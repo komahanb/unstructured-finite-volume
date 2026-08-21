@@ -51,7 +51,7 @@
 module triangular_decay_fixture
 
   use iso_fortran_env  , only : dp => REAL64
-  use operation_action, only : operation
+  use operation_action, only : operation, application
   use view_directed, only : directed_graph
   use field_calculus, only : field
   use graph_fractal    , only : graph
@@ -80,7 +80,7 @@ module triangular_decay_fixture
 
      procedure :: name   => decay_name
      procedure :: domain => decay_domain
-     procedure :: apply  => decay_apply
+     procedure, private :: act => decay_apply
 
   end type triangular_decay
 
@@ -151,29 +151,29 @@ contains
   ! plausible.
   !===================================================================!
 
-  subroutine decay_apply(this, input_graph, input_data, output)
+  subroutine decay_apply(this, host, app, output)
 
     class(triangular_decay), intent(in)            :: this
-    class(directed_graph)           , intent(in)            :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
     class(field), allocatable, intent(inout) :: output
+    class(field), pointer :: arg1
 
     type(graph)       :: given
     type(stored_field)           :: out
     real(dp), allocatable          :: q(:), s(:)
 
-    associate (u1 => input_graph); end associate
+    arg1 => app % field_for(this % argument(1))
 
-    if (.not. present(input_data)) then
-       error stop 'triangular_decay: the action needs a state to act on'
-    end if
+    associate (u1 => host); end associate
 
-    given = input_data(1) % domain()
+
+    given = arg1 % domain()
     if (.not. given % same_as(this % state)) then
        error stop 'triangular_decay: the state must live on the action''s own domain'
     end if
 
-    call input_data(1) % real_vector(q)
+    call arg1 % real_vector(q)
     if (size(q) /= this % n_state) then
        error stop 'triangular_decay: one number per state coordinate'
     end if

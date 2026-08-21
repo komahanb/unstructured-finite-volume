@@ -28,7 +28,8 @@
 module operation_linearization
 
   use iso_fortran_env    , only : dp => REAL64
-  use operation_action, only : operation, argument, variation
+  use operation_action, only : operation, argument, variation, &
+       & binding, application, constitute
   use view_directed, only : directed_graph
   use field_calculus, only : field
   use graph_fractal      , only : graph
@@ -56,7 +57,7 @@ module operation_linearization
 
      procedure :: name   => linearization_name
      procedure :: domain => linearization_domain
-     procedure :: apply  => linearization_apply
+     procedure, private :: act => linearization_act
      procedure :: exact  => linearization_exact
 
      procedure, private :: freeze_values
@@ -196,12 +197,15 @@ contains
   end subroutine linearization_domain
 
   !===================================================================!
-  ! The frozen tuple and the position of the differentiated
-  ! argument in it. Values frozen alone become the state on the
-  ! statement's domain. Checks, each stopping the program: a point
-  ! must have been frozen; values frozen alone must hold a whole
-  ! number of components per domain member; the tuple must reach the
-  ! differentiated argument.
+  ! The frozen tuple and the position of the differentiated argument
+  ! in it. The tuple is the statement's WHOLE input list - exactly
+  ! num_arguments() entries - because an application binds every
+  ! declared argument or none. Values frozen alone therefore serve a
+  ! statement of one argument only; a statement with auxiliaries is
+  ! frozen on its input tuple. Checks, each stopping the program: a
+  ! point must have been frozen; values frozen alone must hold a whole
+  ! number of components per domain member, and belong to a one-
+  ! argument statement; the tuple must be the whole argument list.
   !===================================================================!
 
   subroutine frozen_tuple(this, on, n_on, tuple, position)
@@ -217,6 +221,10 @@ contains
     if (allocated(this % at)) then
        tuple = this % at
     else if (allocated(this % at_values)) then
+       if (this % of % num_arguments() /= 1) then
+          error stop 'linearization: values alone freeze a statement of one &
+               &argument; freeze the input tuple for a statement with auxiliaries'
+       end if
        if (mod(size(this % at_values), n_on) /= 0) then
           error stop 'linearization: the frozen state must carry a whole number &
                &per member of the operation''s domain'
@@ -229,15 +237,42 @@ contains
        error stop 'linearization: the tangent is taken at a frozen state'
     end if
 
+    if (size(tuple) /= this % of % num_arguments()) then
+       error stop 'linearization: the frozen tuple is the statement''s whole &
+            &argument list'
+    end if
+
     position = 0
     do k = 1, this % of % num_arguments()
        if (this % wrt % matches(this % of % argument(k))) position = k
     end do
-    if (position < 1 .or. position > size(tuple)) then
+    if (position < 1) then
        error stop 'linearization: the frozen tuple reaches the differentiated argument'
     end if
 
   end subroutine frozen_tuple
+
+  !===================================================================!
+  ! The statement's own application at a frozen tuple.
+  !===================================================================!
+
+  subroutine statement_application(this, host, tuple, app)
+
+    class(linearization), intent(in)  :: this
+    class(directed_graph), intent(in) :: host
+    type(stored_field)  , intent(in)  :: tuple(:)
+    type(application)   , intent(out) :: app
+
+    type(binding), allocatable :: bound(:)
+    integer :: k
+
+    allocate(bound(size(tuple)))
+    do k = 1, size(tuple)
+       bound(k) = binding(this % of % argument(k), tuple(k))
+    end do
+    call constitute(this % of, host, bound, app)
+
+  end subroutine statement_application
 
   !===================================================================!
   ! D_a S(x)[v] at the frozen tuple x, on the statement's own domain.
@@ -249,21 +284,23 @@ contains
   ! otherwise. Without input data the direction is zero.
   !===================================================================!
 
-  subroutine linearization_apply(this, input_graph, input_data, output)
+  subroutine linearization_act(this, host, app, output)
 
-    class(linearization), intent(in)         :: this
-    class(directed_graph), intent(in)        :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
-    class(field), allocatable, intent(inout) :: output
+    class(linearization) , intent(in)         :: this
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
+    class(field), allocatable, intent(inout)  :: output
 
     type(stored_field), allocatable :: tuple(:)
-    type(stored_field)   :: direction, out
+    type(stored_field)        :: direction, out
+    type(application)         :: at
     class(field), allocatable :: pushed
+    class(field), pointer     :: given
     type(graph) :: on, along
     real(dp), allocatable :: v(:), y(:), base(:), x(:)
     integer :: n_on, p, width
 
-    call this % of % domain(input_graph, on, n_on)
+    call this % of % domain(host, on, n_on)
 
     if (n_on <= 0) then
        error stop 'linearization: the operation''s domain is empty'
@@ -275,17 +312,13 @@ contains
     call tuple(p) % real_vector(x)
     width = size(x)
 
-    if (present(input_data)) then
-       if (.not. input_data(1) % defined_on(along)) then
-          error stop 'linearization: the direction must live on the differentiated argument''s domain'
-       end if
-       call input_data(1) % real_vector(v)
-       if (size(v) /= width) then
-          error stop 'linearization: the direction must match the frozen state''s width'
-       end if
-    else
-       allocate(v(width))
-       v = 0.0_dp
+    given => app % field_for(this % argument(1))
+    if (.not. given % defined_on(along)) then
+       error stop 'linearization: the direction must live on the differentiated argument''s domain'
+    end if
+    call given % real_vector(v)
+    if (size(v) /= width) then
+       error stop 'linearization: the direction must match the frozen state''s width'
     end if
 
     direction = stored_field('direction', along, tuple(p) % num_entries(), &
@@ -294,7 +327,8 @@ contains
 
     if (this % exact()) then
 
-       call this % of % partial_action(input_graph, tuple, &
+       call statement_application(this, host, tuple, at)
+       call this % of % partial_action(host, at, &
             & [variation(this % wrt, direction)], pushed)
        call require_domain(pushed, on)
        call pushed % real_vector(y)
@@ -306,13 +340,15 @@ contains
        if (allocated(this % base)) then
           base = this % base
        else
-          call this % of % apply(input_graph, tuple, pushed)
+          call statement_application(this, host, tuple, at)
+          call this % of % apply(host, at, pushed)
           call require_domain(pushed, on)
           call pushed % real_vector(base)
        end if
 
        call tuple(p) % set_real_vector(x + this % step * v)
-       call this % of % apply(input_graph, tuple, pushed)
+       call statement_application(this, host, tuple, at)
+       call this % of % apply(host, at, pushed)
        call require_domain(pushed, on)
        call pushed % real_vector(y)
 
@@ -325,7 +361,7 @@ contains
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
 
-  end subroutine linearization_apply
+  end subroutine linearization_act
 
   !===================================================================!
   ! (D_a S)^T lambda under the Euclidean pairing on stored values:

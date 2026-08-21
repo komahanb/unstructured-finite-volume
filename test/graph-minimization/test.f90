@@ -18,7 +18,7 @@
 module cubic_statement_fixture
 
   use iso_fortran_env, only : dp => REAL64
-  use operation_action, only : operation
+  use operation_action, only : operation, application, binding, constitute
   use view_directed, only : directed_graph
   use field_calculus, only : field
   use view_directed , only : SIDE_VERTEX
@@ -48,7 +48,7 @@ module cubic_statement_fixture
 
      procedure :: name   => cubic_name
      procedure :: domain => cubic_domain
-     procedure :: apply  => cubic_apply
+     procedure, private :: act => cubic_apply
 
   end type cubic_statement
 
@@ -80,30 +80,40 @@ contains
     num_entries = input_graph % num_vertices()
   end subroutine cubic_domain
 
-  subroutine cubic_apply(this, input_graph, input_data, output)
+  subroutine cubic_apply(this, host, app, output)
 
     class(cubic_statement), intent(in)             :: this
-    class(directed_graph), intent(in)                       :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
     class(field), allocatable, intent(inout) :: output
+    class(field), pointer :: arg1
 
     type(graph)   :: cells
     type(stored_field)   :: out
     real(dp), allocatable :: q(:), y(:)
     integer :: nv, v
 
-    call this % linear_part % apply(input_graph, input_data, output)
+    arg1 => app % field_for(this % argument(1))
+
+    block
+      type(binding), allocatable :: inner_bound(:)
+      type(application) :: inner
+      allocate(inner_bound(1))
+      inner_bound(1) = binding(this % linear_part % argument(1), arg1)
+      call constitute(this % linear_part, host, inner_bound, inner)
+      call this % linear_part % apply(host, inner, output)
+    end block
     call output % real_vector(y)
 
-    nv = input_graph % num_vertices()
-    if (present(input_data)) then
-       call input_data(1) % real_vector(q)
+    nv = host % num_vertices()
+    block
+       call arg1 % real_vector(q)
        do v = 1, min(nv, size(q))
           y(v) = y(v) - this % strength * q(v)**3
        end do
-    end if
+    end block
 
-    cells = input_graph % vertex_set()
+    cells = host % vertex_set()
     out = stored_field('cubic', cells, nv)
     call out % set_real_vector(y)
     if (allocated(output)) deallocate(output)

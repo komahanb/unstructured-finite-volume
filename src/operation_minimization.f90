@@ -39,7 +39,7 @@
 module operation_minimization
 
   use iso_fortran_env       , only : dp => REAL64
-  use operation_action  , only : operation
+  use operation_action  , only : operation, application, binding, constitute
   use view_directed   , only : directed_graph
   use field_calculus  , only : field
   use graph_fractal      , only : graph
@@ -138,7 +138,7 @@ module operation_minimization
      ! solver composes wherever operations go; a preconditioner is
      ! exactly this face of an inner solver.
      procedure :: domain => solver_domain
-     procedure :: apply  => solver_apply
+     procedure, private :: act => solver_act
 
      procedure(solve_interface), deferred :: solve
 
@@ -288,10 +288,20 @@ contains
     real(dp), allocatable, intent(out) :: y(:)
 
     type(stored_field), allocatable :: inputs(:)
+    type(binding), allocatable :: bound(:)
+    type(application) :: at
     class(field), allocatable :: answer
+    integer :: k
 
     call this % evaluation_inputs(x, inputs)
-    call this % action % apply(this % on, inputs, answer)
+
+    allocate(bound(size(inputs)))
+    do k = 1, size(inputs)
+       bound(k) = binding(this % action % argument(k), inputs(k))
+    end do
+    call constitute(this % action, this % on, bound, at)
+
+    call this % action % apply(this % on, at, answer)
 
     if (.not. answer % defined_on(this % residual_domain)) then
        error stop 'minimization: the action must answer on its stated residual domain'
@@ -462,39 +472,40 @@ contains
 
   end subroutine solver_domain
 
-  subroutine solver_apply(this, input_graph, input_data, output)
+  subroutine solver_act(this, host, app, output)
 
-    class(minimizer), intent(in)                   :: this
-    class(directed_graph), intent(in)                       :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
-    class(field), allocatable, intent(inout) :: output
+    class(minimizer)     , intent(in)         :: this
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
+    class(field), allocatable, intent(inout)  :: output
 
     class(minimizer), allocatable :: worker
-    type(stored_field) :: out
+    type(stored_field)    :: out
+    class(field), pointer :: given
     real(dp), allocatable :: rhs(:), x(:)
     real(dp) :: achieved
 
-    associate (u1 => input_graph); end associate
+    associate (u1 => host); end associate
 
     ! x IS a state on the unknown domain; say so.
     allocate(x(this % num_unknowns * this % num_components))
     x = 0.0_dp
 
-    if (present(input_data)) then
-       if (.not. input_data(1) % defined_on(this % residual_domain)) then
-          error stop 'minimization: a right-hand side lives on the residual domain'
-       end if
-       call input_data(1) % real_vector(rhs)
-       allocate(worker, source=this)
-       call worker % solve(rhs, x, achieved)
+    given => app % field_for(this % argument(1))
+    if (.not. given % defined_on(this % residual_domain)) then
+       error stop 'minimization: a right-hand side lives on the residual domain'
     end if
+    call given % real_vector(rhs)
+    allocate(worker, source=this)
+    call worker % solve(rhs, x, achieved)
 
-    out = stored_field('solution', this % unknown_domain, this % num_unknowns, num_components=this % num_components)
+    out = stored_field('solution', this % unknown_domain, this % num_unknowns, &
+         & num_components=this % num_components)
     call out % set_real_vector(x)
 
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
 
-  end subroutine solver_apply
+  end subroutine solver_act
 
 end module operation_minimization

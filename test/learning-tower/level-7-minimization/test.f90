@@ -47,7 +47,7 @@ module learning_residual_fixture
   use map_set        , only : set_map
   use map_set_representation, only : set_representation
   use map_inclusion  , only : inclusion_map, declared_subobject
-  use operation_action, only : operation
+  use operation_action, only : operation, application
   use view_directed, only : directed_graph
   use field_calculus, only : field
   use field_stored, only : stored_field
@@ -70,7 +70,7 @@ module learning_residual_fixture
    contains
      procedure :: name   => oracle_name
      procedure :: domain => oracle_domain
-     procedure :: apply  => oracle_apply
+     procedure, private :: act => oracle_apply
   end type affine_learning_residual
 
   interface affine_learning_residual
@@ -113,12 +113,13 @@ contains
     num_entries = this % n_y
   end subroutine oracle_domain
 
-  subroutine oracle_apply(this, input_graph, input_data, output)
+  subroutine oracle_apply(this, host, app, output)
 
     class(affine_learning_residual), intent(in)    :: this
-    class(directed_graph), intent(in)                       :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
     class(field), allocatable, intent(inout) :: output
+    class(field), pointer :: arg1
 
     type(stored_field)                    :: out
     type(graph) :: dom
@@ -126,13 +127,15 @@ contains
     real(dp)                       :: w
     integer         :: n_y
 
-    associate (u1 => input_graph); end associate
+    arg1 => app % field_for(this % argument(1))
 
-    dom = input_data(1) % domain()
+    associate (u1 => host); end associate
+
+    dom = arg1 % domain()
     if (.not. dom % same_as(this % theta)) then
        error stop 'oracle: the state must live on the trainable domain'
     end if
-    call input_data(1) % real_vector(q)
+    call arg1 % real_vector(q)
 
     ! The parameter, through Theta's own enumeration - never by
     ! assuming member integer = vector position.

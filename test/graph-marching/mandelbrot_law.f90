@@ -24,7 +24,7 @@
 module mandelbrot_law_fixture
 
   use iso_fortran_env    , only : dp => REAL64
-  use operation_action, only : operation
+  use operation_action, only : operation, application
   use view_directed, only : directed_graph
   use field_calculus, only : field
   use view_directed     , only : SIDE_VERTEX
@@ -45,7 +45,7 @@ module mandelbrot_law_fixture
 
      procedure :: name   => law_name
      procedure :: domain => law_domain
-     procedure :: apply  => law_apply
+     procedure, private :: act => law_apply
 
   end type mandelbrot_law
 
@@ -79,12 +79,13 @@ contains
     num_entries = input_graph % num_vertices()
   end subroutine law_domain
 
-  subroutine law_apply(this, input_graph, input_data, output)
+  subroutine law_apply(this, host, app, output)
 
     class(mandelbrot_law), intent(in)              :: this
-    class(directed_graph), intent(in)                       :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
     class(field), allocatable, intent(inout) :: output
+    class(field), pointer :: arg1
 
     type(graph) :: cells
     type(stored_field)   :: out
@@ -92,22 +93,24 @@ contains
     real(dp) :: u, v
     integer :: nv, k
 
-    nv = input_graph % num_vertices()
+    arg1 => app % field_for(this % argument(1))
+
+    nv = host % num_vertices()
     allocate(s(2 * nv))
     s = 0.0_dp
 
-    if (present(input_data)) then
-       call input_data(1) % real_vector(q)
+    block
+       call arg1 % real_vector(q)
        do k = 1, nv
           u = q(2 * k - 1)
           v = q(2 * k)
           s(2 * k - 1) = u - (u * u - v * v) - this % creal(k)
           s(2 * k)     = v - (2.0_dp * u * v) - this % cimag(k)
        end do
-    end if
+    end block
 
-    cells = input_graph % vertex_set()
-    out = stored_field('velocity', cells, input_graph % num_vertices(), num_components=2)
+    cells = host % vertex_set()
+    out = stored_field('velocity', cells, host % num_vertices(), num_components=2)
     call out % set_real_vector(s)
 
     if (allocated(output)) deallocate(output)

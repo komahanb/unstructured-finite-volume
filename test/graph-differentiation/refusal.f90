@@ -195,6 +195,9 @@ program refusal
 
   case ('historymissing')
 
+     ! the scheme declares the action's arguments then its history,
+     ! so a tuple that stops before the history is not the argument
+     ! list and never becomes an application
      statement = backward_euler(quartic, 0.5_dp)
      call scalar_pair(1.0_dp, 2.0_dp, cells, inputs)
      call statement % apply(lone, inputs, output)

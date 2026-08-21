@@ -31,7 +31,7 @@ module constituted_residual_fixture
   use graph_fractal        , only : graph
   use view_relational, only : relational_binding, &
        & num_relations, relation_at
-  use operation_action, only : operation
+  use operation_action, only : operation, application
   use view_directed, only : directed_graph
   use field_calculus, only : field
   use field_stored, only : stored_field
@@ -59,7 +59,7 @@ module constituted_residual_fixture
    contains
      procedure :: name   => clr_name
      procedure :: domain => clr_domain
-     procedure :: apply  => clr_apply
+     procedure, private :: act => clr_apply
   end type constituted_learning_residual
 
   interface constituted_learning_residual
@@ -154,12 +154,13 @@ contains
     num_entries = this % n_rows
   end subroutine clr_domain
 
-  subroutine clr_apply(this, input_graph, input_data, output)
+  subroutine clr_apply(this, host, app, output)
 
     class(constituted_learning_residual), intent(in) :: this
-    class(directed_graph), intent(in)                 :: input_graph
-    class(field), intent(in), optional         :: input_data(:)
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
     class(field), allocatable, intent(inout)   :: output
+    class(field), pointer :: arg1
 
     type(stored_field)                    :: out
     type(graph) :: dom
@@ -174,7 +175,9 @@ contains
     type(set_map) :: mine
     integer         :: n_rows
 
-    associate (u1 => input_graph); end associate
+    arg1 => app % field_for(this % argument(1))
+
+    associate (u1 => host); end associate
 
     call mine % bind(this % slots,     this % c_slots)
     call mine % bind(this % rows,      this % c_rows)
@@ -182,18 +185,15 @@ contains
     call mine % bind(this % trainable, this % c_trainable)
     call mine % bind(this % computed,  this % c_computed)
 
-    if (.not. present(input_data)) then
-       error stop 'statement: the residual needs a state to judge'
-    end if
-    if (size(input_data) < 1) then
+    if (app % num_bindings() < 1) then
        error stop 'statement: the residual needs a state to judge'
     end if
 
-    dom = input_data(1) % domain()
+    dom = arg1 % domain()
     if (.not. dom % same_as(this % trainable)) then
        error stop 'statement: the state must live on the trainable domain'
     end if
-    call input_data(1) % real_vector(tstate)
+    call arg1 % real_vector(tstate)
 
     allocate(r(this % n_rows))
     call generated_residual(this % flow, this % located, &

@@ -45,7 +45,7 @@
 module operation_balance
 
   use iso_fortran_env    , only : dp => REAL64
-  use operation_action, only : operation
+  use operation_action, only : operation, application, binding, constitute
   use view_directed, only : directed_graph
   use field_calculus, only : field
   use graph_fractal      , only : graph
@@ -76,7 +76,7 @@ module operation_balance
 
      procedure :: name   => balance_name
      procedure :: domain => balance_domain
-     procedure :: apply  => balance_apply
+     procedure, private :: act => balance_act
 
   end type balance
 
@@ -148,23 +148,28 @@ contains
   !       through incidence
   !===================================================================!
 
-  subroutine balance_apply(this, input_graph, input_data, output)
+  subroutine balance_act(this, host, app, output)
 
-    class(balance)    , intent(in)                 :: this
-    class(directed_graph)      , intent(in)                 :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
-    class(field), allocatable, intent(inout) :: output
+    class(balance)       , intent(in)         :: this
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
+    class(field), allocatable, intent(inout)  :: output
 
-    class(field), allocatable :: edge_values
+    class(field), allocatable  :: edge_values
+    class(field), pointer      :: state
+    type(binding), allocatable :: bound(:)
+    type(application)          :: term
 
     type(stored_field)           :: out
     real(dp), allocatable :: y(:), z(:)
     integer               :: nv, ne, v, e, t, h, k
 
-    nv = input_graph % num_vertices()
-    ne = input_graph % num_edges()
+    state => app % field_for(this % argument(1))
 
-    out = stored_field('balance', input_graph % vertex_set(), input_graph % num_vertices())
+    nv = host % num_vertices()
+    ne = host % num_edges()
+
+    out = stored_field('balance', host % vertex_set(), host % num_vertices())
 
     allocate(y(nv))
     y = this % source
@@ -173,8 +178,12 @@ contains
        do k = 1, size(this % edge_terms)
 
           ! One edge term, computed for every edge at once. This is
-          ! the only place the edge values are computed.
-          call this % edge_terms(k) % apply(input_graph, input_data, edge_values)
+          ! the only place the edge values are computed. The state
+          ! this balance was given supplies the term's own argument.
+          allocate(bound(1))
+          bound(1) = binding(this % edge_terms(k) % argument(1), state)
+          call constitute(this % edge_terms(k), host, bound, term)
+          call this % edge_terms(k) % apply(host, term, edge_values)
           call edge_values % real_vector(z)
 
           ! And reduced onto the vertices through incidence, each
@@ -183,11 +192,11 @@ contains
           do e = 1, ne
              if (e > size(z)) exit
 
-             t = input_graph % edge_tail(e)
+             t = host % edge_tail(e)
              if (t >= 1 .and. t <= nv) y(t) = y(t) - z(e)
 
-             if (input_graph % edge_has_head(e)) then
-                h = input_graph % edge_head(e)
+             if (host % edge_has_head(e)) then
+                h = host % edge_head(e)
                 if (h >= 1 .and. h <= nv) y(h) = y(h) + z(e)
              end if
 
@@ -202,6 +211,6 @@ contains
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
 
-  end subroutine balance_apply
+  end subroutine balance_act
 
 end module operation_balance

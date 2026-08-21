@@ -31,7 +31,7 @@
 module toy_differentiable_forms
 
   use iso_fortran_env     , only : dp => REAL64
-  use operation_action, only : operation, argument, variation
+  use operation_action, only : operation, argument, variation, application
   use view_directed , only : directed_graph
   use field_calculus, only : field
   use graph_fractal       , only : graph
@@ -54,9 +54,9 @@ module toy_differentiable_forms
    contains
      procedure :: name           => quartic_name
      procedure :: domain         => quartic_domain
-     procedure :: apply          => quartic_apply
+     procedure, private :: act => quartic_apply
      procedure :: max_degree     => quartic_max_degree
-     procedure :: partial_action => quartic_partial_action
+     procedure, private :: partial_act => quartic_partial_action
   end type quartic_form
 
   interface quartic_form
@@ -76,9 +76,9 @@ module toy_differentiable_forms
    contains
      procedure :: name           => power8_name
      procedure :: domain         => power8_domain
-     procedure :: apply          => power8_apply
+     procedure, private :: act => power8_apply
      procedure :: max_degree     => power8_max_degree
-     procedure :: partial_action => power8_partial_action
+     procedure, private :: partial_act => power8_partial_action
   end type power8_form
 
   interface power8_form
@@ -100,9 +100,9 @@ module toy_differentiable_forms
    contains
      procedure :: name           => equilibrium_name
      procedure :: domain         => equilibrium_domain
-     procedure :: apply          => equilibrium_apply
+     procedure, private :: act => equilibrium_apply
      procedure :: max_degree     => equilibrium_max_degree
-     procedure :: partial_action => equilibrium_partial_action
+     procedure, private :: partial_act => equilibrium_partial_action
   end type equilibrium_law
 
   interface equilibrium_law
@@ -120,7 +120,7 @@ module toy_differentiable_forms
    contains
      procedure :: name   => linear_name
      procedure :: domain => linear_domain
-     procedure :: apply  => linear_apply
+     procedure, private :: act => linear_apply
   end type linear_law
 
   interface linear_law
@@ -180,19 +180,23 @@ contains
   ! was passed.
   !===================================================================!
 
-  subroutine read_arguments(input_data, xi_default, q, xi)
+  subroutine read_arguments(op, app, xi_default, q, xi)
 
-    class(field), intent(in)     :: input_data(:)
+    class(operation) , intent(in)         :: op
+    type(application), intent(in), target :: app
+    class(field), pointer :: given
     real(dp)          , intent(in)     :: xi_default
     real(dp), allocatable, intent(out) :: q(:)
     real(dp)          , intent(out)    :: xi
 
     real(dp), allocatable :: xv(:)
 
-    call input_data(1) % real_vector(q)
+    given => app % field_for(op % argument(1))
+    call given % real_vector(q)
 
-    if (size(input_data) >= 2) then
-       call input_data(2) % real_vector(xv)
+    if (op % num_arguments() >= 2) then
+       given => app % field_for(op % argument(2))
+       call given % real_vector(xv)
        xi = xv(1)
     else
        xi = xi_default
@@ -350,23 +354,23 @@ contains
     degree = 4
   end function quartic_max_degree
 
-  subroutine quartic_apply(this, input_graph, input_data, output)
+  subroutine quartic_apply(this, host, app, output)
 
     class(quartic_form), intent(in)                 :: this
-    class(directed_graph), intent(in)               :: input_graph
-    class(field), intent(in), optional        :: input_data(:)
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
     class(field), allocatable, intent(inout)  :: output
 
     real(dp), allocatable :: q(:)
     real(dp) :: xi, phi
 
     phi = 0.0_dp
-    if (present(input_data)) then
-       call read_arguments(input_data, this % xi_default, q, xi)
+    block
+       call read_arguments(this, app, this % xi_default, q, xi)
        phi = quartic_mixed(0, 0, q(1), xi)
-    end if
+    end block
 
-    call pack_output(input_graph, [phi], output)
+    call pack_output(host, [phi], output)
 
   end subroutine quartic_apply
 
@@ -394,12 +398,11 @@ contains
 
   end function quartic_mixed
 
-  subroutine quartic_partial_action(this, input_graph, input_data, &
-       & variations, output)
+  subroutine quartic_partial_action(this, host, app, variations, output)
 
     class(quartic_form), intent(in)                :: this
-    class(directed_graph), intent(in)              :: input_graph
-    class(field), intent(in)                 :: input_data(:)
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
     type(variation), intent(in)              :: variations(:)
     class(field), allocatable, intent(inout) :: output
 
@@ -407,10 +410,10 @@ contains
     real(dp) :: xi, product
     integer  :: a, b
 
-    call read_arguments(input_data, this % xi_default, q, xi)
+    call read_arguments(this, app, this % xi_default, q, xi)
     call count_argument_occurrences(this, variations, a, b, product)
 
-    call pack_output(input_graph, &
+    call pack_output(host, &
          & [quartic_mixed(a, b, q(1), xi) * product], output)
 
   end subroutine quartic_partial_action
@@ -442,32 +445,31 @@ contains
     degree = 8
   end function power8_max_degree
 
-  subroutine power8_apply(this, input_graph, input_data, output)
+  subroutine power8_apply(this, host, app, output)
 
     class(power8_form), intent(in)                  :: this
-    class(directed_graph), intent(in)               :: input_graph
-    class(field), intent(in), optional        :: input_data(:)
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
     class(field), allocatable, intent(inout)  :: output
 
     real(dp), allocatable :: q(:)
     real(dp) :: xi, phi
 
     phi = 0.0_dp
-    if (present(input_data)) then
-       call read_arguments(input_data, this % xi_default, q, xi)
+    block
+       call read_arguments(this, app, this % xi_default, q, xi)
        phi = (q(1) + xi) ** 8
-    end if
+    end block
 
-    call pack_output(input_graph, [phi], output)
+    call pack_output(host, [phi], output)
 
   end subroutine power8_apply
 
-  subroutine power8_partial_action(this, input_graph, input_data, &
-       & variations, output)
+  subroutine power8_partial_action(this, host, app, variations, output)
 
     class(power8_form), intent(in)                 :: this
-    class(directed_graph), intent(in)              :: input_graph
-    class(field), intent(in)                 :: input_data(:)
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
     type(variation), intent(in)              :: variations(:)
     class(field), allocatable, intent(inout) :: output
 
@@ -475,7 +477,7 @@ contains
     real(dp) :: xi, product, term
     integer  :: a, b, order
 
-    call read_arguments(input_data, this % xi_default, q, xi)
+    call read_arguments(this, app, this % xi_default, q, xi)
     call count_argument_occurrences(this, variations, a, b, product)
 
     ! d^k (q + xi)^8 = 8!/(8-k)! (q + xi)^(8-k) for every mix of
@@ -483,7 +485,7 @@ contains
     order = a + b
     term  = falling(8, order) * (q(1) + xi) ** (8 - order)
 
-    call pack_output(input_graph, [term * product], output)
+    call pack_output(host, [term * product], output)
 
   end subroutine power8_partial_action
 
@@ -514,34 +516,28 @@ contains
     degree = 8
   end function equilibrium_max_degree
 
-  subroutine equilibrium_apply(this, input_graph, input_data, output)
+  subroutine equilibrium_apply(this, host, app, output)
 
     class(equilibrium_law), intent(in)              :: this
-    class(directed_graph), intent(in)               :: input_graph
-    class(field), intent(in), optional        :: input_data(:)
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
     class(field), allocatable, intent(inout)  :: output
 
     real(dp), allocatable :: q(:), s(:)
     real(dp) :: xi
 
-    if (present(input_data)) then
-       call read_arguments(input_data, this % xi_default, q, xi)
-       s = q * q - xi
-    else
-       allocate(s(input_graph % num_vertices()))
-       s = 0.0_dp
-    end if
+    call read_arguments(this, app, this % xi_default, q, xi)
+    s = q * q - xi
 
-    call pack_output(input_graph, s, output)
+    call pack_output(host, s, output)
 
   end subroutine equilibrium_apply
 
-  subroutine equilibrium_partial_action(this, input_graph, input_data, &
-       & variations, output)
+  subroutine equilibrium_partial_action(this, host, app, variations, output)
 
     class(equilibrium_law), intent(in)             :: this
-    class(directed_graph), intent(in)              :: input_graph
-    class(field), intent(in)                 :: input_data(:)
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
     type(variation), intent(in)              :: variations(:)
     class(field), allocatable, intent(inout) :: output
 
@@ -549,7 +545,7 @@ contains
     real(dp) :: xi, product
     integer  :: a, b, j
 
-    call read_arguments(input_data, this % xi_default, q, xi)
+    call read_arguments(this, app, this % xi_default, q, xi)
     call count_argument_occurrences(this, variations, a, b, product)
 
     ! collect up to two state direction vectors whole; only the
@@ -579,7 +575,7 @@ contains
        s = 0.0_dp
     end if
 
-    call pack_output(input_graph, s, output)
+    call pack_output(host, s, output)
 
   end subroutine equilibrium_partial_action
 
@@ -603,25 +599,23 @@ contains
     call vertex_domain(input_graph, domain, num_entries)
   end subroutine linear_domain
 
-  subroutine linear_apply(this, input_graph, input_data, output)
+  subroutine linear_apply(this, host, app, output)
 
     class(linear_law), intent(in)                   :: this
-    class(directed_graph), intent(in)               :: input_graph
-    class(field), intent(in), optional        :: input_data(:)
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
     class(field), allocatable, intent(inout)  :: output
+    class(field), pointer :: arg1
 
     real(dp), allocatable :: s(:)
 
+    arg1 => app % field_for(this % argument(1))
+
     associate (u1 => this); end associate
 
-    if (present(input_data)) then
-       call input_data(1) % real_vector(s)
-    else
-       allocate(s(input_graph % num_vertices()))
-       s = 0.0_dp
-    end if
+    call arg1 % real_vector(s)
 
-    call pack_output(input_graph, s, output)
+    call pack_output(host, s, output)
 
   end subroutine linear_apply
 

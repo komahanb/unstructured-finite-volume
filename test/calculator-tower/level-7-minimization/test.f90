@@ -37,7 +37,7 @@ module affine_residual_fixture
   use map_set        , only : set_map
   use map_set_representation, only : set_representation
   use map_inclusion  , only : inclusion_map, declared_subobject
-  use operation_action, only : operation
+  use operation_action, only : operation, application
   use view_directed, only : directed_graph
   use field_calculus, only : field
   use field_stored, only : stored_field
@@ -64,7 +64,7 @@ module affine_residual_fixture
    contains
      procedure :: name   => oracle_name
      procedure :: domain => oracle_domain
-     procedure :: apply  => oracle_apply
+     procedure, private :: act => oracle_apply
   end type affine_residual
 
   interface affine_residual
@@ -103,17 +103,20 @@ contains
     num_entries = this % n_y
   end subroutine oracle_domain
 
-  subroutine oracle_apply(this, input_graph, input_data, output)
+  subroutine oracle_apply(this, host, app, output)
 
     class(affine_residual), intent(in)             :: this
-    class(directed_graph), intent(in)                       :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
     class(field), allocatable, intent(inout) :: output
+    class(field), pointer :: arg1
 
     type(stored_field)                    :: out
     type(graph) :: dom
     real(dp), allocatable          :: q(:), r(:)
     real(dp)                       :: qc, qe
+
+    arg1 => app % field_for(this % argument(1))
     !----------------------------------------------------------------!
     ! The action's OWN coordinates, compiled here from the identities
     ! and counts it stored. U and Y both enumerate 1..n, so a counted
@@ -121,13 +124,13 @@ contains
     ! to be held in this type.
     !----------------------------------------------------------------!
 
-    associate (u1 => input_graph); end associate
+    associate (u1 => host); end associate
 
-    dom = input_data(1) % domain()
+    dom = arg1 % domain()
     if (.not. dom % same_as(this % u)) then
        error stop 'oracle: the state must live on the unknown domain'
     end if
-    call input_data(1) % real_vector(q)
+    call arg1 % real_vector(q)
 
     ! Every access through U's own enumeration: U is { e, c }.
     qc = q(this % u_coords % local_index(SLOT_C))

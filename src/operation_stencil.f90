@@ -40,7 +40,7 @@ module operation_stencil
   use iso_fortran_env    , only : dp => REAL64
   use view_directed, only : directed_graph
   use field_calculus, only : field
-  use operation_action, only : operation, variation
+  use operation_action, only : operation, variation, application
   use operation_discretization     , only : discretization
   use relation_binary, only : group_by_key
   use field_stored  , only : stored_field
@@ -66,11 +66,11 @@ module operation_stencil
 
      procedure :: name         => stencil_name
      procedure :: domain       => stencil_domain
-     procedure :: apply        => stencil_apply
+     procedure, private :: act         => stencil_act
      procedure :: dependencies => stencil_dependencies
      procedure :: transpose     => stencil_transpose
      procedure :: max_degree     => stencil_max_degree
-     procedure :: partial_action => stencil_partial_action
+     procedure, private :: partial_act => stencil_partial_act
 
   end type stencil
 
@@ -166,6 +166,12 @@ contains
   ! must return exactly width values; both are checked and stop the
   ! program, because a mismatched column cannot be placed in the
   ! matrix. The label defaults to the operation's name.
+  !
+  ! Compilation varies ONE argument, so it serves an operation that
+  ! declares exactly one. An operation with auxiliaries is compiled by
+  ! first freezing them - a linearization does exactly that - and the
+  ! mismatch stops the program rather than compiling a column of a
+  ! function of arguments it never supplied.
   !===================================================================!
 
   type(stencil) function create_compiled(action, on, width, label) &
@@ -186,6 +192,10 @@ contains
 
     if (n_dom <= 0) then
        error stop 'stencil: the operation''s domain is nonempty'
+    end if
+    if (action % num_arguments() /= 1) then
+       error stop 'stencil: compilation varies one argument, so the operation &
+            &declares one; freeze the auxiliaries first'
     end if
     if (width <= 0 .or. mod(width, n_dom) /= 0) then
        error stop 'stencil: the width carries a whole number per member'
@@ -247,33 +257,35 @@ contains
 
   !===================================================================!
   ! y = constants + the dependency edges, walked once: each edge
-  ! carries its weight times the tail's value onto its head.
+  ! carries its weight times the tail's value onto its head. The
+  ! state is reached by argument identity; a caller that means the
+  ! constants alone binds a zero field.
   !===================================================================!
 
-  subroutine stencil_apply(this, input_graph, input_data, output)
+  subroutine stencil_act(this, host, app, output)
 
-    class(stencil), intent(in)            :: this
-    class(directed_graph), intent(in)                       :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
-    class(field), allocatable, intent(inout) :: output
+    class(stencil)       , intent(in)         :: this
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
+    class(field), allocatable, intent(inout)  :: output
 
-    type(stored_field)   :: out
+    type(stored_field)    :: out
+    class(field), pointer :: state
     real(dp), allocatable :: q(:), y(:)
 
     call this % constants % real_vector(y)
 
-    if (present(input_data)) then
-       call input_data(1) % real_vector(q)
-       call accumulate_edges(this, q, y)
-    end if
+    state => app % field_for(this % argument(1))
+    call state % real_vector(q)
+    call accumulate_edges(this, q, y)
 
-    out = stored_field(this % label, input_graph % vertex_set(), input_graph % num_vertices())
+    out = stored_field(this % label, host % vertex_set(), host % num_vertices())
     call out % set_real_vector(y)
 
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
 
-  end subroutine stencil_apply
+  end subroutine stencil_act
 
   !===================================================================!
   ! The one edge walk, shared by apply and the tangent: each edge
@@ -317,21 +329,18 @@ contains
 
   end function stencil_max_degree
 
-  subroutine stencil_partial_action(this, input_graph, input_data, &
-       & variations, output)
+  subroutine stencil_partial_act(this, host, app, variations, output)
 
-    class(stencil), intent(in)               :: this
-    class(directed_graph), intent(in)        :: input_graph
-    class(field), intent(in)                 :: input_data(:)
-    type(variation), intent(in)              :: variations(:)
-    class(field), allocatable, intent(inout) :: output
+    class(stencil)       , intent(in)         :: this
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
+    type(variation)      , intent(in)         :: variations(:)
+    class(field), allocatable, intent(inout)  :: output
 
-    type(stored_field)   :: out
+    type(stored_field)    :: out
     real(dp), allocatable :: v(:), y(:)
 
-    associate (u1 => input_data); end associate
-
-    call this % require_owned(variations)
+    associate (u1 => app % num_bindings()); end associate
 
     if (size(variations) /= 1) then
        error stop 'stencil: the requested order is within max_degree'
@@ -345,13 +354,13 @@ contains
     y = 0.0_dp
     call accumulate_edges(this, v, y)
 
-    out = stored_field(this % label, input_graph % vertex_set(), input_graph % num_vertices())
+    out = stored_field('J v', host % vertex_set(), host % num_vertices())
     call out % set_real_vector(y)
 
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
 
-  end subroutine stencil_partial_action
+  end subroutine stencil_partial_act
 
   !===================================================================!
   ! The contract's answer: the pattern IS a graph, handed out whole.

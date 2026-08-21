@@ -50,7 +50,7 @@ module partitioned_shifted_laplacian_fixture
   use map_set      , only : set_map
   use map_label    , only : label_map
   use map_inclusion, only : inclusion_map
-  use operation_action, only : operation
+  use operation_action, only : operation, application
   use view_directed, only : directed_graph
   use field_calculus, only : field
   use view_directed_stored      , only : stored_directed_graph
@@ -85,7 +85,7 @@ module partitioned_shifted_laplacian_fixture
    contains
      procedure :: name   => part_name
      procedure :: domain => part_domain
-     procedure :: apply  => part_apply
+     procedure, private :: act => part_apply
   end type partitioned_shifted_laplacian
 
   interface partitioned_shifted_laplacian
@@ -149,12 +149,13 @@ contains
   ! and sum. Nothing global is differentiated; nothing is cached.
   !===================================================================!
 
-  subroutine part_apply(this, input_graph, input_data, output)
+  subroutine part_apply(this, host, app, output)
 
     class(partitioned_shifted_laplacian), intent(in) :: this
-    class(directed_graph), intent(in)                       :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
     class(field), allocatable, intent(inout) :: output
+    class(field), pointer :: arg1
 
     type(stored_field)                     :: out
     class(field), allocatable :: q1, q2, a1, a2
@@ -171,15 +172,14 @@ contains
     type(label_map)                 :: labels
     type(inclusion_map)             :: inclusions
 
-    call demand_the_recorded_context(this, input_graph)
+    arg1 => app % field_for(this % argument(1))
 
-    if (.not. present(input_data)) then
-       error stop 'partitioned action: the action needs a state to read'
-    end if
-    if (size(input_data) /= 1) then
+    call demand_the_recorded_context(this, host)
+
+    if (app % num_bindings() /= 1) then
        error stop 'partitioned action: the action reads exactly one state'
     end if
-    dom = input_data(1) % domain()
+    dom = arg1 % domain()
     if (.not. dom % same_as(this % whole % vertex_set())) then
        error stop 'partitioned action: the state must live on the global vertex carrier'
     end if
@@ -198,9 +198,9 @@ contains
 
     ! -- NUMERICAL OVERLAP REFRESH, from the state handed in NOW
     call this % p1 % partition_data(this % r1, this % whole, &
-         & input_data(1), this % g1, sets, labels, inclusions, q1)
+         & arg1, this % g1, sets, labels, inclusions, q1)
     call this % p2 % partition_data(this % r2, this % whole, &
-         & input_data(1), this % g2, sets, labels, inclusions, q2)
+         & arg1, this % g2, sets, labels, inclusions, q2)
 
     ! -- LOCAL TOPOLOGY ACTIONS, each on its own part
     call act_locally(this % local, this % g1, q1, a1)

@@ -143,9 +143,11 @@ contains
   ! tangent_of must take the exact road when the operation's
   ! max_degree is at least one and the difference road otherwise;
   ! the two are distinguished here by their name() prefixes. The
-  ! exact tangent of the quartic frozen at
-  ! q = 1 (xi defaulting to 2) is Phi_q(1, 2) = 26, so applying it
-  ! to the direction v = 3 must return 78.
+  ! exact tangent of the quartic frozen at q = 1, xi = 2 is
+  ! Phi_q(1, 2) = 26, so applying it to the direction v = 3 must
+  ! return 78. The quartic declares two arguments, so the frozen
+  ! point is its whole input tuple: an application binds every
+  ! declared argument or none.
   !===================================================================!
 
   subroutine check_the_tangent_chooser(nfail)
@@ -154,7 +156,7 @@ contains
 
     type(linearization) :: tangent, slow
     class(field), allocatable :: output
-    type(stored_field) :: direction
+    type(stored_field) :: direction, q_at, xi_at
     real(dp), allocatable :: rv(:)
 
     tangent = tangent_of(quartic)
@@ -169,7 +171,11 @@ contains
          & index(slow % name(), 'exact') == 0, &
          & "tangent_of picks the difference linearization otherwise", nfail)
 
-    call tangent % freeze([1.0_dp])
+    q_at  = stored_field('q',  cells, 1, num_components=1)
+    call q_at  % set_real_vector([1.0_dp])
+    xi_at = stored_field('xi', cells, 1, num_components=1)
+    call xi_at % set_real_vector([2.0_dp])
+    call tangent % freeze([q_at, xi_at])
 
     direction = stored_field('v', cells, 1, num_components=1)
     call direction % set_real_vector([3.0_dp])

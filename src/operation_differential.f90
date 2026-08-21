@@ -58,9 +58,9 @@
 !
 ! Handed an EDGE field on the vertex landing, the composition
 ! enters at the incidence step: order 1 is then the divergence of
-! that field. Handed no field, or a field on the wrong domain, the
-! operator returns zeros rather than reading memory it was never
-! given.
+! that field. The state is reached by argument identity and is always
+! bound; a field on neither side's set returns zeros rather than
+! reading memory it was never given.
 !
 ! Each step consults an edge's two ends, so order n reaches
 ! exactly n rings of neighbours; the composed pattern states that
@@ -75,7 +75,7 @@
 module operation_differential
 
   use iso_fortran_env    , only : dp => REAL64
-  use operation_action, only : operation
+  use operation_action, only : operation, application
   use view_directed, only : directed_graph
   use field_calculus, only : field
   use graph_fractal      , only : graph
@@ -128,7 +128,7 @@ module operation_differential
 
      procedure :: name   => operator_name
      procedure :: domain => operator_domain
-     procedure :: apply  => operator_apply
+     procedure, private :: act => operator_act
 
   end type differential_operator
 
@@ -875,12 +875,14 @@ contains
   ! returns zeros rather than reading memory it was never given.
   !===================================================================!
 
-  subroutine operator_apply(this, input_graph, input_data, output)
+  subroutine operator_act(this, host, app, output)
 
-    class(differential_operator), intent(in)       :: this
-    class(directed_graph), intent(in)                       :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
-    class(field), allocatable, intent(inout) :: output
+    class(differential_operator), intent(in)  :: this
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
+    class(field), allocatable, intent(inout)  :: output
+
+    class(field), pointer :: state
 
     type(affine_map) :: a
     type(stored_field)      :: out
@@ -888,25 +890,27 @@ contains
     integer :: nv, ne, nout, nc, c
     logical :: enters_on_edges
 
-    nv = input_graph % num_vertices()
-    ne = input_graph % num_edges()
+    state => app % field_for(this % argument(1))
+
+    nv = host % num_vertices()
+    ne = host % num_edges()
 
     ! the input: vertex values first; on the vertex landing an edge
     ! field is also lawful and enters at the incidence step
     enters_on_edges = .false.
-    call fetch_values(input_data, input_graph, .false., nv, q, nc)
+    call fetch_values(state, host, .false., nv, q, nc)
     if (nc == 0 .and. this % landing == SIDE_VERTEX) then
-       call fetch_values(input_data, input_graph, .true., ne, q, nc)
+       call fetch_values(state, host, .true., ne, q, nc)
        enters_on_edges = nc > 0
     end if
 
     if (this % landing == SIDE_EDGE) then
        nout = ne
-       out  = stored_field(this % name(), input_graph % edge_set(), ne, &
+       out  = stored_field(this % name(), host % edge_set(), ne, &
             & num_components=max(nc, 1))
     else
        nout = nv
-       out  = stored_field(this % name(), input_graph % vertex_set(), nv, &
+       out  = stored_field(this % name(), host % vertex_set(), nv, &
             & num_components=max(nc, 1))
     end if
 
@@ -915,7 +919,7 @@ contains
 
     if (nc >= 1) then
 
-       a = compiled_map(this, input_graph, enters_on_edges)
+       a = compiled_map(this, host, enters_on_edges)
 
        allocate(qc(a % ncols), yc(a % nrows))
 
@@ -933,45 +937,43 @@ contains
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
 
-  end subroutine operator_apply
+  end subroutine operator_act
 
   !===================================================================!
-  ! Fetch the input values once and report how many components are carried
-  ! in each entry. The field must cover the named side's whole set,
-  ! by identity, because the sweep indexes it densely; anything
+  ! Read the bound state once and report how many components are
+  ! carried in each entry. The field must cover the named side's whole
+  ! set, by identity, because the sweep indexes it densely; anything
   ! else leaves a zero-length array and zero components.
   !===================================================================!
 
-  subroutine fetch_values(input_data, input_graph, on_edges, n, q, num_components)
+  subroutine fetch_values(given, host, on_edges, n, q, num_components)
 
-    class(field), intent(in), optional :: input_data(:)
-    class(directed_graph)     , intent(in)           :: input_graph
-    logical          , intent(in)           :: on_edges
-    integer          , intent(in)           :: n
-    real(dp), allocatable, intent(out)      :: q(:)
-    integer          , intent(out)          :: num_components
+    class(field)         , intent(in)  :: given
+    class(directed_graph), intent(in)  :: host
+    logical              , intent(in)  :: on_edges
+    integer              , intent(in)  :: n
+    real(dp), allocatable, intent(out) :: q(:)
+    integer              , intent(out) :: num_components
 
     type(graph) :: dom, expected
 
     num_components = 0
 
-    if (present(input_data)) then
-       select type (state => input_data(1))
-       class is (stored_field)
-          dom = state % domain()
-          if (on_edges) then
-             expected = input_graph % edge_set()
-          else
-             expected = input_graph % vertex_set()
-          end if
-          if (dom % same_as(expected)) then
-             num_components = max(state % num_components(), 1)
-             call state % real_vector(q)
-             if (size(q) == n * num_components) return
-             num_components = 0
-          end if
-       end select
-    end if
+    select type (given)
+    class is (stored_field)
+       dom = given % domain()
+       if (on_edges) then
+          expected = host % edge_set()
+       else
+          expected = host % vertex_set()
+       end if
+       if (dom % same_as(expected)) then
+          num_components = max(given % num_components(), 1)
+          call given % real_vector(q)
+          if (size(q) == n * num_components) return
+          num_components = 0
+       end if
+    end select
 
     allocate(q(0))
 

@@ -82,7 +82,7 @@ module operation_reduction
   use graph_fractal      , only : graph
   use field_calculus  , only : FIELD_REAL, FIELD_COMPLEX
   use field_calculus  , only : FIELD_LOGICAL
-  use operation_action  , only : operation
+  use operation_action  , only : operation, application
   use field_calculus  , only : functional
   use view_directed   , only : SIDE_VERTEX
   use field_stored    , only : stored_field
@@ -156,7 +156,7 @@ module operation_reduction
 
      procedure :: name   => reduction_name
      procedure :: domain => reduction_domain
-     procedure :: apply  => reduction_apply
+     procedure, private :: act => reduction_act
 
   end type reduction
 
@@ -195,7 +195,7 @@ module operation_reduction
 
      procedure :: name   => broadcast_name
      procedure :: domain => broadcast_domain
-     procedure :: apply  => broadcast_apply
+     procedure, private :: act => broadcast_act
 
   end type broadcast
 
@@ -218,7 +218,7 @@ contains
 
     ! two readable positions, the values and the measure; a call may
     ! still pass one or none, as it always could
-    call this % declare_arguments(2)
+    call this % declare_arguments(1)
 
   end function create
 
@@ -599,51 +599,36 @@ contains
 
   end subroutine reduction_domain
 
-  subroutine reduction_apply(this, input_graph, input_data, output)
+  subroutine reduction_act(this, host, app, output)
 
-    class(reduction), intent(in)                   :: this
-    class(directed_graph), intent(in)                       :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
-    class(field), allocatable, intent(inout) :: output
+    class(reduction)     , intent(in)         :: this
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
+    class(field), allocatable, intent(inout)  :: output
 
     class(functional), allocatable :: answer
+    class(field), pointer :: u
 
-    associate (u1 => input_graph); end associate
+    associate (u1 => host); end associate
 
-    if (present(input_data)) then
-       if (size(input_data) >= 2) then
-          call reduce_measured(this, input_data(1), input_data(2), answer)
-       else
-          call this % reduce(input_data(1), answer)
-       end if
-    else
-       call this % initialize(answer)
-    end if
+    u => app % field_for(this % argument(1))
+    call this % reduce(u, answer)
 
     if (allocated(output)) deallocate(output)
     allocate(output, source=answer)
 
-  end subroutine reduction_apply
+  end subroutine reduction_act
 
-  ! A separate frame so the measure lands on a required dummy:
-  ! gfortran crashes (gfc_get_descriptor_field; verified on 11.4,
-  ! 13.4, 15.2, and 16.0 trunk) when an optional class dummy is fed
-  ! from a polymorphic array element. Delete when the compiler stops
-  ! crashing on the direct call.
-  subroutine reduce_measured(this, u, v, answer)
 
-    class(reduction), intent(in)   :: this
-    class(field), intent(in) :: u
-    class(field), intent(in) :: v
-    class(functional), allocatable, intent(inout) :: answer
-
-    call this % reduce(u, answer, measure=v)
-
-  end subroutine reduce_measured
 
   !===================================================================!
   ! The broadcast's operation face: the mirror. The one input field
   ! must be a functional; the fill leaves on the graph's vertices.
+  !
+  ! THE OPERATION FACE IS UNARY, field -> functional. A measured
+  ! reduction is the direct capability, reduce(u, answer, measure=v),
+  ! where an optional measure is said by an optional dummy rather
+  ! than by the length of a tuple.
   !===================================================================!
 
   pure function broadcast_name(this) result(name)
@@ -671,30 +656,30 @@ contains
 
   end subroutine broadcast_domain
 
-  subroutine broadcast_apply(this, input_graph, input_data, output)
+  subroutine broadcast_act(this, host, app, output)
 
-    class(broadcast), intent(in)                   :: this
-    class(directed_graph), intent(in)                       :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
-    class(field), allocatable, intent(inout) :: output
+    class(broadcast)     , intent(in)         :: this
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
+    class(field), allocatable, intent(inout)  :: output
 
-    type(stored_field) :: out
+    type(stored_field)    :: out
+    class(field), pointer :: given
 
-    out = stored_field('broadcast', input_graph % vertex_set(), input_graph % num_vertices())
+    out = stored_field('broadcast', host % vertex_set(), host % num_vertices())
 
-    if (present(input_data)) then
-       select type (f => input_data(1))
-       class is (functional)
-          call this % broadcast(f, out)
-       class default
-          error stop 'broadcast: the operation face wants a functional'
-       end select
-    end if
+    given => app % field_for(this % argument(1))
+    select type (given)
+    class is (functional)
+       call this % broadcast(given, out)
+    class default
+       error stop 'broadcast: the operation face wants a functional'
+    end select
 
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
 
-  end subroutine broadcast_apply
+  end subroutine broadcast_act
 
   !===================================================================!
   ! Fill every stored value of the field from the functional's one.

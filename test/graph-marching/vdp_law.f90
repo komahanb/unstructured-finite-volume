@@ -14,7 +14,7 @@
 module vdp_fixture
 
   use iso_fortran_env    , only : dp => REAL64
-  use operation_action, only : operation, variation
+  use operation_action, only : operation, variation, application
   use view_directed, only : directed_graph
   use field_calculus, only : field
   use view_directed     , only : SIDE_VERTEX
@@ -31,9 +31,9 @@ module vdp_fixture
    contains
      procedure :: name           => law_name
      procedure :: domain         => law_domain
-     procedure :: apply          => law_apply
+     procedure, private :: act => law_apply
      procedure :: max_degree     => law_max_degree
-     procedure :: partial_action => law_partial_action
+     procedure, private :: partial_act => law_partial_action
   end type vdp_law
 
   interface vdp_law
@@ -47,7 +47,7 @@ module vdp_fixture
    contains
      procedure :: name   => tangent_name
      procedure :: domain => law_domain2
-     procedure :: apply  => tangent_apply
+     procedure, private :: act => tangent_apply
   end type vdp_tangent_law
 
   interface vdp_tangent_law
@@ -105,42 +105,48 @@ contains
     num_entries = input_graph % num_vertices()
   end subroutine law_domain2
 
-  subroutine law_apply(this, input_graph, input_data, output)
+  subroutine law_apply(this, host, app, output)
 
     class(vdp_law), intent(in)                     :: this
-    class(directed_graph), intent(in)                       :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
     class(field), allocatable, intent(inout) :: output
+    class(field), pointer :: arg1
 
     real(dp), allocatable :: q(:)
     real(dp) :: s(2), u, v
 
+    arg1 => app % field_for(this % argument(1))
+
     s = 0.0_dp
-    if (present(input_data)) then
-       call input_data(1) % real_vector(q)
+    block
+       call arg1 % real_vector(q)
        u = q(1)
        v = q(2)
        s(1) = -v
        s(2) = -(this % mu * (1.0_dp - u * u) * v - u)
-    end if
+    end block
 
-    call pack_answer(input_graph, s, output)
+    call pack_answer(host, s, output)
 
   end subroutine law_apply
 
-  subroutine tangent_apply(this, input_graph, input_data, output)
+  subroutine tangent_apply(this, host, app, output)
 
     class(vdp_tangent_law), intent(in)             :: this
-    class(directed_graph), intent(in)                       :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
     class(field), allocatable, intent(inout) :: output
+    class(field), pointer :: arg1
 
     real(dp), allocatable :: q(:)
     real(dp) :: s(4), u, v, du, dv
 
+    arg1 => app % field_for(this % argument(1))
+
     s = 0.0_dp
-    if (present(input_data)) then
-       call input_data(1) % real_vector(q)
+    block
+       call arg1 % real_vector(q)
        u  = q(1)
        v  = q(2)
        du = q(3)
@@ -150,9 +156,9 @@ contains
        s(3) = -dv
        s(4) = -((-2.0_dp * this % mu * u * v - 1.0_dp) * du &
             &   + this % mu * (1.0_dp - u * u) * dv)
-    end if
+    end block
 
-    call pack_answer(input_graph, s, output)
+    call pack_answer(host, s, output)
 
   end subroutine tangent_apply
 
@@ -166,17 +172,19 @@ contains
   ! Minus J dq at the state, the one argument: the velocity jacobian,
   ! written once; tangent_of reads it and the reverse traversal
   ! transposes it.
-  subroutine law_partial_action(this, input_graph, input_data, &
-       & variations, output)
+  subroutine law_partial_action(this, host, app, variations, output)
 
     class(vdp_law), intent(in)               :: this
-    class(directed_graph), intent(in)        :: input_graph
-    class(field), intent(in)                 :: input_data(:)
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
     type(variation), intent(in)              :: variations(:)
     class(field), allocatable, intent(inout) :: output
+    class(field), pointer :: arg1
 
     real(dp), allocatable :: q(:), d(:)
     real(dp) :: s(2), u, v
+
+    arg1 => app % field_for(this % argument(1))
 
     call this % require_owned(variations)
     if (size(variations) /= 1) error stop 'van der pol: the law is exact to first order'
@@ -184,7 +192,7 @@ contains
        error stop 'van der pol: the law takes one argument'
     end if
 
-    call input_data(1) % real_vector(q)
+    call arg1 % real_vector(q)
     call variations(1) % direction(d)
     u = q(1)
     v = q(2)
@@ -192,7 +200,7 @@ contains
     s(2) = -((-2.0_dp * this % mu * u * v - 1.0_dp) * d(1) &
          &   + this % mu * (1.0_dp - u * u) * d(2))
 
-    call pack_answer(input_graph, s, output)
+    call pack_answer(host, s, output)
 
   end subroutine law_partial_action
 

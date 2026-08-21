@@ -38,7 +38,8 @@
 module operation_step
 
   use iso_fortran_env    , only : dp => REAL64
-  use operation_action, only : operation, argument, variation
+  use operation_action, only : operation, argument, variation, &
+       & binding, application, constitute, reindex
   use operation_discretization     , only : discretization
   use view_directed, only : directed_graph
   use field_calculus, only : field
@@ -68,12 +69,12 @@ module operation_step
 
      procedure :: name         => step_name
      procedure :: domain       => step_domain
-     procedure :: apply        => step_apply
+     procedure, private :: act => step_act
      procedure :: dependencies => step_dependencies
      procedure :: set_bdf
 
      procedure :: max_degree     => step_max_degree
-     procedure :: partial_action => step_partial_action
+     procedure, private :: partial_act => step_partial_act
 
      procedure :: state
      procedure :: auxiliary
@@ -392,82 +393,62 @@ contains
   end subroutine step_domain
 
   !===================================================================!
-  ! The history state k instants back, input m+k. It must be given,
-  ! live on the action's domain and carry the current state's storage
+  ! The history state k instants back, reached by argument identity.
+  ! It must live on the action's domain and carry the state's storage
   ! shape - the same entry count and component count - because it is
   ! combined with the state entry by entry; a violation stops the
   ! program.
   !===================================================================!
 
-  subroutine history_values(this, k, input_data, expected, values)
+  subroutine require_history(state, older, expected)
 
-    class(scheme), intent(in)          :: this
-    integer      , intent(in)          :: k
-    class(field) , intent(in)          :: input_data(:)
-    type(graph)  , intent(in)          :: expected
-    real(dp), allocatable, intent(out) :: values(:)
+    class(field), intent(in) :: state
+    class(field), intent(in) :: older
+    type(graph) , intent(in) :: expected
 
-    integer :: at, width
-
-    at    = this % action % num_arguments() + k
-    width = input_data(1) % num_entries() * input_data(1) % num_components()
-
-    if (size(input_data) < at) then
-       error stop 'step: the history state is given'
-    end if
-
-    if (.not. input_data(at) % defined_on(expected)) then
+    if (.not. older % defined_on(expected)) then
        error stop 'step: a history state lives on the action''s own domain'
     end if
-    if (input_data(at) % num_entries() /= input_data(1) % num_entries() .or. &
-         & input_data(at) % num_components() /= input_data(1) % num_components()) then
-       error stop 'step: a history state matches the state''s storage shape'
-    end if
-    call input_data(at) % real_vector(values)
-
-    if (size(values) /= width) then
+    if (older % num_entries()    /= state % num_entries() .or. &
+         & older % num_components() /= state % num_components()) then
        error stop 'step: a history state matches the state''s storage shape'
     end if
 
-  end subroutine history_values
+  end subroutine require_history
 
   !===================================================================!
-  ! The action's full input tuple rebuilt at another state - the
-  ! history state - from the scheme's inputs: the given values as
-  ! input 1 on the action's domain, then the scheme's inputs 2..m,
-  ! which are the action's auxiliaries, copied as stored fields. The
-  ! scheme's inputs hold the whole action tuple before the history,
-  ! so every auxiliary is present here.
+  ! The action's view of the scheme's application. The map is stated
+  ! in arguments, not fields: the action's state is supplied by
+  ! whichever of the scheme's arguments this evaluation reads from -
+  ! its state at the newest instant, its history one instant back -
+  ! and the action's auxiliary j by the scheme's auxiliary j.
+  !
+  ! It is a VIEW, so nothing is copied. It borrows the scheme's own
+  ! application for the length of this call and never leaves it.
   !===================================================================!
 
-  subroutine inputs_at(this, input_data, expected, n_expected, &
-       & num_components, values, inputs)
+  subroutine action_view(this, host, app, supplies_state, inner)
 
-    class(scheme), intent(in) :: this
-    class(field) , intent(in) :: input_data(:)
-    type(graph)  , intent(in) :: expected
-    integer      , intent(in) :: n_expected, num_components
-    real(dp)     , intent(in) :: values(:)
-    type(stored_field), allocatable, intent(out) :: inputs(:)
+    class(scheme)        , intent(in)         :: this
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
+    type(argument)       , intent(in)         :: supplies_state
+    type(application)    , intent(out)        :: inner
 
-    real(dp), allocatable :: v(:)
-    integer :: j, m
+    type(argument), allocatable :: outer(:)
+    integer :: m, j
 
-    m = min(this % action % num_arguments(), size(input_data))
+    m = this % action % num_arguments()
+    allocate(outer(m))
 
-    allocate(inputs(max(m, 1)))
-
-    inputs(1) = stored_field('state', expected, n_expected, num_components=num_components)
-    call inputs(1) % set_real_vector(values)
-
+    outer(1) = supplies_state
     do j = 2, m
-       inputs(j) = stored_field(input_data(j) % name(), input_data(j) % domain(), &
-            & input_data(j) % num_entries(), num_components=input_data(j) % num_components())
-       call input_data(j) % real_vector(v)
-       call inputs(j) % set_real_vector(v)
+       outer(j) = this % auxiliary(j - 1)
     end do
 
-  end subroutine inputs_at
+    call reindex(this % action, host, app, outer, inner)
+
+  end subroutine action_view
 
   !===================================================================!
   ! Evaluate the residual on the action's domain. Two identity
@@ -479,74 +460,71 @@ contains
   ! state one instant back as well.
   !===================================================================!
 
-  subroutine step_apply(this, input_graph, input_data, output)
+  subroutine step_act(this, host, app, output)
 
-    class(scheme), intent(in)               :: this
-    class(directed_graph), intent(in)                       :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
-    class(field), allocatable, intent(inout) :: output
+    class(scheme)        , intent(in)         :: this
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
+    class(field), allocatable, intent(inout)  :: output
 
-    type(stored_field)   :: out
+    type(stored_field)        :: out
+    type(application)         :: inner
     class(field), allocatable :: velocity
-    type(stored_field), allocatable :: inputs(:)
+    class(field), pointer     :: q_f, qold_f, qolder_f
     type(graph) :: expected
-    integer         :: n_expected, m
+    integer     :: n_expected, num_components
     real(dp), allocatable :: q(:), s(:), y(:), qold(:), qolder(:)
-    integer :: num_components
 
-    call this % action % domain(input_graph, expected, n_expected)
+    call this % action % domain(host, expected, n_expected)
 
-    if (present(input_data)) then
+    q_f => app % field_for(this % state())
+    if (.not. q_f % defined_on(expected)) then
+       error stop 'step: the state must live on the action''s own domain'
+    end if
+    num_components = q_f % num_components()
+    call q_f % real_vector(q)
 
-       if (.not. input_data(1) % defined_on(expected)) then
-          error stop 'step: the state must live on the action''s own domain'
-       end if
-       num_components = input_data(1) % num_components()
+    qold_f => app % field_for(this % history(1))
+    call require_history(q_f, qold_f, expected)
+    call qold_f % real_vector(qold)
 
-       call input_data(1) % real_vector(q)
-       call history_values(this, 1, input_data, expected, qold)
+    y = this % a0 * q + this % a1 * qold
 
-       y = this % a0 * q + this % a1 * qold
-
-       if (abs(this % a2) > 0.0_dp) then
-          call history_values(this, 2, input_data, expected, qolder)
-          y = y + this % a2 * qolder
-       end if
-
-       m = min(this % action % num_arguments(), size(input_data))
-
-       if (this % theta /= 0.0_dp) then
-          call this % action % apply(input_graph, input_data(1:m), velocity)
-          if (.not. velocity % defined_on(expected)) then
-             error stop 'step: the action result lives on its stated domain'
-          end if
-          call velocity % real_vector(s)
-          y = y + this % hs * this % theta * s
-       end if
-
-       if (this % theta /= 1.0_dp) then
-          call inputs_at(this, input_data, expected, n_expected, num_components, qold, inputs)
-          call this % action % apply(input_graph, inputs, velocity)
-          if (.not. velocity % defined_on(expected)) then
-             error stop 'step: the action result lives on its stated domain'
-          end if
-          call velocity % real_vector(s)
-          y = y + this % hs * (1.0_dp - this % theta) * s
-       end if
-
-    else
-       num_components = 1
-       allocate(y(n_expected))
-       y = 0.0_dp
+    if (abs(this % a2) > 0.0_dp) then
+       qolder_f => app % field_for(this % history(2))
+       call require_history(q_f, qolder_f, expected)
+       call qolder_f % real_vector(qolder)
+       y = y + this % a2 * qolder
     end if
 
-    out = stored_field('step residual', expected, n_expected, num_components=num_components)
+    if (this % theta /= 0.0_dp) then
+       call action_view(this, host, app, this % state(), inner)
+       call this % action % apply(host, inner, velocity)
+       if (.not. velocity % defined_on(expected)) then
+          error stop 'step: the action result lives on its stated domain'
+       end if
+       call velocity % real_vector(s)
+       y = y + this % hs * this % theta * s
+    end if
+
+    if (this % theta /= 1.0_dp) then
+       call action_view(this, host, app, this % history(1), inner)
+       call this % action % apply(host, inner, velocity)
+       if (.not. velocity % defined_on(expected)) then
+          error stop 'step: the action result lives on its stated domain'
+       end if
+       call velocity % real_vector(s)
+       y = y + this % hs * (1.0_dp - this % theta) * s
+    end if
+
+    out = stored_field('step residual', expected, n_expected, &
+         & num_components=num_components)
     call out % set_real_vector(y)
 
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
 
-  end subroutine step_apply
+  end subroutine step_act
 
   !===================================================================!
   ! The calculus reaches as deep as the action's. A scheme without
@@ -587,34 +565,31 @@ contains
   ! matches its width, because a0 v or a1 v is added entry by entry.
   !===================================================================!
 
-  subroutine step_partial_action(this, input_graph, input_data, &
-       & variations, output)
+  subroutine step_partial_act(this, host, app, variations, output)
 
-    class(scheme), intent(in)                :: this
-    class(directed_graph), intent(in)        :: input_graph
-    class(field), intent(in)                 :: input_data(:)
-    type(variation), intent(in)              :: variations(:)
-    class(field), allocatable, intent(inout) :: output
+    class(scheme)        , intent(in)         :: this
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
+    type(variation)      , intent(in)         :: variations(:)
+    class(field), allocatable, intent(inout)  :: output
 
-    type(stored_field)        :: out
+    type(stored_field)           :: out
     type(variation), allocatable :: restated(:)
+    class(field)   , pointer     :: q_f, qold_f
     type(graph) :: expected
     integer     :: n_expected, num_components, k, j
     integer     :: nq, nh1, nh2
-    real(dp), allocatable :: y(:), v(:), partial(:), qold(:)
+    real(dp), allocatable :: y(:), v(:), partial(:)
     type(argument) :: q_n, h1, h2
-
-    call this % require_owned(variations)
 
     if (.not. allocated(this % action)) then
        error stop 'step: the action is attached'
     end if
-    if (size(input_data) < 1) then
-       error stop 'step: the state is given'
-    end if
 
-    call this % action % domain(input_graph, expected, n_expected)
-    num_components = input_data(1) % num_components()
+    call this % action % domain(host, expected, n_expected)
+
+    q_f => app % field_for(this % state())
+    num_components = q_f % num_components()
 
     k = size(variations)
 
@@ -661,8 +636,7 @@ contains
     else if (nq > 0) then
 
        if (this % theta /= 0.0_dp) then
-          call action_partial_at_newest(this, input_graph, input_data, expected, &
-               & restated, partial)
+          call action_partial_at(this, host, app, this % state(), expected, restated, partial)
           y = this % hs * this % theta * partial
        end if
        if (k == 1) then
@@ -673,9 +647,9 @@ contains
     else if (nh1 > 0) then
 
        if (this % theta /= 1.0_dp) then
-          call history_values(this, 1, input_data, expected, qold)
-          call action_partial_at(this, input_graph, input_data, expected, &
-               & n_expected, num_components, qold, restated, partial)
+          qold_f => app % field_for(this % history(1))
+          call require_history(q_f, qold_f, expected)
+          call action_partial_at(this, host, app, this % history(1), expected, restated, partial)
           y = this % hs * (1.0_dp - this % theta) * partial
        end if
        if (k == 1) then
@@ -686,14 +660,13 @@ contains
     else
 
        if (this % theta /= 0.0_dp) then
-          call action_partial_at_newest(this, input_graph, input_data, expected, &
-               & restated, partial)
+          call action_partial_at(this, host, app, this % state(), expected, restated, partial)
           y = y + this % hs * this % theta * partial
        end if
        if (this % theta /= 1.0_dp) then
-          call history_values(this, 1, input_data, expected, qold)
-          call action_partial_at(this, input_graph, input_data, expected, &
-               & n_expected, num_components, qold, restated, partial)
+          qold_f => app % field_for(this % history(1))
+          call require_history(q_f, qold_f, expected)
+          call action_partial_at(this, host, app, this % history(1), expected, restated, partial)
           y = y + this % hs * (1.0_dp - this % theta) * partial
        end if
 
@@ -706,59 +679,30 @@ contains
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
 
-  end subroutine step_partial_action
+  end subroutine step_partial_act
 
   !===================================================================!
-  ! The action's mixed partial at the newest state, over the
-  ! caller's first m inputs.
+  ! The action's mixed partial at whichever of the scheme's arguments
+  ! supplies the state for this term, through the action's view.
   !===================================================================!
 
-  subroutine action_partial_at_newest(this, input_graph, input_data, expected, &
+  subroutine action_partial_at(this, host, app, supplies_state, expected, &
        & restated, partial)
 
-    class(scheme), intent(in)          :: this
-    class(directed_graph), intent(in)  :: input_graph
-    class(field) , intent(in)          :: input_data(:)
-    type(graph)  , intent(in)          :: expected
-    type(variation), intent(in)        :: restated(:)
-    real(dp), allocatable, intent(out) :: partial(:)
+    class(scheme)        , intent(in)         :: this
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
+    type(argument)       , intent(in)         :: supplies_state
+    type(graph)          , intent(in)         :: expected
+    type(variation)      , intent(in)         :: restated(:)
+    real(dp), allocatable, intent(out)        :: partial(:)
 
-    class(field), allocatable :: answer
-    integer :: m
-
-    m = min(this % action % num_arguments(), size(input_data))
-
-    call this % action % partial_action(input_graph, input_data(1:m), restated, answer)
-    if (.not. answer % defined_on(expected)) then
-       error stop 'step: the action partial lives on its stated domain'
-    end if
-    call answer % real_vector(partial)
-
-  end subroutine action_partial_at_newest
-
-  !===================================================================!
-  ! The action's mixed partial at another state: the given values
-  ! as the state, the caller's auxiliaries beside it.
-  !===================================================================!
-
-  subroutine action_partial_at(this, input_graph, input_data, expected, &
-       & n_expected, num_components, values, restated, partial)
-
-    class(scheme), intent(in)          :: this
-    class(directed_graph), intent(in)  :: input_graph
-    class(field) , intent(in)          :: input_data(:)
-    type(graph)  , intent(in)          :: expected
-    integer      , intent(in)          :: n_expected, num_components
-    real(dp)     , intent(in)          :: values(:)
-    type(variation), intent(in)        :: restated(:)
-    real(dp), allocatable, intent(out) :: partial(:)
-
-    type(stored_field), allocatable :: inputs(:)
+    type(application)         :: inner
     class(field), allocatable :: answer
 
-    call inputs_at(this, input_data, expected, n_expected, num_components, values, inputs)
+    call action_view(this, host, app, supplies_state, inner)
+    call this % action % partial_action(host, inner, restated, answer)
 
-    call this % action % partial_action(input_graph, inputs, restated, answer)
     if (.not. answer % defined_on(expected)) then
        error stop 'step: the action partial lives on its stated domain'
     end if

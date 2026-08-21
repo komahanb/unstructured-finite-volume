@@ -38,7 +38,7 @@ module opaque_equation_fixture
   use graph_fractal        , only : graph
   use map_set        , only : set_map
   use map_set_representation, only : set_representation
-  use operation_action, only : operation
+  use operation_action, only : operation, application
   use view_directed, only : directed_graph
   use field_calculus, only : field
   use field_stored, only : stored_field
@@ -63,7 +63,7 @@ module opaque_equation_fixture
    contains
      procedure :: name   => primal_name
      procedure :: domain => primal_domain
-     procedure :: apply  => primal_apply
+     procedure, private :: act => primal_apply
   end type opaque_primal
 
   !===================================================================!
@@ -82,7 +82,7 @@ module opaque_equation_fixture
    contains
      procedure :: name   => adjoint_name
      procedure :: domain => adjoint_domain
-     procedure :: apply  => adjoint_apply
+     procedure, private :: act => adjoint_apply
   end type opaque_adjoint
 
   interface opaque_primal
@@ -158,12 +158,13 @@ contains
   ! ignored: this equation is a function of its input field alone.
   !===================================================================!
 
-  subroutine primal_apply(this, input_graph, input_data, output)
+  subroutine primal_apply(this, host, app, output)
 
     class(opaque_primal), intent(in)               :: this
-    class(directed_graph), intent(in)                       :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
     class(field), allocatable, intent(inout) :: output
+    class(field), pointer :: arg1
 
     type(stored_field)                    :: out
     type(graph) :: dom
@@ -171,16 +172,15 @@ contains
     real(dp)                       :: u, v
     type(set_map)     :: sets
 
-    associate (u1 => input_graph); end associate
+    arg1 => app % field_for(this % argument(1))
 
-    if (.not. present(input_data)) then
-       error stop 'opaque primal: the equation needs a state to judge'
-    end if
-    dom = input_data(1) % domain()
+    associate (u1 => host); end associate
+
+    dom = arg1 % domain()
     if (.not. dom % same_as(this % q_dom)) then
        error stop 'opaque primal: the state must live on the state domain'
     end if
-    call input_data(1) % real_vector(q)
+    call arg1 % real_vector(q)
 
     u = q(this % c_q % local_index(VAR_U))
     v = q(this % c_q % local_index(VAR_V))
@@ -202,12 +202,13 @@ contains
   ! transposed operator answers on.
   !===================================================================!
 
-  subroutine adjoint_apply(this, input_graph, input_data, output)
+  subroutine adjoint_apply(this, host, app, output)
 
     class(opaque_adjoint), intent(in)              :: this
-    class(directed_graph), intent(in)                       :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
     class(field), allocatable, intent(inout) :: output
+    class(field), pointer :: arg1
 
     type(stored_field)                    :: out
     type(graph) :: dom
@@ -215,16 +216,15 @@ contains
     real(dp)                       :: l1, l2
     type(set_map)     :: sets
 
-    associate (u1 => input_graph); end associate
+    arg1 => app % field_for(this % argument(1))
 
-    if (.not. present(input_data)) then
-       error stop 'opaque adjoint: the equation needs a covector to judge'
-    end if
-    dom = input_data(1) % domain()
+    associate (u1 => host); end associate
+
+    dom = arg1 % domain()
     if (.not. dom % same_as(this % y_dom)) then
        error stop 'opaque adjoint: the covector must live on the residual-row domain'
     end if
-    call input_data(1) % real_vector(lam)
+    call arg1 % real_vector(lam)
 
     l1 = lam(this % c_y % local_index(TGT_R1))
     l2 = lam(this % c_y % local_index(TGT_R2))

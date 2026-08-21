@@ -44,7 +44,7 @@ module adjoint_constitution_fixture
   use map_set_representation, only : counted_set_representation, &
        & set_representation
   use relation_finitary   , only : relation
-  use operation_action, only : operation
+  use operation_action, only : operation, application
   use view_directed, only : directed_graph
   use field_calculus, only : field
   use field_stored, only : stored_field
@@ -77,7 +77,7 @@ module adjoint_constitution_fixture
    contains
      procedure :: name   => primal_name
      procedure :: domain => primal_domain
-     procedure :: apply  => primal_apply
+     procedure, private :: act => primal_apply
   end type constituted_primal
 
   type, extends(operation) :: constituted_adjoint
@@ -91,7 +91,7 @@ module adjoint_constitution_fixture
    contains
      procedure :: name   => adjoint_name
      procedure :: domain => adjoint_domain
-     procedure :: apply  => adjoint_apply
+     procedure, private :: act => adjoint_apply
   end type constituted_adjoint
 
   type, extends(operation) :: constituted_tangent
@@ -106,7 +106,7 @@ module adjoint_constitution_fixture
    contains
      procedure :: name   => tangent_name
      procedure :: domain => tangent_domain
-     procedure :: apply  => tangent_apply
+     procedure, private :: act => tangent_apply
   end type constituted_tangent
 
   interface constituted_primal
@@ -526,12 +526,13 @@ contains
   ! R(q, p) - a state on Q in, a residual on Y out.
   !===================================================================!
 
-  subroutine primal_apply(this, input_graph, input_data, output)
+  subroutine primal_apply(this, host, app, output)
 
     class(constituted_primal), intent(in)          :: this
-    class(directed_graph), intent(in)                       :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
     class(field), allocatable, intent(inout) :: output
+    class(field), pointer :: arg1
 
     type(stored_field)                    :: out
     type(graph) :: dom
@@ -544,20 +545,19 @@ contains
 
     type(set_map) :: mine
 
-    associate (u1 => input_graph); end associate
+    arg1 => app % field_for(this % argument(1))
+
+    associate (u1 => host); end associate
 
     call mine % bind(this % q_dom, this % c_q)
     call mine % bind(this % y_dom, this % c_y)
     call mine % bind(this % p_dom, this % c_p)
 
-    if (.not. present(input_data)) then
-       error stop 'constitution: the residual needs a state to judge'
-    end if
-    dom = input_data(1) % domain()
+    dom = arg1 % domain()
     if (.not. dom % same_as(this % q_dom)) then
        error stop 'constitution: the state must live on the state domain'
     end if
-    call input_data(1) % real_vector(q)
+    call arg1 % real_vector(q)
 
     allocate(r(this % n_y_dom))
     call residual_of(this % jq, this % jp, this % y_dom, this % q_dom, &
@@ -577,12 +577,13 @@ contains
   ! seed. No transposed coefficients are written anywhere.
   !===================================================================!
 
-  subroutine adjoint_apply(this, input_graph, input_data, output)
+  subroutine adjoint_apply(this, host, app, output)
 
     class(constituted_adjoint), intent(in)         :: this
-    class(directed_graph), intent(in)                       :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
     class(field), allocatable, intent(inout) :: output
+    class(field), pointer :: arg1
 
     type(stored_field)                    :: out
     type(graph) :: dom
@@ -595,20 +596,19 @@ contains
 
     type(set_map) :: mine
 
-    associate (u1 => input_graph); end associate
+    arg1 => app % field_for(this % argument(1))
+
+    associate (u1 => host); end associate
 
     call mine % bind(this % q_dom, this % c_q)
     call mine % bind(this % y_dom, this % c_y)
     call mine % bind(this % z_dom, this % c_z)
 
-    if (.not. present(input_data)) then
-       error stop 'constitution: the adjoint equation needs a covector to judge'
-    end if
-    dom = input_data(1) % domain()
+    dom = arg1 % domain()
     if (.not. dom % same_as(this % y_dom)) then
        error stop 'constitution: the covector must live on the residual-row domain'
     end if
-    call input_data(1) % real_vector(lam)
+    call arg1 % real_vector(lam)
 
     allocate(r(this % n_q_dom), rhs(this % n_q_dom))
     allocate(seed(this % n_z_dom))
@@ -630,12 +630,13 @@ contains
   ! The forward reading of the same law.
   !===================================================================!
 
-  subroutine tangent_apply(this, input_graph, input_data, output)
+  subroutine tangent_apply(this, host, app, output)
 
     class(constituted_tangent), intent(in)         :: this
-    class(directed_graph), intent(in)                       :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
     class(field), allocatable, intent(inout) :: output
+    class(field), pointer :: arg1
 
     type(stored_field)                    :: out
     type(graph) :: dom
@@ -648,20 +649,19 @@ contains
 
     type(set_map) :: mine
 
-    associate (u1 => input_graph); end associate
+    arg1 => app % field_for(this % argument(1))
+
+    associate (u1 => host); end associate
 
     call mine % bind(this % q_dom, this % c_q)
     call mine % bind(this % y_dom, this % c_y)
     call mine % bind(this % p_dom, this % c_p)
 
-    if (.not. present(input_data)) then
-       error stop 'constitution: the tangent equation needs a direction to judge'
-    end if
-    dom = input_data(1) % domain()
+    dom = arg1 % domain()
     if (.not. dom % same_as(this % q_dom)) then
        error stop 'constitution: the state must live on the state domain'
     end if
-    call input_data(1) % real_vector(qp)
+    call arg1 % real_vector(qp)
 
     allocate(r(this % n_y_dom), from_param(this % n_y_dom))
 

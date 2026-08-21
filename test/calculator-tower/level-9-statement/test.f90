@@ -45,7 +45,7 @@ module constituted_residual_fixture
   use view_relational, only : relational_binding, &
        & num_member_sets, member_set_at, num_relations, relation_at, &
        & has_set
-  use operation_action, only : operation
+  use operation_action, only : operation, application
   use view_directed, only : directed_graph
   use field_calculus, only : field
   use field_stored, only : stored_field
@@ -74,7 +74,7 @@ module constituted_residual_fixture
    contains
      procedure :: name   => cr_name
      procedure :: domain => cr_domain
-     procedure :: apply  => cr_apply
+     procedure, private :: act => cr_apply
   end type constituted_residual
 
   interface constituted_residual
@@ -160,12 +160,13 @@ contains
     num_entries = this % n_ys
   end subroutine cr_domain
 
-  subroutine cr_apply(this, input_graph, input_data, output)
+  subroutine cr_apply(this, host, app, output)
 
     class(constituted_residual), intent(in)        :: this
-    class(directed_graph), intent(in)                       :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
     class(field), allocatable, intent(inout) :: output
+    class(field), pointer :: arg1
 
     type(set_map) :: mine
 
@@ -176,20 +177,19 @@ contains
     integer         :: n_xs
     integer         :: n_ys
 
-    associate (u1 => input_graph); end associate
+    arg1 => app % field_for(this % argument(1))
 
-    if (.not. present(input_data)) then
+    associate (u1 => host); end associate
+
+    if (app % num_bindings() < 1) then
        error stop 'statement: the residual needs a state to judge'
     end if
-    if (size(input_data) < 1) then
-       error stop 'statement: the residual needs a state to judge'
-    end if
 
-    dom = input_data(1) % domain()
+    dom = arg1 % domain()
     if (.not. dom % same_as(this % unknown)) then
        error stop 'statement: the state must live on the unknown domain'
     end if
-    call input_data(1) % real_vector(ustate)
+    call arg1 % real_vector(ustate)
 
     !----------------------------------------------------------------!
     ! The action's own coordinates, rebound into a LOCAL map for the

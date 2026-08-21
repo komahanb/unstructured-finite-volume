@@ -17,7 +17,7 @@
 module nonlinear_sample_support
 
   use iso_fortran_env    , only : dp => REAL64
-  use operation_action, only : operation
+  use operation_action, only : operation, application
   use view_directed, only : directed_graph
   use field_calculus, only : field
   use view_directed, only : SIDE_VERTEX
@@ -38,7 +38,7 @@ module nonlinear_sample_support
    contains
      procedure :: name   => nonlinear_sample_name
      procedure :: domain => nonlinear_sample_domain
-     procedure :: apply  => nonlinear_sample_apply
+     procedure, private :: act => nonlinear_sample_apply
   end type nonlinear_sample
 
   interface nonlinear_sample
@@ -68,12 +68,13 @@ contains
     num_entries = input_graph % num_edges()
   end subroutine nonlinear_sample_domain
 
-  subroutine nonlinear_sample_apply(this, input_graph, input_data, output)
+  subroutine nonlinear_sample_apply(this, host, app, output)
 
     class(nonlinear_sample), intent(in)                 :: this
-    class(directed_graph), intent(in)                            :: input_graph
-    class(field), intent(in), optional             :: input_data(:)
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
     class(field), allocatable, intent(inout) :: output
+    class(field), pointer :: arg1
 
     type(stored_field)      :: out
     type(graph)    :: on
@@ -81,22 +82,24 @@ contains
     real(dp)              :: qt, qh
     integer               :: ne, e, t, h
 
-    ne = input_graph % num_edges()
-    on = input_graph % edge_set()
+    arg1 => app % field_for(this % argument(1))
+
+    ne = host % num_edges()
+    on = host % edge_set()
     out = stored_field(this % name(), on, ne)
 
     allocate(z(ne))
     z = 0.0_dp
 
-    if (present(input_data)) then
-       select type (state => input_data(1))
+    block
+       select type (state => arg1)
        class is (stored_field)
           call state % real_vector(q)
           do e = 1, ne
-             t  = input_graph % edge_tail(e)
+             t  = host % edge_tail(e)
              qt = q(t)
-             if (input_graph % edge_has_head(e)) then
-                h  = input_graph % edge_head(e)
+             if (host % edge_has_head(e)) then
+                h  = host % edge_head(e)
                 qh = q(h)
              else
                 qh = 0.0_dp
@@ -105,7 +108,7 @@ contains
              z(e) = 0.5_dp * (qt + qh) * abs(qh - qt)
           end do
        end select
-    end if
+    end block
 
     call out % set_real_vector(z)
     if (allocated(output)) deallocate(output)

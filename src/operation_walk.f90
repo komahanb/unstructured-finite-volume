@@ -46,7 +46,7 @@
 
 module operation_walk
 
-  use operation_action, only : operation
+  use operation_action, only : operation, application
   use view_directed, only : directed_graph
   use field_calculus, only : field
   use graph_fractal      , only : graph
@@ -76,7 +76,7 @@ module operation_walk
 
      procedure :: name   => walk_name
      procedure :: domain => walk_domain
-     procedure :: apply  => walk_apply
+     procedure, private :: act => walk_act
 
   end type walk
 
@@ -153,36 +153,37 @@ contains
   !===================================================================!
   ! Walk the graph and return a whole number per cell.
   !
-  ! Nothing here reads input_data. Every answer comes from the shape
+  ! Nothing here reads a binding: the walk declares no arguments and
+  ! its application is the empty one. Every answer comes from the shape
   ! of the graph alone: structure in, rule applied, integers out.
   !===================================================================!
 
-  subroutine walk_apply(this, input_graph, input_data, output)
+  subroutine walk_act(this, host, app, output)
 
-    class(walk)       , intent(in)                 :: this
-    class(directed_graph)      , intent(in)                 :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
-    class(field), allocatable, intent(inout) :: output
+    class(walk)          , intent(in)         :: this
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
+    class(field), allocatable, intent(inout)  :: output
 
     type(stored_field)           :: out
     integer , allocatable :: mark(:)
     integer :: nv
 
-    associate (u1 => present(input_data)); end associate
+    associate (u1 => app % num_bindings()); end associate
 
-    nv = input_graph % num_vertices()
+    nv = host % num_vertices()
 
-    out = stored_field(this % name(), input_graph % vertex_set(), input_graph % num_vertices())
+    out = stored_field(this % name(), host % vertex_set(), host % num_vertices())
 
     select case (this % rule)
     case (WALK_VISIT_ORDER)
-       call breadth_first(input_graph, this % seed, mark, want_depth=.false.)
+       call breadth_first(host, this % seed, mark, want_depth=.false.)
     case (WALK_DEPTH)
-       call breadth_first(input_graph, this % seed, mark, want_depth=.true.)
+       call breadth_first(host, this % seed, mark, want_depth=.true.)
     case (WALK_COMPONENT)
-       call components(input_graph, mark)
+       call components(host, mark)
     case default
-       call colour(input_graph, mark)
+       call colour(host, mark)
     end select
 
     call out % set_integer_vector(mark)
@@ -191,7 +192,7 @@ contains
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
 
-  end subroutine walk_apply
+  end subroutine walk_act
 
   !===================================================================!
   ! Give every cell the lowest colour none of its neighbours has taken.

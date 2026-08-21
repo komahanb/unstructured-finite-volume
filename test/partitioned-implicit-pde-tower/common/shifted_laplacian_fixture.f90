@@ -40,7 +40,7 @@ module shifted_laplacian_fixture
 
   use iso_fortran_env  , only : dp => REAL64
   use graph_fractal    , only : graph
-  use operation_action, only : operation
+  use operation_action, only : operation, application, binding, constitute
   use view_directed, only : directed_graph
   use field_calculus, only : field
   use field_stored, only : stored_field
@@ -56,7 +56,7 @@ module shifted_laplacian_fixture
    contains
      procedure :: name   => shifted_name
      procedure :: domain => shifted_domain
-     procedure :: apply  => shifted_apply
+     procedure, private :: act => shifted_apply
   end type shifted_laplacian
 
   interface shifted_laplacian
@@ -101,12 +101,13 @@ contains
   ! one, applied to the same graph.
   !===================================================================!
 
-  subroutine shifted_apply(this, input_graph, input_data, output)
+  subroutine shifted_apply(this, host, app, output)
 
     class(shifted_laplacian), intent(in)           :: this
-    class(directed_graph), intent(in)                       :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
     class(field), allocatable, intent(inout) :: output
+    class(field), pointer :: arg1
 
     type(differential_operator)     :: lap
     type(stored_field)                     :: out
@@ -114,26 +115,32 @@ contains
     type(graph) :: dom
     real(dp), allocatable           :: q(:), l(:)
 
-    if (.not. present(input_data)) then
-       error stop 'shifted laplacian: the action needs a state to read'
-    end if
-    if (size(input_data) /= 1) then
+    arg1 => app % field_for(this % argument(1))
+
+    if (app % num_bindings() /= 1) then
        error stop 'shifted laplacian: the action reads exactly one state'
     end if
 
-    dom = input_data(1) % domain()
-    if (.not. dom % same_as(input_graph % vertex_set())) then
+    dom = arg1 % domain()
+    if (.not. dom % same_as(host % vertex_set())) then
        error stop 'shifted laplacian: the state must live on this graph''s vertex carrier'
     end if
 
     ! The topology is consumed HERE, by production, on THIS graph.
     lap = laplacian(coefficient=1.0_dp, spacing=1.0_dp, measure=1.0_dp)
-    call lap % apply(input_graph, input_data, lq)
+    block
+      type(binding), allocatable :: inner_bound(:)
+      type(application) :: inner
+      allocate(inner_bound(1))
+      inner_bound(1) = binding(lap % argument(1), arg1)
+      call constitute(lap, host, inner_bound, inner)
+      call lap % apply(host, inner, lq)
+    end block
 
-    call input_data(1) % real_vector(q)
+    call arg1 % real_vector(q)
     call lq % real_vector(l)
 
-    out = stored_field('shifted laplacian', input_graph % vertex_set(), input_graph % num_vertices())
+    out = stored_field('shifted laplacian', host % vertex_set(), host % num_vertices())
     call out % set_real_vector(2.0_dp * q - l)
 
     if (allocated(output)) deallocate(output)

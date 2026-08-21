@@ -8,7 +8,7 @@ module lopsided_fixture
   ! An action names a domain and counts it. It holds no map: the
   ! identity and the count are the whole of what it is entitled to.
   use graph_fractal    , only : graph
-  use operation_action, only : operation
+  use operation_action, only : operation, application
   use view_directed, only : directed_graph
   use field_calculus, only : field
   use field_stored, only : stored_field
@@ -21,7 +21,7 @@ module lopsided_fixture
    contains
      procedure :: name => l_name
      procedure :: domain => l_domain
-     procedure :: apply => l_apply
+     procedure, private :: act => l_apply
   end type lopsided
   interface lopsided
      module procedure create_lopsided
@@ -46,13 +46,13 @@ contains
     domain   = this % y
     num_entries = this % n_y
   end subroutine l_domain
-  subroutine l_apply(this, input_graph, input_data, output)
+  subroutine l_apply(this, host, app, output)
     class(lopsided), intent(in) :: this
-    class(directed_graph), intent(in) :: input_graph
-    class(field), intent(in), optional :: input_data(:)
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
     class(field), allocatable, intent(inout) :: output
     type(stored_field) :: out
-    associate (u => input_graph, u2 => input_data); end associate
+    associate (u => host, u2 => app % num_bindings()); end associate
     out = stored_field('r', this % y, this % n_y)
     call out % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp])
     if (allocated(output)) deallocate(output)

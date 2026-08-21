@@ -36,7 +36,7 @@
 module operation_fitting
 
   use iso_fortran_env    , only : dp => REAL64
-  use operation_action, only : operation
+  use operation_action, only : operation, application
   use view_directed, only : directed_graph
   use field_calculus, only : field
   use graph_fractal      , only : graph
@@ -70,7 +70,7 @@ module operation_fitting
 
      procedure :: name   => fit_name
      procedure :: domain => fit_domain
-     procedure :: apply  => fit_apply
+     procedure, private :: act => fit_act
 
   end type fit
 
@@ -174,12 +174,14 @@ contains
   ! dual is handed to the level's own solver.
   !===================================================================!
 
-  subroutine fit_apply(this, input_graph, input_data, output)
+  subroutine fit_act(this, host, app, output)
 
-    class(fit), intent(in)                         :: this
-    class(directed_graph), intent(in)                       :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
-    class(field), allocatable, intent(inout) :: output
+    class(fit)           , intent(in)         :: this
+    class(directed_graph), intent(in)         :: host
+    type(application)    , intent(in), target :: app
+    class(field), allocatable, intent(inout)  :: output
+
+    class(field), pointer :: given
 
     type(stored_field)   :: out
     type(stencil) :: dual
@@ -191,14 +193,15 @@ contains
     real(dp) :: achieved, d2, nearest
     integer :: npts, nc, i, j, v
 
-    npts = input_graph % num_vertices()
+    npts = host % num_vertices()
 
     allocate(w(npts))
     w = 0.0_dp
 
-    if (present(input_data)) then
+    block
 
-       call input_data(1) % real_vector(positions)
+       given => app % field_for(this % argument(1))
+       call given % real_vector(positions)
 
        nc = this % shape % num_members()
        allocate(b(nc, npts), g(nc, nc), r(nc), lam(nc))
@@ -267,15 +270,15 @@ contains
           w(j) = w(j) * price(j)
        end do
 
-    end if
+    end block
 
-    out = stored_field('fit weights', input_graph % vertex_set(), input_graph % num_vertices())
+    out = stored_field('fit weights', host % vertex_set(), host % num_vertices())
     call out % set_real_vector(w)
 
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
 
-  end subroutine fit_apply
+  end subroutine fit_act
 
 
   !===================================================================!

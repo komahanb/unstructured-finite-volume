@@ -39,7 +39,8 @@
 module operation_marching
 
   use iso_fortran_env    , only : dp => REAL64
-  use operation_action, only : operation, argument
+  use operation_action, only : operation, argument, binding, application, &
+       & constitute, bind_moved
   use view_directed, only : directed_graph
   use field_calculus, only : field
   use graph_fractal      , only : graph
@@ -157,11 +158,10 @@ contains
        ! BDF2 needs two history states, so its first edge is a
        ! backward-euler step: qolder is unallocated until the second
        call configure_edge(this, statement, h_edge, h_previous, allocated(qolder))
-       call edge_inputs(statement, q, qold, state_domain, n_state_domain, &
-            & num_components, inputs, qolder=qolder, parameters=parameters)
 
        call advance(this, statement, on, state_domain, n_state_domain, &
-            & num_components, inputs, zeros, q, achieved)
+            & num_components, qold, zeros, q, achieved, &
+            & qolder=qolder, parameters=parameters)
 
        qolder     = qold
        qold       = q
@@ -181,29 +181,46 @@ contains
   !===================================================================!
 
   subroutine advance(this, statement, on, state_domain, n_state_domain, &
-       & num_components, inputs, zeros, q, achieved)
+       & num_components, qold, zeros, q, achieved, qolder, parameters)
 
     class(marcher), intent(inout)     :: this
     type(scheme), intent(in)          :: statement
     class(directed_graph), intent(in) :: on
     type(graph), intent(in)           :: state_domain
     integer, intent(in)               :: n_state_domain, num_components
-    type(stored_field), intent(inout) :: inputs(:)
+    real(dp), intent(in)              :: qold(:)
     real(dp), intent(in)              :: zeros(:)
     real(dp), intent(inout)           :: q(:)
     real(dp), intent(out)             :: achieved
+    real(dp), intent(in), optional    :: qolder(:)
+    type(stored_field), intent(in), optional :: parameters(:)
 
+    type(stored_field), allocatable :: inputs(:)
+    type(binding), allocatable :: bound(:)
+    type(application) :: at
     class(field), allocatable :: residual
     real(dp), allocatable :: c(:)
 
     if (statement % theta == 0.0_dp) then
-       call inputs(1) % set_real_vector(zeros)
-       call statement % apply(on, inputs, residual)
+
+       ! The explicit road. The state and history fields are made
+       ! here and belong to nobody else, so they are moved into
+       ! their bindings; the residual is read at the zero state.
+       call edge_bindings(statement, zeros, qold, state_domain, &
+            & n_state_domain, num_components, bound, qolder=qolder, &
+            & parameters=parameters)
+       call constitute(statement, on, bound, at)
+       call statement % apply(on, at, residual)
+
        call residual % real_vector(c)
        q = -c / statement % a0
        achieved = 0.0_dp
        return
+
     end if
+
+    call edge_inputs(statement, q, qold, state_domain, n_state_domain, &
+         & num_components, inputs, qolder=qolder, parameters=parameters)
 
     call this % inner % attach(statement, on, state_domain, &
          & n_state_domain, num_components = num_components, &
@@ -353,6 +370,87 @@ contains
   ! or a reach-2 statement without its second history state, stops
   ! the program.
   !===================================================================!
+
+  !===================================================================!
+  ! The explicit road's input tuple, as BINDINGS. The state and the
+  ! history states are made here and belong to nobody else, so they
+  ! are moved into their bindings rather than copied; the auxiliaries
+  ! are the caller's parameters and are copied, as any caller-owned
+  ! field is.
+  !===================================================================!
+
+  subroutine edge_bindings(statement, state_values, qold, state_domain, &
+       & n_state_domain, num_components, bound, qolder, parameters)
+
+    type(scheme), intent(in) :: statement
+    real(dp)    , intent(in) :: state_values(:)
+    real(dp)    , intent(in) :: qold(:)
+    type(graph) , intent(in) :: state_domain
+    integer     , intent(in) :: n_state_domain, num_components
+    type(binding), allocatable, intent(out) :: bound(:)
+    real(dp)    , intent(in), optional :: qolder(:)
+    type(stored_field), intent(in), optional :: parameters(:)
+
+    integer :: m, np, j
+
+    m  = statement % action % num_arguments()
+    np = 0
+    if (present(parameters)) np = size(parameters)
+    if (np /= m - 1) then
+       error stop 'marcher: every auxiliary argument of the action is supplied as a parameter'
+    end if
+
+    allocate(bound(m + statement % reach))
+
+    call fresh_binding(statement % state(), 'state', state_domain, &
+         & n_state_domain, num_components, state_values, bound(1))
+
+    do j = 1, m - 1
+       bound(1 + j) = binding(statement % auxiliary(j), parameters(j))
+    end do
+
+    call fresh_binding(statement % history(1), 'history 1', state_domain, &
+         & n_state_domain, num_components, qold, bound(m + 1))
+
+    if (statement % reach >= 2) then
+       if (.not. present(qolder)) then
+          error stop 'marcher: a reach-2 statement is given two history states'
+       end if
+       call fresh_binding(statement % history(2), 'history 2', state_domain, &
+            & n_state_domain, num_components, qolder, bound(m + 2))
+    end if
+
+  end subroutine edge_bindings
+
+  !===================================================================!
+  ! One freshly made field, moved into its binding. The values are
+  ! written once, into the field the binding keeps; nothing is copied
+  ! afterwards.
+  !===================================================================!
+
+  subroutine fresh_binding(to, label, state_domain, n_state_domain, &
+       & num_components, values, bound)
+
+    type(argument)  , intent(in)  :: to
+    character(len=*), intent(in)  :: label
+    type(graph)     , intent(in)  :: state_domain
+    integer         , intent(in)  :: n_state_domain, num_components
+    real(dp)        , intent(in)  :: values(:)
+    type(binding)   , intent(out) :: bound
+
+    class(field), allocatable :: fresh
+
+    allocate(stored_field :: fresh)
+    select type (fresh)
+    type is (stored_field)
+       fresh = stored_field(label, state_domain, n_state_domain, &
+            & num_components=num_components)
+       call fresh % set_real_vector(values)
+    end select
+
+    call bind_moved(to, fresh, bound)
+
+  end subroutine fresh_binding
 
   subroutine edge_inputs(statement, state_values, qold, state_domain, &
        & n_state_domain, num_components, inputs, qolder, parameters)
@@ -916,12 +1014,10 @@ contains
           ! qprev is unallocated until the first accepted edge, so the
           ! statement takes order 1 until then
           call configure_edge(this, statement, h, h_previous, allocated(qprev))
-          call edge_inputs(statement, q, q, state_domain, n_state_domain, &
-               & num_components, inputs, qolder=qprev, parameters=parameters)
-
           trial = q
           call advance(this, statement, on, state_domain, n_state_domain, &
-               & num_components, inputs, zeros, trial, achieved)
+               & num_components, q, zeros, trial, achieved, &
+               & qolder=qprev, parameters=parameters)
 
           ! error estimate: distance from the extrapolating
           ! predictor - constant with one accepted state behind,

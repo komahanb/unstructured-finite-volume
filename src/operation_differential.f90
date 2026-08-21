@@ -671,18 +671,19 @@ contains
   end function transpose_of
 
   !===================================================================!
-  ! The vertex chain of one order, composed:
-  !
-  !    order 0:   C                     (the diagonal)
-  !    order 2k:  (D G)^k               coefficient on the first G
-  !    order 2k+1: (D G)^k D S          coefficient on S, one-sided
-  !                                     by its sign
-  !
-  ! The innermost step carries the coefficient; every later step
-  ! runs bare.
+  ! The parity chain, stated as the law reads: vertex(0) = C,
+  ! vertex(n) = D edge(n-1); edge(0) = S, edge(1) = G, edge(n) =
+  ! G vertex(n-1) with G bare. The innermost step carries the
+  ! coefficient: the average one-sided by the coefficient's sign
+  ! (one_sided_by = 1) wherever a vertex chain reaches it, and by
+  ! the operator's own flag only at compiled_map's direct edge
+  ! order 0. The composition associates as D (G (D (... S_c))),
+  ! innermost first. The incidence map is formed at each vertex
+  ! level - once for every order the tree uses.
   !===================================================================!
 
-  pure function vertex_chain_map(order, g, c, cs, h, hs, m, ms, b, bs) result(a)
+  pure recursive function vertex_chain(order, g, c, cs, h, hs, m, ms, b, bs) &
+       & result(a)
 
     integer     , intent(in)          :: order
     class(directed_graph), intent(in) :: g
@@ -690,54 +691,41 @@ contains
     real(dp), allocatable, intent(in) :: cs(:), hs(:), ms(:), bs(:)
     type(affine_map)                  :: a
 
-    type(affine_map) :: d
-    integer          :: k
-    logical          :: innermost
-
     if (order <= 0) then
        a = diagonal_map(g % num_vertices(), c, cs)
-       return
+    else
+       a = compose(incidence_map(g, m, ms), &
+            & edge_chain(order - 1, g, 1.0_dp, c, cs, h, hs, m, ms, b, bs))
     end if
 
-    d = incidence_map(g, m, ms)
+  end function vertex_chain
 
-    k = order
-    innermost = .true.
+  pure recursive function edge_chain(order, g, one_sided_by, c, cs, h, hs, &
+       & m, ms, b, bs) result(a)
 
-    do while (k > 0)
+    integer     , intent(in)          :: order
+    class(directed_graph), intent(in) :: g
+    real(dp)    , intent(in)          :: one_sided_by, c, h, m, b
+    real(dp), allocatable, intent(in) :: cs(:), hs(:), ms(:), bs(:)
+    type(affine_map)                  :: a
 
-       if (mod(k, 2) == 1) then
-          ! the odd step: the one-sided average, side by the sign
-          ! of the coefficient it carries
-          if (innermost) then
-             a = compose(d, average_map(g, 1.0_dp, .true., c, cs, b, bs))
-          else
-             a = compose(d, compose(average_map(g, 1.0_dp, .true., &
-                  & c, cs, b, bs), a))
-          end if
-          k = k - 1
-       else
-          if (innermost) then
-             a = compose(d, difference_map(g, .true., c, cs, h, hs, b, bs))
-          else
-             a = compose(d, compose(difference_map(g, .false., c, cs, &
-                  & h, hs, b, bs), a))
-          end if
-          k = k - 2
-       end if
+    if (order <= 0) then
+       a = average_map(g, one_sided_by, .true., c, cs, b, bs)
+    else if (order == 1) then
+       a = difference_map(g, .true., c, cs, h, hs, b, bs)
+    else
+       a = compose(difference_map(g, .false., c, cs, h, hs, b, bs), &
+            & vertex_chain(order - 1, g, c, cs, h, hs, m, ms, b, bs))
+    end if
 
-       innermost = .false.
-
-    end do
-
-  end function vertex_chain_map
+  end function edge_chain
 
   !===================================================================!
   ! The whole operator as one affine map, by landing and entry:
   !
-  !    edge landing            order 0: S; order 1: G; order n:
-  !                            G (bare) after the vertex chain of
-  !                            n - 1
+  !    edge landing            the edge chain of the order: S, G,
+  !                            or G (bare) after the vertex chain
+  !                            of n - 1
   !    vertex landing          the vertex chain, transposed when
   !                            adjoint
   !    vertex landing, entry   diag(c) then D, then the bare vertex
@@ -757,24 +745,13 @@ contains
 
     if (this % landing == SIDE_EDGE) then
 
-       if (this % order <= 0) then
-          a = average_map(g, merge(1.0_dp, 0.0_dp, this % one_sided), &
-               & .true., this % coefficient, this % coefficients, &
-               & this % boundary_value, this % boundary_values)
-       else if (this % order == 1) then
-          a = difference_map(g, .true., this % coefficient, &
-               & this % coefficients, this % spacing, this % spacings, &
-               & this % boundary_value, this % boundary_values)
-       else
-          a = compose(difference_map(g, .false., this % coefficient, &
-               & this % coefficients, this % spacing, this % spacings, &
-               & this % boundary_value, this % boundary_values), &
-               & vertex_chain_map(this % order - 1, g, &
-               & this % coefficient, this % coefficients, &
-               & this % spacing, this % spacings, &
-               & this % measure, this % measures, &
-               & this % boundary_value, this % boundary_values))
-       end if
+       ! the operator's one-sided flag reaches only its own order 0;
+       ! every average inside a chain is one-sided by its sign
+       a = edge_chain(this % order, g, merge(1.0_dp, 0.0_dp, this % one_sided), &
+            & this % coefficient, this % coefficients, &
+            & this % spacing, this % spacings, &
+            & this % measure, this % measures, &
+            & this % boundary_value, this % boundary_values)
 
     else if (enters_on_edges) then
 
@@ -782,7 +759,7 @@ contains
             & diagonal_map(g % num_edges(), this % coefficient, &
             & this % coefficients))
        if (this % order > 1) then
-          a = compose(vertex_chain_map(this % order - 1, g, &
+          a = compose(vertex_chain(this % order - 1, g, &
                & 1.0_dp, spent, &
                & this % spacing, this % spacings, &
                & this % measure, this % measures, &
@@ -791,7 +768,7 @@ contains
 
     else
 
-       a = vertex_chain_map(this % order, g, &
+       a = vertex_chain(this % order, g, &
             & this % coefficient, this % coefficients, &
             & this % spacing, this % spacings, &
             & this % measure, this % measures, &

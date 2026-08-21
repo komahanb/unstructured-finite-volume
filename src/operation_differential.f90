@@ -82,6 +82,7 @@ module operation_differential
   use view_directed     , only : SIDE_VERTEX, SIDE_EDGE
   use field_stored  , only : stored_field
   use operation_stencil, only : stencil, combine_triples
+  use relation_binary   , only : group_by_key
 
   implicit none
 
@@ -597,7 +598,7 @@ contains
     type(affine_map), intent(in) :: a2, a1
     type(affine_map)             :: a
 
-    integer , allocatable :: ptr(:), r(:), c(:)
+    integer , allocatable :: ptr(:), order(:), identity(:), r(:), c(:)
     real(dp), allocatable :: w(:)
     integer :: k2, j, n, row1
 
@@ -608,45 +609,31 @@ contains
     a % nrows = a2 % nrows
     a % ncols = a1 % ncols
 
-    ! group A1's entries by row, counting-sort style
-    allocate(ptr(a1 % nrows + 1))
-    ptr = 0
-    do j = 1, size(a1 % rows)
-       ptr(a1 % rows(j) + 1) = ptr(a1 % rows(j) + 1) + 1
+    ! group A1's entries by row with the one counting sort: order
+    ! lists A1's entry indices row by row, in arrival order, and
+    ! ptr(row)..ptr(row+1)-1 is each row's range
+    allocate(identity(size(a1 % rows)))
+    identity = [(j, j = 1, size(a1 % rows))]
+    call group_by_key(a1 % nrows, a1 % rows, identity, ptr, order)
+
+    ! emit one product entry per (A2 entry, matching A1 entry)
+    n = 0
+    do k2 = 1, size(a2 % rows)
+       row1 = a2 % cols(k2)
+       n = n + ptr(row1 + 1) - ptr(row1)
     end do
-    ptr(1) = 1
-    do j = 1, a1 % nrows
-       ptr(j + 1) = ptr(j + 1) + ptr(j)
+
+    allocate(r(n), c(n), w(n))
+    n = 0
+    do k2 = 1, size(a2 % rows)
+       row1 = a2 % cols(k2)
+       do j = ptr(row1), ptr(row1 + 1) - 1
+          n = n + 1
+          r(n) = a2 % rows(k2)
+          c(n) = a1 % cols(order(j))
+          w(n) = a2 % weights(k2) * a1 % weights(order(j))
+       end do
     end do
-
-    block
-      integer , allocatable :: order(:), cursor(:)
-      allocate(order(size(a1 % rows)), cursor(a1 % nrows))
-      cursor = ptr(1:a1 % nrows)
-      do j = 1, size(a1 % rows)
-         order(cursor(a1 % rows(j))) = j
-         cursor(a1 % rows(j)) = cursor(a1 % rows(j)) + 1
-      end do
-
-      ! emit one product entry per (A2 entry, matching A1 entry)
-      n = 0
-      do k2 = 1, size(a2 % rows)
-         row1 = a2 % cols(k2)
-         n = n + ptr(row1 + 1) - ptr(row1)
-      end do
-
-      allocate(r(n), c(n), w(n))
-      n = 0
-      do k2 = 1, size(a2 % rows)
-         row1 = a2 % cols(k2)
-         do j = ptr(row1), ptr(row1 + 1) - 1
-            n = n + 1
-            r(n) = a2 % rows(k2)
-            c(n) = a1 % cols(order(j))
-            w(n) = a2 % weights(k2) * a1 % weights(order(j))
-         end do
-      end do
-    end block
 
     call combine_triples(a % nrows, a % ncols, r, c, w, &
          & a % rows, a % cols, a % weights)

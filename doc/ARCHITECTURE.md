@@ -196,8 +196,12 @@ on vertices), and tag names. Everything else is derived, in
     F2C    = {(f, c) : F2V(f) subset of C2V(c)}     (<= 2 cells per face)
     C2F    = transpose(F2C)
     measurements = pure functions of coordinates and the relations:
-                   cell centres/volumes, face centres/areas/normals,
-                   centre-to-centre vectors, deltas, weights
+                   cell centres, face centres, one area vector S_f per
+                   face (the scalar area is its norm, the unit normal
+                   its direction, signed out of each cell), volumes by
+                   the divergence theorem from the signed S_f,
+                   centre-to-centre vectors, deltas |l_f.S_f|/|S_f|,
+                   weights
 
 `view_mesh_builder` seats the result as `view_mesh`: the
 directed view whose vertices are cells and whose edges are the

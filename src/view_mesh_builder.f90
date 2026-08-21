@@ -7,7 +7,7 @@
 ! view_mesh_geometry: the loader parses the file into member sets,
 ! the cell-to-vertex relation, the vertex coordinates, and the tag
 ! names; the geometry module derives the face set, the incidence
-! relations, and every measurement; this builder seats the results
+! relations, and every measurement; this builder places the results
 ! as the mesh - the directed view whose vertices are cells and
 ! whose edges are the two-cell faces, with the measurements as
 ! fields and the tag names on the boundary edges.
@@ -25,8 +25,8 @@ module view_mesh_builder
   use view_mesh_geometry  , only : element_dimension
   use relation_binary, only : transpose_padded
   use view_mesh_geometry  , only : derive_faces, derive_face_cells, &
-       & derive_cell_centres, derive_face_centres_areas, &
-       & derive_cell_face_normals, derive_cell_volumes, derive_centroidal_vectors, &
+       & derive_cell_centres, &
+       & derive_face_vectors, outward_sign, derive_cell_volumes, derive_centroidal_vectors, &
        & derive_face_deltas, derive_face_weights
 
   implicit none
@@ -37,7 +37,7 @@ module view_mesh_builder
 contains
 
   !===================================================================!
-  ! Load, derive, seat. Tails and heads come from the face-to-cell
+  ! Load, derive, place. Tails and heads come from the face-to-cell
   ! relation - a face with one cell is a boundary face, an edge
   ! without a head. The per-face normal is the one its tail cell
   ! sees; the per-face weight is the tail cell's interpolation
@@ -76,15 +76,15 @@ contains
     integer , allocatable :: cell_faces(:,:), num_cell_faces(:)
     real(dp), allocatable :: cell_centres(:,:), face_centres(:,:)
     real(dp), allocatable :: face_areas(:), cell_volumes(:)
-    real(dp), allocatable :: cell_face_normals(:,:,:), lvec(:,:)
+    real(dp), allocatable :: face_vectors(:,:), lvec(:,:)
     real(dp), allocatable :: face_deltas(:), face_cell_weights(:,:)
 
-    ! the seat's per-face arrays
+    ! the view's per-face arrays
     integer , allocatable :: tails(:), heads(:)
     real(dp), allocatable :: normals(:)
     real(dp), allocatable :: weights(:)
     character(len=64), allocatable :: etags(:)
-    integer :: f, c, l, tag
+    integer :: f, tag
 
     allocate(gl, source=gmsh_loader(trim(filename)))
 
@@ -121,17 +121,13 @@ contains
     ! the measurements
     call derive_cell_centres(vertices, cell_vertices, num_cell_vertices, &
          & cell_centres)
-    call derive_face_centres_areas(spatial_dim, vertices, face_vertices, &
-         & num_face_vertices, face_centres, face_areas)
-    call derive_cell_face_normals(spatial_dim, vertices, face_vertices, &
-         & num_face_vertices, cell_faces, num_cell_faces, face_centres, &
-         & cell_centres, cell_face_normals)
-    call derive_cell_volumes(spatial_dim, face_centres, face_areas, &
-         & cell_face_normals, cell_faces, num_cell_faces, cell_volumes)
+    call derive_face_vectors(spatial_dim, vertices, face_vertices, &
+         & num_face_vertices, face_centres, face_vectors, face_areas)
+    call derive_cell_volumes(spatial_dim, face_centres, face_vectors, &
+         & cell_centres, cell_faces, num_cell_faces, cell_volumes)
     call derive_centroidal_vectors(face_cells, num_face_cells, cell_centres, &
          & face_centres, lvec)
-    call derive_face_deltas(num_faces, lvec, cell_face_normals, cell_faces, &
-         & num_cell_faces, face_deltas)
+    call derive_face_deltas(lvec, face_vectors, face_deltas)
     call derive_face_weights(face_cells, num_face_cells, cell_centres, &
          & face_centres, face_cell_weights)
 
@@ -144,16 +140,13 @@ contains
        if (num_face_cells(f) >= 2) heads(f) = face_cells(2, f)
     end do
 
-    ! one outward normal per face, read from its tail cell's side
+    ! one unit normal per face, pointing out of its tail cell
     allocate(normals(3 * num_faces))
-    normals = 0.0_dp
-    do c = 1, num_cells
-       do l = 1, num_cell_faces(c)
-          f = cell_faces(l, c)
-          if (face_cells(1, f) == c) then
-             normals(3 * f - 2 : 3 * f) = cell_face_normals(:, l, c)
-          end if
-       end do
+    do f = 1, num_faces
+       normals(3 * f - 2 : 3 * f) = &
+            & outward_sign(face_vectors(:, f), face_centres(:, f), &
+            &              cell_centres(:, face_cells(1, f))) &
+            & * face_vectors(:, f) / face_areas(f)
     end do
 
     ! one interpolation weight per face: the tail cell's share

@@ -50,8 +50,8 @@ module view_mesh_geometry
   public :: derive_faces
   public :: derive_face_cells
   public :: derive_cell_centres
-  public :: derive_face_centres_areas
-  public :: derive_cell_face_normals
+  public :: derive_face_vectors
+  public :: outward_sign
   public :: derive_cell_volumes
   public :: derive_centroidal_vectors
   public :: derive_face_deltas
@@ -277,188 +277,118 @@ contains
   end subroutine derive_cell_centres
 
   !===================================================================!
-  ! Face centres and areas. In 2d a face is a segment: the centre
-  ! is its midpoint and the area its length; a zero length stops
-  ! the program (two coincident points). In 3d the centre is the
-  ! vertex mean and the area sums the half cross-products of the
-  ! corner fan (one triangle, plus a second for a quadrilateral);
-  ! a negative area stops the program.
+  ! Face centres and area vectors. The one measurement of a face is
+  ! its area vector S_f: in 2d the segment turned a quarter turn in
+  ! plane, (t_y, -t_x, 0), so |S_f| is the length; in 3d half the
+  ! sum of the corner-fan cross products, one triangle plus a second
+  ! for a quadrilateral, so |S_f| is the vector area - for a planar
+  ! face the scalar area, for a non-planar quadrilateral the area the
+  ! divergence theorem sees. The scalar area is its norm; the unit
+  ! normal is S_f over its norm and is taken where it is needed. The
+  ! centre is the vertex mean. A face whose area vector vanishes -
+  ! coincident points, a degenerate fan - stops the program before
+  ! anything divides by it.
   !===================================================================!
 
-  pure subroutine derive_face_centres_areas(spatial_dim, coordinates, &
-       & face_vertices, num_face_vertices, face_centres, face_areas)
+  pure subroutine derive_face_vectors(spatial_dim, coordinates, &
+       & face_vertices, num_face_vertices, face_centres, face_vectors, &
+       & face_areas)
 
     integer , intent(in)  :: spatial_dim
     real(dp), intent(in)  :: coordinates(:,:)
     integer , intent(in)  :: face_vertices(:,:)
     integer , intent(in)  :: num_face_vertices(:)
     real(dp), allocatable, intent(out) :: face_centres(:,:)
+    real(dp), allocatable, intent(out) :: face_vectors(:,:)
     real(dp), allocatable, intent(out) :: face_areas(:)
 
     integer  :: iface, num_faces
-    real(dp) :: n(3)
+    real(dp) :: s(3), t(3)
 
     num_faces = size(num_face_vertices)
-    allocate(face_areas(num_faces))
     allocate(face_centres(3, num_faces))
-    face_areas   = 0.0_dp
+    allocate(face_vectors(3, num_faces))
+    allocate(face_areas(num_faces))
     face_centres = 0.0_dp
+    face_vectors = 0.0_dp
 
-    if (spatial_dim .eq. 2) then
+    do iface = 1, num_faces
+       associate(facenodes => face_vertices(1:num_face_vertices(iface), iface))
 
-       do iface = 1, num_faces
-          associate(facenodes => face_vertices(1:num_face_vertices(iface), iface))
-            face_centres(1:3, iface) = &
-                 & sum(coordinates(1:3, facenodes), dim=2)/real(2, kind=dp)
-            associate(v1 => coordinates(:, facenodes(1)), &
-                 &    v2 => coordinates(:, facenodes(2)))
-              face_areas(iface) = distance(v1, v2)
-            end associate
-          end associate
-       end do
+         face_centres(:, iface) = sum(coordinates(:, facenodes), dim=2) &
+              & / real(num_face_vertices(iface), kind=dp)
 
-       if (abs(minval(face_areas)) .lt. 10.0d0*tiny(1.0d0)) then
-          error stop 'view_mesh_geometry: a face has two distinct end points'
-       end if
+         if (spatial_dim .eq. 2) then
 
-    else
+            t = coordinates(:, facenodes(2)) - coordinates(:, facenodes(1))
+            s = [t(2), -t(1), 0.0_dp]
 
-       do iface = 1, num_faces
-          associate(facenodes => face_vertices(1:num_face_vertices(iface), iface))
-
-            associate(num_vertices => real(num_face_vertices(iface), kind=dp))
-              face_centres(:, iface) = &
-                   & sum(coordinates(:, facenodes), dim=2)/num_vertices
-            end associate
+         else
 
             associate(&
                  & t12 => coordinates(:, facenodes(2)) - coordinates(:, facenodes(1)), &
                  & t13 => coordinates(:, facenodes(3)) - coordinates(:, facenodes(1)))
-
-              call cross_product(t12, t13, n)
-              face_areas(iface) = norm2(n)/real(2, dp)
-
+              call cross_product(t12, t13, s)
               if (num_face_vertices(iface) .gt. 3) then
                  associate(t14 => coordinates(:, facenodes(4)) - coordinates(:, facenodes(1)))
-                   call cross_product(t13, t14, n)
-                   face_areas(iface) = face_areas(iface) + norm2(n)/real(2, dp)
+                   call cross_product(t13, t14, t)
+                   s = s + t
                  end associate
               end if
-
             end associate
+            s = s / real(2, dp)
 
-          end associate
-       end do
+         end if
 
-       if (minval(face_areas) .lt. 0.0_dp) then
-          error stop 'view_mesh_geometry: a face area is nonnegative'
-       end if
+         face_vectors(:, iface) = s
+         face_areas(iface)      = norm2(s)
 
-    end if
-
-  end subroutine derive_face_centres_areas
-
-  !===================================================================!
-  ! Outward unit normals, one per (cell, local face) pair. In 3d
-  ! the normal comes from the corner-fan cross products; in 2d it
-  ! is the segment tangent turned a quarter turn in plane. Either
-  ! way it is flipped, if needed, to point from the cell centre
-  ! toward the face centre - out of the cell - so the same
-  ! interior face carries opposite normals seen from its two
-  ! cells, which is what makes the assembled operator
-  ! conservative.
-  !===================================================================!
-
-  pure subroutine derive_cell_face_normals(spatial_dim, coordinates, &
-       & face_vertices, num_face_vertices, cell_faces, num_cell_faces, &
-       & face_centres, cell_centres, cell_face_normals)
-
-    integer , intent(in)  :: spatial_dim
-    real(dp), intent(in)  :: coordinates(:,:)
-    integer , intent(in)  :: face_vertices(:,:)
-    integer , intent(in)  :: num_face_vertices(:)
-    integer , intent(in)  :: cell_faces(:,:)
-    integer , intent(in)  :: num_cell_faces(:)
-    real(dp), intent(in)  :: face_centres(:,:)
-    real(dp), intent(in)  :: cell_centres(:,:)
-    real(dp), allocatable, intent(out) :: cell_face_normals(:,:,:)
-
-    integer  :: icell, iface, gface, num_cells
-    integer  :: fv1, fv2
-    real(dp) :: t(3), n(3), tmp(3)
-
-    num_cells = size(num_cell_faces)
-    allocate(cell_face_normals(3, maxval(num_cell_faces), num_cells))
-    cell_face_normals = 0.0_dp
-
-    do icell = 1, num_cells
-       do iface = 1, num_cell_faces(icell)
-
-          gface = cell_faces(iface, icell)
-
-          if (spatial_dim .eq. 2) then
-
-             fv1 = face_vertices(1, gface)
-             fv2 = face_vertices(2, gface)
-
-             t = coordinates(:, fv2) - coordinates(:, fv1)
-             t = t/norm2(t)
-
-             n(1) =  t(2)
-             n(2) = -t(1)
-             n(3) =  0.0d0
-
-          else
-
-             associate(ifv => face_vertices(1:num_face_vertices(gface), gface))
-               associate(&
-                    & t12 => coordinates(:, ifv(2)) - coordinates(:, ifv(1)), &
-                    & t13 => coordinates(:, ifv(3)) - coordinates(:, ifv(1)))
-
-                 call cross_product(t12, t13, n)
-
-                 if (num_face_vertices(gface) .gt. 3) then
-                    associate(t14 => coordinates(:, ifv(4)) - coordinates(:, ifv(1)))
-                      call cross_product(t13, t14, tmp)
-                      n = n + tmp
-                    end associate
-                 end if
-
-               end associate
-             end associate
-
-             n = n/norm2(n)
-
-          end if
-
-          if (dot_product(n, face_centres(:, gface) - cell_centres(:, icell)) &
-               & .lt. real(0, dp)) then
-             n = -n
-          end if
-
-          cell_face_normals(:, iface, icell) = n
-
-       end do
+       end associate
     end do
 
-  end subroutine derive_cell_face_normals
+    if (minval(face_areas) .lt. 10.0d0 * tiny(1.0d0)) then
+       error stop 'view_mesh_geometry: a face has a nonzero area vector'
+    end if
+
+  end subroutine derive_face_vectors
+
+  !===================================================================!
+  ! The sign that points a face's area vector out of a cell: +1 when
+  ! S_f leaves the cell centre toward the face centre, -1 when it
+  ! must be turned. The same interior face carries opposite signs
+  ! seen from its two cells, which is what makes the assembled
+  ! operator conservative.
+  !===================================================================!
+
+  pure real(dp) function outward_sign(face_vector, face_centre, cell_centre)
+
+    real(dp), intent(in) :: face_vector(3), face_centre(3), cell_centre(3)
+
+    outward_sign = 1.0_dp
+    if (dot_product(face_vector, face_centre - cell_centre) .lt. 0.0_dp) then
+       outward_sign = -1.0_dp
+    end if
+
+  end function outward_sign
+
 
   !===================================================================!
   ! Cell volumes by the divergence theorem,
   !
-  !      V = (1/d) sum over the cell's faces of  A_f (n_f . x_f),
+  !      V = (1/d) sum over the cell's faces of  sigma_cf (S_f . x_f),
   !
-  ! with d the spatial dimension. A negative volume is an
-  ! inside-out cell and stops the program.
+  ! with d the spatial dimension, S_f the face's area vector and
+  ! sigma_cf the sign that points it out of the cell. A negative
+  ! volume is an inside-out cell and stops the program.
   !===================================================================!
 
-  pure subroutine derive_cell_volumes(spatial_dim, face_centres, face_areas, &
-       & cell_face_normals, cell_faces, num_cell_faces, cell_volumes)
+  pure subroutine derive_cell_volumes(spatial_dim, face_centres, face_vectors, &
+       & cell_centres, cell_faces, num_cell_faces, cell_volumes)
 
     integer , intent(in)  :: spatial_dim
     real(dp), intent(in)  :: face_centres(:,:)
-    real(dp), intent(in)  :: face_areas(:)
-    real(dp), intent(in)  :: cell_face_normals(:,:,:)
+    real(dp), intent(in)  :: face_vectors(:,:)
+    real(dp), intent(in)  :: cell_centres(:,:)
     integer , intent(in)  :: cell_faces(:,:)
     integer , intent(in)  :: num_cell_faces(:)
     real(dp), allocatable, intent(out) :: cell_volumes(:)
@@ -471,13 +401,11 @@ contains
     do lcell = 1, size(num_cell_faces)
        do lface = 1, num_cell_faces(lcell)
           gface = cell_faces(lface, lcell)
-          associate(&
-               & face_centre => face_centres(:, gface)/real(spatial_dim, dp), &
-               & face_normal => cell_face_normals(:, lface, lcell), &
-               & face_area   => face_areas(gface))
-            cell_volumes(lcell) = cell_volumes(lcell) + &
-                 & face_area*dot_product(face_normal, face_centre)
-          end associate
+          cell_volumes(lcell) = cell_volumes(lcell) + &
+               & outward_sign(face_vectors(:, gface), face_centres(:, gface), &
+               &              cell_centres(:, lcell)) &
+               & * dot_product(face_vectors(:, gface), face_centres(:, gface)) &
+               & / real(spatial_dim, dp)
        end do
     end do
 
@@ -521,34 +449,27 @@ contains
   end subroutine derive_centroidal_vectors
 
   !===================================================================!
-  ! Face deltas: the centre-to-centre vector projected on the face
-  ! normal. On a skewed mesh the segment crosses its face at a
-  ! slant, so this normal distance is shorter than the segment; it
-  ! is the denominator of every two-point face gradient.
+  ! Face deltas: the centre-to-centre vector projected on the unit
+  ! normal, |l_f . S_f| / |S_f|, one per face - the sign of the
+  ! normal drops out under the modulus. On a skewed mesh the segment
+  ! crosses its face at a slant, so this normal distance is shorter
+  ! than the segment; it is the denominator of every two-point face
+  ! gradient.
   !===================================================================!
 
-  pure subroutine derive_face_deltas(num_faces, lvec, cell_face_normals, &
-       & cell_faces, num_cell_faces, face_deltas)
+  pure subroutine derive_face_deltas(lvec, face_vectors, face_deltas)
 
-    integer , intent(in)  :: num_faces
     real(dp), intent(in)  :: lvec(:,:)
-    real(dp), intent(in)  :: cell_face_normals(:,:,:)
-    integer , intent(in)  :: cell_faces(:,:)
-    integer , intent(in)  :: num_cell_faces(:)
+    real(dp), intent(in)  :: face_vectors(:,:)
     real(dp), allocatable, intent(out) :: face_deltas(:)
 
-    integer :: lcell, lface, gface
+    integer :: f
 
-    allocate(face_deltas(num_faces))
-    face_deltas = real(0, dp)
+    allocate(face_deltas(size(face_vectors, 2)))
 
-    do lcell = 1, size(num_cell_faces)
-       do lface = 1, num_cell_faces(lcell)
-          gface = cell_faces(lface, lcell)
-          face_deltas(gface) = &
-               & abs(dot_product(lvec(:, gface), &
-               &                 cell_face_normals(:, lface, lcell)))
-       end do
+    do f = 1, size(face_vectors, 2)
+       face_deltas(f) = abs(dot_product(lvec(:, f), face_vectors(:, f))) &
+            & / norm2(face_vectors(:, f))
     end do
 
   end subroutine derive_face_deltas

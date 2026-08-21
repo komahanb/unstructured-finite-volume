@@ -29,7 +29,7 @@ module map_value
 
   use iso_fortran_env  , only : dp => REAL64
   use graph_fractal    , only : graph
-  use token_identity   , only : token
+  use token_identity   , only : token, index_of
   use field_stored, only : stored_field
 
   implicit none
@@ -82,17 +82,10 @@ contains
     class(value_map), intent(in) :: this
     type(token)     , intent(in) :: key
 
-    integer :: k
-
     at = 0
     if (.not. allocated(this % rows)) return
 
-    do k = 1, size(this % rows)
-       if (this % rows(k) % identity % matches(key)) then
-          at = k
-          return
-       end if
-    end do
+    at = index_of(this % rows % identity, key)
 
   end function row_at
 

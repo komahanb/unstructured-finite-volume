@@ -23,7 +23,7 @@
 !               WHAT THE EXTENSION CANNOT TELL YOU
 !
 ! Two ambients may have identical extensions and be two domains. Then
-! two subsets over the same members - one carved from A, one from B -
+! two subsets over the same members - one declared into A, one into B -
 ! have IDENTICAL inclusion tuples and different ambients. The tuples
 ! are derivable; the association is not. That is the whole reason this
 ! map exists rather than being computed.
@@ -34,7 +34,7 @@
 !     declared subobject   an inclusion path S -> ... -> A exists
 !
 ! The first is a question about two extents; the second is a question
-! about what was declared. S = {2,5,6} carved from A = 1..8 is
+! about what was declared. S = {2,5,6} declared into A = 1..8 is
 ! extensionally inside every set that holds 2, 5 and 6, and is a
 ! declared subobject of A alone. This module answers only the second,
 ! and never infers an edge from the first.
@@ -83,7 +83,7 @@
 module map_inclusion
 
   use graph_fractal , only : graph
-  use token_identity, only : token
+  use token_identity, only : token, index_of
 
   implicit none
 
@@ -114,7 +114,7 @@ module map_inclusion
 contains
 
   !===================================================================!
-  ! Declare S c--> A. A set is carved from ONE domain, so a second
+  ! Declare S c--> A. A set is declared into ONE ambient, so a second
   ! declaration for the same S is refused: two ambients would be two
   ! answers to one question, and the chain would fork.
   !===================================================================!
@@ -142,7 +142,7 @@ contains
     end if
 
     if (row_at(this, below) /= 0) then
-       error stop 'map_inclusion: a set is carved from one domain'
+       error stop 'map_inclusion: a set is declared into one ambient'
     end if
 
     if (.not. allocated(this % rows)) allocate(this % rows(0))
@@ -165,17 +165,10 @@ contains
     class(inclusion_map), intent(in) :: this
     type(token)         , intent(in) :: below
 
-    integer :: k
-
     at = 0
     if (.not. allocated(this % rows)) return
 
-    do k = 1, size(this % rows)
-       if (this % rows(k) % part % matches(below)) then
-          at = k
-          return
-       end if
-    end do
+    at = index_of(this % rows % part, below)
 
   end function row_at
 
@@ -192,13 +185,13 @@ contains
   end function included
 
   !===================================================================!
-  ! The declared edge itself: was S carved from exactly this A. One
+  ! The declared edge itself: was S declared into exactly this A. One
   ! step, not the transitive order - S c--> S' c--> A answers false
   ! here and true to declared_subobject, and the difference is the
   ! reason both exist.
   !===================================================================!
 
-  pure logical function declared_into(this, part, ambient) result(carved)
+  pure logical function declared_into(this, part, ambient) result(declared)
 
     class(inclusion_map), intent(in) :: this
     type(graph)         , intent(in) :: part
@@ -207,14 +200,14 @@ contains
     type(token) :: below, above
     integer     :: at
 
-    carved = .false.
+    declared = .false.
 
     below = part % id()
     at    = row_at(this, below)
     if (at == 0) return
 
     above  = ambient % id()
-    carved = this % rows(at) % ambient % matches(above)
+    declared = this % rows(at) % ambient % matches(above)
 
   end function declared_into
 
@@ -226,7 +219,7 @@ contains
   !     S c--> A  and  A <= B   =>   S <= B
   !
   ! The walk is bounded by the number of declared inclusions, because a
-  ! chain that revisits a set is a cycle and no set is carved from
+  ! chain that revisits a set is a cycle and no set is declared into
   ! itself twice removed.
   !
   ! It steps in IDENTITIES. Each step reads one stored row and compares

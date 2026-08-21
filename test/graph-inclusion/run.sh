@@ -15,7 +15,7 @@ cd "$here" && ./run
 declare -A reason=(
   [unsigned]="keyed on assigned identity"
   [selfsame]="not declared into itself"
-  [twoambients]="carved from one domain"
+  [twoambients]="declared into one ambient"
   [cycle]="an inclusion chain is finite"
 )
 

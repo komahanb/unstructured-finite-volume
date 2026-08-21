@@ -65,7 +65,7 @@
 module map_set
 
   use graph_fractal          , only : graph
-  use token_identity         , only : token
+  use token_identity         , only : token, index_of
   use map_set_representation, only : set_representation
 
   implicit none
@@ -157,9 +157,10 @@ contains
   end subroutine bind
 
   !===================================================================!
-  ! Where the row is, or zero. Private to the dispatch below, and the
-  ! one place identity is compared: a stored key against the key the
-  ! caller's graph carries. Nothing outside this map is read.
+  ! Where the pair is, or zero. Private to the dispatch below. The
+  ! comparison loop is token_identity's index_of - written once for
+  ! every map - so this guards unallocated storage and extracts the
+  ! caller's key, nothing more.
   !===================================================================!
 
   pure integer function row_of(this, element) result(at)
@@ -167,20 +168,10 @@ contains
     class(set_map), intent(in) :: this
     type(graph)   , intent(in) :: element
 
-    type(token) :: key
-    integer     :: k
-
     at = 0
     if (.not. allocated(this % rows)) return
 
-    key = element % id()
-
-    do k = 1, size(this % rows)
-       if (this % rows(k) % identity % matches(key)) then
-          at = k
-          return
-       end if
-    end do
+    at = index_of(this % rows % identity, element % id())
 
   end function row_of
 

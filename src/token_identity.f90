@@ -31,6 +31,7 @@ module token_identity
 
   private
   public :: token, next_token
+  public :: index_of
 
   !===================================================================!
   ! The stamp roll of this image. Serial zero is reserved for the
@@ -66,6 +67,30 @@ contains
     next_token % image   = this_image()
 
   end function next_token
+
+  !===================================================================!
+  ! The index of key in keys, or zero if no element matches. The one
+  ! written form of the identity scan: every map that stores tokens
+  ! finds them here, so identity comparison over a collection has
+  ! exactly one body.
+  !===================================================================!
+
+  pure integer function index_of(keys, key) result(at)
+
+    type(token), intent(in) :: keys(:)
+    type(token), intent(in) :: key
+
+    integer :: k
+
+    at = 0
+    do k = 1, size(keys)
+       if (keys(k) % matches(key)) then
+          at = k
+          return
+       end if
+    end do
+
+  end function index_of
 
   !===================================================================!
   ! The token's three answers.

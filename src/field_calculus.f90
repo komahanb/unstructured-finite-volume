@@ -116,6 +116,27 @@ module field_calculus
   !===================================================================!
 
   type, abstract, extends(field) :: functional
+
+   contains
+
+     !----------------------------------------------------------------!
+     ! The scalar adapters: the vector adapters at length one, since
+     ! a one-entry field and a scalar are the same value. Written
+     ! here once for every functional, through the vector adapters
+     ! only - no storage is known at this level.
+     !----------------------------------------------------------------!
+
+     procedure :: integer_value       => functional_integer_value
+     procedure :: set_integer_value   => functional_set_integer_value
+     procedure :: real_value          => functional_real_value
+     procedure :: set_real_value      => functional_set_real_value
+     procedure :: complex_value       => functional_complex_value
+     procedure :: set_complex_value   => functional_set_complex_value
+     procedure :: logical_value       => functional_logical_value
+     procedure :: set_logical_value   => functional_set_logical_value
+     procedure :: character_value     => functional_character_value
+     procedure :: set_character_value => functional_set_character_value
+
   end type functional
 
   abstract interface
@@ -225,5 +246,123 @@ contains
     defined = on % same_as(domain)
 
   end function field_defined_on
+
+  !===================================================================!
+  ! The scalar adapters of a functional. A getter reads the vector
+  ! adapter of its kind and takes the one entry; when the functional
+  ! holds another kind the adapter answers zero-length and the getter
+  ! answers the zero of the asked kind. A setter hands the one value
+  ! to the vector adapter, which replaces the value and the kind.
+  !===================================================================!
+
+  pure subroutine functional_integer_value(this, value)
+
+    class(functional), intent(in) :: this
+    integer, intent(out) :: value
+
+    integer, allocatable :: t(:)
+
+    call this % integer_vector(t)
+    value = 0
+    if (size(t) >= 1) value = t(1)
+
+  end subroutine functional_integer_value
+
+  pure subroutine functional_set_integer_value(this, value)
+
+    class(functional), intent(inout) :: this
+    integer, intent(in) :: value
+
+    call this % set_integer_vector([value])
+
+  end subroutine functional_set_integer_value
+
+  pure subroutine functional_real_value(this, value)
+
+    class(functional), intent(in) :: this
+    real(dp), intent(out) :: value
+
+    real(dp), allocatable :: t(:)
+
+    call this % real_vector(t)
+    value = 0.0_dp
+    if (size(t) >= 1) value = t(1)
+
+  end subroutine functional_real_value
+
+  pure subroutine functional_set_real_value(this, value)
+
+    class(functional), intent(inout) :: this
+    real(dp), intent(in) :: value
+
+    call this % set_real_vector([value])
+
+  end subroutine functional_set_real_value
+
+  pure subroutine functional_complex_value(this, value)
+
+    class(functional), intent(in) :: this
+    complex(dp), intent(out) :: value
+
+    complex(dp), allocatable :: t(:)
+
+    call this % complex_vector(t)
+    value = (0.0_dp, 0.0_dp)
+    if (size(t) >= 1) value = t(1)
+
+  end subroutine functional_complex_value
+
+  pure subroutine functional_set_complex_value(this, value)
+
+    class(functional), intent(inout) :: this
+    complex(dp), intent(in) :: value
+
+    call this % set_complex_vector([value])
+
+  end subroutine functional_set_complex_value
+
+  pure subroutine functional_logical_value(this, value)
+
+    class(functional), intent(in) :: this
+    logical, intent(out) :: value
+
+    logical, allocatable :: t(:)
+
+    call this % logical_vector(t)
+    value = .false.
+    if (size(t) >= 1) value = t(1)
+
+  end subroutine functional_logical_value
+
+  pure subroutine functional_set_logical_value(this, value)
+
+    class(functional), intent(inout) :: this
+    logical, intent(in) :: value
+
+    call this % set_logical_vector([value])
+
+  end subroutine functional_set_logical_value
+
+  pure subroutine functional_character_value(this, value)
+
+    class(functional), intent(in) :: this
+    character(len=:), allocatable, intent(out) :: value
+
+    character(len=:), allocatable :: t(:)
+
+    call this % character_vector(t)
+    value = ''
+    if (size(t) >= 1) value = t(1)
+
+  end subroutine functional_character_value
+
+  pure subroutine functional_set_character_value(this, value)
+
+    class(functional), intent(inout) :: this
+    character(len=*), intent(in) :: value
+
+    call this % set_character_vector([value])
+
+  end subroutine functional_set_character_value
 
 end module field_calculus

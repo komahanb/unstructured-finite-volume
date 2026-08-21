@@ -262,15 +262,15 @@ contains
 
        select case (this % rule)
        case (REDUCE_MINIMUM)
-          call set_real(state, huge(1.0_dp))
+          call state % set_real_value(huge(1.0_dp))
        case (REDUCE_MAXIMUM)
-          call set_real(state, -huge(1.0_dp))
+          call state % set_real_value(-huge(1.0_dp))
        case (REDUCE_ALL)
-          call set_logical(state, .true.)
+          call state % set_logical_value(.true.)
        case (REDUCE_ANY)
-          call set_logical(state, .false.)
+          call state % set_logical_value(.false.)
        case default
-          call set_real(state, 0.0_dp)
+          call state % set_real_value(0.0_dp)
        end select
 
     end select
@@ -307,13 +307,13 @@ contains
     case (REDUCE_ALL, REDUCE_ANY)
 
        call values % logical_vector(lv)
-       call read_logical(state, lacc)
+       call state % logical_value(lacc)
        if (this % rule == REDUCE_ALL) then
           lacc = lacc .and. all(lv)
        else
           lacc = lacc .or. any(lv)
        end if
-       call set_logical(state, lacc)
+       call state % set_logical_value(lacc)
 
     case (REDUCE_COUNT)
 
@@ -330,14 +330,14 @@ contains
        if (values % value_kind() == FIELD_COMPLEX) then
 
           call values % complex_vector(cv)
-          call read_complex(state, cacc)
+          call state % complex_value(cacc)
           do i = 1, nentry
              do c = 1, num_components
                 k = (i - 1) * num_components + c
                 if (k <= size(cv)) cacc = cacc + cv(k) * m(i)
              end do
           end do
-          call set_complex(state, cacc)
+          call state % set_complex_value(cacc)
 
        else
 
@@ -346,14 +346,14 @@ contains
           select case (this % rule)
 
           case (REDUCE_SUM)
-             call read_real(state, acc)
+             call state % real_value(acc)
              do i = 1, nentry
                 do c = 1, num_components
                    k = (i - 1) * num_components + c
                    if (k <= size(v)) acc = acc + v(k) * m(i)
                 end do
              end do
-             call set_real(state, acc)
+             call state % set_real_value(acc)
 
           case (REDUCE_AVERAGE, REDUCE_NORM)
              ! Both carry a running total and a running weight, and
@@ -376,18 +376,18 @@ contains
              end select
 
           case (REDUCE_MINIMUM)
-             call read_real(state, acc)
+             call state % real_value(acc)
              do k = 1, size(v)
                 acc = min(acc, v(k))
              end do
-             call set_real(state, acc)
+             call state % set_real_value(acc)
 
           case (REDUCE_MAXIMUM)
-             call read_real(state, acc)
+             call state % real_value(acc)
              do k = 1, size(v)
                 acc = max(acc, v(k))
              end do
-             call set_real(state, acc)
+             call state % set_real_value(acc)
 
           end select
 
@@ -443,12 +443,12 @@ contains
 
     case (REDUCE_ALL, REDUCE_ANY)
 
-       call read_logical(left, la)
-       call read_logical(right, lb)
+       call left % logical_value(la)
+       call right % logical_value(lb)
        if (this % rule == REDUCE_ALL) then
-          call set_logical(combined, la .and. lb)
+          call combined % set_logical_value(la .and. lb)
        else
-          call set_logical(combined, la .or. lb)
+          call combined % set_logical_value(la .or. lb)
        end if
 
     case (REDUCE_AVERAGE, REDUCE_NORM, REDUCE_COUNT)
@@ -468,12 +468,12 @@ contains
 
     case (REDUCE_MINIMUM, REDUCE_MAXIMUM)
 
-       call read_real(left, a)
-       call read_real(right, b)
+       call left % real_value(a)
+       call right % real_value(b)
        if (this % rule == REDUCE_MINIMUM) then
-          call set_real(combined, min(a, b))
+          call combined % set_real_value(min(a, b))
        else
-          call set_real(combined, max(a, b))
+          call combined % set_real_value(max(a, b))
        end if
 
     case default
@@ -481,13 +481,13 @@ contains
        ! Summing, on whichever road the parts travelled.
        if (left % value_kind() == FIELD_COMPLEX .or. &
             & right % value_kind() == FIELD_COMPLEX) then
-          call read_complex(left, ca)
-          call read_complex(right, cb)
-          call set_complex(combined, ca + cb)
+          call left % complex_value(ca)
+          call right % complex_value(cb)
+          call combined % set_complex_value(ca + cb)
        else
-          call read_real(left, a)
-          call read_real(right, b)
-          call set_real(combined, a + b)
+          call left % real_value(a)
+          call right % real_value(b)
+          call combined % set_real_value(a + b)
        end if
 
     end select
@@ -516,9 +516,9 @@ contains
        select type (state)
        type is (stored_functional)
           if (state % weight > 0.0_dp) then
-             call set_real(scalar, state % tally / state % weight)
+             call scalar % set_real_value(state % tally / state % weight)
           else
-             call set_real(scalar, 0.0_dp)
+             call scalar % set_real_value(0.0_dp)
           end if
        end select
 
@@ -527,9 +527,9 @@ contains
        select type (state)
        type is (stored_functional)
           if (state % tally > 0.0_dp) then
-             call set_real(scalar, state % tally**(1.0_dp / this % power))
+             call scalar % set_real_value(state % tally**(1.0_dp / this % power))
           else
-             call set_real(scalar, 0.0_dp)
+             call scalar % set_real_value(0.0_dp)
           end if
        end select
 
@@ -718,13 +718,13 @@ contains
     n = values % num_entries() * max(values % num_components(), 1)
 
     if (scalar % value_kind() == FIELD_COMPLEX) then
-       call read_complex(scalar, complex_value)
+       call scalar % complex_value(complex_value)
        if (this % rule == BROADCAST_SHARE .and. n > 0) then
           complex_value = complex_value / real(n, dp)
        end if
        call values % set_complex_vector([(complex_value, i = 1, n)])
     else
-       call read_real(scalar, value)
+       call scalar % real_value(value)
        if (this % rule == BROADCAST_SHARE .and. n > 0) then
           value = value / real(n, dp)
        end if
@@ -732,86 +732,5 @@ contains
     end if
 
   end subroutine broadcast_functional
-
-  !===================================================================!
-  ! One value in and out of any functional, through the contract's
-  ! vector adapters. A wrong-kind read answers the zero of the asked
-  ! kind, matching the adapters' zero-length signal.
-  !===================================================================!
-
-  pure subroutine read_real(f, x)
-
-    class(functional), intent(in) :: f
-    real(dp), intent(out) :: x
-
-    real(dp), allocatable :: t(:)
-
-    call f % real_vector(t)
-    if (size(t) >= 1) then
-       x = t(1)
-    else
-       x = 0.0_dp
-    end if
-
-  end subroutine read_real
-
-  pure subroutine set_real(f, x)
-
-    class(functional), intent(inout) :: f
-    real(dp), intent(in) :: x
-
-    call f % set_real_vector([x])
-
-  end subroutine set_real
-
-  pure subroutine read_complex(f, x)
-
-    class(functional), intent(in) :: f
-    complex(dp), intent(out) :: x
-
-    complex(dp), allocatable :: t(:)
-
-    call f % complex_vector(t)
-    if (size(t) >= 1) then
-       x = t(1)
-    else
-       x = (0.0_dp, 0.0_dp)
-    end if
-
-  end subroutine read_complex
-
-  pure subroutine set_complex(f, x)
-
-    class(functional), intent(inout) :: f
-    complex(dp), intent(in) :: x
-
-    call f % set_complex_vector([x])
-
-  end subroutine set_complex
-
-  pure subroutine read_logical(f, x)
-
-    class(functional), intent(in) :: f
-    logical, intent(out) :: x
-
-    logical, allocatable :: t(:)
-
-    call f % logical_vector(t)
-    if (size(t) >= 1) then
-       x = t(1)
-    else
-       x = .false.
-    end if
-
-  end subroutine read_logical
-
-  pure subroutine set_logical(f, x)
-
-    class(functional), intent(inout) :: f
-    logical, intent(in) :: x
-
-    call f % set_logical_vector([x])
-
-  end subroutine set_logical
 
 end module operation_reduction

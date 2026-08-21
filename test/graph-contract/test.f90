@@ -924,6 +924,17 @@ contains
     call value_real(j, r)
     call report(abs(r - 10.0_dp) < 1.0d-13, "sum adds the values up", nfail)
 
+    ! the scalar adapters belong to the abstract functional: a
+    ! class(functional) sets and reads one value through them, and a
+    ! read of another kind answers the zero of the kind asked
+    call j % set_real_value(3.5_dp)
+    call j % real_value(r)
+    call j % integer_value(i)
+    call report(abs(r - 3.5_dp) < 1.0d-15 .and. i == 0, &
+         & "class(functional) sets and reads a scalar through the abstract contract; &
+         &a read of another kind is zero", nfail)
+    call rule % reduce(f, j)
+
     ! With a measure the same rule becomes an integral. Each cell is
     ! weighted by its volume, so the answer stops depending on how
     ! finely the mesh was cut.

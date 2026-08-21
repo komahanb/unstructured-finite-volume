@@ -58,7 +58,7 @@ Indentation is `extends`; brackets name the file.
 
     field                                      [field_calculus]
     ├── stored_field                           [field_stored]
-    └── functional  (one entry)                [field_calculus]
+    └── functional  (one entry; the scalar adapters, written once over the vector adapters)  [field_calculus]
         └── stored_functional                  [field_functional]
 
     operation                                  [operation_action]

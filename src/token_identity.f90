@@ -1,10 +1,10 @@
 !=====================================================================!
 ! THE IDENTITY . INFRASTRUCTURE BENEATH THE TOWER
 !
-! Not a level: a service every identified citizen draws on. Carriers
+! Not a level: a service every identified object draws on. Carriers
 ! have identity; relations have identity; the relational graph will
-! be the third to sign. What they share is not mathematics but LAW,
-! and the law lives here once:
+! be the third to sign. What they share is not mathematics but the
+! identity rules, and those live here once:
 !
 !      minting    fresh, unrepeatable, contents unchoosable
 !      copying    whole-object only - and a copy IS the identity
@@ -19,8 +19,8 @@
 ! the representation stays free to grow distributed-safe further.
 !
 ! serial_number() is a read-only diagnostic for messages and tests,
-! local to one image BY DESIGN - matches is the law, and the only
-! one.
+! local to one image BY DESIGN - matches is the one comparison,
+! and the only one.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -93,7 +93,7 @@ contains
   end function index_of
 
   !===================================================================!
-  ! The token's three answers.
+  ! The token's three queries.
   !===================================================================!
 
   pure logical function matches(this, other)

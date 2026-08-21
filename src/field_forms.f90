@@ -5,8 +5,9 @@
 ! two independent things held together, and it HAS them rather than
 ! being either:
 !
-!      evaluation      num_members, values, slopes - the concretion's
-!                      own table of functions, read whole
+!      evaluation      num_members, the table's width recorded where
+!                      the basis is declared; values, slopes - the
+!                      concretion's own table of functions, read whole
 !      active basis    WHICH table entries stand, as a declared set:
 !                      an identity, and a representation listing them
 !
@@ -32,7 +33,7 @@
 !      slopes(x, at, n)         each entry's derivative along n
 !
 ! and one act of its own: restrict, which sets that membership. It
-! is here rather than at the caller because a citizen's structure is
+! is here rather than at the caller because a form's structure is
 ! its own business - whoever decides a member should go says so, and
 ! the form does it. When the form sector becomes a transform the
 ! restriction will hand back a NEW form and this verb becomes the
@@ -68,9 +69,13 @@ module field_forms
      type(graph)                , private :: basis
      type(listed_set_representation), private :: active
 
+     ! the table's width, stated once where the basis is declared;
+     ! restriction narrows the roster, never the table
+     integer, private :: width = 0
+
    contains
 
-     procedure(form_num_members_interface), deferred :: num_members
+     procedure :: num_members
      procedure(form_values_interface), deferred :: values
      procedure(form_slopes_interface), deferred :: slopes
 
@@ -82,11 +87,6 @@ module field_forms
   end type form
 
   abstract interface
-
-     pure integer function form_num_members_interface(this)
-       import :: form
-       class(form), intent(in) :: this
-     end function form_num_members_interface
 
      pure subroutine form_values_interface(this, x, at, phi)
        import :: form, dp
@@ -117,7 +117,6 @@ module field_forms
 
    contains
 
-     procedure :: num_members => polynomial_num_members
      procedure :: values  => polynomial_values
      procedure :: slopes  => polynomial_slopes
 
@@ -146,7 +145,6 @@ module field_forms
 
    contains
 
-     procedure :: num_members => harmonic_num_members
      procedure :: values  => harmonic_values
      procedure :: slopes  => harmonic_slopes
 
@@ -173,9 +171,24 @@ contains
     integer :: m
 
     call this % basis % declare()
+    this % width  = width
     this % active = listed_set_representation([(m, m = 1, width)])
 
   end subroutine declare_basis
+
+  !===================================================================!
+  ! The table's width, as declared. Restriction does not change it:
+  ! a restricted form still evaluates every entry of its table and
+  ! stands only some.
+  !===================================================================!
+
+  pure integer function num_members(this)
+
+    class(form), intent(in) :: this
+
+    num_members = this % width
+
+  end function num_members
 
   !===================================================================!
   ! WHICH basis this form's standing members belong to. The identity
@@ -231,16 +244,6 @@ contains
 
   end function create_polynomial
 
-  pure integer function polynomial_num_members(this)
-
-    class(polynomial_form), intent(in) :: this
-
-    associate (u1 => this); end associate
-
-    polynomial_num_members = 4
-
-  end function polynomial_num_members
-
   pure subroutine polynomial_values(this, x, at, phi)
 
     class(polynomial_form), intent(in) :: this
@@ -280,16 +283,6 @@ contains
     call this % declare_basis(3)
 
   end function create_harmonic
-
-  pure integer function harmonic_num_members(this)
-
-    class(harmonic_form), intent(in) :: this
-
-    associate (u1 => this); end associate
-
-    harmonic_num_members = 3
-
-  end function harmonic_num_members
 
   pure subroutine harmonic_values(this, x, at, phi)
 

@@ -407,8 +407,7 @@ contains
     type(graph)  , intent(in)          :: expected
     real(dp), allocatable, intent(out) :: values(:)
 
-    type(graph) :: given
-    integer     :: at, width
+    integer :: at, width
 
     at    = this % action % num_arguments() + k
     width = input_data(1) % num_entries() * input_data(1) % num_components()
@@ -417,8 +416,7 @@ contains
        error stop 'step: the history state is given'
     end if
 
-    given = input_data(at) % domain()
-    if (.not. given % same_as(expected)) then
+    if (.not. input_data(at) % defined_on(expected)) then
        error stop 'step: a history state lives on the action''s own domain'
     end if
     if (input_data(at) % num_entries() /= input_data(1) % num_entries() .or. &
@@ -491,7 +489,7 @@ contains
     type(stored_field)   :: out
     class(field), allocatable :: velocity
     type(stored_field), allocatable :: inputs(:)
-    type(graph) :: expected, given
+    type(graph) :: expected
     integer         :: n_expected, m
     real(dp), allocatable :: q(:), s(:), y(:), qold(:), qolder(:)
     integer :: num_components
@@ -500,8 +498,7 @@ contains
 
     if (present(input_data)) then
 
-       given   = input_data(1) % domain()
-       if (.not. given % same_as(expected)) then
+       if (.not. input_data(1) % defined_on(expected)) then
           error stop 'step: the state must live on the action''s own domain'
        end if
        num_components = input_data(1) % num_components()
@@ -520,8 +517,7 @@ contains
 
        if (this % theta /= 0.0_dp) then
           call this % action % apply(input_graph, input_data(1:m), velocity)
-          given = velocity % domain()
-          if (.not. given % same_as(expected)) then
+          if (.not. velocity % defined_on(expected)) then
              error stop 'step: the action result lives on its stated domain'
           end if
           call velocity % real_vector(s)
@@ -531,8 +527,7 @@ contains
        if (this % theta /= 1.0_dp) then
           call inputs_at(this, input_data, expected, n_expected, num_components, qold, inputs)
           call this % action % apply(input_graph, inputs, velocity)
-          given = velocity % domain()
-          if (.not. given % same_as(expected)) then
+          if (.not. velocity % defined_on(expected)) then
              error stop 'step: the action result lives on its stated domain'
           end if
           call velocity % real_vector(s)
@@ -729,14 +724,12 @@ contains
     real(dp), allocatable, intent(out) :: partial(:)
 
     class(field), allocatable :: answer
-    type(graph) :: given
     integer :: m
 
     m = min(this % action % num_arguments(), size(input_data))
 
     call this % action % partial_action(input_graph, input_data(1:m), restated, answer)
-    given = answer % domain()
-    if (.not. given % same_as(expected)) then
+    if (.not. answer % defined_on(expected)) then
        error stop 'step: the action partial lives on its stated domain'
     end if
     call answer % real_vector(partial)
@@ -762,13 +755,11 @@ contains
 
     type(stored_field), allocatable :: inputs(:)
     class(field), allocatable :: answer
-    type(graph) :: given
 
     call inputs_at(this, input_data, expected, n_expected, num_components, values, inputs)
 
     call this % action % partial_action(input_graph, inputs, restated, answer)
-    given = answer % domain()
-    if (.not. given % same_as(expected)) then
+    if (.not. answer % defined_on(expected)) then
        error stop 'step: the action partial lives on its stated domain'
     end if
     call answer % real_vector(partial)
@@ -789,6 +780,7 @@ contains
 
     type(graph) :: given
 
+    ! the variation answers its domain without copying the direction
     given = factor % domain()
     if (.not. given % same_as(expected)) then
        error stop 'step: the direction lives on the action''s own domain'

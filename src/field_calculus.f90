@@ -88,6 +88,7 @@ module field_calculus
      procedure(field_name_interface), deferred :: units
 
      procedure(field_domain_interface), deferred :: domain
+     procedure :: defined_on => field_defined_on
      procedure(field_count_interface) , deferred :: num_components
      procedure(field_count_interface) , deferred :: num_entries
      procedure(field_count_interface) , deferred :: value_kind
@@ -202,5 +203,27 @@ module field_calculus
      end subroutine field_set_character_vector_interface
 
   end interface
+
+contains
+
+  !===================================================================!
+  ! Whether this field is defined on that domain: the same set by
+  ! identity, never by extent. Every check that a state, a history
+  ! state, a direction, a right-hand side or an action's result lives
+  ! where a calculation expects it asks this one question; what is
+  ! refused, and why, is said at the call site.
+  !===================================================================!
+
+  logical function field_defined_on(this, domain) result(defined)
+
+    class(field), intent(in) :: this
+    type(graph) , intent(in) :: domain
+
+    type(graph) :: on
+
+    on      = this % domain()
+    defined = on % same_as(domain)
+
+  end function field_defined_on
 
 end module field_calculus

@@ -259,7 +259,7 @@ contains
     type(stored_field), allocatable :: tuple(:)
     type(stored_field)   :: direction, out
     class(field), allocatable :: pushed
-    type(graph) :: on, given, along
+    type(graph) :: on, along
     real(dp), allocatable :: v(:), y(:), base(:), x(:)
     integer :: n_on, p, width
 
@@ -276,8 +276,7 @@ contains
     width = size(x)
 
     if (present(input_data)) then
-       given = input_data(1) % domain()
-       if (.not. given % same_as(along)) then
+       if (.not. input_data(1) % defined_on(along)) then
           error stop 'linearization: the direction must live on the differentiated argument''s domain'
        end if
        call input_data(1) % real_vector(v)
@@ -386,10 +385,7 @@ contains
     class(field), intent(in) :: result
     type(graph) , intent(in) :: expected
 
-    type(graph) :: got
-
-    got = result % domain()
-    if (.not. got % same_as(expected)) then
+    if (.not. result % defined_on(expected)) then
        error stop 'linearization: the operation result lives on its stated domain'
     end if
 

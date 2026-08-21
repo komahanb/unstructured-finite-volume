@@ -293,15 +293,9 @@ contains
     call this % evaluation_inputs(x, inputs)
     call this % action % apply(this % on, inputs, answer)
 
-    block
-      type(graph) :: got
-      integer         :: n_got
-      got   = answer % domain()
-      n_got = answer % num_entries()
-      if (.not. got % same_as(this % residual_domain)) then
-         error stop 'minimization: the action must answer on its stated residual domain'
-      end if
-    end block
+    if (.not. answer % defined_on(this % residual_domain)) then
+       error stop 'minimization: the action must answer on its stated residual domain'
+    end if
 
     call answer % real_vector(y)
 
@@ -487,15 +481,9 @@ contains
     x = 0.0_dp
 
     if (present(input_data)) then
-       block
-         type(graph) :: got
-         integer         :: n_got
-         got   = input_data(1) % domain()
-         n_got = input_data(1) % num_entries()
-         if (.not. got % same_as(this % residual_domain)) then
-            error stop 'minimization: a right-hand side lives on the residual domain'
-         end if
-       end block
+       if (.not. input_data(1) % defined_on(this % residual_domain)) then
+          error stop 'minimization: a right-hand side lives on the residual domain'
+       end if
        call input_data(1) % real_vector(rhs)
        allocate(worker, source=this)
        call worker % solve(rhs, x, achieved)

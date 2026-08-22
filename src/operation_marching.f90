@@ -23,15 +23,15 @@
 ! minimizer (inner) solves the step with the rest of the tuple held.
 !
 ! march_adjoint traverses the converse chain over the recorded
-! trajectory and applies the dual of every local differential: at
-! each edge the state block of the tangent is compiled, transposed
-! and solved, and the dual of each history block - also compiled and
-! transposed - is subtracted from the seed of the instant it reads.
-! Nothing here names a1 or a2. march_directional computes forward
-! directional derivatives of any order: the chain rule over the
-! scheme with the state, history and parameter paths gives the
-! right-hand side, and the state block is solved. march_adaptive
-! chooses the steps at run time under a step_policy.
+! trajectory: at each instant the implicit function's dual solve
+! (operation_linearization) answers lambda and the dual of every
+! history block, and each dual is subtracted from the seed of the
+! instant that block reads. march_directional traverses forward and
+! makes the implicit function's forward solve at each instant, the
+! history and parameter paths supplied. The marcher owns the
+! traversal and the seeds; the local law is written once, for any
+! domain. Nothing here names a1 or a2. march_adaptive chooses the
+! steps at run time under a step_policy.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -47,10 +47,9 @@ module operation_marching
   use view_directed_stored        , only : stored_directed_graph
   use operation_step   , only : scheme, bdf
   use operation_minimization , only : minimizer
-  use operation_linearization, only : linearization, tangent_of
-  use operation_chain_rule, only : chain_rule, argument_path
+  use operation_linearization, only : implicit_forward, implicit_dual
+  use operation_chain_rule, only : argument_path
   use operation_step_policy, only : step_policy
-  use operation_stencil, only : stencil
   use operation_dense_direct, only : dense_direct
 
   implicit none
@@ -426,18 +425,17 @@ contains
   end subroutine recorded_inputs
 
   !===================================================================!
-  ! The converse traversal over the recorded trajectory, applying the
-  ! dual of every local differential. At each edge, in reverse order,
-  ! with A the state block of the residual's tangent at the edge's
-  ! input tuple,
+  ! The converse traversal over the recorded trajectory. Every
+  ! instant carries a seed, accumulated from the instants that read
+  ! it: at edge e, in reverse order, the dual solve at the edge's
+  ! input tuple answers lambda_e from the seed of instant e + 1 and
+  ! the dual of every history block, and
   !
-  !      A^T lambda_e = seed_e
-  !      seed of instant e - k + 1  -=  (D_history(k) R_e)^T lambda_e
+  !      seed of instant e + 1 - k  -=  (D_history(k) R_e)^T lambda_e
   !
-  ! for every history argument the statement reaches; each block is
-  ! compiled to a stencil and transposed. With theta = 0 the state
-  ! block is a0 I and no solve runs. seeds(:, k), if present, is added
-  ! when instant k is reached. On return, lambda holds the
+  ! for k up to the statement's reach. With theta = 0 the state
+  ! block is a0 I and no solve runs. seeds(:, k), if present, is
+  ! added when instant k is reached. On return, lambda holds the
   ! sensitivity at the first instant. The trajectory must hold one
   ! state per instant and seeds one entry per instant; both are
   ! checked and stop the program, because a misaligned array would
@@ -460,13 +458,11 @@ contains
     type(stored_directed_graph) :: chain
     type(scheme)       :: statement
     type(dense_direct) :: direct
-    type(linearization) :: tangent
-    type(stencil) :: compiled, adjoint
-    type(stored_field), allocatable :: inputs(:)
+    type(stored_field), allocatable :: inputs(:), duals(:)
+    type(argument), allocatable :: history(:)
     type(graph) :: state_domain
-    real(dp), allocatable :: seed(:), lambda_e(:), carry_one(:), carry_two(:), g(:)
-    real(dp) :: achieved
-    integer :: e, n, n_state_domain, num_components
+    real(dp), allocatable :: accumulated(:,:), seed(:), lambda_e(:), g(:)
+    integer :: e, k, v, n, n_state_domain, num_components
 
     call require_valid_steps(steps, nsteps)
     call require_parameters(action, parameters)
@@ -492,90 +488,41 @@ contains
     statement = prepared_statement(this, action)
     direct % singular_tolerance = this % singular_tolerance
 
-    allocate(carry_one(n), carry_two(n), lambda_e(n))
-    carry_one = 0.0_dp
-    carry_two = 0.0_dp
-
-    seed = lambda
+    allocate(accumulated(n, chain % num_vertices()))
+    accumulated = 0.0_dp
+    accumulated(:, chain % num_vertices()) = lambda
 
     do e = chain % num_edges(), 1, -1
 
+       v = e + 1
        call recorded_configure(this, statement, steps, e)
        call recorded_inputs(statement, e, trajectory, state_domain, &
             & n_state_domain, num_components, inputs, parameters)
 
-       ! seeds(:, k), if given, is added when instant k is reached
-       if (e < chain % num_edges()) then
-          seed = carry_one
-          if (present(seeds)) seed = seed + seeds(:, e + 1)
-       end if
+       seed = accumulated(:, v)
+       if (present(seeds) .and. e < chain % num_edges()) seed = seed + seeds(:, v)
 
-       ! the state block, transposed and solved
+       history = [(statement % history(k), k = 1, statement % reach)]
+
        if (statement % theta == 0.0_dp) then
-          lambda_e = seed / statement % a0
+          call implicit_dual(statement, on, inputs, statement % state(), seed, &
+               & lambda_e, wrt=history, duals=duals, diagonal=statement % a0)
        else
-          tangent = tangent_of(statement)
-          call tangent % freeze(inputs)
-          compiled = stencil(tangent, on, n)
-          adjoint  = compiled % transpose()
-          call direct % attach(adjoint, adjoint % pattern, &
-               & adjoint % pattern % vertex_set(), &
-               & adjoint % pattern % num_vertices())
-          lambda_e = 0.0_dp
-          call direct % solve(seed, lambda_e, achieved)
+          call implicit_dual(statement, on, inputs, statement % state(), seed, &
+               & lambda_e, wrt=history, duals=duals, solver=direct)
        end if
 
-       ! the dual of each history block, subtracted from the seed of
-       ! the instant that block reads
-       call transposed_block(statement, statement % history(1), inputs, on, n, lambda_e, g)
-       carry_one = carry_two - g
-       if (statement % reach >= 2) then
-          call transposed_block(statement, statement % history(2), inputs, on, n, lambda_e, g)
-          carry_two = -g
-       else
-          carry_two = 0.0_dp
-       end if
+       do k = 1, statement % reach
+          call duals(k) % real_vector(g)
+          accumulated(:, v - k) = accumulated(:, v - k) - g
+       end do
 
     end do
 
-    lambda = carry_one
+    lambda = accumulated(:, 1)
     if (present(seeds)) lambda = lambda + seeds(:, 1)
 
   end subroutine march_adjoint
-
-  !===================================================================!
-  ! (D_a R)^T lambda for one argument a of the statement at its input
-  ! tuple: the tangent in a, compiled to a stencil, transposed and
-  ! applied. The block is square - a history state lives on the
-  ! state's domain.
-  !===================================================================!
-
-  subroutine transposed_block(statement, wrt, inputs, on, n, lambda, g)
-
-    type(scheme), intent(in)          :: statement
-    type(argument), intent(in)        :: wrt
-    type(stored_field), intent(in)    :: inputs(:)
-    class(directed_graph), intent(in) :: on
-    integer, intent(in)               :: n
-    real(dp), intent(in)              :: lambda(:)
-    real(dp), allocatable, intent(out) :: g(:)
-
-    type(linearization) :: tangent
-    type(stencil) :: compiled, adjoint
-    type(stored_field) :: lambda_field
-    class(field), allocatable :: answer
-
-    tangent = tangent_of(statement, wrt, at_inputs=inputs)
-    compiled = stencil(tangent, on, n)
-    adjoint  = compiled % transpose()
-
-    lambda_field = stored_field('lambda', inputs(1) % domain(), inputs(1) % num_entries(), &
-         & num_components=inputs(1) % num_components())
-    call lambda_field % set_real_vector(lambda)
-    call adjoint % apply(adjoint % pattern, [lambda_field], answer)
-    call answer % real_vector(g)
-
-  end subroutine transposed_block
 
   !===================================================================!
   ! Read the action's domain and check the state fits it: the
@@ -613,16 +560,11 @@ contains
 
   !===================================================================!
   ! Forward directional derivatives of any order along the recorded
-  ! trajectory. At edge e the derivative of the step equation is
-  !
-  !      A q_(e+1)^(s) = -( chain rule total over the scheme with the
-  !                         order-s state derivative zero, the history
-  !                         paths known, the parameter paths supplied )
-  !
-  ! with A the state block of the residual's tangent at the edge's
-  ! input tuple; with theta = 0 A is a0 I and no solve runs. One
-  ! tangent per edge is attached to the dense direct minimizer and
-  ! solved once per order; only the right-hand side changes with s.
+  ! trajectory: at edge e the implicit function's forward solve at
+  ! the edge's input tuple, the history paths holding every solved
+  ! derivative of the earlier instants and the parameter paths as
+  ! supplied; with theta = 0 the state block is a0 I and no solve
+  ! runs.
   !
   ! Parameter paths name auxiliary arguments of the action, each
   ! covered by a supplied parameter field. A path on the state stops
@@ -646,18 +588,14 @@ contains
     type(argument_path), intent(in), optional   :: paths(:)
 
     type(stored_directed_graph) :: chain
-    type(chain_rule)            :: composer
     type(scheme)                :: statement
     type(dense_direct)          :: direct
-    type(linearization) :: tangent
     type(argument_path), allocatable :: assembled(:)
     type(stored_field), allocatable  :: inputs(:)
-    class(field), allocatable  :: total_field
     type(graph) :: state_domain
-    real(dp), allocatable :: total(:), q_s(:)
-    real(dp) :: achieved
+    real(dp), allocatable :: derivatives(:,:)
     integer :: n_state_domain, num_components
-    integer :: e, s_order, k, n, npaths
+    integer :: e, k, n, npaths
 
     if (order < 1) then
        error stop 'march_directional: the order is positive'
@@ -705,45 +643,25 @@ contains
 
     statement = prepared_statement(this, action)
     direct % singular_tolerance = this % singular_tolerance
-    allocate(q_s(n))
 
-    ! for each edge, assemble the composition degree by degree and
-    ! advance each order's derivative
     do e = 1, chain % num_edges()
 
        call recorded_configure(this, statement, steps, e)
        call recorded_inputs(statement, e, trajectory, state_domain, &
             & n_state_domain, num_components, inputs, parameters)
 
-       ! the tangent copies the statement, so it is taken after the
-       ! edge is configured, and frozen at the edge's input tuple
-       ! before it is attached
-       if (statement % theta /= 0.0_dp) then
-          tangent = tangent_of(statement)
-          call tangent % freeze(inputs)
-          call direct % attach(tangent, on, state_domain, n_state_domain, &
-               & num_components = num_components)
+       call build_paths(statement, sensitivities, state_domain, &
+            & n_state_domain, num_components, e + 1, order, npaths, paths, &
+            & assembled)
+
+       if (statement % theta == 0.0_dp) then
+          call implicit_forward(statement, on, inputs, statement % state(), &
+               & order, assembled, derivatives, diagonal=statement % a0)
+       else
+          call implicit_forward(statement, on, inputs, statement % state(), &
+               & order, assembled, derivatives, solver=direct)
        end if
-
-       do s_order = 1, order
-
-          call build_paths(statement, sensitivities, state_domain, &
-               & n_state_domain, num_components, e + 1, s_order, npaths, paths, &
-               & assembled)
-
-          call composer % assemble(statement, on, inputs, s_order, &
-               & assembled, total_field)
-          call total_field % real_vector(total)
-
-          if (statement % theta == 0.0_dp) then
-             q_s = -total / statement % a0
-          else
-             q_s = 0.0_dp
-             call direct % solve(-total, q_s, achieved)
-          end if
-          sensitivities(:, s_order, e + 1) = q_s
-
-       end do
+       sensitivities(:, :, e + 1) = derivatives
 
     end do
 
@@ -771,13 +689,11 @@ contains
   end function covered_by_parameters
 
   !===================================================================!
-  ! The argument paths of the scheme for one edge and one order,
-  ! about the instant at = e + 1: the state path holds the solved
-  ! derivatives below the current order and zero at the order, which
-  ! makes the assembled total the right-hand side for the unknown
-  ! q^(s); each history(k) path holds every derivative of the state
-  ! at instant at - k; the caller's parameter paths are restated in
-  ! the scheme's argument space.
+  ! The argument paths of the scheme for one edge, about the instant
+  ! at = e + 1: each history(k) path holds every derivative of the
+  ! state at instant at - k, to the order asked; the caller's
+  ! parameter paths are restated in the scheme's argument space. The
+  ! state's own path is the forward solve's to build.
   !===================================================================!
 
   subroutine build_paths(statement, sensitivities, state_domain, n_state_domain, &
@@ -790,34 +706,22 @@ contains
     type(argument_path), intent(in), optional :: parameter_paths(:)
     type(argument_path), allocatable, intent(out) :: assembled(:)
 
-    real(dp), allocatable :: zero(:)
     integer :: k, j
 
-    allocate(assembled(1 + statement % reach + npaths))
-    allocate(zero(size(sensitivities, 1)))
-    zero = 0.0_dp
-
-    ! the state path: the unknown order's entry is zero while the
-    ! total is assembled
-    assembled(1) % wrt = statement % state()
-    allocate(assembled(1) % derivative(s_order))
-    do k = 1, s_order - 1
-       call occupy(assembled(1), k, sensitivities(:, k, at))
-    end do
-    call occupy(assembled(1), s_order, zero)
+    allocate(assembled(statement % reach + npaths))
 
     ! the history paths: every derivative of the earlier instants
     do j = 1, statement % reach
-       assembled(1 + j) % wrt = statement % history(j)
-       allocate(assembled(1 + j) % derivative(s_order))
+       assembled(j) % wrt = statement % history(j)
+       allocate(assembled(j) % derivative(s_order))
        do k = 1, s_order
-          call occupy(assembled(1 + j), k, sensitivities(:, k, at - j))
+          call occupy(assembled(j), k, sensitivities(:, k, at - j))
        end do
     end do
 
     do k = 1, npaths
-       assembled(1 + statement % reach + k) = parameter_paths(k)
-       assembled(1 + statement % reach + k) % wrt = &
+       assembled(statement % reach + k) = parameter_paths(k)
+       assembled(statement % reach + k) % wrt = &
             & statement % from_action(parameter_paths(k) % wrt)
     end do
 

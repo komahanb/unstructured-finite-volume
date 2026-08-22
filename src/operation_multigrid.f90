@@ -88,6 +88,7 @@ contains
     integer, intent(in) :: aggregates(:)
 
     type(stencil) :: block_statement
+    class(directed_graph), allocatable :: block_pattern
     integer , allocatable :: rows(:), columns(:)
     real(dp), allocatable :: weights(:), zeros(:)
     integer :: e, ne, b
@@ -100,13 +101,30 @@ contains
 
     type is (stencil)
 
-       ne = fine % pattern % num_edges()
-       allocate(rows(ne), columns(ne), weights(ne))
+       ! the aggregates name one block per row of a square, scalar
+       ! stencil: one value per member, rows and columns one set.
+       ! Anything else cannot be relabelled row by row and stops
+       ! the program.
+       if (fine % num_rows /= fine % num_columns) then
+          error stop 'multigrid: the Galerkin road takes a square stencil'
+       end if
+       if (fine % row_entries /= 0 .and. fine % row_entries /= fine % num_rows) then
+          error stop 'multigrid: the Galerkin road takes a scalar stencil, one value per member'
+       end if
+       if (size(aggregates) /= fine % num_rows) then
+          error stop 'multigrid: one aggregate per row of the fine stencil'
+       end if
+       if (minval(aggregates) < 1) then
+          error stop 'multigrid: every aggregate is a positive block number'
+       end if
 
-       call fine % weights % real_vector(weights)
+       ne = size(fine % rows)
+       allocate(rows(ne), columns(ne))
+
+       weights = fine % weights
        do e = 1, ne
-          rows(e)    = aggregates(fine % pattern % edge_head(e))
-          columns(e) = aggregates(fine % pattern % edge_tail(e))
+          rows(e)    = aggregates(fine % rows(e))
+          columns(e) = aggregates(fine % columns(e))
        end do
 
        allocate(zeros(this % nblocks))
@@ -139,10 +157,10 @@ contains
 
     ! The coarse statement carries its own stencil, and that stencil
     ! is exactly the coupling of the coarse unknowns.
-    call this % coarse % attach(block_statement, block_statement % pattern, &
-         & block_statement % pattern % vertex_set(), &
-         & block_statement % pattern % num_vertices(), &
-         & coupling = block_statement % pattern)
+    call block_statement % dependencies(block_pattern)
+    call this % coarse % attach(block_statement, block_pattern, &
+         & block_pattern % vertex_set(), block_pattern % num_vertices(), &
+         & coupling = block_pattern)
 
   end subroutine setup
 

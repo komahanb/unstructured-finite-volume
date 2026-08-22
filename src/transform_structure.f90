@@ -8,10 +8,10 @@
 !      exact        assemble(partition(G)) = G      both ways
 !      one-sided    coarsen(refine(G)) = G          one way only
 !
-! The interfaces are impure for a historical language constraint that
-! no longer binds (F2018 C1594 on copying a pointer-carrying set
-! graph inside a pure subprogram); an impure interface permits a pure
-! override, and every implementation is pure.
+! The interfaces are impure because F2018 C1594 forbids copying a
+! pointer-carrying set graph from an intent(in) argument inside a
+! pure subprogram, and gfortran enforces it; an impure interface
+! permits a pure override wherever an implementation copies none.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!

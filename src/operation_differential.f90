@@ -37,8 +37,8 @@
 !
 !    (A2, k2) o (A1, k1) = (A2 A1, A2 k1 + k2),
 !
-! computed here by sparse triple composition with duplicate (row,
-! column) entries combined. The coefficient is carried by the innermost
+! computed once, by the stencil's composition: every step is a
+! stencil and so is the chain. The coefficient is carried by the innermost
 ! step, so a per-edge coefficient makes order 2 the operator
 ! div(k grad q).
 !
@@ -48,13 +48,11 @@
 ! linear part. No reversed step kernels exist: (C B A)^T =
 ! A^T B^T C^T is an identity of the composition, not code.
 !
-! THE STENCIL DOOR. The composed map on the vertex landing is
-! square, and stencil_of returns it as a stencil - the
-! same triples, the same constant - so a minimizer can attach the
-! compiled matrix directly. The edge landing is a rectangular
-! relation (edges x vertices) and is refused there, because a
-! stencil's input and output share one vertex set. apply walks the
-! composed triples the same way the stencil walks its edges.
+! THE STENCIL DOOR. The composed map is a stencil on either
+! landing, its row domain the landing's set, and stencil_of returns
+! it - the same triples, the same constant - so a minimizer can
+! attach the compiled matrix directly. apply is the stencil's own
+! apply, once per component.
 !
 ! Handed an EDGE field on the vertex landing, the composition
 ! enters at the incidence step: order 1 is then the divergence of
@@ -81,8 +79,7 @@ module operation_differential
   use graph_fractal      , only : graph
   use view_directed     , only : SIDE_VERTEX, SIDE_EDGE
   use field_stored  , only : stored_field
-  use operation_stencil, only : stencil, combine_triples
-  use relation_binary   , only : group_by_key
+  use operation_stencil, only : stencil, compose
 
   implicit none
 
@@ -131,24 +128,6 @@ module operation_differential
      procedure :: apply  => operator_apply
 
   end type differential_operator
-
-  !===================================================================!
-  ! One affine sparse map, y = A q + k: the triples of A and the
-  ! constant k, with the two extents. Private: maps are how this
-  ! module computes, not what it promises.
-  !===================================================================!
-
-  type :: affine_map
-
-     integer :: nrows = 0
-     integer :: ncols = 0
-
-     integer , allocatable :: rows(:)
-     integer , allocatable :: cols(:)
-     real(dp), allocatable :: weights(:)
-     real(dp), allocatable :: constants(:)
-
-  end type affine_map
 
 contains
 
@@ -359,7 +338,11 @@ contains
   end function coefficient_at
 
   !===================================================================!
-  ! THE THREE STEP MAPS, as affine triples.
+  ! THE THREE STEP MAPS, each one stencil: edges x vertices for the
+  ! average and the difference, vertices x edges for the incidence.
+  ! Each accumulates its triples and hands them to the stencil with
+  ! both domains, so a composed chain lands on the set its outermost
+  ! step names and reads the set its innermost step reads.
   !
   ! The average step S, edges x vertices. When it carries the
   ! coefficient and the one-sided choice is on, the sign of the
@@ -368,7 +351,7 @@ contains
   ! head reads the boundary value into the constant.
   !===================================================================!
 
-  pure function average_map(g, one_sided_by, with_c, op_c, op_cs, &
+  function average_map(g, one_sided_by, with_c, op_c, op_cs, &
        & op_b, op_bs) result(a)
 
     class(directed_graph), intent(in) :: g
@@ -378,21 +361,19 @@ contains
     real(dp), allocatable, intent(in) :: op_cs(:)
     real(dp)    , intent(in)          :: op_b
     real(dp), allocatable, intent(in) :: op_bs(:)
-    type(affine_map)                  :: a
+    type(stencil)                     :: a
 
+    integer , allocatable :: rows(:), cols(:)
+    real(dp), allocatable :: weights(:), constants(:)
     real(dp) :: c, pick, b
-    integer  :: e, n
+    integer  :: e, n, ne
 
-    a % nrows = g % num_edges()
-    a % ncols = g % num_vertices()
-
-    allocate(a % rows(2 * a % nrows), a % cols(2 * a % nrows))
-    allocate(a % weights(2 * a % nrows))
-    allocate(a % constants(a % nrows))
-    a % constants = 0.0_dp
+    ne = g % num_edges()
+    allocate(rows(2 * ne), cols(2 * ne), weights(2 * ne), constants(ne))
+    constants = 0.0_dp
 
     n = 0
-    do e = 1, a % nrows
+    do e = 1, ne
 
        c = 1.0_dp
        if (with_c) c = coefficient_at(op_c, op_cs, e)
@@ -403,28 +384,30 @@ contains
        b = coefficient_at(op_b, op_bs, e)
 
        if (pick > 0.0_dp) then
-          ! the end the walk leaves
-          call put(a, n, e, g % edge_tail(e), c)
+          ! the tail end
+          call put(rows, cols, weights, n, e, g % edge_tail(e), c)
        else if (pick < 0.0_dp) then
-          ! the end the walk enters, or the boundary value
+          ! the head end, or the boundary value
           if (g % edge_has_head(e)) then
-             call put(a, n, e, g % edge_head(e), c)
+             call put(rows, cols, weights, n, e, g % edge_head(e), c)
           else
-             a % constants(e) = c * b
+             constants(e) = c * b
           end if
        else
           ! both ends, evenly
-          call put(a, n, e, g % edge_tail(e), c * 0.5_dp)
+          call put(rows, cols, weights, n, e, g % edge_tail(e), c * 0.5_dp)
           if (g % edge_has_head(e)) then
-             call put(a, n, e, g % edge_head(e), c * 0.5_dp)
+             call put(rows, cols, weights, n, e, g % edge_head(e), c * 0.5_dp)
           else
-             a % constants(e) = c * 0.5_dp * b
+             constants(e) = c * 0.5_dp * b
           end if
        end if
 
     end do
 
-    call shrink(a, n)
+    a = stencil(rows(1:n), cols(1:n), weights(1:n), constants, &
+         & label='average', num_columns=g % num_vertices(), &
+         & row_domain=g % edge_set(), column_domain=g % vertex_set())
 
   end function average_map
 
@@ -437,7 +420,7 @@ contains
   ! on an edge with no head.
   !===================================================================!
 
-  pure function difference_map(g, with_c, op_c, op_cs, op_h, op_hs, &
+  function difference_map(g, with_c, op_c, op_cs, op_h, op_hs, &
        & op_b, op_bs) result(a)
 
     class(directed_graph), intent(in) :: g
@@ -448,37 +431,37 @@ contains
     real(dp), allocatable, intent(in) :: op_hs(:)
     real(dp)    , intent(in)          :: op_b
     real(dp), allocatable, intent(in) :: op_bs(:)
-    type(affine_map)                  :: a
+    type(stencil)                     :: a
 
+    integer , allocatable :: rows(:), cols(:)
+    real(dp), allocatable :: weights(:), constants(:)
     real(dp) :: c, w
-    integer  :: e, n
+    integer  :: e, n, ne
 
-    a % nrows = g % num_edges()
-    a % ncols = g % num_vertices()
-
-    allocate(a % rows(2 * a % nrows), a % cols(2 * a % nrows))
-    allocate(a % weights(2 * a % nrows))
-    allocate(a % constants(a % nrows))
-    a % constants = 0.0_dp
+    ne = g % num_edges()
+    allocate(rows(2 * ne), cols(2 * ne), weights(2 * ne), constants(ne))
+    constants = 0.0_dp
 
     n = 0
-    do e = 1, a % nrows
+    do e = 1, ne
 
        c = 1.0_dp
        if (with_c) c = coefficient_at(op_c, op_cs, e)
        w = c / coefficient_at(op_h, op_hs, e)
 
-       call put(a, n, e, g % edge_tail(e), -w)
+       call put(rows, cols, weights, n, e, g % edge_tail(e), -w)
 
        if (g % edge_has_head(e)) then
-          call put(a, n, e, g % edge_head(e), w)
+          call put(rows, cols, weights, n, e, g % edge_head(e), w)
        else
-          a % constants(e) = w * coefficient_at(op_b, op_bs, e)
+          constants(e) = w * coefficient_at(op_b, op_bs, e)
        end if
 
     end do
 
-    call shrink(a, n)
+    a = stencil(rows(1:n), cols(1:n), weights(1:n), constants, &
+         & label='difference', num_columns=g % num_vertices(), &
+         & row_domain=g % edge_set(), column_domain=g % vertex_set())
 
   end function difference_map
 
@@ -491,184 +474,90 @@ contains
   ! edge with no head contributes to its tail alone.
   !===================================================================!
 
-  pure function incidence_map(g, op_m, op_ms) result(a)
+  function incidence_map(g, op_m, op_ms) result(a)
 
     class(directed_graph), intent(in) :: g
     real(dp)    , intent(in)          :: op_m
     real(dp), allocatable, intent(in) :: op_ms(:)
-    type(affine_map)                  :: a
+    type(stencil)                     :: a
 
-    integer :: e, t, h, n
+    integer , allocatable :: rows(:), cols(:)
+    real(dp), allocatable :: weights(:), constants(:)
+    integer :: e, t, h, n, ne, nv
 
-    a % nrows = g % num_vertices()
-    a % ncols = g % num_edges()
-
-    allocate(a % rows(2 * a % ncols), a % cols(2 * a % ncols))
-    allocate(a % weights(2 * a % ncols))
-    allocate(a % constants(a % nrows))
-    a % constants = 0.0_dp
+    ne = g % num_edges()
+    nv = g % num_vertices()
+    allocate(rows(2 * ne), cols(2 * ne), weights(2 * ne), constants(nv))
+    constants = 0.0_dp
 
     n = 0
-    do e = 1, a % ncols
+    do e = 1, ne
 
        t = g % edge_tail(e)
-       call put(a, n, t, e, 1.0_dp / coefficient_at(op_m, op_ms, t))
+       call put(rows, cols, weights, n, t, e, 1.0_dp / coefficient_at(op_m, op_ms, t))
 
        if (g % edge_has_head(e)) then
           h = g % edge_head(e)
-          call put(a, n, h, e, -1.0_dp / coefficient_at(op_m, op_ms, h))
+          call put(rows, cols, weights, n, h, e, -1.0_dp / coefficient_at(op_m, op_ms, h))
        end if
 
     end do
 
-    call shrink(a, n)
+    a = stencil(rows(1:n), cols(1:n), weights(1:n), constants, &
+         & label='incidence', num_columns=ne, &
+         & row_domain=g % vertex_set(), column_domain=g % edge_set())
 
   end function incidence_map
 
   !===================================================================!
-  ! The diagonal map, n x n: y_i = c_i q_i. Order 0 on the vertex
-  ! landing, and the per-edge coefficient of an edge-field entry.
+  ! The diagonal map on one set, n x n: y_i = c_i q_i. Order 0 on
+  ! the vertex landing, and the per-edge coefficient of an
+  ! edge-field entry.
   !===================================================================!
 
-  pure function diagonal_map(n, op_c, op_cs) result(a)
+  function diagonal_map(on, n, op_c, op_cs) result(a)
 
+    type(graph) , intent(in)          :: on
     integer     , intent(in)          :: n
     real(dp)    , intent(in)          :: op_c
     real(dp), allocatable, intent(in) :: op_cs(:)
-    type(affine_map)                  :: a
+    type(stencil)                     :: a
 
+    integer , allocatable :: rows(:)
+    real(dp), allocatable :: weights(:), constants(:)
     integer :: i
 
-    a % nrows = n
-    a % ncols = n
-
-    allocate(a % rows(n), a % cols(n), a % weights(n), a % constants(n))
-    a % constants = 0.0_dp
+    allocate(rows(n), weights(n), constants(n))
+    constants = 0.0_dp
 
     do i = 1, n
-       a % rows(i)    = i
-       a % cols(i)    = i
-       a % weights(i) = coefficient_at(op_c, op_cs, i)
+       rows(i)    = i
+       weights(i) = coefficient_at(op_c, op_cs, i)
     end do
+
+    a = stencil(rows, rows, weights, constants, label='diagonal', &
+         & row_domain=on, column_domain=on)
 
   end function diagonal_map
 
   !===================================================================!
-  ! Triple bookkeeping: append one entry; trim to the count.
+  ! Triple bookkeeping: append one entry.
   !===================================================================!
 
-  pure subroutine put(a, n, r, c, w)
+  pure subroutine put(rows, cols, weights, n, r, c, w)
 
-    type(affine_map), intent(inout) :: a
-    integer         , intent(inout) :: n
-    integer         , intent(in)    :: r, c
-    real(dp)        , intent(in)    :: w
+    integer , intent(inout) :: rows(:), cols(:)
+    real(dp), intent(inout) :: weights(:)
+    integer , intent(inout) :: n
+    integer , intent(in)    :: r, c
+    real(dp), intent(in)    :: w
 
     n = n + 1
-    a % rows(n)    = r
-    a % cols(n)    = c
-    a % weights(n) = w
+    rows(n)    = r
+    cols(n)    = c
+    weights(n) = w
 
   end subroutine put
-
-  pure subroutine shrink(a, n)
-
-    type(affine_map), intent(inout) :: a
-    integer         , intent(in)    :: n
-
-    a % rows    = a % rows(1:n)
-    a % cols    = a % cols(1:n)
-    a % weights = a % weights(1:n)
-
-  end subroutine shrink
-
-  !===================================================================!
-  ! Composition of affine maps:
-  !
-  !    (A2, k2) o (A1, k1) = (A2 A1, A2 k1 + k2),
-  !
-  ! by sparse triple product - the inner extent of A2 must equal
-  ! A1's row count, checked because a mismatch means the chain was
-  ! assembled wrong. Duplicate (row, column) entries are combined,
-  ! so the result is a matrix, one entry per pair.
-  !===================================================================!
-
-  pure function compose(a2, a1) result(a)
-
-    type(affine_map), intent(in) :: a2, a1
-    type(affine_map)             :: a
-
-    integer , allocatable :: ptr(:), order(:), identity(:), r(:), c(:)
-    real(dp), allocatable :: w(:)
-    integer :: k2, j, n, row1
-
-    if (a2 % ncols /= a1 % nrows) then
-       error stop 'differential_operator: composed maps agree on the inner extent'
-    end if
-
-    a % nrows = a2 % nrows
-    a % ncols = a1 % ncols
-
-    ! group A1's entries by row with the one counting sort: order
-    ! lists A1's entry indices row by row, in arrival order, and
-    ! ptr(row)..ptr(row+1)-1 is each row's range
-    allocate(identity(size(a1 % rows)))
-    identity = [(j, j = 1, size(a1 % rows))]
-    call group_by_key(a1 % nrows, a1 % rows, identity, ptr, order)
-
-    ! emit one product entry per (A2 entry, matching A1 entry)
-    n = 0
-    do k2 = 1, size(a2 % rows)
-       row1 = a2 % cols(k2)
-       n = n + ptr(row1 + 1) - ptr(row1)
-    end do
-
-    allocate(r(n), c(n), w(n))
-    n = 0
-    do k2 = 1, size(a2 % rows)
-       row1 = a2 % cols(k2)
-       do j = ptr(row1), ptr(row1 + 1) - 1
-          n = n + 1
-          r(n) = a2 % rows(k2)
-          c(n) = a1 % cols(order(j))
-          w(n) = a2 % weights(k2) * a1 % weights(order(j))
-       end do
-    end do
-
-    call combine_triples(a % nrows, a % ncols, r, c, w, &
-         & a % rows, a % cols, a % weights)
-
-    ! the constant travels through the outer map
-    allocate(a % constants(a % nrows))
-    a % constants = a2 % constants
-    do k2 = 1, size(a2 % rows)
-       a % constants(a2 % rows(k2)) = a % constants(a2 % rows(k2)) &
-            & + a2 % weights(k2) * a1 % constants(a2 % cols(k2))
-    end do
-
-  end function compose
-
-  !===================================================================!
-  ! The transpose: rows and columns swapped, the constant dropped -
-  ! the adjoint acts on the linear part.
-  !===================================================================!
-
-  pure function transpose_of(a) result(t)
-
-    type(affine_map), intent(in) :: a
-    type(affine_map)             :: t
-
-    t % nrows = a % ncols
-    t % ncols = a % nrows
-
-    t % rows    = a % cols
-    t % cols    = a % rows
-    t % weights = a % weights
-
-    allocate(t % constants(t % nrows))
-    t % constants = 0.0_dp
-
-  end function transpose_of
 
   !===================================================================!
   ! The parity chain, stated as the law reads: vertex(0) = C,
@@ -682,17 +571,17 @@ contains
   ! level - once for every order the tree uses.
   !===================================================================!
 
-  pure recursive function vertex_chain(order, g, c, cs, h, hs, m, ms, b, bs) &
+  recursive function vertex_chain(order, g, c, cs, h, hs, m, ms, b, bs) &
        & result(a)
 
     integer     , intent(in)          :: order
     class(directed_graph), intent(in) :: g
     real(dp)    , intent(in)          :: c, h, m, b
     real(dp), allocatable, intent(in) :: cs(:), hs(:), ms(:), bs(:)
-    type(affine_map)                  :: a
+    type(stencil)                     :: a
 
     if (order <= 0) then
-       a = diagonal_map(g % num_vertices(), c, cs)
+       a = diagonal_map(g % vertex_set(), g % num_vertices(), c, cs)
     else
        a = compose(incidence_map(g, m, ms), &
             & edge_chain(order - 1, g, 1.0_dp, c, cs, h, hs, m, ms, b, bs))
@@ -700,14 +589,14 @@ contains
 
   end function vertex_chain
 
-  pure recursive function edge_chain(order, g, one_sided_by, c, cs, h, hs, &
+  recursive function edge_chain(order, g, one_sided_by, c, cs, h, hs, &
        & m, ms, b, bs) result(a)
 
     integer     , intent(in)          :: order
     class(directed_graph), intent(in) :: g
     real(dp)    , intent(in)          :: one_sided_by, c, h, m, b
     real(dp), allocatable, intent(in) :: cs(:), hs(:), ms(:), bs(:)
-    type(affine_map)                  :: a
+    type(stencil)                     :: a
 
     if (order <= 0) then
        a = average_map(g, one_sided_by, .true., c, cs, b, bs)
@@ -733,12 +622,12 @@ contains
   !                            divergence of the given field
   !===================================================================!
 
-  pure function compiled_map(this, g, enters_on_edges) result(a)
+  function compiled_map(this, g, enters_on_edges) result(a)
 
     class(differential_operator), intent(in) :: this
     class(directed_graph)       , intent(in) :: g
     logical                     , intent(in) :: enters_on_edges
-    type(affine_map)                         :: a
+    type(stencil)                            :: a
 
     real(dp), allocatable :: spent(:)   ! never allocated: the
                                         ! coefficient is applied once
@@ -756,8 +645,8 @@ contains
     else if (enters_on_edges) then
 
        a = compose(incidence_map(g, this % measure, this % measures), &
-            & diagonal_map(g % num_edges(), this % coefficient, &
-            & this % coefficients))
+            & diagonal_map(g % edge_set(), g % num_edges(), &
+            & this % coefficient, this % coefficients))
        if (this % order > 1) then
           a = compose(vertex_chain(this % order - 1, g, &
                & 1.0_dp, spent, &
@@ -773,59 +662,36 @@ contains
             & this % spacing, this % spacings, &
             & this % measure, this % measures, &
             & this % boundary_value, this % boundary_values)
-       if (this % adjoint) a = transpose_of(a)
+       if (this % adjoint) a = a % transpose()
 
     end if
 
   end function compiled_map
 
   !===================================================================!
-  ! THE STENCIL DOOR: the compiled operator as a stencil.
-  ! Only the vertex landing compiles to one, because a stencil's
-  ! input and output share one vertex set; the edge landing is a
-  ! rectangular relation and stops the program here.
+  ! THE STENCIL DOOR: the compiled operator as a stencil, on either
+  ! landing, named after the operator. on_edge_field compiles the
+  ! vertex landing's entry on an edge field - apply's choice when
+  ! handed one - so the bare incidence step is reachable.
   !===================================================================!
 
-  impure function stencil_of(operator, input_graph) result(compiled)
+  function stencil_of(operator, input_graph, on_edge_field) result(compiled)
 
     type(differential_operator), intent(in) :: operator
     class(directed_graph)      , intent(in) :: input_graph
+    logical, intent(in), optional           :: on_edge_field
     type(stencil)                  :: compiled
 
-    type(affine_map) :: a
+    logical :: enters_on_edges
 
-    if (operator % landing /= SIDE_VERTEX) then
-       error stop 'differential_operator: a stencil is square - only the &
-            &vertex landing compiles to one'
-    end if
+    enters_on_edges = .false.
+    if (present(on_edge_field)) enters_on_edges = on_edge_field &
+         & .and. operator % landing == SIDE_VERTEX
 
-    a = compiled_map(operator, input_graph, enters_on_edges=.false.)
-
-    compiled = stencil(a % rows, a % cols, a % weights, &
-         & a % constants, label=operator % name())
+    compiled = compiled_map(operator, input_graph, enters_on_edges)
+    compiled % label = operator % name()
 
   end function stencil_of
-
-  !===================================================================!
-  ! The affine sweep, the same walk the stencil's apply performs:
-  ! y = k, then every triple carries its weight times the column's
-  ! value onto its row.
-  !===================================================================!
-
-  pure subroutine sweep(a, q, y)
-
-    type(affine_map), intent(in)  :: a
-    real(dp)        , intent(in)  :: q(:)
-    real(dp)        , intent(out) :: y(:)
-
-    integer :: j
-
-    y = a % constants
-    do j = 1, size(a % rows)
-       y(a % rows(j)) = y(a % rows(j)) + a % weights(j) * q(a % cols(j))
-    end do
-
-  end subroutine sweep
 
   !===================================================================!
   ! COMPONENTS. A field may carry several values per entry,
@@ -868,7 +734,7 @@ contains
   end subroutine scatter_component
 
   !===================================================================!
-  ! Apply: fetch the input, compile the map once, sweep it per
+  ! Apply: fetch the input, compile the map once, apply it per
   ! component. A vertex field enters the chain at its innermost
   ! step; an edge field on the vertex landing enters at the
   ! incidence step; no field, or a field on the wrong domain,
@@ -882,8 +748,9 @@ contains
     class(field), intent(in), optional       :: input_data(:)
     class(field), allocatable, intent(inout) :: output
 
-    type(affine_map) :: a
-    type(stored_field)      :: out
+    type(stencil)             :: a
+    type(stored_field)        :: out, component
+    class(field), allocatable :: swept
     real(dp), allocatable :: q(:), y(:), qc(:), yc(:)
     integer :: nv, ne, nout, nc, c
     logical :: enters_on_edges
@@ -917,11 +784,14 @@ contains
 
        a = compiled_map(this, input_graph, enters_on_edges)
 
-       allocate(qc(a % ncols), yc(a % nrows))
+       allocate(qc(a % num_columns), yc(a % num_rows))
 
        do c = 1, nc
           call gather_component(q, nc, c, qc)
-          call sweep(a, qc, yc)
+          component = stored_field('component', a % column_domain, a % num_columns)
+          call component % set_real_vector(qc)
+          call a % apply(input_graph, [component], swept)
+          call swept % real_vector(yc)
           call scatter_component(yc, nc, c, y)
        end do
 

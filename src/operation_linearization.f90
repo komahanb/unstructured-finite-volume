@@ -17,10 +17,22 @@
 ! base residual handed to freeze is used by the difference road and
 ! ignored by the exact one.
 !
-! dual_by_basis forms (D_a S)^T lambda under the Euclidean pairing
-! on stored values, one application per basis vector of argument a:
-! it serves any block, square or not, where the compiled transpose
-! of a stencil serves only a square one.
+! THE IMPLICIT FUNCTION THEOREM, on any domain. A statement
+! R(x_1, ..., x_m) = 0 held at its input tuple and solved in
+! argument a has, with A = D_a R compiled at the tuple,
+!
+!      forward   A x_a^(s) = - T_s      T_s the chain-rule total of
+!                                       order s with x_a^(s) zero
+!      dual      A^T lambda = seed,     g_b = (D_b R)^T lambda
+!
+! implicit_forward and implicit_dual are those two solves, the block
+! compiled once to a stencil and solved by the caller's linear
+! minimizer. A time step and a steady residual are the same call:
+! the marcher makes it at every instant, a steady problem once. The
+! dual of any block, square or not, is the transpose of the compiled
+! tangent; no second road exists here. With diagonal present the
+! block is that multiple of the identity and nothing is compiled or
+! solved - an explicit scheme.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -33,13 +45,17 @@ module operation_linearization
   use field_calculus, only : field
   use graph_fractal      , only : graph
   use field_stored  , only : stored_field
+  use operation_stencil, only : stencil
+  use operation_chain_rule, only : chain_rule, argument_path
+  use operation_minimization, only : minimizer
 
   implicit none
 
   private
   public :: linearization
   public :: tangent_of
-  public :: dual_by_basis
+  public :: implicit_forward
+  public :: implicit_dual
 
   type, extends(operation) :: linearization
 
@@ -328,51 +344,205 @@ contains
   end subroutine linearization_apply
 
   !===================================================================!
-  ! (D_a S)^T lambda under the Euclidean pairing on stored values:
-  ! entry j is < D_a S e_j, lambda >, one application of the tangent
-  ! per basis vector of the differentiated argument. lambda must
-  ! match the tangent's result width; a mismatch stops the program.
-  ! The tangent must be frozen.
+  ! The position of an argument in the statement's argument space;
+  ! an argument the statement does not own stops the program.
   !===================================================================!
 
-  subroutine dual_by_basis(tangent, input_graph, lambda, g)
+  integer function position_of(statement, wrt) result(p)
 
-    type(linearization)  , intent(in)  :: tangent
-    class(directed_graph), intent(in)  :: input_graph
-    real(dp)             , intent(in)  :: lambda(:)
-    real(dp), allocatable, intent(out) :: g(:)
+    class(operation), intent(in) :: statement
+    type(argument)  , intent(in) :: wrt
 
-    type(stored_field), allocatable :: tuple(:)
-    type(stored_field) :: basis
-    class(field), allocatable :: pushed
-    type(graph) :: on, along
-    real(dp), allocatable :: e(:), y(:)
-    integer :: n_on, p, width, j
+    integer :: k
 
-    call tangent % of % domain(input_graph, on, n_on)
-    call frozen_tuple(tangent, on, n_on, tuple, p)
+    p = 0
+    do k = 1, statement % num_arguments()
+       if (wrt % matches(statement % argument(k))) p = k
+    end do
+    if (p == 0) then
+       error stop 'linearization: the argument is one the statement owns'
+    end if
 
-    along = tuple(p) % domain()
-    call tuple(p) % real_vector(e)
-    width = size(e)
+  end function position_of
 
-    allocate(g(width))
+  !===================================================================!
+  ! Forward derivatives of the unknown to the given order: order by
+  ! order, the chain-rule total over the statement with the unknown's
+  ! derivatives below s known, its order-s derivative zero, and the
+  ! other arguments' paths as supplied, is the right-hand side of the
+  ! state block. The solver is attached once; only the right-hand
+  ! side changes with s. Invalid input stops the program: an order
+  ! below one, a path naming the unknown (its path is what is
+  ! computed), a statement whose max_degree is below the order,
+  ! and - through the chain rule - a path on an argument the
+  ! statement does not own.
+  !===================================================================!
 
-    do j = 1, width
-       e    = 0.0_dp
-       e(j) = 1.0_dp
-       basis = stored_field('basis', along, tuple(p) % num_entries(), &
-            & num_components=tuple(p) % num_components())
-       call basis % set_real_vector(e)
-       call tangent % apply(input_graph, [basis], pushed)
-       call pushed % real_vector(y)
-       if (size(y) /= size(lambda)) then
-          error stop 'linearization: the dual pairs the tangent''s result with lambda'
+  subroutine implicit_forward(statement, on, inputs, unknown, order, paths, &
+       & derivatives, solver, diagonal)
+
+    class(operation)     , intent(in)    :: statement
+    class(directed_graph), intent(in)    :: on
+    type(stored_field)   , intent(in)    :: inputs(:)
+    type(argument)       , intent(in)    :: unknown
+    integer              , intent(in)    :: order
+    type(argument_path)  , intent(in)    :: paths(:)
+    real(dp), allocatable, intent(out)   :: derivatives(:,:)
+    class(minimizer), intent(inout), optional :: solver
+    real(dp)        , intent(in)   , optional :: diagonal
+
+    type(chain_rule)    :: composer
+    type(linearization) :: tangent
+    type(argument_path), allocatable :: assembled(:)
+    class(field), allocatable :: total_field
+    real(dp), allocatable :: total(:), q_s(:)
+    real(dp) :: achieved
+    integer :: p, width, s, k
+
+    if (order < 1) then
+       error stop 'linearization: the order is positive'
+    end if
+    if (statement % max_degree() < order) then
+       error stop 'linearization: the statement''s max_degree covers the requested order'
+    end if
+    do k = 1, size(paths)
+       if (paths(k) % wrt % matches(unknown)) then
+          error stop 'linearization: the unknown''s path is computed, not supplied'
        end if
-       g(j) = dot_product(y, lambda)
     end do
 
-  end subroutine dual_by_basis
+    p = position_of(statement, unknown)
+    call inputs(p) % real_vector(q_s)
+    width = size(q_s)
+
+    allocate(derivatives(width, order))
+    derivatives = 0.0_dp
+
+    if (.not. present(diagonal)) then
+       if (.not. present(solver)) then
+          error stop 'linearization: a state block that is not diagonal needs a solver'
+       end if
+       tangent = tangent_of(statement, unknown, at_inputs=inputs)
+       call solver % attach(tangent, on, inputs(p) % domain(), &
+            & inputs(p) % num_entries(), &
+            & num_components = inputs(p) % num_components())
+    end if
+
+    allocate(assembled(1 + size(paths)))
+    assembled(2:) = paths
+    assembled(1) % wrt = unknown
+
+    do s = 1, order
+
+       ! the unknown's path: solved derivatives below s, zero at s
+       if (allocated(assembled(1) % derivative)) deallocate(assembled(1) % derivative)
+       allocate(assembled(1) % derivative(s))
+       do k = 1, s
+          assembled(1) % derivative(k) % occupied  = .true.
+          assembled(1) % derivative(k) % direction = stored_field('path', &
+               & inputs(p) % domain(), inputs(p) % num_entries(), &
+               & num_components = inputs(p) % num_components())
+          call assembled(1) % derivative(k) % direction % set_real_vector(derivatives(:, k))
+       end do
+
+       call composer % assemble(statement, on, inputs, s, assembled, total_field)
+       call total_field % real_vector(total)
+
+       if (present(diagonal)) then
+          derivatives(:, s) = -total / diagonal
+       else
+          q_s = 0.0_dp
+          call solver % solve(-total, q_s, achieved)
+          derivatives(:, s) = q_s
+       end if
+
+    end do
+
+  end subroutine implicit_forward
+
+  !===================================================================!
+  ! The dual: lambda from A^T lambda = seed, the state block compiled
+  ! at the tuple and transposed, then for every argument in wrt the
+  ! dual (D_b R)^T lambda, a field on that argument's own domain -
+  ! rectangular blocks included. The seed lives on the unknown's
+  ! domain and lambda on the residual's: A is residuals x unknowns,
+  ! so A^T carries a residual-sized lambda onto the unknown's width.
+  ! A seed whose length is not the unknown's width stops the
+  ! program, because the block could not be applied to it.
+  !===================================================================!
+
+  subroutine implicit_dual(statement, on, inputs, unknown, seed, lambda, &
+       & wrt, duals, solver, diagonal)
+
+    class(operation)     , intent(in)    :: statement
+    class(directed_graph), intent(in)    :: on
+    type(stored_field)   , intent(in)    :: inputs(:)
+    type(argument)       , intent(in)    :: unknown
+    real(dp)             , intent(in)    :: seed(:)
+    real(dp), allocatable, intent(out)   :: lambda(:)
+    type(argument)    , intent(in) , optional :: wrt(:)
+    type(stored_field), allocatable, intent(out), optional :: duals(:)
+    class(minimizer), intent(inout), optional :: solver
+    real(dp)        , intent(in)   , optional :: diagonal
+
+    type(linearization) :: tangent
+    type(stencil) :: compiled, adjoint
+    type(stored_field) :: lambda_field
+    class(field), allocatable :: answer
+    type(graph) :: residual_domain
+    real(dp), allocatable :: values(:)
+    real(dp) :: achieved
+    integer :: p, b, width, num_residuals
+
+    p = position_of(statement, unknown)
+    call inputs(p) % real_vector(values)
+    width = size(values)
+    if (size(seed) /= width) then
+       error stop 'linearization: the seed carries one value per unknown'
+    end if
+
+    call statement % domain(on, residual_domain, num_residuals)
+
+    if (present(diagonal)) then
+       lambda = seed / diagonal
+    else
+       if (.not. present(solver)) then
+          error stop 'linearization: a state block that is not diagonal needs a solver'
+       end if
+       tangent  = tangent_of(statement, unknown, at_inputs=inputs)
+       compiled = stencil(tangent, on, width)
+       adjoint  = compiled % transpose()
+       call solver % attach(adjoint, on, residual_domain, num_residuals, &
+            & num_components = compiled % num_rows / num_residuals)
+       allocate(lambda(compiled % num_rows))
+       lambda = 0.0_dp
+       call solver % solve(seed, lambda, achieved)
+    end if
+
+    if (.not. present(wrt)) return
+    if (.not. present(duals)) return
+
+    lambda_field = stored_field('lambda', residual_domain, num_residuals, &
+         & num_components = size(lambda) / num_residuals)
+    call lambda_field % set_real_vector(lambda)
+
+    allocate(duals(size(wrt)))
+    do b = 1, size(wrt)
+       p = position_of(statement, wrt(b))
+       call inputs(p) % real_vector(values)
+       tangent  = tangent_of(statement, wrt(b), at_inputs=inputs)
+       compiled = stencil(tangent, on, size(values), &
+            & column_domain=inputs(p) % domain(), &
+            & column_entries=inputs(p) % num_entries())
+       adjoint  = compiled % transpose()
+       call adjoint % apply(on, [lambda_field], answer)
+       call answer % real_vector(values)
+       duals(b) = stored_field('dual', inputs(p) % domain(), inputs(p) % num_entries(), &
+            & num_components = inputs(p) % num_components())
+       call duals(b) % set_real_vector(values)
+    end do
+
+  end subroutine implicit_dual
 
   !===================================================================!
   ! A same-domain tangent subtracts or contracts results, so each

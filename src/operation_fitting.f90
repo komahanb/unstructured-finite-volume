@@ -183,6 +183,7 @@ contains
 
     type(stored_field)   :: out
     type(stencil) :: dual
+    class(directed_graph), allocatable :: dual_pattern
     type(conjugate_gradient) :: solver
     real(dp), allocatable :: positions(:), w(:), b(:,:), bw(:,:)
     real(dp), allocatable :: g(:,:), r(:), lam(:), price(:)
@@ -251,8 +252,9 @@ contains
 
        dual = stencil(g, label='fitting dual')
 
-       call solver % attach(dual, dual % pattern, dual % pattern % vertex_set(), &
-            & dual % pattern % num_vertices())
+       call dual % dependencies(dual_pattern)
+       call solver % attach(dual, dual_pattern, dual_pattern % vertex_set(), &
+            & dual_pattern % num_vertices())
        solver % tolerance      = 1.0d-14
        solver % max_iterations = 50
 

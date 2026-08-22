@@ -31,7 +31,6 @@ operation_conduction.o \
 operation_advection.o \
 operation_stencil.o \
 operation_step.o \
-operation_linearization.o \
 operation_chain_rule.o \
 field_forms.o \
 operation_reduction.o \
@@ -43,6 +42,7 @@ transform_refiner.o \
 operation_differential.o \
 operation_balance.o \
 operation_minimization.o \
+operation_linearization.o \
 operation_jacobi.o \
 operation_dense_direct.o \
 operation_conjugate_gradient.o \

@@ -54,3 +54,11 @@ test/graph-identity-map/labels
 .codex/
 GTI\.md
 GTI_PHASE1_AGENT_TASK.md
+maths/oracle/
+maths/demo/mesh/
+maths/demo/*.o
+maths/demo/*.mod
+maths/demo/law
+maths/demo/law2
+maths/demo/time_orders
+maths/demo/poisson

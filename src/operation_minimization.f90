@@ -5,8 +5,8 @@
 ! residual map R : U -> Y, vary the values on the UNKNOWN domain U
 ! to drive the values on the RESIDUAL domain Y toward zero. U and Y
 ! are set graph identities - never assumed to be anyone's
-! vertices; the graph argument survives only as the legacy
-! operation host the compatibility apply() signature still wants. This
+! vertices; the graph argument is the host every operation's apply
+! reads its structure from, not a domain. This
 ! module holds the minimizer base - ONE family for one story:
 ! attach a statement, drive its residual to zero. Linear solvers,
 ! newton, and whatever else minimizes a residual are its

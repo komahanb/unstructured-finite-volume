@@ -26,6 +26,8 @@ operation_family.o \
 operation_family_bdf.o \
 operation_family_adams.o \
 operation_family_dirk.o \
+operation_step_scaling.o \
+operation_weight.o \
 transform_structure.o \
 operation_discretization.o \
 map_value.o \
@@ -37,6 +39,7 @@ operation_robin_condition.o \
 operation_conduction.o \
 operation_advection.o \
 operation_stencil.o \
+operation_scheme_stencil.o \
 operation_step.o \
 operation_linearization.o \
 operation_chain_rule.o \

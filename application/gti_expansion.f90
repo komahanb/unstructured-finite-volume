@@ -73,6 +73,7 @@ module gti_expansion
 
   private
   public :: expansion, family_holder
+  public :: block_reach
 
   !===================================================================!
   ! One family per block. Families of different kinds cannot share an
@@ -589,18 +590,16 @@ contains
   ! block's first instant.
   !===================================================================!
 
-  subroutine block_reach(this, scheme, n, tails, heads, source_degree, determines)
+  subroutine block_reach(scheme, nd, n, tails, heads, source_degree, determines)
 
-    class(expansion), intent(in) :: this
-    class(family)   , intent(in) :: scheme
-    integer         , intent(in) :: n
+    class(family), intent(in) :: scheme
+    integer      , intent(in) :: nd, n
     integer, allocatable, intent(out) :: tails(:), heads(:)
     integer, allocatable, intent(out) :: source_degree(:), determines(:)
 
     integer, allocatable :: offset(:), degrees_of(:)
-    integer :: nd, primary, kk, d, e, counted, at, pass
+    integer :: primary, kk, d, e, counted, at, pass
 
-    nd      = this % degrees
     primary = scheme % primary_degree(nd - 1)
 
     do pass = 1, 2
@@ -686,7 +685,7 @@ contains
     n  = last - first + 1
     nd = this % degrees
 
-    call block_reach(this, scheme, n, tails, heads, source_degree, determines)
+    call block_reach(scheme, nd, n, tails, heads, source_degree, determines)
     call reach_weights(scheme, n, tails, heads, source_degree, determines, &
          & dt(first:last), w)
 

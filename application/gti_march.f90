@@ -40,7 +40,7 @@ module gti_march
   use operation_newton        , only : newton
   use operation_dense_direct  , only : dense_direct
   use operation_family        , only : family
-  use operation_grid          , only : uniform_grid
+  use operation_grid          , only : grid, uniform_grid
   use operation_weight        , only : scheme_weight
   use operation_scheme_stencil, only : derived_constraints
   use physics_integrand       , only : nodal_integrand
@@ -50,7 +50,7 @@ module gti_march
   implicit none
 
   private
-  public :: partition, scheme_rows, block_of, solved, unknowns_graph
+  public :: partition, partitioned, scheme_rows, block_of, solved, unknowns_graph
   public :: horizon_bounds, marched_horizon
 
 contains
@@ -65,9 +65,22 @@ contains
     integer , intent(in) :: n
     real(dp), allocatable, intent(out) :: dt(:), t(:)
 
+    call partitioned(uniform_grid(duration), n, dt, t)
+
+  end subroutine partition
+
+  !===================================================================!
+  ! The instants a grid makes over the duration it was given.
+  !===================================================================!
+
+  subroutine partitioned(steps, n, dt, t)
+
+    class(grid), intent(in) :: steps
+    integer    , intent(in) :: n
+    real(dp), allocatable, intent(out) :: dt(:), t(:)
+
     type(stored_directed_graph) :: instants
     type(stored_field) :: knobs
-    type(uniform_grid) :: steps
     class(field), allocatable :: out
     integer :: k
 
@@ -75,7 +88,6 @@ contains
     knobs    = stored_field('design', instants % vertex_set(), 1)
     call knobs % set_real_vector([0.0_dp])
 
-    steps = uniform_grid(duration)
     call steps % apply(instants, [knobs], out)
     call out % real_vector(dt)
 
@@ -85,7 +97,7 @@ contains
        t(k) = t(k - 1) + dt(k)
     end do
 
-  end subroutine partition
+  end subroutine partitioned
 
   pure integer function unknown(instant, degree, degrees) result(at)
 

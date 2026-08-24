@@ -104,7 +104,7 @@ contains
   end function initial
 
   !-------------------------------------------------------------------!
-  ! One family, by name and order. A stage family answers that it is
+  ! One family, by name and order. A stage family says that it is
   ! one, since its block is laid out differently.
   !-------------------------------------------------------------------!
 
@@ -153,10 +153,10 @@ contains
 
     class(family), allocatable :: scheme
     type(block_residual) :: rows
-    real(dp), allocatable :: dt(:), t(:), held(:), q(:), f(:)
+    real(dp), allocatable :: dt(:), t(:), q(:), f(:)
     integer , allocatable :: at(:)
     real(dp) :: achieved
-    integer :: nd, k, d
+    integer :: nd
     logical :: staged, ok
 
     call chosen(name, order, scheme, staged, ok)
@@ -164,8 +164,37 @@ contains
 
     nd = cfg % state_degree + 1
     call steps_of(cfg, dt, t)
-
     if (scheme % history_depth() >= cfg % instants) return
+
+    call block_and_instants(cfg, scheme, staged, nd, dt, t, rows, at)
+
+    call block_expansion(rows, van_der_pol(cfg % state_degree), &
+         & van_der_pol_energy(cfg % state_degree), nd, &
+         & scheme % primary_degree(nd - 1), at, dt, cfg % design, &
+         & cfg % max_derivative_degree, q, f, achieved)
+
+    call show_row(labelled(name, order), f, achieved)
+
+  end subroutine one_row
+
+  !-------------------------------------------------------------------!
+  ! The block a family makes, and where its instants sit among the
+  ! unknowns: one set per instant for a multistep family, and between
+  ! the stages for a stage family.
+  !-------------------------------------------------------------------!
+
+  subroutine block_and_instants(cfg, scheme, staged, nd, dt, t, rows, at)
+
+    type(configuration) , intent(in)  :: cfg
+    class(family)       , intent(in)  :: scheme
+    logical             , intent(in)  :: staged
+    integer             , intent(in)  :: nd
+    real(dp)            , intent(in)  :: dt(:), t(:)
+    type(block_residual), intent(out) :: rows
+    integer, allocatable, intent(out) :: at(:)
+
+    real(dp), allocatable :: held(:)
+    integer :: k, d
 
     held = [((initial(d, t(k)), d = 0, nd - 1), k = 1, scheme % history_depth())]
 
@@ -179,14 +208,7 @@ contains
        at   = [((k - 1) * nd, k = 1, cfg % instants)]
     end if
 
-    call block_expansion(rows, van_der_pol(cfg % state_degree), &
-         & van_der_pol_energy(cfg % state_degree), nd, &
-         & scheme % primary_degree(nd - 1), at, dt, cfg % design, &
-         & cfg % max_derivative_degree, q, f, achieved)
-
-    call show_row(labelled(name, order), f, achieved)
-
-  end subroutine one_row
+  end subroutine block_and_instants
 
   subroutine steps_of(cfg, dt, t)
 

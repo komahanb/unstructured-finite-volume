@@ -52,7 +52,7 @@ module gti_sweeps
   private
   public :: functional_of, functional_gradient
   public :: design_partial, jacobian_of
-  public :: by_tangent, by_adjoint
+  public :: by_tangent, by_adjoint, dense_solve
 
 contains
 

@@ -25,6 +25,14 @@
 ! that remains is the physics, and the physics is nodal, so r_m is
 ! computed one instant at a time.
 !
+!             WHERE A COEFFICIENT IS TAKEN
+!
+! At the points the rule is stated on, which are given rather than
+! assumed: a multistep block's physics is evaluated at its instants
+! and a stage block's at its stages, while the functional is
+! evaluated at the instants either way, so that one number means the
+! same thing whichever family produced it.
+!
 !             HOW A COEFFICIENT IS TAKEN
 !
 ! A quantity is handed to the physics as derivative_terms seeded
@@ -69,16 +77,16 @@ contains
   ! state's coefficients up to that order and the design.
   !===================================================================!
 
-  subroutine nodal_coefficient(integrand, degrees, n, series, design, order, values)
+  subroutine nodal_coefficient(integrand, degrees, at, series, design, order, values)
 
     class(nodal_integrand), intent(in) :: integrand
-    integer               , intent(in) :: degrees, n, order
+    integer               , intent(in) :: degrees, at(:), order
     real(dp)              , intent(in) :: series(0:, :)
     real(dp)              , intent(in) :: design
     real(dp), allocatable , intent(out) :: values(:)
 
     type(derivative_terms) :: q(0:degrees - 1), knob
-    integer :: k, d, m, base
+    integer :: p, d, m
 
     if (order < 0) then
        error stop 'gti_taylor: an order is not negative'
@@ -90,17 +98,16 @@ contains
     knob = derivative_terms(design, order)
     if (order >= 1) call knob % set_symmetric(1, 1.0_dp)
 
-    allocate(values(n))
+    allocate(values(size(at)))
 
-    do k = 1, n
-       base = (k - 1) * degrees
+    do p = 1, size(at)
        do d = 0, degrees - 1
           q(d) = derivative_terms(0.0_dp, order)
           do m = 0, order
-             call q(d) % set_symmetric(m, series(m, base + d + 1))
+             call q(d) % set_symmetric(m, series(m, at(p) + d + 1))
           end do
        end do
-       values(k) = mixed_partial(integrand % at_instant(q, knob))
+       values(p) = mixed_partial(integrand % at_instant(q, knob))
     end do
 
   end subroutine nodal_coefficient
@@ -109,18 +116,18 @@ contains
   ! The governing coefficient placed on the rows it belongs to.
   !===================================================================!
 
-  pure subroutine placed(governing, degrees, primary, carried, r)
+  pure subroutine placed(governing, at, primary, carried, r)
 
     real(dp), intent(in)  :: governing(:)
-    integer , intent(in)  :: degrees, primary, carried
+    integer , intent(in)  :: at(:), primary, carried
     real(dp), intent(out) :: r(:)
 
-    integer :: k
+    integer :: p
 
     r = 0.0_dp
 
-    do k = 1, size(governing)
-       r((k - 1) * degrees + primary + 1) = governing(k)
+    do p = 1, size(at)
+       r(at(p) + primary + 1) = governing(p)
     end do
 
     r(1:carried) = 0.0_dp
@@ -132,40 +139,37 @@ contains
   ! derivative of it in the design, to the order asked for.
   !===================================================================!
 
-  subroutine block_expansion(scheme, physics, integrand, degrees, n, dt, held, &
-       & design, max_order, q, f, achieved)
+  subroutine block_expansion(rows, physics, integrand, degrees, primary, &
+       & instants_at, dt, design, max_order, q, f, achieved)
 
-    class(family)         , intent(in) :: scheme
+    type(block_residual)  , intent(in) :: rows
     class(nodal_integrand), intent(in) :: physics, integrand
-    integer               , intent(in) :: degrees, n, max_order
-    real(dp)              , intent(in) :: dt(:), held(:), design
+    integer               , intent(in) :: degrees, primary, instants_at(:), max_order
+    real(dp)              , intent(in) :: dt(:), design
     real(dp), allocatable , intent(out) :: q(:), f(:)
     real(dp)              , intent(out) :: achieved
 
-    type(block_residual) :: rows
     type(stored_directed_graph) :: unknowns
     type(stored_field) :: state, knobs
     real(dp), allocatable :: a(:,:), series(:,:)
-    integer :: primary, unknown_count, carried
+    integer :: unknown_count
 
-    unknown_count = n * degrees
-    primary       = scheme % primary_degree(degrees - 1)
-    carried       = scheme % history_depth() * degrees
-
-    rows = block_of(scheme, physics, degrees, n, dt, held)
+    unknown_count = rows % num_unknowns()
     call solved(rows, design, q, achieved)
 
-    unknowns = unknowns_graph(n, degrees)
+    unknowns = stored_directed_graph(unknown_count, tails=[integer ::], heads=[integer ::])
     state    = stored_field('state', unknowns % vertex_set(), unknown_count)
-    knobs    = stored_field('design', unknowns % vertex_set(), n)
+    knobs    = stored_field('design', unknowns % vertex_set(), rows % num_points())
     call state % set_real_vector(q)
-    call knobs % set_real_vector(spread(design, 1, n))
+    call knobs % set_real_vector(spread(design, 1, rows % num_points()))
 
     call jacobian_of(rows, unknowns, [state, knobs], unknown_count, &
          & unknowns % vertex_set(), a)
 
-    call state_series(physics, a, degrees, n, primary, carried, design, max_order, q, series)
-    call functional_series(integrand, degrees, n, design, max_order, series, dt, f)
+    call state_series(physics, a, degrees, rows % points_at(), primary, &
+         & rows % num_carried(), design, max_order, q, series)
+    call functional_series(integrand, degrees, instants_at, design, max_order, &
+         & series, dt, f)
 
   end subroutine block_expansion
 
@@ -175,12 +179,12 @@ contains
   ! side the orders beneath it determine.
   !===================================================================!
 
-  subroutine state_series(physics, a, degrees, n, primary, carried, design, &
+  subroutine state_series(physics, a, degrees, at, primary, carried, design, &
        & max_order, q, series)
 
     class(nodal_integrand), intent(in) :: physics
     real(dp)              , intent(in) :: a(:,:), design, q(:)
-    integer               , intent(in) :: degrees, n, primary, carried, max_order
+    integer               , intent(in) :: degrees, at(:), primary, carried, max_order
     real(dp), allocatable , intent(out) :: series(:,:)
 
     real(dp), allocatable :: frozen(:,:), r(:), w(:), coefficient(:)
@@ -193,8 +197,8 @@ contains
     do m = 1, max_order
        frozen = series
        frozen(m, :) = 0.0_dp
-       call nodal_coefficient(physics, degrees, n, frozen, design, m, coefficient)
-       call placed(coefficient, degrees, primary, carried, r)
+       call nodal_coefficient(physics, degrees, at, frozen, design, m, coefficient)
+       call placed(coefficient, at, primary, carried, r)
        call dense_solve(a, -r, .false., w)
        series(m, :) = w
     end do
@@ -206,10 +210,10 @@ contains
   ! coefficients once they are all known.
   !===================================================================!
 
-  subroutine functional_series(integrand, degrees, n, design, max_order, series, dt, f)
+  subroutine functional_series(integrand, degrees, at, design, max_order, series, dt, f)
 
     class(nodal_integrand), intent(in) :: integrand
-    integer               , intent(in) :: degrees, n, max_order
+    integer               , intent(in) :: degrees, at(:), max_order
     real(dp)              , intent(in) :: design, series(0:, :), dt(:)
     real(dp), allocatable , intent(out) :: f(:)
 
@@ -219,7 +223,7 @@ contains
     allocate(f(0:max_order))
 
     do m = 0, max_order
-       call nodal_coefficient(integrand, degrees, n, series, design, m, coefficient)
+       call nodal_coefficient(integrand, degrees, at, series, design, m, coefficient)
        f(m) = sum(dt * coefficient)
     end do
 

@@ -91,6 +91,8 @@ module gti_block
      procedure :: partial_action => block_partial_action
      procedure :: num_unknowns
      procedure :: num_points
+     procedure :: points_at
+     procedure :: num_carried
 
   end type block_residual
 
@@ -149,6 +151,23 @@ contains
     num_points = size(this % at)
 
   end function num_points
+
+  pure function points_at(this) result(at)
+
+    class(block_residual), intent(in) :: this
+    integer, allocatable :: at(:)
+
+    at = this % at
+
+  end function points_at
+
+  pure integer function num_carried(this)
+
+    class(block_residual), intent(in) :: this
+
+    num_carried = size(this % carried)
+
+  end function num_carried
 
   pure function block_name(this) result(name)
 

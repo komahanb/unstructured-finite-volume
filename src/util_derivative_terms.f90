@@ -17,6 +17,21 @@
 ! compilers this is built with, so the masks are stored from one and
 ! the two are never confused.
 !
+!             SYMMETRIC SEEDING
+!
+! Set every subset of the same size to the same number and the type
+! computes a Taylor composition rather than a mixed partial: seed the
+! subsets of size k with the k-th derivative of a quantity along one
+! parameter, and the coefficient of the full subset comes out as the
+! n-th derivative of whatever was built from it. That is the product
+! rule read on subsets - splitting a set of size k into two parts
+! counts each split once, which is the binomial coefficient Leibniz
+! asks for - so nothing here changes; only what the numbers are taken
+! to mean does.
+!
+! The convention is derivatives, not derivatives over factorials: a
+! subset of size k holds the k-th derivative itself.
+!
 !             THE FOUR RULES
 !
 !      sum        coefficient by coefficient
@@ -61,6 +76,7 @@ module util_derivative_terms
    contains
 
      procedure :: set_direction
+     procedure :: set_symmetric
      procedure :: num_directions
 
   end type derivative_terms
@@ -160,6 +176,30 @@ contains
     this % terms(2**(i - 1) + 1) = x
 
   end subroutine set_direction
+
+  !===================================================================!
+  ! Seed every subset of one size with one number. An order below
+  ! zero or past the directions declared stops the program: there is
+  ! no such coefficient to set.
+  !===================================================================!
+
+  pure subroutine set_symmetric(this, order, x)
+
+    class(derivative_terms), intent(inout) :: this
+    integer                , intent(in)    :: order
+    real(dp)               , intent(in)    :: x
+
+    integer :: m
+
+    if (order < 0 .or. order > this % directions) then
+       error stop 'util_derivative_terms: the order is one the directions carry'
+    end if
+
+    do m = 0, size(this % terms) - 1
+       if (popcnt(m) == order) this % terms(m + 1) = x
+    end do
+
+  end subroutine set_symmetric
 
   pure real(dp) function value(x)
 

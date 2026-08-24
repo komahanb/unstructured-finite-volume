@@ -54,3 +54,10 @@ test/graph-identity-map/labels
 .codex/
 GTI\.md
 GTI_PHASE1_AGENT_TASK.md
+application/level_shape
+application/family_coefficients
+application/scheme_weights
+application/coupling_relation
+application/constraint_rows
+application/level_maps
+application/assembled_tower

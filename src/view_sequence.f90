@@ -54,6 +54,7 @@ module view_sequence
   private
   public :: sequence_defined, sequence_num_elements
   public :: sequence_element, sequence_has
+  public :: sequence_empty, sequence_first, sequence_rest
 
 contains
 
@@ -184,6 +185,60 @@ contains
     end do
 
   end function sequence_has
+
+  !===================================================================!
+  ! The recursive form: a sequence is empty, or it is a first
+  ! element followed by the rest. A traversal written on these two
+  ! crosses the spine once, where indexing by position restarts from
+  ! the head at every step.
+  !===================================================================!
+
+  logical function sequence_empty(b) result(empty)
+
+    type(branch), intent(in) :: b
+
+    empty = b % status() .eq. BRANCH_NULL
+
+  end function sequence_empty
+
+  !===================================================================!
+  ! The first element. An empty or unknown sequence has none and
+  ! stops the program, as does a malformed cell.
+  !===================================================================!
+
+  function sequence_first(b) result(element)
+
+    type(branch), intent(in) :: b
+    type(graph), pointer     :: element
+
+    type(graph), pointer :: cell
+
+    call require_reachable(b)
+    cell => b % known()
+    call require_cell(cell)
+    element => cell % branch(1) % known()
+
+  end function sequence_first
+
+  !===================================================================!
+  ! The sequence after the first element, refused on the same
+  ! grounds. A copy of the branch carries the reference and owns
+  ! nothing, which is what lets the result be returned by value.
+  !===================================================================!
+
+  function sequence_rest(b) result(rest)
+
+    type(branch), intent(in) :: b
+    type(branch)             :: rest
+
+    type(graph), pointer :: cell
+
+    call require_reachable(b)
+    cell => b % known()
+    call require_cell(cell)
+    rest = cell % branch(2)
+
+  end function sequence_rest
 
   !===================================================================!
   ! The two guards. require_cell refuses a malformed representation;

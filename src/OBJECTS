@@ -1,8 +1,10 @@
 objects= \
+util_derivative_terms.o \
 token_identity.o \
 map_change_protocol.o \
 graph_fractal.o \
 view_sequence.o \
+view_level.o \
 map_set_representation.o \
 map_set.o \
 view_set.o \
@@ -19,6 +21,11 @@ view_directed.o \
 relation_partition.o \
 field_stored.o \
 operation_action.o \
+operation_edge_function.o \
+operation_family.o \
+operation_family_bdf.o \
+operation_family_adams.o \
+operation_family_dirk.o \
 transform_structure.o \
 operation_discretization.o \
 map_value.o \

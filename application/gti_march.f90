@@ -170,7 +170,8 @@ contains
        error stop 'gti_march: one value per carried component'
     end if
 
-    rows = block_residual(scheme_rows(scheme, degrees, n, dt), physics, n, degrees, &
+    rows = block_residual(scheme_rows(scheme, degrees, n, dt), physics, &
+         & [((k - 1) * degrees, k = 1, n)], n * degrees, degrees, &
          & scheme % primary_degree(degrees - 1), carried, held)
 
   end function block_of
@@ -180,10 +181,9 @@ contains
   ! varies, which is what a minimizer supplies as an extra input.
   !===================================================================!
 
-  subroutine solved(rows, n, degrees, design_value, q, achieved)
+  subroutine solved(rows, design_value, q, achieved)
 
     type(block_residual), intent(in)  :: rows
-    integer             , intent(in)  :: n, degrees
     real(dp)            , intent(in)  :: design_value
     real(dp), allocatable, intent(out) :: q(:)
     real(dp)            , intent(out) :: achieved
@@ -191,18 +191,20 @@ contains
     type(newton) :: solver
     type(stored_directed_graph) :: unknowns
     type(stored_field) :: design
+    integer :: count
 
-    unknowns = unknowns_graph(n, degrees)
-    design   = stored_field('nu', unknowns % vertex_set(), n)
-    call design % set_real_vector(spread(design_value, 1, n))
+    count    = rows % num_unknowns()
+    unknowns = stored_directed_graph(count, tails=[integer ::], heads=[integer ::])
+    design   = stored_field('nu', unknowns % vertex_set(), rows % num_points())
+    call design % set_real_vector(spread(design_value, 1, rows % num_points()))
 
     allocate(solver % inner, source=dense_direct())
     solver % tolerance = 1.0e-12_dp
-    call solver % attach(rows, unknowns, unknowns % vertex_set(), n * degrees, &
+    call solver % attach(rows, unknowns, unknowns % vertex_set(), count, &
          & held_inputs = [design])
 
-    allocate(q(n * degrees), source=0.0_dp)
-    call solver % solve(spread(0.0_dp, 1, n * degrees), q, achieved)
+    allocate(q(count), source=0.0_dp)
+    call solver % solve(spread(0.0_dp, 1, count), q, achieved)
 
   end subroutine solved
 
@@ -280,7 +282,7 @@ contains
        rows = block_of(schemes(b) % scheme, physics, degrees, n, &
             & dt(first(b):last(b)), q(shift + 1:shift + held_size))
 
-       call solved(rows, n, degrees, design_value, block_state, block_achieved)
+       call solved(rows, design_value, block_state, block_achieved)
 
        q(shift + 1:shift + n * degrees) = block_state
        achieved = max(achieved, block_achieved)

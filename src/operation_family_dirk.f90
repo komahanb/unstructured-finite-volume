@@ -239,7 +239,7 @@ contains
     real(dp) :: g, w, pi
 
     pi = acos(-1.0_dp)
-    g  = 2.0_dp * cos(pi / 18.0_dp) / sqrt(3.0_dp)
+    g  = cos(pi / 18.0_dp) / sqrt(3.0_dp) + 0.5_dp
     w  = 1.0_dp / (6.0_dp * (1.0_dp - 2.0_dp * g)**2)
 
     this = dirk_family(reshape( &

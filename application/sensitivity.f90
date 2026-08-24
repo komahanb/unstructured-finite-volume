@@ -98,7 +98,7 @@ contains
     call partition(duration, num_instants, dt, t)
     rows = block_of(scheme, van_der_pol(state_degree), degrees, num_instants, dt, &
          & carried_values(scheme, t))
-    call solved(rows, num_instants, degrees, design_value, q, achieved)
+    call solved(rows, design_value, q, achieved)
 
     unknowns = unknowns_graph(num_instants, degrees)
     instants = stored_directed_graph(num_instants, tails=[integer ::], heads=[integer ::])

@@ -145,15 +145,15 @@ contains
     type(block_residual) :: rows
     type(stored_directed_graph) :: unknowns
     type(stored_field) :: state, knobs
-    real(dp), allocatable :: a(:,:), series(:,:), frozen(:,:), r(:), w(:), coefficient(:)
-    integer :: primary, unknown_count, carried, m
+    real(dp), allocatable :: a(:,:), series(:,:)
+    integer :: primary, unknown_count, carried
 
     unknown_count = n * degrees
     primary       = scheme % primary_degree(degrees - 1)
     carried       = scheme % history_depth() * degrees
 
     rows = block_of(scheme, physics, degrees, n, dt, held)
-    call solved(rows, n, degrees, design, q, achieved)
+    call solved(rows, design, q, achieved)
 
     unknowns = unknowns_graph(n, degrees)
     state    = stored_field('state', unknowns % vertex_set(), unknown_count)
@@ -164,8 +164,30 @@ contains
     call jacobian_of(rows, unknowns, [state, knobs], unknown_count, &
          & unknowns % vertex_set(), a)
 
-    allocate(series(0:max_order, unknown_count), source=0.0_dp)
-    allocate(r(unknown_count))
+    call state_series(physics, a, degrees, n, primary, carried, design, max_order, q, series)
+    call functional_series(integrand, degrees, n, design, max_order, series, dt, f)
+
+  end subroutine block_expansion
+
+  !===================================================================!
+  ! The trajectory's coefficients, one order at a time. Each is one
+  ! solve, against the jacobian the march already formed, for a right
+  ! side the orders beneath it determine.
+  !===================================================================!
+
+  subroutine state_series(physics, a, degrees, n, primary, carried, design, &
+       & max_order, q, series)
+
+    class(nodal_integrand), intent(in) :: physics
+    real(dp)              , intent(in) :: a(:,:), design, q(:)
+    integer               , intent(in) :: degrees, n, primary, carried, max_order
+    real(dp), allocatable , intent(out) :: series(:,:)
+
+    real(dp), allocatable :: frozen(:,:), r(:), w(:), coefficient(:)
+    integer :: m
+
+    allocate(series(0:max_order, size(q)), source=0.0_dp)
+    allocate(r(size(q)))
     series(0, :) = q
 
     do m = 1, max_order
@@ -177,12 +199,30 @@ contains
        series(m, :) = w
     end do
 
+  end subroutine state_series
+
+  !===================================================================!
+  ! The functional and its derivatives, read off the trajectory's
+  ! coefficients once they are all known.
+  !===================================================================!
+
+  subroutine functional_series(integrand, degrees, n, design, max_order, series, dt, f)
+
+    class(nodal_integrand), intent(in) :: integrand
+    integer               , intent(in) :: degrees, n, max_order
+    real(dp)              , intent(in) :: design, series(0:, :), dt(:)
+    real(dp), allocatable , intent(out) :: f(:)
+
+    real(dp), allocatable :: coefficient(:)
+    integer :: m
+
     allocate(f(0:max_order))
+
     do m = 0, max_order
        call nodal_coefficient(integrand, degrees, n, series, design, m, coefficient)
        f(m) = sum(dt * coefficient)
     end do
 
-  end subroutine block_expansion
+  end subroutine functional_series
 
 end module gti_taylor

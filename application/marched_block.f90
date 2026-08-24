@@ -77,7 +77,7 @@ contains
     held = [((exact(d, t(k)), d = 0, degrees - 1), k = 1, h)]
     rows = block_of(scheme, van_der_pol(max_state_degree), degrees, n, dt, held)
 
-    call solved(rows, n, degrees, design_value, q, achieved)
+    call solved(rows, design_value, q, achieved)
 
   end subroutine march
 

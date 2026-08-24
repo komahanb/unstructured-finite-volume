@@ -7,8 +7,8 @@
 !      derived     the scheme's own rows, already assembled as a
 !                  stencil; linear in the state, so that stencil is
 !                  also their jacobian
-!      governing   the physics, at each slice's primary degree - the
-!                  one degree no derived row determines
+!      governing   the physics, at each evaluation point's primary
+!                  degree - the one degree no derived row determines
 !      carried     the instants a block reaches back over, whose
 !                  components are known before it starts; their rows
 !                  are the identity less what they hold, so the block
@@ -18,13 +18,25 @@
 ! which is what a minimizer supplies when the design is handed to it
 ! as a held input.
 !
+!             WHERE THE PHYSICS IS EVALUATED
+!
+! At the points given, and nowhere else. A multistep block evaluates
+! at its instants, and its points are the instants in order, so the
+! components it hands the physics are the state unchanged. A stage
+! block evaluates at its stages and recovers its instants from them,
+! so its points are the stages and the components are gathered out
+! from between them. The physics is nodal either way and never learns
+! which it is being asked about.
+!
 !             THE JACOBIAN
 !
 ! Both halves carry exact partials - the stencil by being linear, the
 ! physics by differentiating its own rule - so the tangent is exact
 ! and nothing is differenced. A variation arrives named for this
 ! statement's argument and is renamed for each half before it is
-! passed on, since each half checks the variation against its own.
+! passed on, since each half checks the variation against its own,
+! and a variation in the state is gathered to the points along with
+! the state itself.
 !
 ! A variation in the design is answered too, and it is a different
 ! statement: the scheme's rows are frozen at the steps they were
@@ -34,8 +46,9 @@
 !
 !             WHAT IS REFUSED
 !
-! A state that is not one component per degree per slice; a missing
-! argument; a carried row outside the unknowns.
+! A state that is not one component per degree per unknown point; a
+! missing argument; a carried row outside the unknowns; an evaluation
+! point whose degrees run past them.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -59,14 +72,15 @@ module gti_block
 
   type, extends(operation) :: block_residual
 
-     type(stencil)                      , private :: derived
-     class(nodal_integrand), allocatable , private :: physics
-     type(stored_directed_graph)        , private :: instants
-     integer , allocatable              , private :: carried(:)
-     real(dp), allocatable              , private :: held(:)
-     integer                            , private :: degrees = 0
-     integer                            , private :: slices  = 0
-     integer                            , private :: primary = 0
+     type(stencil)                       , private :: derived
+     class(nodal_integrand), allocatable  , private :: physics
+     type(stored_directed_graph)         , private :: points
+     integer , allocatable               , private :: at(:)
+     integer , allocatable               , private :: carried(:)
+     real(dp), allocatable               , private :: held(:)
+     integer                             , private :: degrees  = 0
+     integer                             , private :: unknowns = 0
+     integer                             , private :: primary  = 0
 
    contains
 
@@ -76,6 +90,7 @@ module gti_block
      procedure :: max_degree     => block_max_degree
      procedure :: partial_action => block_partial_action
      procedure :: num_unknowns
+     procedure :: num_points
 
   end type block_residual
 
@@ -85,11 +100,12 @@ module gti_block
 
 contains
 
-  function create(derived, physics, slices, degrees, primary, carried, held) result(this)
+  function create(derived, physics, at, unknowns, degrees, primary, carried, held) &
+       & result(this)
 
     type(stencil)         , intent(in) :: derived
     class(nodal_integrand), intent(in) :: physics
-    integer               , intent(in) :: slices, degrees, primary
+    integer               , intent(in) :: at(:), unknowns, degrees, primary
     integer               , intent(in) :: carried(:)
     real(dp)              , intent(in) :: held(:)
     type(block_residual) :: this
@@ -97,19 +113,23 @@ contains
     if (size(carried) /= size(held)) then
        error stop 'gti_block: one value per carried component'
     end if
-    if (any(carried < 1) .or. any(carried > slices * degrees)) then
+    if (any(carried < 1) .or. any(carried > unknowns)) then
        error stop 'gti_block: every carried row names an unknown'
     end if
+    if (any(at < 0) .or. any(at + degrees > unknowns)) then
+       error stop 'gti_block: an evaluation point holds its degrees within the unknowns'
+    end if
 
-    this % derived = derived
+    this % derived  = derived
     allocate(this % physics, source=physics)
-    this % slices  = slices
-    this % degrees = degrees
-    this % primary = primary
-    this % carried = carried
-    this % held    = held
+    this % at       = at
+    this % unknowns = unknowns
+    this % degrees  = degrees
+    this % primary  = primary
+    this % carried  = carried
+    this % held     = held
 
-    this % instants = stored_directed_graph(slices, tails=[integer ::], heads=[integer ::])
+    this % points = stored_directed_graph(size(at), tails=[integer ::], heads=[integer ::])
     call this % declare_arguments(2)
 
   end function create
@@ -118,9 +138,17 @@ contains
 
     class(block_residual), intent(in) :: this
 
-    num_unknowns = this % slices * this % degrees
+    num_unknowns = this % unknowns
 
   end function num_unknowns
+
+  pure integer function num_points(this)
+
+    class(block_residual), intent(in) :: this
+
+    num_points = size(this % at)
+
+  end function num_points
 
   pure function block_name(this) result(name)
 
@@ -160,8 +188,59 @@ contains
   end function block_max_degree
 
   !===================================================================!
-  ! The governing value at each slice, placed at the row its primary
-  ! degree holds.
+  ! The components held at the evaluation points, taken out from
+  ! among the unknowns so that a nodal rule reads them one point at a
+  ! time.
+  !===================================================================!
+
+  pure function gathered(this, x) result(y)
+
+    class(block_residual), intent(in) :: this
+    real(dp)             , intent(in) :: x(:)
+    real(dp), allocatable :: y(:)
+
+    integer :: p
+
+    allocate(y(size(this % at) * this % degrees))
+
+    do p = 1, size(this % at)
+       y((p - 1) * this % degrees + 1:p * this % degrees) = &
+            & x(this % at(p) + 1:this % at(p) + this % degrees)
+    end do
+
+  end function gathered
+
+  !===================================================================!
+  ! What the physics is handed: the gathered components and the
+  ! design, both over the points.
+  !===================================================================!
+
+  subroutine point_inputs(this, input_data, x, inputs)
+
+    class(block_residual), intent(in) :: this
+    class(field)         , intent(in) :: input_data(:)
+    real(dp)             , intent(in) :: x(:)
+    type(stored_field), allocatable, intent(out) :: inputs(:)
+
+    type(stored_field) :: state, design
+    real(dp), allocatable :: knob(:)
+
+    call input_data(2) % real_vector(knob)
+
+    state = stored_field('state', this % points % vertex_set(), &
+         & size(this % at) * this % degrees)
+    call state % set_real_vector(gathered(this, x))
+
+    design = stored_field('design', this % points % vertex_set(), size(knob))
+    call design % set_real_vector(knob)
+
+    inputs = [state, design]
+
+  end subroutine point_inputs
+
+  !===================================================================!
+  ! The governing value at each point, on the row its primary degree
+  ! holds.
   !===================================================================!
 
   pure subroutine placed(this, governing, r)
@@ -170,11 +249,11 @@ contains
     real(dp)             , intent(in)    :: governing(:)
     real(dp)             , intent(inout) :: r(:)
 
-    integer :: k
+    integer :: p
 
-    do k = 1, this % slices
-       r((k - 1) * this % degrees + this % primary + 1) = &
-            & r((k - 1) * this % degrees + this % primary + 1) + governing(k)
+    do p = 1, size(this % at)
+       r(this % at(p) + this % primary + 1) = &
+            & r(this % at(p) + this % primary + 1) + governing(p)
     end do
 
   end subroutine placed
@@ -198,172 +277,19 @@ contains
 
   end subroutine carry
 
-  subroutine require_state(this, input_data)
+  pure subroutine carry_direction(this, v, r)
 
-    class(block_residual), intent(in) :: this
-    class(field)         , intent(in) :: input_data(:)
+    class(block_residual), intent(in)    :: this
+    real(dp)             , intent(in)    :: v(:)
+    real(dp)             , intent(inout) :: r(:)
 
-    real(dp), allocatable :: x(:)
+    integer :: i
 
-    if (size(input_data) < 2) then
-       error stop 'gti_block: the state and the design are given'
-    end if
+    do i = 1, size(this % carried)
+       r(this % carried(i)) = v(this % carried(i))
+    end do
 
-    call input_data(1) % real_vector(x)
-    if (size(x) /= this % num_unknowns()) then
-       error stop 'gti_block: the state holds one component per degree per slice'
-    end if
-
-  end subroutine require_state
-
-  subroutine block_apply(this, input_graph, input_data, output)
-
-    class(block_residual), intent(in)        :: this
-    class(directed_graph), intent(in)        :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
-    class(field), allocatable, intent(inout) :: output
-
-    type(stored_field) :: state
-    class(field), allocatable :: half
-    real(dp), allocatable :: r(:), governing(:), x(:)
-
-    if (.not. present(input_data)) then
-       error stop 'gti_block: the state and the design are given'
-    end if
-    call require_state(this, input_data)
-    call input_data(1) % real_vector(x)
-
-    state = stored_field('state', input_graph % vertex_set(), size(x))
-    call state % set_real_vector(x)
-
-    call this % derived % apply(input_graph, [state], half)
-    call half % real_vector(r)
-
-    call this % physics % apply(this % instants, input_data, half)
-    call half % real_vector(governing)
-
-    call placed(this, governing, r)
-    call carry(this, x, r)
-
-    call placed_output(this, input_graph, r, output)
-
-  end subroutine block_apply
-
-  !===================================================================!
-  ! The rows, on the unknowns they belong to.
-  !===================================================================!
-
-  subroutine placed_output(this, input_graph, r, output)
-
-    class(block_residual), intent(in) :: this
-    class(directed_graph), intent(in) :: input_graph
-    real(dp)             , intent(in) :: r(:)
-    class(field), allocatable, intent(inout) :: output
-
-    type(stored_field) :: out
-
-    out = stored_field(this % name(), input_graph % vertex_set(), size(r))
-    call out % set_real_vector(r)
-
-    if (allocated(output)) deallocate(output)
-    allocate(output, source=out)
-
-  end subroutine placed_output
-
-  !===================================================================!
-  ! The tangent: each half differentiated in its own argument, the
-  ! variation renamed for it, and the carried rows contributing the
-  ! direction itself.
-  !===================================================================!
-
-  subroutine block_partial_action(this, input_graph, input_data, variations, output)
-
-    class(block_residual), intent(in)        :: this
-    class(directed_graph), intent(in)        :: input_graph
-    class(field)         , intent(in)        :: input_data(:)
-    type(variation)      , intent(in)        :: variations(:)
-    class(field), allocatable, intent(inout) :: output
-
-    type(stored_field) :: state
-    class(field), allocatable :: half
-    real(dp), allocatable :: r(:), governing(:), v(:), x(:)
-
-    call this % require_owned(variations)
-
-    if (size(variations) /= 1) then
-       error stop 'gti_block: the requested order is within max_degree'
-    end if
-    call require_state(this, input_data)
-    call variations(1) % direction(v)
-    call input_data(1) % real_vector(x)
-
-    state = stored_field('state', input_graph % vertex_set(), size(x))
-    call state % set_real_vector(x)
-
-    if (variations(1) % argument_is(this % argument(1))) then
-       call tangent_halves(this, input_graph, input_data, variations, state, r, governing)
-       call placed(this, governing, r)
-       call carry_direction(this, v, r)
-    else if (variations(1) % argument_is(this % argument(2))) then
-       call design_half(this, input_data, variations, r, governing)
-       call placed(this, governing, r)
-       call carry_held(this, r)
-    else
-       error stop 'gti_block: a variation names the state or the design'
-    end if
-
-    call placed_output(this, input_graph, r, output)
-
-  end subroutine block_partial_action
-
-  !===================================================================!
-  ! Each half differentiated in its own argument, the variation
-  ! renamed for it, since each half checks a variation against the
-  ! argument it declared itself.
-  !===================================================================!
-
-  subroutine tangent_halves(this, input_graph, input_data, variations, state, r, governing)
-
-    class(block_residual), intent(in) :: this
-    class(directed_graph), intent(in) :: input_graph
-    class(field)         , intent(in) :: input_data(:)
-    type(variation)      , intent(in) :: variations(:)
-    type(stored_field)   , intent(in) :: state
-    real(dp), allocatable, intent(out) :: r(:), governing(:)
-
-    class(field), allocatable :: half
-
-    call this % derived % partial_action(input_graph, [state], &
-         & [variations(1) % with_argument(this % derived % argument(1))], half)
-    call half % real_vector(r)
-
-    call this % physics % partial_action(this % instants, input_data, &
-         & [variations(1) % with_argument(this % physics % argument(1))], half)
-    call half % real_vector(governing)
-
-  end subroutine tangent_halves
-
-  !===================================================================!
-  ! The design half: the scheme's rows are frozen and the carried
-  ! rows hold given numbers, so only the governing rows vary.
-  !===================================================================!
-
-  subroutine design_half(this, input_data, variations, r, governing)
-
-    class(block_residual), intent(in) :: this
-    class(field)         , intent(in) :: input_data(:)
-    type(variation)      , intent(in) :: variations(:)
-    real(dp), allocatable, intent(out) :: r(:), governing(:)
-
-    class(field), allocatable :: half
-
-    allocate(r(this % num_unknowns()), source=0.0_dp)
-
-    call this % physics % partial_action(this % instants, input_data, &
-         & [variations(1) % with_argument(this % physics % argument(2))], half)
-    call half % real_vector(governing)
-
-  end subroutine design_half
+  end subroutine carry_direction
 
   !===================================================================!
   ! A carried row holds a given number, which varies with nothing.
@@ -382,18 +308,173 @@ contains
 
   end subroutine carry_held
 
-  pure subroutine carry_direction(this, v, r)
+  subroutine state_of(this, input_data, input_graph, x, state)
 
-    class(block_residual), intent(in)    :: this
-    real(dp)             , intent(in)    :: v(:)
-    real(dp)             , intent(inout) :: r(:)
+    class(block_residual), intent(in)  :: this
+    class(field)         , intent(in)  :: input_data(:)
+    class(directed_graph), intent(in)  :: input_graph
+    real(dp), allocatable, intent(out) :: x(:)
+    type(stored_field)   , intent(out) :: state
 
-    integer :: i
+    if (size(input_data) < 2) then
+       error stop 'gti_block: the state and the design are given'
+    end if
 
-    do i = 1, size(this % carried)
-       r(this % carried(i)) = v(this % carried(i))
-    end do
+    call input_data(1) % real_vector(x)
+    if (size(x) /= this % num_unknowns()) then
+       error stop 'gti_block: the state holds one component per degree per unknown point'
+    end if
 
-  end subroutine carry_direction
+    state = stored_field('state', input_graph % vertex_set(), size(x))
+    call state % set_real_vector(x)
+
+  end subroutine state_of
+
+  subroutine placed_output(this, input_graph, r, output)
+
+    class(block_residual), intent(in) :: this
+    class(directed_graph), intent(in) :: input_graph
+    real(dp)             , intent(in) :: r(:)
+    class(field), allocatable, intent(inout) :: output
+
+    type(stored_field) :: out
+
+    out = stored_field(this % name(), input_graph % vertex_set(), size(r))
+    call out % set_real_vector(r)
+
+    if (allocated(output)) deallocate(output)
+    allocate(output, source=out)
+
+  end subroutine placed_output
+
+  subroutine block_apply(this, input_graph, input_data, output)
+
+    class(block_residual), intent(in)        :: this
+    class(directed_graph), intent(in)        :: input_graph
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
+
+    type(stored_field) :: state
+    type(stored_field), allocatable :: inputs(:)
+    class(field), allocatable :: half
+    real(dp), allocatable :: r(:), governing(:), x(:)
+
+    if (.not. present(input_data)) then
+       error stop 'gti_block: the state and the design are given'
+    end if
+
+    call state_of(this, input_data, input_graph, x, state)
+    call point_inputs(this, input_data, x, inputs)
+
+    call this % derived % apply(input_graph, [state], half)
+    call half % real_vector(r)
+
+    call this % physics % apply(this % points, inputs, half)
+    call half % real_vector(governing)
+
+    call placed(this, governing, r)
+    call carry(this, x, r)
+    call placed_output(this, input_graph, r, output)
+
+  end subroutine block_apply
+
+  !===================================================================!
+  ! The tangent: each half differentiated in its own argument, the
+  ! variation renamed for it and, in the state, gathered to the
+  ! points the physics reads.
+  !===================================================================!
+
+  subroutine block_partial_action(this, input_graph, input_data, variations, output)
+
+    class(block_residual), intent(in)        :: this
+    class(directed_graph), intent(in)        :: input_graph
+    class(field)         , intent(in)        :: input_data(:)
+    type(variation)      , intent(in)        :: variations(:)
+    class(field), allocatable, intent(inout) :: output
+
+    type(stored_field) :: state
+    real(dp), allocatable :: r(:), governing(:), v(:), x(:)
+
+    call this % require_owned(variations)
+
+    if (size(variations) /= 1) then
+       error stop 'gti_block: the requested order is within max_degree'
+    end if
+
+    call state_of(this, input_data, input_graph, x, state)
+    call variations(1) % direction(v)
+
+    if (variations(1) % argument_is(this % argument(1))) then
+       call state_tangent(this, input_graph, input_data, variations, state, x, v, &
+            & r, governing)
+       call placed(this, governing, r)
+       call carry_direction(this, v, r)
+    else if (variations(1) % argument_is(this % argument(2))) then
+       call design_tangent(this, input_data, variations, x, r, governing)
+       call placed(this, governing, r)
+       call carry_held(this, r)
+    else
+       error stop 'gti_block: a variation names the state or the design'
+    end if
+
+    call placed_output(this, input_graph, r, output)
+
+  end subroutine block_partial_action
+
+  subroutine state_tangent(this, input_graph, input_data, variations, state, x, v, &
+       & r, governing)
+
+    class(block_residual), intent(in) :: this
+    class(directed_graph), intent(in) :: input_graph
+    class(field)         , intent(in) :: input_data(:)
+    type(variation)      , intent(in) :: variations(:)
+    type(stored_field)   , intent(in) :: state
+    real(dp)             , intent(in) :: x(:), v(:)
+    real(dp), allocatable, intent(out) :: r(:), governing(:)
+
+    type(stored_field) :: direction
+    type(stored_field), allocatable :: inputs(:)
+    class(field), allocatable :: half
+
+    call this % derived % partial_action(input_graph, [state], &
+         & [variations(1) % with_argument(this % derived % argument(1))], half)
+    call half % real_vector(r)
+
+    call point_inputs(this, input_data, x, inputs)
+
+    direction = stored_field('direction', this % points % vertex_set(), &
+         & size(this % at) * this % degrees)
+    call direction % set_real_vector(gathered(this, v))
+
+    call this % physics % partial_action(this % points, inputs, &
+         & [variation(this % physics % argument(1), direction)], half)
+    call half % real_vector(governing)
+
+  end subroutine state_tangent
+
+  !===================================================================!
+  ! The design half: the scheme's rows are frozen and the carried
+  ! rows hold given numbers, so only the governing rows vary.
+  !===================================================================!
+
+  subroutine design_tangent(this, input_data, variations, x, r, governing)
+
+    class(block_residual), intent(in) :: this
+    class(field)         , intent(in) :: input_data(:)
+    type(variation)      , intent(in) :: variations(:)
+    real(dp)             , intent(in) :: x(:)
+    real(dp), allocatable, intent(out) :: r(:), governing(:)
+
+    type(stored_field), allocatable :: inputs(:)
+    class(field), allocatable :: half
+
+    allocate(r(this % num_unknowns()), source=0.0_dp)
+    call point_inputs(this, input_data, x, inputs)
+
+    call this % physics % partial_action(this % points, inputs, &
+         & [variations(1) % with_argument(this % physics % argument(2))], half)
+    call half % real_vector(governing)
+
+  end subroutine design_tangent
 
 end module gti_block

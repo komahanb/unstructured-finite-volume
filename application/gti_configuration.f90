@@ -51,6 +51,7 @@ module gti_configuration
      real(dp) :: design        = 1.0_dp
 
      logical  :: automatic_order_conservation = .true.
+     logical  :: mixed_orders                 = .false.
 
   end type configuration
 
@@ -114,6 +115,8 @@ contains
        read(value, *) cfg % design
     case ('automatic_order_conservation')
        read(value, *) cfg % automatic_order_conservation
+    case ('mixed_orders')
+       read(value, *) cfg % mixed_orders
     case default
        write(*,'(a)') ' this is not a setting: ' // levelled(name)
        error stop 'gti_configuration: every setting given is one that exists'
@@ -225,6 +228,7 @@ contains
     write(*,'(a,a)')       '   families                 ', trim(cfg % families)
     write(*,'(a,a)')       '   combinations             ', trim(cfg % combinations)
     write(*,'(a,l1)')      '   automatic order conservation ', cfg % automatic_order_conservation
+    write(*,'(a,l1)')      '   mixed orders             ', cfg % mixed_orders
 
   end subroutine show
 

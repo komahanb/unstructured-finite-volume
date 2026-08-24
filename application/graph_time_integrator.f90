@@ -26,10 +26,10 @@ program graph_time_integrator
        & crouzeix_three_stage
   use operation_grid        , only : uniform_grid, random_grid
   use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
-  use gti_block             , only : block_residual
-  use gti_march             , only : partitioned, block_of
-  use gti_stage             , only : stage_block_of, instant_at
-  use gti_taylor            , only : block_expansion
+  use operation_grid        , only : grid
+  use gti_march             , only : partitioned
+  use gti_expansion         , only : family_holder
+  use gti_chain             , only : chain_block, march_chain, chain_expansion
   use gti_configuration     , only : configuration, read_configuration, override, show
 
   implicit none
@@ -141,74 +141,6 @@ contains
 
   end subroutine chosen
 
-  !-------------------------------------------------------------------!
-  ! One row: march the block and expand the functional over it.
-  !-------------------------------------------------------------------!
-
-  subroutine one_row(cfg, name, order)
-
-    type(configuration), intent(in) :: cfg
-    character(len=*)   , intent(in) :: name
-    integer            , intent(in) :: order
-
-    class(family), allocatable :: scheme
-    type(block_residual) :: rows
-    real(dp), allocatable :: dt(:), t(:), q(:), f(:)
-    integer , allocatable :: at(:)
-    real(dp) :: achieved
-    integer :: nd
-    logical :: staged, ok
-
-    call chosen(name, order, scheme, staged, ok)
-    if (.not. ok) return
-
-    nd = cfg % state_degree + 1
-    call steps_of(cfg, dt, t)
-    if (scheme % history_depth() >= cfg % instants) return
-
-    call block_and_instants(cfg, scheme, staged, nd, dt, t, rows, at)
-
-    call block_expansion(rows, van_der_pol(cfg % state_degree), &
-         & van_der_pol_energy(cfg % state_degree), nd, &
-         & scheme % primary_degree(nd - 1), at, dt, cfg % design, &
-         & cfg % max_derivative_degree, q, f, achieved)
-
-    call show_row(labelled(name, order), f, achieved)
-
-  end subroutine one_row
-
-  !-------------------------------------------------------------------!
-  ! The block a family makes, and where its instants sit among the
-  ! unknowns: one set per instant for a multistep family, and between
-  ! the stages for a stage family.
-  !-------------------------------------------------------------------!
-
-  subroutine block_and_instants(cfg, scheme, staged, nd, dt, t, rows, at)
-
-    type(configuration) , intent(in)  :: cfg
-    class(family)       , intent(in)  :: scheme
-    logical             , intent(in)  :: staged
-    integer             , intent(in)  :: nd
-    real(dp)            , intent(in)  :: dt(:), t(:)
-    type(block_residual), intent(out) :: rows
-    integer, allocatable, intent(out) :: at(:)
-
-    real(dp), allocatable :: held(:)
-    integer :: k, d
-
-    held = [((initial(d, t(k)), d = 0, nd - 1), k = 1, scheme % history_depth())]
-
-    if (staged) then
-       rows = stage_block_of(scheme, van_der_pol(cfg % state_degree), nd, &
-            & cfg % instants, dt, held)
-       at   = [(instant_at(k, scheme % num_stages(), nd), k = 1, cfg % instants)]
-    else
-       rows = block_of(scheme, van_der_pol(cfg % state_degree), nd, &
-            & cfg % instants, dt, held)
-       at   = [((k - 1) * nd, k = 1, cfg % instants)]
-    end if
-
-  end subroutine block_and_instants
 
   subroutine steps_of(cfg, dt, t)
 
@@ -226,16 +158,21 @@ contains
 
   end subroutine steps_of
 
-  function labelled(name, order) result(text)
+  function labelled(names, orders) result(text)
 
-    character(len=*), intent(in) :: name
-    integer         , intent(in) :: order
+    character(len=*), intent(in) :: names(:)
+    integer         , intent(in) :: orders(:)
     character(len=:), allocatable :: text
 
     character(len=2) :: digit
+    integer :: b
 
-    write(digit,'(i0)') order
-    text = trim(name) // trim(digit)
+    text = ''
+    do b = 1, size(names)
+       write(digit,'(i0)') orders(b)
+       if (b > 1) text = text // '-'
+       text = text // trim(names(b)) // trim(digit)
+    end do
 
   end function labelled
 
@@ -251,7 +188,7 @@ contains
     character(len=2) :: digit
     integer :: m
 
-    line = '  scheme  ' // repeat(' ', 6) // 'f'
+    line = '  scheme' // repeat(' ', 20) // 'f'
 
     do m = 1, cfg % max_derivative_degree
        write(digit,'(i0)') m
@@ -276,7 +213,7 @@ contains
     character(len=:), allocatable :: line
     integer :: m
 
-    line = '  ' // label // repeat(' ', max(1, 8 - len(label)))
+    line = '  ' // label // repeat(' ', max(2, 20 - len(label)))
 
     do m = 0, ubound(f, 1)
        write(cell,'(es15.6)') f(m)
@@ -290,6 +227,102 @@ contains
   end subroutine show_row
 
   !-------------------------------------------------------------------!
+  ! One row: a chain of blocks, marched and then expanded. A chain of
+  ! one is a homogeneous row and takes the same path.
+  !-------------------------------------------------------------------!
+
+  subroutine one_row(cfg, names, orders)
+
+    type(configuration), intent(in) :: cfg
+    character(len=*)   , intent(in) :: names(:)
+    integer            , intent(in) :: orders(:)
+
+    type(family_holder), allocatable :: schemes(:)
+    type(chain_block) , allocatable :: chain(:)
+    integer , allocatable :: added(:)
+    real(dp), allocatable :: dt(:), t(:), held(:), f(:)
+    real(dp) :: achieved
+    integer :: b, nd, k, d, given
+    logical :: ok
+
+    nd = cfg % state_degree + 1
+    allocate(schemes(size(names)), added(size(names)))
+    call assembled(cfg, names, orders, schemes, added, ok)
+    if (.not. ok) return
+
+    call steps_of(cfg, dt, t)
+    given = schemes(1) % scheme % history_depth()
+    held  = [((initial(d, t(k)), d = 0, nd - 1), k = 1, given)]
+
+    call march_chain(schemes, added, van_der_pol(cfg % state_degree), nd, &
+         & chosen_grid(cfg), cfg % design, held, chain, dt, t, achieved)
+
+    call chain_expansion(chain, van_der_pol(cfg % state_degree), &
+         & van_der_pol_energy(cfg % state_degree), nd, dt, cfg % design, &
+         & cfg % max_derivative_degree, f)
+
+    call show_row(labelled(names, orders), f, achieved)
+
+    associate (u1 => b); end associate
+
+  end subroutine one_row
+
+  !-------------------------------------------------------------------!
+  ! The families a row names, and the instants split among them. A
+  ! row whose blocks would add no more instants than their families
+  ! reach back over is not built.
+  !-------------------------------------------------------------------!
+
+  subroutine assembled(cfg, names, orders, schemes, added, ok)
+
+    type(configuration), intent(in)  :: cfg
+    character(len=*)   , intent(in)  :: names(:)
+    integer            , intent(in)  :: orders(:)
+    type(family_holder), intent(inout) :: schemes(:)
+    integer            , intent(inout) :: added(:)
+    logical            , intent(out)   :: ok
+
+    class(family), allocatable :: scheme
+    logical :: staged, exists
+    integer :: b, blocks, share
+
+    blocks = size(names)
+    ok = .true.
+
+    share = cfg % instants / blocks
+    added = share
+    added(1) = cfg % instants - share * (blocks - 1)
+
+    do b = 1, blocks
+       call chosen(names(b), orders(b), scheme, staged, exists)
+       if (.not. exists) then
+          ok = .false.
+          cycle
+       end if
+       allocate(schemes(b) % scheme, source=scheme)
+       deallocate(scheme)
+       if (added(b) <= schemes(b) % scheme % history_depth()) ok = .false.
+    end do
+
+  end subroutine assembled
+
+  function chosen_grid(cfg) result(steps)
+
+    type(configuration), intent(in) :: cfg
+    class(grid), allocatable :: steps
+
+    select case (trim(cfg % grid))
+    case ('uniform')
+       allocate(steps, source=uniform_grid(cfg % time_duration))
+    case ('random')
+       allocate(steps, source=random_grid(cfg % time_duration, cfg % seed))
+    case default
+       error stop 'graph_time_integrator: a grid is uniform or random'
+    end select
+
+  end function chosen_grid
+
+  !-------------------------------------------------------------------!
   ! Every row the configuration asks for.
   !-------------------------------------------------------------------!
 
@@ -297,35 +330,125 @@ contains
 
     type(configuration), intent(in) :: cfg
 
-    integer :: order
-
-    if (trim(cfg % combinations) /= 'homogeneous') then
-       write(*,'(a)') ' '
-       write(*,'(a)') ' only homogeneous rows are built: a horizon of two families needs'
-       write(*,'(a)') ' the junction to map one block layout onto another, which is not here.'
-       error stop 'graph_time_integrator: the combinations asked for are not built'
-    end if
-
     call heading(cfg)
 
-    if (index(cfg % families, 'bdf') > 0) then
-       do order = 1, cfg % max_discretization_order
-          call one_row(cfg, 'bdf', order)
-       end do
-    end if
-
-    if (index(cfg % families, 'adams') > 0) then
-       do order = 1, cfg % max_discretization_order
-          call one_row(cfg, 'adams', order)
-       end do
-    end if
-
-    if (index(cfg % families, 'dirk') > 0) then
-       do order = 2, min(4, cfg % max_discretization_order)
-          call one_row(cfg, 'dirk', order)
-       end do
-    end if
+    if (asked(cfg, 'homogeneous')) call homogeneous_rows(cfg)
+    if (asked(cfg, 'pairs'))       call pair_rows(cfg)
+    if (asked(cfg, 'triples'))     call triple_rows(cfg)
 
   end subroutine table
+
+  pure logical function asked(cfg, what) result(yes)
+
+    type(configuration), intent(in) :: cfg
+    character(len=*)   , intent(in) :: what
+
+    yes = index(cfg % combinations, what) > 0
+
+  end function asked
+
+  !-------------------------------------------------------------------!
+  ! The names a configuration lists, in the order it lists them.
+  !-------------------------------------------------------------------!
+
+  function listed(cfg) result(names)
+
+    type(configuration), intent(in) :: cfg
+    character(len=8), allocatable :: names(:)
+
+    character(len=8) :: every(3)
+    integer :: i, n
+
+    every = ['bdf     ', 'adams   ', 'dirk    ']
+    n = 0
+    do i = 1, 3
+       if (index(cfg % families, trim(every(i))) > 0) n = n + 1
+    end do
+
+    allocate(names(n))
+    n = 0
+    do i = 1, 3
+       if (index(cfg % families, trim(every(i))) > 0) then
+          n = n + 1
+          names(n) = every(i)
+       end if
+    end do
+
+  end function listed
+
+  subroutine homogeneous_rows(cfg)
+
+    type(configuration), intent(in) :: cfg
+
+    character(len=8), allocatable :: names(:)
+    integer :: i, order
+
+    names = listed(cfg)
+
+    do i = 1, size(names)
+       do order = 1, cfg % max_discretization_order
+          call one_row(cfg, [names(i)], [order])
+       end do
+    end do
+
+  end subroutine homogeneous_rows
+
+  !-------------------------------------------------------------------!
+  ! Every ordered pair of distinct families, at one order or, when
+  ! mixed orders are asked for, at every pair of orders.
+  !-------------------------------------------------------------------!
+
+  subroutine pair_rows(cfg)
+
+    type(configuration), intent(in) :: cfg
+
+    character(len=8), allocatable :: names(:)
+    integer :: i, j, p, q
+
+    names = listed(cfg)
+
+    do i = 1, size(names)
+       do j = 1, size(names)
+          if (i == j) cycle
+          do p = 1, cfg % max_discretization_order
+             if (cfg % mixed_orders) then
+                do q = 1, cfg % max_discretization_order
+                   call one_row(cfg, [names(i), names(j)], [p, q])
+                end do
+             else
+                call one_row(cfg, [names(i), names(j)], [p, p])
+             end if
+          end do
+       end do
+    end do
+
+  end subroutine pair_rows
+
+  !-------------------------------------------------------------------!
+  ! Every permutation of the families listed, at one order.
+  !-------------------------------------------------------------------!
+
+  subroutine triple_rows(cfg)
+
+    type(configuration), intent(in) :: cfg
+
+    character(len=8), allocatable :: names(:)
+    integer :: i, j, k, order
+
+    names = listed(cfg)
+
+    do i = 1, size(names)
+       do j = 1, size(names)
+          if (j == i) cycle
+          do k = 1, size(names)
+             if (k == i .or. k == j) cycle
+             do order = 1, cfg % max_discretization_order
+                call one_row(cfg, [names(i), names(j), names(k)], [order, order, order])
+             end do
+          end do
+       end do
+    end do
+
+  end subroutine triple_rows
 
 end program graph_time_integrator

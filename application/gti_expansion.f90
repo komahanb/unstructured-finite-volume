@@ -73,6 +73,7 @@ module gti_expansion
 
   private
   public :: expansion, family_holder
+  public :: marches_by_stages
   public :: block_reach
 
   !===================================================================!

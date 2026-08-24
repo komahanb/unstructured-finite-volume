@@ -194,6 +194,8 @@ contains
     allocate(r(size(q)))
     series(0, :) = q
 
+    allocate(frozen(0:max_order, size(q)))
+
     do m = 1, max_order
        frozen = series
        frozen(m, :) = 0.0_dp

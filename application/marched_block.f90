@@ -24,18 +24,12 @@ program marched_block
   use view_directed_stored  , only : stored_directed_graph
   use field_calculus        , only : field
   use field_stored          , only : stored_field
-  use operation_stencil     , only : stencil
-  use operation_newton      , only : newton
-  use operation_dense_direct, only : dense_direct
   use operation_family      , only : family
   use operation_family_bdf  , only : bdf_family
   use operation_family_adams, only : adams_family
-  use operation_grid        , only : uniform_grid
-  use operation_weight      , only : scheme_weight
-  use operation_scheme_stencil, only : derived_constraints
   use physics_vanderpol     , only : van_der_pol
-  use gti_expansion         , only : block_reach
   use gti_block             , only : block_residual
+  use gti_march             , only : partition, block_of, solved
 
   implicit none
 
@@ -58,76 +52,7 @@ contains
 
   end function unknown
 
-  !-------------------------------------------------------------------!
-  ! The instants of a uniform partition of the duration.
-  !-------------------------------------------------------------------!
 
-  subroutine partition(n, dt, t)
-
-    integer, intent(in) :: n
-    real(dp), allocatable, intent(out) :: dt(:), t(:)
-
-    type(stored_directed_graph) :: instants
-    type(stored_field) :: knobs
-    type(uniform_grid) :: steps
-    class(field), allocatable :: out
-    integer :: k
-
-    instants = stored_directed_graph(n, tails=[integer ::], heads=[integer ::])
-    knobs    = stored_field('design', instants % vertex_set(), 1)
-    call knobs % set_real_vector([0.0_dp])
-
-    steps = uniform_grid(duration)
-    call steps % apply(instants, [knobs], out)
-    call out % real_vector(dt)
-
-    allocate(t(n))
-    t(1) = 0.0_dp
-    do k = 2, n
-       t(k) = t(k - 1) + dt(k)
-    end do
-
-  end subroutine partition
-
-  !-------------------------------------------------------------------!
-  ! The derived rows of a block, as a stencil.
-  !-------------------------------------------------------------------!
-
-  function scheme_rows(scheme, n, dt) result(rows)
-
-    class(family), intent(in) :: scheme
-    integer      , intent(in) :: n
-    real(dp)     , intent(in) :: dt(:)
-    type(stencil) :: rows
-
-    type(stored_directed_graph) :: edges
-    type(stored_field) :: steps, source_field, condition_field
-    type(scheme_weight) :: weights
-    class(field), allocatable :: out
-    integer , allocatable :: tails(:), heads(:), source_degree(:), determines(:)
-    real(dp), allocatable :: w(:)
-    integer :: e
-
-    call block_reach(scheme, degrees, n, tails, heads, source_degree, determines)
-
-    edges           = stored_directed_graph(n, tails=tails, heads=heads)
-    steps           = stored_field('dt', edges % vertex_set(), n)
-    source_field    = stored_field('source degree', edges % edge_set(), size(tails))
-    condition_field = stored_field('determines', edges % edge_set(), size(tails))
-    call steps           % set_real_vector(dt)
-    call source_field    % set_integer_vector(source_degree)
-    call condition_field % set_integer_vector(determines)
-
-    weights = scheme_weight(scheme)
-    call weights % apply(edges, [steps, source_field, condition_field], out)
-    call out % real_vector(w)
-
-    rows = derived_constraints( &
-         & [(unknown(heads(e), determines(e)), e = 1, size(heads))], &
-         & [(unknown(tails(e), source_degree(e)), e = 1, size(tails))], &
-         & w, n * degrees, 'derived rows')
-
-  end function scheme_rows
 
   !-------------------------------------------------------------------!
   ! March a block: the steps, the rows, the carried instants, and
@@ -143,33 +68,16 @@ contains
     real(dp)     , intent(out) :: achieved
 
     type(block_residual) :: rows
-    type(newton) :: solver
-    type(stored_directed_graph) :: unknowns
-    type(stored_field) :: design
     real(dp), allocatable :: dt(:), held(:)
-    integer , allocatable :: carried(:)
     integer :: h, k, d
 
-    call partition(n, dt, t)
+    call partition(duration, n, dt, t)
     h = scheme % history_depth()
 
-    carried = [(((k - 1) * degrees + d + 1, d = 0, degrees - 1), k = 1, h)]
-    held    = [((exact(d, t(k)), d = 0, degrees - 1), k = 1, h)]
+    held = [((exact(d, t(k)), d = 0, degrees - 1), k = 1, h)]
+    rows = block_of(scheme, van_der_pol(max_state_degree), degrees, n, dt, held)
 
-    rows = block_residual(scheme_rows(scheme, n, dt), van_der_pol(max_state_degree), &
-         & n, degrees, scheme % primary_degree(max_state_degree), carried, held)
-
-    unknowns = stored_directed_graph(n * degrees, tails=[integer ::], heads=[integer ::])
-    design   = stored_field('nu', unknowns % vertex_set(), n)
-    call design % set_real_vector(spread(design_value, 1, n))
-
-    allocate(solver % inner, source=dense_direct())
-    solver % tolerance = 1.0e-12_dp
-    call solver % attach(rows, unknowns, unknowns % vertex_set(), n * degrees, &
-         & held_inputs = [design])
-
-    allocate(q(n * degrees), source=0.0_dp)
-    call solver % solve(spread(0.0_dp, 1, n * degrees), q, achieved)
+    call solved(rows, n, degrees, design_value, q, achieved)
 
   end subroutine march
 

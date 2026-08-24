@@ -26,6 +26,12 @@
 ! statement's argument and is renamed for each half before it is
 ! passed on, since each half checks the variation against its own.
 !
+! A variation in the design is answered too, and it is a different
+! statement: the scheme's rows are frozen at the steps they were
+! built from and the carried rows hold given numbers, so neither
+! varies with the design and only the governing rows do. That partial
+! is what a sensitivity reads, by either the tangent or the adjoint.
+!
 !             WHAT IS REFUSED
 !
 ! A state that is not one component per degree per slice; a missing
@@ -217,7 +223,7 @@ contains
     class(field), intent(in), optional       :: input_data(:)
     class(field), allocatable, intent(inout) :: output
 
-    type(stored_field) :: out, state
+    type(stored_field) :: state
     class(field), allocatable :: half
     real(dp), allocatable :: r(:), governing(:), x(:)
 
@@ -239,13 +245,30 @@ contains
     call placed(this, governing, r)
     call carry(this, x, r)
 
+    call placed_output(this, input_graph, r, output)
+
+  end subroutine block_apply
+
+  !===================================================================!
+  ! The rows, on the unknowns they belong to.
+  !===================================================================!
+
+  subroutine placed_output(this, input_graph, r, output)
+
+    class(block_residual), intent(in) :: this
+    class(directed_graph), intent(in) :: input_graph
+    real(dp)             , intent(in) :: r(:)
+    class(field), allocatable, intent(inout) :: output
+
+    type(stored_field) :: out
+
     out = stored_field(this % name(), input_graph % vertex_set(), size(r))
     call out % set_real_vector(r)
 
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
 
-  end subroutine block_apply
+  end subroutine placed_output
 
   !===================================================================!
   ! The tangent: each half differentiated in its own argument, the
@@ -261,7 +284,7 @@ contains
     type(variation)      , intent(in)        :: variations(:)
     class(field), allocatable, intent(inout) :: output
 
-    type(stored_field) :: out, state
+    type(stored_field) :: state
     class(field), allocatable :: half
     real(dp), allocatable :: r(:), governing(:), v(:), x(:)
 
@@ -277,16 +300,19 @@ contains
     state = stored_field('state', input_graph % vertex_set(), size(x))
     call state % set_real_vector(x)
 
-    call tangent_halves(this, input_graph, input_data, variations, state, r, governing)
+    if (variations(1) % argument_is(this % argument(1))) then
+       call tangent_halves(this, input_graph, input_data, variations, state, r, governing)
+       call placed(this, governing, r)
+       call carry_direction(this, v, r)
+    else if (variations(1) % argument_is(this % argument(2))) then
+       call design_half(this, input_data, variations, r, governing)
+       call placed(this, governing, r)
+       call carry_held(this, r)
+    else
+       error stop 'gti_block: a variation names the state or the design'
+    end if
 
-    call placed(this, governing, r)
-    call carry_direction(this, v, r)
-
-    out = stored_field(this % name(), input_graph % vertex_set(), size(r))
-    call out % set_real_vector(r)
-
-    if (allocated(output)) deallocate(output)
-    allocate(output, source=out)
+    call placed_output(this, input_graph, r, output)
 
   end subroutine block_partial_action
 
@@ -316,6 +342,45 @@ contains
     call half % real_vector(governing)
 
   end subroutine tangent_halves
+
+  !===================================================================!
+  ! The design half: the scheme's rows are frozen and the carried
+  ! rows hold given numbers, so only the governing rows vary.
+  !===================================================================!
+
+  subroutine design_half(this, input_data, variations, r, governing)
+
+    class(block_residual), intent(in) :: this
+    class(field)         , intent(in) :: input_data(:)
+    type(variation)      , intent(in) :: variations(:)
+    real(dp), allocatable, intent(out) :: r(:), governing(:)
+
+    class(field), allocatable :: half
+
+    allocate(r(this % num_unknowns()), source=0.0_dp)
+
+    call this % physics % partial_action(this % instants, input_data, &
+         & [variations(1) % with_argument(this % physics % argument(2))], half)
+    call half % real_vector(governing)
+
+  end subroutine design_half
+
+  !===================================================================!
+  ! A carried row holds a given number, which varies with nothing.
+  !===================================================================!
+
+  pure subroutine carry_held(this, r)
+
+    class(block_residual), intent(in)    :: this
+    real(dp)             , intent(inout) :: r(:)
+
+    integer :: i
+
+    do i = 1, size(this % carried)
+       r(this % carried(i)) = 0.0_dp
+    end do
+
+  end subroutine carry_held
 
   pure subroutine carry_direction(this, v, r)
 

@@ -10,6 +10,9 @@
 !      coordinates(:,:)     (ndim, num_points), any ndim
 !      cell_vertices(:,:)   (corner, cell), padded; 1-based points
 !      num_cell_vertices(:) the corners each cell owns
+!                           - or the two as one ragged list of lists
+!                             (relation_binary), which the padded form
+!                             is converted to
 !      cell_types(:)        gmsh's numbers (1 line, 2 triangle, 3 quad,
 !                           4 tet, 5 hex, 6 prism, 7 pyramid), or
 !                           polygon_cell, or hypercube_cell
@@ -103,6 +106,7 @@ module view_paraview_writer
   use util_string    , only : string
   use field_stored   , only : stored_field
   use view_mesh      , only : mesh
+  use relation_binary, only : ragged
 
   implicit none
 
@@ -179,6 +183,7 @@ module view_paraview_writer
 
   interface paraview_writer
      module procedure construct
+     module procedure construct_ragged
   end interface paraview_writer
 
 contains
@@ -233,9 +238,9 @@ contains
   end function hypercube_type
 
   !===================================================================!
-  ! This is the constructor for the paraview writer. The gate: the
-  ! corner arrays must fit the mesh's cells, the drawn axes must be
-  ! distinct coordinates, and a slice must fix every other one.
+  ! This is the constructor for the paraview writer. The corners may
+  ! arrive padded - one fixed width, a count per cell - or as the
+  ! ragged list they are; the padded form is the ragged one with room.
   !===================================================================!
 
   impure type(paraview_writer) function construct(m, coordinates, &
@@ -250,6 +255,28 @@ contains
     integer   , intent(in), optional :: axes(:)
     real(dp)  , intent(in), optional :: slice(:)
 
+    this = construct_ragged(m, coordinates, ragged(cell_vertices, num_cell_vertices), &
+         & cell_types, axes, slice)
+
+  end function construct
+
+  !===================================================================!
+  ! The writer from the ragged corners. The gate: the corner lists
+  ! must fit the mesh's cells and lie among the points, the drawn
+  ! axes must be distinct coordinates, and a slice must fix every
+  ! other one.
+  !===================================================================!
+
+  impure type(paraview_writer) function construct_ragged(m, coordinates, &
+       & corners, cell_types, axes, slice) result (this)
+
+    type(mesh), intent(in)           :: m
+    real(dp)  , intent(in)           :: coordinates(:,:)    ! (ndim, point)
+    type(ragged), intent(in)         :: corners             ! each cell's points, in order
+    integer   , intent(in)           :: cell_types(:)
+    integer   , intent(in), optional :: axes(:)
+    real(dp)  , intent(in), optional :: slice(:)
+
     type(stored_field)   :: volume
     integer              :: ndim, num_points, c, k, n
     integer, allocatable :: drawn(:), fixed(:)
@@ -259,16 +286,13 @@ contains
     num_points       = size(coordinates, 2)
     this % num_cells = m % num_vertices()
 
-    call gate(size(num_cell_vertices) == this % num_cells, 'one corner count per cell')
-    call gate(size(cell_types)        == this % num_cells, 'one type per cell')
-    call gate(size(cell_vertices, 2)  == this % num_cells, 'one corner list per cell')
-    call gate(all(num_cell_vertices >= 1) .and. &
-         &    all(num_cell_vertices <= size(cell_vertices, 1)), &
-         &    'corner counts within the corner lists')
+    call gate(corners % num_lists() == this % num_cells, 'one corner list per cell')
+    call gate(size(cell_types)       == this % num_cells, 'one type per cell')
+    call gate(all(corners % entries >= 1) .and. all(corners % entries <= num_points), &
+         &    'corners among the points')
     do c = 1, this % num_cells
-       n = num_cell_vertices(c)
-       call gate(all(cell_vertices(1:n, c) >= 1) .and. &
-            &    all(cell_vertices(1:n, c) <= num_points), 'corners among the points')
+       n = corners % length(c)
+       call gate(n >= 1, 'a corner for every cell')
        if (cell_types(c) == hypercube_cell) then
           call gate(n == 2 ** ndim, 'a hypercube of 2^ndim corners')
        end if
@@ -299,13 +323,12 @@ contains
 
     if (sliced) then
        call gate(all(cell_types == hypercube_cell), 'hypercube cells for a slice')
-       call sectioned(this, coordinates, cell_vertices, drawn, fixed, slice)
+       call sectioned(this, coordinates, corners, drawn, fixed, slice)
     else
-       call projected(this, coordinates, cell_vertices, num_cell_vertices, &
-            & cell_types, drawn)
+       call projected(this, coordinates, corners, cell_types, drawn)
     end if
 
-  end function construct
+  end function construct_ragged
 
   !===================================================================!
   ! The projection: every point, its drawn coordinates first and
@@ -313,16 +336,15 @@ contains
   ! reordered to paraview's order along the drawn axes.
   !===================================================================!
 
-  subroutine projected(this, coordinates, cell_vertices, num_cell_vertices, &
-       & cell_types, drawn)
+  subroutine projected(this, coordinates, corners, cell_types, drawn)
 
     type(paraview_writer), intent(inout) :: this
     real(dp)             , intent(in)    :: coordinates(:,:)
-    integer              , intent(in)    :: cell_vertices(:,:)
-    integer              , intent(in)    :: num_cell_vertices(:)
+    type(ragged)         , intent(in)    :: corners
     integer              , intent(in)    :: cell_types(:)
     integer              , intent(in)    :: drawn(:)
 
+    integer, allocatable :: list(:)
     integer :: ndim, num_points, c, k, n, at
 
     ndim       = size(coordinates, 1)
@@ -337,19 +359,19 @@ contains
     this % cells = [(c, c = 1, this % num_cells)]
     allocate(this % first_point(this % num_cells + 1))
     allocate(this % types(this % num_cells))
-    allocate(this % cell_points(sum(num_cell_vertices)))
+    allocate(this % cell_points(size(corners % entries)))
 
     this % first_point(1) = 1
     do c = 1, this % num_cells
-       n  = num_cell_vertices(c)
-       at = this % first_point(c)
+       n    = corners % length(c)
+       at   = this % first_point(c)
+       list = corners % list(c)
        if (cell_types(c) == hypercube_cell) then
           call gate(ndim <= 3, 'a hypercube above three dimensions drawn through a slice')
-          this % cell_points(at : at + n - 1) = &
-               & cell_vertices(hypercube_order(ndim, [(k, k = 1, ndim)], drawn), c)
+          this % cell_points(at : at + n - 1) = list(hypercube_order(ndim, [(k, k = 1, ndim)], drawn))
           this % types(c) = this % cell_type % hypercube_type(ndim)
        else
-          this % cell_points(at : at + n - 1) = cell_vertices(1:n, c)
+          this % cell_points(at : at + n - 1) = list
           this % types(c) = this % cell_type % element_type(cell_types(c))
        end if
        this % first_point(c + 1) = at + n
@@ -363,18 +385,18 @@ contains
   ! the drawn axes with its own points, shared with no other cell.
   !===================================================================!
 
-  subroutine sectioned(this, coordinates, cell_vertices, drawn, fixed, slice)
+  subroutine sectioned(this, coordinates, corners, drawn, fixed, slice)
 
     type(paraview_writer), intent(inout) :: this
     real(dp)             , intent(in)    :: coordinates(:,:)
-    integer              , intent(in)    :: cell_vertices(:,:)
+    type(ragged)         , intent(in)    :: corners
     integer              , intent(in)    :: drawn(:)
     integer              , intent(in)    :: fixed(:)
     real(dp)             , intent(in)    :: slice(:)
 
     integer :: ndim, num_corners, num_drawn_corners, num_kept, c, i, j, k
     integer , allocatable :: kept(:)
-    real(dp), allocatable :: corners(:,:), section(:,:)
+    real(dp), allocatable :: cell_corners(:,:), section(:,:)
 
     ndim              = size(coordinates, 1)
     num_corners       = 2 ** ndim
@@ -384,8 +406,8 @@ contains
     allocate(kept(this % num_cells))
     num_kept = 0
     do c = 1, this % num_cells
-       corners = coordinates(:, cell_vertices(1:num_corners, c))
-       if (within(corners, fixed, slice)) then
+       cell_corners = coordinates(:, corners % list(c))
+       if (within(cell_corners, fixed, slice)) then
           num_kept       = num_kept + 1
           kept(num_kept) = c
        end if
@@ -400,8 +422,8 @@ contains
 
     do i = 1, num_kept
        c       = kept(i)
-       corners = coordinates(:, cell_vertices(1:num_corners, c))
-       section = sectioned_corners(corners, fixed, slice, drawn)
+       cell_corners = coordinates(:, corners % list(c))
+       section = sectioned_corners(cell_corners, fixed, slice, drawn)
        do j = 1, num_drawn_corners
           k = (i - 1) * num_drawn_corners + j
           this % points(1:size(drawn), k) = section(drawn, j)

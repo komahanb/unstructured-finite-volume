@@ -109,6 +109,7 @@ module relation_binary
   public :: binary_relation, csr_relation, transposed_relation, transpose_of
   public :: inclusion_of
   public :: group_by_key
+  public :: ragged
   public :: transpose_padded
 
   !===================================================================!
@@ -234,6 +235,29 @@ module relation_binary
      ! graph-owned relations, never inside them.
 
   end type transposed_relation
+
+  !===================================================================!
+  ! A list of lists, compressed: the entries of list k are
+  ! entries(first(k) : first(k+1) - 1). This is the shape group_by_key
+  ! produces and every compressed walk reads. The padded shape - one
+  ! fixed width with a count per list - is the same relation stored
+  ! with room, and the two are converted here and nowhere else.
+  !===================================================================!
+
+  type :: ragged
+     integer, allocatable :: first(:)
+     integer, allocatable :: entries(:)
+   contains
+     procedure :: num_lists => ragged_num_lists
+     procedure :: length    => ragged_length
+     procedure :: list      => ragged_list
+     procedure :: padded    => ragged_padded
+  end type ragged
+
+  interface ragged
+     module procedure ragged_of_padded
+     module procedure ragged_of_lists
+  end interface ragged
 
 contains
 
@@ -700,7 +724,7 @@ contains
     integer, allocatable, intent(out) :: num_reverse(:)
 
     integer, allocatable :: keys(:), values(:), ptr(:), grouped(:)
-    integer :: key, k, n, v
+    integer :: key, k, n
 
     allocate(keys(sum(num_forward)), values(sum(num_forward)))
     n = 0
@@ -713,17 +737,104 @@ contains
     end do
 
     call group_by_key(n_values, keys, values, ptr, grouped)
-
-    allocate(num_reverse(n_values))
-    do v = 1, n_values
-       num_reverse(v) = ptr(v + 1) - ptr(v)
-    end do
-    allocate(reverse(maxval(num_reverse), n_values))
-    reverse = 0
-    do v = 1, n_values
-       reverse(1:num_reverse(v), v) = grouped(ptr(v) : ptr(v + 1) - 1)
-    end do
+    call ragged_padded(ragged(ptr, grouped), reverse, num_reverse)
 
   end subroutine transpose_padded
+
+  !===================================================================!
+  ! The ragged list from its padded shape, and from its two arrays.
+  ! Either way the lists are copied once, in order.
+  !===================================================================!
+
+  pure function ragged_of_padded(x, num_x) result(this)
+
+    integer, intent(in) :: x(:,:)
+    integer, intent(in) :: num_x(:)
+    type(ragged) :: this
+
+    integer :: k, at
+
+    if (size(x, 2) /= size(num_x)) error stop 'ragged: one count per list'
+    if (any(num_x < 0) .or. any(num_x > size(x, 1))) error stop 'ragged: counts within the width'
+
+    allocate(this % first(size(num_x) + 1), this % entries(sum(num_x)))
+    at = 1
+    do k = 1, size(num_x)
+       this % first(k) = at
+       this % entries(at : at + num_x(k) - 1) = x(1:num_x(k), k)
+       at = at + num_x(k)
+    end do
+    this % first(size(num_x) + 1) = at
+
+  end function ragged_of_padded
+
+  pure function ragged_of_lists(first, entries) result(this)
+
+    integer, intent(in) :: first(:)
+    integer, intent(in) :: entries(:)
+    type(ragged) :: this
+
+    if (size(first) < 1) error stop 'ragged: a first entry for every list and one past the last'
+    if (first(1) /= 1 .or. first(size(first)) /= size(entries) + 1) then
+       error stop 'ragged: the lists cover the entries exactly'
+    end if
+
+    this % first   = first
+    this % entries = entries
+
+  end function ragged_of_lists
+
+  pure integer function ragged_num_lists(this)
+
+    class(ragged), intent(in) :: this
+
+    ragged_num_lists = size(this % first) - 1
+
+  end function ragged_num_lists
+
+  pure integer function ragged_length(this, k)
+
+    class(ragged), intent(in) :: this
+    integer      , intent(in) :: k
+
+    ragged_length = this % first(k + 1) - this % first(k)
+
+  end function ragged_length
+
+  pure function ragged_list(this, k) result(members)
+
+    class(ragged), intent(in) :: this
+    integer      , intent(in) :: k
+    integer, allocatable :: members(:)
+
+    members = this % entries(this % first(k) : this % first(k + 1) - 1)
+
+  end function ragged_list
+
+  !===================================================================!
+  ! The padded shape: the widest list's width, a count per list, and
+  ! zeros past each count.
+  !===================================================================!
+
+  pure subroutine ragged_padded(this, x, num_x)
+
+    class(ragged)       , intent(in)  :: this
+    integer, allocatable, intent(out) :: x(:,:)
+    integer, allocatable, intent(out) :: num_x(:)
+
+    integer :: k, n
+
+    n = this % num_lists()
+    allocate(num_x(n))
+    do k = 1, n
+       num_x(k) = this % length(k)
+    end do
+    allocate(x(max(maxval(num_x), 0), n))
+    x = 0
+    do k = 1, n
+       x(1:num_x(k), k) = this % entries(this % first(k) : this % first(k + 1) - 1)
+    end do
+
+  end subroutine ragged_padded
 
 end module relation_binary

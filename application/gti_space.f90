@@ -37,6 +37,7 @@ module gti_space
   use operation_robin_condition , only : robin_condition, neumann
   use field_forms               , only : polynomial_form
   use view_paraview_writer      , only : paraview_writer, polygon_cell
+  use relation_binary           , only : ragged
   use util_string               , only : string
 
   implicit none
@@ -510,31 +511,14 @@ contains
     real(dp)        , intent(in) :: values(:,:)
 
     type(paraview_writer) :: writer
-    integer, allocatable :: cell_vertices(:,:), num_cell_vertices(:), cell_types(:)
-    integer :: c, k, n, widest
 
     if (size(values, 1) /= this % num_cells .or. size(values, 2) /= size(names)) then
        error stop 'gti_space: one value per cell per name'
     end if
 
-    widest = 0
-    do c = 1, this % num_cells
-       widest = max(widest, this % first_corner(c + 1) - this % first_corner(c))
-    end do
-
-    allocate(cell_vertices(widest, this % num_cells), source=0)
-    allocate(num_cell_vertices(this % num_cells), cell_types(this % num_cells))
-    do c = 1, this % num_cells
-       n = this % first_corner(c + 1) - this % first_corner(c)
-       num_cell_vertices(c) = n
-       cell_types(c)        = polygon_cell
-       do k = 1, n
-          cell_vertices(k, c) = this % cell_corner(this % first_corner(c) + k - 1)
-       end do
-    end do
-
-    writer = paraview_writer(this % m, this % corner, cell_vertices, num_cell_vertices, &
-         & cell_types)
+    writer = paraview_writer(this % m, this % corner, &
+         & ragged(this % first_corner, this % cell_corner), &
+         & spread(polygon_cell, 1, this % num_cells))
     call writer % write(path, values, string(names))
 
   end subroutine written_paraview

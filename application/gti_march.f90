@@ -73,11 +73,12 @@ contains
   ! The instants a grid makes over the duration it was given.
   !===================================================================!
 
-  subroutine partitioned(steps, n, dt, t)
+  subroutine partitioned(steps, n, dt, t, design)
 
     class(grid), intent(in) :: steps
     integer    , intent(in) :: n
     real(dp), allocatable, intent(out) :: dt(:), t(:)
+    real(dp), intent(in), optional :: design(:)
 
     type(stored_directed_graph) :: instants
     type(stored_field) :: knobs
@@ -85,8 +86,14 @@ contains
     integer :: k
 
     instants = stored_directed_graph(n, tails=[integer ::], heads=[integer ::])
-    knobs    = stored_field('design', instants % vertex_set(), 1)
-    call knobs % set_real_vector([0.0_dp])
+
+    if (present(design)) then
+       knobs = stored_field('design', instants % vertex_set(), size(design))
+       call knobs % set_real_vector(design)
+    else
+       knobs = stored_field('design', instants % vertex_set(), 1)
+       call knobs % set_real_vector([0.0_dp])
+    end if
 
     call steps % apply(instants, [knobs], out)
     call out % real_vector(dt)

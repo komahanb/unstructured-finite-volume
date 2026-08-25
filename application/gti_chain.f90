@@ -144,7 +144,7 @@ contains
   !===================================================================!
 
   subroutine march_chain(schemes, added, physics, degrees, steps, &
-       & design, initial, chain, dt, t, achieved)
+       & design, initial, chain, dt, t, achieved, grid_design)
 
     type(family_holder)   , intent(in) :: schemes(:)
     integer               , intent(in) :: added(:), degrees
@@ -154,6 +154,7 @@ contains
     type(chain_block), allocatable, intent(out) :: chain(:)
     real(dp)         , allocatable, intent(out) :: dt(:), t(:)
     real(dp)              , intent(out) :: achieved
+    real(dp), intent(in), optional     :: grid_design(:)
 
     integer , allocatable :: first(:), last(:)
     real(dp) :: one_achieved
@@ -164,7 +165,7 @@ contains
     end if
 
     call horizon_bounds(schemes, added, first, last)
-    call partitioned(steps, last(size(added)), dt, t)
+    call partitioned(steps, last(size(added)), dt, t, grid_design)
 
     allocate(chain(size(added)))
     achieved = 0.0_dp

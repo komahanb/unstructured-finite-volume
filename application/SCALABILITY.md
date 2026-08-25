@@ -18,43 +18,70 @@ cost at all - it is a cliff, and everything downstream of it was
 misread as one until it was separated out.
 
 `gti_march % solved` sets `tolerance = 1e-12 x max(1, scale_of(...))`.
-The residual a march can actually reach does not stay put as the
-horizon widens - it rises with the count of equations. Measured on one
-`bdf2` row, design one, timing the march apart from the formation and
-the solve it calls:
+The iteration counts below are counted by the accounting layer, not
+inferred from a ratio of times as they were when this was first
+written.
+
+It is one scheme, not every scheme, and it is the step and not the
+count of unknowns. At a fixed duration of three, raising the instants:
 
 ```
-  unknowns   march(s)  dense_solve(s)   achieved   march/solve
-       123      0.056       0.034       8.7e-13        1.6
-       183      0.124       0.109       2.5e-12        1.1
-       243      0.226       0.251       4.6e-12        0.9
-       303      0.371       0.480       9.3e-12        0.8
-       363      3.183       0.821       1.4e-11        3.9
+ instants   bdf1 loops   bdf2 loops   bdf2 reported
+      106         8            8          converged
+      112         8            9          converged
+      115         8           37          converged
+      121         8           40          converged
+      161         8           40          converged
 ```
 
-`achieved` rises by sixteen times over a threefold rise in the count.
-Where it passes what the tolerance will accept, the march stops
-converging and spends its whole iteration budget - forty - on every
-solve. `march/solve` jumps from 0.8 to 3.9 at that step, and the march
-time with it, by 8.6 times across a 1.2 times rise in the count.
+bdf1 takes eight iterations at every size and never degrades. bdf2
+reaches the budget of forty and stays there, and the row prints as
+converged while it does: newton leaves at the budget, the residual it
+leaves at is 1.4e-11, and show_row calls a march unconverged only
+above 1e-8.
 
-The row does not report any of this. `show_row` calls a march
-unconverged above 1e-8 and `achieved` is 1.4e-11, so the table reads
-as though nothing happened while every solve behind it costs about
-five times what it needs to.
+Holding the instants at 161 and varying only the duration shows what
+it actually follows:
 
-This is the same shape as the absolute tolerance that once had newton
-burning a thousand iterations: a floor that rises with the problem and
-a tolerance that does not follow it. `scale_of` is meant to follow it
-and does not follow it far enough.
+```
+ dt          0.15    0.075   0.0375   0.01875
+ bdf2 loops     3       14       10        40
+```
 
-**What one processor should do instead.** Take the tolerance from
-something that rises with the problem as the floor does - the first
-residual of the march, or the count of equations times the machine
-epsilon times a scale - and stop when progress stops rather than when
-a fixed number is reached. Until that is done, every measurement past
-about 120 instants is measuring the iteration cap and not the
-algorithm.
+**The step, not the count.** Halving dt from 0.0375 takes bdf2 from ten
+iterations to the budget, at 161 instants either way. Refining a
+grid is the whole of what scaling up means, so this is met by every
+run that refines rather than by every run that grows.
+
+The reference is the wrong one. `scale_of` is the norm of the residual
+at the state newton starts from, and that state holds one instant's
+components repeated. A difference row of a constant vanishes, by the
+same consistency that makes the coefficients sum to zero, so the
+starting residual carries none of the `1/dt^2` the rows carry. The
+floor round-off leaves at the solution does carry it. One rises as the
+grid refines and the other does not, and where they cross the march
+cannot reach what it is asked for.
+
+A first-order scheme's rows are weighted by `1/dt` and a second-order
+scheme's by `1/dt^2`, which is why bdf1 is untouched at every size
+measured and bdf2 is not.
+
+**What one processor should do instead.** Not the starting residual -
+that is what `scale_of` already takes, and it is the thing that fails.
+The tolerance has to carry the same weight the rows carry, so that it
+rises with `1/dt^d` for a scheme determining the d-th derivative as
+the floor does. The diagonal of the frozen jacobian carries exactly
+that and is already formed, so its norm is the reference to hand.
+
+Second, stop on stagnation. A march that has not improved its residual
+over a few iterations has reached its floor, and forty iterations of
+not improving is the same as five of not improving except in what it
+costs. That alone turns this cliff from four to five times the cost
+into a fraction over the converging case, without settling what the
+right tolerance is.
+
+Until one of the two is done, any measurement taken where the step is
+small enough measures the budget and not the algorithm.
 
 ---
 
@@ -314,10 +341,12 @@ array nor the `n^2`-edge graph is built.
 
 ## Ranked, by what binds first
 
-1. **A tolerance that stops being reachable.** Not an order at all -
-   a cliff at about 120 instants past which every solve spends its
-   whole iteration budget, at about five times the cost, reporting
-   nothing. Cheapest to fix and it distorts every other measurement
+1. **A tolerance that stops being reachable.** Not an order at all,
+   and not a count: it follows the step. A second-order scheme reaches
+   its iteration budget where the step falls under about a fortieth,
+   at four to five times the cost, and prints as converged. A
+   first-order scheme beside it is untouched. Cheapest to fix, met by
+   every run that refines, and it distorts every other measurement
    until it is.
 2. **A matrix taken afresh every iteration.** `dense_direct_solve`
    allocates `n by n` inside itself, about 2 MB an iteration at 471

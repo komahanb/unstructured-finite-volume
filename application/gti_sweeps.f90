@@ -58,8 +58,48 @@ module gti_sweeps
   public :: functional_of, functional_gradient
   public :: design_partial, jacobian_of
   public :: by_tangent, by_adjoint, dense_solve, tangent_solve
+  public :: krylov_above, set_krylov_above
+
+  !===================================================================!
+  ! Where the linear solve stops factorising and starts iterating.
+  !
+  ! A dense factorisation forms the jacobian one column at a time and
+  ! then costs the cube of the count, so it wins while the count is
+  ! small; a krylov solver forms no matrix and wins once it is not.
+  ! The default sits at the crossing measured on a stage block of a
+  ! degree-four equation, where six hundred unknowns take twenty-one
+  ! seconds dense against eighty-eight iterating, and a thousand do
+  ! not finish in five minutes dense against fifteen seconds.
+  !
+  ! It is settable because the two fail differently. A dense
+  ! factorisation meeting a singular pivot stops the program, and a
+  ! statement can be singular for reasons of its own - a coarse grid
+  ! on a diverging problem will do it - so a caller who would rather
+  ! be told a row did not converge than lose the run sets this to
+  ! zero and iterates throughout.
+  !===================================================================!
+
+  integer, private, save :: crossing = 800
 
 contains
+
+  pure integer function krylov_above()
+
+    krylov_above = crossing
+
+  end function krylov_above
+
+  subroutine set_krylov_above(count)
+
+    integer, intent(in) :: count
+
+    if (count < 0) then
+       error stop 'gti_sweeps: the crossing is not negative'
+    end if
+
+    crossing = count
+
+  end subroutine set_krylov_above
 
   subroutine applied(action, on, inputs, y)
 
@@ -259,7 +299,7 @@ contains
     jacobian = tangent_of(rows, rows % argument(1))
     call jacobian % freeze(inputs)
 
-    if (size(b) <= 800) then
+    if (size(b) <= krylov_above()) then
        allocate(solver, source=dense_direct())
     else
        krylov = gmres()

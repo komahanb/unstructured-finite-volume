@@ -47,6 +47,7 @@ module gti_configuration
      integer  :: max_discretization_order = 4
      integer  :: seed                     = 20260824
      integer  :: startup_refinement       = 4
+     integer  :: krylov_above             = 800
 
      real(dp) :: time_duration = 7.0_dp
      real(dp) :: design        = 1.0_dp
@@ -112,6 +113,8 @@ contains
        read(value, *) cfg % seed
     case ('startup_refinement')
        read(value, *) cfg % startup_refinement
+    case ('krylov_above')
+       read(value, *) cfg % krylov_above
     case ('time_duration')
        read(value, *) cfg % time_duration
     case ('design')
@@ -226,6 +229,7 @@ contains
     write(*,'(a,a)')       '   grid                     ', trim(cfg % grid)
     write(*,'(a,i0)')      '   seed                     ', cfg % seed
     write(*,'(a,i0)')      '   startup refinement       ', cfg % startup_refinement
+    write(*,'(a,i0)')      '   krylov above             ', cfg % krylov_above
     write(*,'(a,f0.4)')    '   design                   ', cfg % design
     write(*,'(a,i0)')      '   max derivative degree    ', cfg % max_derivative_degree
     write(*,'(a,i0)')      '   max discretization order ', cfg % max_discretization_order

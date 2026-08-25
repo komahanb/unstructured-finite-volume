@@ -71,6 +71,7 @@ program graph_time_integrator
   use gti_expansion         , only : family_holder
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
        & instant_components
+  use gti_sweeps            , only : set_krylov_above
   use gti_configuration     , only : configuration, read_configuration, override, show
 
   implicit none
@@ -79,6 +80,7 @@ program graph_time_integrator
 
   call settings(cfg)
   call show(cfg)
+  call set_krylov_above(cfg % krylov_above)
   call table(cfg)
 
 contains

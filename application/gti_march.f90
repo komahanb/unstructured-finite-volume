@@ -48,6 +48,7 @@ module gti_march
   use physics_integrand       , only : nodal_integrand
   use gti_expansion           , only : block_reach, family_holder
   use gti_block               , only : block_residual
+  use gti_sweeps              , only : krylov_above
 
   implicit none
 
@@ -267,12 +268,8 @@ contains
   ! statement supplies a matvec through its partial action, so a
   ! krylov solver forms no matrix at all.
   !
-  ! Measured on a stage block of a degree-four equation: at six
-  ! hundred unknowns the dense one takes twenty-one seconds and the
-  ! krylov one eighty-eight, and at a thousand the dense one does not
-  ! finish in five minutes while the krylov one takes fifteen
-  ! seconds. The crossing is between them and the threshold is set
-  ! there.
+  ! Where the crossing sits, and why it is settable, is stated in
+  ! gti_sweeps, which owns it.
   !===================================================================!
 
   function inner_solver(unknowns) result(inner)
@@ -282,7 +279,7 @@ contains
 
     type(gmres) :: krylov
 
-    if (unknowns <= 800) then
+    if (unknowns <= krylov_above()) then
        allocate(inner, source=dense_direct())
     else
        krylov = gmres()

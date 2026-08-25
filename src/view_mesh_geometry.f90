@@ -278,12 +278,15 @@ contains
 
   !===================================================================!
   ! Face centres and area vectors. The one measurement of a face is
-  ! its area vector S_f: in 2d the segment turned a quarter turn in
+  ! its area vector S_f: the corner fan from the first vertex, each
+  ! simplex of d-1 edge vectors taken through the dual and summed,
+  ! over (d-1)!. In 2d that is the segment turned a quarter turn in
   ! plane, (t_y, -t_x, 0), so |S_f| is the length; in 3d half the
-  ! sum of the corner-fan cross products, one triangle plus a second
-  ! for a quadrilateral, so |S_f| is the vector area - for a planar
-  ! face the scalar area, for a non-planar quadrilateral the area the
-  ! divergence theorem sees. The scalar area is its norm; the unit
+  ! sum of the fan's cross products, one triangle plus a second for
+  ! a quadrilateral, so |S_f| is the vector area - for a planar face
+  ! the scalar area, for a non-planar quadrilateral the area the
+  ! divergence theorem sees. Neither is written here: one formula
+  ! serves every dimension. The scalar area is its norm; the unit
   ! normal is S_f over its norm and is taken where it is needed. The
   ! centre is the vertex mean. A face whose area vector vanishes -
   ! coincident points, a degenerate fan - stops the program before
@@ -302,8 +305,8 @@ contains
     real(dp), allocatable, intent(out) :: face_vectors(:,:)
     real(dp), allocatable, intent(out) :: face_areas(:)
 
-    integer  :: iface, num_faces
-    real(dp) :: s(3), t(3)
+    integer  :: iface, num_faces, i, k
+    real(dp) :: s(3), fan(3, spatial_dim - 1)
 
     num_faces = size(num_face_vertices)
     allocate(face_centres(3, num_faces))
@@ -318,27 +321,14 @@ contains
          face_centres(:, iface) = sum(coordinates(:, facenodes), dim=2) &
               & / real(num_face_vertices(iface), kind=dp)
 
-         if (spatial_dim .eq. 2) then
-
-            t = coordinates(:, facenodes(2)) - coordinates(:, facenodes(1))
-            s = [t(2), -t(1), 0.0_dp]
-
-         else
-
-            associate(&
-                 & t12 => coordinates(:, facenodes(2)) - coordinates(:, facenodes(1)), &
-                 & t13 => coordinates(:, facenodes(3)) - coordinates(:, facenodes(1)))
-              call cross_product(t12, t13, s)
-              if (num_face_vertices(iface) .gt. 3) then
-                 associate(t14 => coordinates(:, facenodes(4)) - coordinates(:, facenodes(1)))
-                   call cross_product(t13, t14, t)
-                   s = s + t
-                 end associate
-              end if
-            end associate
-            s = s / real(2, dp)
-
-         end if
+         s = 0.0_dp
+         do i = 2, num_face_vertices(iface) - spatial_dim + 2
+            do k = 1, spatial_dim - 1
+               fan(:, k) = coordinates(:, facenodes(i + k - 1)) - coordinates(:, facenodes(1))
+            end do
+            s = s + dual(spatial_dim, fan)
+         end do
+         s = s / real(factorial(spatial_dim - 1), dp)
 
          face_vectors(:, iface) = s
          face_areas(iface)      = norm2(s)
@@ -518,20 +508,73 @@ contains
 
 
   !===================================================================!
-  ! Compute the cross product for area computations.
+  ! The dual of d-1 vectors in d dimensions: the vector normal to all
+  ! of them whose length is the volume they span - the cross product
+  ! at d = 3, the quarter turn (t_y, -t_x) at d = 2, and in general
+  ! the cofactors of the matrix whose columns they are, component i
+  ! being (-1)^(i+1) times the minor with row i struck. One formula
+  ! serves every dimension, so no dimension is written out. The
+  ! vectors arrive as many rows as the coordinates carry; only the
+  ! first d are read, and the components past d are zero.
   !===================================================================!
 
-  pure subroutine cross_product(a, b, pdt)
+  pure function dual(d, vectors) result(s)
 
-    real(dp), intent(in)  :: a(3), b(3)
-    real(dp), intent(out) :: pdt(3)
+    integer , intent(in) :: d
+    real(dp), intent(in) :: vectors(:,:)
+    real(dp) :: s(size(vectors, 1))
 
-    ! The skew-symmetric form would generalize this product to n dimensions.
-    pdt(1) = a(2) * b(3) - a(3) * b(2)
-    pdt(2) = a(3) * b(1) - a(1) * b(3)
-    pdt(3) = a(1) * b(2) - a(2) * b(1)
+    real(dp) :: minor(d - 1, d - 1)
+    integer  :: i, k
 
-  end subroutine cross_product
+    s = 0.0_dp
+    do i = 1, d
+       minor = vectors([(k, k = 1, i - 1), (k, k = i + 1, d)], 1:d - 1)
+       s(i) = real((-1) ** (i + 1), dp) * determinant(minor)
+    end do
+
+  end function dual
+
+  !===================================================================!
+  ! The determinant, by expansion along the first row. The minors
+  ! here are at most (d-1) square, so the expansion costs nothing
+  ! worth a factorisation.
+  !===================================================================!
+
+  pure recursive function determinant(a) result(det)
+
+    real(dp), intent(in) :: a(:,:)
+    real(dp) :: det
+
+    integer :: n, j, k
+
+    n = size(a, 1)
+    if (n == 0) then
+       det = 1.0_dp
+    else if (n == 1) then
+       det = a(1, 1)
+    else
+       det = 0.0_dp
+       do j = 1, n
+          det = det + real((-1) ** (j + 1), dp) * a(1, j) &
+               & * determinant(a(2:n, [(k, k = 1, j - 1), (k, k = j + 1, n)]))
+       end do
+    end if
+
+  end function determinant
+
+  pure integer function factorial(n)
+
+    integer, intent(in) :: n
+
+    integer :: k
+
+    factorial = 1
+    do k = 2, n
+       factorial = factorial * k
+    end do
+
+  end function factorial
 
   !===================================================================!
   ! Compute the geometric distance between two points.

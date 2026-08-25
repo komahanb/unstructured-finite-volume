@@ -67,6 +67,8 @@ module view_directed_stored
   implicit none
 
   private
+
+  integer, parameter :: SELECT_INTERIOR = 1, SELECT_BOUNDARY = 2, SELECT_TAGGED = 3
   public :: stored_directed_graph
 
   !===================================================================!
@@ -612,19 +614,7 @@ contains
     type(inclusion_map), intent(inout) :: inclusions
     type(graph)    , intent(out)   :: members
 
-    integer, allocatable :: pick(:)
-    integer :: v, n
-
-    allocate(pick(this % nv))
-    n = 0
-    do v = 1, this % nv
-       if (.not. touches_boundary(this, v)) then
-          n = n + 1
-          pick(n) = v
-       end if
-    end do
-
-    call carve(members, pick(1:n), 'interior_vertices', &
+    call carve(members, selected(this, SELECT_INTERIOR, .true.), 'interior_vertices', &
          & this % vset, sets, labels, inclusions)
 
   end subroutine interior_vertices
@@ -641,19 +631,7 @@ contains
     type(inclusion_map), intent(inout) :: inclusions
     type(graph)    , intent(out)   :: members
 
-    integer, allocatable :: pick(:)
-    integer :: v, n
-
-    allocate(pick(this % nv))
-    n = 0
-    do v = 1, this % nv
-       if (touches_boundary(this, v)) then
-          n = n + 1
-          pick(n) = v
-       end if
-    end do
-
-    call carve(members, pick(1:n), 'boundary_vertices', &
+    call carve(members, selected(this, SELECT_BOUNDARY, .true.), 'boundary_vertices', &
          & this % vset, sets, labels, inclusions)
 
   end subroutine boundary_vertices
@@ -672,21 +650,7 @@ contains
     type(inclusion_map), intent(inout) :: inclusions
     type(graph)    , intent(out)   :: members
 
-    integer, allocatable :: pick(:)
-    integer :: v, n
-
-    allocate(pick(this % nv))
-    n = 0
-    if (allocated(this % vtag)) then
-       do v = 1, this % nv
-          if (trim(this % vtag(v)) == tag) then
-             n = n + 1
-             pick(n) = v
-          end if
-       end do
-    end if
-
-    call carve(members, pick(1:n), 'tagged_vertices', &
+    call carve(members, selected(this, SELECT_TAGGED, .true., tag), 'tagged_vertices', &
          & this % vset, sets, labels, inclusions)
 
   end subroutine tagged_vertices
@@ -696,6 +660,56 @@ contains
   ! Does any edge touching this vertex stop here rather than holding
   ! on to another vertex?
   !===================================================================!
+
+  !===================================================================!
+  ! The members selected by one predicate, on either side: interior
+  ! (a vertex touching no boundary edge; an edge with a head),
+  ! boundary (the complement), or tagged with a name. Three
+  ! predicates times two sides, written once.
+  !===================================================================!
+
+  pure function selected(this, which, on_vertices, tag) result(pick)
+
+    class(stored_directed_graph), intent(in) :: this
+    integer                     , intent(in) :: which
+    logical                     , intent(in) :: on_vertices
+    character(len=*), optional  , intent(in) :: tag
+    integer, allocatable :: pick(:)
+
+    integer :: i, n, k
+    logical :: keep
+
+    n = merge(this % nv, this % ne, on_vertices)
+    allocate(pick(n))
+    k = 0
+    do i = 1, n
+       select case (which)
+       case (SELECT_INTERIOR, SELECT_BOUNDARY)
+          if (on_vertices) then
+             keep = .not. touches_boundary(this, i)
+          else
+             keep = this % head(i) >= 1
+          end if
+          if (which == SELECT_BOUNDARY) keep = .not. keep
+       case (SELECT_TAGGED)
+          keep = .false.
+          if (.not. present(tag)) error stop 'stored_directed_graph: a tagged selection names its tag'
+          if (on_vertices) then
+             if (allocated(this % vtag)) keep = trim(this % vtag(i)) == tag
+          else
+             if (allocated(this % etag)) keep = trim(this % etag(i)) == tag
+          end if
+       case default
+          error stop 'stored_directed_graph: a selection is interior, boundary or tagged'
+       end select
+       if (keep) then
+          k = k + 1
+          pick(k) = i
+       end if
+    end do
+    pick = pick(1:k)
+
+  end function selected
 
   pure logical function touches_boundary(this, v)
 
@@ -730,19 +744,7 @@ contains
     type(inclusion_map), intent(inout) :: inclusions
     type(graph)    , intent(out)   :: members
 
-    integer, allocatable :: pick(:)
-    integer :: e, n
-
-    allocate(pick(this % ne))
-    n = 0
-    do e = 1, this % ne
-       if (this % head(e) >= 1) then
-          n = n + 1
-          pick(n) = e
-       end if
-    end do
-
-    call carve(members, pick(1:n), 'interior_edges', &
+    call carve(members, selected(this, SELECT_INTERIOR, .false.), 'interior_edges', &
          & this % eset, sets, labels, inclusions)
 
   end subroutine interior_edges
@@ -759,19 +761,7 @@ contains
     type(inclusion_map), intent(inout) :: inclusions
     type(graph)    , intent(out)   :: members
 
-    integer, allocatable :: pick(:)
-    integer :: e, n
-
-    allocate(pick(this % ne))
-    n = 0
-    do e = 1, this % ne
-       if (this % head(e) < 1) then
-          n = n + 1
-          pick(n) = e
-       end if
-    end do
-
-    call carve(members, pick(1:n), 'boundary_edges', &
+    call carve(members, selected(this, SELECT_BOUNDARY, .false.), 'boundary_edges', &
          & this % eset, sets, labels, inclusions)
 
   end subroutine boundary_edges
@@ -790,21 +780,7 @@ contains
     type(inclusion_map), intent(inout) :: inclusions
     type(graph)    , intent(out)   :: members
 
-    integer, allocatable :: pick(:)
-    integer :: e, n
-
-    allocate(pick(this % ne))
-    n = 0
-    if (allocated(this % etag)) then
-       do e = 1, this % ne
-          if (trim(this % etag(e)) == tag) then
-             n = n + 1
-             pick(n) = e
-          end if
-       end do
-    end if
-
-    call carve(members, pick(1:n), 'tagged_edges', &
+    call carve(members, selected(this, SELECT_TAGGED, .false., tag), 'tagged_edges', &
          & this % eset, sets, labels, inclusions)
 
   end subroutine tagged_edges

@@ -28,7 +28,7 @@ module transform_refiner
   use view_directed , only : directed_graph
   use field_calculus, only : field
   use graph_fractal      , only : graph
-  use transform_structure, only : transform
+  use transform_structure, only : transform, through_blocks
   use view_directed_stored         , only : stored_directed_graph
   use field_stored   , only : stored_field
 
@@ -201,7 +201,9 @@ contains
   !===================================================================!
   ! Carry the values down. Every child starts from its parent's value.
   !
-  ! This is injection: a child of a cell holding 3.0 holds 3.0. A
+  ! This is injection - the transpose of the block sum the coarsener
+  ! takes, read through the same map: a child of a cell holding 3.0
+  ! holds 3.0. A
   ! geometric refiner interpolates so the result stays smooth across
   ! the new faces, but interpolation needs the children's positions,
   ! and this refiner has none.
@@ -217,7 +219,7 @@ contains
 
     type(stored_field)    :: out
     real(dp), allocatable :: cv(:), fv(:)
-    integer :: nfine, num_components, v, i, c, child
+    integer :: nfine, num_components, v
 
     select type (coarse_data)
     class is (stored_field)
@@ -229,19 +231,8 @@ contains
             &             num_components=num_components, unit_name=coarse_data % units())
 
        call coarse_data % real_vector(cv)
-       allocate(fv(nfine * num_components))
-       fv = 0.0_dp
-
-       do v = 1, coarse_graph % num_vertices()
-          do i = 1, this % split
-             child = child_of(v, i, this % split)
-             do c = 1, num_components
-                associate (to => (child - 1) * num_components + c, from => (v - 1) * num_components + c)
-                  if (to <= size(fv) .and. from <= size(cv)) fv(to) = cv(from)
-                end associate
-             end do
-          end do
-       end do
+       call through_blocks([((v - 1) / this % split + 1, v = 1, nfine)], &
+            & coarse_graph % num_vertices(), num_components, fv, cv, transposed=.true.)
 
        call out % set_real_vector(fv)
        allocate(fine_data, source=out)

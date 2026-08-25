@@ -51,7 +51,7 @@ module operation_fitted_balance
   use field_forms        , only : form
   use field_stored  , only : stored_field
   use view_mesh   , only : mesh
-  use operation_stencil, only : stencil
+  use operation_stencil, only : stencil, triple_list
   use operation_fitting      , only : fit
 
   implicit none
@@ -100,7 +100,8 @@ contains
     integer , allocatable :: rows(:), columns(:), hood(:)
     real(dp), allocatable :: weights(:), pts(:), w(:), constant(:)
     real(dp) :: xf(3), vb, wb
-    integer :: nv, ne, e, t, h, j, npts, width, filled
+    type(triple_list) :: triples
+    integer :: nv, ne, e, t, h, j, npts, width
 
     ! A fit needs at least as many points as its form has members,
     ! so the neighbourhood grows ring by ring until it holds that
@@ -127,8 +128,6 @@ contains
     ! room for the triples grows by doubling: an assembly that
     ! appends one entry at a time to an array copies the array each
     ! time, and is quadratic in the mesh
-    allocate(rows(4 * ne), columns(4 * ne), weights(4 * ne))
-    filled = 0
     allocate(constant(nv))
     constant = 0.0_dp
 
@@ -174,8 +173,8 @@ contains
        call fitting % apply(constellation, [positions], answer)
        call answer % real_vector(w)
        do j = 1, size(hood)
-          call placed_triple(rows, columns, weights, filled, t, hood(j), w(j))
-          if (h > 0) call placed_triple(rows, columns, weights, filled, h, hood(j), -w(j))
+          call triples % place(t, hood(j), w(j))
+          if (h > 0) call triples % place(h, hood(j), -w(j))
        end do
        if (h == 0) then
           vb = 0.0_dp
@@ -184,53 +183,18 @@ contains
           if (present(boundary_weights)) wb = boundary_weights(e)
           constant(t) = constant(t) + w(npts) * vb
           if (abs(1.0_dp - wb) > 0.0_dp) then
-             call placed_triple(rows, columns, weights, filled, t, t, w(npts) * (1.0_dp - wb))
+             call triples % place(t, t, w(npts) * (1.0_dp - wb))
           end if
        end if
        deallocate(pts)
 
     end do
 
-    op = stencil(rows(1:filled), columns(1:filled), weights(1:filled), constant, &
+    call triples % entries(rows, columns, weights)
+    op = stencil(rows, columns, weights, constant, &
          & label='fitted balance')
 
   end function fitted_balance_stencil
-
-  !-------------------------------------------------------------------!
-  ! One triple appended, the room doubling when it runs out.
-  !-------------------------------------------------------------------!
-
-  subroutine placed_triple(rows, columns, weights, filled, row, column, weight)
-
-    integer , allocatable, intent(inout) :: rows(:), columns(:)
-    real(dp), allocatable, intent(inout) :: weights(:)
-    integer              , intent(inout) :: filled
-    integer              , intent(in)    :: row, column
-    real(dp)             , intent(in)    :: weight
-
-    integer , allocatable :: wider(:)
-    real(dp), allocatable :: heavier(:)
-    integer :: room
-
-    if (filled == size(rows)) then
-       room = 2 * size(rows)
-       allocate(wider(room))
-       wider(1:filled) = rows
-       call move_alloc(wider, rows)
-       allocate(wider(room))
-       wider(1:filled) = columns
-       call move_alloc(wider, columns)
-       allocate(heavier(room))
-       heavier(1:filled) = weights
-       call move_alloc(heavier, weights)
-    end if
-
-    filled          = filled + 1
-    rows(filled)    = row
-    columns(filled) = column
-    weights(filled) = weight
-
-  end subroutine placed_triple
 
   !===================================================================!
   ! The face's neighbourhood: its two cells and their neighbours,

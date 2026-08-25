@@ -18,6 +18,7 @@
 
 module transform_structure
 
+  use util_precision, only : dp
   use view_directed , only : directed_graph
   use field_calculus, only : field
 
@@ -26,6 +27,7 @@ module transform_structure
   private
 
   public :: transform
+  public :: through_blocks
 
   type, abstract :: transform
 
@@ -52,5 +54,76 @@ module transform_structure
      end function transform_on_data_interface
 
   end interface
+
+contains
+
+  !===================================================================!
+  ! The one map between a level and its blocks, read both ways. Read
+  ! forward it is restriction R: each block the sum of its members,
+  ! or their mean where average is asked. Read backward it is R^T,
+  ! every member taking its block's value - the injected prolongation.
+  ! Values are num_components wide per member. coarsen(refine(G)) = G
+  ! is this map read twice, which is why it is written once.
+  !===================================================================!
+
+  pure subroutine through_blocks(block_of, num_blocks, num_components, fine, coarse, &
+       & transposed, average)
+
+    integer              , intent(in)    :: block_of(:)
+    integer              , intent(in)    :: num_blocks, num_components
+    real(dp), allocatable, intent(inout) :: fine(:)
+    real(dp), allocatable, intent(inout) :: coarse(:)
+    logical              , intent(in)    :: transposed
+    logical              , intent(in), optional :: average
+
+    integer, allocatable :: tally(:)
+    integer :: v, b, c, nv
+
+    nv = size(block_of)
+    if (any(block_of < 1) .or. any(block_of > num_blocks)) then
+       error stop 'through_blocks: every member belongs to a block'
+    end if
+
+    if (transposed) then
+       if (size(coarse) /= num_blocks * num_components) then
+          error stop 'through_blocks: one value per component per block'
+       end if
+       if (allocated(fine)) deallocate(fine)
+       allocate(fine(nv * num_components))
+       do v = 1, nv
+          b = block_of(v)
+          do c = 1, num_components
+             fine((v - 1) * num_components + c) = coarse((b - 1) * num_components + c)
+          end do
+       end do
+    else
+       if (size(fine) /= nv * num_components) then
+          error stop 'through_blocks: one value per component per member'
+       end if
+       if (allocated(coarse)) deallocate(coarse)
+       allocate(coarse(num_blocks * num_components), tally(num_blocks))
+       coarse = 0.0_dp
+       tally  = 0
+       do v = 1, nv
+          b = block_of(v)
+          tally(b) = tally(b) + 1
+          do c = 1, num_components
+             coarse((b - 1) * num_components + c) = &
+                  & coarse((b - 1) * num_components + c) + fine((v - 1) * num_components + c)
+          end do
+       end do
+       if (present(average)) then
+          if (average) then
+             do b = 1, num_blocks
+                if (tally(b) > 0) then
+                   coarse((b - 1) * num_components + 1 : b * num_components) = &
+                        & coarse((b - 1) * num_components + 1 : b * num_components) / real(tally(b), dp)
+                end if
+             end do
+          end if
+       end if
+    end if
+
+  end subroutine through_blocks
 
 end module transform_structure

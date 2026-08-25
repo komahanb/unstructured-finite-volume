@@ -32,7 +32,7 @@ module transform_coarsener
   use view_directed , only : directed_graph
   use field_calculus, only : field
   use graph_fractal      , only : graph
-  use transform_structure, only : transform
+  use transform_structure, only : transform, through_blocks
   use view_directed_stored         , only : stored_directed_graph
   use field_stored   , only : stored_field
 
@@ -328,9 +328,9 @@ contains
     class(field), allocatable, intent(out) :: coarse_data
 
     type(stored_field)    :: out
-    integer , allocatable :: blk(:), tally(:)
+    integer , allocatable :: blk(:)
     real(dp), allocatable :: fv(:), cv(:)
-    integer :: nb, nv, num_components, v, c, b
+    integer :: nb, nv, num_components
 
     select type (fine_data)
     class is (stored_field)
@@ -344,29 +344,8 @@ contains
             &             num_components=num_components, unit_name=fine_data % units())
 
        call fine_data % real_vector(fv)
-       allocate(cv(nb * num_components), tally(nb))
-       cv    = 0.0_dp
-       tally = 0
-
-       do v = 1, nv
-          b = blk(v)
-          tally(b) = tally(b) + 1
-          do c = 1, num_components
-             associate (to => (b - 1) * num_components + c, from => (v - 1) * num_components + c)
-               if (from <= size(fv)) cv(to) = cv(to) + fv(from)
-             end associate
-          end do
-       end do
-
-       if (this % average) then
-          do b = 1, nb
-             if (tally(b) > 0) then
-                do c = 1, num_components
-                   cv((b - 1) * num_components + c) = cv((b - 1) * num_components + c) / real(tally(b), dp)
-                end do
-             end if
-          end do
-       end if
+       call through_blocks(blk(1:nv), nb, num_components, fv, cv, transposed=.false., &
+            & average=this % average)
 
        call out % set_real_vector(cv)
        allocate(coarse_data, source=out)

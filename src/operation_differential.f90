@@ -82,7 +82,7 @@ module operation_differential
   use graph_fractal      , only : graph
   use view_directed     , only : SIDE_VERTEX, SIDE_EDGE
   use field_stored  , only : stored_field
-  use operation_stencil, only : stencil, combine_triples
+  use operation_stencil, only : stencil, combine_triples, triple_list
   use relation_binary   , only : group_by_key
 
   implicit none
@@ -381,18 +381,15 @@ contains
     real(dp), allocatable, intent(in) :: op_bs(:)
     type(affine_map)                  :: a
 
+    type(triple_list) :: triples
     real(dp) :: c, pick, b
-    integer  :: e, n
+    integer  :: e
 
     a % nrows = g % num_edges()
     a % ncols = g % num_vertices()
 
-    allocate(a % rows(2 * a % nrows), a % cols(2 * a % nrows))
-    allocate(a % weights(2 * a % nrows))
     allocate(a % constants(a % nrows))
     a % constants = 0.0_dp
-
-    n = 0
     do e = 1, a % nrows
 
        c = 1.0_dp
@@ -405,19 +402,19 @@ contains
 
        if (pick > 0.0_dp) then
           ! the end the walk leaves
-          call put(a, n, e, g % edge_tail(e), c)
+          call triples % place(e, g % edge_tail(e), c)
        else if (pick < 0.0_dp) then
           ! the end the walk enters, or the boundary value
           if (g % edge_has_head(e)) then
-             call put(a, n, e, g % edge_head(e), c)
+             call triples % place(e, g % edge_head(e), c)
           else
              a % constants(e) = c * b
           end if
        else
           ! both ends, evenly
-          call put(a, n, e, g % edge_tail(e), c * 0.5_dp)
+          call triples % place(e, g % edge_tail(e), c * 0.5_dp)
           if (g % edge_has_head(e)) then
-             call put(a, n, e, g % edge_head(e), c * 0.5_dp)
+             call triples % place(e, g % edge_head(e), c * 0.5_dp)
           else
              a % constants(e) = c * 0.5_dp * b
           end if
@@ -425,7 +422,7 @@ contains
 
     end do
 
-    call shrink(a, n)
+    call triples % entries(a % rows, a % cols, a % weights)
 
   end function average_map
 
@@ -451,35 +448,32 @@ contains
     real(dp), allocatable, intent(in) :: op_bs(:)
     type(affine_map)                  :: a
 
+    type(triple_list) :: triples
     real(dp) :: c, w
-    integer  :: e, n
+    integer  :: e
 
     a % nrows = g % num_edges()
     a % ncols = g % num_vertices()
 
-    allocate(a % rows(2 * a % nrows), a % cols(2 * a % nrows))
-    allocate(a % weights(2 * a % nrows))
     allocate(a % constants(a % nrows))
     a % constants = 0.0_dp
-
-    n = 0
     do e = 1, a % nrows
 
        c = 1.0_dp
        if (with_c) c = coefficient_at(op_c, op_cs, e)
        w = c / coefficient_at(op_h, op_hs, e)
 
-       call put(a, n, e, g % edge_tail(e), -w)
+       call triples % place(e, g % edge_tail(e), -w)
 
        if (g % edge_has_head(e)) then
-          call put(a, n, e, g % edge_head(e), w)
+          call triples % place(e, g % edge_head(e), w)
        else
           a % constants(e) = w * coefficient_at(op_b, op_bs, e)
        end if
 
     end do
 
-    call shrink(a, n)
+    call triples % entries(a % rows, a % cols, a % weights)
 
   end function difference_map
 
@@ -499,30 +493,27 @@ contains
     real(dp), allocatable, intent(in) :: op_ms(:)
     type(affine_map)                  :: a
 
-    integer :: e, t, h, n
+    type(triple_list) :: triples
+    integer :: e, t, h
 
     a % nrows = g % num_vertices()
     a % ncols = g % num_edges()
 
-    allocate(a % rows(2 * a % ncols), a % cols(2 * a % ncols))
-    allocate(a % weights(2 * a % ncols))
     allocate(a % constants(a % nrows))
     a % constants = 0.0_dp
-
-    n = 0
     do e = 1, a % ncols
 
        t = g % edge_tail(e)
-       call put(a, n, t, e, 1.0_dp / coefficient_at(op_m, op_ms, t))
+       call triples % place(t, e, 1.0_dp / coefficient_at(op_m, op_ms, t))
 
        if (g % edge_has_head(e)) then
           h = g % edge_head(e)
-          call put(a, n, h, e, -1.0_dp / coefficient_at(op_m, op_ms, h))
+          call triples % place(h, e, -1.0_dp / coefficient_at(op_m, op_ms, h))
        end if
 
     end do
 
-    call shrink(a, n)
+    call triples % entries(a % rows, a % cols, a % weights)
 
   end function incidence_map
 
@@ -553,35 +544,6 @@ contains
     end do
 
   end function diagonal_map
-
-  !===================================================================!
-  ! Triple bookkeeping: append one entry; trim to the count.
-  !===================================================================!
-
-  pure subroutine put(a, n, r, c, w)
-
-    type(affine_map), intent(inout) :: a
-    integer         , intent(inout) :: n
-    integer         , intent(in)    :: r, c
-    real(dp)        , intent(in)    :: w
-
-    n = n + 1
-    a % rows(n)    = r
-    a % cols(n)    = c
-    a % weights(n) = w
-
-  end subroutine put
-
-  pure subroutine shrink(a, n)
-
-    type(affine_map), intent(inout) :: a
-    integer         , intent(in)    :: n
-
-    a % rows    = a % rows(1:n)
-    a % cols    = a % cols(1:n)
-    a % weights = a % weights(1:n)
-
-  end subroutine shrink
 
   !===================================================================!
   ! Composition of affine maps:

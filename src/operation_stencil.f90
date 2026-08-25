@@ -53,6 +53,7 @@ module operation_stencil
   private
   public :: stencil
   public :: combine_triples
+  public :: triple_list
 
   type, extends(discretization) :: stencil
 
@@ -74,6 +75,26 @@ module operation_stencil
      procedure :: partial_action => stencil_partial_action
 
   end type stencil
+
+  !===================================================================!
+  ! A list of (row, column, weight) triples being gathered, the room
+  ! doubling when it runs out. Every assembly on the tower appends to
+  ! one of these and reads the filled entries out; none keeps its own
+  ! counter.
+  !===================================================================!
+
+  type :: triple_list
+
+     integer :: filled = 0
+     integer , allocatable :: rows(:), columns(:)
+     real(dp), allocatable :: weights(:)
+
+   contains
+
+     procedure :: place
+     procedure :: entries
+
+  end type triple_list
 
   interface stencil
      module procedure create
@@ -243,7 +264,8 @@ contains
 
     integer , allocatable :: sub_of(:), rows(:), columns(:)
     real(dp), allocatable :: weights(:), w(:), constant(:), held(:)
-    integer :: n, m, e, row, column, filled
+    type(triple_list) :: triples
+    integer :: n, m, e, row, column
 
     n = this % pattern % num_vertices()
     m = size(kept)
@@ -266,26 +288,19 @@ contains
     allocate(constant(m))
     constant = held(kept)
 
-    allocate(rows(this % pattern % num_edges()), columns(this % pattern % num_edges()), &
-         & weights(this % pattern % num_edges()))
-    filled = 0
-
     do e = 1, this % pattern % num_edges()
        row    = sub_of(this % pattern % edge_head(e))
        if (row == 0) cycle
        column = this % pattern % edge_tail(e)
        if (sub_of(column) > 0) then
-          filled          = filled + 1
-          rows(filled)    = row
-          columns(filled) = sub_of(column)
-          weights(filled) = w(e)
+          call triples % place(row, sub_of(column), w(e))
        else
           constant(row) = constant(row) + w(e) * values(column)
        end if
     end do
 
-    sub = stencil(rows(1:filled), columns(1:filled), weights(1:filled), constant, &
-         & label=this % label // ' restricted')
+    call triples % entries(rows, columns, weights)
+    sub = stencil(rows, columns, weights, constant, label=this % label // ' restricted')
 
   end function stencil_restricted
 
@@ -509,5 +524,64 @@ contains
     weights = weights(1:m)
 
   end subroutine combine_triples
+
+  !===================================================================!
+  ! One triple appended, the room doubling when it runs out.
+  !===================================================================!
+
+  pure subroutine place(this, row, column, weight)
+
+    class(triple_list), intent(inout) :: this
+    integer           , intent(in)    :: row, column
+    real(dp)          , intent(in)    :: weight
+
+    integer , allocatable :: wider(:)
+    real(dp), allocatable :: heavier(:)
+    integer :: room
+
+    if (.not. allocated(this % rows)) then
+       allocate(this % rows(16), this % columns(16), this % weights(16))
+       this % filled = 0
+    end if
+
+    if (this % filled == size(this % rows)) then
+       room = 2 * size(this % rows)
+       allocate(wider(room))
+       wider(1:this % filled) = this % rows
+       call move_alloc(wider, this % rows)
+       allocate(wider(room))
+       wider(1:this % filled) = this % columns
+       call move_alloc(wider, this % columns)
+       allocate(heavier(room))
+       heavier(1:this % filled) = this % weights
+       call move_alloc(heavier, this % weights)
+    end if
+
+    this % filled = this % filled + 1
+    this % rows(this % filled)    = row
+    this % columns(this % filled) = column
+    this % weights(this % filled) = weight
+
+  end subroutine place
+
+  !===================================================================!
+  ! The triples placed so far, exactly, in the order placed.
+  !===================================================================!
+
+  pure subroutine entries(this, rows, columns, weights)
+
+    class(triple_list)   , intent(in)  :: this
+    integer , allocatable, intent(out) :: rows(:), columns(:)
+    real(dp), allocatable, intent(out) :: weights(:)
+
+    if (allocated(this % rows)) then
+       rows    = this % rows(1:this % filled)
+       columns = this % columns(1:this % filled)
+       weights = this % weights(1:this % filled)
+    else
+       allocate(rows(0), columns(0), weights(0))
+    end if
+
+  end subroutine entries
 
 end module operation_stencil

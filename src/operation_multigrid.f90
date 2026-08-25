@@ -45,6 +45,7 @@ module operation_multigrid
   use graph_fractal          , only : graph
   use field_stored           , only : stored_field
   use util_tally, only : tally_record, linear_solves
+  use transform_structure, only : through_blocks
 
   implicit none
 
@@ -206,7 +207,7 @@ contains
 
     call tally_record(linear_solves)
 
-    allocate(rc(this % nblocks), ec(this % nblocks), e(size(x)))
+    allocate(ec(this % nblocks))
 
     call this % begin_imbalance()
 
@@ -222,10 +223,10 @@ contains
 
        ! Down: the residual restricted onto the blocks; up: the
        ! correction found there, prolonged by the transpose.
-       call through_aggregates(this % aggregates, r, rc, transposed=.false.)
+       call through_blocks(this % aggregates, this % nblocks, 1, r, rc, transposed=.false.)
        ec = 0.0_dp
        call this % coarse % solve(rc, ec, answered)
-       call through_aggregates(this % aggregates, e, ec, transposed=.true.)
+       call through_blocks(this % aggregates, this % nblocks, 1, e, ec, transposed=.true.)
        x = x + e
 
        call this % smoother % solve(rhs, x, smoothed)
@@ -237,33 +238,5 @@ contains
 
   end subroutine solve
 
-  !===================================================================!
-  ! The restriction, read both ways. Summing restriction takes each
-  ! cell's value onto its block; its transpose gives each cell its
-  ! block's value, which is the injected prolongation. One map, one
-  ! loop, so R^T is not written a second time.
-  !===================================================================!
-
-  pure subroutine through_aggregates(aggregates, fine, coarse, transposed)
-
-    integer , intent(in)    :: aggregates(:)
-    real(dp), intent(inout) :: fine(:)
-    real(dp), intent(inout) :: coarse(:)
-    logical , intent(in)    :: transposed
-
-    integer :: v
-
-    if (transposed) then
-       do v = 1, size(fine)
-          fine(v) = coarse(aggregates(v))
-       end do
-    else
-       coarse = 0.0_dp
-       do v = 1, size(fine)
-          coarse(aggregates(v)) = coarse(aggregates(v)) + fine(v)
-       end do
-    end if
-
-  end subroutine through_aggregates
 
 end module operation_multigrid

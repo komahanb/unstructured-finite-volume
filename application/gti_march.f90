@@ -203,8 +203,8 @@ contains
   ! rises with it: at a hundredth of a unit it is near ten to the
   ! minus thirteen, and finer than that it passes any fixed target.
   !
-  ! Asked for a fixed one, newton reaches the answer in two steps and
-  ! then spends its whole budget failing to better it. Measured on a
+  ! Asked for a fixed one, newton reaches the trajectory in two steps
+  ! and then spends its whole budget failing to better it. Measured on a
   ! degree-two problem over three units: a hundred and twenty instants
   ! took a hundred and sixty seconds to produce what forty iterations
   ! produce in a sixth of one, to the same six digits.

@@ -193,6 +193,25 @@ contains
   !===================================================================!
   ! Newton over the whole block. The design is held while the state
   ! varies, which is what a minimizer supplies as an extra input.
+  !
+  !             WHAT COUNTS AS SOLVED
+  !
+  ! A scheme's rows carry a power of the step, so a difference on the
+  ! second derivative weighs its sources by the inverse square of it.
+  ! Refining the grid therefore raises the size of a residual for the
+  ! same trajectory, and the smallest one reachable in the arithmetic
+  ! rises with it: at a hundredth of a unit it is near ten to the
+  ! minus thirteen, and finer than that it passes any fixed target.
+  !
+  ! Asked for a fixed one, newton reaches the answer in two steps and
+  ! then spends its whole budget failing to better it. Measured on a
+  ! degree-two problem over three units: a hundred and twenty instants
+  ! took a hundred and sixty seconds to produce what forty iterations
+  ! produce in a sixth of one, to the same six digits.
+  !
+  ! So the target is set against the residual the first guess gives,
+  ! which is the only scale in the problem that is known before it is
+  ! solved, and the budget is a backstop rather than a cost.
   !===================================================================!
 
   subroutine solved(rows, design_value, q, achieved)
@@ -213,14 +232,43 @@ contains
     call design % set_real_vector(spread(design_value, 1, rows % num_points()))
 
     allocate(solver % inner, source=inner_solver(count))
-    solver % tolerance = 1.0e-12_dp
     call solver % attach(rows, unknowns, unknowns % vertex_set(), count, &
          & held_inputs = [design])
 
     q = at_first_instant(rows, count)
+
+    solver % max_iterations = 40
+    solver % tolerance      = 1.0e-12_dp * max(1.0_dp, scale_of(rows, unknowns, q, design))
+
     call solver % solve(spread(0.0_dp, 1, count), q, achieved)
 
   end subroutine solved
+
+  !===================================================================!
+  ! How large a residual the first guess gives, which is the scale
+  ! the target is set against.
+  !===================================================================!
+
+  real(dp) function scale_of(rows, unknowns, q, design) result(size_of)
+
+    type(block_residual)       , intent(in) :: rows
+    type(stored_directed_graph), intent(in) :: unknowns
+    real(dp)                   , intent(in) :: q(:)
+    type(stored_field)         , intent(in) :: design
+
+    type(stored_field) :: state
+    class(field), allocatable :: out
+    real(dp), allocatable :: r(:)
+
+    state = stored_field('state', unknowns % vertex_set(), size(q))
+    call state % set_real_vector(q)
+
+    call rows % apply(unknowns, [state, design], out)
+    call out % real_vector(r)
+
+    size_of = norm2(r)
+
+  end function scale_of
 
   !===================================================================!
   ! A first guess: every point of the block holding what its first

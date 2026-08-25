@@ -59,6 +59,7 @@ module operation_action
   private
 
   public :: operation
+  public :: emit
   public :: argument
   public :: variation
 
@@ -121,7 +122,7 @@ module operation_action
    contains
 
      procedure(operation_name_interface)  , deferred :: name
-     procedure(operation_domain_interface), deferred :: domain
+     procedure :: domain => operation_domain
      procedure(operation_apply_interface) , deferred :: apply
 
      procedure :: max_degree       => operation_max_degree
@@ -153,14 +154,6 @@ module operation_action
      ! matches, and to size a field.
      !---------------------------------------------------------------!
 
-     subroutine operation_domain_interface(this, input_graph, domain, &
-          & num_entries)
-       import :: operation, directed_graph, graph
-       class(operation), intent(in)  :: this
-       class(directed_graph)          , intent(in)  :: input_graph
-       type(graph)       , intent(out) :: domain
-       integer               , intent(out) :: num_entries
-     end subroutine operation_domain_interface
 
      subroutine operation_apply_interface(this, input_graph, input_data, output)
        import :: operation, directed_graph, field
@@ -445,5 +438,39 @@ contains
     error stop 'operation: the requested order is within max_degree'
 
   end subroutine operation_partial_action
+
+  !===================================================================!
+  ! Where an operation's answer lives, unless it says otherwise: one
+  ! entry per vertex of the graph it is applied on. An operation that
+  ! answers on its edges, or on a domain of its own, overrides this.
+  !===================================================================!
+
+  subroutine operation_domain(this, input_graph, domain, num_entries)
+
+    class(operation)     , intent(in)  :: this
+    class(directed_graph), intent(in)  :: input_graph
+    type(graph)          , intent(out) :: domain
+    integer              , intent(out) :: num_entries
+
+    associate (u1 => this); end associate
+    domain      = input_graph % vertex_set()
+    num_entries = input_graph % num_vertices()
+
+  end subroutine operation_domain
+
+  !===================================================================!
+  ! The one way an operation hands its answer back: a supplied buffer
+  ! is overwritten, never added to.
+  !===================================================================!
+
+  subroutine emit(out, output)
+
+    class(field)             , intent(in)    :: out
+    class(field), allocatable, intent(inout) :: output
+
+    if (allocated(output)) deallocate(output)
+    allocate(output, source=out)
+
+  end subroutine emit
 
 end module operation_action

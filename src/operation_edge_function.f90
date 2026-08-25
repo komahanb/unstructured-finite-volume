@@ -40,6 +40,7 @@ module operation_edge_function
 
   use util_precision  , only : dp
   use operation_action      , only : operation, variation
+  use operation_action, only : emit
   use view_directed         , only : directed_graph
   use field_calculus        , only : field
   use graph_fractal         , only : graph
@@ -203,8 +204,7 @@ contains
          & input_graph % num_edges())
     call out % set_real_vector(values)
 
-    if (allocated(output)) deallocate(output)
-    allocate(output, source=out)
+    call emit(out, output)
 
   end subroutine full_terms
 

@@ -40,6 +40,7 @@ module operation_minimization
 
   use util_precision  , only : dp, half_digits
   use operation_action  , only : operation
+  use operation_action, only : emit
   use view_directed   , only : directed_graph
   use field_calculus  , only : field
   use graph_fractal      , only : graph
@@ -757,8 +758,7 @@ contains
     out = stored_field('solution', this % unknown_domain, this % num_unknowns, num_components=this % num_components)
     call out % set_real_vector(x)
 
-    if (allocated(output)) deallocate(output)
-    allocate(output, source=out)
+    call emit(out, output)
 
   end subroutine solver_apply
 

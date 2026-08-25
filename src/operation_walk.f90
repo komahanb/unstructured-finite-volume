@@ -47,6 +47,7 @@
 module operation_walk
 
   use operation_action, only : operation
+  use operation_action, only : emit
   use view_directed, only : directed_graph
   use field_calculus, only : field
   use graph_fractal      , only : graph
@@ -75,7 +76,6 @@ module operation_walk
    contains
 
      procedure :: name   => walk_name
-     procedure :: domain => walk_domain
      procedure :: apply  => walk_apply
 
   end type walk
@@ -128,29 +128,6 @@ contains
   end function walk_name
 
   !===================================================================!
-  ! Where the answer lives: one value per vertex, whatever the rule.
-  !
-  !      colouring      a colour per vertex
-  !      visit order    a position per vertex
-  !      component      a component number per vertex
-  !      depth          a distance per vertex
-  !===================================================================!
-
-  subroutine walk_domain(this, input_graph, domain, num_entries)
-
-    class(walk) , intent(in)               :: this
-    class(directed_graph), intent(in)               :: input_graph
-    type(graph), intent(out) :: domain
-    integer        , intent(out) :: num_entries
-
-    associate (u1 => this); end associate
-
-    domain   = input_graph % vertex_set()
-    num_entries = input_graph % num_vertices()
-
-  end subroutine walk_domain
-
-  !===================================================================!
   ! Walk the graph and return a whole number per cell.
   !
   ! Nothing here reads input_data. Every answer comes from the shape
@@ -187,9 +164,7 @@ contains
 
     call out % set_integer_vector(mark)
 
-    ! A supplied buffer is overwritten, never added to.
-    if (allocated(output)) deallocate(output)
-    allocate(output, source=out)
+    call emit(out, output)
 
   end subroutine walk_apply
 

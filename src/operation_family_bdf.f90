@@ -55,7 +55,6 @@ module operation_family_bdf
 
      procedure :: name             => bdf_name
      procedure :: history_depth    => bdf_history_depth
-     procedure :: num_stages       => bdf_num_stages
      procedure :: primary_degree   => bdf_primary_degree
      procedure :: row_pattern      => bdf_row_pattern
      procedure :: edge_coefficient => bdf_edge_coefficient
@@ -104,16 +103,6 @@ contains
     bdf_history_depth = equation_degree * this % order
 
   end function bdf_history_depth
-
-  pure integer function bdf_num_stages(this)
-
-    class(bdf_family), intent(in) :: this
-
-    associate (u1 => this); end associate
-    bdf_num_stages = 1
-
-  end function bdf_num_stages
-
   pure integer function bdf_primary_degree(this, equation_degree)
 
     class(bdf_family), intent(in) :: this

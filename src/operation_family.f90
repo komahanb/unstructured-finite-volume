@@ -46,9 +46,9 @@ module operation_family
 
    contains
 
-     procedure(family_degree_interface) , deferred :: history_depth
-     procedure(family_count_interface)  , deferred :: num_stages
-     procedure(family_degree_interface) , deferred :: primary_degree
+     procedure :: history_depth  => family_history_depth
+     procedure :: num_stages     => family_num_stages
+     procedure :: primary_degree => family_primary_degree
      procedure(family_pattern_interface), deferred :: row_pattern
 
   end type family
@@ -215,6 +215,42 @@ contains
     end do
 
   end function integral_over_step
+  !===================================================================!
+  ! What a family is unless it says otherwise: one stage, one instant
+  ! of history, and the primary unknown the equation's own highest
+  ! derivative. bdf reaches further back and solves for the value;
+  ! dirk has as many stages as its tableau has weights.
+  !===================================================================!
+
+  pure integer function family_num_stages(this)
+
+    class(family), intent(in) :: this
+
+    associate (u1 => this); end associate
+    family_num_stages = 1
+
+  end function family_num_stages
+
+  pure integer function family_history_depth(this, equation_degree)
+
+    class(family), intent(in) :: this
+    integer      , intent(in) :: equation_degree
+
+    associate (u1 => this, u2 => equation_degree); end associate
+    family_history_depth = 1
+
+  end function family_history_depth
+
+  pure integer function family_primary_degree(this, equation_degree)
+
+    class(family), intent(in) :: this
+    integer      , intent(in) :: equation_degree
+
+    associate (u1 => this); end associate
+    family_primary_degree = equation_degree
+
+  end function family_primary_degree
+
   !===================================================================!
   ! The offsets negated: the nodes a family reads its coefficients at
   ! lie the other way from the instant they are measured against.

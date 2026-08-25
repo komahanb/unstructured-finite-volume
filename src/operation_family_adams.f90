@@ -45,8 +45,6 @@ module operation_family_adams
 
      procedure :: name             => adams_name
      procedure :: history_depth    => adams_history_depth
-     procedure :: num_stages       => adams_num_stages
-     procedure :: primary_degree   => adams_primary_degree
      procedure :: row_pattern      => adams_row_pattern
      procedure :: edge_coefficient => adams_edge_coefficient
 
@@ -91,26 +89,6 @@ contains
     adams_history_depth = max(this % order - 1, 1)
 
   end function adams_history_depth
-
-  pure integer function adams_num_stages(this)
-
-    class(adams_family), intent(in) :: this
-
-    associate (u1 => this); end associate
-    adams_num_stages = 1
-
-  end function adams_num_stages
-
-  pure integer function adams_primary_degree(this, equation_degree)
-
-    class(adams_family), intent(in) :: this
-    integer            , intent(in) :: equation_degree
-
-    associate (u1 => this); end associate
-    adams_primary_degree = equation_degree
-
-  end function adams_primary_degree
-
   !===================================================================!
   ! The row on degree d carries the same degree one instant back and
   ! quadratures the degree above it over the last p instants. The

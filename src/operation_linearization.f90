@@ -29,6 +29,7 @@ module operation_linearization
 
   use util_precision  , only : dp, half_digits
   use operation_action, only : operation, argument, variation
+  use operation_action, only : emit
   use view_directed, only : directed_graph
   use field_calculus, only : field
   use graph_fractal      , only : graph
@@ -322,8 +323,7 @@ contains
 
     out = stored_field('J v', on, n_on, num_components=max(size(y) / n_on, 1))
     call out % set_real_vector(y)
-    if (allocated(output)) deallocate(output)
-    allocate(output, source=out)
+    call emit(out, output)
 
   end subroutine linearization_apply
 

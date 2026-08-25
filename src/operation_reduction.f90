@@ -83,6 +83,7 @@ module operation_reduction
   use field_calculus  , only : FIELD_REAL, FIELD_COMPLEX
   use field_calculus  , only : FIELD_LOGICAL
   use operation_action  , only : operation
+  use operation_action, only : emit
   use field_calculus  , only : functional
   use view_directed   , only : SIDE_VERTEX
   use field_stored    , only : stored_field
@@ -194,7 +195,6 @@ module operation_reduction
      !----------------------------------------------------------------!
 
      procedure :: name   => broadcast_name
-     procedure :: domain => broadcast_domain
      procedure :: apply  => broadcast_apply
 
   end type broadcast
@@ -656,21 +656,6 @@ contains
     name = 'broadcast'
 
   end function broadcast_name
-
-  subroutine broadcast_domain(this, input_graph, domain, num_entries)
-
-    class(broadcast), intent(in)           :: this
-    class(directed_graph), intent(in)               :: input_graph
-    type(graph), intent(out) :: domain
-    integer        , intent(out) :: num_entries
-
-    associate (u1 => this); end associate
-
-    domain   = input_graph % vertex_set()
-    num_entries = input_graph % num_vertices()
-
-  end subroutine broadcast_domain
-
   subroutine broadcast_apply(this, input_graph, input_data, output)
 
     class(broadcast), intent(in)                   :: this
@@ -691,8 +676,7 @@ contains
        end select
     end if
 
-    if (allocated(output)) deallocate(output)
-    allocate(output, source=out)
+    call emit(out, output)
 
   end subroutine broadcast_apply
 

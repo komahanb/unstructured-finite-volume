@@ -76,6 +76,7 @@ module operation_differential
 
   use util_precision  , only : dp
   use operation_action, only : operation
+  use operation_action, only : emit
   use view_directed, only : directed_graph
   use field_calculus, only : field
   use graph_fractal      , only : graph
@@ -929,9 +930,7 @@ contains
 
     call out % set_real_vector(y)
 
-    ! a supplied buffer is overwritten, never added to
-    if (allocated(output)) deallocate(output)
-    allocate(output, source=out)
+    call emit(out, output)
 
   end subroutine operator_apply
 

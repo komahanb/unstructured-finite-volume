@@ -41,6 +41,7 @@ module operation_stencil
   use view_directed, only : directed_graph
   use field_calculus, only : field
   use operation_action, only : operation, variation
+  use operation_action, only : emit
   use operation_discretization     , only : discretization
   use relation_binary, only : group_by_key
   use field_stored  , only : stored_field
@@ -65,7 +66,6 @@ module operation_stencil
    contains
 
      procedure :: name         => stencil_name
-     procedure :: domain       => stencil_domain
      procedure :: apply        => stencil_apply
      procedure :: dependencies => stencil_dependencies
      procedure :: transpose     => stencil_transpose
@@ -297,21 +297,6 @@ contains
     name = this % label
 
   end function stencil_name
-
-  subroutine stencil_domain(this, input_graph, domain, num_entries)
-
-    class(stencil), intent(in)    :: this
-    class(directed_graph), intent(in)               :: input_graph
-    type(graph), intent(out) :: domain
-    integer        , intent(out) :: num_entries
-
-    associate (u1 => this); end associate
-
-    domain   = input_graph % vertex_set()
-    num_entries = input_graph % num_vertices()
-
-  end subroutine stencil_domain
-
   !===================================================================!
   ! y = constants + the dependency edges, walked once: each edge
   ! carries its weight times the tail's value onto its head.
@@ -337,8 +322,7 @@ contains
     out = stored_field(this % label, input_graph % vertex_set(), input_graph % num_vertices())
     call out % set_real_vector(y)
 
-    if (allocated(output)) deallocate(output)
-    allocate(output, source=out)
+    call emit(out, output)
 
   end subroutine stencil_apply
 
@@ -415,8 +399,7 @@ contains
     out = stored_field(this % label, input_graph % vertex_set(), input_graph % num_vertices())
     call out % set_real_vector(y)
 
-    if (allocated(output)) deallocate(output)
-    allocate(output, source=out)
+    call emit(out, output)
 
   end subroutine stencil_partial_action
 

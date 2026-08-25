@@ -62,9 +62,7 @@ module operation_family_dirk
    contains
 
      procedure :: name             => dirk_name
-     procedure :: history_depth    => dirk_history_depth
      procedure :: num_stages       => dirk_num_stages
-     procedure :: primary_degree   => dirk_primary_degree
      procedure :: row_pattern      => dirk_row_pattern
      procedure :: edge_coefficient => dirk_edge_coefficient
 
@@ -117,17 +115,6 @@ contains
     name = 'dirk'
 
   end function dirk_name
-
-  pure integer function dirk_history_depth(this, equation_degree)
-
-    class(dirk_family), intent(in) :: this
-    integer           , intent(in) :: equation_degree
-
-    associate (u1 => this, u2 => equation_degree); end associate
-    dirk_history_depth = 1
-
-  end function dirk_history_depth
-
   pure integer function dirk_num_stages(this)
 
     class(dirk_family), intent(in) :: this
@@ -135,17 +122,6 @@ contains
     dirk_num_stages = size(this % b)
 
   end function dirk_num_stages
-
-  pure integer function dirk_primary_degree(this, equation_degree)
-
-    class(dirk_family), intent(in) :: this
-    integer           , intent(in) :: equation_degree
-
-    associate (u1 => this); end associate
-    dirk_primary_degree = equation_degree
-
-  end function dirk_primary_degree
-
   !===================================================================!
   ! A stage family's rows run between the stages of one step, not
   ! between instants, so they have no pattern in instant offsets. A

@@ -39,6 +39,7 @@ module operation_step
 
   use util_precision  , only : dp
   use operation_action, only : operation, argument, variation
+  use operation_action, only : emit
   use operation_discretization     , only : discretization
   use view_directed, only : directed_graph
   use field_calculus, only : field
@@ -543,8 +544,7 @@ contains
     out = stored_field('step residual', expected, n_expected, num_components=num_components)
     call out % set_real_vector(y)
 
-    if (allocated(output)) deallocate(output)
-    allocate(output, source=out)
+    call emit(out, output)
 
   end subroutine step_apply
 
@@ -703,8 +703,7 @@ contains
          & num_components=num_components)
     call out % set_real_vector(y)
 
-    if (allocated(output)) deallocate(output)
-    allocate(output, source=out)
+    call emit(out, output)
 
   end subroutine step_partial_action
 

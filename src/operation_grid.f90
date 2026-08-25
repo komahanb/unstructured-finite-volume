@@ -43,6 +43,7 @@ module operation_grid
   use iso_fortran_env, only : int64
   use util_precision  , only : dp
   use operation_action      , only : operation, variation
+  use operation_action, only : emit
   use view_directed         , only : directed_graph
   use field_calculus        , only : field
   use graph_fractal         , only : graph
@@ -64,7 +65,6 @@ module operation_grid
      procedure(grid_weight_interface), deferred :: weight_of
 
      procedure :: duration
-     procedure :: domain         => grid_domain
      procedure :: apply          => grid_apply
      procedure :: max_degree     => grid_max_degree
      procedure :: partial_action => grid_partial_action
@@ -280,23 +280,6 @@ contains
 
   end function designed_weight
 
-  !===================================================================!
-  ! THE MACHINERY.
-  !===================================================================!
-
-  subroutine grid_domain(this, input_graph, domain, num_entries)
-
-    class(grid)          , intent(in)  :: this
-    class(directed_graph), intent(in)  :: input_graph
-    type(graph)          , intent(out) :: domain
-    integer              , intent(out) :: num_entries
-
-    associate (u1 => this); end associate
-    domain      = input_graph % vertex_set()
-    num_entries = input_graph % num_vertices()
-
-  end subroutine grid_domain
-
   pure integer function grid_max_degree(this)
 
     class(grid), intent(in) :: this
@@ -402,8 +385,7 @@ contains
     out = stored_field(this % name(), input_graph % vertex_set(), size(dt))
     call out % set_real_vector(values)
 
-    if (allocated(output)) deallocate(output)
-    allocate(output, source=out)
+    call emit(out, output)
 
   end subroutine placed
 

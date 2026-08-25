@@ -46,6 +46,7 @@ module operation_balance
 
   use util_precision  , only : dp
   use operation_action, only : operation
+  use operation_action, only : emit
   use view_directed, only : directed_graph
   use field_calculus, only : field
   use graph_fractal      , only : graph
@@ -75,7 +76,6 @@ module operation_balance
    contains
 
      procedure :: name   => balance_name
-     procedure :: domain => balance_domain
      procedure :: apply  => balance_apply
 
   end type balance
@@ -119,25 +119,6 @@ contains
     name = 'balance'
 
   end function balance_name
-
-  !===================================================================!
-  ! Every cell. A balance answers for the whole graph it is given; a
-  ! caller wanting only part of one hands it only part of one.
-  !===================================================================!
-
-  subroutine balance_domain(this, input_graph, domain, num_entries)
-
-    class(balance), intent(in)             :: this
-    class(directed_graph)  , intent(in)             :: input_graph
-    type(graph), intent(out) :: domain
-    integer        , intent(out) :: num_entries
-
-    associate (u1 => this); end associate
-
-    domain   = input_graph % vertex_set()
-    num_entries = input_graph % num_vertices()
-
-  end subroutine balance_domain
 
   !===================================================================!
   ! Work the balance out.
@@ -198,9 +179,7 @@ contains
 
     call out % set_real_vector(y)
 
-    ! A supplied buffer is overwritten, never added to.
-    if (allocated(output)) deallocate(output)
-    allocate(output, source=out)
+    call emit(out, output)
 
   end subroutine balance_apply
 

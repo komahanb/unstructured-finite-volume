@@ -37,6 +37,7 @@ module operation_fitting
 
   use util_precision  , only : dp, spacing_at_one
   use operation_action, only : operation
+  use operation_action, only : emit
   use view_directed, only : directed_graph
   use field_calculus, only : field
   use graph_fractal      , only : graph
@@ -69,7 +70,6 @@ module operation_fitting
    contains
 
      procedure :: name   => fit_name
-     procedure :: domain => fit_domain
      procedure :: apply  => fit_apply
 
   end type fit
@@ -154,21 +154,6 @@ contains
          & allocated(this % shape))
 
   end function fit_name
-
-  subroutine fit_domain(this, input_graph, domain, num_entries)
-
-    class(fit), intent(in)                 :: this
-    class(directed_graph), intent(in)               :: input_graph
-    type(graph), intent(out) :: domain
-    integer        , intent(out) :: num_entries
-
-    associate (u1 => this); end associate
-
-    domain   = input_graph % vertex_set()
-    num_entries = input_graph % num_vertices()
-
-  end subroutine fit_domain
-
   !===================================================================!
   ! Positions in, weights out. The conditions honour the roster; the
   ! dual is handed to the level's own solver.
@@ -272,8 +257,7 @@ contains
     out = stored_field('fit weights', input_graph % vertex_set(), input_graph % num_vertices())
     call out % set_real_vector(w)
 
-    if (allocated(output)) deallocate(output)
-    allocate(output, source=out)
+    call emit(out, output)
 
   end subroutine fit_apply
 

@@ -184,10 +184,11 @@ contains
 
   !===================================================================!
   ! This function maps gmsh element numbers to paraview cell types.
+  ! A number this writer has no drawing for stops the program: a
+  ! polyhedron needs its faces listed, which write does not do.
   !===================================================================!
 
-  pure elemental type(integer) function element_type(this, gmsh_type) &
-       & result (paraview_type)
+  type(integer) function element_type(this, gmsh_type) result (paraview_type)
 
     class(linear_cell_type), intent(in) :: this
     integer                , intent(in) :: gmsh_type
@@ -210,7 +211,8 @@ contains
     case (polygon_cell)
        paraview_type = this % VTK_POLYGON
     case default
-       paraview_type = this % VTK_POLYHEDRON
+       call gate(.false., 'a cell type this writer draws: gmsh 1 to 7, polygon_cell, hypercube_cell')
+       paraview_type = this % VTK_EMPTY_CELL
     end select
 
   end function element_type

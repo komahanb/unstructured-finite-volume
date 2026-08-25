@@ -22,6 +22,7 @@ module util_precision
   private
   public :: dp, precision_named
   public :: single_spacing, double_spacing, quadruple_spacing, least_kind_for
+  public :: spacing_at_one, half_digits
 
 #ifdef PRECISION_QUAD
   integer, parameter :: dp = real128
@@ -32,6 +33,15 @@ module util_precision
   real(real128), parameter :: single_spacing    = real(epsilon(1.0_real32), real128)
   real(real128), parameter :: double_spacing    = real(epsilon(1.0_real64), real128)
   real(real128), parameter :: quadruple_spacing = epsilon(1.0_real128)
+
+  ! The floor of this build's own kind, from which every tolerance in
+  ! the tower is measured: the spacing at one, below which a residual
+  ! cannot be told from zero, and its square root, the step at which a
+  ! first difference loses half its digits to rounding and half to
+  ! truncation - and so the reduction past which a first-order iterate
+  ! is not telling a caller anything more.
+  real(dp), parameter :: spacing_at_one = epsilon(1.0_dp)
+  real(dp), parameter :: half_digits    = sqrt(epsilon(1.0_dp))
 
 contains
 

@@ -16,9 +16,11 @@
 ! A direct solve is a single pass, so the tolerance and iteration
 ! budget inherited from the minimizer family are unused. The one
 ! numerical check is on the pivot: a pivot at or below
-! singular_tolerance cannot be divided by, being indistinguishable
-! from zero. By default that stops the program, the matrix being
-! singular where the caller expected it not to be.
+! singular_tolerance times the largest entry of the matrix cannot be
+! divided by, being indistinguishable from zero at the matrix's own
+! scale; the default is the spacing of the build's kind. By default
+! that stops the program, the matrix being singular where the caller
+! expected it not to be.
 !
 ! A caller whose matrix is a tangent frozen at an intermediate
 ! iterate expects no such thing, since singularity there is a fact
@@ -33,7 +35,7 @@
 
 module operation_dense_direct
 
-  use util_precision  , only : dp
+  use util_precision  , only : dp, spacing_at_one
   use operation_minimization , only : minimizer
   use util_factorisation, only : dense_factorisation
 
@@ -44,7 +46,7 @@ module operation_dense_direct
 
   type, extends(minimizer) :: dense_direct
 
-     real(dp) :: singular_tolerance = 1.0e-14_dp
+     real(dp) :: singular_tolerance = spacing_at_one
 
      ! Whether a singular pivot is reported through the achieved
      ! residual instead of stopping the program. False by default,
@@ -84,7 +86,8 @@ contains
   ! Solve A x = rhs where A(:, j) = matvec(e_j). Checks, each
   ! stopping the program: singular_tolerance must be positive,
   ! size(x) must equal size(rhs) because x is written in place,
-  ! and every pivot must exceed singular_tolerance.
+  ! and every pivot must exceed singular_tolerance times the largest
+  ! entry of the matrix.
   !===================================================================!
 
   subroutine dense_direct_solve(this, rhs, x, achieved)
@@ -126,7 +129,7 @@ contains
           call this % matvec(basis, y)
           a(:, j) = y
        end do
-       call this % factor % factorise(a, this % singular_tolerance)
+       call this % factor % factorise(a, this % singular_tolerance * maxval(abs(a)))
        this % kept_stamp = this % action % stamp()
     end if
 

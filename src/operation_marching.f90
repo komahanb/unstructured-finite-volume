@@ -67,7 +67,6 @@ module operation_marching
 
      integer  :: rule = MARCH_FORWARD
      real(dp) :: step = 1.0_dp
-     real(dp) :: singular_tolerance = 1.0e-14_dp
 
      class(minimizer), allocatable :: inner
 
@@ -490,7 +489,6 @@ contains
     call read_state_domain(action, on, lambda, state_domain, n_state_domain, num_components)
 
     statement = prepared_statement(this, action)
-    direct % singular_tolerance = this % singular_tolerance
 
     allocate(carry_one(n), carry_two(n), lambda_e(n))
     carry_one = 0.0_dp
@@ -704,7 +702,6 @@ contains
     sensitivities = 0.0_dp
 
     statement = prepared_statement(this, action)
-    direct % singular_tolerance = this % singular_tolerance
     allocate(q_s(n))
 
     ! for each edge, assemble the composition degree by degree and
@@ -896,7 +893,7 @@ contains
     h_previous    = 0.0_dp
     completed     = .false.
 
-    do while (duration - t > 1.0e-12_dp * duration)
+    do while (duration - t > spacing(duration))
 
        call policy % propose(h)
 

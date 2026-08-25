@@ -27,7 +27,7 @@
 
 module operation_linearization
 
-  use util_precision  , only : dp
+  use util_precision  , only : dp, half_digits
   use operation_action, only : operation, argument, variation
   use view_directed, only : directed_graph
   use field_calculus, only : field
@@ -50,7 +50,7 @@ module operation_linearization
      type(stored_field), allocatable :: at(:)
      real(dp), allocatable :: at_values(:)
      real(dp), allocatable :: base(:)
-     real(dp) :: step = 1.0d-7
+     real(dp) :: step = half_digits
 
    contains
 

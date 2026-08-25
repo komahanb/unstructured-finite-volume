@@ -35,7 +35,7 @@
 
 module operation_fitting
 
-  use util_precision  , only : dp
+  use util_precision  , only : dp, spacing_at_one
   use operation_action, only : operation
   use view_directed, only : directed_graph
   use field_calculus, only : field
@@ -118,7 +118,7 @@ module operation_fitting
 
   type, extends(form_optimizer) :: pruner
 
-     real(dp) :: threshold = 1.0d-12
+     real(dp) :: threshold = spacing_at_one
 
    contains
 
@@ -253,7 +253,7 @@ contains
 
        call solver % attach(dual, dual % pattern, dual % pattern % vertex_set(), &
             & dual % pattern % num_vertices())
-       solver % tolerance      = 1.0d-14
+       solver % tolerance      = spacing_at_one
        solver % max_iterations = 50
 
        lam = 0.0_dp
@@ -317,7 +317,7 @@ contains
     ! Membership is the roster: the pruned form stands on the kept
     ! table entries. A set needs no second list to say who belongs,
     ! and the form sets its own - this decides, it does not reach.
-    call shape % restrict(pack([(m, m = 1, nc)], seen > this % threshold))
+    call shape % restrict(pack([(m, m = 1, nc)], seen > this % threshold * maxval(seen)))
 
   end subroutine adapt
 

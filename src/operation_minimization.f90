@@ -38,7 +38,7 @@
 
 module operation_minimization
 
-  use util_precision  , only : dp
+  use util_precision  , only : dp, half_digits
   use operation_action  , only : operation
   use view_directed   , only : directed_graph
   use field_calculus  , only : field
@@ -137,7 +137,7 @@ module operation_minimization
      type(stored_field), allocatable :: held(:)
 
      integer  :: max_iterations = 1000
-     real(dp) :: tolerance      = 1.0d-10
+     real(dp) :: tolerance      = half_digits
 
      ! WHAT THE TOLERANCE IS MEASURED AGAINST. relative divides the
      ! imbalance by the one the iteration began with, which is the

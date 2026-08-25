@@ -323,9 +323,9 @@ contains
        allocate(inner, source=dense_direct())
     else
        krylov = gmres()
-       krylov % restart    = min(unknowns, 200)
-       krylov % tolerance  = 1.0e-13_dp
-       krylov % max_iterations = 4 * unknowns
+       krylov % restart        = min(unknowns, 60)
+       krylov % tolerance      = 1.0e-13_dp
+       krylov % max_iterations = 4
        allocate(inner, source=krylov)
     end if
 

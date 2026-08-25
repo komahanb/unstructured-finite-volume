@@ -47,7 +47,7 @@ module gti_configuration
      integer  :: max_discretization_order = 4
      integer  :: seed                     = 20260824
      integer  :: startup_refinement       = 4
-     integer  :: krylov_above             = 800
+     integer  :: krylov_above             = huge(1)
 
      real(dp) :: time_duration = 7.0_dp
      real(dp) :: design        = 1.0_dp

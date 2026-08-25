@@ -64,22 +64,39 @@ module gti_sweeps
   ! Where the linear solve stops factorising and starts iterating.
   !
   ! A dense factorisation forms the jacobian one column at a time and
-  ! then costs the cube of the count, so it wins while the count is
-  ! small; a krylov solver forms no matrix and wins once it is not.
-  ! The default sits at the crossing measured on a stage block of a
-  ! degree-four equation, where six hundred unknowns take twenty-one
-  ! seconds dense against eighty-eight iterating, and a thousand do
-  ! not finish in five minutes dense against fifteen seconds.
+  ! then costs the cube of the count. A krylov solver forms no matrix
+  ! and costs a matvec per step, so how it fares depends on how many
+  ! steps it needs, which is a question about the conditioning of the
+  ! block and not about its size.
   !
-  ! It is settable because the two fail differently. A dense
-  ! factorisation meeting a singular pivot stops the program, and a
-  ! statement can be singular for reasons of its own - a coarse grid
-  ! on a diverging problem will do it - so a caller who would rather
-  ! be told a row did not converge than lose the run sets this to
-  ! zero and iterates throughout.
+  ! The two families sit on opposite sides of that. A stage block
+  ! weighs its sources by the step, and iterating beats factorising
+  ! on one: at six hundred unknowns five seconds against eleven, and
+  ! at a thousand ten seconds against sixty. A difference block on a
+  ! second derivative weighs its sources by the inverse square of the
+  ! step, and iterating does not converge on one at all - at three
+  ! hundred and sixty unknowns it does not finish in the time
+  ! factorising takes a second to do.
+  !
+  ! Nothing here preconditions, and without that a krylov solver
+  ! cannot be the default. So the default factorises, which always
+  ! finishes, and iterating is asked for: set krylov_above to a count
+  ! above which to iterate, or to zero to iterate throughout.
+  !
+  ! It is worth asking for on a large stage block, and worth asking
+  ! for where a statement is singular for reasons of its own - a
+  ! coarse grid on a diverging problem will do it - because a
+  ! factorisation meeting a singular pivot stops the program where an
+  ! iteration reports that a row did not converge.
+  !
+  ! For the second of those to be worth anything the iteration has to
+  ! give up rather than grind, so it is held to a few restarts of a
+  ! few dozen steps. On a block it suits that is more than it needs;
+  ! on one it does not, newton is handed a poor step, fails to
+  ! converge, and the row says so - which is the point.
   !===================================================================!
 
-  integer, private, save :: crossing = 800
+  integer, private, save :: crossing = huge(1)
 
 contains
 
@@ -303,9 +320,9 @@ contains
        allocate(solver, source=dense_direct())
     else
        krylov = gmres()
-       krylov % restart        = min(size(b), 200)
+       krylov % restart        = min(size(b), 60)
        krylov % tolerance      = 1.0e-13_dp
-       krylov % max_iterations = 4 * size(b)
+       krylov % max_iterations = 4
        allocate(solver, source=krylov)
     end if
 

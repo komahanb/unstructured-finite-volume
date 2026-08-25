@@ -38,7 +38,7 @@
 module operation_family_bdf
 
   use util_precision  , only : dp
-  use operation_family     , only : family, offsets, slope_at_zero
+  use operation_family     , only : family, offsets, slope_at_zero, negated
   use util_derivative_terms, only : derivative_terms, &
        & operator(+), operator(*), operator(/)
 
@@ -164,19 +164,6 @@ contains
     alpha = slope_at_zero(negated(offsets(dt, k, p + 1)), j)
 
   end function velocity_coefficient
-
-  pure function negated(u) result(minus_u)
-
-    type(derivative_terms), intent(in) :: u(0:)
-    type(derivative_terms) :: minus_u(0:ubound(u, 1))
-
-    integer :: i
-
-    do i = 0, ubound(u, 1)
-       minus_u(i) = (-1.0_dp) * u(i)
-    end do
-
-  end function negated
 
   !===================================================================!
   ! The coefficient of the row on the d-th derivative, at offset j

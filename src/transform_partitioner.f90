@@ -63,7 +63,7 @@ module transform_partitioner
   use map_set      , only : set_map
   use map_label    , only : label_map
   use map_inclusion, only : inclusion_map, declared_subobject
-  use map_set_representation, only : listed_set_representation
+  use map_carving           , only : carve
   use transform_structure, only : transform
   use view_directed_stored         , only : stored_directed_graph
   use field_stored   , only : stored_field
@@ -596,7 +596,7 @@ contains
        allocate(lv(nlocal * num_components))
        lv = 0.0_dp
        do l = 1, nlocal
-          g = global_of(rel, l, on_vertices)
+          g = rel % global_index(l, on_vertices)
           at = sets % index_in(dom, g)
           if (at >= 1) then
              do c = 1, num_components
@@ -614,7 +614,7 @@ contains
        allocate(kept(nlocal))
        n = 0
        do l = 1, nlocal
-          g = global_of(rel, l, on_vertices)
+          g = rel % global_index(l, on_vertices)
           if (sets % has(dom, g)) then
              n = n + 1
              kept(n) = l
@@ -627,14 +627,11 @@ contains
        ! carried - transport renames nothing.
        !-------------------------------------------------------------!
 
-       call sp % declare()
-       call sets       % bind(sp, listed_set_representation(kept(1:n)))
-       call labels     % bind(sp, labels % label_of(dom))
-       call inclusions % include_in(sp, part_carrier)
+       call carve(sp, kept(1:n), labels % label_of(dom), part_carrier, sets, labels, inclusions)
 
        allocate(lv(n * num_components))
        do l = 1, n
-          g  = global_of(rel, kept(l), on_vertices)
+          g  = rel % global_index(kept(l), on_vertices)
           at = sets % index_in(dom, g)
           do c = 1, num_components
              lv((l - 1) * num_components + c) = fv((at - 1) * num_components + c)
@@ -649,23 +646,5 @@ contains
     allocate(part_data, source=out)
 
   end subroutine carry_field
-
-  !===================================================================!
-  ! What the part's l-th member was called in the whole.
-  !===================================================================!
-
-  pure integer function global_of(rel, l, on_vertices)
-
-    type(partition_relation), intent(in) :: rel
-    integer                 , intent(in) :: l
-    logical                 , intent(in) :: on_vertices
-
-    if (on_vertices) then
-       global_of = rel % global_vertex_index(l)
-    else
-       global_of = rel % global_edge_index(l)
-    end if
-
-  end function global_of
 
 end module transform_partitioner

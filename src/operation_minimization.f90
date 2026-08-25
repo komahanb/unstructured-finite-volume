@@ -219,15 +219,15 @@ contains
   !===================================================================!
   ! The imbalance an iteration begins at, against which a relative
   ! tolerance is measured, and the last few it has seen, from which a
-  ! rate is fitted. Written here and nowhere else.
+  ! rate is fitted. Written here and nowhere else: begin clears them,
+  ! and the first imbalance noted is the one the iteration began at.
   !===================================================================!
 
-  subroutine begin_imbalance(this, imbalance)
+  subroutine begin_imbalance(this)
 
     class(minimizer), intent(inout) :: this
-    real(dp)        , intent(in)    :: imbalance
 
-    this % began_at  = imbalance
+    this % began_at  = 0.0_dp
     this % recent    = 0.0_dp
     this % noted     = 0
     this % descended = .false.

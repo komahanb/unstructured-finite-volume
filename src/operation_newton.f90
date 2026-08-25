@@ -119,7 +119,7 @@ contains
 
     allocate(dq(size(x)))
 
-    call this % begin_imbalance(0.0_dp)
+    call this % begin_imbalance()
 
     call this % constant(g)
 

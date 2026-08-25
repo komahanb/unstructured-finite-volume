@@ -74,7 +74,7 @@ contains
 
     allocate(basis(n, m + 1), h(m + 1, m), cs(m), sn(m), s(m + 1))
 
-    call this % begin_imbalance(0.0_dp)
+    call this % begin_imbalance()
 
     do outer = 1, this % max_iterations
 

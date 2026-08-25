@@ -208,7 +208,7 @@ contains
 
     allocate(rc(this % nblocks), ec(this % nblocks))
 
-    call this % begin_imbalance(0.0_dp)
+    call this % begin_imbalance()
 
     do it = 1, this % max_iterations
 

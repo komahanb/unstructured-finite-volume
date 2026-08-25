@@ -58,11 +58,11 @@ module view_directed_stored
   use relation_binary, only : group_by_key, csr_relation
   use relation_partition, only : partition_relation
   use view_directed     , only : SIDE_VERTEX, SIDE_EDGE
-  use map_set_representation, only : counted_set_representation, &
-       & listed_set_representation
+  use map_set_representation, only : counted_set_representation
   use map_set      , only : set_map
   use map_label    , only : label_map
   use map_inclusion, only : inclusion_map
+  use map_carving  , only : carve
 
   implicit none
 
@@ -691,44 +691,6 @@ contains
 
   end subroutine tagged_vertices
 
-  !===================================================================!
-  ! CARVE. The one gate every named subset passes through.
-  !
-  ! A carved set is a NEW set - it signs a fresh identity, exactly as
-  ! the subset_set it replaces did - and three things must be said
-  ! about it or it is not usable:
-  !
-  !     its extension     which members, in this order
-  !     its label         what the old subset called itself
-  !     its embedding     which carrier it was carved from
-  !
-  ! They are bound together HERE rather than at each of the twelve
-  ! call sites, because the third is the one an author forgets: a
-  ! missing representation stops the program at the first query, and a
-  ! missing label answers '', but a missing inclusion answers FALSE to
-  ! is_subobject_of - quietly, and only on a real mesh.
-  !
-  ! The maps are the caller's. This routine writes into them and keeps
-  ! nothing.
-  !===================================================================!
-
-  subroutine carve(members, roll, label, ambient, sets, labels, inclusions)
-
-    type(graph)    , intent(out)   :: members
-    integer            , intent(in)    :: roll(:)
-    character(len=*)   , intent(in)    :: label
-    type(graph)    , intent(in)    :: ambient
-    type(set_map)      , intent(inout) :: sets
-    type(label_map)    , intent(inout) :: labels
-    type(inclusion_map), intent(inout) :: inclusions
-
-    call members % declare()
-
-    call sets       % bind(members, listed_set_representation(roll))
-    call labels     % bind(members, label)
-    call inclusions % include_in(members, ambient)
-
-  end subroutine carve
 
   !===================================================================!
   ! Does any edge touching this vertex stop here rather than holding
@@ -1055,11 +1017,7 @@ contains
     allocate(pick(n))
     k = 0
     do i = 1, n
-       if (on_vertices) then
-          owns = r % vertex_owner_part(i)
-       else
-          owns = r % edge_owner_part(i)
-       end if
+       owns = r % owner_part(i, on_vertices)
        if ((owns == part_id) .eqv. want_owned) then
           k = k + 1
           pick(k) = i

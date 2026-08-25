@@ -141,10 +141,12 @@ module relation_partition
 
      procedure :: global_vertex_index
      procedure :: global_edge_index
+     procedure :: global_index
      procedure :: part_vertex_index
      procedure :: part_edge_index
      procedure :: vertex_owner_part
      procedure :: edge_owner_part
+     procedure :: owner_part
 
      procedure :: describes
      procedure :: whole_vertex_set
@@ -262,6 +264,19 @@ contains
     global_edge_index = outward(this % eglobal, index, this % cut)
   end function global_edge_index
 
+  ! The same read with the side chosen by a flag, for a caller that
+  ! handles vertices and edges through one path.
+  pure integer function global_index(this, index, on_vertices)
+    class(partition_relation), intent(in) :: this
+    integer                  , intent(in) :: index
+    logical                  , intent(in) :: on_vertices
+    if (on_vertices) then
+       global_index = this % global_vertex_index(index)
+    else
+       global_index = this % global_edge_index(index)
+    end if
+  end function global_index
+
   pure integer function outward(global, index, cut)
     integer, allocatable, intent(in) :: global(:)
     integer             , intent(in) :: index
@@ -329,6 +344,17 @@ contains
     integer                                  , intent(in) :: index
     edge_owner_part = owner(this % eowner, index, this % cut, this % number)
   end function edge_owner_part
+
+  pure integer function owner_part(this, index, on_vertices)
+    class(partition_relation), intent(in) :: this
+    integer                  , intent(in) :: index
+    logical                  , intent(in) :: on_vertices
+    if (on_vertices) then
+       owner_part = this % vertex_owner_part(index)
+    else
+       owner_part = this % edge_owner_part(index)
+    end if
+  end function owner_part
 
   pure integer function owner(owners, index, cut, mine)
     integer, allocatable, intent(in) :: owners(:)

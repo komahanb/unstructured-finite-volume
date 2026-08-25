@@ -29,7 +29,7 @@
 module operation_family_adams
 
   use util_precision  , only : dp
-  use operation_family     , only : family, offsets, integral_over_step
+  use operation_family     , only : family, offsets, integral_over_step, negated
   use util_derivative_terms, only : derivative_terms, operator(*)
 
   implicit none
@@ -151,19 +151,6 @@ contains
     alpha = integral_over_step(negated(offsets(dt, k, p)), i)
 
   end function quadrature_weight
-
-  pure function negated(u) result(minus_u)
-
-    type(derivative_terms), intent(in) :: u(0:)
-    type(derivative_terms) :: minus_u(0:ubound(u, 1))
-
-    integer :: i
-
-    do i = 0, ubound(u, 1)
-       minus_u(i) = (-1.0_dp) * u(i)
-    end do
-
-  end function negated
 
   pure function adams_edge_coefficient(this, dt, tail, head, &
        & source_degree, determines) result(c)

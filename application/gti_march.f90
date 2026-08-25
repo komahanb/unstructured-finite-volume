@@ -704,7 +704,7 @@ contains
     judge % tolerance      = stopping_tolerance
     judge % criterion      = stopping_criterion
     judge % budget         = stopping_budget
-    call judge % begin_imbalance(0.0_dp)
+    call judge % begin_imbalance()
 
     if (trim(sweep_level) == 'time') then
        members = instants

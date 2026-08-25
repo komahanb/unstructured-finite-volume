@@ -69,7 +69,7 @@ contains
        if (abs(d(v)) < tiny(1.0_dp)) d(v) = huge(1.0_dp)
     end do
 
-    call this % begin_imbalance(0.0_dp)
+    call this % begin_imbalance()
 
     do it = 1, this % max_iterations
 

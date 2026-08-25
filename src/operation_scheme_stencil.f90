@@ -51,6 +51,7 @@ module operation_scheme_stencil
 
   use util_precision  , only : dp
   use operation_stencil, only : stencil
+  use relation_binary  , only : group_by_key
 
   implicit none
 
@@ -98,13 +99,13 @@ contains
     integer, intent(in) :: determined(:), source(:), num_unknowns
 
     integer, allocatable :: start(:), order(:)
-    integer :: r, i, j
+    integer :: r, i, j, e
 
-    call grouped_by_row(determined, num_unknowns, start, order)
+    call group_by_key(num_unknowns, determined, [(e, e = 1, size(determined))], start, order)
 
     do r = 1, num_unknowns
-       do i = start(r + 1), start(r + 2) - 1
-          do j = start(r + 1), i - 1
+       do i = start(r), start(r + 1) - 1
+          do j = start(r), i - 1
              if (source(order(i)) == source(order(j))) then
                 error stop 'operation_scheme_stencil: a row reads each column once'
              end if
@@ -114,40 +115,6 @@ contains
 
   end subroutine require_distinct
 
-  !===================================================================!
-  ! The edges counted into their rows: start(r+1) is where row r
-  ! begins in order, and order lists the edges row by row.
-  !===================================================================!
-
-  subroutine grouped_by_row(determined, num_unknowns, start, order)
-
-    integer, intent(in) :: determined(:), num_unknowns
-    integer, allocatable, intent(out) :: start(:), order(:)
-
-    integer, allocatable :: place(:)
-    integer :: e, r
-
-    allocate(start(num_unknowns + 2), source=0)
-
-    do e = 1, size(determined)
-       start(determined(e) + 2) = start(determined(e) + 2) + 1
-    end do
-
-    start(1:2) = 1
-    do r = 2, num_unknowns + 1
-       start(r + 1) = start(r + 1) + start(r)
-    end do
-
-    allocate(order(size(determined)))
-    place = start(1:num_unknowns + 1)
-
-    do e = 1, size(determined)
-       r = determined(e)
-       order(place(r + 1)) = e
-       place(r + 1) = place(r + 1) + 1
-    end do
-
-  end subroutine grouped_by_row
 
   !===================================================================!
   ! The rows a scheme's weights make. The distinct rows entered by

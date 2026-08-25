@@ -13,6 +13,7 @@ map_set.o \
 view_set.o \
 map_inclusion.o \
 map_label.o \
+map_carving.o \
 view_epistemic.o \
 relation_finitary.o \
 view_relational.o \

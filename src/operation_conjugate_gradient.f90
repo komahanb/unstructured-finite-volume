@@ -71,7 +71,7 @@ contains
     p = r
 
     rr   = this % inner_product(r, r)
-    call this % begin_imbalance(0.0_dp)
+    call this % begin_imbalance()
 
     do it = 1, this % max_iterations
 

@@ -67,7 +67,7 @@ module transform_assembler
   use map_set      , only : set_map
   use map_label    , only : label_map
   use map_inclusion, only : inclusion_map, declared_subobject
-  use map_set_representation, only : listed_set_representation
+  use map_carving           , only : carve
   use transform_structure, only : transform
   use view_directed_stored         , only : stored_directed_graph
   use field_stored   , only : stored_field
@@ -345,9 +345,9 @@ contains
 
        do l = 1, nlocal
           if (rel % has_part_relation()) then
-             if (owner_of(rel, l, on_vertices) /= me) cycle
+             if (rel % owner_part(l, on_vertices) /= me) cycle
           end if
-          f = global_of(rel, l, on_vertices)
+          f = rel % global_index(l, on_vertices)
           do c = 1, num_components
              associate (to => (f - 1) * num_components + c, from => (l - 1) * num_components + c)
                if (to >= 1 .and. to <= size(fv) .and. from <= size(lv)) fv(to) = lv(from)
@@ -365,10 +365,10 @@ contains
        do l = 1, n_dom
           at = sets % member_of(dom, l)      ! part-local member
           if (rel % has_part_relation()) then
-             if (owner_of(rel, at, on_vertices) /= me) cycle
+             if (rel % owner_part(at, on_vertices) /= me) cycle
           end if
           n = n + 1
-          kept(n) = global_of(rel, at, on_vertices)
+          kept(n) = rel % global_index(at, on_vertices)
           came(n) = l
        end do
        !-------------------------------------------------------------!
@@ -378,10 +378,7 @@ contains
        ! do not, and the label does.
        !-------------------------------------------------------------!
 
-       call sg % declare()
-       call sets       % bind(sg, listed_set_representation(kept(1:n)))
-       call labels     % bind(sg, labels % label_of(dom))
-       call inclusions % include_in(sg, global_carrier)
+       call carve(sg, kept(1:n), labels % label_of(dom), global_carrier, sets, labels, inclusions)
 
        allocate(fv(n * num_components))
        do l = 1, n
@@ -398,33 +395,5 @@ contains
     allocate(global_data, source=out)
 
   end subroutine gather_field
-
-  pure integer function global_of(rel, l, on_vertices)
-
-    type(partition_relation), intent(in) :: rel
-    integer                 , intent(in) :: l
-    logical                 , intent(in) :: on_vertices
-
-    if (on_vertices) then
-       global_of = rel % global_vertex_index(l)
-    else
-       global_of = rel % global_edge_index(l)
-    end if
-
-  end function global_of
-
-  pure integer function owner_of(rel, l, on_vertices)
-
-    type(partition_relation), intent(in) :: rel
-    integer                 , intent(in) :: l
-    logical                 , intent(in) :: on_vertices
-
-    if (on_vertices) then
-       owner_of = rel % vertex_owner_part(l)
-    else
-       owner_of = rel % edge_owner_part(l)
-    end if
-
-  end function owner_of
 
 end module transform_assembler

@@ -40,7 +40,7 @@ module operation_family
 
   private
   public :: family
-  public :: offsets, slope_at_zero, integral_over_step
+  public :: offsets, slope_at_zero, integral_over_step, negated
 
   type, abstract, extends(edge_function) :: family
 
@@ -215,4 +215,22 @@ contains
     end do
 
   end function integral_over_step
+  !===================================================================!
+  ! The offsets negated: the nodes a family reads its coefficients at
+  ! lie the other way from the instant they are measured against.
+  !===================================================================!
+
+  pure function negated(u) result(minus_u)
+
+    type(derivative_terms), intent(in) :: u(0:)
+    type(derivative_terms) :: minus_u(0:ubound(u, 1))
+
+    integer :: i
+
+    do i = 0, ubound(u, 1)
+       minus_u(i) = (-1.0_dp) * u(i)
+    end do
+
+  end function negated
+
 end module operation_family

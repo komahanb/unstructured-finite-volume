@@ -64,7 +64,7 @@ module relation_algorithms
   use map_set           , only : set_map
   use map_label         , only : label_map
   use map_inclusion     , only : inclusion_map
-  use map_set_representation, only : listed_set_representation
+  use map_carving       , only : carve
 
   implicit none
 
@@ -300,28 +300,5 @@ contains
 
   end subroutine require_adjacency
 
-  !===================================================================!
-  ! CARVE. The same atomic declaration view_directed_stored states in full: a
-  ! carved set mints its identity and binds its extension, its label
-  ! and its embedding together, so no half-described set escapes.
-  !===================================================================!
-
-  subroutine carve(members, roll, label, ambient, sets, labels, inclusions)
-
-    type(graph)    , intent(out)   :: members
-    integer            , intent(in)    :: roll(:)
-    character(len=*)   , intent(in)    :: label
-    type(graph)    , intent(in)    :: ambient
-    type(set_map)      , intent(inout) :: sets
-    type(label_map)    , intent(inout) :: labels
-    type(inclusion_map), intent(inout) :: inclusions
-
-    call members % declare()
-
-    call sets       % bind(members, listed_set_representation(roll))
-    call labels     % bind(members, label)
-    call inclusions % include_in(members, ambient)
-
-  end subroutine carve
 
 end module relation_algorithms

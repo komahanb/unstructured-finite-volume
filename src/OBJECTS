@@ -1,6 +1,7 @@
 objects= \
 util_derivative_terms.o \
 util_tally.o \
+util_factorisation.o \
 token_identity.o \
 map_change_protocol.o \
 graph_fractal.o \

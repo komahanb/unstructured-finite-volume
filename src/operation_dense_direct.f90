@@ -35,7 +35,7 @@ module operation_dense_direct
 
   use iso_fortran_env    , only : dp => REAL64
   use operation_minimization , only : minimizer
-  use util_tally, only : tally_record, linear_solves, factorisations
+  use util_factorisation, only : dense_factorisation
 
   implicit none
 
@@ -86,11 +86,9 @@ contains
     real(dp), intent(inout) :: x(:)
     real(dp), intent(out)   :: achieved
 
-    real(dp), allocatable :: a(:,:), basis(:), y(:), r(:), row(:)
-    real(dp) :: swap_value, factor
-    integer :: n, j, k, p, i
-
-    call tally_record(linear_solves)
+    type(dense_factorisation) :: factor
+    real(dp), allocatable :: a(:,:), basis(:), y(:), solution(:)
+    integer :: n, j
 
     if (this % singular_tolerance <= 0.0_dp) then
        error stop 'dense_direct: singular tolerance is positive'
@@ -117,47 +115,23 @@ contains
     end do
 
     !----------------------------------------------------------------!
-    ! Gaussian elimination with partial pivoting, on the assembled
-    ! matrix and a copy of the right-hand side.
+    ! Factorise, and substitute. A singular pivot is reported through
+    ! the achieved residual where the caller asked for that, and stops
+    ! the program otherwise.
     !----------------------------------------------------------------!
 
-    call tally_record(factorisations)
+    call factor % factorise(a, this % singular_tolerance)
 
-    r = rhs
-    allocate(row(n))
-
-    do k = 1, n
-
-       p = k - 1 + maxloc(abs(a(k:n, k)), dim=1)
-
-       if (abs(a(p, k)) <= this % singular_tolerance) then
-          if (this % singular_reported) then
-             achieved = huge(1.0_dp)
-             return
-          end if
-          error stop 'dense_direct: the pivot is singular'
+    if (factor % singular()) then
+       if (this % singular_reported) then
+          achieved = huge(1.0_dp)
+          return
        end if
+       error stop 'dense_direct: the pivot is singular'
+    end if
 
-       if (p /= k) then
-          row        = a(k, :)
-          a(k, :)    = a(p, :)
-          a(p, :)    = row
-          swap_value = r(k)
-          r(k)       = r(p)
-          r(p)       = swap_value
-       end if
-
-       do i = k + 1, n
-          factor    = a(i, k) / a(k, k)
-          a(i, k:n) = a(i, k:n) - factor * a(k, k:n)
-          r(i)      = r(i) - factor * r(k)
-       end do
-
-    end do
-
-    do k = n, 1, -1
-       x(k) = (r(k) - dot_product(a(k, k+1:n), x(k+1:n))) / a(k, k)
-    end do
+    call factor % substitute(rhs, solution, transposed=.false.)
+    x = solution
 
     !----------------------------------------------------------------!
     ! Measure the residual of the computed solution through the

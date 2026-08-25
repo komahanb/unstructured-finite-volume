@@ -49,6 +49,7 @@ module gti_sweeps
   use operation_stencil     , only : stencil
   use operation_dense_direct, only : dense_direct
   use util_tally, only : tally_record, tangent_loops, adjoint_loops
+  use util_factorisation, only : dense_factorisation
   use operation_gmres       , only : gmres
   use operation_minimization, only : minimizer
   use operation_linearization, only : linearization, tangent_of
@@ -58,7 +59,11 @@ module gti_sweeps
   private
   public :: functional_of, functional_gradient
   public :: design_partial, jacobian_of
-  public :: by_tangent, by_adjoint, dense_solve, tangent_solve
+  public :: by_tangent, by_adjoint, tangent_solve
+  public :: forward_route, reverse_route, route_of, route_substitutions
+
+  integer, parameter :: forward_route = 1
+  integer, parameter :: reverse_route = 2
   public :: krylov_above, set_krylov_above
 
   !===================================================================!
@@ -266,42 +271,6 @@ contains
   end subroutine jacobian_of
 
   !===================================================================!
-  ! One dense solve, through the tower's own machinery: the matrix as
-  ! a stencil, transposed on request, driven to the given right side.
-  !===================================================================!
-
-  subroutine dense_solve(a, b, transposed, x)
-
-    real(dp), intent(in)  :: a(:,:), b(:)
-    logical , intent(in)  :: transposed
-    real(dp), allocatable, intent(out) :: x(:)
-
-    type(stencil) :: matrix
-    type(dense_direct) :: solver
-    type(stored_directed_graph) :: on
-    real(dp) :: achieved
-
-    if (transposed) then
-       call tally_record(adjoint_loops)
-    else
-       call tally_record(tangent_loops)
-    end if
-
-    matrix = stencil(a, 'jacobian')
-    on     = stored_directed_graph(size(b), tails=[integer ::], heads=[integer ::])
-
-    if (transposed) then
-       call solver % attach(matrix % transpose(), on, on % vertex_set(), size(b))
-    else
-       call solver % attach(matrix, on, on % vertex_set(), size(b))
-    end if
-
-    allocate(x(size(b)), source=0.0_dp)
-    call solver % solve(b, x, achieved)
-
-  end subroutine dense_solve
-
-  !===================================================================!
   ! One solve against the statement's tangent in the state, frozen at
   ! the inputs given. No matrix is formed past a small block: the
   ! statement's own partial action is the matvec.
@@ -319,8 +288,6 @@ contains
     class(minimizer), allocatable :: solver
     type(gmres) :: krylov
     real(dp) :: achieved
-
-    call tally_record(tangent_loops)
 
     jacobian = tangent_of(rows, rows % argument(1))
     call jacobian % freeze(inputs)
@@ -347,31 +314,103 @@ contains
   ! along what it gives.
   !===================================================================!
 
-  real(dp) function by_tangent(a, g, design_rate, explicit) result(df)
+  real(dp) function by_tangent(factor, g, design_rate, explicit) result(df)
 
-    real(dp), intent(in) :: a(:,:), g(:), design_rate(:), explicit
+    type(dense_factorisation), intent(in) :: factor
+    real(dp)                 , intent(in) :: g(:), design_rate(:), explicit
 
     real(dp), allocatable :: w(:)
 
-    call dense_solve(a, -design_rate, .false., w)
+    call tally_record(tangent_loops)
+    call factor % substitute(-design_rate, w, transposed=.false.)
     df = explicit + dot_product(g, w)
 
   end function by_tangent
 
   !===================================================================!
-  ! The adjoint: one solve against the transpose, then the
+  ! The adjoint: one substitution against the transpose, then the
   ! statement's design partial read along what it gives.
   !===================================================================!
 
-  real(dp) function by_adjoint(a, g, design_rate, explicit) result(df)
+  real(dp) function by_adjoint(factor, g, design_rate, explicit) result(df)
 
-    real(dp), intent(in) :: a(:,:), g(:), design_rate(:), explicit
+    type(dense_factorisation), intent(in) :: factor
+    real(dp)                 , intent(in) :: g(:), design_rate(:), explicit
 
     real(dp), allocatable :: lambda(:)
 
-    call dense_solve(a, g, .true., lambda)
+    call tally_record(adjoint_loops)
+    call factor % substitute(g, lambda, transposed=.true.)
     df = explicit - dot_product(lambda, design_rate)
 
   end function by_adjoint
+
+  !===================================================================!
+  ! THE GATE. Which route computes the m-th derivative of n_f
+  ! functionals in n_d designs, by the count of substitutions each
+  ! costs against one kept factorisation:
+  !
+  !      forward, m times            C(n_d + m - 1, m)
+  !      forward m-1 times over      (1 + n_f) C(n_d + m - 2, m - 1)
+  !      one reverse
+  !
+  ! The ratio of the first to the second is (n_d + m - 1) / (m (1 + n_f)),
+  ! so the forward route is the cheaper exactly where n_d <= m n_f. At
+  ! m = 1 that is the rule for a gradient, n_d <= n_f. At one design
+  ! and one functional the forward route costs m substitutions and the
+  ! other 2 m, at every order.
+  !
+  ! A count below one, or an order below one, stops the program.
+  !===================================================================!
+
+  pure integer function route_of(num_designs, num_functionals, order) result(route)
+
+    integer, intent(in) :: num_designs, num_functionals, order
+
+    if (num_designs < 1 .or. num_functionals < 1 .or. order < 1) then
+       error stop 'gti_sweeps: a route is chosen for at least one design, one functional and order one'
+    end if
+
+    if (num_designs <= order * num_functionals) then
+       route = forward_route
+    else
+       route = reverse_route
+    end if
+
+  end function route_of
+
+  !===================================================================!
+  ! The substitutions a route costs at one order, per block. What the
+  ! accounting layer counts is compared against this.
+  !===================================================================!
+
+  pure integer function route_substitutions(route, num_designs, num_functionals, order) &
+       & result(count)
+
+    integer, intent(in) :: route, num_designs, num_functionals, order
+
+    select case (route)
+    case (forward_route)
+       count = choose(num_designs + order - 1, order)
+    case (reverse_route)
+       count = (1 + num_functionals) * choose(num_designs + order - 2, order - 1)
+    case default
+       error stop 'gti_sweeps: a route is forward or reverse'
+    end select
+
+  end function route_substitutions
+
+  pure integer function choose(n, k) result(c)
+
+    integer, intent(in) :: n, k
+
+    integer :: i
+
+    c = 1
+    do i = 1, k
+       c = c * (n - k + i) / i
+    end do
+
+  end function choose
 
 end module gti_sweeps

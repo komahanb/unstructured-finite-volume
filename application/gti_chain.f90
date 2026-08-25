@@ -68,8 +68,10 @@ module gti_chain
   use field_calculus   , only : field
   use field_stored     , only : stored_field
   use operation_action , only : variation
-  use gti_sweeps       , only : tangent_solve, dense_solve, jacobian_of, design_partial
-  use util_tally            , only : tally_order, tally_enter, tally_leave, &
+  use gti_sweeps       , only : jacobian_of, design_partial, route_of, &
+       & route_substitutions, forward_route, reverse_route
+  use util_factorisation, only : dense_factorisation
+  use util_tally            , only : tally_record, tangent_loops, adjoint_loops, linear_solves, tally_order, tally_enter, tally_leave, &
        & at_horizon, at_block, at_stage
   use gti_taylor       , only : nodal_coefficient
 
@@ -78,6 +80,11 @@ module gti_chain
   private
   public :: chain_block, march_chain, chain_expansion, instant_components
   public :: chain_system, chain_systems, chain_by_tangent, chain_by_adjoint
+  public :: expansion_substitutions
+
+  ! A pivot at or below this leaves a factorisation singular. It is a
+  ! statement about the arithmetic, not about any problem.
+  real(dp), parameter :: singular_pivot = 1.0e-14_dp
 
   !===================================================================!
   ! One block of a chain: its statement, where its instants sit among
@@ -108,6 +115,11 @@ module gti_chain
      real(dp), allocatable :: a(:,:)
      real(dp), allocatable :: rate(:)
      real(dp), allocatable :: g(:)
+
+     ! The jacobian factorised once at the frozen state. Every order
+     ! of the expansion, the tangent and the adjoint substitute
+     ! against it.
+     type(dense_factorisation) :: factor
 
   end type chain_system
 
@@ -310,8 +322,13 @@ contains
     real(dp)              , intent(in) :: dt(:), design
     real(dp), allocatable , intent(out) :: f(:)
 
+    ! One design and one functional: what this expansion is built for,
+    ! and what the gate is asked about at every order.
+    integer, parameter :: num_designs = 1, num_functionals = 1
+
+    type(chain_system), allocatable :: systems(:)
     real(dp), allocatable :: series(:,:,:)
-    integer :: b, m, widest
+    integer :: b, m, widest, route
 
     widest = 0
     do b = 1, size(chain)
@@ -324,12 +341,30 @@ contains
        series(0, 1:size(chain(b) % state), b) = chain(b) % state
     end do
 
+    ! The jacobian of every block, factorised once. Every order below
+    ! substitutes against it.
+    if (max_order >= 1) then
+       call chain_systems(chain, integrand, degrees, dt, design, systems)
+    end if
+
     do m = 1, max_order
        call tally_order(m)
        call tally_enter(at_horizon)
+
+       ! THE GATE. The route is chosen from the counts and not assumed.
+       ! Only the forward route is built for an expansion, so a choice
+       ! of the other stops the program and says so rather than taking
+       ! the dearer one silently.
+       route = route_of(num_designs, num_functionals, m)
+       if (route /= forward_route) then
+          write(*,'(a,i0,a)') ' the reverse route is the cheaper at order ', m, &
+               & ' and an expansion by it is not built.'
+          error stop 'gti_chain: an expansion by the reverse route is not built'
+       end if
+
        do b = 1, size(chain)
           call tally_enter(at_block)
-          call one_order(chain, b, physics, degrees, design, m, series)
+          call one_order(chain, systems, b, physics, degrees, design, m, series)
           call tally_leave()
        end do
        call tally_leave()
@@ -371,16 +406,15 @@ contains
   ! and its predecessor's coefficient on the rows it was given.
   !===================================================================!
 
-  subroutine one_order(chain, b, physics, degrees, design, m, series)
+  subroutine one_order(chain, systems, b, physics, degrees, design, m, series)
 
     type(chain_block)     , intent(in)    :: chain(:)
+    type(chain_system)    , intent(in)    :: systems(:)
     integer               , intent(in)    :: b, degrees, m
     class(nodal_integrand), intent(in)    :: physics
     real(dp)              , intent(in)    :: design
     real(dp)              , intent(inout) :: series(0:, :, :)
 
-    type(stored_directed_graph) :: unknowns
-    type(stored_field), allocatable :: inputs(:)
     real(dp), allocatable :: frozen(:,:), coefficient(:), r(:), w(:), held(:)
     integer , allocatable :: at(:)
     integer :: count, carried, p
@@ -408,8 +442,8 @@ contains
        r(1:carried) = -held
     end if
 
-    call frozen_at(chain(b), design, unknowns, inputs)
-    call tangent_solve(chain(b) % rows, unknowns, inputs, -r, w)
+    call tally_record(tangent_loops)
+    call systems(b) % factor % substitute(-r, w, transposed=.false.)
     series(m, 1:count, b) = w
 
   end subroutine one_order
@@ -507,6 +541,10 @@ contains
 
        call jacobian_of(chain(b) % rows, unknowns, inputs, count, &
             & unknowns % vertex_set(), systems(b) % a)
+       call systems(b) % factor % factorise(systems(b) % a, singular_pivot)
+       if (systems(b) % factor % singular()) then
+          error stop 'gti_chain: the jacobian at a converged state is not singular'
+       end if
        call design_partial(chain(b) % rows, unknowns, inputs, &
             & chain(b) % rows % num_points(), unknowns % vertex_set(), &
             & systems(b) % rate)
@@ -635,6 +673,21 @@ contains
   end subroutine holder_of
 
   !===================================================================!
+  ! What the model says an expansion to the given order costs in
+  ! substitutions, for the accounting layer to set beside what it
+  ! counted: per order, one per block by the forward route at one
+  ! design and one functional.
+  !===================================================================!
+
+  pure integer function expansion_substitutions(num_blocks, order) result(count)
+
+    integer, intent(in) :: num_blocks, order
+
+    count = num_blocks * route_substitutions(route_of(1, 1, order), 1, 1, order)
+
+  end function expansion_substitutions
+
+  !===================================================================!
   ! Forward. Each block solves for its own sensitivity, with the rows
   ! it carried set to what an earlier block already found at those
   ! instants.
@@ -667,7 +720,8 @@ contains
           if (held_by > 0) rhs(i) = w(at + d + 1, held_by)
        end do
 
-       call dense_solve(systems(b) % a, rhs, .false., one)
+       call tally_record(tangent_loops)
+       call systems(b) % factor % substitute(rhs, one, transposed=.false.)
        w(1:size(one), b) = one
        df = df + dot_product(systems(b) % g, one)
     end do
@@ -702,8 +756,9 @@ contains
     df = 0.0_dp
 
     do b = size(chain), 1, -1
-       call dense_solve(systems(b) % a, rhs(1:chain(b) % rows % num_unknowns(), b), &
-            & .true., lambda)
+       call tally_record(adjoint_loops)
+       call systems(b) % factor % substitute(rhs(1:chain(b) % rows % num_unknowns(), b), &
+            & lambda, transposed=.true.)
        df = df - dot_product(lambda, systems(b) % rate)
 
        do i = 1, chain(b) % given * degrees

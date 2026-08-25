@@ -29,6 +29,7 @@ program sensitivity
   use gti_march            , only : partition, block_of, solved, unknowns_graph
   use gti_sweeps           , only : functional_of, functional_gradient, &
        & design_partial, jacobian_of, by_tangent, by_adjoint
+  use util_factorisation   , only : dense_factorisation
 
   implicit none
 
@@ -120,12 +121,14 @@ contains
 
     real(dp), allocatable :: q(:), g(:), rate(:), a(:,:), plus(:), minus(:)
     real(dp) :: f, tangent, adjoint, differenced
+    type(dense_factorisation) :: factor
 
     f = marched(scheme, design, q)
     call three_objects(scheme, q, g, rate, a)
 
-    tangent = by_tangent(a, g, rate, 0.0_dp)
-    adjoint = by_adjoint(a, g, rate, 0.0_dp)
+    call factor % factorise(a, 1.0e-14_dp)
+    tangent = by_tangent(factor, g, rate, 0.0_dp)
+    adjoint = by_adjoint(factor, g, rate, 0.0_dp)
 
     differenced = (marched(scheme, design + delta, plus) - &
          &         marched(scheme, design - delta, minus)) / (2.0_dp * delta)

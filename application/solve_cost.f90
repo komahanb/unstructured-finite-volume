@@ -2,8 +2,8 @@
 ! that calls them.
 !
 ! chain_systems forms the jacobian, the design rate and the gradient.
-! dense_solve wraps that jacobian as a stencil, rebuilds it column by
-! column and eliminates. Timing them apart from the march says which
+! The factorisation is kept with the system, so a solve here is one
+! substitution against it. Timing them apart from the march says which
 ! of the two carries the growth, and whether the march's own growth is
 ! more than the two of them together.
 program solve_cost
@@ -14,7 +14,7 @@ program solve_cost
   use operation_grid        , only : uniform_grid
   use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
   use gti_expansion         , only : family_holder
-  use gti_sweeps            , only : dense_solve
+  use util_factorisation    , only : dense_factorisation
   use gti_march             , only : partition
   use gti_chain             , only : chain_block, march_chain, &
        & chain_system, chain_systems
@@ -73,7 +73,7 @@ contains
     allocate(rhs(n), source=1.0_dp)
 
     solved_in = clock()
-    call dense_solve(systems(1) % a, rhs, .false., x)
+    call systems(1) % factor % substitute(rhs, x, transposed=.false.)
     solved_in = clock() - solved_in
 
     write(*,'(i10,3f11.3,2es15.3)') n, marched, formed, solved_in, &

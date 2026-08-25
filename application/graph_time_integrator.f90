@@ -70,6 +70,7 @@ program graph_time_integrator
   use gti_march             , only : partitioned, set_stopping
   use gti_expansion         , only : family_holder
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
+       & expansion_substitutions, &
        & instant_components
   use gti_sweeps            , only : set_krylov_above
   use operation_minimization, only : relative, absolute, by_count, by_rate
@@ -782,9 +783,53 @@ contains
        call one_measurement(cfg, event)
     end do
 
+    call route_note(cfg)
     call cliff_note(cfg)
 
   end subroutine accounted
+
+  !-------------------------------------------------------------------!
+  ! What the route's cost model said each order would cost in
+  ! substitutions, beside what was counted. One block per row is what
+  ! the homogeneous table builds, so the model is read at one block.
+  !-------------------------------------------------------------------!
+
+  subroutine route_note(cfg)
+
+    type(configuration), intent(in) :: cfg
+
+    character(len=:), allocatable :: line
+    character(len=14) :: cell
+    integer :: m, level
+    real(dp) :: counted, rows
+
+    rows = 0.0_dp
+    do level = 1, tally_num_levels()
+       rows = rows + tally_amount(level, 0, 5)
+    end do
+    if (rows <= 0.0_dp) return
+
+    write(*,'(a)') ' '
+    write(*,'(a)') '   tangent substitutions per row, the model against the count'
+    line = '   model            '
+    do m = 1, cfg % max_derivative_degree
+       write(cell,'(i14)') expansion_substitutions(1, m)
+       line = line // cell
+    end do
+    write(*,'(a)') line
+
+    line = '   counted          '
+    do m = 1, cfg % max_derivative_degree
+       counted = 0.0_dp
+       do level = 1, tally_num_levels()
+          counted = counted + tally_amount(level, m, 3)
+       end do
+       write(cell,'(f14.2)') counted / rows
+       line = line // cell
+    end do
+    write(*,'(a)') line
+
+  end subroutine route_note
 
   subroutine one_measurement(cfg, event)
 

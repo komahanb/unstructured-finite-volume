@@ -13,7 +13,7 @@
 
 module view_mesh_loader
 
-  use iso_fortran_env , only : dp => real64
+  use util_precision  , only : dp
   use util_string    , only : string
 
   implicit none

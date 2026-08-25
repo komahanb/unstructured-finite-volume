@@ -33,7 +33,7 @@
 
 module operation_dense_direct
 
-  use iso_fortran_env    , only : dp => REAL64
+  use util_precision  , only : dp
   use operation_minimization , only : minimizer
   use util_factorisation, only : dense_factorisation
 

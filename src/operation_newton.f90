@@ -46,7 +46,7 @@
 
 module operation_newton
 
-  use iso_fortran_env           , only : dp => REAL64
+  use util_precision  , only : dp
   use operation_minimization        , only : minimizer
   use util_tally, only : tally_record, newton_solves, primal_loops
   use field_stored  , only : stored_field

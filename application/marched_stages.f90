@@ -11,7 +11,7 @@
 ! so the marched value is compared against it and the steps halved.
 program marched_stages
 
-  use iso_fortran_env      , only : dp => REAL64
+  use util_precision  , only : dp
   use operation_family     , only : family
   use operation_family_dirk, only : dirk_family, implicit_midpoint, &
        & crouzeix_two_stage, crouzeix_three_stage

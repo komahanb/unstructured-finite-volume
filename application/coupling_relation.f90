@@ -24,7 +24,7 @@
 ! two ways.
 program coupling_relation
 
-  use iso_fortran_env       , only : dp => REAL64
+  use util_precision  , only : dp
   use graph_fractal         , only : graph
   use view_level            , only : level_storage, level_consistent, &
        & level_num_members

@@ -56,6 +56,14 @@ ifeq ($(COMPILER),gnu)
     F90FLAGS += -DUSE_COMPLEX
   endif
 
+  # Working precision: real64 unless PRECISION=quad, which selects
+  # real128 and keeps its own library so the two builds coexist.
+  LIBDIR := ../lib
+  ifeq ($(PRECISION),quad)
+    F90FLAGS += -DPRECISION_QUAD
+    LIBDIR := ../lib_quad
+  endif
+
   # Fortran standard: the newest the compiler speaks, probed above
   ifeq ($(F2008),no)
     F90FLAGS += -DNO_F2008

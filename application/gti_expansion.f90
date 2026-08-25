@@ -50,7 +50,7 @@
 
 module gti_expansion
 
-  use iso_fortran_env       , only : dp => REAL64
+  use util_precision  , only : dp
   use graph_fractal         , only : graph, branch
   use view_level            , only : level_storage, level_consistent, &
        & level_is_leaf, level_members, level_couples, level_coupling

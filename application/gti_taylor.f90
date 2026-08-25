@@ -55,7 +55,7 @@
 
 module gti_taylor
 
-  use iso_fortran_env      , only : dp => REAL64
+  use util_precision  , only : dp
   use util_derivative_terms, only : derivative_terms, mixed_partial
   use view_directed        , only : directed_graph
   use view_directed_stored , only : stored_directed_graph

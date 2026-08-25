@@ -37,7 +37,7 @@
 
 module operation_family_bdf
 
-  use iso_fortran_env , only : dp => REAL64
+  use util_precision  , only : dp
   use operation_family     , only : family, offsets, slope_at_zero
   use util_derivative_terms, only : derivative_terms, &
        & operator(+), operator(*), operator(/)

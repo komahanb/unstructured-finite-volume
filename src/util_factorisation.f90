@@ -39,7 +39,7 @@
 
 module util_factorisation
 
-  use iso_fortran_env, only : dp => REAL64
+  use util_precision  , only : dp
   use util_tally     , only : tally_record, factorisations, linear_solves
 
   implicit none

@@ -21,7 +21,7 @@
 
 module operation_gmres
 
-  use iso_fortran_env  , only : dp => REAL64
+  use util_precision  , only : dp
   use operation_minimization, only : minimizer
   use util_tally, only : tally_record, linear_solves
 

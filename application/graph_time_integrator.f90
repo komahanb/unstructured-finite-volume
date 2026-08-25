@@ -58,7 +58,7 @@
 ! and stops rather than printing a table that cannot be read across.
 program graph_time_integrator
 
-  use iso_fortran_env       , only : dp => REAL64
+  use util_precision  , only : dp
   use operation_family      , only : family
   use operation_family_bdf  , only : bdf_family
   use operation_family_adams, only : adams_family
@@ -67,7 +67,10 @@ program graph_time_integrator
   use operation_grid        , only : uniform_grid, random_grid, designed_grid
   use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
   use operation_grid        , only : grid
-  use gti_march             , only : partitioned, set_stopping, consistent_state, imbalance
+  use gti_march             , only : partitioned, set_stopping, consistent_state, imbalance, &
+       & weight_of, precision_needed
+  use util_precision        , only : precision_named
+  use iso_fortran_env       , only : real128
   use gti_expansion         , only : family_holder
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
        & expansion_substitutions, &
@@ -490,6 +493,44 @@ contains
   ! sits, and which state the norm is steepest in.
   !-------------------------------------------------------------------!
 
+  !-------------------------------------------------------------------!
+  ! The precision a row's target needs, from the weight its family
+  ! carries at its smallest step and the state it reached: shown
+  ! beneath every row under accounting, and beneath any row whose
+  ! need exceeds this build.
+  !-------------------------------------------------------------------!
+
+  subroutine shown_precision(scheme, nd, dt, chain, left, cfg)
+
+    class(family)      , intent(in) :: scheme
+    integer            , intent(in) :: nd
+    real(dp)           , intent(in) :: dt(:)
+    type(chain_block)  , intent(in) :: chain(:)
+    type(imbalance)    , intent(in) :: left
+    type(configuration), intent(in) :: cfg
+
+    real(dp) :: weight, state_size
+    real(real128) :: needed
+    character(len=:), allocatable :: least
+    integer :: b
+
+    weight     = weight_of(scheme, nd, minval(dt(2:)))
+    state_size = 0.0_dp
+    do b = 1, size(chain)
+       state_size = max(state_size, maxval(abs(chain(b) % state)))
+    end do
+
+    call precision_needed(weight, state_size, left % began, needed, least)
+
+    if (.not. cfg % accounting .and. least == precision_named()) return
+    if (.not. cfg % accounting .and. least == 'single') return
+
+    write(*,'(a,es9.2,a,es9.2,a,es9.2,a,a,a,a)') '      precision  ||A|| ', weight, &
+         & '  ||q|| ', state_size, '  spacing needed ', real(needed, dp), &
+         & '  least kind ', least, '  this build ', precision_named()
+
+  end subroutine shown_precision
+
   subroutine shown_aspect(left)
 
     type(imbalance), intent(in) :: left
@@ -571,6 +612,7 @@ contains
 
     call show_row(labelled(names, orders), cfg % instants - given, f, left, &
          & cfg % max_derivative_degree)
+    call shown_precision(schemes(1) % scheme, nd, dt, chain, left, cfg)
     printed = printed + 1
 
     associate (u1 => b); end associate
@@ -692,6 +734,7 @@ contains
     call startup_trajectory(cfg, dt, widest, startup)
 
     call shown_initial(cfg)
+    write(*,'(a,a)') '   precision of this build  ', precision_named()
     call heading(cfg)
 
     if (cfg % accounting) call tally_open(cfg % max_derivative_degree)

@@ -9,12 +9,13 @@
 ! never from the (m-1)-th.
 program expansion_check
 
-  use iso_fortran_env      , only : dp => REAL64
+  use util_precision  , only : dp
   use operation_family     , only : family
   use operation_family_bdf , only : bdf_family
   use operation_family_adams, only : adams_family
   use physics_vanderpol    , only : van_der_pol, van_der_pol_energy
-  use gti_march            , only : partition, block_of
+  use gti_march            , only : partition, block_of, set_stopping
+  use operation_minimization, only : relative, by_rate
   use gti_stage            , only : stage_block_of, instant_at
   use operation_family_dirk, only : crouzeix_two_stage
   use gti_block            , only : block_residual
@@ -22,13 +23,29 @@ program expansion_check
 
   implicit none
 
+  character(len=32) :: argument
+
   integer , parameter :: state_degree = 2
   integer , parameter :: degrees = state_degree + 1
   integer , parameter :: instants = 11
   integer , parameter :: max_order = 4
   real(dp), parameter :: duration = 2.0_dp
   real(dp), parameter :: design = 1.0_dp
-  real(dp), parameter :: delta = 1.0e-4_dp
+  ! The difference step is not chosen. A central difference of a
+  ! quantity known to a relative error tau has round-off tau f / delta
+  ! and truncation delta^2 f''' / 6, balanced at delta = tau^(1/3), where
+  ! the error is tau^(2/3). tau is the march's own relative tolerance,
+  ! which is what the expanded functional is known to.
+  real(dp) :: delta, tau
+
+  ! An optional relative tolerance; the default otherwise.
+  tau = 1.0e-12_dp
+  call get_command_argument(1, argument)
+  if (len_trim(argument) > 0) read(argument, *) tau
+  call set_stopping(tau, relative, by_rate, 100)
+  delta = tau ** (1.0_dp / 3.0_dp)
+  write(*,'(a,es9.2,a,es9.2,a,es9.2)') ' relative tolerance', tau, &
+       & '   difference step', delta, '   expected agreement tau^(2/3)', tau ** (2.0_dp / 3.0_dp)
 
   call expansion_of('bdf 2', bdf_family(2), .false.)
   call expansion_of('adams-moulton 3', adams_family(3), .false.)

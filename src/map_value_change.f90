@@ -24,7 +24,7 @@
 
 module map_value_change
 
-  use iso_fortran_env      , only : dp => REAL64
+  use util_precision  , only : dp
   use graph_fractal        , only : graph
   use map_value      , only : value_map, &
        & VALUE_UNATTACHED, VALUE_UNKNOWN, VALUE_KNOWN

@@ -24,7 +24,7 @@
 
 module transform_refiner
 
-  use iso_fortran_env     , only : dp => REAL64
+  use util_precision  , only : dp
   use view_directed , only : directed_graph
   use field_calculus, only : field
   use graph_fractal      , only : graph

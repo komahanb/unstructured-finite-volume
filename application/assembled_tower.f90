@@ -16,7 +16,7 @@
 ! before and after to show the constraint holding.
 program assembled_tower
 
-  use iso_fortran_env       , only : dp => REAL64
+  use util_precision  , only : dp
   use graph_fractal         , only : graph, branch
   use view_sequence         , only : sequence_empty, sequence_first, sequence_rest
   use view_level            , only : level_is_leaf, level_members, level_couples, &

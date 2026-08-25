@@ -56,7 +56,7 @@
 
 module gti_chain
 
-  use iso_fortran_env  , only : dp => REAL64
+  use util_precision  , only : dp
   use operation_family , only : family
   use operation_grid   , only : grid
   use physics_integrand, only : nodal_integrand

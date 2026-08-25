@@ -17,7 +17,7 @@
 
 module view_mesh_builder
 
-  use iso_fortran_env      , only : dp => REAL64
+  use util_precision  , only : dp
   use view_mesh     , only : mesh
   use util_string         , only : string
   use view_mesh_loader, only : mesh_loader

@@ -37,7 +37,8 @@
 ! test anything, so the draw stays where the trajectory is bounded.
 program randomized_checks
 
-  use iso_fortran_env       , only : dp => REAL64, int64 => INT64
+  use iso_fortran_env, only : int64
+  use util_precision  , only : dp
   use operation_family      , only : family
   use operation_family_bdf  , only : bdf_family
   use operation_family_adams, only : adams_family

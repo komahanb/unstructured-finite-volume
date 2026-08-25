@@ -49,7 +49,7 @@
 
 module operation_scheme_stencil
 
-  use iso_fortran_env  , only : dp => REAL64
+  use util_precision  , only : dp
   use operation_stencil, only : stencil
 
   implicit none

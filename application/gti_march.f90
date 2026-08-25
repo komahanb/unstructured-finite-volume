@@ -24,7 +24,9 @@
 
 module gti_march
 
-  use iso_fortran_env         , only : dp => REAL64
+  use util_precision  , only : dp, least_kind_for
+  use iso_fortran_env , only : real128
+  use operation_weight        , only : scheme_weight
   use view_directed_stored    , only : stored_directed_graph
   use field_calculus          , only : field
   use field_stored            , only : stored_field
@@ -85,9 +87,121 @@ module gti_march
   public :: set_stopping
   public :: consistent_state
   public :: imbalance
+  public :: weight_of, precision_needed
   public :: horizon_bounds
 
 contains
+
+  !===================================================================!
+  ! THE WEIGHT A BLOCK CARRIES: ||A||_inf from the family and the step,
+  ! without the matrix. A row determining degree d reads the sources
+  ! its pattern names, each weighted alpha dt^(sigma - d) by the same
+  ! scheme_weight that builds the block, so the row's absolute sum is
+  ! one apply on a coupling of that pattern at the step given, plus
+  ! the one the row carries on the column it determines. The largest
+  ! over the degrees is the norm. A stage family has no pattern in
+  ! instants and its rows lie within one step: the incoming instant
+  ! and the stages at or before, read the same way.
+  !===================================================================!
+
+  real(dp) function weight_of(scheme, degrees, step) result(w)
+
+    class(family), intent(in) :: scheme
+    integer      , intent(in) :: degrees
+    real(dp)     , intent(in) :: step
+
+    integer, allocatable :: offset(:), source_degree(:)
+    integer :: d, reach, s, i, k
+    logical :: any_pattern
+
+    w = 1.0_dp
+    any_pattern = .false.
+
+    do d = 0, degrees - 1
+       call scheme % row_pattern(d, degrees - 1, offset, source_degree)
+       if (size(offset) == 0) cycle
+       any_pattern = .true.
+       reach = maxval(offset)
+       w = max(w, 1.0_dp + row_weight(scheme, reach + 1, &
+            & [(reach + 1 - offset(k), k = 1, size(offset))], reach + 1, &
+            & source_degree, d, step))
+    end do
+
+    if (any_pattern) return
+
+    s = scheme % num_stages()
+    do d = 0, degrees - 2
+       do i = 1, s
+          w = max(w, 1.0_dp + row_weight(scheme, s + 2, &
+               & [1, (1 + k, k = 1, i)], 1 + i, &
+               & [d, (d + 1, k = 1, i)], d, step))
+       end do
+       w = max(w, 1.0_dp + row_weight(scheme, s + 2, &
+            & [1, (1 + k, k = 1, s)], s + 2, &
+            & [d, (d + 1, k = 1, s)], d, step))
+    end do
+
+  end function weight_of
+
+  real(dp) function row_weight(scheme, num_vertices, tails, head, source_degree, &
+       & determines, step) result(total)
+
+    class(family), intent(in) :: scheme
+    integer      , intent(in) :: num_vertices, tails(:), head, source_degree(:), determines
+    real(dp)     , intent(in) :: step
+
+    type(stored_directed_graph) :: coupling
+    type(stored_field) :: steps, degrees_field, conditions
+    type(scheme_weight) :: weights
+    class(field), allocatable :: out
+    real(dp), allocatable :: c(:)
+    integer :: k
+
+    coupling = stored_directed_graph(num_vertices, tails=tails, &
+         & heads=[(head, k = 1, size(tails))])
+
+    steps         = stored_field('dt', coupling % vertex_set(), num_vertices)
+    degrees_field = stored_field('source degree', coupling % edge_set(), size(tails))
+    conditions    = stored_field('determines', coupling % edge_set(), size(tails))
+    call steps         % set_real_vector([(step, k = 1, num_vertices)])
+    call degrees_field % set_integer_vector(source_degree)
+    call conditions    % set_integer_vector([(determines, k = 1, size(tails))])
+
+    weights = scheme_weight(scheme)
+    call weights % apply(coupling, [steps, degrees_field, conditions], out)
+    call out % real_vector(c)
+
+    total = sum(abs(c))
+
+  end function row_weight
+
+  !===================================================================!
+  ! THE PRECISION A TARGET NEEDS. The floor a march reaches is
+  ! eps ||A|| ||q||, so a target is reachable at a kind whose spacing
+  ! is under target / (||A|| ||q||). The target is the tolerance times
+  ! the starting imbalance where the criterion is relative, and the
+  ! tolerance itself where it is absolute.
+  !===================================================================!
+
+  subroutine precision_needed(weight, state_size, began, spacing_needed, least_kind)
+
+    real(dp)        , intent(in)  :: weight, state_size, began
+    real(real128)   , intent(out) :: spacing_needed
+    character(len=:), allocatable, intent(out) :: least_kind
+
+    real(dp) :: target
+
+    select case (stopping_criterion)
+    case (relative)
+       target = stopping_tolerance * began
+    case default
+       target = stopping_tolerance
+    end select
+
+    spacing_needed = real(target, real128) / real(max(weight * state_size, tiny(1.0_dp)), real128)
+    least_kind     = least_kind_for(spacing_needed)
+
+  end subroutine precision_needed
 
   !===================================================================!
   ! THE CONSISTENT INITIAL STATE. Given the components below the

@@ -15,7 +15,7 @@
 ! cosine, and the error is watched as the steps are halved.
 program marched_horizon
 
-  use iso_fortran_env       , only : dp => REAL64
+  use util_precision  , only : dp
   use operation_family      , only : family
   use operation_family_bdf  , only : bdf_family
   use operation_family_adams, only : adams_family

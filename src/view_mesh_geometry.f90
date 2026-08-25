@@ -42,7 +42,7 @@
 
 module view_mesh_geometry
 
-  use iso_fortran_env  , only : dp => REAL64
+  use util_precision  , only : dp
 
   implicit none
 

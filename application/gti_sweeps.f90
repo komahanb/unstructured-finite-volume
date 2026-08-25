@@ -39,7 +39,7 @@
 
 module gti_sweeps
 
-  use iso_fortran_env       , only : dp => REAL64
+  use util_precision  , only : dp
   use operation_action      , only : operation, variation
   use view_directed         , only : directed_graph
   use view_directed_stored  , only : stored_directed_graph

@@ -30,7 +30,8 @@
 
 module util_tally
 
-  use iso_fortran_env, only : dp => REAL64, int64 => INT64
+  use iso_fortran_env, only : int64
+  use util_precision  , only : dp
 
   implicit none
 

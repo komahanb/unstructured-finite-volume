@@ -31,7 +31,7 @@
 
 module operation_family
 
-  use iso_fortran_env         , only : dp => REAL64
+  use util_precision  , only : dp
   use operation_edge_function , only : edge_function
   use util_derivative_terms   , only : derivative_terms, value, &
        & operator(+), operator(-), operator(*), operator(/)

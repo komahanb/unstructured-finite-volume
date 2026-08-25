@@ -34,7 +34,7 @@
 
 module physics_vanderpol
 
-  use iso_fortran_env       , only : dp => REAL64
+  use util_precision  , only : dp
   use physics_integrand     , only : nodal_integrand
   use util_derivative_terms , only : derivative_terms, &
        & operator(+), operator(-), operator(*)

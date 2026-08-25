@@ -53,7 +53,7 @@
 
 module field_calculus
 
-  use iso_fortran_env, only : dp => REAL64
+  use util_precision  , only : dp
   use graph_fractal  , only : graph
 
   implicit none

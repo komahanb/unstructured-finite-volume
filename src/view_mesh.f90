@@ -40,7 +40,8 @@
 
 module view_mesh
 
-  use iso_fortran_env    , only : dp => REAL64, error_unit
+  use iso_fortran_env, only : error_unit
+  use util_precision  , only : dp
   use field_stored  , only : stored_field
   use view_directed_stored        , only : stored_directed_graph
   use graph_fractal      , only : graph

@@ -37,7 +37,7 @@
 
 module operation_step
 
-  use iso_fortran_env    , only : dp => REAL64
+  use util_precision  , only : dp
   use operation_action, only : operation, argument, variation
   use operation_discretization     , only : discretization
   use view_directed, only : directed_graph

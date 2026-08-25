@@ -24,7 +24,7 @@
 module view_gmsh_loader
 
   ! Import the dependencies.
-  use iso_fortran_env       , only : dp => real64
+  use util_precision  , only : dp
   use view_mesh_loader , only : mesh_loader
   use util_file            , only : file
   use util_string          , only : string

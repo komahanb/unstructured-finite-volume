@@ -8,7 +8,8 @@
 ! more than the two of them together.
 program solve_cost
 
-  use iso_fortran_env       , only : dp => REAL64, int64 => INT64
+  use iso_fortran_env, only : int64
+  use util_precision  , only : dp
   use operation_family      , only : family
   use operation_family_bdf  , only : bdf_family
   use operation_grid        , only : uniform_grid

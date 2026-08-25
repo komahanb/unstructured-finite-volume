@@ -1,4 +1,5 @@
 objects= \
+util_precision.o \
 util_derivative_terms.o \
 util_tally.o \
 util_factorisation.o \

@@ -27,7 +27,7 @@
 ! out would not be.
 program constraint_rows
 
-  use iso_fortran_env            , only : dp => REAL64
+  use util_precision  , only : dp
   use view_directed_stored       , only : stored_directed_graph
   use field_calculus             , only : field
   use field_stored               , only : stored_field

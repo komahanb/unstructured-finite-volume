@@ -17,13 +17,14 @@ default: $(objects)
 	@echo "----------- shared library: libufvm.so created -----------"
 
 install:
-	mv *.o ../lib
-	mv *.a ../lib
-	mv *.so ../lib
-	mv *.mod ../lib
+	mkdir -p $(LIBDIR)
+	mv *.o $(LIBDIR)
+	mv *.a $(LIBDIR)
+	mv *.so $(LIBDIR)
+	mv *.mod $(LIBDIR)
 
 clean:
-	@rm -f ../lib/*.o ../lib/*.mod ../lib/*.so ../lib/*.a *.mod *.o
+	@rm -f $(LIBDIR)/*.o $(LIBDIR)/*.mod $(LIBDIR)/*.so $(LIBDIR)/*.a *.mod *.o
 
 #=====================================================================#
 # Rule

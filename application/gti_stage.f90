@@ -46,11 +46,10 @@
 module gti_stage
 
   use util_precision  , only : dp
-  use view_directed_stored    , only : stored_directed_graph
   use field_calculus          , only : field
-  use field_stored            , only : stored_field
   use operation_stencil       , only : stencil
   use operation_family        , only : family
+  use operation_coupling      , only : weights_of
   use operation_weight        , only : scheme_weight
   use operation_scheme_stencil, only : derived_constraints
   use physics_integrand       , only : nodal_integrand
@@ -206,22 +205,8 @@ contains
     real(dp)     , intent(in) :: step
     real(dp), allocatable, intent(out) :: w(:)
 
-    type(stored_directed_graph) :: edges
-    type(stored_field) :: steps, degrees_field, conditions
-    type(scheme_weight) :: weights
-    class(field), allocatable :: out
-
-    edges         = stored_directed_graph(s + 2, tails=tails, heads=heads)
-    steps         = stored_field('dt', edges % vertex_set(), s + 2)
-    degrees_field = stored_field('source degree', edges % edge_set(), size(tails))
-    conditions    = stored_field('determines', edges % edge_set(), size(tails))
-    call steps         % set_real_vector(spread(step, 1, s + 2))
-    call degrees_field % set_integer_vector(source_degree)
-    call conditions    % set_integer_vector(determines)
-
-    weights = scheme_weight(scheme)
-    call weights % apply(edges, [steps, degrees_field, conditions], out)
-    call out % real_vector(w)
+    call weights_of(scheme_weight(scheme), s + 2, tails, heads, spread(step, 1, s + 2), &
+         & source_degree, determines, w)
 
   end subroutine step_weights
 

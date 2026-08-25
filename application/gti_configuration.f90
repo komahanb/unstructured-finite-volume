@@ -33,7 +33,7 @@ module gti_configuration
 
   private
   public :: configuration, read_configuration, override, show
-  public :: worded, lists, refuse_unknown
+  public :: worded, lists, refuse_unknown, chosen_from
 
   type :: configuration
 
@@ -472,5 +472,26 @@ contains
     end if
 
   end subroutine show
+
+  !===================================================================!
+  ! Which of the words listed a setting names, as its place in the
+  ! list; a word the list has not stops the program the way every
+  ! unknown word does.
+  !===================================================================!
+
+  integer function chosen_from(text, every, subject) result(which)
+
+    character(len=*), intent(in) :: text, every(:), subject
+
+    integer :: j
+
+    call refuse_unknown(text, every, subject)
+
+    which = 0
+    do j = 1, size(every)
+       if (trim(text) == trim(every(j))) which = j
+    end do
+
+  end function chosen_from
 
 end module gti_configuration

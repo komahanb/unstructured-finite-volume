@@ -24,6 +24,7 @@
 program tolerance_form
 
   use util_precision  , only : dp
+  use operation_coupling    , only : weights_of
   use view_directed_stored  , only : stored_directed_graph
   use field_calculus        , only : field
   use field_stored          , only : stored_field
@@ -86,28 +87,14 @@ contains
     class(family), intent(in) :: scheme
     integer      , intent(in) :: order, determines
 
-    type(stored_directed_graph) :: coupling
-    type(stored_field) :: steps, degrees, conditions
-    class(field), allocatable :: out
     real(dp), allocatable :: c(:)
     integer :: reach, last, k
 
     reach = determines * order
     last  = reach + 1
 
-    coupling = stored_directed_graph(last, &
-         & tails=[(last - k, k = 0, reach)], heads=[(last, k = 0, reach)])
-
-    steps      = stored_field('dt', coupling % vertex_set(), last)
-    degrees    = stored_field('source degree', coupling % edge_set(), reach + 1)
-    conditions = stored_field('determines', coupling % edge_set(), reach + 1)
-
-    call steps      % set_real_vector([(1.0_dp, k = 1, last)])
-    call degrees    % set_integer_vector([(0, k = 0, reach)])
-    call conditions % set_integer_vector([(determines, k = 0, reach)])
-
-    call scheme % apply(coupling, [steps, degrees, conditions], out)
-    call out % real_vector(c)
+    call weights_of(scheme, last, [(last - k, k = 0, reach)], [(last, k = 0, reach)], &
+         & [(1.0_dp, k = 1, last)], [(0, k = 0, reach)], [(determines, k = 0, reach)], c)
 
     total = sum(abs(c))
 

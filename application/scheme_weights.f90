@@ -27,6 +27,7 @@ program scheme_weights
   use operation_family       , only : family
   use operation_family_bdf   , only : bdf_family
   use operation_family_adams , only : adams_family
+  use operation_coupling     , only : coupling_inputs
   use operation_step_scaling , only : step_scaling
   use operation_weight       , only : scheme_weight
 
@@ -98,31 +99,24 @@ contains
     real(dp), allocatable, intent(out) :: tau(:), alpha(:), w(:)
 
     type(stored_directed_graph) :: coupling
-    type(stored_field) :: steps, degrees, conditions
+    type(stored_field), allocatable :: inputs(:)
     class(field), allocatable :: out
     type(step_scaling) :: scaling
     type(scheme_weight) :: weights
     integer :: e
 
-    coupling = stored_directed_graph(nv, tails=tails, &
-         & heads=[(head, e = 1, size(tails))])
-
-    steps      = stored_field('dt', coupling % vertex_set(), nv)
-    degrees    = stored_field('source degree', coupling % edge_set(), size(tails))
-    conditions = stored_field('determines', coupling % edge_set(), size(tails))
-    call steps      % set_real_vector(dt)
-    call degrees    % set_integer_vector(source_degree)
-    call conditions % set_integer_vector(determines)
+    call coupling_inputs(nv, tails, [(head, e = 1, size(tails))], dt, source_degree, determines, &
+         & coupling, inputs)
 
     scaling = step_scaling()
-    call scaling % apply(coupling, [steps, degrees, conditions], out)
+    call scaling % apply(coupling, inputs, out)
     call out % real_vector(tau)
 
-    call scheme % apply(coupling, [steps, degrees, conditions], out)
+    call scheme % apply(coupling, inputs, out)
     call out % real_vector(alpha)
 
     weights = scheme_weight(scheme)
-    call weights % apply(coupling, [steps, degrees, conditions], out)
+    call weights % apply(coupling, inputs, out)
     call out % real_vector(w)
 
   end subroutine row_fields
@@ -231,7 +225,8 @@ contains
     real(dp), parameter :: delta = 1.0e-6_dp
 
     type(stored_directed_graph) :: coupling
-    type(stored_field) :: steps, degrees, conditions, direction
+    type(stored_field), allocatable :: inputs(:)
+    type(stored_field) :: direction
     type(scheme_weight) :: weights
     class(field), allocatable :: out
     real(dp), allocatable :: exact(:), plus(:), minus(:), v(:)
@@ -241,32 +236,24 @@ contains
     last  = 2 * p + 1
     tails = [(last - j, j = 0, p)]
 
-    coupling = stored_directed_graph(last, tails=tails, &
-         & heads=[(last, e = 1, size(tails))])
+    call coupling_inputs(last, tails, [(last, e = 1, size(tails))], dt, &
+         & [(0, e = 1, size(tails))], [(1, e = 1, size(tails))], coupling, inputs)
 
-    steps      = stored_field('dt', coupling % vertex_set(), last)
-    degrees    = stored_field('source degree', coupling % edge_set(), size(tails))
-    conditions = stored_field('determines', coupling % edge_set(), size(tails))
-    direction  = stored_field('v', coupling % vertex_set(), last)
-    call degrees    % set_integer_vector([(0, e = 1, size(tails))])
-    call conditions % set_integer_vector([(1, e = 1, size(tails))])
-
+    direction = stored_field('v', coupling % vertex_set(), last)
     allocate(v(last), source=0.0_dp)
     v(last) = 1.0_dp
     call direction % set_real_vector(v)
 
     weights = scheme_weight(bdf_family(p))
 
-    call steps % set_real_vector(dt)
-    call weights % partial_action(coupling, [steps, degrees, conditions], &
-         & [variation(weights % argument(1), direction)], out)
+    call weights % partial_action(coupling, inputs, [variation(weights % argument(1), direction)], out)
     call out % real_vector(exact)
 
-    call steps % set_real_vector(dt + delta * v)
-    call weights % apply(coupling, [steps, degrees, conditions], out)
+    call inputs(1) % set_real_vector(dt + delta * v)
+    call weights % apply(coupling, inputs, out)
     call out % real_vector(plus)
-    call steps % set_real_vector(dt - delta * v)
-    call weights % apply(coupling, [steps, degrees, conditions], out)
+    call inputs(1) % set_real_vector(dt - delta * v)
+    call weights % apply(coupling, inputs, out)
     call out % real_vector(minus)
 
     write(*,'(a)') ' '

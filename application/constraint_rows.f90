@@ -35,6 +35,7 @@ program constraint_rows
   use operation_stencil          , only : stencil
   use operation_scheme_stencil   , only : derived_constraints
   use operation_family_bdf       , only : bdf_family
+  use operation_coupling         , only : weights_of
   use operation_weight           , only : scheme_weight
   use physics_vanderpol          , only : van_der_pol
 
@@ -381,22 +382,8 @@ contains
     integer , intent(in) :: tails(:), heads(:), source_degree(:), determines(:)
     real(dp), allocatable, intent(out) :: w(:)
 
-    type(stored_directed_graph) :: edges
-    type(stored_field) :: steps, degrees, conditions
-    type(scheme_weight) :: weights
-    class(field), allocatable :: out
-
-    edges  = stored_directed_graph(num_instants, tails=tails, heads=heads)
-    steps  = stored_field('dt', edges % vertex_set(), num_instants)
-    degrees    = stored_field('source degree', edges % edge_set(), size(tails))
-    conditions = stored_field('determines', edges % edge_set(), size(tails))
-    call steps      % set_real_vector(dt)
-    call degrees    % set_integer_vector(source_degree)
-    call conditions % set_integer_vector(determines)
-
-    weights = scheme_weight(bdf_family(order))
-    call weights % apply(edges, [steps, degrees, conditions], out)
-    call out % real_vector(w)
+    call weights_of(scheme_weight(bdf_family(order)), num_instants, tails, heads, dt, &
+         & source_degree, determines, w)
 
   end subroutine edge_weights
 

@@ -38,6 +38,7 @@ map_value.o \
 map_value_change.o \
 field_functional.o \
 view_directed_stored.o \
+operation_coupling.o \
 view_mesh.o \
 operation_robin_condition.o \
 operation_conduction.o \

@@ -28,6 +28,7 @@ module gti_field
 
   use util_precision          , only : dp
   use operation_family        , only : family
+  use operation_coupling      , only : weights_of
   use operation_weight        , only : scheme_weight
   use operation_scheme_stencil, only : derived_constraints
   use operation_stencil       , only : stencil
@@ -98,10 +99,6 @@ contains
     real(dp)     , intent(in) :: dt(:)
     type(stencil) :: rows
 
-    type(stored_directed_graph) :: edges
-    type(stored_field) :: steps, source_field, condition_field
-    type(scheme_weight) :: weights
-    class(field), allocatable :: out
     integer , allocatable :: tails(:), heads(:), source_degree(:), determines(:)
     integer , allocatable :: determined(:), source(:)
     real(dp), allocatable :: w(:), replicated(:)
@@ -109,18 +106,7 @@ contains
 
     call block_reach(scheme, degrees, n, tails, heads, source_degree, determines)
     ne = size(tails)
-
-    edges           = stored_directed_graph(n, tails=tails, heads=heads)
-    steps           = stored_field('dt', edges % vertex_set(), n)
-    source_field    = stored_field('source degree', edges % edge_set(), ne)
-    condition_field = stored_field('determines', edges % edge_set(), ne)
-    call steps           % set_real_vector(dt)
-    call source_field    % set_integer_vector(source_degree)
-    call condition_field % set_integer_vector(determines)
-
-    weights = scheme_weight(scheme)
-    call weights % apply(edges, [steps, source_field, condition_field], out)
-    call out % real_vector(w)
+    call weights_of(scheme_weight(scheme), n, tails, heads, dt, source_degree, determines, w)
 
     allocate(determined(ne * nodes), source(ne * nodes), replicated(ne * nodes))
     do i = 1, nodes

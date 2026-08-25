@@ -10,6 +10,7 @@ program family_coefficients
   use view_directed_stored  , only : stored_directed_graph
   use field_calculus        , only : field
   use field_stored          , only : stored_field
+  use operation_coupling    , only : weights_of, coupling_inputs
   use operation_action      , only : variation
   use operation_family      , only : family
   use operation_family_bdf  , only : bdf_family
@@ -43,21 +44,8 @@ contains
     real(dp)     , intent(in)  :: dt(:)
     real(dp), allocatable, intent(out) :: c(:)
 
-    type(stored_directed_graph) :: coupling
-    type(stored_field) :: steps, degrees, conditions
-    class(field), allocatable :: out
-
-    coupling = stored_directed_graph(num_vertices, tails=tails, heads=[(head, k = 1, size(tails))])
-
-    steps      = stored_field('dt', coupling % vertex_set(), num_vertices)
-    degrees    = stored_field('source degree', coupling % edge_set(), size(tails))
-    conditions = stored_field('determines', coupling % edge_set(), size(tails))
-    call steps      % set_real_vector(dt)
-    call degrees    % set_integer_vector(source_degree)
-    call conditions % set_integer_vector(determines)
-
-    call scheme % apply(coupling, [steps, degrees, conditions], out)
-    call out % real_vector(c)
+    call weights_of(scheme, num_vertices, tails, [(head, k = 1, size(tails))], dt, &
+         & source_degree, determines, c)
 
   end subroutine coefficients
 
@@ -154,36 +142,29 @@ contains
     real(dp), parameter :: delta = 1.0e-6_dp
 
     type(stored_directed_graph) :: coupling
-    type(stored_field) :: steps, degrees, conditions, direction
+    type(stored_field), allocatable :: inputs(:)
+    type(stored_field) :: direction
     type(bdf_family) :: scheme
     class(field), allocatable :: out
     real(dp), allocatable :: exact(:), plus(:), minus(:), v(:)
 
-    scheme   = bdf_family(order)
-    coupling = stored_directed_graph(last, tails=[(last - k, k = 0, order)], &
-         & heads=[(last, k = 0, order)])
+    scheme = bdf_family(order)
+    call coupling_inputs(last, [(last - k, k = 0, order)], [(last, k = 0, order)], dt, &
+         & [(0, k = 0, order)], [(1, k = 0, order)], coupling, inputs)
 
-    steps      = stored_field('dt', coupling % vertex_set(), last)
-    degrees    = stored_field('source degree', coupling % edge_set(), order + 1)
-    conditions = stored_field('determines', coupling % edge_set(), order + 1)
-    direction  = stored_field('v', coupling % vertex_set(), last)
-    call degrees    % set_integer_vector([(0, k = 0, order)])
-    call conditions % set_integer_vector([(1, k = 0, order)])
-
+    direction = stored_field('v', coupling % vertex_set(), last)
     allocate(v(last), source=0.0_dp)
     v(last) = 1.0_dp
     call direction % set_real_vector(v)
 
-    call steps % set_real_vector(dt)
-    call scheme % partial_action(coupling, [steps, degrees, conditions], &
-         & [variation(scheme % argument(1), direction)], out)
+    call scheme % partial_action(coupling, inputs, [variation(scheme % argument(1), direction)], out)
     call out % real_vector(exact)
 
-    call steps % set_real_vector(dt + delta * v)
-    call scheme % apply(coupling, [steps, degrees, conditions], out)
+    call inputs(1) % set_real_vector(dt + delta * v)
+    call scheme % apply(coupling, inputs, out)
     call out % real_vector(plus)
-    call steps % set_real_vector(dt - delta * v)
-    call scheme % apply(coupling, [steps, degrees, conditions], out)
+    call inputs(1) % set_real_vector(dt - delta * v)
+    call scheme % apply(coupling, inputs, out)
     call out % real_vector(minus)
 
     write(*,'(a)') ' '
@@ -191,7 +172,7 @@ contains
     write(*,'(a,3f12.6)') '   partial_action, degree one    ', exact
     write(*,'(a,3f12.6)') '   central difference            ', (plus - minus) / (2.0_dp * delta)
 
-    call bdf_second_partials(scheme, coupling, steps, degrees, conditions, dt, v)
+    call bdf_second_partials(scheme, coupling, inputs(1), inputs(2), inputs(3), dt, v)
 
   end subroutine bdf_step_sensitivity
 

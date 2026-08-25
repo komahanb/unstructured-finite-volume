@@ -26,6 +26,8 @@ module gti_march
 
   use util_precision  , only : dp, least_kind_for
   use iso_fortran_env , only : real128
+  use operation_coupling      , only : weights_of
+  use gti_configuration       , only : refuse_unknown
   use operation_weight        , only : scheme_weight
   use view_directed_stored    , only : stored_directed_graph
   use view_directed           , only : directed_graph
@@ -180,26 +182,11 @@ contains
     integer      , intent(in) :: num_vertices, tails(:), head, source_degree(:), determines
     real(dp)     , intent(in) :: step
 
-    type(stored_directed_graph) :: coupling
-    type(stored_field) :: steps, degrees_field, conditions
-    type(scheme_weight) :: weights
-    class(field), allocatable :: out
     real(dp), allocatable :: c(:)
     integer :: k
 
-    coupling = stored_directed_graph(num_vertices, tails=tails, &
-         & heads=[(head, k = 1, size(tails))])
-
-    steps         = stored_field('dt', coupling % vertex_set(), num_vertices)
-    degrees_field = stored_field('source degree', coupling % edge_set(), size(tails))
-    conditions    = stored_field('determines', coupling % edge_set(), size(tails))
-    call steps         % set_real_vector([(step, k = 1, num_vertices)])
-    call degrees_field % set_integer_vector(source_degree)
-    call conditions    % set_integer_vector([(determines, k = 1, size(tails))])
-
-    weights = scheme_weight(scheme)
-    call weights % apply(coupling, [steps, degrees_field, conditions], out)
-    call out % real_vector(c)
+    call weights_of(scheme_weight(scheme), num_vertices, tails, [(head, k = 1, size(tails))], &
+         & [(step, k = 1, num_vertices)], source_degree, [(determines, k = 1, size(tails))], c)
 
     total = sum(abs(c))
 
@@ -389,27 +376,12 @@ contains
     real(dp)     , intent(in) :: dt(:)
     type(stencil) :: rows
 
-    type(stored_directed_graph) :: edges
-    type(stored_field) :: steps, source_field, condition_field
-    type(scheme_weight) :: weights
-    class(field), allocatable :: out
     integer , allocatable :: tails(:), heads(:), source_degree(:), determines(:)
     real(dp), allocatable :: w(:)
     integer :: e
 
     call block_reach(scheme, degrees, n, tails, heads, source_degree, determines)
-
-    edges           = stored_directed_graph(n, tails=tails, heads=heads)
-    steps           = stored_field('dt', edges % vertex_set(), n)
-    source_field    = stored_field('source degree', edges % edge_set(), size(tails))
-    condition_field = stored_field('determines', edges % edge_set(), size(tails))
-    call steps           % set_real_vector(dt)
-    call source_field    % set_integer_vector(source_degree)
-    call condition_field % set_integer_vector(determines)
-
-    weights = scheme_weight(scheme)
-    call weights % apply(edges, [steps, source_field, condition_field], out)
-    call out % real_vector(w)
+    call weights_of(scheme_weight(scheme), n, tails, heads, dt, source_degree, determines, w)
 
     rows = derived_constraints( &
          & [(unknown(heads(e), determines(e), degrees), e = 1, size(heads))], &
@@ -611,13 +583,8 @@ contains
 
     character(len=*), intent(in) :: name
 
-    select case (trim(name))
-    case ('space-time', 'time', 'space')
-       sweep_level = name
-    case default
-       write(*,'(a)') ' sweep names ' // trim(name) // ', which this program has nothing for.'
-       error stop 'gti_march: a sweep is space-time, time or space'
-    end select
+    call refuse_unknown(name, ['space-time', 'time      ', 'space     '], 'sweep')
+    sweep_level = name
 
   end subroutine set_sweep
 

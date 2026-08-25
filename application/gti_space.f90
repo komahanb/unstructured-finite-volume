@@ -41,6 +41,7 @@ module gti_space
   use relation_binary           , only : ragged
   use util_string               , only : string
   use operation_grid            , only : uniform_grid, random_grid
+  use gti_configuration         , only : chosen_from
   use gti_march                 , only : partitioned
 
   implicit none
@@ -92,18 +93,8 @@ contains
 
     character(len=*), intent(in) :: name
 
-    select case (trim(name))
-    case ('cartesian')
-       geometry = cartesian
-    case ('circular')
-       geometry = circular
-    case ('elliptical')
-       geometry = elliptical
-    case default
-       write(*,'(a)') ' spatial_geometry names ' // trim(name) // &
-            & ', which this program has nothing for.'
-       error stop 'gti_space: a geometry is cartesian, circular or elliptical'
-    end select
+    ! the constants are the places in this list
+    geometry = chosen_from(name, ['cartesian ', 'circular  ', 'elliptical'], 'spatial_geometry')
 
   end function geometry_of
 

@@ -38,6 +38,7 @@ program coupling_relation
   use field_calculus        , only : field
   use field_stored          , only : stored_field
   use operation_family_bdf  , only : bdf_family
+  use operation_coupling    , only : weights_of
   use operation_weight      , only : scheme_weight
 
   implicit none
@@ -219,23 +220,8 @@ contains
     real(dp), intent(in) :: steps(:)
     real(dp), allocatable, intent(out) :: w(:)
 
-    type(stored_directed_graph) :: edges
-    type(stored_field) :: step_field, degrees, conditions
-    type(scheme_weight) :: weights
-    class(field), allocatable :: out
-
-    edges = stored_directed_graph(num_instants, tails=tails, heads=heads)
-
-    step_field = stored_field('dt', edges % vertex_set(), num_instants)
-    degrees    = stored_field('source degree', edges % edge_set(), size(tails))
-    conditions = stored_field('determines', edges % edge_set(), size(tails))
-    call step_field % set_real_vector(steps)
-    call degrees    % set_integer_vector(source_degree)
-    call conditions % set_integer_vector(determines)
-
-    weights = scheme_weight(bdf_family(order))
-    call weights % apply(edges, [step_field, degrees, conditions], out)
-    call out % real_vector(w)
+    call weights_of(scheme_weight(bdf_family(order)), num_instants, tails, heads, steps, &
+         & source_degree, determines, w)
 
   end subroutine edge_weights
 

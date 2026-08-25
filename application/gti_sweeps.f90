@@ -39,6 +39,7 @@
 
 module gti_sweeps
 
+  use gti_configuration, only : refuse_unknown
   use util_precision  , only : dp
   use operation_action      , only : operation, variation
   use view_directed         , only : directed_graph
@@ -99,13 +100,8 @@ contains
 
     character(len=*), intent(in) :: name
 
-    select case (trim(name))
-    case ('direct', 'iterative')
-       chosen_solver = name
-    case default
-       write(*,'(a)') ' linear_solver names ' // trim(name) // ', which this program has nothing for.'
-       error stop 'gti_sweeps: a linear solver is direct or iterative'
-    end select
+    call refuse_unknown(name, ['direct   ', 'iterative'], 'linear_solver')
+    chosen_solver = name
     call forget_inner()
 
   end subroutine set_linear_solver
@@ -114,13 +110,8 @@ contains
 
     character(len=*), intent(in) :: name
 
-    select case (trim(name))
-    case ('matrix', 'free')
-       chosen_assembly = name
-    case default
-       write(*,'(a)') ' assembly names ' // trim(name) // ', which this program has nothing for.'
-       error stop 'gti_sweeps: an assembly is matrix or free'
-    end select
+    call refuse_unknown(name, ['matrix', 'free  '], 'assembly')
+    chosen_assembly = name
     call forget_inner()
 
   end subroutine set_assembly
@@ -129,13 +120,8 @@ contains
 
     character(len=*), intent(in) :: name
 
-    select case (trim(name))
-    case ('dense', 'sparse')
-       chosen_storage = name
-    case default
-       write(*,'(a)') ' storage names ' // trim(name) // ', which this program has nothing for.'
-       error stop 'gti_sweeps: a storage is dense or sparse'
-    end select
+    call refuse_unknown(name, ['dense ', 'sparse'], 'storage')
+    chosen_storage = name
     call forget_inner()
 
   end subroutine set_storage

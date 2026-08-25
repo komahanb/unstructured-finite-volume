@@ -24,11 +24,11 @@ program marched_horizon
   use view_directed_stored  , only : stored_directed_graph
   use field_stored          , only : stored_field
   use physics_vanderpol     , only : van_der_pol_energy
-  use gti_march             , only : horizon_bounds, marched_horizon_of => marched_horizon, &
-       & partition, unknowns_graph
+  use gti_march             , only : horizon_bounds, partition, unknowns_graph
   use gti_sweeps            , only : functional_of
-  use gti_horizon           , only : block_system, horizon_systems, &
-       & horizon_by_tangent, horizon_by_adjoint
+  use gti_chain             , only : chain_block, march_chain, instant_components, &
+       & chain_system, chain_systems, chain_by_tangent, chain_by_adjoint
+  use operation_grid        , only : uniform_grid
 
   implicit none
 
@@ -92,17 +92,30 @@ contains
     real(dp)           , intent(out) :: achieved
     real(dp), intent(in), optional :: design_value
 
+    type(chain_block), allocatable :: chain(:)
     integer, allocatable :: first(:), last(:)
+    real(dp), allocatable :: dt(:), t(:)
     real(dp) :: design
+    integer :: k, n
 
     design = 0.0_dp
     if (present(design_value)) design = design_value
 
     call horizon_bounds(schemes, added, degrees - 1, first, last)
+    n = last(size(added))
+    call partition(duration, n, dt, t)
 
-    call marched_horizon_of(schemes, added, van_der_pol(state_degree), degrees, &
-         & duration, design, initial_for(schemes(1) % scheme, last(size(added))), &
-         & q, achieved)
+    call march_chain(schemes, added, van_der_pol(state_degree), degrees, &
+         & uniform_grid(duration), design, initial_for(schemes(1) % scheme, n), &
+         & chain, dt, t, achieved)
+
+    ! The chain keeps its state one block at a time, and a stage
+    ! block keeps its instants between its stages, so the instants
+    ! are gathered here into the one layout the checks below read.
+    allocate(q(n * degrees))
+    do k = 1, n
+       q((k - 1) * degrees + 1:k * degrees) = instant_components(chain, k, degrees)
+    end do
 
   end subroutine marched
 
@@ -227,8 +240,9 @@ contains
     integer , parameter :: added(2) = [10, 10]
 
     type(family_holder) :: schemes(2)
-    type(block_system), allocatable :: systems(:)
-    real(dp), allocatable :: q(:), gradient(:)
+    type(chain_block) , allocatable :: chain(:)
+    type(chain_system), allocatable :: systems(:)
+    real(dp), allocatable :: q(:), dt(:)
     real(dp) :: f, tangent, adjoint, differenced, achieved
     integer :: n
 
@@ -239,12 +253,12 @@ contains
     call marched(schemes, added, q, achieved, design)
     f = energy_of(q, n, design)
 
-    call horizon_systems(schemes, added, van_der_pol(state_degree), &
-         & van_der_pol_energy(state_degree), degrees, duration, design, q, &
-         & systems, gradient)
+    call chained(schemes, added, design, chain, dt)
+    call chain_systems(chain, van_der_pol_energy(state_degree), degrees, dt, design, &
+         & systems)
 
-    tangent     = horizon_by_tangent(systems, gradient)
-    adjoint     = horizon_by_adjoint(systems)
+    tangent     = chain_by_tangent(chain, systems, degrees)
+    adjoint     = chain_by_adjoint(chain, systems, degrees)
     differenced = differenced_energy(schemes, added, n, design, delta)
 
     write(*,'(a)')        ' '
@@ -258,6 +272,32 @@ contains
     write(*,'(a,es16.2)') '   tangent against difference ', abs(tangent - differenced)
 
   end subroutine sensitivity_across_the_junction
+
+  !-------------------------------------------------------------------!
+  ! The chain itself, and the steps it was built over.
+  !-------------------------------------------------------------------!
+
+  subroutine chained(schemes, added, design, chain, dt)
+
+    type(family_holder), intent(in) :: schemes(:)
+    integer            , intent(in) :: added(:)
+    real(dp)           , intent(in) :: design
+    type(chain_block), allocatable, intent(out) :: chain(:)
+    real(dp)         , allocatable, intent(out) :: dt(:)
+
+    integer , allocatable :: first(:), last(:)
+    real(dp), allocatable :: t(:)
+    real(dp) :: achieved
+
+    call horizon_bounds(schemes, added, degrees - 1, first, last)
+    call partition(duration, last(size(added)), dt, t)
+
+    call march_chain(schemes, added, van_der_pol(state_degree), degrees, &
+         & uniform_grid(duration), design, &
+         & initial_for(schemes(1) % scheme, last(size(added))), &
+         & chain, dt, t, achieved)
+
+  end subroutine chained
 
   !-------------------------------------------------------------------!
   ! The whole horizon marched either side of the design and the

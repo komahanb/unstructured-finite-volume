@@ -139,9 +139,9 @@ At the largest measured horizon, `n = 951` and `b = 14 + 2`:
 
 The ratio is `O(n^2 / b^2)` and therefore grows without limit.
 
-On memory the claim needs correcting. The arithmetic above says the
-dense matrix costs `O(n^2)`, and it does, but measurement says it is
-not where the memory goes:
+On memory the arithmetic above is right about the order and wrong
+about what dominates. Measured, the matrix is not where the memory
+goes:
 
 ```
  unknowns   peak, factorising   peak, matrix-free
@@ -150,19 +150,39 @@ not where the memory goes:
 ```
 
 The krylov path forms no matrix at all and at 471 unknowns uses
-essentially the same memory. The dense 711 by 711 matrix is 4 MB
-against a 119 MB matrix-free baseline, so **the representation of the
-problem costs about thirty times the numbers in it**. Peak memory over
-the whole sweep is 7.5, 8.1, 10.3, 14.6 and 84.7 MB at 231 to 471
-unknowns - the last step being the cliff of section 0, where forty
-iterations of allocating and freeing an `n by n` array leave the
-allocator holding what it will not return.
+essentially the same memory. So the memory was ascribed to the
+representation. It measures otherwise. One part per run, because
+within a process the allocator's arena is warm and a difference
+reports nothing:
 
-For an exascale horizon that constant matters more than the order: a
-representation costing tens of kilobytes per unknown forecloses the
-problem long before `O(n^2)` does. Measuring where it goes - the
-fractal graph's vertices and edges, the stored fields rebuilt per
-column - is the next thing to do, and it is not yet done.
+```
+ at 711 unknowns and 9165 edges          peak MB
+  a run that builds nothing                 1.54
+  a bare vertex set                         1.50
+  the same set given its banded edges       3.19
+  a field over it                           3.15
+  the block statement the march solves      4.07
+```
+
+**The representation is cheap.** A vertex set costs nothing
+measurable, a field over it nothing, an edge about 184 bytes, and the
+whole block statement 2.5 MB above a bare run - one and a half per
+cent of the 185 MB that same size reaches while solving.
+
+The memory is transient, and it is the cliff of section 0 wearing
+another face. `dense_direct_solve` allocates its `n by n` array inside
+the solve, so a fresh one is taken every newton iteration and handed
+back; at 471 unknowns that is 1.7 MB an iteration, and the allocator
+does not return it. Peak memory over the sweep is 7.5, 8.1, 10.3, 14.6
+then 84.7 MB - flat while the march converges in a few iterations, six
+times higher the moment it starts spending all forty. Per iteration it
+is about 2 MB either side of the step, so the step is the iteration
+count and nothing else.
+
+Two things follow, in order. Settle the tolerance and the memory falls
+with the time, by the same factor. Then hoist the matrix out of the
+iteration: it is the same shape every time, and there is no reason to
+take a new one per step.
 
 ### What one processor should do instead
 
@@ -299,17 +319,22 @@ array nor the `n^2`-edge graph is built.
    whole iteration budget, at about five times the cost, reporting
    nothing. Cheapest to fix and it distorts every other measurement
    until it is.
-2. **Dense elimination of a banded matrix.** The solve is cleanly
+2. **A matrix taken afresh every iteration.** `dense_direct_solve`
+   allocates `n by n` inside itself, about 2 MB an iteration at 471
+   unknowns, which is the whole of the memory growth. The shape does
+   not change between iterations. Falls out with 1, and cheap to fix
+   on its own.
+3. **Dense elimination of a banded matrix.** The solve is cleanly
    cubic; ~1250x flops available at the largest size measured, the
-   ratio growing as `n^2/b^2`. Memory is a separate matter: the
-   representation, not the matrix, holds thirty times more.
-3. **No factorisation reuse.** Multiplies axis 1 by `n_d` and `n_f`.
+   ratio growing as `n^2/b^2`. The representation is not the problem -
+   the block statement is 2.5 MB where the run reaches 185.
+4. **No factorisation reuse.** Multiplies axis 1 by `n_d` and `n_f`.
    Latent today at one design and one functional, and it is the axis
    the user named first, so it should be settled before it is paid.
-4. **Triple materialisation on the gradient path.** `n^2` edges to
+5. **Triple materialisation on the gradient path.** `n^2` edges to
    carry a matrix already held as an array. Confined to sensitivity,
    not the hot path.
-5. **Krylov as the escape hatch.** Linear in `n` but does not converge
+6. **Krylov as the escape hatch.** Linear in `n` but does not converge
    on difference blocks. Superseded by 1, and should be retired as the
    remedy for large horizons once 1 is done.
 

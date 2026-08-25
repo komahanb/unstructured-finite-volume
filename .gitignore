@@ -68,3 +68,4 @@ application/expansion_check
 application/marched_stages
 application/graph_time_integrator
 application/chained_horizon
+application/randomized_checks

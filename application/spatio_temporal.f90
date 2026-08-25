@@ -57,6 +57,7 @@ program spatio_temporal
   real(dp), allocatable :: dt(:), t(:), q0(:), measure(:)
   real(dp) :: a, b, kappa, began
   integer  :: nd, n1, n2
+  real(dp) :: x, y
 
   call settings('field', cfg)
   call show(cfg)
@@ -79,8 +80,11 @@ program spatio_temporal
 
   nd    = cfg % state_degree + 1
   kappa = cfg % diffusion
-  call two_reals(cfg % spatial_extent, a, b)
-  call two_integers(cfg % spatial_counts, n1, n2)
+  call pair_of(cfg % spatial_extent, a, b, 'extents')
+  call pair_of(cfg % spatial_counts, x, y, 'counts')
+  n1 = nint(x)
+  n2 = nint(y)
+  if (real(n1, dp) /= x .or. real(n2, dp) /= y) error stop 'spatio_temporal: a count is whole'
 
   began = clock()
   space = spatial_mesh(geometry_of(cfg % spatial_geometry), a, b, n1, n2, &
@@ -118,21 +122,16 @@ contains
     real(dp)           , intent(in) :: kappa
 
     real(dp), allocatable :: shape(:), balanced(:), exact(:)
-    real(dp) :: pi, err(0:2), norm(0:2), x, y
+    real(dp) :: pi, err(0:2), norm(0:2)
     integer  :: i, walls, count(0:2)
 
     if (space % geometry /= cartesian) then
        error stop 'spatio_temporal: the laplacian check is the rectangle''s'
     end if
 
-    pi = acos(-1.0_dp)
-    allocate(shape(space % num_cells), exact(space % num_cells))
-    do i = 1, space % num_cells
-       x = space % centre(1, i)
-       y = space % centre(2, i)
-       shape(i) = cos(pi * x / a) * cos(pi * y / b)
-       exact(i) = -kappa * pi ** 2 * (1.0_dp / a ** 2 + 1.0_dp / b ** 2) * shape(i)
-    end do
+    pi    = acos(-1.0_dp)
+    shape = mode_shape(space, a, b)
+    exact = -kappa * pi ** 2 * (1.0_dp / a ** 2 + 1.0_dp / b ** 2) * shape
 
     began = clock()
     call balance_of(space, kappa, cfg % spatial_order, shape, balanced)
@@ -159,33 +158,44 @@ contains
 
   end subroutine against_the_laplacian
 
-  subroutine two_reals(text, x, y)
+  !-------------------------------------------------------------------!
+  ! The rectangle's mode at every cell centre, cos(pi x / a) cos(pi y
+  ! / b): the shape every check on the rectangle reads.
+  !-------------------------------------------------------------------!
 
-    character(len=*), intent(in)  :: text
+  pure function mode_shape(space, a, b) result(shape)
+
+    type(room), intent(in) :: space
+    real(dp)  , intent(in) :: a, b
+    real(dp), allocatable :: shape(:)
+
+    real(dp) :: pi
+    integer  :: i
+
+    pi = acos(-1.0_dp)
+    shape = [(cos(pi * space % centre(1, i) / a) * cos(pi * space % centre(2, i) / b), &
+         &    i = 1, space % num_cells)]
+
+  end function mode_shape
+
+  !-------------------------------------------------------------------!
+  ! Two numbers from a setting, one per coordinate; a count is a
+  ! whole one.
+  !-------------------------------------------------------------------!
+
+  subroutine pair_of(text, x, y, subject)
+
+    character(len=*), intent(in)  :: text, subject
     real(dp)        , intent(out) :: x, y
 
     character(len=32), allocatable :: w(:)
 
     w = worded(text)
-    if (size(w) /= 2) error stop 'spatio_temporal: two extents, one per coordinate'
+    if (size(w) /= 2) error stop 'spatio_temporal: two ' // subject // ', one per coordinate'
     read(w(1), *) x
     read(w(2), *) y
 
-  end subroutine two_reals
-
-  subroutine two_integers(text, x, y)
-
-    character(len=*), intent(in)  :: text
-    integer         , intent(out) :: x, y
-
-    character(len=32), allocatable :: w(:)
-
-    w = worded(text)
-    if (size(w) /= 2) error stop 'spatio_temporal: two counts, one per coordinate'
-    read(w(1), *) x
-    read(w(2), *) y
-
-  end subroutine two_integers
+  end subroutine pair_of
 
   !-------------------------------------------------------------------!
   ! The field at the first instant: the components below the highest
@@ -226,16 +236,11 @@ contains
        if (space % geometry /= cartesian) then
           error stop 'spatio_temporal: the mode is the rectangle''s'
        end if
-       do i = 1, space % num_cells
-          lower(1, i) = cos(pi * space % centre(1, i) / a) * cos(pi * space % centre(2, i) / b)
-       end do
+       lower(1, :) = mode_shape(space, a, b)
     case ('bump')
        ! one plus half the rectangle's mode, on any geometry: a field
        ! that is not uniform, so the level below has something to do
-       do i = 1, space % num_cells
-          lower(1, i) = 1.0_dp + 0.5_dp * cos(pi * space % centre(1, i) / a) &
-               & * cos(pi * space % centre(2, i) / b)
-       end do
+       lower(1, :) = 1.0_dp + 0.5_dp * mode_shape(space, a, b)
     end select
 
     call set_aggregates(field_aggregates(space, 1, nd))
@@ -451,10 +456,7 @@ contains
     ! the semi-discrete frequency from the operator as built, by the
     ! rayleigh quotient of the mode: minus the mode against its own
     ! balance, over the mode against itself by area
-    allocate(shape(nodes))
-    do i = 1, nodes
-       shape(i) = cos(pi * space % centre(1, i) / a) * cos(pi * space % centre(2, i) / b)
-    end do
+    shape = mode_shape(space, a, b)
     call balance_of(space, kappa, cfg % spatial_order, shape, balanced)
     omega_h = sqrt(1.0_dp - dot_product(shape, balanced) / &
          & dot_product(shape, space % volume * shape))

@@ -353,24 +353,15 @@ contains
 
     type(configuration), intent(in) :: cfg
 
-    character(len=:), allocatable :: line
-    character(len=2)  :: digit
-    character(len=16) :: name
+    character(len=:), allocatable :: line, name
     integer :: m
 
     line = '  scheme' // repeat(' ', 14) // 'solved' // repeat(' ', 10)
 
     ! Each name sits over its own column, right against the digits.
     do m = 0, cfg % max_derivative_degree
-       write(digit,'(i0)') m
-       if (m == 0) then
-          name = 'f'
-       else if (m == 1) then
-          name = 'dfdx'
-       else
-          name = 'd' // trim(digit) // 'fdx' // trim(digit)
-       end if
-       line = line // repeat(' ', 20 - len_trim(name)) // trim(name) // ' '
+       name = order_named(m)
+       line = line // repeat(' ', 20 - len(name)) // name // ' '
     end do
 
     write(*,'(a)') ' '
@@ -810,13 +801,10 @@ contains
 
     character(len=:), allocatable :: line
     character(len=14) :: cell
-    integer :: m, level
+    integer :: m
     real(dp) :: counted, rows
 
-    rows = 0.0_dp
-    do level = 1, tally_num_levels()
-       rows = rows + tally_amount(level, 0, 5)
-    end do
+    rows = over_levels(0, 5)
     if (rows <= 0.0_dp) return
 
     write(*,'(a)') ' '
@@ -830,10 +818,7 @@ contains
 
     line = '   counted          '
     do m = 1, cfg % max_derivative_degree
-       counted = 0.0_dp
-       do level = 1, tally_num_levels()
-          counted = counted + tally_amount(level, m, 3)
-       end do
+       counted = over_levels(m, 3)
        write(cell,'(f14.2)') counted / rows
        line = line // cell
     end do
@@ -865,9 +850,7 @@ contains
        if (event == wall_time) then
           whole(m) = tally_amount(at_horizon, m, event)
        else
-          do level = 1, tally_num_levels()
-             whole(m) = whole(m) + tally_amount(level, m, event)
-          end do
+          whole(m) = over_levels(m, event)
        end if
     end do
 
@@ -955,16 +938,14 @@ contains
     type(configuration), intent(in) :: cfg
 
     real(dp) :: loops, solves
-    integer  :: level, m
+    integer  :: m
 
     loops  = 0.0_dp
     solves = 0.0_dp
 
     do m = 0, cfg % max_derivative_degree
-       do level = 1, tally_num_levels()
-          loops  = loops  + tally_amount(level, m, 2)
-          solves = solves + tally_amount(level, m, 5)
-       end do
+       loops  = loops  + over_levels(m, 2)
+       solves = solves + over_levels(m, 5)
     end do
 
     if (solves <= 0.0_dp) return
@@ -994,6 +975,24 @@ contains
     text = trim(adjustl(cell))
 
   end function amount_text
+
+  !-------------------------------------------------------------------!
+  ! An amount summed over every level of the hierarchy, for one order
+  ! and one event.
+  !-------------------------------------------------------------------!
+
+  real(dp) function over_levels(m, event) result(total)
+
+    integer, intent(in) :: m, event
+
+    integer :: level
+
+    total = 0.0_dp
+    do level = 1, tally_num_levels()
+       total = total + tally_amount(level, m, event)
+    end do
+
+  end function over_levels
 
   function order_named(m) result(named)
 

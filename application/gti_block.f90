@@ -93,6 +93,7 @@ module gti_block
      procedure :: num_points
      procedure :: points_at
      procedure :: num_carried
+     procedure :: first_held
 
   end type block_residual
 
@@ -160,6 +161,23 @@ contains
     at = this % at
 
   end function points_at
+
+  !===================================================================!
+  ! What the first instant a block was given holds. A solver starting
+  ! from it begins near the trajectory rather than at nothing, which
+  ! for a state of any size is much the same thing as starting at the
+  ! wrong end of it.
+  !===================================================================!
+
+  pure function first_held(this) result(x)
+
+    class(block_residual), intent(in) :: this
+    real(dp), allocatable :: x(:)
+
+    allocate(x(this % degrees), source=0.0_dp)
+    if (size(this % held) >= this % degrees) x = this % held(1:this % degrees)
+
+  end function first_held
 
   pure integer function num_carried(this)
 

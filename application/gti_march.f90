@@ -38,7 +38,9 @@ module gti_march
   use field_stored            , only : stored_field
   use operation_stencil       , only : stencil
   use operation_newton        , only : newton
+  use operation_minimization  , only : minimizer
   use operation_dense_direct  , only : dense_direct
+  use operation_gmres         , only : gmres
   use operation_family        , only : family
   use operation_grid          , only : grid, uniform_grid
   use operation_weight        , only : scheme_weight
@@ -217,15 +219,80 @@ contains
     design   = stored_field('nu', unknowns % vertex_set(), rows % num_points())
     call design % set_real_vector(spread(design_value, 1, rows % num_points()))
 
-    allocate(solver % inner, source=dense_direct())
+    allocate(solver % inner, source=inner_solver(count))
     solver % tolerance = 1.0e-12_dp
     call solver % attach(rows, unknowns, unknowns % vertex_set(), count, &
          & held_inputs = [design])
 
-    allocate(q(count), source=0.0_dp)
+    q = at_first_instant(rows, count)
     call solver % solve(spread(0.0_dp, 1, count), q, achieved)
 
   end subroutine solved
+
+  !===================================================================!
+  ! A first guess: every point of the block holding what its first
+  ! instant was given. It costs nothing to form and it starts newton
+  ! near the trajectory rather than at zero, which for a state of any
+  ! size is far away and is where a jacobian is most likely to be
+  ! singular.
+  !===================================================================!
+
+  function at_first_instant(rows, count) result(q)
+
+    type(block_residual), intent(in) :: rows
+    integer             , intent(in) :: count
+    real(dp), allocatable :: q(:)
+
+    real(dp), allocatable :: one(:)
+    integer , allocatable :: at(:)
+    integer :: p, nd
+
+    one = rows % first_held()
+    nd  = size(one)
+    at  = rows % points_at()
+
+    allocate(q(count), source=0.0_dp)
+
+    do p = 1, size(at)
+       q(at(p) + 1:at(p) + nd) = one
+    end do
+
+  end function at_first_instant
+
+  !===================================================================!
+  ! The linear solver inside newton. A dense factorisation forms the
+  ! jacobian column by column - one application of the statement per
+  ! unknown - and then costs the cube of the count to factor, so it
+  ! wins while the count is small and loses badly once it is not. The
+  ! statement supplies a matvec through its partial action, so a
+  ! krylov solver forms no matrix at all.
+  !
+  ! Measured on a stage block of a degree-four equation: at six
+  ! hundred unknowns the dense one takes twenty-one seconds and the
+  ! krylov one eighty-eight, and at a thousand the dense one does not
+  ! finish in five minutes while the krylov one takes fifteen
+  ! seconds. The crossing is between them and the threshold is set
+  ! there.
+  !===================================================================!
+
+  function inner_solver(unknowns) result(inner)
+
+    integer, intent(in) :: unknowns
+    class(minimizer), allocatable :: inner
+
+    type(gmres) :: krylov
+
+    if (unknowns <= 800) then
+       allocate(inner, source=dense_direct())
+    else
+       krylov = gmres()
+       krylov % restart    = min(unknowns, 200)
+       krylov % tolerance  = 1.0e-13_dp
+       krylov % max_iterations = 4 * unknowns
+       allocate(inner, source=krylov)
+    end if
+
+  end function inner_solver
 
   !===================================================================!
   ! Where each block begins and ends. A block adds the instants given

@@ -59,13 +59,13 @@ module gti_chain
   use gti_stage        , only : stage_block_of, instant_at
   use view_directed_stored, only : stored_directed_graph
   use field_stored     , only : stored_field
-  use gti_sweeps       , only : dense_solve, jacobian_of
+  use gti_sweeps       , only : tangent_solve
   use gti_taylor       , only : nodal_coefficient
 
   implicit none
 
   private
-  public :: chain_block, march_chain, chain_expansion
+  public :: chain_block, march_chain, chain_expansion, instant_components
 
   !===================================================================!
   ! One block of a chain: its statement, where its instants sit among
@@ -86,6 +86,32 @@ module gti_chain
   end type chain_block
 
 contains
+
+  !===================================================================!
+  ! The components a chain holds at one of the horizon's instants,
+  ! found in whichever block computed it. A shared instant is held by
+  ! both and reads the same either way, so the earlier is taken.
+  !===================================================================!
+
+  function instant_components(chain, instant, degrees) result(x)
+
+    type(chain_block), intent(in) :: chain(:)
+    integer          , intent(in) :: instant, degrees
+    real(dp), allocatable :: x(:)
+
+    integer :: b, local, at
+
+    do b = 1, size(chain)
+       if (instant < chain(b) % first .or. instant > chain(b) % last) cycle
+       local = instant - chain(b) % first + 1
+       at    = chain(b) % instants_at(local)
+       x     = chain(b) % state(at + 1:at + degrees)
+       return
+    end do
+
+    error stop 'gti_chain: that instant lies outside the chain'
+
+  end function instant_components
 
   !===================================================================!
   ! What a block is given at the instants it shares with the one
@@ -248,7 +274,7 @@ contains
     real(dp)              , intent(in) :: dt(:), design
     real(dp), allocatable , intent(out) :: f(:)
 
-    real(dp), allocatable :: series(:,:,:), a(:,:), jacobians(:,:,:)
+    real(dp), allocatable :: series(:,:,:)
     integer :: b, m, widest
 
     widest = 0
@@ -257,17 +283,14 @@ contains
     end do
 
     allocate(series(0:max_order, widest, size(chain)), source=0.0_dp)
-    allocate(jacobians(widest, widest, size(chain)), source=0.0_dp)
 
     do b = 1, size(chain)
-       call block_jacobian(chain(b), degrees, design, a)
-       jacobians(1:size(a, 1), 1:size(a, 2), b) = a
        series(0, 1:size(chain(b) % state), b) = chain(b) % state
     end do
 
     do m = 1, max_order
        do b = 1, size(chain)
-          call one_order(chain, b, physics, degrees, design, m, jacobians, series)
+          call one_order(chain, b, physics, degrees, design, m, series)
        end do
     end do
 
@@ -276,21 +299,19 @@ contains
   end subroutine chain_expansion
 
   !===================================================================!
-  ! One block's jacobian at the trajectory it marched.
+  ! What one block's tangent is frozen at: its own trajectory and the
+  ! design, over its own unknowns.
   !===================================================================!
 
-  subroutine block_jacobian(b, degrees, design, a)
+  subroutine frozen_at(b, design, unknowns, inputs)
 
     type(chain_block), intent(in) :: b
-    integer          , intent(in) :: degrees
     real(dp)         , intent(in) :: design
-    real(dp), allocatable, intent(out) :: a(:,:)
+    type(stored_directed_graph), intent(out) :: unknowns
+    type(stored_field), allocatable, intent(out) :: inputs(:)
 
-    type(stored_directed_graph) :: unknowns
     type(stored_field) :: state, knobs
     integer :: count
-
-    associate (u1 => degrees); end associate
 
     count    = b % rows % num_unknowns()
     unknowns = stored_directed_graph(count, tails=[integer ::], heads=[integer ::])
@@ -299,24 +320,25 @@ contains
     call state % set_real_vector(b % state)
     call knobs % set_real_vector(spread(design, 1, b % rows % num_points()))
 
-    call jacobian_of(b % rows, unknowns, [state, knobs], count, &
-         & unknowns % vertex_set(), a)
+    inputs = [state, knobs]
 
-  end subroutine block_jacobian
+  end subroutine frozen_at
 
   !===================================================================!
   ! One block at one order: its own physics on the rows it governs,
   ! and its predecessor's coefficient on the rows it was given.
   !===================================================================!
 
-  subroutine one_order(chain, b, physics, degrees, design, m, jacobians, series)
+  subroutine one_order(chain, b, physics, degrees, design, m, series)
 
     type(chain_block)     , intent(in)    :: chain(:)
     integer               , intent(in)    :: b, degrees, m
     class(nodal_integrand), intent(in)    :: physics
-    real(dp)              , intent(in)    :: design, jacobians(:,:,:)
+    real(dp)              , intent(in)    :: design
     real(dp)              , intent(inout) :: series(0:, :, :)
 
+    type(stored_directed_graph) :: unknowns
+    type(stored_field), allocatable :: inputs(:)
     real(dp), allocatable :: frozen(:,:), coefficient(:), r(:), w(:), held(:)
     integer , allocatable :: at(:)
     integer :: count, carried, p
@@ -344,7 +366,8 @@ contains
        r(1:carried) = -held
     end if
 
-    call dense_solve(jacobians(1:count, 1:count, b), -r, .false., w)
+    call frozen_at(chain(b), design, unknowns, inputs)
+    call tangent_solve(chain(b) % rows, unknowns, inputs, -r, w)
     series(m, 1:count, b) = w
 
   end subroutine one_order

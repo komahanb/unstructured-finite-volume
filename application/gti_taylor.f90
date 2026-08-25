@@ -57,13 +57,14 @@ module gti_taylor
 
   use iso_fortran_env      , only : dp => REAL64
   use util_derivative_terms, only : derivative_terms, mixed_partial
+  use view_directed        , only : directed_graph
   use view_directed_stored , only : stored_directed_graph
   use field_stored         , only : stored_field
   use operation_family     , only : family
   use physics_integrand    , only : nodal_integrand
   use gti_block            , only : block_residual
   use gti_march            , only : block_of, solved, unknowns_graph
-  use gti_sweeps           , only : jacobian_of, dense_solve
+  use gti_sweeps           , only : tangent_solve
 
   implicit none
 
@@ -151,7 +152,7 @@ contains
 
     type(stored_directed_graph) :: unknowns
     type(stored_field) :: state, knobs
-    real(dp), allocatable :: a(:,:), series(:,:)
+    real(dp), allocatable :: series(:,:)
     integer :: unknown_count
 
     unknown_count = rows % num_unknowns()
@@ -163,11 +164,9 @@ contains
     call state % set_real_vector(q)
     call knobs % set_real_vector(spread(design, 1, rows % num_points()))
 
-    call jacobian_of(rows, unknowns, [state, knobs], unknown_count, &
-         & unknowns % vertex_set(), a)
-
-    call state_series(physics, a, degrees, rows % points_at(), primary, &
-         & rows % num_carried(), design, max_order, q, series)
+    call state_series(rows, physics, unknowns, [state, knobs], degrees, &
+         & rows % points_at(), primary, rows % num_carried(), design, &
+         & max_order, q, series)
     call functional_series(integrand, degrees, instants_at, design, max_order, &
          & series, dt, f)
 
@@ -179,11 +178,14 @@ contains
   ! side the orders beneath it determine.
   !===================================================================!
 
-  subroutine state_series(physics, a, degrees, at, primary, carried, design, &
-       & max_order, q, series)
+  subroutine state_series(rows, physics, on, inputs, degrees, at, primary, carried, &
+       & design, max_order, q, series)
 
+    type(block_residual)  , intent(in) :: rows
     class(nodal_integrand), intent(in) :: physics
-    real(dp)              , intent(in) :: a(:,:), design, q(:)
+    class(directed_graph) , intent(in) :: on
+    type(stored_field)    , intent(in) :: inputs(:)
+    real(dp)              , intent(in) :: design, q(:)
     integer               , intent(in) :: degrees, at(:), primary, carried, max_order
     real(dp), allocatable , intent(out) :: series(:,:)
 
@@ -201,7 +203,7 @@ contains
        frozen(m, :) = 0.0_dp
        call nodal_coefficient(physics, degrees, at, frozen, design, m, coefficient)
        call placed(coefficient, at, primary, carried, r)
-       call dense_solve(a, -r, .false., w)
+       call tangent_solve(rows, on, inputs, -r, w)
        series(m, :) = w
     end do
 

@@ -24,13 +24,15 @@
 !
 !             HOW THE JACOBIAN IS FORMED
 !
-! Column by column, one partial action per unknown, and then solved
-! densely. That is the same cost dense_direct already pays inside
-! newton and it does not scale: the block residual supplies a matvec
-! through its partial action, so a krylov solver needs no matrix at
-! all, and the adjoint needs the stencil's compiled transpose rather
-! than a dense one. Both are what a long horizon needs, and
-! neither changes the numbers below.
+! For the adjoint, column by column: one partial action per unknown,
+! and then solved densely. That does not scale, and what would is
+! the stencil's compiled transpose rather than a dense one.
+!
+! For the tangent no matrix is formed at all past a large block. The
+! statement's partial action is already a matvec, so freezing it at
+! the trajectory gives a linear operation a krylov solver can be
+! driven with directly. Below the same threshold gti_march uses, a
+! dense factorisation is the faster of the two and is taken.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -46,13 +48,16 @@ module gti_sweeps
   use field_stored          , only : stored_field
   use operation_stencil     , only : stencil
   use operation_dense_direct, only : dense_direct
+  use operation_gmres       , only : gmres
+  use operation_minimization, only : minimizer
+  use operation_linearization, only : linearization, tangent_of
 
   implicit none
 
   private
   public :: functional_of, functional_gradient
   public :: design_partial, jacobian_of
-  public :: by_tangent, by_adjoint, dense_solve
+  public :: by_tangent, by_adjoint, dense_solve, tangent_solve
 
 contains
 
@@ -231,6 +236,45 @@ contains
     call solver % solve(b, x, achieved)
 
   end subroutine dense_solve
+
+  !===================================================================!
+  ! One solve against the statement's tangent in the state, frozen at
+  ! the inputs given. No matrix is formed past a small block: the
+  ! statement's own partial action is the matvec.
+  !===================================================================!
+
+  subroutine tangent_solve(rows, on, inputs, b, x)
+
+    class(operation)     , intent(in) :: rows
+    class(directed_graph), intent(in) :: on
+    type(stored_field)   , intent(in) :: inputs(:)
+    real(dp)             , intent(in) :: b(:)
+    real(dp), allocatable, intent(out) :: x(:)
+
+    type(linearization) :: jacobian
+    class(minimizer), allocatable :: solver
+    type(gmres) :: krylov
+    real(dp) :: achieved
+
+    jacobian = tangent_of(rows, rows % argument(1))
+    call jacobian % freeze(inputs)
+
+    if (size(b) <= 800) then
+       allocate(solver, source=dense_direct())
+    else
+       krylov = gmres()
+       krylov % restart        = min(size(b), 200)
+       krylov % tolerance      = 1.0e-13_dp
+       krylov % max_iterations = 4 * size(b)
+       allocate(solver, source=krylov)
+    end if
+
+    call solver % attach(jacobian, on, on % vertex_set(), size(b))
+
+    allocate(x(size(b)), source=0.0_dp)
+    call solver % solve(b, x, achieved)
+
+  end subroutine tangent_solve
 
   !===================================================================!
   ! The tangent: one solve in the state, then the gradient read

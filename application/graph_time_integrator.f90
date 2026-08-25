@@ -36,7 +36,10 @@
 ! So the instants are integrated rather than invented. A stage family
 ! needs one instant and therefore no filler at all, so one is marched
 ! first over a refined grid across the startup, and every row takes
-! its own reach from what that produced. Every row then begins from
+! its own reach from what that produced. That march is itself a chain
+! of short blocks rather than one long one, because a block is solved
+! whole and a long one costs far more than the several it could have
+! been - which is the same junction the table's own rows use. Every row then begins from
 ! the same trajectory, holding one instant of it or eight is equally
 ! sound, and what separates the rows is how well each integrates,
 ! which is what the table is for.
@@ -62,12 +65,12 @@ program graph_time_integrator
   use operation_family_dirk , only : implicit_midpoint, crouzeix_two_stage, &
        & crouzeix_three_stage
   use operation_grid        , only : uniform_grid, random_grid, designed_grid
-  use gti_stage             , only : instant_at
   use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
   use operation_grid        , only : grid
   use gti_march             , only : partitioned
   use gti_expansion         , only : family_holder
-  use gti_chain             , only : chain_block, march_chain, chain_expansion
+  use gti_chain             , only : chain_block, march_chain, chain_expansion, &
+       & instant_components
   use gti_configuration     , only : configuration, read_configuration, override, show
 
   implicit none
@@ -141,21 +144,51 @@ contains
   end function at_rest
 
   !-------------------------------------------------------------------!
-  ! How many instants the widest row of this table looks back over.
+  ! How far back a family of one order looks, which for a backward
+  ! difference grows with the degree of the equation as well as with
+  ! the order, and for the others does not.
+  !-------------------------------------------------------------------!
+
+  pure integer function reach_of(cfg, name, order) result(reach)
+
+    type(configuration), intent(in) :: cfg
+    character(len=*)   , intent(in) :: name
+    integer            , intent(in) :: order
+
+    select case (name)
+    case ('bdf')
+       reach = cfg % state_degree * order
+    case ('adams')
+       reach = max(order - 1, 1)
+    case default
+       reach = 1
+    end select
+
+  end function reach_of
+
+  !-------------------------------------------------------------------!
+  ! How many instants the widest row that fits looks back over. A row
+  ! that reaches past the horizon is not built, so it does not decide
+  ! how long a startup the others need; zero means none of them fit.
   !-------------------------------------------------------------------!
 
   pure integer function widest_reach(cfg) result(widest)
 
     type(configuration), intent(in) :: cfg
 
-    widest = 1
+    character(len=8) :: every(3)
+    integer :: i, order, reach
 
-    if (index(cfg % families, 'bdf') > 0) then
-       widest = max(widest, cfg % state_degree * cfg % max_discretization_order)
-    end if
-    if (index(cfg % families, 'adams') > 0) then
-       widest = max(widest, max(cfg % max_discretization_order - 1, 1))
-    end if
+    every  = ['bdf     ', 'adams   ', 'dirk    ']
+    widest = 0
+
+    do i = 1, 3
+       if (index(cfg % families, trim(every(i))) == 0) cycle
+       do order = 1, cfg % max_discretization_order
+          reach = reach_of(cfg, trim(every(i)), order)
+          if (reach < cfg % instants) widest = max(widest, reach)
+       end do
+    end do
 
   end function widest_reach
 
@@ -172,11 +205,12 @@ contains
     integer            , intent(in)  :: widest
     real(dp), allocatable, intent(out) :: held(:)
 
-    type(family_holder) :: schemes(1)
-    type(chain_block), allocatable :: chain(:)
+    type(family_holder), allocatable :: schemes(:)
+    type(chain_block) , allocatable :: chain(:)
+    integer , allocatable :: added(:)
     real(dp), allocatable :: fine_dt(:), fine_t(:), substeps(:)
     real(dp) :: achieved, span
-    integer :: nd, k, r
+    integer :: nd, k, r, b
 
     nd = cfg % state_degree + 1
 
@@ -189,36 +223,66 @@ contains
     substeps = [(dt(1 + (k - 1) / r + 1) / real(r, dp), k = 1, (widest - 1) * r)]
     span     = sum(substeps)
 
-    allocate(schemes(1) % scheme, source=crouzeix_three_stage())
+    added = in_pieces((widest - 1) * r + 1)
+    allocate(schemes(size(added)))
+    do b = 1, size(added)
+       allocate(schemes(b) % scheme, source=crouzeix_three_stage())
+    end do
 
-    call march_chain(schemes, [(widest - 1) * r + 1], van_der_pol(cfg % state_degree), &
+    call march_chain(schemes, added, van_der_pol(cfg % state_degree), &
          & nd, designed_grid(span), cfg % design, at_rest(cfg), chain, &
          & fine_dt, fine_t, achieved, grid_design = substeps)
 
-    call sampled(chain(1), schemes(1) % scheme % num_stages(), nd, widest, r, held)
+    call sampled(chain, nd, widest, r, held)
 
   end subroutine startup_trajectory
+
+  !-------------------------------------------------------------------!
+  ! A count of instants split into blocks short enough that each is
+  ! cheap to solve. Every block after the first shares one instant
+  ! with the one before it, which is what a stage family looks back
+  ! over, so the pieces add to the whole.
+  !-------------------------------------------------------------------!
+
+  pure function in_pieces(instants) result(added)
+
+    integer, intent(in) :: instants
+    integer, allocatable :: added(:)
+
+    integer, parameter :: piece = 4
+    integer :: blocks
+
+    if (instants <= piece + 1) then
+       added = [instants]
+       return
+    end if
+
+    blocks = (instants - 1) / piece
+    allocate(added(blocks))
+
+    added    = piece
+    added(1) = instants - piece * (blocks - 1)
+
+  end function in_pieces
 
   !-------------------------------------------------------------------!
   ! The refined trajectory read back at the coarse instants, which
   ! are every r-th instant of it.
   !-------------------------------------------------------------------!
 
-  subroutine sampled(fine, stages, nd, widest, r, held)
+  subroutine sampled(chain, nd, widest, r, held)
 
-    type(chain_block), intent(in)  :: fine
-    integer          , intent(in)  :: stages, nd, widest, r
+    type(chain_block), intent(in)  :: chain(:)
+    integer          , intent(in)  :: nd, widest, r
     real(dp), allocatable, intent(out) :: held(:)
 
-    integer :: k, d, at
+    integer :: k
 
     allocate(held(widest * nd))
 
     do k = 1, widest
-       at = instant_at(1 + (k - 1) * r, stages, nd)
-       do d = 0, nd - 1
-          held((k - 1) * nd + d + 1) = fine % state(at + d + 1)
-       end do
+       held((k - 1) * nd + 1:k * nd) = &
+            & instant_components(chain, 1 + (k - 1) * r, nd)
     end do
 
   end subroutine sampled
@@ -354,12 +418,13 @@ contains
   ! one is a homogeneous row and takes the same path.
   !-------------------------------------------------------------------!
 
-  subroutine one_row(cfg, startup, names, orders)
+  subroutine one_row(cfg, startup, names, orders, printed)
 
-    type(configuration), intent(in) :: cfg
-    real(dp)           , intent(in) :: startup(:)
-    character(len=*)   , intent(in) :: names(:)
-    integer            , intent(in) :: orders(:)
+    type(configuration), intent(in)    :: cfg
+    real(dp)           , intent(in)    :: startup(:)
+    character(len=*)   , intent(in)    :: names(:)
+    integer            , intent(in)    :: orders(:)
+    integer            , intent(inout) :: printed
 
     type(family_holder), allocatable :: schemes(:)
     type(chain_block) , allocatable :: chain(:)
@@ -376,6 +441,7 @@ contains
 
     call steps_of(cfg, dt, t)
     given = schemes(1) % scheme % history_depth(nd - 1)
+    if (given * nd > size(startup)) return
     held  = startup(1:given * nd)
 
     call march_chain(schemes, added, van_der_pol(cfg % state_degree), nd, &
@@ -386,6 +452,7 @@ contains
          & cfg % max_derivative_degree, f)
 
     call show_row(labelled(names, orders), cfg % instants - given, f, achieved)
+    printed = printed + 1
 
     associate (u1 => b); end associate
 
@@ -455,7 +522,7 @@ contains
     type(configuration), intent(in) :: cfg
 
     real(dp), allocatable :: startup(:), dt(:), t(:)
-    integer :: widest
+    integer :: widest, printed
 
     widest = widest_reach(cfg)
 
@@ -468,8 +535,11 @@ contains
        error stop 'graph_time_integrator: order conservation is the only startup built'
     end if
 
-    if (widest >= cfg % instants) then
-       error stop 'graph_time_integrator: the horizon holds more instants than the widest row reaches'
+    if (widest == 0) then
+       write(*,'(a)')    ' '
+       write(*,'(a,i0)') ' every family and order asked for looks further back than the'
+       write(*,'(a,i0)') ' horizon holds, which is instants: ', cfg % instants
+       error stop 'graph_time_integrator: no row fits in this horizon'
     end if
 
     call steps_of(cfg, dt, t)
@@ -477,9 +547,17 @@ contains
 
     call heading(cfg)
 
-    if (asked(cfg, 'homogeneous')) call homogeneous_rows(cfg, startup)
-    if (asked(cfg, 'pairs'))       call pair_rows(cfg, startup)
-    if (asked(cfg, 'triples'))     call triple_rows(cfg, startup)
+    printed = 0
+    if (asked(cfg, 'homogeneous')) call homogeneous_rows(cfg, startup, printed)
+    if (asked(cfg, 'pairs'))       call pair_rows(cfg, startup, printed)
+    if (asked(cfg, 'triples'))     call triple_rows(cfg, startup, printed)
+
+    if (printed == 0) then
+       write(*,'(a)') ' '
+       write(*,'(a)') ' no row was built. A family has no scheme at every order - a stage'
+       write(*,'(a)') ' family has none below order two - and a row whose blocks would add'
+       write(*,'(a)') ' no more instants than they look back over is not built either.'
+    end if
 
   end subroutine table
 
@@ -521,10 +599,11 @@ contains
 
   end function listed
 
-  subroutine homogeneous_rows(cfg, startup)
+  subroutine homogeneous_rows(cfg, startup, printed)
 
     type(configuration), intent(in) :: cfg
     real(dp)           , intent(in) :: startup(:)
+    integer            , intent(inout) :: printed
 
     character(len=8), allocatable :: names(:)
     integer :: i, order
@@ -533,7 +612,7 @@ contains
 
     do i = 1, size(names)
        do order = 1, cfg % max_discretization_order
-          call one_row(cfg, startup, [names(i)], [order])
+          call one_row(cfg, startup, [names(i)], [order], printed)
        end do
     end do
 
@@ -544,10 +623,11 @@ contains
   ! mixed orders are asked for, at every pair of orders.
   !-------------------------------------------------------------------!
 
-  subroutine pair_rows(cfg, startup)
+  subroutine pair_rows(cfg, startup, printed)
 
     type(configuration), intent(in) :: cfg
     real(dp)           , intent(in) :: startup(:)
+    integer            , intent(inout) :: printed
 
     character(len=8), allocatable :: names(:)
     integer :: i, j, p, q
@@ -560,10 +640,10 @@ contains
           do p = 1, cfg % max_discretization_order
              if (cfg % mixed_orders) then
                 do q = 1, cfg % max_discretization_order
-                   call one_row(cfg, startup, [names(i), names(j)], [p, q])
+                   call one_row(cfg, startup, [names(i), names(j)], [p, q], printed)
                 end do
              else
-                call one_row(cfg, startup, [names(i), names(j)], [p, p])
+                call one_row(cfg, startup, [names(i), names(j)], [p, p], printed)
              end if
           end do
        end do
@@ -575,10 +655,11 @@ contains
   ! Every permutation of the families listed, at one order.
   !-------------------------------------------------------------------!
 
-  subroutine triple_rows(cfg, startup)
+  subroutine triple_rows(cfg, startup, printed)
 
     type(configuration), intent(in) :: cfg
     real(dp)           , intent(in) :: startup(:)
+    integer            , intent(inout) :: printed
 
     character(len=8), allocatable :: names(:)
     integer :: i, j, k, order
@@ -591,7 +672,7 @@ contains
           do k = 1, size(names)
              if (k == i .or. k == j) cycle
              do order = 1, cfg % max_discretization_order
-                call one_row(cfg, startup, [names(i), names(j), names(k)], [order, order, order])
+                call one_row(cfg, startup, [names(i), names(j), names(k)], [order, order, order], printed)
              end do
           end do
        end do

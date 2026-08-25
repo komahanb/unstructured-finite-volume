@@ -198,11 +198,9 @@ contains
     integer              , intent(in) :: width
     character(len=*), intent(in), optional :: label
 
-    type(stored_field)        :: state
-    class(field), allocatable :: output
     type(graph) :: dom
-    real(dp), allocatable :: a(:,:), e(:), y(:), constant(:)
-    integer :: n_dom, num_components, j
+    real(dp), allocatable :: a(:,:), constant(:)
+    integer :: n_dom, num_components
 
     call action % domain(on, dom, n_dom)
 
@@ -215,9 +213,41 @@ contains
 
     num_components = width / n_dom
 
+    call compile_matrix_from_action(action, on, dom, n_dom, width, &
+         & num_components, a, constant)
+
+    if (present(label)) then
+       this = create_dense(a, label)
+    else
+       this = create_dense(a, action % name())
+    end if
+    call this % constants % set_real_vector(constant)
+
+  end function create_compiled
+
+  !===================================================================!
+  ! Compute matrix columns by evaluating the action at each basis
+  ! vector e_j, subtracting the affine part (constant term at j=0).
+  ! Shared between create_compiled and direct solvers.
+  !===================================================================!
+
+  subroutine compile_matrix_from_action(action, on, dom, n_dom, width, &
+       & num_components, a, constant)
+
+    class(operation)     , intent(in) :: action
+    class(directed_graph), intent(in) :: on
+    type(graph)          , intent(in) :: dom
+    integer              , intent(in) :: n_dom, width, num_components
+
+    real(dp), allocatable, intent(out) :: a(:,:), constant(:)
+
+    type(stored_field)        :: state
+    class(field), allocatable :: output
+    real(dp), allocatable :: e(:), y(:)
+    integer :: j
+
     allocate(a(width, width), e(width))
 
-    ! j = 0 is the zero state, whose value is the constant
     do j = 0, width
        e = 0.0_dp
        if (j > 0) e(j) = 1.0_dp
@@ -235,14 +265,7 @@ contains
        end if
     end do
 
-    if (present(label)) then
-       this = create_dense(a, label)
-    else
-       this = create_dense(a, action % name())
-    end if
-    call this % constants % set_real_vector(constant)
-
-  end function create_compiled
+  end subroutine compile_matrix_from_action
 
   !===================================================================!
   ! THE STENCIL RESTRICTED to a subset of its vertices, everything

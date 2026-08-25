@@ -58,6 +58,19 @@ program tolerance_form
   call against(2, 4, 61)
   call against(3, 3, 41)
 
+  write(*,'(a)') ' '
+  write(*,'(a)') '  conditioning, and what the same form removes from it'
+  write(*,'(a)') '  the row determining degree d is divided by dt^-d, which is the'
+  write(*,'(a)') '  weight the family says it carries'
+  write(*,'(a)') ' '
+  write(*,'(a)') '  scheme    d   instants       dt      kappa(A)   kappa(DA)     ratio'
+  call conditioned(2, 3, 21)
+  call conditioned(2, 3, 41)
+  call conditioned(2, 3, 61)
+  call conditioned(2, 3, 81)
+  call conditioned(3, 3, 41)
+  call conditioned(2, 4, 41)
+
 contains
 
   !-------------------------------------------------------------------!
@@ -159,6 +172,109 @@ contains
          & 100.0_dp * (1.0_dp - abs(predicted - assembled) / assembled), ' %'
 
   end subroutine against
+
+  !-------------------------------------------------------------------!
+  ! kappa in the infinity norm, before and after every row is divided
+  ! by the weight its own family gives it.
+  !-------------------------------------------------------------------!
+
+  subroutine conditioned(order, degrees, instants)
+
+    integer, intent(in) :: order, degrees, instants
+
+    type(family_holder), allocatable :: schemes(:)
+    type(chain_block) , allocatable :: chain(:)
+    type(chain_system), allocatable :: systems(:)
+    type(bdf_family) :: scheme
+    integer , allocatable :: added(:)
+    real(dp), allocatable :: held(:), dt(:), t(:), b(:,:)
+    real(dp) :: achieved, duration, design, bare, scaled, step
+    character(len=8) :: named
+    integer :: k, d, i, n
+
+    duration = 3.0_dp
+    design   = 1.0_dp
+    scheme   = bdf_family(order)
+
+    allocate(schemes(1))
+    allocate(schemes(1) % scheme, source=scheme)
+    added = [instants]
+
+    call partition(duration, instants, dt, t)
+    held = [((0.0_dp, d = 0, degrees - 1), k = 1, &
+         &   scheme % history_depth(degrees - 1))]
+
+    call march_chain(schemes, added, van_der_pol(degrees - 1), degrees, &
+         & uniform_grid(duration), design, held, chain, dt, t, achieved)
+    call chain_systems(chain, van_der_pol_energy(degrees - 1), degrees, dt, &
+         & design, systems)
+
+    step = dt(size(dt))
+    bare = kappa(systems(1) % a)
+
+    n = size(systems(1) % a, 1)
+    allocate(b(n, n))
+    do i = 1, n
+       d = mod(i - 1, degrees)
+       b(i, :) = systems(1) % a(i, :) * step ** d
+    end do
+    scaled = kappa(b)
+
+    write(named,'(a,i0)') 'bdf ', order
+    write(*,'(a,a,i5,i10,f10.5,2es13.4,f10.1)') '  ', named, degrees - 1, &
+         & instants, step, bare, scaled, bare / scaled
+
+  end subroutine conditioned
+
+  !-------------------------------------------------------------------!
+  ! ||A||_inf ||A^-1||_inf, the inverse by elimination on the identity.
+  !-------------------------------------------------------------------!
+
+  real(dp) function kappa(a) result(k)
+
+    real(dp), intent(in) :: a(:,:)
+
+    real(dp), allocatable :: w(:,:), inverse(:,:), row(:)
+    real(dp) :: pivot, factor
+    integer :: n, i, j, p
+
+    n = size(a, 1)
+    allocate(w(n, n), inverse(n, n), row(n))
+
+    w       = a
+    inverse = 0.0_dp
+    do i = 1, n
+       inverse(i, i) = 1.0_dp
+    end do
+
+    do j = 1, n
+       p = j - 1 + maxloc(abs(w(j:n, j)), dim=1)
+       if (p /= j) then
+          row          = w(j, :)
+          w(j, :)      = w(p, :)
+          w(p, :)      = row
+          row          = inverse(j, :)
+          inverse(j, :) = inverse(p, :)
+          inverse(p, :) = row
+       end if
+       pivot = w(j, j)
+       if (abs(pivot) <= tiny(1.0_dp)) then
+          k = huge(1.0_dp)
+          return
+       end if
+       w(j, :)       = w(j, :) / pivot
+       inverse(j, :) = inverse(j, :) / pivot
+       do i = 1, n
+          if (i == j) cycle
+          factor = w(i, j)
+          w(i, :)       = w(i, :) - factor * w(j, :)
+          inverse(i, :) = inverse(i, :) - factor * inverse(j, :)
+       end do
+    end do
+
+    k = largest_row(a) * largest_row(inverse)
+
+  end function kappa
 
   real(dp) function largest_row(a) result(most)
 

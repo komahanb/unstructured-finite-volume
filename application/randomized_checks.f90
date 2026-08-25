@@ -12,11 +12,29 @@
 !               solves once against the jacobian and reads a
 !               gradient along it, the other recurs on coefficients
 !               of the statement - and must land on the same number
+!   orders      along a chain that changes family part way through,
+!               every derivative must agree with a difference of the
+!               one below it, which crosses the junction because the
+!               whole chain is remarched either side of the design
 !
 ! The third is the one no fixed test has made before. Every case
 ! prints its three residuals, and a case whose march did not converge
 ! is passed over rather than counted, since nothing can be concluded
 ! from a trajectory that was not found.
+!
+!             WHERE THE INVARIANTS MEAN SOMETHING
+!
+! The design is the damping, and it is drawn without a sign. A
+! negative one is negative damping: van der Pol then grows without
+! bound, and on a coarse grid the discrete statement has more than
+! one solution, so two marches of the same equations converge to
+! different ones and splitting changes the number legitimately. That
+! was seen at a design of minus four fifths over four units, where
+! one march found a functional of six hundred and the other of
+! thirteen thousand, both to a residual under a millionth.
+!
+! Nothing there is wrong. But an invariant that need not hold cannot
+! test anything, so the draw stays where the trajectory is bounded.
 program randomized_checks
 
   use iso_fortran_env       , only : dp => REAL64, int64 => INT64
@@ -51,6 +69,13 @@ program randomized_checks
      call one_case(seed + 7919 * i, i, failures, skipped)
   end do
 
+  write(*,'(a)') ' '
+  write(*,'(a)') '  case  chain                        orders'
+
+  do i = 1, cases / 2
+     call mixed_case(seed + 104729 * i, i, failures, skipped)
+  end do
+
   write(*,'(a)')      ' '
   write(*,'(a,i0,a,i0,a,i0,a)') ' ', cases - skipped, ' cases checked, ', &
        & failures, ' failed, ', skipped, ' passed over'
@@ -58,6 +83,20 @@ program randomized_checks
   if (failures > 0) error stop 'randomized_checks: an invariant did not hold'
 
 contains
+
+  logical function verbose()
+
+    character(len=8) :: argument
+    integer :: count
+
+    count = command_argument_count()
+    verbose = .false.
+    if (count >= 3) then
+       call get_command_argument(3, argument)
+       verbose = trim(argument) == 'verbose'
+    end if
+
+  end function verbose
 
   !-------------------------------------------------------------------!
   ! A deterministic draw, so a failing case can be run again.
@@ -145,6 +184,10 @@ contains
 
     call halved(whole(1) % scheme, degrees, instants, half)
 
+    if (verbose()) write(*,'(a,i0,a,i0,a,i0,a,f8.4,a,f8.4)') &
+         & '        degrees ', degrees, '  instants ', instants, '  half ', half, &
+         & '  duration ', duration, '  design ', design
+
     call expanded(whole, [instants], degrees, duration, design, f_whole, achieved)
     if (achieved > 1.0e-6_dp) then
        skipped = skipped + 1
@@ -154,6 +197,12 @@ contains
 
     call expanded(split, [half, instants - half], degrees, duration, design, &
          & f_split, achieved)
+    if (achieved > 1.0e-6_dp) then
+       skipped = skipped + 1
+       write(*,'(i6,2x,a16,a,es9.2)') index, label, &
+            & '   the split march did not converge, passed over: ', achieved
+       return
+    end if
 
     tangent = 0.0_dp
     adjoint = 0.0_dp
@@ -168,9 +217,117 @@ contains
        adjoint = horizon_by_adjoint(systems)
     end if
 
+    if (verbose()) write(*,'(a,2es14.6)') '        f whole and split ', f_whole(0), f_split(0)
+
     call verdict(index, label, f_whole, f_split, tangent, adjoint, staged, failures)
 
   end subroutine one_case
+
+  !-------------------------------------------------------------------!
+  ! A chain whose blocks are marched by different families. Every
+  ! derivative of the functional is checked against a difference of
+  ! the one below it, and that difference is taken by remarching the
+  ! whole chain, so it crosses every junction the chain has.
+  !
+  ! A difference of two marched functionals carries whatever noise
+  ! the marches carry, divided by the step between them, so this
+  ! check has a floor and the floor rises as the step falls. Measured
+  ! on the widest chain drawn here, the gap reads 1.3E-04 at a step
+  ! of a ten-thousandth, 1.7E-04 at half that and 5.4E-04 at a
+  ! quarter - growing as the step shrinks, which is round-off and not
+  ! truncation. The tolerance sits above that floor, and a gap of
+  ! round-off size is what most chains give.
+  !-------------------------------------------------------------------!
+
+  subroutine mixed_case(from, index, failures, skipped)
+
+    integer, intent(in)    :: from, index
+    integer, intent(inout) :: failures, skipped
+
+    real(dp), parameter :: delta = 1.0e-4_dp
+
+    type(family_holder), allocatable :: schemes(:)
+    integer , allocatable :: added(:)
+    real(dp), allocatable :: f(:), plus(:), minus(:)
+    real(dp) :: duration, design, achieved, gap, differenced
+    integer :: degrees, blocks, b, m
+    character(len=28) :: label
+
+    blocks = 0
+    call draw_chain(from, degrees, blocks, duration, design, schemes, added, label)
+
+    call expanded(schemes, added, degrees, duration, design, f, achieved)
+    if (achieved > 1.0e-6_dp) then
+       skipped = skipped + 1
+       write(*,'(i6,2x,a28,a)') index, label, '  march did not converge, passed over'
+       return
+    end if
+
+    call expanded(schemes, added, degrees, duration, design + delta, plus, achieved)
+    call expanded(schemes, added, degrees, duration, design - delta, minus, achieved)
+
+    gap = 0.0_dp
+    do m = 1, max_order
+       differenced = (plus(m - 1) - minus(m - 1)) / (2.0_dp * delta)
+       gap = max(gap, abs(f(m) - differenced) / max(1.0_dp, abs(f(m))))
+    end do
+
+    write(*,'(i6,2x,a28,es14.2)') index, label, gap
+
+    if (gap > 1.0e-3_dp) failures = failures + 1
+
+    associate (u1 => b); end associate
+
+  end subroutine mixed_case
+
+  !-------------------------------------------------------------------!
+  ! A chain of two or three blocks of differing families, each adding
+  ! more instants than it looks back over.
+  !-------------------------------------------------------------------!
+
+  subroutine draw_chain(from, degrees, blocks, duration, design, schemes, added, label)
+
+    integer            , intent(in)  :: from
+    integer            , intent(out) :: degrees, blocks
+    real(dp)           , intent(out) :: duration, design
+    type(family_holder), allocatable, intent(inout) :: schemes(:)
+    integer            , allocatable, intent(inout) :: added(:)
+    character(len=*)   , intent(out) :: label
+
+    integer(int64) :: state
+    integer :: b, kind, order, widest
+
+    state    = int(from, int64)
+    degrees  = drawn(state, 2) + 2
+    blocks   = drawn(state, 2) + 1
+    duration = drawn_real(state, 0.5_dp, 3.0_dp)
+    design   = drawn_real(state, 0.0_dp, 1.5_dp)
+
+    if (allocated(schemes)) deallocate(schemes)
+    if (allocated(added))   deallocate(added)
+    allocate(schemes(blocks), added(blocks))
+    label = ''
+
+    do b = 1, blocks
+       kind  = drawn(state, 3)
+       order = drawn(state, 3)
+       call fill(schemes(b), kind, order)
+       added(b) = schemes(b) % scheme % history_depth(degrees - 1) + 2 + drawn(state, 3)
+       if (b > 1) label = trim(label) // '-'
+       label = trim(label) // trim(named(kind, order))
+    end do
+
+    ! Every block reaches back over instants an earlier one computed,
+    ! so the first must cover the widest reach behind it. A chain that
+    ! does not is refused by the march, and rightly, but it is not the
+    ! chain this harness meant to draw.
+    widest = 0
+    do b = 2, blocks
+       widest = max(widest, schemes(b) % scheme % history_depth(degrees - 1))
+    end do
+    added(1) = max(added(1), widest + 1)
+
+  end subroutine draw_chain
 
   !-------------------------------------------------------------------!
   ! The parameters of one case, drawn so that the same seed gives the
@@ -191,7 +348,7 @@ contains
     kind     = drawn(state, 3)
     instants = 12 + 2 * drawn(state, 5)
     duration = drawn_real(state, 0.5_dp, 4.0_dp)
-    design   = drawn_real(state, -1.0_dp, 1.5_dp)
+    design   = drawn_real(state, 0.0_dp, 1.5_dp)
 
   end subroutine draw
 

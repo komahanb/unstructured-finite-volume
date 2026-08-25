@@ -323,6 +323,9 @@ contains
        if (added(b) <= schemes(b) % scheme % history_depth(equation_degree)) then
           error stop 'gti_march: a block adds more instants than its family reaches'
        end if
+       if (first(b) < 1) then
+          error stop 'gti_march: the horizon holds every instant its blocks reach back over'
+       end if
     end do
 
   end subroutine horizon_bounds

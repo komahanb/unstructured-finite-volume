@@ -9,8 +9,15 @@
 !
 ! What it becomes is an index map, and the only thing it needs is a
 ! question each block already resolves for itself: where among its
-! unknowns its k-th instant sits. A block hands its successor components, never
-! rows, so that question is the whole of the interface between them.
+! unknowns its k-th instant sits. A block hands its successor
+! components, never rows, so that question is the whole of the
+! interface between them.
+!
+! A block may reach back further than the block before it is long - a
+! stage family spans one instant and a backward difference of order
+! three on a degree-three equation looks back over nine - so what a
+! block is given is gathered from whichever earlier block computed
+! each instant, not from the one immediately before it.
 !
 !             WHOSE INSTANT IS IT
 !
@@ -93,7 +100,7 @@ contains
   ! both and reads the same either way, so the earlier is taken.
   !===================================================================!
 
-  function instant_components(chain, instant, degrees) result(x)
+  pure function instant_components(chain, instant, degrees) result(x)
 
     type(chain_block), intent(in) :: chain(:)
     integer          , intent(in) :: instant, degrees
@@ -119,20 +126,19 @@ contains
   ! by instant, degrees within an instant.
   !===================================================================!
 
-  pure function handed_over(previous, first, given, degrees, series) result(held)
+  pure function handed_over(earlier, first, given, degrees) result(held)
 
-    type(chain_block), intent(in) :: previous
+    type(chain_block), intent(in) :: earlier(:)
     integer          , intent(in) :: first, given, degrees
-    real(dp)         , intent(in) :: series(:)
     real(dp), allocatable :: held(:)
 
-    integer :: i, at
+    integer :: i
 
     allocate(held(given * degrees))
 
     do i = 1, given
-       at = previous % instants_at(first + i - 1 - previous % first + 1)
-       held((i - 1) * degrees + 1:i * degrees) = series(at + 1:at + degrees)
+       held((i - 1) * degrees + 1:i * degrees) = &
+            & instant_components(earlier, first + i - 1, degrees)
     end do
 
   end function handed_over
@@ -230,8 +236,7 @@ contains
     if (b == 1) then
        held = initial
     else
-       held = handed_over(chain(b - 1), first, chain(b) % given, degrees, &
-            & chain(b - 1) % state)
+       held = handed_over(chain(1:b - 1), first, chain(b) % given, degrees)
     end if
 
     call built(scheme, physics, degrees, last - first + 1, dt(first:last), &
@@ -361,8 +366,8 @@ contains
     if (b == 1) then
        r(1:carried) = 0.0_dp
     else
-       held = handed_over(chain(b - 1), chain(b) % first, chain(b) % given, degrees, &
-            & series(m, 1:chain(b - 1) % rows % num_unknowns(), b - 1))
+       held = coefficients_handed(chain(1:b - 1), chain(b) % first, &
+            & chain(b) % given, degrees, series, m)
        r(1:carried) = -held
     end if
 
@@ -371,6 +376,38 @@ contains
     series(m, 1:count, b) = w
 
   end subroutine one_order
+
+  !===================================================================!
+  ! What the earlier blocks found at one order, at the instants a
+  ! later one carries. A coefficient travels the junction the way the
+  ! trajectory does, and comes from whichever block computed that
+  ! instant.
+  !===================================================================!
+
+  pure function coefficients_handed(earlier, first, given, degrees, series, order) &
+       & result(held)
+
+    type(chain_block), intent(in) :: earlier(:)
+    integer          , intent(in) :: first, given, degrees, order
+    real(dp)         , intent(in) :: series(0:, :, :)
+    real(dp), allocatable :: held(:)
+
+    integer :: i, b, local, at
+
+    allocate(held(given * degrees), source=0.0_dp)
+
+    do i = 1, given
+       do b = 1, size(earlier)
+          if (first + i - 1 < earlier(b) % first) cycle
+          if (first + i - 1 > earlier(b) % last) cycle
+          local = first + i - 1 - earlier(b) % first + 1
+          at    = earlier(b) % instants_at(local)
+          held((i - 1) * degrees + 1:i * degrees) = series(order, at + 1:at + degrees, b)
+          exit
+       end do
+    end do
+
+  end function coefficients_handed
 
   !===================================================================!
   ! The functional at every order: each block's own instants, each

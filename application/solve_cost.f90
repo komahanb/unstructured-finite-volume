@@ -15,10 +15,9 @@ program solve_cost
   use operation_grid        , only : uniform_grid
   use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
   use gti_expansion         , only : family_holder
-  use util_factorisation    , only : dense_factorisation
   use gti_march             , only : partition
   use gti_chain             , only : chain_block, march_chain, &
-       & chain_system, chain_systems
+       & chain_system, chain_systems, chain_by_tangent
 
   implicit none
 
@@ -44,8 +43,8 @@ contains
     type(chain_system), allocatable :: systems(:)
     type(bdf_family) :: scheme
     integer , allocatable :: added(:)
-    real(dp), allocatable :: held(:), dt(:), t(:), rhs(:), x(:)
-    real(dp) :: achieved, duration, design, marched, formed, solved_in
+    real(dp), allocatable :: held(:), dt(:), t(:)
+    real(dp) :: achieved, duration, design, marched, formed, solved_in, tangent
     integer  :: n, d, j
 
     duration = 3.0_dp
@@ -70,11 +69,10 @@ contains
          & design, systems)
     formed = clock() - formed
 
-    n = size(systems(1) % a, 1)
-    allocate(rhs(n), source=1.0_dp)
+    n = chain(1) % rows % num_unknowns()
 
     solved_in = clock()
-    call systems(1) % factor % substitute(rhs, x, transposed=.false.)
+    tangent   = chain_by_tangent(chain, systems, degrees, design)
     solved_in = clock() - solved_in
 
     write(*,'(i10,3f11.3,2es15.3)') n, marched, formed, solved_in, &

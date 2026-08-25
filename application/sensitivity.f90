@@ -28,8 +28,8 @@ program sensitivity
   use gti_block            , only : block_residual
   use gti_march            , only : partition, block_of, solved, unknowns_graph
   use gti_sweeps           , only : functional_of, functional_gradient, &
-       & design_partial, jacobian_of, by_tangent, by_adjoint
-  use util_factorisation   , only : dense_factorisation
+       & design_partial
+  use gti_march            , only : by_tangent, by_adjoint, fresh_stamp
 
   implicit none
 
@@ -119,16 +119,11 @@ contains
 
     real(dp), parameter :: delta = 1.0e-6_dp
 
-    real(dp), allocatable :: q(:), g(:), rate(:), a(:,:), plus(:), minus(:)
+    real(dp), allocatable :: q(:), plus(:), minus(:)
     real(dp) :: f, tangent, adjoint, differenced
-    type(dense_factorisation) :: factor
 
     f = marched(scheme, design, q)
-    call three_objects(scheme, q, g, rate, a)
-
-    call factor % factorise(a, 1.0e-14_dp)
-    tangent = by_tangent(factor, g, rate, 0.0_dp)
-    adjoint = by_adjoint(factor, g, rate, 0.0_dp)
+    call three_objects(scheme, q, tangent, adjoint)
 
     differenced = (marched(scheme, design + delta, plus) - &
          &         marched(scheme, design - delta, minus)) / (2.0_dp * delta)
@@ -150,11 +145,13 @@ contains
   ! the design, and the jacobian.
   !-------------------------------------------------------------------!
 
-  subroutine three_objects(scheme, q, g, rate, a)
+  subroutine three_objects(scheme, q, tangent, adjoint)
 
     class(family), intent(in) :: scheme
     real(dp)     , intent(in) :: q(:)
-    real(dp), allocatable, intent(out) :: g(:), rate(:), a(:,:)
+    real(dp)     , intent(out) :: tangent, adjoint
+    real(dp), allocatable :: g(:), rate(:)
+    integer :: mark
 
     type(block_residual) :: rows
     type(stored_directed_graph) :: unknowns, instants
@@ -176,8 +173,9 @@ contains
          & [state, knobs], dt, num_instants, degrees, unknowns % vertex_set(), g)
     call design_partial(rows, unknowns, [state, knobs], num_instants, &
          & unknowns % vertex_set(), rate)
-    call jacobian_of(rows, unknowns, [state, knobs], num_instants * degrees, &
-         & unknowns % vertex_set(), a)
+    mark    = fresh_stamp()
+    tangent = by_tangent(rows, unknowns, [state, knobs], g, rate, 0.0_dp, 1, mark)
+    adjoint = by_adjoint(rows, unknowns, [state, knobs], g, rate, 0.0_dp, 1, mark)
 
   end subroutine three_objects
 

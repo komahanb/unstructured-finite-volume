@@ -28,6 +28,7 @@ module gti_march
   use iso_fortran_env , only : real128
   use operation_weight        , only : scheme_weight
   use view_directed_stored    , only : stored_directed_graph
+  use view_directed           , only : directed_graph
   use field_calculus          , only : field
   use field_stored            , only : stored_field
   use operation_stencil       , only : stencil
@@ -43,7 +44,9 @@ module gti_march
   use physics_integrand       , only : nodal_integrand
   use gti_expansion           , only : block_reach, family_holder
   use gti_block               , only : block_residual
-  use gti_sweeps              , only : inner_minimizer, jacobian_of, assembly_present
+  use gti_sweeps              , only : jacobian_of, assembly_present, multigrid_on, &
+       & aggregates_given, aggregates_of, set_aggregates, take_inner, keep_inner, forget_inner
+  use util_tally              , only : tally_record, tangent_loops, adjoint_loops
 
   implicit none
 
@@ -91,6 +94,10 @@ module gti_march
 
   character(len=16), save :: sweep_level = 'space-time'
 
+  ! Stamps handed out to statements, so that a direct solver can tell
+  ! a statement it has factorised from a new one.
+  integer, save :: stamps_given = 0
+
   !-------------------------------------------------------------------!
   ! HOW A MARCH STOPS. A caller that sets nothing gets a tolerance
   ! measured against the imbalance the march began at, and a budget
@@ -109,6 +116,7 @@ module gti_march
   public :: consistent_state
   public :: imbalance
   public :: swept, set_sweep, sweep_named
+  public :: solved_linear, by_tangent, by_adjoint, fresh_stamp
   public :: weight_of, precision_needed
   public :: horizon_bounds
 
@@ -483,7 +491,7 @@ contains
     design   = stored_field('nu', unknowns % vertex_set(), rows % num_points())
     call design % set_real_vector(spread(design_value, 1, rows % num_points()))
 
-    allocate(solver % inner, source=inner_solver(count))
+    call take_inner(solver % inner, count)
     call solver % attach(rows, unknowns, unknowns % vertex_set(), count, &
          & held_inputs = [design])
 
@@ -500,6 +508,7 @@ contains
     solver % budget         = stopping_budget
 
     call solver % solve(spread(0.0_dp, 1, count), q, achieved)
+    call keep_inner(solver % inner)
 
     if (present(left)) then
        left % converged = solver % converged(achieved)
@@ -510,6 +519,88 @@ contains
     end if
 
   end subroutine solved
+
+  !===================================================================!
+  ! A stamp no statement has had before.
+  !===================================================================!
+
+  integer function fresh_stamp() result(mark)
+
+    stamps_given = stamps_given + 1
+    mark = stamps_given
+
+  end function fresh_stamp
+
+  !===================================================================!
+  ! A LINEAR SYSTEM IN THE TANGENT, A w = rhs or A^T w = rhs, solved
+  ! as the block it came from is solved: as a linear block through the
+  ! sweep, where newton stops after one step. The stamp given is the
+  ! tangent's; every right side against the same tangent gives the
+  ! same stamp, and a direct solver then factorises once.
+  !===================================================================!
+
+  subroutine solved_linear(rows, unknowns, inputs, rhs, transposed, mark, nodes, w)
+
+    type(block_residual)       , intent(in)  :: rows
+    class(directed_graph)      , intent(in)  :: unknowns
+    type(stored_field)         , intent(in)  :: inputs(:)
+    real(dp)                   , intent(in)  :: rhs(:)
+    logical                    , intent(in)  :: transposed
+    integer                    , intent(in)  :: mark, nodes
+    real(dp), allocatable      , intent(out) :: w(:)
+
+    type(block_residual) :: lin
+    real(dp) :: achieved
+
+    if (transposed) then
+       call tally_record(adjoint_loops)
+    else
+       call tally_record(tangent_loops)
+    end if
+
+    lin = rows % linear_block(unknowns, inputs, rhs, transposed, mark)
+    call swept(lin, 0.0_dp, nodes, w, achieved, backward=transposed)
+
+  end subroutine solved_linear
+
+  !===================================================================!
+  ! The gradient in the design by the tangent - one solve in the
+  ! state, the gradient read along it - and by the adjoint - one solve
+  ! against the transpose, the design partial read along it. Both
+  ! through the sweep, against one tangent, stamped once.
+  !===================================================================!
+
+  real(dp) function by_tangent(rows, unknowns, inputs, g, design_rate, explicit, nodes, &
+       & mark) result(df)
+
+    type(block_residual) , intent(in) :: rows
+    class(directed_graph), intent(in) :: unknowns
+    type(stored_field)   , intent(in) :: inputs(:)
+    real(dp)             , intent(in) :: g(:), design_rate(:), explicit
+    integer              , intent(in) :: nodes, mark
+
+    real(dp), allocatable :: w(:)
+
+    call solved_linear(rows, unknowns, inputs, -design_rate, .false., mark, nodes, w)
+    df = explicit + dot_product(g, w)
+
+  end function by_tangent
+
+  real(dp) function by_adjoint(rows, unknowns, inputs, g, design_rate, explicit, nodes, &
+       & mark) result(df)
+
+    type(block_residual) , intent(in) :: rows
+    class(directed_graph), intent(in) :: unknowns
+    type(stored_field)   , intent(in) :: inputs(:)
+    real(dp)             , intent(in) :: g(:), design_rate(:), explicit
+    integer              , intent(in) :: nodes, mark
+
+    real(dp), allocatable :: lambda(:)
+
+    call solved_linear(rows, unknowns, inputs, g, .true., mark, nodes, lambda)
+    df = explicit - dot_product(lambda, design_rate)
+
+  end function by_adjoint
 
   !===================================================================!
   ! Which level the marches sweep. A name that is none of the three
@@ -551,7 +642,7 @@ contains
   ! space sweep stops where the coupling has settled.
   !===================================================================!
 
-  subroutine swept(rows, design_value, nodes, q, achieved, left)
+  subroutine swept(rows, design_value, nodes, q, achieved, left, backward)
 
     type(block_residual), intent(in)  :: rows
     real(dp)            , intent(in)  :: design_value
@@ -559,16 +650,18 @@ contains
     real(dp), allocatable, intent(out) :: q(:)
     real(dp)            , intent(out) :: achieved
     type(imbalance), intent(out), optional :: left
+    logical        , intent(in) , optional :: backward
 
     type(block_residual) :: sub
     type(newton) :: judge
     type(stored_directed_graph) :: unknowns
     type(stored_field) :: design
-    integer , allocatable :: at(:), member(:)
+    integer , allocatable :: at(:), member(:), whole(:)
     real(dp), allocatable :: piece(:)
     logical , allocatable :: is_carried(:)
     real(dp) :: sub_achieved, before
-    integer :: count, degrees, npts, instants, members, m, pass
+    integer :: count, degrees, npts, instants, members, m, mm, pass, neighbour
+    logical :: reversed
 
     if (trim(sweep_level) == 'space-time') then
        call solved(rows, design_value, q, achieved, left)
@@ -619,6 +712,14 @@ contains
        members = nodes
     end if
 
+    ! a transposed statement is upper triangular in time, and its
+    ! instants are swept from the last
+    reversed = .false.
+    if (present(backward)) reversed = backward
+
+    ! the block's aggregates, kept aside while the members set their own
+    if (multigrid_on()) call aggregates_of(whole)
+
     ! The residual where the sweep begins is what a relative target
     ! is measured against, as the first residual is for any march.
     achieved = whole_residual(rows, unknowns, design, q)
@@ -628,17 +729,26 @@ contains
 
        before = achieved
 
-       do m = 1, members
+       do mm = 1, members
+          m = mm
+          if (reversed) m = members - mm + 1
           member = member_unknowns(at, degrees, nodes, instants, m)
           if (all(is_carried(member))) cycle
 
-          ! an instant not yet solved is seeded from the one before it,
-          ! which is continuation: the seed every step of a march has
-          if (pass == 1 .and. trim(sweep_level) == 'time' .and. m > 1) then
-             q(member) = q(member_unknowns(at, degrees, nodes, instants, m - 1))
+          ! an instant not yet solved is seeded from the one before it
+          ! in the order swept, which is continuation: the seed every
+          ! step of a march has
+          neighbour = m - 1
+          if (reversed) neighbour = m + 1
+          if (pass == 1 .and. trim(sweep_level) == 'time' .and. mm > 1) then
+             q(member) = q(member_unknowns(at, degrees, nodes, instants, neighbour))
           end if
 
           sub = rows % restricted(member, q)
+          if (rows % stamp() /= 0) then
+             call sub % stamped(sign(abs(rows % stamp()) * members + m, rows % stamp()))
+          end if
+          if (multigrid_on()) call set_aggregates(member_aggregates(member, whole))
           call solved(sub, design_value, piece, sub_achieved, seed=q(member))
           q(member) = piece
        end do
@@ -655,6 +765,8 @@ contains
 
     end do
 
+    if (multigrid_on()) call set_aggregates(whole)
+
     if (present(left)) then
        left % converged = judge % converged(achieved)
        left % diverging = judge % diverging(achieved)
@@ -664,6 +776,37 @@ contains
     end if
 
   end subroutine swept
+
+  !-------------------------------------------------------------------!
+  ! The aggregates of a member, renumbered from one in the order they
+  ! first appear, so multigrid on the member coarsens as the whole
+  ! block would.
+  !-------------------------------------------------------------------!
+
+  function member_aggregates(member, whole) result(agg)
+
+    integer, intent(in) :: member(:)
+    integer, intent(in), allocatable :: whole(:)
+    integer, allocatable :: agg(:)
+
+    integer, allocatable :: renumbered(:)
+    integer :: i, next
+
+    if (.not. allocated(whole)) then
+       error stop 'gti_march: multigrid coarsens by aggregates, and none were given'
+    end if
+
+    allocate(agg(size(member)), renumbered(maxval(whole)), source=0)
+    next = 0
+    do i = 1, size(member)
+       if (renumbered(whole(member(i))) == 0) then
+          next = next + 1
+          renumbered(whole(member(i))) = next
+       end if
+       agg(i) = renumbered(whole(member(i)))
+    end do
+
+  end function member_aggregates
 
   real(dp) function whole_residual(rows, unknowns, design, q) result(norm)
 
@@ -819,14 +962,6 @@ contains
   ! gti_sweeps, which owns it.
   !===================================================================!
 
-  function inner_solver(unknowns) result(inner)
-
-    integer, intent(in) :: unknowns
-    class(minimizer), allocatable :: inner
-
-    allocate(inner, source=inner_minimizer(unknowns))
-
-  end function inner_solver
 
   !===================================================================!
   ! Where each block begins and ends. A block adds the instants given

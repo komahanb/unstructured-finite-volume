@@ -33,6 +33,9 @@ program tolerance_form
   use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
   use gti_expansion         , only : family_holder
   use gti_march             , only : partition
+  use gti_sweeps            , only : jacobian_of
+  use view_directed_stored  , only : stored_directed_graph
+  use field_stored          , only : stored_field
   use gti_chain             , only : chain_block, march_chain, &
        & chain_system, chain_systems
 
@@ -140,7 +143,7 @@ contains
     type(chain_system), allocatable :: systems(:)
     type(bdf_family) :: scheme
     integer , allocatable :: added(:)
-    real(dp), allocatable :: held(:), dt(:), t(:)
+    real(dp), allocatable :: held(:), dt(:), t(:), a(:,:)
     real(dp) :: achieved, duration, design, predicted, assembled
     character(len=8) :: named
     integer :: k, d, top
@@ -164,7 +167,8 @@ contains
          & design, systems)
 
     predicted = 1.0_dp + row_sum(scheme, order, top) / dt(size(dt)) ** top
-    assembled = largest_row(systems(1) % a)
+    call dense_jacobian(chain, degrees, design, a)
+    assembled = largest_row(a)
 
     write(named,'(a,i0)') 'bdf ', order
     write(*,'(a,a,i5,i10,f10.5,2es15.5,f11.3,a)') '  ', named, top, instants, &
@@ -187,7 +191,7 @@ contains
     type(chain_system), allocatable :: systems(:)
     type(bdf_family) :: scheme
     integer , allocatable :: added(:)
-    real(dp), allocatable :: held(:), dt(:), t(:), b(:,:)
+    real(dp), allocatable :: held(:), dt(:), t(:), b(:,:), a(:,:)
     real(dp) :: achieved, duration, design, bare, scaled, step
     character(len=8) :: named
     integer :: k, d, i, n
@@ -210,13 +214,14 @@ contains
          & design, systems)
 
     step = dt(size(dt))
-    bare = kappa(systems(1) % a)
+    call dense_jacobian(chain, degrees, design, a)
+    bare = kappa(a)
 
-    n = size(systems(1) % a, 1)
+    n = size(a, 1)
     allocate(b(n, n))
     do i = 1, n
        d = mod(i - 1, degrees)
-       b(i, :) = systems(1) % a(i, :) * step ** d
+       b(i, :) = a(i, :) * step ** d
     end do
     scaled = kappa(b)
 
@@ -293,5 +298,33 @@ contains
     end do
 
   end function largest_row
+
+  !-------------------------------------------------------------------!
+  ! The jacobian of the first block at its solved state, formed from
+  ! the compiled tangent, for the measurements below.
+  !-------------------------------------------------------------------!
+
+  subroutine dense_jacobian(chain, degrees, design, a)
+
+    type(chain_block), intent(in) :: chain(:)
+    integer          , intent(in) :: degrees
+    real(dp)         , intent(in) :: design
+    real(dp), allocatable, intent(out) :: a(:,:)
+
+    type(stored_directed_graph) :: unknowns
+    type(stored_field) :: state, knobs
+    integer :: n
+
+    n        = chain(1) % rows % num_unknowns()
+    unknowns = stored_directed_graph(n, tails=[integer ::], heads=[integer ::])
+    state    = stored_field('state', unknowns % vertex_set(), n)
+    knobs    = stored_field('nu', unknowns % vertex_set(), chain(1) % rows % num_points())
+    call state % set_real_vector(chain(1) % state)
+    call knobs % set_real_vector(spread(design, 1, chain(1) % rows % num_points()))
+    call jacobian_of(chain(1) % rows, unknowns, [state, knobs], n, unknowns % vertex_set(), a)
+
+    associate (u1 => degrees); end associate
+
+  end subroutine dense_jacobian
 
 end program tolerance_form

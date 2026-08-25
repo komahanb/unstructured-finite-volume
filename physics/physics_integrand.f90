@@ -42,12 +42,13 @@ module physics_integrand
   use graph_fractal         , only : graph
   use field_stored          , only : stored_field
   use util_derivative_terms , only : derivative_terms, mixed_partial, &
-       & max_subset_width
+       & max_subset_width, operator(*)
 
   implicit none
 
   private
   public :: nodal_integrand
+  public :: zero_integrand
 
   type, abstract, extends(operation) :: nodal_integrand
 
@@ -65,6 +66,21 @@ module physics_integrand
      procedure :: partial_action => integrand_partial_action
 
   end type nodal_integrand
+
+  !-------------------------------------------------------------------!
+  ! The integrand that is zero at every point: the physics of a
+  ! linear statement, whose whole content is its stencil.
+  !-------------------------------------------------------------------!
+
+  type, extends(nodal_integrand) :: zero_integrand
+   contains
+     procedure :: name       => zero_name
+     procedure :: at_instant => zero_rule
+  end type zero_integrand
+
+  interface zero_integrand
+     module procedure create_zero
+  end interface zero_integrand
 
   abstract interface
 
@@ -298,5 +314,36 @@ contains
     call evaluated(this, input_graph, q, nu, output)
 
   end subroutine integrand_partial_action
+
+  function create_zero(degree) result(this)
+
+    integer, intent(in) :: degree
+    type(zero_integrand) :: this
+
+    call this % declare_degree(degree)
+
+  end function create_zero
+
+  pure function zero_name(this) result(name)
+
+    class(zero_integrand), intent(in) :: this
+    character(len=:), allocatable :: name
+
+    associate (u1 => this); end associate
+    name = 'zero'
+
+  end function zero_name
+
+  pure function zero_rule(this, q, nu) result(r)
+
+    class(zero_integrand) , intent(in) :: this
+    type(derivative_terms), intent(in) :: q(0:)
+    type(derivative_terms), intent(in) :: nu
+    type(derivative_terms) :: r
+
+    associate (u1 => this, u2 => nu); end associate
+    r = 0.0_dp * q(0)
+
+  end function zero_rule
 
 end module physics_integrand

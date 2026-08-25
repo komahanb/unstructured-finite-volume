@@ -63,7 +63,7 @@ module gti_block
   use field_stored         , only : stored_field
   use graph_fractal        , only : graph
   use operation_stencil    , only : combine_triples, stencil
-  use physics_integrand    , only : nodal_integrand
+  use physics_integrand    , only : zero_integrand, nodal_integrand
 
   implicit none
 
@@ -99,6 +99,7 @@ module gti_block
      procedure :: partial_action => block_partial_action
      procedure :: compiled_tangent => block_compiled_tangent
      procedure :: restricted => block_restricted
+     procedure :: linear_block
      procedure :: num_unknowns
      procedure :: num_degrees
      procedure :: num_points
@@ -467,6 +468,52 @@ contains
   ! variation renamed for it and, in the state, gathered to the
   ! points the physics reads.
   !===================================================================!
+
+  !===================================================================!
+  ! THE LINEAR BLOCK: the tangent in the state at the inputs given,
+  ! frozen, as a block of its own, so that a linear statement A w = b
+  ! - or A^T w = b - goes through the same solve as the block it came
+  ! from and converges in one newton step. Its derived stencil is A
+  ! with -b as its constant, its physics is zero, its points and
+  ! degrees are this block's, and it carries no rows: the identities
+  ! on the carried components are already in A. A negative stamp is
+  ! given to the transpose, which a direct solver reads as the same
+  ! factors the other way round.
+  !===================================================================!
+
+  function linear_block(this, input_graph, input_data, rhs, transposed, mark) result(lin)
+
+    class(block_residual), intent(in) :: this
+    class(directed_graph), intent(in) :: input_graph
+    class(field)         , intent(in) :: input_data(:)
+    real(dp)             , intent(in) :: rhs(:)
+    logical              , intent(in) :: transposed
+    integer              , intent(in) :: mark
+    type(block_residual) :: lin
+
+    type(stencil) :: a
+    integer , allocatable :: r(:), c(:)
+    real(dp), allocatable :: w(:)
+    logical :: available
+
+    if (size(rhs) /= this % unknowns) then
+       error stop 'gti_block: one right side per unknown'
+    end if
+
+    call this % compiled_tangent(input_graph, input_data, 1, r, c, w, available)
+    if (.not. available) then
+       error stop 'gti_block: the tangent in the state compiles'
+    end if
+
+    a = stencil(r, c, w, spread(0.0_dp, 1, this % unknowns), 'frozen tangent')
+    if (transposed) a = a % transpose()
+    call a % constants % set_real_vector(-rhs)
+
+    lin = block_residual(a, zero_integrand(this % degrees - 1), this % at, this % unknowns, &
+         & this % degrees, this % primary, [integer ::], [real(dp) ::])
+    call lin % stamped(merge(-mark, mark, transposed))
+
+  end function linear_block
 
   !===================================================================!
   ! THE BLOCK RESTRICTED to a member of a level - some of its unknowns

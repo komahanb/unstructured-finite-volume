@@ -64,7 +64,7 @@ module gti_taylor
   use physics_integrand    , only : nodal_integrand
   use gti_block            , only : block_residual
   use gti_march            , only : block_of, solved, unknowns_graph
-  use gti_sweeps           , only : tangent_solve
+  use gti_march            , only : solved_linear, fresh_stamp
 
   implicit none
 
@@ -141,7 +141,7 @@ contains
   !===================================================================!
 
   subroutine block_expansion(rows, physics, integrand, degrees, primary, &
-       & instants_at, dt, design, max_order, q, f, achieved, given)
+       & instants_at, dt, design, max_order, q, f, achieved, given, nodes)
 
     type(block_residual)  , intent(in) :: rows
     class(nodal_integrand), intent(in) :: physics, integrand
@@ -150,6 +150,7 @@ contains
     real(dp), allocatable , intent(out) :: q(:), f(:)
     real(dp)              , intent(out) :: achieved
     real(dp), intent(in), optional      :: given(:)
+    integer , intent(in), optional      :: nodes
 
     type(stored_directed_graph) :: unknowns
     type(stored_field) :: state, knobs
@@ -172,7 +173,7 @@ contains
 
     call state_series(rows, physics, unknowns, [state, knobs], degrees, &
          & rows % points_at(), primary, rows % num_carried(), design, &
-         & max_order, q, series)
+         & max_order, q, series, nodes_of(nodes))
     call functional_series(integrand, degrees, instants_at, design, max_order, &
          & series, dt, f)
 
@@ -184,8 +185,17 @@ contains
   ! side the orders beneath it determine.
   !===================================================================!
 
+  pure integer function nodes_of(nodes) result(n)
+
+    integer, intent(in), optional :: nodes
+
+    n = 1
+    if (present(nodes)) n = nodes
+
+  end function nodes_of
+
   subroutine state_series(rows, physics, on, inputs, degrees, at, primary, carried, &
-       & design, max_order, q, series)
+       & design, max_order, q, series, nodes)
 
     type(block_residual)  , intent(in) :: rows
     class(nodal_integrand), intent(in) :: physics
@@ -194,10 +204,10 @@ contains
     real(dp)              , intent(in) :: design, q(:)
     integer               , intent(in) :: degrees, at(:), primary, carried, max_order
     real(dp), allocatable , intent(out) :: series(:,:)
+    integer               , intent(in) :: nodes
 
     real(dp), allocatable :: frozen(:,:), r(:), w(:), coefficient(:)
-    integer :: m
-
+    integer :: m, mark
     allocate(series(0:max_order, size(q)), source=0.0_dp)
     allocate(r(size(q)))
     series(0, :) = q
@@ -209,7 +219,7 @@ contains
        frozen(m, :) = 0.0_dp
        call nodal_coefficient(physics, degrees, at, frozen, design, m, coefficient)
        call placed(coefficient, at, primary, carried, r)
-       call tangent_solve(rows, on, inputs, -r, w)
+       call solved_linear(rows, on, inputs, -r, .false., mark, nodes, w)
        series(m, :) = w
     end do
 

@@ -96,6 +96,7 @@ contains
     this % lu          = a
     this % is_singular = .false.
     this % least_pivot = huge(1.0_dp)
+    if (allocated(this % exchanged)) deallocate(this % exchanged)
     allocate(this % exchanged(n), source=0)
     allocate(row(n))
 

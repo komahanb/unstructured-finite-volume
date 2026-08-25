@@ -46,94 +46,120 @@ module gti_sweeps
   use graph_fractal         , only : graph
   use field_calculus        , only : field
   use field_stored          , only : stored_field
-  use operation_stencil     , only : stencil
   use operation_dense_direct, only : dense_direct
   use operation_multigrid   , only : multigrid
-  use operation_gauss_seidel, only : gauss_seidel
-  use util_tally, only : tally_record, tangent_loops, adjoint_loops
-  use util_factorisation, only : dense_factorisation
   use operation_gmres       , only : gmres
   use operation_minimization, only : minimizer
-  use operation_linearization, only : linearization, tangent_of
 
   implicit none
 
   private
   public :: functional_of, functional_gradient
   public :: design_partial, jacobian_of
-  public :: by_tangent, by_adjoint, tangent_solve
   public :: forward_route, reverse_route, route_of, route_substitutions
 
   integer, parameter :: forward_route = 1
   integer, parameter :: reverse_route = 2
-  public :: linear_solver_named, set_linear_solver, set_aggregates, inner_minimizer
-  public :: set_assembly, assembly_present
+  public :: set_linear_solver, set_assembly, set_storage, set_multigrid
+  public :: set_aggregates, aggregates_given, aggregates_of, assembly_present, multigrid_on
+  public :: take_inner, keep_inner, forget_inner
 
   !===================================================================!
-  ! WHICH LINEAR SOLVER the tangent systems go to: named, not chosen
-  ! by a count. dense factorises; gmres iterates without a matrix;
-  ! multigrid smooths and detours to the aggregates it was given,
-  ! which a field supplies from its mesh. A name this module has
-  ! nothing for stops the program.
+  ! HOW A LINEAR SYSTEM IS SOLVED: four specifications, each its own.
+  !
+  !      linear_solver   direct | iterative    factorise, or iterate
+  !      assembly        matrix | free         a matrix is formed, or
+  !                                            only a matvec is attached
+  !      storage         dense | sparse        the matrix formed is a
+  !                                            square, or a stencil
+  !      multigrid       yes | no              the solver named is the
+  !                                            smoother of a two-grid
+  !                                            over aggregates, whose
+  !                                            coarse level is direct
+  !
+  ! The corners that mean nothing are refused by name: direct on a
+  ! free assembly, sparse direct (not built), dense iterative, and
+  ! multigrid on a free assembly, its coarse operator being read
+  ! through the aggregates from a stencil.
   !===================================================================!
 
-  character(len=16), save :: chosen_solver = 'dense'
+  character(len=16), save :: chosen_solver   = 'direct'
+  character(len=16), save :: chosen_assembly = 'matrix'
+  character(len=16), save :: chosen_storage  = 'dense'
+  logical          , save :: chosen_multigrid = .false.
   integer, allocatable, save :: chosen_aggregates(:)
 
-  !===================================================================!
-  ! WHETHER A MATRIX IS ASSEMBLED. present: the statement's compiled
-  ! tangent, a sparse stencil, from which a dense factorisation is
-  ! formed where the solver is dense. free: no matrix anywhere - the
-  ! linearization's matvec is what the inner minimizer sees, so it
-  ! must iterate. A dense solver on a free assembly is refused.
-  !===================================================================!
-
-  character(len=16), save :: chosen_assembly = 'present'
+  ! The inner minimizer kept between solves, so that a direct one
+  ! keeps its factors across the statements stamped alike.
+  class(minimizer), allocatable, save :: kept_inner
 
 contains
-
-  subroutine set_assembly(name)
-
-    character(len=*), intent(in) :: name
-
-    select case (trim(name))
-    case ('present', 'free')
-       chosen_assembly = name
-    case default
-       write(*,'(a)') ' assembly names ' // trim(name) // ', which this program has nothing for.'
-       error stop 'gti_sweeps: an assembly is present or free'
-    end select
-
-  end subroutine set_assembly
-
-  pure logical function assembly_present() result(yes)
-
-    yes = trim(chosen_assembly) == 'present'
-
-  end function assembly_present
-
-  pure function linear_solver_named() result(name)
-
-    character(len=:), allocatable :: name
-
-    name = trim(chosen_solver)
-
-  end function linear_solver_named
 
   subroutine set_linear_solver(name)
 
     character(len=*), intent(in) :: name
 
     select case (trim(name))
-    case ('dense', 'gmres', 'multigrid')
+    case ('direct', 'iterative')
        chosen_solver = name
     case default
-       write(*,'(a)') ' linear_solver names ' // trim(name) // &
-            & ', which this program has nothing for.'
-       error stop 'gti_sweeps: a linear solver is dense, gmres or multigrid'
+       write(*,'(a)') ' linear_solver names ' // trim(name) // ', which this program has nothing for.'
+       error stop 'gti_sweeps: a linear solver is direct or iterative'
     end select
+    call forget_inner()
 
   end subroutine set_linear_solver
+
+  subroutine set_assembly(name)
+
+    character(len=*), intent(in) :: name
+
+    select case (trim(name))
+    case ('matrix', 'free')
+       chosen_assembly = name
+    case default
+       write(*,'(a)') ' assembly names ' // trim(name) // ', which this program has nothing for.'
+       error stop 'gti_sweeps: an assembly is matrix or free'
+    end select
+    call forget_inner()
+
+  end subroutine set_assembly
+
+  subroutine set_storage(name)
+
+    character(len=*), intent(in) :: name
+
+    select case (trim(name))
+    case ('dense', 'sparse')
+       chosen_storage = name
+    case default
+       write(*,'(a)') ' storage names ' // trim(name) // ', which this program has nothing for.'
+       error stop 'gti_sweeps: a storage is dense or sparse'
+    end select
+    call forget_inner()
+
+  end subroutine set_storage
+
+  subroutine set_multigrid(on)
+
+    logical, intent(in) :: on
+
+    chosen_multigrid = on
+    call forget_inner()
+
+  end subroutine set_multigrid
+
+  pure logical function assembly_present() result(yes)
+
+    yes = trim(chosen_assembly) == 'matrix'
+
+  end function assembly_present
+
+  pure logical function multigrid_on() result(yes)
+
+    yes = chosen_multigrid
+
+  end function multigrid_on
 
   !===================================================================!
   ! The aggregates multigrid coarsens by: one block per unknown. A
@@ -149,11 +175,24 @@ contains
 
   end subroutine set_aggregates
 
+  subroutine aggregates_of(aggregates)
+
+    integer, allocatable, intent(out) :: aggregates(:)
+
+    if (allocated(chosen_aggregates)) aggregates = chosen_aggregates
+
+  end subroutine aggregates_of
+
+  pure logical function aggregates_given() result(yes)
+
+    yes = allocated(chosen_aggregates)
+
+  end function aggregates_given
+
   !===================================================================!
-  ! The minimizer named, built for a system of the given count. A
-  ! singular pivot in the dense one is reported, the matrix being a
-  ! tangent at an intermediate iterate. multigrid without aggregates
-  ! of the right count stops the program.
+  ! The minimizer the specifications name, built for a system of the
+  ! given count. A singular pivot in a direct one is reported, the
+  ! matrix being a tangent at an intermediate iterate.
   !===================================================================!
 
   function inner_minimizer(count) result(inner)
@@ -161,45 +200,100 @@ contains
     integer, intent(in) :: count
     class(minimizer), allocatable :: inner
 
+    class(minimizer), allocatable :: named
     type(gmres)        :: krylov
     type(dense_direct) :: factorisation
     type(multigrid)    :: levels
-    type(gauss_seidel) :: sweeps
 
-    if (.not. assembly_present() .and. trim(chosen_solver) /= 'gmres') then
+    if (trim(chosen_assembly) == 'free' .and. trim(chosen_solver) == 'direct') then
        error stop 'gti_sweeps: a free assembly has no matrix to factorise; its solver iterates'
+    end if
+    if (trim(chosen_solver) == 'direct' .and. trim(chosen_storage) == 'sparse') then
+       error stop 'gti_sweeps: a sparse direct solve is not built'
+    end if
+    if (trim(chosen_solver) == 'iterative' .and. trim(chosen_assembly) == 'matrix' &
+         & .and. trim(chosen_storage) == 'dense') then
+       error stop 'gti_sweeps: an iterative solve reads the sparse stencil; dense storage is for factorising'
+    end if
+    if (chosen_multigrid .and. trim(chosen_assembly) == 'free') then
+       error stop 'gti_sweeps: multigrid coarsens a stencil, which a free assembly has not'
     end if
 
     select case (trim(chosen_solver))
-    case ('dense')
+    case ('direct')
        factorisation = dense_direct()
        factorisation % singular_reported = .true.
-       allocate(inner, source=factorisation)
-    case ('gmres')
+       allocate(named, source=factorisation)
+    case ('iterative')
        krylov = gmres()
        krylov % restart        = min(count, 60)
        krylov % tolerance      = 1.0e-13_dp
        krylov % max_iterations = 4
-       allocate(inner, source=krylov)
-    case ('multigrid')
-       if (.not. allocated(chosen_aggregates)) then
-          error stop 'gti_sweeps: multigrid coarsens by aggregates, and none were given'
-       end if
-       if (size(chosen_aggregates) /= count) then
-          error stop 'gti_sweeps: one aggregate per unknown'
-       end if
-       sweeps % max_iterations = 2
-       sweeps % tolerance      = 1.0e-13_dp
-       allocate(levels % smoother, source=sweeps)
-       factorisation = dense_direct()
-       allocate(levels % coarse, source=factorisation)
-       levels % aggregates     = chosen_aggregates
-       levels % tolerance      = 1.0e-13_dp
-       levels % max_iterations = 200
-       allocate(inner, source=levels)
+       allocate(named, source=krylov)
     end select
 
+    if (.not. chosen_multigrid) then
+       call move_alloc(named, inner)
+       return
+    end if
+
+    if (.not. allocated(chosen_aggregates)) then
+       error stop 'gti_sweeps: multigrid coarsens by aggregates, and none were given'
+    end if
+    if (size(chosen_aggregates) /= count) then
+       error stop 'gti_sweeps: one aggregate per unknown'
+    end if
+
+    ! the solver named smooths, a few of its iterations at a time; the
+    ! coarse level is factorised. A short krylov space does not damp a
+    ! point's coupled components here and the cycle then stalls, so
+    ! the smoother keeps the solver's own space.
+    named % max_iterations = 2
+    call move_alloc(named, levels % smoother)
+    factorisation = dense_direct()
+    allocate(levels % coarse, source=factorisation)
+    levels % aggregates     = chosen_aggregates
+    levels % tolerance      = 1.0e-13_dp
+    levels % max_iterations = 200
+    allocate(inner, source=levels)
+
   end function inner_minimizer
+
+  !===================================================================!
+  ! The inner minimizer taken for a solve and kept after it, so that
+  ! what it holds - a direct solver's factors - outlives one solve.
+  !===================================================================!
+
+  subroutine take_inner(inner, count)
+
+    class(minimizer), allocatable, intent(out) :: inner
+    integer                      , intent(in)  :: count
+
+    ! multigrid is built afresh for every statement, its aggregates
+    ! being the statement's; a kept one would carry another's
+    if (allocated(kept_inner) .and. .not. chosen_multigrid) then
+       call move_alloc(kept_inner, inner)
+    else
+       call forget_inner()
+       allocate(inner, source=inner_minimizer(count))
+    end if
+
+  end subroutine take_inner
+
+  subroutine keep_inner(inner)
+
+    class(minimizer), allocatable, intent(inout) :: inner
+
+    if (allocated(kept_inner)) deallocate(kept_inner)
+    call move_alloc(inner, kept_inner)
+
+  end subroutine keep_inner
+
+  subroutine forget_inner()
+
+    if (allocated(kept_inner)) deallocate(kept_inner)
+
+  end subroutine forget_inner
 
   subroutine applied(action, on, inputs, y)
 
@@ -359,85 +453,6 @@ contains
     end do
 
   end subroutine jacobian_of
-
-  !===================================================================!
-  ! One solve against the statement's tangent in the state, frozen at
-  ! the inputs given. No matrix is formed past a small block: the
-  ! statement's own partial action is the matvec.
-  !===================================================================!
-
-  subroutine tangent_solve(rows, on, inputs, b, x)
-
-    class(operation)     , intent(in) :: rows
-    class(directed_graph), intent(in) :: on
-    type(stored_field)   , intent(in) :: inputs(:)
-    real(dp)             , intent(in) :: b(:)
-    real(dp), allocatable, intent(out) :: x(:)
-
-    type(linearization) :: jacobian
-    type(stencil) :: compiled
-    class(minimizer), allocatable :: solver
-    integer , allocatable :: r(:), c(:)
-    real(dp), allocatable :: w(:)
-    logical :: available
-    real(dp) :: achieved
-
-    allocate(solver, source=inner_minimizer(size(b)))
-
-    ! the statement's own compiled tangent where it offers one, the
-    ! linearization otherwise
-    available = .false.
-    if (assembly_present()) call rows % compiled_tangent(on, inputs, 1, r, c, w, available)
-    if (available) then
-       compiled = stencil(r, c, w, spread(0.0_dp, 1, size(b)), 'compiled tangent')
-       call solver % attach(compiled, compiled % pattern, on % vertex_set(), size(b), &
-            & coupling = compiled % pattern)
-    else
-       jacobian = tangent_of(rows, rows % argument(1))
-       call jacobian % freeze(inputs)
-       call solver % attach(jacobian, on, on % vertex_set(), size(b))
-    end if
-
-    allocate(x(size(b)), source=0.0_dp)
-    call solver % solve(b, x, achieved)
-
-  end subroutine tangent_solve
-
-  !===================================================================!
-  ! The tangent: one solve in the state, then the gradient read
-  ! along what it gives.
-  !===================================================================!
-
-  real(dp) function by_tangent(factor, g, design_rate, explicit) result(df)
-
-    type(dense_factorisation), intent(in) :: factor
-    real(dp)                 , intent(in) :: g(:), design_rate(:), explicit
-
-    real(dp), allocatable :: w(:)
-
-    call tally_record(tangent_loops)
-    call factor % substitute(-design_rate, w, transposed=.false.)
-    df = explicit + dot_product(g, w)
-
-  end function by_tangent
-
-  !===================================================================!
-  ! The adjoint: one substitution against the transpose, then the
-  ! statement's design partial read along what it gives.
-  !===================================================================!
-
-  real(dp) function by_adjoint(factor, g, design_rate, explicit) result(df)
-
-    type(dense_factorisation), intent(in) :: factor
-    real(dp)                 , intent(in) :: g(:), design_rate(:), explicit
-
-    real(dp), allocatable :: lambda(:)
-
-    call tally_record(adjoint_loops)
-    call factor % substitute(g, lambda, transposed=.true.)
-    df = explicit - dot_product(lambda, design_rate)
-
-  end function by_adjoint
 
   !===================================================================!
   ! THE GATE. Which route computes the m-th derivative of n_f

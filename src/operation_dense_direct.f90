@@ -52,6 +52,14 @@ module operation_dense_direct
      ! said otherwise.
      logical  :: singular_reported = .false.
 
+     ! The factors kept, and the stamp of the statement they belong
+     ! to. A statement stamped the same is not formed or factorised
+     ! again; one stamped zero always is. A stamp of the opposite sign
+     ! is the transpose of the statement kept, and is substituted
+     ! against the same factors the other way round.
+     type(dense_factorisation), private :: factor
+     integer                  , private :: kept_stamp = 0
+
    contains
 
      procedure :: name  => dense_direct_name
@@ -86,9 +94,9 @@ contains
     real(dp), intent(inout) :: x(:)
     real(dp), intent(out)   :: achieved
 
-    type(dense_factorisation) :: factor
     real(dp), allocatable :: a(:,:), basis(:), y(:), solution(:)
     integer :: n, j
+    logical :: kept
 
     if (this % singular_tolerance <= 0.0_dp) then
        error stop 'dense_direct: singular tolerance is positive'
@@ -100,19 +108,27 @@ contains
 
     n = size(rhs)
 
+    kept = this % action % stamp() /= 0 .and. &
+         & abs(this % action % stamp()) == abs(this % kept_stamp) .and. &
+         & this % factor % order() == n
+
     !----------------------------------------------------------------!
-    ! Assemble the matrix: one matvec per basis vector, one column
-    ! each.
+    ! Assemble the matrix - one matvec per basis vector, one column
+    ! each - and factorise, unless the factors kept are this
+    ! statement's already.
     !----------------------------------------------------------------!
 
-    allocate(a(n, n), basis(n))
-
-    do j = 1, n
-       basis    = 0.0_dp
-       basis(j) = 1.0_dp
-       call this % matvec(basis, y)
-       a(:, j) = y
-    end do
+    if (.not. kept) then
+       allocate(a(n, n), basis(n))
+       do j = 1, n
+          basis    = 0.0_dp
+          basis(j) = 1.0_dp
+          call this % matvec(basis, y)
+          a(:, j) = y
+       end do
+       call this % factor % factorise(a, this % singular_tolerance)
+       this % kept_stamp = this % action % stamp()
+    end if
 
     !----------------------------------------------------------------!
     ! Factorise, and substitute. A singular pivot is reported through
@@ -120,9 +136,7 @@ contains
     ! the program otherwise.
     !----------------------------------------------------------------!
 
-    call factor % factorise(a, this % singular_tolerance)
-
-    if (factor % singular()) then
+    if (this % factor % singular()) then
        if (this % singular_reported) then
           achieved = huge(1.0_dp)
           return
@@ -130,7 +144,8 @@ contains
        error stop 'dense_direct: the pivot is singular'
     end if
 
-    call factor % substitute(rhs, solution, transposed=.false.)
+    call this % factor % substitute(rhs, solution, &
+         & transposed = (this % action % stamp() < 0) .neqv. (this % kept_stamp < 0))
     x = solution
 
     !----------------------------------------------------------------!

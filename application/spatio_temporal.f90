@@ -35,11 +35,10 @@ program spatio_temporal
   use gti_field             , only : field_block_of, field_measure, consistent_field, &
        & field_startup, field_unknown, field_aggregates
   use gti_march             , only : partitioned, set_stopping, block_of, unknowns_graph, &
-       & set_sweep, swept, imbalance
+       & set_sweep, swept, imbalance, by_tangent, by_adjoint, fresh_stamp
   use gti_taylor            , only : block_expansion
-  use gti_sweeps            , only : jacobian_of, design_partial, functional_gradient, &
-       & by_tangent, by_adjoint, set_linear_solver, set_aggregates, set_assembly
-  use util_factorisation    , only : dense_factorisation
+  use gti_sweeps            , only : design_partial, functional_gradient, &
+       & set_linear_solver, set_aggregates, set_assembly, set_storage, set_multigrid
   use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
   use operation_family      , only : family
   use operation_family_bdf  , only : bdf_family
@@ -69,6 +68,8 @@ program spatio_temporal
 
   call set_linear_solver(cfg % linear_solver)
   call set_assembly(cfg % assembly)
+  call set_storage(cfg % storage)
+  call set_multigrid(cfg % multigrid)
   call set_sweep(cfg % sweep)
   call set_stopping(cfg % tolerance, &
        & merge(relative, absolute, trim(cfg % tolerance_criterion) == 'relative'), &
@@ -371,11 +372,9 @@ contains
     call swept(rows, cfg % design, space % num_cells, marched, achieved, left)
     call block_expansion(rows, van_der_pol(nd - 1), van_der_pol_energy(nd - 1), nd, &
          & scheme % primary_degree(nd - 1), rows % points_at(), measure, cfg % design, &
-         & cfg % max_derivative_degree, q, f, unused, given=marched)
+         & cfg % max_derivative_degree, q, f, unused, given=marched, nodes=space % num_cells)
 
-    ! the two routes are compared where a derivative was asked for;
-    ! the comparison factorises the whole block, which is the one
-    ! dense solve a sweep otherwise avoids
+    ! the two routes are compared where a derivative was asked for
     tangent = 0.0_dp
     adjoint = 0.0_dp
     if (cfg % max_derivative_degree >= 1) then
@@ -419,9 +418,8 @@ contains
 
     type(stored_directed_graph) :: unknowns, points
     type(stored_field) :: state, knobs
-    type(dense_factorisation) :: factor
-    real(dp), allocatable :: g(:), rate(:), jac(:,:)
-    integer :: num_points
+    real(dp), allocatable :: g(:), rate(:)
+    integer :: num_points, mark
 
     num_points = n * space % num_cells
     unknowns   = unknowns_graph(num_points, nd)
@@ -436,12 +434,10 @@ contains
          & measure, num_points, nd, unknowns % vertex_set(), g)
     call design_partial(rows, unknowns, [state, knobs], num_points, &
          & unknowns % vertex_set(), rate)
-    call jacobian_of(rows, unknowns, [state, knobs], num_points * nd, &
-         & unknowns % vertex_set(), jac)
 
-    call factor % factorise(jac, 1.0e-14_dp)
-    tangent = by_tangent(factor, g, rate, 0.0_dp)
-    adjoint = by_adjoint(factor, g, rate, 0.0_dp)
+    mark    = fresh_stamp()
+    tangent = by_tangent(rows, unknowns, [state, knobs], g, rate, 0.0_dp, space % num_cells, mark)
+    adjoint = by_adjoint(rows, unknowns, [state, knobs], g, rate, 0.0_dp, space % num_cells, mark)
 
   end subroutine both_routes
 

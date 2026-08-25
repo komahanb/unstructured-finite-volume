@@ -149,8 +149,8 @@ contains
     call chain_systems(chain, van_der_pol_energy(degrees - 1), degrees, dt, design, &
          & systems)
 
-    tangent = chain_by_tangent(chain, systems, degrees)
-    adjoint = chain_by_adjoint(chain, systems, degrees)
+    tangent = chain_by_tangent(chain, systems, degrees, design)
+    adjoint = chain_by_adjoint(chain, systems, degrees, design)
 
   end subroutine directions_of
 

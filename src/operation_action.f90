@@ -112,6 +112,12 @@ module operation_action
      type(token), private :: arguments_space
      integer    , private :: declared_arguments = 0
 
+     ! THE STAMP. A statement that stays the same between two solves
+     ! carries the same stamp, and a direct solver keeps its factors
+     ! while the stamp it last factorised is unchanged. Zero is no
+     ! stamp: the default, and always factorised afresh.
+     integer    , private :: mark = 0
+
    contains
 
      procedure(operation_name_interface)  , deferred :: name
@@ -123,6 +129,8 @@ module operation_action
      procedure :: compiled_tangent => operation_compiled_tangent
 
      procedure :: declare_arguments
+     procedure :: stamped
+     procedure :: stamp
      procedure :: num_arguments
      procedure :: argument => operation_argument
      procedure :: owns
@@ -377,6 +385,23 @@ contains
   ! concrete type that declares a positive max_degree overrides both
   ! bindings; the order requested must not exceed its max_degree.
   !===================================================================!
+
+  subroutine stamped(this, mark)
+
+    class(operation), intent(inout) :: this
+    integer         , intent(in)    :: mark
+
+    this % mark = mark
+
+  end subroutine stamped
+
+  pure integer function stamp(this) result(mark)
+
+    class(operation), intent(in) :: this
+
+    mark = this % mark
+
+  end function stamp
 
   !===================================================================!
   ! THE COMPILED TANGENT. A statement that can write its own tangent

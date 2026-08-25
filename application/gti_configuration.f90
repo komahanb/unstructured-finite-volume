@@ -48,14 +48,19 @@ module gti_configuration
      integer  :: max_discretization_order = 4
      integer  :: seed                     = 20260824
      integer  :: startup_refinement       = 4
-     character(len=16) :: linear_solver   = 'dense'
+     ! HOW A LINEAR SYSTEM IS SOLVED, four specifications each its
+     ! own: linear_solver direct or iterative; assembly matrix or
+     ! free; storage dense or sparse; multigrid on or off, the solver
+     ! named then smoothing a two-grid over aggregates.
+     character(len=16) :: linear_solver   = 'direct'
+     character(len=16) :: assembly        = 'matrix'
+     character(len=16) :: storage         = 'dense'
+     logical           :: multigrid       = .false.
 
-     ! WHICH LEVEL IS SWEPT to solve a block, and WHETHER A MATRIX IS
-     ! ASSEMBLED: space-time solves the whole block at once, time
-     ! sweeps the instants, space sweeps the nodes; present assembles
-     ! the compiled tangent, free attaches a matvec and iterates.
+     ! WHICH LEVEL IS SWEPT to solve a block: space-time solves the
+     ! whole block at once, time sweeps the instants, space sweeps the
+     ! nodes.
      character(len=16) :: sweep           = 'space-time'
-     character(len=16) :: assembly        = 'present'
 
      real(dp) :: time_duration = 7.0_dp
      real(dp) :: design        = 1.0_dp
@@ -255,6 +260,10 @@ contains
        cfg % sweep = value
     case ('assembly')
        cfg % assembly = value
+    case ('storage')
+       cfg % storage = value
+    case ('multigrid')
+       read(value, *) cfg % multigrid
     case ('time_duration')
        read(value, *) cfg % time_duration
     case ('design')
@@ -432,6 +441,8 @@ contains
     write(*,'(a,a)')       '   linear solver            ', trim(cfg % linear_solver)
     write(*,'(a,a)')       '   sweep                    ', trim(cfg % sweep)
     write(*,'(a,a)')       '   assembly                 ', trim(cfg % assembly)
+    write(*,'(a,a)')       '   storage                  ', trim(cfg % storage)
+    write(*,'(a,l1)')      '   multigrid                ', cfg % multigrid
     write(*,'(a,f0.4)')    '   design                   ', cfg % design
     write(*,'(a,i0)')      '   max derivative degree    ', cfg % max_derivative_degree
     write(*,'(a,i0)')      '   max discretization order ', cfg % max_discretization_order

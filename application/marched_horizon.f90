@@ -257,8 +257,8 @@ contains
     call chain_systems(chain, van_der_pol_energy(state_degree), degrees, dt, design, &
          & systems)
 
-    tangent     = chain_by_tangent(chain, systems, degrees)
-    adjoint     = chain_by_adjoint(chain, systems, degrees)
+    tangent     = chain_by_tangent(chain, systems, degrees, design)
+    adjoint     = chain_by_adjoint(chain, systems, degrees, design)
     differenced = differenced_energy(schemes, added, n, design, delta)
 
     write(*,'(a)')        ' '

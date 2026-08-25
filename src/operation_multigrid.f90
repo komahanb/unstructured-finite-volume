@@ -49,6 +49,9 @@ module operation_multigrid
   implicit none
 
   private
+
+  ! a stamp for every coarse statement made
+  integer, save :: statements_made = 0
   public :: multigrid
 
   type, extends(minimizer) :: multigrid
@@ -156,6 +159,10 @@ contains
               & rows, columns, weights, crows, ccolumns, cweights)
          block_statement = stencil(crows, ccolumns, cweights, &
               & zeros, label='block statement')
+         ! stamped, so a direct coarse solver factorises it once and
+         ! not once a cycle
+         statements_made = statements_made + 1
+         call block_statement % stamped(statements_made)
        end block
 
     class default

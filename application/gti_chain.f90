@@ -62,16 +62,15 @@ module gti_chain
   use physics_integrand, only : nodal_integrand
   use gti_expansion    , only : family_holder, marches_by_stages
   use gti_block        , only : block_residual
-  use gti_march        , only : imbalance, swept, partitioned, horizon_bounds, block_of, solved
+  use gti_march        , only : imbalance, swept, solved_linear, fresh_stamp, partitioned, horizon_bounds, block_of, solved
   use gti_stage        , only : stage_block_of, instant_at
   use view_directed_stored, only : stored_directed_graph
   use field_calculus   , only : field
   use field_stored     , only : stored_field
   use operation_action , only : variation
-  use gti_sweeps       , only : jacobian_of, design_partial, route_of, &
+  use gti_sweeps       , only : design_partial, route_of, &
        & route_substitutions, forward_route, reverse_route
-  use util_factorisation, only : dense_factorisation
-  use util_tally            , only : tally_record, tangent_loops, adjoint_loops, linear_solves, tally_order, tally_enter, tally_leave, &
+  use util_tally            , only : tally_order, tally_enter, tally_leave, &
        & at_horizon, at_block, at_stage
   use gti_taylor       , only : nodal_coefficient
 
@@ -82,9 +81,6 @@ module gti_chain
   public :: chain_system, chain_systems, chain_by_tangent, chain_by_adjoint
   public :: expansion_substitutions
 
-  ! A pivot at or below this leaves a factorisation singular. It is a
-  ! statement about the arithmetic, not about any problem.
-  real(dp), parameter :: singular_pivot = 1.0e-14_dp
 
   !===================================================================!
   ! One block of a chain: its statement, where its instants sit among
@@ -112,14 +108,13 @@ module gti_chain
 
   type :: chain_system
 
-     real(dp), allocatable :: a(:,:)
      real(dp), allocatable :: rate(:)
      real(dp), allocatable :: g(:)
 
-     ! The jacobian factorised once at the frozen state. Every order
-     ! of the expansion, the tangent and the adjoint substitute
-     ! against it.
-     type(dense_factorisation) :: factor
+     ! The stamp of the tangent at the frozen state. Every order of
+     ! the expansion, the tangent and the adjoint solve against that
+     ! one tangent, and a direct solver factorises it once.
+     integer :: mark = 0
 
   end type chain_system
 
@@ -425,6 +420,8 @@ contains
     real(dp)              , intent(in)    :: design
     real(dp)              , intent(inout) :: series(0:, :, :)
 
+    type(stored_directed_graph) :: unknowns
+    type(stored_field), allocatable :: inputs(:)
     real(dp), allocatable :: frozen(:,:), coefficient(:), r(:), w(:), held(:)
     integer , allocatable :: at(:)
     integer :: count, carried, p
@@ -452,8 +449,8 @@ contains
        r(1:carried) = -held
     end if
 
-    call tally_record(tangent_loops)
-    call systems(b) % factor % substitute(-r, w, transposed=.false.)
+    call frozen_at(chain(b), design, unknowns, inputs)
+    call solved_linear(chain(b) % rows, unknowns, inputs, -r, .false., systems(b) % mark, 1, w)
     series(m, 1:count, b) = w
 
   end subroutine one_order
@@ -549,12 +546,7 @@ contains
        count = chain(b) % rows % num_unknowns()
        call frozen_at(chain(b), design, unknowns, inputs)
 
-       call jacobian_of(chain(b) % rows, unknowns, inputs, count, &
-            & unknowns % vertex_set(), systems(b) % a)
-       call systems(b) % factor % factorise(systems(b) % a, singular_pivot)
-       if (systems(b) % factor % singular()) then
-          error stop 'gti_chain: the jacobian at a converged state is not singular'
-       end if
+       systems(b) % mark = fresh_stamp()
        call design_partial(chain(b) % rows, unknowns, inputs, &
             & chain(b) % rows % num_points(), unknowns % vertex_set(), &
             & systems(b) % rate)
@@ -703,11 +695,15 @@ contains
   ! instants.
   !===================================================================!
 
-  real(dp) function chain_by_tangent(chain, systems, degrees) result(df)
+  real(dp) function chain_by_tangent(chain, systems, degrees, design) result(df)
 
     type(chain_block) , intent(in) :: chain(:)
     type(chain_system), intent(in) :: systems(:)
     integer           , intent(in) :: degrees
+    real(dp)          , intent(in) :: design
+
+    type(stored_directed_graph) :: unknowns
+    type(stored_field), allocatable :: inputs(:)
 
     real(dp), allocatable :: w(:,:), rhs(:), one(:)
     integer :: b, widest, i, k, d, held_by, at
@@ -730,8 +726,8 @@ contains
           if (held_by > 0) rhs(i) = w(at + d + 1, held_by)
        end do
 
-       call tally_record(tangent_loops)
-       call systems(b) % factor % substitute(rhs, one, transposed=.false.)
+       call frozen_at(chain(b), design, unknowns, inputs)
+       call solved_linear(chain(b) % rows, unknowns, inputs, rhs, .false., systems(b) % mark, 1, one)
        w(1:size(one), b) = one
        df = df + dot_product(systems(b) % g, one)
     end do
@@ -744,11 +740,15 @@ contains
   ! left on the instants they share.
   !===================================================================!
 
-  real(dp) function chain_by_adjoint(chain, systems, degrees) result(df)
+  real(dp) function chain_by_adjoint(chain, systems, degrees, design) result(df)
 
     type(chain_block) , intent(in) :: chain(:)
     type(chain_system), intent(in) :: systems(:)
     integer           , intent(in) :: degrees
+    real(dp)          , intent(in) :: design
+
+    type(stored_directed_graph) :: unknowns
+    type(stored_field), allocatable :: inputs(:)
 
     real(dp), allocatable :: rhs(:,:), lambda(:)
     integer :: b, c, widest, i, k, d, held_by, at
@@ -766,9 +766,9 @@ contains
     df = 0.0_dp
 
     do b = size(chain), 1, -1
-       call tally_record(adjoint_loops)
-       call systems(b) % factor % substitute(rhs(1:chain(b) % rows % num_unknowns(), b), &
-            & lambda, transposed=.true.)
+       call frozen_at(chain(b), design, unknowns, inputs)
+       call solved_linear(chain(b) % rows, unknowns, inputs, &
+            & rhs(1:chain(b) % rows % num_unknowns(), b), .true., systems(b) % mark, 1, lambda)
        df = df - dot_product(lambda, systems(b) % rate)
 
        do i = 1, chain(b) % given * degrees

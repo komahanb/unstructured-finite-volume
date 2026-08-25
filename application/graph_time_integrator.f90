@@ -75,7 +75,7 @@ program graph_time_integrator
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
        & expansion_substitutions, &
        & instant_components
-  use gti_sweeps            , only : set_linear_solver, set_assembly
+  use gti_sweeps            , only : set_linear_solver, set_assembly, set_storage, set_multigrid
   use operation_minimization, only : relative, absolute, by_count, by_rate
   use gti_configuration     , only : configuration, read_configuration, override, show, &
        & lists, refuse_unknown, worded
@@ -93,6 +93,8 @@ program graph_time_integrator
   call show(cfg)
   call set_linear_solver(cfg % linear_solver)
   call set_assembly(cfg % assembly)
+  call set_storage(cfg % storage)
+  call set_multigrid(cfg % multigrid)
   call set_sweep(cfg % sweep)
   call table(cfg)
 

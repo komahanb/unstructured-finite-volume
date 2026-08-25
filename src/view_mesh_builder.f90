@@ -25,7 +25,7 @@ module view_mesh_builder
   use view_mesh_geometry  , only : element_dimension
   use relation_binary, only : transpose_padded
   use view_mesh_geometry  , only : derive_faces, derive_face_cells, &
-       & mesh_from_incidence, outward_sign
+       & mesh_from_incidence
 
   implicit none
 
@@ -71,16 +71,7 @@ contains
     integer , allocatable :: face_tags(:), face_types(:)
     integer , allocatable :: vertex_cells(:,:), num_vertex_cells(:)
     integer , allocatable :: face_cells(:,:), num_face_cells(:)
-    integer , allocatable :: cell_faces(:,:), num_cell_faces(:)
-    real(dp), allocatable :: cell_centres(:,:), face_centres(:,:)
-    real(dp), allocatable :: face_areas(:), cell_volumes(:)
-    real(dp), allocatable :: face_vectors(:,:), lvec(:,:)
-    real(dp), allocatable :: face_deltas(:), face_cell_weights(:,:)
 
-    ! the view's per-face arrays
-    integer , allocatable :: tails(:), heads(:)
-    real(dp), allocatable :: normals(:)
-    real(dp), allocatable :: weights(:)
     character(len=64), allocatable :: etags(:)
     integer :: f, tag
 
@@ -113,45 +104,6 @@ contains
          & cell_vertices, num_cell_vertices, vertex_cells, &
          & num_vertex_cells, face_cells, num_face_cells)
 
-    call transpose_padded(face_cells, num_face_cells, num_cells, &
-         & cell_faces, num_cell_faces)
-
-    ! the measurements: faces, volumes, centres, deltas, weights
-    call mesh_from_incidence(spatial_dim, vertices, &
-         & cell_vertices, num_cell_vertices, &
-         & face_vertices, num_face_vertices, &
-         & cell_faces, num_cell_faces, &
-         & face_cells, num_face_cells, &
-         & cell_centres, face_centres, face_vectors, cell_volumes, &
-         & lvec, face_deltas, face_cell_weights)
-
-    ! face areas from the area vector magnitudes
-    allocate(face_areas(size(face_vectors, 2)))
-    face_areas = norm2(face_vectors, dim=1)
-
-    ! tails and heads from the face-to-cell relation; a face with
-    ! one cell is a boundary face, an edge without a head
-    allocate(tails(num_faces), heads(num_faces))
-    do f = 1, num_faces
-       tails(f) = face_cells(1, f)
-       heads(f) = 0
-       if (num_face_cells(f) >= 2) heads(f) = face_cells(2, f)
-    end do
-
-    ! one unit normal per face, pointing out of its tail cell
-    allocate(normals(3 * num_faces))
-    do f = 1, num_faces
-       normals(3 * f - 2 : 3 * f) = &
-            & outward_sign(face_vectors(:, f), face_centres(:, f), &
-            &              cell_centres(:, face_cells(1, f))) &
-            & * face_vectors(:, f) / face_areas(f)
-    end do
-
-    ! one interpolation weight per face: the tail cell's share
-    allocate(weights(num_faces))
-    do f = 1, num_faces
-       weights(f) = face_cell_weights(1, f)
-    end do
 
     ! tag names on the boundary faces, blank inside
     allocate(etags(num_faces))
@@ -165,17 +117,9 @@ contains
        end if
     end do
 
-    ! extract spatial_dim components from 3D padded data
-    m = mesh(num_cells, tails=tails, heads=heads, &
-         & volumes      = cell_volumes, &
-         & cell_centres = reshape(cell_centres(1:spatial_dim, :), [spatial_dim * num_cells]), &
-         & areas        = face_areas, &
-         & deltas       = face_deltas, &
-         & normals      = normals(1:spatial_dim * num_faces), &
-         & face_centres = reshape(face_centres(1:spatial_dim, :), [spatial_dim * num_faces]), &
-         & weights      = weights, &
-         & etags        = etags, &
-         & dimension    = spatial_dim)
+    ! the measurements, and the mesh
+    m = mesh_from_incidence(spatial_dim, vertices, cell_vertices, num_cell_vertices, &
+         & face_vertices, num_face_vertices, face_cells, num_face_cells, etags)
 
   end function mesh_from_gmsh
 

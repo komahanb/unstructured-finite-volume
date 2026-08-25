@@ -36,6 +36,7 @@
 module operation_dense_direct
 
   use util_precision  , only : dp, spacing_at_one
+  use operation_stencil, only : compile_matrix_from_action
   use operation_minimization , only : minimizer
   use util_factorisation, only : dense_factorisation
 
@@ -97,8 +98,8 @@ contains
     real(dp), intent(inout) :: x(:)
     real(dp), intent(out)   :: achieved
 
-    real(dp), allocatable :: a(:,:), basis(:), y(:), solution(:)
-    integer :: n, j
+    real(dp), allocatable :: a(:,:), constant(:), y(:), solution(:)
+    integer :: n
     logical :: kept
 
     if (this % singular_tolerance <= 0.0_dp) then
@@ -122,13 +123,8 @@ contains
     !----------------------------------------------------------------!
 
     if (.not. kept) then
-       allocate(a(n, n), basis(n))
-       do j = 1, n
-          basis    = 0.0_dp
-          basis(j) = 1.0_dp
-          call this % matvec(basis, y)
-          a(:, j) = y
-       end do
+       call compile_matrix_from_action(this % action, this % on, this % unknown_domain, &
+            & this % num_unknowns, n, this % num_components, a, constant, held=this % held)
        call this % factor % factorise(a, this % singular_tolerance * maxval(abs(a)))
        this % kept_stamp = this % action % stamp()
     end if

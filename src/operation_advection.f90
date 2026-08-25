@@ -43,7 +43,7 @@ module operation_advection
 
   type :: advection
 
-     real(dp) :: velocity(3) = 0.0_dp
+     real(dp), allocatable :: velocity(:)
 
    contains
 
@@ -60,7 +60,7 @@ contains
 
   pure type(advection) function create(velocity) result(this)
 
-    real(dp), intent(in) :: velocity(3)
+    real(dp), intent(in) :: velocity(:)
 
     this % velocity = velocity
 
@@ -78,7 +78,10 @@ contains
 
     type(stored_field) :: fn
     real(dp), allocatable :: normals(:)
-    integer :: ne, e
+    integer :: ne, e, d
+
+    d = m % dimension
+    if (size(this % velocity) /= d) error stop 'advection: the velocity is as wide as the space'
 
     fn = m % face_normal()
     call fn % real_vector(normals)
@@ -87,7 +90,7 @@ contains
     allocate(values(ne))
 
     do e = 1, ne
-       values(e) = dot_product(this % velocity, normals(3 * e - 2 : 3 * e))
+       values(e) = dot_product(this % velocity, normals(d * (e - 1) + 1 : d * e))
     end do
 
   end subroutine normal_speed

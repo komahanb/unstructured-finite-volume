@@ -40,7 +40,10 @@ module operation_conduction
 
   type :: conduction
 
-     real(dp) :: k(3, 3) = 0.0_dp
+     ! one number for an isotropic material, or the tensor, as wide
+     ! as the space the mesh lives in
+     real(dp) :: scalar = 0.0_dp
+     real(dp), allocatable :: k(:,:)
 
    contains
 
@@ -64,19 +67,15 @@ contains
 
     real(dp), intent(in) :: k
 
-    integer :: i
-
-    this % k = 0.0_dp
-    do i = 1, 3
-       this % k(i, i) = k
-    end do
+    this % scalar = k
 
   end function isotropic
 
   pure type(conduction) function tensor(k) result(this)
 
-    real(dp), intent(in) :: k(3, 3)
+    real(dp), intent(in) :: k(:,:)
 
+    if (size(k, 1) /= size(k, 2)) error stop 'conduction: the conductivity tensor is square'
     this % k = k
 
   end function tensor
@@ -92,19 +91,29 @@ contains
     real(dp), allocatable, intent(out) :: values(:)
 
     type(stored_field) :: fn
-    real(dp), allocatable :: normals(:)
-    real(dp) :: n(3)
-    integer :: ne, e
+    real(dp), allocatable :: normals(:), n(:)
+    integer :: ne, e, d
 
     fn = m % face_normal()
     call fn % real_vector(normals)
 
     ne = m % num_edges()
-    allocate(values(ne))
+    d  = m % dimension
+    allocate(values(ne), n(d))
+
+    if (allocated(this % k)) then
+       if (size(this % k, 1) /= d) then
+          error stop 'conduction: the conductivity tensor is as wide as the space'
+       end if
+    end if
 
     do e = 1, ne
-       n = normals(3 * e - 2 : 3 * e)
-       values(e) = dot_product(n, matmul(this % k, n))
+       n = normals(d * (e - 1) + 1 : d * e)
+       if (allocated(this % k)) then
+          values(e) = dot_product(n, matmul(this % k, n))
+       else
+          values(e) = this % scalar * dot_product(n, n)
+       end if
     end do
 
   end subroutine normal_conductivity

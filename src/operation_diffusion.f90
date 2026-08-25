@@ -122,7 +122,7 @@ contains
     if (present(shape)) then
        allocate(chosen, source=shape)
     else
-       allocate(chosen, source=polynomial_form())
+       allocate(chosen, source=polynomial_form(dimension=m % dimension))
     end if
 
     op = fitted_balance_stencil(m, chosen, scales, &

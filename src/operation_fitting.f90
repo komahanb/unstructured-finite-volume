@@ -63,7 +63,7 @@ module operation_fitting
 
      class(form), allocatable :: shape
 
-     real(dp) :: at(3)        = 0.0_dp
+     real(dp), allocatable :: at(:)
      real(dp) :: direction(3) = [1.0_dp, 0.0_dp, 0.0_dp]
      real(dp) :: scale        = 1.0_dp
 
@@ -131,7 +131,7 @@ contains
   type(fit) function create_fit(shape, at, direction, scale) result(this)
 
     class(form), intent(in)        :: shape
-    real(dp), intent(in)           :: at(3)
+    real(dp), intent(in)           :: at(:)
     real(dp), intent(in)           :: direction(3)
     real(dp), intent(in), optional :: scale
 
@@ -174,7 +174,7 @@ contains
     integer , allocatable :: standing(:)
     logical , allocatable :: stands(:)
     real(dp) :: achieved, d2, nearest
-    integer :: npts, nc, i, j, v
+    integer :: npts, nc, i, j, v, d
 
     npts = input_graph % num_vertices()
 
@@ -185,6 +185,11 @@ contains
 
        call input_data(1) % real_vector(positions)
 
+       d = this % shape % dimension()
+       if (size(this % at) /= d .or. size(positions) /= d * npts) then
+          error stop 'fitting: the form, the target and the positions read one dimension'
+       end if
+
        nc = this % shape % num_members()
        allocate(b(nc, npts), g(nc, nc), r(nc), lam(nc))
 
@@ -194,9 +199,9 @@ contains
        allocate(price(npts))
        nearest = huge(1.0_dp)
        do j = 1, npts
-          call this % shape % values(positions(3 * j - 2 : 3 * j), &
+          call this % shape % values(positions(d * (j - 1) + 1 : d * j), &
                & this % at, b(:, j))
-          d2 = sum((positions(3 * j - 2 : 3 * j) - this % at)**2)
+          d2 = sum((positions(d * (j - 1) + 1 : d * j) - this % at)**2)
           price(j) = d2
           if (d2 > 0.0_dp) nearest = min(nearest, d2)
        end do
@@ -273,18 +278,19 @@ contains
     class(form), intent(inout) :: shape
     real(dp), intent(in) :: positions(:)
 
-    real(dp), allocatable :: phi(:), seen(:)
-    real(dp) :: middle(3)
-    integer :: nc, npts, j, m
+    real(dp), allocatable :: phi(:), seen(:), middle(:)
+    integer :: nc, npts, j, m, d
 
+    d    = shape % dimension()
     nc   = shape % num_members()
-    npts = size(positions) / 3
+    npts = size(positions) / d
+    allocate(middle(d))
 
     ! The members are read about the constellation's own middle, so
     ! what the points cannot see does not depend on where they sit.
     middle = 0.0_dp
     do j = 1, npts
-       middle = middle + positions(3 * j - 2 : 3 * j)
+       middle = middle + positions(d * (j - 1) + 1 : d * j)
     end do
     middle = middle / real(max(npts, 1), dp)
 
@@ -292,7 +298,7 @@ contains
     seen = 0.0_dp
 
     do j = 1, npts
-       call shape % values(positions(3 * j - 2 : 3 * j), middle, phi)
+       call shape % values(positions(d * (j - 1) + 1 : d * j), middle, phi)
        do m = 1, nc
           seen(m) = seen(m) + phi(m) * phi(m)
        end do

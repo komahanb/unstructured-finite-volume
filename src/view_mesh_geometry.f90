@@ -43,6 +43,8 @@
 module view_mesh_geometry
 
   use util_precision  , only : dp
+  use view_mesh       , only : mesh
+  use relation_binary , only : transpose_padded
 
   implicit none
 
@@ -286,43 +288,47 @@ contains
   end subroutine derive_face_cells
 
   !===================================================================!
-  ! Cell centroids by the divergence theorem: x_c = sum over the
-  ! cell's faces of (x_f . S_f) x_f / ((d+1) V), where x_f is the
-  ! face centre, S_f is the face's area vector, and V is the cell
-  ! volume. This is the true centroid (first moment vanishes), not
-  ! the vertex mean. On a skewed mesh this differs from the vertex
-  ! mean; on orthogonal gmsh meshes the two coincide.
+  ! Cell centroids by the divergence theorem: since div(x_i x) is
+  ! (d + 1) x_i, and x . n is constant on a flat face,
+  !
+  !      x_c = sum_f sigma_cf (x_f . S_f) x_f / ((d + 1) V)
+  !
+  ! with sigma_cf the sign that turns S_f out of the cell and x_f the
+  ! face's centroid - the dual of the volume sum, and exact for any
+  ! cell with flat faces. It is the true centroid, about which the
+  ! first moment vanishes, so a cell average read there is second
+  ! order; the vertex mean is not, except by symmetry.
   !===================================================================!
 
   pure subroutine derive_cell_centres(spatial_dim, face_centres, face_vectors, &
-       & cell_faces, num_cell_faces, cell_volumes, cell_centres)
+       & interior, cell_faces, num_cell_faces, cell_volumes, cell_centres)
 
     integer , intent(in)  :: spatial_dim
     real(dp), intent(in)  :: face_centres(:,:)
     real(dp), intent(in)  :: face_vectors(:,:)
+    real(dp), intent(in)  :: interior(:,:)
     integer , intent(in)  :: cell_faces(:,:)
     integer , intent(in)  :: num_cell_faces(:)
     real(dp), intent(in)  :: cell_volumes(:)
     real(dp), allocatable, intent(out) :: cell_centres(:,:)
 
     integer :: lcell, lface, gface
-    real(dp) :: fc_dot_fv, denom
 
-    allocate(cell_centres(3, size(num_cell_faces)))
+    allocate(cell_centres(size(face_centres, 1), size(num_cell_faces)))
     cell_centres = 0.0_dp
 
-    denom = real(spatial_dim + 1, dp)
-
+    ! the sign turns each face's area vector out of this cell, read
+    ! against any interior point - the vertex mean serves
     do lcell = 1, size(num_cell_faces)
        do lface = 1, num_cell_faces(lcell)
           gface = cell_faces(lface, lcell)
-          fc_dot_fv = dot_product(face_vectors(:, gface), face_centres(:, gface))
-          cell_centres(:, lcell) = cell_centres(:, lcell) + &
-               & fc_dot_fv * face_centres(:, gface)
+          cell_centres(:, lcell) = cell_centres(:, lcell) &
+               & + outward_sign(face_vectors(:, gface), face_centres(:, gface), interior(:, lcell)) &
+               & * dot_product(face_vectors(:, gface), face_centres(:, gface)) &
+               & * face_centres(:, gface)
        end do
-       if (cell_volumes(lcell) > 0.0_dp) then
-          cell_centres(:, lcell) = cell_centres(:, lcell) / (denom * cell_volumes(lcell))
-       end if
+       cell_centres(:, lcell) = cell_centres(:, lcell) &
+            & / (real(spatial_dim + 1, dp) * cell_volumes(lcell))
     end do
 
   end subroutine derive_cell_centres
@@ -356,12 +362,15 @@ contains
     real(dp), allocatable, intent(out) :: face_vectors(:,:)
     real(dp), allocatable, intent(out) :: face_areas(:)
 
-    integer  :: iface, num_faces, i, k
-    real(dp) :: s(3), fan(3, spatial_dim - 1)
+    integer  :: iface, num_faces, i, k, rows
+    real(dp) :: s(size(coordinates, 1)), piece(size(coordinates, 1))
+    real(dp) :: fan(size(coordinates, 1), spatial_dim - 1), mean(size(coordinates, 1))
+    real(dp) :: measure, whole
 
+    rows      = size(coordinates, 1)
     num_faces = size(num_face_vertices)
-    allocate(face_centres(3, num_faces))
-    allocate(face_vectors(3, num_faces))
+    allocate(face_centres(rows, num_faces))
+    allocate(face_vectors(rows, num_faces))
     allocate(face_areas(num_faces))
     face_centres = 0.0_dp
     face_vectors = 0.0_dp
@@ -369,20 +378,34 @@ contains
     do iface = 1, num_faces
        associate(facenodes => face_vertices(1:num_face_vertices(iface), iface))
 
-         face_centres(:, iface) = sum(coordinates(:, facenodes), dim=2) &
-              & / real(num_face_vertices(iface), kind=dp)
-
-         s = 0.0_dp
+         ! the fan from the first vertex: each simplex's dual summed is
+         ! the area vector, and each simplex's mean weighted by its
+         ! measure is the face's centroid - exact for any flat face,
+         ! the midpoint of a segment, the vertex mean of a triangle
+         s     = 0.0_dp
+         mean  = 0.0_dp
+         whole = 0.0_dp
          do i = 2, num_face_vertices(iface) - spatial_dim + 2
             do k = 1, spatial_dim - 1
                fan(:, k) = coordinates(:, facenodes(i + k - 1)) - coordinates(:, facenodes(1))
             end do
-            s = s + dual(spatial_dim, fan)
+            piece   = dual(spatial_dim, fan)
+            measure = norm2(piece)
+            s       = s + piece
+            mean    = mean + measure * (coordinates(:, facenodes(1)) &
+                 & + sum(fan, dim=2) / real(spatial_dim, dp))
+            whole   = whole + measure
          end do
          s = s / real(factorial(spatial_dim - 1), dp)
 
          face_vectors(:, iface) = s
          face_areas(iface)      = norm2(s)
+         if (whole > 0.0_dp) then
+            face_centres(:, iface) = mean / whole
+         else
+            face_centres(:, iface) = sum(coordinates(:, facenodes), dim=2) &
+                 & / real(num_face_vertices(iface), kind=dp)
+         end if
 
        end associate
     end do
@@ -403,7 +426,7 @@ contains
 
   pure real(dp) function outward_sign(face_vector, face_centre, cell_centre)
 
-    real(dp), intent(in) :: face_vector(3), face_centre(3), cell_centre(3)
+    real(dp), intent(in) :: face_vector(:), face_centre(:), cell_centre(:)
 
     outward_sign = 1.0_dp
     if (dot_product(face_vector, face_centre - cell_centre) .lt. 0.0_dp) then
@@ -474,7 +497,7 @@ contains
 
     integer :: iface
 
-    allocate(lvec(3, size(num_face_cells)))
+    allocate(lvec(size(face_centres, 1), size(num_face_cells)))
     lvec = real(0, dp)
 
     do iface = 1, size(num_face_cells)
@@ -640,79 +663,95 @@ contains
   end function distance
 
   !===================================================================!
-  ! Compute mesh measurements from incidence relations and coordinates.
-  ! A pure factoring of the tail of mesh_from_gmsh: takes the spatial
-  ! dimension, coordinates, and the five incidence relations that
-  ! topology dictates, and derives all measurements - cell centres and
-  ! volumes, face centres, areas, vectors, centre-to-centre separations,
-  ! normal projections, and interpolation weights. Both view_mesh_builder
-  ! (after derive_faces) and gti_space (to replace framed()) call this.
+  ! THE MESH FROM ITS INCIDENCES. Every measurement a mesh carries is
+  ! a function of the coordinates and three relations - each cell's
+  ! vertices, each face's vertices, each face's cells - and of nothing
+  ! else: not of element types, not of how the faces were found. So
+  ! this is the one ending of every mesh pipeline: the gmsh builder
+  ! reaches it after deriving its faces, the spatial level after
+  ! enumerating its own, and the measurements are computed once.
+  !
+  ! The coordinates may carry more rows than the space has dimensions
+  ! (a two-dimensional mesh read from a three-dimensional file); the
+  ! mesh keeps the first spatial_dim of them. A face with one cell is
+  ! a boundary face, an edge without a head, and carries the tag
+  ! given; the unit normal points out of the tail cell; the weight is
+  ! the tail cell's interpolation share.
   !===================================================================!
 
-  impure subroutine mesh_from_incidence(spatial_dim, coordinates, &
-       & cell_vertices, num_cell_vertices, &
-       & face_vertices, num_face_vertices, &
-       & cell_faces, num_cell_faces, &
-       & face_cells, num_face_cells, &
-       & cell_centres, face_centres, face_vectors, cell_volumes, &
-       & lvec, face_deltas, face_cell_weights)
+  impure type(mesh) function mesh_from_incidence(spatial_dim, coordinates, &
+       & cell_vertices, num_cell_vertices, face_vertices, num_face_vertices, &
+       & face_cells, num_face_cells, etags) result(m)
 
-    integer , intent(in)  :: spatial_dim
-    real(dp), intent(in)  :: coordinates(:,:)
-    integer , intent(in)  :: cell_vertices(:,:)
-    integer , intent(in)  :: num_cell_vertices(:)
-    integer , intent(in)  :: face_vertices(:,:)
-    integer , intent(in)  :: num_face_vertices(:)
-    integer , intent(in)  :: cell_faces(:,:)
-    integer , intent(in)  :: num_cell_faces(:)
-    integer , intent(in)  :: face_cells(:,:)
-    integer , intent(in)  :: num_face_cells(:)
-    real(dp), allocatable, intent(out) :: cell_centres(:,:)
-    real(dp), allocatable, intent(out) :: face_centres(:,:)
-    real(dp), allocatable, intent(out) :: face_vectors(:,:)
-    real(dp), allocatable, intent(out) :: cell_volumes(:)
-    real(dp), allocatable, intent(out) :: lvec(:,:)
-    real(dp), allocatable, intent(out) :: face_deltas(:)
-    real(dp), allocatable, intent(out) :: face_cell_weights(:,:)
+    integer         , intent(in) :: spatial_dim
+    real(dp)        , intent(in) :: coordinates(:,:)
+    integer         , intent(in) :: cell_vertices(:,:)
+    integer         , intent(in) :: num_cell_vertices(:)
+    integer         , intent(in) :: face_vertices(:,:)
+    integer         , intent(in) :: num_face_vertices(:)
+    integer         , intent(in) :: face_cells(:,:)
+    integer         , intent(in) :: num_face_cells(:)
+    character(len=*), intent(in), optional :: etags(:)
 
-    real(dp), allocatable :: temp_centres(:,:)
-    integer :: ncells, c
+    integer , allocatable :: cell_faces(:,:), num_cell_faces(:), tails(:), heads(:)
+    real(dp), allocatable :: interior(:,:), cell_centres(:,:), face_centres(:,:)
+    real(dp), allocatable :: face_vectors(:,:), face_areas(:), cell_volumes(:), lvec(:,:)
+    real(dp), allocatable :: face_deltas(:), face_cell_weights(:,:), normals(:), weights(:)
+    integer :: num_cells, num_faces, c, f, d
 
-    ncells = size(num_cell_faces)
+    d         = spatial_dim
+    num_cells = size(num_cell_vertices)
+    num_faces = size(num_face_vertices)
 
-    ! Compute face geometry: centres, area vectors (face_vectors), and scalar areas
-    call derive_face_vectors(spatial_dim, coordinates, face_vertices, &
-         & num_face_vertices, face_centres, face_vectors, face_deltas)
+    if (size(coordinates, 1) < d) then
+       error stop 'view_mesh_geometry: the coordinates carry every dimension of the space'
+    end if
 
-    ! Temporary vertex mean for outward sign checks in volume calculation
-    allocate(temp_centres(3, ncells))
-    do c = 1, ncells
-       associate(vids => cell_vertices(1:num_cell_vertices(c), c))
-         temp_centres(:, c) = sum(coordinates(:, vids), dim=2) &
-              & / real(num_cell_vertices(c), kind=dp)
-       end associate
+    call transpose_padded(face_cells, num_face_cells, num_cells, cell_faces, num_cell_faces)
+
+    call derive_face_vectors(d, coordinates, face_vertices, num_face_vertices, &
+         & face_centres, face_vectors, face_areas)
+
+    ! an interior point of each cell for the outward signs: the mean
+    ! of its vertices, inside any convex cell
+    allocate(interior(size(coordinates, 1), num_cells))
+    do c = 1, num_cells
+       interior(:, c) = sum(coordinates(:, cell_vertices(1:num_cell_vertices(c), c)), dim=2) &
+            & / real(num_cell_vertices(c), dp)
     end do
 
-    ! Cell volumes using the divergence theorem and the temporary centres
-    call derive_cell_volumes(spatial_dim, face_centres, face_vectors, &
-         & temp_centres, cell_faces, num_cell_faces, cell_volumes)
-
-    ! True centroids using volumes
-    call derive_cell_centres(spatial_dim, face_centres, face_vectors, &
-         & cell_faces, num_cell_faces, cell_volumes, cell_centres)
-
-    ! Centre-to-centre vectors for each face
-    call derive_centroidal_vectors(face_cells, num_face_cells, &
-         & cell_centres, face_centres, lvec)
-
-    ! Recompute face deltas using the true centres (not temporary)
+    call derive_cell_volumes(d, face_centres, face_vectors, interior, cell_faces, &
+         & num_cell_faces, cell_volumes)
+    call derive_cell_centres(d, face_centres, face_vectors, interior, cell_faces, &
+         & num_cell_faces, cell_volumes, cell_centres)
+    call derive_centroidal_vectors(face_cells, num_face_cells, cell_centres, face_centres, lvec)
     call derive_face_deltas(lvec, face_vectors, face_deltas)
+    call derive_face_weights(face_cells, num_face_cells, cell_centres, face_centres, &
+         & face_cell_weights)
 
-    ! Interpolation weights for each face
-    call derive_face_weights(face_cells, num_face_cells, &
-         & cell_centres, face_centres, face_cell_weights)
+    allocate(tails(num_faces), heads(num_faces), normals(d * num_faces), weights(num_faces))
+    do f = 1, num_faces
+       tails(f) = face_cells(1, f)
+       heads(f) = 0
+       if (num_face_cells(f) >= 2) heads(f) = face_cells(2, f)
+       normals(d * (f - 1) + 1 : d * f) = &
+            & outward_sign(face_vectors(:, f), face_centres(:, f), cell_centres(:, tails(f))) &
+            & * face_vectors(1:d, f) / face_areas(f)
+       weights(f) = face_cell_weights(1, f)
+    end do
 
-  end subroutine mesh_from_incidence
+    m = mesh(num_cells, tails=tails, heads=heads, &
+         & volumes      = cell_volumes, &
+         & cell_centres = reshape(cell_centres(1:d, :), [d * num_cells]), &
+         & areas        = face_areas, &
+         & deltas       = face_deltas, &
+         & normals      = normals, &
+         & face_centres = reshape(face_centres(1:d, :), [d * num_faces]), &
+         & weights      = weights, &
+         & etags        = etags, &
+         & dimension    = d)
+
+  end function mesh_from_incidence
 
   !===================================================================!
   ! Return the index of a target value if it is present in the array;

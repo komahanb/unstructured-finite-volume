@@ -32,6 +32,8 @@ module gti_space
 
   use util_precision            , only : dp
   use view_mesh                 , only : mesh
+  use view_mesh_geometry        , only : mesh_from_incidence
+  use field_stored              , only : stored_field
   use operation_stencil         , only : stencil
   use operation_diffusion       , only : diffusion_stencil
   use operation_conduction      , only : conduction
@@ -197,8 +199,6 @@ contains
        end do
     end do
 
-    call polygon_geometry(this)
-
     !----------------------------------------------------------------!
     ! Faces. Interior ones along the first coordinate between rings
     ! or columns and along the second between neighbours, periodic
@@ -253,7 +253,7 @@ contains
     end if
 
     this % num_faces = f
-    call framed(this, faces(1:f))
+    call measured(this, faces(1:f))
 
   end function spatial_mesh
 
@@ -296,43 +296,6 @@ contains
 
   end subroutine quad
 
-  !-------------------------------------------------------------------!
-  ! Area and centroid of every cell from its corners, by the shoelace
-  ! sums. A cell of no area stops the program.
-  !-------------------------------------------------------------------!
-
-  subroutine polygon_geometry(this)
-
-    type(room), intent(inout) :: this
-
-    real(dp) :: area, cx, cy, cross
-    real(dp) :: p(2), q(2)
-    integer  :: c, k, m, n
-
-    do c = 1, this % num_cells
-       n    = this % first_corner(c + 1) - this % first_corner(c)
-       area = 0.0_dp
-       cx   = 0.0_dp
-       cy   = 0.0_dp
-       do k = 0, n - 1
-          m     = mod(k + 1, n)
-          p     = this % corner(:, this % cell_corner(this % first_corner(c) + k))
-          q     = this % corner(:, this % cell_corner(this % first_corner(c) + m))
-          cross = p(1) * q(2) - q(1) * p(2)
-          area  = area + cross
-          cx    = cx + (p(1) + q(1)) * cross
-          cy    = cy + (p(2) + q(2)) * cross
-       end do
-       area = 0.5_dp * area
-       if (abs(area) <= tiny(1.0_dp)) then
-          error stop 'gti_space: every cell has area'
-       end if
-       this % volume(c)    = abs(area)
-       this % centre(:, c) = [cx, cy] / (6.0_dp * area)
-    end do
-
-  end subroutine polygon_geometry
-
   subroutine face_between(faces, f, tail, head, corner_a, corner_b)
 
     type(face_record), intent(inout) :: faces(:)
@@ -345,69 +308,49 @@ contains
   end subroutine face_between
 
   !-------------------------------------------------------------------!
-  ! The framework's mesh from the polygons: one face per record with
-  ! its length, its unit normal out of the tail, its centre, the
-  ! distance between the centroids projected on the normal, the
-  ! tail's inverse-distance share, and a tag on the headless ones.
-  ! The conventions are view_mesh_builder's, read there.
+  ! The mesh from the corners, the cells and the faces enumerated
+  ! above, through the framework's one ending of every mesh pipeline:
+  ! areas, centroids, normals, deltas and weights are its, computed
+  ! as for a mesh read from a file. The outer boundary is the wall.
+  ! The cell centres and areas the level reads are then the mesh's.
   !-------------------------------------------------------------------!
 
-  subroutine framed(this, faces)
+  subroutine measured(this, faces)
 
     type(room)       , intent(inout) :: this
     type(face_record), intent(in)    :: faces(:)
 
-    integer , allocatable :: tails(:), heads(:)
-    real(dp), allocatable :: areas(:), deltas(:), normals(:), centres(:), weights(:), &
-         & cell_centres(:)
+    integer , allocatable :: cell_vertices(:,:), num_cell_vertices(:)
+    integer , allocatable :: face_vertices(:,:), num_face_vertices(:), face_cells(:,:), num_face_cells(:)
     character(len=4), allocatable :: tags(:)
-    real(dp) :: a(2), b(2), n(2), xf(2), ct(2), ch(2), d1, d2
-    integer  :: f, nf, c
+    type(ragged) :: corners
+    type(stored_field) :: measure
+    real(dp), allocatable :: values(:)
+    integer :: f, nf
 
     nf = size(faces)
-    allocate(tails(nf), heads(nf), areas(nf), deltas(nf), normals(3 * nf), &
-         & centres(3 * nf), weights(nf), tags(nf), cell_centres(3 * this % num_cells))
+    corners = ragged(this % first_corner, this % cell_corner)
+    call corners % padded(cell_vertices, num_cell_vertices)
 
-    do c = 1, this % num_cells
-       cell_centres(3 * c - 2:3 * c) = [this % centre(1, c), this % centre(2, c), 0.0_dp]
-    end do
-
+    allocate(face_vertices(2, nf), num_face_vertices(nf), face_cells(2, nf), num_face_cells(nf), tags(nf))
     do f = 1, nf
-       tails(f) = faces(f) % tail
-       heads(f) = faces(f) % head
-
-       a  = this % corner(:, faces(f) % corner_a)
-       b  = this % corner(:, faces(f) % corner_b)
-       xf = 0.5_dp * (a + b)
-       ct = this % centre(:, faces(f) % tail)
-
-       areas(f) = norm2(b - a)
-       n = [b(2) - a(2), a(1) - b(1)] / areas(f)
-       if (dot_product(n, xf - ct) < 0.0_dp) n = -n
-
-       normals(3 * f - 2:3 * f) = [n(1), n(2), 0.0_dp]
-       centres(3 * f - 2:3 * f) = [xf(1), xf(2), 0.0_dp]
-
-       d1 = norm2(ct - xf)
-       if (faces(f) % head > 0) then
-          ch         = this % centre(:, faces(f) % head)
-          deltas(f)  = abs(dot_product(ch - ct, n))
-          d2         = norm2(ch - xf)
-          weights(f) = (1.0_dp / d1) / (1.0_dp / d1 + 1.0_dp / d2)
-          tags(f)    = ''
-       else
-          deltas(f)  = abs(dot_product(xf - ct, n))
-          weights(f) = 1.0_dp
-          tags(f)    = 'wall'
-       end if
+       face_vertices(:, f)  = [faces(f) % corner_a, faces(f) % corner_b]
+       num_face_vertices(f) = 2
+       face_cells(:, f)     = [faces(f) % tail, faces(f) % head]
+       num_face_cells(f)    = merge(2, 1, faces(f) % head > 0)
+       tags(f)              = merge('    ', 'wall', faces(f) % head > 0)
     end do
 
-    this % m = mesh(this % num_cells, tails=tails, heads=heads, &
-         & volumes=this % volume, cell_centres=cell_centres, areas=areas, &
-         & deltas=deltas, normals=normals, face_centres=centres, weights=weights, &
-         & etags=tags)
+    this % m = mesh_from_incidence(2, this % corner, cell_vertices, num_cell_vertices, &
+         & face_vertices, num_face_vertices, face_cells, num_face_cells, tags)
 
-  end subroutine framed
+    measure = this % m % cell_centre()
+    call measure % real_vector(values)
+    this % centre = reshape(values, [2, this % num_cells])
+    measure = this % m % cell_volume()
+    call measure % real_vector(this % volume)
+
+  end subroutine measured
 
   !-------------------------------------------------------------------!
   ! The spatial operator: the diffusion statement on the mesh, the
@@ -431,7 +374,7 @@ contains
     end if
 
     wall(1) = neumann('wall', 0.0_dp)
-    op = diffusion_stencil(this % m, conduction(kappa), wall, polynomial_form(degree))
+    op = diffusion_stencil(this % m, conduction(kappa), wall, polynomial_form(degree, this % m % dimension))
 
   end function spatial_operator
 

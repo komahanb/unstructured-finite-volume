@@ -54,6 +54,7 @@ module operation_stencil
   public :: stencil
   public :: combine_triples
   public :: triple_list
+  public :: compile_matrix_from_action
 
   type, extends(discretization) :: stencil
 
@@ -226,13 +227,14 @@ contains
   end function create_compiled
 
   !===================================================================!
-  ! Compute matrix columns by evaluating the action at each basis
-  ! vector e_j, subtracting the affine part (constant term at j=0).
-  ! Shared between create_compiled and direct solvers.
+  ! The columns of a linear operation, one per basis vector: column j
+  ! is F(e_j, h) - F(0, h), the affine part F(0, h) read at j = 0 and
+  ! kept as the constant, h the inputs held fixed if any. The compiled
+  ! stencil and the direct solver both read their matrix here.
   !===================================================================!
 
   subroutine compile_matrix_from_action(action, on, dom, n_dom, width, &
-       & num_components, a, constant)
+       & num_components, a, constant, held)
 
     class(operation)     , intent(in) :: action
     class(directed_graph), intent(in) :: on
@@ -240,6 +242,7 @@ contains
     integer              , intent(in) :: n_dom, width, num_components
 
     real(dp), allocatable, intent(out) :: a(:,:), constant(:)
+    type(stored_field)   , intent(in), optional :: held(:)
 
     type(stored_field)        :: state
     class(field), allocatable :: output
@@ -253,7 +256,11 @@ contains
        if (j > 0) e(j) = 1.0_dp
        state = stored_field('basis', dom, n_dom, num_components=num_components)
        call state % set_real_vector(e)
-       call action % apply(on, [state], output)
+       if (present(held)) then
+          call action % apply(on, [state, held], output)
+       else
+          call action % apply(on, [state], output)
+       end if
        call output % real_vector(y)
        if (size(y) /= width) then
           error stop 'stencil: the operation result matches the width'

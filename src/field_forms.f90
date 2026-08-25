@@ -78,6 +78,7 @@ module field_forms
      procedure :: num_members
      procedure(form_values_interface), deferred :: values
      procedure(form_slopes_interface), deferred :: slopes
+     procedure(form_count_interface) , deferred :: dimension
 
      procedure :: declare_basis
      procedure :: basis_set
@@ -91,21 +92,28 @@ module field_forms
      pure subroutine form_values_interface(this, x, at, phi)
        import :: form, dp
        class(form), intent(in) :: this
-       real(dp), intent(in)  :: x(3), at(3)
+       real(dp), intent(in)  :: x(:), at(:)
        real(dp), intent(out) :: phi(:)
      end subroutine form_values_interface
 
      pure subroutine form_slopes_interface(this, x, at, direction, dphi)
        import :: form, dp
        class(form), intent(in) :: this
-       real(dp), intent(in)  :: x(3), at(3), direction(3)
+       real(dp), intent(in)  :: x(:), at(:), direction(:)
        real(dp), intent(out) :: dphi(:)
      end subroutine form_slopes_interface
+
+     ! how many coordinates the form reads
+     pure integer function form_count_interface(this)
+       import :: form
+       class(form), intent(in) :: this
+     end function form_count_interface
 
   end interface
 
 !=====================================================================!
-! The polynomial form: every monomial in the three coordinates,
+! The polynomial form: every monomial in the coordinates, as many as
+! the space has,
 ! reckoned about the point of interest, up to a degree - the Taylor
 ! shape at that degree, whose span is every polynomial field of it.
 ! Degree one is the constant and the three coordinates, and is what
@@ -123,8 +131,9 @@ module field_forms
 
    contains
 
-     procedure :: values  => polynomial_values
-     procedure :: slopes  => polynomial_slopes
+     procedure :: values    => polynomial_values
+     procedure :: slopes    => polynomial_slopes
+     procedure :: dimension => polynomial_dimension
 
   end type polynomial_form
 
@@ -146,13 +155,13 @@ module field_forms
   public :: harmonic_form
 
   type, extends(form) :: harmonic_form
-
-     real(dp) :: wavenumber(3) = [1.0_dp, 0.0_dp, 0.0_dp]
+     real(dp), allocatable :: wavenumber(:)
 
    contains
 
-     procedure :: values  => harmonic_values
-     procedure :: slopes  => harmonic_slopes
+     procedure :: values    => harmonic_values
+     procedure :: slopes    => harmonic_slopes
+     procedure :: dimension => harmonic_dimension
 
   end type harmonic_form
 
@@ -244,48 +253,91 @@ contains
 
 
   ! Born with every table entry standing: the members are the four.
-  type(polynomial_form) function create_polynomial(degree) result(this)
+  type(polynomial_form) function create_polynomial(degree, dimension) result(this)
 
-    integer, intent(in), optional :: degree
+    integer, intent(in), optional :: degree, dimension
 
-    integer :: p, d, i, j, m, width
+    integer :: p, d, deg, m, width, k
+    integer, allocatable :: alpha(:)
 
     p = 1
     if (present(degree)) p = degree
     if (p < 0) then
        error stop 'field_forms: a polynomial degree is zero or above'
     end if
+    d = 3
+    if (present(dimension)) d = dimension
+    if (d < 1) then
+       error stop 'field_forms: a polynomial reads at least one coordinate'
+    end if
 
-    width = (p + 1) * (p + 2) * (p + 3) / 6
-    allocate(this % power(3, width))
+    ! every multi-index of d powers summing to at most p: C(d + p, p)
+    ! of them, by total degree rising and, within a degree, the first
+    ! power falling, then the second, and so on
+    width = 1
+    do k = 1, p
+       width = width * (d + k) / k
+    end do
+    allocate(this % power(d, width), alpha(d))
 
     m = 0
-    do d = 0, p
-       do i = d, 0, -1
-          do j = d - i, 0, -1
-             m = m + 1
-             this % power(:, m) = [i, j, d - i - j]
-          end do
-       end do
+    do deg = 0, p
+       call multi_indices(deg, 1, alpha, this % power, m)
     end do
+    if (m /= width) error stop 'field_forms: the multi-indices fill the table'
 
     call this % declare_basis(width)
 
   end function create_polynomial
 
+  !-------------------------------------------------------------------!
+  ! Every way of writing total on the powers from position first on,
+  ! the earlier power falling first, each written into the next column
+  ! of the table.
+  !-------------------------------------------------------------------!
+
+  pure recursive subroutine multi_indices(total, first, alpha, table, m)
+
+    integer, intent(in)    :: total, first
+    integer, intent(inout) :: alpha(:), table(:,:), m
+
+    integer :: k
+
+    if (first == size(alpha)) then
+       alpha(first) = total
+       m = m + 1
+       table(:, m) = alpha
+       return
+    end if
+
+    do k = total, 0, -1
+       alpha(first) = k
+       call multi_indices(total - k, first + 1, alpha, table, m)
+    end do
+
+  end subroutine multi_indices
+
+  pure integer function polynomial_dimension(this)
+
+    class(polynomial_form), intent(in) :: this
+
+    polynomial_dimension = size(this % power, 1)
+
+  end function polynomial_dimension
+
   pure subroutine polynomial_values(this, x, at, phi)
 
     class(polynomial_form), intent(in) :: this
-    real(dp), intent(in)  :: x(3), at(3)
+    real(dp), intent(in)  :: x(:), at(:)
     real(dp), intent(out) :: phi(:)
 
-    real(dp) :: r(3)
+    real(dp) :: r(size(this % power, 1))
     integer :: m, c
 
-    r = x - at
+    r = x(1:size(r)) - at(1:size(r))
     do m = 1, size(phi)
        phi(m) = 1.0_dp
-       do c = 1, 3
+       do c = 1, size(r)
           phi(m) = phi(m) * monomial(r(c), this % power(c, m))
        end do
     end do
@@ -301,20 +353,20 @@ contains
   pure subroutine polynomial_slopes(this, x, at, direction, dphi)
 
     class(polynomial_form), intent(in) :: this
-    real(dp), intent(in)  :: x(3), at(3), direction(3)
+    real(dp), intent(in)  :: x(:), at(:), direction(:)
     real(dp), intent(out) :: dphi(:)
 
-    real(dp) :: r(3), term
+    real(dp) :: r(size(this % power, 1)), term
     integer :: m, c, o
 
-    r = x - at
+    r = x(1:size(r)) - at(1:size(r))
     do m = 1, size(dphi)
        dphi(m) = 0.0_dp
-       do c = 1, 3
+       do c = 1, size(r)
           if (this % power(c, m) == 0) cycle
           term = direction(c) * real(this % power(c, m), dp) &
                & * monomial(r(c), this % power(c, m) - 1)
-          do o = 1, 3
+          do o = 1, size(r)
              if (o == c) cycle
              term = term * monomial(r(o), this % power(o, m))
           end do
@@ -342,7 +394,7 @@ contains
   ! Born with every table entry standing: the members are the three.
   type(harmonic_form) function create_harmonic(wavenumber) result(this)
 
-    real(dp), intent(in) :: wavenumber(3)
+    real(dp), intent(in) :: wavenumber(:)
 
     integer :: m
 
@@ -354,7 +406,7 @@ contains
   pure subroutine harmonic_values(this, x, at, phi)
 
     class(harmonic_form), intent(in) :: this
-    real(dp), intent(in)  :: x(3), at(3)
+    real(dp), intent(in)  :: x(:), at(:)
     real(dp), intent(out) :: phi(:)
 
     real(dp) :: phase
@@ -374,7 +426,7 @@ contains
   pure subroutine harmonic_slopes(this, x, at, direction, dphi)
 
     class(harmonic_form), intent(in) :: this
-    real(dp), intent(in)  :: x(3), at(3), direction(3)
+    real(dp), intent(in)  :: x(:), at(:), direction(:)
     real(dp), intent(out) :: dphi(:)
 
     real(dp) :: phase, kn
@@ -388,5 +440,13 @@ contains
 
   end subroutine harmonic_slopes
 
+
+  pure integer function harmonic_dimension(this)
+
+    class(harmonic_form), intent(in) :: this
+
+    harmonic_dimension = size(this % wavenumber)
+
+  end function harmonic_dimension
 
 end module field_forms

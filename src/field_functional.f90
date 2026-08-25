@@ -37,9 +37,6 @@ module field_functional
 
   use util_precision  , only : dp
   use view_directed, only : directed_graph
-  use field_calculus, only : FIELD_INTEGER, FIELD_REAL
-  use field_calculus, only : FIELD_COMPLEX, FIELD_LOGICAL
-  use field_calculus, only : FIELD_CHARACTER
   use field_calculus     , only : functional
   use graph_fractal      , only : graph
 
@@ -49,7 +46,8 @@ module field_functional
   public :: stored_functional
 
   !===================================================================!
-  ! One value, of whichever kind was last set.
+  ! One value, of whichever kind was last set, held in the store every
+  ! field inherits; the adapters are field_calculus's, at length one.
   !===================================================================!
 
   type, extends(functional) :: stored_functional
@@ -61,13 +59,7 @@ module field_functional
      character(len=:), allocatable :: label
      character(len=:), allocatable :: unit_name
 
-     integer :: vkind = FIELD_REAL
 
-     integer                       :: ival = 0
-     real(dp)                      :: rval = 0.0_dp
-     complex(dp)                   :: cval = (0.0_dp, 0.0_dp)
-     logical                       :: lval = .false.
-     character(len=:), allocatable :: sval
 
      !----------------------------------------------------------------!
      ! Work carried while a reduction is still running. A sum alone
@@ -90,18 +82,7 @@ module field_functional
      procedure :: domain         => functional_domain
      procedure :: num_components => functional_num_components
      procedure :: num_entries    => functional_num_entries
-     procedure :: value_kind     => functional_value_kind
 
-     procedure :: integer_vector   => functional_get_integer_vector
-     procedure :: set_integer_vector   => functional_set_integer_vector
-     procedure :: real_vector      => functional_get_real_vector
-     procedure :: set_real_vector      => functional_set_real_vector
-     procedure :: complex_vector   => functional_get_complex_vector
-     procedure :: set_complex_vector   => functional_set_complex_vector
-     procedure :: logical_vector   => functional_get_logical_vector
-     procedure :: set_logical_vector   => functional_set_logical_vector
-     procedure :: character_vector => functional_get_character_vector
-     procedure :: set_character_vector => functional_set_character_vector
 
   end type stored_functional
 
@@ -208,146 +189,5 @@ contains
     functional_num_entries = 1
 
   end function functional_num_entries
-
-  pure integer function functional_value_kind(this)
-
-    class(stored_functional), intent(in) :: this
-
-    functional_value_kind = this % vkind
-
-  end function functional_value_kind
-
-  !===================================================================!
-  ! The vector adapters, at length one. The same three rules as any
-  ! field: ask first, a wrong getter answers zero-length, any setter
-  ! replaces the value and the kind together. A setter handed an
-  ! empty array changes nothing.
-  !===================================================================!
-
-  pure subroutine functional_get_integer_vector(this, values)
-
-    class(stored_functional), intent(in)     :: this
-    integer, allocatable, intent(out) :: values(:)
-
-    if (this % vkind == FIELD_INTEGER) then
-       values = [this % ival]
-    else
-       allocate(values(0))
-    end if
-
-  end subroutine functional_get_integer_vector
-
-  pure subroutine functional_set_integer_vector(this, values)
-
-    class(stored_functional), intent(inout) :: this
-    integer          , intent(in)    :: values(:)
-
-    if (size(values) >= 1) then
-       this % ival  = values(1)
-       this % vkind = FIELD_INTEGER
-    end if
-
-  end subroutine functional_set_integer_vector
-
-  pure subroutine functional_get_real_vector(this, values)
-
-    class(stored_functional), intent(in)      :: this
-    real(dp), allocatable, intent(out) :: values(:)
-
-    if (this % vkind == FIELD_REAL) then
-       values = [this % rval]
-    else
-       allocate(values(0))
-    end if
-
-  end subroutine functional_get_real_vector
-
-  pure subroutine functional_set_real_vector(this, values)
-
-    class(stored_functional), intent(inout) :: this
-    real(dp)         , intent(in)    :: values(:)
-
-    if (size(values) >= 1) then
-       this % rval  = values(1)
-       this % vkind = FIELD_REAL
-    end if
-
-  end subroutine functional_set_real_vector
-
-  pure subroutine functional_get_complex_vector(this, values)
-
-    class(stored_functional), intent(in)         :: this
-    complex(dp), allocatable, intent(out) :: values(:)
-
-    if (this % vkind == FIELD_COMPLEX) then
-       values = [this % cval]
-    else
-       allocate(values(0))
-    end if
-
-  end subroutine functional_get_complex_vector
-
-  pure subroutine functional_set_complex_vector(this, values)
-
-    class(stored_functional), intent(inout) :: this
-    complex(dp)      , intent(in)    :: values(:)
-
-    if (size(values) >= 1) then
-       this % cval  = values(1)
-       this % vkind = FIELD_COMPLEX
-    end if
-
-  end subroutine functional_set_complex_vector
-
-  pure subroutine functional_get_logical_vector(this, values)
-
-    class(stored_functional), intent(in)     :: this
-    logical, allocatable, intent(out) :: values(:)
-
-    if (this % vkind == FIELD_LOGICAL) then
-       values = [this % lval]
-    else
-       allocate(values(0))
-    end if
-
-  end subroutine functional_get_logical_vector
-
-  pure subroutine functional_set_logical_vector(this, values)
-
-    class(stored_functional), intent(inout) :: this
-    logical          , intent(in)    :: values(:)
-
-    if (size(values) >= 1) then
-       this % lval  = values(1)
-       this % vkind = FIELD_LOGICAL
-    end if
-
-  end subroutine functional_set_logical_vector
-
-  pure subroutine functional_get_character_vector(this, values)
-
-    class(stored_functional), intent(in)              :: this
-    character(len=:), allocatable, intent(out) :: values(:)
-
-    if (this % vkind == FIELD_CHARACTER .and. allocated(this % sval)) then
-       allocate(character(len=len(this % sval)) :: values(1))
-       values(1) = this % sval
-    else
-       allocate(character(len=1) :: values(0))
-    end if
-
-  end subroutine functional_get_character_vector
-
-  pure subroutine functional_set_character_vector(this, values)
-
-    class(stored_functional), intent(inout) :: this
-    character(len=*) , intent(in)    :: values(:)
-
-    if (size(values) >= 1) then
-       this % sval  = values(1)
-       this % vkind = FIELD_CHARACTER
-    end if
-
-  end subroutine functional_set_character_vector
 
 end module field_functional

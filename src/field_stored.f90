@@ -27,13 +27,9 @@
 !
 !                        THE VALUE-KIND RULE
 !
-! A field holds one kind of value at a time. Only the matching store
-! is ever allocated:
-!
-!      value_kind() = FIELD_REAL     ->   only rvals is live
-!      value_kind() = FIELD_INTEGER  ->   only ivals is live
-!
-! From that, three rules that hold for all ten adapters:
+! A field holds one kind of value at a time, in the one store every
+! field inherits from field_calculus, where the ten adapters are
+! written once. From that, three rules that hold for all of them:
 !
 !      ask first     a caller checks value_kind() before reaching for
 !                    a vector
@@ -77,9 +73,6 @@ module field_stored
   use util_precision  , only : dp
   use field_calculus, only : field
   use graph_fractal , only : graph
-  use field_calculus, only : FIELD_INTEGER, FIELD_REAL
-  use field_calculus, only : FIELD_COMPLEX, FIELD_LOGICAL
-  use field_calculus, only : FIELD_CHARACTER
 
   implicit none
 
@@ -102,14 +95,6 @@ module field_stored
      integer        , private :: ne = 0
 
      integer, private :: nc = 1
-     integer :: vkind = FIELD_REAL
-
-     integer         , allocatable :: ivals(:)
-     real(dp)        , allocatable :: rvals(:)
-     complex(dp)     , allocatable :: cvals(:)
-     logical         , allocatable :: lvals(:)
-     character(len=:), allocatable :: svals(:)
-
    contains
 
      !----------------------------------------------------------------!
@@ -126,22 +111,11 @@ module field_stored
 
      procedure :: num_components => field_num_components
      procedure :: num_entries    => field_num_entries
-     procedure :: value_kind     => field_value_kind
 
      !----------------------------------------------------------------!
      ! The plain-vector adapters, one pair per kind.
      !----------------------------------------------------------------!
 
-     procedure :: integer_vector   => field_get_integer_vector
-     procedure :: set_integer_vector   => field_set_integer_vector
-     procedure :: real_vector      => field_get_real_vector
-     procedure :: set_real_vector      => field_set_real_vector
-     procedure :: complex_vector   => field_get_complex_vector
-     procedure :: set_complex_vector   => field_set_complex_vector
-     procedure :: logical_vector   => field_get_logical_vector
-     procedure :: set_logical_vector   => field_set_logical_vector
-     procedure :: character_vector => field_get_character_vector
-     procedure :: set_character_vector => field_set_character_vector
 
   end type stored_field
 
@@ -266,154 +240,5 @@ contains
     field_num_entries = this % ne
 
   end function field_num_entries
-
-  pure integer function field_value_kind(this)
-
-    class(stored_field), intent(in) :: this
-
-    field_value_kind = this % vkind
-
-  end function field_value_kind
-
-  !===================================================================!
-  ! The adapters. A getter for the wrong kind answers with a
-  ! zero-length array; a setter replaces the values and the kind
-  ! together.
-  !===================================================================!
-
-  pure subroutine field_get_integer_vector(this, values)
-
-    class(stored_field), intent(in)          :: this
-    integer, allocatable, intent(out) :: values(:)
-
-    if (this % vkind == FIELD_INTEGER .and. allocated(this % ivals)) then
-       values = this % ivals
-    else
-       allocate(values(0))
-    end if
-
-  end subroutine field_get_integer_vector
-
-  pure subroutine field_set_integer_vector(this, values)
-
-    class(stored_field), intent(inout) :: this
-    integer     , intent(in)    :: values(:)
-
-    if (size(values) /= this % ne * this % nc) then
-       error stop 'field_stored: a value vector must fill its domain exactly'
-    end if
-    this % ivals = values
-    this % vkind = FIELD_INTEGER
-
-  end subroutine field_set_integer_vector
-
-  pure subroutine field_get_real_vector(this, values)
-
-    class(stored_field), intent(in)           :: this
-    real(dp), allocatable, intent(out) :: values(:)
-
-    if (this % vkind == FIELD_REAL .and. allocated(this % rvals)) then
-       values = this % rvals
-    else
-       allocate(values(0))
-    end if
-
-  end subroutine field_get_real_vector
-
-  pure subroutine field_set_real_vector(this, values)
-
-    class(stored_field), intent(inout) :: this
-    real(dp)    , intent(in)    :: values(:)
-
-    if (size(values) /= this % ne * this % nc) then
-       error stop 'field_stored: a value vector must fill its domain exactly'
-    end if
-    this % rvals = values
-    this % vkind = FIELD_REAL
-
-  end subroutine field_set_real_vector
-
-  !===================================================================!
-  ! The complex pair is the seat a complex-step perturbation rides
-  ! into the engine.
-  !===================================================================!
-
-  pure subroutine field_get_complex_vector(this, values)
-
-    class(stored_field), intent(in)              :: this
-    complex(dp), allocatable, intent(out) :: values(:)
-
-    if (this % vkind == FIELD_COMPLEX .and. allocated(this % cvals)) then
-       values = this % cvals
-    else
-       allocate(values(0))
-    end if
-
-  end subroutine field_get_complex_vector
-
-  pure subroutine field_set_complex_vector(this, values)
-
-    class(stored_field), intent(inout) :: this
-    complex(dp) , intent(in)    :: values(:)
-
-    if (size(values) /= this % ne * this % nc) then
-       error stop 'field_stored: a value vector must fill its domain exactly'
-    end if
-    this % cvals = values
-    this % vkind = FIELD_COMPLEX
-
-  end subroutine field_set_complex_vector
-
-  pure subroutine field_get_logical_vector(this, values)
-
-    class(stored_field), intent(in)          :: this
-    logical, allocatable, intent(out) :: values(:)
-
-    if (this % vkind == FIELD_LOGICAL .and. allocated(this % lvals)) then
-       values = this % lvals
-    else
-       allocate(values(0))
-    end if
-
-  end subroutine field_get_logical_vector
-
-  pure subroutine field_set_logical_vector(this, values)
-
-    class(stored_field), intent(inout) :: this
-    logical     , intent(in)    :: values(:)
-
-    if (size(values) /= this % ne * this % nc) then
-       error stop 'field_stored: a value vector must fill its domain exactly'
-    end if
-    this % lvals = values
-    this % vkind = FIELD_LOGICAL
-
-  end subroutine field_set_logical_vector
-
-  pure subroutine field_get_character_vector(this, values)
-
-    class(stored_field), intent(in)                   :: this
-    character(len=:), allocatable, intent(out) :: values(:)
-
-    if (this % vkind == FIELD_CHARACTER .and. allocated(this % svals)) then
-       values = this % svals
-    else
-       allocate(character(len=1) :: values(0))
-    end if
-
-  end subroutine field_get_character_vector
-
-  pure subroutine field_set_character_vector(this, values)
-
-    class(stored_field), intent(inout)  :: this
-    character(len=*), intent(in) :: values(:)
-
-    if (size(values) /= this % ne * this % nc) then
-       error stop 'field_stored: a value vector must fill its domain exactly'
-    end if
-    this % svals = values
-    this % vkind = FIELD_CHARACTER
-
-  end subroutine field_set_character_vector
 
 end module field_stored

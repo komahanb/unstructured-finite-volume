@@ -82,6 +82,12 @@ module field_calculus
 
   type, abstract :: field
 
+     ! THE VALUES, held once for every field in the tower: one kind
+     ! at a time, of whichever kind was last set, in the order the
+     ! domain lists its members with the components of one member
+     ! next to each other. Only this module reads or writes them.
+     class(*), allocatable, private :: values(:)
+
    contains
 
      procedure(field_name_interface), deferred :: name
@@ -91,18 +97,23 @@ module field_calculus
      procedure :: defined_on => field_defined_on
      procedure(field_count_interface) , deferred :: num_components
      procedure(field_count_interface) , deferred :: num_entries
-     procedure(field_count_interface) , deferred :: value_kind
+     procedure :: value_kind => field_value_kind
 
-     procedure(field_integer_vector_interface)  , deferred :: integer_vector
-     procedure(field_set_integer_vector_interface)  , deferred :: set_integer_vector
-     procedure(field_real_vector_interface)     , deferred :: real_vector
-     procedure(field_set_real_vector_interface)     , deferred :: set_real_vector
-     procedure(field_complex_vector_interface)  , deferred :: complex_vector
-     procedure(field_set_complex_vector_interface)  , deferred :: set_complex_vector
-     procedure(field_logical_vector_interface)  , deferred :: logical_vector
-     procedure(field_set_logical_vector_interface)  , deferred :: set_logical_vector
-     procedure(field_character_vector_interface), deferred :: character_vector
-     procedure(field_set_character_vector_interface), deferred :: set_character_vector
+     ! The ten adapters: fetch once, work in arrays, write back once.
+     ! A getter of the wrong kind answers a zero-length array; any
+     ! setter replaces the values and the kind together, and must
+     ! fill the domain exactly.
+     procedure :: integer_vector       => field_integer_vector
+     procedure :: set_integer_vector   => field_set_integer_vector
+     procedure :: real_vector          => field_real_vector
+     procedure :: set_real_vector      => field_set_real_vector
+     procedure :: complex_vector       => field_complex_vector
+     procedure :: set_complex_vector   => field_set_complex_vector
+     procedure :: logical_vector       => field_logical_vector
+     procedure :: set_logical_vector   => field_set_logical_vector
+     procedure :: character_vector     => field_character_vector
+     procedure :: set_character_vector => field_set_character_vector
+     procedure, private :: hold
 
   end type field
 
@@ -163,66 +174,6 @@ module field_calculus
        class(field), intent(in) :: this
      end function field_count_interface
 
-     pure subroutine field_integer_vector_interface(this, values)
-       import :: field
-       class(field), intent(in) :: this
-       integer, allocatable, intent(out) :: values(:)
-     end subroutine field_integer_vector_interface
-
-     pure subroutine field_set_integer_vector_interface(this, values)
-       import :: field
-       class(field), intent(inout) :: this
-       integer, intent(in) :: values(:)
-     end subroutine field_set_integer_vector_interface
-
-     pure subroutine field_real_vector_interface(this, values)
-       import :: field, dp
-       class(field), intent(in) :: this
-       real(dp), allocatable, intent(out) :: values(:)
-     end subroutine field_real_vector_interface
-
-     pure subroutine field_set_real_vector_interface(this, values)
-       import :: field, dp
-       class(field), intent(inout) :: this
-       real(dp), intent(in) :: values(:)
-     end subroutine field_set_real_vector_interface
-
-     pure subroutine field_complex_vector_interface(this, values)
-       import :: field, dp
-       class(field), intent(in) :: this
-       complex(dp), allocatable, intent(out) :: values(:)
-     end subroutine field_complex_vector_interface
-
-     pure subroutine field_set_complex_vector_interface(this, values)
-       import :: field, dp
-       class(field), intent(inout) :: this
-       complex(dp), intent(in) :: values(:)
-     end subroutine field_set_complex_vector_interface
-
-     pure subroutine field_logical_vector_interface(this, values)
-       import :: field
-       class(field), intent(in) :: this
-       logical, allocatable, intent(out) :: values(:)
-     end subroutine field_logical_vector_interface
-
-     pure subroutine field_set_logical_vector_interface(this, values)
-       import :: field
-       class(field), intent(inout) :: this
-       logical, intent(in) :: values(:)
-     end subroutine field_set_logical_vector_interface
-
-     pure subroutine field_character_vector_interface(this, values)
-       import :: field
-       class(field), intent(in) :: this
-       character(len=:), allocatable, intent(out) :: values(:)
-     end subroutine field_character_vector_interface
-
-     pure subroutine field_set_character_vector_interface(this, values)
-       import :: field
-       class(field), intent(inout) :: this
-       character(len=*), intent(in) :: values(:)
-     end subroutine field_set_character_vector_interface
-
   end interface
 
 contains
@@ -246,6 +197,184 @@ contains
     defined = on % same_as(domain)
 
   end function field_defined_on
+
+  !===================================================================!
+  ! The kind held: read off the values themselves. A field that holds
+  ! nothing yet reads as real, the kind a field is born to.
+  !===================================================================!
+
+  pure integer function field_value_kind(this) result(kind)
+
+    class(field), intent(in) :: this
+
+    kind = FIELD_REAL
+    if (.not. allocated(this % values)) return
+
+    select type (held => this % values)
+    type is (integer)
+       kind = FIELD_INTEGER
+    type is (real(dp))
+       kind = FIELD_REAL
+    type is (complex(dp))
+       kind = FIELD_COMPLEX
+    type is (logical)
+       kind = FIELD_LOGICAL
+    type is (character(len=*))
+       kind = FIELD_CHARACTER
+    end select
+
+  end function field_value_kind
+
+  !===================================================================!
+  ! The one setter behind the five: the values must fill the domain
+  ! exactly - num_entries times num_components - or the program
+  ! stops; they replace whatever kind was held.
+  !===================================================================!
+
+  pure subroutine hold(this, values)
+
+    class(field), intent(inout) :: this
+    class(*)    , intent(in)    :: values(:)
+
+    if (size(values) /= this % num_entries() * this % num_components()) then
+       error stop 'field: a value vector must fill its domain exactly'
+    end if
+
+    if (allocated(this % values)) deallocate(this % values)
+    allocate(this % values, source=values)
+
+  end subroutine hold
+
+  !===================================================================!
+  ! The adapters, one pair per kind. A getter of another kind answers
+  ! a zero-length array: no conversion, no inference, and a pure
+  ! procedure has no error path, so the zero length is the signal.
+  !===================================================================!
+
+  pure subroutine field_integer_vector(this, values)
+
+    class(field), intent(in)          :: this
+    integer, allocatable, intent(out) :: values(:)
+
+    if (allocated(this % values)) then
+       select type (held => this % values)
+       type is (integer)
+          values = held
+          return
+       end select
+    end if
+    allocate(values(0))
+
+  end subroutine field_integer_vector
+
+  pure subroutine field_set_integer_vector(this, values)
+
+    class(field), intent(inout) :: this
+    integer     , intent(in)    :: values(:)
+
+    call this % hold(values)
+
+  end subroutine field_set_integer_vector
+
+  pure subroutine field_real_vector(this, values)
+
+    class(field), intent(in)           :: this
+    real(dp), allocatable, intent(out) :: values(:)
+
+    if (allocated(this % values)) then
+       select type (held => this % values)
+       type is (real(dp))
+          values = held
+          return
+       end select
+    end if
+    allocate(values(0))
+
+  end subroutine field_real_vector
+
+  pure subroutine field_set_real_vector(this, values)
+
+    class(field), intent(inout) :: this
+    real(dp)    , intent(in)    :: values(:)
+
+    call this % hold(values)
+
+  end subroutine field_set_real_vector
+
+  pure subroutine field_complex_vector(this, values)
+
+    class(field), intent(in)              :: this
+    complex(dp), allocatable, intent(out) :: values(:)
+
+    if (allocated(this % values)) then
+       select type (held => this % values)
+       type is (complex(dp))
+          values = held
+          return
+       end select
+    end if
+    allocate(values(0))
+
+  end subroutine field_complex_vector
+
+  pure subroutine field_set_complex_vector(this, values)
+
+    class(field), intent(inout) :: this
+    complex(dp) , intent(in)    :: values(:)
+
+    call this % hold(values)
+
+  end subroutine field_set_complex_vector
+
+  pure subroutine field_logical_vector(this, values)
+
+    class(field), intent(in)          :: this
+    logical, allocatable, intent(out) :: values(:)
+
+    if (allocated(this % values)) then
+       select type (held => this % values)
+       type is (logical)
+          values = held
+          return
+       end select
+    end if
+    allocate(values(0))
+
+  end subroutine field_logical_vector
+
+  pure subroutine field_set_logical_vector(this, values)
+
+    class(field), intent(inout) :: this
+    logical     , intent(in)    :: values(:)
+
+    call this % hold(values)
+
+  end subroutine field_set_logical_vector
+
+  pure subroutine field_character_vector(this, values)
+
+    class(field), intent(in)                   :: this
+    character(len=:), allocatable, intent(out) :: values(:)
+
+    if (allocated(this % values)) then
+       select type (held => this % values)
+       type is (character(len=*))
+          values = held
+          return
+       end select
+    end if
+    allocate(character(len=1) :: values(0))
+
+  end subroutine field_character_vector
+
+  pure subroutine field_set_character_vector(this, values)
+
+    class(field)    , intent(inout) :: this
+    character(len=*), intent(in)    :: values(:)
+
+    call this % hold(values)
+
+  end subroutine field_set_character_vector
 
   !===================================================================!
   ! The scalar adapters of a functional. A getter reads the vector

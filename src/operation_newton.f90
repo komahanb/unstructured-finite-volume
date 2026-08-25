@@ -65,6 +65,11 @@ module operation_newton
 
   type, extends(minimizer) :: newton
 
+     ! Whether the tangent is taken compiled where the statement
+     ! offers it. Off, the linearization is attached - a matvec, no
+     ! matrix anywhere - and the inner minimizer must iterate.
+     logical :: compiled = .true.
+
      class(minimizer), allocatable :: inner
 
    contains
@@ -159,8 +164,11 @@ contains
        ! minimizer a stencil, whose pattern is then the coupling a
        ! structured minimizer sweeps by; any other is handed the
        ! linearization, a matvec.
-       call this % action % compiled_tangent(this % on, inputs, 1, rows, columns, &
-            & weights, available)
+       available = .false.
+       if (this % compiled) then
+          call this % action % compiled_tangent(this % on, inputs, 1, rows, columns, &
+               & weights, available)
+       end if
        if (available) then
           compiled = stencil(rows, columns, weights, &
                & spread(0.0_dp, 1, this % num_unknowns), 'compiled tangent')

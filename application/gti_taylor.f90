@@ -141,7 +141,7 @@ contains
   !===================================================================!
 
   subroutine block_expansion(rows, physics, integrand, degrees, primary, &
-       & instants_at, dt, design, max_order, q, f, achieved)
+       & instants_at, dt, design, max_order, q, f, achieved, given)
 
     type(block_residual)  , intent(in) :: rows
     class(nodal_integrand), intent(in) :: physics, integrand
@@ -149,6 +149,7 @@ contains
     real(dp)              , intent(in) :: dt(:), design
     real(dp), allocatable , intent(out) :: q(:), f(:)
     real(dp)              , intent(out) :: achieved
+    real(dp), intent(in), optional      :: given(:)
 
     type(stored_directed_graph) :: unknowns
     type(stored_field) :: state, knobs
@@ -156,7 +157,12 @@ contains
     integer :: unknown_count
 
     unknown_count = rows % num_unknowns()
-    call solved(rows, design, q, achieved)
+    if (present(given)) then
+       q        = given
+       achieved = 0.0_dp
+    else
+       call solved(rows, design, q, achieved)
+    end if
 
     unknowns = stored_directed_graph(unknown_count, tails=[integer ::], heads=[integer ::])
     state    = stored_field('state', unknowns % vertex_set(), unknown_count)

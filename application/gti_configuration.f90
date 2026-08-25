@@ -50,6 +50,13 @@ module gti_configuration
      integer  :: startup_refinement       = 4
      character(len=16) :: linear_solver   = 'dense'
 
+     ! WHICH LEVEL IS SWEPT to solve a block, and WHETHER A MATRIX IS
+     ! ASSEMBLED: space-time solves the whole block at once, time
+     ! sweeps the instants, space sweeps the nodes; present assembles
+     ! the compiled tangent, free attaches a matvec and iterates.
+     character(len=16) :: sweep           = 'space-time'
+     character(len=16) :: assembly        = 'present'
+
      real(dp) :: time_duration = 7.0_dp
      real(dp) :: design        = 1.0_dp
 
@@ -244,6 +251,10 @@ contains
        read(value, *) cfg % startup_refinement
     case ('linear_solver')
        cfg % linear_solver = value
+    case ('sweep')
+       cfg % sweep = value
+    case ('assembly')
+       cfg % assembly = value
     case ('time_duration')
        read(value, *) cfg % time_duration
     case ('design')
@@ -419,6 +430,8 @@ contains
     write(*,'(a,i0)')      '   seed                     ', cfg % seed
     write(*,'(a,i0)')      '   startup refinement       ', cfg % startup_refinement
     write(*,'(a,a)')       '   linear solver            ', trim(cfg % linear_solver)
+    write(*,'(a,a)')       '   sweep                    ', trim(cfg % sweep)
+    write(*,'(a,a)')       '   assembly                 ', trim(cfg % assembly)
     write(*,'(a,f0.4)')    '   design                   ', cfg % design
     write(*,'(a,i0)')      '   max derivative degree    ', cfg % max_derivative_degree
     write(*,'(a,i0)')      '   max discretization order ', cfg % max_discretization_order

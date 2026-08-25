@@ -43,7 +43,7 @@ module gti_march
   use physics_integrand       , only : nodal_integrand
   use gti_expansion           , only : block_reach, family_holder
   use gti_block               , only : block_residual
-  use gti_sweeps              , only : inner_minimizer, jacobian_of
+  use gti_sweeps              , only : inner_minimizer, jacobian_of, assembly_present
 
   implicit none
 
@@ -71,6 +71,27 @@ module gti_march
   end type imbalance
 
   !-------------------------------------------------------------------!
+  ! WHICH LEVEL IS SWEPT. The block is one nonlinear statement over
+  ! every instant, node and component; solving it is a choice of
+  ! which level's members are solved exactly inside and which level
+  ! is swept over them with the rest held:
+  !
+  !      space-time    no level: the whole block at once
+  !      time          the instants, in order: each instant's nodes
+  !                    and components solved with the instants before
+  !                    it held - the classical step, exact in one pass
+  !                    since every scheme looks backward
+  !      space         the nodes: each node's whole history solved
+  !                    with its neighbours' histories held, the sweep
+  !                    repeated until the coupling agrees
+  !
+  ! The same fixed point in all three. Nothing below this loop knows
+  ! which was chosen.
+  !-------------------------------------------------------------------!
+
+  character(len=16), save :: sweep_level = 'space-time'
+
+  !-------------------------------------------------------------------!
   ! HOW A MARCH STOPS. A caller that sets nothing gets a tolerance
   ! measured against the imbalance the march began at, and a budget
   ! taken from the rate the march itself shows. The count is a
@@ -87,6 +108,7 @@ module gti_march
   public :: set_stopping
   public :: consistent_state
   public :: imbalance
+  public :: swept, set_sweep, sweep_named
   public :: weight_of, precision_needed
   public :: horizon_bounds
 
@@ -442,13 +464,14 @@ contains
   ! solved, and the budget is a backstop rather than a cost.
   !===================================================================!
 
-  subroutine solved(rows, design_value, q, achieved, left)
+  subroutine solved(rows, design_value, q, achieved, left, seed)
 
     type(block_residual), intent(in)  :: rows
     real(dp)            , intent(in)  :: design_value
     real(dp), allocatable, intent(out) :: q(:)
     real(dp)            , intent(out) :: achieved
     type(imbalance), intent(out), optional :: left
+    real(dp)       , intent(in) , optional :: seed(:)
 
     type(newton) :: solver
     type(stored_directed_graph) :: unknowns
@@ -464,8 +487,13 @@ contains
     call solver % attach(rows, unknowns, unknowns % vertex_set(), count, &
          & held_inputs = [design])
 
-    q = at_first_instant(rows, count)
+    if (present(seed)) then
+       q = seed
+    else
+       q = at_first_instant(rows, count)
+    end if
 
+    solver % compiled       = assembly_present()
     solver % max_iterations = stopping_iterations
     solver % tolerance      = stopping_tolerance
     solver % criterion      = stopping_criterion
@@ -482,6 +510,215 @@ contains
     end if
 
   end subroutine solved
+
+  !===================================================================!
+  ! Which level the marches sweep. A name that is none of the three
+  ! stops the program.
+  !===================================================================!
+
+  subroutine set_sweep(name)
+
+    character(len=*), intent(in) :: name
+
+    select case (trim(name))
+    case ('space-time', 'time', 'space')
+       sweep_level = name
+    case default
+       write(*,'(a)') ' sweep names ' // trim(name) // ', which this program has nothing for.'
+       error stop 'gti_march: a sweep is space-time, time or space'
+    end select
+
+  end subroutine set_sweep
+
+  pure function sweep_named() result(name)
+
+    character(len=:), allocatable :: name
+
+    name = trim(sweep_level)
+
+  end function sweep_named
+
+  !===================================================================!
+  ! THE SWEEP. The block's points lie instant by instant, nodes within
+  ! an instant, so a member of the time level is one instant's points
+  ! and a member of the space level is one node's points across the
+  ! instants. Each member is solved as a block of its own, restricted
+  ! from the whole with the rest held at the current state, and its
+  ! solution written back; a member with nothing to solve - every
+  ! component carried - is passed over. A pass is judged on the whole
+  ! block's residual by the same criteria as any iteration, so the
+  ! time sweep, exact after one pass, stops on the second, and the
+  ! space sweep stops where the coupling has settled.
+  !===================================================================!
+
+  subroutine swept(rows, design_value, nodes, q, achieved, left)
+
+    type(block_residual), intent(in)  :: rows
+    real(dp)            , intent(in)  :: design_value
+    integer             , intent(in)  :: nodes
+    real(dp), allocatable, intent(out) :: q(:)
+    real(dp)            , intent(out) :: achieved
+    type(imbalance), intent(out), optional :: left
+
+    type(block_residual) :: sub
+    type(newton) :: judge
+    type(stored_directed_graph) :: unknowns
+    type(stored_field) :: design
+    integer , allocatable :: at(:), member(:)
+    real(dp), allocatable :: piece(:)
+    logical , allocatable :: is_carried(:)
+    real(dp) :: sub_achieved, before
+    integer :: count, degrees, npts, instants, members, m, pass
+
+    if (trim(sweep_level) == 'space-time') then
+       call solved(rows, design_value, q, achieved, left)
+       return
+    end if
+
+    count    = rows % num_unknowns()
+    degrees  = rows % num_degrees()
+    at       = rows % points_at()
+    npts     = size(at)
+    instants = npts / nodes
+
+    ! A stage block keeps its instants between its stages, and its
+    ! points - the stages - do not tile its unknowns, so a sweep by
+    ! instants is not defined on it and it is solved whole. A member
+    ! of one step, its stages and the instant it arrives at, is the
+    ! sweep such a block would take, and is not built.
+    if (count /= npts * degrees) then
+       call solved(rows, design_value, q, achieved, left)
+       return
+    end if
+
+    if (instants * nodes /= npts) then
+       error stop 'gti_march: the points lie instant by instant, the nodes within'
+    end if
+
+    allocate(is_carried(count), source=.false.)
+    is_carried(rows % carried_unknowns()) = .true.
+
+    ! the seed, and the carried components at what they are held at:
+    ! a member that is all carried is then already solved
+    q = at_first_instant(rows, count)
+    q(rows % carried_unknowns()) = rows % held_values()
+
+    unknowns = stored_directed_graph(count, tails=[integer ::], heads=[integer ::])
+    design   = stored_field('nu', unknowns % vertex_set(), npts)
+    call design % set_real_vector(spread(design_value, 1, npts))
+
+    judge % max_iterations = stopping_iterations
+    judge % tolerance      = stopping_tolerance
+    judge % criterion      = stopping_criterion
+    judge % budget         = stopping_budget
+    call judge % begin_imbalance(0.0_dp)
+
+    if (trim(sweep_level) == 'time') then
+       members = instants
+    else
+       members = nodes
+    end if
+
+    ! The residual where the sweep begins is what a relative target
+    ! is measured against, as the first residual is for any march.
+    achieved = whole_residual(rows, unknowns, design, q)
+    call judge % note_imbalance(achieved)
+
+    do pass = 1, stopping_iterations
+
+       before = achieved
+
+       do m = 1, members
+          member = member_unknowns(at, degrees, nodes, instants, m)
+          if (all(is_carried(member))) cycle
+
+          ! an instant not yet solved is seeded from the one before it,
+          ! which is continuation: the seed every step of a march has
+          if (pass == 1 .and. trim(sweep_level) == 'time' .and. m > 1) then
+             q(member) = q(member_unknowns(at, degrees, nodes, instants, m - 1))
+          end if
+
+          sub = rows % restricted(member, q)
+          call solved(sub, design_value, piece, sub_achieved, seed=q(member))
+          q(member) = piece
+       end do
+
+       achieved = whole_residual(rows, unknowns, design, q)
+       call judge % note_imbalance(achieved)
+
+       if (judge % converged(achieved)) exit
+       if (judge % exhausted(pass)) exit
+
+       ! A pass that left the residual exactly where it was has
+       ! reached the sweep's fixed point; another would do the same.
+       if (achieved == before) exit
+
+    end do
+
+    if (present(left)) then
+       left % converged = judge % converged(achieved)
+       left % diverging = judge % diverging(achieved)
+       left % norm      = achieved
+       left % began     = judge % began()
+       if (.not. left % converged) call by_aspect(rows, unknowns, q, design, left)
+    end if
+
+  end subroutine swept
+
+  real(dp) function whole_residual(rows, unknowns, design, q) result(norm)
+
+    type(block_residual)       , intent(in) :: rows
+    type(stored_directed_graph), intent(in) :: unknowns
+    type(stored_field)         , intent(in) :: design
+    real(dp)                   , intent(in) :: q(:)
+
+    type(stored_field) :: state
+    class(field), allocatable :: out
+    real(dp), allocatable :: r(:)
+
+    state = stored_field('state', unknowns % vertex_set(), size(q))
+    call state % set_real_vector(q)
+    call rows % apply(unknowns, [state, design], out)
+    call out % real_vector(r)
+    norm = norm2(r)
+
+  end function whole_residual
+
+  !-------------------------------------------------------------------!
+  ! The unknowns of the m-th member: the points of instant m, or the
+  ! points of node m across the instants, each point's components.
+  !-------------------------------------------------------------------!
+
+  function member_unknowns(at, degrees, nodes, instants, m) result(member)
+
+    integer, intent(in) :: at(:), degrees, nodes, instants, m
+    integer, allocatable :: member(:)
+
+    integer :: k, i, d, p, e
+
+    if (trim(sweep_level) == 'time') then
+       allocate(member(nodes * degrees))
+       e = 0
+       do i = 1, nodes
+          p = (m - 1) * nodes + i
+          do d = 1, degrees
+             e = e + 1
+             member(e) = at(p) + d
+          end do
+       end do
+    else
+       allocate(member(instants * degrees))
+       e = 0
+       do k = 1, instants
+          p = (k - 1) * nodes + m
+          do d = 1, degrees
+             e = e + 1
+             member(e) = at(p) + d
+          end do
+       end do
+    end if
+
+  end function member_unknowns
 
   !===================================================================!
   ! The aspects of what was left: the norm split by degree, the

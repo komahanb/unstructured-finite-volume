@@ -34,10 +34,11 @@ program spatio_temporal
   use field_calculus        , only : field
   use gti_field             , only : field_block_of, field_measure, consistent_field, &
        & field_startup, field_unknown, field_aggregates
-  use gti_march             , only : partitioned, set_stopping, block_of, unknowns_graph
+  use gti_march             , only : partitioned, set_stopping, block_of, unknowns_graph, &
+       & set_sweep, swept, imbalance
   use gti_taylor            , only : block_expansion
   use gti_sweeps            , only : jacobian_of, design_partial, functional_gradient, &
-       & by_tangent, by_adjoint, set_linear_solver, set_aggregates
+       & by_tangent, by_adjoint, set_linear_solver, set_aggregates, set_assembly
   use util_factorisation    , only : dense_factorisation
   use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
   use operation_family      , only : family
@@ -67,6 +68,8 @@ program spatio_temporal
   call refuse_unknown(cfg % check, ['none    ', 'ode     ', 'mode    ', 'operator'], 'check')
 
   call set_linear_solver(cfg % linear_solver)
+  call set_assembly(cfg % assembly)
+  call set_sweep(cfg % sweep)
   call set_stopping(cfg % tolerance, &
        & merge(relative, absolute, trim(cfg % tolerance_criterion) == 'relative'), &
        & merge(by_rate, by_count, trim(cfg % iteration_criterion) == 'by_rate'), &
@@ -343,8 +346,9 @@ contains
     character(len=*)   , intent(in) :: label
 
     type(block_residual) :: rows
-    real(dp), allocatable :: held(:), q(:), f(:)
-    real(dp) :: achieved, tangent, adjoint
+    type(imbalance) :: left
+    real(dp), allocatable :: held(:), q(:), f(:), marched(:)
+    real(dp) :: achieved, tangent, adjoint, unused
     integer  :: h, n, m
     character(len=:), allocatable :: line
     character(len=20) :: cell
@@ -363,11 +367,20 @@ contains
 
     call set_aggregates(field_aggregates(space, n, nd))
 
+    ! the state by the sweep chosen; the expansion from that state
+    call swept(rows, cfg % design, space % num_cells, marched, achieved, left)
     call block_expansion(rows, van_der_pol(nd - 1), van_der_pol_energy(nd - 1), nd, &
          & scheme % primary_degree(nd - 1), rows % points_at(), measure, cfg % design, &
-         & cfg % max_derivative_degree, q, f, achieved)
+         & cfg % max_derivative_degree, q, f, unused, given=marched)
 
-    call both_routes(rows, space, nd, n, measure, cfg % design, q, tangent, adjoint)
+    ! the two routes are compared where a derivative was asked for;
+    ! the comparison factorises the whole block, which is the one
+    ! dense solve a sweep otherwise avoids
+    tangent = 0.0_dp
+    adjoint = 0.0_dp
+    if (cfg % max_derivative_degree >= 1) then
+       call both_routes(rows, space, nd, n, measure, cfg % design, q, tangent, adjoint)
+    end if
 
     line = '  ' // label // repeat(' ', max(1, 10 - len(label)))
     do m = lbound(f, 1), ubound(f, 1)
@@ -378,7 +391,12 @@ contains
     line = line // cell
     write(cell,'(es14.2)') achieved
     line = line // cell
+    if (.not. left % converged) line = line // '   unconverged'
     write(*,'(a)') line
+    if (.not. left % converged) then
+       write(*,'(a,es10.3,a,es10.3,a)') '      imbalance ', left % norm, ' against ', &
+            & left % began, ' where the sweep began'
+    end if
 
     if (trim(cfg % check) == 'ode')  call against_the_ode(cfg, space, dt, nd, scheme, held, f)
     if (trim(cfg % check) == 'mode') call against_the_mode(cfg, space, t, nd, kappa, q, n)

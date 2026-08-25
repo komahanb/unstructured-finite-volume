@@ -67,6 +67,7 @@ module gti_sweeps
   integer, parameter :: forward_route = 1
   integer, parameter :: reverse_route = 2
   public :: linear_solver_named, set_linear_solver, set_aggregates, inner_minimizer
+  public :: set_assembly, assembly_present
 
   !===================================================================!
   ! WHICH LINEAR SOLVER the tangent systems go to: named, not chosen
@@ -79,7 +80,37 @@ module gti_sweeps
   character(len=16), save :: chosen_solver = 'dense'
   integer, allocatable, save :: chosen_aggregates(:)
 
+  !===================================================================!
+  ! WHETHER A MATRIX IS ASSEMBLED. present: the statement's compiled
+  ! tangent, a sparse stencil, from which a dense factorisation is
+  ! formed where the solver is dense. free: no matrix anywhere - the
+  ! linearization's matvec is what the inner minimizer sees, so it
+  ! must iterate. A dense solver on a free assembly is refused.
+  !===================================================================!
+
+  character(len=16), save :: chosen_assembly = 'present'
+
 contains
+
+  subroutine set_assembly(name)
+
+    character(len=*), intent(in) :: name
+
+    select case (trim(name))
+    case ('present', 'free')
+       chosen_assembly = name
+    case default
+       write(*,'(a)') ' assembly names ' // trim(name) // ', which this program has nothing for.'
+       error stop 'gti_sweeps: an assembly is present or free'
+    end select
+
+  end subroutine set_assembly
+
+  pure logical function assembly_present() result(yes)
+
+    yes = trim(chosen_assembly) == 'present'
+
+  end function assembly_present
 
   pure function linear_solver_named() result(name)
 
@@ -134,6 +165,10 @@ contains
     type(dense_direct) :: factorisation
     type(multigrid)    :: levels
     type(gauss_seidel) :: sweeps
+
+    if (.not. assembly_present() .and. trim(chosen_solver) /= 'gmres') then
+       error stop 'gti_sweeps: a free assembly has no matrix to factorise; its solver iterates'
+    end if
 
     select case (trim(chosen_solver))
     case ('dense')
@@ -351,7 +386,8 @@ contains
 
     ! the statement's own compiled tangent where it offers one, the
     ! linearization otherwise
-    call rows % compiled_tangent(on, inputs, 1, r, c, w, available)
+    available = .false.
+    if (assembly_present()) call rows % compiled_tangent(on, inputs, 1, r, c, w, available)
     if (available) then
        compiled = stencil(r, c, w, spread(0.0_dp, 1, size(b)), 'compiled tangent')
        call solver % attach(compiled, compiled % pattern, on % vertex_set(), size(b), &

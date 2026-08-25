@@ -62,7 +62,7 @@ module gti_chain
   use physics_integrand, only : nodal_integrand
   use gti_expansion    , only : family_holder, marches_by_stages
   use gti_block        , only : block_residual
-  use gti_march        , only : imbalance, partitioned, horizon_bounds, block_of, solved
+  use gti_march        , only : imbalance, swept, partitioned, horizon_bounds, block_of, solved
   use gti_stage        , only : stage_block_of, instant_at
   use view_directed_stored, only : stored_directed_graph
   use field_calculus   , only : field
@@ -293,7 +293,7 @@ contains
     call built(scheme, physics, degrees, last - first + 1, dt(first:last), &
          & held, chain(b) % rows, chain(b) % instants_at)
 
-    call solved(chain(b) % rows, design, chain(b) % state, achieved, left)
+    call swept(chain(b) % rows, design, 1, chain(b) % state, achieved, left)
 
     call tally_leave()
 

@@ -67,7 +67,7 @@ program graph_time_integrator
   use operation_grid        , only : uniform_grid, random_grid, designed_grid
   use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
   use operation_grid        , only : grid
-  use gti_march             , only : partitioned, set_stopping, consistent_state, imbalance, &
+  use gti_march             , only : partitioned, set_stopping, consistent_state, imbalance, set_sweep, &
        & weight_of, precision_needed
   use util_precision        , only : precision_named
   use iso_fortran_env       , only : real128
@@ -75,7 +75,7 @@ program graph_time_integrator
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
        & expansion_substitutions, &
        & instant_components
-  use gti_sweeps            , only : set_linear_solver
+  use gti_sweeps            , only : set_linear_solver, set_assembly
   use operation_minimization, only : relative, absolute, by_count, by_rate
   use gti_configuration     , only : configuration, read_configuration, override, show, &
        & lists, refuse_unknown, worded
@@ -92,6 +92,8 @@ program graph_time_integrator
   call settings(cfg)
   call show(cfg)
   call set_linear_solver(cfg % linear_solver)
+  call set_assembly(cfg % assembly)
+  call set_sweep(cfg % sweep)
   call table(cfg)
 
 contains

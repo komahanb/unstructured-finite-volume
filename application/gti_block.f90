@@ -98,11 +98,14 @@ module gti_block
      procedure :: max_degree     => block_max_degree
      procedure :: partial_action => block_partial_action
      procedure :: compiled_tangent => block_compiled_tangent
+     procedure :: restricted => block_restricted
      procedure :: num_unknowns
      procedure :: num_degrees
      procedure :: num_points
      procedure :: points_at
      procedure :: num_carried
+     procedure :: carried_unknowns
+     procedure :: held_values
      procedure :: first_held
 
   end type block_residual
@@ -156,6 +159,24 @@ contains
     num_unknowns = this % unknowns
 
   end function num_unknowns
+
+  pure function carried_unknowns(this) result(c)
+
+    class(block_residual), intent(in) :: this
+    integer, allocatable :: c(:)
+
+    c = this % carried
+
+  end function carried_unknowns
+
+  pure function held_values(this) result(h)
+
+    class(block_residual), intent(in) :: this
+    real(dp), allocatable :: h(:)
+
+    h = this % held
+
+  end function held_values
 
   pure integer function num_degrees(this)
 
@@ -446,6 +467,69 @@ contains
   ! variation renamed for it and, in the state, gathered to the
   ! points the physics reads.
   !===================================================================!
+
+  !===================================================================!
+  ! THE BLOCK RESTRICTED to a member of a level - some of its unknowns
+  ! - with the rest held at the values given. The derived and the
+  ! spatial rows restrict as stencils do, the outside taken into
+  ! their constants; the points whose components all lie inside stay
+  ! points; the carried rows inside stay carried. A point half inside
+  ! stops the program, a member being whole points or nothing.
+  !===================================================================!
+
+  function block_restricted(this, kept, values) result(sub)
+
+    class(block_residual), intent(in) :: this
+    integer              , intent(in) :: kept(:)
+    real(dp)             , intent(in) :: values(:)
+    type(block_residual) :: sub
+
+    type(stencil) :: derived, spatial
+    integer , allocatable :: sub_of(:), at(:), carried(:)
+    real(dp), allocatable :: held(:)
+    integer :: e, p, d, inside, npts, ncar
+
+    allocate(sub_of(this % unknowns), source=0)
+    do e = 1, size(kept)
+       sub_of(kept(e)) = e
+    end do
+
+    npts = 0
+    allocate(at(size(this % at)))
+    do p = 1, size(this % at)
+       inside = 0
+       do d = 1, this % degrees
+          if (sub_of(this % at(p) + d) > 0) inside = inside + 1
+       end do
+       if (inside == 0) cycle
+       if (inside /= this % degrees) then
+          error stop 'gti_block: a member holds whole points'
+       end if
+       npts     = npts + 1
+       at(npts) = sub_of(this % at(p) + 1) - 1
+    end do
+
+    ncar = 0
+    allocate(carried(size(this % carried)), held(size(this % carried)))
+    do e = 1, size(this % carried)
+       if (sub_of(this % carried(e)) == 0) cycle
+       ncar          = ncar + 1
+       carried(ncar) = sub_of(this % carried(e))
+       held(ncar)    = this % held(e)
+    end do
+
+    derived = this % derived % restricted(kept, values)
+
+    if (allocated(this % spatial)) then
+       spatial = this % spatial % restricted(kept, values)
+       sub = block_residual(derived, this % physics, at(1:npts), size(kept), &
+            & this % degrees, this % primary, carried(1:ncar), held(1:ncar), spatial=spatial)
+    else
+       sub = block_residual(derived, this % physics, at(1:npts), size(kept), &
+            & this % degrees, this % primary, carried(1:ncar), held(1:ncar))
+    end if
+
+  end function block_restricted
 
   !===================================================================!
   ! THE COMPILED TANGENT in the state. The block knows its own

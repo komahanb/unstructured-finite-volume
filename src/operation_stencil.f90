@@ -69,6 +69,7 @@ module operation_stencil
      procedure :: apply        => stencil_apply
      procedure :: dependencies => stencil_dependencies
      procedure :: transpose     => stencil_transpose
+     procedure :: restricted    => stencil_restricted
      procedure :: max_degree     => stencil_max_degree
      procedure :: partial_action => stencil_partial_action
 
@@ -221,6 +222,72 @@ contains
     call this % constants % set_real_vector(constant)
 
   end function create_compiled
+
+  !===================================================================!
+  ! THE STENCIL RESTRICTED to a subset of its vertices, everything
+  ! outside the subset held at the values given: the rows kept are
+  ! those of the subset, a column inside it stays a dependency, and a
+  ! column outside it is taken into the row's constant as its weight
+  ! times the held value. What comes back is the same linear map,
+  ! seen from inside the subset, with the outside as an affine part.
+  ! A member outside the vertices, or values of the wrong extent,
+  ! stops the program.
+  !===================================================================!
+
+  function stencil_restricted(this, kept, values) result(sub)
+
+    class(stencil), intent(in) :: this
+    integer       , intent(in) :: kept(:)
+    real(dp)      , intent(in) :: values(:)
+    type(stencil) :: sub
+
+    integer , allocatable :: sub_of(:), rows(:), columns(:)
+    real(dp), allocatable :: weights(:), w(:), constant(:), held(:)
+    integer :: n, m, e, row, column, filled
+
+    n = this % pattern % num_vertices()
+    m = size(kept)
+
+    if (size(values) /= n) then
+       error stop 'stencil: one held value per vertex'
+    end if
+    if (any(kept < 1) .or. any(kept > n)) then
+       error stop 'stencil: a kept member is one of the vertices'
+    end if
+
+    allocate(sub_of(n), source=0)
+    do e = 1, m
+       sub_of(kept(e)) = e
+    end do
+
+    call this % weights   % real_vector(w)
+    call this % constants % real_vector(held)
+
+    allocate(constant(m))
+    constant = held(kept)
+
+    allocate(rows(this % pattern % num_edges()), columns(this % pattern % num_edges()), &
+         & weights(this % pattern % num_edges()))
+    filled = 0
+
+    do e = 1, this % pattern % num_edges()
+       row    = sub_of(this % pattern % edge_head(e))
+       if (row == 0) cycle
+       column = this % pattern % edge_tail(e)
+       if (sub_of(column) > 0) then
+          filled          = filled + 1
+          rows(filled)    = row
+          columns(filled) = sub_of(column)
+          weights(filled) = w(e)
+       else
+          constant(row) = constant(row) + w(e) * values(column)
+       end if
+    end do
+
+    sub = stencil(rows(1:filled), columns(1:filled), weights(1:filled), constant, &
+         & label=this % label // ' restricted')
+
+  end function stencil_restricted
 
   pure function stencil_name(this) result(name)
 

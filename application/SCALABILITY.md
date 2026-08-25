@@ -11,7 +11,54 @@ design variables and functionals later but structurally.
 
 ---
 
-## 1. State variables — measured, and the binding constraint
+## 0. A convergence tolerance that stops being reachable
+
+This binds before any of the three axes, and it is not an asymptotic
+cost at all - it is a cliff, and everything downstream of it was
+misread as one until it was separated out.
+
+`gti_march % solved` sets `tolerance = 1e-12 x max(1, scale_of(...))`.
+The residual a march can actually reach does not stay put as the
+horizon widens - it rises with the count of equations. Measured on one
+`bdf2` row, design one, timing the march apart from the formation and
+the solve it calls:
+
+```
+  unknowns   march(s)  dense_solve(s)   achieved   march/solve
+       123      0.056       0.034       8.7e-13        1.6
+       183      0.124       0.109       2.5e-12        1.1
+       243      0.226       0.251       4.6e-12        0.9
+       303      0.371       0.480       9.3e-12        0.8
+       363      3.183       0.821       1.4e-11        3.9
+```
+
+`achieved` rises by sixteen times over a threefold rise in the count.
+Where it passes what the tolerance will accept, the march stops
+converging and spends its whole iteration budget - forty - on every
+solve. `march/solve` jumps from 0.8 to 3.9 at that step, and the march
+time with it, by 8.6 times across a 1.2 times rise in the count.
+
+The row does not report any of this. `show_row` calls a march
+unconverged above 1e-8 and `achieved` is 1.4e-11, so the table reads
+as though nothing happened while every solve behind it costs about
+five times what it needs to.
+
+This is the same shape as the absolute tolerance that once had newton
+burning a thousand iterations: a floor that rises with the problem and
+a tolerance that does not follow it. `scale_of` is meant to follow it
+and does not follow it far enough.
+
+**What one processor should do instead.** Take the tolerance from
+something that rises with the problem as the floor does - the first
+residual of the march, or the count of equations times the machine
+epsilon times a scale - and stop when progress stops rather than when
+a fixed number is reached. Until that is done, every measurement past
+about 120 instants is measuring the iteration cap and not the
+algorithm.
+
+---
+
+## 1. State variables — the cost that remains once the cliff is set aside
 
 One `bdf2` row, state degree 2, uniform grid, no derivative columns.
 Unknowns are `(instants - history) x components`.
@@ -19,12 +66,29 @@ Unknowns are `(instants - history) x components`.
 ```
  unknowns      51    111    231    471    951
  seconds     0.05   0.13   0.46   7.51  98.86
- per doubling   -   2.62   3.58  16.36  13.13
 ```
 
-Cost grows as **n^3.7 to n^4.0** once the horizon is wide enough for
-the elimination to dominate. The last two doublings are the asymptote;
-the first two are graph traversal, which is linear and hides it.
+An earlier account of this row called the growth `n^3.7` to `n^4.0`
+and took the last two doublings for an asymptote. That was wrong. The
+step between 231 and 471 is the cliff of section 0, and averaging
+across it manufactures a power that nothing in the algorithm produces.
+
+Taken apart, each piece is what theory says it is:
+
+```
+  unknowns    form(s)   solve(s)      form growth   solve growth
+        63      0.002      0.005
+       123      0.006      0.034            3.0          6.8
+       243      0.023      0.252            3.8          7.4
+       483      0.086      1.901            3.7          7.5
+       723      0.191      6.453            2.2          3.4
+```
+
+Formation is quadratic and cheap - `n` partial-action passes at `O(n)`
+each, 0.19s of 6.6s at 723 unknowns, three per cent. **The solve is
+cleanly cubic** at every step, which is the elimination and nothing
+more. The cubic term is the one worth attacking; the quartic never
+existed.
 
 ### Why: a matrix that is 98 per cent empty is eliminated as if it were full
 
@@ -73,10 +137,32 @@ At the largest measured horizon, `n = 951` and `b = 14 + 2`:
  memory      7.2 MB        0.19 MB           38x
 ```
 
-The ratio is `O(n^2 / b^2)` and therefore grows without limit. This is
-the binding constraint, and it binds on memory before it binds on
-time: `O(n^2)` storage per block is what makes a large horizon
-impossible rather than merely slow.
+The ratio is `O(n^2 / b^2)` and therefore grows without limit.
+
+On memory the claim needs correcting. The arithmetic above says the
+dense matrix costs `O(n^2)`, and it does, but measurement says it is
+not where the memory goes:
+
+```
+ unknowns   peak, factorising   peak, matrix-free
+      471          84.7 MB            82.1 MB
+      711           185 MB             119 MB
+```
+
+The krylov path forms no matrix at all and at 471 unknowns uses
+essentially the same memory. The dense 711 by 711 matrix is 4 MB
+against a 119 MB matrix-free baseline, so **the representation of the
+problem costs about thirty times the numbers in it**. Peak memory over
+the whole sweep is 7.5, 8.1, 10.3, 14.6 and 84.7 MB at 231 to 471
+unknowns - the last step being the cliff of section 0, where forty
+iterations of allocating and freeing an `n by n` array leave the
+allocator holding what it will not return.
+
+For an exascale horizon that constant matters more than the order: a
+representation costing tens of kilobytes per unknown forecloses the
+problem long before `O(n^2)` does. Measuring where it goes - the
+fractal graph's vertices and edges, the stored fields rebuilt per
+column - is the next thing to do, and it is not yet done.
 
 ### What one processor should do instead
 
@@ -208,17 +294,22 @@ array nor the `n^2`-edge graph is built.
 
 ## Ranked, by what binds first
 
-1. **Dense storage and elimination of a banded matrix.** `O(n^2)`
-   memory is the wall; `n^4` observed time is the symptom. ~1250x
-   flops and 38x memory available at the largest size measured, and
-   the ratio grows as `n^2/b^2`.
-2. **No factorisation reuse.** Multiplies axis 1 by `n_d` and `n_f`.
+1. **A tolerance that stops being reachable.** Not an order at all -
+   a cliff at about 120 instants past which every solve spends its
+   whole iteration budget, at about five times the cost, reporting
+   nothing. Cheapest to fix and it distorts every other measurement
+   until it is.
+2. **Dense elimination of a banded matrix.** The solve is cleanly
+   cubic; ~1250x flops available at the largest size measured, the
+   ratio growing as `n^2/b^2`. Memory is a separate matter: the
+   representation, not the matrix, holds thirty times more.
+3. **No factorisation reuse.** Multiplies axis 1 by `n_d` and `n_f`.
    Latent today at one design and one functional, and it is the axis
    the user named first, so it should be settled before it is paid.
-3. **Triple materialisation on the gradient path.** `n^2` edges to
+4. **Triple materialisation on the gradient path.** `n^2` edges to
    carry a matrix already held as an array. Confined to sensitivity,
    not the hot path.
-4. **Krylov as the escape hatch.** Linear in `n` but does not converge
+5. **Krylov as the escape hatch.** Linear in `n` but does not converge
    on difference blocks. Superseded by 1, and should be retired as the
    remedy for large horizons once 1 is done.
 

@@ -70,3 +70,4 @@ application/graph_time_integrator
 application/chained_horizon
 application/randomized_checks
 application/jacobian_shape
+application/solve_cost

@@ -56,6 +56,7 @@ module view_mesh_geometry
   public :: derive_centroidal_vectors
   public :: derive_face_deltas
   public :: derive_face_weights
+  public :: mesh_from_incidence
   public :: find
   public :: element_dimension
   public :: element_num_vertices
@@ -637,6 +638,81 @@ contains
     distance = sqrt(sum((x-y)**2))
 
   end function distance
+
+  !===================================================================!
+  ! Compute mesh measurements from incidence relations and coordinates.
+  ! A pure factoring of the tail of mesh_from_gmsh: takes the spatial
+  ! dimension, coordinates, and the five incidence relations that
+  ! topology dictates, and derives all measurements - cell centres and
+  ! volumes, face centres, areas, vectors, centre-to-centre separations,
+  ! normal projections, and interpolation weights. Both view_mesh_builder
+  ! (after derive_faces) and gti_space (to replace framed()) call this.
+  !===================================================================!
+
+  impure subroutine mesh_from_incidence(spatial_dim, coordinates, &
+       & cell_vertices, num_cell_vertices, &
+       & face_vertices, num_face_vertices, &
+       & cell_faces, num_cell_faces, &
+       & face_cells, num_face_cells, &
+       & cell_centres, face_centres, face_vectors, cell_volumes, &
+       & lvec, face_deltas, face_cell_weights)
+
+    integer , intent(in)  :: spatial_dim
+    real(dp), intent(in)  :: coordinates(:,:)
+    integer , intent(in)  :: cell_vertices(:,:)
+    integer , intent(in)  :: num_cell_vertices(:)
+    integer , intent(in)  :: face_vertices(:,:)
+    integer , intent(in)  :: num_face_vertices(:)
+    integer , intent(in)  :: cell_faces(:,:)
+    integer , intent(in)  :: num_cell_faces(:)
+    integer , intent(in)  :: face_cells(:,:)
+    integer , intent(in)  :: num_face_cells(:)
+    real(dp), allocatable, intent(out) :: cell_centres(:,:)
+    real(dp), allocatable, intent(out) :: face_centres(:,:)
+    real(dp), allocatable, intent(out) :: face_vectors(:,:)
+    real(dp), allocatable, intent(out) :: cell_volumes(:)
+    real(dp), allocatable, intent(out) :: lvec(:,:)
+    real(dp), allocatable, intent(out) :: face_deltas(:)
+    real(dp), allocatable, intent(out) :: face_cell_weights(:,:)
+
+    real(dp), allocatable :: temp_centres(:,:)
+    integer :: ncells, c
+
+    ncells = size(num_cell_faces)
+
+    ! Compute face geometry: centres, area vectors (face_vectors), and scalar areas
+    call derive_face_vectors(spatial_dim, coordinates, face_vertices, &
+         & num_face_vertices, face_centres, face_vectors, face_deltas)
+
+    ! Temporary vertex mean for outward sign checks in volume calculation
+    allocate(temp_centres(3, ncells))
+    do c = 1, ncells
+       associate(vids => cell_vertices(1:num_cell_vertices(c), c))
+         temp_centres(:, c) = sum(coordinates(:, vids), dim=2) &
+              & / real(num_cell_vertices(c), kind=dp)
+       end associate
+    end do
+
+    ! Cell volumes using the divergence theorem and the temporary centres
+    call derive_cell_volumes(spatial_dim, face_centres, face_vectors, &
+         & temp_centres, cell_faces, num_cell_faces, cell_volumes)
+
+    ! True centroids using volumes
+    call derive_cell_centres(spatial_dim, face_centres, face_vectors, &
+         & cell_faces, num_cell_faces, cell_volumes, cell_centres)
+
+    ! Centre-to-centre vectors for each face
+    call derive_centroidal_vectors(face_cells, num_face_cells, &
+         & cell_centres, face_centres, lvec)
+
+    ! Recompute face deltas using the true centres (not temporary)
+    call derive_face_deltas(lvec, face_vectors, face_deltas)
+
+    ! Interpolation weights for each face
+    call derive_face_weights(face_cells, num_face_cells, &
+         & cell_centres, face_centres, face_cell_weights)
+
+  end subroutine mesh_from_incidence
 
   !===================================================================!
   ! Return the index of a target value if it is present in the array;

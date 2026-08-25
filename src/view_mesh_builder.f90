@@ -25,9 +25,7 @@ module view_mesh_builder
   use view_mesh_geometry  , only : element_dimension
   use relation_binary, only : transpose_padded
   use view_mesh_geometry  , only : derive_faces, derive_face_cells, &
-       & derive_cell_centres, &
-       & derive_face_vectors, outward_sign, derive_cell_volumes, derive_centroidal_vectors, &
-       & derive_face_deltas, derive_face_weights
+       & mesh_from_incidence, outward_sign
 
   implicit none
 
@@ -118,31 +116,18 @@ contains
     call transpose_padded(face_cells, num_face_cells, num_cells, &
          & cell_faces, num_cell_faces)
 
-    ! the measurements: compute face geometry and volumes first, then centroids
-    call derive_face_vectors(spatial_dim, vertices, face_vertices, &
-         & num_face_vertices, face_centres, face_vectors, face_areas)
+    ! the measurements: faces, volumes, centres, deltas, weights
+    call mesh_from_incidence(spatial_dim, vertices, &
+         & cell_vertices, num_cell_vertices, &
+         & face_vertices, num_face_vertices, &
+         & cell_faces, num_cell_faces, &
+         & face_cells, num_face_cells, &
+         & cell_centres, face_centres, face_vectors, cell_volumes, &
+         & lvec, face_deltas, face_cell_weights)
 
-    ! temporary vertex mean for outward sign checks in volume computation
-    allocate(cell_centres(3, size(num_cell_vertices)))
-    do f = 1, size(num_cell_vertices)
-       associate(vids => cell_vertices(1:num_cell_vertices(f), f))
-         cell_centres(:, f) = sum(vertices(:, vids), dim=2) &
-              & / real(num_cell_vertices(f), kind=dp)
-       end associate
-    end do
-
-    call derive_cell_volumes(spatial_dim, face_centres, face_vectors, &
-         & cell_centres, cell_faces, num_cell_faces, cell_volumes)
-
-    ! now compute true centroids using the volumes
-    call derive_cell_centres(spatial_dim, face_centres, face_vectors, &
-         & cell_faces, num_cell_faces, cell_volumes, cell_centres)
-
-    call derive_centroidal_vectors(face_cells, num_face_cells, cell_centres, &
-         & face_centres, lvec)
-    call derive_face_deltas(lvec, face_vectors, face_deltas)
-    call derive_face_weights(face_cells, num_face_cells, cell_centres, &
-         & face_centres, face_cell_weights)
+    ! face areas from the area vector magnitudes
+    allocate(face_areas(size(face_vectors, 2)))
+    face_areas = norm2(face_vectors, dim=1)
 
     ! tails and heads from the face-to-cell relation; a face with
     ! one cell is a boundary face, an edge without a head

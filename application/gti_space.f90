@@ -9,8 +9,9 @@
 !      elliptical    x = a xi cos 2 pi eta, y = b xi sin 2 pi eta
 !
 ! so one indexing serves every shape and the shape is a mapping. The
-! spacing along each coordinate is given as the time grid's is - by
-! counts, and uniform or drawn from a seed - and every cell is the
+! spacing along each coordinate IS the time grid's, uniform or drawn
+! from a seed through the same partition, so a seed means the same
+! thing in space as in time - and every cell is the
 ! polygon of its mapped corners: its area, centroid and face geometry
 ! are read off those corners, whatever the shape. A polar mapping
 ! collapses the inner corners onto the origin, so the innermost ring
@@ -39,6 +40,8 @@ module gti_space
   use view_paraview_writer      , only : paraview_writer, polygon_cell
   use relation_binary           , only : ragged
   use util_string               , only : string
+  use operation_grid            , only : uniform_grid, random_grid
+  use gti_march                 , only : partitioned
 
   implicit none
 
@@ -104,44 +107,6 @@ contains
 
   end function geometry_of
 
-  !-------------------------------------------------------------------!
-  ! The spacing along one coordinate: n widths, uniform or drawn, that
-  ! sum to one. The draw is the time grid's, so a seed means the same
-  ! thing in space as in time.
-  !-------------------------------------------------------------------!
-
-  pure subroutine spacing(n, drawn, seed, salt, u)
-
-    integer, intent(in) :: n
-    logical, intent(in) :: drawn
-    integer, intent(in) :: seed, salt
-    real(dp), allocatable, intent(out) :: u(:)
-
-    integer, parameter :: modulus = 2147483647
-    real(dp) :: w(n)
-    integer  :: k, x
-
-    ! allocated here with its own lower bound, which an assignment
-    ! from a function result would not keep
-    allocate(u(0:n))
-
-    w = 1.0_dp
-    if (drawn) then
-       do k = 1, n
-          x = modulo(seed * 40503 + (k + salt) * 65537, modulus)
-          x = modulo(int(mod(1103515245_8 * int(x, 8) + 12345_8, int(modulus, 8))), modulus)
-          w(k) = 0.5_dp + real(x, dp) / real(modulus, dp)
-       end do
-    end if
-
-    u(0) = 0.0_dp
-    do k = 1, n
-       u(k) = u(k - 1) + w(k)
-    end do
-    u = u / u(n)
-
-  end subroutine spacing
-
   pure function mapped(geometry, a, b, xi, eta) result(x)
 
     integer , intent(in) :: geometry
@@ -176,7 +141,7 @@ contains
     logical , intent(in) :: drawn
     type(room) :: this
 
-    real(dp), allocatable :: xi(:), eta(:)
+    real(dp), allocatable :: xi(:), eta(:), dxi(:), deta(:)
     type(face_record), allocatable :: faces(:)
     integer :: i, j, c, f, polar, cells, ring
 
@@ -190,13 +155,21 @@ contains
     this % geometry = geometry
     polar = merge(1, 0, geometry /= cartesian)
 
-    call spacing(n1, drawn, seed, 0, xi)
-    call spacing(n2, drawn, seed, n1, eta)
+    ! the spacing along each coordinate is the time grid's own draw,
+    ! scaled to the unit interval; the second coordinate continues
+    ! the draw past the first, as a seed offset by the first's count
+    if (drawn) then
+       call partitioned(random_grid(1.0_dp, seed),      n1 + 1, dxi,  xi)
+       call partitioned(random_grid(1.0_dp, seed + n1), n2 + 1, deta, eta)
+    else
+       call partitioned(uniform_grid(1.0_dp), n1 + 1, dxi,  xi)
+       call partitioned(uniform_grid(1.0_dp), n2 + 1, deta, eta)
+    end if
 
     allocate(this % corner(2, (n1 + 1) * (n2 + 1)))
     do j = 0, n1
        do i = 0, n2
-          this % corner(:, corner_index(i, j, n2)) = mapped(geometry, a, b, xi(j), eta(i))
+          this % corner(:, corner_index(i, j, n2)) = mapped(geometry, a, b, xi(j + 1), eta(i + 1))
        end do
     end do
 
@@ -208,7 +181,7 @@ contains
     this % num_cells = cells
 
     allocate(this % first_corner(cells + 1))
-    allocate(this % cell_corner(4 * n1 * n2 + n2))
+    allocate(this % cell_corner(merge(n2 + 4 * (n1 - 1) * n2, 4 * n1 * n2, polar == 1)))
     allocate(this % centre(2, cells), this % volume(cells), this % cell_ij(2, cells))
     this % n1 = n1
     this % n2 = n2

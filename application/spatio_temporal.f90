@@ -26,6 +26,7 @@ program spatio_temporal
 
   use util_precision        , only : dp
   use iso_fortran_env       , only : int64
+  use gti_driver            , only : settings, steps_of, clock
   use gti_configuration     , only : configuration, read_configuration, override, show, &
        & worded, lists, refuse_unknown
   use gti_space             , only : room, spatial_mesh, spatial_operator, written_paraview, &
@@ -57,7 +58,7 @@ program spatio_temporal
   real(dp) :: a, b, kappa, began
   integer  :: nd, n1, n2
 
-  call settings(cfg)
+  call settings('field', cfg)
   call show(cfg)
 
   call refuse_unknown(cfg % families, ['bdf  ', 'adams'], 'families')
@@ -158,45 +159,6 @@ contains
 
   end subroutine against_the_laplacian
 
-  subroutine settings(cfg)
-
-    type(configuration), intent(out) :: cfg
-
-    character(len=256) :: argument
-    integer :: i
-
-    call read_configuration(named(), cfg)
-    do i = 1, command_argument_count()
-       call get_command_argument(i, argument)
-       if (index(argument, '--config=') == 1) cycle
-       call override(cfg, argument)
-    end do
-
-  end subroutine settings
-
-  function named() result(name)
-
-    character(len=:), allocatable :: name
-    character(len=256) :: argument
-    integer :: i
-
-    name = 'field'
-    do i = 1, command_argument_count()
-       call get_command_argument(i, argument)
-       if (index(argument, '--config=') == 1) name = trim(argument(10:))
-    end do
-
-  end function named
-
-  real(dp) function clock() result(s)
-
-    integer(int64) :: ticks, rate
-
-    call system_clock(ticks, rate)
-    s = real(ticks, dp) / real(rate, dp)
-
-  end function clock
-
   subroutine two_reals(text, x, y)
 
     character(len=*), intent(in)  :: text
@@ -224,22 +186,6 @@ contains
     read(w(2), *) y
 
   end subroutine two_integers
-
-  subroutine steps_of(cfg, dt, t)
-
-    type(configuration), intent(in) :: cfg
-    real(dp), allocatable, intent(out) :: dt(:), t(:)
-
-    select case (trim(cfg % grid))
-    case ('uniform')
-       call partitioned(uniform_grid(cfg % time_duration), cfg % instants, dt, t)
-    case ('random')
-       call partitioned(random_grid(cfg % time_duration, cfg % seed), cfg % instants, dt, t)
-    case default
-       error stop 'spatio_temporal: a grid is uniform or random'
-    end select
-
-  end subroutine steps_of
 
   !-------------------------------------------------------------------!
   ! The field at the first instant: the components below the highest

@@ -285,17 +285,7 @@ contains
 
     real(dp), intent(in) :: a(:,:)
 
-    real(dp) :: total
-    integer  :: i, j
-
-    most = 0.0_dp
-    do i = 1, size(a, 1)
-       total = 0.0_dp
-       do j = 1, size(a, 2)
-          total = total + abs(a(i, j))
-       end do
-       most = max(most, total)
-    end do
+    most = maxval(sum(abs(a), dim=2))
 
   end function largest_row
 

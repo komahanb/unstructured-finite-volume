@@ -46,6 +46,7 @@ program randomized_checks
   use operation_grid        , only : uniform_grid, random_grid
   use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
   use gti_expansion         , only : family_holder
+  use gti_driver            , only : cosine
   use gti_block             , only : block_residual
   use gti_march             , only : partition
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
@@ -168,24 +169,6 @@ contains
          &   scheme % history_depth(degrees - 1))]
 
   end subroutine held_for
-
-  pure real(dp) function cosine(d, t) result(q)
-
-    integer , intent(in) :: d
-    real(dp), intent(in) :: t
-
-    select case (mod(d, 4))
-    case (0)
-       q =  cos(t)
-    case (1)
-       q = -sin(t)
-    case (2)
-       q = -cos(t)
-    case default
-       q =  sin(t)
-    end select
-
-  end function cosine
 
   !-------------------------------------------------------------------!
   ! One drawn case: the three residuals, and a verdict.

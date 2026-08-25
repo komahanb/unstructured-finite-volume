@@ -77,6 +77,7 @@ program graph_time_integrator
        & instant_components
   use gti_sweeps            , only : set_linear_solver, set_assembly, set_storage, set_multigrid
   use operation_minimization, only : relative, absolute, by_count, by_rate
+  use gti_driver            , only : settings, chosen_grid, steps_of
   use gti_configuration     , only : configuration, read_configuration, override, show, &
        & lists, refuse_unknown, worded
   use util_tally            , only : tally_open, tally_close, tally_order, &
@@ -89,7 +90,7 @@ program graph_time_integrator
 
   type(configuration) :: cfg
 
-  call settings(cfg)
+  call settings('homogeneous', cfg)
   call show(cfg)
   call set_linear_solver(cfg % linear_solver)
   call set_assembly(cfg % assembly)
@@ -99,44 +100,6 @@ program graph_time_integrator
   call table(cfg)
 
 contains
-
-  !-------------------------------------------------------------------!
-  ! The configuration named on the command line, then every other
-  ! argument applied over it.
-  !-------------------------------------------------------------------!
-
-  subroutine settings(cfg)
-
-    type(configuration), intent(out) :: cfg
-
-    character(len=256) :: argument
-    integer :: i
-
-    call read_configuration(named(), cfg)
-
-    do i = 1, command_argument_count()
-       call get_command_argument(i, argument)
-       if (index(argument, '--config=') == 1) cycle
-       call override(cfg, argument)
-    end do
-
-  end subroutine settings
-
-  function named() result(name)
-
-    character(len=:), allocatable :: name
-
-    character(len=256) :: argument
-    integer :: i
-
-    name = 'homogeneous'
-
-    do i = 1, command_argument_count()
-       call get_command_argument(i, argument)
-       if (index(argument, '--config=') == 1) name = trim(argument(10:))
-    end do
-
-  end function named
 
   !-------------------------------------------------------------------!
   ! The one instant a stage family needs, and it is consistent with
@@ -181,48 +144,30 @@ contains
   end function at_rest
 
   !-------------------------------------------------------------------!
-  ! How far back a family of one order looks, which for a backward
-  ! difference grows with the degree of the equation as well as with
-  ! the order, and for the others does not.
-  !-------------------------------------------------------------------!
-
-  pure integer function reach_of(cfg, name, order) result(reach)
-
-    type(configuration), intent(in) :: cfg
-    character(len=*)   , intent(in) :: name
-    integer            , intent(in) :: order
-
-    select case (name)
-    case ('bdf')
-       reach = cfg % state_degree * order
-    case ('adams')
-       reach = max(order - 1, 1)
-    case default
-       reach = 1
-    end select
-
-  end function reach_of
-
-  !-------------------------------------------------------------------!
   ! How many instants the widest row that fits looks back over. A row
   ! that reaches past the horizon is not built, so it does not decide
   ! how long a startup the others need; zero means none of them fit.
   !-------------------------------------------------------------------!
 
-  pure integer function widest_reach(cfg) result(widest)
+  integer function widest_reach(cfg) result(widest)
 
     type(configuration), intent(in) :: cfg
 
     character(len=8) :: every(3)
+    class(family), allocatable :: scheme
+    logical :: staged, ok
     integer :: i, order, reach
 
     every  = ['bdf     ', 'adams   ', 'dirk    ']
     widest = 0
 
+    ! how far back a family looks is the family's own answer
     do i = 1, 3
        if (index(cfg % families, trim(every(i))) == 0) cycle
        do order = 1, cfg % max_discretization_order
-          reach = reach_of(cfg, trim(every(i)), order)
+          call chosen(trim(every(i)), order, scheme, staged, ok)
+          if (.not. ok) cycle
+          reach = scheme % history_depth(cfg % state_degree)
           if (reach < cfg % instants) widest = max(widest, reach)
        end do
     end do
@@ -362,22 +307,6 @@ contains
 
   end subroutine chosen
 
-
-  subroutine steps_of(cfg, dt, t)
-
-    type(configuration), intent(in) :: cfg
-    real(dp), allocatable, intent(out) :: dt(:), t(:)
-
-    select case (trim(cfg % grid))
-    case ('uniform')
-       call partitioned(uniform_grid(cfg % time_duration), cfg % instants, dt, t)
-    case ('random')
-       call partitioned(random_grid(cfg % time_duration, cfg % seed), cfg % instants, dt, t)
-    case default
-       error stop 'graph_time_integrator: a grid is uniform or random'
-    end select
-
-  end subroutine steps_of
 
   function labelled(names, orders) result(text)
 
@@ -662,21 +591,6 @@ contains
 
   end subroutine assembled
 
-  function chosen_grid(cfg) result(steps)
-
-    type(configuration), intent(in) :: cfg
-    class(grid), allocatable :: steps
-
-    select case (trim(cfg % grid))
-    case ('uniform')
-       allocate(steps, source=uniform_grid(cfg % time_duration))
-    case ('random')
-       allocate(steps, source=random_grid(cfg % time_duration, cfg % seed))
-    case default
-       error stop 'graph_time_integrator: a grid is uniform or random'
-    end select
-
-  end function chosen_grid
 
   !-------------------------------------------------------------------!
   ! Every row the configuration asks for.
@@ -744,9 +658,9 @@ contains
     if (cfg % accounting) call tally_open(cfg % max_derivative_degree)
 
     printed = 0
-    if (asked(cfg, 'homogeneous')) call homogeneous_rows(cfg, startup, printed)
-    if (asked(cfg, 'pairs'))       call pair_rows(cfg, startup, printed)
-    if (asked(cfg, 'triples'))     call triple_rows(cfg, startup, printed)
+    if (asked(cfg, 'homogeneous')) call tuple_rows(cfg, startup, 1, printed)
+    if (asked(cfg, 'pairs'))       call tuple_rows(cfg, startup, 2, printed)
+    if (asked(cfg, 'triples'))     call tuple_rows(cfg, startup, 3, printed)
 
     if (cfg % accounting) then
        call tally_close()
@@ -801,86 +715,57 @@ contains
 
   end function listed
 
-  subroutine homogeneous_rows(cfg, startup, printed)
+  !-------------------------------------------------------------------!
+  ! Every ordered tuple of this many distinct families, at every
+  ! order - one order for the whole tuple, or, when mixed orders are
+  ! asked for, every tuple of orders. One arity serves the
+  ! homogeneous rows, the pairs and the triples alike.
+  !-------------------------------------------------------------------!
 
-    type(configuration), intent(in) :: cfg
-    real(dp)           , intent(in) :: startup(:)
+  subroutine tuple_rows(cfg, startup, arity, printed)
+
+    type(configuration), intent(in)    :: cfg
+    real(dp)           , intent(in)    :: startup(:)
+    integer            , intent(in)    :: arity
     integer            , intent(inout) :: printed
 
     character(len=8), allocatable :: names(:)
-    integer :: i, order
+    integer :: which(arity), orders(arity)
+    integer :: m, code, k, r, order
 
     names = listed(cfg)
+    m     = size(names)
 
-    do i = 1, size(names)
-       do order = 1, cfg % max_discretization_order
-          call one_row(cfg, startup, [names(i)], [order], printed)
+    do code = 0, m ** arity - 1
+       ! the tuple of families, the last position varying fastest
+       r = code
+       do k = arity, 1, -1
+          which(k) = mod(r, m) + 1
+          r        = r / m
        end do
-    end do
+       if (any([(any(which(1:k-1) == which(k)), k = 2, arity)])) cycle
 
-  end subroutine homogeneous_rows
-
-  !-------------------------------------------------------------------!
-  ! Every ordered pair of distinct families, at one order or, when
-  ! mixed orders are asked for, at every pair of orders.
-  !-------------------------------------------------------------------!
-
-  subroutine pair_rows(cfg, startup, printed)
-
-    type(configuration), intent(in) :: cfg
-    real(dp)           , intent(in) :: startup(:)
-    integer            , intent(inout) :: printed
-
-    character(len=8), allocatable :: names(:)
-    integer :: i, j, p, q
-
-    names = listed(cfg)
-
-    do i = 1, size(names)
-       do j = 1, size(names)
-          if (i == j) cycle
-          do p = 1, cfg % max_discretization_order
-             if (cfg % mixed_orders) then
-                do q = 1, cfg % max_discretization_order
-                   call one_row(cfg, startup, [names(i), names(j)], [p, q], printed)
-                end do
-             else
-                call one_row(cfg, startup, [names(i), names(j)], [p, p], printed)
-             end if
+       if (cfg % mixed_orders .and. arity >= 2) then
+          code_of_orders: block
+            integer :: oc
+            do oc = 0, cfg % max_discretization_order ** arity - 1
+               r = oc
+               do k = arity, 1, -1
+                  orders(k) = mod(r, cfg % max_discretization_order) + 1
+                  r         = r / cfg % max_discretization_order
+               end do
+               call one_row(cfg, startup, names(which), orders, printed)
+            end do
+          end block code_of_orders
+       else
+          do order = 1, cfg % max_discretization_order
+             orders = order
+             call one_row(cfg, startup, names(which), orders, printed)
           end do
-       end do
+       end if
     end do
 
-  end subroutine pair_rows
-
-  !-------------------------------------------------------------------!
-  ! Every permutation of the families listed, at one order.
-  !-------------------------------------------------------------------!
-
-  subroutine triple_rows(cfg, startup, printed)
-
-    type(configuration), intent(in) :: cfg
-    real(dp)           , intent(in) :: startup(:)
-    integer            , intent(inout) :: printed
-
-    character(len=8), allocatable :: names(:)
-    integer :: i, j, k, order
-
-    names = listed(cfg)
-
-    do i = 1, size(names)
-       do j = 1, size(names)
-          if (j == i) cycle
-          do k = 1, size(names)
-             if (k == i .or. k == j) cycle
-             do order = 1, cfg % max_discretization_order
-                call one_row(cfg, startup, [names(i), names(j), names(k)], [order, order, order], printed)
-             end do
-          end do
-       end do
-    end do
-
-  end subroutine triple_rows
+  end subroutine tuple_rows
 
   !-------------------------------------------------------------------!
   ! What the run spent, one table per measurement asked for: the

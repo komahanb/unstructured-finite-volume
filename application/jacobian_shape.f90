@@ -15,6 +15,7 @@ program jacobian_shape
   use operation_grid        , only : uniform_grid
   use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
   use gti_expansion         , only : family_holder
+  use gti_driver            , only : cosine
   use gti_march             , only : partition
   use gti_sweeps            , only : jacobian_of
   use view_directed_stored  , only : stored_directed_graph
@@ -80,7 +81,7 @@ contains
     integer         , intent(in) :: degrees, instants
 
     integer  :: n, i, j, filled, below, above
-    real(dp) :: biggest, least, on_diagonal, row_most, row_sum
+    real(dp) :: biggest, least, on_diagonal, row_most
 
     n       = size(a, 1)
     biggest = maxval(abs(a))
@@ -104,14 +105,7 @@ contains
        on_diagonal = max(on_diagonal, abs(a(i, i)))
     end do
 
-    row_most = 0.0_dp
-    do i = 1, n
-       row_sum = 0.0_dp
-       do j = 1, n
-          row_sum = row_sum + abs(a(i, j))
-       end do
-       row_most = max(row_most, row_sum)
-    end do
+    row_most = maxval(sum(abs(a), dim=2))
 
     write(*,'(a,a,i8,i10,i8,i8,f12.2,3es15.4)') '  ', label // repeat(' ', 12 - len(label)), &
          & n, filled, below, above, 100.0_dp * real(filled, dp) / real(n * n, dp), &
@@ -120,24 +114,6 @@ contains
     associate (u1 => degrees, u2 => instants); end associate
 
   end subroutine reported
-
-  pure real(dp) function cosine(d, t) result(q)
-
-    integer , intent(in) :: d
-    real(dp), intent(in) :: t
-
-    select case (mod(d, 4))
-    case (0)
-       q =  cos(t)
-    case (1)
-       q = -sin(t)
-    case (2)
-       q = -cos(t)
-    case default
-       q =  sin(t)
-    end select
-
-  end function cosine
 
   !-------------------------------------------------------------------!
   ! The jacobian of the first block at its solved state, formed from

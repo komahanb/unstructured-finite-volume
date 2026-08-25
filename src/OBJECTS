@@ -75,4 +75,5 @@ util_file.o \
 view_mesh_geometry.o \
 view_mesh_loader.o \
 view_gmsh_loader.o \
-view_mesh_builder.o
+view_mesh_builder.o \
+view_paraview_writer.o

@@ -285,27 +285,43 @@ contains
   end subroutine derive_face_cells
 
   !===================================================================!
-  ! Cell centres: the mean of each cell's vertex coordinates.
+  ! Cell centroids by the divergence theorem: x_c = sum over the
+  ! cell's faces of (x_f . S_f) x_f / ((d+1) V), where x_f is the
+  ! face centre, S_f is the face's area vector, and V is the cell
+  ! volume. This is the true centroid (first moment vanishes), not
+  ! the vertex mean. On a skewed mesh this differs from the vertex
+  ! mean; on orthogonal gmsh meshes the two coincide.
   !===================================================================!
 
-  pure subroutine derive_cell_centres(coordinates, cell_vertices, &
-       & num_cell_vertices, cell_centres)
+  pure subroutine derive_cell_centres(spatial_dim, face_centres, face_vectors, &
+       & cell_faces, num_cell_faces, cell_volumes, cell_centres)
 
-    real(dp), intent(in)  :: coordinates(:,:)
-    integer , intent(in)  :: cell_vertices(:,:)
-    integer , intent(in)  :: num_cell_vertices(:)
+    integer , intent(in)  :: spatial_dim
+    real(dp), intent(in)  :: face_centres(:,:)
+    real(dp), intent(in)  :: face_vectors(:,:)
+    integer , intent(in)  :: cell_faces(:,:)
+    integer , intent(in)  :: num_cell_faces(:)
+    real(dp), intent(in)  :: cell_volumes(:)
     real(dp), allocatable, intent(out) :: cell_centres(:,:)
 
-    integer :: icell
+    integer :: lcell, lface, gface
+    real(dp) :: fc_dot_fv, denom
 
-    allocate(cell_centres(3, size(num_cell_vertices)))
+    allocate(cell_centres(3, size(num_cell_faces)))
+    cell_centres = 0.0_dp
 
-    do icell = 1, size(num_cell_vertices)
-       associate(&
-            & num_vertices => real(num_cell_vertices(icell), kind=dp), &
-            & vids => cell_vertices(1:num_cell_vertices(icell), icell))
-         cell_centres(:, icell) = sum(coordinates(:, vids), dim=2)/num_vertices
-       end associate
+    denom = real(spatial_dim + 1, dp)
+
+    do lcell = 1, size(num_cell_faces)
+       do lface = 1, num_cell_faces(lcell)
+          gface = cell_faces(lface, lcell)
+          fc_dot_fv = dot_product(face_vectors(:, gface), face_centres(:, gface))
+          cell_centres(:, lcell) = cell_centres(:, lcell) + &
+               & fc_dot_fv * face_centres(:, gface)
+       end do
+       if (cell_volumes(lcell) > 0.0_dp) then
+          cell_centres(:, lcell) = cell_centres(:, lcell) / (denom * cell_volumes(lcell))
+       end if
     end do
 
   end subroutine derive_cell_centres

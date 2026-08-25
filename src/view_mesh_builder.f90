@@ -118,13 +118,26 @@ contains
     call transpose_padded(face_cells, num_face_cells, num_cells, &
          & cell_faces, num_cell_faces)
 
-    ! the measurements
-    call derive_cell_centres(vertices, cell_vertices, num_cell_vertices, &
-         & cell_centres)
+    ! the measurements: compute face geometry and volumes first, then centroids
     call derive_face_vectors(spatial_dim, vertices, face_vertices, &
          & num_face_vertices, face_centres, face_vectors, face_areas)
+
+    ! temporary vertex mean for outward sign checks in volume computation
+    allocate(cell_centres(3, size(num_cell_vertices)))
+    do f = 1, size(num_cell_vertices)
+       associate(vids => cell_vertices(1:num_cell_vertices(f), f))
+         cell_centres(:, f) = sum(vertices(:, vids), dim=2) &
+              & / real(num_cell_vertices(f), kind=dp)
+       end associate
+    end do
+
     call derive_cell_volumes(spatial_dim, face_centres, face_vectors, &
          & cell_centres, cell_faces, num_cell_faces, cell_volumes)
+
+    ! now compute true centroids using the volumes
+    call derive_cell_centres(spatial_dim, face_centres, face_vectors, &
+         & cell_faces, num_cell_faces, cell_volumes, cell_centres)
+
     call derive_centroidal_vectors(face_cells, num_face_cells, cell_centres, &
          & face_centres, lvec)
     call derive_face_deltas(lvec, face_vectors, face_deltas)

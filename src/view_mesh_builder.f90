@@ -165,15 +165,17 @@ contains
        end if
     end do
 
+    ! extract spatial_dim components from 3D padded data
     m = mesh(num_cells, tails=tails, heads=heads, &
          & volumes      = cell_volumes, &
-         & cell_centres = reshape(cell_centres, [3 * num_cells]), &
+         & cell_centres = reshape(cell_centres(1:spatial_dim, :), [spatial_dim * num_cells]), &
          & areas        = face_areas, &
          & deltas       = face_deltas, &
-         & normals      = normals, &
-         & face_centres = reshape(face_centres, [3 * num_faces]), &
+         & normals      = normals(1:spatial_dim * num_faces), &
+         & face_centres = reshape(face_centres(1:spatial_dim, :), [spatial_dim * num_faces]), &
          & weights      = weights, &
-         & etags        = etags)
+         & etags        = etags, &
+         & dimension    = spatial_dim)
 
   end function mesh_from_gmsh
 

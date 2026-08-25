@@ -99,9 +99,10 @@ contains
     real(dp), allocatable :: areas(:), normals(:), fcentres(:), centres(:)
     integer , allocatable :: rows(:), columns(:), hood(:)
     real(dp), allocatable :: weights(:), pts(:), w(:), constant(:)
-    real(dp) :: xf(3), vb, wb
+    real(dp), allocatable :: xf(:)
+    real(dp) :: vb, wb
     type(triple_list) :: triples
-    integer :: nv, ne, e, t, h, j, npts, width
+    integer :: nv, ne, e, t, h, j, npts, width, d
 
     ! A fit needs at least as many points as its form has members,
     ! so the neighbourhood grows ring by ring until it holds that
@@ -115,6 +116,9 @@ contains
 
     nv = m % num_vertices()
     ne = m % num_edges()
+    d = m % dimension
+
+    allocate(xf(d))
 
     fa = m % face_area()
     call fa % real_vector(areas)
@@ -154,21 +158,21 @@ contains
        if (h == 0) npts = npts + 1
 
        ! Data: the positions on it.
-       allocate(pts(3 * npts))
+       allocate(pts(d * npts))
        do j = 1, size(hood)
-          pts(3 * j - 2 : 3 * j) = centres(3 * hood(j) - 2 : 3 * hood(j))
+          pts(d * j - d + 1 : d * j) = centres(d * hood(j) - d + 1 : d * hood(j))
        end do
-       xf = fcentres(3 * e - 2 : 3 * e)
-       if (h == 0) pts(3 * npts - 2 : 3 * npts) = xf
+       xf = fcentres(d * e - d + 1 : d * e)
+       if (h == 0) pts(d * npts - d + 1 : d * npts) = xf
 
        constellation = stored_directed_graph(npts, tails=[integer ::], heads=[integer ::])
        positions = stored_field('positions', constellation % vertex_set(), &
-            & constellation % num_vertices(), num_components=3)
+            & constellation % num_vertices(), num_components=d)
        call positions % set_real_vector(pts)
 
        ! Algebra: one apply, aimed along the normal at the face.
        fitting = fit(shape, at=xf, &
-            & direction=normals(3 * e - 2 : 3 * e), &
+            & direction=normals(d * e - d + 1 : d * e), &
             & scale=scales(e))
        call fitting % apply(constellation, [positions], answer)
        call answer % real_vector(w)

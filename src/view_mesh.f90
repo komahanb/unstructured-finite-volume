@@ -57,6 +57,8 @@ module view_mesh
 
   type, extends(stored_directed_graph) :: mesh
 
+     integer :: dimension = 3
+
      type(stored_field) :: volumes
      type(stored_field) :: cell_centres
      type(stored_field) :: areas
@@ -93,7 +95,7 @@ contains
 
   impure type(mesh) function create(nv, tails, heads, volumes, &
        & cell_centres, areas, deltas, normals, face_centres, weights, &
-       & vtags, etags, number) result(this)
+       & vtags, etags, number, dimension) result(this)
 
     integer         , intent(in)           :: nv
     integer         , intent(in)           :: tails(:)
@@ -108,9 +110,10 @@ contains
     character(len=*), intent(in), optional :: vtags(:)
     character(len=*), intent(in), optional :: etags(:)
     integer         , intent(in), optional :: number
+    integer         , intent(in), optional :: dimension
 
     type(graph) :: cells, faces
-    integer :: ne
+    integer :: ne, d
 
     ! The structure first, through the parent's own constructor.
     this % stored_directed_graph = stored_directed_graph(nv, tails=tails, heads=heads, &
@@ -118,13 +121,17 @@ contains
 
     ne = this % num_edges()
 
+    d = 3
+    if (present(dimension)) d = dimension
+    this % dimension = d
+
     ! The gate: measurements must fit the structure they measure.
     call gate(size(volumes)      == nv    , 'one volume per cell')
-    call gate(size(cell_centres) == 3 * nv, 'three centre parts per cell')
+    call gate(size(cell_centres) == d * nv, 'd centre parts per cell')
     call gate(size(areas)        == ne    , 'one area per face')
     call gate(size(deltas)       == ne    , 'one delta per face')
-    call gate(size(normals)      == 3 * ne, 'three normal parts per face')
-    call gate(size(face_centres) == 3 * ne, 'three centre parts per face')
+    call gate(size(normals)      == d * ne, 'd normal parts per face')
+    call gate(size(face_centres) == d * ne, 'd centre parts per face')
     call gate(size(weights)      == ne    , 'one weight per face')
 
     ! Geometry rides the graph's OWN carriers, so a field's domain
@@ -133,11 +140,11 @@ contains
     faces = this % edge_set()
 
     this % volumes       = stored_field('cell_volume' , cells, nv, unit_name='m3')
-    this % cell_centres  = stored_field('cell_centre' , cells, nv, num_components=3, unit_name='m')
+    this % cell_centres  = stored_field('cell_centre' , cells, nv, num_components=d, unit_name='m')
     this % areas         = stored_field('face_area'   , faces, ne, unit_name='m2')
     this % deltas        = stored_field('face_delta'  , faces, ne, unit_name='m')
-    this % normals       = stored_field('face_normal' , faces, ne, num_components=3, unit_name='-')
-    this % face_centers_ = stored_field('face_centre' , faces, ne, num_components=3, unit_name='m')
+    this % normals       = stored_field('face_normal' , faces, ne, num_components=d, unit_name='-')
+    this % face_centers_ = stored_field('face_centre' , faces, ne, num_components=d, unit_name='m')
     this % weights       = stored_field('face_weights', faces, ne, unit_name='-')
 
     call this % volumes       % set_real_vector(volumes)

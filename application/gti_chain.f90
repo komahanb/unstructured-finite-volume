@@ -65,14 +65,17 @@ module gti_chain
   use gti_march        , only : partitioned, horizon_bounds, block_of, solved
   use gti_stage        , only : stage_block_of, instant_at
   use view_directed_stored, only : stored_directed_graph
+  use field_calculus   , only : field
   use field_stored     , only : stored_field
-  use gti_sweeps       , only : tangent_solve
+  use operation_action , only : variation
+  use gti_sweeps       , only : tangent_solve, dense_solve, jacobian_of, design_partial
   use gti_taylor       , only : nodal_coefficient
 
   implicit none
 
   private
   public :: chain_block, march_chain, chain_expansion, instant_components
+  public :: chain_system, chain_systems, chain_by_tangent, chain_by_adjoint
 
   !===================================================================!
   ! One block of a chain: its statement, where its instants sit among
@@ -91,6 +94,20 @@ module gti_chain
      integer               :: primary = 0
 
   end type chain_block
+
+  !===================================================================!
+  ! What one block contributes to a sensitivity: its jacobian in the
+  ! state, its partial in the design, and the part of the
+  ! functional's gradient it owns.
+  !===================================================================!
+
+  type :: chain_system
+
+     real(dp), allocatable :: a(:,:)
+     real(dp), allocatable :: rate(:)
+     real(dp), allocatable :: g(:)
+
+  end type chain_system
 
 contains
 
@@ -442,5 +459,243 @@ contains
     end do
 
   end subroutine chain_functional
+
+  !===================================================================!
+  ! Every block's system at the trajectory already marched. The
+  ! gradient is shared out by ownership, each block taking the
+  ! instants it computed and none of the instants it was given, so
+  ! that a shared instant counts once.
+  !===================================================================!
+
+  subroutine chain_systems(chain, integrand, degrees, dt, design, systems)
+
+    type(chain_block)     , intent(in) :: chain(:)
+    class(nodal_integrand), intent(in) :: integrand
+    integer               , intent(in) :: degrees
+    real(dp)              , intent(in) :: dt(:), design
+    type(chain_system), allocatable, intent(out) :: systems(:)
+
+    type(stored_directed_graph) :: unknowns
+    type(stored_field), allocatable :: inputs(:)
+    integer :: b, count
+
+    allocate(systems(size(chain)))
+
+    do b = 1, size(chain)
+       count = chain(b) % rows % num_unknowns()
+       call frozen_at(chain(b), design, unknowns, inputs)
+
+       call jacobian_of(chain(b) % rows, unknowns, inputs, count, &
+            & unknowns % vertex_set(), systems(b) % a)
+       call design_partial(chain(b) % rows, unknowns, inputs, &
+            & chain(b) % rows % num_points(), unknowns % vertex_set(), &
+            & systems(b) % rate)
+       call owned_gradient(chain, b, integrand, degrees, dt, design, inputs, &
+            & unknowns, systems(b) % g)
+    end do
+
+  end subroutine chain_systems
+
+  !===================================================================!
+  ! The functional's gradient over the instants one block owns,
+  ! weighted by the step that ends at each. The integrand reads one
+  ! instant at a time, so one partial action per degree gives the
+  ! whole of it rather than one per unknown.
+  !===================================================================!
+
+  subroutine owned_gradient(chain, b, integrand, degrees, dt, design, inputs, &
+       & unknowns, g)
+
+    type(chain_block)          , intent(in) :: chain(:)
+    integer                    , intent(in) :: b, degrees
+    class(nodal_integrand)     , intent(in) :: integrand
+    real(dp)                   , intent(in) :: dt(:), design
+    type(stored_field)         , intent(in) :: inputs(:)
+    type(stored_directed_graph), intent(in) :: unknowns
+    real(dp), allocatable      , intent(out) :: g(:)
+
+    type(stored_directed_graph) :: instants
+    type(stored_field) :: state, knobs, direction
+    class(field), allocatable :: out
+    real(dp), allocatable :: v(:), rate(:)
+    integer :: count, from, to, k, d, at, held
+
+    count = chain(b) % rows % num_unknowns()
+    allocate(g(count), source=0.0_dp)
+    call owned(chain, b, from, to)
+
+    held = to - from + 1
+    instants = stored_directed_graph(held, tails=[integer ::], heads=[integer ::])
+
+    call at_owned_instants(chain, b, degrees, design, inputs, from, to, instants, &
+         & state, knobs)
+
+    allocate(v(held * degrees), source=0.0_dp)
+    direction = stored_field('direction', instants % vertex_set(), held * degrees)
+
+    do d = 0, degrees - 1
+       v = 0.0_dp
+       do k = 1, held
+          v((k - 1) * degrees + d + 1) = 1.0_dp
+       end do
+       call direction % set_real_vector(v)
+
+       call integrand % partial_action(instants, [state, knobs], &
+            & [variation(integrand % argument(1), direction)], out)
+       call out % real_vector(rate)
+
+       do k = from, to
+          at = chain(b) % instants_at(k - chain(b) % first + 1)
+          g(at + d + 1) = dt(k) * rate(k - from + 1)
+       end do
+    end do
+
+    associate (u1 => unknowns); end associate
+
+  end subroutine owned_gradient
+
+  !===================================================================!
+  ! The trajectory at the instants one block owns, laid out one
+  ! instant at a time so that a nodal rule reads them.
+  !===================================================================!
+
+  subroutine at_owned_instants(chain, b, degrees, design, inputs, from, to, &
+       & instants, state, knobs)
+
+    type(chain_block)          , intent(in)  :: chain(:)
+    integer                    , intent(in)  :: b, degrees, from, to
+    real(dp)                   , intent(in)  :: design
+    type(stored_field)         , intent(in)  :: inputs(:)
+    type(stored_directed_graph), intent(in)  :: instants
+    type(stored_field)         , intent(out) :: state, knobs
+
+    real(dp), allocatable :: whole(:), v(:)
+    integer :: held, k, at
+
+    held = to - from + 1
+    call inputs(1) % real_vector(whole)
+    allocate(v(held * degrees))
+
+    do k = from, to
+       at = chain(b) % instants_at(k - chain(b) % first + 1)
+       v((k - from) * degrees + 1:(k - from + 1) * degrees) = whole(at + 1:at + degrees)
+    end do
+
+    state = stored_field('state', instants % vertex_set(), held * degrees)
+    knobs = stored_field('design', instants % vertex_set(), held)
+    call state % set_real_vector(v)
+    call knobs % set_real_vector(spread(design, 1, held))
+
+  end subroutine at_owned_instants
+
+  !===================================================================!
+  ! Which block holds one global instant, and where in it.
+  !===================================================================!
+
+  pure subroutine holder_of(chain, instant, degrees, held_by, at)
+
+    type(chain_block), intent(in)  :: chain(:)
+    integer          , intent(in)  :: instant, degrees
+    integer          , intent(out) :: held_by, at
+
+    integer :: b
+
+    held_by = 0
+    at      = 0
+
+    do b = 1, size(chain)
+       if (instant < chain(b) % first .or. instant > chain(b) % last) cycle
+       held_by = b
+       at      = chain(b) % instants_at(instant - chain(b) % first + 1)
+       return
+    end do
+
+    associate (u1 => degrees); end associate
+
+  end subroutine holder_of
+
+  !===================================================================!
+  ! Forward. Each block solves for its own sensitivity, with the rows
+  ! it carried set to what an earlier block already found at those
+  ! instants.
+  !===================================================================!
+
+  real(dp) function chain_by_tangent(chain, systems, degrees) result(df)
+
+    type(chain_block) , intent(in) :: chain(:)
+    type(chain_system), intent(in) :: systems(:)
+    integer           , intent(in) :: degrees
+
+    real(dp), allocatable :: w(:,:), rhs(:), one(:)
+    integer :: b, widest, i, k, d, held_by, at
+
+    widest = 0
+    do b = 1, size(chain)
+       widest = max(widest, chain(b) % rows % num_unknowns())
+    end do
+
+    allocate(w(widest, size(chain)), source=0.0_dp)
+    df = 0.0_dp
+
+    do b = 1, size(chain)
+       rhs = -systems(b) % rate
+
+       do i = 1, chain(b) % given * degrees
+          k = chain(b) % first + (i - 1) / degrees
+          d = mod(i - 1, degrees)
+          call holder_of(chain(1:b - 1), k, degrees, held_by, at)
+          if (held_by > 0) rhs(i) = w(at + d + 1, held_by)
+       end do
+
+       call dense_solve(systems(b) % a, rhs, .false., one)
+       w(1:size(one), b) = one
+       df = df + dot_product(systems(b) % g, one)
+    end do
+
+  end function chain_by_tangent
+
+  !===================================================================!
+  ! Backward. Each block solves against its own transpose, with its
+  ! own share of the gradient plus whatever a later block's costate
+  ! left on the instants they share.
+  !===================================================================!
+
+  real(dp) function chain_by_adjoint(chain, systems, degrees) result(df)
+
+    type(chain_block) , intent(in) :: chain(:)
+    type(chain_system), intent(in) :: systems(:)
+    integer           , intent(in) :: degrees
+
+    real(dp), allocatable :: rhs(:,:), lambda(:)
+    integer :: b, c, widest, i, k, d, held_by, at
+
+    widest = 0
+    do b = 1, size(chain)
+       widest = max(widest, chain(b) % rows % num_unknowns())
+    end do
+
+    allocate(rhs(widest, size(chain)), source=0.0_dp)
+    do b = 1, size(chain)
+       rhs(1:size(systems(b) % g), b) = systems(b) % g
+    end do
+
+    df = 0.0_dp
+
+    do b = size(chain), 1, -1
+       call dense_solve(systems(b) % a, rhs(1:chain(b) % rows % num_unknowns(), b), &
+            & .true., lambda)
+       df = df - dot_product(lambda, systems(b) % rate)
+
+       do i = 1, chain(b) % given * degrees
+          k = chain(b) % first + (i - 1) / degrees
+          d = mod(i - 1, degrees)
+          call holder_of(chain(1:b - 1), k, degrees, held_by, at)
+          if (held_by > 0) rhs(at + d + 1, held_by) = rhs(at + d + 1, held_by) + lambda(i)
+       end do
+
+       associate (u1 => c); end associate
+    end do
+
+  end function chain_by_adjoint
 
 end module gti_chain

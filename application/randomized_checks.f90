@@ -46,10 +46,9 @@ program randomized_checks
   use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
   use gti_expansion         , only : family_holder
   use gti_block             , only : block_residual
-  use gti_march             , only : partition, marched_horizon
-  use gti_horizon           , only : block_system, horizon_systems, &
-       & horizon_by_tangent, horizon_by_adjoint
-  use gti_chain             , only : chain_block, march_chain, chain_expansion
+  use gti_march             , only : partition
+  use gti_chain             , only : chain_block, march_chain, chain_expansion, &
+       & chain_system, chain_systems, chain_by_tangent, chain_by_adjoint
 
   implicit none
 
@@ -122,6 +121,38 @@ contains
 
   end function drawn_real
 
+  !-------------------------------------------------------------------!
+  ! The sensitivity by both directions, over the chain layout, which
+  ! every family has - a stage block keeps its instants between its
+  ! stages and a multistep one keeps one set per instant, and neither
+  ! is assumed here.
+  !-------------------------------------------------------------------!
+
+  subroutine directions_of(schemes, added, degrees, duration, design, tangent, adjoint)
+
+    type(family_holder), intent(in)  :: schemes(:)
+    integer            , intent(in)  :: added(:), degrees
+    real(dp)           , intent(in)  :: duration, design
+    real(dp)           , intent(out) :: tangent, adjoint
+
+    type(chain_block) , allocatable :: chain(:)
+    type(chain_system), allocatable :: systems(:)
+    real(dp), allocatable :: held(:), dt(:), t(:)
+    real(dp) :: achieved
+
+    call held_for(schemes(1) % scheme, degrees, duration, sum(added), held, dt, t)
+
+    call march_chain(schemes, added, van_der_pol(degrees - 1), degrees, &
+         & uniform_grid(duration), design, held, chain, dt, t, achieved)
+
+    call chain_systems(chain, van_der_pol_energy(degrees - 1), degrees, dt, design, &
+         & systems)
+
+    tangent = chain_by_tangent(chain, systems, degrees)
+    adjoint = chain_by_adjoint(chain, systems, degrees)
+
+  end subroutine directions_of
+
   subroutine held_for(scheme, degrees, duration, instants, held, dt, t)
 
     class(family), intent(in) :: scheme
@@ -165,8 +196,7 @@ contains
     integer, intent(inout) :: failures, skipped
 
     type(family_holder), allocatable :: whole(:), split(:)
-    type(block_system) , allocatable :: systems(:)
-    real(dp), allocatable :: f_whole(:), f_split(:), q(:), gradient(:)
+    real(dp), allocatable :: f_whole(:), f_split(:)
     real(dp) :: duration, design, tangent, adjoint, achieved
     integer :: degrees, order, kind, instants, half
     character(len=16) :: label
@@ -188,40 +218,47 @@ contains
          & '        degrees ', degrees, '  instants ', instants, '  half ', half, &
          & '  duration ', duration, '  design ', design
 
-    call expanded(whole, [instants], degrees, duration, design, f_whole, achieved)
-    if (achieved > 1.0e-6_dp) then
-       skipped = skipped + 1
-       write(*,'(i6,2x,a16,a)') index, label, '   march did not converge, passed over'
-       return
-    end if
-
-    call expanded(split, [half, instants - half], degrees, duration, design, &
-         & f_split, achieved)
+    call both_ways(whole, split, instants, half, degrees, duration, design, &
+         & f_whole, f_split, achieved)
     if (achieved > 1.0e-6_dp) then
        skipped = skipped + 1
        write(*,'(i6,2x,a16,a,es9.2)') index, label, &
-            & '   the split march did not converge, passed over: ', achieved
+            & '   a march did not converge, passed over: ', achieved
        return
     end if
 
-    tangent = 0.0_dp
-    adjoint = 0.0_dp
-    if (.not. staged) then
-       call marched_horizon(whole, [instants], van_der_pol(degrees - 1), degrees, &
-            & duration, design, held_of(whole(1) % scheme, degrees, duration, instants), &
-            & q, achieved)
-       call horizon_systems(whole, [instants], van_der_pol(degrees - 1), &
-            & van_der_pol_energy(degrees - 1), degrees, duration, design, q, &
-            & systems, gradient)
-       tangent = horizon_by_tangent(systems, gradient)
-       adjoint = horizon_by_adjoint(systems)
-    end if
+    call directions_of(whole, [instants], degrees, duration, design, tangent, adjoint)
 
     if (verbose()) write(*,'(a,2es14.6)') '        f whole and split ', f_whole(0), f_split(0)
 
-    call verdict(index, label, f_whole, f_split, tangent, adjoint, staged, failures)
+    call verdict(index, label, f_whole, f_split, tangent, adjoint, failures)
 
   end subroutine one_case
+
+  !-------------------------------------------------------------------!
+  ! The same horizon expanded in one block and in two, and the worse
+  ! of the two residuals, so that a case is passed over if either
+  ! march failed to find a trajectory.
+  !-------------------------------------------------------------------!
+
+  subroutine both_ways(whole, split, instants, half, degrees, duration, design, &
+       & f_whole, f_split, achieved)
+
+    type(family_holder), intent(in)  :: whole(:), split(:)
+    integer            , intent(in)  :: instants, half, degrees
+    real(dp)           , intent(in)  :: duration, design
+    real(dp), allocatable, intent(out) :: f_whole(:), f_split(:)
+    real(dp)           , intent(out) :: achieved
+
+    real(dp) :: one, two
+
+    call expanded(whole, [instants], degrees, duration, design, f_whole, one)
+    call expanded(split, [half, instants - half], degrees, duration, design, &
+         & f_split, two)
+
+    achieved = max(one, two)
+
+  end subroutine both_ways
 
   !-------------------------------------------------------------------!
   ! A chain whose blocks are marched by different families. Every
@@ -378,17 +415,11 @@ contains
 
   end subroutine halved
 
-  function held_of(scheme, degrees, duration, instants) result(held)
-
-    class(family), intent(in) :: scheme
-    integer      , intent(in) :: degrees, instants
-    real(dp)     , intent(in) :: duration
-    real(dp), allocatable :: held(:), dt(:), t(:)
-
-    call held_for(scheme, degrees, duration, instants, held, dt, t)
-
-  end function held_of
-
+  !-------------------------------------------------------------------!
+  ! The sensitivity by both directions, over the chain layout, which
+  ! every family has - a stage block keeps its instants between its
+  ! stages and a multistep one keeps one set per instant, and neither
+  ! is assumed here.
   subroutine fill(held, kind, order)
 
     type(family_holder), intent(out) :: held
@@ -450,12 +481,11 @@ contains
   ! to be round-off carried through a solve.
   !-------------------------------------------------------------------!
 
-  subroutine verdict(index, label, f_whole, f_split, tangent, adjoint, staged, failures)
+  subroutine verdict(index, label, f_whole, f_split, tangent, adjoint, failures)
 
     integer         , intent(in)    :: index
     character(len=*), intent(in)    :: label
     real(dp)        , intent(in)    :: f_whole(0:), f_split(0:), tangent, adjoint
-    logical         , intent(in)    :: staged
     integer         , intent(inout) :: failures
 
     real(dp) :: split_gap, direction_gap, route_gap, scale
@@ -465,16 +495,11 @@ contains
     direction_gap = abs(tangent - adjoint) / max(1.0_dp, abs(tangent))
     route_gap     = abs(tangent - f_whole(1)) / max(1.0_dp, abs(tangent))
 
-    if (staged) then
-       write(*,'(i6,2x,a16,es15.2,a)') index, label, split_gap, &
-            & '   multistep only   multistep only'
-    else
-       write(*,'(i6,2x,a16,3es15.2)') index, label, split_gap, direction_gap, route_gap
-    end if
+    write(*,'(i6,2x,a16,3es15.2)') index, label, split_gap, direction_gap, route_gap
 
     if (split_gap > 1.0e-6_dp) failures = failures + 1
-    if (.not. staged .and. direction_gap > 1.0e-8_dp) failures = failures + 1
-    if (.not. staged .and. route_gap > 1.0e-6_dp) failures = failures + 1
+    if (direction_gap > 1.0e-8_dp) failures = failures + 1
+    if (route_gap > 1.0e-6_dp) failures = failures + 1
 
   end subroutine verdict
 

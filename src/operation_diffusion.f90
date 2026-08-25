@@ -46,12 +46,13 @@ module operation_diffusion
 
 contains
 
-  function diffusion_stencil(m, law, conditions, shape) result(op)
+  function diffusion_stencil(m, law, conditions, shape, rings) result(op)
 
     type(mesh)           , intent(in) :: m
     type(conduction)     , intent(in) :: law
     type(robin_condition), intent(in) :: conditions(:)
     class(form), intent(in), optional :: shape
+    integer    , intent(in), optional :: rings
 
     type(stencil) :: op
 
@@ -70,7 +71,8 @@ contains
 
     type(stored_field) :: fa
     real(dp), allocatable :: keff(:), areas(:), scales(:)
-    real(dp), allocatable :: vb(:), wb(:), values(:), weights(:)
+    real(dp), allocatable :: vb(:), wb(:), values(:), weights(:), flux(:)
+    logical , allocatable :: known(:)
     integer :: k, f, e, ne
 
     ne = m % num_edges()
@@ -85,9 +87,11 @@ contains
     ! numbers of the wall relation travel: a wall that holds a value
     ! and a wall that holds a gradient are not the same wall, and
     ! one number cannot tell them apart.
-    allocate(vb(ne), wb(ne))
-    vb = 0.0_dp
-    wb = 1.0_dp
+    allocate(vb(ne), wb(ne), flux(ne), known(ne))
+    vb    = 0.0_dp
+    wb    = 1.0_dp
+    flux  = 0.0_dp
+    known = .false.
     do k = 1, size(conditions)
        call conditions(k) % faces(m, sets, labels, inclusions, members)
        call conditions(k) % wall_relation(m, weights, values)
@@ -96,6 +100,22 @@ contains
           wb(e) = weights(f)
           vb(e) = values(f)
        end do
+
+       ! A wall that holds a gradient - a = 0 - holds the flux itself,
+       ! c / b, and there is nothing at such a face to fit: the flux
+       ! goes straight into the balance. A wall relation fitted there
+       ! is right for the value and wrong for the slope, and a cell on
+       ! that wall then carries an error that no refinement removes.
+       if (conditions(k) % a == 0.0_dp) then
+          if (conditions(k) % b == 0.0_dp) then
+             error stop 'operation_diffusion: a wall holds a value, a gradient, or both'
+          end if
+          do f = 1, sets % num_members_of(members)
+             e        = sets % member_of(members, f)
+             known(e) = .true.
+             flux(e)  = conditions(k) % c / conditions(k) % b
+          end do
+       end if
     end do
 
     ! The shape, chosen or defaulted; then the assembly does the act.
@@ -106,7 +126,8 @@ contains
     end if
 
     op = fitted_balance_stencil(m, chosen, scales, &
-         & boundary_values=vb, boundary_weights=wb)
+         & boundary_values=vb, boundary_weights=wb, rings=rings, &
+         & flux_known=known, boundary_flux=flux)
 
   end function diffusion_stencil
 

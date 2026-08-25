@@ -75,7 +75,7 @@ program graph_time_integrator
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
        & expansion_substitutions, &
        & instant_components
-  use gti_sweeps            , only : set_krylov_above
+  use gti_sweeps            , only : set_linear_solver
   use operation_minimization, only : relative, absolute, by_count, by_rate
   use gti_configuration     , only : configuration, read_configuration, override, show, &
        & lists, refuse_unknown, worded
@@ -91,7 +91,7 @@ program graph_time_integrator
 
   call settings(cfg)
   call show(cfg)
-  call set_krylov_above(cfg % krylov_above)
+  call set_linear_solver(cfg % linear_solver)
   call table(cfg)
 
 contains

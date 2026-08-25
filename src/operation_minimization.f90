@@ -68,6 +68,7 @@ module operation_minimization
   ! smallest window that gives a slope an error worth comparing to.
   integer, parameter :: window = 5
   public :: minimizer
+  public :: attach
 
   !===================================================================!
   ! The base: an attached operation, the graph it reads, and the

@@ -77,3 +77,4 @@ lib_quad/
 application/.build/
 application/.build_quad/
 application/quad/
+application/spatio_temporal

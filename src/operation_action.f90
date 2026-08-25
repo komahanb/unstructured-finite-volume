@@ -118,8 +118,9 @@ module operation_action
      procedure(operation_domain_interface), deferred :: domain
      procedure(operation_apply_interface) , deferred :: apply
 
-     procedure :: max_degree     => operation_max_degree
-     procedure :: partial_action => operation_partial_action
+     procedure :: max_degree       => operation_max_degree
+     procedure :: partial_action   => operation_partial_action
+     procedure :: compiled_tangent => operation_compiled_tangent
 
      procedure :: declare_arguments
      procedure :: num_arguments
@@ -376,6 +377,32 @@ contains
   ! concrete type that declares a positive max_degree overrides both
   ! bindings; the order requested must not exceed its max_degree.
   !===================================================================!
+
+  !===================================================================!
+  ! THE COMPILED TANGENT. A statement that can write its own tangent
+  ! in one argument down as triples - row, column, weight - says so
+  ! here, and a minimizer governing it may then attach the compiled
+  ! operator instead of forming the tangent by matvecs. The default
+  ! is that it cannot, and available says so; the arrays are then
+  ! untouched. Nothing here is a matvec: a statement that compiles
+  ! its tangent knows its own structure.
+  !===================================================================!
+
+  subroutine operation_compiled_tangent(this, input_graph, input_data, which, &
+       & rows, columns, weights, available)
+
+    class(operation)     , intent(in)  :: this
+    class(directed_graph), intent(in)  :: input_graph
+    class(field)         , intent(in)  :: input_data(:)
+    integer              , intent(in)  :: which
+    integer , allocatable, intent(out) :: rows(:), columns(:)
+    real(dp), allocatable, intent(out) :: weights(:)
+    logical              , intent(out) :: available
+
+    associate (u1 => this, u2 => input_graph, u3 => input_data, u4 => which); end associate
+    available = .false.
+
+  end subroutine operation_compiled_tangent
 
   subroutine operation_partial_action(this, input_graph, input_data, &
        & variations, output)

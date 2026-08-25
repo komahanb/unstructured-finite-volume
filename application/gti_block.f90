@@ -62,7 +62,7 @@ module gti_block
   use field_calculus       , only : field
   use field_stored         , only : stored_field
   use graph_fractal        , only : graph
-  use operation_stencil    , only : stencil
+  use operation_stencil    , only : combine_triples, stencil
   use physics_integrand    , only : nodal_integrand
 
   implicit none
@@ -74,6 +74,14 @@ module gti_block
 
      type(stencil)                       , private :: derived
      class(nodal_integrand), allocatable  , private :: physics
+
+     ! THE LEVEL BELOW. A stencil over the same unknowns coupling the
+     ! components of one instant across the nodes of a spatial mesh:
+     ! the spatial operator, linear in the state and independent of
+     ! the design. It adds to the derived rows in the apply and in
+     ! the tangent, and nowhere else, having no design partial and no
+     ! partial above the first. Absent, the block is one node's.
+     type(stencil), allocatable, private :: spatial
      type(stored_directed_graph)         , private :: points
      integer , allocatable               , private :: at(:)
      integer , allocatable               , private :: carried(:)
@@ -89,6 +97,7 @@ module gti_block
      procedure :: apply          => block_apply
      procedure :: max_degree     => block_max_degree
      procedure :: partial_action => block_partial_action
+     procedure :: compiled_tangent => block_compiled_tangent
      procedure :: num_unknowns
      procedure :: num_degrees
      procedure :: num_points
@@ -104,14 +113,15 @@ module gti_block
 
 contains
 
-  function create(derived, physics, at, unknowns, degrees, primary, carried, held) &
-       & result(this)
+  function create(derived, physics, at, unknowns, degrees, primary, carried, held, &
+       & spatial) result(this)
 
     type(stencil)         , intent(in) :: derived
     class(nodal_integrand), intent(in) :: physics
     integer               , intent(in) :: at(:), unknowns, degrees, primary
     integer               , intent(in) :: carried(:)
     real(dp)              , intent(in) :: held(:)
+    type(stencil)         , intent(in), optional :: spatial
     type(block_residual) :: this
 
     if (size(carried) /= size(held)) then
@@ -125,6 +135,7 @@ contains
     end if
 
     this % derived  = derived
+    if (present(spatial)) this % spatial = spatial
     allocate(this % physics, source=physics)
     this % at       = at
     this % unknowns = unknowns
@@ -403,7 +414,7 @@ contains
     type(stored_field) :: state
     type(stored_field), allocatable :: inputs(:)
     class(field), allocatable :: half
-    real(dp), allocatable :: r(:), governing(:), x(:)
+    real(dp), allocatable :: r(:), governing(:), x(:), coupled(:)
 
     if (.not. present(input_data)) then
        error stop 'gti_block: the state and the design are given'
@@ -414,6 +425,12 @@ contains
 
     call this % derived % apply(input_graph, [state], half)
     call half % real_vector(r)
+
+    if (allocated(this % spatial)) then
+       call this % spatial % apply(input_graph, [state], half)
+       call half % real_vector(coupled)
+       r = r + coupled
+    end if
 
     call this % physics % apply(this % points, inputs, half)
     call half % real_vector(governing)
@@ -429,6 +446,117 @@ contains
   ! variation renamed for it and, in the state, gathered to the
   ! points the physics reads.
   !===================================================================!
+
+  !===================================================================!
+  ! THE COMPILED TANGENT in the state. The block knows its own
+  ! structure: the derived rows and the spatial rows are stencils
+  ! already, and the physics is nodal, so its tangent at every point
+  ! comes from one partial action per degree - a direction of one on
+  ! that degree at every point at once, the points being independent.
+  ! A carried row is an identity. Triples landing on one entry are
+  ! combined. Only the state's tangent is compiled; any other
+  ! argument is not available.
+  !===================================================================!
+
+  subroutine block_compiled_tangent(this, input_graph, input_data, which, &
+       & rows, columns, weights, available)
+
+    class(block_residual), intent(in)  :: this
+    class(directed_graph), intent(in)  :: input_graph
+    class(field)         , intent(in)  :: input_data(:)
+    integer              , intent(in)  :: which
+    integer , allocatable, intent(out) :: rows(:), columns(:)
+    real(dp), allocatable, intent(out) :: weights(:)
+    logical              , intent(out) :: available
+
+    type(stored_field) :: state, direction
+    type(stored_field), allocatable :: inputs(:)
+    class(field), allocatable :: out
+    real(dp), allocatable :: x(:), w(:), governing(:), v(:)
+    integer , allocatable :: r(:), c(:)
+    logical , allocatable :: is_carried(:)
+    integer :: e, d, p, ne, npts, n, kept, count
+
+    available = which == 1
+    if (.not. available) return
+
+    n    = this % unknowns
+    npts = size(this % at)
+    allocate(is_carried(n), source=.false.)
+    is_carried(this % carried) = .true.
+
+    call state_of(this, input_data, input_graph, x, state)
+    call point_inputs(this, input_data, x, inputs)
+
+    ! room for the derived and spatial triples, the physics's degrees
+    ! per point, and the carried identities
+    count = this % derived % pattern % num_edges() + npts * this % degrees + size(this % carried)
+    if (allocated(this % spatial)) count = count + this % spatial % pattern % num_edges()
+    allocate(r(count), c(count), w(count))
+    kept = 0
+
+    call stencil_triples(this % derived, is_carried, r, c, w, kept)
+    if (allocated(this % spatial)) call stencil_triples(this % spatial, is_carried, r, c, w, kept)
+
+    allocate(v(npts * this % degrees))
+    do d = 0, this % degrees - 1
+       v = 0.0_dp
+       do p = 1, npts
+          v((p - 1) * this % degrees + d + 1) = 1.0_dp
+       end do
+       direction = stored_field('direction', this % points % vertex_set(), size(v))
+       call direction % set_real_vector(v)
+       call this % physics % partial_action(this % points, inputs, &
+            & [variation(this % physics % argument(1), direction)], out)
+       call out % real_vector(governing)
+       do p = 1, npts
+          if (is_carried(this % at(p) + this % primary + 1)) cycle
+          kept    = kept + 1
+          r(kept) = this % at(p) + this % primary + 1
+          c(kept) = this % at(p) + d + 1
+          w(kept) = governing(p)
+       end do
+    end do
+
+    do e = 1, size(this % carried)
+       kept    = kept + 1
+       r(kept) = this % carried(e)
+       c(kept) = this % carried(e)
+       w(kept) = 1.0_dp
+    end do
+
+    call combine_triples(n, n, r(1:kept), c(1:kept), w(1:kept), rows, columns, weights)
+
+    associate (u1 => ne); end associate
+
+  end subroutine block_compiled_tangent
+
+  !-------------------------------------------------------------------!
+  ! A stencil's triples, less those on carried rows, appended.
+  !-------------------------------------------------------------------!
+
+  subroutine stencil_triples(op, is_carried, r, c, w, kept)
+
+    type(stencil), intent(in)    :: op
+    logical      , intent(in)    :: is_carried(:)
+    integer      , intent(inout) :: r(:), c(:)
+    real(dp)     , intent(inout) :: w(:)
+    integer      , intent(inout) :: kept
+
+    real(dp), allocatable :: weights(:)
+    integer :: e, row
+
+    call op % weights % real_vector(weights)
+    do e = 1, op % pattern % num_edges()
+       row = op % pattern % edge_head(e)
+       if (is_carried(row)) cycle
+       kept    = kept + 1
+       r(kept) = row
+       c(kept) = op % pattern % edge_tail(e)
+       w(kept) = weights(e)
+    end do
+
+  end subroutine stencil_triples
 
   subroutine block_partial_action(this, input_graph, input_data, variations, output)
 
@@ -481,10 +609,18 @@ contains
     type(stored_field) :: direction
     type(stored_field), allocatable :: inputs(:)
     class(field), allocatable :: half
+    real(dp), allocatable :: coupled(:)
 
     call this % derived % partial_action(input_graph, [state], &
          & [variations(1) % with_argument(this % derived % argument(1))], half)
     call half % real_vector(r)
+
+    if (allocated(this % spatial)) then
+       call this % spatial % partial_action(input_graph, [state], &
+            & [variations(1) % with_argument(this % spatial % argument(1))], half)
+       call half % real_vector(coupled)
+       r = r + coupled
+    end if
 
     call point_inputs(this, input_data, x, inputs)
 

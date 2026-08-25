@@ -43,7 +43,7 @@ module gti_march
   use physics_integrand       , only : nodal_integrand
   use gti_expansion           , only : block_reach, family_holder
   use gti_block               , only : block_residual
-  use gti_sweeps              , only : krylov_above, jacobian_of
+  use gti_sweeps              , only : inner_minimizer, jacobian_of
 
   implicit none
 
@@ -587,23 +587,7 @@ contains
     integer, intent(in) :: unknowns
     class(minimizer), allocatable :: inner
 
-    type(gmres)        :: krylov
-    type(dense_direct) :: factorisation
-
-    if (unknowns <= krylov_above()) then
-       ! The matrix here is a tangent frozen at an intermediate newton
-       ! iterate, where a singular pivot is a fact about the iterate
-       ! rather than a fault, so it is reported and not stopped on.
-       factorisation = dense_direct()
-       factorisation % singular_reported = .true.
-       allocate(inner, source=factorisation)
-    else
-       krylov = gmres()
-       krylov % restart        = min(unknowns, 60)
-       krylov % tolerance      = 1.0e-13_dp
-       krylov % max_iterations = 4
-       allocate(inner, source=krylov)
-    end if
+    allocate(inner, source=inner_minimizer(unknowns))
 
   end function inner_solver
 

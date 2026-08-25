@@ -48,6 +48,8 @@ module gti_sweeps
   use field_stored          , only : stored_field
   use operation_stencil     , only : stencil
   use operation_dense_direct, only : dense_direct
+  use operation_multigrid   , only : multigrid
+  use operation_gauss_seidel, only : gauss_seidel
   use util_tally, only : tally_record, tangent_loops, adjoint_loops
   use util_factorisation, only : dense_factorisation
   use operation_gmres       , only : gmres
@@ -64,65 +66,105 @@ module gti_sweeps
 
   integer, parameter :: forward_route = 1
   integer, parameter :: reverse_route = 2
-  public :: krylov_above, set_krylov_above
+  public :: linear_solver_named, set_linear_solver, set_aggregates, inner_minimizer
 
   !===================================================================!
-  ! Where the linear solve stops factorising and starts iterating.
-  !
-  ! A dense factorisation forms the jacobian one column at a time and
-  ! then costs the cube of the count. A krylov solver forms no matrix
-  ! and costs a matvec per step, so how it fares depends on how many
-  ! steps it needs, which is a question about the conditioning of the
-  ! block and not about its size.
-  !
-  ! The two families sit on opposite sides of that. A stage block
-  ! weighs its sources by the step, and iterating beats factorising
-  ! on one: at six hundred unknowns five seconds against eleven, and
-  ! at a thousand ten seconds against sixty. A difference block on a
-  ! second derivative weighs its sources by the inverse square of the
-  ! step, and iterating does not converge on one at all - at three
-  ! hundred and sixty unknowns it does not finish in the time
-  ! factorising takes a second to do.
-  !
-  ! Nothing here preconditions, and without that a krylov solver
-  ! cannot be the default. So the default factorises, which always
-  ! finishes, and iterating is asked for: set krylov_above to a count
-  ! above which to iterate, or to zero to iterate throughout.
-  !
-  ! It is worth asking for on a large stage block, and worth asking
-  ! for where a statement is singular for reasons of its own - a
-  ! coarse grid on a diverging problem will do it - because a
-  ! factorisation meeting a singular pivot stops the program where an
-  ! iteration reports that a row did not converge.
-  !
-  ! For the second of those to be worth anything the iteration has to
-  ! give up rather than grind, so it is held to a few restarts of a
-  ! few dozen steps. On a block it suits that is more than it needs;
-  ! on one it does not, newton is handed a poor step, fails to
-  ! converge, and the row says so - which is the point.
+  ! WHICH LINEAR SOLVER the tangent systems go to: named, not chosen
+  ! by a count. dense factorises; gmres iterates without a matrix;
+  ! multigrid smooths and detours to the aggregates it was given,
+  ! which a field supplies from its mesh. A name this module has
+  ! nothing for stops the program.
   !===================================================================!
 
-  integer, private, save :: crossing = huge(1)
+  character(len=16), save :: chosen_solver = 'dense'
+  integer, allocatable, save :: chosen_aggregates(:)
 
 contains
 
-  pure integer function krylov_above()
+  pure function linear_solver_named() result(name)
 
-    krylov_above = crossing
+    character(len=:), allocatable :: name
 
-  end function krylov_above
+    name = trim(chosen_solver)
 
-  subroutine set_krylov_above(count)
+  end function linear_solver_named
+
+  subroutine set_linear_solver(name)
+
+    character(len=*), intent(in) :: name
+
+    select case (trim(name))
+    case ('dense', 'gmres', 'multigrid')
+       chosen_solver = name
+    case default
+       write(*,'(a)') ' linear_solver names ' // trim(name) // &
+            & ', which this program has nothing for.'
+       error stop 'gti_sweeps: a linear solver is dense, gmres or multigrid'
+    end select
+
+  end subroutine set_linear_solver
+
+  !===================================================================!
+  ! The aggregates multigrid coarsens by: one block per unknown. A
+  ! caller with no field clears them.
+  !===================================================================!
+
+  subroutine set_aggregates(aggregates)
+
+    integer, intent(in), optional :: aggregates(:)
+
+    if (allocated(chosen_aggregates)) deallocate(chosen_aggregates)
+    if (present(aggregates)) chosen_aggregates = aggregates
+
+  end subroutine set_aggregates
+
+  !===================================================================!
+  ! The minimizer named, built for a system of the given count. A
+  ! singular pivot in the dense one is reported, the matrix being a
+  ! tangent at an intermediate iterate. multigrid without aggregates
+  ! of the right count stops the program.
+  !===================================================================!
+
+  function inner_minimizer(count) result(inner)
 
     integer, intent(in) :: count
+    class(minimizer), allocatable :: inner
 
-    if (count < 0) then
-       error stop 'gti_sweeps: the crossing is not negative'
-    end if
+    type(gmres)        :: krylov
+    type(dense_direct) :: factorisation
+    type(multigrid)    :: levels
+    type(gauss_seidel) :: sweeps
 
-    crossing = count
+    select case (trim(chosen_solver))
+    case ('dense')
+       factorisation = dense_direct()
+       factorisation % singular_reported = .true.
+       allocate(inner, source=factorisation)
+    case ('gmres')
+       krylov = gmres()
+       krylov % restart        = min(count, 60)
+       krylov % tolerance      = 1.0e-13_dp
+       krylov % max_iterations = 4
+       allocate(inner, source=krylov)
+    case ('multigrid')
+       if (.not. allocated(chosen_aggregates)) then
+          error stop 'gti_sweeps: multigrid coarsens by aggregates, and none were given'
+       end if
+       if (size(chosen_aggregates) /= count) then
+          error stop 'gti_sweeps: one aggregate per unknown'
+       end if
+       sweeps % max_iterations = 2
+       sweeps % tolerance      = 1.0e-13_dp
+       allocate(levels % smoother, source=sweeps)
+       factorisation = dense_direct()
+       allocate(levels % coarse, source=factorisation)
+       levels % aggregates     = chosen_aggregates
+       levels % tolerance      = 1.0e-13_dp
+       levels % max_iterations = 200
+       allocate(inner, source=levels)
+    end select
 
-  end subroutine set_krylov_above
+  end function inner_minimizer
 
   subroutine applied(action, on, inputs, y)
 
@@ -255,12 +297,25 @@ contains
     type(graph)          , intent(in) :: state_domain
     real(dp), allocatable, intent(out) :: a(:,:)
 
-    real(dp), allocatable :: v(:), column(:)
-    integer :: j
+    real(dp), allocatable :: v(:), column(:), w(:)
+    integer , allocatable :: r(:), c(:)
+    logical :: available
+    integer :: j, e
 
-    allocate(a(num_unknowns, num_unknowns))
+    allocate(a(num_unknowns, num_unknowns), source=0.0_dp)
+
+    ! A statement that compiles its tangent hands over its triples,
+    ! and the square is filled from them; any other is probed one
+    ! column at a time, a partial action each.
+    call rows % compiled_tangent(unknowns, inputs, 1, r, c, w, available)
+    if (available) then
+       do e = 1, size(r)
+          a(r(e), c(e)) = a(r(e), c(e)) + w(e)
+       end do
+       return
+    end if
+
     allocate(v(num_unknowns), source=0.0_dp)
-
     do j = 1, num_unknowns
        v    = 0.0_dp
        v(j) = 1.0_dp
@@ -285,24 +340,27 @@ contains
     real(dp), allocatable, intent(out) :: x(:)
 
     type(linearization) :: jacobian
+    type(stencil) :: compiled
     class(minimizer), allocatable :: solver
-    type(gmres) :: krylov
+    integer , allocatable :: r(:), c(:)
+    real(dp), allocatable :: w(:)
+    logical :: available
     real(dp) :: achieved
 
-    jacobian = tangent_of(rows, rows % argument(1))
-    call jacobian % freeze(inputs)
+    allocate(solver, source=inner_minimizer(size(b)))
 
-    if (size(b) <= krylov_above()) then
-       allocate(solver, source=dense_direct())
+    ! the statement's own compiled tangent where it offers one, the
+    ! linearization otherwise
+    call rows % compiled_tangent(on, inputs, 1, r, c, w, available)
+    if (available) then
+       compiled = stencil(r, c, w, spread(0.0_dp, 1, size(b)), 'compiled tangent')
+       call solver % attach(compiled, compiled % pattern, on % vertex_set(), size(b), &
+            & coupling = compiled % pattern)
     else
-       krylov = gmres()
-       krylov % restart        = min(size(b), 60)
-       krylov % tolerance      = 1.0e-13_dp
-       krylov % max_iterations = 4
-       allocate(solver, source=krylov)
+       jacobian = tangent_of(rows, rows % argument(1))
+       call jacobian % freeze(inputs)
+       call solver % attach(jacobian, on, on % vertex_set(), size(b))
     end if
-
-    call solver % attach(jacobian, on, on % vertex_set(), size(b))
 
     allocate(x(size(b)), source=0.0_dp)
     call solver % solve(b, x, achieved)

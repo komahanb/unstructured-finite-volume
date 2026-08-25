@@ -389,3 +389,56 @@ Nothing here is about parallelism. Every item is a single-processor
 algorithm or storage choice, and each one makes the eventual parallel
 decomposition easier rather than harder: a banded solve over a chain
 of blocks is what a time-parallel method partitions.
+
+
+---
+
+## 5. Measured again with the level below attached (2026-08-26)
+
+Everything above was measured at no optimisation: neither build passed
+an -O flag. That does not change any order stated - a cubic is a cubic
+at -O0 - but it changes every constant by more than an order of
+magnitude, and one of the two "binding" items dissolves under it.
+
+```
+                                          before        after
+ bdf2, 161 instants, the state              2.26 s      0.30 s
+ field 8x8, 11 instants, 2112 unknowns     102 s        1.95 s
+ fitted operator, 32x32 cells              179 s        0.059 s
+```
+
+Three things did that, in the order they matter:
+
+- `-O3` on the library, `-O2` on the application. The dense elimination
+  is 98 per cent of a field march (gprof), and it was 50 times slower
+  than it needed to be for want of a flag.
+- The elimination and the substitutions run down columns. The array is
+  column-major, and the row-oriented loop it had strode across it.
+- The fitted balance appended one triple at a time to an array, which
+  copies the array each time. It grows by doubling now; the assembly
+  is linear, and 32x32 cells at any form degree take under a tenth of
+  a second where they took three minutes.
+
+None of this is parallelism. All of it was one processor doing what
+it was asked in the way the memory lies.
+
+**The field block as a statement.** A spatial mesh under every instant
+multiplies the unknowns by the cell count, so the dense elimination
+binds at a few thousand unknowns - 8x8 cells by 11 instants is 2112,
+16x16 by 41 is 31,000, and the latter's factorisation is an hour. The
+block now writes its own tangent down as triples (`compiled_tangent`),
+so the matrix is formed at the cost of its nonzeros and not by n
+applies, and newton attaches it as a stencil; that is what a banded
+or a multigrid solve needs, and the dense one already gains from it.
+
+**Multigrid over the space-time block does not converge with a point
+smoother**, and the reason is structural, not a defect in the
+plumbing. A derived row carries one on the degree it determines and
+1/dt^d on the same instant's value; a point Gauss-Seidel sweep pivots
+on the one and diverges. What the structure wants is a sweep by
+instant - the time coupling is lower triangular, so a sweep in
+instant order is exact in time - with multigrid inside each instant
+over the nodes, on the system reduced to values. That is the
+implicit time-stepping solver built as a linear solver for the block,
+and it is the next slice; the compiled tangent is its prerequisite
+and is done.

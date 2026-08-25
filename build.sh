@@ -9,8 +9,8 @@ set -e
 PRECISION=${PRECISION:-double}
 
 mkdir -p lib
-make -C src clean PRECISION=$PRECISION
-make -C src PRECISION=$PRECISION
-make -C src install PRECISION=$PRECISION
+make -C src clean PRECISION=$PRECISION OPTIMIZE=yes
+make -C src PRECISION=$PRECISION OPTIMIZE=yes
+make -C src install PRECISION=$PRECISION OPTIMIZE=yes
 
 echo "library built in lib/ - now 'make' and run an example (e.g. examples/solver)"

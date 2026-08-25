@@ -83,7 +83,7 @@ contains
 
     real(dp), allocatable :: row(:)
     real(dp) :: factor
-    integer  :: n, k, p, i
+    integer  :: n, k, p, j
 
     n = size(a, 1)
     if (size(a, 2) /= n) then
@@ -99,6 +99,10 @@ contains
     allocate(this % exchanged(n), source=0)
     allocate(row(n))
 
+    ! Right-looking elimination, column by column: the multipliers of
+    ! column k are formed at once, and each later column is updated
+    ! as a whole, so every inner sweep runs down a column, which is
+    ! how the array lies in memory.
     do k = 1, n
 
        p = k - 1 + maxloc(abs(this % lu(k:n, k)), dim=1)
@@ -117,10 +121,11 @@ contains
           return
        end if
 
-       do i = k + 1, n
-          factor                 = this % lu(i, k) / this % lu(k, k)
-          this % lu(i, k)        = factor
-          this % lu(i, k+1:n)    = this % lu(i, k+1:n) - factor * this % lu(k, k+1:n)
+       this % lu(k+1:n, k) = this % lu(k+1:n, k) / this % lu(k, k)
+       do j = k + 1, n
+          factor = this % lu(k, j)
+          if (factor == 0.0_dp) cycle
+          this % lu(k+1:n, j) = this % lu(k+1:n, j) - factor * this % lu(k+1:n, k)
        end do
 
     end do
@@ -141,7 +146,7 @@ contains
     logical                   , intent(in)  :: transposed
 
     real(dp) :: held
-    integer  :: n, i, k
+    integer  :: n, i, j, k
 
     n = this % n
 
@@ -169,16 +174,21 @@ contains
           end if
        end do
 
-       do i = 2, n
-          x(i) = x(i) - dot_product(this % lu(i, 1:i-1), x(1:i-1))
+       ! L y = b, then U x = y, each a sweep of columns: once x(j) is
+       ! known its column is taken off everything below (or above).
+       do j = 1, n - 1
+          x(j+1:n) = x(j+1:n) - x(j) * this % lu(j+1:n, j)
        end do
 
-       do i = n, 1, -1
-          x(i) = (x(i) - dot_product(this % lu(i, i+1:n), x(i+1:n))) / this % lu(i, i)
+       do j = n, 1, -1
+          x(j) = x(j) / this % lu(j, j)
+          x(1:j-1) = x(1:j-1) - x(j) * this % lu(1:j-1, j)
        end do
 
     else
 
+       ! U^T y = b, then L^T z = y: the transposes run down columns
+       ! as dot products, which are the same contiguous sweeps.
        do i = 1, n
           x(i) = (x(i) - dot_product(this % lu(1:i-1, i), x(1:i-1))) / this % lu(i, i)
        end do

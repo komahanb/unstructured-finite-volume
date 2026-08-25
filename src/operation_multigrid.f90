@@ -40,7 +40,10 @@ module operation_multigrid
   use util_precision  , only : dp
   use view_directed, only : directed_graph
   use operation_stencil, only : stencil, combine_triples
-  use operation_minimization , only : minimizer
+  use operation_minimization , only : minimizer, attach
+  use operation_action       , only : operation
+  use graph_fractal          , only : graph
+  use field_stored           , only : stored_field
   use util_tally, only : tally_record, linear_solves
 
   implicit none
@@ -60,6 +63,7 @@ module operation_multigrid
 
      procedure :: name  => multigrid_name
      procedure :: setup
+     procedure :: attach => multigrid_attach
      procedure :: solve
 
   end type multigrid
@@ -82,6 +86,36 @@ contains
   ! hand the governed pair their statements. The smoother sweeps the
   ! fine one; the coarse minimizer answers the block one.
   !===================================================================!
+
+  !===================================================================!
+  ! Attach, and where aggregates are already held, set the two levels
+  ! up at once: a governing minimizer that re-attaches its inner at
+  ! every iteration need not know the coarse level exists.
+  !===================================================================!
+
+  subroutine multigrid_attach(this, action, on, unknown_domain, num_unknowns, &
+       & num_components, coupling, held_inputs)
+
+    class(multigrid)     , intent(inout)        :: this
+    class(operation)     , intent(in)           :: action
+    class(directed_graph), intent(in)           :: on
+    type(graph)          , intent(in)           :: unknown_domain
+    integer              , intent(in)           :: num_unknowns
+    integer              , intent(in), optional :: num_components
+    class(directed_graph), intent(in), optional :: coupling
+    type(stored_field)   , intent(in), optional :: held_inputs(:)
+
+    integer, allocatable :: kept(:)
+
+    call attach(this, action, on, unknown_domain, num_unknowns, &
+         & num_components, coupling, held_inputs)
+
+    if (allocated(this % aggregates)) then
+       kept = this % aggregates
+       call this % setup(kept)
+    end if
+
+  end subroutine multigrid_attach
 
   subroutine setup(this, aggregates)
 

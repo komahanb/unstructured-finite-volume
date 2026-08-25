@@ -48,6 +48,7 @@ module operation_newton
 
   use util_precision  , only : dp
   use operation_minimization        , only : minimizer
+  use operation_stencil     , only : stencil
   use util_tally, only : tally_record, newton_solves, primal_loops
   use field_stored  , only : stored_field
   use operation_linearization, only : linearization, tangent_of
@@ -100,7 +101,11 @@ contains
 
 
     type(linearization) :: jacobian
+    type(stencil) :: compiled
     type(stored_field), allocatable :: inputs(:)
+    integer , allocatable :: rows(:), columns(:)
+    real(dp), allocatable :: weights(:)
+    logical :: available
     real(dp), allocatable :: residual(:), g(:), y(:), dq(:)
     real(dp) :: linear_achieved
     integer :: it
@@ -150,8 +155,22 @@ contains
        call this % evaluation_inputs(x, inputs)
        call jacobian % freeze(inputs, base=y + g)
 
-       call this % inner % attach(jacobian, this % on, this % unknown_domain, &
-            & this % num_unknowns, num_components = this % num_components)
+       ! A statement that compiles its tangent hands the inner
+       ! minimizer a stencil, whose pattern is then the coupling a
+       ! structured minimizer sweeps by; any other is handed the
+       ! linearization, a matvec.
+       call this % action % compiled_tangent(this % on, inputs, 1, rows, columns, &
+            & weights, available)
+       if (available) then
+          compiled = stencil(rows, columns, weights, &
+               & spread(0.0_dp, 1, this % num_unknowns), 'compiled tangent')
+          call this % inner % attach(compiled, compiled % pattern, this % unknown_domain, &
+               & this % num_unknowns, num_components = this % num_components, &
+               & coupling = compiled % pattern)
+       else
+          call this % inner % attach(jacobian, this % on, this % unknown_domain, &
+               & this % num_unknowns, num_components = this % num_components)
+       end if
        dq = 0.0_dp
        call this % inner % solve(-residual, dq, linear_achieved)
 

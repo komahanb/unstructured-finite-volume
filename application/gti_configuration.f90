@@ -48,7 +48,7 @@ module gti_configuration
      integer  :: max_discretization_order = 4
      integer  :: seed                     = 20260824
      integer  :: startup_refinement       = 4
-     integer  :: krylov_above             = huge(1)
+     character(len=16) :: linear_solver   = 'dense'
 
      real(dp) :: time_duration = 7.0_dp
      real(dp) :: design        = 1.0_dp
@@ -61,6 +61,25 @@ module gti_configuration
      ! there, solved for. Fewer values than degrees are taken as the
      ! rest being zero.
      character(len=128) :: initial_state = '1.0'
+
+     ! THE LEVEL BELOW. A spatial mesh under every instant: its
+     ! geometry, its extents along the two coordinates, the cell
+     ! counts along them, and its spacing, uniform or drawn from the
+     ! seed as the time grid is. Counts of zero mean no spatial level.
+     ! diffusion is the kappa on the laplacian. initial_field is
+     ! constant, from initial_state at every node, or the rectangle's
+     ! mode. export writes every instant for paraview; check names a
+     ! comparison the run makes against something known.
+     character(len=16)  :: spatial_geometry = 'cartesian'
+     character(len=64)  :: spatial_extent   = '1.0 1.0'
+     character(len=64)  :: spatial_counts   = '0 0'
+     character(len=16)  :: spatial_grid     = 'uniform'
+     real(dp)           :: diffusion        = 0.0_dp
+     integer            :: spatial_order    = 1
+     character(len=16)  :: initial_field    = 'constant'
+     character(len=16)  :: export           = 'none'
+     character(len=128) :: export_path      = 'field'
+     character(len=16)  :: check            = 'none'
 
      ! HOW A MARCH STOPS. The tolerance is a ratio where the
      ! criterion is relative, which is the question asked whenever the
@@ -223,8 +242,8 @@ contains
        read(value, *) cfg % seed
     case ('startup_refinement')
        read(value, *) cfg % startup_refinement
-    case ('krylov_above')
-       read(value, *) cfg % krylov_above
+    case ('linear_solver')
+       cfg % linear_solver = value
     case ('time_duration')
        read(value, *) cfg % time_duration
     case ('design')
@@ -235,6 +254,26 @@ contains
        read(value, *) cfg % mixed_orders
     case ('initial_state')
        cfg % initial_state = value
+    case ('spatial_geometry')
+       cfg % spatial_geometry = value
+    case ('spatial_extent')
+       cfg % spatial_extent = value
+    case ('spatial_counts')
+       cfg % spatial_counts = value
+    case ('spatial_grid')
+       cfg % spatial_grid = value
+    case ('diffusion')
+       read(value, *) cfg % diffusion
+    case ('spatial_order')
+       read(value, *) cfg % spatial_order
+    case ('initial_field')
+       cfg % initial_field = value
+    case ('export')
+       cfg % export = value
+    case ('export_path')
+       cfg % export_path = value
+    case ('check')
+       cfg % check = value
     case ('tolerance')
        read(value, *) cfg % tolerance
     case ('tolerance_criterion')
@@ -257,6 +296,8 @@ contains
     ! by or counted over.
     call refuse_below(cfg % max_iterations, 1, &
          & 'max_iterations', 'an iteration budget is at least one')
+    call refuse_below(cfg % spatial_order, 1, &
+         & 'spatial_order', 'a form of degree below one fits no gradient')
     call refuse_below(cfg % max_derivative_degree, 0, &
          & 'max_derivative_degree', 'the value on its own is degree zero')
     call refuse_below(cfg % max_discretization_order, 1, &
@@ -377,7 +418,7 @@ contains
     write(*,'(a,a)')       '   grid                     ', trim(cfg % grid)
     write(*,'(a,i0)')      '   seed                     ', cfg % seed
     write(*,'(a,i0)')      '   startup refinement       ', cfg % startup_refinement
-    write(*,'(a,i0)')      '   krylov above             ', cfg % krylov_above
+    write(*,'(a,a)')       '   linear solver            ', trim(cfg % linear_solver)
     write(*,'(a,f0.4)')    '   design                   ', cfg % design
     write(*,'(a,i0)')      '   max derivative degree    ', cfg % max_derivative_degree
     write(*,'(a,i0)')      '   max discretization order ', cfg % max_discretization_order
@@ -386,6 +427,17 @@ contains
     write(*,'(a,l1)')      '   automatic order conservation ', cfg % automatic_order_conservation
     write(*,'(a,l1)')      '   mixed orders             ', cfg % mixed_orders
     write(*,'(a,a)')       '   initial state, given     ', trim(cfg % initial_state)
+    if (trim(cfg % spatial_counts) /= '0 0') then
+       write(*,'(a,a)')    '   spatial geometry         ', trim(cfg % spatial_geometry)
+       write(*,'(a,a)')    '   spatial extent           ', trim(cfg % spatial_extent)
+       write(*,'(a,a)')    '   spatial counts           ', trim(cfg % spatial_counts)
+       write(*,'(a,a)')    '   spatial grid             ', trim(cfg % spatial_grid)
+       write(*,'(a,es9.2)')'   diffusion                ', cfg % diffusion
+       write(*,'(a,i0)')   '   spatial order            ', cfg % spatial_order
+       write(*,'(a,a)')    '   initial field            ', trim(cfg % initial_field)
+       write(*,'(a,a)')    '   export                   ', trim(cfg % export)
+       write(*,'(a,a)')    '   check                    ', trim(cfg % check)
+    end if
     write(*,'(a,es9.2)')   '   tolerance                ', cfg % tolerance
     write(*,'(a,a)')       '   tolerance criterion      ', trim(cfg % tolerance_criterion)
     write(*,'(a,a)')       '   iteration criterion      ', trim(cfg % iteration_criterion)

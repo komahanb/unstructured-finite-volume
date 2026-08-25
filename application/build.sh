@@ -9,7 +9,7 @@ set -e
 
 cd "$(dirname "$0")"
 F90=${F90:-gfortran-15}
-FLAGS="-std=f2023 -fcoarray=single -cpp -Wall -fbounds-check"
+FLAGS="-std=f2023 -fcoarray=single -cpp -Wall -fbounds-check -O2"
 
 # PRECISION=quad links against lib_quad and puts its binaries in
 # quad/, so a double and a quadruple build coexist.
@@ -27,7 +27,7 @@ mkdir -p $OBJ $OUT
 
 MODULES="../physics/physics_integrand ../physics/physics_vanderpol
          gti_configuration gti_sweeps gti_expansion gti_block gti_stage
-         gti_march gti_taylor gti_chain"
+         gti_march gti_space gti_field gti_taylor gti_chain"
 
 for m in $MODULES; do
    $F90 $FLAGS -I$LIB -J$OBJ -c $m.f90 -o $OBJ/$(basename $m).o

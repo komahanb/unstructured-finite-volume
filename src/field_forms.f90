@@ -105,15 +105,21 @@ module field_forms
   end interface
 
 !=====================================================================!
-! The polynomial form: the constant and the three coordinates,
-! reckoned about the point of interest - the Taylor shape at degree
-! one, whose span is every linear field.
+! The polynomial form: every monomial in the three coordinates,
+! reckoned about the point of interest, up to a degree - the Taylor
+! shape at that degree, whose span is every polynomial field of it.
+! Degree one is the constant and the three coordinates, and is what
+! a form asked for without a degree is. The monomials stand in order
+! of total degree, and within a degree with the first coordinate's
+! power falling, so degree one is 1, x, y, z in that order.
 !
 !=====================================================================!
 
   public :: polynomial_form
 
   type, extends(form) :: polynomial_form
+
+     integer, allocatable, private :: power(:,:)
 
    contains
 
@@ -238,9 +244,32 @@ contains
 
 
   ! Born with every table entry standing: the members are the four.
-  type(polynomial_form) function create_polynomial() result(this)
+  type(polynomial_form) function create_polynomial(degree) result(this)
 
-    call this % declare_basis(4)
+    integer, intent(in), optional :: degree
+
+    integer :: p, d, i, j, m, width
+
+    p = 1
+    if (present(degree)) p = degree
+    if (p < 0) then
+       error stop 'field_forms: a polynomial degree is zero or above'
+    end if
+
+    width = (p + 1) * (p + 2) * (p + 3) / 6
+    allocate(this % power(3, width))
+
+    m = 0
+    do d = 0, p
+       do i = d, 0, -1
+          do j = d - i, 0, -1
+             m = m + 1
+             this % power(:, m) = [i, j, d - i - j]
+          end do
+       end do
+    end do
+
+    call this % declare_basis(width)
 
   end function create_polynomial
 
@@ -250,12 +279,24 @@ contains
     real(dp), intent(in)  :: x(3), at(3)
     real(dp), intent(out) :: phi(:)
 
-    associate (u1 => this); end associate
+    real(dp) :: r(3)
+    integer :: m, c
 
-    phi(1)   = 1.0_dp
-    phi(2:4) = x - at
+    r = x - at
+    do m = 1, size(phi)
+       phi(m) = 1.0_dp
+       do c = 1, 3
+          phi(m) = phi(m) * monomial(r(c), this % power(c, m))
+       end do
+    end do
 
   end subroutine polynomial_values
+
+  !-------------------------------------------------------------------!
+  ! The derivative of each monomial along the direction: the sum over
+  ! the coordinates of the direction's component times the power
+  ! brought down.
+  !-------------------------------------------------------------------!
 
   pure subroutine polynomial_slopes(this, x, at, direction, dphi)
 
@@ -263,12 +304,38 @@ contains
     real(dp), intent(in)  :: x(3), at(3), direction(3)
     real(dp), intent(out) :: dphi(:)
 
-    associate (u1 => this, u2 => x, u3 => at); end associate
+    real(dp) :: r(3), term
+    integer :: m, c, o
 
-    dphi(1)   = 0.0_dp
-    dphi(2:4) = direction
+    r = x - at
+    do m = 1, size(dphi)
+       dphi(m) = 0.0_dp
+       do c = 1, 3
+          if (this % power(c, m) == 0) cycle
+          term = direction(c) * real(this % power(c, m), dp) &
+               & * monomial(r(c), this % power(c, m) - 1)
+          do o = 1, 3
+             if (o == c) cycle
+             term = term * monomial(r(o), this % power(o, m))
+          end do
+          dphi(m) = dphi(m) + term
+       end do
+    end do
 
   end subroutine polynomial_slopes
+
+  pure real(dp) function monomial(r, power) result(v)
+
+    real(dp), intent(in) :: r
+    integer , intent(in) :: power
+
+    if (power == 0) then
+       v = 1.0_dp
+    else
+       v = r ** power
+    end if
+
+  end function monomial
 
 
 

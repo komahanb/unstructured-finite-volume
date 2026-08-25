@@ -246,9 +246,12 @@ contains
 
     associate (u1 => n); end associate
 
-    x = mod(int(this % seed, int64) * 40503_int64 + int(k, int64) * 65537_int64, modulus)
-    x = mod(multiplier * x + increment, modulus)
-    x = mod(multiplier * x + increment, modulus)
+    ! modulo, not mod: mod carries the sign of its first argument, so
+    ! a negative seed would leave x below zero and the weight at or
+    ! below it. The two agree wherever the seed is positive.
+    x = modulo(int(this % seed, int64) * 40503_int64 + int(k, int64) * 65537_int64, modulus)
+    x = modulo(multiplier * x + increment, modulus)
+    x = modulo(multiplier * x + increment, modulus)
 
     w = derivative_terms(0.5_dp + real(x, dp) / real(modulus, dp), design(1))
 

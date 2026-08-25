@@ -128,7 +128,29 @@ contains
        error stop 'gti_configuration: every setting given is one that exists'
     end select
 
+    ! A count below the least value it means anything at is refused
+    ! here, where it is given, rather than where it is first indexed
+    ! by or counted over.
+    call refuse_below(cfg % max_derivative_degree, 0, &
+         & 'max_derivative_degree', 'the value on its own is degree zero')
+    call refuse_below(cfg % max_discretization_order, 1, &
+         & 'max_discretization_order', 'no scheme is built below order one')
+
   end subroutine assign
+
+  subroutine refuse_below(given, least, name, why)
+
+    integer         , intent(in) :: given, least
+    character(len=*), intent(in) :: name, why
+
+    if (given >= least) return
+
+    write(*,'(a)') ' '
+    write(*,'(a,i0,a,i0,a)') ' ' // name // ' is ', given, ', under ', least, &
+         & ': ' // why // '.'
+    error stop 'gti_configuration: a setting is under the value it means anything at'
+
+  end subroutine refuse_below
 
   !===================================================================!
   ! One line of a file: a comment, a blank, or a setting and its

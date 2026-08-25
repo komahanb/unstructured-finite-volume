@@ -64,7 +64,7 @@ contains
 
     real(dp), allocatable :: basis(:,:), h(:,:), cs(:), sn(:), s(:)
     real(dp), allocatable :: r(:), w(:), y(:)
-    real(dp) :: goal, beta, hik, radius, subdiag
+    real(dp) :: beta, hik, radius, subdiag
     integer :: n, m, outer, i, j, k
 
     call tally_record(linear_solves)
@@ -74,7 +74,7 @@ contains
 
     allocate(basis(n, m + 1), h(m + 1, m), cs(m), sn(m), s(m + 1))
 
-    goal = this % tolerance * (1.0_dp + this % norm(rhs))
+    call this % begin_imbalance(0.0_dp)
 
     do outer = 1, this % max_iterations
 
@@ -83,7 +83,9 @@ contains
        beta = this % norm(r)
 
        achieved = beta
-       if (beta < goal) return
+       call this % note_imbalance(achieved)
+       if (this % converged(achieved)) return
+       if (this % exhausted(outer)) return
 
        basis = 0.0_dp
        h  = 0.0_dp
@@ -131,7 +133,7 @@ contains
 
           k = j
           achieved = abs(s(j + 1))
-          if (achieved < goal) exit
+          if (this % converged(achieved)) exit
           if (subdiag < tiny(1.0_dp)) exit
 
        end do
@@ -150,7 +152,7 @@ contains
        end do
        deallocate(y)
 
-       if (achieved < goal) then
+       if (this % converged(achieved)) then
           call this % matvec(x, r)
           achieved = this % norm(rhs - r)
           return

@@ -61,8 +61,7 @@ contains
 
     real(dp), allocatable :: d(:), y(:), r(:)
     integer , allocatable :: colours(:)
-    real(dp) :: goal
-    integer :: it, col, v
+        integer :: it, col, v
 
     call tally_record(linear_solves)
 
@@ -73,7 +72,7 @@ contains
 
     call this % sweep_order(colours)
 
-    goal = this % tolerance * (1.0_dp + this % norm(rhs))
+    call this % begin_imbalance(0.0_dp)
 
     do it = 1, this % max_iterations
 
@@ -87,7 +86,9 @@ contains
 
        call this % matvec(x, y)
        achieved = this % norm(rhs - y)
-       if (achieved < goal) return
+       call this % note_imbalance(achieved)
+       if (this % converged(achieved)) return
+       if (this % exhausted(it)) return
 
     end do
 

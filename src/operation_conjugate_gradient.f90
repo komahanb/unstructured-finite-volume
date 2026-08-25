@@ -61,7 +61,7 @@ contains
     real(dp), intent(out)   :: achieved
 
     real(dp), allocatable :: r(:), p(:), ap(:), y(:)
-    real(dp) :: rr, rr_next, alpha, beta, pap, goal
+    real(dp) :: rr, rr_next, alpha, beta, pap
     integer :: it
 
     call tally_record(linear_solves)
@@ -71,12 +71,14 @@ contains
     p = r
 
     rr   = this % inner_product(r, r)
-    goal = this % tolerance * (1.0_dp + this % norm(rhs))
+    call this % begin_imbalance(0.0_dp)
 
     do it = 1, this % max_iterations
 
        achieved = this % norm(r)
-       if (achieved < goal) return
+       call this % note_imbalance(achieved)
+       if (this % converged(achieved)) return
+       if (this % exhausted(it)) return
 
        call this % matvec(p, ap)
        pap = this % inner_product(p, ap)

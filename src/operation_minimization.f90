@@ -51,6 +51,22 @@ module operation_minimization
   implicit none
 
   private
+
+  !-------------------------------------------------------------------!
+  ! What a tolerance is measured against, and where an iteration that
+  ! has not converged stops.
+  !-------------------------------------------------------------------!
+
+  integer, parameter, public :: relative = 1
+  integer, parameter, public :: absolute = 2
+
+  integer, parameter, public :: by_count = 1
+  integer, parameter, public :: by_rate  = 2
+
+  ! How many of the last imbalances a rate is fitted over. Three would
+  ! leave one degree of freedom for the scatter and no more, so the
+  ! smallest window that gives a slope an error worth comparing to.
+  integer, parameter :: window = 5
   public :: minimizer
 
   !===================================================================!
@@ -122,7 +138,40 @@ module operation_minimization
      integer  :: max_iterations = 1000
      real(dp) :: tolerance      = 1.0d-10
 
+     ! WHAT THE TOLERANCE IS MEASURED AGAINST. relative divides the
+     ! imbalance by the one the iteration began with, which is the
+     ! question asked whenever the target is a reduction. absolute
+     ! compares the imbalance itself, which is the question asked only
+     ! when the number has a meaning of its own - a functional driven
+     ! under a stated value, and nothing else.
+     integer :: criterion = relative
+
+     ! WHERE THE ITERATION STOPS WHEN IT HAS NOT CONVERGED. by_count
+     ! stops at max_iterations. by_rate also stops where the imbalance
+     ! has flattened, which is where the slope of its logarithm over
+     ! the last few iterations is no longer distinguishable from zero
+     ! against its own scatter.
+     integer :: budget = by_count
+
+     ! The imbalance the iteration began at, and the last few it has
+     ! seen. Written by note_imbalance and by nothing else.
+     real(dp), private :: began_at = 0.0_dp
+     real(dp), private :: recent(window) = 0.0_dp
+     integer , private :: noted = 0
+
+     ! Whether a window has yet shown a slope significantly below
+     ! zero. An iteration that has never descended has not flattened
+     ! either, whatever a window of its early wandering looks like.
+     logical , private :: descended = .false.
+
    contains
+
+     procedure :: begin_imbalance
+     procedure :: note_imbalance
+     procedure :: converged
+     procedure :: flattened
+     procedure, private :: fitted
+     procedure :: exhausted
 
      procedure :: attach
      procedure :: evaluation_inputs
@@ -163,6 +212,156 @@ module operation_minimization
   end interface
 
 contains
+
+  !===================================================================!
+  ! The imbalance an iteration begins at, against which a relative
+  ! tolerance is measured, and the last few it has seen, from which a
+  ! rate is fitted. Written here and nowhere else.
+  !===================================================================!
+
+  subroutine begin_imbalance(this, imbalance)
+
+    class(minimizer), intent(inout) :: this
+    real(dp)        , intent(in)    :: imbalance
+
+    this % began_at  = imbalance
+    this % recent    = 0.0_dp
+    this % noted     = 0
+    this % descended = .false.
+
+  end subroutine begin_imbalance
+
+  subroutine note_imbalance(this, imbalance)
+
+    class(minimizer), intent(inout) :: this
+    real(dp)        , intent(in)    :: imbalance
+
+    real(dp) :: slope, error
+    logical  :: usable
+    integer  :: i
+
+    if (this % noted == 0 .and. this % began_at <= 0.0_dp) then
+       this % began_at = imbalance
+    end if
+
+    do i = 1, window - 1
+       this % recent(i) = this % recent(i + 1)
+    end do
+    this % recent(window) = imbalance
+
+    this % noted = this % noted + 1
+
+    call this % fitted(slope, error, usable)
+    if (usable .and. slope < -error) this % descended = .true.
+
+  end subroutine note_imbalance
+
+  !===================================================================!
+  ! Whether the imbalance meets what was asked of it. Relative divides
+  ! by the imbalance the iteration began at; absolute does not divide
+  ! at all. A criterion that is neither stops the program.
+  !===================================================================!
+
+  logical function converged(this, imbalance) result(done)
+
+    class(minimizer), intent(in) :: this
+    real(dp)        , intent(in) :: imbalance
+
+    select case (this % criterion)
+    case (relative)
+       done = imbalance <= this % tolerance * max(this % began_at, tiny(1.0_dp))
+    case (absolute)
+       done = imbalance <= this % tolerance
+    case default
+       error stop 'minimizer: a tolerance is measured relative or absolute'
+    end select
+
+  end function converged
+
+  !===================================================================!
+  ! Whether the imbalance has stopped falling: the slope of its
+  ! logarithm over the last window against the standard error of that
+  ! slope. A descent still under way has a slope far outside its own
+  ! error; scatter about a floor has a slope inside it. Nothing is
+  ! chosen here except the width of the window, and no scale enters,
+  ! the slope of a logarithm being dimensionless.
+  !===================================================================!
+
+  logical function flattened(this) result(flat)
+
+    class(minimizer), intent(in) :: this
+
+    real(dp) :: slope, error
+    logical  :: usable
+
+    call this % fitted(slope, error, usable)
+    flat = usable .and. this % descended .and. abs(slope) < error
+
+  end function flattened
+
+  !===================================================================!
+  ! The slope of the logarithm of the last window of imbalances, and
+  ! the standard error of that slope. Not usable until the window is
+  ! full, and not usable where an imbalance has reached zero, there
+  ! being no logarithm of it.
+  !===================================================================!
+
+  subroutine fitted(this, slope, error, usable)
+
+    class(minimizer), intent(in)  :: this
+    real(dp)        , intent(out) :: slope, error
+    logical         , intent(out) :: usable
+
+    real(dp) :: x(window), y(window), mx, my, sxx, sxy, scatter
+    integer  :: i
+
+    slope  = 0.0_dp
+    error  = 0.0_dp
+    usable = .false.
+
+    if (this % noted < window) return
+
+    do i = 1, window
+       if (this % recent(i) <= 0.0_dp) return
+       x(i) = real(i, dp)
+       y(i) = log(this % recent(i))
+    end do
+
+    mx  = sum(x) / real(window, dp)
+    my  = sum(y) / real(window, dp)
+    sxx = sum((x - mx) ** 2)
+    sxy = sum((x - mx) * (y - my))
+
+    slope   = sxy / sxx
+    scatter = sum((y - (my + slope * (x - mx))) ** 2)
+    error   = sqrt(scatter / real(window - 2, dp) / sxx)
+
+    usable = .true.
+
+  end subroutine fitted
+
+  !===================================================================!
+  ! Whether the iteration has run out of what it was given. A budget
+  ! that is neither counted nor taken from the rate stops the program.
+  !===================================================================!
+
+  logical function exhausted(this, iteration) result(done)
+
+    class(minimizer), intent(in) :: this
+    integer         , intent(in) :: iteration
+
+    done = iteration >= this % max_iterations
+
+    select case (this % budget)
+    case (by_count)
+       continue
+    case (by_rate)
+       done = done .or. this % flattened()
+    case default
+       error stop 'minimizer: a budget is counted or taken from the rate'
+    end select
+
+  end function exhausted
 
   !===================================================================!
   ! Take the operation and the graph it reads. The affine part is

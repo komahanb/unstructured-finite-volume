@@ -67,11 +67,12 @@ program graph_time_integrator
   use operation_grid        , only : uniform_grid, random_grid, designed_grid
   use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
   use operation_grid        , only : grid
-  use gti_march             , only : partitioned
+  use gti_march             , only : partitioned, set_stopping
   use gti_expansion         , only : family_holder
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
        & instant_components
   use gti_sweeps            , only : set_krylov_above
+  use operation_minimization, only : relative, absolute, by_count, by_rate
   use gti_configuration     , only : configuration, read_configuration, override, show, &
        & lists, refuse_unknown, worded
   use util_tally            , only : tally_open, tally_close, tally_order, &
@@ -572,6 +573,15 @@ contains
     ! integrand is built. Were it neither, the run would state a
     ! physics in its heading and integrate a different one.
     call refuse_unknown(cfg % physics, ['vanderpol'], 'physics')
+    call refuse_unknown(cfg % tolerance_criterion, ['relative', 'absolute'], &
+         & 'tolerance_criterion')
+    call refuse_unknown(cfg % iteration_criterion, ['by_rate ', 'by_count'], &
+         & 'iteration_criterion')
+
+    call set_stopping(cfg % tolerance, &
+         & merge(relative, absolute, trim(cfg % tolerance_criterion) == 'relative'), &
+         & merge(by_rate, by_count, trim(cfg % iteration_criterion) == 'by_rate'), &
+         & cfg % max_iterations)
     if (cfg % accounting) then
        call refuse_unknown(cfg % measurements, &
             & ['wall_time     ', 'primal_loops  ', 'tangent_loops ', &

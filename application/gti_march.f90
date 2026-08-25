@@ -30,7 +30,8 @@ module gti_march
   use field_stored            , only : stored_field
   use operation_stencil       , only : stencil
   use operation_newton        , only : newton
-  use operation_minimization  , only : minimizer
+  use operation_minimization  , only : minimizer, relative, absolute, &
+       & by_count, by_rate
   use operation_dense_direct  , only : dense_direct
   use operation_gmres         , only : gmres
   use operation_family        , only : family
@@ -44,11 +45,54 @@ module gti_march
 
   implicit none
 
+  !-------------------------------------------------------------------!
+  ! HOW A MARCH STOPS. A caller that sets nothing gets a tolerance
+  ! measured against the imbalance the march began at, and a budget
+  ! taken from the rate the march itself shows. The count is a
+  ! backstop and not the operative limit.
+  !-------------------------------------------------------------------!
+
+  real(dp), save :: stopping_tolerance  = 1.0e-12_dp
+  integer , save :: stopping_criterion  = relative
+  integer , save :: stopping_budget     = by_rate
+  integer , save :: stopping_iterations = 100
+
   private
   public :: partition, partitioned, scheme_rows, block_of, solved, unknowns_graph
+  public :: set_stopping
   public :: horizon_bounds
 
 contains
+
+  !===================================================================!
+  ! How every march that follows stops. A criterion or a budget that
+  ! is neither of its two stops the program.
+  !===================================================================!
+
+  subroutine set_stopping(tolerance, criterion, budget, iterations)
+
+    real(dp), intent(in) :: tolerance
+    integer , intent(in) :: criterion, budget, iterations
+
+    if (tolerance <= 0.0_dp) then
+       error stop 'gti_march: a tolerance is positive'
+    end if
+    if (criterion /= relative .and. criterion /= absolute) then
+       error stop 'gti_march: a tolerance is measured relative or absolute'
+    end if
+    if (budget /= by_count .and. budget /= by_rate) then
+       error stop 'gti_march: a budget is counted or taken from the rate'
+    end if
+    if (iterations < 1) then
+       error stop 'gti_march: an iteration budget is positive'
+    end if
+
+    stopping_tolerance  = tolerance
+    stopping_criterion  = criterion
+    stopping_budget     = budget
+    stopping_iterations = iterations
+
+  end subroutine set_stopping
 
   !===================================================================!
   ! A uniform partition of the duration, and the instants it makes.
@@ -237,8 +281,10 @@ contains
 
     q = at_first_instant(rows, count)
 
-    solver % max_iterations = 40
-    solver % tolerance      = 1.0e-12_dp * max(1.0_dp, scale_of(rows, unknowns, q, design))
+    solver % max_iterations = stopping_iterations
+    solver % tolerance      = stopping_tolerance
+    solver % criterion      = stopping_criterion
+    solver % budget         = stopping_budget
 
     call solver % solve(spread(0.0_dp, 1, count), q, achieved)
 
@@ -249,26 +295,6 @@ contains
   ! the target is set against.
   !===================================================================!
 
-  real(dp) function scale_of(rows, unknowns, q, design) result(size_of)
-
-    type(block_residual)       , intent(in) :: rows
-    type(stored_directed_graph), intent(in) :: unknowns
-    real(dp)                   , intent(in) :: q(:)
-    type(stored_field)         , intent(in) :: design
-
-    type(stored_field) :: state
-    class(field), allocatable :: out
-    real(dp), allocatable :: r(:)
-
-    state = stored_field('state', unknowns % vertex_set(), size(q))
-    call state % set_real_vector(q)
-
-    call rows % apply(unknowns, [state, design], out)
-    call out % real_vector(r)
-
-    size_of = norm2(r)
-
-  end function scale_of
 
   !===================================================================!
   ! A first guess: every point of the block holding what its first

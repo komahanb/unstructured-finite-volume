@@ -99,29 +99,20 @@ contains
 
     real(dp), parameter :: diverged = 1.0e8_dp
 
-    ! What counts as progress, how many iterations without it are
-    ! allowed, and how far below its first residual a march must
-    ! already be before a run without progress means anything. Newton
-    ! wanders early - a residual rising once before it falls is
-    ! ordinary - so a run without progress is evidence of a floor only
-    ! after the residual has fallen far.
-    real(dp), parameter :: bettered = 0.9_dp
-    real(dp), parameter :: settled  = 1.0e-6_dp
-    integer , parameter :: stalls_allowed = 4
+
 
     type(linearization) :: jacobian
     type(stored_field), allocatable :: inputs(:)
     real(dp), allocatable :: residual(:), g(:), y(:), dq(:)
-    real(dp) :: linear_achieved, first, best
-    integer :: it, stalled
-    logical :: progressed
+    real(dp) :: linear_achieved, first
+    integer :: it
 
     call tally_record(newton_solves)
 
     allocate(dq(size(x)))
-    first   = 0.0_dp
-    best    = huge(1.0_dp)
-    stalled = 0
+    first = 0.0_dp
+
+    call this % begin_imbalance(0.0_dp)
 
     call this % constant(g)
 
@@ -138,7 +129,8 @@ contains
        residual = y + g - rhs
 
        achieved = this % norm(residual)
-       if (achieved < this % tolerance) return
+       call this % note_imbalance(achieved)
+       if (this % converged(achieved)) return
 
        if (it == 1) first = achieved
 
@@ -150,23 +142,11 @@ contains
        if (achieved > huge(1.0_dp) / 2.0_dp) return
        if (first > 0.0_dp .and. achieved > diverged * first) return
 
-       ! A residual that has not bettered the best seen, over several
-       ! iterations together and once already far below where it
-       ! began, has reached the floor this arithmetic leaves, and the
-       ! iterations after it only cost. No tolerance can be asked to
-       ! know where that floor is: it rises with the weight the rows
-       ! carry, which rises as the step falls, while a tolerance set
-       ! from the residual the march starts at does not rise with
-       ! either.
-       progressed = achieved < bettered * best
-       if (achieved < best) best = achieved
-
-       if (progressed) then
-          stalled = 0
-       else if (first > 0.0_dp .and. best < settled * first) then
-          stalled = stalled + 1
-          if (stalled >= stalls_allowed) return
-       end if
+       ! Where the budget is taken from the rate, this is where an
+       ! iteration that has flattened stops. No floor is named: the
+       ! slope of the residual's logarithm is compared against its own
+       ! scatter, and a descent still under way lies far outside it.
+       if (this % exhausted(it)) return
 
        ! The linear question at this point, answered by the governed
        ! minimizer: the Jacobian is frozen at the same input tuple the

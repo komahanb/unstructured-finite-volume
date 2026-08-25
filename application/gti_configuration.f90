@@ -56,6 +56,18 @@ module gti_configuration
      logical  :: automatic_order_conservation = .true.
      logical  :: mixed_orders                 = .false.
 
+     ! HOW A MARCH STOPS. The tolerance is a ratio where the
+     ! criterion is relative, which is the question asked whenever the
+     ! target is a reduction in imbalance, and a number in its own
+     ! right where the criterion is absolute, which is the question
+     ! asked only where that number means something on its own. The
+     ! iteration criterion says whether the budget is a count or is
+     ! taken from the rate the march itself shows.
+     real(dp)          :: tolerance           = 1.0e-12_dp
+     character(len=16) :: tolerance_criterion = 'relative'
+     character(len=16) :: iteration_criterion = 'by_rate'
+     integer           :: max_iterations      = 100
+
      ! Whether the run counts what it spends, and which of the counts
      ! it prints. Counting is off unless it is asked for.
      logical  :: accounting                   = .false.
@@ -215,6 +227,14 @@ contains
        read(value, *) cfg % automatic_order_conservation
     case ('mixed_orders')
        read(value, *) cfg % mixed_orders
+    case ('tolerance')
+       read(value, *) cfg % tolerance
+    case ('tolerance_criterion')
+       cfg % tolerance_criterion = value
+    case ('iteration_criterion')
+       cfg % iteration_criterion = value
+    case ('max_iterations')
+       read(value, *) cfg % max_iterations
     case ('accounting')
        read(value, *) cfg % accounting
     case ('measurements')
@@ -227,6 +247,8 @@ contains
     ! A count below the least value it means anything at is refused
     ! here, where it is given, rather than where it is first indexed
     ! by or counted over.
+    call refuse_below(cfg % max_iterations, 1, &
+         & 'max_iterations', 'an iteration budget is at least one')
     call refuse_below(cfg % max_derivative_degree, 0, &
          & 'max_derivative_degree', 'the value on its own is degree zero')
     call refuse_below(cfg % max_discretization_order, 1, &
@@ -355,6 +377,10 @@ contains
     write(*,'(a,a)')       '   combinations             ', trim(cfg % combinations)
     write(*,'(a,l1)')      '   automatic order conservation ', cfg % automatic_order_conservation
     write(*,'(a,l1)')      '   mixed orders             ', cfg % mixed_orders
+    write(*,'(a,es9.2)')   '   tolerance                ', cfg % tolerance
+    write(*,'(a,a)')       '   tolerance criterion      ', trim(cfg % tolerance_criterion)
+    write(*,'(a,a)')       '   iteration criterion      ', trim(cfg % iteration_criterion)
+    write(*,'(a,i0)')      '   max iterations           ', cfg % max_iterations
     write(*,'(a,l1)')      '   accounting               ', cfg % accounting
     if (cfg % accounting) then
        write(*,'(a,a)')    '   measurements             ', trim(cfg % measurements)

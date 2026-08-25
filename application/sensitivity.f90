@@ -75,7 +75,7 @@ contains
 
     integer :: k, d
 
-    held = [((exact(d, t(k)), d = 0, degrees - 1), k = 1, scheme % history_depth())]
+    held = [((exact(d, t(k)), d = 0, degrees - 1), k = 1, scheme % history_depth(degrees - 1))]
 
   end function carried_values
 

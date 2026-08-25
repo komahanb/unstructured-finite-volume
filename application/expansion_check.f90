@@ -68,7 +68,7 @@ contains
     integer :: k, d, s
 
     call partition(duration, instants, dt, t)
-    held = [((exact(d, t(k)), d = 0, degrees - 1), k = 1, scheme % history_depth())]
+    held = [((exact(d, t(k)), d = 0, degrees - 1), k = 1, scheme % history_depth(degrees - 1))]
 
     if (staged) then
        s    = scheme % num_stages()

@@ -164,7 +164,7 @@ contains
        error stop 'gti_chain: a chain holds at least one block'
     end if
 
-    call horizon_bounds(schemes, added, first, last)
+    call horizon_bounds(schemes, added, degrees - 1, first, last)
     call partitioned(steps, last(size(added)), dt, t, grid_design)
 
     allocate(chain(size(added)))
@@ -198,7 +198,7 @@ contains
 
     chain(b) % first   = first
     chain(b) % last    = last
-    chain(b) % given   = scheme % history_depth()
+    chain(b) % given   = scheme % history_depth(degrees - 1)
     chain(b) % primary = scheme % primary_degree(degrees - 1)
 
     if (b == 1) then

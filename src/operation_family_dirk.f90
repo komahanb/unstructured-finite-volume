@@ -118,11 +118,12 @@ contains
 
   end function dirk_name
 
-  pure integer function dirk_history_depth(this)
+  pure integer function dirk_history_depth(this, equation_degree)
 
     class(dirk_family), intent(in) :: this
+    integer           , intent(in) :: equation_degree
 
-    associate (u1 => this); end associate
+    associate (u1 => this, u2 => equation_degree); end associate
     dirk_history_depth = 1
 
   end function dirk_history_depth

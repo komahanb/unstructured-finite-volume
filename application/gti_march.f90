@@ -182,7 +182,7 @@ contains
     integer, allocatable :: carried(:)
     integer :: h, k, d
 
-    h = scheme % history_depth()
+    h = scheme % history_depth(degrees - 1)
     carried = [((unknown(k, d, degrees), d = 0, degrees - 1), k = 1, h)]
 
     if (size(held) /= size(carried)) then
@@ -233,10 +233,10 @@ contains
   ! blocks overlap by exactly what each family reaches.
   !===================================================================!
 
-  subroutine horizon_bounds(schemes, added, first, last)
+  subroutine horizon_bounds(schemes, added, equation_degree, first, last)
 
     type(family_holder), intent(in) :: schemes(:)
-    integer            , intent(in) :: added(:)
+    integer            , intent(in) :: added(:), equation_degree
     integer, allocatable, intent(out) :: first(:), last(:)
 
     integer :: b
@@ -252,11 +252,11 @@ contains
           first(b) = 1
           last(b)  = added(b)
        else
-          first(b) = last(b - 1) - schemes(b) % scheme % history_depth() + 1
+          first(b) = last(b - 1) - schemes(b) % scheme % history_depth(equation_degree) + 1
           last(b)  = last(b - 1) + added(b)
        end if
 
-       if (added(b) <= schemes(b) % scheme % history_depth()) then
+       if (added(b) <= schemes(b) % scheme % history_depth(equation_degree)) then
           error stop 'gti_march: a block adds more instants than its family reaches'
        end if
     end do
@@ -285,7 +285,7 @@ contains
     integer :: b, n, shift, held_size
     real(dp) :: block_achieved
 
-    call horizon_bounds(schemes, added, first, last)
+    call horizon_bounds(schemes, added, degrees - 1, first, last)
     call partition(duration, last(size(added)), dt, t)
 
     allocate(q(last(size(added)) * degrees), source=0.0_dp)
@@ -296,7 +296,7 @@ contains
     do b = 1, size(added)
        n         = last(b) - first(b) + 1
        shift     = (first(b) - 1) * degrees
-       held_size = schemes(b) % scheme % history_depth() * degrees
+       held_size = schemes(b) % scheme % history_depth(degrees - 1) * degrees
 
        rows = block_of(schemes(b) % scheme, physics, degrees, n, &
             & dt(first(b):last(b)), q(shift + 1:shift + held_size))

@@ -82,10 +82,12 @@ contains
 
   end function adams_name
 
-  pure integer function adams_history_depth(this)
+  pure integer function adams_history_depth(this, equation_degree)
 
     class(adams_family), intent(in) :: this
+    integer            , intent(in) :: equation_degree
 
+    associate (u1 => equation_degree); end associate
     adams_history_depth = max(this % order - 1, 1)
 
   end function adams_history_depth

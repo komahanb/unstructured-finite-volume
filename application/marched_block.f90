@@ -72,7 +72,7 @@ contains
     integer :: h, k, d
 
     call partition(duration, n, dt, t)
-    h = scheme % history_depth()
+    h = scheme % history_depth(degrees - 1)
 
     held = [((exact(d, t(k)), d = 0, degrees - 1), k = 1, h)]
     rows = block_of(scheme, van_der_pol(max_state_degree), degrees, n, dt, held)

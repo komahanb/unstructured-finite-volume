@@ -370,7 +370,7 @@ contains
     integer, allocatable :: slices(:)
     integer :: k, coupling
 
-    if (last - first + 1 <= scheme % history_depth()) then
+    if (last - first + 1 <= scheme % history_depth(this % degrees - 1)) then
        error stop 'gti_expansion: a block holds more instants than its family reaches'
     end if
 
@@ -550,7 +550,7 @@ contains
     call this % labels % bind(this % node(at), 'component of degree ' // written(degree))
     call this % extents % bind(this % node(at), counted_set_representation(1))
 
-    if (instant - first < scheme % history_depth()) then
+    if (instant - first < scheme % history_depth(this % degrees - 1)) then
        call attach_known(this, at, [0.0_dp])
     else
        call this % values % attach_unknown(this % node(at))

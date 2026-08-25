@@ -283,7 +283,7 @@ contains
     if (n < 2) then
        error stop 'gti_stage: a stage block holds at least one step'
     end if
-    if (scheme % history_depth() /= 1) then
+    if (scheme % history_depth(nd - 1) /= 1) then
        error stop 'gti_stage: a stage family reaches one instant back'
     end if
     if (size(held) /= nd) then

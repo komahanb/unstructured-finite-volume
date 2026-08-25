@@ -16,7 +16,10 @@
 !         c(d, j at k) = sum over i of
 !                        alpha_i(at k) c(d-1, j-i at k-i) dt_k/dt_(k-i)
 !
-!                     which reaches d p instants back. At d = 2 on a
+!                     which reaches d p instants back, so the widest
+!                     row of an equation of degree N reaches N p, and
+!                     the history a block needs grows with the
+!                     equation as well as with the order. At d = 2 on a
 !                     uniform grid this is the convolution of alpha
 !                     with itself, and the tabulated second-difference
 !                     coefficients come out of it.
@@ -93,11 +96,12 @@ contains
 
   end function bdf_name
 
-  pure integer function bdf_history_depth(this)
+  pure integer function bdf_history_depth(this, equation_degree)
 
     class(bdf_family), intent(in) :: this
+    integer          , intent(in) :: equation_degree
 
-    bdf_history_depth = 2 * this % order
+    bdf_history_depth = equation_degree * this % order
 
   end function bdf_history_depth
 

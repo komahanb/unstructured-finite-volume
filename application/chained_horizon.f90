@@ -101,7 +101,7 @@ contains
     real(dp) :: achieved
     integer :: k, d, given
 
-    given = schemes(1) % scheme % history_depth()
+    given = schemes(1) % scheme % history_depth(degrees - 1)
     call partition(duration, sum(added), dt, t)
     held = [((initial_at(d, t(k)), d = 0, degrees - 1), k = 1, given)]
 

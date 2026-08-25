@@ -97,7 +97,7 @@ contains
        error stop 'gti_horizon: a horizon holds at least one block'
     end if
 
-    call horizon_bounds(schemes, added, first, last)
+    call horizon_bounds(schemes, added, degrees - 1, first, last)
     call partition(duration, last(size(added)), dt, t)
     call whole_gradient(integrand, degrees, last(size(added)), design_value, q, dt, gradient)
 
@@ -106,7 +106,7 @@ contains
     do b = 1, size(added)
        n = last(b) - first(b) + 1
        systems(b) % at      = (first(b) - 1) * degrees
-       systems(b) % carried = schemes(b) % scheme % history_depth() * degrees
+       systems(b) % carried = schemes(b) % scheme % history_depth(degrees - 1) * degrees
 
        call one_system(schemes(b) % scheme, physics, degrees, n, &
             & dt(first(b):last(b)), design_value, q, gradient, systems(b))

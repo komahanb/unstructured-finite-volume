@@ -97,11 +97,12 @@ contains
   ! and no sparsity.
   !===================================================================!
 
-  pure integer function weight_history_depth(this)
+  pure integer function weight_history_depth(this, equation_degree)
 
     class(scheme_weight), intent(in) :: this
+    integer             , intent(in) :: equation_degree
 
-    weight_history_depth = this % coefficients % history_depth()
+    weight_history_depth = this % coefficients % history_depth(equation_degree)
 
   end function weight_history_depth
 

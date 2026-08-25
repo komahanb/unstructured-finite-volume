@@ -46,7 +46,7 @@ module operation_family
 
    contains
 
-     procedure(family_count_interface)  , deferred :: history_depth
+     procedure(family_degree_interface) , deferred :: history_depth
      procedure(family_count_interface)  , deferred :: num_stages
      procedure(family_degree_interface) , deferred :: primary_degree
      procedure(family_pattern_interface), deferred :: row_pattern
@@ -61,10 +61,13 @@ module operation_family
      end function family_count_interface
 
      !----------------------------------------------------------------!
-     ! The degree the governing constraint determines, which for an
-     ! equation of degree N is the value for a difference family and
-     ! N itself for a quadrature or a stage family. Every other
-     ! degree is determined by a derived row.
+     ! Two counts that read the degree of the equation, because the
+     ! rows a family makes depend on how many derivatives there are
+     ! to determine: how far back the widest of those rows reaches,
+     ! and which degree the governing constraint determines. The
+     ! second is the value for a difference family and the highest
+     ! degree for a quadrature or a stage family; every other degree
+     ! is determined by a derived row.
      !----------------------------------------------------------------!
 
      pure integer function family_degree_interface(this, equation_degree)

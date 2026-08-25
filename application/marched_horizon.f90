@@ -75,7 +75,7 @@ contains
     integer :: k, d
 
     call partition(duration, instants, dt, t)
-    held = [((exact(d, t(k)), d = 0, degrees - 1), k = 1, scheme % history_depth())]
+    held = [((exact(d, t(k)), d = 0, degrees - 1), k = 1, scheme % history_depth(degrees - 1))]
 
   end function initial_for
 
@@ -98,7 +98,7 @@ contains
     design = 0.0_dp
     if (present(design_value)) design = design_value
 
-    call horizon_bounds(schemes, added, first, last)
+    call horizon_bounds(schemes, added, degrees - 1, first, last)
 
     call marched_horizon_of(schemes, added, van_der_pol(state_degree), degrees, &
          & duration, design, initial_for(schemes(1) % scheme, last(size(added))), &

@@ -41,6 +41,14 @@
 ! sound, and what separates the rows is how well each integrates,
 ! which is what the table is for.
 !
+! How many instants a row is handed and how many it works out is
+! printed beside it, because they differ sharply: a backward
+! difference of order four on an equation of degree four looks back
+! over sixteen, so on a horizon of twenty-one it integrates five. Its
+! functional is then mostly what it was given, and a reader who did
+! not know that would take it for a peer of a row that integrated
+! twenty.
+!
 ! That is what automatic_order_conservation asks for. Turned off, the
 ! startup would have to be filled some other way, and there is no
 ! other way here that keeps the rows comparable, so the run says so
@@ -143,7 +151,7 @@ contains
     widest = 1
 
     if (index(cfg % families, 'bdf') > 0) then
-       widest = max(widest, 2 * cfg % max_discretization_order)
+       widest = max(widest, cfg % state_degree * cfg % max_discretization_order)
     end if
     if (index(cfg % families, 'adams') > 0) then
        widest = max(widest, max(cfg % max_discretization_order - 1, 1))
@@ -300,7 +308,7 @@ contains
     character(len=2) :: digit
     integer :: m
 
-    line = '  scheme' // repeat(' ', 20) // 'f'
+    line = '  scheme' // repeat(' ', 14) // 'solved' // repeat(' ', 8) // 'f'
 
     do m = 1, cfg % max_derivative_degree
        write(digit,'(i0)') m
@@ -316,9 +324,10 @@ contains
 
   end subroutine heading
 
-  subroutine show_row(label, f, achieved)
+  subroutine show_row(label, solved, f, achieved)
 
     character(len=*), intent(in) :: label
+    integer         , intent(in) :: solved
     real(dp)        , intent(in) :: f(0:), achieved
 
     character(len=16) :: cell
@@ -326,6 +335,8 @@ contains
     integer :: m
 
     line = '  ' // label // repeat(' ', max(2, 20 - len(label)))
+    write(cell,'(i6)') solved
+    line = line // cell
 
     do m = 0, ubound(f, 1)
        write(cell,'(es15.6)') f(m)
@@ -364,7 +375,7 @@ contains
     if (.not. ok) return
 
     call steps_of(cfg, dt, t)
-    given = schemes(1) % scheme % history_depth()
+    given = schemes(1) % scheme % history_depth(nd - 1)
     held  = startup(1:given * nd)
 
     call march_chain(schemes, added, van_der_pol(cfg % state_degree), nd, &
@@ -374,7 +385,7 @@ contains
          & van_der_pol_energy(cfg % state_degree), nd, dt, cfg % design, &
          & cfg % max_derivative_degree, f)
 
-    call show_row(labelled(names, orders), f, achieved)
+    call show_row(labelled(names, orders), cfg % instants - given, f, achieved)
 
     associate (u1 => b); end associate
 
@@ -414,7 +425,7 @@ contains
        end if
        allocate(schemes(b) % scheme, source=scheme)
        deallocate(scheme)
-       if (added(b) <= schemes(b) % scheme % history_depth()) ok = .false.
+       if (added(b) <= schemes(b) % scheme % history_depth(cfg % state_degree)) ok = .false.
     end do
 
   end subroutine assembled

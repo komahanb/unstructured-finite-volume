@@ -48,6 +48,7 @@ module gti_sweeps
   use field_stored          , only : stored_field
   use operation_stencil     , only : stencil
   use operation_dense_direct, only : dense_direct
+  use util_tally, only : tally_record, tangent_loops, adjoint_loops
   use operation_gmres       , only : gmres
   use operation_minimization, only : minimizer
   use operation_linearization, only : linearization, tangent_of
@@ -280,6 +281,12 @@ contains
     type(stored_directed_graph) :: on
     real(dp) :: achieved
 
+    if (transposed) then
+       call tally_record(adjoint_loops)
+    else
+       call tally_record(tangent_loops)
+    end if
+
     matrix = stencil(a, 'jacobian')
     on     = stored_directed_graph(size(b), tails=[integer ::], heads=[integer ::])
 
@@ -312,6 +319,8 @@ contains
     class(minimizer), allocatable :: solver
     type(gmres) :: krylov
     real(dp) :: achieved
+
+    call tally_record(tangent_loops)
 
     jacobian = tangent_of(rows, rows % argument(1))
     call jacobian % freeze(inputs)

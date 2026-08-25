@@ -41,6 +41,7 @@ module operation_multigrid
   use view_directed, only : directed_graph
   use operation_stencil, only : stencil, combine_triples
   use operation_minimization , only : minimizer
+  use util_tally, only : tally_record, linear_solves
 
   implicit none
 
@@ -161,6 +162,8 @@ contains
     real(dp), allocatable :: y(:), r(:), rc(:), ec(:)
     real(dp) :: goal, smoothed, answered
     integer :: it, v
+
+    call tally_record(linear_solves)
 
     allocate(rc(this % nblocks), ec(this % nblocks))
 

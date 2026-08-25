@@ -69,6 +69,8 @@ module gti_chain
   use field_stored     , only : stored_field
   use operation_action , only : variation
   use gti_sweeps       , only : tangent_solve, dense_solve, jacobian_of, design_partial
+  use util_tally            , only : tally_order, tally_enter, tally_leave, &
+       & at_horizon, at_block, at_stage
   use gti_taylor       , only : nodal_coefficient
 
   implicit none
@@ -219,11 +221,13 @@ contains
     allocate(chain(size(added)))
     achieved = 0.0_dp
 
+    call tally_enter(at_horizon)
     do b = 1, size(added)
        call one_block(chain, b, schemes(b) % scheme, physics, degrees, &
             & first(b), last(b), dt, design, initial, one_achieved)
        achieved = max(achieved, one_achieved)
     end do
+    call tally_leave()
 
   end subroutine march_chain
 
@@ -256,10 +260,20 @@ contains
        held = handed_over(chain(1:b - 1), first, chain(b) % given, degrees)
     end if
 
+    ! A block whose scheme keeps stages within a step is filed under
+    ! the stage level, every other under the block level.
+    if (scheme % num_stages() > 1) then
+       call tally_enter(at_stage)
+    else
+       call tally_enter(at_block)
+    end if
+
     call built(scheme, physics, degrees, last - first + 1, dt(first:last), &
          & held, chain(b) % rows, chain(b) % instants_at)
 
     call solved(chain(b) % rows, design, chain(b) % state, achieved)
+
+    call tally_leave()
 
   end subroutine one_block
 
@@ -311,10 +325,16 @@ contains
     end do
 
     do m = 1, max_order
+       call tally_order(m)
+       call tally_enter(at_horizon)
        do b = 1, size(chain)
+          call tally_enter(at_block)
           call one_order(chain, b, physics, degrees, design, m, series)
+          call tally_leave()
        end do
+       call tally_leave()
     end do
+    call tally_order(0)
 
     call chain_functional(chain, integrand, degrees, dt, design, max_order, series, f)
 

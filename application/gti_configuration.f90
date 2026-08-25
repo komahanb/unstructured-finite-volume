@@ -33,6 +33,7 @@ module gti_configuration
 
   private
   public :: configuration, read_configuration, override, show
+  public :: worded, lists, refuse_unknown
 
   type :: configuration
 
@@ -54,6 +55,13 @@ module gti_configuration
 
      logical  :: automatic_order_conservation = .true.
      logical  :: mixed_orders                 = .false.
+
+     ! Whether the run counts what it spends, and which of the counts
+     ! it prints. Counting is off unless it is asked for.
+     logical  :: accounting                   = .false.
+     character(len=256) :: measurements       = &
+          & 'wall_time primal_loops tangent_loops adjoint_loops ' // &
+          & 'newton_solves linear_solves factorisations'
 
   end type configuration
 
@@ -86,6 +94,90 @@ contains
   ! One setting given a value. A name that is not a setting stops the
   ! program.
   !===================================================================!
+
+  !===================================================================!
+  ! The blank-separated words of a list, and whether one of them is a
+  ! given word. Containment is not the test: a word is what lies
+  ! between blanks, so a list naming bdfx does not thereby name bdf.
+  !===================================================================!
+
+  pure function worded(text) result(list)
+
+    character(len=*), intent(in) :: text
+    character(len=32), allocatable :: list(:)
+
+    character(len=32) :: held(32)
+    integer :: i, first, n, last
+
+    n    = 0
+    i    = 1
+    last = len_trim(text)
+
+    do while (i <= last)
+       if (text(i:i) == ' ') then
+          i = i + 1
+          cycle
+       end if
+       first = i
+       do while (i <= last)
+          if (text(i:i) == ' ') exit
+          i = i + 1
+       end do
+       if (n == size(held)) exit
+       n = n + 1
+       held(n) = text(first:i-1)
+    end do
+
+    list = held(1:n)
+
+  end function worded
+
+  pure logical function lists(text, what) result(yes)
+
+    character(len=*), intent(in) :: text, what
+
+    character(len=32), allocatable :: list(:)
+    integer :: i
+
+    list = worded(text)
+    yes  = .false.
+
+    do i = 1, size(list)
+       if (trim(list(i)) == what) yes = .true.
+    end do
+
+  end function lists
+
+  !===================================================================!
+  ! A word this program has nothing for stops it. Left to run, the
+  ! setting would take effect nowhere and the run would report a
+  ! reason that is not the one.
+  !===================================================================!
+
+  subroutine refuse_unknown(text, every, subject)
+
+    character(len=*), intent(in) :: text, every(:), subject
+
+    character(len=32), allocatable :: list(:)
+    integer :: i, j
+    logical :: known
+
+    list = worded(text)
+
+    do i = 1, size(list)
+       known = .false.
+       do j = 1, size(every)
+          if (trim(list(i)) == trim(every(j))) known = .true.
+       end do
+       if (.not. known) then
+          write(*,'(a)') ' '
+          write(*,'(a)') ' ' // subject // ' names ' // trim(list(i)) // &
+               & ', which this program has nothing for.'
+          error stop 'gti_configuration: a setting names something unknown'
+       end if
+    end do
+
+  end subroutine refuse_unknown
 
   subroutine assign(cfg, name, value)
 
@@ -123,6 +215,10 @@ contains
        read(value, *) cfg % automatic_order_conservation
     case ('mixed_orders')
        read(value, *) cfg % mixed_orders
+    case ('accounting')
+       read(value, *) cfg % accounting
+    case ('measurements')
+       cfg % measurements = value
     case default
        write(*,'(a)') ' this is not a setting: ' // levelled(name)
        error stop 'gti_configuration: every setting given is one that exists'
@@ -259,6 +355,10 @@ contains
     write(*,'(a,a)')       '   combinations             ', trim(cfg % combinations)
     write(*,'(a,l1)')      '   automatic order conservation ', cfg % automatic_order_conservation
     write(*,'(a,l1)')      '   mixed orders             ', cfg % mixed_orders
+    write(*,'(a,l1)')      '   accounting               ', cfg % accounting
+    if (cfg % accounting) then
+       write(*,'(a,a)')    '   measurements             ', trim(cfg % measurements)
+    end if
 
   end subroutine show
 

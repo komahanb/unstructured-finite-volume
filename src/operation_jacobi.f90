@@ -17,6 +17,7 @@ module operation_jacobi
 
   use iso_fortran_env  , only : dp => REAL64
   use operation_minimization, only : minimizer
+  use util_tally, only : tally_record, linear_solves
 
   implicit none
 
@@ -58,6 +59,8 @@ contains
     real(dp), allocatable :: d(:), y(:), r(:)
     real(dp) :: goal
     integer :: it, v
+
+    call tally_record(linear_solves)
 
     call this % diagonal(d)
 

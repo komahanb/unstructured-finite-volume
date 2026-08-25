@@ -72,7 +72,12 @@ program graph_time_integrator
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
        & instant_components
   use gti_sweeps            , only : set_krylov_above
-  use gti_configuration     , only : configuration, read_configuration, override, show
+  use gti_configuration     , only : configuration, read_configuration, override, show, &
+       & lists, refuse_unknown, worded
+  use util_tally            , only : tally_open, tally_close, tally_order, &
+       & tally_enter, tally_leave, tally_amount, tally_event_of, &
+       & tally_num_levels, tally_level_name, tally_event_name, &
+       & at_expansion, at_horizon, wall_time
 
   implicit none
 
@@ -464,6 +469,9 @@ contains
     if (given * nd > size(startup)) return
     held  = startup(1:given * nd)
 
+    call tally_enter(at_expansion)
+    call tally_order(0)
+
     call march_chain(schemes, added, van_der_pol(cfg % state_degree), nd, &
          & chosen_grid(cfg), cfg % design, held, chain, dt, t, achieved)
 
@@ -479,6 +487,8 @@ contains
     call chain_expansion(chain, van_der_pol(cfg % state_degree), &
          & van_der_pol_energy(cfg % state_degree), nd, dt, cfg % design, &
          & reported, f)
+
+    call tally_leave()
 
     call show_row(labelled(names, orders), cfg % instants - given, f, achieved, &
          & cfg % max_derivative_degree)
@@ -562,6 +572,12 @@ contains
     ! integrand is built. Were it neither, the run would state a
     ! physics in its heading and integrate a different one.
     call refuse_unknown(cfg % physics, ['vanderpol'], 'physics')
+    if (cfg % accounting) then
+       call refuse_unknown(cfg % measurements, &
+            & ['wall_time     ', 'primal_loops  ', 'tangent_loops ', &
+            &  'adjoint_loops ', 'newton_solves ', 'linear_solves ', &
+            &  'factorisations'], 'measurements')
+    end if
     call refuse_unknown(cfg % families, ['bdf     ', 'adams   ', 'dirk    '], 'families')
     call refuse_unknown(cfg % combinations, &
          & ['homogeneous', 'pairs      ', 'triples    '], 'combinations')
@@ -589,10 +605,17 @@ contains
 
     call heading(cfg)
 
+    if (cfg % accounting) call tally_open(cfg % max_derivative_degree)
+
     printed = 0
     if (asked(cfg, 'homogeneous')) call homogeneous_rows(cfg, startup, printed)
     if (asked(cfg, 'pairs'))       call pair_rows(cfg, startup, printed)
     if (asked(cfg, 'triples'))     call triple_rows(cfg, startup, printed)
+
+    if (cfg % accounting) then
+       call tally_close()
+       call accounted(cfg)
+    end if
 
     if (printed == 0) then
        write(*,'(a)') ' '
@@ -612,89 +635,6 @@ contains
 
   end function asked
 
-  !-------------------------------------------------------------------!
-  ! The blank-separated words of a list, and whether one of them is a
-  ! given word. Containment is not the test: a word is what lies
-  ! between blanks, so a list naming bdfx does not thereby name bdf.
-  !-------------------------------------------------------------------!
-
-  pure function worded(text) result(list)
-
-    character(len=*), intent(in) :: text
-    character(len=16), allocatable :: list(:)
-
-    character(len=16) :: held(16)
-    integer :: i, first, n, last
-
-    n    = 0
-    i    = 1
-    last = len_trim(text)
-
-    do while (i <= last)
-       if (text(i:i) == ' ') then
-          i = i + 1
-          cycle
-       end if
-       first = i
-       do while (i <= last)
-          if (text(i:i) == ' ') exit
-          i = i + 1
-       end do
-       if (n == size(held)) exit
-       n = n + 1
-       held(n) = text(first:i-1)
-    end do
-
-    list = held(1:n)
-
-  end function worded
-
-  pure logical function lists(text, what) result(yes)
-
-    character(len=*), intent(in) :: text, what
-
-    character(len=16), allocatable :: list(:)
-    integer :: i
-
-    list = worded(text)
-    yes  = .false.
-
-    do i = 1, size(list)
-       if (trim(list(i)) == what) yes = .true.
-    end do
-
-  end function lists
-
-  !-------------------------------------------------------------------!
-  ! A word this program has nothing for stops it. Left to run, the
-  ! setting would build no row and the empty table would state a
-  ! reason that is not the one.
-  !-------------------------------------------------------------------!
-
-  subroutine refuse_unknown(text, every, subject)
-
-    character(len=*), intent(in) :: text, every(:), subject
-
-    character(len=16), allocatable :: list(:)
-    integer :: i, j
-    logical :: known
-
-    list = worded(text)
-
-    do i = 1, size(list)
-       known = .false.
-       do j = 1, size(every)
-          if (trim(list(i)) == trim(every(j))) known = .true.
-       end do
-       if (.not. known) then
-          write(*,'(a)') ' '
-          write(*,'(a)') ' ' // subject // ' names ' // trim(list(i)) // &
-               & ', which this program has nothing for.'
-          error stop 'graph_time_integrator: a setting names something unknown'
-       end if
-    end do
-
-  end subroutine refuse_unknown
 
   !-------------------------------------------------------------------!
   ! The names a configuration lists, in the order it lists them.
@@ -805,5 +745,216 @@ contains
     end do
 
   end subroutine triple_rows
+
+  !-------------------------------------------------------------------!
+  ! What the run spent, one table per measurement asked for: the
+  ! amount at each level of the hierarchy against the derivative order
+  ! it was spent on, and then the same amounts as ratios of one order
+  ! to another.
+  !
+  ! The ratio is what a higher order costs against a lower one, so the
+  ! entry at row i and column j is the amount at order i over the
+  ! amount at order j. A column whose order spent nothing leaves its
+  ! ratio empty rather than dividing by it.
+  !-------------------------------------------------------------------!
+
+  subroutine accounted(cfg)
+
+    type(configuration), intent(in) :: cfg
+
+    character(len=32), allocatable :: wanted(:)
+    integer :: i, event
+
+    wanted = worded(cfg % measurements)
+
+    do i = 1, size(wanted)
+       event = tally_event_of(trim(wanted(i)))
+       call one_measurement(cfg, event)
+    end do
+
+    call cliff_note(cfg)
+
+  end subroutine accounted
+
+  subroutine one_measurement(cfg, event)
+
+    type(configuration), intent(in) :: cfg
+    integer            , intent(in) :: event
+
+    real(dp), allocatable :: whole(:)
+    character(len=:), allocatable :: line
+    integer :: level, m, top
+
+    top = cfg % max_derivative_degree
+    allocate(whole(0:top), source=0.0_dp)
+
+    ! Levels nest, so a level's time already holds the time of the
+    ! levels opened inside it and a sum over levels would count the
+    ! same seconds again. The expansion is opened once for a whole
+    ! row and closed after every order has been taken, so its time
+    ! belongs to no single order and is filed where the row began.
+    ! The horizon is opened once per order, which is what a time
+    ! against an order means, so it is the one the ratios are taken
+    ! from. A count is filed at one level only and does sum.
+    do m = 0, top
+       if (event == wall_time) then
+          whole(m) = tally_amount(at_horizon, m, event)
+       else
+          do level = 1, tally_num_levels()
+             whole(m) = whole(m) + tally_amount(level, m, event)
+          end do
+       end if
+    end do
+
+    write(*,'(a)') ' '
+    write(*,'(a)') ' accounting: ' // tally_event_name(event)
+    if (event == wall_time) then
+       write(*,'(a)') '   seconds. A level holds the levels opened inside it, and the'
+       write(*,'(a)') '   expansion spans every order, so the ratios are the horizon.'
+    end if
+    write(*,'(a)') ' '
+
+    line = '   at each level    '
+    do m = 0, top
+       line = line // right(order_named(m))
+    end do
+    write(*,'(a)') line
+
+    do level = 1, tally_num_levels()
+       line = '   ' // tally_level_name(level) // &
+            & repeat(' ', max(1, 18 - len(tally_level_name(level))))
+       do m = 0, top
+          line = line // right(amount_text(tally_amount(level, m, event), event))
+       end do
+       write(*,'(a)') line
+    end do
+
+    if (event == wall_time) then
+       line = '   per order        '
+    else
+       line = '   whole run        '
+    end if
+    do m = 0, top
+       line = line // right(amount_text(whole(m), event))
+    end do
+    write(*,'(a)') line
+
+    call ratio_matrix(whole, top)
+
+  end subroutine one_measurement
+
+  !-------------------------------------------------------------------!
+  ! Row over column, the whole run. An order that spent nothing is no
+  ! denominator, and its column is left empty.
+  !-------------------------------------------------------------------!
+
+  subroutine ratio_matrix(whole, top)
+
+    real(dp), intent(in) :: whole(0:)
+    integer , intent(in) :: top
+
+    character(len=:), allocatable :: line
+    character(len=14) :: cell
+    integer :: i, j
+
+    write(*,'(a)') ' '
+    line = '   row over column  '
+    do j = 0, top
+       line = line // right(order_named(j))
+    end do
+    write(*,'(a)') line
+
+    do i = 0, top
+       line = '   ' // order_named(i) // repeat(' ', max(1, 18 - len(order_named(i))))
+       do j = 0, top
+          if (whole(j) > 0.0_dp) then
+             write(cell,'(f14.2)') whole(i) / whole(j)
+          else
+             write(cell,'(a14)') '-'
+          end if
+          line = line // cell
+       end do
+       write(*,'(a)') line
+    end do
+
+  end subroutine ratio_matrix
+
+  !-------------------------------------------------------------------!
+  ! Which side of the iteration cap the run sits on. Past it every
+  ! order spends the whole budget instead of converging, and a ratio
+  ! measured there reports the cap and not the order.
+  !-------------------------------------------------------------------!
+
+  subroutine cliff_note(cfg)
+
+    type(configuration), intent(in) :: cfg
+
+    real(dp) :: loops, solves
+    integer  :: level, m
+
+    loops  = 0.0_dp
+    solves = 0.0_dp
+
+    do m = 0, cfg % max_derivative_degree
+       do level = 1, tally_num_levels()
+          loops  = loops  + tally_amount(level, m, 2)
+          solves = solves + tally_amount(level, m, 5)
+       end do
+    end do
+
+    if (solves <= 0.0_dp) return
+
+    write(*,'(a)') ' '
+    write(*,'(a,f8.1)') '   primal loops per newton solve      ', loops / solves
+    if (loops / solves >= 39.0_dp) then
+       write(*,'(a)') '   at the iteration budget: the march is not converging, so'
+       write(*,'(a)') '   these ratios report the budget and not the derivative order.'
+    end if
+
+  end subroutine cliff_note
+
+  function amount_text(spent, event) result(text)
+
+    real(dp), intent(in) :: spent
+    integer , intent(in) :: event
+    character(len=:), allocatable :: text
+
+    character(len=14) :: cell
+
+    if (event == wall_time) then
+       write(cell,'(f14.4)') spent
+    else
+       write(cell,'(i14)') nint(spent)
+    end if
+    text = trim(adjustl(cell))
+
+  end function amount_text
+
+  function order_named(m) result(named)
+
+    integer, intent(in) :: m
+    character(len=:), allocatable :: named
+
+    character(len=2) :: digit
+
+    write(digit,'(i0)') m
+    if (m == 0) then
+       named = 'f'
+    else if (m == 1) then
+       named = 'dfdx'
+    else
+       named = 'd' // trim(digit) // 'fdx' // trim(digit)
+    end if
+
+  end function order_named
+
+  function right(text) result(cell)
+
+    character(len=*), intent(in) :: text
+    character(len=14) :: cell
+
+    write(cell,'(a14)') text
+
+  end function right
 
 end program graph_time_integrator

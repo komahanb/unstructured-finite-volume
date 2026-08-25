@@ -23,6 +23,7 @@ module operation_gmres
 
   use iso_fortran_env  , only : dp => REAL64
   use operation_minimization, only : minimizer
+  use util_tally, only : tally_record, linear_solves
 
   implicit none
 
@@ -65,6 +66,8 @@ contains
     real(dp), allocatable :: r(:), w(:), y(:)
     real(dp) :: goal, beta, hik, radius, subdiag
     integer :: n, m, outer, i, j, k
+
+    call tally_record(linear_solves)
 
     n = size(x)
     m = max(this % restart, 1)

@@ -48,6 +48,7 @@ module operation_newton
 
   use iso_fortran_env           , only : dp => REAL64
   use operation_minimization        , only : minimizer
+  use util_tally, only : tally_record, newton_solves, primal_loops
   use field_stored  , only : stored_field
   use operation_linearization, only : linearization, tangent_of
 
@@ -104,6 +105,8 @@ contains
     real(dp) :: linear_achieved, first
     integer :: it
 
+    call tally_record(newton_solves)
+
     allocate(dq(size(x)))
     first = 0.0_dp
 
@@ -114,6 +117,8 @@ contains
     jacobian = tangent_of(this % action, this % action % argument(1))
 
     do it = 1, this % max_iterations
+
+       call tally_record(primal_loops)
 
        ! Where we stand: the full statement, whatever its linearity.
        call this % matvec(x, y)

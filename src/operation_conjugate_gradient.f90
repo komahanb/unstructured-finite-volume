@@ -23,6 +23,7 @@ module operation_conjugate_gradient
 
   use iso_fortran_env  , only : dp => REAL64
   use operation_minimization, only : minimizer
+  use util_tally, only : tally_record, linear_solves
 
   implicit none
 
@@ -62,6 +63,8 @@ contains
     real(dp), allocatable :: r(:), p(:), ap(:), y(:)
     real(dp) :: rr, rr_next, alpha, beta, pap, goal
     integer :: it
+
+    call tally_record(linear_solves)
 
     call this % matvec(x, y)
     r = rhs - y

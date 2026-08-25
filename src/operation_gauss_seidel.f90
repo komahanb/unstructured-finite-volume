@@ -20,6 +20,7 @@ module operation_gauss_seidel
 
   use iso_fortran_env  , only : dp => REAL64
   use operation_minimization, only : minimizer
+  use util_tally, only : tally_record, linear_solves
 
   implicit none
 
@@ -62,6 +63,8 @@ contains
     integer , allocatable :: colours(:)
     real(dp) :: goal
     integer :: it, col, v
+
+    call tally_record(linear_solves)
 
     call this % diagonal(d)
     do v = 1, size(d)

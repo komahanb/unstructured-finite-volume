@@ -35,6 +35,7 @@ module operation_dense_direct
 
   use iso_fortran_env    , only : dp => REAL64
   use operation_minimization , only : minimizer
+  use util_tally, only : tally_record, linear_solves, factorisations
 
   implicit none
 
@@ -89,6 +90,8 @@ contains
     real(dp) :: swap_value, factor
     integer :: n, j, k, p, i
 
+    call tally_record(linear_solves)
+
     if (this % singular_tolerance <= 0.0_dp) then
        error stop 'dense_direct: singular tolerance is positive'
     end if
@@ -117,6 +120,8 @@ contains
     ! Gaussian elimination with partial pivoting, on the assembled
     ! matrix and a copy of the right-hand side.
     !----------------------------------------------------------------!
+
+    call tally_record(factorisations)
 
     r = rhs
     allocate(row(n))

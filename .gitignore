@@ -72,3 +72,4 @@ application/randomized_checks
 application/jacobian_shape
 application/solve_cost
 application/memory_shape
+application/tolerance_form

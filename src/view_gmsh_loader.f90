@@ -29,7 +29,7 @@ module view_gmsh_loader
   use util_file            , only : file
   use util_string          , only : string
   use view_mesh_geometry   , only : find, element_dimension, &
-       & element_num_vertices
+       & element_num_vertices, widest_element
   use util_verbosity      , only : verbosity
 
   implicit none
@@ -450,7 +450,7 @@ contains
       cell_numbers = 0
       allocate(num_cell_vertices(num_cells))
       num_cell_vertices = 0
-      allocate(cell_vertices(8,num_cells))
+      allocate(cell_vertices(widest_element(3), num_cells))
       cell_vertices = 0
       allocate(cell_tags(num_cells))
       cell_tags = 0
@@ -462,7 +462,7 @@ contains
       face_numbers = 0
       allocate(num_face_vertices(num_faces))
       num_face_vertices = 0
-      allocate(face_vertices(4,num_faces))
+      allocate(face_vertices(widest_element(2), num_faces))
       face_vertices = 0
       allocate(face_tags(num_faces))
       face_tags = 0
@@ -472,7 +472,7 @@ contains
       ! Allocate space for the edges.
       allocate(edge_numbers(num_edges))
       edge_numbers = 0
-      allocate(edge_vertices(2,num_edges))
+      allocate(edge_vertices(widest_element(1), num_edges))
       edge_vertices = 0
       allocate(num_edge_vertices(num_edges))
       num_edge_vertices = 0

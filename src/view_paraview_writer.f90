@@ -99,6 +99,7 @@ module view_paraview_writer
 
   use iso_fortran_env, only : error_unit, int32
   use util_precision , only : dp
+  use view_mesh_geometry, only : elements, gmsh_kinds
   use util_string    , only : string
   use field_stored   , only : stored_field
   use view_mesh      , only : mesh
@@ -183,9 +184,10 @@ module view_paraview_writer
 contains
 
   !===================================================================!
-  ! This function maps gmsh element numbers to paraview cell types.
-  ! A number this writer has no drawing for stops the program: a
-  ! polyhedron needs its faces listed, which write does not do.
+  ! The paraview cell type of a gmsh element number, read from the
+  ! element table, and of the agglomerated polygon. A number the
+  ! table has no drawing for stops the program: a polyhedron needs
+  ! its faces listed, which write does not do.
   !===================================================================!
 
   type(integer) function element_type(this, gmsh_type) result (paraview_type)
@@ -193,27 +195,14 @@ contains
     class(linear_cell_type), intent(in) :: this
     integer                , intent(in) :: gmsh_type
 
-    select case (gmsh_type)
-    case (1) ! A 2-node line.
-       paraview_type = this % VTK_LINE
-    case (2) ! A 3-node triangle.
-       paraview_type = this % VTK_TRIANGLE
-    case (3) ! A 4-node quadrangle.
-       paraview_type = this % VTK_QUAD
-    case (4) ! A 4-node tetrahedron.
-       paraview_type = this % VTK_TETRA
-    case (5) ! An 8-node hexahedron.
-       paraview_type = this % VTK_HEXAHEDRON
-    case (6) ! A 6-node prism.
-       paraview_type = this % VTK_WEDGE
-    case (7) ! A 5-node prism (a pyramid).
-       paraview_type = this % VTK_PYRAMID
-    case (polygon_cell)
+    paraview_type = this % VTK_EMPTY_CELL
+    if (gmsh_type == polygon_cell) then
        paraview_type = this % VTK_POLYGON
-    case default
-       call gate(.false., 'a cell type this writer draws: gmsh 1 to 7, polygon_cell, hypercube_cell')
-       paraview_type = this % VTK_EMPTY_CELL
-    end select
+    else if (gmsh_type >= 1 .and. gmsh_type <= gmsh_kinds) then
+       paraview_type = elements(gmsh_type) % vtk_type
+    end if
+    call gate(paraview_type /= this % VTK_EMPTY_CELL, &
+         & 'a cell type this writer draws: a first-order gmsh element, polygon_cell, hypercube_cell')
 
   end function element_type
 

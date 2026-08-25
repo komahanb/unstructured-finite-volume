@@ -59,6 +59,58 @@ module view_mesh_geometry
   public :: find
   public :: element_dimension
   public :: element_num_vertices
+  public :: element_kind, elements, gmsh_kinds, widest_element, face_kind
+
+  !===================================================================!
+  ! THE ELEMENT TABLE: what gmsh's element numbers mean, once. Each
+  ! kind carries its dimension, its vertex count, its faces - which of
+  ! its vertices make each face, in the order that turns the face
+  ! outward - and the paraview type that draws it. Every question
+  ! about an element kind is a read of this table: the loader's
+  ! widths, the face count the algebraic face total needs, the
+  ! ordering of a shared face, the writer's cell type. A gmsh number
+  ! the table does not carry has dimension -1 and nothing else.
+  !===================================================================!
+
+  type :: element_kind
+     integer :: dimension    = -1
+     integer :: num_vertices = 0
+     integer :: num_faces    = 0
+     integer :: vtk_type     = 0
+     integer :: num_face_vertices(6) = 0
+     integer :: face_vertices(4, 6)  = 0
+  end type element_kind
+
+  integer, parameter :: gmsh_kinds = 15
+
+  type(element_kind), parameter :: elements(gmsh_kinds) = [ &
+       ! 1: a 2-node line; its faces are its two vertices
+       & element_kind(1, 2, 2, 3, [1, 1, 0, 0, 0, 0], &
+       &   reshape([1,0,0,0, 2,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0], [4, 6])), &
+       ! 2: a 3-node triangle; its faces are its three edges
+       & element_kind(2, 3, 3, 5, [2, 2, 2, 0, 0, 0], &
+       &   reshape([1,2,0,0, 2,3,0,0, 3,1,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0], [4, 6])), &
+       ! 3: a 4-node quadrangle; its faces are its four edges
+       & element_kind(2, 4, 4, 9, [2, 2, 2, 2, 0, 0], &
+       &   reshape([1,2,0,0, 2,3,0,0, 3,4,0,0, 4,1,0,0, 0,0,0,0, 0,0,0,0], [4, 6])), &
+       ! 4: a 4-node tetrahedron
+       & element_kind(3, 4, 4, 10, [3, 3, 3, 3, 0, 0], &
+       &   reshape([1,2,3,0, 3,2,4,0, 1,3,4,0, 1,4,2,0, 0,0,0,0, 0,0,0,0], [4, 6])), &
+       ! 5: an 8-node hexahedron
+       & element_kind(3, 8, 6, 12, [4, 4, 4, 4, 4, 4], &
+       &   reshape([1,5,8,4, 2,3,7,6, 5,6,7,8, 1,4,3,2, 7,3,4,8, 1,2,6,5], [4, 6])), &
+       ! 6: a 6-node prism, three quadrangles and two triangles
+       & element_kind(3, 6, 5, 13, [4, 4, 4, 3, 3, 0], &
+       &   reshape([1,4,5,6, 1,3,6,4, 2,5,6,3, 1,2,3,0, 4,6,5,0, 0,0,0,0], [4, 6])), &
+       ! 7: a 5-node pyramid, one quadrangle and four triangles
+       & element_kind(3, 5, 5, 14, [4, 3, 3, 3, 3, 0], &
+       &   reshape([1,2,3,4, 1,2,5,0, 2,3,5,0, 3,4,5,0, 1,5,4,0, 0,0,0,0], [4, 6])), &
+       ! 8 to 14: second-order elements, which this tower does not carry
+       & element_kind(), element_kind(), element_kind(), element_kind(), &
+       & element_kind(), element_kind(), element_kind(), &
+       ! 15: a 1-node point
+       & element_kind(0, 1, 0, 1, [0, 0, 0, 0, 0, 0], reshape([0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0], [4, 6])) ]
+
 
 contains
 
@@ -103,13 +155,14 @@ contains
     integer, allocatable, intent(out) :: face_types(:)
 
     integer :: iface, icell, jcell, ivertex
-    integer :: shared_node_count
-    integer :: shared_vertices(4)
+    integer :: shared_node_count, shared_kind
+    integer, allocatable :: shared_vertices(:)
     integer :: nf
 
     num_faces = (sum(element_num_faces(cell_types)) - nbfaces)/2 + nbfaces
 
-    allocate(face_vertices(4, num_faces))
+    allocate(face_vertices(widest_element(spatial_dim - 1), num_faces))
+    allocate(shared_vertices(maxval(num_cell_vertices)))
     allocate(num_face_vertices(num_faces))
     allocate(face_tags(num_faces))
     allocate(face_types(num_faces))
@@ -146,42 +199,23 @@ contains
              end if
           end do
 
-          select case (shared_node_count)
-          case (0)
-             ! the cells do not touch
-          case (1)
-             ! a shared vertex is never a face
-          case (2)
-             ! a shared segment is a face in 2d; in 3d two cells can
-             ! touch along a segment without sharing a face
-             if (spatial_dim .eq. 2) then
-                nf = nf + 1
-                face_tags(nf)         = cell_tags(icell)
-                face_types(nf)        = 1
-                num_face_vertices(nf) = 2
-                call order_face_vertices(cell_types(jcell), &
-                     & cell_vertices(:, jcell), shared_vertices(1:2))
-                face_vertices(1:2, nf) = shared_vertices(1:2)
+          ! a shared vertex is never a face, and in 3d neither is a
+          ! shared segment: a face has as many vertices as the space
+          ! has dimensions, at the least, and is a kind the table has
+          if (shared_node_count >= spatial_dim) then
+             shared_kind = face_kind(spatial_dim - 1, shared_node_count)
+             if (shared_kind == 0) then
+                error stop 'view_mesh_geometry: two cells share the vertices of a face the table has'
              end if
-          case (3)
              nf = nf + 1
              face_tags(nf)         = cell_tags(icell)
-             face_types(nf)        = 2
-             num_face_vertices(nf) = 3
-             call order_face_vertices(cell_types(jcell), &
-                  & cell_vertices(:, jcell), shared_vertices(1:3))
-             face_vertices(1:3, nf) = shared_vertices(1:3)
-          case (4)
-             nf = nf + 1
-             face_tags(nf)         = cell_tags(icell)
-             face_types(nf)        = 3
-             num_face_vertices(nf) = 4
-             call order_face_vertices(cell_types(jcell), &
-                  & cell_vertices(:, jcell), shared_vertices(1:4))
-             face_vertices(1:4, nf) = shared_vertices(1:4)
-          case default
-             error stop 'view_mesh_geometry: two cells share at most four vertices'
-          end select
+             face_types(nf)        = shared_kind
+             num_face_vertices(nf) = shared_node_count
+             call order_face_vertices(cell_types(jcell), cell_vertices(:, jcell), &
+                  & shared_vertices(1:shared_node_count))
+             face_vertices(1:shared_node_count, nf) = shared_vertices(1:shared_node_count)
+          end if
+
 
        end do
 
@@ -617,37 +651,6 @@ contains
   ! generalize to the number of lower dimensional entities.
   !===================================================================!
 
-  pure elemental integer function element_num_faces(cell_type) result (num_faces)
-
-    integer, intent(in) :: cell_type
-
-    select case (cell_type)
-    case (1)
-       ! A 2-node line.
-       num_faces = 2 ! The faces are its two vertices.
-    case (2)
-       ! A 3-node triangle.
-       num_faces = 3  ! The faces are its three edges.
-    case (3)
-       ! A 4-node quadrangle.
-       num_faces = 4 ! The faces are its four edges.
-    case (4)
-       ! A 4-node tetrahedron.
-       num_faces = 4
-    case (5)
-       ! An 8-node hexahedron.
-       num_faces = 6
-    case (6)
-       ! A 6-node prism.
-       num_faces = 5
-    case(7)
-       ! A 5-node prism (a pyramid).
-       num_faces = 5
-    case default
-       num_faces = 0
-    end select
-
-  end function element_num_faces
 
   !===================================================================!
   ! Return the spatial dimension of a gmsh element type: a point is
@@ -656,65 +659,12 @@ contains
   ! faces, and edges by dimension rather than by type.
   !===================================================================!
 
-  pure elemental integer function element_dimension(elem_type) result (dim)
-
-    integer, intent(in) :: elem_type
-
-    select case (elem_type)
-    case (15)
-       ! A 1-node point.
-       dim = 0
-    case (1)
-       ! A 2-node line.
-       dim = 1
-    case (2:3)
-       ! A triangle or a quadrangle.
-       dim = 2
-    case (4:7)
-       ! A tet, hex, prism, or pyramid.
-       dim = 3
-    case default
-       dim = -1
-    end select
-
-  end function element_dimension
 
   !===================================================================!
   ! Return the number of vertices a gmsh element type owns. The name
   ! could generalize to the number of lower dimensional entities.
   !===================================================================!
 
-  pure elemental integer function element_num_vertices(elem_type) result (num_vertices)
-
-    integer, intent(in) :: elem_type
-
-    select case (elem_type)
-    case (1)
-       ! A 2-node line.
-       num_vertices = 2
-    case (2)
-       ! A 3-node triangle.
-       num_vertices = 3
-    case (3)
-       ! A 4-node quadrangle.
-       num_vertices = 4
-    case (4)
-       ! A 4-node tetrahedron.
-       num_vertices = 4
-    case (5)
-       ! An 8-node hexahedron.
-       num_vertices = 8
-    case (6)
-       ! A 6-node prism.
-       num_vertices = 6
-    case(7)
-       ! A 5-node prism (a pyramid).
-       num_vertices = 5
-    case default
-       num_vertices = 0
-    end select
-
-  end function element_num_vertices
 
   !===================================================================!
   ! Put a face's vertices into the cell's own winding order. Each
@@ -724,144 +674,111 @@ contains
   ! order.
   !===================================================================!
 
+
+
+  !===================================================================!
+  ! The table read three ways, elementally, a number outside the table
+  ! reading as no dimension, no vertices, no faces.
+  !===================================================================!
+
+  pure elemental integer function element_dimension(elem_type) result (dim)
+
+    integer, intent(in) :: elem_type
+
+    dim = -1
+    if (elem_type >= 1 .and. elem_type <= gmsh_kinds) dim = elements(elem_type) % dimension
+
+  end function element_dimension
+
+  pure elemental integer function element_num_vertices(elem_type) result (num_vertices)
+
+    integer, intent(in) :: elem_type
+
+    num_vertices = 0
+    if (elem_type >= 1 .and. elem_type <= gmsh_kinds) num_vertices = elements(elem_type) % num_vertices
+
+  end function element_num_vertices
+
+  pure elemental integer function element_num_faces(elem_type) result (num_faces)
+
+    integer, intent(in) :: elem_type
+
+    num_faces = 0
+    if (elem_type >= 1 .and. elem_type <= gmsh_kinds) num_faces = elements(elem_type) % num_faces
+
+  end function element_num_faces
+
+  !===================================================================!
+  ! The most vertices any element of a dimension owns - the width a
+  ! padded list of such elements needs - and the kind of a face of a
+  ! dimension with this many vertices, or zero where the table has
+  ! none.
+  !===================================================================!
+
+  pure integer function widest_element(dimension)
+
+    integer, intent(in) :: dimension
+
+    widest_element = max(0, maxval(elements % num_vertices, mask=elements % dimension == dimension))
+
+  end function widest_element
+
+  pure integer function face_kind(dimension, num_vertices)
+
+    integer, intent(in) :: dimension, num_vertices
+
+    integer :: t
+
+    face_kind = 0
+    do t = 1, gmsh_kinds
+       if (elements(t) % dimension == dimension .and. elements(t) % num_vertices == num_vertices) then
+          face_kind = t
+          return
+       end if
+    end do
+
+  end function face_kind
+
+  !===================================================================!
+  ! The vertices of a face a cell shares, put in the order the table
+  ! gives that face of that cell, which is the order that turns its
+  ! area vector outward. The face is found among the cell's faces by
+  ! its vertex set; a set that is no face of the cell stops the
+  ! program, the mesh being nonconforming.
+  !===================================================================!
+
   impure subroutine order_face_vertices(cell_type, cell_vertices, face_vertices_unordered)
 
     integer, intent(in)    :: cell_type
     integer, intent(in)    :: cell_vertices(:)
     integer, intent(inout) :: face_vertices_unordered(:)
 
-    integer, allocatable :: face_vertices(:,:)
-    integer :: num_face_vertices, num_cell_faces
-    integer :: iface, ivertex
-    integer :: match_count
+    type(element_kind) :: cell_shape
+    integer :: iface, ivertex, n, match_count
 
-    select case (cell_type)
-    case (2)
-       ! A 3-node triangle (a 2d cell); its faces are its three edges.
-       num_face_vertices = 2
-       num_cell_faces = 3
+    if (element_num_faces(cell_type) == 0) then
+       error stop 'view_mesh_geometry: the element table lists the faces of this cell type'
+    end if
 
-       if (num_face_vertices .ne. size(face_vertices_unordered)) &
-            & error stop "inconstent vertices"
+    cell_shape = elements(cell_type)
 
-       allocate(face_vertices(num_face_vertices, num_cell_faces))
-       face_vertices = 0
-
-       face_vertices(:,1) = [cell_vertices(1), cell_vertices(2)]
-       face_vertices(:,2) = [cell_vertices(2), cell_vertices(3)]
-       face_vertices(:,3) = [cell_vertices(3), cell_vertices(1)]
-
-    case (3)
-       ! A 4-node quadrangle (a 2d cell); its faces are its four edges.
-       num_face_vertices = 2
-       num_cell_faces = 4
-
-       if (num_face_vertices .ne. size(face_vertices_unordered)) &
-            & error stop "inconstent vertices"
-
-       allocate(face_vertices(num_face_vertices, num_cell_faces))
-       face_vertices = 0
-
-       face_vertices(:,1) = [cell_vertices(1), cell_vertices(2)]
-       face_vertices(:,2) = [cell_vertices(2), cell_vertices(3)]
-       face_vertices(:,3) = [cell_vertices(3), cell_vertices(4)]
-       face_vertices(:,4) = [cell_vertices(4), cell_vertices(1)]
-
-    case (4)
-       ! A 4-node tetrahedron.
-       num_face_vertices = 3
-       num_cell_faces = 4
-
-       if (num_face_vertices .ne. size(face_vertices_unordered)) &
-            & error stop "inconstent vertices"
-
-       allocate(face_vertices(num_face_vertices, num_cell_faces))
-       face_vertices = 0
-
-       ! The normals must point outward.
-       face_vertices(:,1) = [cell_vertices(1), cell_vertices(2), cell_vertices(3)]
-       face_vertices(:,2) = [cell_vertices(3), cell_vertices(2), cell_vertices(4)]
-       face_vertices(:,3) = [cell_vertices(1), cell_vertices(3), cell_vertices(4)]
-       face_vertices(:,4) = [cell_vertices(1), cell_vertices(4), cell_vertices(2)]
-
-    case (5)
-       ! An 8-node hexahedron.
-       num_face_vertices = 4
-       num_cell_faces = 6
-
-       if (num_face_vertices .ne. size(face_vertices_unordered)) &
-            & error stop "inconstent vertices"
-
-       allocate(face_vertices(num_face_vertices, num_cell_faces))
-       face_vertices = 0
-
-       face_vertices(:,1) = [cell_vertices(1), cell_vertices(5), cell_vertices(8), cell_vertices(4)]
-       face_vertices(:,2) = [cell_vertices(2), cell_vertices(3), cell_vertices(7), cell_vertices(6)]
-       face_vertices(:,3) = [cell_vertices(5), cell_vertices(6), cell_vertices(7), cell_vertices(8)]
-       face_vertices(:,4) = [cell_vertices(1), cell_vertices(4), cell_vertices(3), cell_vertices(2)]
-       face_vertices(:,5) = [cell_vertices(7), cell_vertices(3), cell_vertices(4), cell_vertices(8)]
-       face_vertices(:,6) = [cell_vertices(1), cell_vertices(2), cell_vertices(6), cell_vertices(5)]
-
-    case (6)
-       ! A 6-node prism with five faces.
-       num_cell_faces = 5
-       num_face_vertices = 4 ! Take the maximum.
-
-       allocate(face_vertices(num_face_vertices, num_cell_faces))
-       face_vertices = 0
-
-       face_vertices(:,1) = [cell_vertices(1), cell_vertices(4), cell_vertices(5), cell_vertices(6)]
-       face_vertices(:,2) = [cell_vertices(1), cell_vertices(3), cell_vertices(6), cell_vertices(4)]
-       face_vertices(:,3) = [cell_vertices(2), cell_vertices(5), cell_vertices(6), cell_vertices(3)]
-       face_vertices(:,4) = [cell_vertices(1), cell_vertices(2), cell_vertices(3)]
-       face_vertices(:,5) = [cell_vertices(4), cell_vertices(6), cell_vertices(5)]
-
-    case(7)
-       ! A 5-node prism (a pyramid) with five faces.
-       num_cell_faces = 5
-       num_face_vertices = 4 ! Take the maximum.
-
-       allocate(face_vertices(num_face_vertices, num_cell_faces))
-       face_vertices = 0
-
-       face_vertices(:,1) = [cell_vertices(1), cell_vertices(2), cell_vertices(3), cell_vertices(4)]
-       face_vertices(:,2) = [cell_vertices(1), cell_vertices(2), cell_vertices(5)]
-       face_vertices(:,3) = [cell_vertices(2), cell_vertices(3), cell_vertices(5)]
-       face_vertices(:,4) = [cell_vertices(3), cell_vertices(4), cell_vertices(5)]
-       face_vertices(:,5) = [cell_vertices(1), cell_vertices(5), cell_vertices(4)]
-
-    case default
-       print *, "unknown type"
-       error stop
-    end select
-
-    !-----------------------------------------------------------------!
-    ! Compare the input with every candidate face and find the face
-    ! whose matching count equals the input vertex count.
-    !-----------------------------------------------------------------!
-
-    match_face: do iface = 1, num_cell_faces
-
+    do iface = 1, cell_shape % num_faces
+       n = cell_shape % num_face_vertices(iface)
+       if (n /= size(face_vertices_unordered)) cycle
        match_count = 0
-       match_vertex: do ivertex = 1, num_face_vertices
-          if (any (face_vertices_unordered(:) .eq. face_vertices(ivertex,iface) ) .eqv. .true.) then
-             ! exit match_vertex ! skip and go to next face
-             ! else
+       do ivertex = 1, n
+          if (any(face_vertices_unordered == cell_vertices(cell_shape % face_vertices(ivertex, iface)))) then
              match_count = match_count + 1
           end if
-       end do match_vertex
-
-       ! This is the face with the correct ordering of vertices.
-       if (match_count .eq. num_face_vertices) then
-          face_vertices_unordered = face_vertices(:, iface)
-          exit match_face
+       end do
+       if (match_count == n) then
+          face_vertices_unordered = cell_vertices(cell_shape % face_vertices(1:n, iface))
+          return
        end if
+    end do
 
-    end do match_face
-
-    if (allocated(face_vertices)) deallocate(face_vertices)
+    error stop 'view_mesh_geometry: the vertices two cells share are a face of the cell'
 
   end subroutine order_face_vertices
-
 
 end module view_mesh_geometry

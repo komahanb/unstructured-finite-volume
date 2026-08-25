@@ -557,6 +557,11 @@ contains
     ! Before anything is measured against the horizon, since a word
     ! this program has nothing for reaches back over nothing and
     ! would be reported as a horizon too narrow to hold it.
+    !
+    ! physics is refused rather than dispatched on because one
+    ! integrand is built. Were it neither, the run would state a
+    ! physics in its heading and integrate a different one.
+    call refuse_unknown(cfg % physics, ['vanderpol'], 'physics')
     call refuse_unknown(cfg % families, ['bdf     ', 'adams   ', 'dirk    '], 'families')
     call refuse_unknown(cfg % combinations, &
          & ['homogeneous', 'pairs      ', 'triples    '], 'combinations')

@@ -63,7 +63,7 @@ module gti_taylor
   use operation_family     , only : family
   use physics_integrand    , only : nodal_integrand
   use gti_block            , only : block_residual
-  use gti_march            , only : block_of, solved, unknowns_graph
+  use gti_march            , only : block_of, solved, unknowns_graph, frozen_inputs
   use gti_march            , only : solved_linear, fresh_stamp
 
   implicit none
@@ -153,7 +153,7 @@ contains
     integer , intent(in), optional      :: nodes
 
     type(stored_directed_graph) :: unknowns
-    type(stored_field) :: state, knobs
+    type(stored_field), allocatable :: inputs(:)
     real(dp), allocatable :: series(:,:)
     integer :: unknown_count
 
@@ -165,13 +165,9 @@ contains
        call solved(rows, design, q, achieved)
     end if
 
-    unknowns = stored_directed_graph(unknown_count, tails=[integer ::], heads=[integer ::])
-    state    = stored_field('state', unknowns % vertex_set(), unknown_count)
-    knobs    = stored_field('design', unknowns % vertex_set(), rows % num_points())
-    call state % set_real_vector(q)
-    call knobs % set_real_vector(spread(design, 1, rows % num_points()))
+    call frozen_inputs(q, design, rows % num_points(), unknowns, inputs)
 
-    call state_series(rows, physics, unknowns, [state, knobs], degrees, &
+    call state_series(rows, physics, unknowns, inputs, degrees, &
          & rows % points_at(), primary, rows % num_carried(), design, &
          & max_order, q, series, nodes_of(nodes))
     call functional_series(integrand, degrees, instants_at, design, max_order, &

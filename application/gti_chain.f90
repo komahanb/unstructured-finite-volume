@@ -62,13 +62,14 @@ module gti_chain
   use physics_integrand, only : nodal_integrand
   use gti_expansion    , only : family_holder, marches_by_stages
   use gti_block        , only : block_residual
-  use gti_march        , only : imbalance, swept, solved_linear, fresh_stamp, partitioned, horizon_bounds, block_of, solved
+  use gti_march        , only : imbalance, swept, solved_linear, fresh_stamp, partitioned, horizon_bounds, block_of, solved, &
+       & frozen_inputs
   use gti_stage        , only : stage_block_of, instant_at
   use view_directed_stored, only : stored_directed_graph
   use field_calculus   , only : field
   use field_stored     , only : stored_field
   use operation_action , only : variation
-  use gti_sweeps       , only : design_partial, route_of, &
+  use gti_sweeps       , only : design_partial, route_of, functional_gradient, &
        & route_substitutions, forward_route, reverse_route
   use util_tally            , only : tally_order, tally_enter, tally_leave, &
        & at_horizon, at_block, at_stage
@@ -392,17 +393,7 @@ contains
     type(stored_directed_graph), intent(out) :: unknowns
     type(stored_field), allocatable, intent(out) :: inputs(:)
 
-    type(stored_field) :: state, knobs
-    integer :: count
-
-    count    = b % rows % num_unknowns()
-    unknowns = stored_directed_graph(count, tails=[integer ::], heads=[integer ::])
-    state    = stored_field('state', unknowns % vertex_set(), count)
-    knobs    = stored_field('design', unknowns % vertex_set(), b % rows % num_points())
-    call state % set_real_vector(b % state)
-    call knobs % set_real_vector(spread(design, 1, b % rows % num_points()))
-
-    inputs = [state, knobs]
+    call frozen_inputs(b % state, design, b % rows % num_points(), unknowns, inputs)
 
   end subroutine frozen_at
 
@@ -575,9 +566,8 @@ contains
     real(dp), allocatable      , intent(out) :: g(:)
 
     type(stored_directed_graph) :: instants
-    type(stored_field) :: state, knobs, direction
-    class(field), allocatable :: out
-    real(dp), allocatable :: v(:), rate(:)
+    type(stored_field) :: state, knobs
+    real(dp), allocatable :: owned_g(:)
     integer :: count, from, to, k, d, at, held
 
     count = chain(b) % rows % num_unknowns()
@@ -590,23 +580,15 @@ contains
     call at_owned_instants(chain, b, degrees, design, inputs, from, to, instants, &
          & state, knobs)
 
-    allocate(v(held * degrees), source=0.0_dp)
-    direction = stored_field('direction', instants % vertex_set(), held * degrees)
+    ! the gradient over the owned instants, then scattered to where
+    ! those instants lie in the block
+    call functional_gradient(integrand, instants, [state, knobs], dt(from:to), held, degrees, &
+         & instants % vertex_set(), owned_g)
 
     do d = 0, degrees - 1
-       v = 0.0_dp
-       do k = 1, held
-          v((k - 1) * degrees + d + 1) = 1.0_dp
-       end do
-       call direction % set_real_vector(v)
-
-       call integrand % partial_action(instants, [state, knobs], &
-            & [variation(integrand % argument(1), direction)], out)
-       call out % real_vector(rate)
-
        do k = from, to
           at = chain(b) % instants_at(k - chain(b) % first + 1)
-          g(at + d + 1) = dt(k) * rate(k - from + 1)
+          g(at + d + 1) = owned_g((k - from) * degrees + d + 1)
        end do
     end do
 

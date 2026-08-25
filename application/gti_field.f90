@@ -38,14 +38,14 @@ module gti_field
   use physics_integrand       , only : nodal_integrand
   use gti_block               , only : block_residual
   use gti_expansion           , only : block_reach
-  use gti_march               , only : solved
+  use gti_march               , only : unknown, block_of, solved
   use gti_space               , only : room, spatial_operator, coarse_cells
 
   implicit none
 
   private
-  public :: field_unknown, field_block_of, field_measure
-  public :: consistent_field, field_startup, field_aggregates
+  public :: spatial_rows, field_measure
+  public :: field_startup, field_aggregates
 
 contains
 
@@ -72,55 +72,13 @@ contains
     do k = 1, n
        do i = 1, nodes
           do d = 0, degrees - 1
-             aggregate(field_unknown(k, i, d, nodes, degrees)) = &
+             aggregate(unknown(k, d, degrees, i, nodes)) = &
                   & ((k - 1) * coarse + (cell(i) - 1)) * degrees + d + 1
           end do
        end do
     end do
 
   end function field_aggregates
-
-  pure integer function field_unknown(instant, node, degree, nodes, degrees) result(at)
-
-    integer, intent(in) :: instant, node, degree, nodes, degrees
-
-    at = ((instant - 1) * nodes + (node - 1)) * degrees + degree + 1
-
-  end function field_unknown
-
-  !-------------------------------------------------------------------!
-  ! The family's derived rows over n instants, once per node.
-  !-------------------------------------------------------------------!
-
-  function time_rows(scheme, degrees, n, dt, nodes) result(rows)
-
-    class(family), intent(in) :: scheme
-    integer      , intent(in) :: degrees, n, nodes
-    real(dp)     , intent(in) :: dt(:)
-    type(stencil) :: rows
-
-    integer , allocatable :: tails(:), heads(:), source_degree(:), determines(:)
-    integer , allocatable :: determined(:), source(:)
-    real(dp), allocatable :: w(:), replicated(:)
-    integer :: e, i, ne
-
-    call block_reach(scheme, degrees, n, tails, heads, source_degree, determines)
-    ne = size(tails)
-    call weights_of(scheme_weight(scheme), n, tails, heads, dt, source_degree, determines, w)
-
-    allocate(determined(ne * nodes), source(ne * nodes), replicated(ne * nodes))
-    do i = 1, nodes
-       do e = 1, ne
-          determined((i - 1) * ne + e) = field_unknown(heads(e), i, determines(e), nodes, degrees)
-          source((i - 1) * ne + e)     = field_unknown(tails(e), i, source_degree(e), nodes, degrees)
-          replicated((i - 1) * ne + e) = w(e)
-       end do
-    end do
-
-    rows = derived_constraints(determined, source, replicated, n * nodes * degrees, &
-         & 'derived rows')
-
-  end function time_rows
 
   !-------------------------------------------------------------------!
   ! The spatial rows: -kappa times the laplacian of the values of one
@@ -157,8 +115,8 @@ contains
        do e = 1, m
           row_cell    = op % pattern % edge_head(e)
           column_cell = op % pattern % edge_tail(e)
-          r((k - 1) * m + e) = field_unknown(k, row_cell, primary, nodes, degrees)
-          c((k - 1) * m + e) = field_unknown(k, column_cell, 0, nodes, degrees)
+          r((k - 1) * m + e) = unknown(k, primary, degrees, row_cell, nodes)
+          c((k - 1) * m + e) = unknown(k, 0, degrees, column_cell, nodes)
           w((k - 1) * m + e) = -lw(e) / space % volume(row_cell)
        end do
     end do
@@ -166,43 +124,6 @@ contains
     rows = stencil(r, c, w, spread(0.0_dp, 1, n * nodes * degrees), 'spatial rows')
 
   end function spatial_rows
-
-  !-------------------------------------------------------------------!
-  ! The block over n instants: held holds the first history_depth
-  ! instants in unknown order. A held vector of the wrong extent stops
-  ! the program.
-  !-------------------------------------------------------------------!
-
-  function field_block_of(scheme, physics, degrees, n, dt, space, kappa, degree, held) &
-       & result(rows)
-
-    class(family)         , intent(in) :: scheme
-    class(nodal_integrand), intent(in) :: physics
-    integer               , intent(in) :: degrees, n, degree
-    real(dp)              , intent(in) :: dt(:), kappa, held(:)
-    type(room)            , intent(in) :: space
-    type(block_residual) :: rows
-
-    integer, allocatable :: carried(:), at(:)
-    integer :: h, k, i, d, nodes, primary
-
-    nodes   = space % num_cells
-    h       = scheme % history_depth(degrees - 1)
-    primary = scheme % primary_degree(degrees - 1)
-
-    carried = [(((field_unknown(k, i, d, nodes, degrees), d = 0, degrees - 1), &
-         &        i = 1, nodes), k = 1, h)]
-    at      = [((field_unknown(k, i, 0, nodes, degrees) - 1, i = 1, nodes), k = 1, n)]
-
-    if (size(held) /= size(carried)) then
-       error stop 'gti_field: one value per carried component'
-    end if
-
-    rows = block_residual(time_rows(scheme, degrees, n, dt, nodes), physics, at, &
-         & n * nodes * degrees, degrees, primary, carried, held, &
-         & spatial=spatial_rows(space, kappa, degree, degrees, primary, n))
-
-  end function field_block_of
 
   !-------------------------------------------------------------------!
   ! The measure at every point, in the order the points lie: the step
@@ -220,49 +141,6 @@ contains
     m = [((dt(k) * space % volume(i), i = 1, space % num_cells), k = 1, size(dt))]
 
   end function field_measure
-
-  !-------------------------------------------------------------------!
-  ! The consistent field at one instant: the components below the
-  ! highest given at every node, lower(d + 1, i), and the highest at
-  ! every node what the physics and the laplacian say it is there.
-  ! The same one-instant block as consistent_state, with the level
-  ! below attached.
-  !-------------------------------------------------------------------!
-
-  function consistent_field(physics, degrees, lower, space, kappa, degree, design) result(q)
-
-    class(nodal_integrand), intent(in) :: physics
-    integer               , intent(in) :: degrees, degree
-    real(dp)              , intent(in) :: lower(:,:), kappa, design
-    type(room)            , intent(in) :: space
-    real(dp), allocatable :: q(:)
-
-    type(block_residual) :: rows
-    type(stencil) :: none
-    integer , allocatable :: carried(:), at(:)
-    real(dp), allocatable :: held(:)
-    real(dp) :: achieved
-    integer :: i, d, nodes
-
-    nodes = space % num_cells
-
-    if (size(lower, 1) /= degrees - 1 .or. size(lower, 2) /= nodes) then
-       error stop 'gti_field: the components below the highest are given at every node'
-    end if
-
-    none = stencil([integer ::], [integer ::], [real(dp) ::], &
-         & spread(0.0_dp, 1, nodes * degrees), 'none')
-
-    carried = [((field_unknown(1, i, d, nodes, degrees), d = 0, degrees - 2), i = 1, nodes)]
-    held    = [((lower(d + 1, i), d = 0, degrees - 2), i = 1, nodes)]
-    at      = [(field_unknown(1, i, 0, nodes, degrees) - 1, i = 1, nodes)]
-
-    rows = block_residual(none, physics, at, nodes * degrees, degrees, degrees - 1, &
-         & carried, held, spatial=spatial_rows(space, kappa, degree, degrees, degrees - 1, 1))
-
-    call solved(rows, design, q, achieved)
-
-  end function consistent_field
 
   !-------------------------------------------------------------------!
   ! The first h instants of a march, from a field at the first: a
@@ -299,7 +177,8 @@ contains
     n    = 1 + (h - 1) * r
     fine = [0.0_dp, (dt(1 + (k - 1) / r + 1) / real(r, dp), k = 1, (h - 1) * r)]
 
-    rows = field_block_of(starter, physics, degrees, n, fine, space, kappa, degree, q0)
+    rows = block_of(starter, physics, degrees, n, fine, q0, nodes=space % num_cells, &
+         & spatial=spatial_rows(space, kappa, degree, degrees, starter % primary_degree(degrees - 1), n))
     call solved(rows, design, q, achieved)
 
     allocate(held(h * width))

@@ -114,6 +114,7 @@ module gti_march
 
   private
   public :: partition, partitioned, scheme_rows, block_of, solved, unknowns_graph
+  public :: unknown, consistent_states, frozen_inputs
   public :: set_stopping
   public :: consistent_state
   public :: imbalance
@@ -241,20 +242,50 @@ contains
     real(dp)              , intent(in) :: lower(:), design_value
     real(dp), allocatable :: q(:)
 
-    type(block_residual) :: rows
-    type(stencil) :: none
-    real(dp) :: achieved
-    integer :: k
-
     if (size(lower) /= degrees - 1) then
        error stop 'gti_march: the components below the highest are given, and no others'
     end if
 
-    none = stencil([integer ::], [integer ::], [real(dp) ::], &
-         & spread(0.0_dp, 1, degrees), 'none')
+    q = consistent_states(physics, degrees, reshape(lower, [degrees - 1, 1]), design_value)
 
-    rows = block_residual(none, physics, at=[0], unknowns=degrees, degrees=degrees, &
-         & primary=degrees - 1, carried=[(k, k = 1, degrees - 1)], held=lower)
+  end function consistent_state
+
+  !===================================================================!
+  ! The same at every node of a mesh: the components below the
+  ! highest given at each node, lower(d + 1, i), and the highest at
+  ! every node what the physics - and the level below, where one is
+  ! attached - say it is there. One node is the ordinary state.
+  !===================================================================!
+
+  function consistent_states(physics, degrees, lower, design_value, spatial) result(q)
+
+    class(nodal_integrand), intent(in)           :: physics
+    integer               , intent(in)           :: degrees
+    real(dp)              , intent(in)           :: lower(:,:), design_value
+    type(stencil)         , intent(in), optional :: spatial
+    real(dp), allocatable :: q(:)
+
+    type(block_residual) :: rows
+    type(stencil) :: none
+    integer , allocatable :: carried(:), at(:)
+    real(dp), allocatable :: held(:)
+    real(dp) :: achieved
+    integer :: i, d, nodes
+
+    nodes = size(lower, 2)
+    if (size(lower, 1) /= degrees - 1) then
+       error stop 'gti_march: the components below the highest are given at every node'
+    end if
+
+    none = stencil([integer ::], [integer ::], [real(dp) ::], &
+         & spread(0.0_dp, 1, nodes * degrees), 'none')
+
+    carried = [((unknown(1, d, degrees, i, nodes), d = 0, degrees - 2), i = 1, nodes)]
+    held    = [((lower(d + 1, i), d = 0, degrees - 2), i = 1, nodes)]
+    at      = [(unknown(1, 0, degrees, i, nodes) - 1, i = 1, nodes)]
+
+    rows = block_residual(none, physics, at, nodes * degrees, degrees, degrees - 1, &
+         & carried, held, spatial=spatial)
 
     call solved(rows, design_value, q, achieved)
 
@@ -263,7 +294,29 @@ contains
        error stop 'gti_march: the initial state is consistent with the physics'
     end if
 
-  end function consistent_state
+  end function consistent_states
+
+  !===================================================================!
+  ! A state and a design as the two inputs a block's rows read: the
+  ! state on its unknowns, one design value per point.
+  !===================================================================!
+
+  subroutine frozen_inputs(q, design, num_points, unknowns, inputs)
+
+    real(dp), intent(in) :: q(:), design
+    integer , intent(in) :: num_points
+    type(stored_directed_graph)    , intent(out) :: unknowns
+    type(stored_field), allocatable, intent(out) :: inputs(:)
+
+    unknowns = stored_directed_graph(size(q), tails=[integer ::], heads=[integer ::])
+
+    allocate(inputs(2))
+    inputs(1) = stored_field('state' , unknowns % vertex_set(), size(q))
+    inputs(2) = stored_field('design', unknowns % vertex_set(), num_points)
+    call inputs(1) % set_real_vector(q)
+    call inputs(2) % set_real_vector(spread(design, 1, num_points))
+
+  end subroutine frozen_inputs
 
   !===================================================================!
   ! How every march that follows stops. A criterion or a budget that
@@ -346,11 +399,30 @@ contains
 
   end subroutine partitioned
 
-  pure integer function unknown(instant, degree, degrees) result(at)
+  !===================================================================!
+  ! Where a component lies: instants follow one another, nodes lie
+  ! within an instant, and the components of one point stay together,
+  !
+  !      ((instant - 1) nodes + (node - 1)) degrees + degree + 1
+  !
+  ! which at one node is (instant - 1) degrees + degree + 1, the
+  ! ordinary block. A field over a mesh is this at nodes > 1 and
+  ! nothing else.
+  !===================================================================!
 
-    integer, intent(in) :: instant, degree, degrees
+  pure integer function unknown(instant, degree, degrees, node, nodes) result(at)
 
-    at = (instant - 1) * degrees + degree + 1
+    integer, intent(in)           :: instant, degree, degrees
+    integer, intent(in), optional :: node, nodes
+
+    integer :: i, m
+
+    i = 1
+    m = 1
+    if (present(node))  i = node
+    if (present(nodes)) m = nodes
+
+    at = ((instant - 1) * m + (i - 1)) * degrees + degree + 1
 
   end function unknown
 
@@ -369,24 +441,29 @@ contains
   ! owns.
   !===================================================================!
 
-  function scheme_rows(scheme, degrees, n, dt) result(rows)
+  function scheme_rows(scheme, degrees, n, dt, nodes) result(rows)
 
-    class(family), intent(in) :: scheme
-    integer      , intent(in) :: degrees, n
-    real(dp)     , intent(in) :: dt(:)
+    class(family), intent(in)           :: scheme
+    integer      , intent(in)           :: degrees, n
+    real(dp)     , intent(in)           :: dt(:)
+    integer      , intent(in), optional :: nodes
     type(stencil) :: rows
 
     integer , allocatable :: tails(:), heads(:), source_degree(:), determines(:)
     real(dp), allocatable :: w(:)
-    integer :: e
+    integer :: e, i, m
+
+    m = 1
+    if (present(nodes)) m = nodes
 
     call block_reach(scheme, degrees, n, tails, heads, source_degree, determines)
     call weights_of(scheme_weight(scheme), n, tails, heads, dt, source_degree, determines, w)
 
+    ! the family's rows once per node: each node's history is its own
     rows = derived_constraints( &
-         & [(unknown(heads(e), determines(e), degrees), e = 1, size(heads))], &
-         & [(unknown(tails(e), source_degree(e), degrees), e = 1, size(tails))], &
-         & w, n * degrees, 'derived rows')
+         & [((unknown(heads(e), determines(e), degrees, i, m), e = 1, size(heads)), i = 1, m)], &
+         & [((unknown(tails(e), source_degree(e), degrees, i, m), e = 1, size(tails)), i = 1, m)], &
+         & [(w, i = 1, m)], n * m * degrees, 'derived rows')
 
   end function scheme_rows
 
@@ -396,27 +473,33 @@ contains
   ! their rows hold.
   !===================================================================!
 
-  function block_of(scheme, physics, degrees, n, dt, held) result(rows)
+  function block_of(scheme, physics, degrees, n, dt, held, nodes, spatial) result(rows)
 
-    class(family)         , intent(in) :: scheme
-    class(nodal_integrand), intent(in) :: physics
-    integer               , intent(in) :: degrees, n
-    real(dp)              , intent(in) :: dt(:), held(:)
+    class(family)         , intent(in)           :: scheme
+    class(nodal_integrand), intent(in)           :: physics
+    integer               , intent(in)           :: degrees, n
+    real(dp)              , intent(in)           :: dt(:), held(:)
+    integer               , intent(in), optional :: nodes
+    type(stencil)         , intent(in), optional :: spatial
     type(block_residual) :: rows
 
-    integer, allocatable :: carried(:)
-    integer :: h, k, d
+    integer, allocatable :: carried(:), at(:)
+    integer :: h, k, i, d, m
 
-    h = scheme % history_depth(degrees - 1)
-    carried = [((unknown(k, d, degrees), d = 0, degrees - 1), k = 1, h)]
+    m = 1
+    if (present(nodes)) m = nodes
+
+    h       = scheme % history_depth(degrees - 1)
+    carried = [(((unknown(k, d, degrees, i, m), d = 0, degrees - 1), i = 1, m), k = 1, h)]
+    at      = [((unknown(k, 0, degrees, i, m) - 1, i = 1, m), k = 1, n)]
 
     if (size(held) /= size(carried)) then
        error stop 'gti_march: one value per carried component'
     end if
 
-    rows = block_residual(scheme_rows(scheme, degrees, n, dt), physics, &
-         & [((k - 1) * degrees, k = 1, n)], n * degrees, degrees, &
-         & scheme % primary_degree(degrees - 1), carried, held)
+    rows = block_residual(scheme_rows(scheme, degrees, n, dt, m), physics, at, &
+         & n * m * degrees, degrees, scheme % primary_degree(degrees - 1), carried, held, &
+         & spatial=spatial)
 
   end function block_of
 

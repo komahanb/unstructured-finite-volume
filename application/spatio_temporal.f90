@@ -33,9 +33,9 @@ program spatio_temporal
        & geometry_of, cartesian
   use operation_stencil     , only : stencil
   use field_calculus        , only : field
-  use gti_field             , only : field_block_of, field_measure, consistent_field, &
-       & field_startup, field_unknown, field_aggregates
+  use gti_field             , only : field_measure, field_startup, field_aggregates, spatial_rows
   use gti_march             , only : partitioned, set_stopping, block_of, unknowns_graph, &
+       & unknown, consistent_states, frozen_inputs, &
        & set_sweep, swept, imbalance, by_tangent, by_adjoint, fresh_stamp
   use gti_taylor            , only : block_expansion
   use gti_sweeps            , only : design_partial, functional_gradient, &
@@ -239,8 +239,8 @@ contains
     end select
 
     call set_aggregates(field_aggregates(space, 1, nd))
-    q = consistent_field(van_der_pol(nd - 1), nd, lower, space, kappa, cfg % spatial_order, &
-         & cfg % design)
+    q = consistent_states(van_der_pol(nd - 1), nd, lower, cfg % design, &
+         & spatial_rows(space, kappa, cfg % spatial_order, nd, nd - 1, 1))
 
   end function initial_field
 
@@ -309,8 +309,8 @@ contains
          & max(cfg % startup_refinement, 1), dt, space, kappa, cfg % spatial_order, &
          & cfg % design, q0)
 
-    rows = field_block_of(scheme, van_der_pol(nd - 1), nd, n, dt, space, kappa, &
-         & cfg % spatial_order, held)
+    rows = block_of(scheme, van_der_pol(nd - 1), nd, n, dt, held, nodes=space % num_cells, &
+         & spatial=spatial_rows(space, kappa, cfg % spatial_order, nd, scheme % primary_degree(nd - 1), n))
 
     call set_aggregates(field_aggregates(space, n, nd))
 
@@ -363,27 +363,21 @@ contains
     real(dp)            , intent(out) :: tangent, adjoint
 
     type(stored_directed_graph) :: unknowns, points
-    type(stored_field) :: state, knobs
+    type(stored_field), allocatable :: inputs(:)
     real(dp), allocatable :: g(:), rate(:)
     integer :: num_points, mark
 
     num_points = n * space % num_cells
-    unknowns   = unknowns_graph(num_points, nd)
     points     = stored_directed_graph(num_points, tails=[integer ::], heads=[integer ::])
+    call frozen_inputs(q, design, num_points, unknowns, inputs)
 
-    state = stored_field('state', unknowns % vertex_set(), size(q))
-    knobs = stored_field('nu', unknowns % vertex_set(), num_points)
-    call state % set_real_vector(q)
-    call knobs % set_real_vector(spread(design, 1, num_points))
-
-    call functional_gradient(van_der_pol_energy(nd - 1), points, [state, knobs], &
+    call functional_gradient(van_der_pol_energy(nd - 1), points, inputs, &
          & measure, num_points, nd, unknowns % vertex_set(), g)
-    call design_partial(rows, unknowns, [state, knobs], num_points, &
-         & unknowns % vertex_set(), rate)
+    call design_partial(rows, unknowns, inputs, num_points, unknowns % vertex_set(), rate)
 
     mark    = fresh_stamp()
-    tangent = by_tangent(rows, unknowns, [state, knobs], g, rate, 0.0_dp, space % num_cells, mark)
-    adjoint = by_adjoint(rows, unknowns, [state, knobs], g, rate, 0.0_dp, space % num_cells, mark)
+    tangent = by_tangent(rows, unknowns, inputs, g, rate, 0.0_dp, space % num_cells, mark)
+    adjoint = by_adjoint(rows, unknowns, inputs, g, rate, 0.0_dp, space % num_cells, mark)
 
   end subroutine both_routes
 
@@ -413,7 +407,7 @@ contains
     h     = scheme % history_depth(nd - 1)
     area  = sum(space % volume)
 
-    held_node = [((held(field_unknown(k, 1, d, nodes, nd)), d = 0, nd - 1), k = 1, h)]
+    held_node = [((held(unknown(k, d, nd, 1, nodes)), d = 0, nd - 1), k = 1, h)]
 
     rows = block_of(scheme, van_der_pol(nd - 1), nd, cfg % instants, dt, held_node)
     call block_expansion(rows, van_der_pol(nd - 1), van_der_pol_energy(nd - 1), nd, &
@@ -473,8 +467,8 @@ contains
        mode  = shape(i)
        exact = mode * cos(omega   * t(n))
        semi  = mode * cos(omega_h * t(n))
-       e_exact = e_exact + space % volume(i) * (q(field_unknown(n, i, 0, nodes, nd)) - exact) ** 2
-       e_semi  = e_semi  + space % volume(i) * (q(field_unknown(n, i, 0, nodes, nd)) - semi) ** 2
+       e_exact = e_exact + space % volume(i) * (q(unknown(n, 0, nd, i, nodes)) - exact) ** 2
+       e_semi  = e_semi  + space % volume(i) * (q(unknown(n, 0, nd, i, nodes)) - semi) ** 2
     end do
 
     write(*,'(a,es12.3,a,es12.3,a,f10.6,a,f10.6)') &
@@ -534,7 +528,7 @@ contains
     do k = 1, n
        do i = 1, nodes
           do d = 0, nd - 1
-             values(i, d + 1) = q(field_unknown(k, i, d, nodes, nd))
+             values(i, d + 1) = q(unknown(k, d, nd, i, nodes))
           end do
        end do
        write(path,'(a,a,a,a,i4.4,a)') trim(cfg % export_path), '_', label, '_', k, '.vtu'

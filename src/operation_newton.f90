@@ -97,20 +97,17 @@ contains
     real(dp), intent(inout) :: x(:)
     real(dp), intent(out)   :: achieved
 
-    real(dp), parameter :: diverged = 1.0e8_dp
-
 
 
     type(linearization) :: jacobian
     type(stored_field), allocatable :: inputs(:)
     real(dp), allocatable :: residual(:), g(:), y(:), dq(:)
-    real(dp) :: linear_achieved, first
+    real(dp) :: linear_achieved
     integer :: it
 
     call tally_record(newton_solves)
 
     allocate(dq(size(x)))
-    first = 0.0_dp
 
     call this % begin_imbalance(0.0_dp)
 
@@ -132,15 +129,14 @@ contains
        call this % note_imbalance(achieved)
        if (this % converged(achieved)) return
 
-       if (it == 1) first = achieved
 
        ! A residual that is no longer a number has diverged past
-       ! where a comparison can say so, and one that has grown far
-       ! past the first is going the wrong way; either way there is
-       ! nothing here to pursue.
+       ! where a comparison can say so, and one above where the march
+       ! began and still growing is going the wrong way; either way
+       ! there is nothing here to pursue.
        if (achieved /= achieved) return
        if (achieved > huge(1.0_dp) / 2.0_dp) return
-       if (first > 0.0_dp .and. achieved > diverged * first) return
+       if (this % diverging(achieved)) return
 
        ! Where the budget is taken from the rate, this is where an
        ! iteration that has flattened stops. No floor is named: the

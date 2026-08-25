@@ -170,6 +170,8 @@ module operation_minimization
      procedure :: note_imbalance
      procedure :: converged
      procedure :: flattened
+     procedure :: diverging
+     procedure :: began
      procedure, private :: fitted
      procedure :: exhausted
 
@@ -339,6 +341,42 @@ contains
     usable = .true.
 
   end subroutine fitted
+
+  !===================================================================!
+  ! Whether the imbalance is out of control: above where the iteration
+  ! began, growing, and at the least rate consistent with the window -
+  ! the slope less its error - due to pass what the arithmetic can
+  ! hold before the budget is spent. An early rise that will turn is
+  ! not that: its projection over the remaining iterations stays
+  ! finite. The one limit named is the arithmetic's own.
+  !===================================================================!
+
+  logical function diverging(this, imbalance) result(yes)
+
+    class(minimizer), intent(in) :: this
+    real(dp)        , intent(in) :: imbalance
+
+    real(dp) :: slope, error, remaining
+    logical  :: usable
+
+    yes = .false.
+    if (imbalance <= this % began_at .or. imbalance <= 0.0_dp) return
+
+    call this % fitted(slope, error, usable)
+    if (.not. usable .or. slope <= error) return
+
+    remaining = real(max(this % max_iterations - this % noted, 0), dp)
+    yes = log(imbalance) + (slope - error) * remaining > log(huge(1.0_dp))
+
+  end function diverging
+
+  pure real(dp) function began(this) result(imbalance)
+
+    class(minimizer), intent(in) :: this
+
+    imbalance = this % began_at
+
+  end function began
 
   !===================================================================!
   ! Whether the iteration has run out of what it was given. A budget

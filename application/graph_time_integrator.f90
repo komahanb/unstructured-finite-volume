@@ -67,7 +67,7 @@ program graph_time_integrator
   use operation_grid        , only : uniform_grid, random_grid, designed_grid
   use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
   use operation_grid        , only : grid
-  use gti_march             , only : partitioned, set_stopping, consistent_state
+  use gti_march             , only : partitioned, set_stopping, consistent_state, imbalance
   use gti_expansion         , only : family_holder
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
        & expansion_substitutions, &
@@ -83,10 +83,6 @@ program graph_time_integrator
 
   implicit none
 
-  ! The residual at or below which a march has converged. A row above
-  ! it is reported unconverged and carries no derivative, the state a
-  ! gradient would be taken at not having been reached.
-  real(dp), parameter :: converged_residual = 1.0e-8_dp
 
   type(configuration) :: cfg
 
@@ -446,11 +442,12 @@ contains
 
   end subroutine heading
 
-  subroutine show_row(label, solved, f, achieved, columns)
+  subroutine show_row(label, solved, f, left, columns)
 
     character(len=*), intent(in) :: label
     integer         , intent(in) :: solved
-    real(dp)        , intent(in) :: f(0:), achieved
+    real(dp)        , intent(in) :: f(0:)
+    type(imbalance) , intent(in) :: left
     integer         , intent(in) :: columns
 
     character(len=21) :: cell
@@ -473,11 +470,51 @@ contains
        line = line // cell
     end do
 
-    if (achieved > converged_residual) line = line // '   unconverged'
+    if (.not. left % converged) then
+       if (left % diverging) then
+          line = line // '   diverging'
+       else
+          line = line // '   unconverged'
+       end if
+    end if
 
     write(*,'(a)') line
 
+    if (.not. left % converged) call shown_aspect(left)
+
   end subroutine show_row
+
+  !-------------------------------------------------------------------!
+  ! What the march left, by aspect, beneath the row that did not
+  ! converge: how the norm splits by degree, where the largest entry
+  ! sits, and which state the norm is steepest in.
+  !-------------------------------------------------------------------!
+
+  subroutine shown_aspect(left)
+
+    type(imbalance), intent(in) :: left
+
+    character(len=:), allocatable :: line
+    character(len=14) :: cell
+    integer :: d
+
+    write(*,'(a,es10.3,a,es10.3,a)') '      imbalance ', left % norm, &
+         & ' against ', left % began, ' where the march began'
+
+    line = '      by degree '
+    do d = 0, ubound(left % by_degree, 1)
+       write(cell,'(es14.3)') left % by_degree(d)
+       line = line // cell
+    end do
+    write(*,'(a)') line
+
+    write(*,'(a,i0,a,i0)') '      largest entry at slot ', left % worst_slot, &
+         & ' degree ', left % worst_degree
+    write(*,'(a,i0,a,i0,a,es10.3)') '      steepest in the state at slot ', &
+         & left % steepest_slot, ' degree ', left % steepest_degree, &
+         & ', d||r||/dq = ', left % steepest
+
+  end subroutine shown_aspect
 
   !-------------------------------------------------------------------!
   ! One row: a chain of blocks, marched and then expanded. A chain of
@@ -496,6 +533,7 @@ contains
     type(chain_block) , allocatable :: chain(:)
     integer , allocatable :: added(:)
     real(dp), allocatable :: dt(:), t(:), held(:), f(:)
+    type(imbalance) :: left
     real(dp) :: achieved
     integer :: b, nd, given, reported
     logical :: ok
@@ -514,12 +552,12 @@ contains
     call tally_order(0)
 
     call march_chain(schemes, added, van_der_pol(cfg % state_degree), nd, &
-         & chosen_grid(cfg), cfg % design, held, chain, dt, t, achieved)
+         & chosen_grid(cfg), cfg % design, held, chain, dt, t, achieved, left=left)
 
     ! Every derivative is taken at the state the march reached, so a
     ! row that did not converge has none to take and only its value is
     ! expanded.
-    if (achieved > converged_residual) then
+    if (.not. left % converged) then
        reported = 0
     else
        reported = cfg % max_derivative_degree
@@ -531,7 +569,7 @@ contains
 
     call tally_leave()
 
-    call show_row(labelled(names, orders), cfg % instants - given, f, achieved, &
+    call show_row(labelled(names, orders), cfg % instants - given, f, left, &
          & cfg % max_derivative_degree)
     printed = printed + 1
 

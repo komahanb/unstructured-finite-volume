@@ -90,6 +90,7 @@ module gti_block
      procedure :: max_degree     => block_max_degree
      procedure :: partial_action => block_partial_action
      procedure :: num_unknowns
+     procedure :: num_degrees
      procedure :: num_points
      procedure :: points_at
      procedure :: num_carried
@@ -144,6 +145,14 @@ contains
     num_unknowns = this % unknowns
 
   end function num_unknowns
+
+  pure integer function num_degrees(this)
+
+    class(block_residual), intent(in) :: this
+
+    num_degrees = this % degrees
+
+  end function num_degrees
 
   pure integer function num_points(this)
 

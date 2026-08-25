@@ -41,9 +41,32 @@ module gti_march
   use physics_integrand       , only : nodal_integrand
   use gti_expansion           , only : block_reach, family_holder
   use gti_block               , only : block_residual
-  use gti_sweeps              , only : krylov_above
+  use gti_sweeps              , only : krylov_above, jacobian_of
 
   implicit none
+
+  !-------------------------------------------------------------------!
+  ! WHAT AN UNCONVERGED MARCH LEFT, by aspect. The imbalance is a
+  ! vector with one entry per unknown, and the unknowns lie in slots
+  ! of one instant's - or one stage's - components each, so its norm
+  ! splits exactly, ||r||^2 = sum over slots and degrees of r^2, and
+  ! its steepest direction in the state is the gradient of the norm,
+  ! d||r||/dq = A^T r / ||r||, one transposed matvec. The largest entry
+  ! of each names where the imbalance sits and which state drives it.
+  !-------------------------------------------------------------------!
+
+  type :: imbalance
+
+     logical  :: converged = .true.
+     logical  :: diverging = .false.
+     real(dp) :: norm      = 0.0_dp
+     real(dp) :: began     = 0.0_dp
+     real(dp), allocatable :: by_degree(:)
+     integer  :: worst_slot = 0, worst_degree = 0
+     integer  :: steepest_slot = 0, steepest_degree = 0
+     real(dp) :: steepest = 0.0_dp
+
+  end type imbalance
 
   !-------------------------------------------------------------------!
   ! HOW A MARCH STOPS. A caller that sets nothing gets a tolerance
@@ -61,6 +84,7 @@ module gti_march
   public :: partition, partitioned, scheme_rows, block_of, solved, unknowns_graph
   public :: set_stopping
   public :: consistent_state
+  public :: imbalance
   public :: horizon_bounds
 
 contains
@@ -304,12 +328,13 @@ contains
   ! solved, and the budget is a backstop rather than a cost.
   !===================================================================!
 
-  subroutine solved(rows, design_value, q, achieved)
+  subroutine solved(rows, design_value, q, achieved, left)
 
     type(block_residual), intent(in)  :: rows
     real(dp)            , intent(in)  :: design_value
     real(dp), allocatable, intent(out) :: q(:)
     real(dp)            , intent(out) :: achieved
+    type(imbalance), intent(out), optional :: left
 
     type(newton) :: solver
     type(stored_directed_graph) :: unknowns
@@ -334,7 +359,66 @@ contains
 
     call solver % solve(spread(0.0_dp, 1, count), q, achieved)
 
+    if (present(left)) then
+       left % converged = solver % converged(achieved)
+       left % diverging = solver % diverging(achieved)
+       left % norm      = achieved
+       left % began     = solver % began()
+       if (.not. left % converged) call by_aspect(rows, unknowns, q, design, left)
+    end if
+
   end subroutine solved
+
+  !===================================================================!
+  ! The aspects of what was left: the norm split by degree, the
+  ! largest entry, and the largest entry of A^T r / ||r||. A is formed
+  ! here in full, which is O(n^2) and is paid only on a march that
+  ! did not converge.
+  !===================================================================!
+
+  subroutine by_aspect(rows, unknowns, q, design, left)
+
+    type(block_residual)       , intent(in)    :: rows
+    type(stored_directed_graph), intent(in)    :: unknowns
+    real(dp)                   , intent(in)    :: q(:)
+    type(stored_field)         , intent(in)    :: design
+    type(imbalance)            , intent(inout) :: left
+
+    type(stored_field) :: state
+    class(field), allocatable :: out
+    real(dp), allocatable :: r(:), a(:,:), slope(:)
+    integer :: i, d, nd, n
+
+    n  = size(q)
+    nd = rows % num_degrees()
+
+    state = stored_field('state', unknowns % vertex_set(), n)
+    call state % set_real_vector(q)
+    call rows % apply(unknowns, [state, design], out)
+    call out % real_vector(r)
+
+    allocate(left % by_degree(0:nd - 1), source=0.0_dp)
+    do i = 1, n
+       d = mod(i - 1, nd)
+       left % by_degree(d) = left % by_degree(d) + r(i) ** 2
+    end do
+    left % by_degree = sqrt(left % by_degree)
+
+    i = maxloc(abs(r), dim=1)
+    left % worst_slot   = (i - 1) / nd + 1
+    left % worst_degree = mod(i - 1, nd)
+
+    if (left % norm <= 0.0_dp) return
+
+    call jacobian_of(rows, unknowns, [state, design], n, unknowns % vertex_set(), a)
+    slope = matmul(r, a) / left % norm
+
+    i = maxloc(abs(slope), dim=1)
+    left % steepest_slot   = (i - 1) / nd + 1
+    left % steepest_degree = mod(i - 1, nd)
+    left % steepest        = slope(i)
+
+  end subroutine by_aspect
 
   !===================================================================!
   ! How large a residual the first guess gives, which is the scale

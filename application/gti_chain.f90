@@ -62,7 +62,7 @@ module gti_chain
   use physics_integrand, only : nodal_integrand
   use gti_expansion    , only : family_holder, marches_by_stages
   use gti_block        , only : block_residual
-  use gti_march        , only : partitioned, horizon_bounds, block_of, solved
+  use gti_march        , only : imbalance, partitioned, horizon_bounds, block_of, solved
   use gti_stage        , only : stage_block_of, instant_at
   use view_directed_stored, only : stored_directed_graph
   use field_calculus   , only : field
@@ -207,7 +207,7 @@ contains
   !===================================================================!
 
   subroutine march_chain(schemes, added, physics, degrees, steps, &
-       & design, initial, chain, dt, t, achieved, grid_design)
+       & design, initial, chain, dt, t, achieved, grid_design, left)
 
     type(family_holder)   , intent(in) :: schemes(:)
     integer               , intent(in) :: added(:), degrees
@@ -218,7 +218,9 @@ contains
     real(dp)         , allocatable, intent(out) :: dt(:), t(:)
     real(dp)              , intent(out) :: achieved
     real(dp), intent(in), optional     :: grid_design(:)
+    type(imbalance), intent(out), optional :: left
 
+    type(imbalance) :: one_left
     integer , allocatable :: first(:), last(:)
     real(dp) :: one_achieved
     integer :: b
@@ -236,8 +238,15 @@ contains
     call tally_enter(at_horizon)
     do b = 1, size(added)
        call one_block(chain, b, schemes(b) % scheme, physics, degrees, &
-            & first(b), last(b), dt, design, initial, one_achieved)
+            & first(b), last(b), dt, design, initial, one_achieved, one_left)
        achieved = max(achieved, one_achieved)
+
+       ! The report kept is the first block's that did not converge:
+       ! every block after it reads a state it never reached.
+       if (present(left)) then
+          if (b == 1) left = one_left
+          if (left % converged .and. .not. one_left % converged) left = one_left
+       end if
     end do
     call tally_leave()
 
@@ -250,7 +259,7 @@ contains
   !===================================================================!
 
   subroutine one_block(chain, b, scheme, physics, degrees, first, last, dt, &
-       & design, initial, achieved)
+       & design, initial, achieved, left)
 
     type(chain_block)     , intent(inout) :: chain(:)
     integer               , intent(in)    :: b, degrees, first, last
@@ -258,6 +267,7 @@ contains
     class(nodal_integrand), intent(in)    :: physics
     real(dp)              , intent(in)    :: dt(:), design, initial(:)
     real(dp)              , intent(out)   :: achieved
+    type(imbalance)       , intent(out)   :: left
 
     real(dp), allocatable :: held(:)
 
@@ -283,7 +293,7 @@ contains
     call built(scheme, physics, degrees, last - first + 1, dt(first:last), &
          & held, chain(b) % rows, chain(b) % instants_at)
 
-    call solved(chain(b) % rows, design, chain(b) % state, achieved)
+    call solved(chain(b) % rows, design, chain(b) % state, achieved, left)
 
     call tally_leave()
 

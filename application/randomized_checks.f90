@@ -129,18 +129,11 @@ contains
     type(block_system) , allocatable :: systems(:)
     real(dp), allocatable :: f_whole(:), f_split(:), q(:), gradient(:)
     real(dp) :: duration, design, tangent, adjoint, achieved
-    integer(int64) :: state
     integer :: degrees, order, kind, instants, half
     character(len=16) :: label
     logical :: staged
 
-    state    = int(from, int64)
-    degrees  = drawn(state, 2) + 2
-    order    = drawn(state, 3)
-    kind     = drawn(state, 3)
-    instants = 12 + 2 * drawn(state, 5)
-    duration = drawn_real(state, 0.5_dp, 4.0_dp)
-    design   = drawn_real(state, -1.0_dp, 1.5_dp)
+    call draw(from, degrees, order, kind, instants, duration, design)
 
     staged = kind == 3
     label  = named(kind, order)
@@ -150,15 +143,7 @@ contains
     call fill(split(1), kind, order)
     call fill(split(2), kind, order)
 
-    ! A block cannot add fewer instants than its family looks back
-    ! over, so a horizon is only split where both halves can exist.
-    ! Widening the horizon rather than skipping keeps every drawn
-    ! family in the sample.
-    half = max(instants / 2, whole(1) % scheme % history_depth(degrees - 1) + 1)
-    if (instants - half <= whole(1) % scheme % history_depth(degrees - 1)) then
-       instants = 2 * (whole(1) % scheme % history_depth(degrees - 1) + 1)
-       half     = instants / 2
-    end if
+    call halved(whole(1) % scheme, degrees, instants, half)
 
     call expanded(whole, [instants], degrees, duration, design, f_whole, achieved)
     if (achieved > 1.0e-6_dp) then
@@ -186,6 +171,55 @@ contains
     call verdict(index, label, f_whole, f_split, tangent, adjoint, staged, failures)
 
   end subroutine one_case
+
+  !-------------------------------------------------------------------!
+  ! The parameters of one case, drawn so that the same seed gives the
+  ! same case again.
+  !-------------------------------------------------------------------!
+
+  subroutine draw(from, degrees, order, kind, instants, duration, design)
+
+    integer , intent(in)  :: from
+    integer , intent(out) :: degrees, order, kind, instants
+    real(dp), intent(out) :: duration, design
+
+    integer(int64) :: state
+
+    state    = int(from, int64)
+    degrees  = drawn(state, 2) + 2
+    order    = drawn(state, 3)
+    kind     = drawn(state, 3)
+    instants = 12 + 2 * drawn(state, 5)
+    duration = drawn_real(state, 0.5_dp, 4.0_dp)
+    design   = drawn_real(state, -1.0_dp, 1.5_dp)
+
+  end subroutine draw
+
+  !-------------------------------------------------------------------!
+  ! Where to split a horizon. A block cannot add fewer instants than
+  ! its family looks back over, so a horizon too short to halve is
+  ! widened rather than the case being skipped, which keeps every
+  ! drawn family in the sample.
+  !-------------------------------------------------------------------!
+
+  subroutine halved(scheme, degrees, instants, half)
+
+    class(family), intent(in)    :: scheme
+    integer      , intent(in)    :: degrees
+    integer      , intent(inout) :: instants
+    integer      , intent(out)   :: half
+
+    integer :: reach
+
+    reach = scheme % history_depth(degrees - 1)
+    half  = max(instants / 2, reach + 1)
+
+    if (instants - half <= reach) then
+       instants = 2 * (reach + 1)
+       half     = instants / 2
+    end if
+
+  end subroutine halved
 
   function held_of(scheme, degrees, duration, instants) result(held)
 

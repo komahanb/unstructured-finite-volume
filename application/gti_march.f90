@@ -60,9 +60,55 @@ module gti_march
   private
   public :: partition, partitioned, scheme_rows, block_of, solved, unknowns_graph
   public :: set_stopping
+  public :: consistent_state
   public :: horizon_bounds
 
 contains
+
+  !===================================================================!
+  ! THE CONSISTENT INITIAL STATE. Given the components below the
+  ! highest at one instant, the highest is what the physics says it
+  ! is there: q^(N) with R(q, q', ..., q^(N)) = 0, solved at that one
+  ! instant with everything below it held.
+  !
+  ! This is the smallest block there is - one evaluation point, no
+  ! scheme rows, the lower components carried and the highest the one
+  ! unknown - and it is solved by the same newton as every other
+  ! block. Nothing about the physics is assumed: whatever R is, its
+  ! zero at the instant is what comes back. A lower vector of the
+  ! wrong extent stops the program.
+  !===================================================================!
+
+  function consistent_state(physics, degrees, lower, design_value) result(q)
+
+    class(nodal_integrand), intent(in) :: physics
+    integer               , intent(in) :: degrees
+    real(dp)              , intent(in) :: lower(:), design_value
+    real(dp), allocatable :: q(:)
+
+    type(block_residual) :: rows
+    type(stencil) :: none
+    real(dp) :: achieved
+    integer :: k
+
+    if (size(lower) /= degrees - 1) then
+       error stop 'gti_march: the components below the highest are given, and no others'
+    end if
+
+    none = stencil([integer ::], [integer ::], [real(dp) ::], &
+         & spread(0.0_dp, 1, degrees), 'none')
+
+    rows = block_residual(none, physics, at=[0], unknowns=degrees, degrees=degrees, &
+         & primary=degrees - 1, carried=[(k, k = 1, degrees - 1)], held=lower)
+
+    call solved(rows, design_value, q, achieved)
+
+    if (.not. achieved <= stopping_tolerance * max(1.0_dp, norm2(lower))) then
+       write(*,'(a,es12.3)') ' the physics at the initial instant left a residual of ', achieved
+       error stop 'gti_march: the initial state is consistent with the physics'
+    end if
+
+  end function consistent_state
 
   !===================================================================!
   ! How every march that follows stops. A criterion or a budget that

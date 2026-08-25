@@ -67,7 +67,7 @@ program graph_time_integrator
   use operation_grid        , only : uniform_grid, random_grid, designed_grid
   use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
   use operation_grid        , only : grid
-  use gti_march             , only : partitioned, set_stopping
+  use gti_march             , only : partitioned, set_stopping, consistent_state
   use gti_expansion         , only : family_holder
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
        & expansion_substitutions, &
@@ -142,18 +142,38 @@ contains
   ! the governing constraint then requires.
   !-------------------------------------------------------------------!
 
-  pure function at_rest(cfg) result(q)
+  !-------------------------------------------------------------------!
+  ! The state at the first instant: the components given, and the
+  ! highest solved from the physics so that the state is consistent
+  ! with it. What a hand would have set here is exactly what comes
+  ! back, for the one physics and one value a hand had in mind, and
+  ! for every other the hand would have been wrong.
+  !-------------------------------------------------------------------!
+
+  function at_rest(cfg) result(q)
 
     type(configuration), intent(in) :: cfg
     real(dp), allocatable :: q(:)
 
-    integer :: nd
+    character(len=32), allocatable :: given(:)
+    real(dp), allocatable :: lower(:)
+    integer :: nd, i
 
-    nd = cfg % state_degree + 1
-    allocate(q(nd), source=0.0_dp)
+    nd    = cfg % state_degree + 1
+    given = worded(cfg % initial_state)
 
-    q(1)  =  1.0_dp
-    q(nd) = -1.0_dp
+    if (size(given) > nd - 1) then
+       write(*,'(a,i0,a)') ' the initial state holds the ', nd - 1, &
+            & ' components below the highest, which the physics gives.'
+       error stop 'graph_time_integrator: the initial state is given below the highest derivative'
+    end if
+
+    allocate(lower(nd - 1), source=0.0_dp)
+    do i = 1, size(given)
+       read(given(i), *) lower(i)
+    end do
+
+    q = consistent_state(van_der_pol(cfg % state_degree), nd, lower, cfg % design)
 
   end function at_rest
 
@@ -377,6 +397,25 @@ contains
   !-------------------------------------------------------------------!
   ! The heading, then one line per row.
   !-------------------------------------------------------------------!
+
+  subroutine shown_initial(cfg)
+
+    type(configuration), intent(in) :: cfg
+
+    real(dp), allocatable :: q(:)
+    character(len=:), allocatable :: line
+    character(len=18) :: cell
+    integer :: i
+
+    q = at_rest(cfg)
+    line = '   initial state, consistent'
+    do i = 1, size(q)
+       write(cell,'(es18.10)') q(i)
+       line = line // cell
+    end do
+    write(*,'(a)') line
+
+  end subroutine shown_initial
 
   subroutine heading(cfg)
 
@@ -614,6 +653,7 @@ contains
     call steps_of(cfg, dt, t)
     call startup_trajectory(cfg, dt, widest, startup)
 
+    call shown_initial(cfg)
     call heading(cfg)
 
     if (cfg % accounting) call tally_open(cfg % max_derivative_degree)

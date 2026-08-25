@@ -56,6 +56,12 @@ module gti_configuration
      logical  :: automatic_order_conservation = .true.
      logical  :: mixed_orders                 = .false.
 
+     ! THE STATE AT THE FIRST INSTANT, below the highest derivative.
+     ! The highest is not given: it is what the physics says it is
+     ! there, solved for. Fewer values than degrees are taken as the
+     ! rest being zero.
+     character(len=128) :: initial_state = '1.0'
+
      ! HOW A MARCH STOPS. The tolerance is a ratio where the
      ! criterion is relative, which is the question asked whenever the
      ! target is a reduction in imbalance, and a number in its own
@@ -227,6 +233,8 @@ contains
        read(value, *) cfg % automatic_order_conservation
     case ('mixed_orders')
        read(value, *) cfg % mixed_orders
+    case ('initial_state')
+       cfg % initial_state = value
     case ('tolerance')
        read(value, *) cfg % tolerance
     case ('tolerance_criterion')
@@ -377,6 +385,7 @@ contains
     write(*,'(a,a)')       '   combinations             ', trim(cfg % combinations)
     write(*,'(a,l1)')      '   automatic order conservation ', cfg % automatic_order_conservation
     write(*,'(a,l1)')      '   mixed orders             ', cfg % mixed_orders
+    write(*,'(a,a)')       '   initial state, given     ', trim(cfg % initial_state)
     write(*,'(a,es9.2)')   '   tolerance                ', cfg % tolerance
     write(*,'(a,a)')       '   tolerance criterion      ', trim(cfg % tolerance_criterion)
     write(*,'(a,a)')       '   iteration criterion      ', trim(cfg % iteration_criterion)

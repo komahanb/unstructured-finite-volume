@@ -19,7 +19,7 @@
 !   the routes   the tangent and the adjoint agree on the field, both
 !                against one factorisation
 !
-! and a run may write every instant as a vtk file for paraview.
+! and a run may write every instant as a vtu file for paraview.
 !
 !      ./spatio_temporal --config=field [--setting=value ...]
 program spatio_temporal
@@ -28,7 +28,7 @@ program spatio_temporal
   use iso_fortran_env       , only : int64
   use gti_configuration     , only : configuration, read_configuration, override, show, &
        & worded, lists, refuse_unknown
-  use gti_space             , only : room, spatial_mesh, spatial_operator, written_vtk, &
+  use gti_space             , only : room, spatial_mesh, spatial_operator, written_paraview, &
        & geometry_of, cartesian
   use operation_stencil     , only : stencil
   use field_calculus        , only : field
@@ -595,11 +595,11 @@ contains
              values(i, d + 1) = q(field_unknown(k, i, d, nodes, nd))
           end do
        end do
-       write(path,'(a,a,a,a,i4.4,a)') trim(cfg % export_path), '_', label, '_', k, '.vtk'
-       call written_vtk(space, trim(path), names, values)
+       write(path,'(a,a,a,a,i4.4,a)') trim(cfg % export_path), '_', label, '_', k, '.vtu'
+       call written_paraview(space, trim(path), names, values)
     end do
 
-    write(*,'(a,i0,a,a,a)') '      written ', n, ' files ', trim(cfg % export_path) // '_' // label, '_*.vtk'
+    write(*,'(a,i0,a,a,a)') '      written ', n, ' files ', trim(cfg % export_path) // '_' // label, '_*.vtu'
 
   end subroutine exported
 

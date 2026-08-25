@@ -36,11 +36,13 @@ module gti_space
   use operation_conduction      , only : conduction
   use operation_robin_condition , only : robin_condition, neumann
   use field_forms               , only : polynomial_form
+  use view_paraview_writer      , only : paraview_writer, polygon_cell
+  use util_string               , only : string
 
   implicit none
 
   private
-  public :: room, spatial_mesh, spatial_operator, written_vtk, coarse_cells
+  public :: room, spatial_mesh, spatial_operator, written_paraview, coarse_cells
   public :: cartesian, circular, elliptical, geometry_of
 
   integer, parameter :: cartesian  = 1
@@ -495,59 +497,46 @@ contains
   end function coarse_cells
 
   !-------------------------------------------------------------------!
-  ! One legacy vtk file: the cells as polygons, and one scalar per
-  ! cell for each name given. A numbered series of these is read by
-  ! paraview as steps in time.
+  ! One instant written for paraview by the framework's writer: the
+  ! cells as polygons in the order their corners lie, one scalar per
+  ! cell for each name. A numbered series of these is read as steps
+  ! in time.
   !-------------------------------------------------------------------!
 
-  subroutine written_vtk(this, path, names, values)
+  subroutine written_paraview(this, path, names, values)
 
     type(room)      , intent(in) :: this
     character(len=*), intent(in) :: path, names(:)
     real(dp)        , intent(in) :: values(:,:)
 
-    integer :: u, c, k, n, total
+    type(paraview_writer) :: writer
+    integer, allocatable :: cell_vertices(:,:), num_cell_vertices(:), cell_types(:)
+    integer :: c, k, n, widest
 
     if (size(values, 1) /= this % num_cells .or. size(values, 2) /= size(names)) then
        error stop 'gti_space: one value per cell per name'
     end if
 
-    open(newunit=u, file=path, action='write', status='replace')
-    write(u,'(a)') '# vtk DataFile Version 3.0'
-    write(u,'(a)') 'graph time integrator, one instant'
-    write(u,'(a)') 'ASCII'
-    write(u,'(a)') 'DATASET UNSTRUCTURED_GRID'
-
-    write(u,'(a,i0,a)') 'POINTS ', size(this % corner, 2), ' double'
-    do c = 1, size(this % corner, 2)
-       write(u,'(3es24.15)') this % corner(1, c), this % corner(2, c), 0.0_dp
+    widest = 0
+    do c = 1, this % num_cells
+       widest = max(widest, this % first_corner(c + 1) - this % first_corner(c))
     end do
 
-    total = this % first_corner(this % num_cells + 1) - 1 + this % num_cells
-    write(u,'(a,i0,a,i0)') 'CELLS ', this % num_cells, ' ', total
+    allocate(cell_vertices(widest, this % num_cells), source=0)
+    allocate(num_cell_vertices(this % num_cells), cell_types(this % num_cells))
     do c = 1, this % num_cells
        n = this % first_corner(c + 1) - this % first_corner(c)
-       write(u,'(i0,*(1x,i0))') n, (this % cell_corner(k) - 1, &
-            & k = this % first_corner(c), this % first_corner(c + 1) - 1)
-    end do
-
-    write(u,'(a,i0)') 'CELL_TYPES ', this % num_cells
-    do c = 1, this % num_cells
-       n = this % first_corner(c + 1) - this % first_corner(c)
-       write(u,'(i0)') merge(9, 7, n == 4)
-    end do
-
-    write(u,'(a,i0)') 'CELL_DATA ', this % num_cells
-    do k = 1, size(names)
-       write(u,'(a)') 'SCALARS ' // trim(names(k)) // ' double 1'
-       write(u,'(a)') 'LOOKUP_TABLE default'
-       do c = 1, this % num_cells
-          write(u,'(es24.15)') values(c, k)
+       num_cell_vertices(c) = n
+       cell_types(c)        = polygon_cell
+       do k = 1, n
+          cell_vertices(k, c) = this % cell_corner(this % first_corner(c) + k - 1)
        end do
     end do
 
-    close(u)
+    writer = paraview_writer(this % m, this % corner, cell_vertices, num_cell_vertices, &
+         & cell_types)
+    call writer % write(path, values, string(names))
 
-  end subroutine written_vtk
+  end subroutine written_paraview
 
 end module gti_space

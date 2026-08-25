@@ -143,6 +143,12 @@ contains
        dq = 0.0_dp
        call this % inner % solve(-residual, dq, linear_achieved)
 
+       ! An inner minimizer that met a singular tangent reports a
+       ! residual no completed solve produces, and one that overflowed
+       ! reports no number at all. Neither leaves a step to take.
+       if (linear_achieved /= linear_achieved) return
+       if (linear_achieved > huge(1.0_dp) / 2.0_dp) return
+
        x = x + dq
 
     end do

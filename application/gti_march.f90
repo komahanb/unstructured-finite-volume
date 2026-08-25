@@ -317,10 +317,16 @@ contains
     integer, intent(in) :: unknowns
     class(minimizer), allocatable :: inner
 
-    type(gmres) :: krylov
+    type(gmres)        :: krylov
+    type(dense_direct) :: factorisation
 
     if (unknowns <= krylov_above()) then
-       allocate(inner, source=dense_direct())
+       ! The matrix here is a tangent frozen at an intermediate newton
+       ! iterate, where a singular pivot is a fact about the iterate
+       ! rather than a fault, so it is reported and not stopped on.
+       factorisation = dense_direct()
+       factorisation % singular_reported = .true.
+       allocate(inner, source=factorisation)
     else
        krylov = gmres()
        krylov % restart        = min(unknowns, 60)

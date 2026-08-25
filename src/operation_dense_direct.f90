@@ -16,8 +16,17 @@
 ! A direct solve is a single pass, so the tolerance and iteration
 ! budget inherited from the minimizer family are unused. The one
 ! numerical check is on the pivot: a pivot at or below
-! singular_tolerance stops the program, because continuing would
-! divide by a value indistinguishable from zero.
+! singular_tolerance cannot be divided by, being indistinguishable
+! from zero. By default that stops the program, the matrix being
+! singular where the caller expected it not to be.
+!
+! A caller whose matrix is a tangent frozen at an intermediate
+! iterate expects no such thing, since singularity there is a fact
+! about the iterate and not a fault. Such a caller sets
+! singular_reported, and a singular pivot then leaves the unknown
+! unchanged and reports huge(1.0_dp) as the achieved residual - a
+! value no completed elimination produces - for the outer iteration
+! to act on.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -35,6 +44,12 @@ module operation_dense_direct
   type, extends(minimizer) :: dense_direct
 
      real(dp) :: singular_tolerance = 1.0e-14_dp
+
+     ! Whether a singular pivot is reported through the achieved
+     ! residual instead of stopping the program. False by default,
+     ! a singular matrix being a fault wherever the caller has not
+     ! said otherwise.
+     logical  :: singular_reported = .false.
 
    contains
 
@@ -111,7 +126,11 @@ contains
        p = k - 1 + maxloc(abs(a(k:n, k)), dim=1)
 
        if (abs(a(p, k)) <= this % singular_tolerance) then
-          error stop 'dense_direct: pivot is nonsingular'
+          if (this % singular_reported) then
+             achieved = huge(1.0_dp)
+             return
+          end if
+          error stop 'dense_direct: the pivot is singular'
        end if
 
        if (p /= k) then

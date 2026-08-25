@@ -76,6 +76,11 @@ program graph_time_integrator
 
   implicit none
 
+  ! The residual at or below which a march has converged. A row above
+  ! it is reported unconverged and carries no derivative, the state a
+  ! gradient would be taken at not having been reached.
+  real(dp), parameter :: converged_residual = 1.0e-8_dp
+
   type(configuration) :: cfg
 
   call settings(cfg)
@@ -390,11 +395,12 @@ contains
 
   end subroutine heading
 
-  subroutine show_row(label, solved, f, achieved)
+  subroutine show_row(label, solved, f, achieved, columns)
 
     character(len=*), intent(in) :: label
     integer         , intent(in) :: solved
     real(dp)        , intent(in) :: f(0:), achieved
+    integer         , intent(in) :: columns
 
     character(len=16) :: cell
     character(len=:), allocatable :: line
@@ -404,12 +410,18 @@ contains
     write(cell,'(i6)') solved
     line = line // cell
 
-    do m = 0, ubound(f, 1)
-       write(cell,'(es15.6)') f(m)
+    ! A column the row holds no expansion for is left empty rather
+    ! than filled, there being no number to state under it.
+    do m = 0, columns
+       if (m <= ubound(f, 1)) then
+          write(cell,'(es15.6)') f(m)
+       else
+          write(cell,'(a15)') '-'
+       end if
        line = line // cell
     end do
 
-    if (achieved > 1.0e-8_dp) line = line // '   unconverged'
+    if (achieved > converged_residual) line = line // '   unconverged'
 
     write(*,'(a)') line
 
@@ -433,7 +445,7 @@ contains
     integer , allocatable :: added(:)
     real(dp), allocatable :: dt(:), t(:), held(:), f(:)
     real(dp) :: achieved
-    integer :: b, nd, given
+    integer :: b, nd, given, reported
     logical :: ok
 
     nd = cfg % state_degree + 1
@@ -449,11 +461,21 @@ contains
     call march_chain(schemes, added, van_der_pol(cfg % state_degree), nd, &
          & chosen_grid(cfg), cfg % design, held, chain, dt, t, achieved)
 
+    ! Every derivative is taken at the state the march reached, so a
+    ! row that did not converge has none to take and only its value is
+    ! expanded.
+    if (achieved > converged_residual) then
+       reported = 0
+    else
+       reported = cfg % max_derivative_degree
+    end if
+
     call chain_expansion(chain, van_der_pol(cfg % state_degree), &
          & van_der_pol_energy(cfg % state_degree), nd, dt, cfg % design, &
-         & cfg % max_derivative_degree, f)
+         & reported, f)
 
-    call show_row(labelled(names, orders), cfg % instants - given, f, achieved)
+    call show_row(labelled(names, orders), cfg % instants - given, f, achieved, &
+         & cfg % max_derivative_degree)
     printed = printed + 1
 
     associate (u1 => b); end associate

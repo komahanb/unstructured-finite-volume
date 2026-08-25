@@ -157,10 +157,10 @@ contains
        call partitioned(uniform_grid(1.0_dp), n2 + 1, deta, eta)
     end if
 
-    allocate(this % corner(2, (n1 + 1) * (n2 + 1)))
-    do j = 0, n1
+    allocate(this % corner(2, (n1 + 1 - polar) * (n2 + 1)))
+    do j = polar, n1
        do i = 0, n2
-          this % corner(:, corner_index(i, j, n2)) = mapped(geometry, a, b, xi(j + 1), eta(i + 1))
+          this % corner(:, corner_index(i, j, n2, polar)) = mapped(geometry, a, b, xi(j + 1), eta(i + 1))
        end do
     end do
 
@@ -183,7 +183,7 @@ contains
     if (polar == 1) then
        c = 1
        do i = 0, n2 - 1
-          this % cell_corner(i + 1) = corner_index(i, 1, n2)
+          this % cell_corner(i + 1) = corner_index(i, 1, n2, polar)
        end do
        this % first_corner(2) = n2 + 1
        this % cell_ij(:, 1) = [0, 1]
@@ -212,15 +212,15 @@ contains
     do j = 1 + polar, n1 - 1
        do i = 1, n2
           call face_between(faces, f, cell_index(i, j, n2, polar), &
-               & cell_index(i, j + 1, n2, polar), corner_index(i - 1, j, n2), &
-               & corner_index(i, j, n2))
+               & cell_index(i, j + 1, n2, polar), corner_index(i - 1, j, n2, polar), &
+               & corner_index(i, j, n2, polar))
        end do
     end do
 
     if (polar == 1) then
        do i = 1, n2
           call face_between(faces, f, 1, cell_index(i, 2, n2, polar), &
-               & corner_index(i - 1, 1, n2), corner_index(i, 1, n2))
+               & corner_index(i - 1, 1, n2, polar), corner_index(i, 1, n2, polar))
        end do
     end if
 
@@ -229,26 +229,26 @@ contains
           ring = i + 1
           if (ring > n2) ring = 1
           call face_between(faces, f, cell_index(i, j, n2, polar), &
-               & cell_index(ring, j, n2, polar), corner_index(i, j - 1, n2), &
-               & corner_index(i, j, n2))
+               & cell_index(ring, j, n2, polar), corner_index(i, j - 1, n2, polar), &
+               & corner_index(i, j, n2, polar))
        end do
     end do
 
     do i = 1, n2
        call face_between(faces, f, cell_index(i, n1, n2, polar), 0, &
-            & corner_index(i - 1, n1, n2), corner_index(i, n1, n2))
+            & corner_index(i - 1, n1, n2, polar), corner_index(i, n1, n2, polar))
     end do
 
     if (polar == 0) then
        do i = 1, n2
           call face_between(faces, f, cell_index(i, 1, n2, polar), 0, &
-               & corner_index(i - 1, 0, n2), corner_index(i, 0, n2))
+               & corner_index(i - 1, 0, n2, polar), corner_index(i, 0, n2, polar))
        end do
        do j = 1, n1
           call face_between(faces, f, cell_index(1, j, n2, polar), 0, &
-               & corner_index(0, j - 1, n2), corner_index(0, j, n2))
+               & corner_index(0, j - 1, n2, polar), corner_index(0, j, n2, polar))
           call face_between(faces, f, cell_index(n2, j, n2, polar), 0, &
-               & corner_index(n2, j - 1, n2), corner_index(n2, j, n2))
+               & corner_index(n2, j - 1, n2, polar), corner_index(n2, j, n2, polar))
        end do
     end if
 
@@ -257,11 +257,13 @@ contains
 
   end function spatial_mesh
 
-  pure integer function corner_index(i, j, n2) result(c)
+  pure integer function corner_index(i, j, n2, polar) result(c)
 
-    integer, intent(in) :: i, j, n2
+    integer, intent(in) :: i, j, n2, polar
 
-    c = j * (n2 + 1) + i + 1
+    ! a polar mesh's first row of corners is its innermost ring's;
+    ! the row below it, every point the origin, is never made
+    c = (j - polar) * (n2 + 1) + i + 1
 
   end function corner_index
 
@@ -282,13 +284,14 @@ contains
     type(room), intent(inout) :: this
     integer   , intent(in)    :: c, i, j, n2
 
-    integer :: at
+    integer :: at, polar
 
+    polar = merge(1, 0, this % geometry /= cartesian)
     at = this % first_corner(c)
-    this % cell_corner(at)     = corner_index(i - 1, j - 1, n2)
-    this % cell_corner(at + 1) = corner_index(i,     j - 1, n2)
-    this % cell_corner(at + 2) = corner_index(i,     j,     n2)
-    this % cell_corner(at + 3) = corner_index(i - 1, j,     n2)
+    this % cell_corner(at)     = corner_index(i - 1, j - 1, n2, polar)
+    this % cell_corner(at + 1) = corner_index(i,     j - 1, n2, polar)
+    this % cell_corner(at + 2) = corner_index(i,     j,     n2, polar)
+    this % cell_corner(at + 3) = corner_index(i - 1, j,     n2, polar)
     this % first_corner(c + 1) = at + 4
 
   end subroutine quad

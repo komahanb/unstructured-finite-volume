@@ -69,7 +69,7 @@ module gti_taylor
   implicit none
 
   private
-  public :: nodal_coefficient, block_expansion
+  public :: nodal_coefficient, block_expansion, order_of_series
 
 contains
 
@@ -112,6 +112,41 @@ contains
     end do
 
   end subroutine nodal_coefficient
+
+  !===================================================================!
+  ! One order of a series: the governing coefficient of that order
+  ! from the series so far, placed on its rows, and the block's
+  ! tangent solved against it - less what the carried rows were
+  ! handed, where a predecessor handed anything. The order's
+  ! coefficient of the state is the solution.
+  !===================================================================!
+
+  subroutine order_of_series(rows, physics, on, inputs, degrees, at, primary, carried, &
+       & design, m, series, mark, nodes, w, handed)
+
+    type(block_residual)  , intent(in)    :: rows
+    class(nodal_integrand), intent(in)    :: physics
+    class(directed_graph) , intent(in)    :: on
+    type(stored_field)    , intent(in)    :: inputs(:)
+    integer               , intent(in)    :: degrees, at(:), primary, carried, m, nodes
+    real(dp)              , intent(in)    :: design, series(0:, :)
+    integer               , intent(inout) :: mark
+    real(dp), allocatable , intent(out)   :: w(:)
+    real(dp)              , intent(in), optional :: handed(:)
+
+    real(dp), allocatable :: frozen(:,:), coefficient(:), r(:)
+
+    frozen = series
+    frozen(m, :) = 0.0_dp
+    call nodal_coefficient(physics, degrees, at, frozen, design, m, coefficient)
+
+    allocate(r(size(series, 2)))
+    call placed(coefficient, at, primary, carried, r)
+    if (present(handed)) r(1:carried) = -handed
+
+    call solved_linear(rows, on, inputs, -r, .false., mark, nodes, w)
+
+  end subroutine order_of_series
 
   !===================================================================!
   ! The governing coefficient placed on the rows it belongs to.
@@ -202,20 +237,15 @@ contains
     real(dp), allocatable , intent(out) :: series(:,:)
     integer               , intent(in) :: nodes
 
-    real(dp), allocatable :: frozen(:,:), r(:), w(:), coefficient(:)
+    real(dp), allocatable :: w(:)
     integer :: m, mark
+
     allocate(series(0:max_order, size(q)), source=0.0_dp)
-    allocate(r(size(q)))
     series(0, :) = q
 
-    allocate(frozen(0:max_order, size(q)))
-
     do m = 1, max_order
-       frozen = series
-       frozen(m, :) = 0.0_dp
-       call nodal_coefficient(physics, degrees, at, frozen, design, m, coefficient)
-       call placed(coefficient, at, primary, carried, r)
-       call solved_linear(rows, on, inputs, -r, .false., mark, nodes, w)
+       call order_of_series(rows, physics, on, inputs, degrees, at, primary, carried, &
+            & design, m, series, mark, nodes, w)
        series(m, :) = w
     end do
 

@@ -73,7 +73,7 @@ module gti_chain
        & route_substitutions, forward_route, reverse_route
   use util_tally            , only : tally_order, tally_enter, tally_leave, &
        & at_horizon, at_block, at_stage
-  use gti_taylor       , only : nodal_coefficient
+  use gti_taylor       , only : nodal_coefficient, order_of_series
 
   implicit none
 
@@ -413,35 +413,25 @@ contains
 
     type(stored_directed_graph) :: unknowns
     type(stored_field), allocatable :: inputs(:)
-    real(dp), allocatable :: frozen(:,:), coefficient(:), r(:), w(:), held(:)
-    integer , allocatable :: at(:)
-    integer :: count, carried, p
+    real(dp), allocatable :: w(:), held(:)
+    integer :: count, mark
 
-    count   = chain(b) % rows % num_unknowns()
-    carried = chain(b) % rows % num_carried()
-    at      = chain(b) % rows % points_at()
+    count = chain(b) % rows % num_unknowns()
+    mark  = systems(b) % mark
 
-    allocate(frozen(0:ubound(series, 1), count))
-    frozen = series(:, 1:count, b)
-    frozen(m, :) = 0.0_dp
-
-    call nodal_coefficient(physics, degrees, at, frozen, design, m, coefficient)
-
-    allocate(r(count), source=0.0_dp)
-    do p = 1, size(at)
-       r(at(p) + chain(b) % primary + 1) = coefficient(p)
-    end do
+    call frozen_at(chain(b), design, unknowns, inputs)
 
     if (b == 1) then
-       r(1:carried) = 0.0_dp
+       call order_of_series(chain(b) % rows, physics, unknowns, inputs, degrees, &
+            & chain(b) % rows % points_at(), chain(b) % primary, chain(b) % rows % num_carried(), &
+            & design, m, series(:, 1:count, b), mark, 1, w)
     else
        held = coefficients_handed(chain(1:b - 1), chain(b) % first, &
             & chain(b) % given, degrees, series, m)
-       r(1:carried) = -held
+       call order_of_series(chain(b) % rows, physics, unknowns, inputs, degrees, &
+            & chain(b) % rows % points_at(), chain(b) % primary, chain(b) % rows % num_carried(), &
+            & design, m, series(:, 1:count, b), mark, 1, w, handed=held)
     end if
-
-    call frozen_at(chain(b), design, unknowns, inputs)
-    call solved_linear(chain(b) % rows, unknowns, inputs, -r, .false., systems(b) % mark, 1, w)
     series(m, 1:count, b) = w
 
   end subroutine one_order

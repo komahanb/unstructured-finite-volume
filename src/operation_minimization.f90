@@ -175,6 +175,7 @@ module operation_minimization
      procedure :: began
      procedure, private :: fitted
      procedure :: exhausted
+     procedure :: halted
 
      procedure :: attach
      procedure :: evaluation_inputs
@@ -401,6 +402,32 @@ contains
     end select
 
   end function exhausted
+
+  !===================================================================!
+  ! Whether an iteration stops at this imbalance: noted, then judged -
+  ! met; or no longer a number; or past what the arithmetic holds; or
+  ! diverging; or the budget spent. Every iteration on the tower asks
+  ! this one question of the imbalance it has just measured, and the
+  ! loop around it is the member's own.
+  !===================================================================!
+
+  logical function halted(this, imbalance, iteration) result(stop_here)
+
+    class(minimizer), intent(inout) :: this
+    real(dp)        , intent(in)    :: imbalance
+    integer         , intent(in)    :: iteration
+
+    call this % note_imbalance(imbalance)
+
+    stop_here = .true.
+    if (this % converged(imbalance)) return
+    if (imbalance /= imbalance) return
+    if (imbalance > huge(1.0_dp) / 2.0_dp) return
+    if (this % diverging(imbalance)) return
+    if (this % exhausted(iteration)) return
+    stop_here = .false.
+
+  end function halted
 
   !===================================================================!
   ! Take the operation and the graph it reads. The affine part is

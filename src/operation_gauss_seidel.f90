@@ -10,6 +10,12 @@
 !      for each colour:  r = rhs - A x       (x already partly new)
 !                        x <- x + omega * r / diag   on that colour
 !
+! The residual measured at the top of an iteration is the first
+! colour's, so a sweep of c colours costs c products with the
+! operator. Which colouring is swept is a question the type answers
+! for itself - jacobi is this iteration over one colour class, and
+! says so by extension.
+!
 ! SOR is not another solver. It is this one at omega away from one -
 ! a parameter, absorbed, exactly as the admission law orders.
 !
@@ -34,6 +40,7 @@ module operation_gauss_seidel
    contains
 
      procedure :: name => gauss_seidel_name
+     procedure :: colouring
      procedure :: solve
 
   end type gauss_seidel
@@ -50,6 +57,25 @@ contains
     name = 'gauss-seidel'
 
   end function gauss_seidel_name
+
+  !===================================================================!
+  ! The colour classes the sweep runs over: one entry per unknown,
+  ! from the coupling's own colouring.
+  !===================================================================!
+
+  subroutine colouring(this, n, colours)
+
+    class(gauss_seidel), intent(in)  :: this
+    integer            , intent(in)  :: n
+    integer, allocatable, intent(out) :: colours(:)
+
+    call this % sweep_order(colours)
+
+    if (size(colours) /= n) then
+       error stop 'gauss_seidel: one colour per unknown'
+    end if
+
+  end subroutine colouring
 
 
   subroutine solve(this, rhs, x, achieved)
@@ -70,27 +96,32 @@ contains
        if (abs(d(v)) < tiny(1.0_dp)) d(v) = huge(1.0_dp)
     end do
 
-    call this % sweep_order(colours)
+    call this % colouring(size(x), colours)
 
     call this % begin_imbalance()
 
     do it = 1, this % max_iterations
 
+       call this % matvec(x, y)
+       r = rhs - y
+
+       achieved = this % norm(r)
+       if (this % halted(achieved, it)) return
+
        do col = 1, maxval(colours)
-          call this % matvec(x, y)
-          r = rhs - y
+          if (col > 1) then
+             call this % matvec(x, y)
+             r = rhs - y
+          end if
           do v = 1, size(x)
              if (colours(v) == col) x(v) = x(v) + this % omega * r(v) / d(v)
           end do
        end do
 
-       call this % matvec(x, y)
-       achieved = this % norm(rhs - y)
-       call this % note_imbalance(achieved)
-       if (this % converged(achieved)) return
-       if (this % exhausted(it)) return
-
     end do
+
+    call this % matvec(x, y)
+    achieved = this % norm(rhs - y)
 
   end subroutine solve
 

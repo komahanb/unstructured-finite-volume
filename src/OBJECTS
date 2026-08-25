@@ -58,13 +58,13 @@ transform_refiner.o \
 operation_differential.o \
 operation_balance.o \
 operation_minimization.o \
-operation_jacobi.o \
 operation_dense_direct.o \
 operation_conjugate_gradient.o \
 operation_fitting.o \
 operation_fitted_balance.o \
 operation_diffusion.o \
 operation_gauss_seidel.o \
+operation_jacobi.o \
 operation_gmres.o \
 operation_newton.o \
 operation_multigrid.o \

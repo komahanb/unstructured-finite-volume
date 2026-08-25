@@ -200,13 +200,13 @@ contains
     real(dp), intent(inout) :: x(:)
     real(dp), intent(out)   :: achieved
 
-    real(dp), allocatable :: y(:), r(:), rc(:), ec(:)
+    real(dp), allocatable :: y(:), r(:), rc(:), ec(:), e(:)
     real(dp) :: smoothed, answered
-    integer :: it, v
+    integer :: it
 
     call tally_record(linear_solves)
 
-    allocate(rc(this % nblocks), ec(this % nblocks))
+    allocate(rc(this % nblocks), ec(this % nblocks), e(size(x)))
 
     call this % begin_imbalance()
 
@@ -218,24 +218,15 @@ contains
        r = rhs - y
 
        achieved = this % norm(r)
-       call this % note_imbalance(achieved)
-       if (this % converged(achieved)) return
-       if (this % exhausted(it)) return
+       if (this % halted(achieved, it)) return
 
-       ! Down: the residual gathered onto the blocks.
-       rc = 0.0_dp
-       do v = 1, size(r)
-          rc(this % aggregates(v)) = rc(this % aggregates(v)) + r(v)
-       end do
-
-       ! Answered there.
+       ! Down: the residual restricted onto the blocks; up: the
+       ! correction found there, prolonged by the transpose.
+       call through_aggregates(this % aggregates, r, rc, transposed=.false.)
        ec = 0.0_dp
        call this % coarse % solve(rc, ec, answered)
-
-       ! Back: each cell takes its block's correction.
-       do v = 1, size(x)
-          x(v) = x(v) + ec(this % aggregates(v))
-       end do
+       call through_aggregates(this % aggregates, e, ec, transposed=.true.)
+       x = x + e
 
        call this % smoother % solve(rhs, x, smoothed)
 
@@ -245,5 +236,34 @@ contains
     achieved = this % norm(rhs - y)
 
   end subroutine solve
+
+  !===================================================================!
+  ! The restriction, read both ways. Summing restriction takes each
+  ! cell's value onto its block; its transpose gives each cell its
+  ! block's value, which is the injected prolongation. One map, one
+  ! loop, so R^T is not written a second time.
+  !===================================================================!
+
+  pure subroutine through_aggregates(aggregates, fine, coarse, transposed)
+
+    integer , intent(in)    :: aggregates(:)
+    real(dp), intent(inout) :: fine(:)
+    real(dp), intent(inout) :: coarse(:)
+    logical , intent(in)    :: transposed
+
+    integer :: v
+
+    if (transposed) then
+       do v = 1, size(fine)
+          fine(v) = coarse(aggregates(v))
+       end do
+    else
+       coarse = 0.0_dp
+       do v = 1, size(fine)
+          coarse(aggregates(v)) = coarse(aggregates(v)) + fine(v)
+       end do
+    end if
+
+  end subroutine through_aggregates
 
 end module operation_multigrid

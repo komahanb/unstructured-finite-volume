@@ -136,23 +136,12 @@ contains
        residual = y + g - rhs
 
        achieved = this % norm(residual)
-       call this % note_imbalance(achieved)
-       if (this % converged(achieved)) return
 
-
-       ! A residual that is no longer a number has diverged past
-       ! where a comparison can say so, and one above where the march
-       ! began and still growing is going the wrong way; either way
-       ! there is nothing here to pursue.
-       if (achieved /= achieved) return
-       if (achieved > huge(1.0_dp) / 2.0_dp) return
-       if (this % diverging(achieved)) return
-
-       ! Where the budget is taken from the rate, this is where an
-       ! iteration that has flattened stops. No floor is named: the
-       ! slope of the residual's logarithm is compared against its own
-       ! scatter, and a descent still under way lies far outside it.
-       if (this % exhausted(it)) return
+       ! Met; or no longer a number; or past what the arithmetic
+       ! holds; or diverging; or, where the budget is taken from the
+       ! rate, flattened - the slope of the residual's logarithm
+       ! against its own scatter, no floor named. One question.
+       if (this % halted(achieved, it)) return
 
        ! The linear question at this point, answered by the governed
        ! minimizer: the Jacobian is frozen at the same input tuple the

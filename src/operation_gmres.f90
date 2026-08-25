@@ -83,9 +83,7 @@ contains
        beta = this % norm(r)
 
        achieved = beta
-       call this % note_imbalance(achieved)
-       if (this % converged(achieved)) return
-       if (this % exhausted(outer)) return
+       if (this % halted(achieved, outer)) return
 
        basis = 0.0_dp
        h  = 0.0_dp

@@ -6,32 +6,30 @@
 !
 !      x  <-  x + omega * (rhs - A x) / diag
 !
-! Everything it needs is inherited: matvec from the attached
-! operation, the diagonal probed by colour, the norm from the
-! reduction. This file states the iteration and nothing else.
+! which is the gauss-seidel sweep over one colour class - every cell
+! the same colour, so every correction sees the old state and none
+! sees another's. That is stated by extension: the sweep, the
+! diagonal, the judgement of each residual are gauss-seidel's, and
+! this file says only which colouring is swept.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module operation_jacobi
 
-  use util_precision  , only : dp
-  use operation_minimization, only : minimizer
-  use util_tally, only : tally_record, linear_solves
+  use operation_gauss_seidel, only : gauss_seidel
 
   implicit none
 
   private
   public :: jacobi
 
-  type, extends(minimizer) :: jacobi
-
-     real(dp) :: omega = 1.0_dp
+  type, extends(gauss_seidel) :: jacobi
 
    contains
 
-     procedure :: name => jacobi_name
-     procedure :: solve
+     procedure :: name      => jacobi_name
+     procedure :: colouring => one_colour
 
   end type jacobi
 
@@ -43,48 +41,25 @@ contains
     character(len=:), allocatable :: name
 
     associate (u1 => this); end associate
-
     name = 'jacobi'
 
   end function jacobi_name
 
+  !===================================================================!
+  ! One colour class: every unknown corrected at once from the state
+  ! the iteration began at. The coupling is never asked.
+  !===================================================================!
 
-  subroutine solve(this, rhs, x, achieved)
+  subroutine one_colour(this, n, colours)
 
-    class(jacobi), intent(inout) :: this
-    real(dp), intent(in)    :: rhs(:)
-    real(dp), intent(inout) :: x(:)
-    real(dp), intent(out)   :: achieved
+    class(jacobi), intent(in)  :: this
+    integer      , intent(in)  :: n
+    integer, allocatable, intent(out) :: colours(:)
 
-    real(dp), allocatable :: d(:), y(:), r(:)
-        integer :: it, v
+    associate (u1 => this); end associate
+    allocate(colours(n))
+    colours = 1
 
-    call tally_record(linear_solves)
-
-    call this % diagonal(d)
-
-    ! A zero diagonal cannot correct its cell; leave that cell alone
-    ! rather than divide by nothing.
-    do v = 1, size(d)
-       if (abs(d(v)) < tiny(1.0_dp)) d(v) = huge(1.0_dp)
-    end do
-
-    call this % begin_imbalance()
-
-    do it = 1, this % max_iterations
-
-       call this % matvec(x, y)
-       r = rhs - y
-
-       achieved = this % norm(r)
-       call this % note_imbalance(achieved)
-       if (this % converged(achieved)) return
-       if (this % exhausted(it)) return
-
-       x = x + this % omega * r / d
-
-    end do
-
-  end subroutine solve
+  end subroutine one_colour
 
 end module operation_jacobi

@@ -76,9 +76,7 @@ contains
     do it = 1, this % max_iterations
 
        achieved = this % norm(r)
-       call this % note_imbalance(achieved)
-       if (this % converged(achieved)) return
-       if (this % exhausted(it)) return
+       if (this % halted(achieved, it)) return
 
        call this % matvec(p, ap)
        pap = this % inner_product(p, ap)

@@ -376,18 +376,23 @@ contains
     type(configuration), intent(in) :: cfg
 
     character(len=:), allocatable :: line
-    character(len=2) :: digit
+    character(len=2)  :: digit
+    character(len=16) :: name
     integer :: m
 
-    line = '  scheme' // repeat(' ', 14) // 'solved' // repeat(' ', 8) // 'f'
+    line = '  scheme' // repeat(' ', 14) // 'solved' // repeat(' ', 10)
 
-    do m = 1, cfg % max_derivative_degree
+    ! Each name sits over its own column, right against the digits.
+    do m = 0, cfg % max_derivative_degree
        write(digit,'(i0)') m
-       if (m == 1) then
-          line = line // repeat(' ', 12) // 'dfdx'
+       if (m == 0) then
+          name = 'f'
+       else if (m == 1) then
+          name = 'dfdx'
        else
-          line = line // repeat(' ', 9) // 'd' // trim(digit) // 'fdx' // trim(digit)
+          name = 'd' // trim(digit) // 'fdx' // trim(digit)
        end if
+       line = line // repeat(' ', 20 - len_trim(name)) // trim(name) // ' '
     end do
 
     write(*,'(a)') ' '
@@ -402,21 +407,22 @@ contains
     real(dp)        , intent(in) :: f(0:), achieved
     integer         , intent(in) :: columns
 
-    character(len=16) :: cell
+    character(len=21) :: cell
+    character(len=6)  :: counted
     character(len=:), allocatable :: line
     integer :: m
 
     line = '  ' // label // repeat(' ', max(2, 20 - len(label)))
-    write(cell,'(i6)') solved
-    line = line // cell
+    write(counted,'(i6)') solved
+    line = line // counted // repeat(' ', 10)
 
     ! A column the row holds no expansion for is left empty rather
     ! than filled, there being no number to state under it.
     do m = 0, columns
        if (m <= ubound(f, 1)) then
-          write(cell,'(es15.6)') f(m)
+          write(cell,'(es20.11)') f(m)
        else
-          write(cell,'(a15)') '-'
+          write(cell,'(a20)') '-'
        end if
        line = line // cell
     end do
@@ -548,6 +554,13 @@ contains
     real(dp), allocatable :: startup(:), dt(:), t(:)
     integer :: widest, printed
 
+    ! Before anything is measured against the horizon, since a word
+    ! this program has nothing for reaches back over nothing and
+    ! would be reported as a horizon too narrow to hold it.
+    call refuse_unknown(cfg % families, ['bdf     ', 'adams   ', 'dirk    '], 'families')
+    call refuse_unknown(cfg % combinations, &
+         & ['homogeneous', 'pairs      ', 'triples    '], 'combinations')
+
     widest = widest_reach(cfg)
 
     if (.not. cfg % automatic_order_conservation) then
@@ -590,18 +603,102 @@ contains
     type(configuration), intent(in) :: cfg
     character(len=*)   , intent(in) :: what
 
-    yes = index(cfg % combinations, what) > 0
+    yes = lists(cfg % combinations, what)
 
   end function asked
+
+  !-------------------------------------------------------------------!
+  ! The blank-separated words of a list, and whether one of them is a
+  ! given word. Containment is not the test: a word is what lies
+  ! between blanks, so a list naming bdfx does not thereby name bdf.
+  !-------------------------------------------------------------------!
+
+  pure function worded(text) result(list)
+
+    character(len=*), intent(in) :: text
+    character(len=16), allocatable :: list(:)
+
+    character(len=16) :: held(16)
+    integer :: i, first, n, last
+
+    n    = 0
+    i    = 1
+    last = len_trim(text)
+
+    do while (i <= last)
+       if (text(i:i) == ' ') then
+          i = i + 1
+          cycle
+       end if
+       first = i
+       do while (i <= last)
+          if (text(i:i) == ' ') exit
+          i = i + 1
+       end do
+       if (n == size(held)) exit
+       n = n + 1
+       held(n) = text(first:i-1)
+    end do
+
+    list = held(1:n)
+
+  end function worded
+
+  pure logical function lists(text, what) result(yes)
+
+    character(len=*), intent(in) :: text, what
+
+    character(len=16), allocatable :: list(:)
+    integer :: i
+
+    list = worded(text)
+    yes  = .false.
+
+    do i = 1, size(list)
+       if (trim(list(i)) == what) yes = .true.
+    end do
+
+  end function lists
+
+  !-------------------------------------------------------------------!
+  ! A word this program has nothing for stops it. Left to run, the
+  ! setting would build no row and the empty table would state a
+  ! reason that is not the one.
+  !-------------------------------------------------------------------!
+
+  subroutine refuse_unknown(text, every, subject)
+
+    character(len=*), intent(in) :: text, every(:), subject
+
+    character(len=16), allocatable :: list(:)
+    integer :: i, j
+    logical :: known
+
+    list = worded(text)
+
+    do i = 1, size(list)
+       known = .false.
+       do j = 1, size(every)
+          if (trim(list(i)) == trim(every(j))) known = .true.
+       end do
+       if (.not. known) then
+          write(*,'(a)') ' '
+          write(*,'(a)') ' ' // subject // ' names ' // trim(list(i)) // &
+               & ', which this program has nothing for.'
+          error stop 'graph_time_integrator: a setting names something unknown'
+       end if
+    end do
+
+  end subroutine refuse_unknown
 
   !-------------------------------------------------------------------!
   ! The names a configuration lists, in the order it lists them.
   !-------------------------------------------------------------------!
 
-  function listed(cfg) result(names)
+  function listed(cfg) result(list)
 
     type(configuration), intent(in) :: cfg
-    character(len=8), allocatable :: names(:)
+    character(len=8), allocatable :: list(:)
 
     character(len=8) :: every(3)
     integer :: i, n
@@ -609,15 +706,15 @@ contains
     every = ['bdf     ', 'adams   ', 'dirk    ']
     n = 0
     do i = 1, 3
-       if (index(cfg % families, trim(every(i))) > 0) n = n + 1
+       if (lists(cfg % families, trim(every(i)))) n = n + 1
     end do
 
-    allocate(names(n))
+    allocate(list(n))
     n = 0
     do i = 1, 3
-       if (index(cfg % families, trim(every(i))) > 0) then
+       if (lists(cfg % families, trim(every(i)))) then
           n = n + 1
-          names(n) = every(i)
+          list(n) = every(i)
        end if
     end do
 

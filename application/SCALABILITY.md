@@ -66,22 +66,41 @@ A first-order scheme's rows are weighted by `1/dt` and a second-order
 scheme's by `1/dt^2`, which is why bdf1 is untouched at every size
 measured and bdf2 is not.
 
-**What one processor should do instead.** Not the starting residual -
-that is what `scale_of` already takes, and it is the thing that fails.
-The tolerance has to carry the same weight the rows carry, so that it
-rises with `1/dt^d` for a scheme determining the d-th derivative as
-the floor does. The diagonal of the frozen jacobian carries exactly
-that and is already formed, so its norm is the reference to hand.
+**Settled, and not by a tolerance.** The jacobian's diagonal was
+proposed here as the reference and it is the wrong quantity. Measured
+on a bdf2 block of 244 unknowns the largest entry anywhere is 1.71e5
+and the largest on the diagonal is 9.52: the sign convention puts one
+on the column a row determines and the `1/dt^d` weights on the
+sources, which are off the diagonal. Scaling by the diagonal changes
+the tolerance not at all, the starting residual being larger anyway.
+The largest row sum does carry the weight - 5.12e5 on the same block -
+but scaling by it gives 5.1e-7, looser than the 1e-8 a row is called
+unconverged above.
 
-Second, stop on stagnation. A march that has not improved its residual
-over a few iterations has reached its floor, and forty iterations of
-not improving is the same as five of not improving except in what it
-costs. That alone turns this cliff from four to five times the cost
-into a fraction over the converging case, without settling what the
-right tolerance is.
+No tolerance is the lever, because the floor is not where a tolerance
+can be told to be. Tracing every iteration of bdf2 at 161 instants:
+the residual falls quadratically to 2.7e-11 by the eighth, and then
+bounces between 2.3e-11 and 3.2e-11 for thirty-two more. The tolerance
+sat at 1.25e-11, a factor of two under a floor it could never reach.
 
-Until one of the two is done, any measurement taken where the step is
-small enough measures the budget and not the algorithm.
+So newton stops when it stops progressing: a residual that has not
+bettered the best seen by a tenth, four iterations running, once it is
+already a millionth of where it began. The last clause is what makes
+it safe - newton wanders early, a residual rising once before it falls
+is ordinary, and without it the rule cuts marches off in their first
+few iterations and reports them unconverged.
+
+```
+ instants   bdf2 loops before   after   wall before   after
+      115           37            12       3.2887    1.3472
+      121           40            12       3.9669    1.4736
+      161           40            12       7.7766    2.9327
+      181           40            13      10.5322    4.1743
+```
+
+Every functional is identical to all twelve digits printed, the four
+configurations are byte-identical, and the two randomized sweeps are
+unchanged.
 
 ---
 
@@ -341,13 +360,12 @@ array nor the `n^2`-edge graph is built.
 
 ## Ranked, by what binds first
 
-1. **A tolerance that stops being reachable.** Not an order at all,
-   and not a count: it follows the step. A second-order scheme reaches
-   its iteration budget where the step falls under about a fortieth,
-   at four to five times the cost, and prints as converged. A
-   first-order scheme beside it is untouched. Cheapest to fix, met by
-   every run that refines, and it distorts every other measurement
-   until it is.
+1. ~~**A tolerance that stops being reachable.**~~ **Settled.** It
+   followed the step rather than the count, and no tolerance was the
+   lever: newton now stops when it stops progressing. Two and a half
+   times less time at the sizes it bit, with every functional
+   unchanged. Measurements taken before this are still measuring the
+   budget where the step was small.
 2. **A matrix taken afresh every iteration.** `dense_direct_solve`
    allocates `n by n` inside itself, about 2 MB an iteration at 471
    unknowns, which is the whole of the memory growth. The shape does

@@ -22,7 +22,8 @@ program jacobian_shape
   implicit none
 
   write(*,'(a)') ' '
-  write(*,'(a)') '  scheme        unknowns    filled   below   above   per cent full'
+  write(*,'(a)') '  scheme        unknowns    filled   below   above   per cent full' // &
+       & '     largest    on diagonal    largest row'
   call shape_of('bdf 1',   bdf_family(1),        3, 21)
   call shape_of('bdf 2',   bdf_family(2),        3, 21)
   call shape_of('bdf 3',   bdf_family(3),        3, 21)
@@ -75,7 +76,7 @@ contains
     integer         , intent(in) :: degrees, instants
 
     integer  :: n, i, j, filled, below, above
-    real(dp) :: biggest, least
+    real(dp) :: biggest, least, on_diagonal, row_most, row_sum
 
     n       = size(a, 1)
     biggest = maxval(abs(a))
@@ -94,8 +95,23 @@ contains
        end do
     end do
 
-    write(*,'(a,a,i8,i10,i8,i8,f12.2)') '  ', label // repeat(' ', 12 - len(label)), &
-         & n, filled, below, above, 100.0_dp * real(filled, dp) / real(n * n, dp)
+    on_diagonal = 0.0_dp
+    do i = 1, n
+       on_diagonal = max(on_diagonal, abs(a(i, i)))
+    end do
+
+    row_most = 0.0_dp
+    do i = 1, n
+       row_sum = 0.0_dp
+       do j = 1, n
+          row_sum = row_sum + abs(a(i, j))
+       end do
+       row_most = max(row_most, row_sum)
+    end do
+
+    write(*,'(a,a,i8,i10,i8,i8,f12.2,3es15.4)') '  ', label // repeat(' ', 12 - len(label)), &
+         & n, filled, below, above, 100.0_dp * real(filled, dp) / real(n * n, dp), &
+         & biggest, on_diagonal, row_most
 
     associate (u1 => degrees, u2 => instants); end associate
 

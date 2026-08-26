@@ -462,34 +462,29 @@ contains
   end subroutine stencil_dependencies
 
   !===================================================================!
-  ! The transpose: every edge reversed, so the weight that carried
-  ! the tail's value onto the head now carries the head's onto the
-  ! tail. The constants are dropped, because the affine part of a
-  ! map has no transpose.
+  ! The transpose: the same pattern read the other way, so the weight
+  ! that carried the tail's value onto the head now carries the head's
+  ! onto the tail - no edge is rebuilt and no weight is moved, and the
+  ! transpose of the transpose is this stencil exactly. The constants
+  ! are dropped, because the affine part of a map has no transpose.
   !===================================================================!
 
   type(stencil) function stencil_transpose(this) result(transposed)
 
     class(stencil), intent(in) :: this
 
-    integer , allocatable :: tails(:), heads(:)
-    real(dp), allocatable :: weights(:), zeros(:)
-    integer :: e, ne, nv
+    real(dp), allocatable :: zeros(:)
 
-    ne = this % pattern % num_edges()
-    nv = this % pattern % num_vertices()
+    transposed % pattern   = this % pattern % transpose()
+    transposed % weights   = this % weights
 
-    allocate(tails(ne), heads(ne), zeros(nv))
-    do e = 1, ne
-       tails(e) = this % pattern % edge_tail(e)
-       heads(e) = this % pattern % edge_head(e)
-    end do
+    allocate(zeros(this % pattern % num_vertices()))
     zeros = 0.0_dp
+    transposed % constants = stored_field('stencil constants', &
+         & transposed % pattern % vertex_set(), transposed % pattern % num_vertices())
+    call transposed % constants % set_real_vector(zeros)
 
-    call this % weights % real_vector(weights)
-
-    transposed = create(rows=tails, columns=heads, weights=weights, &
-         & constant=zeros, label='transpose of ' // this % label)
+    transposed % label = 'transpose of ' // this % label
 
   end function stencil_transpose
 

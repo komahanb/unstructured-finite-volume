@@ -9,6 +9,10 @@
 !            E              edge set identity, and its count
 !            tail, head     E -> V
 !
+! and its transpose D^T = ( V, E, head, tail ) is the same view read the
+! other way: a stored graph carries both readings and turns between
+! them without rebuilding an edge, so that (D^T)^T = D exactly.
+!
 ! That is the whole of the role. `directed` is what the structure IS -
 ! two finite domains and two maps between them - and it is a view over
 ! the ontology, never a kind of graph.

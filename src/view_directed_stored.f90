@@ -82,6 +82,16 @@ module view_directed_stored
      integer :: ne     = 0
 
      !----------------------------------------------------------------!
+     ! THE ORIENTATION. D = (V, E, tail, head) and its transpose
+     ! D^T = (V, E, head, tail) are one stored object read two ways:
+     ! both endpoint lists and both compressed directions are kept,
+     ! and reversed says which is which. The transpose of the
+     ! transpose is the object itself, exactly, and the identity is
+     ! the same relation's.
+     !----------------------------------------------------------------!
+     logical :: reversed = .false.
+
+     !----------------------------------------------------------------!
      ! Edge endpoints. A head of zero means the edge has none.
      !----------------------------------------------------------------!
 
@@ -161,6 +171,8 @@ module view_directed_stored
      procedure :: edge_tail
      procedure :: edge_head
      procedure :: edge_has_head
+     procedure :: transpose
+     procedure :: transposed
 
      !----------------------------------------------------------------!
      ! The named vertex sets.
@@ -559,13 +571,46 @@ contains
   !===================================================================!
   ! Where an edge goes.
   !===================================================================!
+  ! The transpose: the same object read the other way, every edge's
+  ! tail its head and head its tail, so that transposing twice gives
+  ! back what was there. An edge without a head would become an edge
+  ! without a tail, which is not an edge; such a graph has no
+  ! transpose and the request stops the program.
+  !===================================================================!
+
+  type(stored_directed_graph) function transpose(this) result(turned)
+
+    class(stored_directed_graph), intent(in) :: this
+
+    if (any(this % head < 1)) then
+       error stop 'stored_directed_graph: a graph with an edge without a head has no transpose'
+    end if
+
+    turned = this
+    turned % reversed = .not. this % reversed
+
+  end function transpose
+
+  pure logical function transposed(this)
+
+    class(stored_directed_graph), intent(in) :: this
+
+    transposed = this % reversed
+
+  end function transposed
+
+  !===================================================================!
 
   pure integer function edge_tail(this, edge_index)
 
     class(stored_directed_graph), intent(in) :: this
     integer            , intent(in) :: edge_index
 
-    edge_tail = this % tail(edge_index)
+    if (this % reversed) then
+       edge_tail = this % head(edge_index)
+    else
+       edge_tail = this % tail(edge_index)
+    end if
 
   end function edge_tail
 
@@ -579,7 +624,11 @@ contains
     class(stored_directed_graph), intent(in) :: this
     integer            , intent(in) :: edge_index
 
-    edge_head = this % head(edge_index)
+    if (this % reversed) then
+       edge_head = this % tail(edge_index)
+    else
+       edge_head = this % head(edge_index)
+    end if
 
   end function edge_head
 
@@ -593,7 +642,7 @@ contains
     class(stored_directed_graph), intent(in) :: this
     integer            , intent(in) :: edge_index
 
-    edge_has_head = this % head(edge_index) >= 1
+    edge_has_head = this % edge_head(edge_index) >= 1
 
   end function edge_has_head
 
@@ -688,7 +737,7 @@ contains
           if (on_vertices) then
              keep = .not. touches_boundary(this, i)
           else
-             keep = this % head(i) >= 1
+             keep = this % edge_has_head(i)
           end if
           if (which == SELECT_BOUNDARY) keep = .not. keep
        case (SELECT_TAGGED)
@@ -720,7 +769,7 @@ contains
 
     touches_boundary = .false.
     do k = this % xinc(v), this % xinc(v + 1) - 1
-       if (this % head(this % einc(k)) < 1) then
+       if (.not. this % edge_has_head(this % einc(k))) then
           touches_boundary = .true.
           return
        end if
@@ -1043,7 +1092,11 @@ contains
     integer            , intent(in)   :: vertex_index
     integer, allocatable, intent(out) :: indices(:)
 
-    indices = this % eout(this % xout(vertex_index) : this % xout(vertex_index + 1) - 1)
+    if (this % reversed) then
+       indices = this % ein(this % xin(vertex_index) : this % xin(vertex_index + 1) - 1)
+    else
+       indices = this % eout(this % xout(vertex_index) : this % xout(vertex_index + 1) - 1)
+    end if
 
   end subroutine outgoing_edges
 
@@ -1057,7 +1110,11 @@ contains
     integer            , intent(in)   :: vertex_index
     integer, allocatable, intent(out) :: indices(:)
 
-    indices = this % ein(this % xin(vertex_index) : this % xin(vertex_index + 1) - 1)
+    if (this % reversed) then
+       indices = this % eout(this % xout(vertex_index) : this % xout(vertex_index + 1) - 1)
+    else
+       indices = this % ein(this % xin(vertex_index) : this % xin(vertex_index + 1) - 1)
+    end if
 
   end subroutine incoming_edges
 
@@ -1072,17 +1129,16 @@ contains
     integer            , intent(in)   :: vertex_index
     integer, allocatable, intent(out) :: indices(:)
 
-    integer :: k, n, lo, hi
+    integer, allocatable :: edges(:)
+    integer :: k, n
 
-    lo = this % xout(vertex_index)
-    hi = this % xout(vertex_index + 1) - 1
-
-    allocate(indices(max(hi - lo + 1, 0)))
+    call this % outgoing_edges(vertex_index, edges)
+    allocate(indices(size(edges)))
     n = 0
-    do k = lo, hi
-       if (this % head(this % eout(k)) >= 1) then
+    do k = 1, size(edges)
+       if (this % edge_has_head(edges(k))) then
           n = n + 1
-          indices(n) = this % head(this % eout(k))
+          indices(n) = this % edge_head(edges(k))
        end if
     end do
     indices = indices(1:n)
@@ -1100,18 +1156,14 @@ contains
     integer            , intent(in)   :: vertex_index
     integer, allocatable, intent(out) :: indices(:)
 
-    integer :: k, n, lo, hi
+    integer, allocatable :: edges(:)
+    integer :: k
 
-    lo = this % xin(vertex_index)
-    hi = this % xin(vertex_index + 1) - 1
-
-    allocate(indices(max(hi - lo + 1, 0)))
-    n = 0
-    do k = lo, hi
-       n = n + 1
-       indices(n) = this % tail(this % ein(k))
+    call this % incoming_edges(vertex_index, edges)
+    allocate(indices(size(edges)))
+    do k = 1, size(edges)
+       indices(k) = this % edge_tail(edges(k))
     end do
-    indices = indices(1:n)
 
   end subroutine incoming_vertices
 
@@ -1160,7 +1212,7 @@ contains
 
     allocate(table(2, this % ne))
     do k = 1, this % ne
-       table(:, k) = [k, this % tail(k)]
+       table(:, k) = [k, this % edge_tail(k)]
     end do
 
     tail_relation = csr_relation('edge tails', this % eset, &
@@ -1179,13 +1231,16 @@ contains
     call sets % bind(this % vset, counted_set_representation(this % nv))
     call sets % bind(this % eset, counted_set_representation(this % ne))
 
-    nh = count(this % head >= 1)
+    nh = 0
+    do k = 1, this % ne
+       if (this % edge_has_head(k)) nh = nh + 1
+    end do
     allocate(table(2, nh))
     nh = 0
     do k = 1, this % ne
-       if (this % head(k) >= 1) then
+       if (this % edge_has_head(k)) then
           nh = nh + 1
-          table(:, nh) = [k, this % head(k)]
+          table(:, nh) = [k, this % edge_head(k)]
        end if
     end do
 

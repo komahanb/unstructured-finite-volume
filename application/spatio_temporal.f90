@@ -30,16 +30,18 @@ program spatio_temporal
   use gti_configuration     , only : configuration, read_configuration, override, show, &
        & worded, lists, refuse_unknown
   use gti_space             , only : room, spatial_mesh, spatial_operator, written_paraview, &
-       & geometry_of, cartesian
+       & geometry_of, cartesian, coarse_cells
   use operation_stencil     , only : stencil
   use field_calculus        , only : field
-  use gti_field             , only : field_measure, field_startup, field_aggregates, spatial_rows
-  use gti_march             , only : partitioned, set_stopping, block_of, unknowns_graph, &
-       & unknown, consistent_states, frozen_inputs, &
-       & set_sweep, swept, imbalance, by_tangent, by_adjoint, fresh_stamp
+  use gti_field             , only : field_measure, node_operator
+  use gti_march             , only : set_stopping, unknown, consistent_states, frozen_inputs, &
+       & set_sweep, imbalance, by_tangent, by_adjoint, fresh_stamp
+  use gti_chain             , only : chain_block, march_chain, startup_trajectory
+  use gti_expansion         , only : family_holder
+  use gti_driver            , only : chosen_grid, family_named
   use gti_taylor            , only : block_expansion
   use gti_sweeps            , only : design_partial, functional_gradient, &
-       & set_linear_solver, set_aggregates, set_assembly, set_storage, set_multigrid
+       & set_linear_solver, set_coarse_nodes, set_assembly, set_storage, set_multigrid
   use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
   use operation_family      , only : family
   use operation_family_bdf  , only : bdf_family
@@ -62,7 +64,7 @@ program spatio_temporal
   call settings('field', cfg)
   call show(cfg)
 
-  call refuse_unknown(cfg % families, ['bdf  ', 'adams'], 'families')
+  call refuse_unknown(cfg % families, ['bdf  ', 'adams', 'dirk '], 'families')
   call refuse_unknown(cfg % spatial_grid, ['uniform', 'random '], 'spatial_grid')
   call refuse_unknown(cfg % initial_field, ['constant', 'mode    ', 'bump    '], 'initial_field')
   call refuse_unknown(cfg % export, ['none    ', 'paraview'], 'export')
@@ -94,6 +96,7 @@ program spatio_temporal
        & '   faces ', space % num_faces, '   area ', sum(space % volume), &
        & '   form degree ', cfg % spatial_order, '   built in ', clock() - began, ' s'
 
+  call set_coarse_nodes(coarse_cells(space))
   call steps_of(cfg, dt, t)
   q0      = initial_field(cfg, space, nd, kappa)
   measure = field_measure(dt, space)
@@ -242,16 +245,15 @@ contains
        ! that is not uniform, so the level below has something to do
        lower(1, :) = 1.0_dp + 0.5_dp * mode_shape(space, a, b)
     end select
-
-    call set_aggregates(field_aggregates(space, 1, nd))
     q = consistent_states(van_der_pol(nd - 1), nd, lower, cfg % design, &
-         & spatial_rows(space, kappa, cfg % spatial_order, nd, nd - 1, 1))
+         & node_operator(space, kappa, cfg % spatial_order))
 
   end function initial_field
 
   !-------------------------------------------------------------------!
-  ! One row per family and order. Stage families keep their instants
-  ! between stages and are not yet laid out over a field.
+  ! One row per family and order named. The block over the field is
+  ! the chain's, a stage family's laid out by steps and every other
+  ! by instants.
   !-------------------------------------------------------------------!
 
   subroutine table(cfg, space, dt, t, q0, measure, nd, kappa)
@@ -264,9 +266,10 @@ contains
     class(family), allocatable :: scheme
     character(len=8), allocatable :: names(:)
     character(len=16) :: label
+    logical :: built
     integer :: i, order
 
-    names = [character(len=8) :: 'bdf', 'adams']
+    names = [character(len=8) :: 'bdf', 'adams', 'dirk']
 
     write(*,'(a)') ' '
     write(*,'(a)') '  scheme        f' // repeat(' ', 20) // 'derivatives in the design ...' // &
@@ -275,11 +278,8 @@ contains
     do i = 1, size(names)
        if (.not. lists(cfg % families, trim(names(i)))) cycle
        do order = 1, cfg % max_discretization_order
-          if (names(i) == 'bdf') then
-             allocate(scheme, source=bdf_family(order))
-          else
-             allocate(scheme, source=adams_family(order))
-          end if
+          call family_named(trim(names(i)), order, scheme, built)
+          if (.not. built) cycle
           write(label,'(a,i0)') trim(names(i)), order
           call one_row(cfg, space, dt, t, q0, measure, nd, kappa, scheme, trim(label))
           deallocate(scheme)
@@ -297,11 +297,14 @@ contains
     class(family)      , intent(in) :: scheme
     character(len=*)   , intent(in) :: label
 
-    type(block_residual) :: rows
+    type(family_holder) :: holder(1)
+    type(chain_block), allocatable :: chain(:)
+    type(stencil) :: op
     type(imbalance) :: left
-    real(dp), allocatable :: held(:), q(:), f(:), marched(:)
+    integer , allocatable :: instants(:)
+    real(dp), allocatable :: held(:), q(:), f(:), marched_dt(:), marched_t(:)
     real(dp) :: achieved, tangent, adjoint, unused
-    integer  :: h, n, m
+    integer  :: h, n, m, k, i
     character(len=:), allocatable :: line
     character(len=20) :: cell
 
@@ -309,27 +312,30 @@ contains
     h = scheme % history_depth(nd - 1)
     if (h >= n) return
 
-    call set_aggregates(field_aggregates(space, 1 + (h - 1) * max(cfg % startup_refinement, 1), nd))
-    held = field_startup(adams_family(2), van_der_pol(nd - 1), nd, h, &
-         & max(cfg % startup_refinement, 1), dt, space, kappa, cfg % spatial_order, &
-         & cfg % design, q0)
+    op = node_operator(space, kappa, cfg % spatial_order)
 
-    rows = block_of(scheme, van_der_pol(nd - 1), nd, n, dt, held, nodes=space % num_cells, &
-         & spatial=spatial_rows(space, kappa, cfg % spatial_order, nd, scheme % primary_degree(nd - 1), n))
+    ! the first h instants from the initial field, then the march as
+    ! one block of a chain, over the nodes with the level below laid on
+    call startup_trajectory(van_der_pol(nd - 1), nd, h, cfg % startup_refinement, dt, &
+         & cfg % design, q0, held, nodes=space % num_cells, spatial=op)
+    allocate(holder(1) % scheme, source=scheme)
+    call march_chain(holder, [n], van_der_pol(nd - 1), nd, chosen_grid(cfg), cfg % design, &
+         & held, chain, marched_dt, marched_t, achieved, left=left, &
+         & nodes=space % num_cells, spatial=op)
+    if (any(marched_dt /= dt)) error stop 'spatio_temporal: the chain marches the steps given'
 
-    call set_aggregates(field_aggregates(space, n, nd))
-
-    ! the state by the sweep chosen; the expansion from that state
-    call swept(rows, cfg % design, space % num_cells, marched, achieved, left)
-    call block_expansion(rows, van_der_pol(nd - 1), van_der_pol_energy(nd - 1), nd, &
-         & scheme % primary_degree(nd - 1), rows % points_at(), measure, cfg % design, &
-         & cfg % max_derivative_degree, q, f, unused, given=marched, nodes=space % num_cells)
+    ! the expansion from the marched state; the functional is read at
+    ! the instants, node by node, with the measure at each
+    instants = [((chain(1) % instants_at(k) + (i - 1) * nd, i = 1, space % num_cells), k = 1, n)]
+    call block_expansion(chain(1) % rows, van_der_pol(nd - 1), van_der_pol_energy(nd - 1), nd, &
+         & scheme % primary_degree(nd - 1), instants, measure, cfg % design, &
+         & cfg % max_derivative_degree, q, f, unused, given=chain(1) % state)
 
     ! the two routes are compared where a derivative was asked for
     tangent = 0.0_dp
     adjoint = 0.0_dp
     if (cfg % max_derivative_degree >= 1) then
-       call both_routes(rows, space, nd, n, measure, cfg % design, q, tangent, adjoint)
+       call both_routes(chain(1) % rows, instants, nd, measure, cfg % design, q, tangent, adjoint)
     end if
 
     line = '  ' // label // repeat(' ', max(1, 10 - len(label)))
@@ -349,40 +355,51 @@ contains
     end if
 
     if (trim(cfg % check) == 'ode')  call against_the_ode(cfg, space, dt, nd, scheme, held, f)
-    if (trim(cfg % check) == 'mode') call against_the_mode(cfg, space, t, nd, kappa, q, n)
-    if (trim(cfg % export) == 'paraview') call exported(cfg, space, nd, n, q, label)
+    if (trim(cfg % check) == 'mode') call against_the_mode(cfg, space, t, nd, kappa, q, instants, n)
+    if (trim(cfg % export) == 'paraview') call exported(cfg, space, nd, n, q, instants, label)
 
   end subroutine one_row
 
   !-------------------------------------------------------------------!
   ! The gradient in the design by both routes, each one substitution
-  ! against the same factorisation.
+  ! against the same factorisation. The functional reads the instants
+  ! one after another wherever the block keeps them, and its gradient
+  ! is put back where they lie.
   !-------------------------------------------------------------------!
 
-  subroutine both_routes(rows, space, nd, n, measure, design, q, tangent, adjoint)
+  subroutine both_routes(rows, instants, nd, measure, design, q, tangent, adjoint)
 
     type(block_residual), intent(in)  :: rows
-    type(room)          , intent(in)  :: space
-    integer             , intent(in)  :: nd, n
+    integer             , intent(in)  :: instants(:), nd
     real(dp)            , intent(in)  :: measure(:), design, q(:)
     real(dp)            , intent(out) :: tangent, adjoint
 
     type(stored_directed_graph) :: unknowns, points
     type(stored_field), allocatable :: inputs(:)
-    real(dp), allocatable :: g(:), rate(:)
-    integer :: num_points, mark
+    type(stored_field) :: state, knobs
+    real(dp), allocatable :: g(:), rate(:), at_instants(:)
+    integer :: num_points, mark, p, d
 
-    num_points = n * space % num_cells
+    num_points = size(instants)
     points     = stored_directed_graph(num_points, tails=[integer ::], heads=[integer ::])
-    call frozen_inputs(q, design, num_points, unknowns, inputs)
+    state      = stored_field('state', points % vertex_set(), num_points * nd)
+    knobs      = stored_field('design', points % vertex_set(), num_points)
+    call state % set_real_vector([((q(instants(p) + d + 1), d = 0, nd - 1), p = 1, num_points)])
+    call knobs % set_real_vector(spread(design, 1, num_points))
+    call functional_gradient(van_der_pol_energy(nd - 1), points, [state, knobs], &
+         & measure, num_points, nd, points % vertex_set(), at_instants)
+    allocate(g(rows % num_unknowns()), source=0.0_dp)
+    do p = 1, num_points
+       do d = 0, nd - 1
+          g(instants(p) + d + 1) = at_instants((p - 1) * nd + d + 1)
+       end do
+    end do
 
-    call functional_gradient(van_der_pol_energy(nd - 1), points, inputs, &
-         & measure, num_points, nd, unknowns % vertex_set(), g)
-    call design_partial(rows, unknowns, inputs, num_points, unknowns % vertex_set(), rate)
-
+    call frozen_inputs(q, design, rows % num_points(), unknowns, inputs)
+    call design_partial(rows, unknowns, inputs, rows % num_points(), unknowns % vertex_set(), rate)
     mark    = fresh_stamp()
-    tangent = by_tangent(rows, unknowns, inputs, g, rate, 0.0_dp, space % num_cells, mark)
-    adjoint = by_adjoint(rows, unknowns, inputs, g, rate, 0.0_dp, space % num_cells, mark)
+    tangent = by_tangent(rows, unknowns, inputs, g, rate, 0.0_dp, mark)
+    adjoint = by_adjoint(rows, unknowns, inputs, g, rate, 0.0_dp, mark)
 
   end subroutine both_routes
 
@@ -400,9 +417,9 @@ contains
     real(dp)           , intent(in) :: dt(:), held(:), f_field(:)
     integer            , intent(in) :: nd
     class(family)      , intent(in) :: scheme
-
-    type(block_residual) :: rows
-    real(dp), allocatable :: held_node(:), q(:), f(:)
+    type(family_holder) :: holder(1)
+    type(chain_block), allocatable :: chain(:)
+    real(dp), allocatable :: held_node(:), q(:), f(:), node_dt(:), node_t(:)
     real(dp) :: achieved, area
     integer  :: h, k, d, nodes
     character(len=:), allocatable :: line
@@ -413,11 +430,12 @@ contains
     area  = sum(space % volume)
 
     held_node = [((held(unknown(k, d, nd, 1, nodes)), d = 0, nd - 1), k = 1, h)]
-
-    rows = block_of(scheme, van_der_pol(nd - 1), nd, cfg % instants, dt, held_node)
-    call block_expansion(rows, van_der_pol(nd - 1), van_der_pol_energy(nd - 1), nd, &
-         & scheme % primary_degree(nd - 1), rows % points_at(), dt, cfg % design, &
-         & cfg % max_derivative_degree, q, f, achieved)
+    allocate(holder(1) % scheme, source=scheme)
+    call march_chain(holder, [cfg % instants], van_der_pol(nd - 1), nd, chosen_grid(cfg), &
+         & cfg % design, held_node, chain, node_dt, node_t, achieved)
+    call block_expansion(chain(1) % rows, van_der_pol(nd - 1), van_der_pol_energy(nd - 1), nd, &
+         & scheme % primary_degree(nd - 1), chain(1) % instants_at, dt, cfg % design, &
+         & cfg % max_derivative_degree, q, f, achieved, given=chain(1) % state)
 
     line = '      field / area over the node, less one:'
     do d = 0, ubound(f, 1) - lbound(f, 1)
@@ -436,12 +454,12 @@ contains
   ! second time alone.
   !-------------------------------------------------------------------!
 
-  subroutine against_the_mode(cfg, space, t, nd, kappa, q, n)
+  subroutine against_the_mode(cfg, space, t, nd, kappa, q, instants, n)
 
     type(configuration), intent(in) :: cfg
     type(room)         , intent(in) :: space
     real(dp)           , intent(in) :: t(:), kappa, q(:)
-    integer            , intent(in) :: nd, n
+    integer            , intent(in) :: nd, instants(:), n
 
     real(dp) :: pi, omega, omega_h, exact, semi, e_exact, e_semi, area, mode
     real(dp), allocatable :: shape(:), balanced(:)
@@ -469,8 +487,8 @@ contains
        mode  = shape(i)
        exact = mode * cos(omega   * t(n))
        semi  = mode * cos(omega_h * t(n))
-       e_exact = e_exact + space % volume(i) * (q(unknown(n, 0, nd, i, nodes)) - exact) ** 2
-       e_semi  = e_semi  + space % volume(i) * (q(unknown(n, 0, nd, i, nodes)) - semi) ** 2
+       e_exact = e_exact + space % volume(i) * (q(instants((n - 1) * nodes + i) + 1) - exact) ** 2
+       e_semi  = e_semi  + space % volume(i) * (q(instants((n - 1) * nodes + i) + 1) - semi) ** 2
     end do
 
     write(*,'(a,es12.3,a,es12.3,a,f10.6,a,f10.6)') &
@@ -508,11 +526,11 @@ contains
   ! series as time.
   !-------------------------------------------------------------------!
 
-  subroutine exported(cfg, space, nd, n, q, label)
+  subroutine exported(cfg, space, nd, n, q, instants, label)
 
     type(configuration), intent(in) :: cfg
     type(room)         , intent(in) :: space
-    integer            , intent(in) :: nd, n
+    integer            , intent(in) :: nd, n, instants(:)
     real(dp)           , intent(in) :: q(:)
     character(len=*)   , intent(in) :: label
 
@@ -530,7 +548,7 @@ contains
     do k = 1, n
        do i = 1, nodes
           do d = 0, nd - 1
-             values(i, d + 1) = q(unknown(k, d, nd, i, nodes))
+             values(i, d + 1) = q(instants((k - 1) * nodes + i) + d + 1)
           end do
        end do
        write(path,'(a,a,a,a,i4.4,a)') trim(cfg % export_path), '_', label, '_', k, '.vtu'

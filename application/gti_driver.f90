@@ -14,11 +14,15 @@ module gti_driver
   use operation_grid   , only : grid, uniform_grid, random_grid
   use gti_configuration, only : configuration, read_configuration, override
   use gti_march        , only : partitioned
+  use operation_family , only : family
+  use operation_family_bdf  , only : bdf_family
+  use operation_family_adams, only : adams_family
+  use operation_family_dirk , only : implicit_midpoint, crouzeix_two_stage, crouzeix_three_stage
 
   implicit none
 
   private
-  public :: settings, chosen_grid, steps_of, clock, cosine
+  public :: settings, chosen_grid, steps_of, clock, cosine, family_named
 
 contains
 
@@ -111,5 +115,41 @@ contains
     end select
 
   end function cosine
+
+  !-------------------------------------------------------------------!
+  ! One family, by name and order. A name or an order no family is
+  ! built for is reported rather than refused, so a table may pass
+  ! it over.
+  !-------------------------------------------------------------------!
+
+  subroutine family_named(name, order, scheme, ok)
+
+    character(len=*), intent(in)  :: name
+    integer         , intent(in)  :: order
+    class(family), allocatable, intent(out) :: scheme
+    logical         , intent(out) :: ok
+
+    ok = .true.
+    select case (name)
+    case ('bdf')
+       allocate(scheme, source=bdf_family(order))
+    case ('adams')
+       allocate(scheme, source=adams_family(order))
+    case ('dirk')
+       select case (order)
+       case (2)
+          allocate(scheme, source=implicit_midpoint())
+       case (3)
+          allocate(scheme, source=crouzeix_two_stage())
+       case (4)
+          allocate(scheme, source=crouzeix_three_stage())
+       case default
+          ok = .false.
+       end select
+    case default
+       ok = .false.
+    end select
+
+  end subroutine family_named
 
 end module gti_driver

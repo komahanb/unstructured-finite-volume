@@ -58,13 +58,15 @@ module gti_chain
 
   use util_precision  , only : dp
   use operation_family , only : family
-  use operation_grid   , only : grid
+  use operation_grid   , only : grid, designed_grid
   use physics_integrand, only : nodal_integrand
   use gti_expansion    , only : family_holder, marches_by_stages
   use gti_block        , only : block_residual
   use gti_march        , only : imbalance, swept, solved_linear, fresh_stamp, partitioned, horizon_bounds, block_of, solved, &
        & frozen_inputs
   use gti_stage        , only : stage_block_of, instant_at
+  use operation_stencil, only : stencil
+  use operation_family_dirk, only : crouzeix_three_stage
   use view_directed_stored, only : stored_directed_graph
   use field_calculus   , only : field
   use field_stored     , only : stored_field
@@ -78,7 +80,7 @@ module gti_chain
   implicit none
 
   private
-  public :: chain_block, march_chain, chain_expansion, instant_components
+  public :: chain_block, march_chain, chain_expansion, instant_components, startup_trajectory
   public :: chain_system, chain_systems, chain_by_tangent, chain_by_adjoint
   public :: expansion_substitutions
 
@@ -98,6 +100,9 @@ module gti_chain
      integer               :: last  = 0
      integer               :: given = 0
      integer               :: primary = 0
+
+     ! the components one instant holds: the degrees at every node
+     integer :: width = 0
 
   end type chain_block
 
@@ -127,10 +132,10 @@ contains
   ! both and reads the same either way, so the earlier is taken.
   !===================================================================!
 
-  pure function instant_components(chain, instant, degrees) result(x)
+  pure function instant_components(chain, instant) result(x)
 
     type(chain_block), intent(in) :: chain(:)
-    integer          , intent(in) :: instant, degrees
+    integer          , intent(in) :: instant
     real(dp), allocatable :: x(:)
 
     integer :: b, local, at
@@ -139,7 +144,7 @@ contains
        if (instant < chain(b) % first .or. instant > chain(b) % last) cycle
        local = instant - chain(b) % first + 1
        at    = chain(b) % instants_at(local)
-       x     = chain(b) % state(at + 1:at + degrees)
+       x     = chain(b) % state(at + 1:at + chain(b) % width)
        return
     end do
 
@@ -153,19 +158,19 @@ contains
   ! by instant, degrees within an instant.
   !===================================================================!
 
-  pure function handed_over(earlier, first, given, degrees) result(held)
+  pure function handed_over(earlier, first, given) result(held)
 
     type(chain_block), intent(in) :: earlier(:)
-    integer          , intent(in) :: first, given, degrees
+    integer          , intent(in) :: first, given
     real(dp), allocatable :: held(:)
 
-    integer :: i
+    integer :: i, width
 
-    allocate(held(given * degrees))
+    width = earlier(1) % width
+    allocate(held(given * width))
 
     do i = 1, given
-       held((i - 1) * degrees + 1:i * degrees) = &
-            & instant_components(earlier, first + i - 1, degrees)
+       held((i - 1) * width + 1:i * width) = instant_components(earlier, first + i - 1)
     end do
 
   end function handed_over
@@ -176,7 +181,7 @@ contains
   ! per instant.
   !===================================================================!
 
-  subroutine built(scheme, physics, degrees, n, dt, held, rows, instants_at)
+  subroutine built(scheme, physics, degrees, n, dt, held, rows, instants_at, nodes, spatial)
 
     class(family)         , intent(in)  :: scheme
     class(nodal_integrand), intent(in)  :: physics
@@ -184,15 +189,20 @@ contains
     real(dp)              , intent(in)  :: dt(:), held(:)
     type(block_residual)  , intent(out) :: rows
     integer, allocatable  , intent(out) :: instants_at(:)
+    integer      , intent(in), optional :: nodes
+    type(stencil), intent(in), optional :: spatial
 
-    integer :: k
+    integer :: k, width
+
+    width = degrees
+    if (present(nodes)) width = degrees * nodes
 
     if (marches_by_stages(scheme, degrees)) then
-       rows        = stage_block_of(scheme, physics, degrees, n, dt, held)
-       instants_at = [(instant_at(k, scheme % num_stages(), degrees), k = 1, n)]
+       rows        = stage_block_of(scheme, physics, degrees, n, dt, held, nodes, spatial)
+       instants_at = [(instant_at(k, scheme % num_stages(), width), k = 1, n)]
     else
-       rows        = block_of(scheme, physics, degrees, n, dt, held)
-       instants_at = [((k - 1) * degrees, k = 1, n)]
+       rows        = block_of(scheme, physics, degrees, n, dt, held, nodes, spatial)
+       instants_at = [((k - 1) * width, k = 1, n)]
     end if
 
   end subroutine built
@@ -203,7 +213,7 @@ contains
   !===================================================================!
 
   subroutine march_chain(schemes, added, physics, degrees, steps, &
-       & design, initial, chain, dt, t, achieved, grid_design, left)
+       & design, initial, chain, dt, t, achieved, grid_design, left, nodes, spatial)
 
     type(family_holder)   , intent(in) :: schemes(:)
     integer               , intent(in) :: added(:), degrees
@@ -215,6 +225,8 @@ contains
     real(dp)              , intent(out) :: achieved
     real(dp), intent(in), optional     :: grid_design(:)
     type(imbalance), intent(out), optional :: left
+    integer        , intent(in) , optional :: nodes
+    type(stencil)  , intent(in) , optional :: spatial
 
     type(imbalance) :: one_left
     integer , allocatable :: first(:), last(:)
@@ -234,7 +246,7 @@ contains
     call tally_enter(at_horizon)
     do b = 1, size(added)
        call one_block(chain, b, schemes(b) % scheme, physics, degrees, &
-            & first(b), last(b), dt, design, initial, one_achieved, one_left)
+            & first(b), last(b), dt, design, initial, one_achieved, one_left, nodes, spatial)
        achieved = max(achieved, one_achieved)
 
        ! The report kept is the first block's that did not converge:
@@ -255,7 +267,7 @@ contains
   !===================================================================!
 
   subroutine one_block(chain, b, scheme, physics, degrees, first, last, dt, &
-       & design, initial, achieved, left)
+       & design, initial, achieved, left, nodes, spatial)
 
     type(chain_block)     , intent(inout) :: chain(:)
     integer               , intent(in)    :: b, degrees, first, last
@@ -264,6 +276,8 @@ contains
     real(dp)              , intent(in)    :: dt(:), design, initial(:)
     real(dp)              , intent(out)   :: achieved
     type(imbalance)       , intent(out)   :: left
+    integer      , intent(in), optional   :: nodes
+    type(stencil), intent(in), optional   :: spatial
 
     real(dp), allocatable :: held(:)
 
@@ -271,11 +285,13 @@ contains
     chain(b) % last    = last
     chain(b) % given   = scheme % history_depth(degrees - 1)
     chain(b) % primary = scheme % primary_degree(degrees - 1)
+    chain(b) % width   = degrees
+    if (present(nodes)) chain(b) % width = degrees * nodes
 
     if (b == 1) then
        held = initial
     else
-       held = handed_over(chain(1:b - 1), first, chain(b) % given, degrees)
+       held = handed_over(chain(1:b - 1), first, chain(b) % given)
     end if
 
     ! A block whose scheme keeps stages within a step is filed under
@@ -285,15 +301,107 @@ contains
     else
        call tally_enter(at_block)
     end if
-
     call built(scheme, physics, degrees, last - first + 1, dt(first:last), &
-         & held, chain(b) % rows, chain(b) % instants_at)
-
-    call swept(chain(b) % rows, design, 1, chain(b) % state, achieved, left)
+         & held, chain(b) % rows, chain(b) % instants_at, nodes, spatial)
+    call swept(chain(b) % rows, design, chain(b) % state, achieved, left)
 
     call tally_leave()
 
   end subroutine one_block
+
+  !===================================================================!
+  ! The first widest instants of a march, from the initial state: a
+  ! stage family of order four, which reads one instant back, marched
+  ! over the first widest - 1 steps with each split refinement ways,
+  ! and sampled back at the instants. The steps given are the march's
+  ! own, dt(k) ending at instant k with dt(1) zero. Over a field the
+  ! nodes and the level below are laid on its blocks as on the march's.
+  !===================================================================!
+
+  subroutine startup_trajectory(physics, degrees, widest, refinement, dt, design, &
+       & initial, held, nodes, spatial)
+
+    class(nodal_integrand), intent(in)  :: physics
+    integer               , intent(in)  :: degrees, widest, refinement
+    real(dp)              , intent(in)  :: dt(:), design, initial(:)
+    real(dp), allocatable , intent(out) :: held(:)
+    integer      , intent(in), optional :: nodes
+    type(stencil), intent(in), optional :: spatial
+
+    type(family_holder), allocatable :: schemes(:)
+    type(chain_block)  , allocatable :: chain(:)
+    integer , allocatable :: added(:)
+    real(dp), allocatable :: fine_dt(:), fine_t(:), substeps(:)
+    real(dp) :: achieved, span
+    integer :: k, r, b
+
+    if (widest == 1) then
+       held = initial
+       return
+    end if
+
+    r        = max(refinement, 1)
+    substeps = [(dt(1 + (k - 1) / r + 1) / real(r, dp), k = 1, (widest - 1) * r)]
+    span     = sum(substeps)
+
+    added = in_pieces((widest - 1) * r + 1)
+    allocate(schemes(size(added)))
+    do b = 1, size(added)
+       allocate(schemes(b) % scheme, source=crouzeix_three_stage())
+    end do
+
+    call march_chain(schemes, added, physics, degrees, designed_grid(span), design, &
+         & initial, chain, fine_dt, fine_t, achieved, grid_design=substeps, &
+         & nodes=nodes, spatial=spatial)
+    call sampled(chain, widest, r, held)
+
+  end subroutine startup_trajectory
+
+  !===================================================================!
+  ! A horizon of that many instants cut into blocks of a few steps
+  ! each, the first taking the remainder, so that a startup over a
+  ! fine grid is marched piece by piece rather than whole.
+  !===================================================================!
+
+  pure function in_pieces(instants) result(added)
+
+    integer, intent(in) :: instants
+    integer, allocatable :: added(:)
+
+    integer, parameter :: piece = 4
+    integer :: blocks
+
+    if (instants <= piece + 1) then
+       added = [instants]
+       return
+    end if
+
+    blocks = (instants - 1) / piece
+    allocate(added(blocks))
+    added    = piece
+    added(1) = instants - piece * (blocks - 1)
+
+  end function in_pieces
+
+  !===================================================================!
+  ! The fine march read at every r-th instant, instant by instant.
+  !===================================================================!
+
+  subroutine sampled(chain, widest, r, held)
+
+    type(chain_block), intent(in)  :: chain(:)
+    integer          , intent(in)  :: widest, r
+    real(dp), allocatable, intent(out) :: held(:)
+
+    integer :: k, width
+
+    width = chain(1) % width
+    allocate(held(widest * width))
+    do k = 1, widest
+       held((k - 1) * width + 1:k * width) = instant_components(chain, 1 + (k - 1) * r)
+    end do
+
+  end subroutine sampled
 
   !===================================================================!
   ! The instants one block owns: the ones it computed, and for the
@@ -424,13 +532,13 @@ contains
     if (b == 1) then
        call order_of_series(chain(b) % rows, physics, unknowns, inputs, degrees, &
             & chain(b) % rows % points_at(), chain(b) % primary, chain(b) % rows % num_carried(), &
-            & design, m, series(:, 1:count, b), mark, 1, w)
+            & design, m, series(:, 1:count, b), mark, w)
     else
        held = coefficients_handed(chain(1:b - 1), chain(b) % first, &
-            & chain(b) % given, degrees, series, m)
+            & chain(b) % given, series, m)
        call order_of_series(chain(b) % rows, physics, unknowns, inputs, degrees, &
             & chain(b) % rows % points_at(), chain(b) % primary, chain(b) % rows % num_carried(), &
-            & design, m, series(:, 1:count, b), mark, 1, w, handed=held)
+            & design, m, series(:, 1:count, b), mark, w, handed=held)
     end if
     series(m, 1:count, b) = w
 
@@ -443,17 +551,18 @@ contains
   ! instant.
   !===================================================================!
 
-  pure function coefficients_handed(earlier, first, given, degrees, series, order) &
+  pure function coefficients_handed(earlier, first, given, series, order) &
        & result(held)
 
     type(chain_block), intent(in) :: earlier(:)
-    integer          , intent(in) :: first, given, degrees, order
+    integer          , intent(in) :: first, given, order
     real(dp)         , intent(in) :: series(0:, :, :)
     real(dp), allocatable :: held(:)
 
-    integer :: i, b, local, at
+    integer :: i, b, local, at, width
 
-    allocate(held(given * degrees), source=0.0_dp)
+    width = earlier(1) % width
+    allocate(held(given * width), source=0.0_dp)
 
     do i = 1, given
        do b = 1, size(earlier)
@@ -461,7 +570,7 @@ contains
           if (first + i - 1 > earlier(b) % last) cycle
           local = first + i - 1 - earlier(b) % first + 1
           at    = earlier(b) % instants_at(local)
-          held((i - 1) * degrees + 1:i * degrees) = series(order, at + 1:at + degrees, b)
+          held((i - 1) * width + 1:i * width) = series(order, at + 1:at + width, b)
           exit
        end do
     end do
@@ -690,19 +799,19 @@ contains
 
     do b = 1, size(chain)
        rhs = -systems(b) % rate
-
-       do i = 1, chain(b) % given * degrees
-          k = chain(b) % first + (i - 1) / degrees
-          d = mod(i - 1, degrees)
+       do i = 1, chain(b) % given * chain(b) % width
+          k = chain(b) % first + (i - 1) / chain(b) % width
+          d = mod(i - 1, chain(b) % width)
           call holder_of(chain(1:b - 1), k, degrees, held_by, at)
           if (held_by > 0) rhs(i) = w(at + d + 1, held_by)
        end do
 
        call frozen_at(chain(b), design, unknowns, inputs)
-       call solved_linear(chain(b) % rows, unknowns, inputs, rhs, .false., systems(b) % mark, 1, one)
+       call solved_linear(chain(b) % rows, unknowns, inputs, rhs, .false., systems(b) % mark, one)
        w(1:size(one), b) = one
        df = df + dot_product(systems(b) % g, one)
     end do
+    associate (u1 => degrees); end associate
 
   end function chain_by_tangent
 
@@ -740,18 +849,17 @@ contains
     do b = size(chain), 1, -1
        call frozen_at(chain(b), design, unknowns, inputs)
        call solved_linear(chain(b) % rows, unknowns, inputs, &
-            & rhs(1:chain(b) % rows % num_unknowns(), b), .true., systems(b) % mark, 1, lambda)
+            & rhs(1:chain(b) % rows % num_unknowns(), b), .true., systems(b) % mark, lambda)
        df = df - dot_product(lambda, systems(b) % rate)
-
-       do i = 1, chain(b) % given * degrees
-          k = chain(b) % first + (i - 1) / degrees
-          d = mod(i - 1, degrees)
+       do i = 1, chain(b) % given * chain(b) % width
+          k = chain(b) % first + (i - 1) / chain(b) % width
+          d = mod(i - 1, chain(b) % width)
           call holder_of(chain(1:b - 1), k, degrees, held_by, at)
           if (held_by > 0) rhs(at + d + 1, held_by) = rhs(at + d + 1, held_by) + lambda(i)
        end do
-
        associate (u1 => c); end associate
     end do
+    associate (u2 => degrees); end associate
 
   end function chain_by_adjoint
 

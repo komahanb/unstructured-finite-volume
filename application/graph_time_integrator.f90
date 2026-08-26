@@ -62,9 +62,7 @@ program graph_time_integrator
   use operation_family      , only : family
   use operation_family_bdf  , only : bdf_family
   use operation_family_adams, only : adams_family
-  use operation_family_dirk , only : implicit_midpoint, crouzeix_two_stage, &
-       & crouzeix_three_stage
-  use operation_grid        , only : uniform_grid, random_grid, designed_grid
+  use operation_grid        , only : uniform_grid, random_grid
   use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
   use operation_grid        , only : grid
   use gti_march             , only : partitioned, set_stopping, consistent_state, imbalance, set_sweep, &
@@ -74,10 +72,10 @@ program graph_time_integrator
   use gti_expansion         , only : family_holder
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
        & expansion_substitutions, &
-       & instant_components
+       & started => startup_trajectory
   use gti_sweeps            , only : set_linear_solver, set_assembly, set_storage, set_multigrid
   use operation_minimization, only : relative, absolute, by_count, by_rate
-  use gti_driver            , only : settings, chosen_grid, steps_of
+  use gti_driver            , only : settings, chosen_grid, steps_of, family_named
   use gti_configuration     , only : configuration, read_configuration, override, show, &
        & lists, refuse_unknown, worded
   use util_tally            , only : tally_open, tally_close, tally_order, &
@@ -179,6 +177,9 @@ contains
   ! invented: a stage family over the startup, on a grid refined
   ! within each of its steps, sampled back at the coarse instants.
   !-------------------------------------------------------------------!
+  ! The first widest instants, marched by the chain's startup from the
+  ! state at rest.
+  !-------------------------------------------------------------------!
 
   subroutine startup_trajectory(cfg, dt, widest, held)
 
@@ -187,87 +188,10 @@ contains
     integer            , intent(in)  :: widest
     real(dp), allocatable, intent(out) :: held(:)
 
-    type(family_holder), allocatable :: schemes(:)
-    type(chain_block) , allocatable :: chain(:)
-    integer , allocatable :: added(:)
-    real(dp), allocatable :: fine_dt(:), fine_t(:), substeps(:)
-    real(dp) :: achieved, span
-    integer :: nd, k, r, b
-
-    nd = cfg % state_degree + 1
-
-    if (widest == 1) then
-       held = at_rest(cfg)
-       return
-    end if
-
-    r        = max(cfg % startup_refinement, 1)
-    substeps = [(dt(1 + (k - 1) / r + 1) / real(r, dp), k = 1, (widest - 1) * r)]
-    span     = sum(substeps)
-
-    added = in_pieces((widest - 1) * r + 1)
-    allocate(schemes(size(added)))
-    do b = 1, size(added)
-       allocate(schemes(b) % scheme, source=crouzeix_three_stage())
-    end do
-
-    call march_chain(schemes, added, van_der_pol(cfg % state_degree), &
-         & nd, designed_grid(span), cfg % design, at_rest(cfg), chain, &
-         & fine_dt, fine_t, achieved, grid_design = substeps)
-
-    call sampled(chain, nd, widest, r, held)
+    call started(van_der_pol(cfg % state_degree), cfg % state_degree + 1, widest, &
+         & cfg % startup_refinement, dt, cfg % design, at_rest(cfg), held)
 
   end subroutine startup_trajectory
-
-  !-------------------------------------------------------------------!
-  ! A count of instants split into blocks short enough that each is
-  ! cheap to solve. Every block after the first shares one instant
-  ! with the one before it, which is what a stage family looks back
-  ! over, so the pieces add to the whole.
-  !-------------------------------------------------------------------!
-
-  pure function in_pieces(instants) result(added)
-
-    integer, intent(in) :: instants
-    integer, allocatable :: added(:)
-
-    integer, parameter :: piece = 4
-    integer :: blocks
-
-    if (instants <= piece + 1) then
-       added = [instants]
-       return
-    end if
-
-    blocks = (instants - 1) / piece
-    allocate(added(blocks))
-
-    added    = piece
-    added(1) = instants - piece * (blocks - 1)
-
-  end function in_pieces
-
-  !-------------------------------------------------------------------!
-  ! The refined trajectory read back at the coarse instants, which
-  ! are every r-th instant of it.
-  !-------------------------------------------------------------------!
-
-  subroutine sampled(chain, nd, widest, r, held)
-
-    type(chain_block), intent(in)  :: chain(:)
-    integer          , intent(in)  :: nd, widest, r
-    real(dp), allocatable, intent(out) :: held(:)
-
-    integer :: k
-
-    allocate(held(widest * nd))
-
-    do k = 1, widest
-       held((k - 1) * nd + 1:k * nd) = &
-            & instant_components(chain, 1 + (k - 1) * r, nd)
-    end do
-
-  end subroutine sampled
 
   !-------------------------------------------------------------------!
   ! One family, by name and order. A stage family says that it is
@@ -281,29 +205,9 @@ contains
     class(family), allocatable, intent(out) :: scheme
     logical         , intent(out) :: staged, ok
 
+    call family_named(name, order, scheme, ok)
     staged = .false.
-    ok     = .true.
-
-    select case (name)
-    case ('bdf')
-       allocate(scheme, source=bdf_family(order))
-    case ('adams')
-       allocate(scheme, source=adams_family(order))
-    case ('dirk')
-       staged = .true.
-       select case (order)
-       case (2)
-          allocate(scheme, source=implicit_midpoint())
-       case (3)
-          allocate(scheme, source=crouzeix_two_stage())
-       case (4)
-          allocate(scheme, source=crouzeix_three_stage())
-       case default
-          ok = .false.
-       end select
-    case default
-       ok = .false.
-    end select
+    if (ok) staged = scheme % num_stages() > 1
 
   end subroutine chosen
 

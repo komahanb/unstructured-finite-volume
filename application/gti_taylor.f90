@@ -122,13 +122,13 @@ contains
   !===================================================================!
 
   subroutine order_of_series(rows, physics, on, inputs, degrees, at, primary, carried, &
-       & design, m, series, mark, nodes, w, handed)
+       & design, m, series, mark, w, handed)
 
     type(block_residual)  , intent(in)    :: rows
     class(nodal_integrand), intent(in)    :: physics
     class(directed_graph) , intent(in)    :: on
     type(stored_field)    , intent(in)    :: inputs(:)
-    integer               , intent(in)    :: degrees, at(:), primary, carried, m, nodes
+    integer               , intent(in)    :: degrees, at(:), primary, carried, m
     real(dp)              , intent(in)    :: design, series(0:, :)
     integer               , intent(inout) :: mark
     real(dp), allocatable , intent(out)   :: w(:)
@@ -144,7 +144,7 @@ contains
     call placed(coefficient, at, primary, carried, r)
     if (present(handed)) r(1:carried) = -handed
 
-    call solved_linear(rows, on, inputs, -r, .false., mark, nodes, w)
+    call solved_linear(rows, on, inputs, -r, .false., mark, w)
 
   end subroutine order_of_series
 
@@ -176,7 +176,7 @@ contains
   !===================================================================!
 
   subroutine block_expansion(rows, physics, integrand, degrees, primary, &
-       & instants_at, dt, design, max_order, q, f, achieved, given, nodes)
+       & instants_at, dt, design, max_order, q, f, achieved, given)
 
     type(block_residual)  , intent(in) :: rows
     class(nodal_integrand), intent(in) :: physics, integrand
@@ -185,7 +185,6 @@ contains
     real(dp), allocatable , intent(out) :: q(:), f(:)
     real(dp)              , intent(out) :: achieved
     real(dp), intent(in), optional      :: given(:)
-    integer , intent(in), optional      :: nodes
 
     type(stored_directed_graph) :: unknowns
     type(stored_field), allocatable :: inputs(:)
@@ -204,7 +203,7 @@ contains
 
     call state_series(rows, physics, unknowns, inputs, degrees, &
          & rows % points_at(), primary, rows % num_carried(), design, &
-         & max_order, q, series, nodes_of(nodes))
+         & max_order, q, series)
     call functional_series(integrand, degrees, instants_at, design, max_order, &
          & series, dt, f)
 
@@ -216,17 +215,8 @@ contains
   ! side the orders beneath it determine.
   !===================================================================!
 
-  pure integer function nodes_of(nodes) result(n)
-
-    integer, intent(in), optional :: nodes
-
-    n = 1
-    if (present(nodes)) n = nodes
-
-  end function nodes_of
-
   subroutine state_series(rows, physics, on, inputs, degrees, at, primary, carried, &
-       & design, max_order, q, series, nodes)
+       & design, max_order, q, series)
 
     type(block_residual)  , intent(in) :: rows
     class(nodal_integrand), intent(in) :: physics
@@ -235,7 +225,6 @@ contains
     real(dp)              , intent(in) :: design, q(:)
     integer               , intent(in) :: degrees, at(:), primary, carried, max_order
     real(dp), allocatable , intent(out) :: series(:,:)
-    integer               , intent(in) :: nodes
 
     real(dp), allocatable :: w(:)
     integer :: m, mark
@@ -245,7 +234,7 @@ contains
 
     do m = 1, max_order
        call order_of_series(rows, physics, on, inputs, degrees, at, primary, carried, &
-            & design, m, series, mark, nodes, w)
+            & design, m, series, mark, w)
        series(m, :) = w
     end do
 

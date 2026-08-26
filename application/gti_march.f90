@@ -47,7 +47,7 @@ module gti_march
   use gti_expansion           , only : block_reach, family_holder
   use gti_block               , only : block_residual
   use gti_sweeps              , only : jacobian_of, assembly_present, multigrid_on, &
-       & aggregates_given, aggregates_of, set_aggregates, take_inner, keep_inner, forget_inner
+       & set_aggregates, coarse_nodes, take_inner, keep_inner, forget_inner
   use util_tally              , only : tally_record, tangent_loops, adjoint_loops
 
   implicit none
@@ -285,7 +285,10 @@ contains
     at      = [(unknown(1, 0, degrees, i, nodes) - 1, i = 1, nodes)]
 
     rows = block_residual(none, physics, at, nodes * degrees, degrees, degrees - 1, &
-         & carried, held, spatial=spatial)
+         & carried, held)
+    call rows % placed_in(spread(1, 1, nodes * degrees), &
+         & [((i, d = 0, degrees - 1), i = 1, nodes)], spread(1, 1, nodes * degrees))
+    if (present(spatial)) call rows % spatial_laid(spatial)
 
     call solved(rows, design_value, q, achieved)
 
@@ -498,12 +501,15 @@ contains
     end if
 
     rows = block_residual(scheme_rows(scheme, degrees, n, dt, m), physics, at, &
-         & n * m * degrees, degrees, scheme % primary_degree(degrees - 1), carried, held, &
-         & spatial=spatial)
+         & n * m * degrees, degrees, scheme % primary_degree(degrees - 1), carried, held)
 
-    ! where every unknown lies: instant k, node i
+    ! where every unknown lies: instant k, node i, and instant k is its
+    ! moment; the level below, a stencil over the nodes, is laid on
+    ! every instant
     call rows % placed_in([(((k, d = 0, degrees - 1), i = 1, m), k = 1, n)], &
-         &                [(((i, d = 0, degrees - 1), i = 1, m), k = 1, n)])
+         &                [(((i, d = 0, degrees - 1), i = 1, m), k = 1, n)], &
+         &                [(((k, d = 0, degrees - 1), i = 1, m), k = 1, n)])
+    if (present(spatial)) call rows % spatial_laid(spatial)
 
   end function block_of
 
@@ -553,6 +559,9 @@ contains
     ! every unknown lies in a point of degrees consecutive components,
     ! a stage's as much as an instant's, and a point is smoothed whole
     width = rows % num_degrees()
+    ! multigrid coarsens by aggregates read off the block: the coarse
+    ! cell of each unknown's node, at its own moment and degree
+    if (multigrid_on()) call set_aggregates(rows % aggregates(coarse_nodes(rows % num_nodes())))
     call take_inner(solver % inner, count, width)
     call solver % attach(rows, unknowns, unknowns % vertex_set(), count, &
          & held_inputs = [design])
@@ -601,14 +610,14 @@ contains
   ! same stamp, and a direct solver then factorises once.
   !===================================================================!
 
-  subroutine solved_linear(rows, unknowns, inputs, rhs, transposed, mark, nodes, w)
+  subroutine solved_linear(rows, unknowns, inputs, rhs, transposed, mark, w)
 
     type(block_residual)       , intent(in)  :: rows
     class(directed_graph)      , intent(in)  :: unknowns
     type(stored_field)         , intent(in)  :: inputs(:)
     real(dp)                   , intent(in)  :: rhs(:)
     logical                    , intent(in)  :: transposed
-    integer                    , intent(in)  :: mark, nodes
+    integer                    , intent(in)  :: mark
     real(dp), allocatable      , intent(out) :: w(:)
 
     type(block_residual) :: lin
@@ -621,7 +630,7 @@ contains
     end if
 
     lin = rows % linear_block(unknowns, inputs, rhs, transposed, mark)
-    call swept(lin, 0.0_dp, nodes, w, achieved)
+    call swept(lin, 0.0_dp, w, achieved)
 
   end subroutine solved_linear
 
@@ -632,34 +641,34 @@ contains
   ! through the sweep, against one tangent, stamped once.
   !===================================================================!
 
-  real(dp) function by_tangent(rows, unknowns, inputs, g, design_rate, explicit, nodes, &
-       & mark) result(df)
+  real(dp) function by_tangent(rows, unknowns, inputs, g, design_rate, explicit, mark) &
+       & result(df)
 
     type(block_residual) , intent(in) :: rows
     class(directed_graph), intent(in) :: unknowns
     type(stored_field)   , intent(in) :: inputs(:)
     real(dp)             , intent(in) :: g(:), design_rate(:), explicit
-    integer              , intent(in) :: nodes, mark
+    integer              , intent(in) :: mark
 
     real(dp), allocatable :: w(:)
 
-    call solved_linear(rows, unknowns, inputs, -design_rate, .false., mark, nodes, w)
+    call solved_linear(rows, unknowns, inputs, -design_rate, .false., mark, w)
     df = explicit + dot_product(g, w)
 
   end function by_tangent
 
-  real(dp) function by_adjoint(rows, unknowns, inputs, g, design_rate, explicit, nodes, &
-       & mark) result(df)
+  real(dp) function by_adjoint(rows, unknowns, inputs, g, design_rate, explicit, mark) &
+       & result(df)
 
     type(block_residual) , intent(in) :: rows
     class(directed_graph), intent(in) :: unknowns
     type(stored_field)   , intent(in) :: inputs(:)
     real(dp)             , intent(in) :: g(:), design_rate(:), explicit
-    integer              , intent(in) :: nodes, mark
+    integer              , intent(in) :: mark
 
     real(dp), allocatable :: lambda(:)
 
-    call solved_linear(rows, unknowns, inputs, g, .true., mark, nodes, lambda)
+    call solved_linear(rows, unknowns, inputs, g, .true., mark, lambda)
     df = explicit - dot_product(lambda, design_rate)
 
   end function by_adjoint
@@ -699,11 +708,10 @@ contains
   ! space sweep stops where the coupling has settled.
   !===================================================================!
 
-  subroutine swept(rows, design_value, nodes, q, achieved, left)
+  subroutine swept(rows, design_value, q, achieved, left)
 
     type(block_residual), intent(in)  :: rows
     real(dp)            , intent(in)  :: design_value
-    integer             , intent(in)  :: nodes
     real(dp), allocatable, intent(out) :: q(:)
     real(dp)            , intent(out) :: achieved
     type(imbalance), intent(out), optional :: left
@@ -712,11 +720,11 @@ contains
     type(newton) :: judge
     type(stored_directed_graph) :: unknowns
     type(stored_field) :: design
-    integer , allocatable :: member(:), whole(:), order(:), label(:)
+    integer , allocatable :: member(:), order(:), label(:)
     real(dp), allocatable :: piece(:)
     logical , allocatable :: is_carried(:)
     real(dp) :: sub_achieved, before
-    integer :: count, degrees, npts, members, m, mm, pass, k
+    integer :: count, npts, members, m, mm, pass, k
 
     if (trim(sweep_level) == 'space-time') then
        call solved(rows, design_value, q, achieved, left)
@@ -724,7 +732,6 @@ contains
     end if
 
     count   = rows % num_unknowns()
-    degrees = rows % num_degrees()
     npts    = rows % num_points()
 
     ! the level's members, read off the block's own labels: instants
@@ -762,8 +769,6 @@ contains
     ! last instant because its pattern says so
     call rows % member_order(trim(sweep_level) == 'time', order)
 
-    ! the block's aggregates, kept aside while the members set their own
-    if (multigrid_on()) call aggregates_of(whole)
 
     ! The residual where the sweep begins is what a relative target
     ! is measured against, as the first residual is for any march.
@@ -785,14 +790,13 @@ contains
           ! a step's stages and arriving instant each take the instant
           ! before them
           if (pass == 1 .and. trim(sweep_level) == 'time' .and. mm > 1) then
-             call continued(q, member, pack([(k, k = 1, count)], label == order(mm - 1)), degrees)
+             call continued(q, member, pack([(k, k = 1, count)], label == order(mm - 1)))
           end if
 
           sub = rows % restricted(member, q)
           if (rows % stamp() /= 0) then
              call sub % stamped(abs(rows % stamp()) * members + m, rows % stamp_transposed())
           end if
-          if (multigrid_on()) call set_aggregates(member_aggregates(member, whole))
           call solved(sub, design_value, piece, sub_achieved, seed=q(member))
           q(member) = piece
        end do
@@ -809,7 +813,6 @@ contains
 
     end do
 
-    if (multigrid_on()) call set_aggregates(whole)
 
     if (present(left)) then
        left % converged = judge % converged(achieved)
@@ -820,37 +823,6 @@ contains
     end if
 
   end subroutine swept
-
-  !-------------------------------------------------------------------!
-  ! The aggregates of a member, renumbered from one in the order they
-  ! first appear, so multigrid on the member coarsens as the whole
-  ! block would.
-  !-------------------------------------------------------------------!
-
-  function member_aggregates(member, whole) result(agg)
-
-    integer, intent(in) :: member(:)
-    integer, intent(in), allocatable :: whole(:)
-    integer, allocatable :: agg(:)
-
-    integer, allocatable :: renumbered(:)
-    integer :: i, next
-
-    if (.not. allocated(whole)) then
-       error stop 'gti_march: multigrid coarsens by aggregates, and none were given'
-    end if
-
-    allocate(agg(size(member)), renumbered(maxval(whole)), source=0)
-    next = 0
-    do i = 1, size(member)
-       if (renumbered(whole(member(i))) == 0) then
-          next = next + 1
-          renumbered(whole(member(i))) = next
-       end if
-       agg(i) = renumbered(whole(member(i)))
-    end do
-
-  end function member_aggregates
 
   real(dp) function whole_residual(rows, unknowns, design, q) result(norm)
 
@@ -884,22 +856,30 @@ contains
   ! its own arriving instant begin.
   !-------------------------------------------------------------------!
 
-  subroutine continued(q, member, earlier, degrees)
+  subroutine continued(q, member, earlier)
 
     real(dp), intent(inout) :: q(:)
-    integer , intent(in)    :: member(:), earlier(:), degrees
+    integer , intent(in)    :: member(:), earlier(:)
 
-    integer :: p, npts
+    integer :: pieces, i, width
 
+    ! a member of the same extent is copied; a step's stages and
+    ! arriving instant each take the instant before them; an instant
+    ! after a step takes the step's last piece
     if (size(member) == size(earlier)) then
        q(member) = q(earlier)
-       return
+    else if (mod(size(member), size(earlier)) == 0) then
+       width  = size(earlier)
+       pieces = size(member) / width
+       do i = 1, pieces
+          q(member((i - 1) * width + 1:i * width)) = q(earlier)
+       end do
+    else if (mod(size(earlier), size(member)) == 0) then
+       width = size(member)
+       q(member) = q(earlier(size(earlier) - width + 1:))
+    else
+       error stop 'gti_march: a member is seeded from one of its extent, a multiple of it, or a divisor'
     end if
-
-    npts = size(member) / degrees
-    do p = 1, npts
-       q(member((p - 1) * degrees + 1:p * degrees)) = q(earlier(size(earlier) - degrees + 1:))
-    end do
 
   end subroutine continued
 

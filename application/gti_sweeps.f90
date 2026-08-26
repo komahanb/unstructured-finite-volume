@@ -63,7 +63,7 @@ module gti_sweeps
   integer, parameter :: forward_route = 1
   integer, parameter :: reverse_route = 2
   public :: set_linear_solver, set_assembly, set_storage, set_multigrid
-  public :: set_aggregates, aggregates_given, aggregates_of, assembly_present, multigrid_on
+  public :: set_aggregates, set_coarse_nodes, coarse_nodes, assembly_present, multigrid_on
   public :: take_inner, keep_inner, forget_inner
 
   !===================================================================!
@@ -91,6 +91,8 @@ module gti_sweeps
   character(len=16), save :: chosen_storage  = 'dense'
   logical          , save :: chosen_multigrid = .false.
   integer, allocatable, save :: chosen_aggregates(:)
+  ! the coarse cell of every node, which a block's aggregates are read from
+  integer, allocatable, save :: chosen_coarse(:)
 
   ! The inner minimizer kept between solves, so that a direct one
   ! keeps its factors across the statements stamped alike.
@@ -163,19 +165,41 @@ contains
 
   end subroutine set_aggregates
 
-  subroutine aggregates_of(aggregates)
+  !===================================================================!
+  ! The coarse cell of every node, from which a block reads the
+  ! aggregates it is coarsened by. None given, every node is its own
+  ! coarse cell and the coarse level is the fine one.
+  !===================================================================!
 
-    integer, allocatable, intent(out) :: aggregates(:)
+  subroutine set_coarse_nodes(cell)
 
-    if (allocated(chosen_aggregates)) aggregates = chosen_aggregates
+    integer, intent(in), optional :: cell(:)
 
-  end subroutine aggregates_of
+    if (allocated(chosen_coarse)) deallocate(chosen_coarse)
+    if (present(cell)) chosen_coarse = cell
 
-  pure logical function aggregates_given() result(yes)
+  end subroutine set_coarse_nodes
 
-    yes = allocated(chosen_aggregates)
+  function coarse_nodes(nodes) result(cell)
 
-  end function aggregates_given
+    ! nodes: the largest node label the map must reach
+    integer, intent(in) :: nodes
+    integer, allocatable :: cell(:)
+
+    integer :: i
+
+    ! a member of a block keeps the block's node labels, so the map
+    ! given must reach the largest of them
+    if (allocated(chosen_coarse)) then
+       if (size(chosen_coarse) < nodes) then
+          error stop 'gti_sweeps: a coarse cell for every node'
+       end if
+       cell = chosen_coarse
+    else
+       cell = [(i, i = 1, nodes)]
+    end if
+
+  end function coarse_nodes
 
   !===================================================================!
   ! The minimizer the specifications name, built for a system of the

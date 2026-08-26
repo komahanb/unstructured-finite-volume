@@ -174,8 +174,8 @@ contains
     call design_partial(rows, unknowns, [state, knobs], num_instants, &
          & unknowns % vertex_set(), rate)
     mark    = fresh_stamp()
-    tangent = by_tangent(rows, unknowns, [state, knobs], g, rate, 0.0_dp, 1, mark)
-    adjoint = by_adjoint(rows, unknowns, [state, knobs], g, rate, 0.0_dp, 1, mark)
+    tangent = by_tangent(rows, unknowns, [state, knobs], g, rate, 0.0_dp, mark)
+    adjoint = by_adjoint(rows, unknowns, [state, knobs], g, rate, 0.0_dp, mark)
 
   end subroutine three_objects
 

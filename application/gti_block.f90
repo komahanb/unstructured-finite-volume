@@ -77,11 +77,12 @@ module gti_block
      class(nodal_integrand), allocatable  , private :: physics
 
      ! THE LEVEL BELOW. A stencil over the same unknowns coupling the
-     ! components of one instant across the nodes of a spatial mesh:
+     ! components of one moment across the nodes of a spatial mesh:
      ! the spatial operator, linear in the state and independent of
-     ! the design. It adds to the derived rows in the apply and in
-     ! the tangent, and nowhere else, having no design partial and no
-     ! partial above the first. Absent, the block is one node's.
+     ! the design, laid on the block by spatial_laid. It adds to the
+     ! derived rows in the apply and in the tangent, and nowhere else,
+     ! having no design partial and no partial above the first.
+     ! Absent, the block is one node's.
      type(stencil), allocatable, private :: spatial
      type(stored_directed_graph)         , private :: points
      integer , allocatable               , private :: at(:)
@@ -93,11 +94,15 @@ module gti_block
 
      ! WHERE EACH UNKNOWN LIES in the hierarchy: the member of the
      ! time level it belongs to - an instant, or a step for a stage
-     ! block - and the member of the space level, its node. The
+     ! block - the member of the space level, its node, and its
+     ! moment, the instant or stage whose values it is among. The
      ! constructors that know the layout say so; a sweep reads its
-     ! members and their coupling from these and from nothing else.
+     ! members and their coupling from these and from nothing else,
+     ! the level below is laid on the moments, and the aggregates a
+     ! multigrid coarsens by are read off them.
      integer, allocatable, private :: slice(:)
      integer, allocatable, private :: node(:)
+     integer, allocatable, private :: moment(:)
 
    contains
 
@@ -111,6 +116,10 @@ module gti_block
      procedure :: placed_in
      procedure :: slice_of
      procedure :: node_of
+     procedure :: moment_of
+     procedure :: num_nodes
+     procedure :: spatial_laid
+     procedure :: aggregates
      procedure :: linear_block
      procedure :: member_order
      procedure :: num_unknowns
@@ -488,20 +497,22 @@ contains
   ! program.
   !===================================================================!
 
-  subroutine placed_in(this, slice, node)
+  subroutine placed_in(this, slice, node, moment)
 
     class(block_residual), intent(inout) :: this
-    integer              , intent(in)    :: slice(:), node(:)
+    integer              , intent(in)    :: slice(:), node(:), moment(:)
 
-    if (size(slice) /= this % unknowns .or. size(node) /= this % unknowns) then
-       error stop 'gti_block: one time member and one space member per unknown'
+    if (size(slice) /= this % unknowns .or. size(node) /= this % unknowns &
+         & .or. size(moment) /= this % unknowns) then
+       error stop 'gti_block: one time member, one space member, one moment per unknown'
     end if
-    if (any(slice < 1) .or. any(node < 1)) then
+    if (any(slice < 1) .or. any(node < 1) .or. any(moment < 1)) then
        error stop 'gti_block: a member is numbered from one'
     end if
 
-    this % slice = slice
-    this % node  = node
+    this % slice  = slice
+    this % node   = node
+    this % moment = moment
 
   end subroutine placed_in
 
@@ -528,6 +539,132 @@ contains
     node = this % node
 
   end function node_of
+
+  function moment_of(this) result(moment)
+
+    class(block_residual), intent(in) :: this
+    integer, allocatable :: moment(:)
+
+    if (.not. allocated(this % moment)) then
+       error stop 'gti_block: the block has not said where its unknowns lie'
+    end if
+    moment = this % moment
+
+  end function moment_of
+
+  ! the largest node label: a member of a block keeps the block's
+  ! numbering, so this is the extent a map over the nodes must reach
+  pure integer function num_nodes(this)
+
+    class(block_residual), intent(in) :: this
+
+    num_nodes = 1
+    if (allocated(this % node)) num_nodes = maxval(this % node)
+
+  end function num_nodes
+
+  !-------------------------------------------------------------------!
+  ! THE LEVEL BELOW, laid on this block: a stencil over the nodes is
+  ! placed at every moment the block evaluates its physics at, on the
+  ! row the physics sits on, and reads the values of that moment. A
+  ! moment with no evaluation point - an instant a stage block
+  ! recovers - takes no spatial rows, since no physics is stated
+  ! there. Invalid input: a stencil over other than the nodes; a
+  ! stencil carrying a constant, which would be a source the block
+  ! has no place for; a moment holding some nodes and not others.
+  !-------------------------------------------------------------------!
+
+  subroutine spatial_laid(this, spatial)
+
+    class(block_residual), intent(inout) :: this
+    type(stencil)        , intent(in)    :: spatial
+
+    integer , allocatable :: base(:,:), r(:), c(:)
+    real(dp), allocatable :: lw(:), held(:), w(:)
+    integer :: nodes, moments, p, u, e, g, ne, n, rc, cc
+
+    if (.not. allocated(this % moment)) then
+       error stop 'gti_block: the block has not said where its unknowns lie'
+    end if
+    nodes   = maxval(this % node)
+    moments = maxval(this % moment)
+    if (spatial % pattern % num_vertices() /= nodes) then
+       error stop 'gti_block: the level below is a stencil over the nodes'
+    end if
+    call spatial % constants % real_vector(held)
+    if (any(abs(held) > 0.0_dp)) then
+       error stop 'gti_block: the level below carries no constant'
+    end if
+    call spatial % weights % real_vector(lw)
+
+    ! where each node's components lie at each moment with a point
+    allocate(base(nodes, moments), source=-1)
+    do p = 1, size(this % at)
+       u = this % at(p) + 1
+       base(this % node(u), this % moment(u)) = this % at(p)
+    end do
+
+    ne = spatial % pattern % num_edges()
+    allocate(r(ne * moments), c(ne * moments), w(ne * moments))
+    n = 0
+    do g = 1, moments
+       do e = 1, ne
+          rc = spatial % pattern % edge_head(e)
+          cc = spatial % pattern % edge_tail(e)
+          if (base(rc, g) < 0) cycle
+          if (base(cc, g) < 0) then
+             error stop 'gti_block: a moment holds every node or none'
+          end if
+          n    = n + 1
+          r(n) = base(rc, g) + this % primary + 1
+          c(n) = base(cc, g) + 1
+          w(n) = lw(e)
+       end do
+    end do
+
+    this % spatial = stencil(r(1:n), c(1:n), w(1:n), spread(0.0_dp, 1, this % unknowns), &
+         & 'spatial rows')
+
+  end subroutine spatial_laid
+
+  !-------------------------------------------------------------------!
+  ! The aggregates a multigrid coarsens this block by: the coarse
+  ! cell of each unknown's node, at its own moment and degree, and
+  ! numbered from one in the order met. Invalid input: a map that
+  ! does not reach every node label.
+  !-------------------------------------------------------------------!
+
+  function aggregates(this, cell) result(aggregate)
+
+    class(block_residual), intent(in) :: this
+    integer              , intent(in) :: cell(:)
+    integer, allocatable :: aggregate(:)
+
+    integer, allocatable :: numbered(:)
+    integer :: u, coarse, key, count
+
+    if (.not. allocated(this % moment)) then
+       error stop 'gti_block: the block has not said where its unknowns lie'
+    end if
+    if (size(cell) < maxval(this % node)) then
+       error stop 'gti_block: a coarse cell for every node'
+    end if
+
+    coarse = maxval(cell)
+    allocate(aggregate(this % unknowns))
+    allocate(numbered(maxval(this % moment) * coarse * this % degrees), source=0)
+    count = 0
+    do u = 1, this % unknowns
+       key = ((this % moment(u) - 1) * coarse + cell(this % node(u)) - 1) * this % degrees &
+            & + mod(u - 1, this % degrees) + 1
+       if (numbered(key) == 0) then
+          count         = count + 1
+          numbered(key) = count
+       end if
+       aggregate(u) = numbered(key)
+    end do
+
+  end function aggregates
 
   !===================================================================!
   ! THE LINEAR BLOCK: the tangent in the state at the inputs given,
@@ -572,7 +709,7 @@ contains
     lin = block_residual(a, zero_integrand(this % degrees - 1), this % at, this % unknowns, &
          & this % degrees, this % primary, [integer ::], [real(dp) ::])
     call lin % stamped(mark, transposed=a % pattern % transposed())
-    if (allocated(this % slice)) call lin % placed_in(this % slice, this % node)
+    if (allocated(this % slice)) call lin % placed_in(this % slice, this % node, this % moment)
 
   end function linear_block
 
@@ -636,7 +773,9 @@ contains
        sub = block_residual(derived, this % physics, at(1:npts), size(kept), &
             & this % degrees, this % primary, carried(1:ncar), held(1:ncar))
     end if
-    if (allocated(this % slice)) call sub % placed_in(this % slice(kept), this % node(kept))
+    if (allocated(this % slice)) then
+       call sub % placed_in(this % slice(kept), this % node(kept), this % moment(kept))
+    end if
 
   end function block_restricted
 
@@ -885,8 +1024,8 @@ contains
        return
     end if
 
-    ! the time level's coupling: a derived row at one member reading
-    ! an unknown at another, which for every family looks one way
+    ! the time level's coupling: a derived row at one member that
+    ! reads an unknown at another, which for every family looks one way
     label   = this % slice
     members = maxval(label)
     ne      = this % derived % pattern % num_edges()

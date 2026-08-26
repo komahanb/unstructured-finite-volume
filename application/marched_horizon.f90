@@ -114,7 +114,7 @@ contains
     ! are gathered here into the one layout the checks below read.
     allocate(q(n * degrees))
     do k = 1, n
-       q((k - 1) * degrees + 1:k * degrees) = instant_components(chain, k, degrees)
+       q((k - 1) * degrees + 1:k * degrees) = instant_components(chain, k)
     end do
 
   end subroutine marched

@@ -65,17 +65,21 @@ program graph_time_integrator
   use operation_grid        , only : uniform_grid, random_grid
   use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
   use operation_grid        , only : grid
-  use gti_march             , only : partitioned, set_stopping, consistent_state, imbalance, set_sweep, &
-       & weight_of, precision_needed
+  use gti_march             , only : set_stopping, imbalance, set_sweep, weight_of, precision_needed
+  use operation_stencil     , only : stencil
+  use gti_space             , only : room, spatial_mesh, geometry_of, coarse_cells
+  use gti_field             , only : node_operator, initial_field, against_the_laplacian, &
+       & against_the_mode, export_instant
   use util_precision        , only : precision_named
   use iso_fortran_env       , only : real128
   use gti_expansion         , only : family_holder
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
-       & expansion_substitutions, &
-       & started => startup_trajectory
-  use gti_sweeps            , only : set_linear_solver, set_assembly, set_storage, set_multigrid
+       & expansion_substitutions, chain_system, chain_systems, chain_by_tangent, &
+       & chain_by_adjoint, instant_components, started => startup_trajectory
+  use gti_sweeps            , only : set_linear_solver, set_assembly, set_storage, set_multigrid, &
+       & set_coarse_nodes
   use operation_minimization, only : relative, absolute, by_count, by_rate
-  use gti_driver            , only : settings, chosen_grid, steps_of, family_named
+  use gti_driver            , only : settings, chosen_grid, steps_of, family_named, clock
   use gti_configuration     , only : configuration, read_configuration, override, show, &
        & lists, refuse_unknown, worded
   use util_tally            , only : tally_open, tally_close, tally_order, &
@@ -88,6 +92,18 @@ program graph_time_integrator
 
   type(configuration) :: cfg
 
+  ! THE FIELD, when the configuration names a mesh: its room, the
+  ! level below as a stencil over the nodes, the measure of each node,
+  ! and the state at the first instant over every node. With no mesh
+  ! there is one node, no level below, and a measure of one: one
+  ! node's equation, marched by the same chain.
+  type(room)   , allocatable :: space
+  type(stencil), allocatable :: op
+  real(dp)     , allocatable :: volume(:), q0(:)
+  real(dp) :: extent_a = 0.0_dp, extent_b = 0.0_dp
+  integer  :: nodes = 1
+  logical  :: over_field = .false.
+
   call settings('homogeneous', cfg)
   call show(cfg)
   call set_linear_solver(cfg % linear_solver)
@@ -95,6 +111,7 @@ program graph_time_integrator
   call set_storage(cfg % storage)
   call set_multigrid(cfg % multigrid)
   call set_sweep(cfg % sweep)
+  call field_context(cfg)
   call table(cfg)
 
 contains
@@ -106,40 +123,6 @@ contains
   ! the governing constraint then requires.
   !-------------------------------------------------------------------!
 
-  !-------------------------------------------------------------------!
-  ! The state at the first instant: the components given, and the
-  ! highest solved from the physics so that the state is consistent
-  ! with it. What a hand would have set here is exactly what comes
-  ! back, for the one physics and one value a hand had in mind, and
-  ! for every other the hand would have been wrong.
-  !-------------------------------------------------------------------!
-
-  function at_rest(cfg) result(q)
-
-    type(configuration), intent(in) :: cfg
-    real(dp), allocatable :: q(:)
-
-    character(len=32), allocatable :: given(:)
-    real(dp), allocatable :: lower(:)
-    integer :: nd, i
-
-    nd    = cfg % state_degree + 1
-    given = worded(cfg % initial_state)
-
-    if (size(given) > nd - 1) then
-       write(*,'(a,i0,a)') ' the initial state holds the ', nd - 1, &
-            & ' components below the highest, which the physics gives.'
-       error stop 'graph_time_integrator: the initial state is given below the highest derivative'
-    end if
-
-    allocate(lower(nd - 1), source=0.0_dp)
-    do i = 1, size(given)
-       read(given(i), *) lower(i)
-    end do
-
-    q = consistent_state(van_der_pol(cfg % state_degree), nd, lower, cfg % design)
-
-  end function at_rest
 
   !-------------------------------------------------------------------!
   ! How many instants the widest row that fits looks back over. A row
@@ -189,7 +172,7 @@ contains
     real(dp), allocatable, intent(out) :: held(:)
 
     call started(van_der_pol(cfg % state_degree), cfg % state_degree + 1, widest, &
-         & cfg % startup_refinement, dt, cfg % design, at_rest(cfg), held)
+         & cfg % startup_refinement, dt, cfg % design, q0, held, nodes=nodes, spatial=op)
 
   end subroutine startup_trajectory
 
@@ -243,12 +226,14 @@ contains
     character(len=18) :: cell
     integer :: i
 
-    q = at_rest(cfg)
+    q = q0(1:cfg % state_degree + 1)
     line = '   initial state, consistent'
     do i = 1, size(q)
        write(cell,'(es18.10)') q(i)
        line = line // cell
     end do
+    if (over_field) write(cell,'(a,i0)') '   at node 1 of ', nodes
+    if (over_field) line = line // trim(cell)
     write(*,'(a)') line
 
   end subroutine shown_initial
@@ -399,29 +384,31 @@ contains
     integer            , intent(inout) :: printed
 
     type(family_holder), allocatable :: schemes(:)
-    type(chain_block) , allocatable :: chain(:)
+    type(chain_block)  , allocatable :: chain(:)
+    type(chain_system) , allocatable :: systems(:)
     integer , allocatable :: added(:)
     real(dp), allocatable :: dt(:), t(:), held(:), f(:)
     type(imbalance) :: left
-    real(dp) :: achieved
-    integer :: b, nd, given, reported
+    real(dp) :: achieved, tangent, adjoint
+    integer :: nd, width, given, reported
     logical :: ok
 
-    nd = cfg % state_degree + 1
+    nd    = cfg % state_degree + 1
+    width = nd * nodes
     allocate(schemes(size(names)), added(size(names)))
     call assembled(cfg, names, orders, schemes, added, ok)
     if (.not. ok) return
 
     call steps_of(cfg, dt, t)
     given = schemes(1) % scheme % history_depth(nd - 1)
-    if (given * nd > size(startup)) return
-    held  = startup(1:given * nd)
+    if (given * width > size(startup)) return
+    held  = startup(1:given * width)
 
     call tally_enter(at_expansion)
     call tally_order(0)
-
     call march_chain(schemes, added, van_der_pol(cfg % state_degree), nd, &
-         & chosen_grid(cfg), cfg % design, held, chain, dt, t, achieved, left=left)
+         & chosen_grid(cfg), cfg % design, held, chain, dt, t, achieved, left=left, &
+         & nodes=nodes, spatial=op)
 
     ! Every derivative is taken at the state the march reached, so a
     ! row that did not converge has none to take and only its value is
@@ -431,21 +418,186 @@ contains
     else
        reported = cfg % max_derivative_degree
     end if
-
     call chain_expansion(chain, van_der_pol(cfg % state_degree), &
          & van_der_pol_energy(cfg % state_degree), nd, dt, cfg % design, &
-         & reported, f)
-
+         & reported, f, node_measure=volume)
     call tally_leave()
 
     call show_row(labelled(names, orders), cfg % instants - given, f, left, &
          & cfg % max_derivative_degree)
     call shown_precision(schemes(1) % scheme, nd, dt, chain, left, cfg)
+
+    ! the two routes to the first derivative, each one substitution
+    ! against the factorisation the expansion made
+    if (lists(cfg % check, 'routes') .and. reported >= 1) then
+       call chain_systems(chain, van_der_pol_energy(cfg % state_degree), nd, dt, &
+            & cfg % design, systems, node_measure=volume)
+       tangent = chain_by_tangent(chain, systems, nd, cfg % design)
+       adjoint = chain_by_adjoint(chain, systems, nd, cfg % design)
+       write(*,'(a,es10.2,a,es20.11,a,es20.11)') '      tangent - adjoint ', tangent - adjoint, &
+            & '   tangent ', tangent, '   adjoint ', adjoint
+    end if
+
+    if (over_field) then
+       if (lists(cfg % check, 'ode')) call against_the_ode(cfg, schemes, added, held, f)
+       if (lists(cfg % check, 'mode')) then
+          call against_the_mode(space, extent_a, extent_b, cfg % diffusion, cfg % spatial_order, &
+               & cfg % design, t(cfg % instants), instant_components(chain, cfg % instants), nd)
+       end if
+       if (trim(cfg % export) == 'paraview') call exported(cfg, chain, labelled(names, orders), nd)
+    end if
+
     printed = printed + 1
 
-    associate (u1 => b); end associate
-
   end subroutine one_row
+
+  !-------------------------------------------------------------------!
+  ! At kappa = 0 with a constant field every node is one node's
+  ! equation: the field's functional over the area is the node's,
+  ! order by order. The node's march is the same chain from the same
+  ! history, read at the first node.
+  !-------------------------------------------------------------------!
+
+  subroutine against_the_ode(cfg, schemes, added, held, f_field)
+
+    type(configuration), intent(in) :: cfg
+    type(family_holder), intent(in) :: schemes(:)
+    integer            , intent(in) :: added(:)
+    real(dp)           , intent(in) :: held(:), f_field(0:)
+
+    type(chain_block), allocatable :: chain(:)
+    real(dp), allocatable :: held_node(:), f(:), dt(:), t(:)
+    real(dp) :: achieved, area
+    integer  :: nd, width, given, k, d
+    character(len=:), allocatable :: line
+    character(len=20) :: cell
+
+    nd    = cfg % state_degree + 1
+    width = nd * nodes
+    given = size(held) / width
+    area  = sum(volume)
+
+    held_node = [((held((k - 1) * width + d + 1), d = 0, nd - 1), k = 1, given)]
+    call march_chain(schemes, added, van_der_pol(cfg % state_degree), nd, chosen_grid(cfg), &
+         & cfg % design, held_node, chain, dt, t, achieved)
+    call chain_expansion(chain, van_der_pol(cfg % state_degree), &
+         & van_der_pol_energy(cfg % state_degree), nd, dt, cfg % design, ubound(f_field, 1), f)
+
+    line = '      field / area over the node, less one:'
+    do d = lbound(f, 1), ubound(f, 1)
+       write(cell,'(es14.2)') f_field(d) / area / f(d) - 1.0_dp
+       line = line // cell
+    end do
+    write(*,'(a)') line
+
+  end subroutine against_the_ode
+
+  !-------------------------------------------------------------------!
+  ! Every instant as one vtu file, numbered, so paraview reads the
+  ! series as time.
+  !-------------------------------------------------------------------!
+
+  subroutine exported(cfg, chain, label, nd)
+
+    type(configuration), intent(in) :: cfg
+    type(chain_block)  , intent(in) :: chain(:)
+    character(len=*)   , intent(in) :: label
+    integer            , intent(in) :: nd
+
+    character(len=len(label)) :: name
+    character(len=256) :: path
+    integer :: k, i
+
+    name = label
+    do i = 1, len(name)
+       if (name(i:i) == ' ') name(i:i) = '_'
+    end do
+
+    do k = 1, cfg % instants
+       write(path,'(a,a,a,a,i4.4,a)') trim(cfg % export_path), '_', trim(name), '_', k, '.vtu'
+       call export_instant(space, trim(path), nd, instant_components(chain, k))
+    end do
+    write(*,'(a,i0,a,a,a)') '      written ', cfg % instants, ' files ', &
+         & trim(cfg % export_path) // '_' // trim(name), '_*.vtu'
+
+  end subroutine exported
+
+  !-------------------------------------------------------------------!
+  ! The field the configuration names, or one node when it names no
+  ! mesh: the room, the level below, the coarse cells a multigrid
+  ! coarsens the nodes by, the measure of each node, and the state at
+  ! the first instant. The operator alone is checked here when asked,
+  ! before any march.
+  !-------------------------------------------------------------------!
+
+  subroutine field_context(cfg)
+
+    type(configuration), intent(in) :: cfg
+
+    real(dp) :: x, y, began
+    integer  :: n1, n2
+
+    call refuse_unknown(cfg % initial_field, ['constant', 'mode    ', 'bump    '], 'initial_field')
+    call refuse_unknown(cfg % export, ['none    ', 'paraview'], 'export')
+    call refuse_unknown(cfg % check, ['none    ', 'ode     ', 'mode    ', 'operator', 'routes  '], &
+         & 'check')
+
+    call pair_of(cfg % spatial_counts, x, y, 'counts')
+    n1 = nint(x)
+    n2 = nint(y)
+    if (real(n1, dp) /= x .or. real(n2, dp) /= y) then
+       error stop 'graph_time_integrator: a count of cells is whole'
+    end if
+    over_field = n1 > 0 .or. n2 > 0
+    if (over_field .and. (n1 <= 0 .or. n2 <= 0)) then
+       error stop 'graph_time_integrator: a mesh has cells along both coordinates'
+    end if
+
+    if (over_field) then
+       call refuse_unknown(cfg % spatial_grid, ['uniform', 'random '], 'spatial_grid')
+       call pair_of(cfg % spatial_extent, extent_a, extent_b, 'extents')
+       began = clock()
+       allocate(space)
+       space = spatial_mesh(geometry_of(cfg % spatial_geometry), extent_a, extent_b, n1, n2, &
+            & trim(cfg % spatial_grid) == 'random', cfg % seed)
+       write(*,'(a,i0,a,i0,a,f12.6,a,i0,a,f9.3,a)') '   spatial mesh: cells ', &
+            & space % num_cells, '   faces ', space % num_faces, '   area ', sum(space % volume), &
+            & '   form degree ', cfg % spatial_order, '   built in ', clock() - began, ' s'
+       op = node_operator(space, cfg % diffusion, cfg % spatial_order)
+       call set_coarse_nodes(coarse_cells(space))
+       nodes  = space % num_cells
+       volume = space % volume
+       if (lists(cfg % check, 'operator')) then
+          call against_the_laplacian(space, extent_a, extent_b, cfg % diffusion, cfg % spatial_order)
+       end if
+    else
+       nodes  = 1
+       volume = [1.0_dp]
+    end if
+
+    q0 = initial_field(van_der_pol(cfg % state_degree), cfg % state_degree + 1, &
+         & cfg % initial_field, cfg % initial_state, cfg % design, &
+         & spatial=op, space=space, a=extent_a, b=extent_b)
+
+  end subroutine field_context
+
+  !-------------------------------------------------------------------!
+  ! Two numbers from a setting, one per coordinate.
+  !-------------------------------------------------------------------!
+
+  subroutine pair_of(text, x, y, subject)
+
+    character(len=*), intent(in)  :: text, subject
+    real(dp)        , intent(out) :: x, y
+
+    character(len=32), allocatable :: w(:)
+
+    w = worded(text)
+    if (size(w) /= 2) error stop 'graph_time_integrator: two ' // subject // ', one per coordinate'
+    read(w(1), *) x
+    read(w(2), *) y
+
+  end subroutine pair_of
 
   !-------------------------------------------------------------------!
   ! The families a row names, and the instants split among them. A

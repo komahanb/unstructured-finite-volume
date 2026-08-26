@@ -103,6 +103,7 @@ module gti_chain
 
      ! the components one instant holds: the degrees at every node
      integer :: width = 0
+     integer :: nodes = 1
 
   end type chain_block
 
@@ -286,7 +287,10 @@ contains
     chain(b) % given   = scheme % history_depth(degrees - 1)
     chain(b) % primary = scheme % primary_degree(degrees - 1)
     chain(b) % width   = degrees
-    if (present(nodes)) chain(b) % width = degrees * nodes
+    if (present(nodes)) then
+       chain(b) % width = degrees * nodes
+       chain(b) % nodes = nodes
+    end if
 
     if (b == 1) then
        held = initial
@@ -428,13 +432,14 @@ contains
   !===================================================================!
 
   subroutine chain_expansion(chain, physics, integrand, degrees, dt, design, &
-       & max_order, f)
+       & max_order, f, node_measure)
 
     type(chain_block)     , intent(in) :: chain(:)
     class(nodal_integrand), intent(in) :: physics, integrand
     integer               , intent(in) :: degrees, max_order
     real(dp)              , intent(in) :: dt(:), design
     real(dp), allocatable , intent(out) :: f(:)
+    real(dp), intent(in), optional     :: node_measure(:)
 
     ! One design and one functional: what this expansion is built for,
     ! and what the gate is asked about at every order.
@@ -458,7 +463,7 @@ contains
     ! The jacobian of every block, factorised once. Every order below
     ! substitutes against it.
     if (max_order >= 1) then
-       call chain_systems(chain, integrand, degrees, dt, design, systems)
+       call chain_systems(chain, integrand, degrees, dt, design, systems, node_measure)
     end if
 
     do m = 1, max_order
@@ -485,7 +490,8 @@ contains
     end do
     call tally_order(0)
 
-    call chain_functional(chain, integrand, degrees, dt, design, max_order, series, f)
+    call chain_functional(chain, integrand, degrees, dt, design, max_order, series, f, &
+         & node_measure)
 
   end subroutine chain_expansion
 
@@ -578,34 +584,35 @@ contains
   end function coefficients_handed
 
   !===================================================================!
-  ! The functional at every order: each block's own instants, each
-  ! counted once, weighted by the step that ends at it.
+  ! The functional at every order: each block's own points, each
+  ! counted once, weighted by the step that ends at its instant times
+  ! the measure of its node.
   !===================================================================!
 
   subroutine chain_functional(chain, integrand, degrees, dt, design, max_order, &
-       & series, f)
+       & series, f, node_measure)
 
     type(chain_block)     , intent(in) :: chain(:)
     class(nodal_integrand), intent(in) :: integrand
     integer               , intent(in) :: degrees, max_order
     real(dp)              , intent(in) :: dt(:), design, series(0:, :, :)
     real(dp), allocatable , intent(out) :: f(:)
+    real(dp), intent(in), optional     :: node_measure(:)
 
-    real(dp), allocatable :: values(:)
+    real(dp), allocatable :: values(:), weight(:)
     integer , allocatable :: at(:)
-    integer :: b, m, from, to, k, count
+    integer :: b, m, from, to, count
 
     allocate(f(0:max_order), source=0.0_dp)
 
     do b = 1, size(chain)
        call owned(chain, b, from, to)
        count = chain(b) % rows % num_unknowns()
-       at    = [(chain(b) % instants_at(k - chain(b) % first + 1), k = from, to)]
-
+       call owned_points(chain(b), dt, from, to, node_measure, at, weight)
        do m = 0, max_order
           call nodal_coefficient(integrand, degrees, at, series(:, 1:count, b), &
                & design, m, values)
-          f(m) = f(m) + sum(dt(from:to) * values)
+          f(m) = f(m) + sum(weight * values)
        end do
     end do
 
@@ -618,13 +625,14 @@ contains
   ! that a shared instant counts once.
   !===================================================================!
 
-  subroutine chain_systems(chain, integrand, degrees, dt, design, systems)
+  subroutine chain_systems(chain, integrand, degrees, dt, design, systems, node_measure)
 
     type(chain_block)     , intent(in) :: chain(:)
     class(nodal_integrand), intent(in) :: integrand
     integer               , intent(in) :: degrees
     real(dp)              , intent(in) :: dt(:), design
     type(chain_system), allocatable, intent(out) :: systems(:)
+    real(dp), intent(in), optional     :: node_measure(:)
 
     type(stored_directed_graph) :: unknowns
     type(stored_field), allocatable :: inputs(:)
@@ -641,20 +649,57 @@ contains
             & chain(b) % rows % num_points(), unknowns % vertex_set(), &
             & systems(b) % rate)
        call owned_gradient(chain, b, integrand, degrees, dt, design, inputs, &
-            & unknowns, systems(b) % g)
+            & unknowns, systems(b) % g, node_measure)
     end do
 
   end subroutine chain_systems
 
   !===================================================================!
-  ! The functional's gradient over the instants one block owns,
-  ! weighted by the step that ends at each. The integrand reads one
-  ! instant at a time, so one partial action per degree gives the
-  ! whole of it rather than one per unknown.
+  ! The points one block owns and the measure of each: the owned
+  ! instants, node by node, weighted by the step ending at the
+  ! instant times the node's measure - one when no measure is given,
+  ! as for one node's equation. Invalid input: a measure for other
+  ! than every node.
+  !===================================================================!
+
+  subroutine owned_points(b, dt, from, to, node_measure, at, weight)
+
+    type(chain_block), intent(in) :: b
+    real(dp)         , intent(in) :: dt(:)
+    integer          , intent(in) :: from, to
+    real(dp), intent(in), optional :: node_measure(:)
+    integer , allocatable, intent(out) :: at(:)
+    real(dp), allocatable, intent(out) :: weight(:)
+
+    real(dp), allocatable :: measure(:)
+    integer :: degrees, k, i
+
+    degrees = b % width / b % nodes
+    if (present(node_measure)) then
+       if (size(node_measure) /= b % nodes) then
+          error stop 'gti_chain: one measure per node'
+       end if
+       measure = node_measure
+    else
+       measure = spread(1.0_dp, 1, b % nodes)
+    end if
+
+    at     = [((b % instants_at(k - b % first + 1) + (i - 1) * degrees, i = 1, b % nodes), &
+         &     k = from, to)]
+    weight = [((dt(k) * measure(i), i = 1, b % nodes), k = from, to)]
+
+  end subroutine owned_points
+
+  !===================================================================!
+  ! The functional's gradient over the points one block owns - its
+  ! instants, node by node over a field - each weighted by the step
+  ! that ends at its instant times the measure of its node. The
+  ! integrand reads one point at a time, so one partial action per
+  ! degree gives the whole of it rather than one per unknown.
   !===================================================================!
 
   subroutine owned_gradient(chain, b, integrand, degrees, dt, design, inputs, &
-       & unknowns, g)
+       & unknowns, g, node_measure)
 
     type(chain_block)          , intent(in) :: chain(:)
     integer                    , intent(in) :: b, degrees
@@ -663,71 +708,63 @@ contains
     type(stored_field)         , intent(in) :: inputs(:)
     type(stored_directed_graph), intent(in) :: unknowns
     real(dp), allocatable      , intent(out) :: g(:)
+    real(dp), intent(in), optional          :: node_measure(:)
 
-    type(stored_directed_graph) :: instants
+    type(stored_directed_graph) :: points
     type(stored_field) :: state, knobs
-    real(dp), allocatable :: owned_g(:)
-    integer :: count, from, to, k, d, at, held
+    real(dp), allocatable :: owned_g(:), weight(:)
+    integer , allocatable :: at(:)
+    integer :: count, from, to, p, d
 
     count = chain(b) % rows % num_unknowns()
     allocate(g(count), source=0.0_dp)
+
     call owned(chain, b, from, to)
+    call owned_points(chain(b), dt, from, to, node_measure, at, weight)
+    points = stored_directed_graph(size(at), tails=[integer ::], heads=[integer ::])
+    call at_owned_points(inputs, degrees, design, at, points, state, knobs)
 
-    held = to - from + 1
-    instants = stored_directed_graph(held, tails=[integer ::], heads=[integer ::])
-
-    call at_owned_instants(chain, b, degrees, design, inputs, from, to, instants, &
-         & state, knobs)
-
-    ! the gradient over the owned instants, then scattered to where
-    ! those instants lie in the block
-    call functional_gradient(integrand, instants, [state, knobs], dt(from:to), held, degrees, &
-         & instants % vertex_set(), owned_g)
-
-    do d = 0, degrees - 1
-       do k = from, to
-          at = chain(b) % instants_at(k - chain(b) % first + 1)
-          g(at + d + 1) = owned_g((k - from) * degrees + d + 1)
+    ! the gradient over the owned points, then scattered to where
+    ! those points lie in the block
+    call functional_gradient(integrand, points, [state, knobs], weight, size(at), degrees, &
+         & points % vertex_set(), owned_g)
+    do p = 1, size(at)
+       do d = 0, degrees - 1
+          g(at(p) + d + 1) = owned_g((p - 1) * degrees + d + 1)
        end do
     end do
-
     associate (u1 => unknowns); end associate
 
   end subroutine owned_gradient
 
   !===================================================================!
-  ! The trajectory at the instants one block owns, laid out one
-  ! instant at a time so that a nodal rule reads them.
+  ! The trajectory at the points one block owns, laid out one point
+  ! at a time so that a nodal rule reads them.
   !===================================================================!
 
-  subroutine at_owned_instants(chain, b, degrees, design, inputs, from, to, &
-       & instants, state, knobs)
+  subroutine at_owned_points(inputs, degrees, design, at, points, state, knobs)
 
-    type(chain_block)          , intent(in)  :: chain(:)
-    integer                    , intent(in)  :: b, degrees, from, to
-    real(dp)                   , intent(in)  :: design
     type(stored_field)         , intent(in)  :: inputs(:)
-    type(stored_directed_graph), intent(in)  :: instants
+    integer                    , intent(in)  :: degrees, at(:)
+    real(dp)                   , intent(in)  :: design
+    type(stored_directed_graph), intent(in)  :: points
     type(stored_field)         , intent(out) :: state, knobs
 
     real(dp), allocatable :: whole(:), v(:)
-    integer :: held, k, at
+    integer :: p
 
-    held = to - from + 1
     call inputs(1) % real_vector(whole)
-    allocate(v(held * degrees))
-
-    do k = from, to
-       at = chain(b) % instants_at(k - chain(b) % first + 1)
-       v((k - from) * degrees + 1:(k - from + 1) * degrees) = whole(at + 1:at + degrees)
+    allocate(v(size(at) * degrees))
+    do p = 1, size(at)
+       v((p - 1) * degrees + 1:p * degrees) = whole(at(p) + 1:at(p) + degrees)
     end do
 
-    state = stored_field('state', instants % vertex_set(), held * degrees)
-    knobs = stored_field('design', instants % vertex_set(), held)
+    state = stored_field('state', points % vertex_set(), size(at) * degrees)
+    knobs = stored_field('design', points % vertex_set(), size(at))
     call state % set_real_vector(v)
-    call knobs % set_real_vector(spread(design, 1, held))
+    call knobs % set_real_vector(spread(design, 1, size(at)))
 
-  end subroutine at_owned_instants
+  end subroutine at_owned_points
 
   !===================================================================!
   ! Which block holds one global instant, and where in it.

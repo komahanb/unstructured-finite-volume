@@ -112,6 +112,14 @@ module gti_configuration
      character(len=16) :: iteration_criterion = 'by_rate'
      integer           :: max_iterations      = 100
 
+     ! THE INNER SOLVES honour the same tolerance, criterion and budget
+     ! kind. What they add is declared here: the width of a Krylov
+     ! space before it restarts, the smoothing sweeps a multigrid
+     ! cycle takes, and the ceiling on cycles or restarts.
+     integer           :: krylov_restart        = 60
+     integer           :: smoothing_sweeps      = 2
+     integer           :: max_linear_iterations = 200
+
      ! Whether the run counts what it spends, and which of the counts
      ! it prints. Counting is off unless it is asked for.
      logical  :: accounting                   = .false.
@@ -311,6 +319,12 @@ contains
        cfg % tolerance_criterion = value
     case ('iteration_criterion')
        cfg % iteration_criterion = value
+    case ('krylov_restart')
+       read(value, *) cfg % krylov_restart
+    case ('smoothing_sweeps')
+       read(value, *) cfg % smoothing_sweeps
+    case ('max_linear_iterations')
+       read(value, *) cfg % max_linear_iterations
     case ('max_iterations')
        read(value, *) cfg % max_iterations
     case ('accounting')
@@ -479,6 +493,9 @@ contains
     write(*,'(a,a)')       '   tolerance criterion      ', trim(cfg % tolerance_criterion)
     write(*,'(a,a)')       '   iteration criterion      ', trim(cfg % iteration_criterion)
     write(*,'(a,i0)')      '   max iterations           ', cfg % max_iterations
+    write(*,'(a,i0)')      '   krylov restart           ', cfg % krylov_restart
+    write(*,'(a,i0)')      '   smoothing sweeps         ', cfg % smoothing_sweeps
+    write(*,'(a,i0)')      '   max linear iterations    ', cfg % max_linear_iterations
     write(*,'(a,l1)')      '   accounting               ', cfg % accounting
     if (cfg % accounting) then
        write(*,'(a,a)')    '   measurements             ', trim(cfg % measurements)

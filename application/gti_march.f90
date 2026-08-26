@@ -48,7 +48,7 @@ module gti_march
   use gti_expansion           , only : block_reach, family_holder
   use gti_block               , only : block_residual
   use gti_sweeps              , only : jacobian_of, assembly_present, multigrid_on, &
-       & set_aggregates, coarse_nodes, take_inner, keep_inner, forget_inner
+       & set_aggregates, coarse_nodes, take_inner, keep_inner, forget_inner, set_linear_stopping
   use util_tally              , only : tally_record, tangent_loops, adjoint_loops
 
   implicit none
@@ -350,6 +350,8 @@ contains
     stopping_criterion  = criterion
     stopping_budget     = budget
     stopping_iterations = iterations
+    ! the inner solves honour the same tolerance, criterion and budget
+    call set_linear_stopping(tolerance, criterion, budget)
 
   end subroutine set_stopping
 

@@ -40,7 +40,7 @@
 module gti_sweeps
 
   use gti_configuration, only : refuse_unknown
-  use util_precision  , only : dp
+  use util_precision  , only : dp, half_digits
   use operation_action      , only : operation, variation
   use view_directed         , only : directed_graph
   use view_directed_stored  , only : stored_directed_graph
@@ -51,7 +51,7 @@ module gti_sweeps
   use operation_multigrid   , only : multigrid
   use operation_gauss_seidel, only : gauss_seidel
   use operation_gmres       , only : gmres
-  use operation_minimization, only : minimizer
+  use operation_minimization, only : minimizer, relative, absolute, by_rate, by_count
 
   implicit none
 
@@ -64,7 +64,7 @@ module gti_sweeps
   integer, parameter :: reverse_route = 2
   public :: set_linear_solver, set_assembly, set_storage, set_multigrid
   public :: set_aggregates, set_coarse_nodes, coarse_nodes, assembly_present, multigrid_on
-  public :: take_inner, keep_inner, forget_inner
+  public :: take_inner, keep_inner, forget_inner, set_linear_stopping, set_linear_budget
 
   !===================================================================!
   ! HOW A LINEAR SYSTEM IS SOLVED: four specifications, each its own.
@@ -91,6 +91,16 @@ module gti_sweeps
   character(len=16), save :: chosen_storage  = 'dense'
   logical          , save :: chosen_multigrid = .false.
   integer, allocatable, save :: chosen_aggregates(:)
+
+  ! WHAT THE INNER SOLVES STOP AT: the tolerance, its criterion and
+  ! the budget kind are the march's own, given once; the Krylov
+  ! restart, the smoothing sweeps and the ceiling are declared.
+  real(dp), save :: linear_tolerance  = half_digits
+  integer , save :: linear_criterion  = relative
+  integer , save :: linear_budget     = by_rate
+  integer , save :: linear_restart    = 60
+  integer , save :: linear_sweeps     = 2
+  integer , save :: linear_iterations = 200
   ! the coarse cell of every node, which a block's aggregates are read from
   integer, allocatable, save :: chosen_coarse(:)
 
@@ -202,6 +212,48 @@ contains
   end function coarse_nodes
 
   !===================================================================!
+  ! What the inner solves stop at: the march's own tolerance,
+  ! criterion and budget kind, handed over by the march's stopping;
+  ! and what is declared, the restart, the sweeps and the ceiling.
+  ! Invalid input: a tolerance that is not positive, a criterion or
+  ! budget kind that is neither, a restart, sweep count or ceiling
+  ! below one.
+  !===================================================================!
+
+  subroutine set_linear_stopping(tolerance, criterion, budget)
+
+    real(dp), intent(in) :: tolerance
+    integer , intent(in) :: criterion, budget
+
+    if (tolerance <= 0.0_dp) error stop 'gti_sweeps: a tolerance is positive'
+    if (criterion /= relative .and. criterion /= absolute) then
+       error stop 'gti_sweeps: a tolerance is measured relative or absolute'
+    end if
+    if (budget /= by_count .and. budget /= by_rate) then
+       error stop 'gti_sweeps: a budget is counted or taken from the rate'
+    end if
+
+    linear_tolerance = tolerance
+    linear_criterion = criterion
+    linear_budget    = budget
+
+  end subroutine set_linear_stopping
+
+  subroutine set_linear_budget(restart, sweeps, iterations)
+
+    integer, intent(in) :: restart, sweeps, iterations
+
+    if (restart < 1 .or. sweeps < 1 .or. iterations < 1) then
+       error stop 'gti_sweeps: a restart, a sweep count and a ceiling are positive'
+    end if
+
+    linear_restart    = restart
+    linear_sweeps     = sweeps
+    linear_iterations = iterations
+
+  end subroutine set_linear_budget
+
+  !===================================================================!
   ! The minimizer the specifications name, built for a system of the
   ! given count. A singular pivot in a direct one is reported, the
   ! matrix being a tangent at an intermediate iterate.
@@ -239,9 +291,11 @@ contains
        allocate(named, source=factorisation)
     case ('iterative')
        krylov = gmres()
-       krylov % restart        = min(count, 60)
-       krylov % tolerance      = 1.0e-13_dp
-       krylov % max_iterations = 4
+       krylov % restart        = min(count, linear_restart)
+       krylov % tolerance      = linear_tolerance
+       krylov % criterion      = linear_criterion
+       krylov % budget         = linear_budget
+       krylov % max_iterations = linear_iterations
        allocate(named, source=krylov)
     end select
 
@@ -260,14 +314,16 @@ contains
     ! gauss-seidel smooths, a point's components at a time - the
     ! coupling within a point being what no point smoother damps -
     ! and the solver named serves the coarse level
-    sweeps % max_iterations = 2
+    sweeps % max_iterations = linear_sweeps
     sweeps % block_width    = width
     allocate(levels % smoother, source=sweeps)
     call move_alloc(named, levels % coarse)
     levels % block_width    = width
     levels % aggregates     = chosen_aggregates
-    levels % tolerance      = 1.0e-13_dp
-    levels % max_iterations = 200
+    levels % tolerance      = linear_tolerance
+    levels % criterion      = linear_criterion
+    levels % budget         = linear_budget
+    levels % max_iterations = linear_iterations
     allocate(inner, source=levels)
 
   end function inner_minimizer

@@ -79,7 +79,7 @@ program graph_time_integrator
        & chain_by_adjoint, instant_components, functional_holder, chain_hessian, &
        & started => startup_trajectory
   use gti_sweeps            , only : set_linear_solver, set_assembly, set_storage, set_multigrid, &
-       & set_coarse_nodes
+       & set_coarse_nodes, set_linear_budget
   use gti_sweeps            , only : route_of, forward_route, reverse_route
   use operation_minimization, only : relative, absolute, by_count, by_rate
   use gti_driver            , only : settings, chosen_grid, steps_of, family_named, clock, &
@@ -803,6 +803,8 @@ contains
          & merge(relative, absolute, trim(cfg % tolerance_criterion) == 'relative'), &
          & merge(by_rate, by_count, trim(cfg % iteration_criterion) == 'by_rate'), &
          & cfg % max_iterations)
+    call set_linear_budget(cfg % krylov_restart, cfg % smoothing_sweeps, &
+         & cfg % max_linear_iterations)
     if (cfg % accounting) then
        call refuse_unknown(cfg % measurements, &
             & ['wall_time     ', 'primal_loops  ', 'tangent_loops ', &

@@ -340,8 +340,8 @@ contains
   !===================================================================!
   ! The first widest instants of a march, from the initial state: a
   ! stage family of order four, which reads one instant back, marched
-  ! over the first widest - 1 steps with each split refinement ways,
-  ! and sampled back at the instants. The steps given are the march's
+  ! as one block over the first widest - 1 steps with each split
+  ! refinement ways, and sampled back at the instants. The steps given are the march's
   ! own, dt(k) ending at instant k with dt(1) zero. Over a field the
   ! nodes and the level below are laid on its blocks as on the march's.
   !===================================================================!
@@ -361,7 +361,7 @@ contains
     integer , allocatable :: added(:)
     real(dp), allocatable :: fine_dt(:), fine_t(:), substeps(:)
     real(dp) :: achieved, span
-    integer :: k, r, b
+    integer :: k, r
 
     if (widest == 1) then
        held = initial
@@ -372,11 +372,9 @@ contains
     substeps = [(dt(1 + (k - 1) / r + 1) / real(r, dp), k = 1, (widest - 1) * r)]
     span     = sum(substeps)
 
-    added = in_pieces((widest - 1) * r + 1)
-    allocate(schemes(size(added)))
-    do b = 1, size(added)
-       allocate(schemes(b) % scheme, source=crouzeix_three_stage())
-    end do
+    added = [(widest - 1) * r + 1]
+    allocate(schemes(1))
+    allocate(schemes(1) % scheme, source=crouzeix_three_stage())
 
     call march_chain(schemes, added, physics, degrees, designed_grid(span), design, &
          & initial, chain, fine_dt, fine_t, achieved, grid_design=substeps, &
@@ -384,32 +382,6 @@ contains
     call sampled(chain, widest, r, held)
 
   end subroutine startup_trajectory
-
-  !===================================================================!
-  ! A horizon of that many instants cut into blocks of a few steps
-  ! each, the first taking the remainder, so that a startup over a
-  ! fine grid is marched piece by piece rather than whole.
-  !===================================================================!
-
-  pure function in_pieces(instants) result(added)
-
-    integer, intent(in) :: instants
-    integer, allocatable :: added(:)
-
-    integer, parameter :: piece = 4
-    integer :: blocks
-
-    if (instants <= piece + 1) then
-       added = [instants]
-       return
-    end if
-
-    blocks = (instants - 1) / piece
-    allocate(added(blocks))
-    added    = piece
-    added(1) = instants - piece * (blocks - 1)
-
-  end function in_pieces
 
   !===================================================================!
   ! The fine march read at every r-th instant, instant by instant.

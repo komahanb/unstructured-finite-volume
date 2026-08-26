@@ -20,9 +20,7 @@
 ! agree in theory and are not made to; the entry of the parameter
 ! alone is the expansion's coefficient of that order; and a central
 ! difference of the table one order below, in a weight or in the
-! parameter, gives the entries holding that design to tau^(2/3). At
-! order one the general recursion is set beside the two routes
-! written for that order alone.
+! parameter, gives the entries holding that design to tau^(2/3).
 !
 ! The families read three instants back, so a startup block marches
 ! the first three from the given state, on steps split four ways;
@@ -41,7 +39,7 @@ program grid_design_check
   use gti_expansion         , only : family_holder, expansion
   use gti_march             , only : set_stopping, consistent_state, imbalance
   use gti_chain             , only : chain_block, march_chain, chain_expansion, chain_system, &
-       & chain_systems, chain_by_tangent, chain_by_adjoint, functional_holder, one_functional, &
+       & chain_systems, functional_holder, one_functional, &
        & chain_derivative, asymmetry, multiset_count, multiset_rank, multiset_of
   use gti_sweeps            , only : route_of, forward_route, reverse_route
 
@@ -84,8 +82,8 @@ program grid_design_check
   call marched(p, design, f)
   call tower % step_partials(v)
   call chain_systems(chain, tower, functionals, degrees, systems)
-  tangent = chain_by_tangent(chain, systems, degrees, design)
-  adjoint = chain_by_adjoint(chain, systems, degrees, design)
+  call chain_derivative(chain, tower, systems, functionals, degrees, 1, forward_route, tangent)
+  call chain_derivative(chain, tower, systems, functionals, degrees, 1, reverse_route, adjoint)
   route   = route_of(size(tangent, 2), size(tangent, 1), 1)
 
   write(*,'(a,es9.2,a,es9.2,a,es9.2)') ' relative tolerance', tau, '   difference step', delta, &
@@ -121,18 +119,7 @@ program grid_design_check
        & maxval(abs((plus(0, :) - minus(0, :)) / (2.0_dp * delta) - adjoint(:, 1)) / &
        &        max(1.0_dp, abs(adjoint(:, 1))))
 
-  ! order one by the general recursion, both routes, against the two
-  ! routes written for that order, at the design the tables were
-  ! formed at
   nd = size(tangent, 2)
-  call marched(p, design, f)
-  call chain_systems(chain, tower, functionals, degrees, systems)
-  call chain_derivative(chain, tower, systems, functionals, degrees, 1, forward_route, table)
-  write(*,'(a,es10.2)') ' order one by the recursion, forward, against the tangent route   ', &
-       & maxval(abs(table - tangent)) / maxval(abs(tangent))
-  call chain_derivative(chain, tower, systems, functionals, degrees, 1, reverse_route, table)
-  write(*,'(a,es10.2)') ' order one by the recursion, reverse, against the adjoint route   ', &
-       & maxval(abs(table - adjoint)) / maxval(abs(adjoint))
 
   ! every order above one by the reverse route
   do order = 2, max_order
@@ -226,19 +213,6 @@ contains
 
   end subroutine classed
 
-  ! the first derivatives by the adjoint at other weights or parameter
-  subroutine differenced(weights, nu, df)
-
-    real(dp), intent(in) :: weights(:), nu
-    real(dp), allocatable, intent(out) :: df(:,:)
-
-    real(dp), allocatable :: f(:,:)
-
-    call marched(weights, nu, f)
-    call chain_systems(chain, tower, functionals, degrees, systems)
-    df = chain_by_adjoint(chain, systems, degrees, nu)
-
-  end subroutine differenced
 
   pure function unit(j) result(e)
 

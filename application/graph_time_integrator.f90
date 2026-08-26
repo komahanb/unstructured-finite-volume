@@ -74,8 +74,8 @@ program graph_time_integrator
   use iso_fortran_env       , only : real128
   use gti_expansion         , only : family_holder, expansion
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
-       & expansion_substitutions, chain_system, chain_systems, chain_by_tangent, &
-       & chain_by_adjoint, instant_components, functional_holder, chain_derivative, asymmetry
+       & expansion_substitutions, chain_system, chain_systems, num_designs_of, &
+       & instant_components, functional_holder, chain_derivative, asymmetry
   use gti_sweeps            , only : set_linear_solver, set_assembly, set_storage, set_multigrid, &
        & set_coarse_nodes, set_linear_budget
   use gti_sweeps            , only : route_of, forward_route, reverse_route
@@ -492,15 +492,11 @@ contains
     ! the steps when the grid was designed
     num_functionals = size(functionals)
     call chain_systems(chain, tower, functionals, nd, systems, node_measure=volume)
-    num_designs = size(systems(1) % rate, 2)
+    num_designs = num_designs_of(tower)
     if (grid_designed) p = dt(2:cfg % instants)
 
     route = route_of(num_designs, num_functionals, 1)
-    if (route == forward_route) then
-       df = chain_by_tangent(chain, systems, nd, cfg % design)
-    else
-       df = chain_by_adjoint(chain, systems, nd, cfg % design)
-    end if
+    call chain_derivative(chain, tower, systems, functionals, nd, 1, route, df, node_measure=volume)
 
     write(*,'(a,a,a,i0,a,i0,a,es10.2)') '      first derivatives by the ', &
          & trim(merge('forward', 'reverse', route == forward_route)), ' route, designs ', &
@@ -515,11 +511,8 @@ contains
        end do
     end if
     if (lists(cfg % check, 'routes')) then
-       if (route == forward_route) then
-          other = chain_by_adjoint(chain, systems, nd, cfg % design)
-       else
-          other = chain_by_tangent(chain, systems, nd, cfg % design)
-       end if
+       call chain_derivative(chain, tower, systems, functionals, nd, 1, &
+            & merge(reverse_route, forward_route, route == forward_route), other, node_measure=volume)
        write(*,'(a,es10.2)') '      tangent against adjoint over the table, relative ', &
             & maxval(abs(df - other)) / max(1.0_dp, maxval(abs(df)))
     end if

@@ -1,7 +1,7 @@
 ! What one formation and one solve cost, apart from the iteration
 ! that calls them.
 !
-! chain_systems forms the jacobian, the design rate and the gradient.
+! chain_systems stamps the jacobian; the tangent route forms the rest.
 ! The factorisation is kept with the system, so a solve here is one
 ! substitution against it. Timing them apart from the march says which
 ! of the two carries the growth, and whether the march's own growth is
@@ -17,9 +17,10 @@ program solve_cost
   use gti_expansion         , only : family_holder, expansion
   use gti_driver            , only : clock, cosine
   use gti_march             , only : partition
-  use gti_chain             , only : one_functional, first_of
+  use gti_chain             , only : one_functional, first_of, functional_holder
+  use gti_sweeps            , only : forward_route
   use gti_chain             , only : chain_block, march_chain, &
-       & chain_system, chain_systems, chain_by_tangent
+       & chain_system, chain_systems, chain_derivative
 
   implicit none
 
@@ -44,9 +45,10 @@ contains
     type(chain_block) , allocatable :: chain(:)
     type(expansion), allocatable, target :: tower
     type(chain_system), allocatable :: systems(:)
+    type(functional_holder) :: energy(1)
     type(bdf_family) :: scheme
     integer , allocatable :: added(:)
-    real(dp), allocatable :: held(:), dt(:), t(:)
+    real(dp), allocatable :: held(:), dt(:), t(:), table(:,:)
     real(dp) :: achieved, duration, design, marched, formed, solved_in, tangent
     integer  :: n, d, j
 
@@ -67,14 +69,16 @@ contains
          & uniform_grid(duration), design, held, chain, tower, dt, t, achieved)
     marched = clock() - marched
 
+    energy(1) = one_functional(van_der_pol_energy(degrees - 1))
     formed = clock()
-    call chain_systems(chain, tower, [one_functional(van_der_pol_energy(degrees - 1))], degrees, systems)
+    call chain_systems(chain, tower, energy, degrees, systems)
     formed = clock() - formed
 
     n = chain(1) % rows % num_unknowns()
 
     solved_in = clock()
-    tangent   = first_of(chain_by_tangent(chain, systems, degrees, design))
+    call chain_derivative(chain, tower, systems, energy, degrees, 1, forward_route, table)
+    tangent   = first_of(table)
     solved_in = clock() - solved_in
 
     write(*,'(i10,3f11.3,2es15.3)') n, marched, formed, solved_in, &

@@ -25,10 +25,10 @@ program marched_horizon
   use field_stored          , only : stored_field
   use physics_vanderpol     , only : van_der_pol_energy
   use gti_march             , only : horizon_bounds, partition, unknowns_graph
-  use gti_sweeps            , only : functional_of
-  use gti_chain             , only : one_functional, first_of
+  use gti_sweeps            , only : functional_of, forward_route, reverse_route
+  use gti_chain             , only : one_functional, first_of, functional_holder
   use gti_chain             , only : chain_block, march_chain, instant_components, &
-       & chain_system, chain_systems, chain_by_tangent, chain_by_adjoint
+       & chain_system, chain_systems, chain_derivative
   use operation_grid        , only : uniform_grid
 
   implicit none
@@ -245,7 +245,8 @@ contains
     type(chain_block) , allocatable :: chain(:)
     type(expansion), allocatable, target :: tower
     type(chain_system), allocatable :: systems(:)
-    real(dp), allocatable :: q(:), dt(:)
+    type(functional_holder) :: energy(1)
+    real(dp), allocatable :: q(:), dt(:), table(:,:)
     real(dp) :: f, tangent, adjoint, differenced, achieved
     integer :: n
 
@@ -257,10 +258,12 @@ contains
     f = energy_of(q, n, design)
 
     call chained(schemes, added, design, chain, tower, dt)
-    call chain_systems(chain, tower, [one_functional(van_der_pol_energy(state_degree))], degrees, systems)
-
-    tangent     = first_of(chain_by_tangent(chain, systems, degrees, design))
-    adjoint     = first_of(chain_by_adjoint(chain, systems, degrees, design))
+    energy(1) = one_functional(van_der_pol_energy(state_degree))
+    call chain_systems(chain, tower, energy, degrees, systems)
+    call chain_derivative(chain, tower, systems, energy, degrees, 1, forward_route, table)
+    tangent     = first_of(table)
+    call chain_derivative(chain, tower, systems, energy, degrees, 1, reverse_route, table)
+    adjoint     = first_of(table)
     differenced = differenced_energy(schemes, added, n, design, delta)
 
     write(*,'(a)')        ' '

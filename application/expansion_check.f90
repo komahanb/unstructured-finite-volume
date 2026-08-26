@@ -14,13 +14,12 @@ program expansion_check
   use operation_family_bdf , only : bdf_family
   use operation_family_adams, only : adams_family
   use physics_vanderpol    , only : van_der_pol, van_der_pol_energy
-  use gti_march            , only : partition, block_from, set_stopping
+  use gti_march            , only : partition, set_stopping
   use operation_minimization, only : relative, by_rate
   use gti_expansion        , only : expansion, family_holder
   use operation_grid       , only : uniform_grid
   use operation_family_dirk, only : crouzeix_two_stage
-  use gti_block            , only : block_residual
-  use gti_taylor           , only : block_expansion
+  use gti_chain            , only : chain_block, march_chain, chain_expansion, one_functional
 
   implicit none
 
@@ -79,27 +78,26 @@ contains
     real(dp)     , intent(in) :: design_value
     real(dp), allocatable, intent(out) :: f(:)
 
-    type(block_residual) :: rows
-    type(expansion) :: tower
     type(family_holder) :: holder(1)
-    real(dp), allocatable :: dt(:), t(:), held(:), q(:)
-    integer , allocatable :: at(:)
+    type(chain_block), allocatable :: chain(:)
+    type(expansion)  , allocatable, target :: tower
+    real(dp), allocatable :: dt(:), t(:), held(:), table(:,:)
     real(dp) :: achieved
     integer :: k, d
 
     call partition(duration, instants, dt, t)
     held = [((exact(d, t(k)), d = 0, degrees - 1), k = 1, scheme % history_depth(degrees - 1))]
-    ! the block from its node of the expansion graph, whatever the family
     allocate(holder(1) % scheme, source=scheme)
-    call tower % build(van_der_pol(state_degree), holder, [instants], uniform_grid(duration), &
-         & 0, design_value)
-    call block_from(tower, 1, scheme, van_der_pol(state_degree), held, rows, at)
     associate (u1 => staged); end associate
 
-    call block_expansion(rows, van_der_pol(state_degree), &
-         & van_der_pol_energy(state_degree), degrees, &
-         & scheme % primary_degree(degrees - 1), at, dt, design_value, max_order, &
-         & q, f, achieved)
+    ! one block, marched as a chain of one, then expanded by the
+    ! recursion over the one design
+    call march_chain(holder, [instants], van_der_pol(state_degree), degrees, uniform_grid(duration), &
+         & design_value, held, chain, tower, dt, t, achieved)
+    call chain_expansion(chain, tower, [one_functional(van_der_pol_energy(state_degree))], degrees, &
+         & max_order, table)
+    allocate(f(0:max_order))
+    f(0:) = table(:, 1)
 
   end subroutine expanded
 

@@ -56,7 +56,7 @@ module gti_sweeps
   implicit none
 
   private
-  public :: functional_of, functional_gradient, functional_design_partial
+  public :: functional_of, functional_gradient
   public :: design_partial, jacobian_of
   public :: forward_route, reverse_route, route_of, route_substitutions, choose
 
@@ -378,40 +378,6 @@ contains
 
   end subroutine applied
 
-  !===================================================================!
-  ! What a functional itself adds through the design to its
-  ! derivative: the integrand's partial in the design at every point,
-  ! weighted by the measure of the point and summed.
-  !===================================================================!
-
-  subroutine functional_design_partial(integrand, points, inputs, weight, n, &
-       & design_domain, d, along_state, along_design)
-
-    class(operation)     , intent(in)  :: integrand
-    class(directed_graph), intent(in)  :: points
-    type(stored_field)   , intent(in)  :: inputs(:)
-    real(dp)             , intent(in)  :: weight(:)
-    integer              , intent(in)  :: n
-    type(graph)          , intent(in)  :: design_domain
-    real(dp)             , intent(out) :: d
-    ! given, the partial's own partial along a state direction over
-    ! the points, or along the design again at every point
-    real(dp), intent(in), optional     :: along_state(:), along_design(:)
-
-    real(dp), allocatable :: rate(:)
-
-    if (present(along_state)) then
-       call varied(integrand, points, inputs, 2, design_domain, spread(1.0_dp, 1, n), rate, &
-            & 1, design_domain, along_state)
-    else if (present(along_design)) then
-       call varied(integrand, points, inputs, 2, design_domain, spread(1.0_dp, 1, n), rate, &
-            & 2, design_domain, along_design)
-    else
-       call varied(integrand, points, inputs, 2, design_domain, spread(1.0_dp, 1, n), rate)
-    end if
-    d = sum(weight * rate)
-
-  end subroutine functional_design_partial
 
 
 

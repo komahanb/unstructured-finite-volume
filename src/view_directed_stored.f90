@@ -53,7 +53,8 @@
 
 module view_directed_stored
 
-  use view_directed, only : directed_graph
+  use view_directed, only : directed_graph, forward, reverse
+  use relation_algorithms, only : topological_order
   use graph_fractal      , only : graph
   use relation_binary, only : group_by_key, csr_relation
   use relation_partition, only : partition_relation
@@ -173,6 +174,7 @@ module view_directed_stored
      procedure :: edge_has_head
      procedure :: transpose
      procedure :: transposed
+     procedure :: loop
 
      !----------------------------------------------------------------!
      ! The named vertex sets.
@@ -570,6 +572,56 @@ contains
 
   !===================================================================!
   ! Where an edge goes.
+  !===================================================================!
+  ! THE LOOP over the graph: its vertices in an order every edge
+  ! respects - a tail before its head in the forward orientation, a
+  ! head before its tail in reverse, which is the loop over the
+  ! transpose. It exists only where the graph has no cycle; a graph
+  ! with one has no loop, and the request stops the program. A march
+  ! is this loop forward and its adjoint this loop in reverse, and
+  ! neither writes an instant's number down. The order is the one
+  ! topological sort in the tree, over the graph's own adjacency.
+  !===================================================================!
+
+  function loop(this, orientation) result(order)
+
+    class(stored_directed_graph), intent(in) :: this
+    integer, intent(in), optional :: orientation
+    integer, allocatable :: order(:)
+
+    type(set_map)      :: sets
+    type(csr_relation) :: adjacency
+    integer, allocatable :: table(:,:)
+    logical :: acyclic
+    integer :: way, e, n
+
+    way = forward
+    if (present(orientation)) way = orientation
+    if (way /= forward .and. way /= reverse) then
+       error stop 'stored_directed_graph: a loop runs forward or in reverse'
+    end if
+
+    allocate(table(2, this % ne))
+    n = 0
+    do e = 1, this % ne
+       if (.not. this % edge_has_head(e)) cycle
+       n = n + 1
+       if (way == forward) then
+          table(:, n) = [this % edge_tail(e), this % edge_head(e)]
+       else
+          table(:, n) = [this % edge_head(e), this % edge_tail(e)]
+       end if
+    end do
+
+    call sets % bind(this % vset, counted_set_representation(this % nv))
+    adjacency = csr_relation('adjacency', this % vset, this % vset, table(:, 1:n), sets)
+    call topological_order(adjacency, sets, order, acyclic)
+    if (.not. acyclic) then
+       error stop 'stored_directed_graph: a graph with a cycle has no loop'
+    end if
+
+  end function loop
+
   !===================================================================!
   ! The transpose: the same object read the other way, every edge's
   ! tail its head and head its tail, so that transposing twice gives

@@ -64,10 +64,7 @@ module gti_block
   use graph_fractal        , only : graph
   use operation_stencil    , only : combine_triples, stencil
   use physics_integrand    , only : zero_integrand, nodal_integrand
-  use relation_binary      , only : csr_relation
-  use map_set              , only : set_map
-  use map_set_representation, only : counted_set_representation
-  use relation_algorithms  , only : topological_order
+  use view_directed        , only : forward
 
   implicit none
 
@@ -800,9 +797,9 @@ contains
   ! instants, the members are coupled by the derived rows - a row at
   ! one instant reading a point at another - and that coupling is
   ! acyclic for any march, since every scheme reads backward; its
-  ! topological order is the sweep. The transposed block's pattern is
-  ! the same graph read the other way, so it sweeps from the last
-  ! instant by the same rule and no one says so. Swept by nodes, the
+  ! loop is the sweep. The transposed block's pattern is the same
+  ! graph read the other way, so it sweeps from the last instant by
+  ! the same rule and no one says so. Swept by nodes, the
   ! coupling is the level below's and symmetric, so no node is before
   ! another and they are swept as they lie.
   !===================================================================!
@@ -815,10 +812,7 @@ contains
     integer, allocatable , intent(out) :: order(:)
 
     integer, allocatable :: point_of(:), table(:,:)
-    type(graph)          :: members
-    type(set_map)        :: sets
-    type(csr_relation)   :: coupling
-    logical :: acyclic
+    type(stored_directed_graph) :: coupling
     integer :: npts, instants, ne, e, p, d, k, n, t, h
 
     npts     = size(this % at)
@@ -850,13 +844,8 @@ contains
        table(:, n) = [t, h]
     end do
 
-    call members % declare()
-    call sets % bind(members, counted_set_representation(instants))
-    coupling = csr_relation('instant coupling', members, members, table(:, 1:n), sets)
-    call topological_order(coupling, sets, order, acyclic)
-    if (.not. acyclic) then
-       error stop 'gti_block: the instants of a march are coupled without a cycle'
-    end if
+    coupling = stored_directed_graph(instants, tails=table(1, 1:n), heads=table(2, 1:n))
+    order    = coupling % loop(forward)
 
   end subroutine member_order
 

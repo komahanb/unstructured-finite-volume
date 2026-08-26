@@ -1,8 +1,14 @@
 !=====================================================================!
-! Time integration over a chain graph: instants are vertices, steps
-! are edges, and a step size is a number stored per edge. march
-! takes an optional per-edge step array; absent, every edge uses the
-! marcher's one step.
+! Time integration over the reads graph: instants are vertices, and
+! an edge j -> k says the statement determining instant k reads
+! instant j, its slot - which history argument - carried on the
+! edge; the first instant is read and determines nothing. The steps
+! a statement takes are differences of the instants' times, and the
+! graph is the only thing that says which instant comes before
+! which: a march is the loop over the graph in its forward
+! orientation, the adjoint the loop in reverse, and no routine here
+! writes an instant's number down. march takes an optional per-step
+! array of step sizes; absent, every step is the marcher's one step.
 !
 ! Every rule is one scheme - the theta residual of operation_step -
 ! and every verb is one traversal of the chain with that scheme:
@@ -22,11 +28,12 @@
 ! zero state divided by -a0 and no minimizer runs; otherwise the held
 ! minimizer (inner) solves the step with the rest of the tuple held.
 !
-! march_adjoint traverses the converse chain over the recorded
+! march_adjoint loops over the graph in reverse over the recorded
 ! trajectory and applies the dual of every local differential: at
-! each edge the state block of the tangent is compiled, transposed
+! each instant the state block of the tangent is compiled, transposed
 ! and solved, and the dual of each history block - also compiled and
-! transposed - is subtracted from the seed of the instant it reads.
+! transposed - is subtracted from the seed of the instant it reads,
+! wherever that instant lies.
 ! Nothing here names a1 or a2. march_directional computes forward
 ! directional derivatives of any order: the chain rule over the
 ! scheme with the state, history and parameter paths gives the
@@ -40,7 +47,7 @@ module operation_marching
 
   use util_precision  , only : dp
   use operation_action, only : operation, argument
-  use view_directed, only : directed_graph
+  use view_directed, only : directed_graph, forward, reverse
   use field_calculus, only : field
   use graph_fractal      , only : graph
   use field_stored  , only : stored_field
@@ -87,20 +94,90 @@ contains
   ! step.
   !===================================================================!
 
-  subroutine instants(this, nsteps, chain)
+  subroutine instants(this, nsteps, steps, chain, slot, time)
 
     class(marcher), intent(in) :: this
     integer, intent(in) :: nsteps
+    real(dp), intent(in), optional :: steps(:)
     type(stored_directed_graph), intent(out) :: chain
+    integer , allocatable, intent(out) :: slot(:)
+    real(dp), allocatable, intent(out) :: time(:)
 
-    integer :: n
+    integer, allocatable :: tails(:), heads(:)
+    integer :: k, e
 
-    associate (u1 => this); end associate
+    ! every instant past the first reads the one before it; under
+    ! the two-step rule, the one before that as well, once there is one
+    allocate(tails(2 * nsteps), heads(2 * nsteps), slot(2 * nsteps))
+    e = 0
+    do k = 2, nsteps + 1
+       e = e + 1
+       tails(e) = k - 1
+       heads(e) = k
+       slot(e)  = 1
+       if (this % rule == MARCH_BDF2 .and. k >= 3) then
+          e = e + 1
+          tails(e) = k - 2
+          heads(e) = k
+          slot(e)  = 2
+       end if
+    end do
+    chain = stored_directed_graph(nsteps + 1, tails=tails(1:e), heads=heads(1:e))
+    slot  = slot(1:e)
 
-    chain = stored_directed_graph(nsteps + 1, &
-         & tails=[(n, n = 1, nsteps)], heads=[(n + 1, n = 1, nsteps)])
+    allocate(time(nsteps + 1))
+    time(1) = 0.0_dp
+    do k = 1, nsteps
+       time(k + 1) = time(k) + edge_step(this, steps, k)
+    end do
 
   end subroutine instants
+
+  !===================================================================!
+  ! What the statement determining an instant reads, by slot: the
+  ! instant at each history slot, zero where the slot is not read.
+  ! An instant reading nothing is given, not determined.
+  !===================================================================!
+
+  subroutine reads_of(chain, slot, k, read)
+
+    type(stored_directed_graph), intent(in)  :: chain
+    integer                    , intent(in)  :: slot(:), k
+    integer                    , intent(out) :: read(2)
+
+    integer, allocatable :: edges(:)
+    integer :: e
+
+    read = 0
+    call chain % incoming_edges(k, edges)
+    do e = 1, size(edges)
+       read(slot(edges(e))) = chain % edge_tail(edges(e))
+    end do
+
+  end subroutine reads_of
+
+  !===================================================================!
+  ! The statement configured for the instant it determines: its step
+  ! is the time from the instant it reads first, and the step before
+  ! that, where a second read exists, the time between its two reads.
+  !===================================================================!
+
+  subroutine configured(this, statement, time, k, read)
+
+    class(marcher), intent(in)  :: this
+    type(scheme), intent(inout) :: statement
+    real(dp)    , intent(in)    :: time(:)
+    integer     , intent(in)    :: k, read(2)
+
+    if (read(2) > 0) then
+       call configure_edge(this, statement, time(k) - time(read(1)), &
+            & time(read(1)) - time(read(2)), .true.)
+    else
+       call configure_edge(this, statement, time(k) - time(read(1)), &
+            & time(k) - time(read(1)), .false.)
+    end if
+
+  end subroutine configured
 
   !===================================================================!
   ! Integrate nsteps edges forward under the marcher's rule,
@@ -123,19 +200,14 @@ contains
     type(graph) :: state_domain
     type(stored_field), allocatable :: inputs(:)
     integer         :: n_state_domain
-    real(dp), allocatable :: qold(:), qolder(:), zeros(:)
-    real(dp) :: achieved, h_edge, h_previous
-    integer :: e, num_components
+    real(dp), allocatable :: states(:,:), zeros(:), time(:)
+    integer , allocatable :: order(:), slot(:)
+    real(dp) :: achieved
+    integer :: i, k, read(2), num_components
 
     call require_valid_steps(steps, nsteps)
     call require_parameters(action, parameters)
-
-    call this % instants(nsteps, chain)
-
-    if (present(trajectory)) then
-       allocate(trajectory(size(q), nsteps + 1))
-       trajectory(:, 1) = q
-    end if
+    call this % instants(nsteps, steps, chain, slot, time)
 
     statement = prepared_statement(this, action)
 
@@ -145,30 +217,32 @@ contains
 
     allocate(zeros(size(q)))
     zeros = 0.0_dp
+    allocate(states(size(q), chain % num_vertices()))
 
-    qold       = q
-    h_previous = this % step
-
-    do e = 1, chain % num_edges()
-
-       h_edge = edge_step(this, steps, e)
-
-       ! BDF2 needs two history states, so its first edge is a
-       ! backward-euler step: qolder is unallocated until the second
-       call configure_edge(this, statement, h_edge, h_previous, allocated(qolder))
-       call edge_inputs(statement, q, qold, state_domain, n_state_domain, &
-            & num_components, inputs, qolder=qolder, parameters=parameters)
-
+    ! the loop over the reads graph: an instant reading nothing is the
+    ! one given; every other is determined from the instants it reads
+    order = chain % loop(forward)
+    do i = 1, size(order)
+       k = order(i)
+       call reads_of(chain, slot, k, read)
+       if (read(1) == 0) then
+          states(:, k) = q
+          cycle
+       end if
+       call configured(this, statement, time, k, read)
+       if (read(2) > 0) then
+          call edge_inputs(statement, q, states(:, read(1)), state_domain, n_state_domain, &
+               & num_components, inputs, qolder=states(:, read(2)), parameters=parameters)
+       else
+          call edge_inputs(statement, q, states(:, read(1)), state_domain, n_state_domain, &
+               & num_components, inputs, parameters=parameters)
+       end if
        call advance(this, statement, on, state_domain, n_state_domain, &
             & num_components, inputs, zeros, q, achieved)
-
-       qolder     = qold
-       qold       = q
-       h_previous = h_edge
-
-       if (present(trajectory)) trajectory(:, e + 1) = q
-
+       states(:, k) = q
     end do
+
+    if (present(trajectory)) trajectory = states
 
   end subroutine march
 
@@ -204,10 +278,14 @@ contains
        return
     end if
 
+    ! the step statement is affine in the state, A q + c = 0 with c
+    ! read at the zero state; a linear solver answers the linear part
+    ! alone, so it is asked for A q = -c
     call this % inner % attach(statement, on, state_domain, &
          & n_state_domain, num_components = num_components, &
          & held_inputs = inputs(2:))
-    call this % inner % solve(zeros, q, achieved)
+    call this % inner % constant(c)
+    call this % inner % solve(-c, q, achieved)
 
   end subroutine advance
 
@@ -320,27 +398,6 @@ contains
 
   end subroutine configure_edge
 
-  !===================================================================!
-  ! The coefficients of a recorded edge: the step of edge e and, past
-  ! the first edge, the step before it.
-  !===================================================================!
-
-  subroutine recorded_configure(this, statement, steps, e)
-
-    class(marcher), intent(in)     :: this
-    type(scheme), intent(inout)    :: statement
-    real(dp), intent(in), optional :: steps(:)
-    integer , intent(in)           :: e
-
-    if (e > 1) then
-       call configure_edge(this, statement, edge_step(this, steps, e), &
-            & edge_step(this, steps, e - 1), .true.)
-    else
-       call configure_edge(this, statement, edge_step(this, steps, e), &
-            & edge_step(this, steps, e), .false.)
-    end if
-
-  end subroutine recorded_configure
 
   !===================================================================!
   ! The statement's input tuple for one edge, in the scheme's argument
@@ -397,27 +454,27 @@ contains
   end subroutine edge_inputs
 
   !===================================================================!
-  ! The input tuple of a recorded edge: the state at instant e + 1,
-  ! the history at e and, past the first edge, e - 1.
+  ! The input tuple at a recorded instant: its state, and the states
+  ! at the instants it reads.
   !===================================================================!
 
-  subroutine recorded_inputs(statement, e, trajectory, state_domain, &
+  subroutine recorded_inputs(statement, k, read, trajectory, state_domain, &
        & n_state_domain, num_components, inputs, parameters)
 
     type(scheme), intent(in) :: statement
-    integer     , intent(in) :: e
+    integer     , intent(in) :: k, read(2)
     real(dp)    , intent(in) :: trajectory(:,:)
     type(graph) , intent(in) :: state_domain
     integer     , intent(in) :: n_state_domain, num_components
     type(stored_field), allocatable, intent(out) :: inputs(:)
     type(stored_field), intent(in), optional :: parameters(:)
 
-    if (e > 1) then
-       call edge_inputs(statement, trajectory(:, e + 1), trajectory(:, e), &
+    if (read(2) > 0) then
+       call edge_inputs(statement, trajectory(:, k), trajectory(:, read(1)), &
             & state_domain, n_state_domain, num_components, inputs, &
-            & qolder=trajectory(:, e - 1), parameters=parameters)
+            & qolder=trajectory(:, read(2)), parameters=parameters)
     else
-       call edge_inputs(statement, trajectory(:, e + 1), trajectory(:, e), &
+       call edge_inputs(statement, trajectory(:, k), trajectory(:, read(1)), &
             & state_domain, n_state_domain, num_components, inputs, &
             & parameters=parameters)
     end if
@@ -425,22 +482,23 @@ contains
   end subroutine recorded_inputs
 
   !===================================================================!
-  ! The converse traversal over the recorded trajectory, applying the
-  ! dual of every local differential. At each edge, in reverse order,
-  ! with A the state block of the residual's tangent at the edge's
-  ! input tuple,
+  ! The loop over the reads graph in reverse over the recorded
+  ! trajectory, applying the dual of every local differential. At
+  ! each determined instant k, with A the state block of the
+  ! residual's tangent at its input tuple,
   !
-  !      A^T lambda_e = seed_e
-  !      seed of instant e - k + 1  -=  (D_history(k) R_e)^T lambda_e
+  !      A^T lambda_k = seed_k
+  !      seed of the instant read at slot s  -=  (D_history(s) R_k)^T lambda_k
   !
-  ! for every history argument the statement reaches; each block is
-  ! compiled to a stencil and transposed. With theta = 0 the state
-  ! block is a0 I and no solve runs. seeds(:, k), if present, is added
-  ! when instant k is reached. On return, lambda holds the
-  ! sensitivity at the first instant. The trajectory must hold one
-  ! state per instant and seeds one entry per instant; both are
-  ! checked and stop the program, because a misaligned array would
-  ! pair states with the wrong instants.
+  ! for every slot the statement reads; each block is compiled to a
+  ! stencil and transposed. With theta = 0 the state block is a0 I and
+  ! no solve runs. The seed of the instant the loop begins at is
+  ! lambda as given; seeds(:, k), if present, is what every other
+  ! instant's seed begins as. On return, lambda holds the sensitivity
+  ! at the given instant, the one reading nothing. The trajectory must
+  ! hold one state per instant and seeds one entry per instant; both
+  ! are checked and stop the program, because a misaligned array
+  ! would pair states with the wrong instants.
   !===================================================================!
 
   subroutine march_adjoint(this, action, on, lambda, nsteps, trajectory, &
@@ -463,22 +521,20 @@ contains
     type(stencil) :: compiled, adjoint
     type(stored_field), allocatable :: inputs(:)
     type(graph) :: state_domain
-    real(dp), allocatable :: seed(:), lambda_e(:), carry_one(:), carry_two(:), g(:)
+    real(dp), allocatable :: seed(:,:), lambda_k(:), g(:), time(:)
+    integer , allocatable :: order(:), slot(:)
     real(dp) :: achieved
-    integer :: e, n, n_state_domain, num_components
+    integer :: i, k, s, n, read(2), n_state_domain, num_components
 
     call require_valid_steps(steps, nsteps)
     call require_parameters(action, parameters)
-
-    call this % instants(nsteps, chain)
+    call this % instants(nsteps, steps, chain, slot, time)
 
     n = size(lambda)
-
     if (size(trajectory, 1) /= n .or. &
          & size(trajectory, 2) /= chain % num_vertices()) then
        error stop 'march_adjoint: the trajectory carries one state per instant'
     end if
-
     if (present(seeds)) then
        if (size(seeds, 1) /= n .or. &
             & size(seeds, 2) /= chain % num_vertices()) then
@@ -487,30 +543,32 @@ contains
     end if
 
     call read_state_domain(action, on, lambda, state_domain, n_state_domain, num_components)
-
     statement = prepared_statement(this, action)
 
-    allocate(carry_one(n), carry_two(n), lambda_e(n))
-    carry_one = 0.0_dp
-    carry_two = 0.0_dp
+    allocate(seed(n, chain % num_vertices()), lambda_k(n))
+    seed = 0.0_dp
+    if (present(seeds)) seed = seeds
 
-    seed = lambda
+    order = chain % loop(reverse)
+    seed(:, order(1)) = lambda
 
-    do e = chain % num_edges(), 1, -1
+    do i = 1, size(order)
+       k = order(i)
+       call reads_of(chain, slot, k, read)
 
-       call recorded_configure(this, statement, steps, e)
-       call recorded_inputs(statement, e, trajectory, state_domain, &
-            & n_state_domain, num_components, inputs, parameters)
-
-       ! seeds(:, k), if given, is added when instant k is reached
-       if (e < chain % num_edges()) then
-          seed = carry_one
-          if (present(seeds)) seed = seed + seeds(:, e + 1)
+       ! the given instant: its sensitivity is what was seeded into it
+       if (read(1) == 0) then
+          lambda_k = seed(:, k)
+          cycle
        end if
+
+       call configured(this, statement, time, k, read)
+       call recorded_inputs(statement, k, read, trajectory, state_domain, &
+            & n_state_domain, num_components, inputs, parameters)
 
        ! the state block, transposed and solved
        if (statement % theta == 0.0_dp) then
-          lambda_e = seed / statement % a0
+          lambda_k = seed(:, k) / statement % a0
        else
           tangent = tangent_of(statement)
           call tangent % freeze(inputs)
@@ -519,25 +577,20 @@ contains
           call direct % attach(adjoint, adjoint % pattern, &
                & adjoint % pattern % vertex_set(), &
                & adjoint % pattern % num_vertices())
-          lambda_e = 0.0_dp
-          call direct % solve(seed, lambda_e, achieved)
+          lambda_k = 0.0_dp
+          call direct % solve(seed(:, k), lambda_k, achieved)
        end if
 
        ! the dual of each history block, subtracted from the seed of
-       ! the instant that block reads
-       call transposed_block(statement, statement % history(1), inputs, on, n, lambda_e, g)
-       carry_one = carry_two - g
-       if (statement % reach >= 2) then
-          call transposed_block(statement, statement % history(2), inputs, on, n, lambda_e, g)
-          carry_two = -g
-       else
-          carry_two = 0.0_dp
-       end if
-
+       ! the instant that slot reads
+       do s = 1, statement % reach
+          if (read(s) == 0) cycle
+          call transposed_block(statement, statement % history(s), inputs, on, n, lambda_k, g)
+          seed(:, read(s)) = seed(:, read(s)) - g
+       end do
     end do
 
-    lambda = carry_one
-    if (present(seeds)) lambda = lambda + seeds(:, 1)
+    lambda = lambda_k
 
   end subroutine march_adjoint
 
@@ -652,10 +705,11 @@ contains
     type(stored_field), allocatable  :: inputs(:)
     class(field), allocatable  :: total_field
     type(graph) :: state_domain
-    real(dp), allocatable :: total(:), q_s(:)
+    real(dp), allocatable :: total(:), q_s(:), time(:)
+    integer , allocatable :: walk(:), slot(:)
     real(dp) :: achieved
     integer :: n_state_domain, num_components
-    integer :: e, s_order, k, n, npaths
+    integer :: i, s_order, k, n, npaths, read(2)
 
     if (order < 1) then
        error stop 'march_directional: the order is positive'
@@ -670,7 +724,7 @@ contains
 
     call require_valid_steps(steps, nsteps)
     call require_parameters(action, parameters)
-    call this % instants(nsteps, chain)
+    call this % instants(nsteps, steps, chain, slot, time)
 
     n = size(trajectory, 1)
     if (size(trajectory, 2) /= chain % num_vertices()) then
@@ -704,17 +758,21 @@ contains
     statement = prepared_statement(this, action)
     allocate(q_s(n))
 
-    ! for each edge, assemble the composition degree by degree and
-    ! advance each order's derivative
-    do e = 1, chain % num_edges()
+    ! for each determined instant, in the loop's order, assemble the
+    ! composition degree by degree and advance each order's derivative
+    walk = chain % loop(forward)
+    do i = 1, size(walk)
+       k = walk(i)
+       call reads_of(chain, slot, k, read)
+       if (read(1) == 0) cycle
 
-       call recorded_configure(this, statement, steps, e)
-       call recorded_inputs(statement, e, trajectory, state_domain, &
+       call configured(this, statement, time, k, read)
+       call recorded_inputs(statement, k, read, trajectory, state_domain, &
             & n_state_domain, num_components, inputs, parameters)
 
        ! the tangent copies the statement, so it is taken after the
-       ! edge is configured, and frozen at the edge's input tuple
-       ! before it is attached
+       ! instant is configured, and frozen at its input tuple before
+       ! it is attached
        if (statement % theta /= 0.0_dp) then
           tangent = tangent_of(statement)
           call tangent % freeze(inputs)
@@ -723,25 +781,20 @@ contains
        end if
 
        do s_order = 1, order
-
           call build_paths(statement, sensitivities, state_domain, &
-               & n_state_domain, num_components, e + 1, s_order, npaths, paths, &
+               & n_state_domain, num_components, k, read, s_order, npaths, paths, &
                & assembled)
-
           call composer % assemble(statement, on, inputs, s_order, &
                & assembled, total_field)
           call total_field % real_vector(total)
-
           if (statement % theta == 0.0_dp) then
              q_s = -total / statement % a0
           else
              q_s = 0.0_dp
              call direct % solve(-total, q_s, achieved)
           end if
-          sensitivities(:, s_order, e + 1) = q_s
-
+          sensitivities(:, s_order, k) = q_s
        end do
-
     end do
 
   end subroutine march_directional
@@ -768,22 +821,22 @@ contains
   end function covered_by_parameters
 
   !===================================================================!
-  ! The argument paths of the scheme for one edge and one order,
-  ! about the instant at = e + 1: the state path holds the solved
-  ! derivatives below the current order and zero at the order, which
-  ! makes the assembled total the right-hand side for the unknown
-  ! q^(s); each history(k) path holds every derivative of the state
-  ! at instant at - k; the caller's parameter paths are restated in
-  ! the scheme's argument space.
+  ! The argument paths of the scheme at one instant and one order:
+  ! the state path holds the solved derivatives below the current
+  ! order and zero at the order, which makes the assembled total the
+  ! right-hand side for the unknown q^(s); each history(s) path holds
+  ! every derivative of the state at the instant read at slot s; the
+  ! caller's parameter paths are restated in the scheme's argument
+  ! space.
   !===================================================================!
 
   subroutine build_paths(statement, sensitivities, state_domain, n_state_domain, &
-       & num_components, at, s_order, npaths, parameter_paths, assembled)
+       & num_components, at, read, s_order, npaths, parameter_paths, assembled)
 
     type(scheme)  , intent(in) :: statement
     real(dp)      , intent(in) :: sensitivities(:,:,:)
     type(graph), intent(in) :: state_domain
-    integer       , intent(in) :: n_state_domain, num_components, at, s_order, npaths
+    integer       , intent(in) :: n_state_domain, num_components, at, read(2), s_order, npaths
     type(argument_path), intent(in), optional :: parameter_paths(:)
     type(argument_path), allocatable, intent(out) :: assembled(:)
 
@@ -808,7 +861,7 @@ contains
        assembled(1 + j) % wrt = statement % history(j)
        allocate(assembled(1 + j) % derivative(s_order))
        do k = 1, s_order
-          call occupy(assembled(1 + j), k, sensitivities(:, k, at - j))
+          call occupy(assembled(1 + j), k, sensitivities(:, k, read(j)))
        end do
     end do
 

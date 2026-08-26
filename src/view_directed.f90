@@ -100,6 +100,12 @@ module view_directed
   private
 
   public :: directed_graph
+  public :: forward, reverse
+
+  ! the two orientations a directed view is read in: along its edges,
+  ! tail before head, or against them, which is reading its transpose
+  integer, parameter :: forward = 1
+  integer, parameter :: reverse = 2
   public :: SIDE_VERTEX
   public :: SIDE_EDGE
 

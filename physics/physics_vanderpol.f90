@@ -42,7 +42,7 @@ module physics_vanderpol
   implicit none
 
   private
-  public :: van_der_pol, van_der_pol_energy
+  public :: van_der_pol, van_der_pol_energy, van_der_pol_dissipation
 
   type, extends(nodal_integrand) :: van_der_pol
    contains
@@ -63,6 +63,19 @@ module physics_vanderpol
   interface van_der_pol_energy
      module procedure create_energy
   end interface van_der_pol_energy
+
+  ! the power the damping term draws, nu (1 - q^2) q'^2: a functional
+  ! that reads the design itself, so its own partial in the design
+  ! is not zero
+  type, extends(nodal_integrand) :: van_der_pol_dissipation
+   contains
+     procedure :: name       => dissipation_name
+     procedure :: at_instant => dissipation_at_instant
+  end type van_der_pol_dissipation
+
+  interface van_der_pol_dissipation
+     module procedure create_dissipation
+  end interface van_der_pol_dissipation
 
 contains
 
@@ -101,6 +114,28 @@ contains
     name = 'van der pol residual'
 
   end function residual_name
+
+  function create_dissipation(degree) result(this)
+
+    integer, intent(in) :: degree
+    type(van_der_pol_dissipation) :: this
+
+    if (degree < 1) then
+       error stop 'physics_vanderpol: the dissipation needs a velocity'
+    end if
+    call this % declare_degree(degree)
+
+  end function create_dissipation
+
+  pure function dissipation_name(this) result(name)
+
+    class(van_der_pol_dissipation), intent(in) :: this
+    character(len=:), allocatable :: name
+
+    associate (u1 => this); end associate
+    name = 'van der pol dissipation'
+
+  end function dissipation_name
 
   pure function energy_name(this) result(name)
 
@@ -145,5 +180,20 @@ contains
     r = 0.5_dp * (q(0) * q(0) + q(1) * q(1))
 
   end function energy_at_instant
+
+  pure function dissipation_at_instant(this, q, nu) result(r)
+
+    class(van_der_pol_dissipation), intent(in) :: this
+    type(derivative_terms)        , intent(in) :: q(0:)
+    type(derivative_terms)        , intent(in) :: nu
+    type(derivative_terms) :: r
+
+    type(derivative_terms) :: one
+
+    associate (u1 => this); end associate
+    one = derivative_terms(1.0_dp, nu)
+    r = nu * (one - q(0) * q(0)) * q(1) * q(1)
+
+  end function dissipation_at_instant
 
 end module physics_vanderpol

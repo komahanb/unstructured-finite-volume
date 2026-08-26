@@ -62,10 +62,11 @@ program graph_time_integrator
   use operation_family      , only : family
   use operation_family_bdf  , only : bdf_family
   use operation_family_adams, only : adams_family
-  use operation_grid        , only : uniform_grid, random_grid
+  use operation_grid        , only : uniform_grid, random_grid, designed_grid
   use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
   use operation_grid        , only : grid
-  use gti_march             , only : set_stopping, imbalance, set_sweep, weight_of, precision_needed
+  use gti_march             , only : set_stopping, imbalance, set_sweep, weight_of, precision_needed, &
+       & step_partials
   use operation_stencil     , only : stencil
   use gti_space             , only : room, spatial_mesh, geometry_of, coarse_cells
   use gti_field             , only : node_operator, initial_field, against_the_laplacian, &
@@ -75,11 +76,14 @@ program graph_time_integrator
   use gti_expansion         , only : family_holder
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
        & expansion_substitutions, chain_system, chain_systems, chain_by_tangent, &
-       & chain_by_adjoint, instant_components, started => startup_trajectory
+       & chain_by_adjoint, instant_components, functional_holder, &
+       & started => startup_trajectory
   use gti_sweeps            , only : set_linear_solver, set_assembly, set_storage, set_multigrid, &
        & set_coarse_nodes
+  use gti_sweeps            , only : route_of, forward_route
   use operation_minimization, only : relative, absolute, by_count, by_rate
-  use gti_driver            , only : settings, chosen_grid, steps_of, family_named, clock
+  use gti_driver            , only : settings, chosen_grid, steps_of, family_named, clock, &
+       & functional_named
   use gti_configuration     , only : configuration, read_configuration, override, show, &
        & lists, refuse_unknown, worded
   use util_tally            , only : tally_open, tally_close, tally_order, &
@@ -104,6 +108,11 @@ program graph_time_integrator
   integer  :: nodes = 1
   logical  :: over_field = .false.
 
+  ! THE FUNCTIONALS the configuration names, and whether the grid's
+  ! step weights are designs beside the physics' parameter
+  type(functional_holder), allocatable :: functionals(:)
+  logical :: grid_designed = .false.
+
   call settings('homogeneous', cfg)
   call show(cfg)
   call set_linear_solver(cfg % linear_solver)
@@ -112,6 +121,7 @@ program graph_time_integrator
   call set_multigrid(cfg % multigrid)
   call set_sweep(cfg % sweep)
   call field_context(cfg)
+  call chosen_functionals(cfg)
   call table(cfg)
 
 contains
@@ -385,13 +395,14 @@ contains
 
     type(family_holder), allocatable :: schemes(:)
     type(chain_block)  , allocatable :: chain(:)
-    type(chain_system) , allocatable :: systems(:)
     integer , allocatable :: added(:)
-    real(dp), allocatable :: dt(:), t(:), held(:), f(:)
+    real(dp), allocatable :: dt(:), t(:), held(:), f(:,:)
     type(imbalance) :: left
-    real(dp) :: achieved, tangent, adjoint
-    integer :: nd, width, given, reported
+    real(dp) :: achieved
+    integer :: nd, width, given, reported, i, m
     logical :: ok
+    character(len=20) :: cell
+    character(len=:), allocatable :: line
 
     nd    = cfg % state_degree + 1
     width = nd * nodes
@@ -418,28 +429,33 @@ contains
     else
        reported = cfg % max_derivative_degree
     end if
-    call chain_expansion(chain, van_der_pol(cfg % state_degree), &
-         & van_der_pol_energy(cfg % state_degree), nd, dt, cfg % design, &
-         & reported, f, node_measure=volume)
+    call chain_expansion(chain, van_der_pol(cfg % state_degree), functionals, nd, dt, &
+         & cfg % design, reported, f, node_measure=volume)
     call tally_leave()
 
-    call show_row(labelled(names, orders), cfg % instants - given, f, left, &
+    call show_row(labelled(names, orders), cfg % instants - given, f(:, 1), left, &
          & cfg % max_derivative_degree)
+    ! every functional after the first, under the row, expanded from
+    ! the same state series
+    do i = 2, size(functionals)
+       line = '      ' // functionals(i) % rule % name()
+       line = line // repeat(' ', max(1, 36 - len(line)))
+       do m = 0, ubound(f, 1)
+          write(cell,'(es20.11)') f(m, i)
+          line = line // cell
+       end do
+       write(*,'(a)') line
+    end do
     call shown_precision(schemes(1) % scheme, nd, dt, chain, left, cfg)
 
-    ! the two routes to the first derivative, each one substitution
-    ! against the factorisation the expansion made
-    if (lists(cfg % check, 'routes') .and. reported >= 1) then
-       call chain_systems(chain, van_der_pol_energy(cfg % state_degree), nd, dt, &
-            & cfg % design, systems, node_measure=volume)
-       tangent = chain_by_tangent(chain, systems, nd, cfg % design)
-       adjoint = chain_by_adjoint(chain, systems, nd, cfg % design)
-       write(*,'(a,es10.2,a,es20.11,a,es20.11)') '      tangent - adjoint ', tangent - adjoint, &
-            & '   tangent ', tangent, '   adjoint ', adjoint
+    ! the first derivatives by the routes: where the grid is a design
+    ! they are the only account of it, and where the routes are checked
+    if (reported >= 1 .and. (grid_designed .or. lists(cfg % check, 'routes'))) then
+       call first_derivatives(cfg, chain, nd, dt, f)
     end if
 
     if (over_field) then
-       if (lists(cfg % check, 'ode')) call against_the_ode(cfg, schemes, added, held, f)
+       if (lists(cfg % check, 'ode')) call against_the_ode(cfg, schemes, added, held, f(:, 1))
        if (lists(cfg % check, 'mode')) then
           call against_the_mode(space, extent_a, extent_b, cfg % diffusion, cfg % spatial_order, &
                & cfg % design, t(cfg % instants), instant_components(chain, cfg % instants), nd)
@@ -450,6 +466,104 @@ contains
     printed = printed + 1
 
   end subroutine one_row
+
+  !-------------------------------------------------------------------!
+  ! The first derivative of every functional in every design, by the
+  ! route the gate chooses from the counts: forward, one solve per
+  ! design, or reverse, one per functional. With the grid's weights
+  ! among the designs the steps are homogeneous of degree zero in
+  ! them, so the weights against the gradient sum to zero - a check
+  ! of the whole chain rule through the grid - and the physics' column
+  ! is the expansion's first order. Asked for, the other route is run
+  ! too and the two are compared over the whole table. The first
+  ! instants a family reaches back over are held as given, so their
+  ! own dependence on the steps is not carried.
+  !-------------------------------------------------------------------!
+
+  subroutine first_derivatives(cfg, chain, nd, dt, f)
+
+    type(configuration), intent(in) :: cfg
+    type(chain_block)  , intent(in) :: chain(:)
+    integer            , intent(in) :: nd
+    real(dp)           , intent(in) :: dt(:), f(0:, :)
+
+    type(chain_system), allocatable :: systems(:)
+    real(dp), allocatable :: v(:,:), p(:), df(:,:), other(:,:)
+    real(dp) :: euler
+    integer  :: num_designs, num_functionals, route, i
+
+    num_functionals = size(functionals)
+    if (grid_designed) then
+       ! the steps as the weights of a designed grid: the march's own
+       ! steps are the weights that give them back
+       p = dt(2:cfg % instants)
+       call step_partials(designed_grid(cfg % time_duration), cfg % instants, p, v)
+       call chain_systems(chain, functionals, nd, dt, cfg % design, systems, &
+            & node_measure=volume, step_partials=v)
+    else
+       call chain_systems(chain, functionals, nd, dt, cfg % design, systems, node_measure=volume)
+    end if
+    num_designs = size(systems(1) % rate, 2)
+
+    route = route_of(num_designs, num_functionals, 1)
+    if (route == forward_route) then
+       df = chain_by_tangent(chain, systems, nd, cfg % design)
+    else
+       df = chain_by_adjoint(chain, systems, nd, cfg % design)
+    end if
+
+    write(*,'(a,a,a,i0,a,i0,a,es10.2)') '      first derivatives by the ', &
+         & trim(merge('forward', 'reverse', route == forward_route)), ' route, designs ', &
+         & num_designs, ' functionals ', num_functionals, &
+         & ':  physics column against the expansion ', &
+         & maxval(abs(df(:, 1) - f(1, :)) / max(1.0_dp, abs(f(1, :))))
+    if (grid_designed) then
+       do i = 1, num_functionals
+          euler = dot_product(p, df(i, 2:)) / max(tiny(1.0_dp), norm2(p) * norm2(df(i, 2:)))
+          write(*,'(a,i0,a,es12.4,a,es10.2)') '      grid design, functional ', i, &
+               & ':  |df/dp| ', norm2(df(i, 2:)), '   p . df/dp / |p||df/dp| (theory 0) ', euler
+       end do
+    end if
+    if (lists(cfg % check, 'routes')) then
+       if (route == forward_route) then
+          other = chain_by_adjoint(chain, systems, nd, cfg % design)
+       else
+          other = chain_by_tangent(chain, systems, nd, cfg % design)
+       end if
+       write(*,'(a,es10.2)') '      tangent against adjoint over the table, relative ', &
+            & maxval(abs(df - other)) / max(1.0_dp, maxval(abs(df)))
+    end if
+
+  end subroutine first_derivatives
+
+  !-------------------------------------------------------------------!
+  ! The functionals the configuration names, in its order, and the
+  ! designs: the physics' parameter always, the grid's weights when
+  ! named.
+  !-------------------------------------------------------------------!
+
+  subroutine chosen_functionals(cfg)
+
+    type(configuration), intent(in) :: cfg
+
+    character(len=32), allocatable :: names(:)
+    logical :: ok
+    integer :: i
+
+    call refuse_unknown(cfg % designs, ['physics', 'grid   '], 'designs')
+    call refuse_unknown(cfg % functionals, ['energy     ', 'dissipation'], 'functionals')
+    if (.not. lists(cfg % designs, 'physics')) then
+       error stop 'graph_time_integrator: the physics'' parameter is the first design'
+    end if
+    grid_designed = lists(cfg % designs, 'grid')
+
+    names = worded(cfg % functionals)
+    allocate(functionals(size(names)))
+    do i = 1, size(names)
+       call functional_named(trim(names(i)), cfg % state_degree, functionals(i), ok)
+    end do
+
+  end subroutine chosen_functionals
 
   !-------------------------------------------------------------------!
   ! At kappa = 0 with a constant field every node is one node's
@@ -466,7 +580,7 @@ contains
     real(dp)           , intent(in) :: held(:), f_field(0:)
 
     type(chain_block), allocatable :: chain(:)
-    real(dp), allocatable :: held_node(:), f(:), dt(:), t(:)
+    real(dp), allocatable :: held_node(:), f(:,:), dt(:), t(:)
     real(dp) :: achieved, area
     integer  :: nd, width, given, k, d
     character(len=:), allocatable :: line
@@ -480,12 +594,12 @@ contains
     held_node = [((held((k - 1) * width + d + 1), d = 0, nd - 1), k = 1, given)]
     call march_chain(schemes, added, van_der_pol(cfg % state_degree), nd, chosen_grid(cfg), &
          & cfg % design, held_node, chain, dt, t, achieved)
-    call chain_expansion(chain, van_der_pol(cfg % state_degree), &
-         & van_der_pol_energy(cfg % state_degree), nd, dt, cfg % design, ubound(f_field, 1), f)
+    call chain_expansion(chain, van_der_pol(cfg % state_degree), functionals, nd, dt, &
+         & cfg % design, ubound(f_field, 1), f)
 
     line = '      field / area over the node, less one:'
     do d = lbound(f, 1), ubound(f, 1)
-       write(cell,'(es14.2)') f_field(d) / area / f(d) - 1.0_dp
+       write(cell,'(es14.2)') f_field(d) / area / f(d, 1) - 1.0_dp
        line = line // cell
     end do
     write(*,'(a)') line

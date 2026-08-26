@@ -49,6 +49,7 @@ program randomized_checks
   use gti_driver            , only : cosine
   use gti_block             , only : block_residual
   use gti_march             , only : partition
+  use gti_chain             , only : one_functional, first_of
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
        & chain_system, chain_systems, chain_by_tangent, chain_by_adjoint
 
@@ -147,11 +148,11 @@ contains
     call march_chain(schemes, added, van_der_pol(degrees - 1), degrees, &
          & uniform_grid(duration), design, held, chain, dt, t, achieved)
 
-    call chain_systems(chain, van_der_pol_energy(degrees - 1), degrees, dt, design, &
-         & systems)
+    call chain_systems(chain, [one_functional(van_der_pol_energy(degrees - 1))], degrees, dt, &
+         & design, systems)
 
-    tangent = chain_by_tangent(chain, systems, degrees, design)
-    adjoint = chain_by_adjoint(chain, systems, degrees, design)
+    tangent = first_of(chain_by_tangent(chain, systems, degrees, design))
+    adjoint = first_of(chain_by_adjoint(chain, systems, degrees, design))
 
   end subroutine directions_of
 
@@ -445,6 +446,8 @@ contains
     integer            , intent(in) :: added(:), degrees
     real(dp)           , intent(in) :: duration, design
     real(dp), allocatable, intent(out) :: f(:)
+
+    real(dp), allocatable :: table(:,:)
     real(dp)           , intent(out) :: achieved
 
     type(chain_block), allocatable :: chain(:)
@@ -456,7 +459,10 @@ contains
          & uniform_grid(duration), design, held, chain, dt, t, achieved)
 
     call chain_expansion(chain, van_der_pol(degrees - 1), &
-         & van_der_pol_energy(degrees - 1), degrees, dt, design, max_order, f)
+         & [one_functional(van_der_pol_energy(degrees - 1))], degrees, dt, design, &
+         & max_order, table)
+    allocate(f(lbound(table, 1):ubound(table, 1)))
+    f = table(:, 1)
 
   end subroutine expanded
 

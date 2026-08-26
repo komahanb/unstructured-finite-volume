@@ -16,12 +16,12 @@ module operation_coupling
   use field_calculus      , only : field
   use field_stored        , only : stored_field
   use view_directed_stored, only : stored_directed_graph
-  use operation_action    , only : operation
+  use operation_action    , only : operation, variation
 
   implicit none
 
   private
-  public :: coupling_inputs, weights_of
+  public :: coupling_inputs, weights_of, weights_varied
 
 contains
 
@@ -76,5 +76,40 @@ contains
     call out % real_vector(w)
 
   end subroutine weights_of
+
+  !===================================================================!
+  ! The partial of an action's weights along a direction in the
+  ! steps, read out as a vector. The action carries its partials in
+  ! the steps, so this is the exact derivative and not a difference.
+  !===================================================================!
+
+  subroutine weights_varied(action, num_vertices, tails, heads, steps, along, &
+       & source_degree, determines, dw)
+
+    class(operation), intent(in) :: action
+    integer         , intent(in) :: num_vertices
+    integer         , intent(in) :: tails(:), heads(:)
+    real(dp)        , intent(in) :: steps(:), along(:)
+    integer         , intent(in) :: source_degree(:), determines(:)
+    real(dp), allocatable, intent(out) :: dw(:)
+
+    type(stored_directed_graph)     :: edges
+    type(stored_field), allocatable :: inputs(:)
+    type(stored_field)              :: direction
+    class(field)      , allocatable :: out
+
+    if (size(along) /= num_vertices) then
+       error stop 'operation_coupling: one direction entry per vertex'
+    end if
+
+    call coupling_inputs(num_vertices, tails, heads, steps, source_degree, determines, &
+         & edges, inputs)
+    direction = stored_field('along', edges % vertex_set(), num_vertices)
+    call direction % set_real_vector(along)
+    call action % partial_action(edges, inputs, &
+         & [variation(action % argument(1), direction)], out)
+    call out % real_vector(dw)
+
+  end subroutine weights_varied
 
 end module operation_coupling

@@ -56,7 +56,7 @@ module gti_sweeps
   implicit none
 
   private
-  public :: functional_of, functional_gradient
+  public :: functional_of, functional_gradient, functional_design_partial
   public :: design_partial, jacobian_of
   public :: forward_route, reverse_route, route_of, route_substitutions
 
@@ -321,6 +321,30 @@ contains
     call out % real_vector(y)
 
   end subroutine applied
+
+  !===================================================================!
+  ! What a functional itself adds through the design to its
+  ! derivative: the integrand's partial in the design at every point,
+  ! weighted by the measure of the point and summed.
+  !===================================================================!
+
+  subroutine functional_design_partial(integrand, points, inputs, weight, n, &
+       & design_domain, d)
+
+    class(operation)     , intent(in)  :: integrand
+    class(directed_graph), intent(in)  :: points
+    type(stored_field)   , intent(in)  :: inputs(:)
+    real(dp)             , intent(in)  :: weight(:)
+    integer              , intent(in)  :: n
+    type(graph)          , intent(in)  :: design_domain
+    real(dp)             , intent(out) :: d
+
+    real(dp), allocatable :: rate(:)
+
+    call varied(integrand, points, inputs, 2, design_domain, spread(1.0_dp, 1, n), rate)
+    d = sum(weight * rate)
+
+  end subroutine functional_design_partial
 
   !===================================================================!
   ! The partial action of a statement along one direction in one of

@@ -17,6 +17,7 @@ program solve_cost
   use gti_expansion         , only : family_holder
   use gti_driver            , only : clock, cosine
   use gti_march             , only : partition
+  use gti_chain             , only : one_functional, first_of
   use gti_chain             , only : chain_block, march_chain, &
        & chain_system, chain_systems, chain_by_tangent
 
@@ -66,14 +67,14 @@ contains
     marched = clock() - marched
 
     formed = clock()
-    call chain_systems(chain, van_der_pol_energy(degrees - 1), degrees, dt, &
+    call chain_systems(chain, [one_functional(van_der_pol_energy(degrees - 1))], degrees, dt, &
          & design, systems)
     formed = clock() - formed
 
     n = chain(1) % rows % num_unknowns()
 
     solved_in = clock()
-    tangent   = chain_by_tangent(chain, systems, degrees, design)
+    tangent   = first_of(chain_by_tangent(chain, systems, degrees, design))
     solved_in = clock() - solved_in
 
     write(*,'(i10,3f11.3,2es15.3)') n, marched, formed, solved_in, &

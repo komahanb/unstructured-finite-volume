@@ -37,6 +37,7 @@ program tolerance_form
   use gti_sweeps            , only : jacobian_of
   use view_directed_stored  , only : stored_directed_graph
   use field_stored          , only : stored_field
+  use gti_chain             , only : one_functional
   use gti_chain             , only : chain_block, march_chain, &
        & chain_system, chain_systems
 
@@ -150,7 +151,7 @@ contains
 
     call march_chain(schemes, added, van_der_pol(degrees - 1), degrees, &
          & uniform_grid(duration), design, held, chain, dt, t, achieved)
-    call chain_systems(chain, van_der_pol_energy(degrees - 1), degrees, dt, &
+    call chain_systems(chain, [one_functional(van_der_pol_energy(degrees - 1))], degrees, dt, &
          & design, systems)
 
     predicted = 1.0_dp + row_sum(scheme, order, top) / dt(size(dt)) ** top
@@ -197,7 +198,7 @@ contains
 
     call march_chain(schemes, added, van_der_pol(degrees - 1), degrees, &
          & uniform_grid(duration), design, held, chain, dt, t, achieved)
-    call chain_systems(chain, van_der_pol_energy(degrees - 1), degrees, dt, &
+    call chain_systems(chain, [one_functional(van_der_pol_energy(degrees - 1))], degrees, dt, &
          & design, systems)
 
     step = dt(size(dt))

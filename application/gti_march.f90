@@ -26,13 +26,14 @@ module gti_march
 
   use util_precision  , only : dp, least_kind_for
   use iso_fortran_env , only : real128
-  use operation_coupling      , only : weights_of
+  use operation_coupling      , only : weights_of, weights_varied
   use gti_configuration       , only : refuse_unknown
   use operation_weight        , only : scheme_weight
   use view_directed_stored    , only : stored_directed_graph
   use view_directed           , only : directed_graph
   use field_calculus          , only : field
   use field_stored            , only : stored_field
+  use operation_action      , only : variation
   use operation_stencil       , only : stencil
   use operation_newton        , only : newton
   use operation_minimization  , only : minimizer, relative, absolute, &
@@ -113,7 +114,7 @@ module gti_march
   integer , save :: stopping_iterations = 100
 
   private
-  public :: partition, partitioned, scheme_rows, block_of, solved, unknowns_graph
+  public :: partition, partitioned, scheme_rows, block_of, solved, unknowns_graph, step_partials
   public :: unknown, consistent_states, frozen_inputs
   public :: set_stopping
   public :: consistent_state
@@ -403,6 +404,44 @@ contains
   end subroutine partitioned
 
   !===================================================================!
+  ! The partial of every step in every entry of a grid's design, one
+  ! column per entry, read from the grid's own partial action: exact,
+  ! and carrying the normalisation that keeps the steps summing to
+  ! the duration.
+  !===================================================================!
+
+  subroutine step_partials(steps, n, design, v)
+
+    class(grid), intent(in) :: steps
+    integer    , intent(in) :: n
+    real(dp)   , intent(in) :: design(:)
+    real(dp), allocatable, intent(out) :: v(:,:)
+
+    type(stored_directed_graph) :: instants
+    type(stored_field) :: knobs, direction
+    class(field), allocatable :: out
+    real(dp), allocatable :: e(:), column(:)
+    integer :: j
+
+    instants = stored_directed_graph(n, tails=[integer ::], heads=[integer ::])
+    knobs    = stored_field('design', instants % vertex_set(), size(design))
+    call knobs % set_real_vector(design)
+
+    allocate(v(n, size(design)), e(size(design)))
+    do j = 1, size(design)
+       e    = 0.0_dp
+       e(j) = 1.0_dp
+       direction = stored_field('direction', instants % vertex_set(), size(design))
+       call direction % set_real_vector(e)
+       call steps % partial_action(instants, [knobs], &
+            & [variation(steps % argument(1), direction)], out)
+       call out % real_vector(column)
+       v(:, j) = column
+    end do
+
+  end subroutine step_partials
+
+  !===================================================================!
   ! Where a component lies: instants follow one another, nodes lie
   ! within an instant, and the components of one point stay together,
   !
@@ -444,12 +483,13 @@ contains
   ! owns.
   !===================================================================!
 
-  function scheme_rows(scheme, degrees, n, dt, nodes) result(rows)
+  function scheme_rows(scheme, degrees, n, dt, nodes, along) result(rows)
 
     class(family), intent(in)           :: scheme
     integer      , intent(in)           :: degrees, n
     real(dp)     , intent(in)           :: dt(:)
     integer      , intent(in), optional :: nodes
+    real(dp)     , intent(in), optional :: along(:)
     type(stencil) :: rows
 
     integer , allocatable :: tails(:), heads(:), source_degree(:), determines(:)
@@ -460,13 +500,25 @@ contains
     if (present(nodes)) m = nodes
 
     call block_reach(scheme, degrees, n, tails, heads, source_degree, determines)
-    call weights_of(scheme_weight(scheme), n, tails, heads, dt, source_degree, determines, w)
 
-    ! the family's rows once per node: each node's history is its own
-    rows = derived_constraints( &
-         & [((unknown(heads(e), determines(e), degrees, i, m), e = 1, size(heads)), i = 1, m)], &
-         & [((unknown(tails(e), source_degree(e), degrees, i, m), e = 1, size(tails)), i = 1, m)], &
-         & [(w, i = 1, m)], n * m * degrees, 'derived rows')
+    ! the family's rows once per node: each node's history is its own.
+    ! Along a direction in the steps the rows are the partial of the
+    ! weights, which the determined component, entering with one,
+    ! takes no part in.
+    if (present(along)) then
+       call weights_varied(scheme_weight(scheme), n, tails, heads, dt, along, &
+            & source_degree, determines, w)
+       rows = stencil( &
+            & [((unknown(heads(e), determines(e), degrees, i, m), e = 1, size(heads)), i = 1, m)], &
+            & [((unknown(tails(e), source_degree(e), degrees, i, m), e = 1, size(tails)), i = 1, m)], &
+            & [(-w, i = 1, m)], spread(0.0_dp, 1, n * m * degrees), 'varied rows')
+    else
+       call weights_of(scheme_weight(scheme), n, tails, heads, dt, source_degree, determines, w)
+       rows = derived_constraints( &
+            & [((unknown(heads(e), determines(e), degrees, i, m), e = 1, size(heads)), i = 1, m)], &
+            & [((unknown(tails(e), source_degree(e), degrees, i, m), e = 1, size(tails)), i = 1, m)], &
+            & [(w, i = 1, m)], n * m * degrees, 'derived rows')
+    end if
 
   end function scheme_rows
 

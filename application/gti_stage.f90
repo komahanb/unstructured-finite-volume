@@ -54,7 +54,7 @@ module gti_stage
   use field_calculus          , only : field
   use operation_stencil       , only : stencil
   use operation_family        , only : family
-  use operation_coupling      , only : weights_of
+  use operation_coupling      , only : weights_of, weights_varied
   use operation_weight        , only : scheme_weight
   use operation_scheme_stencil, only : derived_constraints
   use physics_integrand       , only : nodal_integrand
@@ -63,7 +63,7 @@ module gti_stage
   implicit none
 
   private
-  public :: stage_block_of, stage_unknowns, stage_points, instant_at
+  public :: stage_block_of, stage_unknowns, stage_points, instant_at, stage_rows
 
 contains
 
@@ -209,29 +209,37 @@ contains
   ! The weights of one step, from the family.
   !===================================================================!
 
-  subroutine step_weights(scheme, s, tails, heads, source_degree, determines, step, w)
+  subroutine step_weights(scheme, s, tails, heads, source_degree, determines, step, w, along)
 
     class(family), intent(in) :: scheme
     integer      , intent(in) :: s, tails(:), heads(:), source_degree(:), determines(:)
     real(dp)     , intent(in) :: step
     real(dp), allocatable, intent(out) :: w(:)
+    real(dp)     , intent(in), optional :: along
 
-    call weights_of(scheme_weight(scheme), s + 2, tails, heads, spread(step, 1, s + 2), &
-         & source_degree, determines, w)
+    if (present(along)) then
+       call weights_varied(scheme_weight(scheme), s + 2, tails, heads, spread(step, 1, s + 2), &
+            & spread(along, 1, s + 2), source_degree, determines, w)
+    else
+       call weights_of(scheme_weight(scheme), s + 2, tails, heads, spread(step, 1, s + 2), &
+            & source_degree, determines, w)
+    end if
 
   end subroutine step_weights
 
   !===================================================================!
   ! The derived rows of the whole block: one step's pattern repeated
   ! at every step and every node, its weights taken at each step's
-  ! own size, and its vertices mapped onto the block's unknowns.
+  ! own size, and its vertices mapped onto the block's unknowns. Along
+  ! a direction in the steps, the partial of those rows.
   !===================================================================!
 
-  function stage_rows(scheme, nd, n, dt, nodes) result(rows)
+  function stage_rows(scheme, nd, n, dt, nodes, along) result(rows)
 
     class(family), intent(in) :: scheme
     integer      , intent(in) :: nd, n, nodes
     real(dp)     , intent(in) :: dt(:)
+    real(dp)     , intent(in), optional :: along(:)
     type(stencil) :: rows
 
     integer , allocatable :: tails(:), heads(:), source_degree(:), determines(:)
@@ -248,7 +256,12 @@ contains
     at = 0
 
     do kk = 2, n
-       call step_weights(scheme, s, tails, heads, source_degree, determines, dt(kk), w)
+       if (present(along)) then
+          call step_weights(scheme, s, tails, heads, source_degree, determines, dt(kk), w, &
+               & along=along(kk))
+       else
+          call step_weights(scheme, s, tails, heads, source_degree, determines, dt(kk), w)
+       end if
        do p = 1, nodes
           do e = 1, per
              at = at + 1
@@ -259,8 +272,16 @@ contains
        end do
     end do
 
-    rows = derived_constraints(into, from, weight, stage_unknowns(n, s, nd * nodes), &
-         & 'stage rows')
+    ! along a direction in the steps the rows are the partial of the
+    ! weights, which the determined component, entering with one,
+    ! takes no part in
+    if (present(along)) then
+       rows = stencil(into, from, -weight, spread(0.0_dp, 1, stage_unknowns(n, s, nd * nodes)), &
+            & 'varied stage rows')
+    else
+       rows = derived_constraints(into, from, weight, stage_unknowns(n, s, nd * nodes), &
+            & 'stage rows')
+    end if
 
   end function stage_rows
 

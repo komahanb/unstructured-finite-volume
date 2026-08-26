@@ -26,6 +26,7 @@ program marched_horizon
   use physics_vanderpol     , only : van_der_pol_energy
   use gti_march             , only : horizon_bounds, partition, unknowns_graph
   use gti_sweeps            , only : functional_of
+  use gti_chain             , only : one_functional, first_of
   use gti_chain             , only : chain_block, march_chain, instant_components, &
        & chain_system, chain_systems, chain_by_tangent, chain_by_adjoint
   use operation_grid        , only : uniform_grid
@@ -254,11 +255,11 @@ contains
     f = energy_of(q, n, design)
 
     call chained(schemes, added, design, chain, dt)
-    call chain_systems(chain, van_der_pol_energy(state_degree), degrees, dt, design, &
-         & systems)
+    call chain_systems(chain, [one_functional(van_der_pol_energy(state_degree))], degrees, dt, &
+         & design, systems)
 
-    tangent     = chain_by_tangent(chain, systems, degrees, design)
-    adjoint     = chain_by_adjoint(chain, systems, degrees, design)
+    tangent     = first_of(chain_by_tangent(chain, systems, degrees, design))
+    adjoint     = first_of(chain_by_adjoint(chain, systems, degrees, design))
     differenced = differenced_energy(schemes, added, n, design, delta)
 
     write(*,'(a)')        ' '

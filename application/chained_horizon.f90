@@ -24,6 +24,7 @@ program chained_horizon
   use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
   use gti_expansion         , only : family_holder
   use gti_march             , only : partition
+  use gti_chain             , only : one_functional
   use gti_chain             , only : chain_block, march_chain, chain_expansion
 
   implicit none
@@ -96,6 +97,8 @@ contains
     real(dp)           , intent(in) :: design
     real(dp), allocatable, intent(out) :: f(:)
 
+    real(dp), allocatable :: table(:,:)
+
     type(chain_block), allocatable :: chain(:)
     real(dp), allocatable :: dt(:), t(:), held(:)
     real(dp) :: achieved
@@ -109,7 +112,10 @@ contains
          & uniform_grid(duration), design, held, chain, dt, t, achieved)
 
     call chain_expansion(chain, van_der_pol(state_degree), &
-         & van_der_pol_energy(state_degree), degrees, dt, design, max_order, f)
+         & [one_functional(van_der_pol_energy(state_degree))], degrees, dt, design, &
+         & max_order, table)
+    allocate(f(lbound(table, 1):ubound(table, 1)))
+    f = table(:, 1)
 
   end subroutine expanded
 

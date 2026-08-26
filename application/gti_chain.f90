@@ -64,7 +64,9 @@ module gti_chain
   use gti_block        , only : block_residual
   use gti_march        , only : imbalance, swept, solved_linear, fresh_stamp, partitioned, horizon_bounds, block_of, solved, &
        & frozen_inputs
-  use gti_stage        , only : stage_block_of, instant_at
+  use gti_stage        , only : stage_block_of, instant_at, stage_rows
+  use gti_march        , only : scheme_rows
+  use gti_sweeps       , only : functional_design_partial
   use operation_stencil, only : stencil
   use operation_family_dirk, only : crouzeix_three_stage
   use view_directed_stored, only : stored_directed_graph
@@ -81,6 +83,7 @@ module gti_chain
 
   private
   public :: chain_block, march_chain, chain_expansion, instant_components, startup_trajectory
+  public :: functional_holder, one_functional, first_of
   public :: chain_system, chain_systems, chain_by_tangent, chain_by_adjoint
   public :: expansion_substitutions
 
@@ -104,6 +107,10 @@ module gti_chain
      ! the components one instant holds: the degrees at every node
      integer :: width = 0
      integer :: nodes = 1
+     ! the family and the steps the block was built from, so that its
+     ! rows can be differentiated along a direction in the steps
+     class(family), allocatable :: scheme
+     real(dp)     , allocatable :: dt(:)
 
   end type chain_block
 
@@ -113,10 +120,25 @@ module gti_chain
   ! functional's gradient it owns.
   !===================================================================!
 
-  type :: chain_system
+  !===================================================================!
+  ! One functional, held so that several can be handed over at once.
+  !===================================================================!
 
-     real(dp), allocatable :: rate(:)
-     real(dp), allocatable :: g(:)
+  type :: functional_holder
+     class(nodal_integrand), allocatable :: rule
+  end type functional_holder
+
+  type :: chain_system
+     ! the block's partial in every design, one column per design:
+     ! the physics' first, then one per entry of the grid's
+     real(dp), allocatable :: rate(:,:)
+     ! the part of every functional's gradient the block owns, one
+     ! column per functional
+     real(dp), allocatable :: g(:,:)
+     ! what each functional itself adds through the designs, one
+     ! row per functional and one column per design: the integrand's
+     ! partial in the physics' design, the measure's in the grid's
+     real(dp), allocatable :: explicit(:,:)
 
      ! The stamp of the tangent at the frozen state. Every order of
      ! the expansion, the tangent and the adjoint solve against that
@@ -291,6 +313,8 @@ contains
        chain(b) % width = degrees * nodes
        chain(b) % nodes = nodes
     end if
+    allocate(chain(b) % scheme, source=scheme)
+    chain(b) % dt = dt(first:last)
 
     if (b == 1) then
        held = initial
@@ -431,19 +455,20 @@ contains
   ! coefficient over at every junction just as the trajectory does.
   !===================================================================!
 
-  subroutine chain_expansion(chain, physics, integrand, degrees, dt, design, &
+  subroutine chain_expansion(chain, physics, functionals, degrees, dt, design, &
        & max_order, f, node_measure)
 
-    type(chain_block)     , intent(in) :: chain(:)
-    class(nodal_integrand), intent(in) :: physics, integrand
-    integer               , intent(in) :: degrees, max_order
-    real(dp)              , intent(in) :: dt(:), design
-    real(dp), allocatable , intent(out) :: f(:)
-    real(dp), intent(in), optional     :: node_measure(:)
+    type(chain_block)      , intent(in) :: chain(:)
+    class(nodal_integrand) , intent(in) :: physics
+    type(functional_holder), intent(in) :: functionals(:)
+    integer                , intent(in) :: degrees, max_order
+    real(dp)               , intent(in) :: dt(:), design
+    real(dp), allocatable  , intent(out) :: f(:,:)
+    real(dp), intent(in), optional      :: node_measure(:)
 
-    ! One design and one functional: what this expansion is built for,
-    ! and what the gate is asked about at every order.
-    integer, parameter :: num_designs = 1, num_functionals = 1
+    ! One design: the expansion is in the physics' design alone, and
+    ! that is what the gate is asked about at every order.
+    integer, parameter :: num_designs = 1
 
     type(chain_system), allocatable :: systems(:)
     real(dp), allocatable :: series(:,:,:)
@@ -463,7 +488,7 @@ contains
     ! The jacobian of every block, factorised once. Every order below
     ! substitutes against it.
     if (max_order >= 1) then
-       call chain_systems(chain, integrand, degrees, dt, design, systems, node_measure)
+       call chain_systems(chain, functionals, degrees, dt, design, systems, node_measure)
     end if
 
     do m = 1, max_order
@@ -474,7 +499,7 @@ contains
        ! Only the forward route is built for an expansion, so a choice
        ! of the other stops the program and says so rather than taking
        ! the dearer one silently.
-       route = route_of(num_designs, num_functionals, m)
+       route = route_of(num_designs, size(functionals), m)
        if (route /= forward_route) then
           write(*,'(a,i0,a)') ' the reverse route is the cheaper at order ', m, &
                & ' and an expansion by it is not built.'
@@ -490,7 +515,7 @@ contains
     end do
     call tally_order(0)
 
-    call chain_functional(chain, integrand, degrees, dt, design, max_order, series, f, &
+    call chain_functional(chain, functionals, degrees, dt, design, max_order, series, f, &
          & node_measure)
 
   end subroutine chain_expansion
@@ -589,30 +614,32 @@ contains
   ! the measure of its node.
   !===================================================================!
 
-  subroutine chain_functional(chain, integrand, degrees, dt, design, max_order, &
+  subroutine chain_functional(chain, functionals, degrees, dt, design, max_order, &
        & series, f, node_measure)
 
-    type(chain_block)     , intent(in) :: chain(:)
-    class(nodal_integrand), intent(in) :: integrand
-    integer               , intent(in) :: degrees, max_order
-    real(dp)              , intent(in) :: dt(:), design, series(0:, :, :)
-    real(dp), allocatable , intent(out) :: f(:)
-    real(dp), intent(in), optional     :: node_measure(:)
+    type(chain_block)      , intent(in) :: chain(:)
+    type(functional_holder), intent(in) :: functionals(:)
+    integer                , intent(in) :: degrees, max_order
+    real(dp)               , intent(in) :: dt(:), design, series(0:, :, :)
+    real(dp), allocatable  , intent(out) :: f(:,:)
+    real(dp), intent(in), optional      :: node_measure(:)
 
     real(dp), allocatable :: values(:), weight(:)
     integer , allocatable :: at(:)
-    integer :: b, m, from, to, count
+    integer :: b, m, i, from, to, count
 
-    allocate(f(0:max_order), source=0.0_dp)
+    allocate(f(0:max_order, size(functionals)), source=0.0_dp)
 
     do b = 1, size(chain)
        call owned(chain, b, from, to)
        count = chain(b) % rows % num_unknowns()
        call owned_points(chain(b), dt, from, to, node_measure, at, weight)
-       do m = 0, max_order
-          call nodal_coefficient(integrand, degrees, at, series(:, 1:count, b), &
-               & design, m, values)
-          f(m) = f(m) + sum(weight * values)
+       do i = 1, size(functionals)
+          do m = 0, max_order
+             call nodal_coefficient(functionals(i) % rule, degrees, at, series(:, 1:count, b), &
+                  & design, m, values)
+             f(m, i) = f(m, i) + sum(weight * values)
+          end do
        end do
     end do
 
@@ -625,34 +652,134 @@ contains
   ! that a shared instant counts once.
   !===================================================================!
 
-  subroutine chain_systems(chain, integrand, degrees, dt, design, systems, node_measure)
+  subroutine chain_systems(chain, functionals, degrees, dt, design, systems, node_measure, &
+       & step_partials)
 
-    type(chain_block)     , intent(in) :: chain(:)
-    class(nodal_integrand), intent(in) :: integrand
-    integer               , intent(in) :: degrees
-    real(dp)              , intent(in) :: dt(:), design
+    type(chain_block)      , intent(in) :: chain(:)
+    type(functional_holder), intent(in) :: functionals(:)
+    integer                , intent(in) :: degrees
+    real(dp)               , intent(in) :: dt(:), design
     type(chain_system), allocatable, intent(out) :: systems(:)
-    real(dp), intent(in), optional     :: node_measure(:)
+    real(dp), intent(in), optional      :: node_measure(:)
+    ! the partial of every step in every entry of the grid's design,
+    ! one column per entry: given, the grid's entries are designs too
+    real(dp), intent(in), optional      :: step_partials(:,:)
 
-    type(stored_directed_graph) :: unknowns
+    type(stored_directed_graph) :: unknowns, points
     type(stored_field), allocatable :: inputs(:)
-    integer :: b, count
+    type(stored_field) :: state, knobs
+    real(dp), allocatable :: rate(:), g(:), weight(:), varied_weight(:), values(:), series(:,:)
+    integer , allocatable :: at(:), varied_at(:)
+    integer :: b, i, j, count, num_designs, num_functionals, from, to
+
+    num_functionals = size(functionals)
+    num_designs     = 1
+    if (present(step_partials)) num_designs = 1 + size(step_partials, 2)
 
     allocate(systems(size(chain)))
-
     do b = 1, size(chain)
        count = chain(b) % rows % num_unknowns()
        call frozen_at(chain(b), design, unknowns, inputs)
-
        systems(b) % mark = fresh_stamp()
+       allocate(systems(b) % rate(count, num_designs), source=0.0_dp)
+       allocate(systems(b) % g(count, num_functionals), source=0.0_dp)
+       allocate(systems(b) % explicit(num_functionals, num_designs), source=0.0_dp)
+
+       ! the block's partial in the physics' design, then in each
+       ! entry of the grid's: its rows differentiated along the steps'
+       ! partial in that entry, applied to its state
        call design_partial(chain(b) % rows, unknowns, inputs, &
-            & chain(b) % rows % num_points(), unknowns % vertex_set(), &
-            & systems(b) % rate)
-       call owned_gradient(chain, b, integrand, degrees, dt, design, inputs, &
-            & unknowns, systems(b) % g, node_measure)
+            & chain(b) % rows % num_points(), unknowns % vertex_set(), rate)
+       systems(b) % rate(:, 1) = rate
+       do j = 2, num_designs
+          systems(b) % rate(:, j) = varied_rate(chain(b), degrees, &
+               & step_partials(chain(b) % first:chain(b) % last, j - 1))
+       end do
+
+       ! every functional: its gradient over the owned points, its own
+       ! partial in the physics' design, and the measure's partial in
+       ! each entry of the grid's
+       call owned(chain, b, from, to)
+       call owned_points(chain(b), dt, from, to, node_measure, at, weight)
+       points = stored_directed_graph(size(at), tails=[integer ::], heads=[integer ::])
+       call at_owned_points(inputs, degrees, design, at, points, state, knobs)
+       series = reshape(chain(b) % state, [1, count])
+       do i = 1, num_functionals
+          call owned_gradient(chain, b, functionals(i) % rule, degrees, dt, design, inputs, &
+               & unknowns, g, node_measure)
+          systems(b) % g(:, i) = g
+          call functional_design_partial(functionals(i) % rule, points, [state, knobs], &
+               & weight, size(at), points % vertex_set(), systems(b) % explicit(i, 1))
+          if (num_designs > 1) then
+             call nodal_coefficient(functionals(i) % rule, degrees, at, series, design, 0, values)
+          end if
+          do j = 2, num_designs
+             ! the measure's partial: the points again, weighted by the
+             ! steps' partial in this entry in place of the steps
+             call owned_points(chain(b), step_partials(:, j - 1), from, to, node_measure, &
+                  & varied_at, varied_weight)
+             systems(b) % explicit(i, j) = sum(varied_weight * values)
+          end do
+       end do
     end do
 
   end subroutine chain_systems
+
+  !===================================================================!
+  ! A block's rows differentiated along a direction in its steps,
+  ! applied to its state: the block's partial in whatever the steps
+  ! read, by the chain rule through the steps. The carried rows, the
+  ! physics and the level below read no step and take no part.
+  !===================================================================!
+
+  function varied_rate(b, degrees, along) result(r)
+
+    type(chain_block), intent(in) :: b
+    integer          , intent(in) :: degrees
+    real(dp)         , intent(in) :: along(:)
+    real(dp), allocatable :: r(:)
+
+    type(stencil) :: rows
+    real(dp), allocatable :: w(:)
+    integer :: e, n
+
+    n = b % last - b % first + 1
+    if (marches_by_stages(b % scheme, degrees)) then
+       rows = stage_rows(b % scheme, degrees, n, b % dt, b % nodes, along)
+    else
+       rows = scheme_rows(b % scheme, degrees, n, b % dt, b % nodes, along)
+    end if
+    call rows % weights % real_vector(w)
+
+    allocate(r(size(b % state)), source=0.0_dp)
+    do e = 1, rows % pattern % num_edges()
+       r(rows % pattern % edge_head(e)) = r(rows % pattern % edge_head(e)) &
+            & + w(e) * b % state(rows % pattern % edge_tail(e))
+    end do
+
+  end function varied_rate
+
+  !===================================================================!
+  ! One functional, held; and the first entry of a table of
+  ! derivatives, for a caller with one functional and one design.
+  !===================================================================!
+
+  function one_functional(rule) result(holder)
+
+    class(nodal_integrand), intent(in) :: rule
+    type(functional_holder) :: holder
+
+    allocate(holder % rule, source=rule)
+
+  end function one_functional
+
+  pure real(dp) function first_of(table)
+
+    real(dp), intent(in) :: table(:,:)
+
+    first_of = table(1, 1)
+
+  end function first_of
 
   !===================================================================!
   ! The points one block owns and the measure of each: the owned
@@ -808,95 +935,112 @@ contains
   end function expansion_substitutions
 
   !===================================================================!
-  ! Forward. Each block solves for its own sensitivity, with the rows
-  ! it carried set to what an earlier block already found at those
-  ! instants.
+  ! Forward: one solve per design. Each block solves for its own
+  ! sensitivity, with the rows it carried set to what an earlier block
+  ! already found at those instants, and every functional reads it.
+  ! The table has one row per functional and one column per design.
   !===================================================================!
 
-  real(dp) function chain_by_tangent(chain, systems, degrees, design) result(df)
+  function chain_by_tangent(chain, systems, degrees, design) result(df)
 
     type(chain_block) , intent(in) :: chain(:)
     type(chain_system), intent(in) :: systems(:)
     integer           , intent(in) :: degrees
     real(dp)          , intent(in) :: design
+    real(dp), allocatable :: df(:,:)
 
     type(stored_directed_graph) :: unknowns
     type(stored_field), allocatable :: inputs(:)
-
     real(dp), allocatable :: w(:,:), rhs(:), one(:)
-    integer :: b, widest, i, k, d, held_by, at
+    integer :: b, widest, i, j, k, d, held_by, at, num_designs, num_functionals
 
+    num_functionals = size(systems(1) % g, 2)
+    num_designs     = size(systems(1) % rate, 2)
     widest = 0
     do b = 1, size(chain)
        widest = max(widest, chain(b) % rows % num_unknowns())
     end do
-
     allocate(w(widest, size(chain)), source=0.0_dp)
-    df = 0.0_dp
-
+    allocate(df(num_functionals, num_designs), source=0.0_dp)
     do b = 1, size(chain)
-       rhs = -systems(b) % rate
-       do i = 1, chain(b) % given * chain(b) % width
-          k = chain(b) % first + (i - 1) / chain(b) % width
-          d = mod(i - 1, chain(b) % width)
-          call holder_of(chain(1:b - 1), k, degrees, held_by, at)
-          if (held_by > 0) rhs(i) = w(at + d + 1, held_by)
-       end do
-
-       call frozen_at(chain(b), design, unknowns, inputs)
-       call solved_linear(chain(b) % rows, unknowns, inputs, rhs, .false., systems(b) % mark, one)
-       w(1:size(one), b) = one
-       df = df + dot_product(systems(b) % g, one)
+       df = df + systems(b) % explicit
     end do
-    associate (u1 => degrees); end associate
+
+    ! one sensitivity per design, marched along the chain
+    do j = 1, num_designs
+       w = 0.0_dp
+       do b = 1, size(chain)
+          rhs = -systems(b) % rate(:, j)
+          do i = 1, chain(b) % given * chain(b) % width
+             k = chain(b) % first + (i - 1) / chain(b) % width
+             d = mod(i - 1, chain(b) % width)
+             call holder_of(chain(1:b - 1), k, degrees, held_by, at)
+             if (held_by > 0) rhs(i) = w(at + d + 1, held_by)
+          end do
+          call frozen_at(chain(b), design, unknowns, inputs)
+          call solved_linear(chain(b) % rows, unknowns, inputs, rhs, .false., systems(b) % mark, one)
+          w(1:size(one), b) = one
+          do i = 1, num_functionals
+             df(i, j) = df(i, j) + dot_product(systems(b) % g(:, i), one)
+          end do
+       end do
+    end do
 
   end function chain_by_tangent
 
   !===================================================================!
-  ! Backward. Each block solves against its own transpose, with its
-  ! own share of the gradient plus whatever a later block's costate
-  ! left on the instants they share.
+  ! Backward: one solve per functional. Each block solves against its
+  ! own transpose, with its own share of that functional's gradient
+  ! plus whatever a later block's costate left on the instants they
+  ! share, and every design reads the costate. The same table.
   !===================================================================!
 
-  real(dp) function chain_by_adjoint(chain, systems, degrees, design) result(df)
+  function chain_by_adjoint(chain, systems, degrees, design) result(df)
 
     type(chain_block) , intent(in) :: chain(:)
     type(chain_system), intent(in) :: systems(:)
     integer           , intent(in) :: degrees
     real(dp)          , intent(in) :: design
+    real(dp), allocatable :: df(:,:)
 
     type(stored_directed_graph) :: unknowns
     type(stored_field), allocatable :: inputs(:)
-
     real(dp), allocatable :: rhs(:,:), lambda(:)
-    integer :: b, c, widest, i, k, d, held_by, at
+    integer :: b, widest, i, j, k, d, held_by, at, instant, num_designs, num_functionals
 
+    num_functionals = size(systems(1) % g, 2)
+    num_designs     = size(systems(1) % rate, 2)
     widest = 0
     do b = 1, size(chain)
        widest = max(widest, chain(b) % rows % num_unknowns())
     end do
-
     allocate(rhs(widest, size(chain)), source=0.0_dp)
+    allocate(df(num_functionals, num_designs), source=0.0_dp)
     do b = 1, size(chain)
-       rhs(1:size(systems(b) % g), b) = systems(b) % g
+       df = df + systems(b) % explicit
     end do
 
-    df = 0.0_dp
-
-    do b = size(chain), 1, -1
-       call frozen_at(chain(b), design, unknowns, inputs)
-       call solved_linear(chain(b) % rows, unknowns, inputs, &
-            & rhs(1:chain(b) % rows % num_unknowns(), b), .true., systems(b) % mark, lambda)
-       df = df - dot_product(lambda, systems(b) % rate)
-       do i = 1, chain(b) % given * chain(b) % width
-          k = chain(b) % first + (i - 1) / chain(b) % width
-          d = mod(i - 1, chain(b) % width)
-          call holder_of(chain(1:b - 1), k, degrees, held_by, at)
-          if (held_by > 0) rhs(at + d + 1, held_by) = rhs(at + d + 1, held_by) + lambda(i)
+    ! one costate per functional, marched back along the chain
+    do i = 1, num_functionals
+       rhs = 0.0_dp
+       do b = 1, size(chain)
+          rhs(1:size(systems(b) % g, 1), b) = systems(b) % g(:, i)
        end do
-       associate (u1 => c); end associate
+       do b = size(chain), 1, -1
+          call frozen_at(chain(b), design, unknowns, inputs)
+          call solved_linear(chain(b) % rows, unknowns, inputs, &
+               & rhs(1:chain(b) % rows % num_unknowns(), b), .true., systems(b) % mark, lambda)
+          do j = 1, num_designs
+             df(i, j) = df(i, j) - dot_product(lambda, systems(b) % rate(:, j))
+          end do
+          do k = 1, chain(b) % given * chain(b) % width
+             instant = chain(b) % first + (k - 1) / chain(b) % width
+             d       = mod(k - 1, chain(b) % width)
+             call holder_of(chain(1:b - 1), instant, degrees, held_by, at)
+             if (held_by > 0) rhs(at + d + 1, held_by) = rhs(at + d + 1, held_by) + lambda(k)
+          end do
+       end do
     end do
-    associate (u2 => degrees); end associate
 
   end function chain_by_adjoint
 

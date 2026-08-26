@@ -62,6 +62,13 @@ module gti_configuration
      ! nodes.
      character(len=16) :: sweep           = 'space-time'
 
+     ! THE DESIGNS AND THE FUNCTIONALS. designs lists what the
+     ! functionals are differentiated in: physics, the equation's
+     ! parameter, and grid, the weights of the steps on the simplex.
+     ! functionals lists what is integrated over the horizon.
+     character(len=64) :: designs         = 'physics'
+     character(len=64) :: functionals     = 'energy'
+
      real(dp) :: time_duration = 7.0_dp
      real(dp) :: design        = 1.0_dp
 
@@ -258,6 +265,10 @@ contains
        cfg % linear_solver = value
     case ('sweep')
        cfg % sweep = value
+    case ('designs')
+       cfg % designs = value
+    case ('functionals')
+       cfg % functionals = value
     case ('assembly')
        cfg % assembly = value
     case ('storage')
@@ -440,6 +451,8 @@ contains
     write(*,'(a,i0)')      '   startup refinement       ', cfg % startup_refinement
     write(*,'(a,a)')       '   linear solver            ', trim(cfg % linear_solver)
     write(*,'(a,a)')       '   sweep                    ', trim(cfg % sweep)
+    write(*,'(a,a)')       '   designs                  ', trim(cfg % designs)
+    write(*,'(a,a)')       '   functionals              ', trim(cfg % functionals)
     write(*,'(a,a)')       '   assembly                 ', trim(cfg % assembly)
     write(*,'(a,a)')       '   storage                  ', trim(cfg % storage)
     write(*,'(a,l1)')      '   multigrid                ', cfg % multigrid

@@ -486,6 +486,10 @@ contains
 
     transposed % label = 'transpose of ' // this % label
 
+    ! the transpose is an operation of one argument as the original is;
+    ! attached as a matvec, it is asked for that argument
+    call transposed % declare_arguments(1)
+
   end function stencil_transpose
 
   !===================================================================!

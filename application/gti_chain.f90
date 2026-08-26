@@ -111,6 +111,9 @@ module gti_chain
      ! rows can be differentiated along a direction in the steps
      class(family), allocatable :: scheme
      real(dp)     , allocatable :: dt(:)
+     ! the imbalance its solve began at, against which its relative
+     ! tolerance was measured
+     real(dp) :: began = 0.0_dp
 
   end type chain_block
 
@@ -332,6 +335,7 @@ contains
     call built(scheme, physics, degrees, last - first + 1, dt(first:last), &
          & held, chain(b) % rows, chain(b) % instants_at, nodes, spatial)
     call swept(chain(b) % rows, design, chain(b) % state, achieved, left)
+    chain(b) % began = left % began
 
     call tally_leave()
 

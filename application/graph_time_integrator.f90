@@ -317,40 +317,43 @@ contains
   !-------------------------------------------------------------------!
 
   !-------------------------------------------------------------------!
-  ! The precision a row's target needs, from the weight its family
-  ! carries at its smallest step and the state it reached: shown
-  ! beneath every row under accounting, and beneath any row whose
-  ! need exceeds this build.
+  ! The precision each block of a row needs: from its own family and
+  ! smallest step, the norm of its tangent in closed form; from its
+  ! own state, the size of what is subtracted; from the imbalance its
+  ! solve began at, the target. The spacing those ask for names the
+  ! least kind, block by block, since a chain may need more precision
+  ! in one block than in another. Nothing is said when every block's
+  ! least kind is this build's or below it, unless accounting is on.
   !-------------------------------------------------------------------!
 
-  subroutine shown_precision(scheme, nd, dt, chain, left, cfg)
+  subroutine shown_precision(nd, chain, cfg)
 
-    class(family)      , intent(in) :: scheme
     integer            , intent(in) :: nd
-    real(dp)           , intent(in) :: dt(:)
     type(chain_block)  , intent(in) :: chain(:)
-    type(imbalance)    , intent(in) :: left
     type(configuration), intent(in) :: cfg
 
     real(dp) :: weight, state_size
     real(real128) :: needed
     character(len=:), allocatable :: least
+    logical :: shown
     integer :: b
 
-    weight     = weight_of(scheme, nd, minval(dt(2:)))
-    state_size = 0.0_dp
+    shown = cfg % accounting
     do b = 1, size(chain)
-       state_size = max(state_size, maxval(abs(chain(b) % state)))
+       call precision_needed(weight_of(chain(b) % scheme, nd, minval(chain(b) % dt(2:))), &
+            & maxval(abs(chain(b) % state)), chain(b) % began, needed, least)
+       if (least /= precision_named() .and. least /= 'single') shown = .true.
     end do
+    if (.not. shown) return
 
-    call precision_needed(weight, state_size, left % began, needed, least)
-
-    if (.not. cfg % accounting .and. least == precision_named()) return
-    if (.not. cfg % accounting .and. least == 'single') return
-
-    write(*,'(a,es9.2,a,es9.2,a,es9.2,a,a,a,a)') '      precision  ||A|| ', weight, &
-         & '  ||q|| ', state_size, '  spacing needed ', real(needed, dp), &
-         & '  least kind ', least, '  this build ', precision_named()
+    do b = 1, size(chain)
+       weight     = weight_of(chain(b) % scheme, nd, minval(chain(b) % dt(2:)))
+       state_size = maxval(abs(chain(b) % state))
+       call precision_needed(weight, state_size, chain(b) % began, needed, least)
+       write(*,'(a,i0,a,es9.2,a,es9.2,a,es9.2,a,a,a,a)') '      precision, block ', b, &
+            & '  ||A|| ', weight, '  ||q|| ', state_size, '  spacing needed ', real(needed, dp), &
+            & '  least kind ', least, '  this build ', precision_named()
+    end do
 
   end subroutine shown_precision
 
@@ -446,7 +449,7 @@ contains
        end do
        write(*,'(a)') line
     end do
-    call shown_precision(schemes(1) % scheme, nd, dt, chain, left, cfg)
+    call shown_precision(nd, chain, cfg)
 
     ! the first derivatives by the routes: where the grid is a design
     ! they are the only account of it, and where the routes are checked

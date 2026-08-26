@@ -284,7 +284,7 @@ contains
     class(block_residual), intent(in) :: this
 
     associate (u1 => this); end associate
-    block_max_degree = 1
+    block_max_degree = 2
 
   end function block_max_degree
 
@@ -902,14 +902,25 @@ contains
     real(dp), allocatable :: r(:), governing(:), v(:), x(:)
 
     call this % require_owned(variations)
-
-    if (size(variations) /= 1) then
+    if (size(variations) < 1 .or. size(variations) > this % max_degree()) then
        error stop 'gti_block: the requested order is within max_degree'
     end if
-
     call state_of(this, input_data, input_graph, x, state)
-    call variations(1) % direction(v)
 
+    ! THE SECOND PARTIAL. The derived rows, the level below and the
+    ! carried rows are linear in the state and read no design, so
+    ! only the physics has one: its second partial at every point,
+    ! along both directions, on the row its primary degree holds.
+    if (size(variations) == 2) then
+       call second_tangent(this, input_data, variations, x, governing)
+       allocate(r(this % num_unknowns()), source=0.0_dp)
+       call placed(this, governing, r)
+       call carry_held(this, r)
+       call placed_output(this, input_graph, r, output)
+       return
+    end if
+
+    call variations(1) % direction(v)
     if (variations(1) % argument_is(this % argument(1))) then
        call state_tangent(this, input_graph, input_data, variations, state, x, v, &
             & r, governing)
@@ -965,6 +976,57 @@ contains
     call half % real_vector(governing)
 
   end subroutine state_tangent
+
+  !===================================================================!
+  ! The physics' second partial along two variations, each on the
+  ! argument its variation names: a state direction is gathered over
+  ! the points, a design direction is read as given.
+  !===================================================================!
+
+  subroutine second_tangent(this, input_data, variations, x, governing)
+
+    class(block_residual), intent(in) :: this
+    class(field)         , intent(in) :: input_data(:)
+    type(variation)      , intent(in) :: variations(:)
+    real(dp)             , intent(in) :: x(:)
+    real(dp), allocatable, intent(out) :: governing(:)
+
+    type(stored_field), allocatable :: inputs(:)
+    type(variation) :: at_points(2)
+    class(field), allocatable :: half
+    integer :: i
+
+    call point_inputs(this, input_data, x, inputs)
+    do i = 1, 2
+       at_points(i) = physics_variation(this, variations(i))
+    end do
+    call this % physics % partial_action(this % points, inputs, at_points, half)
+    call half % real_vector(governing)
+
+  end subroutine second_tangent
+
+  function physics_variation(this, given) result(at_points)
+
+    class(block_residual), intent(in) :: this
+    type(variation)      , intent(in) :: given
+    type(variation) :: at_points
+
+    type(stored_field) :: direction
+    real(dp), allocatable :: v(:)
+
+    call given % direction(v)
+    if (given % argument_is(this % argument(1))) then
+       direction = stored_field('direction', this % points % vertex_set(), &
+            & size(this % at) * this % degrees)
+       call direction % set_real_vector(gathered(this, v))
+       at_points = variation(this % physics % argument(1), direction)
+    else if (given % argument_is(this % argument(2))) then
+       at_points = given % with_argument(this % physics % argument(2))
+    else
+       error stop 'gti_block: a variation names the state or the design'
+    end if
+
+  end function physics_variation
 
   !===================================================================!
   ! The design half: the scheme's rows are frozen and the carried

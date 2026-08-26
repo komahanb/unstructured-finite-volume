@@ -56,7 +56,7 @@ module gti_sweeps
   implicit none
 
   private
-  public :: functional_of, functional_gradient, functional_design_partial
+  public :: functional_of, functional_gradient, functional_design_partial, varied_by
   public :: design_partial, jacobian_of
   public :: forward_route, reverse_route, route_of, route_substitutions
 
@@ -329,7 +329,7 @@ contains
   !===================================================================!
 
   subroutine functional_design_partial(integrand, points, inputs, weight, n, &
-       & design_domain, d)
+       & design_domain, d, along_state, along_design)
 
     class(operation)     , intent(in)  :: integrand
     class(directed_graph), intent(in)  :: points
@@ -338,20 +338,50 @@ contains
     integer              , intent(in)  :: n
     type(graph)          , intent(in)  :: design_domain
     real(dp)             , intent(out) :: d
+    ! given, the partial's own partial along a state direction over
+    ! the points, or along the design again at every point
+    real(dp), intent(in), optional     :: along_state(:), along_design(:)
 
     real(dp), allocatable :: rate(:)
 
-    call varied(integrand, points, inputs, 2, design_domain, spread(1.0_dp, 1, n), rate)
+    if (present(along_state)) then
+       call varied(integrand, points, inputs, 2, design_domain, spread(1.0_dp, 1, n), rate, &
+            & 1, design_domain, along_state)
+    else if (present(along_design)) then
+       call varied(integrand, points, inputs, 2, design_domain, spread(1.0_dp, 1, n), rate, &
+            & 2, design_domain, along_design)
+    else
+       call varied(integrand, points, inputs, 2, design_domain, spread(1.0_dp, 1, n), rate)
+    end if
     d = sum(weight * rate)
 
   end subroutine functional_design_partial
+
+  !===================================================================!
+  ! An action's partial along one variation, or its mixed second
+  ! partial along two, read out as a vector.
+  !===================================================================!
+
+  subroutine varied_by(action, on, inputs, which, domain, v, which2, domain2, v2, y)
+
+    class(operation)     , intent(in) :: action
+    class(directed_graph), intent(in) :: on
+    type(stored_field)   , intent(in) :: inputs(:)
+    integer              , intent(in) :: which, which2
+    type(graph)          , intent(in) :: domain, domain2
+    real(dp)             , intent(in) :: v(:), v2(:)
+    real(dp), allocatable, intent(out) :: y(:)
+
+    call varied(action, on, inputs, which, domain, v, y, which2, domain2, v2)
+
+  end subroutine varied_by
 
   !===================================================================!
   ! The partial action of a statement along one direction in one of
   ! its arguments.
   !===================================================================!
 
-  subroutine varied(action, on, inputs, which, domain, v, y)
+  subroutine varied(action, on, inputs, which, domain, v, y, which2, domain2, v2)
 
     class(operation)     , intent(in) :: action
     class(directed_graph), intent(in) :: on
@@ -360,15 +390,26 @@ contains
     type(graph)          , intent(in) :: domain
     real(dp)             , intent(in) :: v(:)
     real(dp), allocatable, intent(out) :: y(:)
+    ! a second variation: the mixed second partial along both
+    integer    , intent(in), optional :: which2
+    type(graph), intent(in), optional :: domain2
+    real(dp)   , intent(in), optional :: v2(:)
 
-    type(stored_field) :: direction
+    type(stored_field) :: direction, second
     class(field), allocatable :: out
 
     direction = stored_field('direction', domain, size(v))
     call direction % set_real_vector(v)
-
-    call action % partial_action(on, inputs, &
-         & [variation(action % argument(which), direction)], out)
+    if (present(which2)) then
+       second = stored_field('direction', domain2, size(v2))
+       call second % set_real_vector(v2)
+       call action % partial_action(on, inputs, &
+            & [variation(action % argument(which), direction), &
+            &  variation(action % argument(which2), second)], out)
+    else
+       call action % partial_action(on, inputs, &
+            & [variation(action % argument(which), direction)], out)
+    end if
     call out % real_vector(y)
 
   end subroutine varied
@@ -400,7 +441,7 @@ contains
   !===================================================================!
 
   subroutine functional_gradient(integrand, instants, inputs, dt, n, degrees, &
-       & state_domain, g)
+       & state_domain, g, along_state, along_design)
 
     class(operation)     , intent(in) :: integrand
     class(directed_graph), intent(in) :: instants
@@ -409,21 +450,29 @@ contains
     integer              , intent(in) :: n, degrees
     type(graph)          , intent(in) :: state_domain
     real(dp), allocatable, intent(out) :: g(:)
+    ! given, the gradient's own partial along a state direction over
+    ! the points, or along the design at every point
+    real(dp), intent(in), optional    :: along_state(:), along_design(:)
 
     real(dp), allocatable :: v(:), rate(:)
     integer :: d, k
 
     allocate(g(n * degrees), source=0.0_dp)
     allocate(v(n * degrees))
-
     do d = 0, degrees - 1
        v = 0.0_dp
        do k = 1, n
           v((k - 1) * degrees + d + 1) = 1.0_dp
        end do
-
-       call varied(integrand, instants, inputs, 1, state_domain, v, rate)
-
+       if (present(along_state)) then
+          call varied(integrand, instants, inputs, 1, state_domain, v, rate, &
+               & 1, state_domain, along_state)
+       else if (present(along_design)) then
+          call varied(integrand, instants, inputs, 1, state_domain, v, rate, &
+               & 2, state_domain, along_design)
+       else
+          call varied(integrand, instants, inputs, 1, state_domain, v, rate)
+       end if
        do k = 1, n
           g((k - 1) * degrees + d + 1) = dt(k) * rate(k)
        end do

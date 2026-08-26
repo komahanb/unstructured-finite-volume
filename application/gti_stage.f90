@@ -209,15 +209,18 @@ contains
   ! The weights of one step, from the family.
   !===================================================================!
 
-  subroutine step_weights(scheme, s, tails, heads, source_degree, determines, step, w, along)
+  subroutine step_weights(scheme, s, tails, heads, source_degree, determines, step, w, along, along2)
 
     class(family), intent(in) :: scheme
     integer      , intent(in) :: s, tails(:), heads(:), source_degree(:), determines(:)
     real(dp)     , intent(in) :: step
     real(dp), allocatable, intent(out) :: w(:)
-    real(dp)     , intent(in), optional :: along
+    real(dp)     , intent(in), optional :: along, along2
 
-    if (present(along)) then
+    if (present(along2)) then
+       call weights_varied(scheme_weight(scheme), s + 2, tails, heads, spread(step, 1, s + 2), &
+            & spread(along, 1, s + 2), source_degree, determines, w, spread(along2, 1, s + 2))
+    else if (present(along)) then
        call weights_varied(scheme_weight(scheme), s + 2, tails, heads, spread(step, 1, s + 2), &
             & spread(along, 1, s + 2), source_degree, determines, w)
     else
@@ -234,12 +237,12 @@ contains
   ! a direction in the steps, the partial of those rows.
   !===================================================================!
 
-  function stage_rows(scheme, nd, n, dt, nodes, along) result(rows)
+  function stage_rows(scheme, nd, n, dt, nodes, along, along2) result(rows)
 
     class(family), intent(in) :: scheme
     integer      , intent(in) :: nd, n, nodes
     real(dp)     , intent(in) :: dt(:)
-    real(dp)     , intent(in), optional :: along(:)
+    real(dp)     , intent(in), optional :: along(:), along2(:)
     type(stencil) :: rows
 
     integer , allocatable :: tails(:), heads(:), source_degree(:), determines(:)
@@ -256,7 +259,10 @@ contains
     at = 0
 
     do kk = 2, n
-       if (present(along)) then
+       if (present(along2)) then
+          call step_weights(scheme, s, tails, heads, source_degree, determines, dt(kk), w, &
+               & along=along(kk), along2=along2(kk))
+       else if (present(along)) then
           call step_weights(scheme, s, tails, heads, source_degree, determines, dt(kk), w, &
                & along=along(kk))
        else

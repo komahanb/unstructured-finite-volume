@@ -76,11 +76,11 @@ program graph_time_integrator
   use gti_expansion         , only : family_holder
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
        & expansion_substitutions, chain_system, chain_systems, chain_by_tangent, &
-       & chain_by_adjoint, instant_components, functional_holder, &
+       & chain_by_adjoint, instant_components, functional_holder, chain_hessian, &
        & started => startup_trajectory
   use gti_sweeps            , only : set_linear_solver, set_assembly, set_storage, set_multigrid, &
        & set_coarse_nodes
-  use gti_sweeps            , only : route_of, forward_route
+  use gti_sweeps            , only : route_of, forward_route, reverse_route
   use operation_minimization, only : relative, absolute, by_count, by_rate
   use gti_driver            , only : settings, chosen_grid, steps_of, family_named, clock, &
        & functional_named
@@ -468,9 +468,10 @@ contains
   end subroutine one_row
 
   !-------------------------------------------------------------------!
-  ! The first derivative of every functional in every design, by the
-  ! route the gate chooses from the counts: forward, one solve per
-  ! design, or reverse, one per functional. With the grid's weights
+  ! The derivatives of every functional in every design by the routes.
+  ! At first order the gate chooses from the counts: forward, one
+  ! solve per design, or reverse, one per functional; at second order
+  ! the reverse route, when the gate chooses it. With the grid's weights
   ! among the designs the steps are homogeneous of degree zero in
   ! them, so the weights against the gradient sum to zero - a check
   ! of the whole chain rule through the grid - and the physics' column
@@ -488,7 +489,7 @@ contains
     real(dp)           , intent(in) :: dt(:), f(0:, :)
 
     type(chain_system), allocatable :: systems(:)
-    real(dp), allocatable :: v(:,:), p(:), df(:,:), other(:,:)
+    real(dp), allocatable :: v(:,:), p(:), df(:,:), other(:,:), hessian(:,:,:)
     real(dp) :: euler
     integer  :: num_designs, num_functionals, route, i
 
@@ -532,6 +533,27 @@ contains
        end if
        write(*,'(a,es10.2)') '      tangent against adjoint over the table, relative ', &
             & maxval(abs(df - other)) / max(1.0_dp, maxval(abs(df)))
+    end if
+
+    ! the second derivatives where the gate chooses the reverse route
+    ! at order two: the hessian of every functional over the designs,
+    ! symmetric in theory and not made so, its parameter entry the
+    ! expansion's second order
+    if (grid_designed .and. ubound(f, 1) >= 2) then
+       if (route_of(num_designs, num_functionals, 2) == reverse_route) then
+          call chain_hessian(chain, functionals=functionals, systems=systems, degrees=nd, &
+               & dt=dt, design=cfg % design, hessian=hessian, node_measure=volume, &
+               & step_partials=v, steps=designed_grid(cfg % time_duration), grid_design=p)
+          do i = 1, num_functionals
+             write(*,'(a,i0,a,es12.4,a,es10.2,a,es10.2)') &
+                  & '      second derivatives by the reverse route, functional ', i, &
+                  & ':  |H| ', maxval(abs(hessian(i, :, :))), '   symmetry ', &
+                  & maxval(abs(hessian(i, :, :) - transpose(hessian(i, :, :)))) &
+                  & / max(tiny(1.0_dp), maxval(abs(hessian(i, :, :)))), &
+                  & '   parameter entry against the expansion ', &
+                  & abs(hessian(i, 1, 1) - f(2, i)) / max(1.0_dp, abs(f(2, i)))
+          end do
+       end if
     end if
 
   end subroutine first_derivatives

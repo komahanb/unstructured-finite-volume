@@ -115,6 +115,7 @@ module gti_march
 
   private
   public :: partition, partitioned, scheme_rows, block_of, solved, unknowns_graph, step_partials
+  public :: step_second_partials
   public :: unknown, consistent_states, frozen_inputs
   public :: set_stopping
   public :: consistent_state
@@ -442,6 +443,42 @@ contains
   end subroutine step_partials
 
   !===================================================================!
+  ! The mixed second partial of every step in two entries of a grid's
+  ! design, from the grid's own partial action along both.
+  !===================================================================!
+
+  subroutine step_second_partials(steps, n, design, j, k, u)
+
+    class(grid), intent(in) :: steps
+    integer    , intent(in) :: n, j, k
+    real(dp)   , intent(in) :: design(:)
+    real(dp), allocatable, intent(out) :: u(:)
+
+    type(stored_directed_graph) :: instants
+    type(stored_field) :: knobs, first, second
+    class(field), allocatable :: out
+    real(dp), allocatable :: e(:)
+
+    instants = stored_directed_graph(n, tails=[integer ::], heads=[integer ::])
+    knobs    = stored_field('design', instants % vertex_set(), size(design))
+    call knobs % set_real_vector(design)
+
+    allocate(e(size(design)))
+    e = 0.0_dp
+    e(j) = 1.0_dp
+    first = stored_field('direction', instants % vertex_set(), size(design))
+    call first % set_real_vector(e)
+    e = 0.0_dp
+    e(k) = 1.0_dp
+    second = stored_field('direction', instants % vertex_set(), size(design))
+    call second % set_real_vector(e)
+    call steps % partial_action(instants, [knobs], &
+         & [variation(steps % argument(1), first), variation(steps % argument(1), second)], out)
+    call out % real_vector(u)
+
+  end subroutine step_second_partials
+
+  !===================================================================!
   ! Where a component lies: instants follow one another, nodes lie
   ! within an instant, and the components of one point stay together,
   !
@@ -483,13 +520,13 @@ contains
   ! owns.
   !===================================================================!
 
-  function scheme_rows(scheme, degrees, n, dt, nodes, along) result(rows)
+  function scheme_rows(scheme, degrees, n, dt, nodes, along, along2) result(rows)
 
     class(family), intent(in)           :: scheme
     integer      , intent(in)           :: degrees, n
     real(dp)     , intent(in)           :: dt(:)
     integer      , intent(in), optional :: nodes
-    real(dp)     , intent(in), optional :: along(:)
+    real(dp)     , intent(in), optional :: along(:), along2(:)
     type(stencil) :: rows
 
     integer , allocatable :: tails(:), heads(:), source_degree(:), determines(:)
@@ -507,7 +544,7 @@ contains
     ! takes no part in.
     if (present(along)) then
        call weights_varied(scheme_weight(scheme), n, tails, heads, dt, along, &
-            & source_degree, determines, w)
+            & source_degree, determines, w, along2)
        rows = stencil( &
             & [((unknown(heads(e), determines(e), degrees, i, m), e = 1, size(heads)), i = 1, m)], &
             & [((unknown(tails(e), source_degree(e), degrees, i, m), e = 1, size(tails)), i = 1, m)], &

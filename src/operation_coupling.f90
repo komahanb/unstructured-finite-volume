@@ -84,7 +84,7 @@ contains
   !===================================================================!
 
   subroutine weights_varied(action, num_vertices, tails, heads, steps, along, &
-       & source_degree, determines, dw)
+       & source_degree, determines, dw, along2)
 
     class(operation), intent(in) :: action
     integer         , intent(in) :: num_vertices
@@ -92,10 +92,12 @@ contains
     real(dp)        , intent(in) :: steps(:), along(:)
     integer         , intent(in) :: source_degree(:), determines(:)
     real(dp), allocatable, intent(out) :: dw(:)
+    ! a second direction: the mixed second partial along both
+    real(dp)        , intent(in), optional :: along2(:)
 
     type(stored_directed_graph)     :: edges
     type(stored_field), allocatable :: inputs(:)
-    type(stored_field)              :: direction
+    type(stored_field)              :: direction, second
     class(field)      , allocatable :: out
 
     if (size(along) /= num_vertices) then
@@ -106,8 +108,19 @@ contains
          & edges, inputs)
     direction = stored_field('along', edges % vertex_set(), num_vertices)
     call direction % set_real_vector(along)
-    call action % partial_action(edges, inputs, &
-         & [variation(action % argument(1), direction)], out)
+    if (present(along2)) then
+       if (size(along2) /= num_vertices) then
+          error stop 'operation_coupling: one direction entry per vertex'
+       end if
+       second = stored_field('along', edges % vertex_set(), num_vertices)
+       call second % set_real_vector(along2)
+       call action % partial_action(edges, inputs, &
+            & [variation(action % argument(1), direction), &
+            &  variation(action % argument(1), second)], out)
+    else
+       call action % partial_action(edges, inputs, &
+            & [variation(action % argument(1), direction)], out)
+    end if
     call out % real_vector(dw)
 
   end subroutine weights_varied

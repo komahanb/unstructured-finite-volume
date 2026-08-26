@@ -13,6 +13,12 @@
 !                  march is known to a relative tolerance tau, so the
 !                  step is tau^(1/3) and the agreement tau^(2/3)
 !
+! and then the second derivatives by the reverse route at order two,
+! one hessian per functional, checked three ways: the table is
+! symmetric in theory and is not made so; its parameter entry is the
+! expansion's second order; and a central difference of the first
+! derivatives, themselves known to tau, gives the rows to tau^(2/3).
+!
 ! The families read one instant back, so the first instant is the
 ! given state and no startup depends on the steps.
 !
@@ -27,7 +33,8 @@ program grid_design_check
   use gti_expansion         , only : family_holder
   use gti_march             , only : set_stopping, consistent_state, step_partials, imbalance
   use gti_chain             , only : chain_block, march_chain, chain_expansion, chain_system, &
-       & chain_systems, chain_by_tangent, chain_by_adjoint, functional_holder, one_functional
+       & chain_systems, chain_by_tangent, chain_by_adjoint, functional_holder, one_functional, &
+       & chain_hessian
   use gti_sweeps            , only : route_of, forward_route
 
   implicit none
@@ -41,7 +48,7 @@ program grid_design_check
   type(chain_block) , allocatable :: chain(:)
   type(chain_system), allocatable :: systems(:)
   real(dp), allocatable :: p(:), dt(:), t(:), v(:,:), f(:,:), tangent(:,:), adjoint(:,:)
-  real(dp), allocatable :: plus(:,:), minus(:,:), q0(:)
+  real(dp), allocatable :: plus(:,:), minus(:,:), q0(:), hessian(:,:,:), dplus(:,:), dminus(:,:)
   real(dp) :: tau, delta, achieved, worst
   character(len=32) :: argument
   integer :: k, j, i, route
@@ -101,22 +108,69 @@ program grid_design_check
        & maxval(abs((plus(0, :) - minus(0, :)) / (2.0_dp * delta) - adjoint(:, 1)) / &
        &        max(1.0_dp, abs(adjoint(:, 1))))
 
+  ! the second derivatives: the hessian of every functional, by the
+  ! reverse route at order two
+  call marched(p, design, f, 2)
+  call chain_hessian(chain, systems, functionals, degrees, dt, design, hessian, &
+       & step_partials=v, steps=designed_grid(duration), grid_design=p)
+  write(*,'(a)') ' '
+  write(*,'(a,i0,a,i0,a,i0)') ' second derivatives by the reverse route: hessians ', &
+       & size(hessian, 1), ' of ', size(hessian, 2), ' x ', size(hessian, 3)
+  do i = 1, 2
+     write(*,'(a,i0,a,es10.2,a,es10.2)') ' functional ', i, &
+          & ':  symmetry, relative ', maxval(abs(hessian(i, :, :) - transpose(hessian(i, :, :)))) &
+          & / maxval(abs(hessian(i, :, :))), &
+          & '   parameter entry against the expansion ', abs(hessian(i, 1, 1) - f(2, i)) / abs(f(2, i))
+  end do
+  worst = 0.0_dp
+  do k = 1, size(checked)
+     j = checked(k)
+     call differenced(p + delta * unit(j), design, dplus)
+     call differenced(p - delta * unit(j), design, dminus)
+     worst = max(worst, maxval(abs((dplus - dminus) / (2.0_dp * delta) - hessian(:, 1 + j, :)) &
+          & / max(1.0_dp, maxval(abs(hessian)))))
+  end do
+  call differenced(p, design + delta, dplus)
+  call differenced(p, design - delta, dminus)
+  worst = max(worst, maxval(abs((dplus - dminus) / (2.0_dp * delta) - hessian(:, 1, :)) &
+       & / max(1.0_dp, maxval(abs(hessian)))))
+  write(*,'(a,es10.2)') ' differenced first derivatives against the hessian rows, worst ', worst
+
 contains
 
-  subroutine marched(weights, nu, f)
+  subroutine marched(weights, nu, f, order)
 
     real(dp), intent(in) :: weights(:), nu
     real(dp), allocatable, intent(out) :: f(:,:)
+    integer , intent(in), optional :: order
 
     type(imbalance) :: left
+    integer :: m
 
+    m = 1
+    if (present(order)) m = order
     call march_chain(schemes, [11, 10], van_der_pol(state_degree), degrees, &
          & designed_grid(duration), nu, q0, chain, dt, t, achieved, grid_design=weights, &
          & left=left)
     if (.not. left % converged) error stop 'grid_design_check: the march converged'
-    call chain_expansion(chain, van_der_pol(state_degree), functionals, degrees, dt, nu, 1, f)
+    call chain_expansion(chain, van_der_pol(state_degree), functionals, degrees, dt, nu, m, f)
 
   end subroutine marched
+
+  ! the first derivatives by the adjoint at other weights or parameter
+  subroutine differenced(weights, nu, df)
+
+    real(dp), intent(in) :: weights(:), nu
+    real(dp), allocatable, intent(out) :: df(:,:)
+
+    real(dp), allocatable :: f(:,:), vw(:,:)
+
+    call marched(weights, nu, f)
+    call step_partials(designed_grid(duration), instants, weights, vw)
+    call chain_systems(chain, functionals, degrees, dt, nu, systems, step_partials=vw)
+    df = chain_by_adjoint(chain, systems, degrees, nu)
+
+  end subroutine differenced
 
   pure function unit(j) result(e)
 

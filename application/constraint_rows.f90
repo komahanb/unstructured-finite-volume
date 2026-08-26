@@ -38,6 +38,7 @@ program constraint_rows
   use operation_coupling         , only : weights_of
   use operation_weight           , only : scheme_weight
   use physics_vanderpol          , only : van_der_pol
+  use physics_expression         , only : expression
 
   implicit none
 
@@ -74,7 +75,7 @@ contains
     type(stored_directed_graph) :: unknowns
     type(stored_field) :: state, direction
     class(field), allocatable :: out
-    type(van_der_pol) :: physics
+    type(expression) :: physics
     real(dp), allocatable :: weight(:), residual(:), acted(:), governing(:)
     real(dp) :: q(num_unknowns), t(num_instants)
     integer , allocatable :: tails(:), heads(:), determines(:), source_degree(:)
@@ -167,7 +168,7 @@ contains
 
   subroutine governing_rows(physics, dt, q, r)
 
-    type(van_der_pol), intent(in) :: physics
+    type(expression), intent(in) :: physics
     real(dp)         , intent(in) :: dt(:), q(:)
     real(dp), allocatable, intent(out) :: r(:)
 
@@ -201,7 +202,7 @@ contains
     real(dp), parameter :: delta = 1.0e-6_dp
     integer , parameter :: instants = 2
 
-    type(van_der_pol) :: physics
+    type(expression) :: physics
     type(stored_directed_graph) :: graph_of
     type(stored_field) :: state, nu_field, direction
     class(field), allocatable :: out
@@ -290,7 +291,7 @@ contains
 
   function state_difference(physics, graph_of, state, nu_field, q, v) result(d)
 
-    type(van_der_pol)          , intent(in)    :: physics
+    type(expression)          , intent(in)    :: physics
     type(stored_directed_graph), intent(in)    :: graph_of
     type(stored_field)         , intent(inout) :: state
     type(stored_field)         , intent(in)    :: nu_field
@@ -320,7 +321,7 @@ contains
 
   subroutine design_partial(physics, graph_of, state, nu_field, q, instants, nd)
 
-    type(van_der_pol)          , intent(in)    :: physics
+    type(expression)          , intent(in)    :: physics
     type(stored_directed_graph), intent(in)    :: graph_of
     type(stored_field)         , intent(inout) :: state, nu_field
     real(dp)                   , intent(in)    :: q(:)

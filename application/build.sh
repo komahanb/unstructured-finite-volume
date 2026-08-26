@@ -25,8 +25,8 @@ if [ "$PRECISION" = quad ]; then
 fi
 mkdir -p $OBJ $OUT
 
-MODULES="../physics/physics_integrand ../physics/physics_vanderpol
-         gti_configuration gti_sweeps gti_expansion gti_block gti_stage
+MODULES="../physics/physics_integrand ../physics/physics_expression ../physics/physics_vanderpol
+         gti_configuration gti_sweeps gti_expansion gti_block
          gti_march gti_space gti_field gti_taylor gti_chain gti_driver"
 
 for m in $MODULES; do

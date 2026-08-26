@@ -59,6 +59,7 @@ application/family_coefficients
 application/scheme_weights
 application/coupling_relation
 application/constraint_rows
+application/function_identities
 application/level_maps
 application/assembled_tower
 application/marched_block

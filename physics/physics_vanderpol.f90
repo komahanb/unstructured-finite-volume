@@ -1,199 +1,87 @@
 !=====================================================================!
-! The van der Pol oscillator as a governing constraint, and an energy
-! as a functional integrand.
+! The van der Pol oscillator as a governing constraint, and two
+! functional integrands beside it, each stated once at one instant.
 !
 ! The equation, at degree N,
 !
 !      R  =  q^(N)  -  nu (1 - q^2) q^(N-1)  +  q  =  0
 !
 ! is the ordinary oscillator at N = 2 and its higher-degree
-! continuation above that: the damping always acts on the derivative
-! one below the highest, and the restoring term always acts on the
-! value. The functional integrand supplied beside it is the energy
+! continuation above that: the damping acts on the derivative one
+! below the highest, and the restoring term on the value. The energy
+! is
 !
-!      F  =  ( q^2 + (q')^2 ) / 2 .
+!      F  =  ( q^2 + (q')^2 ) / 2
 !
-! Each is stated once, at one instant. Everything else is written in
-! physics_integrand, which both extend.
+! and the dissipation, the power the damping term draws,
 !
-!             THE PARTIALS OF THE RESIDUAL
+!      F  =  nu (1 - q^2) (q')^2 ,
 !
-!      dR/dq^(N)     =  1
-!      dR/dq^(N-1)   =  -nu (1 - q^2)
-!      dR/dq         =  2 nu q q^(N-1)  +  1
-!      dR/dq^(d)     =  0     for every other d
-!      dR/dnu        =  -(1 - q^2) q^(N-1)
+! a functional that reads the design itself, so its own partial in
+! the design is not zero.
 !
-! and at N > 2 the degrees between one and N-2 are exactly zero,
-! which is what a partial indexed one place out would not be. They
-! are not written out in code: the rule is differentiated as
-! written.
+! Each is an expression over the unknown and the design, and its
+! partials in either are taken by evaluating it; none is written out
+! here. A functional reads the velocity, so a degree-zero problem has
+! none: stating it at degree zero stops the program.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module physics_vanderpol
 
-  use util_precision  , only : dp
-  use physics_integrand     , only : nodal_integrand
-  use util_derivative_terms , only : derivative_terms, &
-       & operator(+), operator(-), operator(*)
+  use util_precision    , only : dp
+  use physics_expression, only : expression, unknown, design, derivative, stated, &
+       & operator(+), operator(-), operator(*), operator(**)
 
   implicit none
 
   private
   public :: van_der_pol, van_der_pol_energy, van_der_pol_dissipation
 
-  type, extends(nodal_integrand) :: van_der_pol
-   contains
-     procedure :: name       => residual_name
-     procedure :: at_instant => residual_at_instant
-  end type van_der_pol
-
-  type, extends(nodal_integrand) :: van_der_pol_energy
-   contains
-     procedure :: name       => energy_name
-     procedure :: at_instant => energy_at_instant
-  end type van_der_pol_energy
-
-  interface van_der_pol
-     module procedure create_residual
-  end interface van_der_pol
-
-  interface van_der_pol_energy
-     module procedure create_energy
-  end interface van_der_pol_energy
-
-  ! the power the damping term draws, nu (1 - q^2) q'^2: a functional
-  ! that reads the design itself, so its own partial in the design
-  ! is not zero
-  type, extends(nodal_integrand) :: van_der_pol_dissipation
-   contains
-     procedure :: name       => dissipation_name
-     procedure :: at_instant => dissipation_at_instant
-  end type van_der_pol_dissipation
-
-  interface van_der_pol_dissipation
-     module procedure create_dissipation
-  end interface van_der_pol_dissipation
-
 contains
 
-  function create_residual(degree) result(this)
+  function van_der_pol(degree) result(r)
 
     integer, intent(in) :: degree
-    type(van_der_pol) :: this
+    type(expression) :: r
 
-    call this % declare_degree(degree)
+    type(expression) :: q, nu
 
-  end function create_residual
+    q  = unknown()
+    nu = design()
 
-  !===================================================================!
-  ! The energy reads a velocity, so a degree-zero problem has none.
-  !===================================================================!
+    r = stated(derivative(q, degree) - nu * (1.0_dp - derivative(q, 0)**2) * derivative(q, degree - 1) &
+         & + derivative(q, 0), degree, 'van der pol residual')
 
-  function create_energy(degree) result(this)
+  end function van_der_pol
 
-    integer, intent(in) :: degree
-    type(van_der_pol_energy) :: this
-
-    if (degree < 1) then
-       error stop 'physics_vanderpol: the energy needs a velocity'
-    end if
-
-    call this % declare_degree(degree)
-
-  end function create_energy
-
-  pure function residual_name(this) result(name)
-
-    class(van_der_pol), intent(in) :: this
-    character(len=:), allocatable :: name
-
-    associate (u1 => this); end associate
-    name = 'van der pol residual'
-
-  end function residual_name
-
-  function create_dissipation(degree) result(this)
+  function van_der_pol_energy(degree) result(f)
 
     integer, intent(in) :: degree
-    type(van_der_pol_dissipation) :: this
+    type(expression) :: f
 
-    if (degree < 1) then
-       error stop 'physics_vanderpol: the dissipation needs a velocity'
-    end if
-    call this % declare_degree(degree)
+    type(expression) :: q
 
-  end function create_dissipation
+    q = unknown()
 
-  pure function dissipation_name(this) result(name)
+    f = stated(0.5_dp * (derivative(q, 0)**2 + derivative(q, 1)**2), degree, 'van der pol energy')
 
-    class(van_der_pol_dissipation), intent(in) :: this
-    character(len=:), allocatable :: name
+  end function van_der_pol_energy
 
-    associate (u1 => this); end associate
-    name = 'van der pol dissipation'
+  function van_der_pol_dissipation(degree) result(f)
 
-  end function dissipation_name
+    integer, intent(in) :: degree
+    type(expression) :: f
 
-  pure function energy_name(this) result(name)
+    type(expression) :: q, nu
 
-    class(van_der_pol_energy), intent(in) :: this
-    character(len=:), allocatable :: name
+    q  = unknown()
+    nu = design()
 
-    associate (u1 => this); end associate
-    name = 'van der pol energy'
+    f = stated(nu * (1.0_dp - derivative(q, 0)**2) * derivative(q, 1) * derivative(q, 1), &
+         & degree, 'van der pol dissipation')
 
-  end function energy_name
-
-  !===================================================================!
-  ! THE TWO RULES.
-  !===================================================================!
-
-  pure function residual_at_instant(this, q, nu) result(r)
-
-    class(van_der_pol)    , intent(in) :: this
-    type(derivative_terms), intent(in) :: q(0:)
-    type(derivative_terms), intent(in) :: nu
-    type(derivative_terms) :: r
-
-    type(derivative_terms) :: one
-    integer :: n
-
-    n   = this % equation_degree()
-    one = derivative_terms(1.0_dp, nu)
-
-    r = q(n) - nu * (one - q(0) * q(0)) * q(n - 1) + q(0)
-
-  end function residual_at_instant
-
-  pure function energy_at_instant(this, q, nu) result(r)
-
-    class(van_der_pol_energy), intent(in) :: this
-    type(derivative_terms)   , intent(in) :: q(0:)
-    type(derivative_terms)   , intent(in) :: nu
-    type(derivative_terms) :: r
-
-    associate (u1 => this, u2 => nu); end associate
-
-    r = 0.5_dp * (q(0) * q(0) + q(1) * q(1))
-
-  end function energy_at_instant
-
-  pure function dissipation_at_instant(this, q, nu) result(r)
-
-    class(van_der_pol_dissipation), intent(in) :: this
-    type(derivative_terms)        , intent(in) :: q(0:)
-    type(derivative_terms)        , intent(in) :: nu
-    type(derivative_terms) :: r
-
-    type(derivative_terms) :: one
-
-    associate (u1 => this); end associate
-    one = derivative_terms(1.0_dp, nu)
-    r = nu * (one - q(0) * q(0)) * q(1) * q(1)
-
-  end function dissipation_at_instant
+  end function van_der_pol_dissipation
 
 end module physics_vanderpol

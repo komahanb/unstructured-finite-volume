@@ -1,6 +1,15 @@
 !=====================================================================!
-! A rule at one instant held as data: a graph whose vertices are
-! typed operators and whose edges are the reads between them.
+! A rule stated at one instant of a time hierarchy, held as data: a
+! graph whose vertices are typed operators and whose edges are the
+! reads between them.
+!
+!      input graph    the instants
+!      input 1        the state, one flat field over instant and
+!                     degree: the component of degree d at instant k
+!                     is held at (k-1)(N+1) + d + 1
+!      input 2        the design, one value per instant, so a design
+!                     that varies in time needs no other shape
+!      output         one value per instant
 !
 ! A leaf reads a component of an argument - the state's component of
 ! degree d, or the design - or holds a constant. Every other vertex
@@ -20,28 +29,38 @@
 ! the derivatives are unknowns the scheme relates, so the vertex
 ! selects and does not differentiate.
 !
-! Evaluated over derivative_terms by one loop over the vertices, so
-! the value and every mixed partial in the state and the design come
-! from one pass; nothing is differentiated symbolically. The
-! nodal_integrand it extends supplies the traversal of the instants
-! and the partial actions; this module supplies at_instant only.
+!             THE PARTIALS
+!
+! The rule is evaluated over derivative_terms by one loop over the
+! vertices, so the value and every mixed partial in the directions
+! asked for come from one pass and are exact; nothing is
+! differentiated symbolically. A variation may name either argument,
+! so the Q-partials, the X-partials and the mixed Q-X partials all
+! come from one path and to any degree. A Newton block wants the
+! Q-partials as a row of numbers, which is one call per degree with a
+! direction that is one at that degree and zero elsewhere.
 !
 !             WHAT IS REFUSED
 !
 ! A derivative of anything but the unknown, or of negative degree; a
-! rule stated at a degree below the highest component it reads; a
-! function index outside those defined. Each stops the program.
+! rule stated at a degree below one, or below the highest component
+! it reads; a state whose extent is not the instants times N+1; a
+! design that is not one value per instant; a missing argument; a
+! variation naming neither argument; a function index outside those
+! defined. Each stops the program.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module physics_expression
+module operation_expression
 
   use util_precision       , only : dp
-  use physics_integrand    , only : nodal_integrand
-  use util_derivative_terms, only : derivative_terms, integer_power, &
-       & operator(+), operator(-), operator(*), operator(/), operator(**), &
-       & sin, cos, exp, log, sqrt
+  use operation_action     , only : operation, variation
+  use view_directed        , only : directed_graph
+  use field_calculus       , only : field
+  use graph_fractal        , only : graph
+  use field_stored         , only : stored_field
+  use util_derivative_terms, only : derivative_terms, mixed_partial, max_subset_width, integer_power
 
   implicit none
 
@@ -62,7 +81,7 @@ module physics_expression
   integer, parameter :: VERTEX_REAL_POWER    = 8
   integer, parameter :: VERTEX_FUNCTION      = 9
 
-  ! the arguments a leaf reads, in nodal_integrand's order
+  ! the arguments a leaf reads, in the operation's order
   integer, parameter :: ARGUMENT_STATE  = 1
   integer, parameter :: ARGUMENT_DESIGN = 2
 
@@ -73,7 +92,9 @@ module physics_expression
   integer, parameter :: LOGARITHM   = 4
   integer, parameter :: ROOT        = 5
 
-  type, extends(nodal_integrand) :: expression
+  type, extends(operation) :: expression
+
+     integer, private :: degree = 2
 
      integer , allocatable, private :: kind(:)
      integer , allocatable, private :: first(:), second(:)    ! the vertices read; 0 if none
@@ -84,8 +105,14 @@ module physics_expression
 
    contains
 
-     procedure :: name       => expression_name
-     procedure :: at_instant => expression_at_instant
+     procedure :: name           => expression_name
+     procedure :: domain         => expression_domain
+     procedure :: apply          => expression_apply
+     procedure :: max_degree     => expression_max_degree
+     procedure :: partial_action => expression_partial_action
+     procedure :: at_instant     => expression_at_instant
+     procedure :: equation_degree
+     procedure :: declare_degree
      procedure :: highest_degree
      procedure :: num_vertices
 
@@ -190,10 +217,10 @@ contains
     type(expression) :: this
 
     if (size(x % kind) /= 1 .or. x % kind(1) /= VERTEX_LEAF .or. x % position(1) /= ARGUMENT_STATE) then
-       error stop 'physics_expression: a derivative is taken of the unknown'
+       error stop 'operation_expression: a derivative is taken of the unknown'
     end if
     if (d < 0) then
-       error stop 'physics_expression: the degree of a derivative is not negative'
+       error stop 'operation_expression: the degree of a derivative is not negative'
     end if
 
     this = vertex(VERTEX_LEAF, ARGUMENT_STATE, d, 0.0_dp)
@@ -217,7 +244,7 @@ contains
     this % label = label
 
     if (this % highest_degree() > degree) then
-       error stop 'physics_expression: the rule reads a component the state holds'
+       error stop 'operation_expression: the rule reads a component the state holds'
     end if
 
     call this % declare_degree(degree)
@@ -421,6 +448,11 @@ contains
 
   pure function expression_at_instant(this, q, nu) result(r)
 
+    ! the arithmetic over derivative_terms is read here alone, so the
+    ! module's public operators are its own, on expressions
+    use util_derivative_terms, only : operator(+), operator(-), operator(*), operator(/), &
+         & operator(**), sin, cos, exp, log, sqrt
+
     class(expression)     , intent(in) :: this
     type(derivative_terms), intent(in) :: q(0:)
     type(derivative_terms), intent(in) :: nu
@@ -436,7 +468,7 @@ contains
        case (VERTEX_LEAF)
           if (this % position(i) == ARGUMENT_STATE) then
              if (this % order(i) > ubound(q, 1)) then
-                error stop 'physics_expression: the state holds the component read'
+                error stop 'operation_expression: the state holds the component read'
              end if
              v(i) = q(this % order(i))
           else
@@ -464,10 +496,10 @@ contains
           case (LOGARITHM);   v(i) = log(v(this % first(i)))
           case (ROOT);        v(i) = sqrt(v(this % first(i)))
           case default
-             error stop 'physics_expression: the function is one of those defined'
+             error stop 'operation_expression: the function is one of those defined'
           end select
        case default
-          error stop 'physics_expression: the vertex kind is one of those defined'
+          error stop 'operation_expression: the vertex kind is one of those defined'
        end select
     end do
 
@@ -515,4 +547,223 @@ contains
 
   end function expression_name
 
-end module physics_expression
+  !===================================================================!
+  ! The degree of the equation, declared when the rule is stated. A
+  ! degree below one stops the program: there is no highest
+  ! derivative then.
+  !===================================================================!
+
+  subroutine declare_degree(this, degree)
+
+    class(expression)     , intent(inout) :: this
+    integer               , intent(in)    :: degree
+
+    if (degree < 1) then
+       error stop 'operation_expression: the degree of the equation is positive'
+    end if
+
+    this % degree = degree
+    call this % declare_arguments(2)
+
+  end subroutine declare_degree
+
+  pure integer function equation_degree(this)
+
+    class(expression)     , intent(in) :: this
+
+    equation_degree = this % degree
+
+  end function equation_degree
+
+  !===================================================================!
+  ! THE MACHINERY.
+  !
+  ! One value per instant.
+  !===================================================================!
+
+  subroutine expression_domain(this, input_graph, domain, num_entries)
+
+    class(expression)     , intent(in)  :: this
+    class(directed_graph) , intent(in)  :: input_graph
+    type(graph)           , intent(out) :: domain
+    integer               , intent(out) :: num_entries
+
+    associate (u1 => this); end associate
+    domain      = input_graph % vertex_set()
+    num_entries = input_graph % num_vertices()
+
+  end subroutine expression_domain
+
+  pure integer function expression_max_degree(this)
+
+    class(expression)     , intent(in) :: this
+
+    associate (u1 => this); end associate
+    expression_max_degree = max_subset_width()
+
+  end function expression_max_degree
+
+  !===================================================================!
+  ! The state and the design as derivative terms, each direction
+  ! seeded on the argument its variation names.
+  !===================================================================!
+
+  subroutine seeded(this, input_data, variations, q, nu)
+
+    class(expression)     , intent(in) :: this
+    class(field)          , intent(in) :: input_data(:)
+    type(variation)       , intent(in) :: variations(:)
+    type(derivative_terms), allocatable, intent(out) :: q(:), nu(:)
+
+    real(dp), allocatable :: state(:), design(:), v(:)
+    integer :: n, i
+
+    if (size(input_data) < 2) then
+       error stop 'operation_expression: the state and the design are given'
+    end if
+
+    call input_data(1) % real_vector(state)
+    call input_data(2) % real_vector(design)
+
+    n = size(variations)
+    call constants(state, n, q)
+    call constants(design, n, nu)
+
+    do i = 1, n
+       call variations(i) % direction(v)
+       if (variations(i) % argument_is(this % argument(1))) then
+          call seed(q, i, v)
+       else if (variations(i) % argument_is(this % argument(2))) then
+          call seed(nu, i, v)
+       else
+          error stop 'operation_expression: a variation names the state or the design'
+       end if
+    end do
+
+  end subroutine seeded
+
+  !===================================================================!
+  ! A real vector as terms that carry no derivative yet.
+  !===================================================================!
+
+  subroutine constants(x, n, terms)
+
+    real(dp), intent(in) :: x(:)
+    integer , intent(in) :: n
+    type(derivative_terms), allocatable, intent(out) :: terms(:)
+
+    integer :: j
+
+    allocate(terms(size(x)))
+
+    do j = 1, size(x)
+       terms(j) = derivative_terms(x(j), n)
+    end do
+
+  end subroutine constants
+
+  !===================================================================!
+  ! One direction laid into every entry of a quantity.
+  !===================================================================!
+
+  subroutine seed(x, i, v)
+
+    type(derivative_terms), intent(inout) :: x(:)
+    integer               , intent(in)    :: i
+    real(dp)              , intent(in)    :: v(:)
+
+    integer :: j
+
+    if (size(v) /= size(x)) then
+       error stop 'operation_expression: a direction has one entry per unknown it varies'
+    end if
+
+    do j = 1, size(x)
+       call x(j) % set_direction(i, v(j))
+    end do
+
+  end subroutine seed
+
+  !===================================================================!
+  ! The rule at every instant, answering the coefficient of the full
+  ! subset: the value with no directions, the mixed partial with n.
+  !===================================================================!
+
+  subroutine evaluated(this, input_graph, q, nu, output)
+
+    class(expression)     , intent(in) :: this
+    class(directed_graph) , intent(in) :: input_graph
+    type(derivative_terms), intent(in) :: q(:), nu(:)
+    class(field), allocatable, intent(inout) :: output
+
+    type(stored_field) :: out
+    real(dp), allocatable :: values(:)
+    integer :: k, nd, base
+
+    nd = this % degree + 1
+
+    if (size(q) /= input_graph % num_vertices() * nd) then
+       error stop 'operation_expression: the state holds one component per degree per instant'
+    end if
+    if (size(nu) /= input_graph % num_vertices()) then
+       error stop 'operation_expression: the design holds one value per instant'
+    end if
+
+    allocate(values(input_graph % num_vertices()))
+
+    do k = 1, input_graph % num_vertices()
+       base = (k - 1) * nd
+       values(k) = mixed_partial(this % at_instant(q(base + 1:base + nd), nu(k)))
+    end do
+
+    out = stored_field(this % name(), input_graph % vertex_set(), &
+         & input_graph % num_vertices())
+    call out % set_real_vector(values)
+
+    if (allocated(output)) deallocate(output)
+    allocate(output, source=out)
+
+  end subroutine evaluated
+
+  subroutine expression_apply(this, input_graph, input_data, output)
+
+    class(expression)     , intent(in)       :: this
+    class(directed_graph) , intent(in)       :: input_graph
+    class(field), intent(in), optional       :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
+
+    type(variation), allocatable :: none(:)
+    type(derivative_terms), allocatable :: q(:), nu(:)
+
+    if (.not. present(input_data)) then
+       error stop 'operation_expression: the state and the design are given'
+    end if
+
+    allocate(none(0))
+    call seeded(this, input_data, none, q, nu)
+    call evaluated(this, input_graph, q, nu, output)
+
+  end subroutine expression_apply
+
+  subroutine expression_partial_action(this, input_graph, input_data, variations, output)
+
+    class(expression)     , intent(in)       :: this
+    class(directed_graph) , intent(in)       :: input_graph
+    class(field)          , intent(in)       :: input_data(:)
+    type(variation)       , intent(in)       :: variations(:)
+    class(field), allocatable, intent(inout) :: output
+
+    type(derivative_terms), allocatable :: q(:), nu(:)
+
+    call this % require_owned(variations)
+
+    if (size(variations) > this % max_degree()) then
+       error stop 'operation_expression: the requested order is within max_degree'
+    end if
+
+    call seeded(this, input_data, variations, q, nu)
+    call evaluated(this, input_graph, q, nu, output)
+
+  end subroutine expression_partial_action
+
+end module operation_expression

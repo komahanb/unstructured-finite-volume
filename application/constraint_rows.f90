@@ -38,7 +38,7 @@ program constraint_rows
   use operation_coupling         , only : weights_of
   use operation_weight           , only : scheme_weight
   use physics_vanderpol          , only : van_der_pol
-  use physics_expression         , only : expression
+  use operation_expression       , only : expression
 
   implicit none
 

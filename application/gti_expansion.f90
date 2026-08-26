@@ -70,7 +70,7 @@ module gti_expansion
   use operation_grid        , only : grid
   use operation_coupling    , only : weights_of
   use operation_weight      , only : scheme_weight
-  use physics_integrand     , only : nodal_integrand
+  use operation_expression     , only : expression
 
   implicit none
 
@@ -274,7 +274,7 @@ contains
        & max_derivative_degree, design)
 
     class(expansion)      , intent(inout) :: this
-    class(nodal_integrand), intent(in)    :: physics
+    type(expression)      , intent(in)    :: physics
     type(family_holder)   , intent(in)    :: schemes(:)
     integer               , intent(in)    :: instants(:)
     class(grid)           , intent(in)    :: steps
@@ -371,7 +371,7 @@ contains
   integer function one_sweep(this, physics, schemes, instants, dt, sensitivity) result(at)
 
     class(expansion)      , intent(inout) :: this
-    class(nodal_integrand), intent(in)    :: physics
+    type(expression)      , intent(in)    :: physics
     type(family_holder)   , intent(in)    :: schemes(:)
     integer               , intent(in)    :: instants(:)
     real(dp)              , intent(in)    :: dt(:)
@@ -396,7 +396,7 @@ contains
   integer function one_horizon(this, physics, schemes, instants, dt) result(at)
 
     class(expansion)      , intent(inout) :: this
-    class(nodal_integrand), intent(in)    :: physics
+    type(expression)      , intent(in)    :: physics
     type(family_holder)   , intent(in)    :: schemes(:)
     integer               , intent(in)    :: instants(:)
     real(dp)              , intent(in)    :: dt(:)
@@ -427,7 +427,7 @@ contains
   integer function one_block(this, physics, scheme, first, last, dt) result(at)
 
     class(expansion)      , intent(inout) :: this
-    class(nodal_integrand), intent(in)    :: physics
+    type(expression)      , intent(in)    :: physics
     class(family)         , intent(in)    :: scheme
     integer               , intent(in)    :: first, last
     real(dp)              , intent(in)    :: dt(:)
@@ -463,7 +463,7 @@ contains
   integer function one_slice(this, physics, scheme, instant, first, step) result(at)
 
     class(expansion)      , intent(inout) :: this
-    class(nodal_integrand), intent(in)    :: physics
+    type(expression)      , intent(in)    :: physics
     class(family)         , intent(in)    :: scheme
     integer               , intent(in)    :: instant, first
     real(dp)              , intent(in)    :: step
@@ -721,7 +721,7 @@ contains
   integer function block_coupling(this, physics, scheme, slices, first, last, dt) result(at)
 
     class(expansion)      , intent(inout) :: this
-    class(nodal_integrand), intent(in)    :: physics
+    type(expression)      , intent(in)    :: physics
     class(family)         , intent(in)    :: scheme
     integer               , intent(in)    :: slices(:), first, last
     real(dp)              , intent(in)    :: dt(:)

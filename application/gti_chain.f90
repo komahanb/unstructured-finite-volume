@@ -59,7 +59,7 @@ module gti_chain
   use util_precision  , only : dp
   use operation_family , only : family
   use operation_grid   , only : grid, designed_grid
-  use physics_integrand, only : nodal_integrand
+  use operation_expression, only : expression
   use gti_expansion    , only : family_holder, marches_by_stages, expansion
   use gti_block        , only : block_residual
   use gti_march        , only : imbalance, swept, solved_linear, fresh_stamp, partitioned, horizon_bounds, solved, &
@@ -137,7 +137,7 @@ module gti_chain
   !===================================================================!
 
   type :: functional_holder
-     class(nodal_integrand), allocatable :: rule
+     type(expression) :: rule
   end type functional_holder
 
   type :: chain_system
@@ -253,7 +253,7 @@ contains
     type(expansion)       , intent(in)  :: tower
     integer               , intent(in)  :: b
     class(family)         , intent(in)  :: scheme
-    class(nodal_integrand), intent(in)  :: physics
+    type(expression)      , intent(in)  :: physics
     real(dp)              , intent(in)  :: held(:)
     type(block_residual)  , intent(out) :: rows
     integer, allocatable  , intent(out) :: instants_at(:)
@@ -274,7 +274,7 @@ contains
 
     type(family_holder)   , intent(in) :: schemes(:)
     integer               , intent(in) :: added(:), degrees
-    class(nodal_integrand), intent(in) :: physics
+    type(expression)      , intent(in) :: physics
     real(dp)              , intent(in) :: design, initial(:)
     class(grid)           , intent(in) :: steps
     type(chain_block), allocatable, intent(out) :: chain(:)
@@ -380,7 +380,7 @@ contains
     integer               , intent(in)    :: b, in_tower, degrees, first, last, stride
     integer               , intent(in)    :: coarse_step(:)
     class(family)         , intent(in)    :: scheme
-    class(nodal_integrand), intent(in)    :: physics
+    type(expression)      , intent(in)    :: physics
     real(dp)              , intent(in)    :: dt(:), fraction, design, initial(:)
     logical               , intent(in)    :: counted
     real(dp)              , intent(out)   :: achieved
@@ -464,7 +464,7 @@ contains
        & max_order, f, node_measure)
 
     type(chain_block)      , intent(in) :: chain(:)
-    class(nodal_integrand) , intent(in) :: physics
+    type(expression)       , intent(in) :: physics
     type(functional_holder), intent(in) :: functionals(:)
     integer                , intent(in) :: degrees, max_order
     real(dp)               , intent(in) :: design
@@ -551,7 +551,7 @@ contains
     type(chain_block)     , intent(in)    :: chain(:)
     type(chain_system)    , intent(in)    :: systems(:)
     integer               , intent(in)    :: b, degrees, m
-    class(nodal_integrand), intent(in)    :: physics
+    type(expression)      , intent(in)    :: physics
     real(dp)              , intent(in)    :: design
     real(dp)              , intent(inout) :: series(0:, :, :)
 
@@ -755,10 +755,10 @@ contains
 
   function one_functional(rule) result(holder)
 
-    class(nodal_integrand), intent(in) :: rule
+    type(expression)      , intent(in) :: rule
     type(functional_holder) :: holder
 
-    allocate(holder % rule, source=rule)
+    holder % rule = rule
 
   end function one_functional
 
@@ -845,7 +845,7 @@ contains
 
     type(chain_block)          , intent(in) :: chain(:)
     integer                    , intent(in) :: b, degrees
-    class(nodal_integrand)     , intent(in) :: integrand
+    type(expression)           , intent(in) :: integrand
     real(dp)                   , intent(in) :: design
     type(stored_field)         , intent(in) :: inputs(:)
     type(stored_directed_graph), intent(in) :: unknowns
@@ -1149,7 +1149,7 @@ contains
   subroutine functional_second(rule, points, state, knobs, weight, at, degrees, count, w, j, &
        & step_partials, b, from, to, node_measure, g2)
 
-    class(nodal_integrand)     , intent(in) :: rule
+    type(expression)           , intent(in) :: rule
     type(stored_directed_graph), intent(in) :: points
     type(stored_field)         , intent(in) :: state, knobs
     real(dp)                   , intent(in) :: weight(:), w(:)
@@ -1246,7 +1246,7 @@ contains
   subroutine functional_mixed(rule, points, state, knobs, weight, at, degrees, count, w, j, k, &
        & step_partials, steps, grid_design, b, from, to, node_measure, values, explicit)
 
-    class(nodal_integrand)     , intent(in) :: rule
+    type(expression)           , intent(in) :: rule
     type(stored_directed_graph), intent(in) :: points
     type(stored_field)         , intent(in) :: state, knobs
     real(dp)                   , intent(in) :: weight(:), w(:), values(:)

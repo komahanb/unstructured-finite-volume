@@ -111,7 +111,9 @@ echo " PASS : readers are bare nouns - no get_ declarations in src"
 #---------------------------------------------------------------------
 # 5. No module re-exports a name it does not define: a public name
 #    that also appears in the module's own use-only imports is a
-#    re-export.
+#    re-export - unless the module declares a generic interface of
+#    that name, which extends the imported generic with specifics of
+#    its own and is therefore defined here.
 #---------------------------------------------------------------------
 
 for f in "$srcdir"/*.f90; do
@@ -119,7 +121,10 @@ for f in "$srcdir"/*.f90; do
         | tr ',' '\n' | sed 's/=>.*//; s/ //g' | grep -v '^$' | sort -u)
     publics=$(joined "$f" | grep -E '^ *public *::' | sed 's/.*:://' \
         | tr ',' '\n' | sed 's/ //g' | grep -v '^$' | sort -u)
-    both=$(comm -12 <(echo "$imports") <(echo "$publics") | grep -v '^$' || true)
+    generics=$(joined "$f" | grep -iE '^ *interface +[a-z(]' | sed 's/^ *interface *//I; s/ //g' \
+        | grep -v '^$' | sort -u)
+    both=$(comm -12 <(echo "$imports") <(echo "$publics") | comm -23 - <(echo "$generics") \
+        | grep -v '^$' || true)
     if [ -n "$both" ]; then
         echo " FAIL : $(basename "$f") re-exports a name it does not define: $both"
         exit 1

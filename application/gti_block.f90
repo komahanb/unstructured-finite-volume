@@ -66,7 +66,7 @@ module gti_block
   use operation_family     , only : family
   use operation_weight     , only : scheme_weight
   use operation_coupling   , only : weights_varied
-  use physics_integrand    , only : zero_integrand, nodal_integrand
+  use operation_expression    , only : expression, constant, stated
   use view_directed        , only : forward
 
   implicit none
@@ -92,7 +92,7 @@ module gti_block
   type, extends(operation) :: block_residual
 
      type(stencil)                       , private :: derived
-     class(nodal_integrand), allocatable  , private :: physics
+     type(expression)     , private :: physics
 
      ! THE LEVEL BELOW. A stencil over the same unknowns coupling the
      ! components of one moment across the nodes of a spatial mesh:
@@ -164,7 +164,7 @@ contains
        & spatial) result(this)
 
     type(stencil)         , intent(in) :: derived
-    class(nodal_integrand), intent(in) :: physics
+    type(expression)      , intent(in) :: physics
     integer               , intent(in) :: at(:), unknowns, degrees, primary
     integer               , intent(in) :: carried(:)
     real(dp)              , intent(in) :: held(:)
@@ -183,7 +183,7 @@ contains
 
     this % derived  = derived
     if (present(spatial)) this % spatial = spatial
-    allocate(this % physics, source=physics)
+    this % physics = physics
     this % at       = at
     this % unknowns = unknowns
     this % degrees  = degrees
@@ -797,7 +797,7 @@ contains
     if (transposed) a = a % transpose()
     call a % constants % set_real_vector(-rhs)
 
-    lin = block_residual(a, zero_integrand(this % degrees - 1), this % at, this % unknowns, &
+    lin = block_residual(a, stated(constant(0.0_dp), this % degrees - 1, 'zero'), this % at, this % unknowns, &
          & this % degrees, this % primary, [integer ::], [real(dp) ::])
     call lin % stamped(mark, transposed=a % pattern % transposed())
     if (allocated(this % slice)) call lin % placed_in(this % slice, this % node, this % moment)

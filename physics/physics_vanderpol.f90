@@ -31,7 +31,7 @@
 module physics_vanderpol
 
   use util_precision    , only : dp
-  use physics_expression, only : expression, unknown, design, derivative, stated, &
+  use operation_expression, only : expression, unknown, design, derivative, stated, &
        & operator(+), operator(-), operator(*), operator(**)
 
   implicit none

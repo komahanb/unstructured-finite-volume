@@ -37,7 +37,7 @@ module gti_field
   use operation_stencil, only : stencil
   use field_calculus   , only : field
   use field_stored     , only : stored_field
-  use physics_integrand, only : nodal_integrand
+  use operation_expression, only : expression
   use gti_configuration, only : worded
   use gti_march        , only : consistent_states
   use gti_space        , only : room, spatial_operator, cartesian, written_paraview
@@ -98,7 +98,7 @@ contains
   function initial_field(physics, degrees, kind, initial_state, design, spatial, space, a, b) &
        & result(q)
 
-    class(nodal_integrand), intent(in)           :: physics
+    type(expression)      , intent(in)           :: physics
     integer               , intent(in)           :: degrees
     character(len=*)      , intent(in)           :: kind, initial_state
     real(dp)              , intent(in)           :: design

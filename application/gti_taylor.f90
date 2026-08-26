@@ -61,7 +61,7 @@ module gti_taylor
   use view_directed_stored , only : stored_directed_graph
   use field_stored         , only : stored_field
   use operation_family     , only : family
-  use physics_integrand    , only : nodal_integrand
+  use operation_expression    , only : expression
   use gti_block            , only : block_residual
   use gti_march            , only : solved, unknowns_graph, frozen_inputs
   use gti_march            , only : solved_linear, fresh_stamp
@@ -80,7 +80,7 @@ contains
 
   subroutine nodal_coefficient(integrand, degrees, at, series, design, order, values)
 
-    class(nodal_integrand), intent(in) :: integrand
+    type(expression)      , intent(in) :: integrand
     integer               , intent(in) :: degrees, at(:), order
     real(dp)              , intent(in) :: series(0:, :)
     real(dp)              , intent(in) :: design
@@ -125,7 +125,7 @@ contains
        & design, m, series, mark, w, handed)
 
     type(block_residual)  , intent(in)    :: rows
-    class(nodal_integrand), intent(in)    :: physics
+    type(expression)      , intent(in)    :: physics
     class(directed_graph) , intent(in)    :: on
     type(stored_field)    , intent(in)    :: inputs(:)
     integer               , intent(in)    :: degrees, at(:), primary, carried, m
@@ -179,7 +179,7 @@ contains
        & instants_at, dt, design, max_order, q, f, achieved, given)
 
     type(block_residual)  , intent(in) :: rows
-    class(nodal_integrand), intent(in) :: physics, integrand
+    type(expression)      , intent(in) :: physics, integrand
     integer               , intent(in) :: degrees, primary, instants_at(:), max_order
     real(dp)              , intent(in) :: dt(:), design
     real(dp), allocatable , intent(out) :: q(:), f(:)
@@ -219,7 +219,7 @@ contains
        & design, max_order, q, series)
 
     type(block_residual)  , intent(in) :: rows
-    class(nodal_integrand), intent(in) :: physics
+    type(expression)      , intent(in) :: physics
     class(directed_graph) , intent(in) :: on
     type(stored_field)    , intent(in) :: inputs(:)
     real(dp)              , intent(in) :: design, q(:)
@@ -247,7 +247,7 @@ contains
 
   subroutine functional_series(integrand, degrees, at, design, max_order, series, dt, f)
 
-    class(nodal_integrand), intent(in) :: integrand
+    type(expression)      , intent(in) :: integrand
     integer               , intent(in) :: degrees, at(:), max_order
     real(dp)              , intent(in) :: design, series(0:, :), dt(:)
     real(dp), allocatable , intent(out) :: f(:)

@@ -44,7 +44,7 @@ module gti_march
   use operation_grid          , only : grid, uniform_grid
   use operation_weight        , only : scheme_weight
   use operation_scheme_stencil, only : derived_constraints
-  use physics_integrand       , only : nodal_integrand
+  use operation_expression       , only : expression
   use gti_expansion           , only : family_holder, expansion, marches_by_stages
   use gti_block               , only : block_residual, coupling_reach
   use view_level              , only : level_member, level_num_members, level_coupling
@@ -243,7 +243,7 @@ contains
 
   function consistent_state(physics, degrees, lower, design_value) result(q)
 
-    class(nodal_integrand), intent(in) :: physics
+    type(expression)      , intent(in) :: physics
     integer               , intent(in) :: degrees
     real(dp)              , intent(in) :: lower(:), design_value
     real(dp), allocatable :: q(:)
@@ -265,7 +265,7 @@ contains
 
   function consistent_states(physics, degrees, lower, design_value, spatial) result(q)
 
-    class(nodal_integrand), intent(in)           :: physics
+    type(expression)      , intent(in)           :: physics
     integer               , intent(in)           :: degrees
     real(dp)              , intent(in)           :: lower(:,:), design_value
     type(stencil)         , intent(in), optional :: spatial
@@ -543,7 +543,7 @@ contains
     type(expansion)       , intent(in)  :: tower
     integer               , intent(in)  :: b
     class(family)         , intent(in)  :: scheme
-    class(nodal_integrand), intent(in)  :: physics
+    type(expression)      , intent(in)  :: physics
     real(dp)              , intent(in)  :: held(:)
     type(block_residual)  , intent(out) :: rows
     integer, allocatable  , intent(out) :: instants_at(:)

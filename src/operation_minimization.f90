@@ -129,6 +129,14 @@ module operation_minimization
      ! stripe.
      integer :: num_components = 1
 
+     ! THE BLOCK WIDTH. Unknowns that come in consecutive blocks of
+     ! this width - a point's components, say - and are coupled within
+     ! the block far more strongly than across it, are smoothed a
+     ! block at a time: the coupling attached is then over blocks, one
+     ! vertex each, and the indicator reads a block's square. One is the
+     ! ordinary case, an unknown its own block.
+     integer :: block_width = 1
+
      real(dp), allocatable :: affine(:)
 
      ! THE HELD INPUTS. Inputs held fixed during this solve - a
@@ -185,6 +193,7 @@ module operation_minimization
      procedure :: norm
      procedure :: sweep_order
      procedure :: diagonal
+     procedure :: block_diagonal
      procedure :: constant
 
      ! The operation face: a solver IS an operation - the one that
@@ -661,39 +670,75 @@ contains
     class(minimizer), intent(in)   :: this
     real(dp), allocatable, intent(out) :: d(:)
 
-    integer , allocatable :: colours(:)
-    real(dp), allocatable :: indicator(:), y(:)
-    integer :: nv, col, v
+    real(dp), allocatable :: blocks(:,:,:)
+    integer :: b
 
-    if (this % num_components > 1) then
-       ! The probe reads one answer per cell, and a wide entry has
-       ! several. A block probe is the honest generalization and no
-       ! caller has asked for one yet.
-       error stop 'diagonal: the coloured probe answers one number per cell'
+    if (this % block_width /= 1) then
+       error stop 'diagonal: the unknowns come in blocks; read the block diagonal'
     end if
 
-    nv = size(this % affine)
-    allocate(d(nv), indicator(nv))
-    d = 0.0_dp
-
-    call this % sweep_order(colours)
-
-    do col = 1, maxval(colours)
-
-       indicator = 0.0_dp
-       do v = 1, nv
-          if (colours(v) == col) indicator(v) = 1.0_dp
-       end do
-
-       call this % matvec(indicator, y)
-
-       do v = 1, nv
-          if (colours(v) == col) d(v) = y(v)
-       end do
-
+    call this % block_diagonal(blocks)
+    allocate(d(size(blocks, 3)))
+    do b = 1, size(blocks, 3)
+       d(b) = blocks(1, 1, b)
     end do
 
   end subroutine diagonal
+
+  !===================================================================!
+  ! THE BLOCK DIAGONAL by coloured indicators. The coupling attached is over
+  ! the blocks; blocks of one colour do not couple, so an indicator of
+  ! one on the k-th component of every block of a colour, sent through
+  ! the matvec, brings back the k-th column of every one of those
+  ! blocks' squares at once. width indicators per colour read the whole
+  ! block diagonal, and with a width of one this is the diagonal.
+  !===================================================================!
+
+  subroutine block_diagonal(this, d)
+
+    class(minimizer), intent(in)   :: this
+    real(dp), allocatable, intent(out) :: d(:,:,:)
+
+    integer , allocatable :: colours(:)
+    real(dp), allocatable :: indicator(:), y(:)
+    integer :: n, w, nb, col, b, k, i
+
+    if (this % num_components > 1) then
+       error stop 'diagonal: the coloured probe answers one number per cell'
+    end if
+
+    n  = size(this % affine)
+    w  = this % block_width
+    nb = n / w
+    if (nb * w /= n) then
+       error stop 'diagonal: the unknowns come in whole blocks'
+    end if
+
+    allocate(d(w, w, nb), indicator(n))
+    d = 0.0_dp
+
+    call this % sweep_order(colours)
+    if (size(colours) /= nb) then
+       error stop 'diagonal: the coupling attached is over the blocks, one colour each'
+    end if
+
+    do col = 1, maxval(colours)
+       do k = 1, w
+          indicator = 0.0_dp
+          do b = 1, nb
+             if (colours(b) == col) indicator((b - 1) * w + k) = 1.0_dp
+          end do
+          call this % matvec(indicator, y)
+          do b = 1, nb
+             if (colours(b) /= col) cycle
+             do i = 1, w
+                d(i, k, b) = y((b - 1) * w + i)
+             end do
+          end do
+       end do
+    end do
+
+  end subroutine block_diagonal
 
   !===================================================================!
   ! The affine part, for the caller assembling an equation: the

@@ -49,6 +49,7 @@ module gti_sweeps
   use field_stored          , only : stored_field
   use operation_dense_direct, only : dense_direct
   use operation_multigrid   , only : multigrid
+  use operation_gauss_seidel, only : gauss_seidel
   use operation_gmres       , only : gmres
   use operation_minimization, only : minimizer
 
@@ -73,10 +74,11 @@ module gti_sweeps
   !                                            only a matvec is attached
   !      storage         dense | sparse        the matrix formed is a
   !                                            square, or a stencil
-  !      multigrid       yes | no              the solver named is the
-  !                                            smoother of a two-grid
-  !                                            over aggregates, whose
-  !                                            coarse level is direct
+  !      multigrid       yes | no              a two-grid over aggregates:
+  !                                            block gauss-seidel over a
+  !                                            point's components smooths,
+  !                                            the solver named serves
+  !                                            the coarse level
   !
   ! The corners that mean nothing are refused by name: direct on a
   ! free assembly, sparse direct (not built), dense iterative, and
@@ -181,15 +183,16 @@ contains
   ! matrix being a tangent at an intermediate iterate.
   !===================================================================!
 
-  function inner_minimizer(count) result(inner)
+  function inner_minimizer(count, width) result(inner)
 
-    integer, intent(in) :: count
+    integer, intent(in) :: count, width
     class(minimizer), allocatable :: inner
 
     class(minimizer), allocatable :: named
     type(gmres)        :: krylov
     type(dense_direct) :: factorisation
     type(multigrid)    :: levels
+    type(gauss_seidel) :: sweeps
 
     if (trim(chosen_assembly) == 'free' .and. trim(chosen_solver) == 'direct') then
        error stop 'gti_sweeps: a free assembly has no matrix to factorise; its solver iterates'
@@ -230,14 +233,14 @@ contains
        error stop 'gti_sweeps: one aggregate per unknown'
     end if
 
-    ! the solver named smooths, a few of its iterations at a time; the
-    ! coarse level is factorised. A short krylov space does not damp a
-    ! point's coupled components here and the cycle then stalls, so
-    ! the smoother keeps the solver's own space.
-    named % max_iterations = 2
-    call move_alloc(named, levels % smoother)
-    factorisation = dense_direct()
-    allocate(levels % coarse, source=factorisation)
+    ! gauss-seidel smooths, a point's components at a time - the
+    ! coupling within a point being what no point smoother damps -
+    ! and the solver named serves the coarse level
+    sweeps % max_iterations = 2
+    sweeps % block_width    = width
+    allocate(levels % smoother, source=sweeps)
+    call move_alloc(named, levels % coarse)
+    levels % block_width    = width
     levels % aggregates     = chosen_aggregates
     levels % tolerance      = 1.0e-13_dp
     levels % max_iterations = 200
@@ -250,10 +253,10 @@ contains
   ! what it holds - a direct solver's factors - outlives one solve.
   !===================================================================!
 
-  subroutine take_inner(inner, count)
+  subroutine take_inner(inner, count, width)
 
     class(minimizer), allocatable, intent(out) :: inner
-    integer                      , intent(in)  :: count
+    integer                      , intent(in)  :: count, width
 
     ! multigrid is built afresh for every statement, its aggregates
     ! being the statement's; a kept one would carry another's
@@ -261,7 +264,7 @@ contains
        call move_alloc(kept_inner, inner)
     else
        call forget_inner()
-       allocate(inner, source=inner_minimizer(count))
+       allocate(inner, source=inner_minimizer(count, width))
     end if
 
   end subroutine take_inner

@@ -26,6 +26,7 @@ module operation_gauss_seidel
 
   use util_precision  , only : dp
   use operation_minimization, only : minimizer
+  use util_factorisation    , only : dense_factorisation
   use util_tally, only : tally_record, linear_solves
 
   implicit none
@@ -85,26 +86,40 @@ contains
     real(dp), intent(inout) :: x(:)
     real(dp), intent(out)   :: achieved
 
-    real(dp), allocatable :: d(:), y(:), r(:)
+    real(dp), allocatable :: d(:,:,:), y(:), r(:), piece(:)
+    type(dense_factorisation), allocatable :: block(:)
     integer , allocatable :: colours(:)
-        integer :: it, col, v
+    integer :: it, col, b, w, nb, i
 
     call tally_record(linear_solves)
 
-    call this % diagonal(d)
-    do v = 1, size(d)
-       if (abs(d(v)) < tiny(1.0_dp)) d(v) = huge(1.0_dp)
-    end do
+    ! the diagonal, a block at a time: a block of width one is the
+    ! number itself, and a wider one is factorised once for the solve
+    w  = this % block_width
+    nb = size(x) / w
+    call this % block_diagonal(d)
 
-    call this % colouring(size(x), colours)
+    if (w == 1) then
+       do b = 1, nb
+          if (abs(d(1, 1, b)) < tiny(1.0_dp)) d(1, 1, b) = huge(1.0_dp)
+       end do
+    else
+       allocate(block(nb))
+       do b = 1, nb
+          call block(b) % factorise(d(:, :, b), tiny(1.0_dp))
+          if (block(b) % singular()) then
+             error stop 'gauss_seidel: a block on the diagonal is singular'
+          end if
+       end do
+    end if
 
+    call this % colouring(nb, colours)
     call this % begin_imbalance()
 
     do it = 1, this % max_iterations
 
        call this % matvec(x, y)
        r = rhs - y
-
        achieved = this % norm(r)
        if (this % halted(achieved, it)) return
 
@@ -113,8 +128,16 @@ contains
              call this % matvec(x, y)
              r = rhs - y
           end if
-          do v = 1, size(x)
-             if (colours(v) == col) x(v) = x(v) + this % omega * r(v) / d(v)
+          do b = 1, nb
+             if (colours(b) /= col) cycle
+             if (w == 1) then
+                x(b) = x(b) + this % omega * r(b) / d(1, 1, b)
+             else
+                call block(b) % substitute(r((b - 1) * w + 1:b * w), piece, transposed=.false.)
+                do i = 1, w
+                   x((b - 1) * w + i) = x((b - 1) * w + i) + this % omega * piece(i)
+                end do
+             end if
           end do
        end do
 

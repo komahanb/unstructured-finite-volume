@@ -539,14 +539,18 @@ contains
     type(newton) :: solver
     type(stored_directed_graph) :: unknowns
     type(stored_field) :: design
-    integer :: count
+    integer :: count, width
 
     count    = rows % num_unknowns()
     unknowns = stored_directed_graph(count, tails=[integer ::], heads=[integer ::])
     design   = stored_field('nu', unknowns % vertex_set(), rows % num_points())
     call design % set_real_vector(spread(design_value, 1, rows % num_points()))
 
-    call take_inner(solver % inner, count)
+    ! a block whose unknowns are whole points is smoothed a point at a
+    ! time; any other - a stage block - an unknown at a time
+    width = 1
+    if (count == rows % num_points() * rows % num_degrees()) width = rows % num_degrees()
+    call take_inner(solver % inner, count, width)
     call solver % attach(rows, unknowns, unknowns % vertex_set(), count, &
          & held_inputs = [design])
 

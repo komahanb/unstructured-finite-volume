@@ -39,6 +39,7 @@ module operation_multigrid
 
   use util_precision  , only : dp
   use view_directed, only : directed_graph
+  use view_directed_stored, only : stored_directed_graph
   use operation_stencil, only : stencil, combine_triples
   use operation_minimization , only : minimizer, attach
   use operation_action       , only : operation
@@ -177,8 +178,18 @@ contains
     ! path the mesh the action executes over IS the coupling of its
     ! unknowns, and saying so here makes that a caller's statement
     ! rather than the minimizer's assumption.
-    call this % smoother % attach(this % action, this % on, &
-         & this % unknown_domain, this % num_unknowns, coupling = this % on)
+    ! the smoother sweeps a block at a time where the unknowns come in
+    ! blocks, and colours the coupling between blocks: the fine
+    ! pattern read through the blocks, one vertex each
+    this % smoother % block_width = this % block_width
+    if (this % block_width > 1) then
+       call this % smoother % attach(this % action, this % on, &
+            & this % unknown_domain, this % num_unknowns, &
+            & coupling = read_through(this % action, this % block_width))
+    else
+       call this % smoother % attach(this % action, this % on, &
+            & this % unknown_domain, this % num_unknowns, coupling = this % on)
+    end if
 
     ! The coarse statement carries its own stencil, and that stencil
     ! is exactly the coupling of the coarse unknowns.
@@ -193,6 +204,43 @@ contains
   ! The cycle: smooth, send the remainder down, bring the answer
   ! back, smooth again.
   !===================================================================!
+
+  !===================================================================!
+  ! A stencil's pattern read through blocks of consecutive unknowns:
+  ! the graph over the blocks with an edge where any unknown of one
+  ! reads any unknown of the other, self-edges dropped. The coupling
+  ! a block smoother colours.
+  !===================================================================!
+
+  function read_through(action, width) result(coupling)
+
+    class(operation), intent(in) :: action
+    integer         , intent(in) :: width
+    type(stored_directed_graph)  :: coupling
+
+    integer , allocatable :: rows(:), columns(:), crows(:), ccolumns(:)
+    real(dp), allocatable :: ones(:), cweights(:)
+    logical , allocatable :: kept(:)
+    integer :: e, ne, nb
+
+    select type (fine => action)
+    type is (stencil)
+       ne = fine % pattern % num_edges()
+       nb = fine % pattern % num_vertices() / width
+       allocate(rows(ne), columns(ne), ones(ne))
+       do e = 1, ne
+          rows(e)    = (fine % pattern % edge_head(e) - 1) / width + 1
+          columns(e) = (fine % pattern % edge_tail(e) - 1) / width + 1
+       end do
+       ones = 1.0_dp
+       call combine_triples(nb, nb, rows, columns, ones, crows, ccolumns, cweights)
+       kept = crows /= ccolumns
+       coupling = stored_directed_graph(nb, tails=pack(ccolumns, kept), heads=pack(crows, kept))
+    class default
+       error stop 'multigrid: attach a compiled (stencil) operator'
+    end select
+
+  end function read_through
 
   subroutine solve(this, rhs, x, achieved)
 

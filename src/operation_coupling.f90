@@ -84,7 +84,7 @@ contains
   !===================================================================!
 
   subroutine weights_varied(action, num_vertices, tails, heads, steps, along, &
-       & source_degree, determines, dw, along2)
+       & source_degree, determines, dw, along2, along3)
 
     class(operation), intent(in) :: action
     integer         , intent(in) :: num_vertices
@@ -92,13 +92,15 @@ contains
     real(dp)        , intent(in) :: steps(:), along(:)
     integer         , intent(in) :: source_degree(:), determines(:)
     real(dp), allocatable, intent(out) :: dw(:)
-    ! a second direction: the mixed second partial along both
-    real(dp)        , intent(in), optional :: along2(:)
+    ! a second and a third direction: the mixed partial along all given
+    real(dp)        , intent(in), optional :: along2(:), along3(:)
 
     type(stored_directed_graph)     :: edges
     type(stored_field), allocatable :: inputs(:)
-    type(stored_field)              :: direction, second
+    type(stored_field)              :: direction(3)
+    type(variation)   , allocatable :: variations(:)
     class(field)      , allocatable :: out
+    integer :: n, k
 
     if (size(along) /= num_vertices) then
        error stop 'operation_coupling: one direction entry per vertex'
@@ -106,21 +108,28 @@ contains
 
     call coupling_inputs(num_vertices, tails, heads, steps, source_degree, determines, &
          & edges, inputs)
-    direction = stored_field('along', edges % vertex_set(), num_vertices)
-    call direction % set_real_vector(along)
+    n = 1
+    direction(1) = stored_field('along', edges % vertex_set(), num_vertices)
+    call direction(1) % set_real_vector(along)
     if (present(along2)) then
        if (size(along2) /= num_vertices) then
           error stop 'operation_coupling: one direction entry per vertex'
        end if
-       second = stored_field('along', edges % vertex_set(), num_vertices)
-       call second % set_real_vector(along2)
-       call action % partial_action(edges, inputs, &
-            & [variation(action % argument(1), direction), &
-            &  variation(action % argument(1), second)], out)
-    else
-       call action % partial_action(edges, inputs, &
-            & [variation(action % argument(1), direction)], out)
+       n = 2
+       direction(2) = stored_field('along', edges % vertex_set(), num_vertices)
+       call direction(2) % set_real_vector(along2)
     end if
+    if (present(along3)) then
+       if (size(along3) /= num_vertices .or. n /= 2) then
+          error stop 'operation_coupling: a third direction follows a second, one entry per vertex'
+       end if
+       n = 3
+       direction(3) = stored_field('along', edges % vertex_set(), num_vertices)
+       call direction(3) % set_real_vector(along3)
+    end if
+    allocate(variations(n))
+    variations = [(variation(action % argument(1), direction(k)), k = 1, n)]
+    call action % partial_action(edges, inputs, variations, out)
     call out % real_vector(dw)
 
   end subroutine weights_varied

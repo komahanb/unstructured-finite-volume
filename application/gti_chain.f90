@@ -66,7 +66,8 @@ module gti_chain
   use gti_march        , only : imbalance, swept, solved_linear, fresh_stamp, partitioned, horizon_bounds, solved, &
        & frozen_inputs
   use gti_march        , only : block_from
-  use gti_sweeps       , only : functional_design_partial, varied_by
+  use gti_sweeps       , only : functional_design_partial, varied_by, varied_along, &
+       & functional_partial_along
   use operation_stencil, only : stencil
   use operation_family_dirk, only : crouzeix_three_stage
   use view_directed_stored, only : stored_directed_graph
@@ -83,7 +84,7 @@ module gti_chain
 
   private
   public :: chain_block, march_chain, chain_expansion, instant_components
-  public :: functional_holder, one_functional, first_of, chain_hessian
+  public :: functional_holder, one_functional, first_of, chain_hessian, chain_third, asymmetry
   public :: chain_system, chain_systems, chain_by_tangent, chain_by_adjoint
   public :: expansion_substitutions
 
@@ -1020,11 +1021,11 @@ contains
     type(stored_directed_graph) :: unknowns, points
     type(stored_field), allocatable :: inputs(:)
     type(stored_field) :: state, knobs
-    real(dp), allocatable :: w(:,:,:), lambda(:,:,:), rhs(:,:), mu(:), explicit(:,:)
-    real(dp), allocatable :: r2(:), g2(:), weight(:), values(:), series(:,:), step_partials(:,:)
+    real(dp), allocatable :: w(:,:,:), lambda(:,:,:), lambda1(:,:,:,:), explicit(:,:)
+    real(dp), allocatable :: r2(:), weight(:), values(:), series(:,:), step_partials(:,:)
     integer , allocatable :: at(:)
     real(dp) :: design
-    integer :: nf, nd, b, i, j, k, count, widest, from, to, p, d, instant, held_by, where
+    integer :: nf, nd, b, i, j, k, count, widest, from, to
 
     call designs_of(tower, design, step_partials)
     nf = size(functionals)
@@ -1042,43 +1043,15 @@ contains
     call costates(chain, systems, degrees, design, widest, lambda)
 
     allocate(hessian(nf, nd, nd), source=0.0_dp)
-    allocate(rhs(widest, size(chain)))
+    call second_costates(chain, tower, systems, functionals, degrees, design, node_measure, &
+         & step_partials, w, lambda, widest, lambda1)
     do i = 1, nf
        do j = 1, nd
-          ! the second-order costate's right side, block by block:
-          ! the functional's second partials along the tangent and in
-          ! the design, less the transposed contraction of the rows'
-          rhs = 0.0_dp
           do b = 1, size(chain)
-             count = chain(b) % rows % num_unknowns()
-             call frozen_at(chain(b), design, unknowns, inputs)
-             call rows_second_transposed(chain(b), degrees, unknowns, inputs, &
-                  & w(1:count, b, j), lambda(1:count, b, i), j, step_partials, mu)
-             rhs(1:count, b) = -mu
-             call owned(chain, b, from, to)
-             if (from > to) cycle
-             call owned_points(chain(b), from, to, node_measure, at, weight)
-             points = stored_directed_graph(size(at), tails=[integer ::], heads=[integer ::])
-             call at_owned_points(inputs, degrees, design, at, points, state, knobs)
-             call functional_second(functionals(i) % rule, points, state, knobs, weight, at, &
-                  & degrees, count, w(1:count, b, j), j, step_partials, chain(b), from, to, &
-                  & node_measure, g2)
-             rhs(1:count, b) = rhs(1:count, b) + g2
-          end do
-          ! the costate's derivative, back along the chain
-          do b = size(chain), 1, -1
-             count = chain(b) % rows % num_unknowns()
-             call frozen_at(chain(b), design, unknowns, inputs)
-             call solved_linear(chain(b) % rows, unknowns, inputs, rhs(1:count, b), .true., &
-                  & systems(b) % mark, mu)
              do k = 1, nd
-                hessian(i, j, k) = hessian(i, j, k) - dot_product(mu, systems(b) % rate(:, k))
-             end do
-             do p = 1, chain(b) % given * chain(b) % width
-                instant = chain(b) % first + ((p - 1) / chain(b) % width) * chain(b) % stride
-                d       = mod(p - 1, chain(b) % width)
-                call holder_of(chain(1:b - 1), instant, held_by, where)
-                if (held_by > 0) rhs(where + d + 1, held_by) = rhs(where + d + 1, held_by) + mu(p)
+                hessian(i, j, k) = hessian(i, j, k) &
+                     & - dot_product(lambda1(1:chain(b) % rows % num_unknowns(), b, i, j), &
+                     &               systems(b) % rate(:, k))
              end do
           end do
           ! the rest of the row: the costate against the rows' mixed
@@ -1110,6 +1083,674 @@ contains
     end do
 
   end subroutine chain_hessian
+
+  !===================================================================!
+  ! The second-order costates: for every functional i and design j,
+  ! lambda_ij' solving A^T lambda' = f_qq w_j + f_q_pj - (R_qq w_j +
+  ! R_q_pj)^T lambda, handed back along the chain as the costate is.
+  !===================================================================!
+
+  subroutine second_costates(chain, tower, systems, functionals, degrees, design, node_measure, &
+       & step_partials, w, lambda, widest, lambda1)
+
+    type(chain_block)      , intent(in) :: chain(:)
+    type(expansion)        , intent(in) :: tower
+    type(chain_system)     , intent(in) :: systems(:)
+    type(functional_holder), intent(in) :: functionals(:)
+    integer                , intent(in) :: degrees, widest
+    real(dp)               , intent(in) :: design, w(:,:,:), lambda(:,:,:)
+    real(dp), intent(in), optional      :: node_measure(:), step_partials(:,:)
+    real(dp), allocatable  , intent(out) :: lambda1(:,:,:,:)
+
+    type(stored_directed_graph) :: unknowns, points
+    type(stored_field), allocatable :: inputs(:)
+    type(stored_field) :: state, knobs
+    real(dp), allocatable :: rhs(:,:), mu(:), g2(:), weight(:)
+    integer , allocatable :: at(:)
+    integer :: nf, nd, b, i, j, count, from, to, p, d, instant, held_by, where
+
+    nf = size(functionals)
+    nd = size(systems(1) % rate, 2)
+    allocate(lambda1(widest, size(chain), nf, nd), source=0.0_dp)
+    allocate(rhs(widest, size(chain)))
+    do i = 1, nf
+       do j = 1, nd
+          rhs = 0.0_dp
+          do b = 1, size(chain)
+             count = chain(b) % rows % num_unknowns()
+             call frozen_at(chain(b), design, unknowns, inputs)
+             call rows_second_transposed(chain(b), degrees, unknowns, inputs, &
+                  & w(1:count, b, j), lambda(1:count, b, i), j, step_partials, mu)
+             rhs(1:count, b) = -mu
+             call owned(chain, b, from, to)
+             if (from > to) cycle
+             call owned_points(chain(b), from, to, node_measure, at, weight)
+             points = stored_directed_graph(size(at), tails=[integer ::], heads=[integer ::])
+             call at_owned_points(inputs, degrees, design, at, points, state, knobs)
+             call functional_second(functionals(i) % rule, points, state, knobs, weight, at, &
+                  & degrees, count, w(1:count, b, j), j, step_partials, chain(b), from, to, &
+                  & node_measure, g2)
+             rhs(1:count, b) = rhs(1:count, b) + g2
+          end do
+          do b = size(chain), 1, -1
+             count = chain(b) % rows % num_unknowns()
+             call frozen_at(chain(b), design, unknowns, inputs)
+             call solved_linear(chain(b) % rows, unknowns, inputs, rhs(1:count, b), .true., &
+                  & systems(b) % mark, mu)
+             lambda1(1:count, b, i, j) = mu
+             do p = 1, chain(b) % given * chain(b) % width
+                instant = chain(b) % first + ((p - 1) / chain(b) % width) * chain(b) % stride
+                d       = mod(p - 1, chain(b) % width)
+                call holder_of(chain(1:b - 1), instant, held_by, where)
+                if (held_by > 0) rhs(where + d + 1, held_by) = rhs(where + d + 1, held_by) + mu(p)
+             end do
+          end do
+       end do
+    end do
+
+  end subroutine second_costates
+
+  !===================================================================!
+  ! THE THIRD DERIVATIVES BY THE REVERSE ROUTE. One more level of
+  ! everything at order two. The second-order tangent for a pair of
+  ! designs k, l solves
+  !
+  !    A w_kl = -(R_qq[w_k, w_l] + R_q_pk[w_l] + R_q_pl[w_k] + R_pk_pl),
+  !
+  ! the second-order costate for functional i and the pair solves
+  !
+  !    A^T lambda_kl'' = f_qqq[w_k, w_l] + f_qq[w_kl] + f_qq_pl[w_k]
+  !                    + f_qq_pk[w_l] + f_q_pk_pl
+  !                    - (R_qqq[w_k, w_l] + R_qq[w_kl] + R_qq_pl[w_k]
+  !                       + R_qq_pk[w_l] + R_q_pk_pl)^T lambda
+  !                    - (R_qq[w_k] + R_q_pk)^T lambda_l'
+  !                    - (R_qq[w_l] + R_q_pl)^T lambda_k',
+  !
+  ! and the entry j, k, l of the table is
+  !
+  !    T_jkl = f_pj_qq[w_k, w_l] + f_pj_q[w_kl] + f_pj_q_pl[w_k]
+  !          + f_pj_q_pk[w_l] + f_pj_pk_pl
+  !          - lambda_kl''^T R_pj
+  !          - lambda_k'^T (R_pj_q[w_l] + R_pj_pl)
+  !          - lambda_l'^T (R_pj_q[w_k] + R_pj_pk)
+  !          - lambda^T (R_pj_qq[w_k, w_l] + R_pj_q[w_kl] + R_pj_q_pl[w_k]
+  !                      + R_pj_q_pk[w_l] + R_pj_pk_pl).
+  !
+  ! Every partial is exact: the physics' from the rule over three
+  ! directions, the rows' from the weight action along three step
+  ! directions with the steps' second and third partials by the
+  ! chain rule, the functional's from the rule. The rows are linear in
+  ! the state, so a grid design's second partial in the state is
+  ! zero. The cost is C(D+1, 2) second-order tangents and F C(D+1, 2)
+  ! second-order costates, which is what the gate counts for the
+  ! reverse route at order three. The table is symmetric in theory
+  ! and is not made so: entries with k > l are copied from k < l,
+  ! and the symmetry in j against k, l is the check.
+  !===================================================================!
+
+  subroutine chain_third(chain, tower, systems, functionals, degrees, third, node_measure)
+
+    type(chain_block)      , intent(in) :: chain(:)
+    type(expansion)        , intent(in) :: tower
+    type(chain_system)     , intent(in) :: systems(:)
+    type(functional_holder), intent(in) :: functionals(:)
+    integer                , intent(in) :: degrees
+    real(dp), allocatable  , intent(out) :: third(:,:,:,:)
+    real(dp), intent(in), optional      :: node_measure(:)
+
+    type(stored_directed_graph) :: unknowns, points
+    type(stored_field), allocatable :: inputs(:)
+    type(stored_field) :: state, knobs
+    real(dp), allocatable :: w(:,:,:), lambda(:,:,:), lambda1(:,:,:,:), w2(:,:,:,:)
+    real(dp), allocatable :: rhs(:,:), mu(:), r(:), g(:), weight(:), step_partials(:,:)
+    integer , allocatable :: at(:)
+    real(dp) :: design, part
+    integer :: nf, nd, b, i, j, k, l, count, widest, from, to, p, d, instant, held_by, where
+
+    call designs_of(tower, design, step_partials)
+    nf = size(functionals)
+    nd = size(systems(1) % rate, 2)
+    if (nd > 1 .and. .not. allocated(step_partials)) then
+       error stop 'gti_chain: the systems name more designs than the tower holds'
+    end if
+    widest = 0
+    do b = 1, size(chain)
+       widest = max(widest, chain(b) % rows % num_unknowns())
+    end do
+
+    call tangents(chain, systems, degrees, design, widest, w)
+    call costates(chain, systems, degrees, design, widest, lambda)
+    call second_costates(chain, tower, systems, functionals, degrees, design, node_measure, &
+         & step_partials, w, lambda, widest, lambda1)
+    call second_tangents(chain, tower, systems, degrees, design, step_partials, w, widest, w2)
+
+    allocate(third(nf, nd, nd, nd), source=0.0_dp)
+    allocate(rhs(widest, size(chain)))
+    do i = 1, nf
+       do k = 1, nd
+          do l = k, nd
+             ! the second-order costate of the pair, back along the chain
+             rhs = 0.0_dp
+             do b = 1, size(chain)
+                count = chain(b) % rows % num_unknowns()
+                call frozen_at(chain(b), design, unknowns, inputs)
+                call rows_third_transposed(chain(b), degrees, unknowns, inputs, w(1:count, b, k), &
+                     & w(1:count, b, l), w2(1:count, b, k, l), lambda(1:count, b, i), k, l, &
+                     & step_partials, tower, mu)
+                rhs(1:count, b) = -mu
+                call rows_second_transposed(chain(b), degrees, unknowns, inputs, w(1:count, b, k), &
+                     & lambda1(1:count, b, i, l), k, step_partials, mu)
+                rhs(1:count, b) = rhs(1:count, b) - mu
+                call rows_second_transposed(chain(b), degrees, unknowns, inputs, w(1:count, b, l), &
+                     & lambda1(1:count, b, i, k), l, step_partials, mu)
+                rhs(1:count, b) = rhs(1:count, b) - mu
+                call owned(chain, b, from, to)
+                if (from > to) cycle
+                call owned_points(chain(b), from, to, node_measure, at, weight)
+                points = stored_directed_graph(size(at), tails=[integer ::], heads=[integer ::])
+                call at_owned_points(inputs, degrees, design, at, points, state, knobs)
+                call functional_third_state(functionals(i) % rule, points, state, knobs, weight, at, &
+                     & degrees, count, w(1:count, b, k), w(1:count, b, l), w2(1:count, b, k, l), &
+                     & k, l, step_partials, tower, chain(b), from, to, node_measure, g)
+                rhs(1:count, b) = rhs(1:count, b) + g
+             end do
+             do b = size(chain), 1, -1
+                count = chain(b) % rows % num_unknowns()
+                call frozen_at(chain(b), design, unknowns, inputs)
+                call solved_linear(chain(b) % rows, unknowns, inputs, rhs(1:count, b), .true., &
+                     & systems(b) % mark, mu)
+                do j = 1, nd
+                   third(i, j, k, l) = third(i, j, k, l) - dot_product(mu, systems(b) % rate(:, j))
+                end do
+                do p = 1, chain(b) % given * chain(b) % width
+                   instant = chain(b) % first + ((p - 1) / chain(b) % width) * chain(b) % stride
+                   d       = mod(p - 1, chain(b) % width)
+                   call holder_of(chain(1:b - 1), instant, held_by, where)
+                   if (held_by > 0) rhs(where + d + 1, held_by) = rhs(where + d + 1, held_by) + mu(p)
+                end do
+             end do
+             ! the rest of the entries j, k, l
+             do b = 1, size(chain)
+                count = chain(b) % rows % num_unknowns()
+                call frozen_at(chain(b), design, unknowns, inputs)
+                call owned(chain, b, from, to)
+                do j = 1, nd
+                   call rows_mixed(chain(b), degrees, unknowns, inputs, w(1:count, b, l), l, j, &
+                        & step_partials, tower, r)
+                   third(i, j, k, l) = third(i, j, k, l) - dot_product(lambda1(1:count, b, i, k), r)
+                   call rows_mixed(chain(b), degrees, unknowns, inputs, w(1:count, b, k), k, j, &
+                        & step_partials, tower, r)
+                   third(i, j, k, l) = third(i, j, k, l) - dot_product(lambda1(1:count, b, i, l), r)
+                   call rows_third(chain(b), degrees, unknowns, inputs, w(1:count, b, k), &
+                        & w(1:count, b, l), w2(1:count, b, k, l), j, k, l, step_partials, tower, r)
+                   third(i, j, k, l) = third(i, j, k, l) - dot_product(lambda(1:count, b, i), r)
+                end do
+                if (from > to) cycle
+                call owned_points(chain(b), from, to, node_measure, at, weight)
+                points = stored_directed_graph(size(at), tails=[integer ::], heads=[integer ::])
+                call at_owned_points(inputs, degrees, design, at, points, state, knobs)
+                do j = 1, nd
+                   call functional_third(functionals(i) % rule, points, state, knobs, weight, at, &
+                        & degrees, w(1:count, b, k), w(1:count, b, l), w2(1:count, b, k, l), &
+                        & j, k, l, step_partials, tower, chain(b), from, to, node_measure, part)
+                   third(i, j, k, l) = third(i, j, k, l) + part
+                end do
+             end do
+             third(i, :, l, k) = third(i, :, k, l)
+          end do
+       end do
+    end do
+
+  end subroutine chain_third
+
+  !===================================================================!
+  ! The second-order tangents: for every pair of designs k <= l, w_kl
+  ! solving A w_kl = -(R_qq[w_k, w_l] + R_q_pk[w_l] + R_q_pl[w_k] +
+  ! R_pk_pl), handed forward along the chain as the tangents are.
+  !===================================================================!
+
+  subroutine second_tangents(chain, tower, systems, degrees, design, step_partials, w, widest, w2)
+
+    type(chain_block) , intent(in) :: chain(:)
+    type(expansion)   , intent(in) :: tower
+    type(chain_system), intent(in) :: systems(:)
+    integer           , intent(in) :: degrees, widest
+    real(dp)          , intent(in) :: design, w(:,:,:)
+    real(dp), intent(in), optional :: step_partials(:,:)
+    real(dp), allocatable, intent(out) :: w2(:,:,:,:)
+
+    type(stored_directed_graph) :: unknowns
+    type(stored_field), allocatable :: inputs(:)
+    real(dp), allocatable :: rhs(:), one(:), r(:), second(:)
+    integer :: nd, b, i, k, l, count, held_by, at, d, instant
+
+    nd = size(systems(1) % rate, 2)
+    allocate(w2(widest, size(chain), nd, nd), source=0.0_dp)
+    do k = 1, nd
+       do l = k, nd
+          do b = 1, size(chain)
+             count = chain(b) % rows % num_unknowns()
+             call frozen_at(chain(b), design, unknowns, inputs)
+             call varied_by(chain(b) % rows, unknowns, inputs, 1, unknowns % vertex_set(), &
+                  & w(1:count, b, k), 1, unknowns % vertex_set(), w(1:count, b, l), rhs)
+             call rows_cross(chain(b), degrees, unknowns, inputs, w(1:count, b, l), k, step_partials, r)
+             rhs = rhs + r
+             call rows_cross(chain(b), degrees, unknowns, inputs, w(1:count, b, k), l, step_partials, r)
+             rhs = rhs + r
+             call rows_design_second(chain(b), degrees, unknowns, inputs, k, l, step_partials, &
+                  & tower, second)
+             rhs = -(rhs + second)
+             do i = 1, chain(b) % given * chain(b) % width
+                instant = chain(b) % first + ((i - 1) / chain(b) % width) * chain(b) % stride
+                d       = mod(i - 1, chain(b) % width)
+                call holder_of(chain(1:b - 1), instant, held_by, at)
+                if (held_by > 0) rhs(i) = w2(at + d + 1, held_by, k, l)
+             end do
+             call solved_linear(chain(b) % rows, unknowns, inputs, rhs, .false., systems(b) % mark, one)
+             w2(1:count, b, k, l) = one
+             w2(1:count, b, l, k) = one
+          end do
+       end do
+    end do
+
+  end subroutine second_tangents
+
+  !===================================================================!
+  ! The transposed contraction (R_qqq[w_k, w_l] + R_qq[w_kl] +
+  ! R_qq_pl[w_k] + R_qq_pk[w_l] + R_q_pk_pl)^T lambda over one block.
+  ! Through a nodal physics the first four are local to the point;
+  ! the rows are linear in the state, so a grid design contributes
+  ! only through R_q_pk_pl, the rows along both step directions and
+  ! along the steps' mixed second partial, applied transposed.
+  !===================================================================!
+
+  subroutine rows_third_transposed(b, degrees, unknowns, inputs, wk, wl, wkl, lambda, k, l, &
+       & step_partials, tower, mu)
+
+    type(chain_block)          , intent(in) :: b
+    integer                    , intent(in) :: degrees, k, l
+    type(stored_directed_graph), intent(in) :: unknowns
+    type(stored_field)         , intent(in) :: inputs(:)
+    real(dp)                   , intent(in) :: wk(:), wl(:), wkl(:), lambda(:)
+    real(dp), intent(in), optional          :: step_partials(:,:)
+    type(expansion)            , intent(in) :: tower
+    real(dp), allocatable      , intent(out) :: mu(:)
+
+    integer , allocatable :: at(:)
+    real(dp), allocatable :: e(:), second(:), ones(:), u(:)
+    integer :: count, d, p, primary, npts
+
+    count   = size(wk)
+    at      = b % rows % points_at()
+    primary = b % primary
+    npts    = b % rows % num_points()
+    ones    = spread(1.0_dp, 1, npts)
+    allocate(mu(count), source=0.0_dp)
+    allocate(e(count))
+    do d = 0, degrees - 1
+       e = 0.0_dp
+       do p = 1, size(at)
+          e(at(p) + d + 1) = 1.0_dp
+       end do
+       call varied_along(b % rows, unknowns, inputs, [1, 1, 1], unknowns % vertex_set(), &
+            & reshape([e, wk, wl], [count, 3]), second, [count, count, count])
+       call gathered(second)
+       call varied_along(b % rows, unknowns, inputs, [1, 1], unknowns % vertex_set(), &
+            & reshape([e, wkl], [count, 2]), second, [count, count])
+       call gathered(second)
+       if (l == 1) then
+          call varied_along(b % rows, unknowns, inputs, [1, 1, 2], unknowns % vertex_set(), &
+               & reshape([e, wk, ones_over(count, npts)], [count, 3]), second, [count, count, npts])
+          call gathered(second)
+       end if
+       if (k == 1) then
+          call varied_along(b % rows, unknowns, inputs, [1, 1, 2], unknowns % vertex_set(), &
+               & reshape([e, wl, ones_over(count, npts)], [count, 3]), second, [count, count, npts])
+          call gathered(second)
+       end if
+       if (k == 1 .and. l == 1) then
+          call varied_along(b % rows, unknowns, inputs, [1, 2, 2], unknowns % vertex_set(), &
+               & reshape([e, ones_over(count, npts), ones_over(count, npts)], [count, 3]), second, [count, npts, npts])
+          call gathered(second)
+       end if
+    end do
+    if (k > 1 .and. l > 1) then
+       mu = mu + varied_transposed(b, degrees, along_of(b, step_partials(:, k - 1)), lambda, &
+            & along2=along_of(b, step_partials(:, l - 1)))
+       call tower % step_second_partials(k - 1, l - 1, u)
+       mu = mu + varied_transposed(b, degrees, along_of(b, u), lambda)
+    end if
+
+  contains
+
+    subroutine gathered(second)
+
+      real(dp), intent(in) :: second(:)
+
+      integer :: q
+
+      do q = 1, size(at)
+         mu(at(q) + d + 1) = mu(at(q) + d + 1) + lambda(at(q) + primary + 1) * second(at(q) + primary + 1)
+      end do
+
+    end subroutine gathered
+
+  end subroutine rows_third_transposed
+
+  !===================================================================!
+  ! A direction over the block's unknowns that is one on the design
+  ! at every point: the design's direction padded to the unknowns'
+  ! extent, since the block reads the design over the block's points.
+  !===================================================================!
+
+  pure function ones_over(count, npts) result(v)
+
+    integer, intent(in) :: count, npts
+    real(dp) :: v(count)
+
+    v = 0.0_dp
+    v(1:npts) = 1.0_dp
+
+  end function ones_over
+
+  !===================================================================!
+  ! The second total derivative of R_pj along the pair k, l: R_pj_qq
+  ! [w_k, w_l] + R_pj_q[w_kl] + R_pj_q_pl[w_k] + R_pj_q_pk[w_l] +
+  ! R_pj_pk_pl, applied - the physics' partials for the parameter,
+  ! the rows along step directions for a grid design, with the
+  ! steps' second and third partials by the chain rule.
+  !===================================================================!
+
+  subroutine rows_third(b, degrees, unknowns, inputs, wk, wl, wkl, j, k, l, step_partials, tower, r)
+
+    type(chain_block)          , intent(in) :: b
+    integer                    , intent(in) :: degrees, j, k, l
+    type(stored_directed_graph), intent(in) :: unknowns
+    type(stored_field)         , intent(in) :: inputs(:)
+    real(dp)                   , intent(in) :: wk(:), wl(:), wkl(:)
+    real(dp), intent(in), optional          :: step_partials(:,:)
+    type(expansion)            , intent(in) :: tower
+    real(dp), allocatable      , intent(out) :: r(:)
+
+    real(dp), allocatable :: part(:), u(:), ujk(:), ujl(:), ukl(:), ujkl(:), vj(:), vk(:), vl(:)
+    integer :: count, npts
+
+    count = size(wk)
+    npts  = b % rows % num_points()
+    allocate(r(count), source=0.0_dp)
+    if (j == 1) then
+       call varied_along(b % rows, unknowns, inputs, [2, 1, 1], unknowns % vertex_set(), &
+            & reshape([ones_over(count, npts), wk, wl], [count, 3]), part, [npts, count, count])
+       r = r + part
+       call varied_along(b % rows, unknowns, inputs, [2, 1], unknowns % vertex_set(), &
+            & reshape([ones_over(count, npts), wkl], [count, 2]), part, [npts, count])
+       r = r + part
+       if (l == 1) then
+          call varied_along(b % rows, unknowns, inputs, [2, 1, 2], unknowns % vertex_set(), &
+               & reshape([ones_over(count, npts), wk, ones_over(count, npts)], [count, 3]), part, [npts, count, npts])
+          r = r + part
+       end if
+       if (k == 1) then
+          call varied_along(b % rows, unknowns, inputs, [2, 1, 2], unknowns % vertex_set(), &
+               & reshape([ones_over(count, npts), wl, ones_over(count, npts)], [count, 3]), part, [npts, count, npts])
+          r = r + part
+       end if
+       if (k == 1 .and. l == 1) then
+          call varied_along(b % rows, unknowns, inputs, [2, 2, 2], unknowns % vertex_set(), &
+               & reshape([ones_over(count, npts), ones_over(count, npts), ones_over(count, npts)], &
+               & [count, 3]), part, [npts, npts, npts])
+          r = r + part
+       end if
+    else
+       vj = along_of(b, step_partials(:, j - 1))
+       r  = r + varied_applied(b, degrees, vj, wkl)
+       if (l > 1) then
+          vl = along_of(b, step_partials(:, l - 1))
+          call tower % step_second_partials(j - 1, l - 1, u)
+          ujl = along_of(b, u)
+          r = r + varied_applied(b, degrees, vj, wk, along2=vl) + varied_applied(b, degrees, ujl, wk)
+       end if
+       if (k > 1) then
+          vk = along_of(b, step_partials(:, k - 1))
+          call tower % step_second_partials(j - 1, k - 1, u)
+          ujk = along_of(b, u)
+          r = r + varied_applied(b, degrees, vj, wl, along2=vk) + varied_applied(b, degrees, ujk, wl)
+       end if
+       if (k > 1 .and. l > 1) then
+          call tower % step_second_partials(k - 1, l - 1, u)
+          ukl = along_of(b, u)
+          call tower % step_third_partials(j - 1, k - 1, l - 1, u)
+          ujkl = along_of(b, u)
+          r = r + varied_applied(b, degrees, vj, b % state, along2=vk, along3=vl) &
+               & + varied_applied(b, degrees, vj, b % state, along2=ukl) &
+               & + varied_applied(b, degrees, vk, b % state, along2=ujl) &
+               & + varied_applied(b, degrees, vl, b % state, along2=ujk) &
+               & + varied_applied(b, degrees, ujkl, b % state)
+       end if
+    end if
+
+  end subroutine rows_third
+
+  !===================================================================!
+  ! A functional's third partials that enter the second-order
+  ! costate's right side over one block's owned points: f_qqq[w_k,
+  ! w_l] + f_qq[w_kl] + f_qq_pl[w_k] + f_qq_pk[w_l] + f_q_pk_pl, laid
+  ! over the block's unknowns. In the parameter these are the
+  ! integrand's own partials; in a grid design the measure's partial
+  ! multiplies the partial one order lower.
+  !===================================================================!
+
+  subroutine functional_third_state(rule, points, state, knobs, weight, at, degrees, count, &
+       & wk, wl, wkl, k, l, step_partials, tower, b, from, to, node_measure, g)
+
+    type(expression)           , intent(in) :: rule
+    type(stored_directed_graph), intent(in) :: points
+    type(stored_field)         , intent(in) :: state, knobs
+    real(dp)                   , intent(in) :: weight(:), wk(:), wl(:), wkl(:)
+    integer                    , intent(in) :: at(:), degrees, count, k, l, from, to
+    real(dp), intent(in), optional          :: step_partials(:,:), node_measure(:)
+    type(expansion)            , intent(in) :: tower
+    type(chain_block)          , intent(in) :: b
+    real(dp), allocatable      , intent(out) :: g(:)
+
+    real(dp), allocatable :: ak(:), al(:), akl(:), ones(:), owned_g(:), part(:), dweight(:), u(:)
+    integer , allocatable :: varied_at(:)
+    real(dp) :: unused
+    integer :: n, p, d
+
+    n   = size(at)
+    ak  = at_points(wk, at, degrees)
+    al  = at_points(wl, at, degrees)
+    akl = at_points(wkl, at, degrees)
+    ones = spread(1.0_dp, 1, n * degrees)
+    allocate(owned_g(n * degrees), source=0.0_dp)
+
+    call functional_partial_along(rule, points, [state, knobs], weight, n, points % vertex_set(), &
+         & [1, 1], reshape([ak, al], [n * degrees, 2]), unused, degrees, part)
+    owned_g = owned_g + part
+    call functional_partial_along(rule, points, [state, knobs], weight, n, points % vertex_set(), &
+         & [1], reshape([akl], [n * degrees, 1]), unused, degrees, part)
+    owned_g = owned_g + part
+    ! f_qq_pl[w_k] and f_qq_pk[w_l]
+    call mixed_state(ak, l)
+    call mixed_state(al, k)
+    ! f_q_pk_pl
+    if (k == 1 .and. l == 1) then
+       call functional_partial_along(rule, points, [state, knobs], weight, n, points % vertex_set(), &
+            & [2, 2], reshape([ones, ones], [n * degrees, 2]), unused, degrees, part)
+       owned_g = owned_g + part
+    else if (k == 1 .or. l == 1) then
+       u = step_partials(:, max(k, l) - 1)
+       call owned_points(b, from, to, node_measure, varied_at, dweight, along=along_of(b, u))
+       call functional_partial_along(rule, points, [state, knobs], dweight, n, points % vertex_set(), &
+            & [2], reshape([ones], [n * degrees, 1]), unused, degrees, part)
+       owned_g = owned_g + part
+    else
+       call tower % step_second_partials(k - 1, l - 1, u)
+       call owned_points(b, from, to, node_measure, varied_at, dweight, along=along_of(b, u))
+       call functional_gradient(rule, points, [state, knobs], dweight, n, degrees, &
+            & points % vertex_set(), part)
+       owned_g = owned_g + part
+    end if
+
+    allocate(g(count), source=0.0_dp)
+    do p = 1, n
+       do d = 0, degrees - 1
+          g(at(p) + d + 1) = owned_g((p - 1) * degrees + d + 1)
+       end do
+    end do
+
+  contains
+
+    ! f_qq_pm along a state direction: the integrand's mixed partial in
+    ! the parameter, or the measure's partial with f_qq along the direction
+    subroutine mixed_state(along, m)
+
+      real(dp), intent(in) :: along(:)
+      integer , intent(in) :: m
+
+      if (m == 1) then
+         call functional_partial_along(rule, points, [state, knobs], weight, n, &
+              & points % vertex_set(), [1, 2], reshape([along, ones], [n * degrees, 2]), unused, &
+              & degrees, part)
+      else
+         call owned_points(b, from, to, node_measure, varied_at, dweight, &
+              & along=along_of(b, step_partials(:, m - 1)))
+         call functional_partial_along(rule, points, [state, knobs], dweight, n, &
+              & points % vertex_set(), [1], reshape([along], [n * degrees, 1]), unused, degrees, part)
+      end if
+      owned_g = owned_g + part
+
+    end subroutine mixed_state
+
+  end subroutine functional_third_state
+
+  !===================================================================!
+  ! A functional's third partials in the entry j, k, l: f_pj_qq[w_k,
+  ! w_l] + f_pj_q[w_kl] + f_pj_q_pl[w_k] + f_pj_q_pk[w_l] + f_pj_pk_pl
+  ! over one block's owned points, as one number.
+  !===================================================================!
+
+  subroutine functional_third(rule, points, state, knobs, weight, at, degrees, wk, wl, wkl, &
+       & j, k, l, step_partials, tower, b, from, to, node_measure, total)
+
+    type(expression)           , intent(in) :: rule
+    type(stored_directed_graph), intent(in) :: points
+    type(stored_field)         , intent(in) :: state, knobs
+    real(dp)                   , intent(in) :: weight(:), wk(:), wl(:), wkl(:)
+    integer                    , intent(in) :: at(:), degrees, j, k, l, from, to
+    real(dp), intent(in), optional          :: step_partials(:,:), node_measure(:)
+    type(expansion)            , intent(in) :: tower
+    type(chain_block)          , intent(in) :: b
+    real(dp)                   , intent(out) :: total
+
+    real(dp), allocatable :: ak(:), al(:), akl(:), ones(:), dweight(:), u(:), values(:), series(:,:)
+    integer , allocatable :: varied_at(:)
+    real(dp) :: part
+    integer :: n
+
+    n    = size(at)
+    ak   = at_points(wk, at, degrees)
+    al   = at_points(wl, at, degrees)
+    akl  = at_points(wkl, at, degrees)
+    ones = spread(1.0_dp, 1, n * degrees)
+    total = 0.0_dp
+
+    if (j == 1) then
+       ! the integrand's partials in the parameter
+       call scalar([2, 1, 1], reshape([ones, ak, al], [n * degrees, 3]), weight)
+       call scalar([2, 1], reshape([ones, akl], [n * degrees, 2]), weight)
+       if (l == 1) call scalar([2, 1, 2], reshape([ones, ak, ones], [n * degrees, 3]), weight)
+       if (k == 1) call scalar([2, 1, 2], reshape([ones, al, ones], [n * degrees, 3]), weight)
+       if (k == 1 .and. l == 1) call scalar([2, 2, 2], reshape([ones, ones, ones], [n * degrees, 3]), weight)
+       if (l > 1) call measured_with(k, l, [2, 1], reshape([ones, ak], [n * degrees, 2]))
+       if (k > 1) call measured_with(l, k, [2, 1], reshape([ones, al], [n * degrees, 2]))
+       if (k > 1 .and. l > 1) then
+          call tower % step_second_partials(k - 1, l - 1, u)
+          call owned_points(b, from, to, node_measure, varied_at, dweight, along=along_of(b, u))
+          call scalar([2], reshape([ones], [n * degrees, 1]), dweight)
+       end if
+    else
+       ! the measure's partial in design j with the second derivative
+       ! of the integrand along the pair, then the mixed and third
+       ! partials of the measure with the lower ones
+       call owned_points(b, from, to, node_measure, varied_at, dweight, &
+            & along=along_of(b, step_partials(:, j - 1)))
+       call scalar([1, 1], reshape([ak, al], [n * degrees, 2]), dweight)
+       call scalar([1], reshape([akl], [n * degrees, 1]), dweight)
+       if (l == 1) call scalar([1, 2], reshape([ak, ones], [n * degrees, 2]), dweight)
+       if (k == 1) call scalar([1, 2], reshape([al, ones], [n * degrees, 2]), dweight)
+       if (k == 1 .and. l == 1) call scalar([2, 2], reshape([ones, ones], [n * degrees, 2]), dweight)
+       if (l > 1) then
+          call tower % step_second_partials(j - 1, l - 1, u)
+          call owned_points(b, from, to, node_measure, varied_at, dweight, along=along_of(b, u))
+          call scalar([1], reshape([ak], [n * degrees, 1]), dweight)
+          if (k == 1) call scalar([2], reshape([ones], [n * degrees, 1]), dweight)
+       end if
+       if (k > 1) then
+          call tower % step_second_partials(j - 1, k - 1, u)
+          call owned_points(b, from, to, node_measure, varied_at, dweight, along=along_of(b, u))
+          call scalar([1], reshape([al], [n * degrees, 1]), dweight)
+          if (l == 1) call scalar([2], reshape([ones], [n * degrees, 1]), dweight)
+       end if
+       if (k > 1 .and. l > 1) then
+          call tower % step_third_partials(j - 1, k - 1, l - 1, u)
+          call owned_points(b, from, to, node_measure, varied_at, dweight, along=along_of(b, u))
+          series = reshape(b % state, [1, size(b % state)])
+          call nodal_coefficient(rule, degrees, at, series, tower % parameter(), 0, values)
+          total = total + sum(dweight * values)
+       end if
+    end if
+
+  contains
+
+    subroutine scalar(which, v, w)
+
+      integer , intent(in) :: which(:)
+      real(dp), intent(in) :: v(:,:), w(:)
+
+      call functional_partial_along(rule, points, [state, knobs], w, n, points % vertex_set(), &
+           & which, v, part)
+      total = total + part
+
+    end subroutine scalar
+
+    ! the measure's partial in a grid design m with an integrand
+    ! partial along the given variations
+    subroutine measured_with(other, m, which, v)
+
+      integer , intent(in) :: other, m, which(:)
+      real(dp), intent(in) :: v(:,:)
+
+      call owned_points(b, from, to, node_measure, varied_at, dweight, &
+           & along=along_of(b, step_partials(:, m - 1)))
+      call scalar(which, v, dweight)
+      associate (u1 => other); end associate
+
+    end subroutine measured_with
+
+  end subroutine functional_third
+
+  !===================================================================!
+  ! A direction over the block's unknowns read at the block's points, degrees
+  ! within a point.
+  !===================================================================!
+
+  pure function at_points(w, at, degrees) result(v)
+
+    real(dp), intent(in) :: w(:)
+    integer , intent(in) :: at(:), degrees
+    real(dp) :: v(size(at) * degrees)
+
+    integer :: p, d
+
+    do p = 1, size(at)
+       do d = 0, degrees - 1
+          v((p - 1) * degrees + d + 1) = w(at(p) + d + 1)
+       end do
+    end do
+
+  end function at_points
 
   !===================================================================!
   ! Every design's tangent over every block, handed forward.
@@ -1370,30 +2011,73 @@ contains
     type(expansion)            , intent(in) :: tower
     real(dp), allocatable      , intent(out) :: r2(:)
 
-    real(dp), allocatable :: second(:), u(:)
-    integer :: count, npts
+    real(dp), allocatable :: second(:)
 
-    count = size(w)
-    npts  = b % rows % num_points()
-    if (k == 1) then
-       call varied_by(b % rows, unknowns, inputs, 2, unknowns % vertex_set(), &
-            & spread(1.0_dp, 1, npts), 1, unknowns % vertex_set(), w, r2)
-       if (j == 1) then
-          call varied_by(b % rows, unknowns, inputs, 2, unknowns % vertex_set(), &
-               & spread(1.0_dp, 1, npts), 2, unknowns % vertex_set(), spread(1.0_dp, 1, npts), second)
-          r2 = r2 + second
-       end if
-    else
-       r2 = varied_applied(b, degrees, along_of(b, step_partials(:, k - 1)), w)
-       if (j > 1) then
-          r2 = r2 + varied_applied(b, degrees, along_of(b, step_partials(:, j - 1)), &
-               & b % state, along2=along_of(b, step_partials(:, k - 1)))
-          call tower % step_second_partials(j - 1, k - 1, u)
-          r2 = r2 + varied_applied(b, degrees, along_of(b, u), b % state)
-       end if
-    end if
+    call rows_cross(b, degrees, unknowns, inputs, w, k, step_partials, r2)
+    call rows_design_second(b, degrees, unknowns, inputs, j, k, step_partials, tower, second)
+    r2 = r2 + second
 
   end subroutine rows_mixed
+
+  !===================================================================!
+  ! R_pk_q applied to a state direction: the physics' mixed partial in
+  ! the state and the parameter, or the rows varied along a grid
+  ! design's step direction applied to the direction.
+  !===================================================================!
+
+  subroutine rows_cross(b, degrees, unknowns, inputs, w, k, step_partials, r)
+
+    type(chain_block)          , intent(in) :: b
+    integer                    , intent(in) :: degrees, k
+    type(stored_directed_graph), intent(in) :: unknowns
+    type(stored_field)         , intent(in) :: inputs(:)
+    real(dp)                   , intent(in) :: w(:)
+    real(dp)   , intent(in), optional       :: step_partials(:,:)
+    real(dp), allocatable      , intent(out) :: r(:)
+
+    if (k == 1) then
+       call varied_by(b % rows, unknowns, inputs, 2, unknowns % vertex_set(), &
+            & spread(1.0_dp, 1, b % rows % num_points()), 1, unknowns % vertex_set(), w, r)
+    else
+       r = varied_applied(b, degrees, along_of(b, step_partials(:, k - 1)), w)
+    end if
+
+  end subroutine rows_cross
+
+  !===================================================================!
+  ! R_pj_pk: the physics' second partial in the parameter, zero
+  ! between the parameter and a grid design, and for two grid designs
+  ! the rows along both step directions and along the steps' mixed
+  ! second partial, applied to the state.
+  !===================================================================!
+
+  subroutine rows_design_second(b, degrees, unknowns, inputs, j, k, step_partials, tower, r)
+
+    type(chain_block)          , intent(in) :: b
+    integer                    , intent(in) :: degrees, j, k
+    type(stored_directed_graph), intent(in) :: unknowns
+    type(stored_field)         , intent(in) :: inputs(:)
+    real(dp)   , intent(in), optional       :: step_partials(:,:)
+    type(expansion)            , intent(in) :: tower
+    real(dp), allocatable      , intent(out) :: r(:)
+
+    real(dp), allocatable :: u(:)
+    integer :: npts
+
+    npts = b % rows % num_points()
+    if (j == 1 .and. k == 1) then
+       call varied_by(b % rows, unknowns, inputs, 2, unknowns % vertex_set(), &
+            & spread(1.0_dp, 1, npts), 2, unknowns % vertex_set(), spread(1.0_dp, 1, npts), r)
+    else if (j > 1 .and. k > 1) then
+       r = varied_applied(b, degrees, along_of(b, step_partials(:, j - 1)), b % state, &
+            & along2=along_of(b, step_partials(:, k - 1)))
+       call tower % step_second_partials(j - 1, k - 1, u)
+       r = r + varied_applied(b, degrees, along_of(b, u), b % state)
+    else
+       allocate(r(size(b % state)), source=0.0_dp)
+    end if
+
+  end subroutine rows_design_second
 
   !===================================================================!
   ! The rows along a direction in the steps - and a second, given -
@@ -1404,19 +2088,19 @@ contains
   ! block drops it.
   !===================================================================!
 
-  function varied_applied(b, degrees, along, x, along2) result(r)
+  function varied_applied(b, degrees, along, x, along2, along3) result(r)
 
     type(chain_block), intent(in) :: b
     integer          , intent(in) :: degrees
     real(dp)         , intent(in) :: along(:), x(:)
-    real(dp)         , intent(in), optional :: along2(:)
+    real(dp)         , intent(in), optional :: along2(:), along3(:)
     real(dp), allocatable :: r(:)
 
     type(stencil) :: rows
     real(dp), allocatable :: w(:)
     integer :: e
 
-    rows = b % rows % rows_varied(b % scheme, b % dt, along, along2)
+    rows = b % rows % rows_varied(b % scheme, b % dt, along, along2, along3)
     call rows % weights % real_vector(w)
     allocate(r(size(x)), source=0.0_dp)
     associate (u1 => degrees); end associate
@@ -1428,18 +2112,19 @@ contains
 
   end function varied_applied
 
-  function varied_transposed(b, degrees, along, y) result(r)
+  function varied_transposed(b, degrees, along, y, along2) result(r)
 
     type(chain_block), intent(in) :: b
     integer          , intent(in) :: degrees
     real(dp)         , intent(in) :: along(:), y(:)
+    real(dp)         , intent(in), optional :: along2(:)
     real(dp), allocatable :: r(:)
 
     type(stencil) :: rows
     real(dp), allocatable :: w(:), kept(:)
     integer :: e
 
-    rows = b % rows % rows_varied(b % scheme, b % dt, along)
+    rows = b % rows % rows_varied(b % scheme, b % dt, along, along2)
     call rows % weights % real_vector(w)
     kept = y
     associate (u1 => degrees); end associate
@@ -1576,5 +2261,32 @@ contains
     end do
 
   end function chain_by_adjoint
+
+  !===================================================================!
+  ! The largest departure of a table from symmetry under every
+  ! permutation of the three indices, relative to the largest entry.
+  ! The third-derivative table is symmetric in theory and is not made
+  ! so, which makes this departure the check on the reverse route.
+  !===================================================================!
+
+  pure real(dp) function asymmetry(t)
+
+    real(dp), intent(in) :: t(:,:,:)
+
+    integer :: a, b, c
+
+    asymmetry = 0.0_dp
+    do a = 1, size(t, 1)
+       do b = 1, size(t, 2)
+          do c = 1, size(t, 3)
+             asymmetry = max(asymmetry, abs(t(a, b, c) - t(a, c, b)), abs(t(a, b, c) - t(b, a, c)), &
+                  & abs(t(a, b, c) - t(b, c, a)), abs(t(a, b, c) - t(c, a, b)), &
+                  & abs(t(a, b, c) - t(c, b, a)))
+          end do
+       end do
+    end do
+    asymmetry = asymmetry / max(tiny(1.0_dp), maxval(abs(t)))
+
+  end function asymmetry
 
 end module gti_chain

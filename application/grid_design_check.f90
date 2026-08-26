@@ -18,6 +18,10 @@
 ! symmetric in theory and is not made so; its parameter entry is the
 ! expansion's second order; and a central difference of the first
 ! derivatives, themselves known to tau, gives the rows to tau^(2/3).
+! Then the third derivatives by the reverse route at order three,
+! checked the same three ways: symmetric under every permutation of
+! the three indices, the parameter entry the expansion's third order,
+! and central differences of the hessian giving the rows to tau^(2/3).
 !
 ! The families read three instants back, so a startup block marches
 ! the first three from the given state, on steps split four ways;
@@ -37,7 +41,7 @@ program grid_design_check
   use gti_march             , only : set_stopping, consistent_state, imbalance
   use gti_chain             , only : chain_block, march_chain, chain_expansion, chain_system, &
        & chain_systems, chain_by_tangent, chain_by_adjoint, functional_holder, one_functional, &
-       & chain_hessian
+       & chain_hessian, chain_third, asymmetry
   use gti_sweeps            , only : route_of, forward_route
 
   implicit none
@@ -53,6 +57,8 @@ program grid_design_check
   type(chain_system), allocatable :: systems(:)
   real(dp), allocatable :: p(:), dt(:), t(:), v(:,:), f(:,:), tangent(:,:), adjoint(:,:)
   real(dp), allocatable :: plus(:,:), minus(:,:), q0(:), hessian(:,:,:), dplus(:,:), dminus(:,:)
+  real(dp), allocatable :: third(:,:,:,:), hplus(:,:,:), hminus(:,:,:)
+  real(dp) :: by_class(0:3)
   real(dp) :: tau, delta, achieved, worst
   character(len=32) :: argument
   integer :: k, j, i, route
@@ -139,6 +145,34 @@ program grid_design_check
        & / max(1.0_dp, maxval(abs(hessian)))))
   write(*,'(a,es10.2)') ' differenced first derivatives against the hessian rows, worst ', worst
 
+  ! the third derivatives: one table per functional, by the reverse
+  ! route at order three
+  call marched(p, design, f, 3)
+  call chain_systems(chain, tower, functionals, degrees, systems)
+  call chain_third(chain, tower, systems, functionals, degrees, third)
+  write(*,'(a)') ' '
+  write(*,'(a,i0,a,i0,a,i0,a,i0)') ' third derivatives by the reverse route: tables ', &
+       & size(third, 1), ' of ', size(third, 2), ' x ', size(third, 3), ' x ', size(third, 4)
+  do i = 1, 2
+     write(*,'(a,i0,a,es10.2,a,es10.2)') ' functional ', i, &
+          & ':  symmetry under every permutation, relative ', asymmetry(third(i, :, :, :)), &
+          & '   parameter entry against the expansion ', abs(third(i, 1, 1, 1) - f(3, i)) / abs(f(3, i))
+  end do
+  ! the departure by the number of parameter indices among the three:
+  ! three, two, one, none
+  by_class = 0.0_dp
+  do k = 1, size(checked)
+     j = checked(k)
+     call differenced_hessian(p + delta * unit(j), design, hplus)
+     call differenced_hessian(p - delta * unit(j), design, hminus)
+     call classed((hplus - hminus) / (2.0_dp * delta) - third(:, 1 + j, :, :), 0)
+  end do
+  call differenced_hessian(p, design + delta, hplus)
+  call differenced_hessian(p, design - delta, hminus)
+  call classed((hplus - hminus) / (2.0_dp * delta) - third(:, 1, :, :), 1)
+  write(*,'(a,4es10.2)') ' differenced hessians against the third-derivative rows, worst by parameter count 3,2,1,0 ', &
+       & by_class(3:0:-1) / max(1.0_dp, maxval(abs(third)))
+
 contains
 
   subroutine marched(weights, nu, f, order)
@@ -159,6 +193,38 @@ contains
     call chain_expansion(chain, tower, functionals, degrees, m, f)
 
   end subroutine marched
+
+  ! the hessians at other weights or parameter
+  subroutine differenced_hessian(weights, nu, h)
+
+    real(dp), intent(in) :: weights(:), nu
+    real(dp), allocatable, intent(out) :: h(:,:,:)
+
+    real(dp), allocatable :: f(:,:)
+
+    call marched(weights, nu, f)
+    call chain_systems(chain, tower, functionals, degrees, systems)
+    call chain_hessian(chain, tower, systems, functionals, degrees, h)
+
+  end subroutine differenced_hessian
+
+  ! the largest departure in each class: the count of parameter indices
+  ! among the differenced one (given) and the two of the hessian
+  subroutine classed(e, given)
+
+    real(dp), intent(in) :: e(:,:,:)
+    integer , intent(in) :: given
+
+    integer :: a, b, c
+
+    do a = 1, size(e, 2)
+       do b = 1, size(e, 3)
+          c = given + merge(1, 0, a == 1) + merge(1, 0, b == 1)
+          by_class(c) = max(by_class(c), maxval(abs(e(:, a, b))))
+       end do
+    end do
+
+  end subroutine classed
 
   ! the first derivatives by the adjoint at other weights or parameter
   subroutine differenced(weights, nu, df)

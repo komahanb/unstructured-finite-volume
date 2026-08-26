@@ -139,6 +139,7 @@ module gti_expansion
      procedure :: design_value
      procedure :: step_partials
      procedure :: step_second_partials
+     procedure :: step_third_partials
      procedure, private :: weights_of_steps
      procedure, private :: refuse_assignment
      generic :: assignment(=) => refuse_assignment
@@ -520,6 +521,40 @@ contains
     call out % real_vector(u)
 
   end subroutine step_second_partials
+
+  subroutine step_third_partials(this, j, k, l, u)
+
+    class(expansion)     , intent(in)  :: this
+    integer              , intent(in)  :: j, k, l
+    real(dp), allocatable, intent(out) :: u(:)
+
+    type(stored_directed_graph) :: instants
+    type(stored_field) :: knobs, direction(3)
+    class(field), allocatable :: out
+    real(dp), allocatable :: weights(:), e(:)
+    integer :: n, i, which(3)
+
+    call this % weights_of_steps(weights)
+    n = size(weights) + 1
+    instants = stored_directed_graph(n, tails=[integer ::], heads=[integer ::])
+    knobs    = stored_field('design', instants % vertex_set(), size(weights))
+    call knobs % set_real_vector(weights)
+
+    which = [j, k, l]
+    allocate(e(size(weights)))
+    do i = 1, 3
+       e = 0.0_dp
+       e(which(i)) = 1.0_dp
+       direction(i) = stored_field('direction', instants % vertex_set(), size(weights))
+       call direction(i) % set_real_vector(e)
+    end do
+    call this % steps_kept % partial_action(instants, [knobs], &
+         & [variation(this % steps_kept % argument(1), direction(1)), &
+         &  variation(this % steps_kept % argument(1), direction(2)), &
+         &  variation(this % steps_kept % argument(1), direction(3))], out)
+    call out % real_vector(u)
+
+  end subroutine step_third_partials
 
   subroutine weights_of_steps(this, weights)
 

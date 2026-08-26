@@ -75,7 +75,8 @@ program graph_time_integrator
   use gti_expansion         , only : family_holder, expansion
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
        & expansion_substitutions, chain_system, chain_systems, chain_by_tangent, &
-       & chain_by_adjoint, instant_components, functional_holder, chain_hessian
+       & chain_by_adjoint, instant_components, functional_holder, chain_hessian, chain_third, &
+       & asymmetry
   use gti_sweeps            , only : set_linear_solver, set_assembly, set_storage, set_multigrid, &
        & set_coarse_nodes, set_linear_budget
   use gti_sweeps            , only : route_of, forward_route, reverse_route
@@ -484,7 +485,7 @@ contains
     real(dp)           , intent(in) :: dt(:), f(0:, :)
 
     type(chain_system), allocatable :: systems(:)
-    real(dp), allocatable :: p(:), df(:,:), other(:,:), hessian(:,:,:)
+    real(dp), allocatable :: p(:), df(:,:), other(:,:), hessian(:,:,:), third(:,:,:,:)
     real(dp) :: euler
     integer  :: num_designs, num_functionals, route, i
 
@@ -539,6 +540,23 @@ contains
                   & / max(tiny(1.0_dp), maxval(abs(hessian(i, :, :)))), &
                   & '   parameter entry against the expansion ', &
                   & abs(hessian(i, 1, 1) - f(2, i)) / max(1.0_dp, abs(f(2, i)))
+          end do
+       end if
+    end if
+
+    ! the third derivatives where the gate chooses the reverse route
+    ! at order three: one table per functional, symmetric in theory
+    ! under every permutation of the three indices, the parameter entry the
+    ! expansion's third order
+    if (grid_designed .and. ubound(f, 1) >= 3) then
+       if (route_of(num_designs, num_functionals, 3) == reverse_route) then
+          call chain_third(chain, tower, systems, functionals, nd, third, node_measure=volume)
+          do i = 1, num_functionals
+             write(*,'(a,i0,a,es12.4,a,es10.2,a,es10.2)') &
+                  & '      third derivatives by the reverse route, functional ', i, &
+                  & ':  |T| ', maxval(abs(third(i, :, :, :))), '   symmetry ', &
+                  & asymmetry(third(i, :, :, :)), '   parameter entry against the expansion ', &
+                  & abs(third(i, 1, 1, 1) - f(3, i)) / max(1.0_dp, abs(f(3, i)))
           end do
        end if
     end if

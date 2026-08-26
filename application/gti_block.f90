@@ -309,7 +309,7 @@ contains
     class(block_residual), intent(in) :: this
 
     associate (u1 => this); end associate
-    block_max_degree = 2
+    block_max_degree = 3
 
   end function block_max_degree
 
@@ -742,12 +742,12 @@ contains
   ! input: a block built without its reach.
   !-------------------------------------------------------------------!
 
-  function rows_varied(this, scheme, dt, along, along2) result(varied)
+  function rows_varied(this, scheme, dt, along, along2, along3) result(varied)
 
     class(block_residual), intent(in) :: this
     class(family)        , intent(in) :: scheme
     real(dp)             , intent(in) :: dt(:), along(:)
-    real(dp)             , intent(in), optional :: along2(:)
+    real(dp)             , intent(in), optional :: along2(:), along3(:)
     type(stencil) :: varied
 
     integer , allocatable :: r(:), c(:)
@@ -767,7 +767,12 @@ contains
     n = 0
     do k = 1, size(this % reach)
        associate (reach => this % reach(k))
-         if (present(along2)) then
+         if (present(along3)) then
+            call weights_varied(scheme_weight(scheme), reach % vertices, reach % tails, &
+                 & reach % heads, dt(reach % step_of), along(reach % step_of), &
+                 & reach % source_degree, reach % determines, dw, along2(reach % step_of), &
+                 & along3(reach % step_of))
+         else if (present(along2)) then
             call weights_varied(scheme_weight(scheme), reach % vertices, reach % tails, &
                  & reach % heads, dt(reach % step_of), along(reach % step_of), &
                  & reach % source_degree, reach % determines, dw, along2(reach % step_of))
@@ -1076,11 +1081,12 @@ contains
     end if
     call state_of(this, input_data, input_graph, x, state)
 
-    ! THE SECOND PARTIAL. The time discretization stencil rows, the spatial discretization stencil and the
-    ! carried rows are linear in the state and read no design, so
-    ! only the physics has one: its second partial at every point,
-    ! along both directions, on the row its primary degree holds.
-    if (size(variations) == 2) then
+    ! THE SECOND AND THIRD PARTIALS. The time discretization stencil
+    ! rows, the spatial discretization stencil and the carried rows
+    ! are linear in the state and read no design, so only the physics
+    ! has one: the partial at every point along every direction given,
+    ! on the row the equation is imposed on.
+    if (size(variations) >= 2) then
        call second_tangent(this, input_data, variations, x, governing)
        allocate(r(this % num_unknowns()), source=0.0_dp)
        call placed(this, governing, r)
@@ -1161,12 +1167,13 @@ contains
     real(dp), allocatable, intent(out) :: governing(:)
 
     type(stored_field), allocatable :: inputs(:)
-    type(variation) :: at_points(2)
+    type(variation), allocatable :: at_points(:)
     class(field), allocatable :: half
     integer :: i
 
     call point_inputs(this, input_data, x, inputs)
-    do i = 1, 2
+    allocate(at_points(size(variations)))
+    do i = 1, size(variations)
        at_points(i) = physics_variation(this, variations(i))
     end do
     call this % physics % partial_action(this % points, inputs, at_points, half)

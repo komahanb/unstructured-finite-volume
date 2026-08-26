@@ -68,7 +68,7 @@ program graph_time_integrator
   use gti_march             , only : set_stopping, imbalance, set_sweep, weight_of, precision_needed
   use operation_stencil     , only : stencil
   use gti_space             , only : room, spatial_mesh, geometry_of, coarse_cells
-  use gti_field             , only : node_operator, initial_field, against_the_laplacian, &
+  use gti_field             , only : spatial_discretization_stencil_of, initial_field, against_the_laplacian, &
        & against_the_mode, export_instant
   use util_precision        , only : precision_named
   use iso_fortran_env       , only : real128
@@ -97,10 +97,10 @@ program graph_time_integrator
   ! THE FIELD, when the configuration names a mesh: its room, the
   ! level below as a stencil over the nodes, the measure of each node,
   ! and the state at the first instant over every node. With no mesh
-  ! there is one node, no level below, and a measure of one: one
+  ! there is one node, no spatial discretization stencil, and a measure of one: one
   ! node's equation, marched by the same chain.
   type(room)   , allocatable :: space
-  type(stencil), allocatable :: op
+  type(stencil), allocatable :: spatial_discretization_stencil
   real(dp)     , allocatable :: volume(:), q0(:)
   real(dp) :: extent_a = 0.0_dp, extent_b = 0.0_dp
   integer  :: nodes = 1
@@ -409,12 +409,12 @@ contains
        weights = dt(2:cfg % instants)
        call march_chain(schemes, added, van_der_pol(cfg % state_degree), nd, &
             & designed_grid(cfg % time_duration), cfg % design, q0, chain, tower, dt, t, &
-            & achieved, grid_design=weights, left=left, nodes=nodes, spatial=op, &
+            & achieved, grid_design=weights, left=left, nodes=nodes, spatial_discretization_stencil=spatial_discretization_stencil, &
             & startup=cfg % startup_refinement)
     else
        call march_chain(schemes, added, van_der_pol(cfg % state_degree), nd, &
             & chosen_grid(cfg), cfg % design, q0, chain, tower, dt, t, achieved, left=left, &
-            & nodes=nodes, spatial=op, startup=cfg % startup_refinement)
+            & nodes=nodes, spatial_discretization_stencil=spatial_discretization_stencil, startup=cfg % startup_refinement)
     end if
     ! Every derivative is taken at the state the march reached, so a
     ! row that did not converge has none to take and only its value is
@@ -644,7 +644,7 @@ contains
 
   !-------------------------------------------------------------------!
   ! The field the configuration names, or one node when it names no
-  ! mesh: the room, the level below, the coarse cells a multigrid
+  ! mesh: the room, the spatial discretization stencil, the coarse cells a multigrid
   ! coarsens the nodes by, the measure of each node, and the state at
   ! the first instant. The operator alone is checked here when asked,
   ! before any march.
@@ -683,7 +683,7 @@ contains
        write(*,'(a,i0,a,i0,a,f12.6,a,i0,a,f9.3,a)') '   spatial mesh: cells ', &
             & space % num_cells, '   faces ', space % num_faces, '   area ', sum(space % volume), &
             & '   form degree ', cfg % spatial_order, '   built in ', clock() - began, ' s'
-       op = node_operator(space, cfg % diffusion, cfg % spatial_order)
+       spatial_discretization_stencil = spatial_discretization_stencil_of(space, cfg % diffusion, cfg % spatial_order)
        call set_coarse_nodes(coarse_cells(space))
        nodes  = space % num_cells
        volume = space % volume
@@ -697,7 +697,7 @@ contains
 
     q0 = initial_field(van_der_pol(cfg % state_degree), cfg % state_degree + 1, &
          & cfg % initial_field, cfg % initial_state, cfg % design, &
-         & spatial=op, space=space, a=extent_a, b=extent_b)
+         & spatial_discretization_stencil=spatial_discretization_stencil, space=space, a=extent_a, b=extent_b)
 
   end subroutine field_context
 

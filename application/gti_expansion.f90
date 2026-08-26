@@ -105,11 +105,11 @@ module gti_expansion
      integer                 , private :: root_at = 0
      integer                 , private :: degrees = 0
      ! THE NODES a component holds - one for an equation at a point,
-     ! the cells of a mesh for a field - and the level below, one
+     ! the cells of a mesh for a field - and the spatial discretization stencil, one
      ! coupling over the nodes, laid on every component the physics
      ! sits on; zero where there is none
      integer                 , private :: node_extent = 1
-     integer                 , private :: below_at = 0
+     integer                 , private :: spatial_coupling_at = 0
      ! THE DESIGNS: leaves of their own level under the root, one per
      ! design - the physics' parameter, and the weights of the steps
      ! when they are designs - each holding its value and its extent;
@@ -301,7 +301,7 @@ contains
   !===================================================================!
 
   subroutine build(this, physics, schemes, instants, steps, &
-       & max_derivative_degree, parameter, nodes, spatial, weights, block_steps)
+       & max_derivative_degree, parameter, nodes, spatial_discretization_stencil, weights, block_steps)
 
     class(expansion)      , intent(inout) :: this
     type(expression)      , intent(in)    :: physics
@@ -315,7 +315,7 @@ contains
     ! level below - a stencil over the nodes - is laid on every
     ! component the physics sits on
     integer      , intent(in), optional   :: nodes
-    type(stencil), intent(in), optional   :: spatial
+    type(stencil), intent(in), optional   :: spatial_discretization_stencil
     ! given, the weights of the steps are designs too, read by the
     ! grid; and given, the steps of the horizon's instants are these
     ! rather than the grid's partition
@@ -335,7 +335,7 @@ contains
     this % degrees = physics % equation_degree() + 1
     this % node_extent = 1
     if (present(nodes)) this % node_extent = nodes
-    if (present(spatial)) this % below_at = level_below(this, spatial)
+    if (present(spatial_discretization_stencil)) this % spatial_coupling_at = spatial_discretization_coupling(this, spatial_discretization_stencil)
     this % rule_kept = physics
     allocate(this % steps_kept, source=steps)
     if (present(block_steps)) then
@@ -539,7 +539,7 @@ contains
   end subroutine weights_of_steps
 
   !===================================================================!
-  ! THE LEVEL BELOW: one coupling over the nodes, shared by every
+  ! THE SPATIAL DISCRETIZATION STENCIL: one coupling over the nodes, shared by every
   ! component the physics sits on. Its carriers are the nodes read
   ! and the nodes whose rows are entered; its relation is the
   ! stencil's pattern, a node read into a node's row; its value the
@@ -547,41 +547,41 @@ contains
   ! stencil over other than the nodes.
   !===================================================================!
 
-  integer function level_below(this, spatial) result(at)
+  integer function spatial_discretization_coupling(this, spatial_discretization_stencil) result(at)
 
     class(expansion), intent(inout) :: this
-    type(stencil)   , intent(in)    :: spatial
+    type(stencil)   , intent(in)    :: spatial_discretization_stencil
 
     integer , allocatable :: table(:,:), heads(:), tails(:), rows(:), cols(:)
     real(dp), allocatable :: given(:), w(:)
     integer :: read_nodes, entered_nodes, holder, e, ne
 
-    if (spatial % pattern % num_vertices() /= this % node_extent) then
-       error stop 'gti_expansion: the level below is a stencil over the nodes'
+    if (spatial_discretization_stencil % pattern % num_vertices() /= this % node_extent) then
+       error stop 'gti_expansion: the spatial discretization stencil is a stencil over the nodes'
     end if
     ! a stencil may name a pair of nodes more than once, its entries
     ! adding; a relation names a pair once, so the entries are combined
-    ne = spatial % pattern % num_edges()
-    heads = [(spatial % pattern % edge_head(e), e = 1, ne)]
-    tails = [(spatial % pattern % edge_tail(e), e = 1, ne)]
-    call spatial % weights % real_vector(given)
+    ne = spatial_discretization_stencil % pattern % num_edges()
+    heads = [(spatial_discretization_stencil % pattern % edge_head(e), e = 1, ne)]
+    tails = [(spatial_discretization_stencil % pattern % edge_tail(e), e = 1, ne)]
+    call spatial_discretization_stencil % weights % real_vector(given)
     call combine_triples(this % node_extent, this % node_extent, heads, tails, given, &
          & rows, cols, w)
     allocate(table(2, size(rows)))
     table(1, :) = cols
     table(2, :) = rows
 
-    read_nodes    = named_set(this, this % node_extent, 'the nodes read by the level below')
-    entered_nodes = named_set(this, this % node_extent, 'the nodes whose rows the level below enters')
+    read_nodes    = named_set(this, this % node_extent, 'the nodes the spatial discretization stencil reads')
+    entered_nodes = named_set(this, this % node_extent, 'the nodes whose rows the spatial discretization stencil enters')
     holder = this % nodes % assemble([integer ::], 0)
-    call this % labels % bind(this % node(holder), 'the stencil''s reach')
+    call this % labels % bind(this % node(holder), 'the spatial discretization stencil''s reach')
     at = this % nodes % couple([read_nodes, entered_nodes], [holder])
     call bind_carriers(this, [read_nodes, entered_nodes])
     call bind_reach(this, holder, read_nodes, entered_nodes, table)
-    call this % labels % bind(this % node(at), 'the level below')
+    call this % labels % bind(this % node(at), 'the spatial discretization stencil')
     call attach_known(this, at, in_relation_order(this, this % node(at), table, w))
 
-  end function level_below
+  end function spatial_discretization_coupling
 
   !===================================================================!
   ! The steps, from the grid, over every instant of the horizon.
@@ -778,7 +778,7 @@ contains
   end function plain_slice
 
   !===================================================================!
-  ! Whether a family's derived rows run between the stages of one
+  ! Whether a family's time discretization stencil rows run between the stages of one
   ! step rather than between instants. A stage family gives an empty
   ! pattern at every degree, which is how it says its rows are not
   ! offsets back through the instants; that question is asked here,
@@ -874,7 +874,7 @@ contains
 
   !===================================================================!
   ! One component: a leaf holding its freedoms, one per node, and on
-  ! the physics' own degree of an evaluated moment the level below.
+  ! the physics' own degree of an evaluated moment the spatial discretization stencil.
   ! The instants a block reaches back over carry their values from
   ! the start; every component after them waits on a march.
   !===================================================================!
@@ -885,12 +885,12 @@ contains
     class(family)   , intent(in)    :: scheme
     integer         , intent(in)    :: instant, first, degree
     ! whether the physics is evaluated at this component's moment,
-    ! where the level below is laid on the physics' own degree
+    ! where the spatial discretization stencil is laid on the physics' own degree
     logical         , intent(in)    :: evaluated
 
     if (evaluated .and. degree == scheme % primary_degree(this % degrees - 1) &
-         & .and. this % below_at > 0) then
-       at = this % nodes % assemble([integer ::], this % below_at)
+         & .and. this % spatial_coupling_at > 0) then
+       at = this % nodes % assemble([integer ::], this % spatial_coupling_at)
     else
        at = this % nodes % assemble([integer ::], 0)
     end if

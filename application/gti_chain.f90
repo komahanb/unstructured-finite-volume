@@ -269,7 +269,7 @@ contains
   !===================================================================!
 
   subroutine march_chain(schemes, added, physics, degrees, steps, &
-       & design, initial, chain, tower, dt, t, achieved, grid_design, left, nodes, spatial, &
+       & design, initial, chain, tower, dt, t, achieved, grid_design, left, nodes, spatial_discretization_stencil, &
        & startup)
 
     type(family_holder)   , intent(in) :: schemes(:)
@@ -286,7 +286,7 @@ contains
     real(dp), intent(in), optional     :: grid_design(:)
     type(imbalance), intent(out), optional :: left
     integer        , intent(in) , optional :: nodes
-    type(stencil)  , intent(in) , optional :: spatial
+    type(stencil)  , intent(in) , optional :: spatial_discretization_stencil
     ! given, the first block's given instants are marched first by a
     ! stage family of order four, every step split this many ways,
     ! as block one of the chain: a startup that is part of the chain
@@ -355,7 +355,7 @@ contains
     end do
     if (allocated(tower)) deallocate(tower)
     allocate(tower)
-    call tower % build(physics, every, spans, steps, 0, design, nodes, spatial, &
+    call tower % build(physics, every, spans, steps, 0, design, nodes, spatial_discretization_stencil, &
          & weights=grid_design, block_steps=knobs)
 
     achieved = 0.0_dp
@@ -364,7 +364,7 @@ contains
        call one_block(chain, 1, tower, 1, every(1) % scheme, physics, degrees, 1, &
             & (given - 1) * r + 1, 1, fine, [0, (1 + (k - 1) / r + 1, k = 1, (given - 1) * r)], &
             & 1.0_dp / real(r, dp), .false., design, initial, one_achieved, one_left, nodes, &
-            & spatial)
+            & spatial_discretization_stencil)
        achieved = one_achieved
        if (present(left)) left = one_left
     end if
@@ -372,7 +372,7 @@ contains
        call one_block(chain, before + b, tower, before + b, schemes(b) % scheme, physics, degrees, &
             & 1 + (first(b) - 1) * r, 1 + (last(b) - 1) * r, r, dt(first(b):last(b)), &
             & [(k, k = first(b), last(b))], 1.0_dp, .true., design, initial, &
-            & one_achieved, one_left, nodes, spatial)
+            & one_achieved, one_left, nodes, spatial_discretization_stencil)
        achieved = max(achieved, one_achieved)
        ! The report kept is the first block's that did not converge:
        ! every block after it reads a state it never reached.
@@ -393,7 +393,7 @@ contains
 
   subroutine one_block(chain, b, tower, in_tower, scheme, physics, degrees, first, last, &
        & stride, dt, coarse_step, fraction, counted, design, initial, achieved, left, nodes, &
-       & spatial)
+       & spatial_discretization_stencil)
 
     type(chain_block)     , intent(inout) :: chain(:)
     type(expansion)       , intent(in), target :: tower
@@ -406,7 +406,7 @@ contains
     real(dp)              , intent(out)   :: achieved
     type(imbalance)       , intent(out)   :: left
     integer      , intent(in), optional   :: nodes
-    type(stencil), intent(in), optional   :: spatial
+    type(stencil), intent(in), optional   :: spatial_discretization_stencil
 
     real(dp), allocatable :: held(:)
 
@@ -444,7 +444,7 @@ contains
     end if
     call built(tower, in_tower, scheme, physics, held, chain(b) % rows, &
          & chain(b) % instants_at)
-    associate (u1 => nodes, u2 => spatial); end associate
+    associate (u1 => nodes, u2 => spatial_discretization_stencil); end associate
     call swept(chain(b) % rows, design, chain(b) % state, achieved, left)
     chain(b) % began = left % began
     call tally_leave()
@@ -784,7 +784,7 @@ contains
   ! A block's rows differentiated along a direction in its steps,
   ! applied to its state: the block's partial in whatever the steps
   ! read, by the chain rule through the steps. The carried rows, the
-  ! physics and the level below read no step and take no part.
+  ! physics and the spatial discretization stencil read no step and take no part.
   !===================================================================!
 
   function varied_rate(b, degrees, along) result(r)
@@ -1399,7 +1399,7 @@ contains
   ! The rows along a direction in the steps - and a second, given -
   ! applied to a vector, and applied transposed. A carried row holds
   ! a given number whatever the steps, so the block's residual has no
-  ! such row there and neither has its derivative: a derived row the
+  ! such row there and neither has its derivative: a time discretization stencil row the
   ! family would have placed at a carried instant is dropped, as the
   ! block drops it.
   !===================================================================!

@@ -259,21 +259,21 @@ contains
   !===================================================================!
   ! The state at the first instant, consistent with the physics: the
   ! components below the highest are given at every node, and the
-  ! highest is what the physics then requires, with the level below
+  ! highest is what the physics then requires, with the spatial discretization stencil
   ! - laid on the given values - entering its row. No block is laid
   ! for it: the physics is a rule at one point, so the highest
   ! component solves node by node, and the physics' partial in it,
   ! which the rule carries, is the slope. Invalid input: components
-  ! for other than every degree below the highest; a level below over
+  ! for other than every degree below the highest; a spatial discretization stencil over
   ! other than the nodes.
   !===================================================================!
 
-  function consistent_states(physics, degrees, lower, design_value, spatial) result(q)
+  function consistent_states(physics, degrees, lower, design_value, spatial_discretization_stencil) result(q)
 
     type(expression)      , intent(in)           :: physics
     integer               , intent(in)           :: degrees
     real(dp)              , intent(in)           :: lower(:,:), design_value
-    type(stencil)         , intent(in), optional :: spatial
+    type(stencil)         , intent(in), optional :: spatial_discretization_stencil
     real(dp), allocatable :: q(:)
 
     type(stored_directed_graph) :: points
@@ -289,17 +289,17 @@ contains
        error stop 'gti_march: the components below the highest are given at every node'
     end if
 
-    ! the level below on the given values: what it adds to each
+    ! the spatial discretization stencil on the given values: what it adds to each
     ! node's row of the highest degree
     allocate(below(nodes), source=0.0_dp)
-    if (present(spatial)) then
-       if (spatial % pattern % num_vertices() /= nodes) then
-          error stop 'gti_march: the level below is a stencil over the nodes'
+    if (present(spatial_discretization_stencil)) then
+       if (spatial_discretization_stencil % pattern % num_vertices() /= nodes) then
+          error stop 'gti_march: the spatial discretization stencil is a stencil over the nodes'
        end if
-       call spatial % weights % real_vector(weights)
-       do k = 1, spatial % pattern % num_edges()
-          below(spatial % pattern % edge_head(k)) = below(spatial % pattern % edge_head(k)) &
-               & + weights(k) * lower(1, spatial % pattern % edge_tail(k))
+       call spatial_discretization_stencil % weights % real_vector(weights)
+       do k = 1, spatial_discretization_stencil % pattern % num_edges()
+          below(spatial_discretization_stencil % pattern % edge_head(k)) = below(spatial_discretization_stencil % pattern % edge_head(k)) &
+               & + weights(k) * lower(1, spatial_discretization_stencil % pattern % edge_tail(k))
        end do
     end if
 
@@ -500,11 +500,11 @@ contains
   ! stages and arriving instant, each with components - are the
   ! moments, laid one after another, each a width of nodes times
   ! degrees, node by node within a moment; the couplings' relations
-  ! give the derived rows, their weights recomputed from the family in
+  ! give the time discretization stencil rows, their weights recomputed from the family in
   ! the relations' own tuple order; a component the graph holds as
   ! known is carried; the physics is evaluated at every moment of a
   ! difference family and at the stages of a stage family. The reach
-  ! is kept on the block, the level below laid on the moments. The
+  ! is kept on the block, the spatial discretization stencil laid on the moments. The
   ! block's steps are the graph node's own value. Invalid input: a
   ! held value for other than every carried component.
   !===================================================================!
@@ -523,7 +523,7 @@ contains
     type(coupling_reach), allocatable :: reach(:)
     integer , allocatable :: slice_of(:), member_of(:), members(:), at(:), carried(:)
     integer , allocatable :: r(:), c(:), table(:,:)
-    real(dp), allocatable :: dt(:), w(:), dt_weights(:), below_weights(:)
+    real(dp), allocatable :: dt(:), w(:), dt_weights(:), spatial_weights(:)
     logical , allocatable :: point(:)
     integer :: m, nd, width, n, s, k, j, g, moments, i, d, u, count, e, npts, ncar
     logical :: staged
@@ -563,7 +563,7 @@ contains
     count = moments * width
 
     ! the carried components: known in the graph, at every node; and
-    ! the level below, one coupling over the nodes shared by every
+    ! the spatial discretization stencil, one coupling over the nodes shared by every
     ! evaluated moment's physics component, read once
     below => null()
     allocate(carried(count), at(moments * m))
@@ -611,7 +611,7 @@ contains
        call block_reach_of(tower, block, n, nd, width, reach)
     end if
 
-    ! the derived rows: every coupling's edges weighted by the family
+    ! the time discretization stencil rows: every coupling's edges weighted by the family
     ! at the block's steps, replicated per node
     count = 0
     do k = 1, size(reach)
@@ -634,7 +634,7 @@ contains
        end associate
     end do
 
-    rows = block_residual(derived_constraints(r, c, w, moments * width, 'derived rows'), &
+    rows = block_residual(derived_constraints(r, c, w, moments * width, 'time discretization stencil'), &
          & physics, at(1:npts), moments * width, nd, scheme % primary_degree(nd - 1), &
          & carried(1:ncar), held)
 
@@ -643,14 +643,14 @@ contains
     call rows % placed_on(tower, block)
     call rows % with_reach(reach)
 
-    ! the level below, laid on every moment the physics sits at: the
+    ! the spatial discretization stencil, laid on every moment the physics sits at: the
     ! coupling's relation is the stencil's pattern, a node read into
     ! a node's row, its value the weights in that order
     if (associated(below)) then
        call tower % tuples_of(below, table)
-       call tower % value_of(below, below_weights)
-       call rows % spatial_laid(stencil(table(2, :), table(1, :), below_weights, &
-            & spread(0.0_dp, 1, m), 'level below'))
+       call tower % value_of(below, spatial_weights)
+       call rows % spatial_discretization_laid(stencil(table(2, :), table(1, :), spatial_weights, &
+            & spread(0.0_dp, 1, m), 'spatial discretization stencil'))
     end if
 
     ! where each instant lies: a slice's last moment

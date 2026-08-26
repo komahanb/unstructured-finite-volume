@@ -4,7 +4,7 @@
 ! A block over a field holds every node's components at every moment,
 ! node by node within a moment, laid out by the constructors in
 ! gti_march and gti_stage exactly as a single node's block is with
-! nodes = 1. What the field adds is the level below: a stencil over
+! nodes = 1. What the field adds is the spatial discretization stencil: a stencil over
 ! the nodes carrying minus the framework's diffusion operator, each
 ! row divided by its cell's area so that the flux balance becomes
 ! kappa times the laplacian. A block lays it on every moment it
@@ -45,19 +45,19 @@ module gti_field
   implicit none
 
   private
-  public :: node_operator, initial_field
+  public :: spatial_discretization_stencil_of, initial_field
   public :: against_the_laplacian, against_the_mode, export_instant
 
 contains
 
   !-------------------------------------------------------------------!
-  ! The level below as a stencil over the nodes: -kappa times the
+  ! The spatial discretization stencil as a stencil over the nodes: -kappa times the
   ! laplacian, one row per cell. A wall holding a value would enter
   ! as a source, which a block has no place for; the wall here holds
   ! no flux, and the block refuses a constant if one arrives.
   !-------------------------------------------------------------------!
 
-  function node_operator(space, kappa, degree) result(op)
+  function spatial_discretization_stencil_of(space, kappa, degree) result(op)
 
     type(room), intent(in) :: space
     real(dp)  , intent(in) :: kappa
@@ -81,28 +81,28 @@ contains
        w(e) = -lw(e) / space % volume(r(e))
     end do
 
-    op = stencil(r, c, w, held, 'level below')
+    op = stencil(r, c, w, held, 'spatial discretization stencil')
 
-  end function node_operator
+  end function spatial_discretization_stencil_of
 
   !-------------------------------------------------------------------!
   ! The state at the first instant: the components below the highest
   ! at every node - constant from the words given, or the rectangle's
   ! mode, or one plus half of it - and the highest solved from the
-  ! physics with the level below laid on, so that the state is
+  ! physics with the spatial discretization stencil laid on, so that the state is
   ! consistent with the equation rather than merely plausible. One
   ! node with no mesh is one node's equation. Invalid input: more
   ! components than lie below the highest; a mode with no rectangle.
   !-------------------------------------------------------------------!
 
-  function initial_field(physics, degrees, kind, initial_state, design, spatial, space, a, b) &
+  function initial_field(physics, degrees, kind, initial_state, design, spatial_discretization_stencil, space, a, b) &
        & result(q)
 
     type(expression)      , intent(in)           :: physics
     integer               , intent(in)           :: degrees
     character(len=*)      , intent(in)           :: kind, initial_state
     real(dp)              , intent(in)           :: design
-    type(stencil)         , intent(in), optional :: spatial
+    type(stencil)         , intent(in), optional :: spatial_discretization_stencil
     type(room)            , intent(in), optional :: space
     real(dp)              , intent(in), optional :: a, b
     real(dp), allocatable :: q(:)
@@ -135,14 +135,14 @@ contains
        lower(1, :) = mode_shape(space, a, b)
     case ('bump')
        ! one plus half the rectangle's mode, on any geometry: a field
-       ! that is not uniform, so the level below has something to do
+       ! that is not uniform, so the spatial discretization stencil has something to do
        if (.not. present(space)) error stop 'gti_field: the bump is a field over a mesh'
        lower(1, :) = 1.0_dp + 0.5_dp * mode_shape(space, a, b)
     case default
        error stop 'gti_field: an initial field is constant, the mode, or the bump'
     end select
 
-    q = consistent_states(physics, degrees, lower, design, spatial)
+    q = consistent_states(physics, degrees, lower, design, spatial_discretization_stencil)
 
   end function initial_field
 

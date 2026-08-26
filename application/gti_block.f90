@@ -8,7 +8,7 @@
 !                  stencil; linear in the state, so that stencil is
 !                  also their jacobian
 !      governing   the physics, at each evaluation point's primary
-!                  degree - the one degree no derived row determines
+!                  degree - the one degree no time discretization stencil row determines
 !      carried     the instants a block reaches back over, whose
 !                  components are known before it starts; their rows
 !                  are the identity less what they hold, so the block
@@ -77,7 +77,7 @@ module gti_block
   public :: block_residual, coupling_reach
 
   !-------------------------------------------------------------------!
-  ! THE REACH a derived row was built from, in the family's own
+  ! THE REACH a time discretization stencil row was built from, in the family's own
   ! numbering of vertices, kept so that the rows can be weighted again
   ! along a direction in the steps: which of the block's steps each
   ! vertex reads, each edge's tail and head vertex and degrees, and
@@ -93,17 +93,17 @@ module gti_block
 
   type, extends(operation) :: block_residual
 
-     type(stencil)                       , private :: derived
+     type(stencil)                       , private :: time_discretization_stencil
      type(expression)     , private :: physics
 
-     ! THE LEVEL BELOW. A stencil over the same unknowns coupling the
+     ! THE SPATIAL DISCRETIZATION STENCIL. A stencil over the same unknowns coupling the
      ! components of one moment across the nodes of a spatial mesh:
      ! the spatial operator, linear in the state and independent of
-     ! the design, laid on the block by spatial_laid. It adds to the
-     ! derived rows in the apply and in the tangent, and nowhere else,
+     ! the design, laid on the block by spatial_discretization_laid. It adds to the
+     ! time discretization stencil rows in the apply and in the tangent, and nowhere else,
      ! having no design partial and no partial above the first.
      ! Absent, the block is one node's.
-     type(stencil), allocatable, private :: spatial
+     type(stencil), allocatable, private :: spatial_discretization_stencil
      type(stored_directed_graph)         , private :: points
      integer , allocatable               , private :: at(:)
      integer , allocatable               , private :: carried(:)
@@ -118,7 +118,7 @@ module gti_block
      ! of the space level; its moment, the instant or stage whose
      ! values it is among - is read from the graph whenever asked and
      ! held nowhere else: a sweep reads its members and their coupling
-     ! from it, the level below is laid on the moments, the aggregates
+     ! from it, the spatial discretization stencil is laid on the moments, the aggregates
      ! a multigrid coarsens by are read off it. A member of a block
      ! keeps the block's node and the unknowns it was restricted to.
      type(graph)    , pointer, private :: node  => null()
@@ -141,7 +141,7 @@ module gti_block
      procedure :: moment_of
      procedure, private :: labels_of
      procedure :: num_nodes
-     procedure :: spatial_laid
+     procedure :: spatial_discretization_laid
      procedure :: aggregates
      procedure :: with_reach
      procedure :: rows_varied
@@ -165,14 +165,14 @@ module gti_block
 contains
 
   function create(derived, physics, at, unknowns, degrees, primary, carried, held, &
-       & spatial) result(this)
+       & spatial_discretization_stencil) result(this)
 
     type(stencil)         , intent(in) :: derived
     type(expression)      , intent(in) :: physics
     integer               , intent(in) :: at(:), unknowns, degrees, primary
     integer               , intent(in) :: carried(:)
     real(dp)              , intent(in) :: held(:)
-    type(stencil)         , intent(in), optional :: spatial
+    type(stencil)         , intent(in), optional :: spatial_discretization_stencil
     type(block_residual) :: this
 
     if (size(carried) /= size(held)) then
@@ -185,8 +185,8 @@ contains
        error stop 'gti_block: an evaluation point holds its degrees within the unknowns'
     end if
 
-    this % derived  = derived
-    if (present(spatial)) this % spatial = spatial
+    this % time_discretization_stencil  = derived
+    if (present(spatial_discretization_stencil)) this % spatial_discretization_stencil = spatial_discretization_stencil
     this % physics = physics
     this % at       = at
     this % unknowns = unknowns
@@ -492,11 +492,11 @@ contains
     call state_of(this, input_data, input_graph, x, state)
     call point_inputs(this, input_data, x, inputs)
 
-    call this % derived % apply(input_graph, [state], half)
+    call this % time_discretization_stencil % apply(input_graph, [state], half)
     call half % real_vector(r)
 
-    if (allocated(this % spatial)) then
-       call this % spatial % apply(input_graph, [state], half)
+    if (allocated(this % spatial_discretization_stencil)) then
+       call this % spatial_discretization_stencil % apply(input_graph, [state], half)
        call half % real_vector(coupled)
        r = r + coupled
     end if
@@ -660,7 +660,7 @@ contains
   end function num_nodes
 
   !-------------------------------------------------------------------!
-  ! THE LEVEL BELOW, laid on this block: a stencil over the nodes is
+  ! THE SPATIAL DISCRETIZATION STENCIL, laid on this block: a stencil over the nodes is
   ! placed at every moment the block evaluates its physics at, on the
   ! row the physics sits on, and reads the values of that moment. A
   ! moment with no evaluation point - an instant a stage block
@@ -670,10 +670,10 @@ contains
   ! has no place for; a moment holding some nodes and not others.
   !-------------------------------------------------------------------!
 
-  subroutine spatial_laid(this, spatial)
+  subroutine spatial_discretization_laid(this, spatial_discretization_stencil)
 
     class(block_residual), intent(inout) :: this
-    type(stencil)        , intent(in)    :: spatial
+    type(stencil)        , intent(in)    :: spatial_discretization_stencil
 
     integer , allocatable :: base(:,:), r(:), c(:), slice(:), node(:), moment(:)
     real(dp), allocatable :: lw(:), held(:), w(:)
@@ -682,14 +682,14 @@ contains
     call this % labels_of(slice, node, moment)
     nodes   = maxval(node)
     moments = maxval(moment)
-    if (spatial % pattern % num_vertices() /= nodes) then
-       error stop 'gti_block: the level below is a stencil over the nodes'
+    if (spatial_discretization_stencil % pattern % num_vertices() /= nodes) then
+       error stop 'gti_block: the spatial discretization stencil is a stencil over the nodes'
     end if
-    call spatial % constants % real_vector(held)
+    call spatial_discretization_stencil % constants % real_vector(held)
     if (any(abs(held) > 0.0_dp)) then
-       error stop 'gti_block: the level below carries no constant'
+       error stop 'gti_block: the spatial discretization stencil carries no constant'
     end if
-    call spatial % weights % real_vector(lw)
+    call spatial_discretization_stencil % weights % real_vector(lw)
 
     ! where each node's components lie at each moment with a point
     allocate(base(nodes, moments), source=-1)
@@ -698,13 +698,13 @@ contains
        base(node(u), moment(u)) = this % at(p)
     end do
 
-    ne = spatial % pattern % num_edges()
+    ne = spatial_discretization_stencil % pattern % num_edges()
     allocate(r(ne * moments), c(ne * moments), w(ne * moments))
     n = 0
     do g = 1, moments
        do e = 1, ne
-          rc = spatial % pattern % edge_head(e)
-          cc = spatial % pattern % edge_tail(e)
+          rc = spatial_discretization_stencil % pattern % edge_head(e)
+          cc = spatial_discretization_stencil % pattern % edge_tail(e)
           if (base(rc, g) < 0) cycle
           if (base(cc, g) < 0) then
              error stop 'gti_block: a moment holds every node or none'
@@ -716,13 +716,13 @@ contains
        end do
     end do
 
-    this % spatial = stencil(r(1:n), c(1:n), w(1:n), spread(0.0_dp, 1, this % unknowns), &
-         & 'spatial rows')
+    this % spatial_discretization_stencil = stencil(r(1:n), c(1:n), w(1:n), spread(0.0_dp, 1, this % unknowns), &
+         & 'spatial discretization stencil')
 
-  end subroutine spatial_laid
+  end subroutine spatial_discretization_laid
 
   !-------------------------------------------------------------------!
-  ! The reach the derived rows were built from, given to the block.
+  ! The reach the time discretization stencil rows were built from, given to the block.
   !-------------------------------------------------------------------!
 
   subroutine with_reach(this, reach)
@@ -735,7 +735,7 @@ contains
   end subroutine with_reach
 
   !-------------------------------------------------------------------!
-  ! The derived rows weighted again along a direction in the block's
+  ! The time discretization stencil rows weighted again along a direction in the block's
   ! steps - and a second, given - as the partial of the rows: the
   ! family's weight action carries its partials in the steps, and the
   ! determined component, entering with one, takes no part. Invalid
@@ -787,7 +787,7 @@ contains
        end associate
     end do
 
-    varied = stencil(r, c, w, spread(0.0_dp, 1, this % unknowns), 'varied rows')
+    varied = stencil(r, c, w, spread(0.0_dp, 1, this % unknowns), 'varied time discretization stencil')
 
   end function rows_varied
 
@@ -893,7 +893,7 @@ contains
     real(dp)             , intent(in) :: values(:)
     type(block_residual) :: sub
 
-    type(stencil) :: derived, spatial
+    type(stencil) :: derived, spatial_discretization_stencil
     integer , allocatable :: sub_of(:), at(:), carried(:)
     real(dp), allocatable :: held(:)
     integer :: e, p, d, inside, npts, ncar
@@ -927,12 +927,12 @@ contains
        held(ncar)    = this % held(e)
     end do
 
-    derived = this % derived % restricted(kept, values)
+    derived = this % time_discretization_stencil % restricted(kept, values)
 
-    if (allocated(this % spatial)) then
-       spatial = this % spatial % restricted(kept, values)
+    if (allocated(this % spatial_discretization_stencil)) then
+       spatial_discretization_stencil = this % spatial_discretization_stencil % restricted(kept, values)
        sub = block_residual(derived, this % physics, at(1:npts), size(kept), &
-            & this % degrees, this % primary, carried(1:ncar), held(1:ncar), spatial=spatial)
+            & this % degrees, this % primary, carried(1:ncar), held(1:ncar), spatial_discretization_stencil=spatial_discretization_stencil)
     else
        sub = block_residual(derived, this % physics, at(1:npts), size(kept), &
             & this % degrees, this % primary, carried(1:ncar), held(1:ncar))
@@ -950,7 +950,7 @@ contains
 
   !===================================================================!
   ! THE COMPILED TANGENT in the state. The block knows its own
-  ! structure: the derived rows and the spatial rows are stencils
+  ! structure: the time discretization stencil rows and the spatial rows are stencils
   ! already, and the physics is nodal, so its tangent at every point
   ! comes from one partial action per degree - a direction of one on
   ! that degree at every point at once, the points being independent.
@@ -991,13 +991,13 @@ contains
 
     ! room for the derived and spatial triples, the physics's degrees
     ! per point, and the carried identities
-    count = this % derived % pattern % num_edges() + npts * this % degrees + size(this % carried)
-    if (allocated(this % spatial)) count = count + this % spatial % pattern % num_edges()
+    count = this % time_discretization_stencil % pattern % num_edges() + npts * this % degrees + size(this % carried)
+    if (allocated(this % spatial_discretization_stencil)) count = count + this % spatial_discretization_stencil % pattern % num_edges()
     allocate(r(count), c(count), w(count))
     kept = 0
 
-    call stencil_triples(this % derived, is_carried, r, c, w, kept)
-    if (allocated(this % spatial)) call stencil_triples(this % spatial, is_carried, r, c, w, kept)
+    call stencil_triples(this % time_discretization_stencil, is_carried, r, c, w, kept)
+    if (allocated(this % spatial_discretization_stencil)) call stencil_triples(this % spatial_discretization_stencil, is_carried, r, c, w, kept)
 
     allocate(v(npts * this % degrees))
     do d = 0, this % degrees - 1
@@ -1076,7 +1076,7 @@ contains
     end if
     call state_of(this, input_data, input_graph, x, state)
 
-    ! THE SECOND PARTIAL. The derived rows, the level below and the
+    ! THE SECOND PARTIAL. The time discretization stencil rows, the spatial discretization stencil and the
     ! carried rows are linear in the state and read no design, so
     ! only the physics has one: its second partial at every point,
     ! along both directions, on the row its primary degree holds.
@@ -1123,13 +1123,13 @@ contains
     class(field), allocatable :: half
     real(dp), allocatable :: coupled(:)
 
-    call this % derived % partial_action(input_graph, [state], &
-         & [variations(1) % with_argument(this % derived % argument(1))], half)
+    call this % time_discretization_stencil % partial_action(input_graph, [state], &
+         & [variations(1) % with_argument(this % time_discretization_stencil % argument(1))], half)
     call half % real_vector(r)
 
-    if (allocated(this % spatial)) then
-       call this % spatial % partial_action(input_graph, [state], &
-            & [variations(1) % with_argument(this % spatial % argument(1))], half)
+    if (allocated(this % spatial_discretization_stencil)) then
+       call this % spatial_discretization_stencil % partial_action(input_graph, [state], &
+            & [variations(1) % with_argument(this % spatial_discretization_stencil % argument(1))], half)
        call half % real_vector(coupled)
        r = r + coupled
     end if
@@ -1224,13 +1224,13 @@ contains
 
   !===================================================================!
   ! THE ORDER A LEVEL IS SWEPT IN, derived and not declared. Swept by
-  ! instants, the members are coupled by the derived rows - a row at
+  ! instants, the members are coupled by the time discretization stencil rows - a row at
   ! one instant reading a point at another - and that coupling is
   ! acyclic for any march, since every scheme reads backward; its
   ! loop is the sweep. The transposed block's pattern is the same
   ! graph read the other way, so it sweeps from the last instant by
   ! the same rule and no one says so. Swept by nodes, the
-  ! coupling is the level below's and symmetric, so no node is before
+  ! coupling is the spatial discretization stencil's and symmetric, so no node is before
   ! another and they are swept as they lie.
   !===================================================================!
 
@@ -1253,16 +1253,16 @@ contains
        return
     end if
 
-    ! the time level's coupling: a derived row at one member that
+    ! the time level's coupling: a time discretization stencil row at one member that
     ! reads an unknown at another, which for every family looks one way
     label   = slice
     members = maxval(label)
-    ne      = this % derived % pattern % num_edges()
+    ne      = this % time_discretization_stencil % pattern % num_edges()
     allocate(table(2, ne))
     n = 0
     do e = 1, ne
-       t = label(this % derived % pattern % edge_tail(e))
-       h = label(this % derived % pattern % edge_head(e))
+       t = label(this % time_discretization_stencil % pattern % edge_tail(e))
+       h = label(this % time_discretization_stencil % pattern % edge_head(e))
        if (t == h) cycle
        n = n + 1
        table(:, n) = [t, h]

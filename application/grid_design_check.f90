@@ -13,22 +13,23 @@
 !                  march is known to a relative tolerance tau, so the
 !                  step is tau^(1/3) and the agreement tau^(2/3)
 !
-! and then the second derivatives by the reverse route at order two,
-! one hessian per functional, checked three ways: the table is
-! symmetric in theory and is not made so; its parameter entry is the
-! expansion's second order; and a central difference of the first
-! derivatives, themselves known to tau, gives the rows to tau^(2/3).
-! Then the third derivatives by the reverse route at order three,
-! checked the same three ways: symmetric under every permutation of
-! the three indices, the parameter entry the expansion's third order,
-! and central differences of the hessian giving the rows to tau^(2/3).
+! and then the derivatives of every order from two to the order asked
+! for, by the reverse route, one table per order with one column per
+! multiset of designs, checked three ways at every order: the entries
+! of one multiset - one per distinct design of the multiset against the rest -
+! agree in theory and are not made to; the entry of the parameter
+! alone is the expansion's coefficient of that order; and a central
+! difference of the table one order below, in a weight or in the
+! parameter, gives the entries holding that design to tau^(2/3). At
+! order one the general recursion is set beside the two routes
+! written for that order alone.
 !
 ! The families read three instants back, so a startup block marches
 ! the first three from the given state, on steps split four ways;
 ! it is part of the chain, and its own dependence on the weights and
 ! the parameter is carried through the junction like any other.
 !
-!      ./grid_design_check [tolerance]
+!      ./grid_design_check [tolerance] [order]
 program grid_design_check
 
   use util_precision        , only : dp
@@ -41,8 +42,8 @@ program grid_design_check
   use gti_march             , only : set_stopping, consistent_state, imbalance
   use gti_chain             , only : chain_block, march_chain, chain_expansion, chain_system, &
        & chain_systems, chain_by_tangent, chain_by_adjoint, functional_holder, one_functional, &
-       & chain_hessian, chain_third, asymmetry
-  use gti_sweeps            , only : route_of, forward_route
+       & chain_derivative, asymmetry, multiset_count, multiset_rank, multiset_of
+  use gti_sweeps            , only : route_of, forward_route, reverse_route
 
   implicit none
 
@@ -56,16 +57,18 @@ program grid_design_check
   type(expansion), allocatable, target :: tower
   type(chain_system), allocatable :: systems(:)
   real(dp), allocatable :: p(:), dt(:), t(:), v(:,:), f(:,:), tangent(:,:), adjoint(:,:)
-  real(dp), allocatable :: plus(:,:), minus(:,:), q0(:), hessian(:,:,:), dplus(:,:), dminus(:,:)
-  real(dp), allocatable :: third(:,:,:,:), hplus(:,:,:), hminus(:,:,:)
-  real(dp) :: by_class(0:3)
+  real(dp), allocatable :: plus(:,:), minus(:,:), q0(:), table(:,:), entries(:,:,:)
+  real(dp), allocatable :: below(:,:), above(:,:), by_class(:)
   real(dp) :: tau, delta, achieved, worst
   character(len=32) :: argument
-  integer :: k, j, i, route
+  integer :: k, j, i, route, order, max_order, nd
 
-  tau = 1.0e-12_dp
+  tau       = 1.0e-12_dp
+  max_order = 3
   call get_command_argument(1, argument)
   if (len_trim(argument) > 0) read(argument, *) tau
+  call get_command_argument(2, argument)
+  if (len_trim(argument) > 0) read(argument, *) max_order
   call set_stopping(tau, relative, by_rate, 100)
   delta = tau ** (1.0_dp / 3.0_dp)
 
@@ -118,60 +121,54 @@ program grid_design_check
        & maxval(abs((plus(0, :) - minus(0, :)) / (2.0_dp * delta) - adjoint(:, 1)) / &
        &        max(1.0_dp, abs(adjoint(:, 1))))
 
-  ! the second derivatives: the hessian of every functional, by the
-  ! reverse route at order two
-  call marched(p, design, f, 2)
-  call chain_hessian(chain, tower, systems, functionals, degrees, hessian)
-  write(*,'(a)') ' '
-  write(*,'(a,i0,a,i0,a,i0)') ' second derivatives by the reverse route: hessians ', &
-       & size(hessian, 1), ' of ', size(hessian, 2), ' x ', size(hessian, 3)
-  do i = 1, 2
-     write(*,'(a,i0,a,es10.2,a,es10.2)') ' functional ', i, &
-          & ':  symmetry, relative ', maxval(abs(hessian(i, :, :) - transpose(hessian(i, :, :)))) &
-          & / maxval(abs(hessian(i, :, :))), &
-          & '   parameter entry against the expansion ', abs(hessian(i, 1, 1) - f(2, i)) / abs(f(2, i))
-  end do
-  worst = 0.0_dp
-  do k = 1, size(checked)
-     j = checked(k)
-     call differenced(p + delta * unit(j), design, dplus)
-     call differenced(p - delta * unit(j), design, dminus)
-     worst = max(worst, maxval(abs((dplus - dminus) / (2.0_dp * delta) - hessian(:, 1 + j, :)) &
-          & / max(1.0_dp, maxval(abs(hessian)))))
-  end do
-  call differenced(p, design + delta, dplus)
-  call differenced(p, design - delta, dminus)
-  worst = max(worst, maxval(abs((dplus - dminus) / (2.0_dp * delta) - hessian(:, 1, :)) &
-       & / max(1.0_dp, maxval(abs(hessian)))))
-  write(*,'(a,es10.2)') ' differenced first derivatives against the hessian rows, worst ', worst
-
-  ! the third derivatives: one table per functional, by the reverse
-  ! route at order three
-  call marched(p, design, f, 3)
+  ! order one by the general recursion, both routes, against the two
+  ! routes written for that order, at the design the tables were
+  ! formed at
+  nd = size(tangent, 2)
+  call marched(p, design, f)
   call chain_systems(chain, tower, functionals, degrees, systems)
-  call chain_third(chain, tower, systems, functionals, degrees, third)
-  write(*,'(a)') ' '
-  write(*,'(a,i0,a,i0,a,i0,a,i0)') ' third derivatives by the reverse route: tables ', &
-       & size(third, 1), ' of ', size(third, 2), ' x ', size(third, 3), ' x ', size(third, 4)
-  do i = 1, 2
-     write(*,'(a,i0,a,es10.2,a,es10.2)') ' functional ', i, &
-          & ':  symmetry under every permutation, relative ', asymmetry(third(i, :, :, :)), &
-          & '   parameter entry against the expansion ', abs(third(i, 1, 1, 1) - f(3, i)) / abs(f(3, i))
+  call chain_derivative(chain, tower, systems, functionals, degrees, 1, forward_route, table)
+  write(*,'(a,es10.2)') ' order one by the recursion, forward, against the tangent route   ', &
+       & maxval(abs(table - tangent)) / maxval(abs(tangent))
+  call chain_derivative(chain, tower, systems, functionals, degrees, 1, reverse_route, table)
+  write(*,'(a,es10.2)') ' order one by the recursion, reverse, against the adjoint route   ', &
+       & maxval(abs(table - adjoint)) / maxval(abs(adjoint))
+
+  ! every order above one by the reverse route
+  do order = 2, max_order
+     call marched(p, design, f, order)
+     call chain_systems(chain, tower, functionals, degrees, systems)
+     call chain_derivative(chain, tower, systems, functionals, degrees, order, reverse_route, &
+          & table, entries=entries)
+     write(*,'(a)') ' '
+     write(*,'(a,i0,a,i0,a,i0,a,i0)') ' derivatives of order ', order, ' by the reverse route: ', &
+          & size(table, 1), ' tables of ', size(table, 2), ' multisets over ', nd
+     do i = 1, 2
+        write(*,'(a,i0,a,es10.2,a,es10.2)') ' functional ', i, &
+             & ':  departure among the entries of a multiset, relative ', &
+             & asymmetry(entries(i:i, :, :), nd, order), &
+             & '   parameter entry against the expansion ', &
+             & abs(table(i, 1) - f(order, i)) / abs(f(order, i))
+     end do
+     ! central differences of the table one order below, in three
+     ! weights and in the parameter, against the entries holding that
+     ! design, the departure by the count of parameter indices among
+     ! the order's
+     allocate(by_class(0:order), source=0.0_dp)
+     do k = 1, size(checked)
+        j = checked(k)
+        call differenced_table(p + delta * unit(j), design, order - 1, above)
+        call differenced_table(p - delta * unit(j), design, order - 1, below)
+        call classed((above - below) / (2.0_dp * delta), 1 + j)
+     end do
+     call differenced_table(p, design + delta, order - 1, above)
+     call differenced_table(p, design - delta, order - 1, below)
+     call classed((above - below) / (2.0_dp * delta), 1)
+     write(*,'(a,i0,a,*(es10.2))') ' differenced tables of order ', order - 1, &
+          & ' against the entries, worst by parameter count from ', &
+          & by_class(order:0:-1) / max(1.0_dp, maxval(abs(table)))
+     deallocate(by_class)
   end do
-  ! the departure by the number of parameter indices among the three:
-  ! three, two, one, none
-  by_class = 0.0_dp
-  do k = 1, size(checked)
-     j = checked(k)
-     call differenced_hessian(p + delta * unit(j), design, hplus)
-     call differenced_hessian(p - delta * unit(j), design, hminus)
-     call classed((hplus - hminus) / (2.0_dp * delta) - third(:, 1 + j, :, :), 0)
-  end do
-  call differenced_hessian(p, design + delta, hplus)
-  call differenced_hessian(p, design - delta, hminus)
-  call classed((hplus - hminus) / (2.0_dp * delta) - third(:, 1, :, :), 1)
-  write(*,'(a,4es10.2)') ' differenced hessians against the third-derivative rows, worst by parameter count 3,2,1,0 ', &
-       & by_class(3:0:-1) / max(1.0_dp, maxval(abs(third)))
 
 contains
 
@@ -194,34 +191,37 @@ contains
 
   end subroutine marched
 
-  ! the hessians at other weights or parameter
-  subroutine differenced_hessian(weights, nu, h)
+  ! the table of one order at other weights or parameter, by the
+  ! reverse route
+  subroutine differenced_table(weights, nu, order, t)
 
     real(dp), intent(in) :: weights(:), nu
-    real(dp), allocatable, intent(out) :: h(:,:,:)
+    integer , intent(in) :: order
+    real(dp), allocatable, intent(out) :: t(:,:)
 
     real(dp), allocatable :: f(:,:)
 
     call marched(weights, nu, f)
     call chain_systems(chain, tower, functionals, degrees, systems)
-    call chain_hessian(chain, tower, systems, functionals, degrees, h)
+    call chain_derivative(chain, tower, systems, functionals, degrees, order, reverse_route, t)
 
-  end subroutine differenced_hessian
+  end subroutine differenced_table
 
-  ! the largest departure in each class: the count of parameter indices
-  ! among the differenced one (given) and the two of the hessian
-  subroutine classed(e, given)
+  ! the departure of a differenced table in design l from the entries
+  ! holding l, by the count of the parameter among the order's designs
+  subroutine classed(e, l)
 
-    real(dp), intent(in) :: e(:,:,:)
-    integer , intent(in) :: given
+    real(dp), intent(in) :: e(:,:)
+    integer , intent(in) :: l
 
-    integer :: a, b, c
+    integer, allocatable :: s(:), with(:)
+    integer :: rank, c
 
-    do a = 1, size(e, 2)
-       do b = 1, size(e, 3)
-          c = given + merge(1, 0, a == 1) + merge(1, 0, b == 1)
-          by_class(c) = max(by_class(c), maxval(abs(e(:, a, b))))
-       end do
+    do rank = 1, size(e, 2)
+       s    = multiset_of(rank, order - 1, nd)
+       with = [s(1:count(s < l)), l, s(count(s < l) + 1:)]
+       c    = count(with == 1)
+       by_class(c) = max(by_class(c), maxval(abs(e(:, rank) - table(:, multiset_rank(with, nd)))))
     end do
 
   end subroutine classed

@@ -16,12 +16,14 @@ module operation_coupling
   use field_calculus      , only : field
   use field_stored        , only : stored_field
   use view_directed_stored, only : stored_directed_graph
-  use operation_action    , only : operation, variation
+  use operation_action    , only : operation
+  use operation_edge_function, only : edge_function
+  use util_derivative_terms, only : derivative_terms, coefficient
 
   implicit none
 
   private
-  public :: coupling_inputs, weights_of, weights_varied
+  public :: coupling_inputs, weights_of, weights_terms
 
 contains
 
@@ -78,60 +80,63 @@ contains
   end subroutine weights_of
 
   !===================================================================!
-  ! The partial of an action's weights along a direction in the
-  ! steps, read out as a vector. The action carries its partials in
-  ! the steps, so this is the exact derivative and not a difference.
+  ! Every coefficient of an action's weights over n directions in the
+  ! steps, the steps seeded subset by subset: seeds(k, m) is the total
+  ! derivative of step k along the subset with mask m, for m = 1 to
+  ! 2^n - 1, and table(e, m) comes out as the total derivative of edge
+  ! e's weight along that subset, the value at m = 0. Singleton seeds
+  ! alone give the mixed partials; the total derivatives of the steps
+  ! along subsets of designs give the weights' total derivatives along
+  ! the same, every set partition included by the product rule. The
+  ! action carries the weights over derivative terms, so every number
+  ! is exact. Invalid input: a seed table of other than one row per
+  ! vertex and 2^n - 1 columns, or an action that is not an edge
+  ! function.
   !===================================================================!
 
-  subroutine weights_varied(action, num_vertices, tails, heads, steps, along, &
-       & source_degree, determines, dw, along2, along3)
+  subroutine weights_terms(action, num_vertices, tails, heads, steps, seeds, &
+       & source_degree, determines, table)
 
     class(operation), intent(in) :: action
     integer         , intent(in) :: num_vertices
     integer         , intent(in) :: tails(:), heads(:)
-    real(dp)        , intent(in) :: steps(:), along(:)
+    real(dp)        , intent(in) :: steps(:), seeds(:,:)
     integer         , intent(in) :: source_degree(:), determines(:)
-    real(dp), allocatable, intent(out) :: dw(:)
-    ! a second and a third direction: the mixed partial along all given
-    real(dp)        , intent(in), optional :: along2(:), along3(:)
+    real(dp), allocatable, intent(out) :: table(:,:)
 
-    type(stored_directed_graph)     :: edges
-    type(stored_field), allocatable :: inputs(:)
-    type(stored_field)              :: direction(3)
-    type(variation)   , allocatable :: variations(:)
-    class(field)      , allocatable :: out
-    integer :: n, k
+    type(derivative_terms), allocatable :: dt(:)
+    type(derivative_terms) :: c
+    integer :: n, k, m, e
 
-    if (size(along) /= num_vertices) then
-       error stop 'operation_coupling: one direction entry per vertex'
+    n = 0
+    do while (2**n - 1 < size(seeds, 2))
+       n = n + 1
+    end do
+    if (size(seeds, 1) /= num_vertices .or. size(seeds, 2) /= 2**n - 1) then
+       error stop 'operation_coupling: one seed row per vertex, one column per nonempty subset'
     end if
 
-    call coupling_inputs(num_vertices, tails, heads, steps, source_degree, determines, &
-         & edges, inputs)
-    n = 1
-    direction(1) = stored_field('along', edges % vertex_set(), num_vertices)
-    call direction(1) % set_real_vector(along)
-    if (present(along2)) then
-       if (size(along2) /= num_vertices) then
-          error stop 'operation_coupling: one direction entry per vertex'
-       end if
-       n = 2
-       direction(2) = stored_field('along', edges % vertex_set(), num_vertices)
-       call direction(2) % set_real_vector(along2)
-    end if
-    if (present(along3)) then
-       if (size(along3) /= num_vertices .or. n /= 2) then
-          error stop 'operation_coupling: a third direction follows a second, one entry per vertex'
-       end if
-       n = 3
-       direction(3) = stored_field('along', edges % vertex_set(), num_vertices)
-       call direction(3) % set_real_vector(along3)
-    end if
-    allocate(variations(n))
-    variations = [(variation(action % argument(1), direction(k)), k = 1, n)]
-    call action % partial_action(edges, inputs, variations, out)
-    call out % real_vector(dw)
+    allocate(dt(num_vertices))
+    do k = 1, num_vertices
+       dt(k) = derivative_terms(steps(k), n)
+       do m = 1, 2**n - 1
+          call dt(k) % set_coefficient(m, seeds(k, m))
+       end do
+    end do
 
-  end subroutine weights_varied
+    allocate(table(size(tails), 0:2**n - 1))
+    select type (action)
+    class is (edge_function)
+       do e = 1, size(tails)
+          c = action % edge_coefficient(dt, tails(e), heads(e), source_degree(e), determines(e))
+          do m = 0, 2**n - 1
+             table(e, m) = coefficient(c, m)
+          end do
+       end do
+    class default
+       error stop 'operation_coupling: the weights are an edge function of the steps'
+    end select
+
+  end subroutine weights_terms
 
 end module operation_coupling

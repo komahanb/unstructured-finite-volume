@@ -67,7 +67,7 @@ module gti_block
   use operation_stencil    , only : combine_triples, stencil
   use operation_family     , only : family
   use operation_weight     , only : scheme_weight
-  use operation_coupling   , only : weights_varied
+  use operation_coupling   , only : weights_terms
   use operation_expression    , only : expression, constant, stated
   use view_directed        , only : forward
 
@@ -144,7 +144,7 @@ module gti_block
      procedure :: spatial_discretization_laid
      procedure :: aggregates
      procedure :: with_reach
-     procedure :: rows_varied
+     procedure :: rows_terms
      procedure :: linear_block
      procedure :: member_order
      procedure :: num_unknowns
@@ -735,23 +735,27 @@ contains
   end subroutine with_reach
 
   !-------------------------------------------------------------------!
-  ! The time discretization stencil rows weighted again along a direction in the block's
-  ! steps - and a second, given - as the partial of the rows: the
-  ! family's weight action carries its partials in the steps, and the
+  ! The time discretization stencil rows' weights and every total
+  ! derivative of the weights along subsets of n directions in the block's
+  ! steps, the steps seeded subset by subset (seeds(k, m) the total
+  ! derivative of step k along the subset with mask m): one triple
+  ! per node per edge of every reach, the row and column among the
+  ! unknowns, and w(:, m) the weight's total derivative along mask m,
+  ! the weight at m = 0, signed as the rows are. The family's
+  ! weight action carries the partials in the steps, and the
   ! determined component, entering with one, takes no part. Invalid
   ! input: a block built without its reach.
   !-------------------------------------------------------------------!
 
-  function rows_varied(this, scheme, dt, along, along2, along3) result(varied)
+  subroutine rows_terms(this, scheme, dt, seeds, r, c, w)
 
     class(block_residual), intent(in) :: this
     class(family)        , intent(in) :: scheme
-    real(dp)             , intent(in) :: dt(:), along(:)
-    real(dp)             , intent(in), optional :: along2(:), along3(:)
-    type(stencil) :: varied
+    real(dp)             , intent(in) :: dt(:), seeds(:,:)
+    integer , allocatable, intent(out) :: r(:), c(:)
+    real(dp), allocatable, intent(out) :: w(:,:)
 
-    integer , allocatable :: r(:), c(:)
-    real(dp), allocatable :: w(:), dw(:)
+    real(dp), allocatable :: table(:,:)
     integer :: k, e, i, nodes, count, n
 
     if (.not. allocated(this % reach)) then
@@ -762,39 +766,26 @@ contains
     do k = 1, size(this % reach)
        count = count + size(this % reach(k) % tails) * nodes
     end do
-    allocate(r(count), c(count), w(count))
+    allocate(r(count), c(count), w(count, 0:size(seeds, 2)))
 
     n = 0
     do k = 1, size(this % reach)
        associate (reach => this % reach(k))
-         if (present(along3)) then
-            call weights_varied(scheme_weight(scheme), reach % vertices, reach % tails, &
-                 & reach % heads, dt(reach % step_of), along(reach % step_of), &
-                 & reach % source_degree, reach % determines, dw, along2(reach % step_of), &
-                 & along3(reach % step_of))
-         else if (present(along2)) then
-            call weights_varied(scheme_weight(scheme), reach % vertices, reach % tails, &
-                 & reach % heads, dt(reach % step_of), along(reach % step_of), &
-                 & reach % source_degree, reach % determines, dw, along2(reach % step_of))
-         else
-            call weights_varied(scheme_weight(scheme), reach % vertices, reach % tails, &
-                 & reach % heads, dt(reach % step_of), along(reach % step_of), &
-                 & reach % source_degree, reach % determines, dw)
-         end if
+         call weights_terms(scheme_weight(scheme), reach % vertices, reach % tails, &
+              & reach % heads, dt(reach % step_of), seeds(reach % step_of, :), &
+              & reach % source_degree, reach % determines, table)
          do i = 1, nodes
             do e = 1, size(reach % tails)
-               n    = n + 1
-               r(n) = reach % row(e)    + (i - 1) * this % degrees
-               c(n) = reach % column(e) + (i - 1) * this % degrees
-               w(n) = -dw(e)
+               n       = n + 1
+               r(n)    = reach % row(e)    + (i - 1) * this % degrees
+               c(n)    = reach % column(e) + (i - 1) * this % degrees
+               w(n, :) = -table(e, :)
             end do
          end do
        end associate
     end do
 
-    varied = stencil(r, c, w, spread(0.0_dp, 1, this % unknowns), 'varied time discretization stencil')
-
-  end function rows_varied
+  end subroutine rows_terms
 
   !-------------------------------------------------------------------!
   ! The aggregates a multigrid coarsens this block by: the coarse

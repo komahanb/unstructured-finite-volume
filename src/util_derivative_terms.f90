@@ -32,6 +32,18 @@
 ! The convention is derivatives, not derivatives over factorials: a
 ! subset of size k holds the k-th derivative itself.
 !
+!             SUBSET SEEDING
+!
+! Set the coefficient of one subset to one number. A quantity whose
+! total derivative along every subset of n design directions is known
+! - the state of a system solved for the designs, whose tangents are
+! those derivatives - is seeded subset by subset, and the coefficient
+! of a subset of anything built from the quantity is then the total derivative
+! along that subset: the sum over the set partitions of the subset
+! that the chain rule asks for is what the product rule on subsets
+! computes, so no partition is listed. Symmetric seeding is the case
+! of one direction repeated.
+!
 !             THE FOUR RULES
 !
 !      sum        coefficient by coefficient
@@ -102,6 +114,7 @@ module util_derivative_terms
 
      procedure :: set_direction
      procedure :: set_symmetric
+     procedure :: set_coefficient
      procedure :: num_directions
 
   end type derivative_terms
@@ -250,6 +263,27 @@ contains
     end do
 
   end subroutine set_symmetric
+
+  !===================================================================!
+  ! Seed the coefficient of the subset with mask m: the total
+  ! derivative along the directions m holds. A mask outside 1 to
+  ! 2^n - 1 stops the program: the value is not a derivative, and no
+  ! other subset exists.
+  !===================================================================!
+
+  pure subroutine set_coefficient(this, m, x)
+
+    class(derivative_terms), intent(inout) :: this
+    integer                , intent(in)    :: m
+    real(dp)               , intent(in)    :: x
+
+    if (m < 1 .or. m >= size(this % terms)) then
+       error stop 'util_derivative_terms: the mask names a nonempty subset of the directions'
+    end if
+
+    this % terms(m + 1) = x
+
+  end subroutine set_coefficient
 
   pure real(dp) function value(x)
 

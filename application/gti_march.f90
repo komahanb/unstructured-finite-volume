@@ -26,7 +26,7 @@ module gti_march
 
   use util_precision  , only : dp, least_kind_for
   use iso_fortran_env , only : real128
-  use operation_coupling      , only : weights_of, weights_varied
+  use operation_coupling      , only : weights_of
   use gti_configuration       , only : refuse_unknown
   use operation_weight        , only : scheme_weight
   use view_directed_stored    , only : stored_directed_graph

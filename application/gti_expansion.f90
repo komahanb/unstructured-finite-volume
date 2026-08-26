@@ -138,8 +138,7 @@ module gti_expansion
      procedure :: design_extent
      procedure :: design_value
      procedure :: step_partials
-     procedure :: step_second_partials
-     procedure :: step_third_partials
+     procedure :: step_partial_along
      procedure, private :: weights_of_steps
      procedure, private :: refuse_assignment
      generic :: assignment(=) => refuse_assignment
@@ -450,111 +449,64 @@ contains
   end function rule
 
   !===================================================================!
-  ! The partial of every step of the horizon in every weight, one
-  ! column per weight, and the mixed second partial in two, from the
-  ! grid's own partial action at the weights the tower holds: exact,
-  ! and carrying the normalisation that keeps the steps summing to
-  ! the duration. Invalid input: a tower whose steps are not designs.
+  ! The steps' partials in the weights of the designed grid: the
+  ! total derivative of every step along the weights listed, one
+  ! variation per entry so that a repeated weight is a repeated
+  ! derivative, exact from the grid's own derivative terms; and the
+  ! first partials as a matrix, one column per weight.
   !===================================================================!
+
+  subroutine step_partial_along(this, weights_varied, u)
+
+    class(expansion)     , intent(in)  :: this
+    integer              , intent(in)  :: weights_varied(:)
+    real(dp), allocatable, intent(out) :: u(:)
+
+    type(stored_directed_graph) :: instants
+    type(stored_field) :: knobs
+    type(stored_field), allocatable :: direction(:)
+    type(variation)   , allocatable :: variations(:)
+    class(field), allocatable :: out
+    real(dp), allocatable :: weights(:), e(:)
+    integer :: n, i
+
+    call this % weights_of_steps(weights)
+    if (any(weights_varied < 1) .or. any(weights_varied > size(weights))) then
+       error stop 'gti_expansion: every weight varied is one of the grid''s'
+    end if
+    n = size(weights) + 1
+    instants = stored_directed_graph(n, tails=[integer ::], heads=[integer ::])
+    knobs    = stored_field('design', instants % vertex_set(), size(weights))
+    call knobs % set_real_vector(weights)
+    allocate(e(size(weights)), direction(size(weights_varied)), variations(size(weights_varied)))
+    do i = 1, size(weights_varied)
+       e = 0.0_dp
+       e(weights_varied(i)) = 1.0_dp
+       direction(i) = stored_field('direction', instants % vertex_set(), size(weights))
+       call direction(i) % set_real_vector(e)
+       variations(i) = variation(this % steps_kept % argument(1), direction(i))
+    end do
+    call this % steps_kept % partial_action(instants, [knobs], variations, out)
+    call out % real_vector(u)
+
+  end subroutine step_partial_along
 
   subroutine step_partials(this, v)
 
     class(expansion)     , intent(in)  :: this
     real(dp), allocatable, intent(out) :: v(:,:)
 
-    type(stored_directed_graph) :: instants
-    type(stored_field) :: knobs, direction
-    class(field), allocatable :: out
-    real(dp), allocatable :: weights(:), e(:), column(:)
-    integer :: n, j
+    real(dp), allocatable :: weights(:), column(:)
+    integer :: j
 
     call this % weights_of_steps(weights)
-    n = size(weights) + 1
-    instants = stored_directed_graph(n, tails=[integer ::], heads=[integer ::])
-    knobs    = stored_field('design', instants % vertex_set(), size(weights))
-    call knobs % set_real_vector(weights)
-
-    allocate(v(n, size(weights)), e(size(weights)))
+    allocate(v(size(weights) + 1, size(weights)))
     do j = 1, size(weights)
-       e    = 0.0_dp
-       e(j) = 1.0_dp
-       direction = stored_field('direction', instants % vertex_set(), size(weights))
-       call direction % set_real_vector(e)
-       call this % steps_kept % partial_action(instants, [knobs], &
-            & [variation(this % steps_kept % argument(1), direction)], out)
-       call out % real_vector(column)
+       call this % step_partial_along([j], column)
        v(:, j) = column
     end do
 
   end subroutine step_partials
-
-  subroutine step_second_partials(this, j, k, u)
-
-    class(expansion)     , intent(in)  :: this
-    integer              , intent(in)  :: j, k
-    real(dp), allocatable, intent(out) :: u(:)
-
-    type(stored_directed_graph) :: instants
-    type(stored_field) :: knobs, first, second
-    class(field), allocatable :: out
-    real(dp), allocatable :: weights(:), e(:)
-    integer :: n
-
-    call this % weights_of_steps(weights)
-    n = size(weights) + 1
-    instants = stored_directed_graph(n, tails=[integer ::], heads=[integer ::])
-    knobs    = stored_field('design', instants % vertex_set(), size(weights))
-    call knobs % set_real_vector(weights)
-
-    allocate(e(size(weights)))
-    e = 0.0_dp
-    e(j) = 1.0_dp
-    first = stored_field('direction', instants % vertex_set(), size(weights))
-    call first % set_real_vector(e)
-    e = 0.0_dp
-    e(k) = 1.0_dp
-    second = stored_field('direction', instants % vertex_set(), size(weights))
-    call second % set_real_vector(e)
-    call this % steps_kept % partial_action(instants, [knobs], &
-         & [variation(this % steps_kept % argument(1), first), &
-         &  variation(this % steps_kept % argument(1), second)], out)
-    call out % real_vector(u)
-
-  end subroutine step_second_partials
-
-  subroutine step_third_partials(this, j, k, l, u)
-
-    class(expansion)     , intent(in)  :: this
-    integer              , intent(in)  :: j, k, l
-    real(dp), allocatable, intent(out) :: u(:)
-
-    type(stored_directed_graph) :: instants
-    type(stored_field) :: knobs, direction(3)
-    class(field), allocatable :: out
-    real(dp), allocatable :: weights(:), e(:)
-    integer :: n, i, which(3)
-
-    call this % weights_of_steps(weights)
-    n = size(weights) + 1
-    instants = stored_directed_graph(n, tails=[integer ::], heads=[integer ::])
-    knobs    = stored_field('design', instants % vertex_set(), size(weights))
-    call knobs % set_real_vector(weights)
-
-    which = [j, k, l]
-    allocate(e(size(weights)))
-    do i = 1, 3
-       e = 0.0_dp
-       e(which(i)) = 1.0_dp
-       direction(i) = stored_field('direction', instants % vertex_set(), size(weights))
-       call direction(i) % set_real_vector(e)
-    end do
-    call this % steps_kept % partial_action(instants, [knobs], &
-         & [variation(this % steps_kept % argument(1), direction(1)), &
-         &  variation(this % steps_kept % argument(1), direction(2)), &
-         &  variation(this % steps_kept % argument(1), direction(3))], out)
-    call out % real_vector(u)
-
-  end subroutine step_third_partials
 
   subroutine weights_of_steps(this, weights)
 

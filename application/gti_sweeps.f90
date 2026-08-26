@@ -56,10 +56,9 @@ module gti_sweeps
   implicit none
 
   private
-  public :: functional_of, functional_gradient, functional_design_partial, varied_by, varied_along
-  public :: functional_partial_along
+  public :: functional_of, functional_gradient, functional_design_partial
   public :: design_partial, jacobian_of
-  public :: forward_route, reverse_route, route_of, route_substitutions
+  public :: forward_route, reverse_route, route_of, route_substitutions, choose
 
   integer, parameter :: forward_route = 1
   integer, parameter :: reverse_route = 2
@@ -414,114 +413,8 @@ contains
 
   end subroutine functional_design_partial
 
-  !===================================================================!
-  ! An action's mixed partial along any number of variations, each
-  ! naming the argument varied and the direction over one domain,
-  ! read out as a vector. Invalid input: no variation.
-  !===================================================================!
 
-  subroutine varied_along(action, on, inputs, which, domain, v, y, lengths)
 
-    class(operation)     , intent(in) :: action
-    class(directed_graph), intent(in) :: on
-    type(stored_field)   , intent(in) :: inputs(:)
-    integer              , intent(in) :: which(:)
-    type(graph)          , intent(in) :: domain
-    real(dp)             , intent(in) :: v(:,:)
-    real(dp), allocatable, intent(out) :: y(:)
-    ! given, each direction's extent: an argument over the points reads
-    ! fewer entries than one over the unknowns
-    integer, intent(in), optional     :: lengths(:)
-
-    type(stored_field), allocatable :: direction(:)
-    type(variation)   , allocatable :: variations(:)
-    class(field), allocatable :: out
-    integer :: i, n
-
-    if (size(which) < 1 .or. size(v, 2) /= size(which)) then
-       error stop 'gti_sweeps: one direction per variation'
-    end if
-    allocate(direction(size(which)), variations(size(which)))
-    do i = 1, size(which)
-       n = size(v, 1)
-       if (present(lengths)) n = lengths(i)
-       direction(i) = stored_field('direction', domain, n)
-       call direction(i) % set_real_vector(v(1:n, i))
-       variations(i) = variation(action % argument(which(i)), direction(i))
-    end do
-    call action % partial_action(on, inputs, variations, out)
-    call out % real_vector(y)
-
-  end subroutine varied_along
-
-  !===================================================================!
-  ! A functional's partial over the points along the given variations,
-  ! summed with the measure: the scalar mixed partial; and, given the
-  ! degrees, the same with one more variation in the state at each
-  ! degree in turn, the gradient-shaped partial laid out point by
-  ! point, degrees within a point.
-  !===================================================================!
-
-  subroutine functional_partial_along(integrand, points, inputs, weight, n, domain, which, v, &
-       & d, degrees, g)
-
-    class(operation)     , intent(in)  :: integrand
-    class(directed_graph), intent(in)  :: points
-    type(stored_field)   , intent(in)  :: inputs(:)
-    real(dp)             , intent(in)  :: weight(:)
-    integer              , intent(in)  :: n
-    type(graph)          , intent(in)  :: domain
-    integer              , intent(in)  :: which(:)
-    real(dp)             , intent(in)  :: v(:,:)
-    real(dp)             , intent(out) :: d
-    integer , intent(in) , optional    :: degrees
-    real(dp), allocatable, intent(out), optional :: g(:)
-
-    real(dp), allocatable :: rate(:), e(:,:)
-    integer, allocatable :: lengths(:)
-    integer :: k, dd
-
-    ! a design direction has one entry per point, a state direction
-    ! one per point and degree
-    lengths = merge(n, size(v, 1), which == 2)
-    call varied_along(integrand, points, inputs, which, domain, v, rate, lengths)
-    d = sum(weight * rate)
-    if (.not. present(degrees)) return
-
-    allocate(g(n * degrees), source=0.0_dp)
-    allocate(e(size(v, 1), size(which) + 1))
-    e(:, 1:size(which)) = v
-    do dd = 0, degrees - 1
-       e(:, size(which) + 1) = 0.0_dp
-       do k = 1, n
-          e((k - 1) * degrees + dd + 1, size(which) + 1) = 1.0_dp
-       end do
-       call varied_along(integrand, points, inputs, [which, 1], domain, e, rate, [lengths, size(v, 1)])
-       do k = 1, n
-          g((k - 1) * degrees + dd + 1) = weight(k) * rate(k)
-       end do
-    end do
-
-  end subroutine functional_partial_along
-
-  !===================================================================!
-  ! An action's partial along one variation, or its mixed second
-  ! partial along two, read out as a vector.
-  !===================================================================!
-
-  subroutine varied_by(action, on, inputs, which, domain, v, which2, domain2, v2, y)
-
-    class(operation)     , intent(in) :: action
-    class(directed_graph), intent(in) :: on
-    type(stored_field)   , intent(in) :: inputs(:)
-    integer              , intent(in) :: which, which2
-    type(graph)          , intent(in) :: domain, domain2
-    real(dp)             , intent(in) :: v(:), v2(:)
-    real(dp), allocatable, intent(out) :: y(:)
-
-    call varied(action, on, inputs, which, domain, v, y, which2, domain2, v2)
-
-  end subroutine varied_by
 
   !===================================================================!
   ! The partial action of a statement along one direction in one of

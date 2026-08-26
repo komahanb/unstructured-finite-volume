@@ -75,8 +75,7 @@ program graph_time_integrator
   use gti_expansion         , only : family_holder, expansion
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
        & expansion_substitutions, chain_system, chain_systems, chain_by_tangent, &
-       & chain_by_adjoint, instant_components, functional_holder, chain_hessian, chain_third, &
-       & asymmetry
+       & chain_by_adjoint, instant_components, functional_holder, chain_derivative, asymmetry
   use gti_sweeps            , only : set_linear_solver, set_assembly, set_storage, set_multigrid, &
        & set_coarse_nodes, set_linear_budget
   use gti_sweeps            , only : route_of, forward_route, reverse_route
@@ -485,9 +484,9 @@ contains
     real(dp)           , intent(in) :: dt(:), f(0:, :)
 
     type(chain_system), allocatable :: systems(:)
-    real(dp), allocatable :: p(:), df(:,:), other(:,:), hessian(:,:,:), third(:,:,:,:)
+    real(dp), allocatable :: p(:), df(:,:), other(:,:), table(:,:), entries(:,:,:)
     real(dp) :: euler
-    integer  :: num_designs, num_functionals, route, i
+    integer  :: num_designs, num_functionals, route, i, order
 
     ! the designs are the tower's: the parameter, and the weights of
     ! the steps when the grid was designed
@@ -525,40 +524,32 @@ contains
             & maxval(abs(df - other)) / max(1.0_dp, maxval(abs(df)))
     end if
 
-    ! the second derivatives where the gate chooses the reverse route
-    ! at order two: the hessian of every functional over the designs,
-    ! symmetric in theory and not made so, its parameter entry the
-    ! expansion's second order
-    if (grid_designed .and. ubound(f, 1) >= 2) then
-       if (route_of(num_designs, num_functionals, 2) == reverse_route) then
-          call chain_hessian(chain, tower, systems, functionals, nd, hessian, node_measure=volume)
+    ! the derivatives of every order above one, when the grid is
+    ! designed, by the route the gate chooses: one table per order,
+    ! one column per multiset of designs; by the reverse route the
+    ! entries of one multiset agree in theory and are not made to; the
+    ! entry of the parameter alone is the expansion's coefficient
+    if (grid_designed) then
+       do order = 2, ubound(f, 1)
+          route = route_of(num_designs, num_functionals, order)
+          call chain_derivative(chain, tower, systems, functionals, nd, order, route, table, &
+               & node_measure=volume, entries=entries)
           do i = 1, num_functionals
-             write(*,'(a,i0,a,es12.4,a,es10.2,a,es10.2)') &
-                  & '      second derivatives by the reverse route, functional ', i, &
-                  & ':  |H| ', maxval(abs(hessian(i, :, :))), '   symmetry ', &
-                  & maxval(abs(hessian(i, :, :) - transpose(hessian(i, :, :)))) &
-                  & / max(tiny(1.0_dp), maxval(abs(hessian(i, :, :)))), &
-                  & '   parameter entry against the expansion ', &
-                  & abs(hessian(i, 1, 1) - f(2, i)) / max(1.0_dp, abs(f(2, i)))
+             if (route == reverse_route) then
+                write(*,'(a,i0,a,a,i0,a,es12.4,a,es10.2,a,es10.2)') '      derivatives of order ', &
+                     & order, ' by the reverse route, functional ', '', i, ':  |T| ', &
+                     & maxval(abs(table(i, :))), '   departure among the entries of a multiset ', &
+                     & asymmetry(entries, num_designs, order), &
+                     & '   parameter entry against the expansion ', &
+                     & abs(table(i, 1) - f(order, i)) / max(1.0_dp, abs(f(order, i)))
+             else
+                write(*,'(a,i0,a,i0,a,es12.4,a,es10.2)') '      derivatives of order ', order, &
+                     & ' by the forward route, functional ', i, ':  |T| ', maxval(abs(table(i, :))), &
+                     & '   parameter entry against the expansion ', &
+                     & abs(table(i, 1) - f(order, i)) / max(1.0_dp, abs(f(order, i)))
+             end if
           end do
-       end if
-    end if
-
-    ! the third derivatives where the gate chooses the reverse route
-    ! at order three: one table per functional, symmetric in theory
-    ! under every permutation of the three indices, the parameter entry the
-    ! expansion's third order
-    if (grid_designed .and. ubound(f, 1) >= 3) then
-       if (route_of(num_designs, num_functionals, 3) == reverse_route) then
-          call chain_third(chain, tower, systems, functionals, nd, third, node_measure=volume)
-          do i = 1, num_functionals
-             write(*,'(a,i0,a,es12.4,a,es10.2,a,es10.2)') &
-                  & '      third derivatives by the reverse route, functional ', i, &
-                  & ':  |T| ', maxval(abs(third(i, :, :, :))), '   symmetry ', &
-                  & asymmetry(third(i, :, :, :)), '   parameter entry against the expansion ', &
-                  & abs(third(i, 1, 1, 1) - f(3, i)) / max(1.0_dp, abs(f(3, i)))
-          end do
-       end if
+       end do
     end if
 
   end subroutine first_derivatives

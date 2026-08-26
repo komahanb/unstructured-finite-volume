@@ -1,8 +1,17 @@
 !=====================================================================!
 ! FRACTAL GRAPH
 !
+! A graph as a recursive binary composition:
+!
 !     G = (B1, B2)
 !     B in { NULL, UNKNOWN, KNOWN -> G }
+!
+! The two branches are symmetric in structure, independent in semantics.
+! They may represent complementary views of the same domain (structure
+! and parameters, skeleton and learning, model and correction, or any
+! other dual decomposition a caller defines). A caller interprets what
+! each branch means; the graph enforces only that both exist and are
+! recursively well-formed.
 !
 ! LAWS
 !
@@ -12,6 +21,7 @@
 !     NULL and UNKNOWN are distinct by status, not by association
 !     (NULL, NULL) is a graph
 !     graph identity is independent of branch state
+!     each branch may carry independent data or interpretation
 !     branch references do not own their targets
 !     identity is assigned once, and is not chosen
 !
@@ -21,10 +31,13 @@
 !
 ! branch(2) stays a public component: assigning a whole branch value
 ! cannot break the iff, and the recursion stays visible in the
-! declarations and in every navigation.
+! declarations and in every navigation. The binary structure is exposed
+! so callers can exploit the natural pairing of the two branches for
+! their own semantics.
 !
 ! The kernel carries shape, status, reference and identity. Numbers,
-! symbols and indices are bound in graph_views.
+! symbols and indices are bound in graph_views. Interpretation belongs
+! to the caller: this module defines only the scaffold.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -64,6 +77,11 @@ module graph_fractal
 
   type :: graph
 
+     ! Two branches, independent in semantics but symmetric in structure.
+     ! A caller may assign different roles to branch(1) and branch(2),
+     ! such as representation and correction, constraint and freedom,
+     ! or any complementary decomposition of the domain. The graph
+     ! enforces only well-formedness; interpretation is the caller's.
      type(branch)   :: branch(2)
      type(token), private :: identity
 

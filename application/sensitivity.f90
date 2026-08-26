@@ -26,7 +26,9 @@ program sensitivity
   use operation_family     , only : family
   use physics_vanderpol    , only : van_der_pol, van_der_pol_energy
   use gti_block            , only : block_residual
-  use gti_march            , only : partition, block_of, solved, unknowns_graph
+  use gti_expansion         , only : expansion, family_holder
+  use operation_grid        , only : uniform_grid
+  use gti_march            , only : partition, block_from, solved, unknowns_graph
   use gti_sweeps           , only : functional_of, functional_gradient, &
        & design_partial
   use gti_march            , only : by_tangent, by_adjoint, fresh_stamp
@@ -91,14 +93,19 @@ contains
     real(dp), allocatable, intent(out) :: q(:)
 
     type(block_residual) :: rows
+type(expansion) :: tower
+type(family_holder) :: holder(1)
+integer, allocatable :: at(:)
     type(stored_directed_graph) :: unknowns, instants
     type(stored_field) :: state, knobs
     real(dp), allocatable :: dt(:), t(:)
     real(dp) :: achieved
 
     call partition(duration, num_instants, dt, t)
-    rows = block_of(scheme, van_der_pol(state_degree), degrees, num_instants, dt, &
-         & carried_values(scheme, t))
+    allocate(holder(1) % scheme, source=scheme)
+    call tower % build(van_der_pol(state_degree), holder, [num_instants], uniform_grid(duration), &
+         & 0, [0.0_dp])
+    call block_from(tower, 1, scheme, van_der_pol(state_degree), carried_values(scheme, t), rows, at)
     call solved(rows, design_value, q, achieved)
 
     unknowns = unknowns_graph(num_instants, degrees)
@@ -154,13 +161,18 @@ contains
     integer :: mark
 
     type(block_residual) :: rows
+type(expansion) :: tower
+type(family_holder) :: holder(1)
+integer, allocatable :: at(:)
     type(stored_directed_graph) :: unknowns, instants
     type(stored_field) :: state, knobs
     real(dp), allocatable :: dt(:), t(:)
 
     call partition(duration, num_instants, dt, t)
-    rows = block_of(scheme, van_der_pol(state_degree), degrees, num_instants, dt, &
-         & carried_values(scheme, t))
+    allocate(holder(1) % scheme, source=scheme)
+    call tower % build(van_der_pol(state_degree), holder, [num_instants], uniform_grid(duration), &
+         & 0, [0.0_dp])
+    call block_from(tower, 1, scheme, van_der_pol(state_degree), carried_values(scheme, t), rows, at)
 
     unknowns = unknowns_graph(num_instants, degrees)
     instants = stored_directed_graph(num_instants, tails=[integer ::], heads=[integer ::])

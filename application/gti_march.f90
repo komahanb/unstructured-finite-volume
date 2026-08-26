@@ -45,8 +45,11 @@ module gti_march
   use operation_weight        , only : scheme_weight
   use operation_scheme_stencil, only : derived_constraints
   use physics_integrand       , only : nodal_integrand
-  use gti_expansion           , only : block_reach, family_holder
-  use gti_block               , only : block_residual
+  use gti_expansion           , only : family_holder, expansion, marches_by_stages
+  use gti_block               , only : block_residual, coupling_reach
+  use view_level              , only : level_member, level_num_members, level_coupling
+  use graph_fractal           , only : graph
+  use map_value               , only : VALUE_KNOWN
   use gti_sweeps              , only : jacobian_of, assembly_present, multigrid_on, &
        & set_aggregates, coarse_nodes, take_inner, keep_inner, forget_inner, set_linear_stopping
   use util_tally              , only : tally_record, tangent_loops, adjoint_loops
@@ -114,7 +117,8 @@ module gti_march
   integer , save :: stopping_iterations = 100
 
   private
-  public :: partition, partitioned, scheme_rows, block_of, solved, unknowns_graph, step_partials
+  public :: partition, partitioned, solved, unknowns_graph, step_partials
+  public :: block_from
   public :: step_second_partials
   public :: unknown, consistent_states, frozen_inputs
   public :: set_stopping
@@ -516,93 +520,307 @@ contains
 
   end function unknowns_graph
 
+
+
   !===================================================================!
-  ! The derived rows of a block, as a stencil: the rows that fit, the
-  ! weights on them, and the sign convention operation_scheme_stencil
-  ! owns.
+  ! THE BLOCK FROM ITS GRAPH NODE. Block b of the horizon of an
+  ! expansion, read under the level view: the slices are the block's
+  ! members; each slice's components - or, for a stage family, its
+  ! stages and arriving instant, each with components - are the
+  ! moments, laid one after another, each a width of nodes times
+  ! degrees, node by node within a moment; the couplings' relations
+  ! give the derived rows, their weights recomputed from the family in
+  ! the relations' own tuple order; a component the graph holds as
+  ! known is carried; the physics is evaluated at every moment of a
+  ! difference family and at the stages of a stage family. The reach
+  ! is kept on the block, the level below laid on the moments. The
+  ! block's steps are the graph node's own value. Invalid input: a
+  ! held value for other than every carried component.
   !===================================================================!
 
-  function scheme_rows(scheme, degrees, n, dt, nodes, along, along2) result(rows)
+  subroutine block_from(tower, b, scheme, physics, held, rows, instants_at, nodes, spatial)
 
-    class(family), intent(in)           :: scheme
-    integer      , intent(in)           :: degrees, n
-    real(dp)     , intent(in)           :: dt(:)
+    type(expansion)       , intent(in)  :: tower
+    integer               , intent(in)  :: b
+    class(family)         , intent(in)  :: scheme
+    class(nodal_integrand), intent(in)  :: physics
+    real(dp)              , intent(in)  :: held(:)
+    type(block_residual)  , intent(out) :: rows
+    integer, allocatable  , intent(out) :: instants_at(:)
     integer      , intent(in), optional :: nodes
-    real(dp)     , intent(in), optional :: along(:), along2(:)
-    type(stencil) :: rows
+    type(stencil), intent(in), optional :: spatial
 
-    integer , allocatable :: tails(:), heads(:), source_degree(:), determines(:)
-    real(dp), allocatable :: w(:)
-    integer :: e, i, m
+    type(graph), pointer :: horizon, block, slice, moment_node, component
+    type(coupling_reach), allocatable :: reach(:)
+    integer , allocatable :: slice_of(:), member_of(:), members(:), at(:), carried(:)
+    integer , allocatable :: label_slice(:), label_node(:), label_moment(:)
+    integer , allocatable :: r(:), c(:)
+    real(dp), allocatable :: dt(:), w(:), dt_weights(:)
+    logical , allocatable :: point(:)
+    integer :: m, nd, width, n, s, k, j, g, moments, i, d, u, count, e, npts, ncar
+    logical :: staged
 
-    m = 1
+    m  = 1
     if (present(nodes)) m = nodes
+    nd = physics % equation_degree() + 1
+    width = nd * m
 
-    call block_reach(scheme, degrees, n, tails, heads, source_degree, determines)
+    horizon => level_member(level_member(tower % node(tower % root()), 1), 1)
+    block   => level_member(horizon, b)
+    n       = level_num_members(block)
+    call tower % value_of(block, dt)
+    staged  = marches_by_stages(scheme, nd)
+    s       = scheme % num_stages()
 
-    ! the family's rows once per node: each node's history is its own.
-    ! Along a direction in the steps the rows are the partial of the
-    ! weights, which the determined component, entering with one,
-    ! takes no part in.
-    if (present(along)) then
-       call weights_varied(scheme_weight(scheme), n, tails, heads, dt, along, &
-            & source_degree, determines, w, along2)
-       rows = stencil( &
-            & [((unknown(heads(e), determines(e), degrees, i, m), e = 1, size(heads)), i = 1, m)], &
-            & [((unknown(tails(e), source_degree(e), degrees, i, m), e = 1, size(tails)), i = 1, m)], &
-            & [(-w, i = 1, m)], spread(0.0_dp, 1, n * m * degrees), 'varied rows')
-    else
-       call weights_of(scheme_weight(scheme), n, tails, heads, dt, source_degree, determines, w)
-       rows = derived_constraints( &
-            & [((unknown(heads(e), determines(e), degrees, i, m), e = 1, size(heads)), i = 1, m)], &
-            & [((unknown(tails(e), source_degree(e), degrees, i, m), e = 1, size(tails)), i = 1, m)], &
-            & [(w, i = 1, m)], n * m * degrees, 'derived rows')
-    end if
+    ! the moments in order: which slice each lies in, and which member
+    ! of it; a difference family's slice is one moment, a stage
+    ! family's the stages then the arriving instant, the first slice
+    ! the instant alone
+    allocate(members(n))
+    do k = 1, n
+       members(k) = merge(level_num_members(level_member(block, k)), 1, staged)
+    end do
+    moments = sum(members)
+    allocate(slice_of(moments), member_of(moments), point(moments))
+    g = 0
+    do k = 1, n
+       do j = 1, members(k)
+          g = g + 1
+          slice_of(g)  = k
+          member_of(g) = j
+          point(g)     = .not. staged .or. (k > 1 .and. j <= s)
+       end do
+    end do
+    count = moments * width
 
-  end function scheme_rows
-
-  !===================================================================!
-  ! The whole statement of one block. The instants the family reaches
-  ! back over are carried, and the values given for them are what
-  ! their rows hold.
-  !===================================================================!
-
-  function block_of(scheme, physics, degrees, n, dt, held, nodes, spatial) result(rows)
-
-    class(family)         , intent(in)           :: scheme
-    class(nodal_integrand), intent(in)           :: physics
-    integer               , intent(in)           :: degrees, n
-    real(dp)              , intent(in)           :: dt(:), held(:)
-    integer               , intent(in), optional :: nodes
-    type(stencil)         , intent(in), optional :: spatial
-    type(block_residual) :: rows
-
-    integer, allocatable :: carried(:), at(:)
-    integer :: h, k, i, d, m
-
-    m = 1
-    if (present(nodes)) m = nodes
-
-    h       = scheme % history_depth(degrees - 1)
-    carried = [(((unknown(k, d, degrees, i, m), d = 0, degrees - 1), i = 1, m), k = 1, h)]
-    at      = [((unknown(k, 0, degrees, i, m) - 1, i = 1, m), k = 1, n)]
-
-    if (size(held) /= size(carried)) then
+    ! the carried components: known in the graph, at every node
+    allocate(carried(count), at(moments * m))
+    ncar = 0
+    npts = 0
+    do g = 1, moments
+       slice => level_member(block, slice_of(g))
+       if (staged) then
+          moment_node => level_member(slice, member_of(g))
+       else
+          moment_node => slice
+       end if
+       ! carried at every node, node by node, degrees within a node
+       do i = 1, m
+          do d = 0, nd - 1
+             component => level_member(moment_node, d + 1)
+             if (tower % status_of(component) == VALUE_KNOWN) then
+                ncar = ncar + 1
+                carried(ncar) = (g - 1) * width + (i - 1) * nd + d + 1
+             end if
+          end do
+       end do
+       if (point(g)) then
+          do i = 1, m
+             npts = npts + 1
+             at(npts) = (g - 1) * width + (i - 1) * nd
+          end do
+       end if
+    end do
+    if (size(held) /= ncar) then
        error stop 'gti_march: one value per carried component'
     end if
 
-    rows = block_residual(scheme_rows(scheme, degrees, n, dt, m), physics, at, &
-         & n * m * degrees, degrees, scheme % primary_degree(degrees - 1), carried, held)
+    ! the reach: one coupling over the instants for a difference
+    ! family; for a stage family one per step, its stages' tableau
+    ! and the carry from the instant before
+    if (staged) then
+       call stage_reach_of(tower, block, scheme, n, s, nd, width, moments, slice_of, &
+            & member_of, reach)
+    else
+       call block_reach_of(tower, block, n, nd, width, reach)
+    end if
 
-    ! where every unknown lies: instant k, node i, and instant k is its
-    ! moment; the level below, a stencil over the nodes, is laid on
-    ! every instant
-    call rows % placed_in([(((k, d = 0, degrees - 1), i = 1, m), k = 1, n)], &
-         &                [(((i, d = 0, degrees - 1), i = 1, m), k = 1, n)], &
-         &                [(((k, d = 0, degrees - 1), i = 1, m), k = 1, n)])
+    ! the derived rows: every coupling's edges weighted by the family
+    ! at the block's steps, replicated per node
+    count = 0
+    do k = 1, size(reach)
+       count = count + size(reach(k) % tails) * m
+    end do
+    allocate(r(count), c(count), w(count))
+    e = 0
+    do k = 1, size(reach)
+       associate (one => reach(k))
+         call weights_of(scheme_weight(scheme), one % vertices, one % tails, one % heads, &
+              & dt(one % step_of), one % source_degree, one % determines, dt_weights)
+         do i = 1, m
+            do u = 1, size(one % tails)
+               e    = e + 1
+               r(e) = one % row(u)    + (i - 1) * nd
+               c(e) = one % column(u) + (i - 1) * nd
+               w(e) = dt_weights(u)
+            end do
+         end do
+       end associate
+    end do
+
+    rows = block_residual(derived_constraints(r, c, w, moments * width, 'derived rows'), &
+         & physics, at(1:npts), moments * width, nd, scheme % primary_degree(nd - 1), &
+         & carried(1:ncar), held)
+
+    ! where every unknown lies: its slice, its node and its moment
+    allocate(label_slice(moments * width), label_node(moments * width), &
+         &   label_moment(moments * width))
+    do g = 1, moments
+       do i = 1, m
+          do d = 0, nd - 1
+             u = (g - 1) * width + (i - 1) * nd + d + 1
+             label_slice(u)  = slice_of(g)
+             label_node(u)   = i
+             label_moment(u) = g
+          end do
+       end do
+    end do
+    call rows % placed_in(label_slice, label_node, label_moment)
+    call rows % with_reach(reach)
     if (present(spatial)) call rows % spatial_laid(spatial)
 
-  end function block_of
+    ! where each instant lies: a slice's last moment
+    allocate(instants_at(n))
+    g = 0
+    do k = 1, n
+       g = g + members(k)
+       instants_at(k) = (g - 1) * width
+    end do
+
+  end subroutine block_from
+
+  !===================================================================!
+  ! The reach of a difference family's block: its coupling's tuples,
+  ! each a source component and the component it determines in the
+  ! slice-major numbering with one node, read back into instants and
+  ! degrees; every vertex reads its own step.
+  !===================================================================!
+
+  subroutine block_reach_of(tower, block, n, nd, width, reach)
+
+    type(expansion), intent(in) :: tower
+    type(graph)    , intent(in) :: block
+    integer        , intent(in) :: n, nd, width
+    type(coupling_reach), allocatable, intent(out) :: reach(:)
+
+    integer, allocatable :: table(:,:)
+    integer :: e, ne
+
+    call tower % tuples_of(level_coupling(block), table)
+    ne = size(table, 2)
+    allocate(reach(1))
+    reach(1) % vertices = n
+    reach(1) % step_of  = [(e, e = 1, n)]
+    allocate(reach(1) % tails(ne), reach(1) % heads(ne), reach(1) % source_degree(ne), &
+         &   reach(1) % determines(ne), reach(1) % row(ne), reach(1) % column(ne))
+    do e = 1, ne
+       reach(1) % tails(e)         = (table(1, e) - 1) / nd + 1
+       reach(1) % source_degree(e) = mod(table(1, e) - 1, nd)
+       reach(1) % heads(e)         = (table(2, e) - 1) / nd + 1
+       reach(1) % determines(e)    = mod(table(2, e) - 1, nd)
+       reach(1) % column(e) = (reach(1) % tails(e) - 1) * width + reach(1) % source_degree(e) + 1
+       reach(1) % row(e)    = (reach(1) % heads(e) - 1) * width + reach(1) % determines(e) + 1
+    end do
+
+  end subroutine block_reach_of
+
+  !===================================================================!
+  ! The reach of a stage family's block: one coupling per step, its
+  ! vertices numbered as the family numbers them - the instant the
+  ! step leaves from, its stages, the instant it arrives at - every
+  ! vertex taking the step's own size. The step's own coupling on
+  ! its slice gives the tableau's edges in the step's numbering of
+  ! members; the block's coupling gives the carry from the instant
+  ! before, in the block's numbering with one node.
+  !===================================================================!
+
+  subroutine stage_reach_of(tower, block, scheme, n, s, nd, width, moments, slice_of, &
+       & member_of, reach)
+
+    type(expansion), intent(in) :: tower
+    type(graph)    , intent(in) :: block
+    class(family)  , intent(in) :: scheme
+    integer        , intent(in) :: n, s, nd, width, moments, slice_of(:), member_of(:)
+    type(coupling_reach), allocatable, intent(out) :: reach(:)
+
+    integer, allocatable :: table(:,:), carry(:,:), first_moment(:), counted(:), filled(:)
+    integer :: kk, e, g, tail_moment, head_moment, vertex_tail, vertex_head
+
+    associate (u1 => scheme); end associate
+    allocate(reach(n - 1), first_moment(n), counted(n), filled(n))
+    first_moment(1) = 1
+    do kk = 2, n
+       first_moment(kk) = first_moment(kk - 1) + merge(1, s + 1, kk - 1 == 1)
+    end do
+
+    ! count the edges of each step: the tableau's plus the carry's
+    counted = 0
+    do kk = 2, n
+       call tower % tuples_of(level_coupling(level_member(block, kk)), table)
+       counted(kk) = size(table, 2)
+    end do
+    call tower % tuples_of(level_coupling(block), carry)
+    do e = 1, size(carry, 2)
+       head_moment = (carry(2, e) - 1) / nd + 1
+       kk          = slice_of(head_moment)
+       counted(kk) = counted(kk) + 1
+    end do
+    do kk = 2, n
+       reach(kk - 1) % vertices = s + 2
+       reach(kk - 1) % step_of  = spread(kk, 1, s + 2)
+       allocate(reach(kk - 1) % tails(counted(kk)), reach(kk - 1) % heads(counted(kk)), &
+            &   reach(kk - 1) % source_degree(counted(kk)), reach(kk - 1) % determines(counted(kk)), &
+            &   reach(kk - 1) % row(counted(kk)), reach(kk - 1) % column(counted(kk)))
+    end do
+
+    ! the tableau's edges: member j of the step is vertex j + 1
+    filled = 0
+    do kk = 2, n
+       call tower % tuples_of(level_coupling(level_member(block, kk)), table)
+       do e = 1, size(table, 2)
+          filled(kk) = filled(kk) + 1
+          vertex_tail = (table(1, e) - 1) / nd + 2
+          vertex_head = (table(2, e) - 1) / nd + 2
+          call put(reach(kk - 1), filled(kk), vertex_tail, vertex_head, &
+               & mod(table(1, e) - 1, nd), mod(table(2, e) - 1, nd), &
+               & (first_moment(kk) + vertex_tail - 2 - 1) * width, &
+               & (first_moment(kk) + vertex_head - 2 - 1) * width)
+       end do
+    end do
+
+    ! the carry's edges: the instant before is vertex one
+    do e = 1, size(carry, 2)
+       tail_moment = (carry(1, e) - 1) / nd + 1
+       head_moment = (carry(2, e) - 1) / nd + 1
+       kk          = slice_of(head_moment)
+       filled(kk)  = filled(kk) + 1
+       call put(reach(kk - 1), filled(kk), 1, member_of(head_moment) + 1, &
+            & mod(carry(1, e) - 1, nd), mod(carry(2, e) - 1, nd), &
+            & (tail_moment - 1) * width, (head_moment - 1) * width)
+    end do
+    if (any(filled /= counted)) then
+       error stop 'gti_march: every edge of a step is placed once'
+    end if
+    associate (u2 => moments); end associate
+
+  contains
+
+    subroutine put(one, e, tail, head, source_degree, determines, column_base, row_base)
+
+      type(coupling_reach), intent(inout) :: one
+      integer             , intent(in)    :: e, tail, head, source_degree, determines
+      integer             , intent(in)    :: column_base, row_base
+
+      one % tails(e)         = tail
+      one % heads(e)         = head
+      one % source_degree(e) = source_degree
+      one % determines(e)    = determines
+      one % column(e)        = column_base + source_degree + 1
+      one % row(e)           = row_base + determines + 1
+
+    end subroutine put
+
+  end subroutine stage_reach_of
 
   !===================================================================!
   ! Newton over the whole block. The design is held while the state

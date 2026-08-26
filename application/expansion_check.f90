@@ -14,9 +14,10 @@ program expansion_check
   use operation_family_bdf , only : bdf_family
   use operation_family_adams, only : adams_family
   use physics_vanderpol    , only : van_der_pol, van_der_pol_energy
-  use gti_march            , only : partition, block_of, set_stopping
+  use gti_march            , only : partition, block_from, set_stopping
   use operation_minimization, only : relative, by_rate
-  use gti_stage            , only : stage_block_of, instant_at
+  use gti_expansion        , only : expansion, family_holder
+  use operation_grid       , only : uniform_grid
   use operation_family_dirk, only : crouzeix_two_stage
   use gti_block            , only : block_residual
   use gti_taylor           , only : block_expansion
@@ -79,22 +80,21 @@ contains
     real(dp), allocatable, intent(out) :: f(:)
 
     type(block_residual) :: rows
+    type(expansion) :: tower
+    type(family_holder) :: holder(1)
     real(dp), allocatable :: dt(:), t(:), held(:), q(:)
     integer , allocatable :: at(:)
     real(dp) :: achieved
-    integer :: k, d, s
+    integer :: k, d
 
     call partition(duration, instants, dt, t)
     held = [((exact(d, t(k)), d = 0, degrees - 1), k = 1, scheme % history_depth(degrees - 1))]
-
-    if (staged) then
-       s    = scheme % num_stages()
-       rows = stage_block_of(scheme, van_der_pol(state_degree), degrees, instants, dt, held)
-       at   = [(instant_at(k, s, degrees), k = 1, instants)]
-    else
-       rows = block_of(scheme, van_der_pol(state_degree), degrees, instants, dt, held)
-       at   = [((k - 1) * degrees, k = 1, instants)]
-    end if
+    ! the block from its node of the expansion graph, whatever the family
+    allocate(holder(1) % scheme, source=scheme)
+    call tower % build(van_der_pol(state_degree), holder, [instants], uniform_grid(duration), &
+         & 0, [design_value])
+    call block_from(tower, 1, scheme, van_der_pol(state_degree), held, rows, at)
+    associate (u1 => staged); end associate
 
     call block_expansion(rows, van_der_pol(state_degree), &
          & van_der_pol_energy(state_degree), degrees, &

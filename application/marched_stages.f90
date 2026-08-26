@@ -17,8 +17,9 @@ program marched_stages
        & crouzeix_two_stage, crouzeix_three_stage
   use physics_vanderpol    , only : van_der_pol
   use gti_block            , only : block_residual
-  use gti_march            , only : partition, solved
-  use gti_stage            , only : stage_block_of, instant_at
+  use gti_march            , only : partition, solved, block_from
+  use gti_expansion        , only : expansion, family_holder
+  use operation_grid       , only : uniform_grid
 
   implicit none
 
@@ -61,20 +62,22 @@ contains
     integer      , intent(in) :: n
 
     type(block_residual) :: rows
+    type(expansion) :: tower
+    type(family_holder) :: holder(1)
     real(dp), allocatable :: dt(:), t(:), q(:)
+    integer , allocatable :: at(:)
     real(dp) :: achieved
-    integer :: k, d, s
+    integer :: k, d
 
     call partition(duration, n, dt, t)
-    s = scheme % num_stages()
-
-    rows = stage_block_of(scheme, van_der_pol(state_degree), degrees, n, dt, &
-         & [(exact(d, t(1)), d = 0, degrees - 1)])
+    allocate(holder(1) % scheme, source=scheme)
+    call tower % build(van_der_pol(state_degree), holder, [n], uniform_grid(duration), 0, [0.0_dp])
+    call block_from(tower, 1, scheme, van_der_pol(state_degree), &
+         & [(exact(d, t(1)), d = 0, degrees - 1)], rows, at)
     call solved(rows, 0.0_dp, q, achieved)
-
     e = 0.0_dp
     do k = 1, n
-       e = max(e, abs(q(instant_at(k, s, degrees) + 1) - exact(0, t(k))))
+       e = max(e, abs(q(at(k) + 1) - exact(0, t(k))))
     end do
 
   end function worst_error

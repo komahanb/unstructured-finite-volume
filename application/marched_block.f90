@@ -29,7 +29,9 @@ program marched_block
   use operation_family_adams, only : adams_family
   use physics_vanderpol     , only : van_der_pol
   use gti_block             , only : block_residual
-  use gti_march             , only : partition, block_of, solved
+  use gti_expansion         , only : expansion, family_holder
+  use operation_grid        , only : uniform_grid
+  use gti_march             , only : partition, block_from, solved
 
   implicit none
 
@@ -68,6 +70,9 @@ contains
     real(dp)     , intent(out) :: achieved
 
     type(block_residual) :: rows
+type(expansion) :: tower
+type(family_holder) :: holder(1)
+integer, allocatable :: at(:)
     real(dp), allocatable :: dt(:), held(:)
     integer :: h, k, d
 
@@ -75,7 +80,9 @@ contains
     h = scheme % history_depth(degrees - 1)
 
     held = [((exact(d, t(k)), d = 0, degrees - 1), k = 1, h)]
-    rows = block_of(scheme, van_der_pol(max_state_degree), degrees, n, dt, held)
+    allocate(holder(1) % scheme, source=scheme)
+    call tower % build(van_der_pol(max_state_degree), holder, [n], uniform_grid(duration), 0, [0.0_dp])
+    call block_from(tower, 1, scheme, van_der_pol(max_state_degree), held, rows, at)
 
     call solved(rows, design_value, q, achieved)
 

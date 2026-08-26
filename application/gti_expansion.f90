@@ -55,8 +55,10 @@ module gti_expansion
   use view_level            , only : level_storage, level_consistent, &
        & level_is_leaf, level_members, level_couples, level_coupling
   use view_sequence         , only : sequence_empty, sequence_first, sequence_rest
-  use view_relational       , only : relational_binding, relational_valid
-  use relation_binary       , only : csr_relation
+  use view_relational       , only : relational_binding, relational_valid, &
+       & num_relations, relation_at
+  use relation_finitary     , only : relation
+  use relation_binary       , only : csr_relation, binary_relation
   use map_value             , only : value_map, VALUE_UNKNOWN, VALUE_KNOWN
   use map_label             , only : label_map
   use map_set               , only : set_map
@@ -107,7 +109,7 @@ module gti_expansion
      procedure :: value_of
      procedure :: extent_of
      procedure :: consistent
-
+     procedure :: tuples_of
      procedure, private :: refuse_assignment
      generic :: assignment(=) => refuse_assignment
 
@@ -201,6 +203,68 @@ contains
     if (this % extents % describes(g)) n = this % extents % num_members_of(g)
 
   end function extent_of
+
+  !===================================================================!
+  ! The tuples of a coupling's relation, in the relation's own order,
+  ! which is the order the coupling's value holds its weights in.
+  ! Invalid input: a node that is not a coupling of one relation.
+  !===================================================================!
+
+  subroutine tuples_of(this, coupling, table)
+
+    class(expansion), intent(in) :: this
+    type(graph)     , intent(in) :: coupling
+    integer, allocatable, intent(out) :: table(:,:)
+
+    class(relation), pointer :: r
+
+    if (num_relations(coupling) /= 1) then
+       error stop 'gti_expansion: a coupling holds one relation'
+    end if
+    r => relation_at(coupling, this % bindings, 1)
+    select type (r)
+    class is (binary_relation)
+       call r % tuples(table)
+    class default
+       error stop 'gti_expansion: a coupling''s relation is binary'
+    end select
+
+  end subroutine tuples_of
+
+  !===================================================================!
+  ! The weights of a coupling in the order its relation holds the
+  ! tuples: the relation groups them by source and keeps each once,
+  ! so a weight computed per tuple as given is placed where the
+  ! relation put its tuple. Invalid input: a tuple given twice, which
+  ! would leave one weight with no place.
+  !===================================================================!
+
+  function in_relation_order(this, coupling, table, w) result(placed)
+
+    class(expansion), intent(in) :: this
+    type(graph)     , intent(in) :: coupling
+    integer         , intent(in) :: table(:,:)
+    real(dp)        , intent(in) :: w(:)
+    real(dp), allocatable :: placed(:)
+
+    integer, allocatable :: kept(:,:), at(:,:)
+    integer :: e, n
+
+    call this % tuples_of(coupling, kept)
+    if (size(kept, 2) /= size(table, 2)) then
+       error stop 'gti_expansion: a coupling names each tuple once'
+    end if
+    n = max(maxval(table(1, :)), maxval(table(2, :)))
+    allocate(at(n, n), source=0)
+    do e = 1, size(table, 2)
+       at(table(1, e), table(2, e)) = e
+    end do
+    allocate(placed(size(kept, 2)))
+    do e = 1, size(kept, 2)
+       placed(e) = w(at(kept(1, e), kept(2, e)))
+    end do
+
+  end function in_relation_order
 
   !===================================================================!
   ! THE BUILD.
@@ -689,7 +753,7 @@ contains
     call bind_reach(this, holder, components, constraints, table)
 
     call this % labels % bind(this % node(at), scheme % name() // ' coupling')
-    call attach_known(this, at, w)
+    call attach_known(this, at, in_relation_order(this, this % node(at), table, w))
 
   end function block_coupling
 
@@ -932,7 +996,7 @@ contains
     call bind_reach(this, holder, components, constraints, table)
 
     call this % labels % bind(this % node(at), scheme % name() // ' stage coupling')
-    call attach_known(this, at, w)
+    call attach_known(this, at, in_relation_order(this, this % node(at), table, w))
 
   end function slice_coupling
 
@@ -1038,7 +1102,7 @@ contains
     call bind_reach(this, holder, components, constraints, table)
 
     call this % labels % bind(this % node(at), scheme % name() // ' carry coupling')
-    call attach_known(this, at, w)
+    call attach_known(this, at, in_relation_order(this, this % node(at), table, w))
 
   end function carry_coupling
 

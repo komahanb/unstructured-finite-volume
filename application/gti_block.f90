@@ -63,13 +63,31 @@ module gti_block
   use field_stored         , only : stored_field
   use graph_fractal        , only : graph
   use operation_stencil    , only : combine_triples, stencil
+  use operation_family     , only : family
+  use operation_weight     , only : scheme_weight
+  use operation_coupling   , only : weights_varied
   use physics_integrand    , only : zero_integrand, nodal_integrand
   use view_directed        , only : forward
 
   implicit none
 
   private
-  public :: block_residual
+  public :: block_residual, coupling_reach
+
+  !-------------------------------------------------------------------!
+  ! THE REACH a derived row was built from, in the family's own
+  ! numbering of vertices, kept so that the rows can be weighted again
+  ! along a direction in the steps: which of the block's steps each
+  ! vertex reads, each edge's tail and head vertex and degrees, and
+  ! the block unknown each edge determines and reads at the first
+  ! node - every other node lies a degrees' width further on.
+  !-------------------------------------------------------------------!
+  type :: coupling_reach
+     integer :: vertices = 0
+     integer, allocatable :: step_of(:)
+     integer, allocatable :: tails(:), heads(:), source_degree(:), determines(:)
+     integer, allocatable :: row(:), column(:)
+  end type coupling_reach
 
   type, extends(operation) :: block_residual
 
@@ -103,6 +121,7 @@ module gti_block
      integer, allocatable, private :: slice(:)
      integer, allocatable, private :: node(:)
      integer, allocatable, private :: moment(:)
+     type(coupling_reach), allocatable, private :: reach(:)
 
    contains
 
@@ -120,6 +139,8 @@ module gti_block
      procedure :: num_nodes
      procedure :: spatial_laid
      procedure :: aggregates
+     procedure :: with_reach
+     procedure :: rows_varied
      procedure :: linear_block
      procedure :: member_order
      procedure :: num_unknowns
@@ -626,6 +647,76 @@ contains
          & 'spatial rows')
 
   end subroutine spatial_laid
+
+  !-------------------------------------------------------------------!
+  ! The reach the derived rows were built from, given to the block.
+  !-------------------------------------------------------------------!
+
+  subroutine with_reach(this, reach)
+
+    class(block_residual), intent(inout) :: this
+    type(coupling_reach) , intent(in)    :: reach(:)
+
+    this % reach = reach
+
+  end subroutine with_reach
+
+  !-------------------------------------------------------------------!
+  ! The derived rows weighted again along a direction in the block's
+  ! steps - and a second, given - as the partial of the rows: the
+  ! family's weight action carries its partials in the steps, and the
+  ! determined component, entering with one, takes no part. Invalid
+  ! input: a block built without its reach.
+  !-------------------------------------------------------------------!
+
+  function rows_varied(this, scheme, dt, along, along2) result(varied)
+
+    class(block_residual), intent(in) :: this
+    class(family)        , intent(in) :: scheme
+    real(dp)             , intent(in) :: dt(:), along(:)
+    real(dp)             , intent(in), optional :: along2(:)
+    type(stencil) :: varied
+
+    integer , allocatable :: r(:), c(:)
+    real(dp), allocatable :: w(:), dw(:)
+    integer :: k, e, i, nodes, count, n
+
+    if (.not. allocated(this % reach)) then
+       error stop 'gti_block: the block was built without its reach'
+    end if
+    nodes = maxval(this % node)
+    count = 0
+    do k = 1, size(this % reach)
+       count = count + size(this % reach(k) % tails) * nodes
+    end do
+    allocate(r(count), c(count), w(count))
+
+    n = 0
+    do k = 1, size(this % reach)
+       associate (reach => this % reach(k))
+         if (present(along2)) then
+            call weights_varied(scheme_weight(scheme), reach % vertices, reach % tails, &
+                 & reach % heads, dt(reach % step_of), along(reach % step_of), &
+                 & reach % source_degree, reach % determines, dw, along2(reach % step_of))
+         else
+            call weights_varied(scheme_weight(scheme), reach % vertices, reach % tails, &
+                 & reach % heads, dt(reach % step_of), along(reach % step_of), &
+                 & reach % source_degree, reach % determines, dw)
+         end if
+         do i = 1, nodes
+            do e = 1, size(reach % tails)
+               n    = n + 1
+               r(n) = reach % row(e)    + (i - 1) * this % degrees
+               c(n) = reach % column(e) + (i - 1) * this % degrees
+               w(n) = -dw(e)
+            end do
+         end do
+       end associate
+    end do
+
+    varied = stencil(r, c, w, spread(0.0_dp, 1, this % unknowns), 'varied rows')
+
+  end function rows_varied
 
   !-------------------------------------------------------------------!
   ! The aggregates a multigrid coarsens this block by: the coarse

@@ -14,8 +14,10 @@ program memory_shape
   use field_stored          , only : stored_field
   use operation_family_bdf  , only : bdf_family
   use physics_vanderpol     , only : van_der_pol
-  use gti_march             , only : block_of, partition
+  use gti_march             , only : block_from, partition
   use gti_block             , only : block_residual
+  use gti_expansion         , only : expansion, family_holder
+  use operation_grid        , only : uniform_grid
 
   implicit none
 
@@ -24,6 +26,9 @@ program memory_shape
   type(stored_directed_graph) :: gr
   type(stored_field)          :: over
   type(block_residual)        :: rows
+type(expansion) :: tower
+type(family_holder) :: holder(1)
+integer, allocatable :: at(:)
   type(bdf_family)            :: scheme
 
   character(len=32) :: what, given
@@ -72,7 +77,9 @@ program memory_shape
   case ('block')
      call partition(3.0_dp, instants, dt, t)
      allocate(held(h * degrees), source=0.0_dp)
-     rows = block_of(scheme, van_der_pol(degrees - 1), degrees, instants, dt, held)
+     allocate(holder(1) % scheme, source=scheme)
+     call tower % build(van_der_pol(degrees - 1), holder, [instants], uniform_grid(3.0_dp), 0, [0.0_dp])
+     call block_from(tower, 1, scheme, van_der_pol(degrees - 1), held, rows, at)
   case default
      error stop 'memory_shape: the part is none, vertices, edges, field or block'
   end select

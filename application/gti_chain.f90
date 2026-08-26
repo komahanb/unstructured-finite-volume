@@ -58,14 +58,13 @@ module gti_chain
 
   use util_precision  , only : dp
   use operation_family , only : family
-  use operation_grid   , only : grid
+  use operation_grid   , only : grid, designed_grid
   use physics_integrand, only : nodal_integrand
-  use gti_expansion    , only : family_holder, marches_by_stages
+  use gti_expansion    , only : family_holder, marches_by_stages, expansion
   use gti_block        , only : block_residual
-  use gti_march        , only : imbalance, swept, solved_linear, fresh_stamp, partitioned, horizon_bounds, block_of, solved, &
+  use gti_march        , only : imbalance, swept, solved_linear, fresh_stamp, partitioned, horizon_bounds, solved, &
        & frozen_inputs
-  use gti_stage        , only : stage_block_of, instant_at, stage_rows
-  use gti_march        , only : scheme_rows, step_second_partials
+  use gti_march        , only : block_from, step_second_partials
   use gti_sweeps       , only : functional_design_partial, varied_by
   use operation_stencil, only : stencil
   use operation_family_dirk, only : crouzeix_three_stage
@@ -245,34 +244,23 @@ contains
   end function handed_over
 
   !===================================================================!
-  ! One block's statement, and where its instants sit. A stage family
-  ! keeps its instants between its stages; every other keeps one set
-  ! per instant.
+  ! One block's statement and where its instants lie, read from its
+  ! node of the expansion graph.
   !===================================================================!
 
-  subroutine built(scheme, physics, degrees, n, dt, held, rows, instants_at, nodes, spatial)
+  subroutine built(tower, b, scheme, physics, held, rows, instants_at, nodes, spatial)
 
+    type(expansion)       , intent(in)  :: tower
+    integer               , intent(in)  :: b
     class(family)         , intent(in)  :: scheme
     class(nodal_integrand), intent(in)  :: physics
-    integer               , intent(in)  :: degrees, n
-    real(dp)              , intent(in)  :: dt(:), held(:)
+    real(dp)              , intent(in)  :: held(:)
     type(block_residual)  , intent(out) :: rows
     integer, allocatable  , intent(out) :: instants_at(:)
     integer      , intent(in), optional :: nodes
     type(stencil), intent(in), optional :: spatial
 
-    integer :: k, width
-
-    width = degrees
-    if (present(nodes)) width = degrees * nodes
-
-    if (marches_by_stages(scheme, degrees)) then
-       rows        = stage_block_of(scheme, physics, degrees, n, dt, held, nodes, spatial)
-       instants_at = [(instant_at(k, scheme % num_stages(), width), k = 1, n)]
-    else
-       rows        = block_of(scheme, physics, degrees, n, dt, held, nodes, spatial)
-       instants_at = [((k - 1) * width, k = 1, n)]
-    end if
+    call block_from(tower, b, scheme, physics, held, rows, instants_at, nodes, spatial)
 
   end subroutine built
 
@@ -303,9 +291,11 @@ contains
     ! first instant alone
     integer        , intent(in) , optional :: startup
 
+    type(expansion) :: tower, startup_tower
+    type(family_holder) :: starter(1)
     type(imbalance) :: one_left
     integer , allocatable :: first(:), last(:)
-    real(dp), allocatable :: fine(:)
+    real(dp), allocatable :: fine(:), knobs(:)
     real(dp) :: one_achieved
     integer :: b, k, r, given, before
     logical :: with_startup
@@ -329,18 +319,37 @@ contains
     before = merge(1, 0, with_startup)
     allocate(chain(size(added) + before))
 
+    ! THE GRAPH the blocks are read from: one node per block, slice
+    ! and component, with the couplings' relations. The expansion lays
+    ! its blocks end to end, where the chain's blocks share the
+    ! instants one hands the next, so the tower is built over each
+    ! block's own span with each block's own steps laid end to end -
+    ! a block reads only its own steps, and the sharing is the
+    ! chain's junction. One more tower covers the startup's refined
+    ! steps.
+    knobs = [real(dp) ::]
+    do b = 1, size(added)
+       knobs = [knobs, dt(first(b) + merge(1, 0, b == 1):last(b))]
+    end do
+    call tower % build(physics, schemes, [(last(b) - first(b) + 1, b = 1, size(added))], &
+         & designed_grid(sum(knobs)), 0, knobs)
+
     achieved = 0.0_dp
     call tally_enter(at_horizon)
     if (with_startup) then
        fine = [0.0_dp, (dt(1 + (k - 1) / r + 1) / real(r, dp), k = 1, (given - 1) * r)]
-       call one_block(chain, 1, crouzeix_three_stage(), physics, degrees, 1, (given - 1) * r + 1, &
-            & 1, fine, [0, (1 + (k - 1) / r + 1, k = 1, (given - 1) * r)], 1.0_dp / real(r, dp), &
-            & .false., design, initial, one_achieved, one_left, nodes, spatial)
+       allocate(starter(1) % scheme, source=crouzeix_three_stage())
+       call startup_tower % build(physics, starter, [(given - 1) * r + 1], &
+            & designed_grid(sum(fine)), 0, fine(2:))
+       call one_block(chain, 1, startup_tower, 1, starter(1) % scheme, physics, degrees, 1, &
+            & (given - 1) * r + 1, 1, fine, [0, (1 + (k - 1) / r + 1, k = 1, (given - 1) * r)], &
+            & 1.0_dp / real(r, dp), .false., design, initial, one_achieved, one_left, nodes, &
+            & spatial)
        achieved = one_achieved
        if (present(left)) left = one_left
     end if
     do b = 1, size(added)
-       call one_block(chain, before + b, schemes(b) % scheme, physics, degrees, &
+       call one_block(chain, before + b, tower, b, schemes(b) % scheme, physics, degrees, &
             & 1 + (first(b) - 1) * r, 1 + (last(b) - 1) * r, r, dt(first(b):last(b)), &
             & [(k, k = first(b), last(b))], 1.0_dp, .true., design, initial, &
             & one_achieved, one_left, nodes, spatial)
@@ -362,11 +371,14 @@ contains
   ! then built and solved.
   !===================================================================!
 
-  subroutine one_block(chain, b, scheme, physics, degrees, first, last, stride, dt, &
-       & coarse_step, fraction, counted, design, initial, achieved, left, nodes, spatial)
+  subroutine one_block(chain, b, tower, in_tower, scheme, physics, degrees, first, last, &
+       & stride, dt, coarse_step, fraction, counted, design, initial, achieved, left, nodes, &
+       & spatial)
 
     type(chain_block)     , intent(inout) :: chain(:)
-    integer               , intent(in)    :: b, degrees, first, last, stride, coarse_step(:)
+    type(expansion)       , intent(in)    :: tower
+    integer               , intent(in)    :: b, in_tower, degrees, first, last, stride
+    integer               , intent(in)    :: coarse_step(:)
     class(family)         , intent(in)    :: scheme
     class(nodal_integrand), intent(in)    :: physics
     real(dp)              , intent(in)    :: dt(:), fraction, design, initial(:)
@@ -410,7 +422,7 @@ contains
     else
        call tally_enter(at_block)
     end if
-    call built(scheme, physics, degrees, size(dt), dt, held, chain(b) % rows, &
+    call built(tower, in_tower, scheme, physics, held, chain(b) % rows, &
          & chain(b) % instants_at, nodes, spatial)
     call swept(chain(b) % rows, design, chain(b) % state, achieved, left)
     chain(b) % began = left % began
@@ -1352,16 +1364,12 @@ contains
 
     type(stencil) :: rows
     real(dp), allocatable :: w(:)
-    integer :: e, n
+    integer :: e
 
-    n = size(b % dt)
-    if (marches_by_stages(b % scheme, degrees)) then
-       rows = stage_rows(b % scheme, degrees, n, b % dt, b % nodes, along, along2)
-    else
-       rows = scheme_rows(b % scheme, degrees, n, b % dt, b % nodes, along, along2)
-    end if
+    rows = b % rows % rows_varied(b % scheme, b % dt, along, along2)
     call rows % weights % real_vector(w)
     allocate(r(size(x)), source=0.0_dp)
+    associate (u1 => degrees); end associate
     do e = 1, rows % pattern % num_edges()
        r(rows % pattern % edge_head(e)) = r(rows % pattern % edge_head(e)) &
             & + w(e) * x(rows % pattern % edge_tail(e))
@@ -1379,16 +1387,12 @@ contains
 
     type(stencil) :: rows
     real(dp), allocatable :: w(:), kept(:)
-    integer :: e, n
+    integer :: e
 
-    n = size(b % dt)
-    if (marches_by_stages(b % scheme, degrees)) then
-       rows = stage_rows(b % scheme, degrees, n, b % dt, b % nodes, along)
-    else
-       rows = scheme_rows(b % scheme, degrees, n, b % dt, b % nodes, along)
-    end if
+    rows = b % rows % rows_varied(b % scheme, b % dt, along)
     call rows % weights % real_vector(w)
     kept = y
+    associate (u1 => degrees); end associate
     kept(b % rows % carried_unknowns()) = 0.0_dp
     allocate(r(size(y)), source=0.0_dp)
     do e = 1, rows % pattern % num_edges()

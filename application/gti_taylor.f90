@@ -63,7 +63,7 @@ module gti_taylor
   use operation_family     , only : family
   use physics_integrand    , only : nodal_integrand
   use gti_block            , only : block_residual
-  use gti_march            , only : block_of, solved, unknowns_graph, frozen_inputs
+  use gti_march            , only : solved, unknowns_graph, frozen_inputs
   use gti_march            , only : solved_linear, fresh_stamp
 
   implicit none

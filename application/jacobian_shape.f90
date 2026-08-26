@@ -67,7 +67,7 @@ contains
 
     call march_chain(schemes, added, van_der_pol(degrees - 1), degrees, &
          & uniform_grid(duration), design, held, chain, dt, t, achieved)
-    call chain_systems(chain, [one_functional(van_der_pol_energy(degrees - 1))], degrees, dt, &
+    call chain_systems(chain, [one_functional(van_der_pol_energy(degrees - 1))], degrees, &
          & design, systems)
 
     call dense_jacobian(chain, degrees, design, a)

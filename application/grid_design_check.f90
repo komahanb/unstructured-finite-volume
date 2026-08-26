@@ -19,14 +19,17 @@
 ! expansion's second order; and a central difference of the first
 ! derivatives, themselves known to tau, gives the rows to tau^(2/3).
 !
-! The families read one instant back, so the first instant is the
-! given state and no startup depends on the steps.
+! The families read three instants back, so a startup block marches
+! the first three from the given state, on steps split four ways;
+! it is part of the chain, and its own dependence on the weights and
+! the parameter is carried through the junction like any other.
 !
 !      ./grid_design_check [tolerance]
 program grid_design_check
 
   use util_precision        , only : dp
-  use operation_family_dirk , only : implicit_midpoint, crouzeix_two_stage
+  use operation_family_bdf  , only : bdf_family
+  use operation_family_adams, only : adams_family
   use operation_grid        , only : designed_grid
   use operation_minimization, only : relative, by_rate
   use physics_vanderpol     , only : van_der_pol, van_der_pol_energy, van_der_pol_dissipation
@@ -59,10 +62,10 @@ program grid_design_check
   call set_stopping(tau, relative, by_rate, 100)
   delta = tau ** (1.0_dp / 3.0_dp)
 
-  ! two blocks of one-history stage families over weights that are
-  ! not uniform, so that no step is like another
-  allocate(schemes(1) % scheme, source=crouzeix_two_stage())
-  allocate(schemes(2) % scheme, source=implicit_midpoint())
+  ! two blocks of three-history families over weights that are not
+  ! uniform, so that no step is like another
+  allocate(schemes(1) % scheme, source=bdf_family(3))
+  allocate(schemes(2) % scheme, source=adams_family(3))
   functionals(1) = one_functional(van_der_pol_energy(state_degree))
   functionals(2) = one_functional(van_der_pol_dissipation(state_degree))
   p  = [(1.0_dp + 0.5_dp * sin(real(k, dp)), k = 1, instants - 1)]
@@ -70,7 +73,7 @@ program grid_design_check
 
   call marched(p, design, f)
   call step_partials(designed_grid(duration), instants, p, v)
-  call chain_systems(chain, functionals, degrees, dt, design, systems, step_partials=v)
+  call chain_systems(chain, functionals, degrees, design, systems, step_partials=v)
   tangent = chain_by_tangent(chain, systems, degrees, design)
   adjoint = chain_by_adjoint(chain, systems, degrees, design)
   route   = route_of(size(tangent, 2), size(tangent, 1), 1)
@@ -111,7 +114,7 @@ program grid_design_check
   ! the second derivatives: the hessian of every functional, by the
   ! reverse route at order two
   call marched(p, design, f, 2)
-  call chain_hessian(chain, systems, functionals, degrees, dt, design, hessian, &
+  call chain_hessian(chain, systems, functionals, degrees, design, hessian, &
        & step_partials=v, steps=designed_grid(duration), grid_design=p)
   write(*,'(a)') ' '
   write(*,'(a,i0,a,i0,a,i0)') ' second derivatives by the reverse route: hessians ', &
@@ -151,9 +154,9 @@ contains
     if (present(order)) m = order
     call march_chain(schemes, [11, 10], van_der_pol(state_degree), degrees, &
          & designed_grid(duration), nu, q0, chain, dt, t, achieved, grid_design=weights, &
-         & left=left)
+         & left=left, startup=4)
     if (.not. left % converged) error stop 'grid_design_check: the march converged'
-    call chain_expansion(chain, van_der_pol(state_degree), functionals, degrees, dt, nu, m, f)
+    call chain_expansion(chain, van_der_pol(state_degree), functionals, degrees, nu, m, f)
 
   end subroutine marched
 
@@ -167,7 +170,7 @@ contains
 
     call marched(weights, nu, f)
     call step_partials(designed_grid(duration), instants, weights, vw)
-    call chain_systems(chain, functionals, degrees, dt, nu, systems, step_partials=vw)
+    call chain_systems(chain, functionals, degrees, nu, systems, step_partials=vw)
     df = chain_by_adjoint(chain, systems, degrees, nu)
 
   end subroutine differenced

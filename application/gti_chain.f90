@@ -58,7 +58,7 @@ module gti_chain
 
   use util_precision  , only : dp
   use operation_family , only : family
-  use operation_grid   , only : grid, designed_grid
+  use operation_grid   , only : grid
   use physics_integrand, only : nodal_integrand
   use gti_expansion    , only : family_holder, marches_by_stages
   use gti_block        , only : block_residual
@@ -82,7 +82,7 @@ module gti_chain
   implicit none
 
   private
-  public :: chain_block, march_chain, chain_expansion, instant_components, startup_trajectory
+  public :: chain_block, march_chain, chain_expansion, instant_components
   public :: functional_holder, one_functional, first_of, chain_hessian
   public :: chain_system, chain_systems, chain_by_tangent, chain_by_adjoint
   public :: expansion_substitutions
@@ -95,26 +95,36 @@ module gti_chain
   !===================================================================!
 
   type :: chain_block
-
      type(block_residual)  :: rows
      integer , allocatable :: instants_at(:)
      real(dp), allocatable :: state(:)
-     integer               :: first = 0
-     integer               :: last  = 0
+     ! WHERE THE BLOCK LIES on the horizon: its first and last instant
+     ! as fine indices, and its stride, the fine indices between its
+     ! own instants - one for a startup block over refined steps, the
+     ! refinement for every block over the march's own steps, and one
+     ! for both when there is no startup
+     integer               :: first  = 0
+     integer               :: last   = 0
+     integer               :: stride = 1
      integer               :: given = 0
      integer               :: primary = 0
-
      ! the components one instant holds: the degrees at every node
      integer :: width = 0
      integer :: nodes = 1
      ! the family and the steps the block was built from, so that its
-     ! rows can be differentiated along a direction in the steps
+     ! rows can be differentiated along a direction in the steps; each
+     ! step as a fraction of the march's step it lies in, and which
+     ! one, so that a direction in the march's steps reads on its own
+     integer , allocatable :: coarse_step(:)
      class(family), allocatable :: scheme
      real(dp)     , allocatable :: dt(:)
+     real(dp)              :: fraction = 1.0_dp
+     ! whether its instants count in the functional: a startup's do
+     ! not, its instants being what the first block is given
+     logical               :: counted = .true.
      ! the imbalance its solve began at, against which its relative
      ! tolerance was measured
      real(dp) :: began = 0.0_dp
-
   end type chain_block
 
   !===================================================================!
@@ -153,10 +163,52 @@ module gti_chain
 contains
 
   !===================================================================!
-  ! The components a chain holds at one of the horizon's instants,
-  ! found in whichever block computed it. A shared instant is held by
-  ! both and reads the same either way, so the earlier is taken.
+  ! The block holding a fine instant, the latest that does - a block
+  ! recomputes the instants it was given, so the latest is what the
+  ! next block reads - and where the instant lies in it. None holds
+  ! it, and the block is zero.
   !===================================================================!
+
+  pure subroutine locate(chain, fine, held_by, local)
+
+    type(chain_block), intent(in)  :: chain(:)
+    integer          , intent(in)  :: fine
+    integer          , intent(out) :: held_by, local
+
+    integer :: b
+
+    held_by = 0
+    local   = 0
+    do b = size(chain), 1, -1
+       if (fine < chain(b) % first .or. fine > chain(b) % last) cycle
+       if (mod(fine - chain(b) % first, chain(b) % stride) /= 0) cycle
+       held_by = b
+       local   = (fine - chain(b) % first) / chain(b) % stride + 1
+       return
+    end do
+
+  end subroutine locate
+
+  !===================================================================!
+  ! The components a chain holds at one fine instant, and at one of
+  ! the march's own instants, which is the fine one at the march's
+  ! stride.
+  !===================================================================!
+
+  pure function fine_components(chain, fine) result(x)
+
+    type(chain_block), intent(in) :: chain(:)
+    integer          , intent(in) :: fine
+    real(dp), allocatable :: x(:)
+
+    integer :: b, local, at
+
+    call locate(chain, fine, b, local)
+    if (b == 0) error stop 'gti_chain: that instant lies outside the chain'
+    at = chain(b) % instants_at(local)
+    x  = chain(b) % state(at + 1:at + chain(b) % width)
+
+  end function fine_components
 
   pure function instant_components(chain, instant) result(x)
 
@@ -164,30 +216,21 @@ contains
     integer          , intent(in) :: instant
     real(dp), allocatable :: x(:)
 
-    integer :: b, local, at
-
-    do b = 1, size(chain)
-       if (instant < chain(b) % first .or. instant > chain(b) % last) cycle
-       local = instant - chain(b) % first + 1
-       at    = chain(b) % instants_at(local)
-       x     = chain(b) % state(at + 1:at + chain(b) % width)
-       return
-    end do
-
-    error stop 'gti_chain: that instant lies outside the chain'
+    x = fine_components(chain, 1 + (instant - 1) * chain(size(chain)) % stride)
 
   end function instant_components
 
+
   !===================================================================!
-  ! What a block is given at the instants it shares with the one
+  ! What a block is given at the instants it shares with the ones
   ! before it, laid out the way its own carried rows expect: instant
-  ! by instant, degrees within an instant.
+  ! by instant at its own stride, the components within an instant.
   !===================================================================!
 
-  pure function handed_over(earlier, first, given) result(held)
+  pure function handed_over(earlier, first, stride, given) result(held)
 
     type(chain_block), intent(in) :: earlier(:)
-    integer          , intent(in) :: first, given
+    integer          , intent(in) :: first, stride, given
     real(dp), allocatable :: held(:)
 
     integer :: i, width
@@ -196,7 +239,7 @@ contains
     allocate(held(given * width))
 
     do i = 1, given
-       held((i - 1) * width + 1:i * width) = instant_components(earlier, first + i - 1)
+       held((i - 1) * width + 1:i * width) = fine_components(earlier, first + (i - 1) * stride)
     end do
 
   end function handed_over
@@ -239,7 +282,7 @@ contains
   !===================================================================!
 
   subroutine march_chain(schemes, added, physics, degrees, steps, &
-       & design, initial, chain, dt, t, achieved, grid_design, left, nodes, spatial)
+       & design, initial, chain, dt, t, achieved, grid_design, left, nodes, spatial, startup)
 
     type(family_holder)   , intent(in) :: schemes(:)
     integer               , intent(in) :: added(:), degrees
@@ -253,11 +296,19 @@ contains
     type(imbalance), intent(out), optional :: left
     integer        , intent(in) , optional :: nodes
     type(stencil)  , intent(in) , optional :: spatial
+    ! given, the first block's given instants are marched first by a
+    ! stage family of order four, every step split this many ways,
+    ! as block one of the chain: a startup that is part of the chain
+    ! and so of every derivative, and reads the initial state at the
+    ! first instant alone
+    integer        , intent(in) , optional :: startup
 
     type(imbalance) :: one_left
     integer , allocatable :: first(:), last(:)
+    real(dp), allocatable :: fine(:)
     real(dp) :: one_achieved
-    integer :: b
+    integer :: b, k, r, given, before
+    logical :: with_startup
 
     if (size(added) < 1) then
        error stop 'gti_chain: a chain holds at least one block'
@@ -266,19 +317,38 @@ contains
     call horizon_bounds(schemes, added, degrees - 1, first, last)
     call partitioned(steps, last(size(added)), dt, t, grid_design)
 
-    allocate(chain(size(added)))
+    given        = schemes(1) % scheme % history_depth(degrees - 1)
+    with_startup = .false.
+    r            = 1
+    if (present(startup)) then
+       if (given > 1) then
+          with_startup = .true.
+          r            = max(startup, 1)
+       end if
+    end if
+    before = merge(1, 0, with_startup)
+    allocate(chain(size(added) + before))
+
     achieved = 0.0_dp
-
     call tally_enter(at_horizon)
+    if (with_startup) then
+       fine = [0.0_dp, (dt(1 + (k - 1) / r + 1) / real(r, dp), k = 1, (given - 1) * r)]
+       call one_block(chain, 1, crouzeix_three_stage(), physics, degrees, 1, (given - 1) * r + 1, &
+            & 1, fine, [0, (1 + (k - 1) / r + 1, k = 1, (given - 1) * r)], 1.0_dp / real(r, dp), &
+            & .false., design, initial, one_achieved, one_left, nodes, spatial)
+       achieved = one_achieved
+       if (present(left)) left = one_left
+    end if
     do b = 1, size(added)
-       call one_block(chain, b, schemes(b) % scheme, physics, degrees, &
-            & first(b), last(b), dt, design, initial, one_achieved, one_left, nodes, spatial)
+       call one_block(chain, before + b, schemes(b) % scheme, physics, degrees, &
+            & 1 + (first(b) - 1) * r, 1 + (last(b) - 1) * r, r, dt(first(b):last(b)), &
+            & [(k, k = first(b), last(b))], 1.0_dp, .true., design, initial, &
+            & one_achieved, one_left, nodes, spatial)
        achieved = max(achieved, one_achieved)
-
        ! The report kept is the first block's that did not converge:
        ! every block after it reads a state it never reached.
        if (present(left)) then
-          if (b == 1) left = one_left
+          if (before + b == 1) left = one_left
           if (left % converged .and. .not. one_left % converged) left = one_left
        end if
     end do
@@ -292,14 +362,15 @@ contains
   ! then built and solved.
   !===================================================================!
 
-  subroutine one_block(chain, b, scheme, physics, degrees, first, last, dt, &
-       & design, initial, achieved, left, nodes, spatial)
+  subroutine one_block(chain, b, scheme, physics, degrees, first, last, stride, dt, &
+       & coarse_step, fraction, counted, design, initial, achieved, left, nodes, spatial)
 
     type(chain_block)     , intent(inout) :: chain(:)
-    integer               , intent(in)    :: b, degrees, first, last
+    integer               , intent(in)    :: b, degrees, first, last, stride, coarse_step(:)
     class(family)         , intent(in)    :: scheme
     class(nodal_integrand), intent(in)    :: physics
-    real(dp)              , intent(in)    :: dt(:), design, initial(:)
+    real(dp)              , intent(in)    :: dt(:), fraction, design, initial(:)
+    logical               , intent(in)    :: counted
     real(dp)              , intent(out)   :: achieved
     type(imbalance)       , intent(out)   :: left
     integer      , intent(in), optional   :: nodes
@@ -307,22 +378,29 @@ contains
 
     real(dp), allocatable :: held(:)
 
-    chain(b) % first   = first
-    chain(b) % last    = last
-    chain(b) % given   = scheme % history_depth(degrees - 1)
-    chain(b) % primary = scheme % primary_degree(degrees - 1)
-    chain(b) % width   = degrees
+    chain(b) % first    = first
+    chain(b) % last     = last
+    chain(b) % stride   = stride
+    chain(b) % given    = scheme % history_depth(degrees - 1)
+    chain(b) % primary  = scheme % primary_degree(degrees - 1)
+    chain(b) % width    = degrees
     if (present(nodes)) then
        chain(b) % width = degrees * nodes
        chain(b) % nodes = nodes
     end if
     allocate(chain(b) % scheme, source=scheme)
-    chain(b) % dt = dt(first:last)
+    chain(b) % dt          = dt
+    chain(b) % coarse_step = coarse_step
+    chain(b) % fraction    = fraction
+    chain(b) % counted     = counted
 
     if (b == 1) then
+       if (size(initial) /= chain(b) % given * chain(b) % width) then
+          error stop 'gti_chain: the initial state holds the first block''s given instants'
+       end if
        held = initial
     else
-       held = handed_over(chain(1:b - 1), first, chain(b) % given)
+       held = handed_over(chain(1:b - 1), first, stride, chain(b) % given)
     end if
 
     ! A block whose scheme keeps stages within a step is filed under
@@ -332,85 +410,18 @@ contains
     else
        call tally_enter(at_block)
     end if
-    call built(scheme, physics, degrees, last - first + 1, dt(first:last), &
-         & held, chain(b) % rows, chain(b) % instants_at, nodes, spatial)
+    call built(scheme, physics, degrees, size(dt), dt, held, chain(b) % rows, &
+         & chain(b) % instants_at, nodes, spatial)
     call swept(chain(b) % rows, design, chain(b) % state, achieved, left)
     chain(b) % began = left % began
-
     call tally_leave()
 
   end subroutine one_block
 
   !===================================================================!
-  ! The first widest instants of a march, from the initial state: a
-  ! stage family of order four, which reads one instant back, marched
-  ! as one block over the first widest - 1 steps with each split
-  ! refinement ways, and sampled back at the instants. The steps given are the march's
-  ! own, dt(k) ending at instant k with dt(1) zero. Over a field the
-  ! nodes and the level below are laid on its blocks as on the march's.
-  !===================================================================!
-
-  subroutine startup_trajectory(physics, degrees, widest, refinement, dt, design, &
-       & initial, held, nodes, spatial)
-
-    class(nodal_integrand), intent(in)  :: physics
-    integer               , intent(in)  :: degrees, widest, refinement
-    real(dp)              , intent(in)  :: dt(:), design, initial(:)
-    real(dp), allocatable , intent(out) :: held(:)
-    integer      , intent(in), optional :: nodes
-    type(stencil), intent(in), optional :: spatial
-
-    type(family_holder), allocatable :: schemes(:)
-    type(chain_block)  , allocatable :: chain(:)
-    integer , allocatable :: added(:)
-    real(dp), allocatable :: fine_dt(:), fine_t(:), substeps(:)
-    real(dp) :: achieved, span
-    integer :: k, r
-
-    if (widest == 1) then
-       held = initial
-       return
-    end if
-
-    r        = max(refinement, 1)
-    substeps = [(dt(1 + (k - 1) / r + 1) / real(r, dp), k = 1, (widest - 1) * r)]
-    span     = sum(substeps)
-
-    added = [(widest - 1) * r + 1]
-    allocate(schemes(1))
-    allocate(schemes(1) % scheme, source=crouzeix_three_stage())
-
-    call march_chain(schemes, added, physics, degrees, designed_grid(span), design, &
-         & initial, chain, fine_dt, fine_t, achieved, grid_design=substeps, &
-         & nodes=nodes, spatial=spatial)
-    call sampled(chain, widest, r, held)
-
-  end subroutine startup_trajectory
-
-  !===================================================================!
-  ! The fine march read at every r-th instant, instant by instant.
-  !===================================================================!
-
-  subroutine sampled(chain, widest, r, held)
-
-    type(chain_block), intent(in)  :: chain(:)
-    integer          , intent(in)  :: widest, r
-    real(dp), allocatable, intent(out) :: held(:)
-
-    integer :: k, width
-
-    width = chain(1) % width
-    allocate(held(widest * width))
-    do k = 1, widest
-       held((k - 1) * width + 1:k * width) = instant_components(chain, 1 + (k - 1) * r)
-    end do
-
-  end subroutine sampled
-
-  !===================================================================!
-  ! The instants one block owns: the ones it computed, and for the
-  ! first block the ones it was given as well, since nobody else
-  ! holds them.
+  ! The instants one block owns, as its own local indices: the ones
+  ! it computed, and the ones it was given as well when no counted
+  ! block before it holds them. A startup block owns none.
   !===================================================================!
 
   pure subroutine owned(chain, b, from, to)
@@ -419,9 +430,15 @@ contains
     integer          , intent(in)  :: b
     integer          , intent(out) :: from, to
 
-    from = chain(b) % first + chain(b) % given
-    if (b == 1) from = chain(b) % first
-    to = chain(b) % last
+    to = size(chain(b) % instants_at)
+    if (.not. chain(b) % counted) then
+       from = to + 1
+       return
+    end if
+    from = 1
+    if (b > 1) then
+       if (chain(b - 1) % counted) from = 1 + chain(b) % given
+    end if
 
   end subroutine owned
 
@@ -431,14 +448,14 @@ contains
   ! coefficient over at every junction just as the trajectory does.
   !===================================================================!
 
-  subroutine chain_expansion(chain, physics, functionals, degrees, dt, design, &
+  subroutine chain_expansion(chain, physics, functionals, degrees, design, &
        & max_order, f, node_measure)
 
     type(chain_block)      , intent(in) :: chain(:)
     class(nodal_integrand) , intent(in) :: physics
     type(functional_holder), intent(in) :: functionals(:)
     integer                , intent(in) :: degrees, max_order
-    real(dp)               , intent(in) :: dt(:), design
+    real(dp)               , intent(in) :: design
     real(dp), allocatable  , intent(out) :: f(:,:)
     real(dp), intent(in), optional      :: node_measure(:)
 
@@ -464,7 +481,7 @@ contains
     ! The jacobian of every block, factorised once. Every order below
     ! substitutes against it.
     if (max_order >= 1) then
-       call chain_systems(chain, functionals, degrees, dt, design, systems, node_measure)
+       call chain_systems(chain, functionals, degrees, design, systems, node_measure)
     end if
 
     do m = 1, max_order
@@ -491,7 +508,7 @@ contains
     end do
     call tally_order(0)
 
-    call chain_functional(chain, functionals, degrees, dt, design, max_order, series, f, &
+    call chain_functional(chain, functionals, degrees, design, max_order, series, f, &
          & node_measure)
 
   end subroutine chain_expansion
@@ -541,7 +558,7 @@ contains
             & chain(b) % rows % points_at(), chain(b) % primary, chain(b) % rows % num_carried(), &
             & design, m, series(:, 1:count, b), mark, w)
     else
-       held = coefficients_handed(chain(1:b - 1), chain(b) % first, &
+       held = coefficients_handed(chain(1:b - 1), chain(b) % first, chain(b) % stride, &
             & chain(b) % given, series, m)
        call order_of_series(chain(b) % rows, physics, unknowns, inputs, degrees, &
             & chain(b) % rows % points_at(), chain(b) % primary, chain(b) % rows % num_carried(), &
@@ -558,11 +575,11 @@ contains
   ! instant.
   !===================================================================!
 
-  pure function coefficients_handed(earlier, first, given, series, order) &
+  pure function coefficients_handed(earlier, first, stride, given, series, order) &
        & result(held)
 
     type(chain_block), intent(in) :: earlier(:)
-    integer          , intent(in) :: first, given, order
+    integer          , intent(in) :: first, stride, given, order
     real(dp)         , intent(in) :: series(0:, :, :)
     real(dp), allocatable :: held(:)
 
@@ -572,14 +589,10 @@ contains
     allocate(held(given * width), source=0.0_dp)
 
     do i = 1, given
-       do b = 1, size(earlier)
-          if (first + i - 1 < earlier(b) % first) cycle
-          if (first + i - 1 > earlier(b) % last) cycle
-          local = first + i - 1 - earlier(b) % first + 1
-          at    = earlier(b) % instants_at(local)
-          held((i - 1) * width + 1:i * width) = series(order, at + 1:at + width, b)
-          exit
-       end do
+       call locate(earlier, first + (i - 1) * stride, b, local)
+       if (b == 0) cycle
+       at = earlier(b) % instants_at(local)
+       held((i - 1) * width + 1:i * width) = series(order, at + 1:at + width, b)
     end do
 
   end function coefficients_handed
@@ -590,13 +603,13 @@ contains
   ! the measure of its node.
   !===================================================================!
 
-  subroutine chain_functional(chain, functionals, degrees, dt, design, max_order, &
+  subroutine chain_functional(chain, functionals, degrees, design, max_order, &
        & series, f, node_measure)
 
     type(chain_block)      , intent(in) :: chain(:)
     type(functional_holder), intent(in) :: functionals(:)
     integer                , intent(in) :: degrees, max_order
-    real(dp)               , intent(in) :: dt(:), design, series(0:, :, :)
+    real(dp)               , intent(in) :: design, series(0:, :, :)
     real(dp), allocatable  , intent(out) :: f(:,:)
     real(dp), intent(in), optional      :: node_measure(:)
 
@@ -608,8 +621,9 @@ contains
 
     do b = 1, size(chain)
        call owned(chain, b, from, to)
+       if (from > to) cycle
        count = chain(b) % rows % num_unknowns()
-       call owned_points(chain(b), dt, from, to, node_measure, at, weight)
+       call owned_points(chain(b), from, to, node_measure, at, weight)
        do i = 1, size(functionals)
           do m = 0, max_order
              call nodal_coefficient(functionals(i) % rule, degrees, at, series(:, 1:count, b), &
@@ -628,13 +642,13 @@ contains
   ! that a shared instant counts once.
   !===================================================================!
 
-  subroutine chain_systems(chain, functionals, degrees, dt, design, systems, node_measure, &
+  subroutine chain_systems(chain, functionals, degrees, design, systems, node_measure, &
        & step_partials)
 
     type(chain_block)      , intent(in) :: chain(:)
     type(functional_holder), intent(in) :: functionals(:)
     integer                , intent(in) :: degrees
-    real(dp)               , intent(in) :: dt(:), design
+    real(dp)               , intent(in) :: design
     type(chain_system), allocatable, intent(out) :: systems(:)
     real(dp), intent(in), optional      :: node_measure(:)
     ! the partial of every step in every entry of the grid's design,
@@ -669,19 +683,22 @@ contains
        systems(b) % rate(:, 1) = rate
        do j = 2, num_designs
           systems(b) % rate(:, j) = varied_rate(chain(b), degrees, &
-               & step_partials(chain(b) % first:chain(b) % last, j - 1))
+               & along_of(chain(b), step_partials(:, j - 1)))
        end do
 
        ! every functional: its gradient over the owned points, its own
        ! partial in the physics' design, and the measure's partial in
        ! each entry of the grid's
+       ! a block with no owned points - a startup - has no gradient
+       ! and nothing to add
        call owned(chain, b, from, to)
-       call owned_points(chain(b), dt, from, to, node_measure, at, weight)
+       if (from > to) cycle
+       call owned_points(chain(b), from, to, node_measure, at, weight)
        points = stored_directed_graph(size(at), tails=[integer ::], heads=[integer ::])
        call at_owned_points(inputs, degrees, design, at, points, state, knobs)
        series = reshape(chain(b) % state, [1, count])
        do i = 1, num_functionals
-          call owned_gradient(chain, b, functionals(i) % rule, degrees, dt, design, inputs, &
+          call owned_gradient(chain, b, functionals(i) % rule, degrees, design, inputs, &
                & unknowns, g, node_measure)
           systems(b) % g(:, i) = g
           call functional_design_partial(functionals(i) % rule, points, [state, knobs], &
@@ -692,8 +709,8 @@ contains
           do j = 2, num_designs
              ! the measure's partial: the points again, weighted by the
              ! steps' partial in this entry in place of the steps
-             call owned_points(chain(b), step_partials(:, j - 1), from, to, node_measure, &
-                  & varied_at, varied_weight)
+             call owned_points(chain(b), from, to, node_measure, varied_at, varied_weight, &
+                  & along=along_of(chain(b), step_partials(:, j - 1)))
              systems(b) % explicit(i, j) = sum(varied_weight * values)
           end do
        end do
@@ -743,22 +760,23 @@ contains
 
   !===================================================================!
   ! The points one block owns and the measure of each: the owned
-  ! instants, node by node, weighted by the step ending at the
-  ! instant times the node's measure - one when no measure is given,
-  ! as for one node's equation. Invalid input: a measure for other
-  ! than every node.
+  ! instants, node by node, weighted by the block's own step ending
+  ! at the instant times the node's measure - one when no measure is
+  ! given, as for one node's equation. Invalid input: a measure for
+  ! other than every node.
   !===================================================================!
 
-  subroutine owned_points(b, dt, from, to, node_measure, at, weight)
+  subroutine owned_points(b, from, to, node_measure, at, weight, along)
 
     type(chain_block), intent(in) :: b
-    real(dp)         , intent(in) :: dt(:)
     integer          , intent(in) :: from, to
     real(dp), intent(in), optional :: node_measure(:)
     integer , allocatable, intent(out) :: at(:)
     real(dp), allocatable, intent(out) :: weight(:)
+    ! given, a direction in the block's steps in place of the steps
+    real(dp), intent(in), optional :: along(:)
 
-    real(dp), allocatable :: measure(:)
+    real(dp), allocatable :: measure(:), step(:)
     integer :: degrees, k, i
 
     degrees = b % width / b % nodes
@@ -770,12 +788,37 @@ contains
     else
        measure = spread(1.0_dp, 1, b % nodes)
     end if
+    if (present(along)) then
+       step = along
+    else
+       step = b % dt
+    end if
 
-    at     = [((b % instants_at(k - b % first + 1) + (i - 1) * degrees, i = 1, b % nodes), &
-         &     k = from, to)]
-    weight = [((dt(k) * measure(i), i = 1, b % nodes), k = from, to)]
+    at     = [((b % instants_at(k) + (i - 1) * degrees, i = 1, b % nodes), k = from, to)]
+    weight = [((step(k) * measure(i), i = 1, b % nodes), k = from, to)]
 
   end subroutine owned_points
+
+  !===================================================================!
+  ! A direction in the march's steps read on a block's own: each of
+  ! its steps takes the direction of the march's step it lies in,
+  ! times its fraction of that step.
+  !===================================================================!
+
+  pure function along_of(b, v) result(along)
+
+    type(chain_block), intent(in) :: b
+    real(dp)         , intent(in) :: v(:)
+    real(dp) :: along(size(b % dt))
+
+    integer :: k
+
+    along(1) = 0.0_dp
+    do k = 2, size(b % dt)
+       along(k) = v(b % coarse_step(k)) * b % fraction
+    end do
+
+  end function along_of
 
   !===================================================================!
   ! The functional's gradient over the points one block owns - its
@@ -785,13 +828,13 @@ contains
   ! degree gives the whole of it rather than one per unknown.
   !===================================================================!
 
-  subroutine owned_gradient(chain, b, integrand, degrees, dt, design, inputs, &
+  subroutine owned_gradient(chain, b, integrand, degrees, design, inputs, &
        & unknowns, g, node_measure)
 
     type(chain_block)          , intent(in) :: chain(:)
     integer                    , intent(in) :: b, degrees
     class(nodal_integrand)     , intent(in) :: integrand
-    real(dp)                   , intent(in) :: dt(:), design
+    real(dp)                   , intent(in) :: design
     type(stored_field)         , intent(in) :: inputs(:)
     type(stored_directed_graph), intent(in) :: unknowns
     real(dp), allocatable      , intent(out) :: g(:)
@@ -807,7 +850,8 @@ contains
     allocate(g(count), source=0.0_dp)
 
     call owned(chain, b, from, to)
-    call owned_points(chain(b), dt, from, to, node_measure, at, weight)
+    if (from > to) return
+    call owned_points(chain(b), from, to, node_measure, at, weight)
     points = stored_directed_graph(size(at), tails=[integer ::], heads=[integer ::])
     call at_owned_points(inputs, degrees, design, at, points, state, knobs)
 
@@ -854,28 +898,21 @@ contains
   end subroutine at_owned_points
 
   !===================================================================!
-  ! Which block holds one global instant, and where in it.
+  ! Which block holds one fine instant, the latest that does, and
+  ! where in it.
   !===================================================================!
 
-  pure subroutine holder_of(chain, instant, degrees, held_by, at)
+  pure subroutine holder_of(chain, fine, held_by, at)
 
     type(chain_block), intent(in)  :: chain(:)
-    integer          , intent(in)  :: instant, degrees
+    integer          , intent(in)  :: fine
     integer          , intent(out) :: held_by, at
 
-    integer :: b
+    integer :: local
 
-    held_by = 0
-    at      = 0
-
-    do b = 1, size(chain)
-       if (instant < chain(b) % first .or. instant > chain(b) % last) cycle
-       held_by = b
-       at      = chain(b) % instants_at(instant - chain(b) % first + 1)
-       return
-    end do
-
-    associate (u1 => degrees); end associate
+    call locate(chain, fine, held_by, local)
+    at = 0
+    if (held_by > 0) at = chain(held_by) % instants_at(local)
 
   end subroutine holder_of
 
@@ -908,14 +945,14 @@ contains
   ! order two. The table is symmetric in theory, and is not made so.
   !===================================================================!
 
-  subroutine chain_hessian(chain, systems, functionals, degrees, dt, design, hessian, &
+  subroutine chain_hessian(chain, systems, functionals, degrees, design, hessian, &
        & node_measure, step_partials, steps, grid_design)
 
     type(chain_block)      , intent(in) :: chain(:)
     type(chain_system)     , intent(in) :: systems(:)
     type(functional_holder), intent(in) :: functionals(:)
     integer                , intent(in) :: degrees
-    real(dp)               , intent(in) :: dt(:), design
+    real(dp)               , intent(in) :: design
     real(dp), allocatable  , intent(out) :: hessian(:,:,:)
     real(dp)   , intent(in), optional :: node_measure(:), step_partials(:,:), grid_design(:)
     class(grid), intent(in), optional :: steps
@@ -924,9 +961,8 @@ contains
     type(stored_field), allocatable :: inputs(:)
     type(stored_field) :: state, knobs
     real(dp), allocatable :: w(:,:,:), lambda(:,:,:), rhs(:,:), mu(:), explicit(:,:)
-    real(dp), allocatable :: u(:), r2(:), at_rows(:), g2(:), weight(:), values(:), series(:,:)
-    real(dp), allocatable :: dweight(:), second_dt(:)
-    integer , allocatable :: at(:), varied_at(:)
+    real(dp), allocatable :: r2(:), g2(:), weight(:), values(:), series(:,:)
+    integer , allocatable :: at(:)
     integer :: nf, nd, b, i, j, k, count, widest, from, to, p, d, instant, held_by, where
 
     nf = size(functionals)
@@ -954,16 +990,18 @@ contains
           do b = 1, size(chain)
              count = chain(b) % rows % num_unknowns()
              call frozen_at(chain(b), design, unknowns, inputs)
+             call rows_second_transposed(chain(b), degrees, unknowns, inputs, &
+                  & w(1:count, b, j), lambda(1:count, b, i), j, step_partials, mu)
+             rhs(1:count, b) = -mu
              call owned(chain, b, from, to)
-             call owned_points(chain(b), dt, from, to, node_measure, at, weight)
+             if (from > to) cycle
+             call owned_points(chain(b), from, to, node_measure, at, weight)
              points = stored_directed_graph(size(at), tails=[integer ::], heads=[integer ::])
              call at_owned_points(inputs, degrees, design, at, points, state, knobs)
              call functional_second(functionals(i) % rule, points, state, knobs, weight, at, &
                   & degrees, count, w(1:count, b, j), j, step_partials, chain(b), from, to, &
-                  & node_measure, dt, g2)
-             call rows_second_transposed(chain(b), degrees, unknowns, inputs, &
-                  & w(1:count, b, j), lambda(1:count, b, i), j, step_partials, mu)
-             rhs(1:count, b) = g2 - mu
+                  & node_measure, g2)
+             rhs(1:count, b) = rhs(1:count, b) + g2
           end do
           ! the costate's derivative, back along the chain
           do b = size(chain), 1, -1
@@ -975,19 +1013,26 @@ contains
                 hessian(i, j, k) = hessian(i, j, k) - dot_product(mu, systems(b) % rate(:, k))
              end do
              do p = 1, chain(b) % given * chain(b) % width
-                instant = chain(b) % first + (p - 1) / chain(b) % width
+                instant = chain(b) % first + ((p - 1) / chain(b) % width) * chain(b) % stride
                 d       = mod(p - 1, chain(b) % width)
-                call holder_of(chain(1:b - 1), instant, degrees, held_by, where)
+                call holder_of(chain(1:b - 1), instant, held_by, where)
                 if (held_by > 0) rhs(where + d + 1, held_by) = rhs(where + d + 1, held_by) + mu(p)
              end do
           end do
-          ! the rest of the row: the functional's mixed partials, and
-          ! the costate against the rows' mixed partials
+          ! the rest of the row: the costate against the rows' mixed
+          ! partials, and the functional's own mixed partials over the
+          ! points the block owns
           do b = 1, size(chain)
              count = chain(b) % rows % num_unknowns()
              call frozen_at(chain(b), design, unknowns, inputs)
+             do k = 1, nd
+                call rows_mixed(chain(b), degrees, unknowns, inputs, w(1:count, b, j), j, k, &
+                     & step_partials, steps, grid_design, r2)
+                hessian(i, j, k) = hessian(i, j, k) - dot_product(lambda(1:count, b, i), r2)
+             end do
              call owned(chain, b, from, to)
-             call owned_points(chain(b), dt, from, to, node_measure, at, weight)
+             if (from > to) cycle
+             call owned_points(chain(b), from, to, node_measure, at, weight)
              points = stored_directed_graph(size(at), tails=[integer ::], heads=[integer ::])
              call at_owned_points(inputs, degrees, design, at, points, state, knobs)
              series = reshape(chain(b) % state, [1, count])
@@ -995,11 +1040,8 @@ contains
              do k = 1, nd
                 call functional_mixed(functionals(i) % rule, points, state, knobs, weight, at, &
                      & degrees, count, w(1:count, b, j), j, k, step_partials, steps, grid_design, &
-                     & chain(b), from, to, node_measure, dt, values, explicit)
-                call rows_mixed(chain(b), degrees, unknowns, inputs, w(1:count, b, j), j, k, &
-                     & step_partials, steps, grid_design, r2)
-                hessian(i, j, k) = hessian(i, j, k) + explicit(1, 1) &
-                     & - dot_product(lambda(1:count, b, i), r2)
+                     & chain(b), from, to, node_measure, values, explicit)
+                hessian(i, j, k) = hessian(i, j, k) + explicit(1, 1)
              end do
           end do
        end do
@@ -1030,9 +1072,9 @@ contains
        do b = 1, size(chain)
           rhs = -systems(b) % rate(:, j)
           do i = 1, chain(b) % given * chain(b) % width
-             k = chain(b) % first + (i - 1) / chain(b) % width
+             k = chain(b) % first + ((i - 1) / chain(b) % width) * chain(b) % stride
              d = mod(i - 1, chain(b) % width)
-             call holder_of(chain(1:b - 1), k, degrees, held_by, at)
+             call holder_of(chain(1:b - 1), k, held_by, at)
              if (held_by > 0) rhs(i) = w(at + d + 1, held_by, j)
           end do
           call frozen_at(chain(b), design, unknowns, inputs)
@@ -1075,9 +1117,9 @@ contains
                & systems(b) % mark, one)
           lambda(1:count, b, i) = one
           do k = 1, chain(b) % given * chain(b) % width
-             instant = chain(b) % first + (k - 1) / chain(b) % width
+             instant = chain(b) % first + ((k - 1) / chain(b) % width) * chain(b) % stride
              d       = mod(k - 1, chain(b) % width)
-             call holder_of(chain(1:b - 1), instant, degrees, held_by, at)
+             call holder_of(chain(1:b - 1), instant, held_by, at)
              if (held_by > 0) rhs(at + d + 1, held_by) = rhs(at + d + 1, held_by) + one(k)
           end do
        end do
@@ -1093,12 +1135,12 @@ contains
   !===================================================================!
 
   subroutine functional_second(rule, points, state, knobs, weight, at, degrees, count, w, j, &
-       & step_partials, b, from, to, node_measure, dt, g2)
+       & step_partials, b, from, to, node_measure, g2)
 
     class(nodal_integrand)     , intent(in) :: rule
     type(stored_directed_graph), intent(in) :: points
     type(stored_field)         , intent(in) :: state, knobs
-    real(dp)                   , intent(in) :: weight(:), w(:), dt(:)
+    real(dp)                   , intent(in) :: weight(:), w(:)
     integer                    , intent(in) :: at(:), degrees, count, j, from, to
     real(dp), intent(in), optional          :: step_partials(:,:), node_measure(:)
     type(chain_block)          , intent(in) :: b
@@ -1115,7 +1157,8 @@ contains
        call functional_gradient(rule, points, [state, knobs], weight, size(at), degrees, &
             & points % vertex_set(), mixed, along_design=spread(1.0_dp, 1, size(at)))
     else
-       call owned_points(b, step_partials(:, j - 1), from, to, node_measure, varied_at, dweight)
+       call owned_points(b, from, to, node_measure, varied_at, dweight, &
+            & along=along_of(b, step_partials(:, j - 1)))
        call functional_gradient(rule, points, [state, knobs], dweight, size(at), degrees, &
             & points % vertex_set(), mixed)
     end if
@@ -1125,7 +1168,6 @@ contains
           g2(at(p) + d + 1) = owned_g((p - 1) * degrees + d + 1) + mixed((p - 1) * degrees + d + 1)
        end do
     end do
-    associate (u1 => dt); end associate
 
   end subroutine functional_second
 
@@ -1149,7 +1191,7 @@ contains
 
     integer , allocatable :: at(:)
     real(dp), allocatable :: e(:), second(:)
-    integer :: count, d, p, primary, n
+    integer :: count, d, p, primary
 
     count   = size(w)
     at      = b % rows % points_at()
@@ -1176,8 +1218,7 @@ contains
        end if
     end do
     if (j > 1) then
-       n = b % last - b % first + 1
-       mu = mu + varied_transposed(b, degrees, step_partials(b % first:b % last, j - 1), lambda)
+       mu = mu + varied_transposed(b, degrees, along_of(b, step_partials(:, j - 1)), lambda)
     end if
 
   end subroutine rows_second_transposed
@@ -1191,12 +1232,12 @@ contains
   !===================================================================!
 
   subroutine functional_mixed(rule, points, state, knobs, weight, at, degrees, count, w, j, k, &
-       & step_partials, steps, grid_design, b, from, to, node_measure, dt, values, explicit)
+       & step_partials, steps, grid_design, b, from, to, node_measure, values, explicit)
 
     class(nodal_integrand)     , intent(in) :: rule
     type(stored_directed_graph), intent(in) :: points
     type(stored_field)         , intent(in) :: state, knobs
-    real(dp)                   , intent(in) :: weight(:), w(:), dt(:), values(:)
+    real(dp)                   , intent(in) :: weight(:), w(:), values(:)
     integer                    , intent(in) :: at(:), degrees, count, j, k, from, to
     real(dp)   , intent(in), optional       :: step_partials(:,:), grid_design(:), node_measure(:)
     class(grid), intent(in), optional       :: steps
@@ -1220,7 +1261,8 @@ contains
                & points % vertex_set(), part, along_design=spread(1.0_dp, 1, size(at)))
           explicit(1, 1) = explicit(1, 1) + part
        else
-          call owned_points(b, step_partials(:, j - 1), from, to, node_measure, varied_at, dweight)
+          call owned_points(b, from, to, node_measure, varied_at, dweight, &
+               & along=along_of(b, step_partials(:, j - 1)))
           call functional_design_partial(rule, points, [state, knobs], dweight, size(at), &
                & points % vertex_set(), part)
           explicit(1, 1) = explicit(1, 1) + part
@@ -1228,7 +1270,8 @@ contains
     else
        ! the measure's partial in design k against the gradient along
        ! w_j, then its mixed partial in j and k
-       call owned_points(b, step_partials(:, k - 1), from, to, node_measure, varied_at, dweight)
+       call owned_points(b, from, to, node_measure, varied_at, dweight, &
+            & along=along_of(b, step_partials(:, k - 1)))
        call functional_gradient(rule, points, [state, knobs], dweight, size(at), degrees, &
             & points % vertex_set(), g)
        explicit(1, 1) = dot_product(g, along)
@@ -1237,8 +1280,8 @@ contains
                & points % vertex_set(), part)
           explicit(1, 1) = explicit(1, 1) + part
        else
-          call step_second_partials(steps, size(dt), grid_design, j - 1, k - 1, u)
-          call owned_points(b, u, from, to, node_measure, varied_at, uweight)
+          call step_second_partials(steps, size(step_partials, 1), grid_design, j - 1, k - 1, u)
+          call owned_points(b, from, to, node_measure, varied_at, uweight, along=along_of(b, u))
           explicit(1, 1) = explicit(1, 1) + sum(uweight * values)
        end if
     end if
@@ -1279,12 +1322,12 @@ contains
           r2 = r2 + second
        end if
     else
-       r2 = varied_applied(b, degrees, step_partials(b % first:b % last, k - 1), w)
+       r2 = varied_applied(b, degrees, along_of(b, step_partials(:, k - 1)), w)
        if (j > 1) then
-          r2 = r2 + varied_applied(b, degrees, step_partials(b % first:b % last, j - 1), &
-               & b % state, along2=step_partials(b % first:b % last, k - 1))
+          r2 = r2 + varied_applied(b, degrees, along_of(b, step_partials(:, j - 1)), &
+               & b % state, along2=along_of(b, step_partials(:, k - 1)))
           call step_second_partials(steps, size(step_partials, 1), grid_design, j - 1, k - 1, u)
-          r2 = r2 + varied_applied(b, degrees, u(b % first:b % last), b % state)
+          r2 = r2 + varied_applied(b, degrees, along_of(b, u), b % state)
        end if
     end if
 
@@ -1292,7 +1335,11 @@ contains
 
   !===================================================================!
   ! The rows along a direction in the steps - and a second, given -
-  ! applied to a vector, and applied transposed.
+  ! applied to a vector, and applied transposed. A carried row holds
+  ! a given number whatever the steps, so the block's residual has no
+  ! such row there and neither has its derivative: a derived row the
+  ! family would have placed at a carried instant is dropped, as the
+  ! block drops it.
   !===================================================================!
 
   function varied_applied(b, degrees, along, x, along2) result(r)
@@ -1307,7 +1354,7 @@ contains
     real(dp), allocatable :: w(:)
     integer :: e, n
 
-    n = b % last - b % first + 1
+    n = size(b % dt)
     if (marches_by_stages(b % scheme, degrees)) then
        rows = stage_rows(b % scheme, degrees, n, b % dt, b % nodes, along, along2)
     else
@@ -1319,6 +1366,7 @@ contains
        r(rows % pattern % edge_head(e)) = r(rows % pattern % edge_head(e)) &
             & + w(e) * x(rows % pattern % edge_tail(e))
     end do
+    r(b % rows % carried_unknowns()) = 0.0_dp
 
   end function varied_applied
 
@@ -1330,20 +1378,22 @@ contains
     real(dp), allocatable :: r(:)
 
     type(stencil) :: rows
-    real(dp), allocatable :: w(:)
+    real(dp), allocatable :: w(:), kept(:)
     integer :: e, n
 
-    n = b % last - b % first + 1
+    n = size(b % dt)
     if (marches_by_stages(b % scheme, degrees)) then
        rows = stage_rows(b % scheme, degrees, n, b % dt, b % nodes, along)
     else
        rows = scheme_rows(b % scheme, degrees, n, b % dt, b % nodes, along)
     end if
     call rows % weights % real_vector(w)
+    kept = y
+    kept(b % rows % carried_unknowns()) = 0.0_dp
     allocate(r(size(y)), source=0.0_dp)
     do e = 1, rows % pattern % num_edges()
        r(rows % pattern % edge_tail(e)) = r(rows % pattern % edge_tail(e)) &
-            & + w(e) * y(rows % pattern % edge_head(e))
+            & + w(e) * kept(rows % pattern % edge_head(e))
     end do
 
   end function varied_transposed
@@ -1401,9 +1451,9 @@ contains
        do b = 1, size(chain)
           rhs = -systems(b) % rate(:, j)
           do i = 1, chain(b) % given * chain(b) % width
-             k = chain(b) % first + (i - 1) / chain(b) % width
+             k = chain(b) % first + ((i - 1) / chain(b) % width) * chain(b) % stride
              d = mod(i - 1, chain(b) % width)
-             call holder_of(chain(1:b - 1), k, degrees, held_by, at)
+             call holder_of(chain(1:b - 1), k, held_by, at)
              if (held_by > 0) rhs(i) = w(at + d + 1, held_by)
           end do
           call frozen_at(chain(b), design, unknowns, inputs)
@@ -1463,9 +1513,9 @@ contains
              df(i, j) = df(i, j) - dot_product(lambda, systems(b) % rate(:, j))
           end do
           do k = 1, chain(b) % given * chain(b) % width
-             instant = chain(b) % first + (k - 1) / chain(b) % width
+             instant = chain(b) % first + ((k - 1) / chain(b) % width) * chain(b) % stride
              d       = mod(k - 1, chain(b) % width)
-             call holder_of(chain(1:b - 1), instant, degrees, held_by, at)
+             call holder_of(chain(1:b - 1), instant, held_by, at)
              if (held_by > 0) rhs(at + d + 1, held_by) = rhs(at + d + 1, held_by) + lambda(k)
           end do
        end do

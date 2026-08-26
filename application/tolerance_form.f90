@@ -151,7 +151,7 @@ contains
 
     call march_chain(schemes, added, van_der_pol(degrees - 1), degrees, &
          & uniform_grid(duration), design, held, chain, dt, t, achieved)
-    call chain_systems(chain, [one_functional(van_der_pol_energy(degrees - 1))], degrees, dt, &
+    call chain_systems(chain, [one_functional(van_der_pol_energy(degrees - 1))], degrees, &
          & design, systems)
 
     predicted = 1.0_dp + row_sum(scheme, order, top) / dt(size(dt)) ** top
@@ -198,7 +198,7 @@ contains
 
     call march_chain(schemes, added, van_der_pol(degrees - 1), degrees, &
          & uniform_grid(duration), design, held, chain, dt, t, achieved)
-    call chain_systems(chain, [one_functional(van_der_pol_energy(degrees - 1))], degrees, dt, &
+    call chain_systems(chain, [one_functional(van_der_pol_energy(degrees - 1))], degrees, &
          & design, systems)
 
     step = dt(size(dt))

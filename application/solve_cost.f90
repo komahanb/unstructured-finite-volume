@@ -67,7 +67,7 @@ contains
     marched = clock() - marched
 
     formed = clock()
-    call chain_systems(chain, [one_functional(van_der_pol_energy(degrees - 1))], degrees, dt, &
+    call chain_systems(chain, [one_functional(van_der_pol_energy(degrees - 1))], degrees, &
          & design, systems)
     formed = clock() - formed
 

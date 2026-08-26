@@ -76,8 +76,7 @@ program graph_time_integrator
   use gti_expansion         , only : family_holder
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
        & expansion_substitutions, chain_system, chain_systems, chain_by_tangent, &
-       & chain_by_adjoint, instant_components, functional_holder, chain_hessian, &
-       & started => startup_trajectory
+       & chain_by_adjoint, instant_components, functional_holder, chain_hessian
   use gti_sweeps            , only : set_linear_solver, set_assembly, set_storage, set_multigrid, &
        & set_coarse_nodes, set_linear_budget
   use gti_sweeps            , only : route_of, forward_route, reverse_route
@@ -169,22 +168,6 @@ contains
   ! The instants every row starts from, integrated rather than
   ! invented: a stage family over the startup, on a grid refined
   ! within each of its steps, sampled back at the coarse instants.
-  !-------------------------------------------------------------------!
-  ! The first widest instants, marched by the chain's startup from the
-  ! state at rest.
-  !-------------------------------------------------------------------!
-
-  subroutine startup_trajectory(cfg, dt, widest, held)
-
-    type(configuration), intent(in)  :: cfg
-    real(dp)           , intent(in)  :: dt(:)
-    integer            , intent(in)  :: widest
-    real(dp), allocatable, intent(out) :: held(:)
-
-    call started(van_der_pol(cfg % state_degree), cfg % state_degree + 1, widest, &
-         & cfg % startup_refinement, dt, cfg % design, q0, held, nodes=nodes, spatial=op)
-
-  end subroutine startup_trajectory
 
   !-------------------------------------------------------------------!
   ! One family, by name and order. A stage family says that it is
@@ -388,10 +371,9 @@ contains
   ! one is a homogeneous row and takes the same path.
   !-------------------------------------------------------------------!
 
-  subroutine one_row(cfg, startup, names, orders, printed)
+  subroutine one_row(cfg, names, orders, printed)
 
     type(configuration), intent(in)    :: cfg
-    real(dp)           , intent(in)    :: startup(:)
     character(len=*)   , intent(in)    :: names(:)
     integer            , intent(in)    :: orders(:)
     integer            , intent(inout) :: printed
@@ -399,7 +381,7 @@ contains
     type(family_holder), allocatable :: schemes(:)
     type(chain_block)  , allocatable :: chain(:)
     integer , allocatable :: added(:)
-    real(dp), allocatable :: dt(:), t(:), held(:), f(:,:)
+    real(dp), allocatable :: dt(:), t(:), f(:,:)
     type(imbalance) :: left
     real(dp) :: achieved
     integer :: nd, width, given, reported, i, m
@@ -415,15 +397,15 @@ contains
 
     call steps_of(cfg, dt, t)
     given = schemes(1) % scheme % history_depth(nd - 1)
-    if (given * width > size(startup)) return
-    held  = startup(1:given * width)
 
+    ! the chain from the state at the first instant: a startup block
+    ! over the first given instants where the family reaches back
+    ! over more than one, then the row's own blocks
     call tally_enter(at_expansion)
     call tally_order(0)
     call march_chain(schemes, added, van_der_pol(cfg % state_degree), nd, &
-         & chosen_grid(cfg), cfg % design, held, chain, dt, t, achieved, left=left, &
-         & nodes=nodes, spatial=op)
-
+         & chosen_grid(cfg), cfg % design, q0, chain, dt, t, achieved, left=left, &
+         & nodes=nodes, spatial=op, startup=cfg % startup_refinement)
     ! Every derivative is taken at the state the march reached, so a
     ! row that did not converge has none to take and only its value is
     ! expanded.
@@ -432,7 +414,7 @@ contains
     else
        reported = cfg % max_derivative_degree
     end if
-    call chain_expansion(chain, van_der_pol(cfg % state_degree), functionals, nd, dt, &
+    call chain_expansion(chain, van_der_pol(cfg % state_degree), functionals, nd, &
          & cfg % design, reported, f, node_measure=volume)
     call tally_leave()
 
@@ -458,7 +440,7 @@ contains
     end if
 
     if (over_field) then
-       if (lists(cfg % check, 'ode')) call against_the_ode(cfg, schemes, added, held, f(:, 1))
+       if (lists(cfg % check, 'ode')) call against_the_ode(cfg, schemes, added, f(:, 1))
        if (lists(cfg % check, 'mode')) then
           call against_the_mode(space, extent_a, extent_b, cfg % diffusion, cfg % spatial_order, &
                & cfg % design, t(cfg % instants), instant_components(chain, cfg % instants), nd)
@@ -502,10 +484,10 @@ contains
        ! steps are the weights that give them back
        p = dt(2:cfg % instants)
        call step_partials(designed_grid(cfg % time_duration), cfg % instants, p, v)
-       call chain_systems(chain, functionals, nd, dt, cfg % design, systems, &
+       call chain_systems(chain, functionals, nd, cfg % design, systems, &
             & node_measure=volume, step_partials=v)
     else
-       call chain_systems(chain, functionals, nd, dt, cfg % design, systems, node_measure=volume)
+       call chain_systems(chain, functionals, nd, cfg % design, systems, node_measure=volume)
     end if
     num_designs = size(systems(1) % rate, 2)
 
@@ -545,7 +527,7 @@ contains
     if (grid_designed .and. ubound(f, 1) >= 2) then
        if (route_of(num_designs, num_functionals, 2) == reverse_route) then
           call chain_hessian(chain, functionals=functionals, systems=systems, degrees=nd, &
-               & dt=dt, design=cfg % design, hessian=hessian, node_measure=volume, &
+               & design=cfg % design, hessian=hessian, node_measure=volume, &
                & step_partials=v, steps=designed_grid(cfg % time_duration), grid_design=p)
           do i = 1, num_functionals
              write(*,'(a,i0,a,es12.4,a,es10.2,a,es10.2)') &
@@ -593,33 +575,30 @@ contains
   !-------------------------------------------------------------------!
   ! At kappa = 0 with a constant field every node is one node's
   ! equation: the field's functional over the area is the node's,
-  ! order by order. The node's march is the same chain from the same
-  ! history, read at the first node.
+  ! order by order. The node's march is the same chain, startup
+  ! included, from the first node's own first instant.
   !-------------------------------------------------------------------!
 
-  subroutine against_the_ode(cfg, schemes, added, held, f_field)
+  subroutine against_the_ode(cfg, schemes, added, f_field)
 
     type(configuration), intent(in) :: cfg
     type(family_holder), intent(in) :: schemes(:)
     integer            , intent(in) :: added(:)
-    real(dp)           , intent(in) :: held(:), f_field(0:)
+    real(dp)           , intent(in) :: f_field(0:)
 
     type(chain_block), allocatable :: chain(:)
-    real(dp), allocatable :: held_node(:), f(:,:), dt(:), t(:)
+    real(dp), allocatable :: f(:,:), dt(:), t(:)
     real(dp) :: achieved, area
-    integer  :: nd, width, given, k, d
+    integer  :: nd, d
     character(len=:), allocatable :: line
     character(len=20) :: cell
 
-    nd    = cfg % state_degree + 1
-    width = nd * nodes
-    given = size(held) / width
-    area  = sum(volume)
+    nd   = cfg % state_degree + 1
+    area = sum(volume)
 
-    held_node = [((held((k - 1) * width + d + 1), d = 0, nd - 1), k = 1, given)]
     call march_chain(schemes, added, van_der_pol(cfg % state_degree), nd, chosen_grid(cfg), &
-         & cfg % design, held_node, chain, dt, t, achieved)
-    call chain_expansion(chain, van_der_pol(cfg % state_degree), functionals, nd, dt, &
+         & cfg % design, q0(1:nd), chain, dt, t, achieved, startup=cfg % startup_refinement)
+    call chain_expansion(chain, van_der_pol(cfg % state_degree), functionals, nd, &
          & cfg % design, ubound(f_field, 1), f)
 
     line = '      field / area over the node, less one:'
@@ -786,7 +765,7 @@ contains
 
     type(configuration), intent(in) :: cfg
 
-    real(dp), allocatable :: startup(:), dt(:), t(:)
+    real(dp), allocatable :: dt(:), t(:)
     integer :: widest, printed
 
     ! Before anything is measured against the horizon, since a word
@@ -837,8 +816,6 @@ contains
     end if
 
     call steps_of(cfg, dt, t)
-    call startup_trajectory(cfg, dt, widest, startup)
-
     call shown_initial(cfg)
     write(*,'(a,a)') '   precision of this build  ', precision_named()
     call heading(cfg)
@@ -846,9 +823,9 @@ contains
     if (cfg % accounting) call tally_open(cfg % max_derivative_degree)
 
     printed = 0
-    if (asked(cfg, 'homogeneous')) call tuple_rows(cfg, startup, 1, printed)
-    if (asked(cfg, 'pairs'))       call tuple_rows(cfg, startup, 2, printed)
-    if (asked(cfg, 'triples'))     call tuple_rows(cfg, startup, 3, printed)
+    if (asked(cfg, 'homogeneous')) call tuple_rows(cfg, 1, printed)
+    if (asked(cfg, 'pairs'))       call tuple_rows(cfg, 2, printed)
+    if (asked(cfg, 'triples'))     call tuple_rows(cfg, 3, printed)
 
     if (cfg % accounting) then
        call tally_close()
@@ -910,10 +887,9 @@ contains
   ! homogeneous rows, the pairs and the triples alike.
   !-------------------------------------------------------------------!
 
-  subroutine tuple_rows(cfg, startup, arity, printed)
+  subroutine tuple_rows(cfg, arity, printed)
 
     type(configuration), intent(in)    :: cfg
-    real(dp)           , intent(in)    :: startup(:)
     integer            , intent(in)    :: arity
     integer            , intent(inout) :: printed
 
@@ -942,13 +918,13 @@ contains
                   orders(k) = mod(r, cfg % max_discretization_order) + 1
                   r         = r / cfg % max_discretization_order
                end do
-               call one_row(cfg, startup, names(which), orders, printed)
+               call one_row(cfg, names(which), orders, printed)
             end do
           end block code_of_orders
        else
           do order = 1, cfg % max_discretization_order
              orders = order
-             call one_row(cfg, startup, names(which), orders, printed)
+             call one_row(cfg, names(which), orders, printed)
           end do
        end if
     end do

@@ -70,6 +70,7 @@ module gti_expansion
   use operation_grid        , only : grid
   use operation_coupling    , only : weights_of
   use operation_stencil     , only : stencil, combine_triples
+  use operation_action      , only : variation
   use operation_weight      , only : scheme_weight
   use operation_expression     , only : expression
 
@@ -77,6 +78,7 @@ module gti_expansion
 
   private
   public :: expansion, family_holder
+  public :: design_of_physics, design_of_steps
   public :: marches_by_stages
   public :: block_reach
 
@@ -84,6 +86,10 @@ module gti_expansion
   ! One family per block. Families of different kinds cannot share an
   ! array, so each is held in its own allocatable slot.
   !===================================================================!
+
+  ! what a design leaf is read by: the physics, or the grid
+  integer, parameter :: design_of_physics = 1
+  integer, parameter :: design_of_steps   = 2
 
   type :: family_holder
      class(family), allocatable :: scheme
@@ -104,6 +110,14 @@ module gti_expansion
      ! sits on; zero where there is none
      integer                 , private :: node_extent = 1
      integer                 , private :: below_at = 0
+     ! THE DESIGNS: leaves of their own level under the root, one per
+     ! design - the physics' parameter, and the weights of the steps
+     ! when they are designs - each holding its value and its extent;
+     ! and what reads them, the physics and the grid, kept here so
+     ! that a partial in a design is asked of the tower
+     integer, allocatable    , private :: design_at(:), design_kind(:)
+     type(expression)        , private :: rule_kept
+     class(grid), allocatable, private :: steps_kept
 
    contains
 
@@ -117,6 +131,15 @@ module gti_expansion
      procedure :: extent_of
      procedure :: consistent
      procedure :: tuples_of
+     procedure :: rule
+     procedure :: parameter
+     procedure :: num_designs
+     procedure :: design_kind_of
+     procedure :: design_extent
+     procedure :: design_value
+     procedure :: step_partials
+     procedure :: step_second_partials
+     procedure, private :: weights_of_steps
      procedure, private :: refuse_assignment
      generic :: assignment(=) => refuse_assignment
 
@@ -278,7 +301,7 @@ contains
   !===================================================================!
 
   subroutine build(this, physics, schemes, instants, steps, &
-       & max_derivative_degree, design, nodes, spatial)
+       & max_derivative_degree, parameter, nodes, spatial, weights, block_steps)
 
     class(expansion)      , intent(inout) :: this
     type(expression)      , intent(in)    :: physics
@@ -286,12 +309,17 @@ contains
     integer               , intent(in)    :: instants(:)
     class(grid)           , intent(in)    :: steps
     integer               , intent(in)    :: max_derivative_degree
-    real(dp)              , intent(in)    :: design(:)
+    ! the physics' parameter, the first design
+    real(dp)              , intent(in)    :: parameter
     ! given, every component holds one freedom per node, and the
     ! level below - a stencil over the nodes - is laid on every
     ! component the physics sits on
     integer      , intent(in), optional   :: nodes
     type(stencil), intent(in), optional   :: spatial
+    ! given, the weights of the steps are designs too, read by the
+    ! grid; and given, the steps of the horizon's instants are these
+    ! rather than the grid's partition
+    real(dp)     , intent(in), optional   :: weights(:), block_steps(:)
 
     real(dp), allocatable :: dt(:)
     integer , allocatable :: sweeps(:)
@@ -308,21 +336,207 @@ contains
     this % node_extent = 1
     if (present(nodes)) this % node_extent = nodes
     if (present(spatial)) this % below_at = level_below(this, spatial)
-    call partition(steps, sum(instants), design, dt)
+    this % rule_kept = physics
+    allocate(this % steps_kept, source=steps)
+    if (present(block_steps)) then
+       if (size(block_steps) /= sum(instants) - 1) then
+          error stop 'gti_expansion: one step per instant after the first'
+       end if
+       dt = [0.0_dp, block_steps]
+    else if (present(weights)) then
+       call partition(steps, sum(instants), weights, dt)
+    else
+       call partition(steps, sum(instants), [real(dp) ::], dt)
+    end if
 
     allocate(sweeps(max_derivative_degree + 1))
     do s = 0, max_derivative_degree
        sweeps(s + 1) = one_sweep(this, physics, schemes, instants, dt, s)
     end do
 
-    this % root_at = this % nodes % assemble(sweeps, 0)
+    ! the designs, leaves of their own level, the last member of the root
+    allocate(this % design_at(0), this % design_kind(0))
+    call one_design(this, 'the physics'' parameter', [parameter], design_of_physics)
+    if (present(weights)) call one_design(this, 'the weights of the steps', weights, design_of_steps)
+    this % root_at = this % nodes % assemble([sweeps, this % nodes % assemble(this % design_at, 0)], 0)
     call this % labels % bind(this % node(this % root_at), &
          & 'expansion of ' // physics % name() // ' in the design')
-    call this % extents % bind(this % node(this % root_at), &
-         & counted_set_representation(max(size(design), 1)))
-    call attach_known(this, this % root_at, design)
 
   end subroutine build
+
+  !===================================================================!
+  ! One design as a leaf: its value, its extent, and what reads it.
+  !===================================================================!
+
+  subroutine one_design(this, text, x, kind)
+
+    class(expansion), intent(inout) :: this
+    character(len=*), intent(in)    :: text
+    real(dp)        , intent(in)    :: x(:)
+    integer         , intent(in)    :: kind
+
+    integer :: at
+
+    at = this % nodes % assemble([integer ::], 0)
+    call this % labels % bind(this % node(at), text)
+    call this % extents % bind(this % node(at), counted_set_representation(size(x)))
+    call attach_known(this, at, x)
+    this % design_at   = [this % design_at, at]
+    this % design_kind = [this % design_kind, kind]
+
+  end subroutine one_design
+
+  !===================================================================!
+  ! The designs read back: how many, what reads each, its extent and
+  ! its value; the physics' parameter by itself; the rule the tower
+  ! was built for.
+  !===================================================================!
+
+  pure integer function num_designs(this)
+
+    class(expansion), intent(in) :: this
+
+    num_designs = size(this % design_at)
+
+  end function num_designs
+
+  pure integer function design_kind_of(this, k)
+
+    class(expansion), intent(in) :: this
+    integer         , intent(in) :: k
+
+    design_kind_of = this % design_kind(k)
+
+  end function design_kind_of
+
+  integer function design_extent(this, k)
+
+    class(expansion), intent(in) :: this
+    integer         , intent(in) :: k
+
+    design_extent = this % extent_of(this % node(this % design_at(k)))
+
+  end function design_extent
+
+  subroutine design_value(this, k, x)
+
+    class(expansion)     , intent(in)  :: this
+    integer              , intent(in)  :: k
+    real(dp), allocatable, intent(out) :: x(:)
+
+    call this % value_of(this % node(this % design_at(k)), x)
+
+  end subroutine design_value
+
+  real(dp) function parameter(this)
+
+    class(expansion), intent(in) :: this
+
+    real(dp), allocatable :: x(:)
+
+    call this % design_value(1, x)
+    parameter = x(1)
+
+  end function parameter
+
+  function rule(this) result(r)
+
+    class(expansion), intent(in) :: this
+    type(expression) :: r
+
+    r = this % rule_kept
+
+  end function rule
+
+  !===================================================================!
+  ! The partial of every step of the horizon in every weight, one
+  ! column per weight, and the mixed second partial in two, from the
+  ! grid's own partial action at the weights the tower holds: exact,
+  ! and carrying the normalisation that keeps the steps summing to
+  ! the duration. Invalid input: a tower whose steps are not designs.
+  !===================================================================!
+
+  subroutine step_partials(this, v)
+
+    class(expansion)     , intent(in)  :: this
+    real(dp), allocatable, intent(out) :: v(:,:)
+
+    type(stored_directed_graph) :: instants
+    type(stored_field) :: knobs, direction
+    class(field), allocatable :: out
+    real(dp), allocatable :: weights(:), e(:), column(:)
+    integer :: n, j
+
+    call this % weights_of_steps(weights)
+    n = size(weights) + 1
+    instants = stored_directed_graph(n, tails=[integer ::], heads=[integer ::])
+    knobs    = stored_field('design', instants % vertex_set(), size(weights))
+    call knobs % set_real_vector(weights)
+
+    allocate(v(n, size(weights)), e(size(weights)))
+    do j = 1, size(weights)
+       e    = 0.0_dp
+       e(j) = 1.0_dp
+       direction = stored_field('direction', instants % vertex_set(), size(weights))
+       call direction % set_real_vector(e)
+       call this % steps_kept % partial_action(instants, [knobs], &
+            & [variation(this % steps_kept % argument(1), direction)], out)
+       call out % real_vector(column)
+       v(:, j) = column
+    end do
+
+  end subroutine step_partials
+
+  subroutine step_second_partials(this, j, k, u)
+
+    class(expansion)     , intent(in)  :: this
+    integer              , intent(in)  :: j, k
+    real(dp), allocatable, intent(out) :: u(:)
+
+    type(stored_directed_graph) :: instants
+    type(stored_field) :: knobs, first, second
+    class(field), allocatable :: out
+    real(dp), allocatable :: weights(:), e(:)
+    integer :: n
+
+    call this % weights_of_steps(weights)
+    n = size(weights) + 1
+    instants = stored_directed_graph(n, tails=[integer ::], heads=[integer ::])
+    knobs    = stored_field('design', instants % vertex_set(), size(weights))
+    call knobs % set_real_vector(weights)
+
+    allocate(e(size(weights)))
+    e = 0.0_dp
+    e(j) = 1.0_dp
+    first = stored_field('direction', instants % vertex_set(), size(weights))
+    call first % set_real_vector(e)
+    e = 0.0_dp
+    e(k) = 1.0_dp
+    second = stored_field('direction', instants % vertex_set(), size(weights))
+    call second % set_real_vector(e)
+    call this % steps_kept % partial_action(instants, [knobs], &
+         & [variation(this % steps_kept % argument(1), first), &
+         &  variation(this % steps_kept % argument(1), second)], out)
+    call out % real_vector(u)
+
+  end subroutine step_second_partials
+
+  subroutine weights_of_steps(this, weights)
+
+    class(expansion)     , intent(in)  :: this
+    real(dp), allocatable, intent(out) :: weights(:)
+
+    integer :: k
+
+    do k = 1, this % num_designs()
+       if (this % design_kind(k) == design_of_steps) then
+          call this % design_value(k, weights)
+          return
+       end if
+    end do
+    error stop 'gti_expansion: the steps of this tower are not designs'
+
+  end subroutine weights_of_steps
 
   !===================================================================!
   ! THE LEVEL BELOW: one coupling over the nodes, shared by every

@@ -58,13 +58,14 @@ module gti_chain
 
   use util_precision  , only : dp
   use operation_family , only : family
-  use operation_grid   , only : grid, designed_grid
+  use operation_grid   , only : grid
   use operation_expression, only : expression
-  use gti_expansion    , only : family_holder, marches_by_stages, expansion
+  use gti_expansion    , only : family_holder, marches_by_stages, expansion, &
+       & design_of_physics, design_of_steps
   use gti_block        , only : block_residual
   use gti_march        , only : imbalance, swept, solved_linear, fresh_stamp, partitioned, horizon_bounds, solved, &
        & frozen_inputs
-  use gti_march        , only : block_from, step_second_partials
+  use gti_march        , only : block_from
   use gti_sweeps       , only : functional_design_partial, varied_by
   use operation_stencil, only : stencil
   use operation_family_dirk, only : crouzeix_three_stage
@@ -354,7 +355,8 @@ contains
     end do
     if (allocated(tower)) deallocate(tower)
     allocate(tower)
-    call tower % build(physics, every, spans, designed_grid(sum(knobs)), 0, knobs, nodes, spatial)
+    call tower % build(physics, every, spans, steps, 0, design, nodes, spatial, &
+         & weights=grid_design, block_steps=knobs)
 
     achieved = 0.0_dp
     call tally_enter(at_horizon)
@@ -479,14 +481,12 @@ contains
   ! coefficient over at every junction just as the trajectory does.
   !===================================================================!
 
-  subroutine chain_expansion(chain, physics, functionals, degrees, design, &
-       & max_order, f, node_measure)
+  subroutine chain_expansion(chain, tower, functionals, degrees, max_order, f, node_measure)
 
     type(chain_block)      , intent(in) :: chain(:)
-    type(expression)       , intent(in) :: physics
+    type(expansion)        , intent(in) :: tower
     type(functional_holder), intent(in) :: functionals(:)
     integer                , intent(in) :: degrees, max_order
-    real(dp)               , intent(in) :: design
     real(dp), allocatable  , intent(out) :: f(:,:)
     real(dp), intent(in), optional      :: node_measure(:)
 
@@ -496,7 +496,12 @@ contains
 
     type(chain_system), allocatable :: systems(:)
     real(dp), allocatable :: series(:,:,:)
+    type(expression) :: physics
+    real(dp) :: design
     integer :: b, m, widest, route
+
+    physics = tower % rule()
+    design  = tower % parameter()
 
     widest = 0
     do b = 1, size(chain)
@@ -512,7 +517,7 @@ contains
     ! The jacobian of every block, factorised once. Every order below
     ! substitutes against it.
     if (max_order >= 1) then
-       call chain_systems(chain, functionals, degrees, design, systems, node_measure)
+       call chain_systems(chain, tower, functionals, degrees, systems, node_measure)
     end if
 
     do m = 1, max_order
@@ -673,29 +678,31 @@ contains
   ! that a shared instant counts once.
   !===================================================================!
 
-  subroutine chain_systems(chain, functionals, degrees, design, systems, node_measure, &
-       & step_partials)
+  subroutine chain_systems(chain, tower, functionals, degrees, systems, node_measure)
 
     type(chain_block)      , intent(in) :: chain(:)
+    type(expansion)        , intent(in) :: tower
     type(functional_holder), intent(in) :: functionals(:)
     integer                , intent(in) :: degrees
-    real(dp)               , intent(in) :: design
     type(chain_system), allocatable, intent(out) :: systems(:)
     real(dp), intent(in), optional      :: node_measure(:)
-    ! the partial of every step in every entry of the grid's design,
-    ! one column per entry: given, the grid's entries are designs too
-    real(dp), intent(in), optional      :: step_partials(:,:)
 
     type(stored_directed_graph) :: unknowns, points
     type(stored_field), allocatable :: inputs(:)
     type(stored_field) :: state, knobs
     real(dp), allocatable :: rate(:), g(:), weight(:), varied_weight(:), values(:), series(:,:)
+    real(dp), allocatable :: step_partials(:,:)
     integer , allocatable :: at(:), varied_at(:)
+    real(dp) :: design
     integer :: b, i, j, count, num_designs, num_functionals, from, to
 
+    ! THE DESIGNS, read from the tower: the physics' parameter first,
+    ! then, when the steps are designs, one column per weight, the
+    ! steps' partials in them from the tower's own grid
+    call designs_of(tower, design, step_partials)
     num_functionals = size(functionals)
     num_designs     = 1
-    if (present(step_partials)) num_designs = 1 + size(step_partials, 2)
+    if (allocated(step_partials)) num_designs = 1 + size(step_partials, 2)
 
     allocate(systems(size(chain)))
     do b = 1, size(chain)
@@ -748,6 +755,30 @@ contains
     end do
 
   end subroutine chain_systems
+
+  !===================================================================!
+  ! What the tower says the designs are: the physics' parameter, and
+  ! the steps' partials in the weights when the weights are designs.
+  ! Invalid input: a tower whose first design is not the parameter.
+  !===================================================================!
+
+  subroutine designs_of(tower, design, step_partials)
+
+    type(expansion), intent(in) :: tower
+    real(dp)       , intent(out) :: design
+    real(dp), allocatable, intent(out) :: step_partials(:,:)
+
+    integer :: k
+
+    if (tower % design_kind_of(1) /= design_of_physics) then
+       error stop 'gti_chain: the physics'' parameter is the first design'
+    end if
+    design = tower % parameter()
+    do k = 2, tower % num_designs()
+       if (tower % design_kind_of(k) == design_of_steps) call tower % step_partials(step_partials)
+    end do
+
+  end subroutine designs_of
 
   !===================================================================!
   ! A block's rows differentiated along a direction in its steps,
@@ -976,30 +1007,30 @@ contains
   ! order two. The table is symmetric in theory, and is not made so.
   !===================================================================!
 
-  subroutine chain_hessian(chain, systems, functionals, degrees, design, hessian, &
-       & node_measure, step_partials, steps, grid_design)
+  subroutine chain_hessian(chain, tower, systems, functionals, degrees, hessian, node_measure)
 
     type(chain_block)      , intent(in) :: chain(:)
+    type(expansion)        , intent(in) :: tower
     type(chain_system)     , intent(in) :: systems(:)
     type(functional_holder), intent(in) :: functionals(:)
     integer                , intent(in) :: degrees
-    real(dp)               , intent(in) :: design
     real(dp), allocatable  , intent(out) :: hessian(:,:,:)
-    real(dp)   , intent(in), optional :: node_measure(:), step_partials(:,:), grid_design(:)
-    class(grid), intent(in), optional :: steps
+    real(dp), intent(in), optional      :: node_measure(:)
 
     type(stored_directed_graph) :: unknowns, points
     type(stored_field), allocatable :: inputs(:)
     type(stored_field) :: state, knobs
     real(dp), allocatable :: w(:,:,:), lambda(:,:,:), rhs(:,:), mu(:), explicit(:,:)
-    real(dp), allocatable :: r2(:), g2(:), weight(:), values(:), series(:,:)
+    real(dp), allocatable :: r2(:), g2(:), weight(:), values(:), series(:,:), step_partials(:,:)
     integer , allocatable :: at(:)
+    real(dp) :: design
     integer :: nf, nd, b, i, j, k, count, widest, from, to, p, d, instant, held_by, where
 
+    call designs_of(tower, design, step_partials)
     nf = size(functionals)
     nd = size(systems(1) % rate, 2)
-    if (nd > 1 .and. .not. (present(step_partials) .and. present(steps) .and. present(grid_design))) then
-       error stop 'gti_chain: the grid''s designs need the grid, its design and the step partials'
+    if (nd > 1 .and. .not. allocated(step_partials)) then
+       error stop 'gti_chain: the systems name more designs than the tower holds'
     end if
     widest = 0
     do b = 1, size(chain)
@@ -1058,7 +1089,7 @@ contains
              call frozen_at(chain(b), design, unknowns, inputs)
              do k = 1, nd
                 call rows_mixed(chain(b), degrees, unknowns, inputs, w(1:count, b, j), j, k, &
-                     & step_partials, steps, grid_design, r2)
+                     & step_partials, tower, r2)
                 hessian(i, j, k) = hessian(i, j, k) - dot_product(lambda(1:count, b, i), r2)
              end do
              call owned(chain, b, from, to)
@@ -1070,7 +1101,7 @@ contains
              call nodal_coefficient(functionals(i) % rule, degrees, at, series, design, 0, values)
              do k = 1, nd
                 call functional_mixed(functionals(i) % rule, points, state, knobs, weight, at, &
-                     & degrees, count, w(1:count, b, j), j, k, step_partials, steps, grid_design, &
+                     & degrees, count, w(1:count, b, j), j, k, step_partials, tower, &
                      & chain(b), from, to, node_measure, values, explicit)
                 hessian(i, j, k) = hessian(i, j, k) + explicit(1, 1)
              end do
@@ -1263,15 +1294,15 @@ contains
   !===================================================================!
 
   subroutine functional_mixed(rule, points, state, knobs, weight, at, degrees, count, w, j, k, &
-       & step_partials, steps, grid_design, b, from, to, node_measure, values, explicit)
+       & step_partials, tower, b, from, to, node_measure, values, explicit)
 
     type(expression)           , intent(in) :: rule
     type(stored_directed_graph), intent(in) :: points
     type(stored_field)         , intent(in) :: state, knobs
     real(dp)                   , intent(in) :: weight(:), w(:), values(:)
     integer                    , intent(in) :: at(:), degrees, count, j, k, from, to
-    real(dp)   , intent(in), optional       :: step_partials(:,:), grid_design(:), node_measure(:)
-    class(grid), intent(in), optional       :: steps
+    real(dp)   , intent(in), optional       :: step_partials(:,:), node_measure(:)
+    type(expansion)            , intent(in) :: tower
     type(chain_block)          , intent(in) :: b
     real(dp), allocatable      , intent(out) :: explicit(:,:)
 
@@ -1311,7 +1342,7 @@ contains
                & points % vertex_set(), part)
           explicit(1, 1) = explicit(1, 1) + part
        else
-          call step_second_partials(steps, size(step_partials, 1), grid_design, j - 1, k - 1, u)
+          call tower % step_second_partials(j - 1, k - 1, u)
           call owned_points(b, from, to, node_measure, varied_at, uweight, along=along_of(b, u))
           explicit(1, 1) = explicit(1, 1) + sum(uweight * values)
        end if
@@ -1328,15 +1359,15 @@ contains
   ! second partial, applied to the state.
   !===================================================================!
 
-  subroutine rows_mixed(b, degrees, unknowns, inputs, w, j, k, step_partials, steps, grid_design, r2)
+  subroutine rows_mixed(b, degrees, unknowns, inputs, w, j, k, step_partials, tower, r2)
 
     type(chain_block)          , intent(in) :: b
     integer                    , intent(in) :: degrees, j, k
     type(stored_directed_graph), intent(in) :: unknowns
     type(stored_field)         , intent(in) :: inputs(:)
     real(dp)                   , intent(in) :: w(:)
-    real(dp)   , intent(in), optional       :: step_partials(:,:), grid_design(:)
-    class(grid), intent(in), optional       :: steps
+    real(dp)   , intent(in), optional       :: step_partials(:,:)
+    type(expansion)            , intent(in) :: tower
     real(dp), allocatable      , intent(out) :: r2(:)
 
     real(dp), allocatable :: second(:), u(:)
@@ -1357,7 +1388,7 @@ contains
        if (j > 1) then
           r2 = r2 + varied_applied(b, degrees, along_of(b, step_partials(:, j - 1)), &
                & b % state, along2=along_of(b, step_partials(:, k - 1)))
-          call step_second_partials(steps, size(step_partials, 1), grid_design, j - 1, k - 1, u)
+          call tower % step_second_partials(j - 1, k - 1, u)
           r2 = r2 + varied_applied(b, degrees, along_of(b, u), b % state)
        end if
     end if

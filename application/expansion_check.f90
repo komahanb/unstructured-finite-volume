@@ -92,7 +92,7 @@ contains
     ! the block from its node of the expansion graph, whatever the family
     allocate(holder(1) % scheme, source=scheme)
     call tower % build(van_der_pol(state_degree), holder, [instants], uniform_grid(duration), &
-         & 0, [design_value])
+         & 0, design_value)
     call block_from(tower, 1, scheme, van_der_pol(state_degree), held, rows, at)
     associate (u1 => staged); end associate
 

@@ -71,7 +71,7 @@ contains
 
     call partition(duration, n, dt, t)
     allocate(holder(1) % scheme, source=scheme)
-    call tower % build(van_der_pol(state_degree), holder, [n], uniform_grid(duration), 0, [0.0_dp])
+    call tower % build(van_der_pol(state_degree), holder, [n], uniform_grid(duration), 0, 0.0_dp)
     call block_from(tower, 1, scheme, van_der_pol(state_degree), &
          & [(exact(d, t(1)), d = 0, degrees - 1)], rows, at)
     call solved(rows, 0.0_dp, q, achieved)

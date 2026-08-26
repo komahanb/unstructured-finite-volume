@@ -104,7 +104,7 @@ integer, allocatable :: at(:)
     call partition(duration, num_instants, dt, t)
     allocate(holder(1) % scheme, source=scheme)
     call tower % build(van_der_pol(state_degree), holder, [num_instants], uniform_grid(duration), &
-         & 0, [0.0_dp])
+         & 0, 0.0_dp)
     call block_from(tower, 1, scheme, van_der_pol(state_degree), carried_values(scheme, t), rows, at)
     call solved(rows, design_value, q, achieved)
 
@@ -171,7 +171,7 @@ integer, allocatable :: at(:)
     call partition(duration, num_instants, dt, t)
     allocate(holder(1) % scheme, source=scheme)
     call tower % build(van_der_pol(state_degree), holder, [num_instants], uniform_grid(duration), &
-         & 0, [0.0_dp])
+         & 0, 0.0_dp)
     call block_from(tower, 1, scheme, van_der_pol(state_degree), carried_values(scheme, t), rows, at)
 
     unknowns = unknowns_graph(num_instants, degrees)

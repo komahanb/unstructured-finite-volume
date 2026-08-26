@@ -65,8 +65,7 @@ program graph_time_integrator
   use operation_grid        , only : uniform_grid, random_grid, designed_grid
   use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
   use operation_grid        , only : grid
-  use gti_march             , only : set_stopping, imbalance, set_sweep, weight_of, precision_needed, &
-       & step_partials
+  use gti_march             , only : set_stopping, imbalance, set_sweep, weight_of, precision_needed
   use operation_stencil     , only : stencil
   use gti_space             , only : room, spatial_mesh, geometry_of, coarse_cells
   use gti_field             , only : node_operator, initial_field, against_the_laplacian, &
@@ -382,7 +381,7 @@ contains
     type(chain_block)  , allocatable :: chain(:)
     type(expansion), allocatable, target :: tower
     integer , allocatable :: added(:)
-    real(dp), allocatable :: dt(:), t(:), f(:,:)
+    real(dp), allocatable :: dt(:), t(:), f(:,:), weights(:)
     type(imbalance) :: left
     real(dp) :: achieved
     integer :: nd, width, given, reported, i, m
@@ -404,9 +403,19 @@ contains
     ! over more than one, then the row's own blocks
     call tally_enter(at_expansion)
     call tally_order(0)
-    call march_chain(schemes, added, van_der_pol(cfg % state_degree), nd, &
-         & chosen_grid(cfg), cfg % design, q0, chain, tower, dt, t, achieved, left=left, &
-         & nodes=nodes, spatial=op, startup=cfg % startup_refinement)
+    if (grid_designed) then
+       ! the steps as the weights of a designed grid, which give the
+       ! same steps back, so that the weights are designs of the tower
+       weights = dt(2:cfg % instants)
+       call march_chain(schemes, added, van_der_pol(cfg % state_degree), nd, &
+            & designed_grid(cfg % time_duration), cfg % design, q0, chain, tower, dt, t, &
+            & achieved, grid_design=weights, left=left, nodes=nodes, spatial=op, &
+            & startup=cfg % startup_refinement)
+    else
+       call march_chain(schemes, added, van_der_pol(cfg % state_degree), nd, &
+            & chosen_grid(cfg), cfg % design, q0, chain, tower, dt, t, achieved, left=left, &
+            & nodes=nodes, spatial=op, startup=cfg % startup_refinement)
+    end if
     ! Every derivative is taken at the state the march reached, so a
     ! row that did not converge has none to take and only its value is
     ! expanded.
@@ -415,8 +424,7 @@ contains
     else
        reported = cfg % max_derivative_degree
     end if
-    call chain_expansion(chain, van_der_pol(cfg % state_degree), functionals, nd, &
-         & cfg % design, reported, f, node_measure=volume)
+    call chain_expansion(chain, tower, functionals, nd, reported, f, node_measure=volume)
     call tally_leave()
 
     call show_row(labelled(names, orders), cfg % instants - given, f(:, 1), left, &
@@ -437,7 +445,7 @@ contains
     ! the first derivatives by the routes: where the grid is a design
     ! they are the only account of it, and where the routes are checked
     if (reported >= 1 .and. (grid_designed .or. lists(cfg % check, 'routes'))) then
-       call first_derivatives(cfg, chain, nd, dt, f)
+       call first_derivatives(cfg, chain, tower, nd, dt, f)
     end if
 
     if (over_field) then
@@ -467,30 +475,25 @@ contains
   ! own dependence on the steps is not carried.
   !-------------------------------------------------------------------!
 
-  subroutine first_derivatives(cfg, chain, nd, dt, f)
+  subroutine first_derivatives(cfg, chain, tower, nd, dt, f)
 
     type(configuration), intent(in) :: cfg
     type(chain_block)  , intent(in) :: chain(:)
+    type(expansion)    , intent(in) :: tower
     integer            , intent(in) :: nd
     real(dp)           , intent(in) :: dt(:), f(0:, :)
 
     type(chain_system), allocatable :: systems(:)
-    real(dp), allocatable :: v(:,:), p(:), df(:,:), other(:,:), hessian(:,:,:)
+    real(dp), allocatable :: p(:), df(:,:), other(:,:), hessian(:,:,:)
     real(dp) :: euler
     integer  :: num_designs, num_functionals, route, i
 
+    ! the designs are the tower's: the parameter, and the weights of
+    ! the steps when the grid was designed
     num_functionals = size(functionals)
-    if (grid_designed) then
-       ! the steps as the weights of a designed grid: the march's own
-       ! steps are the weights that give them back
-       p = dt(2:cfg % instants)
-       call step_partials(designed_grid(cfg % time_duration), cfg % instants, p, v)
-       call chain_systems(chain, functionals, nd, cfg % design, systems, &
-            & node_measure=volume, step_partials=v)
-    else
-       call chain_systems(chain, functionals, nd, cfg % design, systems, node_measure=volume)
-    end if
+    call chain_systems(chain, tower, functionals, nd, systems, node_measure=volume)
     num_designs = size(systems(1) % rate, 2)
+    if (grid_designed) p = dt(2:cfg % instants)
 
     route = route_of(num_designs, num_functionals, 1)
     if (route == forward_route) then
@@ -527,9 +530,7 @@ contains
     ! expansion's second order
     if (grid_designed .and. ubound(f, 1) >= 2) then
        if (route_of(num_designs, num_functionals, 2) == reverse_route) then
-          call chain_hessian(chain, functionals=functionals, systems=systems, degrees=nd, &
-               & design=cfg % design, hessian=hessian, node_measure=volume, &
-               & step_partials=v, steps=designed_grid(cfg % time_duration), grid_design=p)
+          call chain_hessian(chain, tower, systems, functionals, nd, hessian, node_measure=volume)
           do i = 1, num_functionals
              write(*,'(a,i0,a,es12.4,a,es10.2,a,es10.2)') &
                   & '      second derivatives by the reverse route, functional ', i, &
@@ -600,8 +601,7 @@ contains
 
     call march_chain(schemes, added, van_der_pol(cfg % state_degree), nd, chosen_grid(cfg), &
          & cfg % design, q0(1:nd), chain, tower, dt, t, achieved, startup=cfg % startup_refinement)
-    call chain_expansion(chain, van_der_pol(cfg % state_degree), functionals, nd, &
-         & cfg % design, ubound(f_field, 1), f)
+    call chain_expansion(chain, tower, functionals, nd, ubound(f_field, 1), f)
 
     line = '      field / area over the node, less one:'
     do d = lbound(f, 1), ubound(f, 1)

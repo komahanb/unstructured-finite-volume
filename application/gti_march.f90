@@ -118,9 +118,8 @@ module gti_march
   integer , save :: stopping_iterations = 100
 
   private
-  public :: partition, partitioned, solved, unknowns_graph, step_partials
+  public :: partition, partitioned, solved, unknowns_graph
   public :: block_from
-  public :: step_second_partials
   public :: unknown, consistent_states, frozen_inputs
   public :: set_stopping
   public :: consistent_state
@@ -454,79 +453,7 @@ contains
 
   end subroutine partitioned
 
-  !===================================================================!
-  ! The partial of every step in every entry of a grid's design, one
-  ! column per entry, read from the grid's own partial action: exact,
-  ! and carrying the normalisation that keeps the steps summing to
-  ! the duration.
-  !===================================================================!
 
-  subroutine step_partials(steps, n, design, v)
-
-    class(grid), intent(in) :: steps
-    integer    , intent(in) :: n
-    real(dp)   , intent(in) :: design(:)
-    real(dp), allocatable, intent(out) :: v(:,:)
-
-    type(stored_directed_graph) :: instants
-    type(stored_field) :: knobs, direction
-    class(field), allocatable :: out
-    real(dp), allocatable :: e(:), column(:)
-    integer :: j
-
-    instants = stored_directed_graph(n, tails=[integer ::], heads=[integer ::])
-    knobs    = stored_field('design', instants % vertex_set(), size(design))
-    call knobs % set_real_vector(design)
-
-    allocate(v(n, size(design)), e(size(design)))
-    do j = 1, size(design)
-       e    = 0.0_dp
-       e(j) = 1.0_dp
-       direction = stored_field('direction', instants % vertex_set(), size(design))
-       call direction % set_real_vector(e)
-       call steps % partial_action(instants, [knobs], &
-            & [variation(steps % argument(1), direction)], out)
-       call out % real_vector(column)
-       v(:, j) = column
-    end do
-
-  end subroutine step_partials
-
-  !===================================================================!
-  ! The mixed second partial of every step in two entries of a grid's
-  ! design, from the grid's own partial action along both.
-  !===================================================================!
-
-  subroutine step_second_partials(steps, n, design, j, k, u)
-
-    class(grid), intent(in) :: steps
-    integer    , intent(in) :: n, j, k
-    real(dp)   , intent(in) :: design(:)
-    real(dp), allocatable, intent(out) :: u(:)
-
-    type(stored_directed_graph) :: instants
-    type(stored_field) :: knobs, first, second
-    class(field), allocatable :: out
-    real(dp), allocatable :: e(:)
-
-    instants = stored_directed_graph(n, tails=[integer ::], heads=[integer ::])
-    knobs    = stored_field('design', instants % vertex_set(), size(design))
-    call knobs % set_real_vector(design)
-
-    allocate(e(size(design)))
-    e = 0.0_dp
-    e(j) = 1.0_dp
-    first = stored_field('direction', instants % vertex_set(), size(design))
-    call first % set_real_vector(e)
-    e = 0.0_dp
-    e(k) = 1.0_dp
-    second = stored_field('direction', instants % vertex_set(), size(design))
-    call second % set_real_vector(e)
-    call steps % partial_action(instants, [knobs], &
-         & [variation(steps % argument(1), first), variation(steps % argument(1), second)], out)
-    call out % real_vector(u)
-
-  end subroutine step_second_partials
 
   !===================================================================!
   ! Where a component lies: instants follow one another, nodes lie

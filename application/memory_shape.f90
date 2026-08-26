@@ -78,7 +78,7 @@ integer, allocatable :: at(:)
      call partition(3.0_dp, instants, dt, t)
      allocate(held(h * degrees), source=0.0_dp)
      allocate(holder(1) % scheme, source=scheme)
-     call tower % build(van_der_pol(degrees - 1), holder, [instants], uniform_grid(3.0_dp), 0, [0.0_dp])
+     call tower % build(van_der_pol(degrees - 1), holder, [instants], uniform_grid(3.0_dp), 0, 0.0_dp)
      call block_from(tower, 1, scheme, van_der_pol(degrees - 1), held, rows, at)
   case default
      error stop 'memory_shape: the part is none, vertices, edges, field or block'

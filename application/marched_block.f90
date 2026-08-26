@@ -81,7 +81,7 @@ integer, allocatable :: at(:)
 
     held = [((exact(d, t(k)), d = 0, degrees - 1), k = 1, h)]
     allocate(holder(1) % scheme, source=scheme)
-    call tower % build(van_der_pol(max_state_degree), holder, [n], uniform_grid(duration), 0, [0.0_dp])
+    call tower % build(van_der_pol(max_state_degree), holder, [n], uniform_grid(duration), 0, 0.0_dp)
     call block_from(tower, 1, scheme, van_der_pol(max_state_degree), held, rows, at)
 
     call solved(rows, design_value, q, achieved)

@@ -257,8 +257,7 @@ contains
     f = energy_of(q, n, design)
 
     call chained(schemes, added, design, chain, tower, dt)
-    call chain_systems(chain, [one_functional(van_der_pol_energy(state_degree))], degrees, &
-         & design, systems)
+    call chain_systems(chain, tower, [one_functional(van_der_pol_energy(state_degree))], degrees, systems)
 
     tangent     = first_of(chain_by_tangent(chain, systems, degrees, design))
     adjoint     = first_of(chain_by_adjoint(chain, systems, degrees, design))

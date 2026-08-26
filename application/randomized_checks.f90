@@ -149,8 +149,7 @@ contains
     call march_chain(schemes, added, van_der_pol(degrees - 1), degrees, &
          & uniform_grid(duration), design, held, chain, tower, dt, t, achieved)
 
-    call chain_systems(chain, [one_functional(van_der_pol_energy(degrees - 1))], degrees, &
-         & design, systems)
+    call chain_systems(chain, tower, [one_functional(van_der_pol_energy(degrees - 1))], degrees, systems)
 
     tangent = first_of(chain_by_tangent(chain, systems, degrees, design))
     adjoint = first_of(chain_by_adjoint(chain, systems, degrees, design))
@@ -460,9 +459,7 @@ contains
     call march_chain(schemes, added, van_der_pol(degrees - 1), degrees, &
          & uniform_grid(duration), design, held, chain, tower, dt, t, achieved)
 
-    call chain_expansion(chain, van_der_pol(degrees - 1), &
-         & [one_functional(van_der_pol_energy(degrees - 1))], degrees, design, &
-         & max_order, table)
+    call chain_expansion(chain, tower, [one_functional(van_der_pol_energy(degrees - 1))], degrees, max_order, table)
     allocate(f(lbound(table, 1):ubound(table, 1)))
     f = table(:, 1)
 

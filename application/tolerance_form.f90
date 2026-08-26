@@ -152,8 +152,7 @@ contains
 
     call march_chain(schemes, added, van_der_pol(degrees - 1), degrees, &
          & uniform_grid(duration), design, held, chain, tower, dt, t, achieved)
-    call chain_systems(chain, [one_functional(van_der_pol_energy(degrees - 1))], degrees, &
-         & design, systems)
+    call chain_systems(chain, tower, [one_functional(van_der_pol_energy(degrees - 1))], degrees, systems)
 
     predicted = 1.0_dp + row_sum(scheme, order, top) / dt(size(dt)) ** top
     call dense_jacobian(chain, degrees, design, a)
@@ -200,8 +199,7 @@ contains
 
     call march_chain(schemes, added, van_der_pol(degrees - 1), degrees, &
          & uniform_grid(duration), design, held, chain, tower, dt, t, achieved)
-    call chain_systems(chain, [one_functional(van_der_pol_energy(degrees - 1))], degrees, &
-         & design, systems)
+    call chain_systems(chain, tower, [one_functional(van_der_pol_energy(degrees - 1))], degrees, systems)
 
     step = dt(size(dt))
     call dense_jacobian(chain, degrees, design, a)

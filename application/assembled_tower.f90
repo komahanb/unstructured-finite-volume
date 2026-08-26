@@ -45,7 +45,7 @@ program assembled_tower
   allocate(schemes(2) % scheme, source=adams_family(3))
 
   call one % build(van_der_pol(2), schemes, [5, 5], random_grid(duration, seed), 0, &
-       & [real(dp) ::])
+       & 0.0_dp)
 
   write(*,'(a)') ' a horizon of two blocks, marched by different families'
   call show(one, one % node(one % root()), 0)
@@ -56,7 +56,7 @@ program assembled_tower
        & one % consistent(one % node(one % root()))
 
   call two % build(van_der_pol(2), schemes, [5, 5], random_grid(duration, seed), 1, &
-       & [real(dp) ::])
+       & 0.0_dp)
   write(*,'(a,i0)')   ' nodes owned with one tangent sweep ', two % num_nodes()
   write(*,'(a,l1)')   ' every level and coupling valid     ', &
        & two % consistent(two % node(two % root()))
@@ -261,7 +261,7 @@ contains
 
     allocate(schemes(1) % scheme, source=crouzeix_two_stage())
     call staged % build(van_der_pol(2), schemes, [num_instants], &
-         & uniform_grid(duration), 0, [real(dp) ::])
+         & uniform_grid(duration), 0, 0.0_dp)
 
     write(*,'(a)') ' '
     write(*,'(a)') ' a block marched by a two-stage tableau'

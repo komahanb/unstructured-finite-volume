@@ -34,7 +34,7 @@ program grid_design_check
   use operation_minimization, only : relative, by_rate
   use physics_vanderpol     , only : van_der_pol, van_der_pol_energy, van_der_pol_dissipation
   use gti_expansion         , only : family_holder, expansion
-  use gti_march             , only : set_stopping, consistent_state, step_partials, imbalance
+  use gti_march             , only : set_stopping, consistent_state, imbalance
   use gti_chain             , only : chain_block, march_chain, chain_expansion, chain_system, &
        & chain_systems, chain_by_tangent, chain_by_adjoint, functional_holder, one_functional, &
        & chain_hessian
@@ -73,8 +73,8 @@ program grid_design_check
   q0 = consistent_state(van_der_pol(state_degree), degrees, [1.0_dp, 0.0_dp], design)
 
   call marched(p, design, f)
-  call step_partials(designed_grid(duration), instants, p, v)
-  call chain_systems(chain, functionals, degrees, design, systems, step_partials=v)
+  call tower % step_partials(v)
+  call chain_systems(chain, tower, functionals, degrees, systems)
   tangent = chain_by_tangent(chain, systems, degrees, design)
   adjoint = chain_by_adjoint(chain, systems, degrees, design)
   route   = route_of(size(tangent, 2), size(tangent, 1), 1)
@@ -115,8 +115,7 @@ program grid_design_check
   ! the second derivatives: the hessian of every functional, by the
   ! reverse route at order two
   call marched(p, design, f, 2)
-  call chain_hessian(chain, systems, functionals, degrees, design, hessian, &
-       & step_partials=v, steps=designed_grid(duration), grid_design=p)
+  call chain_hessian(chain, tower, systems, functionals, degrees, hessian)
   write(*,'(a)') ' '
   write(*,'(a,i0,a,i0,a,i0)') ' second derivatives by the reverse route: hessians ', &
        & size(hessian, 1), ' of ', size(hessian, 2), ' x ', size(hessian, 3)
@@ -157,7 +156,7 @@ contains
          & designed_grid(duration), nu, q0, chain, tower, dt, t, achieved, grid_design=weights, &
          & left=left, startup=4)
     if (.not. left % converged) error stop 'grid_design_check: the march converged'
-    call chain_expansion(chain, van_der_pol(state_degree), functionals, degrees, nu, m, f)
+    call chain_expansion(chain, tower, functionals, degrees, m, f)
 
   end subroutine marched
 
@@ -167,11 +166,10 @@ contains
     real(dp), intent(in) :: weights(:), nu
     real(dp), allocatable, intent(out) :: df(:,:)
 
-    real(dp), allocatable :: f(:,:), vw(:,:)
+    real(dp), allocatable :: f(:,:)
 
     call marched(weights, nu, f)
-    call step_partials(designed_grid(duration), instants, weights, vw)
-    call chain_systems(chain, functionals, degrees, nu, systems, step_partials=vw)
+    call chain_systems(chain, tower, functionals, degrees, systems)
     df = chain_by_adjoint(chain, systems, degrees, nu)
 
   end subroutine differenced

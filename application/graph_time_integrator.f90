@@ -73,7 +73,7 @@ program graph_time_integrator
        & against_the_mode, export_instant
   use util_precision        , only : precision_named
   use iso_fortran_env       , only : real128
-  use gti_expansion         , only : family_holder
+  use gti_expansion         , only : family_holder, expansion
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
        & expansion_substitutions, chain_system, chain_systems, chain_by_tangent, &
        & chain_by_adjoint, instant_components, functional_holder, chain_hessian
@@ -380,6 +380,7 @@ contains
 
     type(family_holder), allocatable :: schemes(:)
     type(chain_block)  , allocatable :: chain(:)
+    type(expansion), allocatable, target :: tower
     integer , allocatable :: added(:)
     real(dp), allocatable :: dt(:), t(:), f(:,:)
     type(imbalance) :: left
@@ -404,7 +405,7 @@ contains
     call tally_enter(at_expansion)
     call tally_order(0)
     call march_chain(schemes, added, van_der_pol(cfg % state_degree), nd, &
-         & chosen_grid(cfg), cfg % design, q0, chain, dt, t, achieved, left=left, &
+         & chosen_grid(cfg), cfg % design, q0, chain, tower, dt, t, achieved, left=left, &
          & nodes=nodes, spatial=op, startup=cfg % startup_refinement)
     ! Every derivative is taken at the state the march reached, so a
     ! row that did not converge has none to take and only its value is
@@ -587,6 +588,7 @@ contains
     real(dp)           , intent(in) :: f_field(0:)
 
     type(chain_block), allocatable :: chain(:)
+    type(expansion), allocatable, target :: tower
     real(dp), allocatable :: f(:,:), dt(:), t(:)
     real(dp) :: achieved, area
     integer  :: nd, d
@@ -597,7 +599,7 @@ contains
     area = sum(volume)
 
     call march_chain(schemes, added, van_der_pol(cfg % state_degree), nd, chosen_grid(cfg), &
-         & cfg % design, q0(1:nd), chain, dt, t, achieved, startup=cfg % startup_refinement)
+         & cfg % design, q0(1:nd), chain, tower, dt, t, achieved, startup=cfg % startup_refinement)
     call chain_expansion(chain, van_der_pol(cfg % state_degree), functionals, nd, &
          & cfg % design, ubound(f_field, 1), f)
 

@@ -22,7 +22,7 @@ program chained_horizon
   use operation_family_dirk , only : crouzeix_two_stage
   use operation_grid        , only : uniform_grid
   use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
-  use gti_expansion         , only : family_holder
+  use gti_expansion         , only : family_holder, expansion
   use gti_march             , only : partition
   use gti_chain             , only : one_functional
   use gti_chain             , only : chain_block, march_chain, chain_expansion
@@ -100,6 +100,7 @@ contains
     real(dp), allocatable :: table(:,:)
 
     type(chain_block), allocatable :: chain(:)
+    type(expansion), allocatable, target :: tower
     real(dp), allocatable :: dt(:), t(:), held(:)
     real(dp) :: achieved
     integer :: k, d, given
@@ -109,7 +110,7 @@ contains
     held = [((initial_at(d, t(k)), d = 0, degrees - 1), k = 1, given)]
 
     call march_chain(schemes, added, van_der_pol(state_degree), degrees, &
-         & uniform_grid(duration), design, held, chain, dt, t, achieved)
+         & uniform_grid(duration), design, held, chain, tower, dt, t, achieved)
 
     call chain_expansion(chain, van_der_pol(state_degree), &
          & [one_functional(van_der_pol_energy(state_degree))], degrees, design, &

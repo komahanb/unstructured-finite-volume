@@ -258,10 +258,15 @@ contains
   end function consistent_state
 
   !===================================================================!
-  ! The same at every node of a mesh: the components below the
-  ! highest given at each node, lower(d + 1, i), and the highest at
-  ! every node what the physics - and the level below, where one is
-  ! attached - say it is there. One node is the ordinary state.
+  ! The state at the first instant, consistent with the physics: the
+  ! components below the highest are given at every node, and the
+  ! highest is what the physics then requires, with the level below
+  ! - laid on the given values - entering its row. No block is laid
+  ! for it: the physics is a rule at one point, so the highest
+  ! component solves node by node, and the physics' partial in it,
+  ! which the rule carries, is the slope. Invalid input: components
+  ! for other than every degree below the highest; a level below over
+  ! other than the nodes.
   !===================================================================!
 
   function consistent_states(physics, degrees, lower, design_value, spatial) result(q)
@@ -272,37 +277,75 @@ contains
     type(stencil)         , intent(in), optional :: spatial
     real(dp), allocatable :: q(:)
 
-    type(block_residual) :: rows
-    type(stencil) :: none
-    integer , allocatable :: carried(:), at(:)
-    real(dp), allocatable :: held(:)
-    real(dp) :: achieved
-    integer :: i, d, nodes
+    type(stored_directed_graph) :: points
+    type(stored_field) :: state, knobs, direction
+    class(field), allocatable :: out
+    real(dp), allocatable :: below(:), r(:), slope(:), weights(:), e(:)
+    real(dp) :: began, target
+    integer  :: nodes, i, d, k, top, iteration
 
     nodes = size(lower, 2)
-    if (size(lower, 1) /= degrees - 1) then
+    top   = degrees - 1
+    if (size(lower, 1) /= top) then
        error stop 'gti_march: the components below the highest are given at every node'
     end if
 
-    none = stencil([integer ::], [integer ::], [real(dp) ::], &
-         & spread(0.0_dp, 1, nodes * degrees), 'none')
-
-    carried = [((unknown(1, d, degrees, i, nodes), d = 0, degrees - 2), i = 1, nodes)]
-    held    = [((lower(d + 1, i), d = 0, degrees - 2), i = 1, nodes)]
-    at      = [(unknown(1, 0, degrees, i, nodes) - 1, i = 1, nodes)]
-
-    rows = block_residual(none, physics, at, nodes * degrees, degrees, degrees - 1, &
-         & carried, held)
-    call rows % placed_in(spread(1, 1, nodes * degrees), &
-         & [((i, d = 0, degrees - 1), i = 1, nodes)], spread(1, 1, nodes * degrees))
-    if (present(spatial)) call rows % spatial_laid(spatial)
-
-    call solved(rows, design_value, q, achieved)
-
-    if (.not. achieved <= stopping_tolerance * max(1.0_dp, norm2(lower))) then
-       write(*,'(a,es12.3)') ' the physics at the initial instant left a residual of ', achieved
-       error stop 'gti_march: the initial state is consistent with the physics'
+    ! the level below on the given values: what it adds to each
+    ! node's row of the highest degree
+    allocate(below(nodes), source=0.0_dp)
+    if (present(spatial)) then
+       if (spatial % pattern % num_vertices() /= nodes) then
+          error stop 'gti_march: the level below is a stencil over the nodes'
+       end if
+       call spatial % weights % real_vector(weights)
+       do k = 1, spatial % pattern % num_edges()
+          below(spatial % pattern % edge_head(k)) = below(spatial % pattern % edge_head(k)) &
+               & + weights(k) * lower(1, spatial % pattern % edge_tail(k))
+       end do
     end if
+
+    ! the state over the nodes as points, the highest component from
+    ! the rule's own linear part
+    points = stored_directed_graph(nodes, tails=[integer ::], heads=[integer ::])
+    allocate(q(nodes * degrees), source=0.0_dp)
+    do i = 1, nodes
+       q((i - 1) * degrees + 1:(i - 1) * degrees + top) = lower(:, i)
+    end do
+    allocate(e(nodes * degrees), source=0.0_dp)
+    do i = 1, nodes
+       e(i * degrees) = 1.0_dp
+    end do
+    knobs = stored_field('design', points % vertex_set(), nodes)
+    call knobs % set_real_vector(spread(design_value, 1, nodes))
+    direction = stored_field('direction', points % vertex_set(), nodes * degrees)
+    call direction % set_real_vector(e)
+
+    ! newton on the highest component, node by node at once: the
+    ! residual and its partial in that component at every node
+    began = -1.0_dp
+    do iteration = 1, stopping_iterations
+       state = stored_field('state', points % vertex_set(), nodes * degrees)
+       call state % set_real_vector(q)
+       call physics % apply(points, [state, knobs], out)
+       call out % real_vector(r)
+       r = r + below
+       if (began < 0.0_dp) began = norm2(r)
+       if (stopping_criterion == relative) then
+          target = stopping_tolerance * max(began, tiny(1.0_dp))
+       else
+          target = stopping_tolerance
+       end if
+       if (norm2(r) <= target) return
+       call physics % partial_action(points, [state, knobs], &
+            & [variation(physics % argument(1), direction)], out)
+       call out % real_vector(slope)
+       do i = 1, nodes
+          q(i * degrees) = q(i * degrees) - r(i) / slope(i)
+       end do
+    end do
+    write(*,'(a,es12.3)') ' the physics at the initial instant left a residual of ', norm2(r)
+    error stop 'gti_march: the initial state is consistent with the physics'
+    associate (u1 => d); end associate
 
   end function consistent_states
 
@@ -541,7 +584,7 @@ contains
 
   subroutine block_from(tower, b, scheme, physics, held, rows, instants_at)
 
-    type(expansion)       , intent(in)  :: tower
+    type(expansion)       , intent(in), target :: tower
     integer               , intent(in)  :: b
     class(family)         , intent(in)  :: scheme
     type(expression)      , intent(in)  :: physics
@@ -552,7 +595,6 @@ contains
     type(graph), pointer :: horizon, block, slice, moment_node, component, below
     type(coupling_reach), allocatable :: reach(:)
     integer , allocatable :: slice_of(:), member_of(:), members(:), at(:), carried(:)
-    integer , allocatable :: label_slice(:), label_node(:), label_moment(:)
     integer , allocatable :: r(:), c(:), table(:,:)
     real(dp), allocatable :: dt(:), w(:), dt_weights(:), below_weights(:)
     logical , allocatable :: point(:)
@@ -669,20 +711,9 @@ contains
          & physics, at(1:npts), moments * width, nd, scheme % primary_degree(nd - 1), &
          & carried(1:ncar), held)
 
-    ! where every unknown lies: its slice, its node and its moment
-    allocate(label_slice(moments * width), label_node(moments * width), &
-         &   label_moment(moments * width))
-    do g = 1, moments
-       do i = 1, m
-          do d = 0, nd - 1
-             u = (g - 1) * width + (i - 1) * nd + d + 1
-             label_slice(u)  = slice_of(g)
-             label_node(u)   = i
-             label_moment(u) = g
-          end do
-       end do
-    end do
-    call rows % placed_in(label_slice, label_node, label_moment)
+    ! the block lies at its node of the graph, which says where every
+    ! unknown lies
+    call rows % placed_on(tower, block)
     call rows % with_reach(reach)
 
     ! the level below, laid on every moment the physics sits at: the

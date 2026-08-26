@@ -14,7 +14,7 @@ program jacobian_shape
   use operation_family_dirk , only : crouzeix_two_stage
   use operation_grid        , only : uniform_grid
   use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
-  use gti_expansion         , only : family_holder
+  use gti_expansion         , only : family_holder, expansion
   use gti_driver            , only : cosine
   use gti_march             , only : partition
   use gti_sweeps            , only : jacobian_of
@@ -48,6 +48,7 @@ contains
 
     type(family_holder), allocatable :: schemes(:)
     type(chain_block) , allocatable :: chain(:)
+    type(expansion), allocatable, target :: tower
     type(chain_system), allocatable :: systems(:)
     integer , allocatable :: added(:)
     real(dp), allocatable :: held(:), dt(:), t(:), a(:,:)
@@ -66,7 +67,7 @@ contains
          &   scheme % history_depth(degrees - 1))]
 
     call march_chain(schemes, added, van_der_pol(degrees - 1), degrees, &
-         & uniform_grid(duration), design, held, chain, dt, t, achieved)
+         & uniform_grid(duration), design, held, chain, tower, dt, t, achieved)
     call chain_systems(chain, [one_functional(van_der_pol_energy(degrees - 1))], degrees, &
          & design, systems)
 

@@ -45,7 +45,7 @@ program randomized_checks
   use operation_family_dirk , only : crouzeix_two_stage
   use operation_grid        , only : uniform_grid, random_grid
   use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
-  use gti_expansion         , only : family_holder
+  use gti_expansion         , only : family_holder, expansion
   use gti_driver            , only : cosine
   use gti_block             , only : block_residual
   use gti_march             , only : partition
@@ -139,6 +139,7 @@ contains
     real(dp)           , intent(out) :: tangent, adjoint
 
     type(chain_block) , allocatable :: chain(:)
+    type(expansion), allocatable, target :: tower
     type(chain_system), allocatable :: systems(:)
     real(dp), allocatable :: held(:), dt(:), t(:)
     real(dp) :: achieved
@@ -146,7 +147,7 @@ contains
     call held_for(schemes(1) % scheme, degrees, duration, sum(added), held, dt, t)
 
     call march_chain(schemes, added, van_der_pol(degrees - 1), degrees, &
-         & uniform_grid(duration), design, held, chain, dt, t, achieved)
+         & uniform_grid(duration), design, held, chain, tower, dt, t, achieved)
 
     call chain_systems(chain, [one_functional(van_der_pol_energy(degrees - 1))], degrees, &
          & design, systems)
@@ -451,12 +452,13 @@ contains
     real(dp)           , intent(out) :: achieved
 
     type(chain_block), allocatable :: chain(:)
+    type(expansion), allocatable, target :: tower
     real(dp), allocatable :: held(:), dt(:), t(:)
 
     call held_for(schemes(1) % scheme, degrees, duration, sum(added), held, dt, t)
 
     call march_chain(schemes, added, van_der_pol(degrees - 1), degrees, &
-         & uniform_grid(duration), design, held, chain, dt, t, achieved)
+         & uniform_grid(duration), design, held, chain, tower, dt, t, achieved)
 
     call chain_expansion(chain, van_der_pol(degrees - 1), &
          & [one_functional(van_der_pol_energy(degrees - 1))], degrees, design, &

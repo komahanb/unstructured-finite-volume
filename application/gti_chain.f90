@@ -250,7 +250,7 @@ contains
 
   subroutine built(tower, b, scheme, physics, held, rows, instants_at)
 
-    type(expansion)       , intent(in)  :: tower
+    type(expansion)       , intent(in), target :: tower
     integer               , intent(in)  :: b
     class(family)         , intent(in)  :: scheme
     type(expression)      , intent(in)  :: physics
@@ -268,7 +268,8 @@ contains
   !===================================================================!
 
   subroutine march_chain(schemes, added, physics, degrees, steps, &
-       & design, initial, chain, dt, t, achieved, grid_design, left, nodes, spatial, startup)
+       & design, initial, chain, tower, dt, t, achieved, grid_design, left, nodes, spatial, &
+       & startup)
 
     type(family_holder)   , intent(in) :: schemes(:)
     integer               , intent(in) :: added(:), degrees
@@ -276,6 +277,9 @@ contains
     real(dp)              , intent(in) :: design, initial(:)
     class(grid)           , intent(in) :: steps
     type(chain_block), allocatable, intent(out) :: chain(:)
+    ! THE GRAPH the chain is read from, the caller's, built here and
+    ! outliving the march: every block lies at its node of it
+    type(expansion), allocatable, intent(inout), target :: tower
     real(dp)         , allocatable, intent(out) :: dt(:), t(:)
     real(dp)              , intent(out) :: achieved
     real(dp), intent(in), optional     :: grid_design(:)
@@ -289,10 +293,9 @@ contains
     ! first instant alone
     integer        , intent(in) , optional :: startup
 
-    type(expansion) :: tower, startup_tower
-    type(family_holder) :: starter(1)
+    type(family_holder), allocatable :: every(:)
     type(imbalance) :: one_left
-    integer , allocatable :: first(:), last(:)
+    integer , allocatable :: first(:), last(:), spans(:)
     real(dp), allocatable :: fine(:), knobs(:)
     real(dp) :: one_achieved
     integer :: b, k, r, given, before
@@ -323,23 +326,40 @@ contains
     ! instants one hands the next, so the tower is built over each
     ! block's own span with each block's own steps laid end to end -
     ! a block reads only its own steps, and the sharing is the
-    ! chain's junction. One more tower covers the startup's refined
-    ! steps.
+    ! chain's junction. The startup, over its refined steps, is the
+    ! first block of the same tower.
     knobs = [real(dp) ::]
+    allocate(every(size(added) + before))
+    if (with_startup) then
+       fine  = [0.0_dp, (dt(1 + (k - 1) / r + 1) / real(r, dp), k = 1, (given - 1) * r)]
+       knobs = fine(2:)
+       allocate(every(1) % scheme, source=crouzeix_three_stage())
+    end if
     do b = 1, size(added)
-       knobs = [knobs, dt(first(b) + merge(1, 0, b == 1):last(b))]
+       ! the step ending at a block's first instant: none at the
+       ! horizon's first, and after a startup the two share an instant,
+       ! so a positive placeholder no row reads takes the place of the zero
+       ! a partition refuses
+       if (b == 1 .and. with_startup) then
+          knobs = [knobs, fine(size(fine)), dt(2:last(1))]
+       else
+          knobs = [knobs, dt(first(b) + merge(1, 0, b == 1):last(b))]
+       end if
+       allocate(every(before + b) % scheme, source=schemes(b) % scheme)
     end do
-    call tower % build(physics, schemes, [(last(b) - first(b) + 1, b = 1, size(added))], &
-         & designed_grid(sum(knobs)), 0, knobs, nodes, spatial)
+    allocate(spans(size(every)))
+    if (with_startup) spans(1) = (given - 1) * r + 1
+    do b = 1, size(added)
+       spans(before + b) = last(b) - first(b) + 1
+    end do
+    if (allocated(tower)) deallocate(tower)
+    allocate(tower)
+    call tower % build(physics, every, spans, designed_grid(sum(knobs)), 0, knobs, nodes, spatial)
 
     achieved = 0.0_dp
     call tally_enter(at_horizon)
     if (with_startup) then
-       fine = [0.0_dp, (dt(1 + (k - 1) / r + 1) / real(r, dp), k = 1, (given - 1) * r)]
-       allocate(starter(1) % scheme, source=crouzeix_three_stage())
-       call startup_tower % build(physics, starter, [(given - 1) * r + 1], &
-            & designed_grid(sum(fine)), 0, fine(2:), nodes, spatial)
-       call one_block(chain, 1, startup_tower, 1, starter(1) % scheme, physics, degrees, 1, &
+       call one_block(chain, 1, tower, 1, every(1) % scheme, physics, degrees, 1, &
             & (given - 1) * r + 1, 1, fine, [0, (1 + (k - 1) / r + 1, k = 1, (given - 1) * r)], &
             & 1.0_dp / real(r, dp), .false., design, initial, one_achieved, one_left, nodes, &
             & spatial)
@@ -347,7 +367,7 @@ contains
        if (present(left)) left = one_left
     end if
     do b = 1, size(added)
-       call one_block(chain, before + b, tower, b, schemes(b) % scheme, physics, degrees, &
+       call one_block(chain, before + b, tower, before + b, schemes(b) % scheme, physics, degrees, &
             & 1 + (first(b) - 1) * r, 1 + (last(b) - 1) * r, r, dt(first(b):last(b)), &
             & [(k, k = first(b), last(b))], 1.0_dp, .true., design, initial, &
             & one_achieved, one_left, nodes, spatial)
@@ -374,7 +394,7 @@ contains
        & spatial)
 
     type(chain_block)     , intent(inout) :: chain(:)
-    type(expansion)       , intent(in)    :: tower
+    type(expansion)       , intent(in), target :: tower
     integer               , intent(in)    :: b, in_tower, degrees, first, last, stride
     integer               , intent(in)    :: coarse_step(:)
     class(family)         , intent(in)    :: scheme

@@ -20,7 +20,7 @@ program marched_horizon
   use operation_family_bdf  , only : bdf_family
   use operation_family_adams, only : adams_family
   use physics_vanderpol     , only : van_der_pol
-  use gti_expansion         , only : family_holder
+  use gti_expansion         , only : family_holder, expansion
   use view_directed_stored  , only : stored_directed_graph
   use field_stored          , only : stored_field
   use physics_vanderpol     , only : van_der_pol_energy
@@ -94,6 +94,7 @@ contains
     real(dp), intent(in), optional :: design_value
 
     type(chain_block), allocatable :: chain(:)
+    type(expansion), allocatable, target :: tower
     integer, allocatable :: first(:), last(:)
     real(dp), allocatable :: dt(:), t(:)
     real(dp) :: design
@@ -108,7 +109,7 @@ contains
 
     call march_chain(schemes, added, van_der_pol(state_degree), degrees, &
          & uniform_grid(duration), design, initial_for(schemes(1) % scheme, n), &
-         & chain, dt, t, achieved)
+         & chain, tower, dt, t, achieved)
 
     ! The chain keeps its state one block at a time, and a stage
     ! block keeps its instants between its stages, so the instants
@@ -242,6 +243,7 @@ contains
 
     type(family_holder) :: schemes(2)
     type(chain_block) , allocatable :: chain(:)
+    type(expansion), allocatable, target :: tower
     type(chain_system), allocatable :: systems(:)
     real(dp), allocatable :: q(:), dt(:)
     real(dp) :: f, tangent, adjoint, differenced, achieved
@@ -254,7 +256,7 @@ contains
     call marched(schemes, added, q, achieved, design)
     f = energy_of(q, n, design)
 
-    call chained(schemes, added, design, chain, dt)
+    call chained(schemes, added, design, chain, tower, dt)
     call chain_systems(chain, [one_functional(van_der_pol_energy(state_degree))], degrees, &
          & design, systems)
 
@@ -278,12 +280,13 @@ contains
   ! The chain itself, and the steps it was built over.
   !-------------------------------------------------------------------!
 
-  subroutine chained(schemes, added, design, chain, dt)
+  subroutine chained(schemes, added, design, chain, tower, dt)
 
     type(family_holder), intent(in) :: schemes(:)
     integer            , intent(in) :: added(:)
     real(dp)           , intent(in) :: design
     type(chain_block), allocatable, intent(out) :: chain(:)
+    type(expansion)  , allocatable, intent(inout), target :: tower
     real(dp)         , allocatable, intent(out) :: dt(:)
 
     integer , allocatable :: first(:), last(:)
@@ -296,7 +299,7 @@ contains
     call march_chain(schemes, added, van_der_pol(state_degree), degrees, &
          & uniform_grid(duration), design, &
          & initial_for(schemes(1) % scheme, last(size(added))), &
-         & chain, dt, t, achieved)
+         & chain, tower, dt, t, achieved)
 
   end subroutine chained
 

@@ -62,6 +62,8 @@ module gti_block
   use field_calculus       , only : field
   use field_stored         , only : stored_field
   use graph_fractal        , only : graph
+  use gti_expansion        , only : expansion
+  use view_level           , only : level_member, level_num_members, level_is_leaf
   use operation_stencil    , only : combine_triples, stencil
   use operation_family     , only : family
   use operation_weight     , only : scheme_weight
@@ -110,17 +112,18 @@ module gti_block
      integer                             , private :: unknowns = 0
      integer                             , private :: primary  = 0
 
-     ! WHERE EACH UNKNOWN LIES in the hierarchy: the member of the
-     ! time level it belongs to - an instant, or a step for a stage
-     ! block - the member of the space level, its node, and its
-     ! moment, the instant or stage whose values it is among. The
-     ! constructors that know the layout say so; a sweep reads its
-     ! members and their coupling from these and from nothing else,
-     ! the level below is laid on the moments, and the aggregates a
-     ! multigrid coarsens by are read off them.
-     integer, allocatable, private :: slice(:)
-     integer, allocatable, private :: node(:)
-     integer, allocatable, private :: moment(:)
+     ! WHERE THE BLOCK LIES in the graph: its node of the expansion,
+     ! and the expansion that node belongs to. Where each unknown lies
+     ! - the member of the time level, an instant or a step; its node
+     ! of the space level; its moment, the instant or stage whose
+     ! values it is among - is read from the graph whenever asked and
+     ! held nowhere else: a sweep reads its members and their coupling
+     ! from it, the level below is laid on the moments, the aggregates
+     ! a multigrid coarsens by are read off it. A member of a block
+     ! keeps the block's node and the unknowns it was restricted to.
+     type(graph)    , pointer, private :: node  => null()
+     type(expansion), pointer, private :: tower => null()
+     integer, allocatable    , private :: kept(:)
      type(coupling_reach), allocatable, private :: reach(:)
 
    contains
@@ -132,10 +135,11 @@ module gti_block
      procedure :: partial_action => block_partial_action
      procedure :: compiled_tangent => block_compiled_tangent
      procedure :: restricted => block_restricted
-     procedure :: placed_in
+     procedure :: placed_on
      procedure :: slice_of
      procedure :: node_of
      procedure :: moment_of
+     procedure, private :: labels_of
      procedure :: num_nodes
      procedure :: spatial_laid
      procedure :: aggregates
@@ -518,34 +522,103 @@ contains
   ! program.
   !===================================================================!
 
-  subroutine placed_in(this, slice, node, moment)
+  subroutine placed_on(this, tower, node)
 
-    class(block_residual), intent(inout) :: this
-    integer              , intent(in)    :: slice(:), node(:), moment(:)
+    class(block_residual), intent(inout)     :: this
+    type(expansion)      , intent(in), target :: tower
+    type(graph)          , intent(in), target :: node
 
-    if (size(slice) /= this % unknowns .or. size(node) /= this % unknowns &
-         & .or. size(moment) /= this % unknowns) then
-       error stop 'gti_block: one time member, one space member, one moment per unknown'
+    this % tower => tower
+    this % node  => node
+
+  end subroutine placed_on
+
+  !-------------------------------------------------------------------!
+  ! Where every unknown lies, read from the block's node: the slices
+  ! are its members; a slice whose first member is a leaf is one
+  ! moment, any other slice's members are its moments; a moment holds
+  ! one freedom per node of its first component's extent at every
+  ! degree, node by node, degrees within a node; the moments lie one
+  ! after another. A member of a block reads the block's and keeps
+  ! the unknowns it was restricted to. Invalid input: a block placed
+  ! nowhere.
+  !-------------------------------------------------------------------!
+
+  subroutine labels_of(this, slice, node, moment)
+
+    class(block_residual), intent(in) :: this
+    integer, allocatable , intent(out) :: slice(:), node(:), moment(:)
+
+    type(graph), pointer :: one_slice, first
+    integer, allocatable :: whole_slice(:), whole_node(:), whole_moment(:)
+    integer :: n, k, j, members, moments, g, m, count, u, i, d
+
+    if (.not. associated(this % node)) then
+       error stop 'gti_block: the block has not been placed in the graph'
     end if
-    if (any(slice < 1) .or. any(node < 1) .or. any(moment < 1)) then
-       error stop 'gti_block: a member is numbered from one'
+
+    n = level_num_members(this % node)
+    moments = 0
+    do k = 1, n
+       moments = moments + members_of(level_member(this % node, k))
+    end do
+    first => level_member(this % node, 1)
+    if (.not. level_is_leaf(level_member(first, 1))) first => level_member(first, 1)
+    m     = this % tower % extent_of(level_member(first, 1))
+    count = moments * m * this % degrees
+    allocate(whole_slice(count), whole_node(count), whole_moment(count))
+
+    g = 0
+    do k = 1, n
+       one_slice => level_member(this % node, k)
+       members = members_of(one_slice)
+       do j = 1, members
+          g = g + 1
+          do i = 1, m
+             do d = 0, this % degrees - 1
+                u = ((g - 1) * m + (i - 1)) * this % degrees + d + 1
+                whole_slice(u)  = k
+                whole_node(u)   = i
+                whole_moment(u) = g
+             end do
+          end do
+       end do
+    end do
+
+    if (allocated(this % kept)) then
+       slice  = whole_slice(this % kept)
+       node   = whole_node(this % kept)
+       moment = whole_moment(this % kept)
+    else
+       call move_alloc(whole_slice , slice)
+       call move_alloc(whole_node  , node)
+       call move_alloc(whole_moment, moment)
     end if
 
-    this % slice  = slice
-    this % node   = node
-    this % moment = moment
+  contains
 
-  end subroutine placed_in
+    integer function members_of(one_slice)
+
+      type(graph), intent(in) :: one_slice
+
+      if (level_is_leaf(level_member(one_slice, 1))) then
+         members_of = 1
+      else
+         members_of = level_num_members(one_slice)
+      end if
+
+    end function members_of
+
+  end subroutine labels_of
 
   function slice_of(this) result(slice)
 
     class(block_residual), intent(in) :: this
     integer, allocatable :: slice(:)
 
-    if (.not. allocated(this % slice)) then
-       error stop 'gti_block: the block has not said where its unknowns lie'
-    end if
-    slice = this % slice
+    integer, allocatable :: node(:), moment(:)
+
+    call this % labels_of(slice, node, moment)
 
   end function slice_of
 
@@ -554,10 +627,9 @@ contains
     class(block_residual), intent(in) :: this
     integer, allocatable :: node(:)
 
-    if (.not. allocated(this % node)) then
-       error stop 'gti_block: the block has not said where its unknowns lie'
-    end if
-    node = this % node
+    integer, allocatable :: slice(:), moment(:)
+
+    call this % labels_of(slice, node, moment)
 
   end function node_of
 
@@ -566,21 +638,24 @@ contains
     class(block_residual), intent(in) :: this
     integer, allocatable :: moment(:)
 
-    if (.not. allocated(this % moment)) then
-       error stop 'gti_block: the block has not said where its unknowns lie'
-    end if
-    moment = this % moment
+    integer, allocatable :: slice(:), node(:)
+
+    call this % labels_of(slice, node, moment)
 
   end function moment_of
 
   ! the largest node label: a member of a block keeps the block's
   ! numbering, so this is the extent a map over the nodes must reach
-  pure integer function num_nodes(this)
+  integer function num_nodes(this)
 
     class(block_residual), intent(in) :: this
 
+    integer, allocatable :: slice(:), node(:), moment(:)
+
     num_nodes = 1
-    if (allocated(this % node)) num_nodes = maxval(this % node)
+    if (.not. associated(this % node)) return
+    call this % labels_of(slice, node, moment)
+    num_nodes = maxval(node)
 
   end function num_nodes
 
@@ -600,15 +675,13 @@ contains
     class(block_residual), intent(inout) :: this
     type(stencil)        , intent(in)    :: spatial
 
-    integer , allocatable :: base(:,:), r(:), c(:)
+    integer , allocatable :: base(:,:), r(:), c(:), slice(:), node(:), moment(:)
     real(dp), allocatable :: lw(:), held(:), w(:)
     integer :: nodes, moments, p, u, e, g, ne, n, rc, cc
 
-    if (.not. allocated(this % moment)) then
-       error stop 'gti_block: the block has not said where its unknowns lie'
-    end if
-    nodes   = maxval(this % node)
-    moments = maxval(this % moment)
+    call this % labels_of(slice, node, moment)
+    nodes   = maxval(node)
+    moments = maxval(moment)
     if (spatial % pattern % num_vertices() /= nodes) then
        error stop 'gti_block: the level below is a stencil over the nodes'
     end if
@@ -622,7 +695,7 @@ contains
     allocate(base(nodes, moments), source=-1)
     do p = 1, size(this % at)
        u = this % at(p) + 1
-       base(this % node(u), this % moment(u)) = this % at(p)
+       base(node(u), moment(u)) = this % at(p)
     end do
 
     ne = spatial % pattern % num_edges()
@@ -684,7 +757,7 @@ contains
     if (.not. allocated(this % reach)) then
        error stop 'gti_block: the block was built without its reach'
     end if
-    nodes = maxval(this % node)
+    nodes = this % num_nodes()
     count = 0
     do k = 1, size(this % reach)
        count = count + size(this % reach(k) % tails) * nodes
@@ -731,22 +804,20 @@ contains
     integer              , intent(in) :: cell(:)
     integer, allocatable :: aggregate(:)
 
-    integer, allocatable :: numbered(:)
+    integer, allocatable :: numbered(:), slice(:), node(:), moment(:)
     integer :: u, coarse, key, count
 
-    if (.not. allocated(this % moment)) then
-       error stop 'gti_block: the block has not said where its unknowns lie'
-    end if
-    if (size(cell) < maxval(this % node)) then
+    call this % labels_of(slice, node, moment)
+    if (size(cell) < maxval(node)) then
        error stop 'gti_block: a coarse cell for every node'
     end if
 
     coarse = maxval(cell)
     allocate(aggregate(this % unknowns))
-    allocate(numbered(maxval(this % moment) * coarse * this % degrees), source=0)
+    allocate(numbered(maxval(moment) * coarse * this % degrees), source=0)
     count = 0
     do u = 1, this % unknowns
-       key = ((this % moment(u) - 1) * coarse + cell(this % node(u)) - 1) * this % degrees &
+       key = ((moment(u) - 1) * coarse + cell(node(u)) - 1) * this % degrees &
             & + mod(u - 1, this % degrees) + 1
        if (numbered(key) == 0) then
           count         = count + 1
@@ -800,7 +871,9 @@ contains
     lin = block_residual(a, stated(constant(0.0_dp), this % degrees - 1, 'zero'), this % at, this % unknowns, &
          & this % degrees, this % primary, [integer ::], [real(dp) ::])
     call lin % stamped(mark, transposed=a % pattern % transposed())
-    if (allocated(this % slice)) call lin % placed_in(this % slice, this % node, this % moment)
+    lin % tower => this % tower
+    lin % node  => this % node
+    if (allocated(this % kept)) lin % kept = this % kept
 
   end function linear_block
 
@@ -864,8 +937,13 @@ contains
        sub = block_residual(derived, this % physics, at(1:npts), size(kept), &
             & this % degrees, this % primary, carried(1:ncar), held(1:ncar))
     end if
-    if (allocated(this % slice)) then
-       call sub % placed_in(this % slice(kept), this % node(kept), this % moment(kept))
+    ! the member lies where the block lies, on the unknowns kept
+    sub % tower => this % tower
+    sub % node  => this % node
+    if (allocated(this % kept)) then
+       sub % kept = this % kept(kept)
+    else
+       sub % kept = kept
     end if
 
   end function block_restricted
@@ -1162,24 +1240,22 @@ contains
     logical              , intent(in)  :: by_instants
     integer, allocatable , intent(out) :: order(:)
 
-    integer, allocatable :: table(:,:), label(:)
+    integer, allocatable :: table(:,:), label(:), slice(:), node(:), moment(:)
     type(stored_directed_graph) :: coupling
     integer :: ne, e, n, t, h, k, members
 
-    if (.not. allocated(this % slice)) then
-       error stop 'gti_block: the block has not said where its unknowns lie'
-    end if
+    call this % labels_of(slice, node, moment)
 
     ! the space level's members couple both ways through the mesh,
     ! which has no loop, and are swept as numbered
     if (.not. by_instants) then
-       order = [(k, k = 1, maxval(this % node))]
+       order = [(k, k = 1, maxval(node))]
        return
     end if
 
     ! the time level's coupling: a derived row at one member that
     ! reads an unknown at another, which for every family looks one way
-    label   = this % slice
+    label   = slice
     members = maxval(label)
     ne      = this % derived % pattern % num_edges()
     allocate(table(2, ne))

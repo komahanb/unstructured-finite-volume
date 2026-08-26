@@ -33,7 +33,7 @@ program grid_design_check
   use operation_grid        , only : designed_grid
   use operation_minimization, only : relative, by_rate
   use physics_vanderpol     , only : van_der_pol, van_der_pol_energy, van_der_pol_dissipation
-  use gti_expansion         , only : family_holder
+  use gti_expansion         , only : family_holder, expansion
   use gti_march             , only : set_stopping, consistent_state, step_partials, imbalance
   use gti_chain             , only : chain_block, march_chain, chain_expansion, chain_system, &
        & chain_systems, chain_by_tangent, chain_by_adjoint, functional_holder, one_functional, &
@@ -49,6 +49,7 @@ program grid_design_check
   type(family_holder)     :: schemes(2)
   type(functional_holder) :: functionals(2)
   type(chain_block) , allocatable :: chain(:)
+  type(expansion), allocatable, target :: tower
   type(chain_system), allocatable :: systems(:)
   real(dp), allocatable :: p(:), dt(:), t(:), v(:,:), f(:,:), tangent(:,:), adjoint(:,:)
   real(dp), allocatable :: plus(:,:), minus(:,:), q0(:), hessian(:,:,:), dplus(:,:), dminus(:,:)
@@ -153,7 +154,7 @@ contains
     m = 1
     if (present(order)) m = order
     call march_chain(schemes, [11, 10], van_der_pol(state_degree), degrees, &
-         & designed_grid(duration), nu, q0, chain, dt, t, achieved, grid_design=weights, &
+         & designed_grid(duration), nu, q0, chain, tower, dt, t, achieved, grid_design=weights, &
          & left=left, startup=4)
     if (.not. left % converged) error stop 'grid_design_check: the march converged'
     call chain_expansion(chain, van_der_pol(state_degree), functionals, degrees, nu, m, f)

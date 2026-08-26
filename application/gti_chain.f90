@@ -84,6 +84,7 @@ module gti_chain
   public :: multiset_count, multiset_rank, multiset_of, derivative_table, num_designs_of
   public :: chain_system, chain_systems
   public :: expansion_substitutions
+  public :: sink_costates
 
 
   !===================================================================!
@@ -166,6 +167,45 @@ module gti_chain
   type :: sized_costates
      real(dp), allocatable :: v(:,:,:,:)
   end type sized_costates
+
+  !===================================================================!
+  ! THE COSTATE OF A SINK. An unknown read by no row but its own is a
+  ! sink of the block's reads graph: its column of the jacobian holds
+  ! the diagonal alone, so the costate equation J^T lambda = g gives
+  ! J_ii lambda_i = g_i on it exactly, and lambda_i = 0 wherever the
+  ! functional does not read the unknown. Which unknowns are sinks is
+  ! read off the compiled pattern, not declared, at any degree: in a
+  ! stage block the arriving instant's highest degree is one, since
+  ! the next step's stages read the lower degrees and the governing
+  ! rows sit at the stages; in a multistep block none is, the
+  ! governing row at the same instant reading every degree. The
+  ! departure checks the transposition, the solve and the placing of
+  ! the functional's gradient together, at the cost of reading the
+  ! pattern once per block.
+  !===================================================================!
+
+  type :: sink_costates
+     ! sinks at each degree over the chain, 0 to degrees - 1, of three
+     ! kinds: carried unknowns, whose rows are identities; the last
+     ! point of a block, read by the next block through the junction,
+     ! which enters the right side and not the pattern; and the rest,
+     ! the interior, where theory allows sinks in a stage block at the
+     ! highest degree alone and in a multistep block none
+     integer , allocatable :: carried(:), last(:), interior(:)
+     ! max |J_ii lambda_i - g_i| over the sinks, every functional and multiset
+     real(dp) :: departure = 0.0_dp
+     ! max |g_i| and max |lambda_i| over the rows of the same solves
+     real(dp) :: gradient  = 0.0_dp
+     real(dp) :: costate   = 0.0_dp
+     ! max |lambda_i| over the sinks the functional does not read
+     real(dp) :: unread    = 0.0_dp
+  end type sink_costates
+
+  ! one block's sinks and the diagonal of its jacobian on them
+  type :: block_sinks
+     logical , allocatable :: is_sink(:)
+     real(dp), allocatable :: diagonal(:)
+  end type block_sinks
 
   type :: sized_steps
      real(dp), allocatable :: u(:,:)
@@ -625,47 +665,6 @@ contains
   end function first_of
 
   !===================================================================!
-  ! The points one block owns and the measure of each: the owned
-  ! instants, node by node, weighted by the block's own step ending
-  ! at the instant times the node's measure - one when no measure is
-  ! given, as for one node's equation. Invalid input: a measure for
-  ! other than every node.
-  !===================================================================!
-
-  subroutine owned_points(b, from, to, node_measure, at, weight, along)
-
-    type(chain_block), intent(in) :: b
-    integer          , intent(in) :: from, to
-    real(dp), intent(in), optional :: node_measure(:)
-    integer , allocatable, intent(out) :: at(:)
-    real(dp), allocatable, intent(out) :: weight(:)
-    ! given, a direction in the block's steps in place of the steps
-    real(dp), intent(in), optional :: along(:)
-
-    real(dp), allocatable :: measure(:), step(:)
-    integer :: degrees, k, i
-
-    degrees = b % width / b % nodes
-    if (present(node_measure)) then
-       if (size(node_measure) /= b % nodes) then
-          error stop 'gti_chain: one measure per node'
-       end if
-       measure = node_measure
-    else
-       measure = spread(1.0_dp, 1, b % nodes)
-    end if
-    if (present(along)) then
-       step = along
-    else
-       step = b % dt
-    end if
-
-    at     = [((b % instants_at(k) + (i - 1) * degrees, i = 1, b % nodes), k = from, to)]
-    weight = [((step(k) * measure(i), i = 1, b % nodes), k = from, to)]
-
-  end subroutine owned_points
-
-  !===================================================================!
   ! A direction in the march's steps read on a block's own: each of
   ! its steps takes the direction of the march's step it lies in,
   ! times its fraction of that step.
@@ -686,35 +685,6 @@ contains
 
   end function along_of
 
-
-  !===================================================================!
-  ! The trajectory at the points one block owns, laid out one point
-  ! at a time so that a nodal rule reads them.
-  !===================================================================!
-
-  subroutine at_owned_points(inputs, degrees, design, at, points, state, knobs)
-
-    type(stored_field)         , intent(in)  :: inputs(:)
-    integer                    , intent(in)  :: degrees, at(:)
-    real(dp)                   , intent(in)  :: design
-    type(stored_directed_graph), intent(in)  :: points
-    type(stored_field)         , intent(out) :: state, knobs
-
-    real(dp), allocatable :: whole(:), v(:)
-    integer :: p
-
-    call inputs(1) % real_vector(whole)
-    allocate(v(size(at) * degrees))
-    do p = 1, size(at)
-       v((p - 1) * degrees + 1:p * degrees) = whole(at(p) + 1:at(p) + degrees)
-    end do
-
-    state = stored_field('state', points % vertex_set(), size(at) * degrees)
-    knobs = stored_field('design', points % vertex_set(), size(at))
-    call state % set_real_vector(v)
-    call knobs % set_real_vector(spread(design, 1, size(at)))
-
-  end subroutine at_owned_points
 
   !===================================================================!
   ! Which block holds one fine instant, the latest that does, and
@@ -796,7 +766,7 @@ contains
   !===================================================================!
 
   subroutine chain_derivative(chain, tower, systems, functionals, degrees, order, route, &
-       & table, node_measure, entries, designs, by_order)
+       & table, node_measure, entries, designs, by_order, sinks)
 
     type(chain_block)      , intent(in) :: chain(:)
     type(expansion)        , intent(in) :: tower
@@ -819,9 +789,13 @@ contains
     ! the forward route from the tangents in hand, the order asked for
     ! by the route given
     type(derivative_table), allocatable, intent(out), optional :: by_order(:)
+    ! given, the costates of the sinks checked over every solve; the
+    ! forward route makes no costate and is refused
+    type(sink_costates), intent(out), optional :: sinks
 
     type(sized_tangents), allocatable :: w(:)
     type(sized_costates), allocatable :: lambda(:)
+    type(block_sinks)   , allocatable :: sink(:)
     type(sized_steps)   , allocatable :: u(:)
     type(stored_directed_graph) :: unknowns
     type(stored_field), allocatable :: inputs(:)
@@ -893,9 +867,22 @@ contains
 
     if (route == forward_route .or. order == 0) then
        call functional_tables(order)
+       if (present(sinks)) then
+          error stop 'gti_chain: the sinks are checked on the reverse route'
+       end if
        if (present(by_order)) by_order(order) % t = table
        call tally_order(0)
        return
+    end if
+
+    if (present(sinks)) then
+       allocate(sinks % carried(0:degrees - 1), source=0)
+       allocate(sinks % last(0:degrees - 1), source=0)
+       allocate(sinks % interior(0:degrees - 1), source=0)
+       allocate(sink(nb))
+       do b = 1, nb
+          call sinks_of(chain(b), degrees, design, sink(b), sinks)
+       end do
     end if
 
     ! THE COSTATES of every functional and multiset up to the size
@@ -923,6 +910,7 @@ contains
                 call solved_linear(chain(b) % rows, unknowns, inputs, rhs(1:count, b), .true., &
                      & systems(b) % mark, one)
                 lambda(k) % v(1:count, b, i, rank) = one
+                if (present(sinks)) call sink_departure(sink(b), rhs(1:count, b), one, sinks)
                 call tally_leave()
                 do p = 1, chain(b) % given * chain(b) % width
                    instant = chain(b) % first + ((p - 1) / chain(b) % width) * chain(b) % stride
@@ -1256,6 +1244,87 @@ contains
     end do
 
   end subroutine costates_at
+
+  !===================================================================!
+  ! One block's sinks from its compiled pattern: the columns holding
+  ! their diagonal and nothing else. Zero weights are structural
+  ! entries and count as reads, so a partial that happens to vanish
+  ! at the frozen state makes no sink. A block that does not compile
+  ! its tangent stops the program.
+  !===================================================================!
+
+  subroutine sinks_of(b, degrees, design, sink, sinks)
+
+    type(chain_block)  , intent(in)    :: b
+    integer            , intent(in)    :: degrees
+    real(dp)           , intent(in)    :: design
+    type(block_sinks)  , intent(out)   :: sink
+    type(sink_costates), intent(inout) :: sinks
+
+    type(stored_directed_graph) :: unknowns
+    type(stored_field), allocatable :: inputs(:)
+    integer , allocatable :: r(:), c(:), reads(:)
+    real(dp), allocatable :: w(:)
+    logical , allocatable :: has_diagonal(:), carried(:)
+    logical :: available
+    integer :: n, e, p, d
+
+    call frozen_at(b, design, unknowns, inputs)
+    call b % rows % compiled_tangent(unknowns, inputs, 1, r, c, w, available)
+    if (.not. available) then
+       error stop 'gti_chain: the block compiles its tangent in the state'
+    end if
+
+    n = b % rows % num_unknowns()
+    allocate(reads(n), source=0)
+    allocate(has_diagonal(n), source=.false.)
+    allocate(sink % diagonal(n), source=0.0_dp)
+    do e = 1, size(r)
+       reads(c(e)) = reads(c(e)) + 1
+       if (r(e) == c(e)) then
+          has_diagonal(c(e))  = .true.
+          sink % diagonal(c(e)) = w(e)
+       end if
+    end do
+    sink % is_sink = reads == 1 .and. has_diagonal
+
+    carried = is_carried(b)
+    do p = 1, n
+       if (.not. sink % is_sink(p)) cycle
+       d = mod(p - 1, degrees)
+       if (carried(p)) then
+          sinks % carried(d) = sinks % carried(d) + 1
+       else if (p > n - degrees) then
+          sinks % last(d) = sinks % last(d) + 1
+       else
+          sinks % interior(d) = sinks % interior(d) + 1
+       end if
+    end do
+
+  end subroutine sinks_of
+
+  !===================================================================!
+  ! The identity J_ii lambda_i = g_i on one block's sinks after one
+  ! costate solve with right side g, the departure accumulated.
+  !===================================================================!
+
+  subroutine sink_departure(sink, g, lambda, sinks)
+
+    type(block_sinks)  , intent(in)    :: sink
+    real(dp)           , intent(in)    :: g(:), lambda(:)
+    type(sink_costates), intent(inout) :: sinks
+
+    integer :: p
+
+    sinks % gradient = max(sinks % gradient, maxval(abs(g)))
+    sinks % costate  = max(sinks % costate , maxval(abs(lambda)))
+    do p = 1, size(g)
+       if (.not. sink % is_sink(p)) cycle
+       sinks % departure = max(sinks % departure, abs(sink % diagonal(p) * lambda(p) - g(p)))
+       if (g(p) == 0.0_dp) sinks % unread = max(sinks % unread, abs(lambda(p)))
+    end do
+
+  end subroutine sink_departure
 
   !===================================================================!
   ! The right side of one block for the costate of functional i and

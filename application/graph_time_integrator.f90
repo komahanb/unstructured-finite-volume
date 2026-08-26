@@ -75,7 +75,7 @@ program graph_time_integrator
   use gti_expansion         , only : family_holder, expansion
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
        & expansion_substitutions, chain_system, chain_systems, num_designs_of, &
-       & instant_components, functional_holder, chain_derivative, asymmetry
+       & instant_components, functional_holder, chain_derivative, asymmetry, sink_costates
   use gti_sweeps            , only : set_linear_solver, set_assembly, set_storage, set_multigrid, &
        & set_coarse_nodes, set_linear_budget
   use gti_sweeps            , only : route_of, forward_route, reverse_route
@@ -444,7 +444,8 @@ contains
 
     ! the first derivatives by the routes: where the grid is a design
     ! they are the only account of it, and where the routes are checked
-    if (reported >= 1 .and. (grid_designed .or. lists(cfg % check, 'routes'))) then
+    if (reported >= 1 .and. (grid_designed .or. lists(cfg % check, 'routes') &
+         & .or. lists(cfg % check, 'sinks'))) then
        call first_derivatives(cfg, chain, tower, nd, dt, f)
     end if
 
@@ -485,6 +486,7 @@ contains
 
     type(chain_system), allocatable :: systems(:)
     real(dp), allocatable :: p(:), df(:,:), other(:,:), table(:,:), entries(:,:,:)
+    type(sink_costates) :: sinks
     real(dp) :: euler
     integer  :: num_designs, num_functionals, route, i, order
 
@@ -517,6 +519,16 @@ contains
             & maxval(abs(df - other)) / max(1.0_dp, maxval(abs(df)))
     end if
 
+    ! the costates of the sinks: J_ii lambda_i = g_i on every unknown
+    ! no row reads, and lambda_i = 0 where the functional does not
+    ! read it either - in theory the highest degree at the arriving
+    ! instants of a stage block, and no unknown of a multistep block
+    if (lists(cfg % check, 'sinks')) then
+       call chain_derivative(chain, tower, systems, functionals, nd, 1, reverse_route, other, &
+            & node_measure=volume, sinks=sinks)
+       call shown_sinks(sinks, nd)
+    end if
+
     ! the derivatives of every order above one, when the grid is
     ! designed, by the route the gate chooses: one table per order,
     ! one column per multiset of designs; by the reverse route the
@@ -546,6 +558,42 @@ contains
     end if
 
   end subroutine first_derivatives
+
+  !-------------------------------------------------------------------!
+  ! The sinks by degree and the two departures, each relative to the
+  ! largest entry of the solves it was read from.
+  !-------------------------------------------------------------------!
+
+  subroutine shown_sinks(sinks, nd)
+
+    type(sink_costates), intent(in) :: sinks
+    integer            , intent(in) :: nd
+
+    write(*,'(a,a,a,a,a,a)') '      sink costates: unknowns no row of their block reads, by degree 0..', &
+         & trim(counted(nd, sinks % interior)), ' interior', trim(counted(nd, sinks % last)), &
+         & ' at the last point', trim(counted(nd, sinks % carried)), ' carried'
+    write(*,'(a,es10.2,a,es10.2)') '         J_ii lambda_i - g_i on the sinks, relative ', &
+         & sinks % departure / max(1.0_dp, sinks % gradient), &
+         & '   lambda where the functional reads nothing, relative ', &
+         & sinks % unread / max(1.0_dp, sinks % costate)
+
+  end subroutine shown_sinks
+
+  function counted(nd, per_degree) result(line)
+
+    integer, intent(in) :: nd, per_degree(0:)
+    character(len=:), allocatable :: line
+
+    character(len=16) :: word
+    integer :: d
+
+    line = ''
+    do d = 0, nd - 1
+       write(word, '(i0)') per_degree(d)
+       line = line // merge(' ', '/', d == 0) // trim(word)
+    end do
+
+  end function counted
 
   !-------------------------------------------------------------------!
   ! The functionals the configuration names, in its order, and the
@@ -661,7 +709,8 @@ contains
 
     call refuse_unknown(cfg % initial_field, ['constant', 'mode    ', 'bump    '], 'initial_field')
     call refuse_unknown(cfg % export, ['none    ', 'paraview'], 'export')
-    call refuse_unknown(cfg % check, ['none    ', 'ode     ', 'mode    ', 'operator', 'routes  '], &
+    call refuse_unknown(cfg % check, ['none    ', 'ode     ', 'mode    ', 'operator', 'routes  ', &
+         & 'sinks   '], &
          & 'check')
 
     call pair_of(cfg % spatial_counts, x, y, 'counts')

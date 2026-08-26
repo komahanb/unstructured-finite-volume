@@ -88,7 +88,9 @@ module gti_configuration
      ! diffusion is the kappa on the laplacian. initial_field is
      ! constant, from initial_state at every node, or the rectangle's
      ! mode. export writes every instant for paraview; check names a
-     ! comparison the run makes against something known.
+     ! comparison the run makes against something known: ode, mode,
+     ! operator, routes, or sinks - the costates of the unknowns no row
+     ! reads, J_ii lambda_i = g_i, at any degree.
      character(len=16)  :: spatial_geometry = 'cartesian'
      character(len=64)  :: spatial_extent   = '1.0 1.0'
      character(len=64)  :: spatial_counts   = '0 0'

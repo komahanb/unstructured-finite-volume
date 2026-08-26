@@ -118,6 +118,7 @@ module operation_action
      ! while the stamp it last factorised is unchanged. Zero is no
      ! stamp: the default, and always factorised afresh.
      integer    , private :: mark = 0
+     logical    , private :: turned = .false.
 
    contains
 
@@ -132,6 +133,7 @@ module operation_action
      procedure :: declare_arguments
      procedure :: stamped
      procedure :: stamp
+     procedure :: stamp_transposed
      procedure :: num_arguments
      procedure :: argument => operation_argument
      procedure :: owns
@@ -379,14 +381,32 @@ contains
   ! bindings; the order requested must not exceed its max_degree.
   !===================================================================!
 
-  subroutine stamped(this, mark)
+  subroutine stamped(this, mark, transposed)
 
     class(operation), intent(inout) :: this
     integer         , intent(in)    :: mark
+    logical         , intent(in), optional :: transposed
 
-    this % mark = mark
+    this % mark   = mark
+    this % turned = .false.
+    if (present(transposed)) this % turned = transposed
 
   end subroutine stamped
+
+  !===================================================================!
+  ! Whether the statement stamped is the transpose of the one the
+  ! stamp names: read off its pattern where the statement is made,
+  ! and carried with the stamp so that a solver holding the factors
+  ! of the one substitutes them the other way for the other.
+  !===================================================================!
+
+  pure logical function stamp_transposed(this)
+
+    class(operation), intent(in) :: this
+
+    stamp_transposed = this % turned
+
+  end function stamp_transposed
 
   pure integer function stamp(this) result(mark)
 

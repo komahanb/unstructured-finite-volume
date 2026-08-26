@@ -221,11 +221,12 @@ contains
   ! the walk is done, and the walk refuses.
   !===================================================================!
 
-  subroutine topological_order(adjacency, sets, order)
+  subroutine topological_order(adjacency, sets, order, acyclic)
 
     class(relation), target      , intent(in)  :: adjacency
     type(set_map)                , intent(in)  :: sets
     integer, allocatable         , intent(out) :: order(:)
+    logical, optional            , intent(out) :: acyclic
 
     class(binary_relation), pointer :: a
     type(graph)      :: dom
@@ -239,6 +240,7 @@ contains
 
     allocate(indegree(n), placed(n), order(n))
     placed = .false.
+    if (present(acyclic)) acyclic = .true.
     do i = 1, n
        fibre => a % preimage_view(sets % member_of(dom, i))
        indegree(i) = size(fibre)
@@ -253,6 +255,11 @@ contains
           end if
        end do
        if (pick == 0) then
+          if (present(acyclic)) then
+             acyclic = .false.
+             order   = order(1:round - 1)
+             return
+          end if
           error stop 'relation_algorithms: a topological order needs an acyclic graph'
        end if
 

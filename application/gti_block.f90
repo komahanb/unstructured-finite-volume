@@ -64,6 +64,10 @@ module gti_block
   use graph_fractal        , only : graph
   use operation_stencil    , only : combine_triples, stencil
   use physics_integrand    , only : zero_integrand, nodal_integrand
+  use relation_binary      , only : csr_relation
+  use map_set              , only : set_map
+  use map_set_representation, only : counted_set_representation
+  use relation_algorithms  , only : topological_order
 
   implicit none
 
@@ -100,6 +104,7 @@ module gti_block
      procedure :: compiled_tangent => block_compiled_tangent
      procedure :: restricted => block_restricted
      procedure :: linear_block
+     procedure :: member_order
      procedure :: num_unknowns
      procedure :: num_degrees
      procedure :: num_points
@@ -511,7 +516,7 @@ contains
 
     lin = block_residual(a, zero_integrand(this % degrees - 1), this % at, this % unknowns, &
          & this % degrees, this % primary, [integer ::], [real(dp) ::])
-    call lin % stamped(merge(-mark, mark, transposed))
+    call lin % stamped(mark, transposed=a % pattern % transposed())
 
   end function linear_block
 
@@ -789,5 +794,70 @@ contains
     call half % real_vector(governing)
 
   end subroutine design_tangent
+
+  !===================================================================!
+  ! THE ORDER A LEVEL IS SWEPT IN, derived and not declared. Swept by
+  ! instants, the members are coupled by the derived rows - a row at
+  ! one instant reading a point at another - and that coupling is
+  ! acyclic for any march, since every scheme reads backward; its
+  ! topological order is the sweep. The transposed block's pattern is
+  ! the same graph read the other way, so it sweeps from the last
+  ! instant by the same rule and no one says so. Swept by nodes, the
+  ! coupling is the level below's and symmetric, so no node is before
+  ! another and they are swept as they lie.
+  !===================================================================!
+
+  subroutine member_order(this, nodes, by_instants, order)
+
+    class(block_residual), intent(in)  :: this
+    integer              , intent(in)  :: nodes
+    logical              , intent(in)  :: by_instants
+    integer, allocatable , intent(out) :: order(:)
+
+    integer, allocatable :: point_of(:), table(:,:)
+    type(graph)          :: members
+    type(set_map)        :: sets
+    type(csr_relation)   :: coupling
+    logical :: acyclic
+    integer :: npts, instants, ne, e, p, d, k, n, t, h
+
+    npts     = size(this % at)
+    instants = npts / nodes
+
+    if (.not. by_instants) then
+       order = [(k, k = 1, nodes)]
+       return
+    end if
+
+    allocate(point_of(this % unknowns), source=0)
+    do p = 1, npts
+       do d = 1, this % degrees
+          point_of(this % at(p) + d) = p
+       end do
+    end do
+
+    ne = this % derived % pattern % num_edges()
+    allocate(table(2, ne))
+    n = 0
+    do e = 1, ne
+       t = point_of(this % derived % pattern % edge_tail(e))
+       h = point_of(this % derived % pattern % edge_head(e))
+       if (t == 0 .or. h == 0) cycle
+       t = (t - 1) / nodes + 1
+       h = (h - 1) / nodes + 1
+       if (t == h) cycle
+       n = n + 1
+       table(:, n) = [t, h]
+    end do
+
+    call members % declare()
+    call sets % bind(members, counted_set_representation(instants))
+    coupling = csr_relation('instant coupling', members, members, table(:, 1:n), sets)
+    call topological_order(coupling, sets, order, acyclic)
+    if (.not. acyclic) then
+       error stop 'gti_block: the instants of a march are coupled without a cycle'
+    end if
+
+  end subroutine member_order
 
 end module gti_block

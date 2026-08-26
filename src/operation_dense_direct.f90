@@ -57,11 +57,12 @@ module operation_dense_direct
 
      ! The factors kept, and the stamp of the statement they belong
      ! to. A statement stamped the same is not formed or factorised
-     ! again; one stamped zero always is. A stamp of the opposite sign
-     ! is the transpose of the statement kept, and is substituted
-     ! against the same factors the other way round.
+     ! again; one stamped zero always is. A statement stamped the same
+     ! but the other way round is the transpose of the one kept, and
+     ! is substituted against the same factors the other way.
      type(dense_factorisation), private :: factor
-     integer                  , private :: kept_stamp = 0
+     integer                  , private :: kept_stamp  = 0
+     logical                  , private :: kept_turned = .false.
 
    contains
 
@@ -113,7 +114,7 @@ contains
     n = size(rhs)
 
     kept = this % action % stamp() /= 0 .and. &
-         & abs(this % action % stamp()) == abs(this % kept_stamp) .and. &
+         & this % action % stamp() == this % kept_stamp .and. &
          & this % factor % order() == n
 
     !----------------------------------------------------------------!
@@ -126,7 +127,8 @@ contains
        call compile_matrix_from_action(this % action, this % on, this % unknown_domain, &
             & this % num_unknowns, n, this % num_components, a, constant, held=this % held)
        call this % factor % factorise(a, this % singular_tolerance * maxval(abs(a)))
-       this % kept_stamp = this % action % stamp()
+       this % kept_stamp  = this % action % stamp()
+       this % kept_turned = this % action % stamp_transposed()
     end if
 
     !----------------------------------------------------------------!
@@ -144,7 +146,7 @@ contains
     end if
 
     call this % factor % substitute(rhs, solution, &
-         & transposed = (this % action % stamp() < 0) .neqv. (this % kept_stamp < 0))
+         & transposed = this % action % stamp_transposed() .neqv. this % kept_turned)
     x = solution
 
     !----------------------------------------------------------------!

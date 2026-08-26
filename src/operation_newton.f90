@@ -161,7 +161,7 @@ contains
        if (available) then
           compiled = stencil(rows, columns, weights, &
                & spread(0.0_dp, 1, this % num_unknowns), 'compiled tangent')
-          call compiled % stamped(this % action % stamp())
+          call compiled % stamped(this % action % stamp(), this % action % stamp_transposed())
           call this % inner % attach(compiled, compiled % pattern, this % unknown_domain, &
                & this % num_unknowns, num_components = this % num_components, &
                & coupling = compiled % pattern)

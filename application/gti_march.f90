@@ -614,7 +614,7 @@ contains
     end if
 
     lin = rows % linear_block(unknowns, inputs, rhs, transposed, mark)
-    call swept(lin, 0.0_dp, nodes, w, achieved, backward=transposed)
+    call swept(lin, 0.0_dp, nodes, w, achieved)
 
   end subroutine solved_linear
 
@@ -692,7 +692,7 @@ contains
   ! space sweep stops where the coupling has settled.
   !===================================================================!
 
-  subroutine swept(rows, design_value, nodes, q, achieved, left, backward)
+  subroutine swept(rows, design_value, nodes, q, achieved, left)
 
     type(block_residual), intent(in)  :: rows
     real(dp)            , intent(in)  :: design_value
@@ -700,18 +700,16 @@ contains
     real(dp), allocatable, intent(out) :: q(:)
     real(dp)            , intent(out) :: achieved
     type(imbalance), intent(out), optional :: left
-    logical        , intent(in) , optional :: backward
 
     type(block_residual) :: sub
     type(newton) :: judge
     type(stored_directed_graph) :: unknowns
     type(stored_field) :: design
-    integer , allocatable :: at(:), member(:), whole(:)
+    integer , allocatable :: at(:), member(:), whole(:), order(:)
     real(dp), allocatable :: piece(:)
     logical , allocatable :: is_carried(:)
     real(dp) :: sub_achieved, before
     integer :: count, degrees, npts, instants, members, m, mm, pass, neighbour
-    logical :: reversed
 
     if (trim(sweep_level) == 'space-time') then
        call solved(rows, design_value, q, achieved, left)
@@ -762,10 +760,10 @@ contains
        members = nodes
     end if
 
-    ! a transposed statement is upper triangular in time, and its
-    ! instants are swept from the last
-    reversed = .false.
-    if (present(backward)) reversed = backward
+    ! the order the members are swept in is the coupling's own: a
+    ! transposed statement, upper triangular in time, sweeps from the
+    ! last instant because its pattern says so
+    call rows % member_order(nodes, trim(sweep_level) == 'time', order)
 
     ! the block's aggregates, kept aside while the members set their own
     if (multigrid_on()) call aggregates_of(whole)
@@ -780,23 +778,22 @@ contains
        before = achieved
 
        do mm = 1, members
-          m = mm
-          if (reversed) m = members - mm + 1
+          m = order(mm)
           member = member_unknowns(at, degrees, nodes, instants, m)
           if (all(is_carried(member))) cycle
 
           ! an instant not yet solved is seeded from the one before it
           ! in the order swept, which is continuation: the seed every
           ! step of a march has
-          neighbour = m - 1
-          if (reversed) neighbour = m + 1
+          neighbour = 0
+          if (mm > 1) neighbour = order(mm - 1)
           if (pass == 1 .and. trim(sweep_level) == 'time' .and. mm > 1) then
              q(member) = q(member_unknowns(at, degrees, nodes, instants, neighbour))
           end if
 
           sub = rows % restricted(member, q)
           if (rows % stamp() /= 0) then
-             call sub % stamped(sign(abs(rows % stamp()) * members + m, rows % stamp()))
+             call sub % stamped(abs(rows % stamp()) * members + m, rows % stamp_transposed())
           end if
           if (multigrid_on()) call set_aggregates(member_aggregates(member, whole))
           call solved(sub, design_value, piece, sub_achieved, seed=q(member))

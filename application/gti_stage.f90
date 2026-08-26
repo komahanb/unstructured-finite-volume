@@ -281,6 +281,31 @@ contains
          & stage_points(n, s, nd), stage_unknowns(n, s, nd), nd, nd - 1, &
          & [(d, d = 1, nd)], held)
 
+    ! where every unknown lies: the first instant is its own member,
+    ! and a step's stages and the instant it arrives at are one member
+    call rows % placed_in(step_labels(n, s, nd), spread(1, 1, stage_unknowns(n, s, nd)))
+
   end function stage_block_of
+
+  pure function step_labels(n, s, nd) result(label)
+
+    integer, intent(in) :: n, s, nd
+    integer :: label(stage_unknowns(n, s, nd))
+
+    integer :: kk, i, d
+
+    label(1:nd) = 1
+    do kk = 2, n
+       do i = 1, s
+          do d = 1, nd
+             label(stage_at(kk, i, s, nd) + d) = kk
+          end do
+       end do
+       do d = 1, nd
+          label(instant_at(kk, s, nd) + d) = kk
+       end do
+    end do
+
+  end function step_labels
 
 end module gti_stage

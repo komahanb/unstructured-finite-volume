@@ -91,6 +91,14 @@ module gti_block
      integer                             , private :: unknowns = 0
      integer                             , private :: primary  = 0
 
+     ! WHERE EACH UNKNOWN LIES in the hierarchy: the member of the
+     ! time level it belongs to - an instant, or a step for a stage
+     ! block - and the member of the space level, its node. The
+     ! constructors that know the layout say so; a sweep reads its
+     ! members and their coupling from these and from nothing else.
+     integer, allocatable, private :: slice(:)
+     integer, allocatable, private :: node(:)
+
    contains
 
      procedure :: name           => block_name
@@ -100,6 +108,9 @@ module gti_block
      procedure :: partial_action => block_partial_action
      procedure :: compiled_tangent => block_compiled_tangent
      procedure :: restricted => block_restricted
+     procedure :: placed_in
+     procedure :: slice_of
+     procedure :: node_of
      procedure :: linear_block
      procedure :: member_order
      procedure :: num_unknowns
@@ -472,6 +483,53 @@ contains
   !===================================================================!
 
   !===================================================================!
+  ! Where the unknowns lie: one time member and one space member per
+  ! unknown. Labels of the wrong extent, or one below one, stop the
+  ! program.
+  !===================================================================!
+
+  subroutine placed_in(this, slice, node)
+
+    class(block_residual), intent(inout) :: this
+    integer              , intent(in)    :: slice(:), node(:)
+
+    if (size(slice) /= this % unknowns .or. size(node) /= this % unknowns) then
+       error stop 'gti_block: one time member and one space member per unknown'
+    end if
+    if (any(slice < 1) .or. any(node < 1)) then
+       error stop 'gti_block: a member is numbered from one'
+    end if
+
+    this % slice = slice
+    this % node  = node
+
+  end subroutine placed_in
+
+  function slice_of(this) result(slice)
+
+    class(block_residual), intent(in) :: this
+    integer, allocatable :: slice(:)
+
+    if (.not. allocated(this % slice)) then
+       error stop 'gti_block: the block has not said where its unknowns lie'
+    end if
+    slice = this % slice
+
+  end function slice_of
+
+  function node_of(this) result(node)
+
+    class(block_residual), intent(in) :: this
+    integer, allocatable :: node(:)
+
+    if (.not. allocated(this % node)) then
+       error stop 'gti_block: the block has not said where its unknowns lie'
+    end if
+    node = this % node
+
+  end function node_of
+
+  !===================================================================!
   ! THE LINEAR BLOCK: the tangent in the state at the inputs given,
   ! frozen, as a block of its own, so that a linear statement A w = b
   ! - or A^T w = b - goes through the same solve as the block it came
@@ -514,6 +572,7 @@ contains
     lin = block_residual(a, zero_integrand(this % degrees - 1), this % at, this % unknowns, &
          & this % degrees, this % primary, [integer ::], [real(dp) ::])
     call lin % stamped(mark, transposed=a % pattern % transposed())
+    if (allocated(this % slice)) call lin % placed_in(this % slice, this % node)
 
   end function linear_block
 
@@ -577,6 +636,7 @@ contains
        sub = block_residual(derived, this % physics, at(1:npts), size(kept), &
             & this % degrees, this % primary, carried(1:ncar), held(1:ncar))
     end if
+    if (allocated(this % slice)) call sub % placed_in(this % slice(kept), this % node(kept))
 
   end function block_restricted
 
@@ -804,47 +864,42 @@ contains
   ! another and they are swept as they lie.
   !===================================================================!
 
-  subroutine member_order(this, nodes, by_instants, order)
+  subroutine member_order(this, by_instants, order)
 
     class(block_residual), intent(in)  :: this
-    integer              , intent(in)  :: nodes
     logical              , intent(in)  :: by_instants
     integer, allocatable , intent(out) :: order(:)
 
-    integer, allocatable :: point_of(:), table(:,:)
+    integer, allocatable :: table(:,:), label(:)
     type(stored_directed_graph) :: coupling
-    integer :: npts, instants, ne, e, p, d, k, n, t, h
+    integer :: ne, e, n, t, h, k, members
 
-    npts     = size(this % at)
-    instants = npts / nodes
+    if (.not. allocated(this % slice)) then
+       error stop 'gti_block: the block has not said where its unknowns lie'
+    end if
 
+    ! the space level's members couple both ways through the mesh,
+    ! which has no loop, and are swept as numbered
     if (.not. by_instants) then
-       order = [(k, k = 1, nodes)]
+       order = [(k, k = 1, maxval(this % node))]
        return
     end if
 
-    allocate(point_of(this % unknowns), source=0)
-    do p = 1, npts
-       do d = 1, this % degrees
-          point_of(this % at(p) + d) = p
-       end do
-    end do
-
-    ne = this % derived % pattern % num_edges()
+    ! the time level's coupling: a derived row at one member reading
+    ! an unknown at another, which for every family looks one way
+    label   = this % slice
+    members = maxval(label)
+    ne      = this % derived % pattern % num_edges()
     allocate(table(2, ne))
     n = 0
     do e = 1, ne
-       t = point_of(this % derived % pattern % edge_tail(e))
-       h = point_of(this % derived % pattern % edge_head(e))
-       if (t == 0 .or. h == 0) cycle
-       t = (t - 1) / nodes + 1
-       h = (h - 1) / nodes + 1
+       t = label(this % derived % pattern % edge_tail(e))
+       h = label(this % derived % pattern % edge_head(e))
        if (t == h) cycle
        n = n + 1
        table(:, n) = [t, h]
     end do
-
-    coupling = stored_directed_graph(instants, tails=table(1, 1:n), heads=table(2, 1:n))
+    coupling = stored_directed_graph(members, tails=table(1, 1:n), heads=table(2, 1:n))
     order    = coupling % loop(forward)
 
   end subroutine member_order

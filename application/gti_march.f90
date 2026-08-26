@@ -501,6 +501,10 @@ contains
          & n * m * degrees, degrees, scheme % primary_degree(degrees - 1), carried, held, &
          & spatial=spatial)
 
+    ! where every unknown lies: instant k, node i
+    call rows % placed_in([(((k, d = 0, degrees - 1), i = 1, m), k = 1, n)], &
+         &                [(((i, d = 0, degrees - 1), i = 1, m), k = 1, n)])
+
   end function block_of
 
   !===================================================================!
@@ -546,10 +550,9 @@ contains
     design   = stored_field('nu', unknowns % vertex_set(), rows % num_points())
     call design % set_real_vector(spread(design_value, 1, rows % num_points()))
 
-    ! a block whose unknowns are whole points is smoothed a point at a
-    ! time; any other - a stage block - an unknown at a time
-    width = 1
-    if (count == rows % num_points() * rows % num_degrees()) width = rows % num_degrees()
+    ! every unknown lies in a point of degrees consecutive components,
+    ! a stage's as much as an instant's, and a point is smoothed whole
+    width = rows % num_degrees()
     call take_inner(solver % inner, count, width)
     call solver % attach(rows, unknowns, unknowns % vertex_set(), count, &
          & held_inputs = [design])
@@ -709,36 +712,31 @@ contains
     type(newton) :: judge
     type(stored_directed_graph) :: unknowns
     type(stored_field) :: design
-    integer , allocatable :: at(:), member(:), whole(:), order(:)
+    integer , allocatable :: member(:), whole(:), order(:), label(:)
     real(dp), allocatable :: piece(:)
     logical , allocatable :: is_carried(:)
     real(dp) :: sub_achieved, before
-    integer :: count, degrees, npts, instants, members, m, mm, pass, neighbour
+    integer :: count, degrees, npts, members, m, mm, pass, k
 
     if (trim(sweep_level) == 'space-time') then
        call solved(rows, design_value, q, achieved, left)
        return
     end if
 
-    count    = rows % num_unknowns()
-    degrees  = rows % num_degrees()
-    at       = rows % points_at()
-    npts     = size(at)
-    instants = npts / nodes
+    count   = rows % num_unknowns()
+    degrees = rows % num_degrees()
+    npts    = rows % num_points()
 
-    ! A stage block keeps its instants between its stages, and its
-    ! points - the stages - do not tile its unknowns, so a sweep by
-    ! instants is not defined on it and it is solved whole. A member
-    ! of one step, its stages and the instant it arrives at, is the
-    ! sweep such a block would take, and is not built.
-    if (count /= npts * degrees) then
-       call solved(rows, design_value, q, achieved, left)
-       return
+    ! the level's members, read off the block's own labels: instants
+    ! or steps for the time level, nodes for the space level
+    if (trim(sweep_level) == 'time') then
+       label = rows % slice_of()
+    else
+       label = rows % node_of()
     end if
+    members = maxval(label)
 
-    if (instants * nodes /= npts) then
-       error stop 'gti_march: the points lie instant by instant, the nodes within'
-    end if
+
 
     allocate(is_carried(count), source=.false.)
     is_carried(rows % carried_unknowns()) = .true.
@@ -758,16 +756,11 @@ contains
     judge % budget         = stopping_budget
     call judge % begin_imbalance()
 
-    if (trim(sweep_level) == 'time') then
-       members = instants
-    else
-       members = nodes
-    end if
 
     ! the order the members are swept in is the coupling's own: a
     ! transposed statement, upper triangular in time, sweeps from the
     ! last instant because its pattern says so
-    call rows % member_order(nodes, trim(sweep_level) == 'time', order)
+    call rows % member_order(trim(sweep_level) == 'time', order)
 
     ! the block's aggregates, kept aside while the members set their own
     if (multigrid_on()) call aggregates_of(whole)
@@ -783,16 +776,16 @@ contains
 
        do mm = 1, members
           m = order(mm)
-          member = member_unknowns(at, degrees, nodes, instants, m)
+          member = pack([(k, k = 1, count)], label == m)
           if (all(is_carried(member))) cycle
 
-          ! an instant not yet solved is seeded from the one before it
-          ! in the order swept, which is continuation: the seed every
-          ! step of a march has
-          neighbour = 0
-          if (mm > 1) neighbour = order(mm - 1)
+          ! a member not yet solved is seeded from the one before it in
+          ! the order swept, which is continuation, the seed every step
+          ! of a march has: a member of the same extent is copied, and
+          ! a step's stages and arriving instant each take the instant
+          ! before them
           if (pass == 1 .and. trim(sweep_level) == 'time' .and. mm > 1) then
-             q(member) = q(member_unknowns(at, degrees, nodes, instants, neighbour))
+             call continued(q, member, pack([(k, k = 1, count)], label == order(mm - 1)), degrees)
           end if
 
           sub = rows % restricted(member, q)
@@ -883,36 +876,32 @@ contains
   ! points of node m across the instants, each point's components.
   !-------------------------------------------------------------------!
 
-  function member_unknowns(at, degrees, nodes, instants, m) result(member)
+  !-------------------------------------------------------------------!
+  ! The seed of a member from the member solved before it. Of the
+  ! same extent, the values are copied; otherwise the last point of
+  ! the earlier member - the instant a step arrives at - is laid on
+  ! every point of the later one, which is where a step's stages and
+  ! its own arriving instant begin.
+  !-------------------------------------------------------------------!
 
-    integer, intent(in) :: at(:), degrees, nodes, instants, m
-    integer, allocatable :: member(:)
+  subroutine continued(q, member, earlier, degrees)
 
-    integer :: k, i, d, p, e
+    real(dp), intent(inout) :: q(:)
+    integer , intent(in)    :: member(:), earlier(:), degrees
 
-    if (trim(sweep_level) == 'time') then
-       allocate(member(nodes * degrees))
-       e = 0
-       do i = 1, nodes
-          p = (m - 1) * nodes + i
-          do d = 1, degrees
-             e = e + 1
-             member(e) = at(p) + d
-          end do
-       end do
-    else
-       allocate(member(instants * degrees))
-       e = 0
-       do k = 1, instants
-          p = (k - 1) * nodes + m
-          do d = 1, degrees
-             e = e + 1
-             member(e) = at(p) + d
-          end do
-       end do
+    integer :: p, npts
+
+    if (size(member) == size(earlier)) then
+       q(member) = q(earlier)
+       return
     end if
 
-  end function member_unknowns
+    npts = size(member) / degrees
+    do p = 1, npts
+       q(member((p - 1) * degrees + 1:p * degrees)) = q(earlier(size(earlier) - degrees + 1:))
+    end do
+
+  end subroutine continued
 
   !===================================================================!
   ! The aspects of what was left: the norm split by degree, the

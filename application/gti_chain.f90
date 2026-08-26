@@ -110,6 +110,11 @@ module gti_chain
      ! the components one instant holds: the degrees at every node
      integer :: width = 0
      integer :: nodes = 1
+     ! whether the block marches by stages: its functional is the
+     ! stage quadrature, dt times the sum over stages of the tableau
+     ! weight times the integrand at the stage; a multistep block's is
+     ! the integrand at the instant
+     logical :: staged = .false.
      ! the family and the steps the block was built from, so that its
      ! rows can be differentiated along a direction in the steps; each
      ! step as a fraction of the march's step it lies in, and which
@@ -472,6 +477,7 @@ contains
        chain(b) % nodes = nodes
     end if
     allocate(chain(b) % scheme, source=scheme)
+    chain(b) % staged      = marches_by_stages(scheme, degrees)
     chain(b) % dt          = dt
     chain(b) % coarse_step = coarse_step
     chain(b) % fraction    = fraction
@@ -1126,6 +1132,47 @@ contains
   end function point_terms
 
   !===================================================================!
+  ! The quadrature points of one owned instant of a block, and the
+  ! weight each carries. A multistep block has one, the instant
+  ! itself, weight one. A stage block has its s stages, laid before
+  ! the arriving instant at offsets instants_at(k) - (s - i + 1) width,
+  ! each weighted by the tableau weight of its stage; the arriving
+  ! instant is not a quadrature point.
+  !===================================================================!
+
+  subroutine quadrature_points(b, k, offset, weight)
+
+    type(chain_block)    , intent(in)  :: b
+    integer              , intent(in)  :: k
+    integer , allocatable, intent(out) :: offset(:)
+    real(dp), allocatable, intent(out) :: weight(:)
+
+    integer :: s, i, width
+
+    if (.not. b % staged) then
+       offset = [b % instants_at(k)]
+       weight = [1.0_dp]
+       return
+    end if
+
+    ! a stage block's first slice is the initial instant, which has no
+    ! stages and no step ending at it, so it is not a quadrature point
+    if (k == 1) then
+       allocate(offset(0), weight(0))
+       return
+    end if
+
+    s     = b % scheme % num_stages()
+    width = b % width
+    allocate(offset(s), weight(s))
+    do i = 1, s
+       offset(i) = b % instants_at(k) - (s - i + 1) * width
+       weight(i) = b % scheme % stage_weight(i)
+    end do
+
+  end subroutine quadrature_points
+
+  !===================================================================!
   ! The step ending at one of a block's instants over the seeded
   ! terms, times the measure of a node: the measure of an owned point
   ! with every total derivative of the measure.
@@ -1351,7 +1398,9 @@ contains
     real(dp), allocatable :: state_seed(:,:), step_seed(:,:), nu_seed(:), tw(:,:), lam(:,:)
     integer , allocatable :: tr(:), tc(:), at(:)
     logical , allocatable :: carried(:)
-    integer :: n, full, e, mask, p, d, row, k, node, from, to, point, count
+    integer , allocatable :: offset(:)
+    real(dp), allocatable :: beta(:)
+    integer :: n, full, e, mask, p, d, row, k, node, from, to, point, count, pt
 
     n     = size(s)
     full  = 2**n - 1
@@ -1361,12 +1410,15 @@ contains
 
     call owned(chain, b, from, to)
     do k = from, to
-       do node = 1, chain(b) % nodes
-          point = chain(b) % instants_at(k) + (node - 1) * degrees
-          t = measure_terms(chain(b), k, node, n, degrees, step_seed, node_measure) &
-               & * point_terms(rule, degrees, design, point, n, degrees, state_seed, nu_seed)
-          do d = 0, degrees - 1
-             g(point + d + 1) = g(point + d + 1) + coefficient(t, ior(full, shiftl(1, n + d)))
+       call quadrature_points(chain(b), k, offset, beta)
+       do pt = 1, size(offset)
+          do node = 1, chain(b) % nodes
+             point = offset(pt) + (node - 1) * degrees
+             t = beta(pt) * measure_terms(chain(b), k, node, n, degrees, step_seed, node_measure) &
+                  & * point_terms(rule, degrees, design, point, n, degrees, state_seed, nu_seed)
+             do d = 0, degrees - 1
+                g(point + d + 1) = g(point + d + 1) + coefficient(t, ior(full, shiftl(1, n + d)))
+             end do
           end do
        end do
     end do
@@ -1419,7 +1471,9 @@ contains
     real(dp), allocatable :: state_seed(:,:), step_seed(:,:), nu_seed(:), tw(:,:), lam(:,:)
     integer , allocatable :: tr(:), tc(:), at(:)
     logical , allocatable :: carried(:)
-    integer :: n, fulln, jbit, full, e, mask, sub, p, row, k, node, from, to, point
+    integer , allocatable :: offset(:)
+    real(dp), allocatable :: beta(:)
+    integer :: n, fulln, jbit, full, e, mask, sub, p, row, k, node, from, to, point, pt
 
     n     = size(s)
     fulln = 2**n - 1
@@ -1430,11 +1484,14 @@ contains
 
     call owned(chain, b, from, to)
     do k = from, to
-       do node = 1, chain(b) % nodes
-          point = chain(b) % instants_at(k) + (node - 1) * degrees
-          t = measure_terms(chain(b), k, node, n + 1, 0, step_seed, node_measure) &
-               & * point_terms(rule, degrees, design, point, n + 1, 0, state_seed, nu_seed)
-          part = part + coefficient(t, full)
+       call quadrature_points(chain(b), k, offset, beta)
+       do pt = 1, size(offset)
+          do node = 1, chain(b) % nodes
+             point = offset(pt) + (node - 1) * degrees
+             t = beta(pt) * measure_terms(chain(b), k, node, n + 1, 0, step_seed, node_measure) &
+                  & * point_terms(rule, degrees, design, point, n + 1, 0, state_seed, nu_seed)
+             part = part + coefficient(t, full)
+          end do
        end do
     end do
 
@@ -1484,7 +1541,9 @@ contains
 
     type(derivative_terms) :: t
     real(dp), allocatable :: state_seed(:,:), step_seed(:,:), nu_seed(:)
-    integer :: n, full, k, node, from, to, point
+    integer , allocatable :: offset(:)
+    real(dp), allocatable :: beta(:)
+    integer :: n, full, k, node, from, to, point, pt
 
     n    = size(s) + merge(1, 0, open > 0)
     full = 2**n - 1
@@ -1492,11 +1551,14 @@ contains
     part = 0.0_dp
     call owned(chain, b, from, to)
     do k = from, to
-       do node = 1, chain(b) % nodes
-          point = chain(b) % instants_at(k) + (node - 1) * degrees
-          t = measure_terms(chain(b), k, node, n, 0, step_seed, node_measure) &
-               & * point_terms(rule, degrees, design, point, n, 0, state_seed, nu_seed)
-          part = part + coefficient(t, full)
+       call quadrature_points(chain(b), k, offset, beta)
+       do pt = 1, size(offset)
+          do node = 1, chain(b) % nodes
+             point = offset(pt) + (node - 1) * degrees
+             t = beta(pt) * measure_terms(chain(b), k, node, n, 0, step_seed, node_measure) &
+                  & * point_terms(rule, degrees, design, point, n, 0, state_seed, nu_seed)
+             part = part + coefficient(t, full)
+          end do
        end do
     end do
 

@@ -63,6 +63,7 @@ module operation_family_dirk
 
      procedure :: name             => dirk_name
      procedure :: num_stages       => dirk_num_stages
+     procedure :: stage_weight     => dirk_stage_weight
      procedure :: row_pattern      => dirk_row_pattern
      procedure :: edge_coefficient => dirk_edge_coefficient
 
@@ -122,6 +123,23 @@ contains
     dirk_num_stages = size(this % b)
 
   end function dirk_num_stages
+
+  !===================================================================!
+  ! The quadrature weight of stage i: the tableau weight b_i. An index
+  ! outside the stages stops the program.
+  !===================================================================!
+
+  pure real(dp) function dirk_stage_weight(this, i)
+
+    class(dirk_family), intent(in) :: this
+    integer           , intent(in) :: i
+
+    if (i < 1 .or. i > size(this % b)) then
+       error stop 'operation_family_dirk: the stage is one of the tableau'
+    end if
+    dirk_stage_weight = this % b(i)
+
+  end function dirk_stage_weight
   !===================================================================!
   ! A stage family's rows run between the stages of one step, not
   ! between instants, so they have no pattern in instant offsets. A

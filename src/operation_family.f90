@@ -48,6 +48,7 @@ module operation_family
 
      procedure :: history_depth  => family_history_depth
      procedure :: num_stages     => family_num_stages
+     procedure :: stage_weight   => family_stage_weight
      procedure :: primary_degree => family_primary_degree
      procedure(family_pattern_interface), deferred :: row_pattern
 
@@ -230,6 +231,25 @@ contains
     family_num_stages = 1
 
   end function family_num_stages
+
+  !===================================================================!
+  ! The quadrature weight of one stage: the tableau's b for a stage
+  ! family, one for a multistep family, whose single quadrature point
+  ! is the instant itself. An index outside the stages stops the
+  ! program.
+  !===================================================================!
+
+  pure real(dp) function family_stage_weight(this, i)
+
+    class(family), intent(in) :: this
+    integer      , intent(in) :: i
+
+    if (i /= 1) then
+       error stop 'operation_family: a multistep family has one quadrature point per instant'
+    end if
+    family_stage_weight = 1.0_dp
+
+  end function family_stage_weight
 
   pure integer function family_history_depth(this, equation_degree)
 

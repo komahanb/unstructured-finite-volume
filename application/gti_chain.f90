@@ -248,7 +248,7 @@ contains
   ! node of the expansion graph.
   !===================================================================!
 
-  subroutine built(tower, b, scheme, physics, held, rows, instants_at, nodes, spatial)
+  subroutine built(tower, b, scheme, physics, held, rows, instants_at)
 
     type(expansion)       , intent(in)  :: tower
     integer               , intent(in)  :: b
@@ -257,10 +257,8 @@ contains
     real(dp)              , intent(in)  :: held(:)
     type(block_residual)  , intent(out) :: rows
     integer, allocatable  , intent(out) :: instants_at(:)
-    integer      , intent(in), optional :: nodes
-    type(stencil), intent(in), optional :: spatial
 
-    call block_from(tower, b, scheme, physics, held, rows, instants_at, nodes, spatial)
+    call block_from(tower, b, scheme, physics, held, rows, instants_at)
 
   end subroutine built
 
@@ -332,7 +330,7 @@ contains
        knobs = [knobs, dt(first(b) + merge(1, 0, b == 1):last(b))]
     end do
     call tower % build(physics, schemes, [(last(b) - first(b) + 1, b = 1, size(added))], &
-         & designed_grid(sum(knobs)), 0, knobs)
+         & designed_grid(sum(knobs)), 0, knobs, nodes, spatial)
 
     achieved = 0.0_dp
     call tally_enter(at_horizon)
@@ -340,7 +338,7 @@ contains
        fine = [0.0_dp, (dt(1 + (k - 1) / r + 1) / real(r, dp), k = 1, (given - 1) * r)]
        allocate(starter(1) % scheme, source=crouzeix_three_stage())
        call startup_tower % build(physics, starter, [(given - 1) * r + 1], &
-            & designed_grid(sum(fine)), 0, fine(2:))
+            & designed_grid(sum(fine)), 0, fine(2:), nodes, spatial)
        call one_block(chain, 1, startup_tower, 1, starter(1) % scheme, physics, degrees, 1, &
             & (given - 1) * r + 1, 1, fine, [0, (1 + (k - 1) / r + 1, k = 1, (given - 1) * r)], &
             & 1.0_dp / real(r, dp), .false., design, initial, one_achieved, one_left, nodes, &
@@ -423,7 +421,8 @@ contains
        call tally_enter(at_block)
     end if
     call built(tower, in_tower, scheme, physics, held, chain(b) % rows, &
-         & chain(b) % instants_at, nodes, spatial)
+         & chain(b) % instants_at)
+    associate (u1 => nodes, u2 => spatial); end associate
     call swept(chain(b) % rows, design, chain(b) % state, achieved, left)
     chain(b) % began = left % began
     call tally_leave()

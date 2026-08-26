@@ -69,6 +69,7 @@ module gti_expansion
   use operation_family      , only : family
   use operation_grid        , only : grid
   use operation_coupling    , only : weights_of
+  use operation_stencil     , only : stencil, combine_triples
   use operation_weight      , only : scheme_weight
   use operation_expression     , only : expression
 
@@ -97,6 +98,12 @@ module gti_expansion
      type(relational_binding), private :: bindings
      integer                 , private :: root_at = 0
      integer                 , private :: degrees = 0
+     ! THE NODES a component holds - one for an equation at a point,
+     ! the cells of a mesh for a field - and the level below, one
+     ! coupling over the nodes, laid on every component the physics
+     ! sits on; zero where there is none
+     integer                 , private :: node_extent = 1
+     integer                 , private :: below_at = 0
 
    contains
 
@@ -271,7 +278,7 @@ contains
   !===================================================================!
 
   subroutine build(this, physics, schemes, instants, steps, &
-       & max_derivative_degree, design)
+       & max_derivative_degree, design, nodes, spatial)
 
     class(expansion)      , intent(inout) :: this
     type(expression)      , intent(in)    :: physics
@@ -280,6 +287,11 @@ contains
     class(grid)           , intent(in)    :: steps
     integer               , intent(in)    :: max_derivative_degree
     real(dp)              , intent(in)    :: design(:)
+    ! given, every component holds one freedom per node, and the
+    ! level below - a stencil over the nodes - is laid on every
+    ! component the physics sits on
+    integer      , intent(in), optional   :: nodes
+    type(stencil), intent(in), optional   :: spatial
 
     real(dp), allocatable :: dt(:)
     integer , allocatable :: sweeps(:)
@@ -293,6 +305,9 @@ contains
     end if
 
     this % degrees = physics % equation_degree() + 1
+    this % node_extent = 1
+    if (present(nodes)) this % node_extent = nodes
+    if (present(spatial)) this % below_at = level_below(this, spatial)
     call partition(steps, sum(instants), design, dt)
 
     allocate(sweeps(max_derivative_degree + 1))
@@ -308,6 +323,51 @@ contains
     call attach_known(this, this % root_at, design)
 
   end subroutine build
+
+  !===================================================================!
+  ! THE LEVEL BELOW: one coupling over the nodes, shared by every
+  ! component the physics sits on. Its carriers are the nodes read
+  ! and the nodes whose rows are entered; its relation is the
+  ! stencil's pattern, a node read into a node's row; its value the
+  ! stencil's weights in the relation's order. Invalid input: a
+  ! stencil over other than the nodes.
+  !===================================================================!
+
+  integer function level_below(this, spatial) result(at)
+
+    class(expansion), intent(inout) :: this
+    type(stencil)   , intent(in)    :: spatial
+
+    integer , allocatable :: table(:,:), heads(:), tails(:), rows(:), cols(:)
+    real(dp), allocatable :: given(:), w(:)
+    integer :: read_nodes, entered_nodes, holder, e, ne
+
+    if (spatial % pattern % num_vertices() /= this % node_extent) then
+       error stop 'gti_expansion: the level below is a stencil over the nodes'
+    end if
+    ! a stencil may name a pair of nodes more than once, its entries
+    ! adding; a relation names a pair once, so the entries are combined
+    ne = spatial % pattern % num_edges()
+    heads = [(spatial % pattern % edge_head(e), e = 1, ne)]
+    tails = [(spatial % pattern % edge_tail(e), e = 1, ne)]
+    call spatial % weights % real_vector(given)
+    call combine_triples(this % node_extent, this % node_extent, heads, tails, given, &
+         & rows, cols, w)
+    allocate(table(2, size(rows)))
+    table(1, :) = cols
+    table(2, :) = rows
+
+    read_nodes    = named_set(this, this % node_extent, 'the nodes read by the level below')
+    entered_nodes = named_set(this, this % node_extent, 'the nodes whose rows the level below enters')
+    holder = this % nodes % assemble([integer ::], 0)
+    call this % labels % bind(this % node(holder), 'the stencil''s reach')
+    at = this % nodes % couple([read_nodes, entered_nodes], [holder])
+    call bind_carriers(this, [read_nodes, entered_nodes])
+    call bind_reach(this, holder, read_nodes, entered_nodes, table)
+    call this % labels % bind(this % node(at), 'the level below')
+    call attach_known(this, at, in_relation_order(this, this % node(at), table, w))
+
+  end function level_below
 
   !===================================================================!
   ! The steps, from the grid, over every instant of the horizon.
@@ -496,7 +556,7 @@ contains
 
     allocate(components(this % degrees))
     do d = 0, this % degrees - 1
-       components(d + 1) = one_component(this, scheme, instant, first, d)
+       components(d + 1) = one_component(this, scheme, instant, first, d, .true.)
     end do
 
     at = this % nodes % assemble(components, 0)
@@ -585,7 +645,7 @@ contains
 
     allocate(components(this % degrees))
     do d = 0, this % degrees - 1
-       components(d + 1) = one_component(this, scheme, instant, first, d)
+       components(d + 1) = one_component(this, scheme, instant, first, d, index > 0)
     end do
 
     at = this % nodes % assemble(components, 0)
@@ -599,21 +659,30 @@ contains
   end function stage_node
 
   !===================================================================!
-  ! One component: a leaf holding its freedoms. The instants a block
-  ! reaches back over carry their values from the start; every
-  ! component after them waits on a march.
+  ! One component: a leaf holding its freedoms, one per node, and on
+  ! the physics' own degree of an evaluated moment the level below.
+  ! The instants a block reaches back over carry their values from
+  ! the start; every component after them waits on a march.
   !===================================================================!
 
-  integer function one_component(this, scheme, instant, first, degree) result(at)
+  integer function one_component(this, scheme, instant, first, degree, evaluated) result(at)
 
     class(expansion), intent(inout) :: this
     class(family)   , intent(in)    :: scheme
     integer         , intent(in)    :: instant, first, degree
+    ! whether the physics is evaluated at this component's moment,
+    ! where the level below is laid on the physics' own degree
+    logical         , intent(in)    :: evaluated
 
-    at = this % nodes % assemble([integer ::], 0)
+    if (evaluated .and. degree == scheme % primary_degree(this % degrees - 1) &
+         & .and. this % below_at > 0) then
+       at = this % nodes % assemble([integer ::], this % below_at)
+    else
+       at = this % nodes % assemble([integer ::], 0)
+    end if
 
     call this % labels % bind(this % node(at), 'component of degree ' // written(degree))
-    call this % extents % bind(this % node(at), counted_set_representation(1))
+    call this % extents % bind(this % node(at), counted_set_representation(this % node_extent))
 
     if (instant - first < scheme % history_depth(this % degrees - 1)) then
        call attach_known(this, at, [0.0_dp])

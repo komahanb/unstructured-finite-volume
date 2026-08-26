@@ -47,7 +47,8 @@ module gti_march
   use operation_expression       , only : expression
   use gti_expansion           , only : family_holder, expansion, marches_by_stages
   use gti_block               , only : block_residual, coupling_reach
-  use view_level              , only : level_member, level_num_members, level_coupling
+  use view_level              , only : level_member, level_num_members, level_coupling, &
+       & level_couples
   use graph_fractal           , only : graph
   use map_value               , only : VALUE_KNOWN
   use gti_sweeps              , only : jacobian_of, assembly_present, multigrid_on, &
@@ -538,7 +539,7 @@ contains
   ! held value for other than every carried component.
   !===================================================================!
 
-  subroutine block_from(tower, b, scheme, physics, held, rows, instants_at, nodes, spatial)
+  subroutine block_from(tower, b, scheme, physics, held, rows, instants_at)
 
     type(expansion)       , intent(in)  :: tower
     integer               , intent(in)  :: b
@@ -547,23 +548,18 @@ contains
     real(dp)              , intent(in)  :: held(:)
     type(block_residual)  , intent(out) :: rows
     integer, allocatable  , intent(out) :: instants_at(:)
-    integer      , intent(in), optional :: nodes
-    type(stencil), intent(in), optional :: spatial
 
-    type(graph), pointer :: horizon, block, slice, moment_node, component
+    type(graph), pointer :: horizon, block, slice, moment_node, component, below
     type(coupling_reach), allocatable :: reach(:)
     integer , allocatable :: slice_of(:), member_of(:), members(:), at(:), carried(:)
     integer , allocatable :: label_slice(:), label_node(:), label_moment(:)
-    integer , allocatable :: r(:), c(:)
-    real(dp), allocatable :: dt(:), w(:), dt_weights(:)
+    integer , allocatable :: r(:), c(:), table(:,:)
+    real(dp), allocatable :: dt(:), w(:), dt_weights(:), below_weights(:)
     logical , allocatable :: point(:)
     integer :: m, nd, width, n, s, k, j, g, moments, i, d, u, count, e, npts, ncar
     logical :: staged
 
-    m  = 1
-    if (present(nodes)) m = nodes
     nd = physics % equation_degree() + 1
-    width = nd * m
 
     horizon => level_member(level_member(tower % node(tower % root()), 1), 1)
     block   => level_member(horizon, b)
@@ -571,6 +567,10 @@ contains
     call tower % value_of(block, dt)
     staged  = marches_by_stages(scheme, nd)
     s       = scheme % num_stages()
+
+    ! the nodes a component holds, read from the first component
+    m     = tower % extent_of(level_member(first_moment(block, staged), 1))
+    width = nd * m
 
     ! the moments in order: which slice each lies in, and which member
     ! of it; a difference family's slice is one moment, a stage
@@ -593,7 +593,10 @@ contains
     end do
     count = moments * width
 
-    ! the carried components: known in the graph, at every node
+    ! the carried components: known in the graph, at every node; and
+    ! the level below, one coupling over the nodes shared by every
+    ! evaluated moment's physics component, read once
+    below => null()
     allocate(carried(count), at(moments * m))
     ncar = 0
     npts = 0
@@ -619,6 +622,10 @@ contains
              npts = npts + 1
              at(npts) = (g - 1) * width + (i - 1) * nd
           end do
+          component => level_member(moment_node, scheme % primary_degree(nd - 1) + 1)
+          if (level_couples(component) .and. .not. associated(below)) then
+             below => level_coupling(component)
+          end if
        end if
     end do
     if (size(held) /= ncar) then
@@ -677,7 +684,16 @@ contains
     end do
     call rows % placed_in(label_slice, label_node, label_moment)
     call rows % with_reach(reach)
-    if (present(spatial)) call rows % spatial_laid(spatial)
+
+    ! the level below, laid on every moment the physics sits at: the
+    ! coupling's relation is the stencil's pattern, a node read into
+    ! a node's row, its value the weights in that order
+    if (associated(below)) then
+       call tower % tuples_of(below, table)
+       call tower % value_of(below, below_weights)
+       call rows % spatial_laid(stencil(table(2, :), table(1, :), below_weights, &
+            & spread(0.0_dp, 1, m), 'level below'))
+    end if
 
     ! where each instant lies: a slice's last moment
     allocate(instants_at(n))
@@ -688,6 +704,22 @@ contains
     end do
 
   end subroutine block_from
+
+  !===================================================================!
+  ! The first moment of a block: its first slice for a difference
+  ! family, that slice's one member for a stage family.
+  !===================================================================!
+
+  function first_moment(block, staged) result(moment)
+
+    type(graph), intent(in) :: block
+    logical    , intent(in) :: staged
+    type(graph), pointer :: moment
+
+    moment => level_member(block, 1)
+    if (staged) moment => level_member(moment, 1)
+
+  end function first_moment
 
   !===================================================================!
   ! The reach of a difference family's block: its coupling's tuples,

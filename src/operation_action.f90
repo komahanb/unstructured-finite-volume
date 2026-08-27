@@ -62,6 +62,8 @@ module operation_action
   public :: emit
   public :: argument
   public :: variation
+  public :: applied, varied, functional_of, functional_gradient
+  public :: design_partial, jacobian_of
 
   !===================================================================!
   ! One argument of one operation: the operation's argument space
@@ -458,6 +460,152 @@ contains
     error stop 'operation: the requested order is within max_degree'
 
   end subroutine operation_partial_action
+
+  subroutine applied(action, on, inputs, y)
+
+    class(operation)     , intent(in) :: action
+    class(directed_graph), intent(in) :: on
+    type(stored_field)   , intent(in) :: inputs(:)
+    real(dp), allocatable, intent(out) :: y(:)
+
+    class(field), allocatable :: out
+
+    call action % apply(on, inputs, out)
+    call out % real_vector(y)
+
+  end subroutine applied
+
+  subroutine varied(action, on, inputs, which, domain, v, y, which2, domain2, v2)
+
+    class(operation)     , intent(in) :: action
+    class(directed_graph), intent(in) :: on
+    type(stored_field)   , intent(in) :: inputs(:)
+    integer              , intent(in) :: which
+    type(graph)          , intent(in) :: domain
+    real(dp)             , intent(in) :: v(:)
+    real(dp), allocatable, intent(out) :: y(:)
+    integer    , intent(in), optional :: which2
+    type(graph), intent(in), optional :: domain2
+    real(dp)   , intent(in), optional :: v2(:)
+
+    type(stored_field) :: direction, second
+    class(field), allocatable :: out
+
+    direction = stored_field('direction', domain, size(v))
+    call direction % set_real_vector(v)
+
+    if (present(which2)) then
+       second = stored_field('direction', domain2, size(v2))
+       call second % set_real_vector(v2)
+       call action % partial_action(on, inputs, &
+            & [variation(action % argument(which), direction), &
+            &  variation(action % argument(which2), second)], out)
+    else
+       call action % partial_action(on, inputs, &
+            & [variation(action % argument(which), direction)], out)
+    end if
+
+    call out % real_vector(y)
+
+  end subroutine varied
+
+  real(dp) function functional_of(integrand, instants, inputs, dt) result(f)
+
+    class(operation)     , intent(in) :: integrand
+    class(directed_graph), intent(in) :: instants
+    type(stored_field)   , intent(in) :: inputs(:)
+    real(dp)             , intent(in) :: dt(:)
+
+    real(dp), allocatable :: values(:)
+
+    call applied(integrand, instants, inputs, values)
+    f = sum(dt * values)
+
+  end function functional_of
+
+  subroutine functional_gradient(integrand, instants, inputs, dt, n, degrees, &
+       & state_domain, g, along_state, along_design)
+
+    class(operation)     , intent(in) :: integrand
+    class(directed_graph), intent(in) :: instants
+    type(stored_field)   , intent(in) :: inputs(:)
+    real(dp)             , intent(in) :: dt(:)
+    integer              , intent(in) :: n, degrees
+    type(graph)          , intent(in) :: state_domain
+    real(dp), allocatable, intent(out) :: g(:)
+    real(dp), intent(in), optional    :: along_state(:), along_design(:)
+
+    real(dp), allocatable :: v(:), rate(:)
+    integer :: d, k
+
+    allocate(g(n * degrees), source=0.0_dp)
+    allocate(v(n * degrees))
+    do d = 0, degrees - 1
+       v = 0.0_dp
+       do k = 1, n
+          v((k - 1) * degrees + d + 1) = 1.0_dp
+       end do
+       if (present(along_state)) then
+          call varied(integrand, instants, inputs, 1, state_domain, v, rate, &
+               & 1, state_domain, along_state)
+       else if (present(along_design)) then
+          call varied(integrand, instants, inputs, 1, state_domain, v, rate, &
+               & 2, state_domain, along_design)
+       else
+          call varied(integrand, instants, inputs, 1, state_domain, v, rate)
+       end if
+       do k = 1, n
+          g((k - 1) * degrees + d + 1) = dt(k) * rate(k)
+       end do
+    end do
+
+  end subroutine functional_gradient
+
+  subroutine design_partial(rows, unknowns, inputs, n, design_domain, d)
+
+    class(operation)     , intent(in) :: rows
+    class(directed_graph), intent(in) :: unknowns
+    type(stored_field)   , intent(in) :: inputs(:)
+    integer              , intent(in) :: n
+    type(graph)          , intent(in) :: design_domain
+    real(dp), allocatable, intent(out) :: d(:)
+
+    call varied(rows, unknowns, inputs, 2, design_domain, spread(1.0_dp, 1, n), d)
+
+  end subroutine design_partial
+
+  subroutine jacobian_of(rows, unknowns, inputs, num_unknowns, state_domain, a)
+
+    class(operation)     , intent(in) :: rows
+    class(directed_graph), intent(in) :: unknowns
+    type(stored_field)   , intent(in) :: inputs(:)
+    integer              , intent(in) :: num_unknowns
+    type(graph)          , intent(in) :: state_domain
+    real(dp), allocatable, intent(out) :: a(:,:)
+
+    real(dp), allocatable :: v(:), column(:), w(:)
+    integer , allocatable :: r(:), c(:)
+    logical :: available
+    integer :: j, e
+
+    allocate(a(num_unknowns, num_unknowns), source=0.0_dp)
+    call rows % compiled_tangent(unknowns, inputs, 1, r, c, w, available)
+    if (available) then
+       do e = 1, size(r)
+          a(r(e), c(e)) = a(r(e), c(e)) + w(e)
+       end do
+       return
+    end if
+
+    allocate(v(num_unknowns), source=0.0_dp)
+    do j = 1, num_unknowns
+       v    = 0.0_dp
+       v(j) = 1.0_dp
+       call varied(rows, unknowns, inputs, 1, state_domain, v, column)
+       a(:, j) = column
+    end do
+
+  end subroutine jacobian_of
 
   !===================================================================!
   ! Where an operation's answer lives, unless it says otherwise: one

@@ -333,12 +333,6 @@ end module gti_configuration
 module gti_sweeps
   use gti_configuration, only : refuse_unknown
   use util_precision  , only : dp, half_digits
-  use operation_action      , only : operation, variation
-  use view_directed         , only : directed_graph
-  use view_directed_stored  , only : stored_directed_graph
-  use graph_fractal         , only : graph
-  use field_calculus        , only : field
-  use field_stored          , only : stored_field
   use operation_dense_direct, only : dense_direct
   use operation_multigrid   , only : multigrid
   use operation_gauss_seidel, only : gauss_seidel
@@ -346,8 +340,6 @@ module gti_sweeps
   use operation_minimization, only : minimizer, relative, absolute, by_rate, by_count
   implicit none
   private
-  public :: functional_of, functional_gradient
-  public :: design_partial, jacobian_of
   public :: forward_route, reverse_route, route_of, route_substitutions, choose
   integer, parameter :: forward_route = 1
   integer, parameter :: reverse_route = 2
@@ -518,120 +510,6 @@ contains
   subroutine forget_inner()
     if (allocated(kept_inner)) deallocate(kept_inner)
   end subroutine forget_inner
-  subroutine applied(action, on, inputs, y)
-    class(operation)     , intent(in) :: action
-    class(directed_graph), intent(in) :: on
-    type(stored_field)   , intent(in) :: inputs(:)
-    real(dp), allocatable, intent(out) :: y(:)
-    class(field), allocatable :: out
-    call action % apply(on, inputs, out)
-    call out % real_vector(y)
-  end subroutine applied
-  subroutine varied(action, on, inputs, which, domain, v, y, which2, domain2, v2)
-    class(operation)     , intent(in) :: action
-    class(directed_graph), intent(in) :: on
-    type(stored_field)   , intent(in) :: inputs(:)
-    integer              , intent(in) :: which
-    type(graph)          , intent(in) :: domain
-    real(dp)             , intent(in) :: v(:)
-    real(dp), allocatable, intent(out) :: y(:)
-    integer    , intent(in), optional :: which2
-    type(graph), intent(in), optional :: domain2
-    real(dp)   , intent(in), optional :: v2(:)
-    type(stored_field) :: direction, second
-    class(field), allocatable :: out
-    direction = stored_field('direction', domain, size(v))
-    call direction % set_real_vector(v)
-    if (present(which2)) then
-       second = stored_field('direction', domain2, size(v2))
-       call second % set_real_vector(v2)
-       call action % partial_action(on, inputs, &
-            & [variation(action % argument(which), direction), &
-            &  variation(action % argument(which2), second)], out)
-    else
-       call action % partial_action(on, inputs, &
-            & [variation(action % argument(which), direction)], out)
-    end if
-    call out % real_vector(y)
-  end subroutine varied
-  real(dp) function functional_of(integrand, instants, inputs, dt) result(f)
-    class(operation)     , intent(in) :: integrand
-    class(directed_graph), intent(in) :: instants
-    type(stored_field)   , intent(in) :: inputs(:)
-    real(dp)             , intent(in) :: dt(:)
-    real(dp), allocatable :: values(:)
-    call applied(integrand, instants, inputs, values)
-    f = sum(dt * values)
-  end function functional_of
-  subroutine functional_gradient(integrand, instants, inputs, dt, n, degrees, &
-       & state_domain, g, along_state, along_design)
-    class(operation)     , intent(in) :: integrand
-    class(directed_graph), intent(in) :: instants
-    type(stored_field)   , intent(in) :: inputs(:)
-    real(dp)             , intent(in) :: dt(:)
-    integer              , intent(in) :: n, degrees
-    type(graph)          , intent(in) :: state_domain
-    real(dp), allocatable, intent(out) :: g(:)
-    real(dp), intent(in), optional    :: along_state(:), along_design(:)
-    real(dp), allocatable :: v(:), rate(:)
-    integer :: d, k
-    allocate(g(n * degrees), source=0.0_dp)
-    allocate(v(n * degrees))
-    do d = 0, degrees - 1
-       v = 0.0_dp
-       do k = 1, n
-          v((k - 1) * degrees + d + 1) = 1.0_dp
-       end do
-       if (present(along_state)) then
-          call varied(integrand, instants, inputs, 1, state_domain, v, rate, &
-               & 1, state_domain, along_state)
-       else if (present(along_design)) then
-          call varied(integrand, instants, inputs, 1, state_domain, v, rate, &
-               & 2, state_domain, along_design)
-       else
-          call varied(integrand, instants, inputs, 1, state_domain, v, rate)
-       end if
-       do k = 1, n
-          g((k - 1) * degrees + d + 1) = dt(k) * rate(k)
-       end do
-    end do
-  end subroutine functional_gradient
-  subroutine design_partial(rows, unknowns, inputs, n, design_domain, d)
-    class(operation)     , intent(in) :: rows
-    class(directed_graph), intent(in) :: unknowns
-    type(stored_field)   , intent(in) :: inputs(:)
-    integer              , intent(in) :: n
-    type(graph)          , intent(in) :: design_domain
-    real(dp), allocatable, intent(out) :: d(:)
-    call varied(rows, unknowns, inputs, 2, design_domain, spread(1.0_dp, 1, n), d)
-  end subroutine design_partial
-  subroutine jacobian_of(rows, unknowns, inputs, num_unknowns, state_domain, a)
-    class(operation)     , intent(in) :: rows
-    class(directed_graph), intent(in) :: unknowns
-    type(stored_field)   , intent(in) :: inputs(:)
-    integer              , intent(in) :: num_unknowns
-    type(graph)          , intent(in) :: state_domain
-    real(dp), allocatable, intent(out) :: a(:,:)
-    real(dp), allocatable :: v(:), column(:), w(:)
-    integer , allocatable :: r(:), c(:)
-    logical :: available
-    integer :: j, e
-    allocate(a(num_unknowns, num_unknowns), source=0.0_dp)
-    call rows % compiled_tangent(unknowns, inputs, 1, r, c, w, available)
-    if (available) then
-       do e = 1, size(r)
-          a(r(e), c(e)) = a(r(e), c(e)) + w(e)
-       end do
-       return
-    end if
-    allocate(v(num_unknowns), source=0.0_dp)
-    do j = 1, num_unknowns
-       v    = 0.0_dp
-       v(j) = 1.0_dp
-       call varied(rows, unknowns, inputs, 1, state_domain, v, column)
-       a(:, j) = column
-    end do
-  end subroutine jacobian_of
   pure integer function route_of(num_designs, num_functionals, order) result(route)
     integer, intent(in) :: num_designs, num_functionals, order
     if (num_designs < 1 .or. num_functionals < 1 .or. order < 1) then
@@ -2220,7 +2098,7 @@ module gti_march
   use view_directed           , only : directed_graph
   use field_calculus          , only : field
   use field_stored            , only : stored_field
-  use operation_action      , only : variation
+  use operation_action      , only : variation, jacobian_of
   use operation_stencil       , only : stencil
   use operation_newton        , only : newton
   use operation_minimization  , only : minimizer, relative, absolute, &
@@ -2238,7 +2116,7 @@ module gti_march
        & level_couples
   use graph_fractal           , only : graph
   use map_value               , only : VALUE_KNOWN
-  use gti_sweeps              , only : jacobian_of, assembly_present, multigrid_on, &
+  use gti_sweeps              , only : assembly_present, multigrid_on, &
        & set_aggregates, coarse_nodes, take_inner, keep_inner, forget_inner, set_linear_stopping
   use util_tally              , only : tally_record, tangent_loops, adjoint_loops
   implicit none
@@ -4466,9 +4344,9 @@ end module gti_chain
 module gti_driver
   use iso_fortran_env  , only : int64
   use util_precision   , only : dp
+  use operation_action , only : jacobian_of
   use operation_grid   , only : grid, uniform_grid, random_grid, partitioned
   use gti_configuration, only : configuration, read_configuration, override
-  use gti_sweeps       , only : jacobian_of
   use view_directed_stored, only : stored_directed_graph
   use field_stored     , only : stored_field
   use operation_family , only : family
@@ -4612,7 +4490,8 @@ module gti_demos
   use view_directed_stored  , only : stored_directed_graph
   use field_calculus        , only : field
   use field_stored          , only : stored_field
-  use operation_action      , only : variation
+  use operation_action      , only : variation, functional_of, functional_gradient, &
+       & sweep_design_partial => design_partial
   use operation_stencil     , only : stencil
   use operation_scheme_stencil, only : derived_constraints
   use operation_family      , only : family
@@ -4635,8 +4514,7 @@ module gti_demos
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
        & chain_stamps, chain_derivative, first_of, instant_components, &
        & asymmetry, multiset_count, multiset_rank, multiset_of
-  use gti_sweeps            , only : functional_of, functional_gradient, &
-       & sweep_design_partial => design_partial, route_of, forward_route, reverse_route
+  use gti_sweeps            , only : route_of, forward_route, reverse_route
   use gti_driver            , only : clock, cosine, dense_jacobian
   implicit none
   private

@@ -1,240 +1,42 @@
-What is being built
-
-One packed source under application and a set of configuration files. module_graph_time_integrator.f90 supplies the Van der Pol residual and functional integrands, assembles what src/ provides, and prints one table selected by --config=homogeneous and similar. Columns run f, df/dnu, ... to the configured derivative degree; rows are the homogeneous primitives, then ordered pairs, then ordered triples of BDF, ABM and DIRK, at one order or across orders as the configuration asks. The old standalone checks are modes of the same executable: ./graph_time_integrator --list-demos shows them, and ./graph_time_integrator --demo=scheme_weights runs one.
-
-Structure
-
-type(graph) is the only permitted structure, so a scheme is built from supplied vertices and edges. The hierarchy is self-similar at every zoom:
-
-  tower      B_1 =====> B_2 =====> B_3        blocks, one family and order each
-  block      G_0 --> G_1 --> ... --> G_m      slices, one instant each
-  slice      G_k = ( G_k^S , G_k^C )          state first, constraint second
-  sub-deck   G_k,1 --> ... --> G_k,s          one slice when not multistage
-  degree     [ q , q' , ... , q^(N) ]
-
-with G^S = (primal_state, (adjoint_state, tangent_state)) and G^C the same shape over the equations. That nesting records a real distinction: the primal traversal is nonlinear, while adjoint and tangent are both linear in the operator assembled at the converged primal state. At the top, P^S = (design, state deck) and P^C = (functional, constraint deck), which keeps the count square — N+2 data blocks against N+2 operators — with the design never solved and the functional's multiplier held at one, exactly as Figure 2 of the 2017 paper draws it. The pair order is (data, operator) to match view_epistemic.
-
-A block is homogeneous in family and order; the tower above it is heterogeneous. Boundaries between blocks carry the state forward and the costate backward, and the tower's outer boundaries are the initial and terminal conditions, so those are the degenerate case of a junction rather than a separate mechanism. Only a multistage block may be first. With automatic_order_conservation = .true. a multistage startup block is prepended before a multistep block — 2P slices for BDF of order P, P−1 for ABM — so the order is preserved; .false. is unimplemented and stops. Every family carries a stage sub-deck, degenerate at one stage for BDF and ABM, so that all families are traversed by identical code; that identity is the evidence the abstraction is correct, and it also collapses the per-stage quadrature h_k Σ β_i F_ki to h_k F_k without a family test.
-
-Indexing and the two linear systems
-Fortran folds case, so distinct words are used rather than Q against q.
-  max_state_degree           degree      0 .. max_state_degree   components, tangents                                                                                                                                                 condition   0 .. max_state_degree   constraints, costates  max_discretization_order   --                                  scheme order  max_derivative_degree      sensitivity 1 ..                    tangent order  max_stages                 stage       1 ..  max_outputs                output      1 ..                    functionals, costate  max_parameters             parameter   1 ..                    design components  max_instants               instant     0 ..  max_blocks                 block       1 ..
-degree and condition share a bound because the block is square. The primal system has rows indexed by constraint and columns by component; the adjoint is that same matrix transposed, rows by component and columns by constraint. λ, ψ and φ are dual to R, S and T; q, q̇ and q̈ are dual to tons. The generic (N+1)m block is solved rather than its Schur complement, and thereduced Newton system of the 2017 paper is recovered exactly by eliminating the derived rows. Multiplication by ones and addition of zeros are accepted, the purpose being characterisation rather than speed. operation's existing max_degree is a different quantity from max_state_degree and must not be conflated.
-                                                                                                                                                                                                  The scheme as a productEvery weight separates as α(θ)·h_k^(d′−d), the exponent being the derivative degree an it enters, which is determined by the topology alone. The dimensionless factor dependson the steps only through θ_j = (t_k − t_{k−j})/h_k, with α_j = ℓ_j′(0) for BDF and ∫_niform grid is the degeneracy θ_j = j, at which α collapses to the classical tables;this was checked against set_bdf, whose three BDF-2 lines are reproduced exactly and gtio. The product is edgewise over one shared topology, though the factors are notindependent since α is computed from τ. The coefficient builder takes the dt-graph andh and returns the extended one; entries are immutable at fixed design, which gives afree check — incremental and from-scratch construction must agree entry for entry.
-Design as the parent notion
-State and design are one kind of variable differing in whether the codomain map is square and closable, and in disposition, fixed or free. Solving is tuning, which the tower already encodes: every solver is a minimizer attached to a statement. Two refinements were taken from evidence in the repository: disposition is carried as a map rather than as branches, since it changes during a study and malready carries per-identity status; and state is composition rather than a subtype ofoural differs and the view_directed audit showed what a one-concretion hierarchy costs.The unification is of description and gradient assembly, not of traversal — the primaltuning outer.Carrying ψ and φ as genuine unknowns, rather than assuming them zero, is what makes coall, since ∂S/∂α and ∂T/∂α reach the gradient only through them.
-                                                                                                                                                                                                  Consequences flushed out
-                                                                                                                                                                                                  Six revisions are required before the design demonstrations will work. The coefficientable operation rather than a producer of data, since grid design needs ∂α/∂h. Thequadrature weight becomes design-dependent, so ∂f/∂h_k carries an explicit F_k term. The instants become design-dependent, so ∂R/∂t must be declarable and chained — invisible for Van der Pol, which has no explicit t. A tower-level constraint is needed, because a fixed duration and the order conditions have no slice to live at while the constraint deck is instant-indexed. The coefficient graph per-entry provenance, computed from τ or free, the two being exclusive. And immutabili.Two limits are scope rather than defect: the number of steps and the assignment of sliy sizes varying; and designing α is a choice between one tableau per block andindependent entries per slice. One caution: joint grid and coefficient design is reduneld by trading α against h, so the problem should be expected ill-conditioned until theduration or the order conditions are imposed.
-
-The acceptance criterion adopted for the three design demonstrations is that they differ only by which entries a configuration file marks free. Any one of them needing its own code path means the abstraction has not earned itself.
-
-Open, and the gaps in src/
-
-Still to settle: whether the startup block takes its slices from the head of the firstnds the duration; the random step distribution, its bounds and its seed; and thedetailed contents of the configuration groups.
-
-src/ supplies none of the traversal yet. There is no traversal over a descriptor step,rajectory-level derivative recursion; the coefficient tables are uniform-step only andstop at order four; and there are no Butcher tableaux or stage assembly. Those are what must be built before either demonstration file can be written.
-
-
-
-
-
-
-
-```mermaid
-
-
-graph TD
-  P["P — problem"]
-  P -->|B1| PS["P_S — data"]
-  P -->|B2| PC["P_C — operator"]
-
-  PS -->|B1| PSP["primal data"]
-  PS -->|B2| PSD["derived data"]
-  PSD -->|B1| PSA["adjoint data"]
-  PSD -->|B2| PST["tangent data"]
-
-  PSP -->|B1| XI["design — xi"]
-  PSP -->|B2| QT["state tower"]
-  PSA -->|B1| GR["gradient — df/dxi"]
-  PSA -->|B2| LT["costate tower"]
-  PST -->|B1| DIR["direction — p"]
-  PST -->|B2| MT["tangent tower"]
-
-  PC -->|B1| PCP["primal operator"]
-  PC -->|B2| PCD["derived operator"]
-  PCD -->|B1| PCA["adjoint operator"]
-  PCD -->|B2| PCT["tangent operator"]
-
-  PCP -->|B1| FF["functional — F"]
-  PCP -->|B2| RT["constraint tower"]
-  PCA -->|B1| SD["seed — e_j"]
-  PCA -->|B2| AT["adjoint equation tower"]
-  PCT -->|B1| SR["source"]
-  PCT -->|B2| TT["tangent equation tower"]
-
-```
-
-
-
-
-
-```mermaid
-graph TD
-  X["node — tower, block, slice or stage"]
-  X -->|B1| XS["data"]
-  X -->|B2| XC["operator"]
-
-  XS -->|B1| XSN["nonlinear"]
-  XS -->|B2| XSL["linear"]
-  XSN -->|B1| PAR["parameter — this level's own design"]
-  XSN -->|B2| VAL["value — the two sub-nodes, or a field at a leaf"]
-  XSL -->|B1| TAN["tangent — J forward"]
-  XSL -->|B2| ADJ["adjoint — J transposed"]
-
-  XC -->|B1| XCN["nonlinear"]
-  XC -->|B2| XCL["linear"]
-  XCN -->|B1| OBJ["objective"]
-  XCN -->|B2| CON["constraint"]
-  XCL -->|B1| TEQ["tangent equation"]
-  XCL -->|B2| AEQ["adjoint equation"]
-```
-
-
-
-
-
-```mermaid
-graph TD
-  T["tower — [0, T]"]
-  T -->|B1| A["earlier span"]
-  T -->|B2| B["later span"]
-  A -->|B1| A1["span"]
-  A -->|B2| A2["block — family and order attach here"]
-  B -->|B1| B1x["block"]
-  B -->|B2| B2x["span"]
-  A2 -->|B1| C1["earlier slices"]
-  A2 -->|B2| C2["later slices"]
-  C1 -->|B1| S1["slice — one instant"]
-  C1 -->|B2| S2["slice"]
-  S1 -->|B1| G1["earlier stages"]
-  S1 -->|B2| G2["later stages"]
-  G1 -->|B1| U1["stage"]
-  U1 -->|B1| D1["lower degrees"]
-  U1 -->|B2| D2["higher degrees"]
-  D1 -->|B1| Q0["component — field on the state domain"]
-```
-
-
-
-instead of splitting `data` as `primal` and `derived`, should we split it as `linear` and `nonlinear`. The tangent and adjoint are two orientations of the same linearized operator. 
-
-
-
-
-
-
-
-
-
-```mermaid
-graph TD
-  TW["tower"] -->|B1| BK["block"]
-  TW -->|B2| TWR["rest of tower"]
-
-  BK -->|B1| SL["slice"]
-  BK -->|B2| BKR["rest of block"]
-
-  SL -->|B1| ST["stage"]
-  SL -->|B2| SLR["rest of slice"]
-
-  ST -->|B1| DG["degree component"]
-  ST -->|B2| STR["rest of stage"]
-
-  DG -->|B1| VL["values — field on the state domain"]
-  DG -->|B2| NIL["NULL"]
-```
-
-
-
-
-
-
-
-```mermaid
-graph TD
-  P["P — problem"]
-  P -->|B1| PS["P_S — data"]
-  P -->|B2| PC["P_C — operator"]
-
-  PS -->|B1| PSN["nonlinear data"]
-  PS -->|B2| PSL["linear data"]
-  PSN -->|B1| XI["design — xi"]
-  PSN -->|B2| QT["state tower"]
-  PSL -->|B1| PSA["adjoint data"]
-  PSL -->|B2| PST["tangent data"]
-  PSA -->|B1| GR["gradient — df/dxi"]
-  PSA -->|B2| LT["costate tower"]
-  PST -->|B1| DIR["direction — p"]
-  PST -->|B2| MT["tangent tower"]
-
-  PC -->|B1| PCN["nonlinear operator"]
-  PC -->|B2| PCL["linear operator"]
-  PCN -->|B1| FF["functional — F"]
-  PCN -->|B2| RT["constraint tower"]
-  PCL -->|B1| PCA["adjoint operator"]
-  PCL -->|B2| PCT["tangent operator"]
-  PCA -->|B1| SD["seed — e_j"]
-  PCA -->|B2| AT["adjoint equation tower"]
-  PCT -->|B1| SR["source"]
-  PCT -->|B2| TT["tangent equation tower"]
-```
-
-
-
-
-
-
-
-```mermaid
-graph TD
-  SEQ0["sequence - sensitivity 1..max_derivative_degree"] -->|element| G0
-
-  G0["graph - tower"]
-  G0 --> E0["epistemic - data | operator"]
-  G0 --> R0["relational - blocks, junction coupling"]
-  G0 --> S0["sequence - block 1..max_blocks"]
-  S0 -->|element| G1
-
-  G1["graph - block"]
-  G1 --> E1["epistemic - data | operator"]
-  G1 --> R1["relational - slices, scheme reach"]
-  G1 --> S1["sequence - instant 0..max_instants"]
-  S1 -->|element| G2
-
-  G2["graph - slice"]
-  G2 --> E2["epistemic - data | operator"]
-  G2 --> R2["relational - stages, butcher coupling"]
-  G2 --> S2["sequence - stage 1..max_stages"]
-  S2 -->|element| G3
-
-  G3["graph - stage"]
-  G3 --> E3["epistemic - data | operator"]
-  G3 --> R3["relational - components x constraints"]
-  G3 --> S3["sequence - degree 0..max_state_degree"]
-  S3 -->|element| G4
-
-  G4["graph - derivative state"]
-  G4 --> E4["epistemic - data | operator"]
-  G4 --> R4["relational - spatial coupling"]
-  G4 --> S4["sequence - freedom 1..max_freedoms"]
-  S4 -->|element| G5
-
-  G5["graph - degree of freedom, leaf"]
-```
-
-
-
-
+# The mathematics of the graph time integrator
+
+What follows completes the draft: the corrupted passages are restored,
+the questions the draft left open are resolved and the resolution is
+recorded, the claims that have since been demonstrated are marked so,
+and the ledger of what remains is brought to the truth of the tree.
+
+## 0. What is being built
+
+One packed source under `application` and a set of configuration
+files. `module_graph_time_integrator.f90` states the van der Pol
+residual and the functional integrands as expressions, assembles what
+`src/` provides, and prints one table selected by `--config=` and
+overridden by `key=value` words. Columns run f, df/dnu, ... to the
+configured derivative degree; rows are the homogeneous families, then
+ordered pairs, then ordered triples of BDF, ABM and DIRK, at one order
+or across orders as the configuration asks. The former standalone
+checks are demonstrations of the same executable: `--list-demos` names
+them, `--demo=scheme_weights` runs one. `application/README.md` is the
+user's door; this file is the mathematics behind it.
+
+## 1. The one structure and its readings
+
+There is one structure: the graph
+
+    G = (B1, B2),        B in { NULL, UNKNOWN, KNOWN -> G },
+
+with identity assigned once and never chosen. Everything else is a
+reading. A graph has no properties; it admits interpretations, and
+each interpretation is a view or a map held beside the mathematics:
+
+    epistemic     the pair (B1, B2) read as (data, operator)
+    relational    read as (carriers, relations)
+    sequence      read as (element, rest) - the list below
+    set           a declared extent, in the set store, O(1) objects
+    label         what an identity is called; naming is not addressing
+    value         what an identity holds, with a status
+
+The sequence reading is the kernel's own list:
 
 ```mermaid
 graph LR
@@ -249,138 +51,338 @@ graph LR
   C3 -->|"B2"| N["branch - NULL, the end"]
 ```
 
+The reading principle governs everything below: no level of the
+construction is a new type. A tower, a block, a slice, a stage and a
+component are one graph read at five depths, and the evidence that
+the abstraction is correct is that one traversal serves all of them.
 
+## 2. The problem as a graph
 
-
-
-
+The whole problem is one graph P = (P_S, P_C): data beside operator,
+in that order, matching the epistemic view. The draft asked whether
+the second split of each half should be (primal, derived) or
+(nonlinear, linear). The question is resolved for (nonlinear, linear),
+and the reason is a mathematical one: the tangent and the adjoint are
+two orientations of the one operator linearised at the converged
+primal state, so the split that carves at the joint is the split by
+linearity - the nonlinear half holds what is solved by iteration, the
+linear half holds the two orientations of its derivative. The
+(primal, derived) division is the same four quarters read
+epistemically, and survives as prose, not as structure.
 
 ```mermaid
 graph TD
+  P["P - problem"]
+  P -->|B1| PS["P_S - data"]
+  P -->|B2| PC["P_C - operator"]
 
-  subgraph L0["level 0 — expansion"]
-    G0["graph — one identity"]
+  PS -->|B1| PSN["nonlinear data"]
+  PS -->|B2| PSL["linear data"]
+  PSN -->|B1| XI["design - xi"]
+  PSN -->|B2| QT["state tower"]
+  PSL -->|B1| PSA["adjoint data"]
+  PSL -->|B2| PST["tangent data"]
+  PSA -->|B1| GR["gradient - df/dxi"]
+  PSA -->|B2| LT["costate tower"]
+  PST -->|B1| DIR["direction - p"]
+  PST -->|B2| MT["tangent tower"]
+
+  PC -->|B1| PCN["nonlinear operator"]
+  PC -->|B2| PCL["linear operator"]
+  PCN -->|B1| FF["functional - F"]
+  PCN -->|B2| RT["constraint tower"]
+  PCL -->|B1| PCA["adjoint operator"]
+  PCL -->|B2| PCT["tangent operator"]
+  PCA -->|B1| SD["seed - e_j"]
+  PCA -->|B2| AT["adjoint equation tower"]
+  PCT -->|B1| SR["source"]
+  PCT -->|B2| TT["tangent equation tower"]
+```
+
+The count is square by construction. For an equation of degree N there
+are N+2 data blocks against N+2 operators: the design is never solved,
+and the functional's own multiplier is held at one - exactly as
+Figure 2 of the 2017 paper draws it. The primal traversal is
+nonlinear; the adjoint and tangent traversals are linear in the
+operator assembled at the converged primal state, one with it and one
+against it.
+
+## 3. The hierarchy
+
+The hierarchy is self-similar at every zoom:
+
+    tower      B_1 =====> B_2 =====> B_3        blocks, one family and order each
+    block      G_0 --> G_1 --> ... --> G_m      slices, one instant each
+    slice      G_k = ( G_k^S , G_k^C )          data first, operator second
+    sub-deck   G_k,1 --> ... --> G_k,s          the stages; one when not multistage
+    degree     [ q , q' , ... , q^(N) ]         the components of one point
+
+Each level is the same triple of readings - its data carry a sequence
+of members, its operator carries the relations among them - and the
+final form of the levels, after the draft's candidates, is:
+
+```mermaid
+graph TD
+  subgraph L0["level 0 - expansion"]
+    G0["graph"]
     G0 --> E0["epistemic"]
-    E0 -->|B1| E0D["data — design xi, sweep values"]
-    E0 -->|B2| E0O["operator — functional F, constraints"]
-    G0 --> R0["relational"]
-    R0 -->|B1| R0C["carriers — sweeps s = 0..r"]
-    R0 -->|B2| R0R["relations — sweep s reads sweeps below s"]
-    G0 --> S0["sequence — sensitivity 0..max_derivative_degree"]
+    E0 -->|B1| E0D["data - design xi, sweep values"]
+    E0 -->|B2| E0O["operator - functional F, constraints"]
+    E0D --> S0["sequence - sensitivity 0..max_derivative_degree"]
+    E0O --> R0["relational - sweep s reads the sweeps below s"]
   end
   S0 -->|element| G1
 
-  subgraph L1["level 1 — horizon, the span 0..T"]
+  subgraph L1["level 1 - horizon, the span 0..T"]
     G1["graph"]
     G1 --> E1["epistemic"]
-    E1 -->|B1| E1D["data — state over the span"]
-    E1 -->|B2| E1O["operator — constraints over the span"]
-    G1 --> R1["relational"]
-    R1 -->|B1| R1C["carriers — blocks"]
-    R1 -->|B2| R1R["relations — junctions, weight 1"]
-    G1 --> S1["sequence — block 1..max_blocks"]
+    E1 -->|B1| E1D["data - the member blocks"]
+    E1 -->|B2| E1O["operator - junctions, weight one"]
+    E1D --> S1["sequence - block 1..max_blocks"]
   end
   S1 -->|element| G2
 
-  subgraph L2["level 2 — block, one family and order"]
+  subgraph L2["level 2 - block, one family and order"]
     G2["graph"]
     G2 --> E2["epistemic"]
-    E2 -->|B1| E2D["data — slice states"]
-    E2 -->|B2| E2O["operator — slice constraints"]
-    G2 --> R2["relational"]
-    R2 -->|B1| R2C["carriers — slices"]
-    R2 -->|B2| R2R["relations — scheme reach, weight tau x alpha"]
-    G2 --> S2["sequence — instant 0..max_instants"]
+    E2 -->|B1| E2D["data - the member slices"]
+    E2 -->|B2| E2O["operator - scheme reach, weight tau x alpha"]
+    E2D --> S2["sequence - instant 0..max_instants"]
   end
   S2 -->|element| G3
 
-  subgraph L3["level 3 — slice, one instant"]
+  subgraph L3["level 3 - slice, one instant"]
     G3["graph"]
     G3 --> E3["epistemic"]
-    E3 -->|B1| E3D["data — bundle Q_k"]
-    E3 -->|B2| E3O["operator — constraints at k, plus recovery"]
-    G3 --> R3["relational"]
-    R3 -->|B1| R3C["carriers — stages"]
-    R3 -->|B2| R3R["relations — butcher a_ij, j <= i"]
-    G3 --> S3["sequence — stage 1..max_stages"]
+    E3 -->|B1| E3D["data - the member stages"]
+    E3 -->|B2| E3O["operator - butcher a_ij, j <= i, plus recovery"]
+    E3D --> S3["sequence - stage 1..max_stages"]
   end
   S3 -->|element| G4
 
-  subgraph L4["level 4 — stage"]
+  subgraph L4["level 4 - stage, degenerate at one for multistep"]
     G4["graph"]
     G4 --> E4["epistemic"]
-    E4 -->|B1| E4D["data — components q, q', q''..."]
-    E4 -->|B2| E4O["operator — one governing, N derived"]
-    G4 --> R4["relational"]
-    R4 -->|B1| R4C["carriers — components and constraints"]
-    R4 -->|B2| R4R["relations — condition x degree sparsity"]
-    G4 --> S4["sequence — degree 0..max_state_degree"]
+    E4 -->|B1| E4D["data - the member components"]
+    E4 -->|B2| E4O["operator - one governing row, N derived"]
+    E4D --> S4["sequence - degree 0..max_state_degree"]
   end
   S4 -->|element| G5
 
-  subgraph L5["level 5 — component, one derivative order"]
+  subgraph L5["level 5 - component, leaf of the state hierarchy"]
     G5["graph"]
     G5 --> E5["epistemic"]
-    E5 -->|B1| E5D["data — values"]
-    E5 -->|B2| E5O["operator — spatial constraints, if any"]
-    G5 --> R5["relational"]
-    R5 -->|B1| R5C["carriers — freedoms"]
-    R5 -->|B2| R5R["relations — spatial coupling, empty for an ODE"]
-    G5 --> V5["set — freedom, extent in map_set, O(1) objects"]
-  end
-
-```
-
-
-
-
-
-```mermaid
-graph TD
-
-  subgraph L2["level 2 — block, one family and order"]
-    G2["graph"]
-    G2 --> E2["epistemic"]
-    E2 -->|B1| E2D["data — the member slices"]
-    E2 -->|B2| E2O["operator — coupling and constraints"]
-    E2D --> S2["sequence — instant 0..max_instants"]
-    E2O --> R2["relational"]
-    R2 -->|B1| R2C["carriers — slices, constraint instances"]
-  end
-  S2 -->|element| G3
-
-  subgraph L3["level 3 — slice, one instant"]
-    G3["graph"]
-    G3 --> E3["epistemic"]
-    E3 -->|B1| E3D["data — the member stages"]
-    E3 -->|B2| E3O["operator — constraints at k, plus recovery"]
-    E3D --> S3["sequence — stage 1..max_stages"]
-    E3O --> R3["relational"]
-    R3 -->|B1| R3C["carriers — stages"]
-    R3 -->|B2| R3R["relations — butcher a_ij, j <= i"]
-  end
-  S3 -->|element| G4
-
-  subgraph L4["level 4 — stage (optional for multistage)"]
-    G4["graph"]
-    G4 --> E4["epistemic"]
-    E4 -->|B1| E4D["data — the member components"]
-    E4 -->|B2| E4O["operator — one governing, N derived"]
-    E4D --> S4["sequence — degree 0..max_state_degree"]
-    E4O --> R4["relational"]
-    R4 -->|B1| R4C["carriers — components and constraints"]
-    R4 -->|B2| R4R["relations — condition x degree sparsity"]
-  end
-  S4 -->|element| G5
-
-  subgraph L5["level 5 — component, leaf of the state hierarchy"]
-    G5["graph"]
-    G5 --> E5["epistemic"]
-    E5 -->|B1| E5D["data — a field of values, no spine"]
-    E5 -->|B2| E5O["operator — spatial constraints, NULL for an ODE"]
-    E5D --> V5["set — freedom, extent in map_set, O(1) objects"]
-    E5O --> R5["relational"]
-    R5 -->|B1| R5C["carriers — freedoms"]
-    R5 -->|B2| R5R["relations — spatial coupling, empty for an ODE"]
+    E5 -->|B1| E5D["data - a field of values, no spine"]
+    E5 -->|B2| E5O["operator - spatial coupling, NULL for an ODE"]
+    E5D --> V5["set - freedom, extent in the set store, O(1) objects"]
   end
 ```
+
+Three invariants of the hierarchy, each carried by the code and checked by a
+demonstration:
+
+**Junctions are degenerate boundaries.** Boundaries between blocks
+carry the state forward and the costate backward; the tower's outer
+boundaries - the initial and terminal conditions - are the degenerate
+case of a junction, not a separate mechanism. `chained_horizon` is the
+witness: a chain across families whose every derivative agrees with a
+difference of the one below, across the junctions.
+
+**The startup preserves the order.** Only a self-starting block may be
+first. With automatic order conservation a multistage startup block is
+prepended before a multistep one - 2P slices for BDF of order P over an
+equation of degree two, P-1 for ABM - so every row integrates the same
+initial-value problem at its own formal order. The alternative is not
+built and stops the program, because a table read across rows solving
+different problems means nothing.
+
+**The stage sub-deck is total, degenerate at one.** Every family
+carries stages, BDF and ABM at exactly one, so that all families are
+traversed by identical code; that identity of traversal is the
+evidence the abstraction is correct. It also makes the functional's
+per-stage quadrature h_k sum over i of beta_i F_ki collapse to
+h_k F_k without a family test: the multistep tableau weight is one.
+
+## 4. The scheme as a product
+
+Every weight of the scheme's operator separates as
+
+    w  =  alpha(theta) * h_k^(d' - d),
+
+the exponent being fixed by the two derivative degrees the edge joins
+and by nothing else - not the family, not the order, not the position
+in the history. The dimensionless factor depends on the steps only
+through the scaled offsets
+
+    theta_j = (t_k - t_(k-j)) / h_k,        theta_0 = 0,
+
+with alpha_j the slope at zero of the j-th Lagrange basis function
+through those offsets for a difference, and its integral over the last
+step for a quadrature. The uniform grid is the degeneracy theta_j = j,
+at which alpha collapses to the classical tables; this is checked
+against the tabulated BDF-2 coefficients, reproduced exactly, and by
+the `scheme_weights` and `family_coefficients` demonstrations on
+non-uniform steps.
+
+The product is edgewise over one shared topology, though its factors
+are not independent: alpha is computed from the same steps tau scales
+by. Both factors carry their partials in the steps through the exact
+arithmetic, so the product rule is applied by evaluation and the
+weight's derivative in any step is exact - `grid_design_check` holds
+the tables to three independent computations at every order. Entries
+are immutable at a fixed design, which gives a free check: incremental
+and from-scratch construction must agree entry for entry.
+
+## 5. Duality
+
+At one slice the unknowns q, q', ..., q^(N) are dual to the rows that
+determine them: the governing row R at the primary degree, and the
+derived rows S, T, ... at the others. The multipliers lambda, psi, phi
+are dual to R, S, T in the same pairing. The primal system has rows
+indexed by constraint and columns by component; the adjoint is the
+same matrix transposed - the same reads graph traversed against its
+edges - and the tangent is the same matrix along them. The generic
+(N+1)m block is solved rather than its Schur complement; the reduced
+Newton system of the 2017 paper is recovered exactly by eliminating
+the derived rows. Multiplications by one and additions of zero are
+accepted, the purpose being characterisation rather than speed.
+
+Two theorems of this duality are now carried as checks:
+
+**The costate of a sink.** An unknown read by no row but its own is a
+sink of the block's reads graph; its column of the jacobian holds the
+diagonal alone, so the costate equation J^T lambda = g gives
+
+    J_ii lambda_i = g_i
+
+exactly on it, and lambda_i = 0 wherever the functional does not read
+the unknown either. Which unknowns are sinks is read off the compiled
+pattern, not declared, and the demonstration finds them where the
+theory allows them and nowhere else: in a stage block, the arriving
+instant's highest degree - the governing rows sit at the stages and
+the next step reads the lower degrees - and in a multistep block,
+none, the governing row at the same instant reading every degree.
+`check = sinks` asserts the identity over every costate solve, at
+every degree of the equation.
+
+**One theorem, three guises.** The composition of derivatives
+appears three times in the tower: as the product rule over subsets of
+directions in the exact arithmetic, as the total derivative of a
+composition over integer partitions with multinomial counts in the
+chain rule, and as the derivative of a function of a carried quantity
+over set partitions in the elementary functions. All three are Faa di
+Bruno's formula; the set-partition form is primitive, and the other
+two are its restrictions - to singleton blocks, and to the symmetric
+case where every direction is the same. That the three agree wherever
+they meet is exercised by `function_identities` to five directions and
+by the route cross-checks over the whole derivative table.
+
+## 6. Design as the parent notion
+
+State and design are one kind of variable. They differ in two
+attributes, not in kind: disposition - fixed or free - and whether the
+operator ranged against them is square and closable. Solving is
+tuning: every solver in the tower is a minimizer attached to a
+statement, and the primal march is the inner loop of the same act the
+outer design loop performs. Two refinements were taken from evidence
+in the repository rather than from taste: disposition is carried as a
+map keyed on identity, since it changes during a study and the value
+map already carries per-identity status; and state is a composition
+rather than a subtype, since only the description differs and the
+directed-view audit showed what a one-concretion hierarchy costs. The
+unification is of description and of gradient assembly, not of
+traversal - the primal stays inner, the tuning outer.
+
+Carrying psi and phi as genuine unknowns, rather than assuming them
+zero, is what makes coefficient design assemblable at all: the partials
+of S and T in the scheme's coefficients reach the gradient only
+through them.
+
+## 7. The consequences, their limits, and the criterion
+
+Six revisions are required before the design demonstrations work, and
+they are consequences of section 6, not choices:
+
+1. The coefficient builder becomes a differentiable operation rather
+   than a producer of data, since grid design needs the partial of
+   alpha in the steps.
+2. The quadrature weight becomes design-dependent, so df/dh_k carries
+   an explicit F_k term beside the chained one.
+3. The instants become design-dependent, so the partial of R in t must
+   be declarable and chained - invisible for van der Pol, which reads
+   no explicit t.
+4. A tower-level constraint is needed: a fixed duration and the order
+   conditions have no slice to live at while the constraint deck is
+   instant-indexed.
+5. The coefficient graph carries per-entry provenance - computed from
+   theta, or free - the two being exclusive.
+6. Immutability becomes provenance-wise: a computed entry is immutable
+   at fixed design, a free entry is a design.
+
+Two limits are scope rather than defect: the number of steps and the
+assignment of slices to blocks stay fixed, sizes varying; and
+designing alpha is a choice between one tableau per block and
+independent entries per slice. One caution is mathematical: joint grid
+and coefficient design is redundant along the invariance of the
+product - alpha can be traded against a power of h - so the problem
+should be expected ill-conditioned until the duration or the order
+conditions are imposed.
+
+The acceptance criterion for the three design demonstrations is that
+they differ only by which entries a configuration marks free. Any one
+of them needing its own code path means the abstraction has not earned
+itself.
+
+## 8. The coordinate reading
+
+Below the hierarchy sits the axis itself, and the same discipline
+applies to it. A coordinate is the uniform axis on [0, 1], identified
+and labelled; every physical axis is its image under a mapping, and
+the measure on the physical axis is the pushforward - the Lebesgue
+measure on [0, T] is the uniform one at scale T, a probabilistic axis
+is the image under the inverse distribution function, a spatial domain
+is the image of the parametric square under the geometry. A grid is
+the discretisation of a coordinate: a finite measure, points and
+weights, and its two readings are two kinds of the one map - the
+partition, whose points are the instants and whose weights are the
+steps, exact on piecewise constants; and the quadrature, whose points
+are the Legendre nodes and whose weights are the rule's, exact on
+polynomials of degree below twice the point count. Both are
+implemented as kinds of the one grid type, and `assembled_tower`
+demonstrates the exactness with a floor derived from the arithmetic.
+
+Inside one instant the same reading continues one level further: the
+governing equation itself is a graph whose vertices are typed
+operators and whose edges are the reads between them, evaluated over
+the arithmetic that carries mixed derivatives. The march is the loop
+over the blocks' reads graph, the block over its instants', and the
+rule over its own - the hierarchy is reads graphs all the way down,
+and the adjoint at every level is the same loop against the edges.
+
+## 9. Established, and open
+
+Of the draft's gaps, the following are now built and demonstrated:
+the traversal over a descriptor equation of any degree; coefficient
+tables at any order on non-uniform steps, from the Lagrange
+functionals; the Butcher tableaux and stage assembly; the
+trajectory-level derivative recursion to any order by either route;
+the heterogeneous chains with order-preserving startup; the per-stage
+functional quadrature; the adaptive grid, discovered and frozen; the
+sink identity as a standing check; and the quadrature kind of the
+grid. Each has its demonstration in the table of
+`application/README.md`, and every demonstration holds its departure
+beside a floor derived from the arithmetic.
+
+Open, in the order the mathematics suggests:
+
+- the six consequences of section 7, and with them the three design
+  demonstrations - grid design is built, coefficient design is not;
+- several unknowns and algebraic constraints: the state as a vector,
+  the layout instant x unknown x degree, which is what the
+  differential-algebraic application requires;
+- the spatial derivative as a vertex of the rule's own graph, its
+  linear part compiled to the stencil;
+- the probabilistic axis exercised: the same functional integrated by
+  collocation on the quadrature kind and by the Taylor expansion in
+  the design, the two discretisations of one coordinate compared on
+  one problem.

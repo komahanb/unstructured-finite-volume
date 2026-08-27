@@ -17,9 +17,8 @@ program jacobian_shape
   use gti_expansion         , only : family_holder, expansion
   use gti_driver            , only : cosine, dense_jacobian
   use gti_march             , only : partition
-  use gti_chain             , only : one_functional
   use gti_chain             , only : chain_block, march_chain, &
-       & chain_system, chain_systems
+       & chain_stamps
 
   implicit none
 
@@ -46,7 +45,7 @@ contains
     type(family_holder), allocatable :: schemes(:)
     type(chain_block) , allocatable :: chain(:)
     type(expansion), allocatable, target :: tower
-    type(chain_system), allocatable :: systems(:)
+    integer, allocatable :: marks(:)
     integer , allocatable :: added(:)
     real(dp), allocatable :: held(:), dt(:), t(:), a(:,:)
     real(dp) :: achieved, duration, design
@@ -65,7 +64,7 @@ contains
 
     call march_chain(schemes, added, van_der_pol(degrees - 1), degrees, &
          & uniform_grid(duration), design, held, chain, tower, dt, t, achieved)
-    call chain_systems(chain, tower, [one_functional(van_der_pol_energy(degrees - 1))], degrees, systems)
+    call chain_stamps(chain, tower, [van_der_pol_energy(degrees - 1)], degrees, marks)
 
     call dense_jacobian(chain, design, a)
     call reported(label, a, degrees, instants)

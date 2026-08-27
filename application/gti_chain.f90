@@ -80,9 +80,9 @@ module gti_chain
 
   private
   public :: chain_block, march_chain, chain_expansion, instant_components
-  public :: functional_holder, one_functional, first_of, chain_derivative, asymmetry
-  public :: multiset_count, multiset_rank, multiset_of, derivative_table, num_designs_of
-  public :: chain_system, chain_systems
+  public :: first_of, chain_derivative, asymmetry
+  public :: multiset_count, multiset_rank, multiset_of, num_designs_of
+  public :: chain_stamps
   public :: expansion_substitutions
   public :: sink_costates
 
@@ -132,48 +132,6 @@ module gti_chain
   end type chain_block
 
   !===================================================================!
-  ! One functional, held so that several can be handed over at once.
-  !===================================================================!
-
-  type :: functional_holder
-     type(expression) :: rule
-  end type functional_holder
-
-  !===================================================================!
-  ! The stamp of one block's tangent at the frozen state. Every order,
-  ! by either route, solves against that one tangent, and a direct
-  ! solver factorises the tangent once.
-  !===================================================================!
-
-  type :: chain_system
-     integer :: mark = 0
-  end type chain_system
-
-  !===================================================================!
-  ! One order's table: one column per multiset of designs of that
-  ! order's size.
-  !===================================================================!
-
-  type :: derivative_table
-     real(dp), allocatable :: t(:,:)
-  end type derivative_table
-
-  !===================================================================!
-  ! The tangents of every multiset of designs of one size, v(unknown,
-  ! block, rank); the costates of every functional for the same,
-  ! v(unknown, block, functional, rank); the steps' total derivatives
-  ! along every multiset of one size, u(instant, rank).
-  !===================================================================!
-
-  type :: sized_tangents
-     real(dp), allocatable :: v(:,:,:)
-  end type sized_tangents
-
-  type :: sized_costates
-     real(dp), allocatable :: v(:,:,:,:)
-  end type sized_costates
-
-  !===================================================================!
   ! THE COSTATE OF A SINK. An unknown read by no row but its own is a
   ! sink of the block's reads graph: its column of the jacobian holds
   ! the diagonal alone, so the costate equation J^T lambda = g gives
@@ -205,16 +163,6 @@ module gti_chain
      ! max |lambda_i| over the sinks the functional does not read
      real(dp) :: unread    = 0.0_dp
   end type sink_costates
-
-  ! one block's sinks and the diagonal of its jacobian on them
-  type :: block_sinks
-     logical , allocatable :: is_sink(:)
-     real(dp), allocatable :: diagonal(:)
-  end type block_sinks
-
-  type :: sized_steps
-     real(dp), allocatable :: u(:,:)
-  end type sized_steps
 
 contains
 
@@ -543,22 +491,21 @@ contains
 
     type(chain_block)      , intent(in) :: chain(:)
     type(expansion)        , intent(in) :: tower
-    type(functional_holder), intent(in) :: functionals(:)
+    type(expression)       , intent(in) :: functionals(:)
     integer                , intent(in) :: degrees, max_order
     real(dp), allocatable  , intent(out) :: f(:,:)
     real(dp), intent(in), optional      :: node_measure(:)
 
-    type(chain_system)    , allocatable :: systems(:)
-    type(derivative_table), allocatable :: by_order(:)
-    real(dp), allocatable :: table(:,:)
+    integer , allocatable :: marks(:)
+    real(dp), allocatable :: by_order(:,:,:), table(:,:)
     integer :: m
 
-    call chain_systems(chain, tower, functionals, degrees, systems)
-    call chain_derivative(chain, tower, systems, functionals, degrees, max_order, forward_route, &
+    call chain_stamps(chain, tower, functionals, degrees, marks)
+    call chain_derivative(chain, tower, marks, functionals, degrees, max_order, forward_route, &
          & table, node_measure, designs=1, by_order=by_order)
     allocate(f(0:max_order, size(functionals)))
     do m = 0, max_order
-       f(m, :) = by_order(m) % t(:, 1)
+       f(m, :) = by_order(:, 1, m)
     end do
 
   end subroutine chain_expansion
@@ -586,24 +533,24 @@ contains
   ! Every block's tangent stamped at the trajectory already marched.
   !===================================================================!
 
-  subroutine chain_systems(chain, tower, functionals, degrees, systems, node_measure)
+  subroutine chain_stamps(chain, tower, functionals, degrees, marks, node_measure)
 
-    type(chain_block)      , intent(in) :: chain(:)
-    type(expansion)        , intent(in) :: tower
-    type(functional_holder), intent(in) :: functionals(:)
-    integer                , intent(in) :: degrees
-    type(chain_system), allocatable, intent(out) :: systems(:)
-    real(dp), intent(in), optional      :: node_measure(:)
+    type(chain_block), intent(in) :: chain(:)
+    type(expansion)  , intent(in) :: tower
+    type(expression) , intent(in) :: functionals(:)
+    integer          , intent(in) :: degrees
+    integer, allocatable, intent(out) :: marks(:)
+    real(dp), intent(in), optional :: node_measure(:)
 
     integer :: b
 
     associate (u1 => tower, u2 => functionals, u3 => degrees, u4 => node_measure); end associate
-    allocate(systems(size(chain)))
+    allocate(marks(size(chain)))
     do b = 1, size(chain)
-       systems(b) % mark = fresh_stamp()
+       marks(b) = fresh_stamp()
     end do
 
-  end subroutine chain_systems
+  end subroutine chain_stamps
 
   !===================================================================!
   ! The designs a chain's derivatives run over: the physics' parameter
@@ -649,18 +596,9 @@ contains
 
 
   !===================================================================!
-  ! One functional, held; and the first entry of a table of
-  ! derivatives, for a caller with one functional and one design.
+  ! The first entry of a table of derivatives, for a caller with one
+  ! functional and one design.
   !===================================================================!
-
-  function one_functional(rule) result(holder)
-
-    type(expression)      , intent(in) :: rule
-    type(functional_holder) :: holder
-
-    holder % rule = rule
-
-  end function one_functional
 
   pure real(dp) function first_of(table)
 
@@ -771,13 +709,13 @@ contains
   ! first design is not the parameter.
   !===================================================================!
 
-  subroutine chain_derivative(chain, tower, systems, functionals, degrees, order, route, &
+  subroutine chain_derivative(chain, tower, marks, functionals, degrees, order, route, &
        & table, node_measure, entries, designs, by_order, sinks)
 
-    type(chain_block)      , intent(in) :: chain(:)
-    type(expansion)        , intent(in) :: tower
-    type(chain_system)     , intent(in) :: systems(:)
-    type(functional_holder), intent(in) :: functionals(:)
+    type(chain_block), intent(in) :: chain(:)
+    type(expansion)  , intent(in) :: tower
+    integer          , intent(in) :: marks(:)
+    type(expression) , intent(in) :: functionals(:)
     integer                , intent(in) :: degrees, order, route
     ! one column per multiset of designs of the order's size, in the
     ! lexicographic order multiset_of names
@@ -794,15 +732,14 @@ contains
     ! given, every order's table up to the order: the ones below by
     ! the forward route from the tangents in hand, the order asked for
     ! by the route given
-    type(derivative_table), allocatable, intent(out), optional :: by_order(:)
+    real(dp), allocatable, intent(out), optional :: by_order(:,:,:)
     ! given, the costates of the sinks checked over every solve; the
     ! forward route makes no costate and is refused
     type(sink_costates), intent(out), optional :: sinks
 
-    type(sized_tangents), allocatable :: w(:)
-    type(sized_costates), allocatable :: lambda(:)
-    type(block_sinks)   , allocatable :: sink(:)
-    type(sized_steps)   , allocatable :: u(:)
+    real(dp), allocatable :: w(:,:,:,:), lambda(:,:,:,:,:), u(:,:,:)
+    logical , allocatable :: is_sink(:,:)
+    real(dp), allocatable :: diagonal(:,:)
     type(stored_directed_graph) :: unknowns
     type(stored_field), allocatable :: inputs(:)
     real(dp), allocatable :: step_partials(:,:), rhs(:,:), one(:), r(:), every(:,:,:)
@@ -837,17 +774,19 @@ contains
     if (route == reverse_route) top = max(order - 1, 0)
 
     call steps_along(tower, nd, max(order, 1), u)
-    if (present(by_order)) allocate(by_order(0:order))
+    if (present(by_order)) then
+       allocate(by_order(nf, multiset_count(nd, order), 0:order), source=0.0_dp)
+    end if
 
     ! THE TANGENTS of every multiset up to the top size, in increasing
     ! size, each block given what an earlier block found at the
     ! instants the block carries
-    allocate(w(top), rhs(widest, nb))
+    allocate(w(widest, nb, multiset_count(nd, max(top, 1)), max(top, 1)), source=0.0_dp)
+    allocate(rhs(widest, nb))
     if (present(by_order)) call functional_tables(0)
     do k = 1, top
        call tally_order(k)
        call tally_enter(at_horizon)
-       allocate(w(k) % v(widest, nb, multiset_count(nd, k)), source=0.0_dp)
        do rank = 1, multiset_count(nd, k)
           s = multiset_of(rank, k, nd)
           do b = 1, nb
@@ -859,11 +798,11 @@ contains
                 instant = chain(b) % first + ((i - 1) / chain(b) % width) * chain(b) % stride
                 d       = mod(i - 1, chain(b) % width)
                 call holder_of(chain(1:b - 1), instant, held_by, at)
-                if (held_by > 0) r(i) = w(k) % v(at + d + 1, held_by, rank)
+                if (held_by > 0) r(i) = w(at + d + 1, held_by, rank, k)
              end do
              call frozen_at(chain(b), design, unknowns, inputs)
-             call solved_linear(chain(b) % rows, unknowns, inputs, r, .false., systems(b) % mark, one)
-             w(k) % v(1:count, b, rank) = one
+             call solved_linear(chain(b) % rows, unknowns, inputs, r, .false., marks(b), one)
+             w(1:count, b, rank, k) = one
              call tally_leave()
           end do
        end do
@@ -876,7 +815,7 @@ contains
        if (present(sinks)) then
           error stop 'gti_chain: the sinks are checked on the reverse route'
        end if
-       if (present(by_order)) by_order(order) % t = table
+       if (present(by_order)) by_order(:, :, order) = table
        call tally_order(0)
        return
     end if
@@ -885,27 +824,27 @@ contains
        allocate(sinks % carried(0:degrees - 1), source=0)
        allocate(sinks % last(0:degrees - 1), source=0)
        allocate(sinks % interior(0:degrees - 1), source=0)
-       allocate(sink(nb))
+       allocate(is_sink(widest, nb), source=.false.)
+       allocate(diagonal(widest, nb), source=0.0_dp)
        do b = 1, nb
-          call sinks_of(chain(b), degrees, design, sink(b), sinks)
+          call sinks_of(chain(b), degrees, design, is_sink(:, b), diagonal(:, b), sinks)
        end do
     end if
 
     ! THE COSTATES of every functional and multiset up to the size
     ! below the order, the empty multiset's the costate of order one,
     ! each handed back along the chain
-    allocate(lambda(0:top))
+    allocate(lambda(widest, nb, nf, multiset_count(nd, max(top, 1)), 0:top), source=0.0_dp)
     do k = 0, top
        call tally_order(k + 1)
        call tally_enter(at_horizon)
-       allocate(lambda(k) % v(widest, nb, nf, multiset_count(nd, k)), source=0.0_dp)
        do rank = 1, multiset_count(nd, k)
           s = multiset_of(rank, k, nd)
           do i = 1, nf
              rhs = 0.0_dp
              do b = 1, nb
                 count = chain(b) % rows % num_unknowns()
-                call costate_rows(chain, b, physics, functionals(i) % rule, degrees, design, s, &
+                call costate_rows(chain, b, physics, functionals(i), degrees, design, s, &
                      & w, lambda, u, nd, i, node_measure, r)
                 rhs(1:count, b) = r
              end do
@@ -914,9 +853,12 @@ contains
                 count = chain(b) % rows % num_unknowns()
                 call frozen_at(chain(b), design, unknowns, inputs)
                 call solved_linear(chain(b) % rows, unknowns, inputs, rhs(1:count, b), .true., &
-                     & systems(b) % mark, one)
-                lambda(k) % v(1:count, b, i, rank) = one
-                if (present(sinks)) call sink_departure(sink(b), rhs(1:count, b), one, sinks)
+                     & marks(b), one)
+                lambda(1:count, b, i, rank, k) = one
+                if (present(sinks)) then
+                   call sink_departure(is_sink(1:count, b), diagonal(1:count, b), &
+                        & rhs(1:count, b), one, sinks)
+                end if
                 call tally_leave()
                 do p = 1, chain(b) % given * chain(b) % width
                    instant = chain(b) % first + ((p - 1) / chain(b) % width) * chain(b) % stride
@@ -941,7 +883,7 @@ contains
           do b = 1, nb
              do i = 1, nf
                 every(i, j, rank) = every(i, j, rank) + entry_of(chain, b, physics, &
-                     & functionals(i) % rule, degrees, design, s, j, w, lambda, u, nd, i, node_measure)
+                     & functionals(i), degrees, design, s, j, w, lambda, u, nd, i, node_measure)
              end do
           end do
        end do
@@ -952,7 +894,7 @@ contains
        table(:, rank) = every(:, s(order), multiset_rank(s(1:order - 1), nd))
     end do
     if (present(entries)) entries = every
-    if (present(by_order)) by_order(order) % t = table
+    if (present(by_order)) by_order(:, :, order) = table
 
   contains
 
@@ -972,7 +914,7 @@ contains
          s = multiset_of(rank, size_of, nd)
          do b = 1, nb
             do i = 1, nf
-               t(i, rank) = t(i, rank) + functional_along(chain, b, functionals(i) % rule, &
+               t(i, rank) = t(i, rank) + functional_along(chain, b, functionals(i), &
                     & degrees, design, s, 0, w, u, nd, node_measure)
             end do
          end do
@@ -980,7 +922,7 @@ contains
       if (size_of == order) then
          table = t
       else
-         by_order(size_of) % t = t
+         by_order(:, 1:size(t, 2), size_of) = t
       end if
 
     end subroutine functional_tables
@@ -997,7 +939,7 @@ contains
 
     type(expansion), intent(in) :: tower
     integer        , intent(in) :: nd, max_size
-    type(sized_steps), allocatable, intent(out) :: u(:)
+    real(dp), allocatable, intent(out) :: u(:,:,:)
 
     real(dp), allocatable :: column(:)
     integer , allocatable :: s(:)
@@ -1008,15 +950,14 @@ contains
        call tower % step_partial_along([1], column)
        n = size(column)
     end if
-    allocate(u(max_size))
+    allocate(u(n, multiset_count(nd, max_size), max_size), source=0.0_dp)
     do k = 1, max_size
-       allocate(u(k) % u(n, multiset_count(nd, k)), source=0.0_dp)
        if (nd == 1) cycle
        do rank = 1, multiset_count(nd, k)
           s = multiset_of(rank, k, nd)
           if (any(s == 1)) cycle
           call tower % step_partial_along(s - 1, column)
-          u(k) % u(:, rank) = column
+          u(:, rank, k) = column
        end do
     end do
 
@@ -1038,8 +979,7 @@ contains
     type(chain_block)   , intent(in) :: chain(:)
     integer             , intent(in) :: b, s(:), open, nd
     logical             , intent(in) :: with_full
-    type(sized_tangents), intent(in) :: w(:)
-    type(sized_steps)   , intent(in) :: u(:)
+    real(dp)            , intent(in) :: w(:,:,:,:), u(:,:,:)
     real(dp), allocatable, intent(out) :: state_seed(:,:), step_seed(:,:), nu_seed(:)
 
     integer, allocatable :: designs(:), t(:)
@@ -1065,14 +1005,14 @@ contains
        if (size_of == 1 .and. t(1) == 1) nu_seed(mask) = 1.0_dp
        if (.not. any(t == 1)) then
           rank = multiset_rank(t, nd)
-          step_seed(:, mask) = along_of(chain(b), u(size_of) % u(:, rank))
+          step_seed(:, mask) = along_of(chain(b), u(:, rank, size_of))
        end if
        if (open > 0 .and. btest(mask, n - 1)) then
           state_seed(:, mask) = 0.0_dp
        else if (mask == full .and. .not. with_full) then
           state_seed(:, mask) = 0.0_dp
        else
-          state_seed(:, mask) = w(size_of) % v(1:count, b, multiset_rank(t, nd))
+          state_seed(:, mask) = w(1:count, b, multiset_rank(t, nd), size_of)
        end if
     end do
 
@@ -1221,8 +1161,7 @@ contains
     type(expression)    , intent(in) :: physics
     integer             , intent(in) :: degrees, s(:), nd
     real(dp)            , intent(in) :: design
-    type(sized_tangents), intent(in) :: w(:)
-    type(sized_steps)   , intent(in) :: u(:)
+    real(dp), intent(in) :: w(:,:,:,:), u(:,:,:)
     real(dp), allocatable, intent(out) :: r(:)
 
     real(dp), allocatable :: state_seed(:,:), step_seed(:,:), nu_seed(:), tw(:,:)
@@ -1275,7 +1214,7 @@ contains
 
     type(chain_block)   , intent(in) :: chain(:)
     integer             , intent(in) :: b, s(:), nd, i
-    type(sized_costates), intent(in) :: lambda(0:)
+    real(dp)            , intent(in) :: lambda(:,:,:,:,0:)
     real(dp), allocatable, intent(out) :: lam(:,:)
 
     integer, allocatable :: t(:)
@@ -1287,7 +1226,7 @@ contains
     allocate(lam(count, 0:full))
     do mask = 0, full
        t = pack(s, [(btest(mask, k - 1), k = 1, n)])
-       lam(:, mask) = lambda(size(t)) % v(1:count, b, i, multiset_rank(t, nd))
+       lam(:, mask) = lambda(1:count, b, i, multiset_rank(t, nd), size(t))
     end do
 
   end subroutine costates_at
@@ -1300,12 +1239,13 @@ contains
   ! its tangent stops the program.
   !===================================================================!
 
-  subroutine sinks_of(b, degrees, design, sink, sinks)
+  subroutine sinks_of(b, degrees, design, is_sink, diagonal, sinks)
 
     type(chain_block)  , intent(in)    :: b
     integer            , intent(in)    :: degrees
     real(dp)           , intent(in)    :: design
-    type(block_sinks)  , intent(out)   :: sink
+    logical            , intent(out)   :: is_sink(:)
+    real(dp)           , intent(out)   :: diagonal(:)
     type(sink_costates), intent(inout) :: sinks
 
     type(stored_directed_graph) :: unknowns
@@ -1325,19 +1265,20 @@ contains
     n = b % rows % num_unknowns()
     allocate(reads(n), source=0)
     allocate(has_diagonal(n), source=.false.)
-    allocate(sink % diagonal(n), source=0.0_dp)
+    is_sink  = .false.
+    diagonal = 0.0_dp
     do e = 1, size(r)
        reads(c(e)) = reads(c(e)) + 1
        if (r(e) == c(e)) then
-          has_diagonal(c(e))  = .true.
-          sink % diagonal(c(e)) = w(e)
+          has_diagonal(c(e)) = .true.
+          diagonal(c(e))     = w(e)
        end if
     end do
-    sink % is_sink = reads == 1 .and. has_diagonal
+    is_sink(1:n) = reads == 1 .and. has_diagonal
 
     carried = is_carried(b)
     do p = 1, n
-       if (.not. sink % is_sink(p)) cycle
+       if (.not. is_sink(p)) cycle
        d = mod(p - 1, degrees)
        if (carried(p)) then
           sinks % carried(d) = sinks % carried(d) + 1
@@ -1355,10 +1296,10 @@ contains
   ! costate solve with right side g, the departure accumulated.
   !===================================================================!
 
-  subroutine sink_departure(sink, g, lambda, sinks)
+  subroutine sink_departure(is_sink, diagonal, g, lambda, sinks)
 
-    type(block_sinks)  , intent(in)    :: sink
-    real(dp)           , intent(in)    :: g(:), lambda(:)
+    logical            , intent(in)    :: is_sink(:)
+    real(dp)           , intent(in)    :: diagonal(:), g(:), lambda(:)
     type(sink_costates), intent(inout) :: sinks
 
     integer :: p
@@ -1366,8 +1307,8 @@ contains
     sinks % gradient = max(sinks % gradient, maxval(abs(g)))
     sinks % costate  = max(sinks % costate , maxval(abs(lambda)))
     do p = 1, size(g)
-       if (.not. sink % is_sink(p)) cycle
-       sinks % departure = max(sinks % departure, abs(sink % diagonal(p) * lambda(p) - g(p)))
+       if (.not. is_sink(p)) cycle
+       sinks % departure = max(sinks % departure, abs(diagonal(p) * lambda(p) - g(p)))
        if (g(p) == 0.0_dp) sinks % unread = max(sinks % unread, abs(lambda(p)))
     end do
 
@@ -1388,9 +1329,7 @@ contains
     integer             , intent(in) :: b, degrees, s(:), nd, i
     type(expression)    , intent(in) :: physics, rule
     real(dp)            , intent(in) :: design
-    type(sized_tangents), intent(in) :: w(:)
-    type(sized_costates), intent(in) :: lambda(0:)
-    type(sized_steps)   , intent(in) :: u(:)
+    real(dp), intent(in) :: w(:,:,:,:), lambda(:,:,:,:,0:), u(:,:,:)
     real(dp), intent(in), optional   :: node_measure(:)
     real(dp), allocatable, intent(out) :: g(:)
 
@@ -1462,9 +1401,7 @@ contains
     integer             , intent(in) :: b, degrees, s(:), j, nd, i
     type(expression)    , intent(in) :: physics, rule
     real(dp)            , intent(in) :: design
-    type(sized_tangents), intent(in) :: w(:)
-    type(sized_costates), intent(in) :: lambda(0:)
-    type(sized_steps)   , intent(in) :: u(:)
+    real(dp), intent(in) :: w(:,:,:,:), lambda(:,:,:,:,0:), u(:,:,:)
     real(dp), intent(in), optional   :: node_measure(:)
 
     type(derivative_terms) :: t
@@ -1535,8 +1472,7 @@ contains
     integer             , intent(in) :: b, degrees, s(:), open, nd
     type(expression)    , intent(in) :: rule
     real(dp)            , intent(in) :: design
-    type(sized_tangents), intent(in) :: w(:)
-    type(sized_steps)   , intent(in) :: u(:)
+    real(dp), intent(in) :: w(:,:,:,:), u(:,:,:)
     real(dp), intent(in), optional   :: node_measure(:)
 
     type(derivative_terms) :: t

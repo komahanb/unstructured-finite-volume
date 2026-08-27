@@ -20,7 +20,7 @@ program expansion_check
   use gti_expansion        , only : expansion, family_holder
   use operation_grid       , only : uniform_grid
   use operation_family_dirk, only : crouzeix_two_stage
-  use gti_chain            , only : chain_block, march_chain, chain_expansion, one_functional
+  use gti_chain            , only : chain_block, march_chain, chain_expansion
 
   implicit none
 
@@ -77,7 +77,7 @@ contains
     ! recursion over the one design
     call march_chain(holder, [instants], van_der_pol(state_degree), degrees, uniform_grid(duration), &
          & design_value, held, chain, tower, dt, t, achieved)
-    call chain_expansion(chain, tower, [one_functional(van_der_pol_energy(state_degree))], degrees, &
+    call chain_expansion(chain, tower, [van_der_pol_energy(state_degree)], degrees, &
          & max_order, table)
     allocate(f(0:max_order))
     f(0:) = table(:, 1)

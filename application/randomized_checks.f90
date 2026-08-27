@@ -44,15 +44,16 @@ program randomized_checks
   use operation_family_adams, only : adams_family
   use operation_family_dirk , only : crouzeix_two_stage
   use operation_grid        , only : uniform_grid, random_grid
+  use operation_expression  , only : expression
   use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
   use gti_expansion         , only : family_holder, expansion
   use gti_driver            , only : cosine
   use gti_block             , only : block_residual
   use gti_march             , only : partition
-  use gti_chain             , only : one_functional, first_of, functional_holder
+  use gti_chain             , only : first_of
   use gti_sweeps            , only : forward_route, reverse_route
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
-       & chain_system, chain_systems, chain_derivative
+       & chain_stamps, chain_derivative
 
   implicit none
 
@@ -141,8 +142,8 @@ contains
 
     type(chain_block) , allocatable :: chain(:)
     type(expansion), allocatable, target :: tower
-    type(chain_system), allocatable :: systems(:)
-    type(functional_holder) :: energy(1)
+    integer, allocatable :: marks(:)
+    type(expression)       :: energy(1)
     real(dp), allocatable :: held(:), dt(:), t(:), table(:,:)
     real(dp) :: achieved
 
@@ -151,11 +152,11 @@ contains
     call march_chain(schemes, added, van_der_pol(degrees - 1), degrees, &
          & uniform_grid(duration), design, held, chain, tower, dt, t, achieved)
 
-    energy(1) = one_functional(van_der_pol_energy(degrees - 1))
-    call chain_systems(chain, tower, energy, degrees, systems)
-    call chain_derivative(chain, tower, systems, energy, degrees, 1, forward_route, table)
+    energy(1) = van_der_pol_energy(degrees - 1)
+    call chain_stamps(chain, tower, energy, degrees, marks)
+    call chain_derivative(chain, tower, marks, energy, degrees, 1, forward_route, table)
     tangent = first_of(table)
-    call chain_derivative(chain, tower, systems, energy, degrees, 1, reverse_route, table)
+    call chain_derivative(chain, tower, marks, energy, degrees, 1, reverse_route, table)
     adjoint = first_of(table)
 
   end subroutine directions_of
@@ -463,7 +464,7 @@ contains
     call march_chain(schemes, added, van_der_pol(degrees - 1), degrees, &
          & uniform_grid(duration), design, held, chain, tower, dt, t, achieved)
 
-    call chain_expansion(chain, tower, [one_functional(van_der_pol_energy(degrees - 1))], degrees, max_order, table)
+    call chain_expansion(chain, tower, [van_der_pol_energy(degrees - 1)], degrees, max_order, table)
     allocate(f(lbound(table, 1):ubound(table, 1)))
     f = table(:, 1)
 

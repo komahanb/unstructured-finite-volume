@@ -63,6 +63,7 @@ program graph_time_integrator
   use operation_family_bdf  , only : bdf_family
   use operation_family_adams, only : adams_family
   use operation_grid        , only : uniform_grid, random_grid, designed_grid, fixed_grid
+  use operation_expression  , only : expression
   use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
   use operation_grid        , only : grid
   use gti_march             , only : set_stopping, imbalance, set_sweep, weight_of, precision_needed
@@ -76,8 +77,8 @@ program graph_time_integrator
   use iso_fortran_env       , only : real128
   use gti_expansion         , only : family_holder, expansion
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
-       & expansion_substitutions, chain_system, chain_systems, num_designs_of, &
-       & instant_components, functional_holder, chain_derivative, asymmetry, sink_costates
+       & expansion_substitutions, chain_stamps, num_designs_of, &
+       & instant_components, chain_derivative, asymmetry, sink_costates
   use gti_sweeps            , only : set_linear_solver, set_assembly, set_storage, set_multigrid, &
        & set_coarse_nodes, set_linear_budget
   use gti_sweeps            , only : route_of, forward_route, reverse_route
@@ -110,7 +111,7 @@ program graph_time_integrator
 
   ! THE FUNCTIONALS the configuration names, and whether the grid's
   ! step weights are designs beside the physics' parameter
-  type(functional_holder), allocatable :: functionals(:)
+  type(expression)      , allocatable :: functionals(:)
   logical :: grid_designed = .false.
   ! the adaptive grid, discovered once and frozen: not a design
   logical :: grid_adaptive = .false.
@@ -444,7 +445,7 @@ contains
     ! every functional after the first, under the row, expanded from
     ! the same state series
     do i = 2, size(functionals)
-       line = '      ' // functionals(i) % rule % name()
+       line = '      ' // functionals(i) % name()
        line = line // repeat(' ', max(1, 36 - len(line)))
        do m = 0, ubound(f, 1)
           write(cell,'(es20.11)') f(m, i)
@@ -496,7 +497,7 @@ contains
     integer            , intent(in) :: nd
     real(dp)           , intent(in) :: dt(:), f(0:, :)
 
-    type(chain_system), allocatable :: systems(:)
+    integer, allocatable :: marks(:)
     real(dp), allocatable :: p(:), df(:,:), other(:,:), table(:,:), entries(:,:,:)
     type(sink_costates) :: sinks
     real(dp) :: euler
@@ -505,12 +506,12 @@ contains
     ! the designs are the tower's: the parameter, and the weights of
     ! the steps when the grid was designed
     num_functionals = size(functionals)
-    call chain_systems(chain, tower, functionals, nd, systems, node_measure=volume)
+    call chain_stamps(chain, tower, functionals, nd, marks, node_measure=volume)
     num_designs = num_designs_of(tower)
     if (grid_designed) p = dt(2:cfg % instants)
 
     route = route_of(num_designs, num_functionals, 1)
-    call chain_derivative(chain, tower, systems, functionals, nd, 1, route, df, node_measure=volume)
+    call chain_derivative(chain, tower, marks, functionals, nd, 1, route, df, node_measure=volume)
 
     write(*,'(a,a,a,i0,a,i0,a,es10.2)') '      first derivatives by the ', &
          & trim(merge('forward', 'reverse', route == forward_route)), ' route, designs ', &
@@ -525,7 +526,7 @@ contains
        end do
     end if
     if (lists(cfg % check, 'routes')) then
-       call chain_derivative(chain, tower, systems, functionals, nd, 1, &
+       call chain_derivative(chain, tower, marks, functionals, nd, 1, &
             & merge(reverse_route, forward_route, route == forward_route), other, node_measure=volume)
        write(*,'(a,es10.2)') '      tangent against adjoint over the table, relative ', &
             & maxval(abs(df - other)) / max(1.0_dp, maxval(abs(df)))
@@ -536,7 +537,7 @@ contains
     ! read it either - in theory the highest degree at the arriving
     ! instants of a stage block, and no unknown of a multistep block
     if (lists(cfg % check, 'sinks')) then
-       call chain_derivative(chain, tower, systems, functionals, nd, 1, reverse_route, other, &
+       call chain_derivative(chain, tower, marks, functionals, nd, 1, reverse_route, other, &
             & node_measure=volume, sinks=sinks)
        call shown_sinks(sinks, nd)
     end if
@@ -549,7 +550,7 @@ contains
     if (grid_designed) then
        do order = 2, ubound(f, 1)
           route = route_of(num_designs, num_functionals, order)
-          call chain_derivative(chain, tower, systems, functionals, nd, order, route, table, &
+          call chain_derivative(chain, tower, marks, functionals, nd, order, route, table, &
                & node_measure=volume, entries=entries)
           do i = 1, num_functionals
              if (route == reverse_route) then

@@ -21,8 +21,9 @@ module gti_driver
   use operation_family_bdf  , only : bdf_family
   use operation_family_adams, only : adams_family
   use operation_family_dirk , only : implicit_midpoint, crouzeix_two_stage, crouzeix_three_stage
+  use operation_expression  , only : expression
   use physics_vanderpol     , only : van_der_pol_energy, van_der_pol_dissipation
-  use gti_chain             , only : chain_block, functional_holder, one_functional
+  use gti_chain             , only : chain_block
 
   implicit none
 
@@ -188,19 +189,19 @@ contains
   ! name nothing is built for is reported rather than refused.
   !-------------------------------------------------------------------!
 
-  subroutine functional_named(name, degree, holder, ok)
+  subroutine functional_named(name, degree, rule, ok)
 
-    character(len=*)       , intent(in)  :: name
-    integer                , intent(in)  :: degree
-    type(functional_holder), intent(out) :: holder
-    logical                , intent(out) :: ok
+    character(len=*), intent(in)  :: name
+    integer         , intent(in)  :: degree
+    type(expression), intent(out) :: rule
+    logical         , intent(out) :: ok
 
     ok = .true.
     select case (name)
     case ('energy')
-       holder = one_functional(van_der_pol_energy(degree))
+       rule = van_der_pol_energy(degree)
     case ('dissipation')
-       holder = one_functional(van_der_pol_dissipation(degree))
+       rule = van_der_pol_dissipation(degree)
     case default
        ok = .false.
     end select

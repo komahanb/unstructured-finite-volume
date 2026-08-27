@@ -25,7 +25,6 @@ program chained_horizon
   use gti_expansion         , only : family_holder, expansion
   use gti_march             , only : partition
   use gti_driver            , only : initial_at => cosine
-  use gti_chain             , only : one_functional
   use gti_chain             , only : chain_block, march_chain, chain_expansion
 
   implicit none
@@ -95,7 +94,7 @@ contains
     call march_chain(schemes, added, van_der_pol(state_degree), degrees, &
          & uniform_grid(duration), design, held, chain, tower, dt, t, achieved)
 
-    call chain_expansion(chain, tower, [one_functional(van_der_pol_energy(state_degree))], degrees, max_order, table)
+    call chain_expansion(chain, tower, [van_der_pol_energy(state_degree)], degrees, max_order, table)
     allocate(f(lbound(table, 1):ubound(table, 1)))
     f = table(:, 1)
 

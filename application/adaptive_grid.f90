@@ -45,8 +45,9 @@ program adaptive_grid
   use gti_march            , only : consistent_state
   use gti_adaptive         , only : adaptive_partition
   use gti_chain            , only : chain_block, march_chain, chain_expansion, &
-       & chain_derivative, chain_system, chain_systems, functional_holder, one_functional
+       & chain_derivative, chain_stamps
   use gti_sweeps           , only : forward_route, reverse_route
+  use operation_expression  , only : expression
   use physics_vanderpol    , only : van_der_pol, van_der_pol_energy
 
   implicit none
@@ -89,9 +90,9 @@ contains
     real(dp)     , intent(out) :: f, forward, reverse
 
     type(family_holder)     :: schemes(1)
-    type(functional_holder) :: functionals(1)
+    type(expression)       :: functionals(1)
     type(chain_block), allocatable :: chain(:)
-    type(chain_system), allocatable :: systems(:)
+    integer, allocatable :: marks(:)
     type(expansion), allocatable :: tower
     real(dp), allocatable :: grid_dt(:), t(:), fvals(:,:), df(:,:), other(:,:)
     real(dp) :: achieved
@@ -99,7 +100,7 @@ contains
 
     n = size(dt) + 1
     allocate(schemes(1) % scheme, source=scheme)
-    functionals(1) = one_functional(van_der_pol_energy(degrees - 1))
+    functionals(1) = van_der_pol_energy(degrees - 1)
 
     call march_chain(schemes, [n - 1], van_der_pol(degrees - 1), degrees, &
          & designed_grid(duration), design, &
@@ -109,9 +110,9 @@ contains
     call chain_expansion(chain, tower, functionals, degrees, 1, fvals)
     f = fvals(0, 1)
 
-    call chain_systems(chain, tower, functionals, degrees, systems)
-    call chain_derivative(chain, tower, systems, functionals, degrees, 1, forward_route, df)
-    call chain_derivative(chain, tower, systems, functionals, degrees, 1, reverse_route, other)
+    call chain_stamps(chain, tower, functionals, degrees, marks)
+    call chain_derivative(chain, tower, marks, functionals, degrees, 1, forward_route, df)
+    call chain_derivative(chain, tower, marks, functionals, degrees, 1, reverse_route, other)
     forward = df(1, 1)
     reverse = other(1, 1)
 

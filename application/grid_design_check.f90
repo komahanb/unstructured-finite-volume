@@ -35,11 +35,12 @@ program grid_design_check
   use operation_family_adams, only : adams_family
   use operation_grid        , only : designed_grid
   use operation_minimization, only : relative, by_rate
+  use operation_expression  , only : expression
   use physics_vanderpol     , only : van_der_pol, van_der_pol_energy, van_der_pol_dissipation
   use gti_expansion         , only : family_holder, expansion
   use gti_march             , only : set_stopping, consistent_state, imbalance
-  use gti_chain             , only : chain_block, march_chain, chain_expansion, chain_system, &
-       & chain_systems, functional_holder, one_functional, &
+  use gti_chain             , only : chain_block, march_chain, chain_expansion, &
+       & chain_stamps, &
        & chain_derivative, asymmetry, multiset_count, multiset_rank, multiset_of
   use gti_sweeps            , only : route_of, forward_route, reverse_route
 
@@ -50,10 +51,10 @@ program grid_design_check
   real(dp), parameter :: duration = 4.0_dp, design = 0.8_dp
 
   type(family_holder)     :: schemes(2)
-  type(functional_holder) :: functionals(2)
+  type(expression)       :: functionals(2)
   type(chain_block) , allocatable :: chain(:)
   type(expansion), allocatable, target :: tower
-  type(chain_system), allocatable :: systems(:)
+  integer, allocatable :: marks(:)
   real(dp), allocatable :: p(:), dt(:), t(:), v(:,:), f(:,:), tangent(:,:), adjoint(:,:)
   real(dp), allocatable :: plus(:,:), minus(:,:), q0(:), table(:,:), entries(:,:,:)
   real(dp), allocatable :: below(:,:), above(:,:), by_class(:)
@@ -74,16 +75,16 @@ program grid_design_check
   ! uniform, so that no step is like another
   allocate(schemes(1) % scheme, source=bdf_family(3))
   allocate(schemes(2) % scheme, source=adams_family(3))
-  functionals(1) = one_functional(van_der_pol_energy(state_degree))
-  functionals(2) = one_functional(van_der_pol_dissipation(state_degree))
+  functionals(1) = van_der_pol_energy(state_degree)
+  functionals(2) = van_der_pol_dissipation(state_degree)
   p  = [(1.0_dp + 0.5_dp * sin(real(k, dp)), k = 1, instants - 1)]
   q0 = consistent_state(van_der_pol(state_degree), degrees, [1.0_dp, 0.0_dp], design)
 
   call marched(p, design, f)
   call tower % step_partials(v)
-  call chain_systems(chain, tower, functionals, degrees, systems)
-  call chain_derivative(chain, tower, systems, functionals, degrees, 1, forward_route, tangent)
-  call chain_derivative(chain, tower, systems, functionals, degrees, 1, reverse_route, adjoint)
+  call chain_stamps(chain, tower, functionals, degrees, marks)
+  call chain_derivative(chain, tower, marks, functionals, degrees, 1, forward_route, tangent)
+  call chain_derivative(chain, tower, marks, functionals, degrees, 1, reverse_route, adjoint)
   route   = route_of(size(tangent, 2), size(tangent, 1), 1)
 
   write(*,'(a,es9.2,a,es9.2,a,es9.2)') ' relative tolerance', tau, '   difference step', delta, &
@@ -124,8 +125,8 @@ program grid_design_check
   ! every order above one by the reverse route
   do order = 2, max_order
      call marched(p, design, f, order)
-     call chain_systems(chain, tower, functionals, degrees, systems)
-     call chain_derivative(chain, tower, systems, functionals, degrees, order, reverse_route, &
+     call chain_stamps(chain, tower, functionals, degrees, marks)
+     call chain_derivative(chain, tower, marks, functionals, degrees, order, reverse_route, &
           & table, entries=entries)
      write(*,'(a)') ' '
      write(*,'(a,i0,a,i0,a,i0,a,i0)') ' derivatives of order ', order, ' by the reverse route: ', &
@@ -189,8 +190,8 @@ contains
     real(dp), allocatable :: f(:,:)
 
     call marched(weights, nu, f)
-    call chain_systems(chain, tower, functionals, degrees, systems)
-    call chain_derivative(chain, tower, systems, functionals, degrees, order, reverse_route, t)
+    call chain_stamps(chain, tower, functionals, degrees, marks)
+    call chain_derivative(chain, tower, marks, functionals, degrees, order, reverse_route, t)
 
   end subroutine differenced_table
 

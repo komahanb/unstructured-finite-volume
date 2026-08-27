@@ -1,6 +1,6 @@
 What is being built
 
-Two files under maths/demo and a set of configuration files. physics_vanderpol.f90 supplies the residual integrand R and the functional integrand F with their state and design partials, for a Van der Pol system generalised to degree N as q^(N) − ν(1−q²)q^(N−1) + q = 0. graph_time_integrator.f90 assembles what src/ provides and prints one table, selected by --config=test_homogeneous and similar. Columns run f, df/dν, … to the configured derivative degree; rows are the homogeneous primitives, then ordered pairs, then ordered triples of BDF, ABM and DIRK, at one order or across orders as the configuration asks. No test suite is kept; a demonstration that runs is the check. Three further demonstrations follow: grid design, coefficient design, and the two together.
+One packed source under application and a set of configuration files. module_graph_time_integrator.f90 supplies the Van der Pol residual and functional integrands, assembles what src/ provides, and prints one table selected by --config=homogeneous and similar. Columns run f, df/dnu, ... to the configured derivative degree; rows are the homogeneous primitives, then ordered pairs, then ordered triples of BDF, ABM and DIRK, at one order or across orders as the configuration asks. No test suite is kept; a demonstration that runs is the check. Three further demonstrations follow: grid design, coefficient design, and the two together.
 
 Structure
 
@@ -384,4 +384,3 @@ graph TD
     R5 -->|B2| R5R["relations — spatial coupling, empty for an ODE"]
   end
 ```
-

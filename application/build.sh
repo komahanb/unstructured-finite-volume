@@ -1,10 +1,9 @@
 #!/bin/bash
-# build the gti modules and every driver in application/.
+# Build the packed graph-time-integrator application.
 #
-# src/ is built by ../build.sh into ../lib, which holds the .mod and .o
-# files this links against. the module compile order below is the
-# dependency order of the `use` statements; objects and .mod files go
-# to .build/ so the source directory holds only sources and binaries.
+# src/ is built by ../build.sh into ../lib, which holds the library modules
+# and objects this executable links against. The application layer is one
+# source file: modules first, main program last.
 set -e
 
 cd "$(dirname "$0")"
@@ -25,18 +24,9 @@ if [ "$PRECISION" = quad ]; then
 fi
 mkdir -p $OBJ $OUT
 
-MODULES="../physics/physics_vanderpol
-         gti_configuration gti_sweeps gti_expansion gti_block
-         gti_march gti_adaptive gti_space gti_field gti_chain gti_driver"
+SOURCE=module_graph_time_integrator.f90
+PROGRAM=graph_time_integrator
 
-for m in $MODULES; do
-   $F90 $FLAGS -I$LIB -J$OBJ -c $m.f90 -o $OBJ/$(basename $m).o
-done
+$F90 $FLAGS -I$LIB -J$OBJ -o $OUT/$PROGRAM $SOURCE $LIB/*.o
 
-DRIVERS=${*:-$(ls *.f90 | grep -v '^gti_' | sed 's/\.f90$//')}
-
-for d in $DRIVERS; do
-   $F90 $FLAGS -I$LIB -I$OBJ -J$OBJ -o $OUT/$d $d.f90 $OBJ/*.o $LIB/*.o
-done
-
-echo "built: $DRIVERS"
+echo "built: $PROGRAM"

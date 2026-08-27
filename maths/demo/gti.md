@@ -1,6 +1,6 @@
 What is being built
 
-One packed source under application and a set of configuration files. module_graph_time_integrator.f90 supplies the Van der Pol residual and functional integrands, assembles what src/ provides, and prints one table selected by --config=homogeneous and similar. Columns run f, df/dnu, ... to the configured derivative degree; rows are the homogeneous primitives, then ordered pairs, then ordered triples of BDF, ABM and DIRK, at one order or across orders as the configuration asks. No test suite is kept; a demonstration that runs is the check. Three further demonstrations follow: grid design, coefficient design, and the two together.
+One packed source under application and a set of configuration files. module_graph_time_integrator.f90 supplies the Van der Pol residual and functional integrands, assembles what src/ provides, and prints one table selected by --config=homogeneous and similar. Columns run f, df/dnu, ... to the configured derivative degree; rows are the homogeneous primitives, then ordered pairs, then ordered triples of BDF, ABM and DIRK, at one order or across orders as the configuration asks. The old standalone checks are modes of the same executable: ./graph_time_integrator --list-demos shows them, and ./graph_time_integrator --demo=scheme_weights runs one.
 
 Structure
 

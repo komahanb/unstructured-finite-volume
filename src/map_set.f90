@@ -39,7 +39,7 @@
 ! recognize it later. Then the map outlived its own key: with the
 ! binder's graph destroyed, every lookup scanned freed storage, and
 ! the native allocator answered CORRECTLY - 170 invalid reads under
-! valgrind, in row_of and so in all six questions and in bind itself.
+! valgrind, in every lookup and so in all six questions and in bind itself.
 ! An answer that is right because the page has not been reused yet is
 ! not an answer.
 !
@@ -65,7 +65,8 @@
 module map_set
 
   use graph_fractal          , only : graph
-  use token_identity         , only : token, index_of
+  use token_identity         , only : token
+  use map_token_rows         , only : identity_rows
   use map_set_representation, only : set_representation
 
   implicit none
@@ -74,17 +75,19 @@ module map_set
   public :: set_map
 
   !===================================================================!
-  ! One row: WHICH set - by value - and how its members are stored.
+  ! The extent of one set: how its members are stored. The extents run
+  ! parallel to the table's keys, and each carries its own kind of
+  ! representation.
   !===================================================================!
 
-  type :: set_pair
-     type(token)                             :: identity
-     class(set_representation), allocatable  :: extent
-  end type set_pair
+  type :: extent
+     class(set_representation), allocatable :: representation
+  end type extent
 
   type :: set_map
 
-     type(set_pair), allocatable, private :: rows(:)
+     type(identity_rows)       , private :: rows
+     type(extent), allocatable , private :: extents(:)
 
    contains
 
@@ -125,62 +128,42 @@ contains
   ! binding would leave two answers to one question.
   !===================================================================!
 
-  subroutine bind(this, element, extent)
+  subroutine bind(this, element, representation)
 
     class(set_map)           , intent(inout) :: this
     type(graph)              , intent(in)    :: element
-    class(set_representation), intent(in)    :: extent
+    class(set_representation), intent(in)    :: representation
 
-    type(set_pair), allocatable :: grown(:)
-    type(token)                :: key
-    integer                    :: n
+    type(extent), allocatable :: grown(:)
+    type(token) :: key
+    integer     :: n, at
 
-    ! An undeclared token does not match itself.
     key = element % id()
-    if (.not. key % matches(key)) then
+    if (.not. key % declared()) then
        error stop 'map_set: a set map is keyed on assigned identity'
     end if
 
-    if (row_of(this, element) /= 0) then
+    if (this % rows % position(key) /= 0) then
        error stop 'map_set: a set is described once'
     end if
 
-    if (.not. allocated(this % rows)) allocate(this % rows(0))
+    at = this % rows % append(key)
 
-    n = size(this % rows)
+    if (.not. allocated(this % extents)) allocate(this % extents(0))
+    n = size(this % extents)
     allocate(grown(n + 1))
-    grown(1:n) = this % rows
-    grown(n + 1) % identity = key
-    allocate(grown(n + 1) % extent, source=extent)
-    call move_alloc(grown, this % rows)
+    grown(1:n) = this % extents
+    allocate(grown(n + 1) % representation, source=representation)
+    call move_alloc(grown, this % extents)
 
   end subroutine bind
-
-  !===================================================================!
-  ! Where the pair is, or zero. Private to the dispatch below. The
-  ! comparison loop is token_identity's index_of - written once for
-  ! every map - so this guards unallocated storage and extracts the
-  ! caller's key, nothing more.
-  !===================================================================!
-
-  pure integer function row_of(this, element) result(at)
-
-    class(set_map), intent(in) :: this
-    type(graph)   , intent(in) :: element
-
-    at = 0
-    if (.not. allocated(this % rows)) return
-
-    at = index_of(this % rows % identity, element % id())
-
-  end function row_of
 
   pure logical function describes(this, element)
 
     class(set_map), intent(in) :: this
     type(graph)   , intent(in) :: element
 
-    describes = row_of(this, element) /= 0
+    describes = this % rows % position(element % id()) /= 0
 
   end function describes
 
@@ -196,10 +179,10 @@ contains
 
     integer :: at
 
-    at = row_of(this, element)
+    at = this % rows % position(element % id())
     if (at == 0) error stop 'map_set: no representation describes that set'
 
-    num_members_of = this % rows(at) % extent % num_members()
+    num_members_of = this % extents(at) % representation % num_members()
 
   end function num_members_of
 
@@ -211,10 +194,10 @@ contains
 
     integer :: at
 
-    at = row_of(this, element)
+    at = this % rows % position(element % id())
     if (at == 0) error stop 'map_set: no representation describes that set'
 
-    member_of = this % rows(at) % extent % member(position)
+    member_of = this % extents(at) % representation % member(position)
 
   end function member_of
 
@@ -226,10 +209,10 @@ contains
 
     integer :: at
 
-    at = row_of(this, element)
+    at = this % rows % position(element % id())
     if (at == 0) error stop 'map_set: no representation describes that set'
 
-    call this % rows(at) % extent % members(values)
+    call this % extents(at) % representation % members(values)
 
   end subroutine members_of
 
@@ -241,10 +224,10 @@ contains
 
     integer :: at
 
-    at = row_of(this, element)
+    at = this % rows % position(element % id())
     if (at == 0) error stop 'map_set: no representation describes that set'
 
-    has = this % rows(at) % extent % has(value)
+    has = this % extents(at) % representation % has(value)
 
   end function has
 
@@ -256,10 +239,10 @@ contains
 
     integer :: at
 
-    at = row_of(this, element)
+    at = this % rows % position(element % id())
     if (at == 0) error stop 'map_set: no representation describes that set'
 
-    allocate(extent, source=this % rows(at) % extent)
+    allocate(extent, source=this % extents(at) % representation)
 
   end subroutine extent_of
 
@@ -271,10 +254,10 @@ contains
 
     integer :: at
 
-    at = row_of(this, element)
+    at = this % rows % position(element % id())
     if (at == 0) error stop 'map_set: no representation describes that set'
 
-    index_in = this % rows(at) % extent % local_index(value)
+    index_in = this % extents(at) % representation % local_index(value)
 
   end function index_in
 

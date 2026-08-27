@@ -29,7 +29,8 @@ module map_value
 
   use util_precision  , only : dp
   use graph_fractal    , only : graph
-  use token_identity   , only : token, index_of
+  use token_identity   , only : token
+  use map_token_rows   , only : identity_rows
   use field_stored, only : stored_field
 
   implicit none
@@ -43,21 +44,22 @@ module map_value
   integer, parameter :: VALUE_KNOWN      = 2
 
   !===================================================================!
-  ! One row: the copied identity token, the status, and the value
-  ! field.
+  ! The state of one attached value: its status, and the field of
+  ! numbers when the status is KNOWN. The states run parallel to the
+  ! table's keys.
   !===================================================================!
 
-  type :: value_pair
+  type :: value_state
 
-     type(token) :: identity
-     integer     :: status = VALUE_UNKNOWN
+     integer            :: status = VALUE_UNKNOWN
      type(stored_field) :: value
 
-  end type value_pair
+  end type value_state
 
   type :: value_map
 
-     type(value_pair), allocatable, private :: rows(:)
+     type(identity_rows)           , private :: rows
+     type(value_state), allocatable, private :: states(:)
 
    contains
 
@@ -74,26 +76,9 @@ module map_value
 contains
 
   !===================================================================!
-  ! Index of the row keyed on the given token, or zero.
-  !===================================================================!
-
-  pure integer function row_at(this, key) result(at)
-
-    class(value_map), intent(in) :: this
-    type(token)     , intent(in) :: key
-
-    at = 0
-    if (.not. allocated(this % rows)) return
-
-    at = index_of(this % rows % identity, key)
-
-  end function row_at
-
-  !===================================================================!
-  ! Check that the element has an assigned identity before any
-  ! write: an undeclared token does not match itself, so a row
-  ! keyed on it could never be found again. Violation stops the
-  ! program.
+  ! Check that the element has an assigned identity before any write:
+  ! an undeclared token could never be found again. Violation stops
+  ! the program.
   !===================================================================!
 
   pure function writer_key(element) result(key)
@@ -102,7 +87,7 @@ contains
     type(token)             :: key
 
     key = element % id()
-    if (.not. key % matches(key)) then
+    if (.not. key % declared()) then
        error stop 'map_value: a value map is keyed on assigned identity'
     end if
 
@@ -119,24 +104,24 @@ contains
     class(value_map), intent(inout) :: this
     type(graph)     , intent(in)    :: element
 
-    type(value_pair), allocatable :: grown(:)
-    type(token)                  :: key
-    integer                      :: n
+    type(value_state), allocatable :: grown(:)
+    type(token) :: key
+    integer     :: n, at
 
     key = writer_key(element)
 
-    if (row_at(this, key) /= 0) then
+    if (this % rows % position(key) /= 0) then
        error stop 'map_value: a value row is attached once'
     end if
 
-    if (.not. allocated(this % rows)) allocate(this % rows(0))
+    at = this % rows % append(key)
 
-    n = size(this % rows)
+    if (.not. allocated(this % states)) allocate(this % states(0))
+    n = size(this % states)
     allocate(grown(n + 1))
-    grown(1:n) = this % rows
-    grown(n + 1) % identity = key
-    grown(n + 1) % status   = VALUE_UNKNOWN
-    call move_alloc(grown, this % rows)
+    grown(1:n)          = this % states
+    grown(n + 1) % status = VALUE_UNKNOWN
+    call move_alloc(grown, this % states)
 
   end subroutine attach_unknown
 
@@ -160,7 +145,7 @@ contains
 
     key = writer_key(element)
 
-    at = row_at(this, key)
+    at = this % rows % position(key)
     if (at == 0) then
        error stop 'map_value: an update touches an attached row'
     end if
@@ -172,10 +157,10 @@ contains
     width = 1
     if (present(num_components)) width = max(num_components, 1)
 
-    this % rows(at) % value = stored_field('attached value', element, &
+    this % states(at) % value = stored_field('attached value', element, &
          & size(values) / width, num_components=width)
-    call this % rows(at) % value % set_real_vector(values)
-    this % rows(at) % status = VALUE_KNOWN
+    call this % states(at) % value % set_real_vector(values)
+    this % states(at) % status = VALUE_KNOWN
 
   end subroutine mark_known
 
@@ -195,13 +180,13 @@ contains
 
     key = writer_key(element)
 
-    at = row_at(this, key)
+    at = this % rows % position(key)
     if (at == 0) then
        error stop 'map_value: an update touches an attached row'
     end if
 
-    this % rows(at) % value  = nothing
-    this % rows(at) % status = VALUE_UNKNOWN
+    this % states(at) % value  = nothing
+    this % states(at) % status = VALUE_UNKNOWN
 
   end subroutine mark_unknown
 
@@ -216,26 +201,28 @@ contains
     class(value_map), intent(inout) :: this
     type(graph)     , intent(in)    :: element
 
-    type(value_pair), allocatable :: kept(:)
-    type(token)                  :: key
-    integer                      :: at, n, k, m
+    type(value_state), allocatable :: kept(:)
+    type(token) :: key
+    integer     :: at, n, k, m
 
     key = writer_key(element)
 
-    at = row_at(this, key)
+    at = this % rows % position(key)
     if (at == 0) then
        error stop 'map_value: a detach removes an attached row'
     end if
 
-    n = size(this % rows)
+    call this % rows % drop(at)
+
+    n = size(this % states)
     allocate(kept(n - 1))
     m = 0
     do k = 1, n
        if (k == at) cycle
        m = m + 1
-       kept(m) = this % rows(k)
+       kept(m) = this % states(k)
     end do
-    call move_alloc(kept, this % rows)
+    call move_alloc(kept, this % states)
 
   end subroutine detach
 
@@ -251,10 +238,7 @@ contains
     class(value_map), intent(in) :: this
     type(graph)     , intent(in) :: element
 
-    type(token) :: key
-
-    key = element % id()
-    attached = row_at(this, key) /= 0
+    attached = this % rows % position(element % id()) /= 0
 
   end function attached
 
@@ -263,16 +247,14 @@ contains
     class(value_map), intent(in) :: this
     type(graph)     , intent(in) :: element
 
-    type(token) :: key
-    integer     :: at
+    integer :: at
 
-    key = element % id()
-    at  = row_at(this, key)
+    at = this % rows % position(element % id())
 
     if (at == 0) then
        status = VALUE_UNATTACHED
     else
-       status = this % rows(at) % status
+       status = this % states(at) % status
     end if
 
   end function status_of
@@ -283,21 +265,19 @@ contains
     type(graph)          , intent(in)  :: element
     real(dp), allocatable, intent(out) :: values(:)
 
-    type(token) :: key
-    integer     :: at
+    integer :: at
 
-    key = element % id()
-    at  = row_at(this, key)
+    at = this % rows % position(element % id())
 
     if (at == 0) then
        error stop 'map_value: a known value is read'
     end if
 
-    if (this % rows(at) % status /= VALUE_KNOWN) then
+    if (this % states(at) % status /= VALUE_KNOWN) then
        error stop 'map_value: a known value is read'
     end if
 
-    call this % rows(at) % value % real_vector(values)
+    call this % states(at) % value % real_vector(values)
 
   end subroutine value_of
 

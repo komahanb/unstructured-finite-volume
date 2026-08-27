@@ -4,6 +4,8 @@ util_derivative_terms.o \
 util_tally.o \
 util_factorisation.o \
 token_identity.o \
+map_token_rows.o \
+util_string.o \
 map_change_protocol.o \
 graph_fractal.o \
 view_sequence.o \
@@ -73,7 +75,6 @@ operation_multigrid.o \
 operation_step_policy.o \
 operation_marching.o \
 util_verbosity.o \
-util_string.o \
 util_file.o \
 view_mesh_geometry.o \
 view_mesh_loader.o \

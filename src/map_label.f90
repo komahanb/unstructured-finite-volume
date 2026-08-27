@@ -63,7 +63,9 @@
 module map_label
 
   use graph_fractal , only : graph
-  use token_identity, only : token, index_of
+  use token_identity, only : token
+  use map_token_rows, only : identity_rows
+  use util_string   , only : string
 
   implicit none
 
@@ -71,17 +73,14 @@ module map_label
   public :: label_map
 
   !===================================================================!
-  ! One row: WHICH set - by value - and what it is called.
+  ! The labels run parallel to the table's keys: labels(at) is the
+  ! label of the set whose token the table holds at row at.
   !===================================================================!
-
-  type :: label_pair
-     type(token)                   :: identity
-     character(len=:), allocatable :: label
-  end type label_pair
 
   type :: label_map
 
-     type(label_pair), allocatable, private :: rows(:)
+     type(identity_rows)         , private :: rows
+     type(string), allocatable, private :: labels(:)
 
    contains
 
@@ -104,57 +103,36 @@ contains
     type(graph)     , intent(in)    :: element
     character(len=*), intent(in)    :: label
 
-    type(label_pair), allocatable :: grown(:)
-    type(token)                  :: key
-    integer                      :: n
+    type(string), allocatable :: grown(:)
+    type(token) :: key
+    integer     :: n, at
 
-    ! An undeclared token does not match itself.
     key = element % id()
-    if (.not. key % matches(key)) then
+    if (.not. key % declared()) then
        error stop 'map_label: a label map is keyed on assigned identity'
     end if
 
-    if (row_at(this, key) /= 0) then
+    if (this % rows % position(key) /= 0) then
        error stop 'map_label: a set is named once'
     end if
 
-    if (.not. allocated(this % rows)) allocate(this % rows(0))
+    at = this % rows % append(key)
 
-    n = size(this % rows)
+    if (.not. allocated(this % labels)) allocate(this % labels(0))
+    n = size(this % labels)
     allocate(grown(n + 1))
-    grown(1:n) = this % rows
-    grown(n + 1) % identity = key
-    grown(n + 1) % label    = label
-    call move_alloc(grown, this % rows)
+    grown(1:n)   = this % labels
+    grown(n + 1) = string(label)
+    call move_alloc(grown, this % labels)
 
   end subroutine bind_label
-
-  !===================================================================!
-  ! Where the row for an identity is, or zero. The one comparison, and
-  ! it reads nothing outside this map.
-  !===================================================================!
-
-  pure integer function row_at(this, key) result(at)
-
-    class(label_map), intent(in) :: this
-    type(token)     , intent(in) :: key
-
-    at = 0
-    if (.not. allocated(this % rows)) return
-
-    at = index_of(this % rows % identity, key)
-
-  end function row_at
 
   pure logical function labelled(this, element)
 
     class(label_map), intent(in) :: this
     type(graph)     , intent(in) :: element
 
-    type(token) :: key
-
-    key = element % id()
-    labelled = row_at(this, key) /= 0
+    labelled = this % rows % position(element % id()) /= 0
 
   end function labelled
 
@@ -170,16 +148,14 @@ contains
     type(graph)     , intent(in)  :: element
     character(len=:), allocatable :: label
 
-    type(token) :: key
-    integer     :: at
+    integer :: at
 
-    key = element % id()
-    at  = row_at(this, key)
+    at = this % rows % position(element % id())
 
     if (at == 0) then
        label = ''
     else
-       label = this % rows(at) % label
+       label = this % labels(at) % str
     end if
 
   end function label_of

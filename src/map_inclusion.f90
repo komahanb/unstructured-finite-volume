@@ -83,7 +83,8 @@
 module map_inclusion
 
   use graph_fractal , only : graph
-  use token_identity, only : token, index_of
+  use token_identity, only : token
+  use map_token_rows, only : identity_rows
 
   implicit none
 
@@ -91,17 +92,15 @@ module map_inclusion
   public :: inclusion_map, declared_subobject
 
   !===================================================================!
-  ! One declared embedding: which part, which ambient, by value.
+  ! The ambients run parallel to the table's keys: the part is the key
+  ! at row at, ambients(at) the ambient it was declared into. Both are
+  ! copied tokens.
   !===================================================================!
-
-  type :: inclusion_pair
-     type(token) :: part
-     type(token) :: ambient
-  end type inclusion_pair
 
   type :: inclusion_map
 
-     type(inclusion_pair), allocatable, private :: rows(:)
+     type(identity_rows)      , private :: rows
+     type(token), allocatable , private :: ambients(:)
 
    contains
 
@@ -125,15 +124,14 @@ contains
     type(graph)         , intent(in)    :: part
     type(graph)         , intent(in)    :: ambient
 
-    type(inclusion_pair), allocatable :: grown(:)
-    type(token)                      :: below, above
-    integer                          :: n
+    type(token), allocatable :: grown(:)
+    type(token) :: below, above
+    integer     :: n, at
 
     below = part % id()
     above = ambient % id()
 
-    ! An undeclared token does not match itself.
-    if (.not. below % matches(below) .or. .not. above % matches(above)) then
+    if (.not. below % declared() .or. .not. above % declared()) then
        error stop 'map_inclusion: an inclusion is keyed on assigned identity'
     end if
 
@@ -141,46 +139,27 @@ contains
        error stop 'map_inclusion: a set is not declared into itself'
     end if
 
-    if (row_at(this, below) /= 0) then
+    if (this % rows % position(below) /= 0) then
        error stop 'map_inclusion: a set is declared into one ambient'
     end if
 
-    if (.not. allocated(this % rows)) allocate(this % rows(0))
-    n = size(this % rows)
+    at = this % rows % append(below)
+
+    if (.not. allocated(this % ambients)) allocate(this % ambients(0))
+    n = size(this % ambients)
     allocate(grown(n + 1))
-    grown(1:n) = this % rows
-    grown(n + 1) % part    = below
-    grown(n + 1) % ambient = above
-    call move_alloc(grown, this % rows)
+    grown(1:n)   = this % ambients
+    grown(n + 1) = above
+    call move_alloc(grown, this % ambients)
 
   end subroutine include_in
-
-  !===================================================================!
-  ! Where the row for an identity is, or zero. The whole of lookup:
-  ! the walk below steps in identities, so it needs no other form.
-  !===================================================================!
-
-  pure integer function row_at(this, below) result(at)
-
-    class(inclusion_map), intent(in) :: this
-    type(token)         , intent(in) :: below
-
-    at = 0
-    if (.not. allocated(this % rows)) return
-
-    at = index_of(this % rows % part, below)
-
-  end function row_at
 
   pure logical function included(this, part)
 
     class(inclusion_map), intent(in) :: this
     type(graph)         , intent(in) :: part
 
-    type(token) :: below
-
-    below = part % id()
-    included = row_at(this, below) /= 0
+    included = this % rows % position(part % id()) /= 0
 
   end function included
 
@@ -203,11 +182,11 @@ contains
     declared = .false.
 
     below = part % id()
-    at    = row_at(this, below)
+    at    = this % rows % position(below)
     if (at == 0) return
 
     above  = ambient % id()
-    declared = this % rows(at) % ambient % matches(above)
+    declared = this % ambients(at) % matches(above)
 
   end function declared_into
 
@@ -243,18 +222,17 @@ contains
     below = here % matches(target_id)
     if (below) return
 
-    bound = 0
-    if (allocated(m % rows)) bound = size(m % rows)
+    bound = m % rows % num_rows()
 
     do steps = 1, bound
-       at = row_at(m, here)
+       at = m % rows % position(here)
        if (at == 0) return
-       here  = m % rows(at) % ambient
+       here  = m % ambients(at)
        below = here % matches(target_id)
        if (below) return
     end do
 
-    if (row_at(m, here) /= 0) then
+    if (m % rows % position(here) /= 0) then
        error stop 'map_inclusion: an inclusion chain is finite'
     end if
 

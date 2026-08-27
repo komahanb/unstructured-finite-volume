@@ -25,6 +25,7 @@ program marched_horizon
   use field_stored          , only : stored_field
   use physics_vanderpol     , only : van_der_pol_energy
   use gti_march             , only : horizon_bounds, partition, unknowns_graph
+  use gti_driver            , only : exact => cosine
   use gti_sweeps            , only : functional_of, forward_route, reverse_route
   use gti_chain             , only : one_functional, first_of, functional_holder
   use gti_chain             , only : chain_block, march_chain, instant_components, &
@@ -42,24 +43,6 @@ program marched_horizon
   call sensitivity_across_the_junction()
 
 contains
-
-  pure real(dp) function exact(d, t) result(q)
-
-    integer , intent(in) :: d
-    real(dp), intent(in) :: t
-
-    select case (mod(d, 4))
-    case (0)
-       q =  cos(t)
-    case (1)
-       q = -sin(t)
-    case (2)
-       q = -cos(t)
-    case default
-       q =  sin(t)
-    end select
-
-  end function exact
 
   !-------------------------------------------------------------------!
   ! The initial conditions a first block carries: the cosine and its

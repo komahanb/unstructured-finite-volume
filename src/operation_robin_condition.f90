@@ -56,6 +56,12 @@ module operation_robin_condition
   implicit none
 
   private
+  integer, parameter :: COEFFICIENT_LHS = 1
+  integer, parameter :: COEFFICIENT_RHS = 2
+  integer, parameter :: COEFFICIENT_ADVECTION_LHS = 3
+  integer, parameter :: COEFFICIENT_ADVECTION_RHS = 4
+  integer, parameter :: COEFFICIENT_OPERATOR = 5
+
   public :: robin_condition
   public :: robin, dirichlet, neumann
 
@@ -157,15 +163,7 @@ contains
     real(dp)  , intent(in)             :: kappa
     real(dp), allocatable, intent(out) :: values(:)
 
-    real(dp), allocatable :: area(:), delta(:)
-    integer :: f
-
-    call measures_of(this, m, area, delta)
-    allocate(values(size(area)))
-    do f = 1, size(values)
-       values(f) = -kappa * area(f) * this % a &
-            & / (delta(f) * denom(this, delta(f)))
-    end do
+    call coefficient_values(this, m, kappa, COEFFICIENT_LHS, values)
 
   end subroutine lhs_coefficients
 
@@ -176,15 +174,7 @@ contains
     real(dp)  , intent(in)             :: kappa
     real(dp), allocatable, intent(out) :: values(:)
 
-    real(dp), allocatable :: area(:), delta(:)
-    integer :: f
-
-    call measures_of(this, m, area, delta)
-    allocate(values(size(area)))
-    do f = 1, size(values)
-       values(f) = -kappa * area(f) * this % c &
-            & / (delta(f) * denom(this, delta(f)))
-    end do
+    call coefficient_values(this, m, kappa, COEFFICIENT_RHS, values)
 
   end subroutine rhs_coefficients
 
@@ -195,15 +185,7 @@ contains
     real(dp)  , intent(in)             :: vn
     real(dp), allocatable, intent(out) :: values(:)
 
-    real(dp), allocatable :: area(:), delta(:)
-    integer :: f
-
-    call measures_of(this, m, area, delta)
-    allocate(values(size(area)))
-    do f = 1, size(values)
-       values(f) = -vn * area(f) * (this % b / delta(f)) &
-            & / denom(this, delta(f))
-    end do
+    call coefficient_values(this, m, vn, COEFFICIENT_ADVECTION_LHS, values)
 
   end subroutine advection_lhs_coefficients
 
@@ -214,14 +196,7 @@ contains
     real(dp)  , intent(in)             :: vn
     real(dp), allocatable, intent(out) :: values(:)
 
-    real(dp), allocatable :: area(:), delta(:)
-    integer :: f
-
-    call measures_of(this, m, area, delta)
-    allocate(values(size(area)))
-    do f = 1, size(values)
-       values(f) = vn * area(f) * this % c / denom(this, delta(f))
-    end do
+    call coefficient_values(this, m, vn, COEFFICIENT_ADVECTION_RHS, values)
 
   end subroutine advection_rhs_coefficients
 
@@ -243,16 +218,53 @@ contains
     real(dp)  , intent(in)             :: kappa
     real(dp), allocatable, intent(out) :: values(:)
 
+    call coefficient_values(this, m, kappa, COEFFICIENT_OPERATOR, values)
+
+  end subroutine operator_coefficients
+
+  subroutine coefficient_values(this, m, scale, which, values)
+
+    class(robin_condition), intent(in) :: this
+    type(mesh), intent(in)             :: m
+    real(dp)  , intent(in)             :: scale
+    integer   , intent(in)             :: which
+    real(dp), allocatable, intent(out) :: values(:)
+
     real(dp), allocatable :: area(:), delta(:)
     integer :: f
 
     call measures_of(this, m, area, delta)
     allocate(values(size(area)))
-    do f = 1, size(values)
-       values(f) = kappa * area(f) * this % a / denom(this, delta(f))
-    end do
 
-  end subroutine operator_coefficients
+    select case (which)
+    case (COEFFICIENT_LHS)
+       do f = 1, size(values)
+          values(f) = -scale * area(f) * this % a &
+               & / (delta(f) * denom(this, delta(f)))
+       end do
+    case (COEFFICIENT_RHS)
+       do f = 1, size(values)
+          values(f) = -scale * area(f) * this % c &
+               & / (delta(f) * denom(this, delta(f)))
+       end do
+    case (COEFFICIENT_ADVECTION_LHS)
+       do f = 1, size(values)
+          values(f) = -scale * area(f) * (this % b / delta(f)) &
+               & / denom(this, delta(f))
+       end do
+    case (COEFFICIENT_ADVECTION_RHS)
+       do f = 1, size(values)
+          values(f) = scale * area(f) * this % c / denom(this, delta(f))
+       end do
+    case (COEFFICIENT_OPERATOR)
+       do f = 1, size(values)
+          values(f) = scale * area(f) * this % a / denom(this, delta(f))
+       end do
+    case default
+       error stop 'operation_robin_condition: unknown coefficient projection'
+    end select
+
+  end subroutine coefficient_values
 
   subroutine boundary_values(this, m, values)
 

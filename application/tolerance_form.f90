@@ -25,18 +25,13 @@ program tolerance_form
 
   use util_precision  , only : dp
   use operation_coupling    , only : weights_of
-  use view_directed_stored  , only : stored_directed_graph
-  use field_calculus        , only : field
-  use field_stored          , only : stored_field
   use operation_family      , only : family
   use operation_family_bdf  , only : bdf_family
   use operation_grid        , only : uniform_grid
   use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
   use gti_expansion         , only : family_holder, expansion
   use gti_march             , only : partition
-  use gti_sweeps            , only : jacobian_of
-  use view_directed_stored  , only : stored_directed_graph
-  use field_stored          , only : stored_field
+  use gti_driver            , only : dense_jacobian
   use gti_chain             , only : one_functional
   use gti_chain             , only : chain_block, march_chain, &
        & chain_system, chain_systems
@@ -155,7 +150,7 @@ contains
     call chain_systems(chain, tower, [one_functional(van_der_pol_energy(degrees - 1))], degrees, systems)
 
     predicted = 1.0_dp + row_sum(scheme, order, top) / dt(size(dt)) ** top
-    call dense_jacobian(chain, degrees, design, a)
+    call dense_jacobian(chain, design, a)
     assembled = largest_row(a)
 
     write(named,'(a,i0)') 'bdf ', order
@@ -202,7 +197,7 @@ contains
     call chain_systems(chain, tower, [one_functional(van_der_pol_energy(degrees - 1))], degrees, systems)
 
     step = dt(size(dt))
-    call dense_jacobian(chain, degrees, design, a)
+    call dense_jacobian(chain, design, a)
     bare = kappa(a)
 
     n = size(a, 1)
@@ -276,33 +271,5 @@ contains
     most = maxval(sum(abs(a), dim=2))
 
   end function largest_row
-
-  !-------------------------------------------------------------------!
-  ! The jacobian of the first block at its solved state, formed from
-  ! the compiled tangent, for the measurements below.
-  !-------------------------------------------------------------------!
-
-  subroutine dense_jacobian(chain, degrees, design, a)
-
-    type(chain_block), intent(in) :: chain(:)
-    integer          , intent(in) :: degrees
-    real(dp)         , intent(in) :: design
-    real(dp), allocatable, intent(out) :: a(:,:)
-
-    type(stored_directed_graph) :: unknowns
-    type(stored_field) :: state, knobs
-    integer :: n
-
-    n        = chain(1) % rows % num_unknowns()
-    unknowns = stored_directed_graph(n, tails=[integer ::], heads=[integer ::])
-    state    = stored_field('state', unknowns % vertex_set(), n)
-    knobs    = stored_field('nu', unknowns % vertex_set(), chain(1) % rows % num_points())
-    call state % set_real_vector(chain(1) % state)
-    call knobs % set_real_vector(spread(design, 1, chain(1) % rows % num_points()))
-    call jacobian_of(chain(1) % rows, unknowns, [state, knobs], n, unknowns % vertex_set(), a)
-
-    associate (u1 => degrees); end associate
-
-  end subroutine dense_jacobian
 
 end program tolerance_form

@@ -14,17 +14,21 @@ module gti_driver
   use operation_grid   , only : grid, uniform_grid, random_grid
   use gti_configuration, only : configuration, read_configuration, override
   use gti_march        , only : partitioned
+  use gti_sweeps       , only : jacobian_of
+  use view_directed_stored, only : stored_directed_graph
+  use field_stored     , only : stored_field
   use operation_family , only : family
   use operation_family_bdf  , only : bdf_family
   use operation_family_adams, only : adams_family
   use operation_family_dirk , only : implicit_midpoint, crouzeix_two_stage, crouzeix_three_stage
   use physics_vanderpol     , only : van_der_pol_energy, van_der_pol_dissipation
-  use gti_chain             , only : functional_holder, one_functional
+  use gti_chain             , only : chain_block, functional_holder, one_functional
 
   implicit none
 
   private
-  public :: settings, chosen_grid, steps_of, clock, cosine, family_named, functional_named
+  public :: settings, chosen_grid, steps_of, clock, cosine, dense_jacobian
+  public :: family_named, functional_named
 
 contains
 
@@ -117,6 +121,31 @@ contains
     end select
 
   end function cosine
+
+  !-------------------------------------------------------------------!
+  ! The dense jacobian of the first chain block at its solved state,
+  ! formed from the compiled tangent when the block provides one.
+  !-------------------------------------------------------------------!
+
+  subroutine dense_jacobian(chain, design, a)
+
+    type(chain_block), intent(in) :: chain(:)
+    real(dp)         , intent(in) :: design
+    real(dp), allocatable, intent(out) :: a(:,:)
+
+    type(stored_directed_graph) :: unknowns
+    type(stored_field) :: state, knobs
+    integer :: n
+
+    n        = chain(1) % rows % num_unknowns()
+    unknowns = stored_directed_graph(n, tails=[integer ::], heads=[integer ::])
+    state    = stored_field('state', unknowns % vertex_set(), n)
+    knobs    = stored_field('nu', unknowns % vertex_set(), chain(1) % rows % num_points())
+    call state % set_real_vector(chain(1) % state)
+    call knobs % set_real_vector(spread(design, 1, chain(1) % rows % num_points()))
+    call jacobian_of(chain(1) % rows, unknowns, [state, knobs], n, unknowns % vertex_set(), a)
+
+  end subroutine dense_jacobian
 
   !-------------------------------------------------------------------!
   ! One family, by name and order. A name or an order no family is

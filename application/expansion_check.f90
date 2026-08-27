@@ -15,6 +15,7 @@ program expansion_check
   use operation_family_adams, only : adams_family
   use physics_vanderpol    , only : van_der_pol, van_der_pol_energy
   use gti_march            , only : partition, set_stopping
+  use gti_driver           , only : exact => cosine
   use operation_minimization, only : relative, by_rate
   use gti_expansion        , only : expansion, family_holder
   use operation_grid       , only : uniform_grid
@@ -52,24 +53,6 @@ program expansion_check
   call expansion_of('crouzeix two-stage', crouzeix_two_stage(), .true.)
 
 contains
-
-  pure real(dp) function exact(d, t) result(q)
-
-    integer , intent(in) :: d
-    real(dp), intent(in) :: t
-
-    select case (mod(d, 4))
-    case (0)
-       q =  cos(t)
-    case (1)
-       q = -sin(t)
-    case (2)
-       q = -cos(t)
-    case default
-       q =  sin(t)
-    end select
-
-  end function exact
 
   subroutine expanded(scheme, staged, design_value, f)
 

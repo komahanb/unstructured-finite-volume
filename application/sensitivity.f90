@@ -29,6 +29,7 @@ program sensitivity
   use gti_expansion         , only : expansion, family_holder
   use operation_grid        , only : uniform_grid
   use gti_march            , only : partition, block_from, solved, unknowns_graph
+  use gti_driver           , only : exact => cosine
   use gti_sweeps           , only : functional_of, functional_gradient, &
        & design_partial
   use gti_march            , only : by_tangent, by_adjoint, fresh_stamp
@@ -45,30 +46,6 @@ program sensitivity
   call sensitivity_of('adams-moulton 3', adams_family(3))
 
 contains
-
-  !-------------------------------------------------------------------!
-  ! The d-th derivative of the cosine, which is what the carried
-  ! instants hold: they are the block's initial data and any
-  ! consistent numbers would do.
-  !-------------------------------------------------------------------!
-
-  pure real(dp) function exact(d, t) result(q)
-
-    integer , intent(in) :: d
-    real(dp), intent(in) :: t
-
-    select case (mod(d, 4))
-    case (0)
-       q =  cos(t)
-    case (1)
-       q = -sin(t)
-    case (2)
-       q = -cos(t)
-    case default
-       q =  sin(t)
-    end select
-
-  end function exact
 
   function carried_values(scheme, t) result(held)
 

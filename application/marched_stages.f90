@@ -18,6 +18,7 @@ program marched_stages
   use physics_vanderpol    , only : van_der_pol
   use gti_block            , only : block_residual
   use gti_march            , only : partition, solved, block_from
+  use gti_driver           , only : exact => cosine
   use gti_expansion        , only : expansion, family_holder
   use operation_grid       , only : uniform_grid
 
@@ -32,24 +33,6 @@ program marched_stages
   call order_of('crouzeix three-stage', crouzeix_three_stage())
 
 contains
-
-  pure real(dp) function exact(d, t) result(q)
-
-    integer , intent(in) :: d
-    real(dp), intent(in) :: t
-
-    select case (mod(d, 4))
-    case (0)
-       q =  cos(t)
-    case (1)
-       q = -sin(t)
-    case (2)
-       q = -cos(t)
-    case default
-       q =  sin(t)
-    end select
-
-  end function exact
 
   !-------------------------------------------------------------------!
   ! One stage block marched, and the worst error in the value at the

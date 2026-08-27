@@ -32,6 +32,7 @@ program marched_block
   use gti_expansion         , only : expansion, family_holder
   use operation_grid        , only : uniform_grid
   use gti_march             , only : partition, block_from, solved
+  use gti_driver            , only : exact => cosine
 
   implicit none
 
@@ -87,28 +88,6 @@ integer, allocatable :: at(:)
     call solved(rows, design_value, q, achieved)
 
   end subroutine march
-
-  !-------------------------------------------------------------------!
-  ! The d-th derivative of the cosine.
-  !-------------------------------------------------------------------!
-
-  pure real(dp) function exact(d, t) result(q)
-
-    integer , intent(in) :: d
-    real(dp), intent(in) :: t
-
-    select case (mod(d, 4))
-    case (0)
-       q =  cos(t)
-    case (1)
-       q = -sin(t)
-    case (2)
-       q = -cos(t)
-    case default
-       q =  sin(t)
-    end select
-
-  end function exact
 
   pure real(dp) function worst(q, t) result(e)
 

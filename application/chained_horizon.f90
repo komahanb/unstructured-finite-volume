@@ -24,6 +24,7 @@ program chained_horizon
   use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
   use gti_expansion         , only : family_holder, expansion
   use gti_march             , only : partition
+  use gti_driver            , only : initial_at => cosine
   use gti_chain             , only : one_functional
   use gti_chain             , only : chain_block, march_chain, chain_expansion
 
@@ -41,24 +42,6 @@ program chained_horizon
   call across_families('adams 3 then crouzeix two-stage', adams_of(3), dirk_of())
 
 contains
-
-  pure real(dp) function initial_at(d, t) result(q)
-
-    integer , intent(in) :: d
-    real(dp), intent(in) :: t
-
-    select case (mod(d, 4))
-    case (0)
-       q =  cos(t)
-    case (1)
-       q = -sin(t)
-    case (2)
-       q = -cos(t)
-    case default
-       q =  sin(t)
-    end select
-
-  end function initial_at
 
   function bdf_of(order) result(held)
 

@@ -80,43 +80,11 @@ module field_stored
   public :: stored_field
 
   !===================================================================!
-  ! One field: a name, a unit, a domain, a width, and one live store.
+  ! One field: the description and the store the abstract field
+  ! holds, stated by the constructor and nothing more.
   !===================================================================!
 
   type, extends(field) :: stored_field
-
-     character(len=:), allocatable :: label
-     character(len=:), allocatable :: unit_name
-
-     ! The one domain: which set, and how many entries it had when
-     ! this field was built. Private, so consumers ask through
-     ! domain() and num_entries() rather than inspecting on.
-     type(graph), private :: on
-     integer        , private :: ne = 0
-
-     integer, private :: nc = 1
-   contains
-
-     !----------------------------------------------------------------!
-     ! Identity, and where the values live.
-     !----------------------------------------------------------------!
-
-     procedure :: name   => field_name
-     procedure :: units  => field_units
-     procedure :: domain => field_domain
-
-     !----------------------------------------------------------------!
-     ! Shape and kind.
-     !----------------------------------------------------------------!
-
-     procedure :: num_components => field_num_components
-     procedure :: num_entries    => field_num_entries
-
-     !----------------------------------------------------------------!
-     ! The plain-vector adapters, one pair per kind.
-     !----------------------------------------------------------------!
-
-
   end type stored_field
 
   !===================================================================!
@@ -146,99 +114,8 @@ contains
     integer         , intent(in), optional :: num_components
     character(len=*), intent(in), optional :: unit_name
 
-    if (.not. on % same_as(on)) then
-       error stop 'field_stored: a field needs a declared domain'
-    end if
-
-    if (num_entries < 0) then
-       error stop 'field_stored: a domain does not have fewer than no entries'
-    end if
-
-    this % label    = label
-    this % on       = on
-    this % ne = num_entries
-
-    if (present(num_components)) then
-       this % nc = num_components
-    else
-       this % nc = 1
-    end if
-
-    if (present(unit_name)) then
-       this % unit_name = unit_name
-    else
-       this % unit_name = '-'
-    end if
+    call this % describe(label, on, num_entries, num_components, unit_name)
 
   end function create
-
-  !===================================================================!
-  ! What the field is called; an empty name when nobody named it.
-  !===================================================================!
-
-  pure function field_name(this) result(name)
-
-    class(stored_field), intent(in)      :: this
-    character(len=:), allocatable :: name
-
-    if (allocated(this % label)) then
-       name = this % label
-    else
-       name = ''
-    end if
-
-  end function field_name
-
-  !===================================================================!
-  ! What the values are measured in; a dash when nobody said.
-  !===================================================================!
-
-  pure function field_units(this) result(units)
-
-    class(stored_field), intent(in)      :: this
-    character(len=:), allocatable :: units
-
-    if (allocated(this % unit_name)) then
-       units = this % unit_name
-    else
-       units = '-'
-    end if
-
-  end function field_units
-
-  !===================================================================!
-  ! WHICH set the values live on. A copy carries the token, so the
-  ! answer is the same declared domain; nothing is lent.
-  !===================================================================!
-
-  type(graph) function field_domain(this) result(domain)
-
-    class(stored_field), intent(in) :: this
-
-    domain = this % on
-
-  end function field_domain
-
-  !===================================================================!
-  ! Shape and kind. The entry count was taken from the domain at
-  ! construction and frozen there - the copy this field used to keep
-  ! froze it just as firmly, and far more expensively.
-  !===================================================================!
-
-  pure integer function field_num_components(this)
-
-    class(stored_field), intent(in) :: this
-
-    field_num_components = this % nc
-
-  end function field_num_components
-
-  pure integer function field_num_entries(this)
-
-    class(stored_field), intent(in) :: this
-
-    field_num_entries = this % ne
-
-  end function field_num_entries
 
 end module field_stored

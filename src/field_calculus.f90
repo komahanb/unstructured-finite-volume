@@ -88,16 +88,27 @@ module field_calculus
      ! next to each other. Only this module reads or writes them.
      class(*), allocatable, private :: values(:)
 
+     ! THE DESCRIPTION, held once for every field in the tower: what
+     ! it is called, what its values are measured in, WHICH set they
+     ! live on and HOW MANY entries that set had at construction, and
+     ! how many components each entry holds. A concretion states all
+     ! of it through describe, once.
+     character(len=:), allocatable, private :: label
+     character(len=:), allocatable, private :: unit_name
+     type(graph), private :: on
+     integer    , private :: ne = 0
+     integer    , private :: nc = 1
+
    contains
 
-     procedure(field_name_interface), deferred :: name
-     procedure(field_name_interface), deferred :: units
-
-     procedure(field_domain_interface), deferred :: domain
-     procedure :: defined_on => field_defined_on
-     procedure(field_count_interface) , deferred :: num_components
-     procedure(field_count_interface) , deferred :: num_entries
-     procedure :: value_kind => field_value_kind
+     procedure :: name           => field_name
+     procedure :: units          => field_units
+     procedure :: domain         => field_domain
+     procedure :: defined_on     => field_defined_on
+     procedure :: num_components => field_num_components
+     procedure :: num_entries    => field_num_entries
+     procedure :: value_kind     => field_value_kind
+     procedure :: describe
 
      ! The ten adapters: fetch once, work in arrays, write back once.
      ! A getter of the wrong kind answers a zero-length array; any
@@ -131,6 +142,15 @@ module field_calculus
    contains
 
      !----------------------------------------------------------------!
+     ! The law of the type, stated here rather than stored: a
+     ! functional is one entry of one component, however it was
+     ! allocated.
+     !----------------------------------------------------------------!
+
+     procedure :: num_components => functional_one
+     procedure :: num_entries    => functional_one
+
+     !----------------------------------------------------------------!
      ! The scalar adapters: the vector adapters at length one, since
      ! a one-entry field and a scalar are the same value. Written
      ! here once for every functional, through the vector adapters
@@ -150,33 +170,93 @@ module field_calculus
 
   end type functional
 
-  abstract interface
-
-     pure function field_name_interface(this) result(name)
-       import :: field
-       class(field), intent(in) :: this
-       character(len=:), allocatable :: name
-     end function field_name_interface
-
-     !--------------------------------------------------------------!
-     ! WHICH set the values live on, by value. A copy of a set graph
-     ! carries its token, so the answer IS the domain - same_as
-     ! decides, and nothing is lent.
-     !--------------------------------------------------------------!
-
-     type(graph) function field_domain_interface(this)
-       import :: field, graph
-       class(field), intent(in) :: this
-     end function field_domain_interface
-
-     pure integer function field_count_interface(this)
-       import :: field
-       class(field), intent(in) :: this
-     end function field_count_interface
-
-  end interface
-
 contains
+
+  !===================================================================!
+  ! The description, stated once by a concretion's constructor. An
+  ! undeclared domain, or a negative entry count, stops the program.
+  !===================================================================!
+
+  subroutine describe(this, label, on, num_entries, num_components, unit_name)
+
+    class(field)    , intent(inout)        :: this
+    character(len=*), intent(in)           :: label
+    type(graph)     , intent(in)           :: on
+    integer         , intent(in)           :: num_entries
+    integer         , intent(in), optional :: num_components
+    character(len=*), intent(in), optional :: unit_name
+
+    if (.not. on % same_as(on)) then
+       error stop 'field: a field needs a declared domain'
+    end if
+    if (num_entries < 0) then
+       error stop 'field: a domain does not have fewer than no entries'
+    end if
+
+    this % label = label
+    this % on    = on
+    this % ne    = num_entries
+    this % nc    = 1
+    if (present(num_components)) this % nc = num_components
+    this % unit_name = '-'
+    if (present(unit_name)) this % unit_name = unit_name
+
+  end subroutine describe
+
+  !===================================================================!
+  ! What the field is called, and what its values are measured in: an
+  ! empty name when nobody named it, a dash when nobody said.
+  !===================================================================!
+
+  pure function field_name(this) result(name)
+
+    class(field), intent(in) :: this
+    character(len=:), allocatable :: name
+
+    name = ''
+    if (allocated(this % label)) name = this % label
+
+  end function field_name
+
+  pure function field_units(this) result(units)
+
+    class(field), intent(in) :: this
+    character(len=:), allocatable :: units
+
+    units = '-'
+    if (allocated(this % unit_name)) units = this % unit_name
+
+  end function field_units
+
+  !===================================================================!
+  ! WHICH set the values live on, by value: a copy of a set graph
+  ! carries its token, so the answer IS the domain - same_as decides,
+  ! and nothing is lent. The counts were frozen at construction.
+  !===================================================================!
+
+  type(graph) function field_domain(this) result(domain)
+
+    class(field), intent(in) :: this
+
+    domain = this % on
+
+  end function field_domain
+
+  pure integer function field_num_components(this)
+
+    class(field), intent(in) :: this
+
+    field_num_components = this % nc
+
+  end function field_num_components
+
+  pure integer function field_num_entries(this)
+
+    class(field), intent(in) :: this
+
+    field_num_entries = this % ne
+
+  end function field_num_entries
 
   !===================================================================!
   ! Whether this field is defined on that domain: the same set by
@@ -375,6 +455,15 @@ contains
     call this % hold(values)
 
   end subroutine field_set_character_vector
+
+  pure integer function functional_one(this)
+
+    class(functional), intent(in) :: this
+
+    associate (u1 => this); end associate
+    functional_one = 1
+
+  end function functional_one
 
   !===================================================================!
   ! The scalar adapters of a functional. A getter reads the vector

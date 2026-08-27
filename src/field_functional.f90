@@ -52,15 +52,6 @@ module field_functional
 
   type, extends(functional) :: stored_functional
 
-     ! The one-entry home, declared at construction so domain()
-     ! answers one stable identity for the life of the functional.
-     type(graph), private :: home
-
-     character(len=:), allocatable :: label
-     character(len=:), allocatable :: unit_name
-
-
-
      !----------------------------------------------------------------!
      ! Work carried while a reduction is still running. A sum alone
      ! needs none of it; an average needs the tally, a norm needs the
@@ -70,19 +61,6 @@ module field_functional
 
      real(dp) :: tally  = 0.0_dp
      real(dp) :: weight = 0.0_dp
-
-   contains
-
-     !----------------------------------------------------------------!
-     ! The field contract, answered at one entry.
-     !----------------------------------------------------------------!
-
-     procedure :: name           => functional_name
-     procedure :: units          => functional_units
-     procedure :: domain         => functional_domain
-     procedure :: num_components => functional_num_components
-     procedure :: num_entries    => functional_num_entries
-
 
   end type stored_functional
 
@@ -106,88 +84,17 @@ contains
     character(len=*), intent(in), optional :: label
     character(len=*), intent(in), optional :: unit_name
 
-    if (present(label)) then
-       this % label = label
-    else
-       this % label = ''
-    end if
+    type(graph) :: home
+    character(len=:), allocatable :: called, measured
 
-    if (present(unit_name)) then
-       this % unit_name = unit_name
-    else
-       this % unit_name = '-'
-    end if
+    called = ''
+    if (present(label)) called = label
+    measured = '-'
+    if (present(unit_name)) measured = unit_name
 
+    call home % declare()
+    call this % describe(called, home, 1, 1, measured)
 
-    call this % home % declare()
   end function create
-
-  !===================================================================!
-  ! Identity.
-  !===================================================================!
-
-  pure function functional_name(this) result(name)
-
-    class(stored_functional), intent(in) :: this
-    character(len=:), allocatable :: name
-
-    if (allocated(this % label)) then
-       name = this % label
-    else
-       name = ''
-    end if
-
-  end function functional_name
-
-  pure function functional_units(this) result(units)
-
-    class(stored_functional), intent(in) :: this
-    character(len=:), allocatable :: units
-
-    if (allocated(this % unit_name)) then
-       units = this % unit_name
-    else
-       units = '-'
-    end if
-
-  end function functional_units
-
-  !===================================================================!
-  ! The terminal domain: one member, no edges. A single value has no
-  ! side of its own; the terminal support answers vertex by
-  ! convention, and nothing downstream reads it.
-  !===================================================================!
-
-  type(graph) function functional_domain(this) result(domain)
-
-    class(stored_functional), intent(in) :: this
-
-    domain = this % home
-
-  end function functional_domain
-
-  !===================================================================!
-  ! Shape: one entry, one component, one live kind.
-  !===================================================================!
-
-  pure integer function functional_num_components(this)
-
-    class(stored_functional), intent(in) :: this
-
-    associate (u1 => this); end associate
-
-    functional_num_components = 1
-
-  end function functional_num_components
-
-  pure integer function functional_num_entries(this)
-
-    class(stored_functional), intent(in) :: this
-
-    associate (u1 => this); end associate
-
-    functional_num_entries = 1
-
-  end function functional_num_entries
 
 end module field_functional

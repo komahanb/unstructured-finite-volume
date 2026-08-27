@@ -16,8 +16,8 @@
 ! either being weakened.
 !
 ! One relation serves the whole block. A relation for each edge would
-! be one object per instant per row, which is the count view_set
-! exists to keep at O(1).
+! be one object per instant per row; counted carrier sets keep that
+! boundary at O(1).
 !
 ! The weights are then printed against the relation's own tuples, so
 ! that the sparsity and the numbers are shown to be one object read

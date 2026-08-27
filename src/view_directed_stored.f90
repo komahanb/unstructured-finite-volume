@@ -62,8 +62,7 @@ module view_directed_stored
   use map_set_representation, only : counted_set_representation
   use map_set      , only : set_map
   use map_label    , only : label_map
-  use map_inclusion, only : inclusion_map
-  use map_carving  , only : carve
+  use map_set_store, only : set_store
 
   implicit none
 
@@ -707,16 +706,14 @@ contains
   ! The vertices that touch no boundary edge.
   !===================================================================!
 
-  subroutine interior_vertices(this, sets, labels, inclusions, members)
+  subroutine interior_vertices(this, sets, members)
 
     class(stored_directed_graph), intent(in)    :: this
-    type(set_map)      , intent(inout) :: sets
-    type(label_map)    , intent(inout) :: labels
-    type(inclusion_map), intent(inout) :: inclusions
+    type(set_store)    , intent(inout) :: sets
     type(graph)    , intent(out)   :: members
 
-    call carve(members, selected(this, SELECT_INTERIOR, .true.), 'interior_vertices', &
-         & this % vset, sets, labels, inclusions)
+    call sets % declare_subobject(members, selected(this, SELECT_INTERIOR, .true.), &
+         & 'interior_vertices', this % vset)
 
   end subroutine interior_vertices
 
@@ -724,16 +721,14 @@ contains
   ! The vertices that touch a boundary edge.
   !===================================================================!
 
-  subroutine boundary_vertices(this, sets, labels, inclusions, members)
+  subroutine boundary_vertices(this, sets, members)
 
     class(stored_directed_graph), intent(in)    :: this
-    type(set_map)      , intent(inout) :: sets
-    type(label_map)    , intent(inout) :: labels
-    type(inclusion_map), intent(inout) :: inclusions
+    type(set_store)    , intent(inout) :: sets
     type(graph)    , intent(out)   :: members
 
-    call carve(members, selected(this, SELECT_BOUNDARY, .true.), 'boundary_vertices', &
-         & this % vset, sets, labels, inclusions)
+    call sets % declare_subobject(members, selected(this, SELECT_BOUNDARY, .true.), &
+         & 'boundary_vertices', this % vset)
 
   end subroutine boundary_vertices
 
@@ -742,17 +737,15 @@ contains
   ! here.
   !===================================================================!
 
-  subroutine tagged_vertices(this, tag, sets, labels, inclusions, members)
+  subroutine tagged_vertices(this, tag, sets, members)
 
     class(stored_directed_graph), intent(in)    :: this
     character(len=*)   , intent(in)    :: tag
-    type(set_map)      , intent(inout) :: sets
-    type(label_map)    , intent(inout) :: labels
-    type(inclusion_map), intent(inout) :: inclusions
+    type(set_store)    , intent(inout) :: sets
     type(graph)    , intent(out)   :: members
 
-    call carve(members, selected(this, SELECT_TAGGED, .true., tag), 'tagged_vertices', &
-         & this % vset, sets, labels, inclusions)
+    call sets % declare_subobject(members, selected(this, SELECT_TAGGED, .true., tag), &
+         & 'tagged_vertices', this % vset)
 
   end subroutine tagged_vertices
 
@@ -837,16 +830,14 @@ contains
   ! The edges with a head: both ends real.
   !===================================================================!
 
-  subroutine interior_edges(this, sets, labels, inclusions, members)
+  subroutine interior_edges(this, sets, members)
 
     class(stored_directed_graph), intent(in)    :: this
-    type(set_map)      , intent(inout) :: sets
-    type(label_map)    , intent(inout) :: labels
-    type(inclusion_map), intent(inout) :: inclusions
+    type(set_store)    , intent(inout) :: sets
     type(graph)    , intent(out)   :: members
 
-    call carve(members, selected(this, SELECT_INTERIOR, .false.), 'interior_edges', &
-         & this % eset, sets, labels, inclusions)
+    call sets % declare_subobject(members, selected(this, SELECT_INTERIOR, .false.), &
+         & 'interior_edges', this % eset)
 
   end subroutine interior_edges
 
@@ -854,16 +845,14 @@ contains
   ! The edges with no head - the open ends of the graph.
   !===================================================================!
 
-  subroutine boundary_edges(this, sets, labels, inclusions, members)
+  subroutine boundary_edges(this, sets, members)
 
     class(stored_directed_graph), intent(in)    :: this
-    type(set_map)      , intent(inout) :: sets
-    type(label_map)    , intent(inout) :: labels
-    type(inclusion_map), intent(inout) :: inclusions
+    type(set_store)    , intent(inout) :: sets
     type(graph)    , intent(out)   :: members
 
-    call carve(members, selected(this, SELECT_BOUNDARY, .false.), 'boundary_edges', &
-         & this % eset, sets, labels, inclusions)
+    call sets % declare_subobject(members, selected(this, SELECT_BOUNDARY, .false.), &
+         & 'boundary_edges', this % eset)
 
   end subroutine boundary_edges
 
@@ -872,17 +861,15 @@ contains
   ! here.
   !===================================================================!
 
-  subroutine tagged_edges(this, tag, sets, labels, inclusions, members)
+  subroutine tagged_edges(this, tag, sets, members)
 
     class(stored_directed_graph), intent(in)    :: this
     character(len=*)   , intent(in)    :: tag
-    type(set_map)      , intent(inout) :: sets
-    type(label_map)    , intent(inout) :: labels
-    type(inclusion_map), intent(inout) :: inclusions
+    type(set_store)    , intent(inout) :: sets
     type(graph)    , intent(out)   :: members
 
-    call carve(members, selected(this, SELECT_TAGGED, .false., tag), 'tagged_edges', &
-         & this % eset, sets, labels, inclusions)
+    call sets % declare_subobject(members, selected(this, SELECT_TAGGED, .false., tag), &
+         & 'tagged_edges', this % eset)
 
   end subroutine tagged_edges
 
@@ -894,17 +881,15 @@ contains
   ! arrays and these answers become real.
   !===================================================================!
 
-  subroutine owned_vertices(this, part_id, sets, labels, inclusions, members)
+  subroutine owned_vertices(this, part_id, sets, members)
 
     class(stored_directed_graph), intent(in)    :: this
     integer            , intent(in)    :: part_id
-    type(set_map)      , intent(inout) :: sets
-    type(label_map)    , intent(inout) :: labels
-    type(inclusion_map), intent(inout) :: inclusions
+    type(set_store)    , intent(inout) :: sets
     type(graph)    , intent(out)   :: members
 
-    call carve(members, owner_matches(this % whole_rel, this % nv, part_id, .true., .true.), 'owned_vertices', &
-         & this % vset, sets, labels, inclusions)
+    call sets % declare_subobject(members, owner_matches(this % whole_rel, this % nv, part_id, .true., .true.), &
+         & 'owned_vertices', this % vset)
 
   end subroutine owned_vertices
 
@@ -913,17 +898,15 @@ contains
   ! cells along the cut.
   !===================================================================!
 
-  subroutine borrowed_vertices(this, part_id, sets, labels, inclusions, members)
+  subroutine borrowed_vertices(this, part_id, sets, members)
 
     class(stored_directed_graph), intent(in)    :: this
     integer            , intent(in)    :: part_id
-    type(set_map)      , intent(inout) :: sets
-    type(label_map)    , intent(inout) :: labels
-    type(inclusion_map), intent(inout) :: inclusions
+    type(set_store)    , intent(inout) :: sets
     type(graph)    , intent(out)   :: members
 
-    call carve(members, owner_matches(this % whole_rel, this % nv, part_id, .true., .false.), 'borrowed_vertices', &
-         & this % vset, sets, labels, inclusions)
+    call sets % declare_subobject(members, owner_matches(this % whole_rel, this % nv, part_id, .true., .false.), &
+         & 'borrowed_vertices', this % vset)
 
   end subroutine borrowed_vertices
 
@@ -932,13 +915,11 @@ contains
   ! owns: what it owns, plus what it borrows.
   !===================================================================!
 
-  subroutine overlap_vertices(this, part_id, sets, labels, inclusions, members)
+  subroutine overlap_vertices(this, part_id, sets, members)
 
     class(stored_directed_graph), intent(in)    :: this
     integer            , intent(in)    :: part_id
-    type(set_map)      , intent(inout) :: sets
-    type(label_map)    , intent(inout) :: labels
-    type(inclusion_map), intent(inout) :: inclusions
+    type(set_store)    , intent(inout) :: sets
     type(graph)    , intent(out)   :: members
 
     integer, allocatable :: owned(:), borrowed(:)
@@ -946,8 +927,7 @@ contains
     allocate(owned   , source=owner_matches(this % whole_rel, this % nv, part_id, .true., .true.))
     allocate(borrowed, source=owner_matches(this % whole_rel, this % nv, part_id, .true., .false.))
 
-    call carve(members, [owned, borrowed], 'overlap_vertices', &
-         & this % vset, sets, labels, inclusions)
+    call sets % declare_subobject(members, [owned, borrowed], 'overlap_vertices', this % vset)
 
   end subroutine overlap_vertices
 
@@ -955,17 +935,15 @@ contains
   ! The edges whose keeper is this part.
   !===================================================================!
 
-  subroutine owned_edges(this, part_id, sets, labels, inclusions, members)
+  subroutine owned_edges(this, part_id, sets, members)
 
     class(stored_directed_graph), intent(in)    :: this
     integer            , intent(in)    :: part_id
-    type(set_map)      , intent(inout) :: sets
-    type(label_map)    , intent(inout) :: labels
-    type(inclusion_map), intent(inout) :: inclusions
+    type(set_store)    , intent(inout) :: sets
     type(graph)    , intent(out)   :: members
 
-    call carve(members, owner_matches(this % whole_rel, this % ne, part_id, .false., .true.), 'owned_edges', &
-         & this % eset, sets, labels, inclusions)
+    call sets % declare_subobject(members, owner_matches(this % whole_rel, this % ne, part_id, .false., .true.), &
+         & 'owned_edges', this % eset)
 
   end subroutine owned_edges
 
@@ -973,17 +951,15 @@ contains
   ! The edges this part reads but does not own.
   !===================================================================!
 
-  subroutine borrowed_edges(this, part_id, sets, labels, inclusions, members)
+  subroutine borrowed_edges(this, part_id, sets, members)
 
     class(stored_directed_graph), intent(in)    :: this
     integer            , intent(in)    :: part_id
-    type(set_map)      , intent(inout) :: sets
-    type(label_map)    , intent(inout) :: labels
-    type(inclusion_map), intent(inout) :: inclusions
+    type(set_store)    , intent(inout) :: sets
     type(graph)    , intent(out)   :: members
 
-    call carve(members, owner_matches(this % whole_rel, this % ne, part_id, .false., .false.), 'borrowed_edges', &
-         & this % eset, sets, labels, inclusions)
+    call sets % declare_subobject(members, owner_matches(this % whole_rel, this % ne, part_id, .false., .false.), &
+         & 'borrowed_edges', this % eset)
 
   end subroutine borrowed_edges
 
@@ -991,13 +967,11 @@ contains
   ! Owned and borrowed together: every edge this part can see.
   !===================================================================!
 
-  subroutine overlap_edges(this, part_id, sets, labels, inclusions, members)
+  subroutine overlap_edges(this, part_id, sets, members)
 
     class(stored_directed_graph), intent(in)    :: this
     integer            , intent(in)    :: part_id
-    type(set_map)      , intent(inout) :: sets
-    type(label_map)    , intent(inout) :: labels
-    type(inclusion_map), intent(inout) :: inclusions
+    type(set_store)    , intent(inout) :: sets
     type(graph)    , intent(out)   :: members
 
     integer, allocatable :: owned(:), borrowed(:)
@@ -1005,8 +979,7 @@ contains
     allocate(owned   , source=owner_matches(this % whole_rel, this % ne, part_id, .false., .true.))
     allocate(borrowed, source=owner_matches(this % whole_rel, this % ne, part_id, .false., .false.))
 
-    call carve(members, [owned, borrowed], 'overlap_edges', &
-         & this % eset, sets, labels, inclusions)
+    call sets % declare_subobject(members, [owned, borrowed], 'overlap_edges', this % eset)
 
   end subroutine overlap_edges
 

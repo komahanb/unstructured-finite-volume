@@ -19,7 +19,7 @@
 !
 !                    SUBOBJECTS, NOT INTEGER LISTS
 !
-! Sources and sinks are answered as carved subobjects of the
+! Sources and sinks are answered as declared subobjects of the
 ! view's own domain - so they carry identity, membership, size and
 ! local_index for free, and their enumeration is CANONICAL BY THE
 ! DOMAIN'S DECLARATION ORDER: the scan walks V by local index, and a
@@ -41,7 +41,7 @@
 ! m = |A|, and the carrier's own lookup cost T_idx:
 !
 !      sources/sinks       O(n) fibre borrows, each paying T_idx -
-!                          and then the carved-set declaration,
+!                          and then the subobject declaration,
 !                          which validates every kept member against
 !                          the ambient (T_has each) and dedupes with
 !                          its current quadratic worst-case check
@@ -62,9 +62,7 @@ module relation_algorithms
   use relation_finitary          , only : relation
   use relation_binary   , only : binary_relation, transposed_relation, transpose_of
   use map_set           , only : set_map
-  use map_label         , only : label_map
-  use map_inclusion     , only : inclusion_map
-  use map_carving       , only : carve
+  use map_set_store     , only : set_store
 
   implicit none
 
@@ -78,19 +76,17 @@ contains
   ! the domain's own order.
   !===================================================================!
 
-  subroutine sources(adjacency, sets, labels, inclusions, chosen)
+  subroutine sources(adjacency, sets, chosen)
 
     class(relation), target      , intent(in)    :: adjacency
-    type(set_map)                , intent(inout) :: sets
-    type(label_map)              , intent(inout) :: labels
-    type(inclusion_map)          , intent(inout) :: inclusions
+    type(set_store)              , intent(inout) :: sets
     type(graph)              , intent(out)   :: chosen
 
     class(binary_relation), pointer :: a
     type(graph)      :: dom
 
     call require_adjacency(adjacency, a, dom)
-    call carve_unpointed(a, 'sources', dom, sets, labels, inclusions, chosen)
+    call carve_unpointed(a, 'sources', dom, sets, chosen)
 
   end subroutine sources
 
@@ -99,12 +95,10 @@ contains
   ! read through the transposed view, so the search is written once.
   !===================================================================!
 
-  subroutine sinks(adjacency, sets, labels, inclusions, chosen)
+  subroutine sinks(adjacency, sets, chosen)
 
     class(relation), target      , intent(in)    :: adjacency
-    type(set_map)                , intent(inout) :: sets
-    type(label_map)              , intent(inout) :: labels
-    type(inclusion_map)          , intent(inout) :: inclusions
+    type(set_store)              , intent(inout) :: sets
     type(graph)              , intent(out)   :: chosen
 
     class(binary_relation), pointer :: a
@@ -113,23 +107,21 @@ contains
 
     call require_adjacency(adjacency, a, dom)
     converse = transpose_of(a)
-    call carve_unpointed(converse, 'sinks', dom, sets, labels, inclusions, chosen)
+    call carve_unpointed(converse, 'sinks', dom, sets, chosen)
 
   end subroutine sinks
 
   !===================================================================!
-  ! The members with an empty preimage, carved as a subobject of the
+  ! The members with an empty preimage, declared as a subobject of the
   ! domain in the domain's own order.
   !===================================================================!
 
-  subroutine carve_unpointed(a, label, dom, sets, labels, inclusions, chosen)
+  subroutine carve_unpointed(a, label, dom, sets, chosen)
 
     class(binary_relation), target, intent(in)    :: a
     character(len=*)              , intent(in)    :: label
     type(graph)                   , intent(in)    :: dom
-    type(set_map)                 , intent(inout) :: sets
-    type(label_map)               , intent(inout) :: labels
-    type(inclusion_map)           , intent(inout) :: inclusions
+    type(set_store)               , intent(inout) :: sets
     type(graph)                   , intent(out)   :: chosen
 
     integer, allocatable :: keep(:)
@@ -149,7 +141,7 @@ contains
        end if
     end do
 
-    call carve(chosen, keep(1:n), label, dom, sets, labels, inclusions)
+    call sets % declare_subobject(chosen, keep(1:n), label, dom)
 
   end subroutine carve_unpointed
 

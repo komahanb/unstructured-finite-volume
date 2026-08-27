@@ -1,7 +1,7 @@
 !=====================================================================!
-! The robin condition: the constitution's first citizen.
+! The robin condition: one tagged boundary statement.
 !
-! LEVEL 3 OF THE STRATIFICATION. The constitution says what the
+! LEVEL 3 OF THE STRATIFICATION. The condition says what the
 ! material does at a boundary, and it says it as COEFFICIENTS - this
 ! class computes numbers and hands them to the calculus; it owns no
 ! operator, no balance, no solve.
@@ -30,7 +30,7 @@
 ! Nothing downstream holds the string; everything downstream holds
 ! arrays.
 !
-! THE OPERATOR ROAD, for a > 0: the diffusive part rides the
+! THE OPERATOR PATH, for a > 0: the diffusive part uses the
 ! calculus directly. An edge coefficient kappa*area*a/denom with
 ! spacing delta and the stored value c/a in the operator's boundary
 ! argument reproduces the eliminated flux with the old row's own
@@ -47,9 +47,7 @@ module operation_robin_condition
   use util_precision  , only : dp
   use view_directed, only : directed_graph
   use graph_fractal      , only : graph
-  use map_set      , only : set_map
-  use map_label    , only : label_map
-  use map_inclusion, only : inclusion_map
+  use map_set_store, only : set_store
   use field_stored, only : stored_field
   use view_mesh, only : mesh
 
@@ -128,25 +126,23 @@ contains
   end function neumann
 
   !===================================================================!
-  ! The tag resolved, once: WHICH edges this condition speaks for.
+  ! The tag resolved, once: WHICH edges this condition covers.
   !
-  ! The answer is a carved set, so it is a new declared domain, and
-  ! the caller's maps are where it says who belongs, what it is called
-  ! and what it was carved from. They are arguments because the answer
+  ! The answer is a declared subset, so it is a new declared domain, and
+  ! the caller's set store says who belongs, what it is called and
+  ! which ambient set it sits under. It is an argument because the answer
   ! outlives this call - a set the caller cannot interpret would be no
   ! answer at all.
   !===================================================================!
 
-  subroutine faces(this, m, sets, labels, inclusions, members)
+  subroutine faces(this, m, sets, members)
 
     class(robin_condition), intent(in)    :: this
     type(mesh)            , intent(in)    :: m
-    type(set_map)         , intent(inout) :: sets
-    type(label_map)       , intent(inout) :: labels
-    type(inclusion_map)   , intent(inout) :: inclusions
+    type(set_store)       , intent(inout) :: sets
     type(graph)       , intent(out)   :: members
 
-    call m % tagged_edges(this % tag, sets, labels, inclusions, members)
+    call m % tagged_edges(this % tag, sets, members)
 
   end subroutine faces
 
@@ -336,21 +332,19 @@ contains
     real(dp), allocatable, intent(out) :: delta(:)
 
     !----------------------------------------------------------------!
-    ! The carved set is born and dies inside this call, so its
-    ! interpretation does too: these maps are locals, not a hidden
-    ! environment. Nothing that needs them escapes.
+    ! The declared set is local to this call, so its interpretation is
+    ! local too: this store is not a hidden environment. Nothing that
+    ! needs it escapes.
     !----------------------------------------------------------------!
 
     type(graph)     :: members
-    type(set_map)       :: sets
-    type(label_map)     :: labels
-    type(inclusion_map) :: inclusions
+    type(set_store) :: sets
 
     type(stored_field) :: fa, fd
     real(dp), allocatable :: all_areas(:), all_deltas(:)
     integer :: f, e
 
-    call m % tagged_edges(this % tag, sets, labels, inclusions, members)
+    call m % tagged_edges(this % tag, sets, members)
 
     fa = m % face_area()
     call fa % real_vector(all_areas)

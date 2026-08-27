@@ -60,10 +60,7 @@ module transform_partitioner
   use relation_partition, only : partition_relation
   use field_calculus, only : field
   use graph_fractal      , only : graph
-  use map_set      , only : set_map
-  use map_label    , only : label_map
-  use map_inclusion, only : inclusion_map, declared_subobject
-  use map_carving           , only : carve
+  use map_set_store, only : set_store
   use transform_structure, only : transform
   use view_directed_stored         , only : stored_directed_graph
   use field_stored   , only : stored_field
@@ -81,8 +78,8 @@ module transform_partitioner
   ! r <= S_part x S_whole recording how the part sits in the
   ! whole; the relation is required output, because a part without
   ! it cannot be reassembled. partition_data carries a field onto
-  ! a part along that same relation, writing the carved domain
-  ! into the caller's maps.
+  ! a part along that same relation, writing the declared domain
+  ! into the caller's set store.
   !===================================================================!
 
   !-------------------------------------------------------------------!
@@ -493,16 +490,14 @@ contains
   !===================================================================!
 
   subroutine partition_data(this, rel, global_graph, global_data, part_graph, &
-       & sets, labels, inclusions, part_data)
+       & sets, part_data)
 
     class(partitioner), intent(in)               :: this
     type(partition_relation), intent(in)         :: rel
     class(directed_graph)      , intent(in)               :: global_graph
     class(field) , intent(in)               :: global_data
     class(directed_graph)      , intent(in)               :: part_graph
-    type(set_map)      , intent(inout)            :: sets
-    type(label_map)    , intent(inout)            :: labels
-    type(inclusion_map), intent(inout)            :: inclusions
+    type(set_store)    , intent(inout)            :: sets
     class(field) , allocatable, intent(out) :: part_data
 
     type(graph) :: dom
@@ -523,22 +518,22 @@ contains
     class is (stored_field)
        dom   = global_data % domain()
        n_dom = global_data % num_entries()
-       ! Classify by embedding - a DECLARED question, so the inclusion
-       ! map answers it. Coverage decides the carry inside.
-       if (declared_subobject(dom, global_graph % vertex_set(), inclusions)) then
+       ! Classify by embedding - a DECLARED question answered through
+       ! the set store. Coverage decides the carry inside.
+       if (sets % subobject_of(dom, global_graph % vertex_set())) then
           call carry_field(global_data, dom, n_dom, &
                & global_graph % vertex_set(), global_graph % num_vertices(), &
-               & part_graph, rel, .true., sets, labels, inclusions, part_data)
-       else if (declared_subobject(dom, global_graph % edge_set(), inclusions)) then
+               & part_graph, rel, .true., sets, part_data)
+       else if (sets % subobject_of(dom, global_graph % edge_set())) then
           call carry_field(global_data, dom, n_dom, &
                & global_graph % edge_set(), global_graph % num_edges(), &
-               & part_graph, rel, .false., sets, labels, inclusions, part_data)
+               & part_graph, rel, .false., sets, part_data)
        else
           error stop 'partition: this field does not live on this graph''s domains'
        end if
 
     class default
-       error stop 'partition: this data does not ride on this transform'
+       error stop 'partition: this data is not handled by this transform'
     end select
 
   end subroutine partition_data
@@ -557,7 +552,7 @@ contains
 
   subroutine carry_field(global_data, dom, n_dom, global_carrier, &
        &                 n_global_carrier, part_graph, rel, on_vertices, &
-       &                 sets, labels, inclusions, part_data)
+       &                 sets, part_data)
 
     type(stored_field)        , intent(in)               :: global_data
     type(graph)    , intent(in)               :: dom
@@ -567,9 +562,7 @@ contains
     class(directed_graph)       , intent(in)               :: part_graph
     type(partition_relation), intent(in)          :: rel
     logical            , intent(in)               :: on_vertices
-    type(set_map)      , intent(inout)            :: sets
-    type(label_map)    , intent(inout)            :: labels
-    type(inclusion_map), intent(inout)            :: inclusions
+    type(set_store)    , intent(inout)            :: sets
     class(field) , allocatable, intent(out) :: part_data
 
     type(stored_field)           :: out
@@ -621,13 +614,13 @@ contains
           end if
        end do
        !-------------------------------------------------------------!
-       ! A new ambient means a new declared subset, so this is a carve
-       ! and obeys the carve law: identity, extension, label and
+       ! A new ambient means a new declared subset, so this operation
+       ! obeys the subobject law: identity, extension, label and
        ! embedding, together. The label is the one the global domain
        ! carried - transport renames nothing.
        !-------------------------------------------------------------!
 
-       call carve(sp, kept(1:n), labels % label_of(dom), part_carrier, sets, labels, inclusions)
+       call sets % declare_subobject(sp, kept(1:n), sets % label_of(dom), part_carrier)
 
        allocate(lv(n * num_components))
        do l = 1, n

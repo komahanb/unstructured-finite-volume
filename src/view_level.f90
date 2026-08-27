@@ -16,9 +16,9 @@
 !                        WHERE A LEVEL ENDS
 !
 ! A leaf spends no branch(1): its members are values rather than
-! graphs, and their extent is held in a map. That boundary is the one
-! drawn by view_set, and it is what keeps a domain of N freedoms at
-! O(1) semantic objects instead of N.
+! graphs, and their extent is held as a counted set representation.
+! That boundary keeps a domain of N freedoms at O(1) semantic
+! objects instead of N.
 !
 ! A leaf may still carry branch(2). A component of an ordinary
 ! differential equation has no coupling and leaves it NULL; the same

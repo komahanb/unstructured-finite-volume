@@ -64,10 +64,7 @@ module transform_assembler
   use relation_partition, only : partition_relation
   use field_calculus, only : field
   use graph_fractal      , only : graph
-  use map_set      , only : set_map
-  use map_label    , only : label_map
-  use map_inclusion, only : inclusion_map, declared_subobject
-  use map_carving           , only : carve
+  use map_set_store, only : set_store
   use transform_structure, only : transform
   use view_directed_stored         , only : stored_directed_graph
   use field_stored   , only : stored_field
@@ -242,16 +239,14 @@ contains
   !===================================================================!
 
   subroutine assemble_data(this, rel, part_graph, part_data, global_graph, &
-       & sets, labels, inclusions, global_data)
+       & sets, global_data)
 
     class(assembler) , intent(in)               :: this
     type(partition_relation), intent(in)        :: rel
     class(directed_graph)     , intent(in)               :: part_graph
     class(field), intent(in)               :: part_data
     class(directed_graph)     , intent(in)               :: global_graph
-    type(set_map)      , intent(inout)            :: sets
-    type(label_map)    , intent(inout)            :: labels
-    type(inclusion_map), intent(inout)            :: inclusions
+    type(set_store)    , intent(inout)            :: sets
     class(field), allocatable, intent(out) :: global_data
 
     type(graph) :: dom
@@ -266,22 +261,22 @@ contains
     class is (stored_field)
        dom   = part_data % domain()
        n_dom = part_data % num_entries()
-       ! Classify by embedding - a DECLARED question, so the inclusion
-       ! map answers it, never the extension and never the graph.
-       if (declared_subobject(dom, part_graph % vertex_set(), inclusions)) then
+       ! Classify by embedding - a DECLARED question answered through
+       ! the set store, never the extension and never the graph.
+       if (sets % subobject_of(dom, part_graph % vertex_set())) then
           call gather_field(part_data, dom, n_dom, part_graph, rel, &
                & part_graph % vertex_set(), part_graph % num_vertices(), &
-               & global_graph, .true., sets, labels, inclusions, global_data)
-       else if (declared_subobject(dom, part_graph % edge_set(), inclusions)) then
+               & global_graph, .true., sets, global_data)
+       else if (sets % subobject_of(dom, part_graph % edge_set())) then
           call gather_field(part_data, dom, n_dom, part_graph, rel, &
                & part_graph % edge_set(), part_graph % num_edges(), &
-               & global_graph, .false., sets, labels, inclusions, global_data)
+               & global_graph, .false., sets, global_data)
        else
           error stop 'assemble: this field does not live on this part''s domains'
        end if
 
     class default
-       error stop 'assemble: this data does not ride on this transform'
+       error stop 'assemble: this data is not handled by this transform'
     end select
 
   end subroutine assemble_data
@@ -298,7 +293,7 @@ contains
 
   subroutine gather_field(part_data, dom, n_dom, part_graph, rel, part_carrier, &
        &                  n_part_carrier, global_graph, on_vertices, &
-       &                  sets, labels, inclusions, global_data)
+       &                  sets, global_data)
 
     type(stored_field)        , intent(in)               :: part_data
     type(graph)    , intent(in)               :: dom
@@ -309,9 +304,7 @@ contains
     integer            , intent(in)               :: n_part_carrier
     class(directed_graph)       , intent(in)               :: global_graph
     logical            , intent(in)               :: on_vertices
-    type(set_map)      , intent(inout)            :: sets
-    type(label_map)    , intent(inout)            :: labels
-    type(inclusion_map), intent(inout)            :: inclusions
+    type(set_store)    , intent(inout)            :: sets
     class(field) , allocatable, intent(out) :: global_data
 
     type(stored_field)           :: out
@@ -372,13 +365,13 @@ contains
           came(n) = l
        end do
        !-------------------------------------------------------------!
-       ! A new ambient means a new declared subset, so this is a carve
-       ! and obeys the carve law: identity, extension, label and
+       ! A new ambient means a new declared subset, so this operation
+       ! obeys the subobject law: identity, extension, label and
        ! embedding, together. Extension and values return home; tokens
        ! do not, and the label does.
        !-------------------------------------------------------------!
 
-       call carve(sg, kept(1:n), labels % label_of(dom), global_carrier, sets, labels, inclusions)
+       call sets % declare_subobject(sg, kept(1:n), sets % label_of(dom), global_carrier)
 
        allocate(fv(n * num_components))
        do l = 1, n

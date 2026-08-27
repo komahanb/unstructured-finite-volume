@@ -1,10 +1,9 @@
 ! What each level carries beyond its structure.
 !
 ! A node is a graph and holds only its two branches. Everything else
-! about it is kept in a map keyed on its identity, and there are
-! three: what it is called, what values it holds, and how many
-! members the set it denotes has. This builds a complete tower and
-! attaches all three at every level, then reads it back with one
+! about it is kept by identity: the set store says what it is called
+! and how many members it denotes, while the value map says what it
+! holds. This builds a complete tower and reads it back with one
 ! traversal that never asks which level it is at.
 !
 !    expansion    label  the physics and what it is differentiated in
@@ -45,8 +44,7 @@ program level_maps
        & level_num_members, level_members
   use map_value             , only : value_map, VALUE_UNATTACHED, VALUE_UNKNOWN, &
        & VALUE_KNOWN
-  use map_label             , only : label_map
-  use map_set               , only : set_map
+  use map_set_store         , only : set_store
   use map_set_representation, only : counted_set_representation
 
   implicit none
@@ -59,8 +57,7 @@ program level_maps
 
   type(level_storage) :: store
   type(value_map)     :: values
-  type(label_map)     :: labels
-  type(set_map)       :: extents
+  type(set_store)     :: sets
 
   integer, allocatable :: sweeps(:)
   integer :: expansion, s
@@ -68,8 +65,8 @@ program level_maps
   sweeps = [(one_sweep(s), s = 0, max_derivative_degree)]
   expansion = store % assemble(sweeps, 0)
 
-  call labels % bind(store % node(expansion), 'expansion of the van der pol functional in nu')
-  call extents % bind(store % node(expansion), counted_set_representation(1))
+  call sets % name(store % node(expansion), 'expansion of the van der pol functional in nu')
+  call sets % bind(store % node(expansion), counted_set_representation(1))
   call attach_known(store % node(expansion), [1.0_dp])
 
   write(*,'(a)') ' the tower, and what each level carries'
@@ -114,8 +111,8 @@ contains
     at = store % assemble([integer ::], 0)
     write(d,'(i1)') degree
 
-    call labels  % bind(store % node(at), 'component of degree ' // d)
-    call extents % bind(store % node(at), counted_set_representation(num_freedoms))
+    call sets % name(store % node(at), 'component of degree ' // d)
+    call sets % bind(store % node(at), counted_set_representation(num_freedoms))
 
     if (block_index == 1 .and. instant <= 2) then
        call attach_known(store % node(at), spread(0.0_dp, 1, num_freedoms))
@@ -140,7 +137,7 @@ contains
          & d = 0, max_state_degree)], 0)
 
     write(k,'(i2)') instant
-    call labels % bind(store % node(at), 'slice at instant' // k)
+    call sets % name(store % node(at), 'slice at instant' // k)
 
   end function one_slice
 
@@ -159,7 +156,7 @@ contains
 
     at = store % assemble([(one_slice(k, block_index), k = 1, num_instants)], 0)
 
-    call labels % bind(store % node(at), family)
+    call sets % name(store % node(at), family)
 
     steps    = duration / real(2 * num_instants, dp)
     steps(1) = 0.0_dp
@@ -179,7 +176,7 @@ contains
          &                 one_block(2, 'adams-moulton of order 3')], 0)
 
     write(t,'(f8.4)') duration
-    call labels % bind(store % node(at), 'horizon of duration' // t)
+    call sets % name(store % node(at), 'horizon of duration' // t)
 
   end function one_horizon
 
@@ -200,16 +197,16 @@ contains
 
     write(s,'(i1)') sensitivity
     if (sensitivity == 0) then
-       call labels % bind(store % node(at), 'sweep 0, the functional itself')
+       call sets % name(store % node(at), 'sweep 0, the functional itself')
     else
-       call labels % bind(store % node(at), 'sweep ' // s // ', derivative ' // s // ' in nu')
+       call sets % name(store % node(at), 'sweep ' // s // ', derivative ' // s // ' in nu')
     end if
     call values % attach_unknown(store % node(at))
 
   end function one_sweep
 
   !-------------------------------------------------------------------!
-  ! One traversal, printing what the three maps hold. It never asks
+  ! One traversal, printing what the identity stores hold. It never asks
   ! which level it is at: the label is data, and a map that holds
   ! nothing for a node says so.
   !-------------------------------------------------------------------!
@@ -222,7 +219,7 @@ contains
     character(len=:), allocatable :: name
 
     name = ' '
-    if (labels % labelled(g)) name = labels % label_of(g)
+    if (sets % labelled(g)) name = sets % label_of(g)
 
     write(*,'(a,a,a,a)') repeat('   ', depth + 1), name, &
          & '   [' // status_name(values % status_of(g)) // ']', extent_of(g)
@@ -273,9 +270,9 @@ contains
     character(len=3) :: n
 
     text = ''
-    if (.not. extents % describes(g)) return
+    if (.not. sets % describes(g)) return
 
-    write(n,'(i3)') extents % num_members_of(g)
+    write(n,'(i3)') sets % num_members_of(g)
     text = '   extent' // n
 
   end function extent_of

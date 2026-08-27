@@ -17,7 +17,7 @@
 !
 !                    MEMBERS IN, MEMBERS OUT
 !
-! Every query speaks MEMBER VALUES, never storage rows. A sparse
+! Every query uses MEMBER VALUES, never storage rows. A sparse
 ! carrier may hold { 10 20 30 }; image(20) is asked with 20 and
 ! answers members of the far side. The bridge between a member and
 ! its storage row is the carrier's own local_index - the inverse
@@ -35,7 +35,7 @@
 ! caller holding a view holds a borrow: it lives while the relation
 ! lives, and no longer.
 !
-!                        THE CSR CITIZEN
+!                        THE CSR REPRESENTATION
 !
 ! csr_relation stores both directions, built once at construction:
 !
@@ -101,13 +101,11 @@ module relation_binary
   use relation_finitary          , only : relation
   use map_set           , only : set_map
   use map_set_representation, only : set_representation
-  use map_label         , only : label_map
 
   implicit none
 
   private
   public :: binary_relation, csr_relation, transposed_relation, transpose_of
-  public :: inclusion_of
   public :: group_by_key
   public :: ragged
   public :: transpose_padded
@@ -156,7 +154,7 @@ module relation_binary
   end interface
 
   !===================================================================!
-  ! The CSR citizen: both directions materialized once, every query
+  ! The CSR representation: both directions materialized once, every query
   ! an O(degree) slice.
   !===================================================================!
 
@@ -262,7 +260,7 @@ module relation_binary
 contains
 
   !===================================================================!
-  ! Arity two, for every binary citizen, forever.
+  ! Arity two, for every binary implementation, forever.
   !===================================================================!
 
   pure integer function binary_arity(this)
@@ -295,7 +293,7 @@ contains
 
   !===================================================================!
   ! The conveniences: own a copy of what the view borrows. Written
-  ! once, here, for every binary citizen present and future.
+  ! once, here, for every binary implementation present and future.
   !===================================================================!
 
   subroutine image(this, member, indices)
@@ -623,41 +621,6 @@ contains
     csr_materialized = .true.
 
   end function csr_materialized
-
-  !===================================================================!
-  ! The relational face of a subobject: the inclusion
-  !
-  !      I_S  <=  S x A ,       (s, s) for every s in S
-  !
-  ! total, functional and injective by construction - each member of
-  ! S relates to exactly its own image in the ambient. What the
-  ! subset states as membership, this states as a relation, ready
-  ! for the algebra: restriction of a relation to a subset is a
-  ! composition with its inclusion.
-  !===================================================================!
-
-  type(csr_relation) function inclusion_of(s, host, sets, labels) &
-       & result(inclusion)
-
-    type(graph) , intent(in) :: s
-    type(graph) , intent(in) :: host
-    type(set_map)   , intent(in) :: sets
-    type(label_map) , intent(in) :: labels
-
-    integer, allocatable :: table(:,:)
-    integer              :: k, n
-
-    n = sets % num_members_of(s)
-
-    allocate(table(2, n))
-    do k = 1, n
-       table(:, k) = [sets % member_of(s, k), sets % member_of(s, k)]
-    end do
-
-    inclusion = csr_relation(labels % label_of(s) // ' in ' // &
-         &                   labels % label_of(host), s, host, table, sets)
-
-  end function inclusion_of
 
   !===================================================================!
   ! Group a finite family of (key, value) pairs by key: the fibres

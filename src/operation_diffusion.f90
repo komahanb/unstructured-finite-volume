@@ -1,6 +1,5 @@
 !=====================================================================!
-! The diffusion statement: the constitution speaks, an operator
-! answers.
+! The diffusion statement: coefficients in, operator out.
 !
 ! LEVEL 3 OF THE STRATIFICATION. This is where the physics words
 ! live and stop: a conduction law says what the material carries, a
@@ -27,9 +26,7 @@ module operation_diffusion
   use util_precision  , only : dp
   use view_directed  , only : directed_graph
   use graph_fractal      , only : graph
-  use map_set      , only : set_map
-  use map_label    , only : label_map
-  use map_inclusion, only : inclusion_map
+  use map_set_store, only : set_store
   use field_forms          , only : form
   use field_stored    , only : stored_field
   use view_mesh     , only : mesh
@@ -58,16 +55,14 @@ contains
 
     class(form), allocatable :: chosen
     !----------------------------------------------------------------!
-    ! Each condition's faces are carved, read and dropped inside this
+    ! Each condition's faces are declared, read and dropped inside this
     ! call, so their interpretation is local too. A fresh identity per
     ! call is what lets one map hold every condition's faces without
     ! two of them claiming to describe one set.
     !----------------------------------------------------------------!
 
     type(graph)     :: members
-    type(set_map)       :: sets
-    type(label_map)     :: labels
-    type(inclusion_map) :: inclusions
+    type(set_store) :: sets
 
     type(stored_field) :: fa
     real(dp), allocatable :: keff(:), areas(:), scales(:)
@@ -93,7 +88,7 @@ contains
     flux  = 0.0_dp
     known = .false.
     do k = 1, size(conditions)
-       call conditions(k) % faces(m, sets, labels, inclusions, members)
+       call conditions(k) % faces(m, sets, members)
        call conditions(k) % wall_relation(m, weights, values)
        do f = 1, sets % num_members_of(members)
           e = sets % member_of(members, f)

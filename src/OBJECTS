@@ -12,10 +12,9 @@ view_sequence.o \
 view_level.o \
 map_set_representation.o \
 map_set.o \
-view_set.o \
 map_inclusion.o \
 map_label.o \
-map_carving.o \
+map_set_store.o \
 view_epistemic.o \
 relation_finitary.o \
 view_relational.o \

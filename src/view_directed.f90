@@ -17,13 +17,13 @@
 ! two finite domains and two maps between them - and it is a view over
 ! the ontology, never a kind of graph.
 !
-! Named, carved and tagged vertex and edge sets are not extra
+! Named vertex and edge subsets are not extra
 ! structure: each is a subobject of V or of E, answered as a set graph
-! identity and described in the caller's maps. Neighbourhood queries
+! identity and described in the caller's set store. Neighbourhood queries
 ! are compositions of tail and head, materialized because they are
 ! asked inside loops.
 !
-! This module was carved out of graph_grammar, which had become the
+! This module was split out of graph_grammar, which had become the
 ! one place everything legacy met (doc/final-codebase-cutover-plan.md,
 ! PR2). The type was renamed from `graph`, and then from `ordinary_`
 ! to `directed_`, because `ordinary` names no mathematical role and
@@ -84,16 +84,14 @@ module view_directed
   ! A domain-producing symbol here answers WHICH set. Where the answer
   ! is a set the graph already holds, that is all it answers, and the
   ! caller reconstructs the extension from a count it can already read.
-  ! Where the answer is a set CARVED on demand, the symbol must also
-  ! say how its members are stored, what it is called, and what it was
-  ! carved from - so it takes the three maps and binds into them. The
-  ! graph does not own them. It never learns what a set means.
+  ! Where the answer is a subset declared on demand, the symbol writes its
+  ! extension, name and embedding into one set store. The graph does
+  ! not own those side facts, and callers no longer drag three maps
+  ! through every signature.
   !===================================================================!
 
   use graph_fractal       , only : graph
-  use map_set       , only : set_map
-  use map_label     , only : label_map
-  use map_inclusion , only : inclusion_map
+  use map_set_store , only : set_store
 
   implicit none
 
@@ -140,7 +138,7 @@ module view_directed
   ! A NAMED SET IS A SET GRAPH. The whole sets are the graph's own
   ! carriers - one stable identity, asked twice, answering once; the
   ! subsets declared on demand answer a FRESH identity and bind what
-  ! it means into the caller's maps,
+  ! it means into the caller's set store,
   !
   !      vertex_set             tagged_edges('wall')
   !      the vertex carrier     a new set { 11 14 19 } c--> edges
@@ -208,17 +206,18 @@ module view_directed
 
      ! The named subsets, declared on demand: a fresh set each call,
      ! so each call binds its extension, its label and its declared
-     ! embedding into the caller's maps - asked twice, they answer
-     ! two sets. The whole vertex and edge sets are the carriers
-     ! above, vertex_set and edge_set: stable identities, no binding.
-     procedure(directed_carved_set_interface), deferred :: interior_vertices
-     procedure(directed_carved_set_interface), deferred :: boundary_vertices
+     ! embedding into the caller's set store - asked twice, they
+     ! answer two sets. The whole vertex and edge sets are the
+     ! carriers above, vertex_set and edge_set: stable identities, no
+     ! binding.
+     procedure(directed_subset_interface), deferred :: interior_vertices
+     procedure(directed_subset_interface), deferred :: boundary_vertices
      procedure(directed_tagged_set_interface), deferred :: tagged_vertices
-     procedure(directed_carved_set_interface), deferred :: interior_edges
-     procedure(directed_carved_set_interface), deferred :: boundary_edges
+     procedure(directed_subset_interface), deferred :: interior_edges
+     procedure(directed_subset_interface), deferred :: boundary_edges
      procedure(directed_tagged_set_interface), deferred :: tagged_edges
 
-     ! Carved by ownership, one part at a time.
+     ! Ownership subsets, one part at a time.
      procedure(directed_part_set_interface), deferred :: owned_vertices
      procedure(directed_part_set_interface), deferred :: borrowed_vertices
      procedure(directed_part_set_interface), deferred :: overlap_vertices
@@ -249,9 +248,9 @@ module view_directed
      ! partition_relation now - a value the cut writes, a graph
      ! carries, and the four verbs are handed.
      !
-     ! The six SETS above stayed. owned, borrowed and overlap carve a
-     ! subobject of V or of E and bind what it means into the caller's
-     ! maps, which is a view question and always was.
+     ! The six SETS above stayed. owned, borrowed and overlap declare
+     ! subobjects of V or of E and bind what they mean into the caller's
+     ! set store, which is a view question and always was.
      !----------------------------------------------------------------!
 
   end type directed_graph
@@ -299,7 +298,7 @@ module view_directed
      end function directed_edge_has_head_interface
 
      !===============================================================!
-     ! THE CARVED SETS. Called once, when an operation begins, so the
+     ! THE DECLARED SUBSETS. Called once, when an operation begins, so the
      ! cost is paid per sweep and not per cell.
      !
      ! Each call declares a NEW set - a fresh identity - because that
@@ -308,47 +307,32 @@ module view_directed
      ! calls to boundary_vertices() were never one domain, and are not
      ! one domain now.
      !
-     ! What the answer needs beyond identity, it binds:
-     !
-     !     sets         the listed extension - who belongs
-     !     labels       the name the old subset carried
-     !     inclusions   the embedding into the graph's own carrier,
-     !                  without which subobject questions go silent
-     !
-     ! All three are the CALLER'S, borrowed for the duration of the
-     ! call and never stored. That is the difference between stating a
-     ! dependency and hiding one.
+     ! What the answer needs beyond identity, it binds in the caller's
+     ! set store: listed extension, name and embedding into the
+     ! graph's own carrier. The store is borrowed for the duration of
+     ! the call and never kept.
      !===============================================================!
 
-     subroutine directed_carved_set_interface(this, sets, labels, &
-          & inclusions, members)
-       import :: directed_graph, graph, set_map, label_map, inclusion_map
+     subroutine directed_subset_interface(this, sets, members)
+       import :: directed_graph, graph, set_store
        class(directed_graph)       , intent(in)    :: this
-       type(set_map)      , intent(inout) :: sets
-       type(label_map)    , intent(inout) :: labels
-       type(inclusion_map), intent(inout) :: inclusions
+       type(set_store)    , intent(inout) :: sets
        type(graph)    , intent(out)   :: members
-     end subroutine directed_carved_set_interface
+     end subroutine directed_subset_interface
 
-     subroutine directed_tagged_set_interface(this, tag, sets, labels, &
-          & inclusions, members)
-       import :: directed_graph, graph, set_map, label_map, inclusion_map
+     subroutine directed_tagged_set_interface(this, tag, sets, members)
+       import :: directed_graph, graph, set_store
        class(directed_graph)       , intent(in)    :: this
        character(len=*)   , intent(in)    :: tag
-       type(set_map)      , intent(inout) :: sets
-       type(label_map)    , intent(inout) :: labels
-       type(inclusion_map), intent(inout) :: inclusions
+       type(set_store)    , intent(inout) :: sets
        type(graph)    , intent(out)   :: members
      end subroutine directed_tagged_set_interface
 
-     subroutine directed_part_set_interface(this, part_id, sets, labels, &
-          & inclusions, members)
-       import :: directed_graph, graph, set_map, label_map, inclusion_map
+     subroutine directed_part_set_interface(this, part_id, sets, members)
+       import :: directed_graph, graph, set_store
        class(directed_graph)       , intent(in)    :: this
        integer            , intent(in)    :: part_id
-       type(set_map)      , intent(inout) :: sets
-       type(label_map)    , intent(inout) :: labels
-       type(inclusion_map), intent(inout) :: inclusions
+       type(set_store)    , intent(inout) :: sets
        type(graph)    , intent(out)   :: members
      end subroutine directed_part_set_interface
 

@@ -1,37 +1,3 @@
-module physics_vanderpol
-  use util_precision    , only : dp
-  use operation_expression, only : expression, unknown, design, derivative, stated, &
-       & operator(+), operator(-), operator(*), operator(**)
-  implicit none
-  private
-  public :: van_der_pol, van_der_pol_energy, van_der_pol_dissipation
-contains
-  function van_der_pol(degree) result(r)
-    integer, intent(in) :: degree
-    type(expression) :: r
-    type(expression) :: q, nu
-    q  = unknown()
-    nu = design()
-    r = stated(derivative(q, degree) - nu * (1.0_dp - derivative(q, 0)**2) * derivative(q, degree - 1) &
-         & + derivative(q, 0), degree, 'van der pol residual')
-  end function van_der_pol
-  function van_der_pol_energy(degree) result(f)
-    integer, intent(in) :: degree
-    type(expression) :: f
-    type(expression) :: q
-    q = unknown()
-    f = stated(0.5_dp * (derivative(q, 0)**2 + derivative(q, 1)**2), degree, 'van der pol energy')
-  end function van_der_pol_energy
-  function van_der_pol_dissipation(degree) result(f)
-    integer, intent(in) :: degree
-    type(expression) :: f
-    type(expression) :: q, nu
-    q  = unknown()
-    nu = design()
-    f = stated(nu * (1.0_dp - derivative(q, 0)**2) * derivative(q, 1) * derivative(q, 1), &
-         & degree, 'van der pol dissipation')
-  end function van_der_pol_dissipation
-end module physics_vanderpol
 module gti_configuration
   use util_precision  , only : dp
   implicit none
@@ -716,7 +682,7 @@ module gti_expansion
   use field_calculus        , only : field
   use field_stored          , only : stored_field
   use operation_family      , only : family
-  use operation_grid        , only : grid
+  use operation_grid        , only : grid, partition
   use operation_coupling    , only : weights_of
   use operation_stencil     , only : stencil, combine_triples
   use operation_action      , only : variation
@@ -1026,35 +992,16 @@ contains
     call this % labels % bind(this % node(at), 'the spatial discretization stencil')
     call attach_known(this, at, in_relation_order(this, this % node(at), table, w))
   end function spatial_discretization_coupling
-  subroutine partition(steps, num_instants, design, dt)
-    class(grid), intent(in) :: steps
-    integer    , intent(in) :: num_instants
-    real(dp)   , intent(in) :: design(:)
-    real(dp), allocatable, intent(out) :: dt(:)
-    type(stored_directed_graph) :: instants
-    type(stored_field) :: knobs
-    class(field), allocatable :: out
-    instants = stored_directed_graph(num_instants, tails=[integer ::], heads=[integer ::])
-    knobs    = stored_field('design', instants % vertex_set(), max(size(design), 1))
-    call knobs % set_real_vector(padded(design))
-    call steps % apply(instants, [knobs], out)
-    call out % real_vector(dt)
-  end subroutine partition
-  pure function padded(design) result(x)
-    real(dp), intent(in) :: design(:)
-    real(dp), allocatable :: x(:)
-    if (size(design) == 0) then
-       allocate(x(1), source=0.0_dp)
-    else
-       x = design
-    end if
-  end function padded
   subroutine attach_known(this, at, x)
     class(expansion), intent(inout) :: this
     integer         , intent(in)    :: at
     real(dp)        , intent(in)    :: x(:)
     call this % values % attach_unknown(this % node(at))
-    call this % values % mark_known(this % node(at), padded(x))
+    if (size(x) == 0) then
+       call this % values % mark_known(this % node(at), [0.0_dp])
+    else
+       call this % values % mark_known(this % node(at), x)
+    end if
   end subroutine attach_known
   integer function one_sweep(this, physics, schemes, instants, dt, sensitivity) result(at)
     class(expansion)      , intent(inout) :: this
@@ -2281,7 +2228,7 @@ module gti_march
   use operation_dense_direct  , only : dense_direct
   use operation_gmres         , only : gmres
   use operation_family        , only : family
-  use operation_grid          , only : grid, uniform_grid
+  use operation_grid          , only : grid, partition, partitioned
   use operation_weight        , only : scheme_weight
   use operation_scheme_stencil, only : derived_constraints
   use operation_expression       , only : expression
@@ -2312,7 +2259,7 @@ module gti_march
   integer , save :: stopping_budget     = by_rate
   integer , save :: stopping_iterations = 100
   private
-  public :: partition, partitioned, solved, unknowns_graph
+  public :: solved, unknowns_graph
   public :: block_from
   public :: unknown, consistent_states, frozen_inputs
   public :: set_stopping
@@ -2487,37 +2434,6 @@ contains
     stopping_iterations = iterations
     call set_linear_stopping(tolerance, criterion, budget)
   end subroutine set_stopping
-  subroutine partition(duration, n, dt, t)
-    real(dp), intent(in) :: duration
-    integer , intent(in) :: n
-    real(dp), allocatable, intent(out) :: dt(:), t(:)
-    call partitioned(uniform_grid(duration), n, dt, t)
-  end subroutine partition
-  subroutine partitioned(steps, n, dt, t, design)
-    class(grid), intent(in) :: steps
-    integer    , intent(in) :: n
-    real(dp), allocatable, intent(out) :: dt(:), t(:)
-    real(dp), intent(in), optional :: design(:)
-    type(stored_directed_graph) :: instants
-    type(stored_field) :: knobs
-    class(field), allocatable :: out
-    integer :: k
-    instants = stored_directed_graph(n, tails=[integer ::], heads=[integer ::])
-    if (present(design)) then
-       knobs = stored_field('design', instants % vertex_set(), size(design))
-       call knobs % set_real_vector(design)
-    else
-       knobs = stored_field('design', instants % vertex_set(), 1)
-       call knobs % set_real_vector([0.0_dp])
-    end if
-    call steps % apply(instants, [knobs], out)
-    call out % real_vector(dt)
-    allocate(t(n))
-    t(1) = 0.0_dp
-    do k = 2, n
-       t(k) = t(k - 1) + dt(k)
-    end do
-  end subroutine partitioned
   pure integer function unknown(instant, degree, degrees, node, nodes) result(at)
     integer, intent(in)           :: instant, degree, degrees
     integer, intent(in), optional :: node, nodes
@@ -3124,9 +3040,8 @@ module gti_space
   use view_paraview_writer      , only : paraview_writer, polygon_cell
   use relation_binary           , only : ragged
   use util_string               , only : string
-  use operation_grid            , only : uniform_grid, random_grid
+  use operation_grid            , only : uniform_grid, random_grid, partitioned
   use gti_configuration         , only : chosen_from
-  use gti_march                 , only : partitioned
   implicit none
   private
   public :: room, spatial_mesh, spatial_operator, written_paraview, coarse_cells
@@ -3558,12 +3473,12 @@ end module gti_field
 module gti_chain
   use util_precision  , only : dp
   use operation_family , only : family
-  use operation_grid   , only : grid
+  use operation_grid   , only : grid, partitioned
   use operation_expression, only : expression
   use gti_expansion    , only : family_holder, marches_by_stages, expansion, &
        & design_of_physics, design_of_steps
   use gti_block        , only : block_residual
-  use gti_march        , only : imbalance, swept, solved_linear, fresh_stamp, partitioned, horizon_bounds, &
+  use gti_march        , only : imbalance, swept, solved_linear, fresh_stamp, horizon_bounds, &
        & frozen_inputs
   use gti_march        , only : block_from
   use gti_sweeps       , only : choose
@@ -4551,9 +4466,8 @@ end module gti_chain
 module gti_driver
   use iso_fortran_env  , only : int64
   use util_precision   , only : dp
-  use operation_grid   , only : grid, uniform_grid, random_grid
+  use operation_grid   , only : grid, uniform_grid, random_grid, partitioned
   use gti_configuration, only : configuration, read_configuration, override
-  use gti_march        , only : partitioned
   use gti_sweeps       , only : jacobian_of
   use view_directed_stored, only : stored_directed_graph
   use field_stored     , only : stored_field
@@ -4561,8 +4475,7 @@ module gti_driver
   use operation_family_bdf  , only : bdf_family
   use operation_family_adams, only : adams_family
   use operation_family_dirk , only : implicit_midpoint, crouzeix_two_stage, crouzeix_three_stage
-  use operation_expression  , only : expression
-  use physics_vanderpol     , only : van_der_pol_energy, van_der_pol_dissipation
+  use operation_expression  , only : expression, van_der_pol_energy, van_der_pol_dissipation
   use gti_chain             , only : chain_block
   implicit none
   private
@@ -4707,16 +4620,15 @@ module gti_demos
   use operation_family_adams, only : adams_family
   use operation_family_dirk , only : dirk_family, implicit_midpoint, &
        & crouzeix_two_stage, crouzeix_three_stage
-  use operation_grid        , only : grid, uniform_grid, random_grid, designed_grid
+  use operation_grid        , only : grid, uniform_grid, random_grid, designed_grid, partition
   use operation_coupling    , only : weights_of, coupling_inputs
   use operation_weight      , only : scheme_weight
-  use operation_expression  , only : expression
-  use operation_minimization, only : relative, by_rate
-  use physics_vanderpol     , only : van_der_pol, van_der_pol_energy, &
+  use operation_expression  , only : expression, van_der_pol, van_der_pol_energy, &
        & van_der_pol_dissipation
+  use operation_minimization, only : relative, by_rate
   use gti_expansion         , only : expansion, family_holder
   use gti_block             , only : block_residual
-  use gti_march             , only : partition, block_from, solved, unknowns_graph, &
+  use gti_march             , only : block_from, solved, unknowns_graph, &
        & horizon_bounds, set_stopping, consistent_state, imbalance, by_tangent, &
        & by_adjoint, fresh_stamp
   use gti_adaptive          , only : adaptive_partition
@@ -7350,8 +7262,7 @@ program graph_time_integrator
   use operation_family_bdf  , only : bdf_family
   use operation_family_adams, only : adams_family
   use operation_grid        , only : uniform_grid, random_grid, designed_grid, fixed_grid
-  use operation_expression  , only : expression
-  use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
+  use operation_expression  , only : expression, van_der_pol, van_der_pol_energy
   use operation_grid        , only : grid
   use gti_march             , only : set_stopping, imbalance, set_sweep, weight_of, precision_needed
   use gti_adaptive          , only : adaptive_partition

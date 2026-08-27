@@ -45,6 +45,7 @@ module operation_grid
   use operation_action      , only : operation, variation
   use operation_action, only : emit
   use view_directed         , only : directed_graph
+  use view_directed_stored  , only : stored_directed_graph
   use field_calculus        , only : field
   use graph_fractal         , only : graph
   use field_stored          , only : stored_field
@@ -55,6 +56,7 @@ module operation_grid
 
   private
   public :: grid, uniform_grid, random_grid, designed_grid, fixed_grid
+  public :: partition, partitioned
 
   ! One representation, the weight rule a case: uniform weighs every
   ! step one, random a bounded deterministic draw, designed the design
@@ -97,6 +99,14 @@ module operation_grid
   interface fixed_grid
      module procedure create_fixed
   end interface fixed_grid
+
+  interface partition
+     module procedure partition_duration, partition_values
+  end interface partition
+
+  interface partitioned
+     module procedure partitioned_terms, partitioned_values
+  end interface partitioned
 
 contains
 
@@ -366,7 +376,7 @@ contains
   ! weight that is not positive stops the program.
   !===================================================================!
 
-  subroutine partitioned(this, design, n, dt)
+  subroutine partitioned_terms(this, design, n, dt)
 
     class(grid)           , intent(in) :: this
     type(derivative_terms), intent(in) :: design(:)
@@ -396,7 +406,65 @@ contains
        dt(k) = this % duration() * (dt(k) / total)
     end do
 
-  end subroutine partitioned
+  end subroutine partitioned_terms
+
+  subroutine partition_duration(duration, n, dt, t)
+    real(dp), intent(in) :: duration
+    integer , intent(in) :: n
+    real(dp), allocatable, intent(out) :: dt(:), t(:)
+    call partitioned(uniform_grid(duration), n, dt, t)
+  end subroutine partition_duration
+
+  subroutine partition_values(steps, num_instants, design, dt)
+    class(grid), intent(in) :: steps
+    integer    , intent(in) :: num_instants
+    real(dp)   , intent(in) :: design(:)
+    real(dp), allocatable, intent(out) :: dt(:)
+    type(stored_directed_graph) :: instants
+    type(stored_field) :: knobs
+    class(field), allocatable :: out
+    instants = stored_directed_graph(num_instants, tails=[integer ::], heads=[integer ::])
+    knobs    = stored_field('design', instants % vertex_set(), max(size(design), 1))
+    call knobs % set_real_vector(padded(design))
+    call steps % apply(instants, [knobs], out)
+    call out % real_vector(dt)
+  end subroutine partition_values
+
+  pure function padded(design) result(x)
+    real(dp), intent(in) :: design(:)
+    real(dp), allocatable :: x(:)
+    if (size(design) == 0) then
+       allocate(x(1), source=0.0_dp)
+    else
+       x = design
+    end if
+  end function padded
+
+  subroutine partitioned_values(steps, n, dt, t, design)
+    class(grid), intent(in) :: steps
+    integer    , intent(in) :: n
+    real(dp), allocatable, intent(out) :: dt(:), t(:)
+    real(dp), intent(in), optional :: design(:)
+    type(stored_directed_graph) :: instants
+    type(stored_field) :: knobs
+    class(field), allocatable :: out
+    integer :: k
+    instants = stored_directed_graph(n, tails=[integer ::], heads=[integer ::])
+    if (present(design)) then
+       knobs = stored_field('design', instants % vertex_set(), size(design))
+       call knobs % set_real_vector(design)
+    else
+       knobs = stored_field('design', instants % vertex_set(), 1)
+       call knobs % set_real_vector([0.0_dp])
+    end if
+    call steps % apply(instants, [knobs], out)
+    call out % real_vector(dt)
+    allocate(t(n))
+    t(1) = 0.0_dp
+    do k = 2, n
+       t(k) = t(k - 1) + dt(k)
+    end do
+  end subroutine partitioned_values
 
   subroutine placed(this, input_graph, dt, output)
 

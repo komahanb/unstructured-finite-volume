@@ -1,6 +1,11 @@
 !=====================================================================!
-! The time grid: the operation that produces a partition of a
-! duration into steps.
+! The discretisation of a coordinate: the operation that produces a
+! finite measure on a duration - points of the axis and the weight
+! each carries. A partition and a quadrature are the two readings of
+! the one map: a partition's points are the instants and its weights
+! the steps, exact on piecewise constants; the gauss kind's points
+! are the Legendre nodes and its weights the rule's, exact on
+! polynomials to degree 2n - 1.
 !
 !      input graph    the instants
 !      input 1        the design, a real field
@@ -55,7 +60,7 @@ module operation_grid
   implicit none
 
   private
-  public :: grid, uniform_grid, random_grid, designed_grid, fixed_grid
+  public :: grid, uniform_grid, random_grid, designed_grid, fixed_grid, gauss_grid
   public :: partition, partitioned
 
   ! One representation, the weight rule a case: uniform weighs every
@@ -65,6 +70,7 @@ module operation_grid
   integer, parameter :: GRID_RANDOM   = 2
   integer, parameter :: GRID_DESIGNED = 3
   integer, parameter :: GRID_FIXED    = 4
+  integer, parameter :: GRID_GAUSS    = 5
 
   type, extends(operation) :: grid
 
@@ -80,6 +86,7 @@ module operation_grid
      procedure :: apply          => grid_apply
      procedure :: max_degree     => grid_max_degree
      procedure :: partial_action => grid_partial_action
+     procedure :: abscissae
      procedure, private :: weight_of
 
   end type grid
@@ -99,6 +106,10 @@ module operation_grid
   interface fixed_grid
      module procedure create_fixed
   end interface fixed_grid
+
+  interface gauss_grid
+     module procedure create_gauss
+  end interface gauss_grid
 
   interface partition
      module procedure partition_duration, partition_values
@@ -185,6 +196,24 @@ contains
 
   end function create_fixed
 
+  !===================================================================!
+  ! The quadrature of a duration: every point of the graph applied on
+  ! is a node of the Gauss-Legendre rule, and the weights sum to the
+  ! duration.
+  !===================================================================!
+
+  function create_gauss(span) result(this)
+
+    real(dp), intent(in) :: span
+    type(grid) :: this
+
+    call require_span(span)
+    this % kind = GRID_GAUSS
+    this % span = span
+    call this % declare_arguments(1)
+
+  end function create_gauss
+
   pure real(dp) function duration(this)
 
     class(grid), intent(in) :: this
@@ -202,6 +231,7 @@ contains
     case (GRID_UNIFORM);  name = 'uniform grid'
     case (GRID_RANDOM);   name = 'random grid'
     case (GRID_DESIGNED); name = 'designed grid'
+    case (GRID_GAUSS);    name = 'gauss grid'
     case default;         name = 'fixed grid'
     end select
 
@@ -223,6 +253,7 @@ contains
     case (GRID_UNIFORM);  w = uniform_weight(this, design, k, n)
     case (GRID_RANDOM);   w = random_weight(this, design, k, n)
     case (GRID_DESIGNED); w = designed_weight(this, design, k, n)
+    case (GRID_GAUSS);    w = gauss_weight(this, design, k, n)
     case default;         w = fixed_weight(this, design, k, n)
     end select
 
@@ -249,6 +280,63 @@ contains
     w = derivative_terms(this % steps(k - 1), design(1))
 
   end function fixed_weight
+
+  !===================================================================!
+  ! The k-th weight of the n-point Gauss-Legendre rule on [0, span],
+  ! a constant in the design. The node and weight on [-1, 1] come
+  ! from Newton on the Legendre polynomial through its recurrence,
+  ! seeded by the Chebyshev estimate; the iteration is stopped at the
+  ! arithmetic's spacing of the node.
+  !===================================================================!
+
+  pure function gauss_weight(this, design, k, n) result(w)
+
+    class(grid)           , intent(in) :: this
+    type(derivative_terms), intent(in) :: design(:)
+    integer               , intent(in) :: k, n
+
+    type(derivative_terms) :: w
+    real(dp) :: node, weight
+
+    call gauss_node_weight(k, n, this % span, node, weight)
+    w = derivative_terms(weight, design(1))
+
+  end function gauss_weight
+
+  pure subroutine gauss_node_weight(k, n, span, node, weight)
+
+    integer , intent(in)  :: k, n
+    real(dp), intent(in)  :: span
+    real(dp), intent(out) :: node, weight
+
+    real(dp) :: x, p, p_below, p_above, slope, pi
+    integer  :: iteration, j
+
+    if (k < 1 .or. k > n) then
+       error stop 'operation_grid: the node is one of the rule'
+    end if
+
+    pi = acos(-1.0_dp)
+    x  = -cos(pi * (real(k, dp) - 0.25_dp) / (real(n, dp) + 0.5_dp))
+
+    do iteration = 1, 64
+       ! P_n(x) and its slope by the three-term recurrence
+       p_below = 1.0_dp
+       p       = x
+       do j = 2, n
+          p_above = (real(2 * j - 1, dp) * x * p - real(j - 1, dp) * p_below) / real(j, dp)
+          p_below = p
+          p       = p_above
+       end do
+       slope = real(n, dp) * (x * p - p_below) / (x * x - 1.0_dp)
+       if (abs(p / slope) <= spacing(abs(x) + 1.0_dp)) exit
+       x = x - p / slope
+    end do
+
+    node   = span * (x + 1.0_dp) / 2.0_dp
+    weight = span / ((1.0_dp - x * x) * slope * slope)
+
+  end subroutine gauss_node_weight
 
   !===================================================================!
   ! THE RULES, one per kind.
@@ -384,17 +472,20 @@ contains
     type(derivative_terms), allocatable, intent(out) :: dt(:)
 
     type(derivative_terms) :: total
-    integer :: k
+    integer :: k, first
 
-    if (n < 2) then
+    ! a partition's first instant carries no step; a quadrature
+    ! weighs every point
+    first = merge(1, 2, this % kind == GRID_GAUSS)
+    if (n < first + 1) then
        error stop 'operation_grid: a partition needs two instants'
     end if
 
     allocate(dt(n))
-    dt(1) = derivative_terms(0.0_dp, design(1))
     total = derivative_terms(0.0_dp, design(1))
+    if (first == 2) dt(1) = derivative_terms(0.0_dp, design(1))
 
-    do k = 2, n
+    do k = first, n
        dt(k) = this % weight_of(design, k, n)
        if (value(dt(k)) <= 0.0_dp) then
           error stop 'operation_grid: every step weight is positive'
@@ -402,7 +493,7 @@ contains
        total = total + dt(k)
     end do
 
-    do k = 2, n
+    do k = first, n
        dt(k) = this % duration() * (dt(k) / total)
     end do
 
@@ -459,12 +550,38 @@ contains
     end if
     call steps % apply(instants, [knobs], out)
     call out % real_vector(dt)
-    allocate(t(n))
-    t(1) = 0.0_dp
-    do k = 2, n
-       t(k) = t(k - 1) + dt(k)
-    end do
+    call steps % abscissae(n, dt, t)
   end subroutine partitioned_values
+
+  !===================================================================!
+  ! The points of the axis the weights sit at: a partition's are its
+  ! instants, accumulated from the steps; the gauss kind's are its
+  ! nodes. One weight per point either way.
+  !===================================================================!
+
+  pure subroutine abscissae(this, n, dt, t)
+
+    class(grid), intent(in) :: this
+    integer    , intent(in) :: n
+    real(dp)   , intent(in) :: dt(:)
+    real(dp), allocatable, intent(out) :: t(:)
+
+    real(dp) :: weight
+    integer  :: k
+
+    allocate(t(n))
+    if (this % kind == GRID_GAUSS) then
+       do k = 1, n
+          call gauss_node_weight(k, n, this % span, t(k), weight)
+       end do
+    else
+       t(1) = 0.0_dp
+       do k = 2, n
+          t(k) = t(k - 1) + dt(k)
+       end do
+    end if
+
+  end subroutine abscissae
 
   subroutine placed(this, input_graph, dt, output)
 

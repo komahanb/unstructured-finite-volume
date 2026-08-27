@@ -4865,6 +4865,7 @@ contains
     write(*,'(a,l1)')   ' every level and coupling valid     ', &
          & two % consistent(two % node(two % root()))
     call grid_partials()
+    call gauss_exactness()
     call stage_block()
   contains
     recursive subroutine show(tower, g, depth)
@@ -4949,6 +4950,43 @@ contains
       call differenced(steps, instants, knobs, design, v, delta, plus, minus)
       call show_grid(dt, exact, (plus - minus) / (2.0_dp * delta))
     end subroutine grid_partials
+    !-----------------------------------------------------------------!
+    ! The quadrature kind of the same map: the n-point rule integrates
+    ! t to every power below 2n exactly over [0, span]. The floor each
+    ! difference is held to is the arithmetic's: n products, each
+    ! within one epsilon of the integral's size.
+    !-----------------------------------------------------------------!
+
+    subroutine gauss_exactness()
+
+      use operation_grid, only : gauss_grid, partitioned
+
+      real(dp), parameter :: span = 2.0_dp
+      real(dp), allocatable :: w(:), t(:)
+      real(dp) :: quadrature, integral, floor, worst
+      integer :: n, m, k
+
+      write(*,'(a)') ' '
+      write(*,'(a)') ' the gauss kind of the grid, exact to twice its points less one'
+      do n = 3, 5, 2
+         call partitioned(gauss_grid(span), n, w, t)
+         worst = 0.0_dp
+         do m = 0, 2 * n - 1
+            quadrature = 0.0_dp
+            do k = 1, n
+               quadrature = quadrature + w(k) * t(k) ** m
+            end do
+            integral = span ** (m + 1) / real(m + 1, dp)
+            floor    = real(n, dp) * epsilon(1.0_dp) * integral
+            worst    = max(worst, abs(quadrature - integral) / floor)
+         end do
+         write(*,'(a,i0,a,i0,a,f8.3,a,es9.2)') '   ', n, ' points, powers 0 to ', &
+              & 2 * n - 1, ':  sum of weights - span ', sum(w) - span, &
+              & '   worst difference over its floor ', worst
+      end do
+
+    end subroutine gauss_exactness
+
     subroutine show_grid(dt, exact, differenced)
       real(dp), intent(in) :: dt(:), exact(:), differenced(:)
       write(*,'(a)')          ' '

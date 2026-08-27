@@ -7,8 +7,8 @@
 ! which derivative degree it solves for. The coefficients it produces
 ! are dimensionless: the weight an edge finally carries is the
 ! coefficient times a power of the step, and that power is fixed by
-! the two degrees the edge joins, which operation_step_scaling
-! supplies and operation_weight multiplies in.
+! the two degrees the edge joins, which operation_weight multiplies
+! in.
 !
 !=====================================================================!
 !

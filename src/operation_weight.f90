@@ -19,7 +19,7 @@
 ! q'_(k-1) and dt_k alpha_i on q"_(k-i); a Runge-Kutta stage gives
 ! one on the incoming component and dt a_ij on the stage above it.
 !
-! A weight is itself a family: it declares the same march as the
+! A weight is an edge function over the same coupling as the
 ! coefficients it multiplies, so it plugs in wherever they do and the
 ! caller chooses whether the step powers are already carried.
 !
@@ -38,25 +38,21 @@
 module operation_weight
 
   use util_precision  , only : dp
-  use operation_family      , only : family
-  use util_derivative_terms , only : derivative_terms, integer_power, operator(*)
+  use operation_edge_function, only : edge_function
+  use util_derivative_terms  , only : derivative_terms, integer_power, operator(*)
 
   implicit none
 
   private
   public :: scheme_weight
 
-  type, extends(family) :: scheme_weight
+  type, extends(edge_function) :: scheme_weight
 
-     class(family), private, allocatable :: coefficients
+     class(edge_function), private, allocatable :: coefficients
 
    contains
 
      procedure :: name             => weight_name
-     procedure :: history_depth    => weight_history_depth
-     procedure :: num_stages       => weight_num_stages
-     procedure :: primary_degree   => weight_primary_degree
-     procedure :: row_pattern      => weight_row_pattern
      procedure :: edge_coefficient => weight_edge_coefficient
 
   end type scheme_weight
@@ -74,7 +70,7 @@ contains
 
   function create(coefficients) result(this)
 
-    class(family), intent(in) :: coefficients
+    class(edge_function), intent(in) :: coefficients
     type(scheme_weight) :: this
 
     allocate(this % coefficients, source=coefficients)
@@ -90,50 +86,6 @@ contains
     name = this % coefficients % name() // ' weight'
 
   end function weight_name
-
-  !===================================================================!
-  ! The march is the one the coefficients declare: multiplying by a
-  ! power of the step changes no reach, no stage count, no unknown
-  ! and no sparsity.
-  !===================================================================!
-
-  pure integer function weight_history_depth(this, equation_degree)
-
-    class(scheme_weight), intent(in) :: this
-    integer             , intent(in) :: equation_degree
-
-    weight_history_depth = this % coefficients % history_depth(equation_degree)
-
-  end function weight_history_depth
-
-  pure integer function weight_num_stages(this)
-
-    class(scheme_weight), intent(in) :: this
-
-    weight_num_stages = this % coefficients % num_stages()
-
-  end function weight_num_stages
-
-  pure integer function weight_primary_degree(this, equation_degree)
-
-    class(scheme_weight), intent(in) :: this
-    integer             , intent(in) :: equation_degree
-
-    weight_primary_degree = this % coefficients % primary_degree(equation_degree)
-
-  end function weight_primary_degree
-
-  pure subroutine weight_row_pattern(this, determines, equation_degree, &
-       & offset, source_degree)
-
-    class(scheme_weight), intent(in) :: this
-    integer             , intent(in) :: determines, equation_degree
-    integer, allocatable, intent(out) :: offset(:), source_degree(:)
-
-    call this % coefficients % row_pattern(determines, equation_degree, &
-         & offset, source_degree)
-
-  end subroutine weight_row_pattern
 
   !===================================================================!
   ! The product. Both factors carry their own partials in the steps,

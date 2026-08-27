@@ -33,7 +33,6 @@ operation_family.o \
 operation_family_bdf.o \
 operation_family_adams.o \
 operation_family_dirk.o \
-operation_step_scaling.o \
 operation_weight.o \
 transform_structure.o \
 operation_discretization.o \

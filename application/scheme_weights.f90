@@ -28,7 +28,6 @@ program scheme_weights
   use operation_family_bdf   , only : bdf_family
   use operation_family_adams , only : adams_family
   use operation_coupling     , only : coupling_inputs
-  use operation_step_scaling , only : step_scaling
   use operation_weight       , only : scheme_weight
 
   implicit none
@@ -101,16 +100,13 @@ contains
     type(stored_directed_graph) :: coupling
     type(stored_field), allocatable :: inputs(:)
     class(field), allocatable :: out
-    type(step_scaling) :: scaling
     type(scheme_weight) :: weights
     integer :: e
 
     call coupling_inputs(nv, tails, [(head, e = 1, size(tails))], dt, source_degree, determines, &
          & coupling, inputs)
 
-    scaling = step_scaling()
-    call scaling % apply(coupling, inputs, out)
-    call out % real_vector(tau)
+    tau = [(step_power(dt(head), source_degree(e) - determines(e)), e = 1, size(tails))]
 
     call scheme % apply(coupling, inputs, out)
     call out % real_vector(alpha)
@@ -120,6 +116,26 @@ contains
     call out % real_vector(w)
 
   end subroutine row_fields
+
+  !-------------------------------------------------------------------!
+  ! The step raised to an integer exponent of either sign, as
+  ! repeated products, matching the exact arithmetic's power.
+  !-------------------------------------------------------------------!
+
+  pure real(dp) function step_power(h, n) result(p)
+
+    real(dp), intent(in) :: h
+    integer , intent(in) :: n
+
+    integer :: i
+
+    p = 1.0_dp
+    do i = 1, abs(n)
+       p = p * h
+    end do
+    if (n < 0) p = 1.0_dp / p
+
+  end function step_power
 
   !-------------------------------------------------------------------!
   ! The residual of one row on the polynomial t raised to m.

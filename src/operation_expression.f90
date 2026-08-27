@@ -67,7 +67,6 @@ module operation_expression
   private
   public :: expression
   public :: unknown, design, constant, derivative, stated
-  public :: van_der_pol, van_der_pol_energy, van_der_pol_dissipation
   public :: operator(+), operator(-), operator(*), operator(/), operator(**)
   public :: sin, cos, exp, log, sqrt
 
@@ -766,33 +765,5 @@ contains
     call evaluated(this, input_graph, q, nu, output)
 
   end subroutine expression_partial_action
-
-  function van_der_pol(degree) result(r)
-    integer, intent(in) :: degree
-    type(expression) :: r
-    type(expression) :: q, nu
-    q  = unknown()
-    nu = design()
-    r = stated(derivative(q, degree) - nu * (1.0_dp - derivative(q, 0)**2) * derivative(q, degree - 1) &
-         & + derivative(q, 0), degree, 'van der pol residual')
-  end function van_der_pol
-
-  function van_der_pol_energy(degree) result(f)
-    integer, intent(in) :: degree
-    type(expression) :: f
-    type(expression) :: q
-    q = unknown()
-    f = stated(0.5_dp * (derivative(q, 0)**2 + derivative(q, 1)**2), degree, 'van der pol energy')
-  end function van_der_pol_energy
-
-  function van_der_pol_dissipation(degree) result(f)
-    integer, intent(in) :: degree
-    type(expression) :: f
-    type(expression) :: q, nu
-    q  = unknown()
-    nu = design()
-    f = stated(nu * (1.0_dp - derivative(q, 0)**2) * derivative(q, 1) * derivative(q, 1), &
-         & degree, 'van der pol dissipation')
-  end function van_der_pol_dissipation
 
 end module operation_expression

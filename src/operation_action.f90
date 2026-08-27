@@ -62,7 +62,7 @@ module operation_action
   public :: emit
   public :: argument
   public :: variation
-  public :: applied, varied, functional_of, functional_gradient
+  public :: applied, varied
   public :: design_partial, jacobian_of
 
   !===================================================================!
@@ -508,58 +508,6 @@ contains
     call out % real_vector(y)
 
   end subroutine varied
-
-  real(dp) function functional_of(integrand, instants, inputs, dt) result(f)
-
-    class(operation)     , intent(in) :: integrand
-    class(directed_graph), intent(in) :: instants
-    type(stored_field)   , intent(in) :: inputs(:)
-    real(dp)             , intent(in) :: dt(:)
-
-    real(dp), allocatable :: values(:)
-
-    call applied(integrand, instants, inputs, values)
-    f = sum(dt * values)
-
-  end function functional_of
-
-  subroutine functional_gradient(integrand, instants, inputs, dt, n, degrees, &
-       & state_domain, g, along_state, along_design)
-
-    class(operation)     , intent(in) :: integrand
-    class(directed_graph), intent(in) :: instants
-    type(stored_field)   , intent(in) :: inputs(:)
-    real(dp)             , intent(in) :: dt(:)
-    integer              , intent(in) :: n, degrees
-    type(graph)          , intent(in) :: state_domain
-    real(dp), allocatable, intent(out) :: g(:)
-    real(dp), intent(in), optional    :: along_state(:), along_design(:)
-
-    real(dp), allocatable :: v(:), rate(:)
-    integer :: d, k
-
-    allocate(g(n * degrees), source=0.0_dp)
-    allocate(v(n * degrees))
-    do d = 0, degrees - 1
-       v = 0.0_dp
-       do k = 1, n
-          v((k - 1) * degrees + d + 1) = 1.0_dp
-       end do
-       if (present(along_state)) then
-          call varied(integrand, instants, inputs, 1, state_domain, v, rate, &
-               & 1, state_domain, along_state)
-       else if (present(along_design)) then
-          call varied(integrand, instants, inputs, 1, state_domain, v, rate, &
-               & 2, state_domain, along_design)
-       else
-          call varied(integrand, instants, inputs, 1, state_domain, v, rate)
-       end if
-       do k = 1, n
-          g((k - 1) * degrees + d + 1) = dt(k) * rate(k)
-       end do
-    end do
-
-  end subroutine functional_gradient
 
   subroutine design_partial(rows, unknowns, inputs, n, design_domain, d)
 

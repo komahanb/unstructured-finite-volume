@@ -146,4 +146,36 @@ if grep -inwE 'fiber|fibers|center|centers|centered|coloring|colored|neighbor|ne
 fi
 echo " PASS : british spelling holds (fibre, centre, colouring, neighbour)"
 
+#---------------------------------------------------------------------
+# 7. The application layer, packed as one file of many modules, keeps
+#    the per-name rules: types read english order, readers are bare
+#    nouns, and the spelling is British. The module-namespace, alias
+#    and re-export rules are per-module laws over src and are not
+#    applied here, where one file holds modules that import each
+#    other.
+#---------------------------------------------------------------------
+
+appdir="$root/application"
+if ls "$appdir"/*.f90 >/dev/null 2>&1; then
+    bad_types=$(grep -hE '^ *type(, *(abstract|extends\([a-z_]+\)|public|private))* *:: *[a-z_]+' \
+            "$appdir"/*.f90 \
+        | grep -oE ':: *[a-z_]+' | sed 's/:: *//' | sort -u \
+        | grep -E "^($primes)_" || true)
+    if [ -n "$bad_types" ]; then
+        echo " FAIL : application types wearing a module namespace: $bad_types"
+        exit 1
+    fi
+    if grep -nE '(procedure[^!]*:: *get_|function +get_|subroutine +get_|public[^!]*\bget_)' \
+            "$appdir"/*.f90 | grep -q .; then
+        echo " FAIL : a get_ declaration exists in application"
+        exit 1
+    fi
+    if grep -inwE 'fiber|fibers|center|centers|centered|coloring|colored|neighbor|neighbors' \
+            "$appdir"/*.f90 | grep -q .; then
+        echo " FAIL : an american spelling exists in application"
+        exit 1
+    fi
+    echo " PASS : the application keeps the per-name rules"
+fi
+
 echo " PASS : the naming law holds"

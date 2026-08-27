@@ -330,9 +330,57 @@ contains
     end do
   end function chosen_from
 end module gti_configuration
+
+!=====================================================================!
+! The equations this application integrates, each stated once as an
+! expression: the van der Pol residual at any degree, its energy, and
+! the power its damping draws. The expression machinery knows none of
+! them; they are this application's physics, so they live here.
+!=====================================================================!
+
+module gti_physics
+  use util_precision      , only : dp
+  use operation_expression, only : expression, unknown, design, derivative, stated, &
+       & operator(+), operator(-), operator(*), operator(**)
+  implicit none
+  private
+  public :: van_der_pol, van_der_pol_energy, van_der_pol_dissipation
+contains
+  function van_der_pol(degree) result(r)
+    integer, intent(in) :: degree
+    type(expression) :: r
+    type(expression) :: q, nu
+    q  = unknown()
+    nu = design()
+    r = stated(derivative(q, degree) - nu * (1.0_dp - derivative(q, 0)**2) * derivative(q, degree - 1) &
+         & + derivative(q, 0), degree, 'van der pol residual')
+  end function van_der_pol
+
+  function van_der_pol_energy(degree) result(f)
+    integer, intent(in) :: degree
+    type(expression) :: f
+    type(expression) :: q
+    q = unknown()
+    f = stated(0.5_dp * (derivative(q, 0)**2 + derivative(q, 1)**2), degree, 'van der pol energy')
+  end function van_der_pol_energy
+
+  function van_der_pol_dissipation(degree) result(f)
+    integer, intent(in) :: degree
+    type(expression) :: f
+    type(expression) :: q, nu
+    q  = unknown()
+    nu = design()
+    f = stated(nu * (1.0_dp - derivative(q, 0)**2) * derivative(q, 1) * derivative(q, 1), &
+         & degree, 'van der pol dissipation')
+  end function van_der_pol_dissipation
+end module gti_physics
 module gti_sweeps
   use gti_configuration, only : refuse_unknown
   use util_precision  , only : dp, half_digits
+  use graph_fractal   , only : graph
+  use view_directed   , only : directed_graph
+  use field_stored    , only : stored_field
+  use operation_action, only : operation, applied, varied
   use operation_dense_direct, only : dense_direct
   use operation_multigrid   , only : multigrid
   use operation_gauss_seidel, only : gauss_seidel
@@ -346,6 +394,7 @@ module gti_sweeps
   public :: set_linear_solver, set_assembly, set_storage, set_multigrid
   public :: set_aggregates, set_coarse_nodes, coarse_nodes, assembly_present, multigrid_on
   public :: take_inner, keep_inner, forget_inner, set_linear_stopping, set_linear_budget
+  public :: functional_of, functional_gradient
   character(len=16), save :: chosen_solver   = 'direct'
   character(len=16), save :: chosen_assembly = 'matrix'
   character(len=16), save :: chosen_storage  = 'dense'
@@ -360,6 +409,57 @@ module gti_sweeps
   integer, allocatable, save :: chosen_coarse(:)
   class(minimizer), allocatable, save :: kept_inner
 contains
+  real(dp) function functional_of(integrand, instants, inputs, dt) result(f)
+
+    class(operation)     , intent(in) :: integrand
+    class(directed_graph), intent(in) :: instants
+    type(stored_field)   , intent(in) :: inputs(:)
+    real(dp)             , intent(in) :: dt(:)
+
+    real(dp), allocatable :: values(:)
+
+    call applied(integrand, instants, inputs, values)
+    f = sum(dt * values)
+
+  end function functional_of
+
+  subroutine functional_gradient(integrand, instants, inputs, dt, n, degrees, &
+       & state_domain, g, along_state, along_design)
+
+    class(operation)     , intent(in) :: integrand
+    class(directed_graph), intent(in) :: instants
+    type(stored_field)   , intent(in) :: inputs(:)
+    real(dp)             , intent(in) :: dt(:)
+    integer              , intent(in) :: n, degrees
+    type(graph)          , intent(in) :: state_domain
+    real(dp), allocatable, intent(out) :: g(:)
+    real(dp), intent(in), optional    :: along_state(:), along_design(:)
+
+    real(dp), allocatable :: v(:), rate(:)
+    integer :: d, k
+
+    allocate(g(n * degrees), source=0.0_dp)
+    allocate(v(n * degrees))
+    do d = 0, degrees - 1
+       v = 0.0_dp
+       do k = 1, n
+          v((k - 1) * degrees + d + 1) = 1.0_dp
+       end do
+       if (present(along_state)) then
+          call varied(integrand, instants, inputs, 1, state_domain, v, rate, &
+               & 1, state_domain, along_state)
+       else if (present(along_design)) then
+          call varied(integrand, instants, inputs, 1, state_domain, v, rate, &
+               & 2, state_domain, along_design)
+       else
+          call varied(integrand, instants, inputs, 1, state_domain, v, rate)
+       end if
+       do k = 1, n
+          g((k - 1) * degrees + d + 1) = dt(k) * rate(k)
+       end do
+    end do
+
+  end subroutine functional_gradient
   subroutine set_linear_solver(name)
     character(len=*), intent(in) :: name
     call refuse_unknown(name, ['direct   ', 'iterative'], 'linear_solver')
@@ -4353,7 +4453,8 @@ module gti_driver
   use operation_family_bdf  , only : bdf_family
   use operation_family_adams, only : adams_family
   use operation_family_dirk , only : implicit_midpoint, crouzeix_two_stage, crouzeix_three_stage
-  use operation_expression  , only : expression, van_der_pol_energy, van_der_pol_dissipation
+  use operation_expression  , only : expression
+  use gti_physics           , only : van_der_pol_energy, van_der_pol_dissipation
   use gti_chain             , only : chain_block
   implicit none
   private
@@ -4490,8 +4591,8 @@ module gti_demos
   use view_directed_stored  , only : stored_directed_graph
   use field_calculus        , only : field
   use field_stored          , only : stored_field
-  use operation_action      , only : variation, functional_of, functional_gradient, &
-       & sweep_design_partial => design_partial
+  use operation_action      , only : variation, sweep_design_partial => design_partial
+  use gti_sweeps            , only : functional_of, functional_gradient
   use operation_stencil     , only : stencil
   use operation_scheme_stencil, only : derived_constraints
   use operation_family      , only : family
@@ -4502,8 +4603,8 @@ module gti_demos
   use operation_grid        , only : grid, uniform_grid, random_grid, designed_grid, partition
   use operation_coupling    , only : weights_of, coupling_inputs
   use operation_weight      , only : scheme_weight
-  use operation_expression  , only : expression, van_der_pol, van_der_pol_energy, &
-       & van_der_pol_dissipation
+  use operation_expression  , only : expression
+  use gti_physics           , only : van_der_pol, van_der_pol_energy, van_der_pol_dissipation
   use operation_minimization, only : relative, by_rate
   use gti_expansion         , only : expansion, family_holder
   use gti_block             , only : block_residual
@@ -7140,7 +7241,8 @@ program graph_time_integrator
   use operation_family_bdf  , only : bdf_family
   use operation_family_adams, only : adams_family
   use operation_grid        , only : uniform_grid, random_grid, designed_grid, fixed_grid
-  use operation_expression  , only : expression, van_der_pol, van_der_pol_energy
+  use operation_expression  , only : expression
+  use gti_physics           , only : van_der_pol, van_der_pol_energy
   use operation_grid        , only : grid
   use gti_march             , only : set_stopping, imbalance, set_sweep, weight_of, precision_needed
   use gti_adaptive          , only : adaptive_partition

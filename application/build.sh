@@ -27,7 +27,7 @@ mkdir -p $OBJ $OUT
 
 MODULES="../physics/physics_vanderpol
          gti_configuration gti_sweeps gti_expansion gti_block
-         gti_march gti_space gti_field gti_chain gti_driver"
+         gti_march gti_adaptive gti_space gti_field gti_chain gti_driver"
 
 for m in $MODULES; do
    $F90 $FLAGS -I$LIB -J$OBJ -c $m.f90 -o $OBJ/$(basename $m).o

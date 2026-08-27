@@ -38,6 +38,8 @@ module gti_configuration
   type :: configuration
 
      character(len=32) :: physics      = 'vanderpol'
+     ! grid is uniform, random, or adaptive - the last discovered by an
+     ! error-controlled march to the tolerance, the steps then frozen
      character(len=32) :: grid         = 'random'
      character(len=32) :: combinations = 'homogeneous'
      character(len=32) :: families     = 'bdf adams dirk'

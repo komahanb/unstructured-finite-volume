@@ -42,7 +42,8 @@ program adaptive_grid
   use operation_grid       , only : designed_grid, uniform_grid
   use gti_block            , only : block_residual
   use gti_expansion        , only : expansion, family_holder
-  use gti_march            , only : consistent_state, block_from, solved
+  use gti_march            , only : consistent_state
+  use gti_adaptive         , only : adaptive_partition
   use gti_chain            , only : chain_block, march_chain, chain_expansion, &
        & chain_derivative, chain_system, chain_systems, functional_holder, one_functional
   use gti_sweeps           , only : forward_route, reverse_route
@@ -74,101 +75,6 @@ contains
     end select
 
   end function dirk_of
-
-  !-------------------------------------------------------------------!
-  ! One step of size h from a state, and the same by two of h/2. The
-  ! arriving instant's components come back from each; the pair drives
-  ! the estimate. A block over n instants of a uniform grid of extent
-  ! h has n - 1 steps of h / (n - 1), so n = 2 is one step and n = 3
-  ! two half steps.
-  !-------------------------------------------------------------------!
-
-  subroutine stepped(scheme, state, h, n, arrived)
-
-    class(family), intent(in)  :: scheme
-    real(dp)     , intent(in)  :: state(:), h
-    integer      , intent(in)  :: n
-    real(dp), allocatable, intent(out) :: arrived(:)
-
-    type(expansion)      :: tower
-    type(family_holder)  :: holder(1)
-    type(block_residual) :: rows
-    integer, allocatable :: at(:)
-    real(dp), allocatable :: q(:)
-    real(dp) :: achieved
-    integer  :: last
-
-    allocate(holder(1) % scheme, source=scheme)
-    call tower % build(van_der_pol(degrees - 1), holder, [n], uniform_grid(h), 0, design)
-    call block_from(tower, 1, scheme, van_der_pol(degrees - 1), state, rows, at)
-    call solved(rows, design, q, achieved)
-
-    last    = at(size(at))
-    arrived = q(last + 1:last + degrees)
-
-  end subroutine stepped
-
-  !-------------------------------------------------------------------!
-  ! The estimate the way a solve reads its tolerance: over the
-  ! solution components below the highest, relative to the state.
-  !-------------------------------------------------------------------!
-
-  pure real(dp) function estimate(coarse, fine) result(e)
-
-    real(dp), intent(in) :: coarse(:), fine(:)
-
-    e = norm2(coarse(1:degrees - 1) - fine(1:degrees - 1)) &
-         & / max(norm2(fine(1:degrees - 1)), tiny(1.0_dp))
-
-  end function estimate
-
-  !-------------------------------------------------------------------!
-  ! The adaptive march: the accepted steps of a scheme of order p over
-  ! [0, duration] to a tolerance. The controller is bounded and the
-  ! last step is clamped to land on the duration.
-  !-------------------------------------------------------------------!
-
-  subroutine adaptive_partition(scheme, p, tol, dt, rejects)
-
-    class(family), intent(in)  :: scheme
-    integer      , intent(in)  :: p
-    real(dp)     , intent(in)  :: tol
-    real(dp), allocatable, intent(out) :: dt(:)
-    integer      , intent(out) :: rejects
-
-    real(dp), parameter :: safety = 0.9_dp, grow = 5.0_dp, shrink = 0.2_dp
-    real(dp), allocatable :: state(:), coarse(:), fine(:)
-    real(dp) :: t, h, e, factor
-    integer  :: attempt
-
-    state = consistent_state(van_der_pol(degrees - 1), degrees, [q0, qd0], design)
-    dt    = [real(dp) ::]
-    t     = 0.0_dp
-    h     = duration / 8.0_dp
-    rejects = 0
-
-    do while (t < duration * (1.0_dp - 1.0e-12_dp))
-       h = min(h, duration - t)
-       attempt = 0
-       do
-          attempt = attempt + 1
-          call stepped(scheme, state, h, 2, coarse)
-          call stepped(scheme, state, h, 3, fine)
-          e      = estimate(coarse, fine)
-          factor = safety * (tol / max(e, tiny(1.0_dp))) ** (1.0_dp / real(p + 1, dp))
-          factor = min(grow, max(shrink, factor))
-          if (e <= tol .or. h <= duration * 1.0e-10_dp) exit
-          rejects = rejects + 1
-          h = h * factor
-          if (attempt > 50) error stop 'adaptive_grid: a step is refused past fifty attempts'
-       end do
-       dt    = [dt, h]
-       t     = t + h
-       state = fine
-       h     = h * factor
-    end do
-
-  end subroutine adaptive_partition
 
   !-------------------------------------------------------------------!
   ! The functional and its first design derivative on a given grid, by
@@ -228,7 +134,7 @@ contains
     write(*,'(a)') '   tolerance     steps   rejects        sum dt - T          functional     forward-reverse'
     do level = 1, 4
        tol = 10.0_dp ** (-3 - level)
-       call adaptive_partition(scheme, order, tol, dt, rejects)
+       dt = adaptive_partition(scheme, order, van_der_pol(degrees - 1), degrees, duration, [q0, qd0], design, tol, .true., rejects)
        call on_grid(scheme, dt, f, forward, reverse)
        span = sum(dt) - duration
        write(*,'(a,es9.1,i9,i9,es18.2,f18.9,es18.2)') '   ', tol, size(dt), rejects, span, f, &

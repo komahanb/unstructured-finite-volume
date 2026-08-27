@@ -54,7 +54,7 @@ module operation_grid
   implicit none
 
   private
-  public :: grid, uniform_grid, random_grid, designed_grid
+  public :: grid, uniform_grid, random_grid, designed_grid, fixed_grid
 
   type, abstract, extends(operation) :: grid
 
@@ -106,6 +106,15 @@ module operation_grid
      procedure :: weight_of => designed_weight
   end type designed_grid
 
+  ! a stored partition, given not designed: its weights are the steps
+  ! themselves, carried as constants so the grid contributes no design
+  type, extends(grid) :: fixed_grid
+     real(dp), allocatable, private :: steps(:)
+   contains
+     procedure :: name      => fixed_name
+     procedure :: weight_of => fixed_weight
+  end type fixed_grid
+
   interface uniform_grid
      module procedure create_uniform
   end interface uniform_grid
@@ -117,6 +126,10 @@ module operation_grid
   interface designed_grid
      module procedure create_designed
   end interface designed_grid
+
+  interface fixed_grid
+     module procedure create_fixed
+  end interface fixed_grid
 
 contains
 
@@ -170,6 +183,27 @@ contains
 
   end function create_designed
 
+  !===================================================================!
+  ! A grid whose partition is given: the steps, all positive, summing
+  ! to the duration they span. A nonpositive step stops the program.
+  !===================================================================!
+
+  function create_fixed(steps) result(this)
+
+    real(dp), intent(in) :: steps(:)
+    type(fixed_grid) :: this
+
+    if (any(steps <= 0.0_dp)) then
+       error stop 'operation_grid: every given step is positive'
+    end if
+
+    call require_span(sum(steps))
+    this % span  = sum(steps)
+    this % steps = steps
+    call this % declare_arguments(1)
+
+  end function create_fixed
+
   pure real(dp) function duration(this)
 
     class(grid), intent(in) :: this
@@ -207,6 +241,38 @@ contains
     name = 'designed grid'
 
   end function designed_name
+
+  pure function fixed_name(this) result(name)
+
+    class(fixed_grid), intent(in) :: this
+    character(len=:), allocatable :: name
+
+    associate (u1 => this); end associate
+    name = 'fixed grid'
+
+  end function fixed_name
+
+  !===================================================================!
+  ! The given step ending at instant k: the (k-1)-th stored step, a
+  ! constant in the design. An instant outside the partition stops the
+  ! program.
+  !===================================================================!
+
+  pure function fixed_weight(this, design, k, n) result(w)
+
+    class(fixed_grid)     , intent(in) :: this
+    type(derivative_terms), intent(in) :: design(:)
+    integer               , intent(in) :: k, n
+
+    type(derivative_terms) :: w
+
+    associate (u1 => n); end associate
+    if (k - 1 < 1 .or. k - 1 > size(this % steps)) then
+       error stop 'operation_grid: the instant is one of the given partition'
+    end if
+    w = derivative_terms(this % steps(k - 1), design(1))
+
+  end function fixed_weight
 
   !===================================================================!
   ! THE THREE RULES.

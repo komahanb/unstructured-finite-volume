@@ -62,10 +62,12 @@ program graph_time_integrator
   use operation_family      , only : family
   use operation_family_bdf  , only : bdf_family
   use operation_family_adams, only : adams_family
-  use operation_grid        , only : uniform_grid, random_grid, designed_grid
+  use operation_grid        , only : uniform_grid, random_grid, designed_grid, fixed_grid
   use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
   use operation_grid        , only : grid
   use gti_march             , only : set_stopping, imbalance, set_sweep, weight_of, precision_needed
+  use gti_adaptive          , only : adaptive_partition
+  use operation_family_dirk , only : crouzeix_three_stage
   use operation_stencil     , only : stencil
   use gti_space             , only : room, spatial_mesh, geometry_of, coarse_cells
   use gti_field             , only : spatial_discretization_stencil_of, initial_field, against_the_laplacian, &
@@ -110,6 +112,9 @@ program graph_time_integrator
   ! step weights are designs beside the physics' parameter
   type(functional_holder), allocatable :: functionals(:)
   logical :: grid_designed = .false.
+  ! the adaptive grid, discovered once and frozen: not a design
+  logical :: grid_adaptive = .false.
+  real(dp), allocatable :: adaptive_weights(:)
 
   call settings('homogeneous', cfg)
   call show(cfg)
@@ -395,7 +400,7 @@ contains
     call assembled(cfg, names, orders, schemes, added, ok)
     if (.not. ok) return
 
-    call steps_of(cfg, dt, t)
+    call grid_partition(cfg, dt, t)
     given = schemes(1) % scheme % history_depth(nd - 1)
 
     ! the chain from the state at the first instant: a startup block
@@ -410,6 +415,13 @@ contains
        call march_chain(schemes, added, van_der_pol(cfg % state_degree), nd, &
             & designed_grid(cfg % time_duration), cfg % design, q0, chain, tower, dt, t, &
             & achieved, grid_design=weights, left=left, nodes=nodes, spatial_discretization_stencil=spatial_discretization_stencil, &
+            & startup=cfg % startup_refinement)
+    else if (grid_adaptive) then
+       ! the discovered steps as a given partition, frozen: no grid
+       ! design, so the tower carries the physics' parameter alone
+       call march_chain(schemes, added, van_der_pol(cfg % state_degree), nd, &
+            & fixed_grid(adaptive_weights), cfg % design, q0, chain, tower, dt, t, achieved, &
+            & left=left, nodes=nodes, spatial_discretization_stencil=spatial_discretization_stencil, &
             & startup=cfg % startup_refinement)
     else
        call march_chain(schemes, added, van_der_pol(cfg % state_degree), nd, &
@@ -814,9 +826,68 @@ contains
   ! Every row the configuration asks for.
   !-------------------------------------------------------------------!
 
-  subroutine table(cfg)
+  !-------------------------------------------------------------------!
+  ! The adaptive grid: when the grid is adaptive, an order-four
+  ! diagonally implicit march to the tolerance discovers the steps,
+  ! and they are frozen as the run''s grid - its instant count set from
+  ! them. The grid is over time alone; a spatial field is refused. The
+  ! steps are not designs: the frozen grid is an ordinary grid to the
+  ! expansion, so no grid sensitivity is taken.
+  !-------------------------------------------------------------------!
+
+  subroutine adaptive_context(cfg)
+
+    type(configuration), intent(inout) :: cfg
+
+    integer :: nd, rejects
+
+    if (trim(cfg % grid) /= 'adaptive') return
+    if (over_field) then
+       error stop 'graph_time_integrator: an adaptive grid is over time alone'
+    end if
+
+    nd = cfg % state_degree + 1
+    adaptive_weights = adaptive_partition(crouzeix_three_stage(), 4, &
+         & van_der_pol(cfg % state_degree), nd, cfg % time_duration, &
+         & q0(1:cfg % state_degree), cfg % design, cfg % tolerance, &
+         & trim(cfg % tolerance_criterion) == 'relative', rejects)
+    cfg % instants = size(adaptive_weights) + 1
+    grid_adaptive  = .true.
+
+    write(*,'(a,i0,a,es9.2,a,i0,a)') '   adaptive grid: ', size(adaptive_weights), &
+         & ' steps to tolerance ', cfg % tolerance, ' (', rejects, ' rejected)'
+
+  end subroutine adaptive_context
+
+  !-------------------------------------------------------------------!
+  ! The steps and their times: the discovered partition when the grid
+  ! is adaptive, the chosen grid's otherwise.
+  !-------------------------------------------------------------------!
+
+  subroutine grid_partition(cfg, dt, t)
 
     type(configuration), intent(in) :: cfg
+    real(dp), allocatable, intent(out) :: dt(:), t(:)
+
+    integer :: k
+
+    if (grid_adaptive) then
+       allocate(dt(cfg % instants), t(cfg % instants))
+       dt(1)  = 0.0_dp
+       dt(2:) = adaptive_weights
+       t(1)   = 0.0_dp
+       do k = 2, cfg % instants
+          t(k) = t(k - 1) + dt(k)
+       end do
+    else
+       call steps_of(cfg, dt, t)
+    end if
+
+  end subroutine grid_partition
+
+  subroutine table(cfg)
+
+    type(configuration), intent(inout) :: cfg
 
     real(dp), allocatable :: dt(:), t(:)
     integer :: widest, printed
@@ -840,6 +911,7 @@ contains
          & cfg % max_iterations)
     call set_linear_budget(cfg % krylov_restart, cfg % smoothing_sweeps, &
          & cfg % max_linear_iterations)
+    call adaptive_context(cfg)
     if (cfg % accounting) then
        call refuse_unknown(cfg % measurements, &
             & ['wall_time     ', 'primal_loops  ', 'tangent_loops ', &
@@ -868,7 +940,7 @@ contains
        error stop 'graph_time_integrator: no row fits in this horizon'
     end if
 
-    call steps_of(cfg, dt, t)
+    call grid_partition(cfg, dt, t)
     call shown_initial(cfg)
     write(*,'(a,a)') '   precision of this build  ', precision_named()
     call heading(cfg)

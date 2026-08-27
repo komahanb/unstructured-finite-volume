@@ -27,7 +27,7 @@ program assembled_tower
   use operation_action      , only : variation
   use operation_family_bdf  , only : bdf_family
   use operation_family_adams, only : adams_family
-  use operation_grid        , only : random_grid, designed_grid, uniform_grid
+  use operation_grid        , only : grid, random_grid, designed_grid, uniform_grid
   use operation_family_dirk , only : crouzeix_two_stage
   use physics_vanderpol     , only : van_der_pol
   use map_value             , only : VALUE_KNOWN, VALUE_UNKNOWN, VALUE_UNATTACHED
@@ -165,7 +165,7 @@ contains
     integer , parameter :: num_instants = 6
     real(dp), parameter :: delta = 1.0e-6_dp
 
-    type(designed_grid) :: steps
+    type(grid) :: steps
     type(stored_directed_graph) :: instants
     type(stored_field) :: knobs, direction
     class(field), allocatable :: out
@@ -217,7 +217,7 @@ contains
 
   subroutine differenced(steps, instants, knobs, design, v, delta, plus, minus)
 
-    type(designed_grid)        , intent(in)    :: steps
+    type(grid)                 , intent(in)    :: steps
     type(stored_directed_graph), intent(in)    :: instants
     type(stored_field)         , intent(inout) :: knobs
     real(dp)                   , intent(in)    :: design(:), v(:), delta

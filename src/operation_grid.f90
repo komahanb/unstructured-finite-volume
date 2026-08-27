@@ -56,64 +56,31 @@ module operation_grid
   private
   public :: grid, uniform_grid, random_grid, designed_grid, fixed_grid
 
-  type, abstract, extends(operation) :: grid
+  ! One representation, the weight rule a case: uniform weighs every
+  ! step one, random a bounded deterministic draw, designed the design
+  ! itself, fixed a stored partition carried as constants.
+  integer, parameter :: GRID_UNIFORM  = 1
+  integer, parameter :: GRID_RANDOM   = 2
+  integer, parameter :: GRID_DESIGNED = 3
+  integer, parameter :: GRID_FIXED    = 4
 
+  type, extends(operation) :: grid
+
+     integer , private :: kind = GRID_UNIFORM
      real(dp), private :: span = 1.0_dp
+     integer , private :: seed = 1
+     real(dp), allocatable, private :: steps(:)
 
    contains
 
-     procedure(grid_weight_interface), deferred :: weight_of
-
+     procedure :: name           => grid_name
      procedure :: duration
      procedure :: apply          => grid_apply
      procedure :: max_degree     => grid_max_degree
      procedure :: partial_action => grid_partial_action
+     procedure, private :: weight_of
 
   end type grid
-
-  abstract interface
-
-     !----------------------------------------------------------------!
-     ! The unnormalised weight of the step ending at instant k, of n.
-     !----------------------------------------------------------------!
-
-     pure function grid_weight_interface(this, design, k, n) result(w)
-       import :: grid, derivative_terms
-       class(grid)           , intent(in) :: this
-       type(derivative_terms), intent(in) :: design(:)
-       integer               , intent(in) :: k, n
-       type(derivative_terms) :: w
-     end function grid_weight_interface
-
-  end interface
-
-  type, extends(grid) :: uniform_grid
-   contains
-     procedure :: name      => uniform_name
-     procedure :: weight_of => uniform_weight
-  end type uniform_grid
-
-  type, extends(grid) :: random_grid
-     integer, private :: seed = 1
-   contains
-     procedure :: name      => random_name
-     procedure :: weight_of => random_weight
-  end type random_grid
-
-  type, extends(grid) :: designed_grid
-   contains
-     procedure :: name      => designed_name
-     procedure :: weight_of => designed_weight
-  end type designed_grid
-
-  ! a stored partition, given not designed: its weights are the steps
-  ! themselves, carried as constants so the grid contributes no design
-  type, extends(grid) :: fixed_grid
-     real(dp), allocatable, private :: steps(:)
-   contains
-     procedure :: name      => fixed_name
-     procedure :: weight_of => fixed_weight
-  end type fixed_grid
 
   interface uniform_grid
      module procedure create_uniform
@@ -151,9 +118,10 @@ contains
   function create_uniform(span) result(this)
 
     real(dp), intent(in) :: span
-    type(uniform_grid) :: this
+    type(grid) :: this
 
     call require_span(span)
+    this % kind = GRID_UNIFORM
     this % span = span
     call this % declare_arguments(1)
 
@@ -163,9 +131,10 @@ contains
 
     real(dp), intent(in) :: span
     integer , intent(in) :: seed
-    type(random_grid) :: this
+    type(grid) :: this
 
     call require_span(span)
+    this % kind = GRID_RANDOM
     this % span = span
     this % seed = seed
     call this % declare_arguments(1)
@@ -175,9 +144,10 @@ contains
   function create_designed(span) result(this)
 
     real(dp), intent(in) :: span
-    type(designed_grid) :: this
+    type(grid) :: this
 
     call require_span(span)
+    this % kind = GRID_DESIGNED
     this % span = span
     call this % declare_arguments(1)
 
@@ -191,13 +161,14 @@ contains
   function create_fixed(steps) result(this)
 
     real(dp), intent(in) :: steps(:)
-    type(fixed_grid) :: this
+    type(grid) :: this
 
     if (any(steps <= 0.0_dp)) then
        error stop 'operation_grid: every given step is positive'
     end if
 
     call require_span(sum(steps))
+    this % kind  = GRID_FIXED
     this % span  = sum(steps)
     this % steps = steps
     call this % declare_arguments(1)
@@ -212,45 +183,40 @@ contains
 
   end function duration
 
-  pure function uniform_name(this) result(name)
+  pure function grid_name(this) result(name)
 
-    class(uniform_grid), intent(in) :: this
+    class(grid), intent(in) :: this
     character(len=:), allocatable :: name
 
-    associate (u1 => this); end associate
-    name = 'uniform grid'
+    select case (this % kind)
+    case (GRID_UNIFORM);  name = 'uniform grid'
+    case (GRID_RANDOM);   name = 'random grid'
+    case (GRID_DESIGNED); name = 'designed grid'
+    case default;         name = 'fixed grid'
+    end select
 
-  end function uniform_name
+  end function grid_name
 
-  pure function random_name(this) result(name)
+  !===================================================================!
+  ! The unnormalised weight of the step ending at instant k, of n:
+  ! the rule the kind names.
+  !===================================================================!
 
-    class(random_grid), intent(in) :: this
-    character(len=:), allocatable :: name
+  pure function weight_of(this, design, k, n) result(w)
 
-    associate (u1 => this); end associate
-    name = 'random grid'
+    class(grid)           , intent(in) :: this
+    type(derivative_terms), intent(in) :: design(:)
+    integer               , intent(in) :: k, n
+    type(derivative_terms) :: w
 
-  end function random_name
+    select case (this % kind)
+    case (GRID_UNIFORM);  w = uniform_weight(this, design, k, n)
+    case (GRID_RANDOM);   w = random_weight(this, design, k, n)
+    case (GRID_DESIGNED); w = designed_weight(this, design, k, n)
+    case default;         w = fixed_weight(this, design, k, n)
+    end select
 
-  pure function designed_name(this) result(name)
-
-    class(designed_grid), intent(in) :: this
-    character(len=:), allocatable :: name
-
-    associate (u1 => this); end associate
-    name = 'designed grid'
-
-  end function designed_name
-
-  pure function fixed_name(this) result(name)
-
-    class(fixed_grid), intent(in) :: this
-    character(len=:), allocatable :: name
-
-    associate (u1 => this); end associate
-    name = 'fixed grid'
-
-  end function fixed_name
+  end function weight_of
 
   !===================================================================!
   ! The given step ending at instant k: the (k-1)-th stored step, a
@@ -260,7 +226,7 @@ contains
 
   pure function fixed_weight(this, design, k, n) result(w)
 
-    class(fixed_grid)     , intent(in) :: this
+    class(grid)           , intent(in) :: this
     type(derivative_terms), intent(in) :: design(:)
     integer               , intent(in) :: k, n
 
@@ -275,12 +241,12 @@ contains
   end function fixed_weight
 
   !===================================================================!
-  ! THE THREE RULES.
+  ! THE RULES, one per kind.
   !===================================================================!
 
   pure function uniform_weight(this, design, k, n) result(w)
 
-    class(uniform_grid)   , intent(in) :: this
+    class(grid)           , intent(in) :: this
     type(derivative_terms), intent(in) :: design(:)
     integer               , intent(in) :: k, n
     type(derivative_terms) :: w
@@ -300,7 +266,7 @@ contains
 
   pure function random_weight(this, design, k, n) result(w)
 
-    class(random_grid)    , intent(in) :: this
+    class(grid)           , intent(in) :: this
     type(derivative_terms), intent(in) :: design(:)
     integer               , intent(in) :: k, n
     type(derivative_terms) :: w
@@ -331,7 +297,7 @@ contains
 
   pure function designed_weight(this, design, k, n) result(w)
 
-    class(designed_grid)  , intent(in) :: this
+    class(grid)           , intent(in) :: this
     type(derivative_terms), intent(in) :: design(:)
     integer               , intent(in) :: k, n
     type(derivative_terms) :: w

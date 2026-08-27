@@ -2059,7 +2059,7 @@ contains
     real(dp), allocatable :: x(:), w(:), governing(:), v(:)
     integer , allocatable :: r(:), c(:)
     logical , allocatable :: is_carried(:)
-    integer :: e, d, p, ne, npts, n, kept, count
+    integer :: e, d, p, npts, n, kept, count
     available = which == 1
     if (.not. available) return
     n    = this % unknowns
@@ -2100,7 +2100,6 @@ contains
        w(kept) = 1.0_dp
     end do
     call combine_triples(n, n, r(1:kept), c(1:kept), w(1:kept), rows, columns, weights)
-    associate (u1 => ne); end associate
   end subroutine block_compiled_tangent
   subroutine stencil_triples(op, is_carried, r, c, w, kept)
     type(stencil), intent(in)    :: op
@@ -2401,7 +2400,7 @@ contains
     class(field), allocatable :: out
     real(dp), allocatable :: below(:), r(:), slope(:), weights(:), e(:)
     real(dp) :: began, target
-    integer  :: nodes, i, d, k, top, iteration
+    integer  :: nodes, i, k, top, iteration
     nodes = size(lower, 2)
     top   = degrees - 1
     if (size(lower, 1) /= top) then
@@ -2454,7 +2453,6 @@ contains
     end do
     write(*,'(a,es12.3)') ' the physics at the initial instant left a residual of ', norm2(r)
     error stop 'gti_march: the initial state is consistent with the physics'
-    associate (u1 => d); end associate
   end function consistent_states
   subroutine frozen_inputs(q, design, num_points, unknowns, inputs)
     real(dp), intent(in) :: q(:), design
@@ -2611,7 +2609,7 @@ contains
        error stop 'gti_march: one value per carried component'
     end if
     if (staged) then
-       call stage_reach_of(tower, block, scheme, n, s, nd, width, moments, slice_of, &
+       call stage_reach_of(tower, block, n, s, nd, width, slice_of, &
             & member_of, reach)
     else
        call block_reach_of(tower, block, n, nd, width, reach)
@@ -2684,16 +2682,14 @@ contains
        reach(1) % row(e)    = (reach(1) % heads(e) - 1) * width + reach(1) % determines(e) + 1
     end do
   end subroutine block_reach_of
-  subroutine stage_reach_of(tower, block, scheme, n, s, nd, width, moments, slice_of, &
+  subroutine stage_reach_of(tower, block, n, s, nd, width, slice_of, &
        & member_of, reach)
     type(expansion), intent(in) :: tower
     type(graph)    , intent(in) :: block
-    class(family)  , intent(in) :: scheme
-    integer        , intent(in) :: n, s, nd, width, moments, slice_of(:), member_of(:)
+    integer        , intent(in) :: n, s, nd, width, slice_of(:), member_of(:)
     type(coupling_reach), allocatable, intent(out) :: reach(:)
     integer, allocatable :: table(:,:), carry(:,:), first_moment(:), counted(:), filled(:)
-    integer :: kk, e, g, tail_moment, head_moment, vertex_tail, vertex_head
-    associate (u1 => scheme); end associate
+    integer :: kk, e, tail_moment, head_moment, vertex_tail, vertex_head
     allocate(reach(n - 1), first_moment(n), counted(n), filled(n))
     first_moment(1) = 1
     do kk = 2, n
@@ -2742,7 +2738,6 @@ contains
     if (any(filled /= counted)) then
        error stop 'gti_march: every edge of a step is placed once'
     end if
-    associate (u2 => moments); end associate
   contains
     subroutine put(one, e, tail, head, source_degree, determines, column_base, row_base)
       type(coupling_reach), intent(inout) :: one
@@ -4686,9 +4681,62 @@ contains
   end subroutine functional_named
 end module gti_driver
 module gti_demos
+  use iso_fortran_env, only : int64
+  use util_precision  , only : dp
+  use graph_fractal         , only : graph, branch, known_branch
+  use view_sequence         , only : sequence_empty, sequence_first, sequence_rest
+  use view_level            , only : level_storage, level_consistent, &
+       & level_is_leaf, level_num_members, level_members, level_couples, level_coupling
+  use view_relational       , only : relational_binding, num_member_sets, &
+       & num_relations, relational_valid, relation_at
+  use relation_finitary     , only : relation
+  use relation_binary       , only : csr_relation
+  use map_set               , only : set_map
+  use map_set_representation, only : counted_set_representation
+  use map_set_store         , only : set_store
+  use map_value             , only : value_map, VALUE_UNATTACHED, VALUE_UNKNOWN, &
+       & VALUE_KNOWN
+  use view_directed_stored  , only : stored_directed_graph
+  use field_calculus        , only : field
+  use field_stored          , only : stored_field
+  use operation_action      , only : variation
+  use operation_stencil     , only : stencil
+  use operation_scheme_stencil, only : derived_constraints
+  use operation_family      , only : family
+  use operation_family_bdf  , only : bdf_family
+  use operation_family_adams, only : adams_family
+  use operation_family_dirk , only : dirk_family, implicit_midpoint, &
+       & crouzeix_two_stage, crouzeix_three_stage
+  use operation_grid        , only : grid, uniform_grid, random_grid, designed_grid
+  use operation_coupling    , only : weights_of, coupling_inputs
+  use operation_weight      , only : scheme_weight
+  use operation_expression  , only : expression
+  use operation_minimization, only : relative, by_rate
+  use physics_vanderpol     , only : van_der_pol, van_der_pol_energy, &
+       & van_der_pol_dissipation
+  use gti_expansion         , only : expansion, family_holder
+  use gti_block             , only : block_residual
+  use gti_march             , only : partition, block_from, solved, unknowns_graph, &
+       & horizon_bounds, set_stopping, consistent_state, imbalance, by_tangent, &
+       & by_adjoint, fresh_stamp
+  use gti_adaptive          , only : adaptive_partition
+  use gti_chain             , only : chain_block, march_chain, chain_expansion, &
+       & chain_stamps, chain_derivative, first_of, instant_components, &
+       & asymmetry, multiset_count, multiset_rank, multiset_of
+  use gti_sweeps            , only : functional_of, functional_gradient, &
+       & sweep_design_partial => design_partial, route_of, forward_route, reverse_route
+  use gti_driver            , only : clock, cosine, dense_jacobian
   implicit none
   private
   public :: demo_requested, run_demo
+  character(len=24), parameter :: demo_names(21) = [character(len=24) :: &
+       & 'adaptive_grid', 'assembled_tower', 'chained_horizon', &
+       & 'constraint_rows', 'coupling_relation', 'expansion_check', &
+       & 'family_coefficients', 'function_identities', 'grid_design_check', &
+       & 'jacobian_shape', 'level_maps', 'level_shape', 'marched_block', &
+       & 'marched_horizon', 'marched_stages', 'memory_shape', &
+       & 'randomized_checks', 'scheme_weights', 'sensitivity', 'solve_cost', &
+       & 'tolerance_form']
 contains
   logical function demo_requested() result(yes)
     character(len=256) :: argument
@@ -4795,43 +4843,40 @@ contains
     end do
   end subroutine demo_argument
   subroutine list_demos()
+    integer :: i
     write(*,'(a)') ' demos:'
-    write(*,'(a)') '   adaptive_grid'
-    write(*,'(a)') '   assembled_tower'
-    write(*,'(a)') '   chained_horizon'
-    write(*,'(a)') '   constraint_rows'
-    write(*,'(a)') '   coupling_relation'
-    write(*,'(a)') '   expansion_check'
-    write(*,'(a)') '   family_coefficients'
-    write(*,'(a)') '   function_identities'
-    write(*,'(a)') '   grid_design_check'
-    write(*,'(a)') '   jacobian_shape'
-    write(*,'(a)') '   level_maps'
-    write(*,'(a)') '   level_shape'
-    write(*,'(a)') '   marched_block'
-    write(*,'(a)') '   marched_horizon'
-    write(*,'(a)') '   marched_stages'
-    write(*,'(a)') '   memory_shape'
-    write(*,'(a)') '   randomized_checks'
-    write(*,'(a)') '   scheme_weights'
-    write(*,'(a)') '   sensitivity'
-    write(*,'(a)') '   solve_cost'
-    write(*,'(a)') '   tolerance_form'
+    do i = 1, size(demo_names)
+       write(*,'(a)') '   ' // trim(demo_names(i))
+    end do
   end subroutine list_demos
+  type(family_holder) function held_family(scheme) result(held)
+    class(family), intent(in) :: scheme
+    call set_family(held, scheme)
+  end function held_family
+  subroutine set_family(held, scheme)
+    type(family_holder), intent(inout) :: held
+    class(family)     , intent(in)    :: scheme
+    if (allocated(held % scheme)) deallocate(held % scheme)
+    allocate(held % scheme, source=scheme)
+  end subroutine set_family
+  function cosine_history(scheme, degrees, t) result(held)
+    class(family), intent(in) :: scheme
+    integer      , intent(in) :: degrees
+    real(dp)     , intent(in) :: t(:)
+    real(dp), allocatable :: held(:)
+    integer :: k, d
+    held = [((cosine(d, t(k)), d = 0, degrees - 1), &
+         & k = 1, scheme % history_depth(degrees - 1))]
+  end function cosine_history
+  subroutine cosine_partition(scheme, degrees, duration, instants, held, dt, t)
+    class(family), intent(in) :: scheme
+    integer      , intent(in) :: degrees, instants
+    real(dp)     , intent(in) :: duration
+    real(dp), allocatable, intent(out) :: held(:), dt(:), t(:)
+    call partition(duration, instants, dt, t)
+    held = cosine_history(scheme, degrees, t)
+  end subroutine cosine_partition
   subroutine demo_adaptive_grid()
-    use util_precision       , only : dp
-    use operation_family     , only : family
-    use operation_family_dirk, only : implicit_midpoint, crouzeix_two_stage, crouzeix_three_stage
-    use operation_grid       , only : designed_grid, uniform_grid
-    use gti_block            , only : block_residual
-    use gti_expansion        , only : expansion, family_holder
-    use gti_march            , only : consistent_state
-    use gti_adaptive         , only : adaptive_partition
-    use gti_chain            , only : chain_block, march_chain, chain_expansion, &
-         & chain_derivative, chain_stamps
-    use gti_sweeps           , only : forward_route, reverse_route
-    use operation_expression  , only : expression
-    use physics_vanderpol    , only : van_der_pol, van_der_pol_energy
     implicit none
     integer , parameter :: degrees  = 3          ! van der Pol is degree two
     real(dp), parameter :: duration = 4.0_dp
@@ -4864,7 +4909,7 @@ contains
       real(dp) :: achieved
       integer  :: n
       n = size(dt) + 1
-      allocate(schemes(1) % scheme, source=scheme)
+      call set_family(schemes(1), scheme)
       functionals(1) = van_der_pol_energy(degrees - 1)
       call march_chain(schemes, [n - 1], van_der_pol(degrees - 1), degrees, &
            & designed_grid(duration), design, &
@@ -4900,29 +4945,12 @@ contains
     end subroutine report
   end subroutine demo_adaptive_grid
   subroutine demo_assembled_tower()
-    use util_precision  , only : dp
-    use graph_fractal         , only : graph, branch
-    use view_sequence         , only : sequence_empty, sequence_first, sequence_rest
-    use view_level            , only : level_is_leaf, level_members, level_couples, &
-         & level_coupling
-    use view_directed_stored  , only : stored_directed_graph
-    use field_calculus        , only : field
-    use field_stored          , only : stored_field
-    use operation_action      , only : variation
-    use operation_family_bdf  , only : bdf_family
-    use operation_family_adams, only : adams_family
-    use operation_grid        , only : grid, random_grid, designed_grid, uniform_grid
-    use operation_family_dirk , only : crouzeix_two_stage
-    use physics_vanderpol     , only : van_der_pol
-    use map_value             , only : VALUE_KNOWN, VALUE_UNKNOWN, VALUE_UNATTACHED
-    use gti_expansion         , only : expansion, family_holder
     implicit none
     real(dp), parameter :: duration = 7.0_dp
     integer , parameter :: seed = 20260824
     type(expansion) :: one, two
     type(family_holder) :: schemes(2)
-    allocate(schemes(1) % scheme, source=bdf_family(2))
-    allocate(schemes(2) % scheme, source=adams_family(3))
+    schemes = [held_family(bdf_family(2)), held_family(adams_family(3))]
     call one % build(van_der_pol(2), schemes, [5, 5], random_grid(duration, seed), 0, &
          & 0.0_dp)
     write(*,'(a)') ' a horizon of two blocks, marched by different families'
@@ -5054,7 +5082,7 @@ contains
       type(graph), pointer :: g, coupling
       real(dp), allocatable :: w(:)
       real(dp) :: step
-      allocate(schemes(1) % scheme, source=crouzeix_two_stage())
+      schemes = [held_family(crouzeix_two_stage())]
       call staged % build(van_der_pol(2), schemes, [num_instants], &
            & uniform_grid(duration), 0, 0.0_dp)
       write(*,'(a)') ' '
@@ -5086,17 +5114,6 @@ contains
     end function second_slice
   end subroutine demo_assembled_tower
   subroutine demo_chained_horizon()
-    use util_precision  , only : dp
-    use operation_family      , only : family
-    use operation_family_bdf  , only : bdf_family
-    use operation_family_adams, only : adams_family
-    use operation_family_dirk , only : crouzeix_two_stage
-    use operation_grid        , only : uniform_grid
-    use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
-    use gti_expansion         , only : family_holder, expansion
-    use gti_march             , only : partition
-    use gti_driver            , only : initial_at => cosine
-    use gti_chain             , only : chain_block, march_chain, chain_expansion
     implicit none
     integer , parameter :: state_degree = 2
     integer , parameter :: degrees = state_degree + 1
@@ -5104,24 +5121,13 @@ contains
     real(dp), parameter :: duration = 2.0_dp
     real(dp), parameter :: delta = 1.0e-4_dp
     call splitting_changes_nothing()
-    call across_families('bdf 2 then crouzeix two-stage', bdf_of(2), dirk_of())
-    call across_families('crouzeix two-stage then bdf 2', dirk_of(), bdf_of(2))
-    call across_families('adams 3 then crouzeix two-stage', adams_of(3), dirk_of())
+    call across_families('bdf 2 then crouzeix two-stage', &
+         & held_family(bdf_family(2)), held_family(crouzeix_two_stage()))
+    call across_families('crouzeix two-stage then bdf 2', &
+         & held_family(crouzeix_two_stage()), held_family(bdf_family(2)))
+    call across_families('adams 3 then crouzeix two-stage', &
+         & held_family(adams_family(3)), held_family(crouzeix_two_stage()))
   contains
-    function bdf_of(order) result(held)
-      integer, intent(in) :: order
-      type(family_holder) :: held
-      allocate(held % scheme, source=bdf_family(order))
-    end function bdf_of
-    function adams_of(order) result(held)
-      integer, intent(in) :: order
-      type(family_holder) :: held
-      allocate(held % scheme, source=adams_family(order))
-    end function adams_of
-    function dirk_of() result(held)
-      type(family_holder) :: held
-      allocate(held % scheme, source=crouzeix_two_stage())
-    end function dirk_of
     subroutine expanded(schemes, added, design, f)
       type(family_holder), intent(in) :: schemes(:)
       integer            , intent(in) :: added(:)
@@ -5132,10 +5138,7 @@ contains
       type(expansion), allocatable, target :: tower
       real(dp), allocatable :: dt(:), t(:), held(:)
       real(dp) :: achieved
-      integer :: k, d, given
-      given = schemes(1) % scheme % history_depth(degrees - 1)
-      call partition(duration, sum(added), dt, t)
-      held = [((initial_at(d, t(k)), d = 0, degrees - 1), k = 1, given)]
+      call cosine_partition(schemes(1) % scheme, degrees, duration, sum(added), held, dt, t)
       call march_chain(schemes, added, van_der_pol(state_degree), degrees, &
            & uniform_grid(duration), design, held, chain, tower, dt, t, achieved)
       call chain_expansion(chain, tower, [van_der_pol_energy(state_degree)], degrees, max_order, table)
@@ -5145,9 +5148,8 @@ contains
     subroutine splitting_changes_nothing()
       type(family_holder) :: whole(1), split(2)
       real(dp), allocatable :: f_whole(:), f_split(:)
-      whole(1) = bdf_of(2)
-      split(1) = bdf_of(2)
-      split(2) = bdf_of(2)
+      whole = [held_family(bdf_family(2))]
+      split = [held_family(bdf_family(2)), held_family(bdf_family(2))]
       call expanded(whole, [20], 1.0_dp, f_whole)
       call expanded(split, [10, 10], 1.0_dp, f_split)
       write(*,'(a)')        ' bdf 2 over twenty instants, in one block and in two'
@@ -5180,18 +5182,6 @@ contains
     end subroutine across_families
   end subroutine demo_chained_horizon
   subroutine demo_constraint_rows()
-    use util_precision  , only : dp
-    use view_directed_stored       , only : stored_directed_graph
-    use field_calculus             , only : field
-    use field_stored               , only : stored_field
-    use operation_action           , only : variation
-    use operation_stencil          , only : stencil
-    use operation_scheme_stencil   , only : derived_constraints
-    use operation_family_bdf       , only : bdf_family
-    use operation_coupling         , only : weights_of
-    use operation_weight           , only : scheme_weight
-    use physics_vanderpol          , only : van_der_pol
-    use operation_expression       , only : expression
     implicit none
     integer , parameter :: order = 2
     integer , parameter :: num_instants = 5
@@ -5243,7 +5233,7 @@ contains
            & [variation(rows % argument(1), direction)], out)
       call out % real_vector(acted)
       physics = van_der_pol(2)
-      call governing_rows(physics, dt, q, governing)
+      call governing_rows(physics, q, governing)
       call show_block(governing, residual, maxval(abs(residual - acted)))
     end subroutine derived_rows
     subroutine scheme_reach(tails, heads, source_degree, determines)
@@ -5272,14 +5262,13 @@ contains
       write(*,'(a,es11.2)') '   largest difference between apply and partial action ', &
            & jacobian_gap
     end subroutine show_block
-    subroutine governing_rows(physics, dt, q, r)
+    subroutine governing_rows(physics, q, r)
       type(expression), intent(in) :: physics
-      real(dp)         , intent(in) :: dt(:), q(:)
+      real(dp)         , intent(in) :: q(:)
       real(dp), allocatable, intent(out) :: r(:)
       type(stored_directed_graph) :: instants
       type(stored_field) :: state, design
       class(field), allocatable :: out
-      associate (u1 => dt); end associate
       instants = stored_directed_graph(num_instants, tails=[integer ::], heads=[integer ::])
       state    = stored_field('state', instants % vertex_set(), num_unknowns)
       design   = stored_field('nu', instants % vertex_set(), num_instants)
@@ -5380,7 +5369,6 @@ contains
       class(field), allocatable :: out
       real(dp), allocatable :: exact(:), plus(:), minus(:)
       real(dp) :: w(instants), q0, q_below
-      associate (u1 => state); end associate
       w    = 1.0_dp
       q0      = q(1)
       q_below = q(nd - 1)
@@ -5422,22 +5410,6 @@ contains
     end subroutine edge_weights
   end subroutine demo_constraint_rows
   subroutine demo_coupling_relation()
-    use util_precision  , only : dp
-    use graph_fractal         , only : graph
-    use view_level            , only : level_storage, level_consistent, &
-         & level_num_members
-    use view_relational       , only : relational_binding, num_member_sets, &
-         & num_relations, relational_valid, relation_at
-    use relation_finitary     , only : relation
-    use relation_binary       , only : csr_relation
-    use map_set               , only : set_map
-    use map_set_representation, only : counted_set_representation
-    use view_directed_stored  , only : stored_directed_graph
-    use field_calculus        , only : field
-    use field_stored          , only : stored_field
-    use operation_family_bdf  , only : bdf_family
-    use operation_coupling    , only : weights_of
-    use operation_weight      , only : scheme_weight
     implicit none
     integer , parameter :: order = 2
     integer , parameter :: num_instants = 5
@@ -5544,18 +5516,6 @@ contains
     end subroutine edge_weights
   end subroutine demo_coupling_relation
   subroutine demo_expansion_check()
-    use util_precision  , only : dp
-    use operation_family     , only : family
-    use operation_family_bdf , only : bdf_family
-    use operation_family_adams, only : adams_family
-    use physics_vanderpol    , only : van_der_pol, van_der_pol_energy
-    use gti_march            , only : partition, set_stopping
-    use gti_driver           , only : exact => cosine
-    use operation_minimization, only : relative, by_rate
-    use gti_expansion        , only : expansion, family_holder
-    use operation_grid       , only : uniform_grid
-    use operation_family_dirk, only : crouzeix_two_stage
-    use gti_chain            , only : chain_block, march_chain, chain_expansion
     implicit none
     character(len=32) :: argument
     integer , parameter :: state_degree = 2
@@ -5572,13 +5532,12 @@ contains
     delta = tau ** (1.0_dp / 3.0_dp)
     write(*,'(a,es9.2,a,es9.2,a,es9.2)') ' relative tolerance', tau, &
          & '   difference step', delta, '   expected agreement tau^(2/3)', tau ** (2.0_dp / 3.0_dp)
-    call expansion_of('bdf 2', bdf_family(2), .false.)
-    call expansion_of('adams-moulton 3', adams_family(3), .false.)
-    call expansion_of('crouzeix two-stage', crouzeix_two_stage(), .true.)
+    call expansion_of('bdf 2', bdf_family(2))
+    call expansion_of('adams-moulton 3', adams_family(3))
+    call expansion_of('crouzeix two-stage', crouzeix_two_stage())
   contains
-    subroutine expanded(scheme, staged, design_value, f)
+    subroutine expanded(scheme, design_value, f)
       class(family), intent(in) :: scheme
-      logical      , intent(in) :: staged
       real(dp)     , intent(in) :: design_value
       real(dp), allocatable, intent(out) :: f(:)
       type(family_holder) :: holder(1)
@@ -5586,11 +5545,8 @@ contains
       type(expansion)  , allocatable, target :: tower
       real(dp), allocatable :: dt(:), t(:), held(:), table(:,:)
       real(dp) :: achieved
-      integer :: k, d
-      call partition(duration, instants, dt, t)
-      held = [((exact(d, t(k)), d = 0, degrees - 1), k = 1, scheme % history_depth(degrees - 1))]
-      allocate(holder(1) % scheme, source=scheme)
-      associate (u1 => staged); end associate
+      call cosine_partition(scheme, degrees, duration, instants, held, dt, t)
+      call set_family(holder(1), scheme)
       call march_chain(holder, [instants], van_der_pol(state_degree), degrees, uniform_grid(duration), &
            & design_value, held, chain, tower, dt, t, achieved)
       call chain_expansion(chain, tower, [van_der_pol_energy(state_degree)], degrees, &
@@ -5598,16 +5554,15 @@ contains
       allocate(f(0:max_order))
       f(0:) = table(:, 1)
     end subroutine expanded
-    subroutine expansion_of(title, scheme, staged)
+    subroutine expansion_of(title, scheme)
       character(len=*), intent(in) :: title
       class(family)   , intent(in) :: scheme
-      logical         , intent(in) :: staged
       real(dp), allocatable :: f(:), plus(:), minus(:)
       real(dp) :: differenced(max_order)
       integer :: m
-      call expanded(scheme, staged, design, f)
-      call expanded(scheme, staged, design + delta, plus)
-      call expanded(scheme, staged, design - delta, minus)
+      call expanded(scheme, design, f)
+      call expanded(scheme, design + delta, plus)
+      call expanded(scheme, design - delta, minus)
       do m = 1, max_order
          differenced(m) = (plus(m - 1) - minus(m - 1)) / (2.0_dp * delta)
       end do
@@ -5620,16 +5575,6 @@ contains
     end subroutine expansion_of
   end subroutine demo_expansion_check
   subroutine demo_family_coefficients()
-    use util_precision  , only : dp
-    use view_directed_stored  , only : stored_directed_graph
-    use field_calculus        , only : field
-    use field_stored          , only : stored_field
-    use operation_coupling    , only : weights_of, coupling_inputs
-    use operation_action      , only : variation
-    use operation_family      , only : family
-    use operation_family_bdf  , only : bdf_family
-    use operation_family_adams, only : adams_family
-    use operation_family_dirk , only : dirk_family, crouzeix_two_stage
     implicit none
     integer, parameter :: order = 2
     integer :: k
@@ -5783,7 +5728,6 @@ contains
     end subroutine bdf_second_partials
   end subroutine demo_family_coefficients
   subroutine demo_function_identities()
-    use util_precision       , only : dp
     use util_derivative_terms, only : derivative_terms, integer_power, mixed_partial, coefficient, &
          & operator(+), operator(-), operator(*), operator(/), operator(**), &
          & sin, cos, exp, log, sqrt
@@ -5873,19 +5817,6 @@ contains
     end subroutine reported
   end subroutine demo_function_identities
   subroutine demo_grid_design_check()
-    use util_precision        , only : dp
-    use operation_family_bdf  , only : bdf_family
-    use operation_family_adams, only : adams_family
-    use operation_grid        , only : designed_grid
-    use operation_minimization, only : relative, by_rate
-    use operation_expression  , only : expression
-    use physics_vanderpol     , only : van_der_pol, van_der_pol_energy, van_der_pol_dissipation
-    use gti_expansion         , only : family_holder, expansion
-    use gti_march             , only : set_stopping, consistent_state, imbalance
-    use gti_chain             , only : chain_block, march_chain, chain_expansion, &
-         & chain_stamps, &
-         & chain_derivative, asymmetry, multiset_count, multiset_rank, multiset_of
-    use gti_sweeps            , only : route_of, forward_route, reverse_route
     implicit none
     integer , parameter :: state_degree = 2, degrees = state_degree + 1
     integer , parameter :: instants = 21, checked(3) = [1, 7, 20]
@@ -5909,8 +5840,7 @@ contains
     if (len_trim(argument) > 0) read(argument, *) max_order
     call set_stopping(tau, relative, by_rate, 100)
     delta = tau ** (1.0_dp / 3.0_dp)
-    allocate(schemes(1) % scheme, source=bdf_family(3))
-    allocate(schemes(2) % scheme, source=adams_family(3))
+    schemes = [held_family(bdf_family(3)), held_family(adams_family(3))]
     functionals(1) = van_der_pol_energy(state_degree)
     functionals(2) = van_der_pol_dissipation(state_degree)
     p  = [(1.0_dp + 0.5_dp * sin(real(k, dp)), k = 1, instants - 1)]
@@ -6026,18 +5956,6 @@ contains
     end function unit
   end subroutine demo_grid_design_check
   subroutine demo_jacobian_shape()
-    use util_precision  , only : dp
-    use operation_family      , only : family
-    use operation_family_bdf  , only : bdf_family
-    use operation_family_adams, only : adams_family
-    use operation_family_dirk , only : crouzeix_two_stage
-    use operation_grid        , only : uniform_grid
-    use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
-    use gti_expansion         , only : family_holder, expansion
-    use gti_driver            , only : cosine, dense_jacobian
-    use gti_march             , only : partition
-    use gti_chain             , only : chain_block, march_chain, &
-         & chain_stamps
     implicit none
     write(*,'(a)') ' '
     write(*,'(a)') '  scheme        unknowns    filled   below   above   per cent full' // &
@@ -6062,25 +5980,21 @@ contains
       integer , allocatable :: added(:)
       real(dp), allocatable :: held(:), dt(:), t(:), a(:,:)
       real(dp) :: achieved, duration, design
-      integer :: k, d
       duration = 3.0_dp
       design   = 1.0_dp
       allocate(schemes(1))
-      allocate(schemes(1) % scheme, source=scheme)
+      call set_family(schemes(1), scheme)
       added = [instants]
-      call partition(duration, instants, dt, t)
-      held = [((cosine(d, t(k)), d = 0, degrees - 1), k = 1, &
-           &   scheme % history_depth(degrees - 1))]
+      call cosine_partition(scheme, degrees, duration, instants, held, dt, t)
       call march_chain(schemes, added, van_der_pol(degrees - 1), degrees, &
            & uniform_grid(duration), design, held, chain, tower, dt, t, achieved)
       call chain_stamps(chain, tower, [van_der_pol_energy(degrees - 1)], degrees, marks)
       call dense_jacobian(chain, design, a)
-      call reported(label, a, degrees, instants)
+      call reported(label, a)
     end subroutine shape_of
-    subroutine reported(label, a, degrees, instants)
+    subroutine reported(label, a)
       character(len=*), intent(in) :: label
       real(dp)        , intent(in) :: a(:,:)
-      integer         , intent(in) :: degrees, instants
       integer  :: n, i, j, filled, below, above
       real(dp) :: biggest, least, on_diagonal, row_most
       n       = size(a, 1)
@@ -6105,19 +6019,9 @@ contains
       write(*,'(a,a,i8,i10,i8,i8,f12.2,3es15.4)') '  ', label // repeat(' ', 12 - len(label)), &
            & n, filled, below, above, 100.0_dp * real(filled, dp) / real(n * n, dp), &
            & biggest, on_diagonal, row_most
-      associate (u1 => degrees, u2 => instants); end associate
     end subroutine reported
   end subroutine demo_jacobian_shape
   subroutine demo_level_maps()
-    use util_precision  , only : dp
-    use graph_fractal         , only : graph, branch
-    use view_sequence         , only : sequence_empty, sequence_first, sequence_rest
-    use view_level            , only : level_storage, level_is_leaf, &
-         & level_num_members, level_members
-    use map_value             , only : value_map, VALUE_UNATTACHED, VALUE_UNKNOWN, &
-         & VALUE_KNOWN
-    use map_set_store         , only : set_store
-    use map_set_representation, only : counted_set_representation
     implicit none
     integer , parameter :: max_derivative_degree = 1     ! the primal and one tangent
     integer , parameter :: max_state_degree      = 2     ! q, q', q''
@@ -6280,10 +6184,6 @@ contains
     end function counted
   end subroutine demo_level_maps
   subroutine demo_level_shape()
-    use graph_fractal, only : graph, branch, known_branch
-    use view_sequence, only : sequence_empty, sequence_first, sequence_rest
-    use view_level   , only : level_storage, level_is_leaf, level_num_members, &
-         & level_members, level_couples, level_consistent
     implicit none
     integer, parameter :: max_instants     = 2
     integer, parameter :: max_stages       = 2
@@ -6388,19 +6288,6 @@ contains
     end subroutine the_stranger_is_refused
   end subroutine demo_level_shape
   subroutine demo_marched_block()
-    use util_precision  , only : dp
-    use view_directed_stored  , only : stored_directed_graph
-    use field_calculus        , only : field
-    use field_stored          , only : stored_field
-    use operation_family      , only : family
-    use operation_family_bdf  , only : bdf_family
-    use operation_family_adams, only : adams_family
-    use physics_vanderpol     , only : van_der_pol
-    use gti_block             , only : block_residual
-    use gti_expansion         , only : expansion, family_holder
-    use operation_grid        , only : uniform_grid
-    use gti_march             , only : partition, block_from, solved
-    use gti_driver            , only : exact => cosine
     implicit none
     integer , parameter :: max_state_degree = 2
     integer , parameter :: degrees = max_state_degree + 1
@@ -6421,15 +6308,12 @@ contains
       real(dp), allocatable, intent(out) :: q(:), t(:)
       real(dp)     , intent(out) :: achieved
       type(block_residual) :: rows
-  type(expansion) :: tower
-  type(family_holder) :: holder(1)
-  integer, allocatable :: at(:)
+      type(expansion) :: tower
+      type(family_holder) :: holder(1)
+      integer, allocatable :: at(:)
       real(dp), allocatable :: dt(:), held(:)
-      integer :: h, k, d
-      call partition(duration, n, dt, t)
-      h = scheme % history_depth(degrees - 1)
-      held = [((exact(d, t(k)), d = 0, degrees - 1), k = 1, h)]
-      allocate(holder(1) % scheme, source=scheme)
+      call cosine_partition(scheme, degrees, duration, n, held, dt, t)
+      call set_family(holder(1), scheme)
       call tower % build(van_der_pol(max_state_degree), holder, [n], uniform_grid(duration), 0, 0.0_dp)
       call block_from(tower, 1, scheme, van_der_pol(max_state_degree), held, rows, at)
       call solved(rows, design_value, q, achieved)
@@ -6439,7 +6323,7 @@ contains
       integer :: k
       e = 0.0_dp
       do k = 1, size(t)
-         e = max(e, abs(q(unknown(k, 0)) - exact(0, t(k))))
+         e = max(e, abs(q(unknown(k, 0)) - cosine(0, t(k))))
       end do
     end function worst
     subroutine order_of(title, scheme, expected)
@@ -6474,23 +6358,6 @@ contains
     end subroutine nonlinear
   end subroutine demo_marched_block
   subroutine demo_marched_horizon()
-    use util_precision  , only : dp
-    use operation_family      , only : family
-    use operation_family_bdf  , only : bdf_family
-    use operation_family_adams, only : adams_family
-    use operation_expression  , only : expression
-    use physics_vanderpol     , only : van_der_pol
-    use gti_expansion         , only : family_holder, expansion
-    use view_directed_stored  , only : stored_directed_graph
-    use field_stored          , only : stored_field
-    use physics_vanderpol     , only : van_der_pol_energy
-    use gti_march             , only : horizon_bounds, partition, unknowns_graph
-    use gti_driver            , only : exact => cosine
-    use gti_sweeps            , only : functional_of, forward_route, reverse_route
-    use gti_chain             , only : first_of
-    use gti_chain             , only : chain_block, march_chain, instant_components, &
-         & chain_stamps, chain_derivative
-    use operation_grid        , only : uniform_grid
     implicit none
     integer , parameter :: state_degree = 2
     integer , parameter :: degrees = state_degree + 1
@@ -6499,15 +6366,6 @@ contains
     call across_a_change_of_scheme()
     call sensitivity_across_the_junction()
   contains
-    function initial_for(scheme, instants) result(held)
-      class(family), intent(in) :: scheme
-      integer      , intent(in) :: instants
-      real(dp), allocatable :: held(:)
-      real(dp), allocatable :: dt(:), t(:)
-      integer :: k, d
-      call partition(duration, instants, dt, t)
-      held = [((exact(d, t(k)), d = 0, degrees - 1), k = 1, scheme % history_depth(degrees - 1))]
-    end function initial_for
     subroutine marched(schemes, added, q, achieved, design_value)
       type(family_holder), intent(in) :: schemes(:)
       integer            , intent(in) :: added(:)
@@ -6517,39 +6375,28 @@ contains
       type(chain_block), allocatable :: chain(:)
       type(expansion), allocatable, target :: tower
       integer, allocatable :: first(:), last(:)
-      real(dp), allocatable :: dt(:), t(:)
+      real(dp), allocatable :: dt(:), t(:), held(:)
       real(dp) :: design
       integer :: k, n
       design = 0.0_dp
       if (present(design_value)) design = design_value
       call horizon_bounds(schemes, added, degrees - 1, first, last)
       n = last(size(added))
-      call partition(duration, n, dt, t)
+      call cosine_partition(schemes(1) % scheme, degrees, duration, n, held, dt, t)
       call march_chain(schemes, added, van_der_pol(state_degree), degrees, &
-           & uniform_grid(duration), design, initial_for(schemes(1) % scheme, n), &
+           & uniform_grid(duration), design, held, &
            & chain, tower, dt, t, achieved)
       allocate(q(n * degrees))
       do k = 1, n
          q((k - 1) * degrees + 1:k * degrees) = instant_components(chain, k)
       end do
     end subroutine marched
-    function bdf_of(order) result(held)
-      integer, intent(in) :: order
-      type(family_holder) :: held
-      allocate(held % scheme, source=bdf_family(order))
-    end function bdf_of
-    function adams_of(order) result(held)
-      integer, intent(in) :: order
-      type(family_holder) :: held
-      allocate(held % scheme, source=adams_family(order))
-    end function adams_of
     subroutine splitting_changes_nothing()
       type(family_holder) :: whole(1), split(2)
       real(dp), allocatable :: q_whole(:), q_split(:)
       real(dp) :: achieved_whole, achieved_split
-      whole(1) = bdf_of(2)
-      split(1) = bdf_of(2)
-      split(2) = bdf_of(2)
+      whole = [held_family(bdf_family(2))]
+      split = [held_family(bdf_family(2)), held_family(bdf_family(2))]
       call marched(whole, [40], q_whole, achieved_whole)
       call marched(split, [20, 20], q_split, achieved_split)
       write(*,'(a)')        ' bdf 2 over forty instants, in one block and in two'
@@ -6564,8 +6411,7 @@ contains
       real(dp), allocatable :: q(:), dt(:), t(:)
       real(dp) :: e(3), achieved
       integer :: level, added, k, n
-      schemes(1) = bdf_of(2)
-      schemes(2) = adams_of(3)
+      schemes = [held_family(bdf_family(2)), held_family(adams_family(3))]
       do level = 1, 3
          added = 10 * 2 ** (level - 1)
          call marched(schemes, [added, added], q, achieved)
@@ -6573,7 +6419,7 @@ contains
          call partition(duration, n, dt, t)
          e(level) = 0.0_dp
          do k = 1, n
-            e(level) = max(e(level), abs(q((k - 1) * degrees + 1) - exact(0, t(k))))
+            e(level) = max(e(level), abs(q((k - 1) * degrees + 1) - cosine(0, t(k))))
          end do
       end do
       write(*,'(a)')          ' '
@@ -6611,8 +6457,7 @@ contains
       real(dp), allocatable :: q(:), dt(:), table(:,:)
       real(dp) :: f, tangent, adjoint, differenced, achieved
       integer :: n
-      schemes(1) = bdf_of(2)
-      schemes(2) = adams_of(3)
+      schemes = [held_family(bdf_family(2)), held_family(adams_family(3))]
       n = sum(added)
       call marched(schemes, added, q, achieved, design)
       f = energy_of(q, n, design)
@@ -6642,13 +6487,12 @@ contains
       type(expansion)  , allocatable, intent(inout), target :: tower
       real(dp)         , allocatable, intent(out) :: dt(:)
       integer , allocatable :: first(:), last(:)
-      real(dp), allocatable :: t(:)
+      real(dp), allocatable :: t(:), held(:)
       real(dp) :: achieved
       call horizon_bounds(schemes, added, degrees - 1, first, last)
-      call partition(duration, last(size(added)), dt, t)
+      call cosine_partition(schemes(1) % scheme, degrees, duration, last(size(added)), held, dt, t)
       call march_chain(schemes, added, van_der_pol(state_degree), degrees, &
-           & uniform_grid(duration), design, &
-           & initial_for(schemes(1) % scheme, last(size(added))), &
+           & uniform_grid(duration), design, held, &
            & chain, tower, dt, t, achieved)
     end subroutine chained
     real(dp) function differenced_energy(schemes, added, n, design, delta) result(d)
@@ -6664,16 +6508,6 @@ contains
     end function differenced_energy
   end subroutine demo_marched_horizon
   subroutine demo_marched_stages()
-    use util_precision  , only : dp
-    use operation_family     , only : family
-    use operation_family_dirk, only : dirk_family, implicit_midpoint, &
-         & crouzeix_two_stage, crouzeix_three_stage
-    use physics_vanderpol    , only : van_der_pol
-    use gti_block            , only : block_residual
-    use gti_march            , only : partition, solved, block_from
-    use gti_driver           , only : exact => cosine
-    use gti_expansion        , only : expansion, family_holder
-    use operation_grid       , only : uniform_grid
     implicit none
     integer , parameter :: state_degree = 2
     integer , parameter :: degrees = state_degree + 1
@@ -6693,14 +6527,14 @@ contains
       real(dp) :: achieved
       integer :: k, d
       call partition(duration, n, dt, t)
-      allocate(holder(1) % scheme, source=scheme)
+      call set_family(holder(1), scheme)
       call tower % build(van_der_pol(state_degree), holder, [n], uniform_grid(duration), 0, 0.0_dp)
       call block_from(tower, 1, scheme, van_der_pol(state_degree), &
-           & [(exact(d, t(1)), d = 0, degrees - 1)], rows, at)
+           & [(cosine(d, t(1)), d = 0, degrees - 1)], rows, at)
       call solved(rows, 0.0_dp, q, achieved)
       e = 0.0_dp
       do k = 1, n
-         e = max(e, abs(q(at(k) + 1) - exact(0, t(k))))
+         e = max(e, abs(q(at(k) + 1) - cosine(0, t(k))))
       end do
     end function worst_error
     subroutine order_of(title, scheme)
@@ -6720,23 +6554,14 @@ contains
     end subroutine order_of
   end subroutine demo_marched_stages
   subroutine demo_memory_shape()
-    use util_precision  , only : dp
-    use view_directed_stored  , only : stored_directed_graph
-    use field_stored          , only : stored_field
-    use operation_family_bdf  , only : bdf_family
-    use physics_vanderpol     , only : van_der_pol
-    use gti_march             , only : block_from, partition
-    use gti_block             , only : block_residual
-    use gti_expansion         , only : expansion, family_holder
-    use operation_grid        , only : uniform_grid
     implicit none
     integer, parameter :: degrees = 3, order = 2
     type(stored_directed_graph) :: gr
     type(stored_field)          :: over
     type(block_residual)        :: rows
-  type(expansion) :: tower
-  type(family_holder) :: holder(1)
-  integer, allocatable :: at(:)
+    type(expansion) :: tower
+    type(family_holder) :: holder(1)
+    integer, allocatable :: at(:)
     type(bdf_family)            :: scheme
     character(len=32) :: what, given
     integer , allocatable :: tails(:), heads(:)
@@ -6779,7 +6604,7 @@ contains
     case ('block')
        call partition(3.0_dp, instants, dt, t)
        allocate(held(h * degrees), source=0.0_dp)
-       allocate(holder(1) % scheme, source=scheme)
+       call set_family(holder(1), scheme)
        call tower % build(van_der_pol(degrees - 1), holder, [instants], uniform_grid(3.0_dp), 0, 0.0_dp)
        call block_from(tower, 1, scheme, van_der_pol(degrees - 1), held, rows, at)
     case default
@@ -6805,23 +6630,6 @@ contains
     end function peak
   end subroutine demo_memory_shape
   subroutine demo_randomized_checks()
-    use iso_fortran_env, only : int64
-    use util_precision  , only : dp
-    use operation_family      , only : family
-    use operation_family_bdf  , only : bdf_family
-    use operation_family_adams, only : adams_family
-    use operation_family_dirk , only : crouzeix_two_stage
-    use operation_grid        , only : uniform_grid, random_grid
-    use operation_expression  , only : expression
-    use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
-    use gti_expansion         , only : family_holder, expansion
-    use gti_driver            , only : cosine
-    use gti_block             , only : block_residual
-    use gti_march             , only : partition
-    use gti_chain             , only : first_of
-    use gti_sweeps            , only : forward_route, reverse_route
-    use gti_chain             , only : chain_block, march_chain, chain_expansion, &
-         & chain_stamps, chain_derivative
     implicit none
     integer , parameter :: max_order = 2
     integer :: seed, cases, i, failures, skipped
@@ -6877,7 +6685,7 @@ contains
       type(expression)       :: energy(1)
       real(dp), allocatable :: held(:), dt(:), t(:), table(:,:)
       real(dp) :: achieved
-      call held_for(schemes(1) % scheme, degrees, duration, sum(added), held, dt, t)
+      call cosine_partition(schemes(1) % scheme, degrees, duration, sum(added), held, dt, t)
       call march_chain(schemes, added, van_der_pol(degrees - 1), degrees, &
            & uniform_grid(duration), design, held, chain, tower, dt, t, achieved)
       energy(1) = van_der_pol_energy(degrees - 1)
@@ -6887,16 +6695,6 @@ contains
       call chain_derivative(chain, tower, marks, energy, degrees, 1, reverse_route, table)
       adjoint = first_of(table)
     end subroutine directions_of
-    subroutine held_for(scheme, degrees, duration, instants, held, dt, t)
-      class(family), intent(in) :: scheme
-      integer      , intent(in) :: degrees, instants
-      real(dp)     , intent(in) :: duration
-      real(dp), allocatable, intent(out) :: held(:), dt(:), t(:)
-      integer :: k, d
-      call partition(duration, instants, dt, t)
-      held = [((cosine(d, t(k)), d = 0, degrees - 1), k = 1, &
-           &   scheme % history_depth(degrees - 1))]
-    end subroutine held_for
     subroutine one_case(from, index, failures, skipped)
       integer, intent(in)    :: from, index
       integer, intent(inout) :: failures, skipped
@@ -6950,7 +6748,7 @@ contains
       integer , allocatable :: added(:)
       real(dp), allocatable :: f(:), plus(:), minus(:)
       real(dp) :: duration, design, achieved, gap, differenced
-      integer :: degrees, blocks, b, m
+      integer :: degrees, blocks, m
       character(len=28) :: label
       blocks = 0
       call draw_chain(from, degrees, blocks, duration, design, schemes, added, label)
@@ -6969,7 +6767,6 @@ contains
       end do
       write(*,'(i6,2x,a28,es14.2)') index, label, gap
       if (gap > 1.0e-3_dp) failures = failures + 1
-      associate (u1 => b); end associate
     end subroutine mixed_case
     subroutine draw_chain(from, degrees, blocks, duration, design, schemes, added, label)
       integer            , intent(in)  :: from
@@ -7034,11 +6831,11 @@ contains
       integer            , intent(in)  :: kind, order
       select case (kind)
       case (1)
-         allocate(held % scheme, source=bdf_family(order))
+         call set_family(held, bdf_family(order))
       case (2)
-         allocate(held % scheme, source=adams_family(order))
+         call set_family(held, adams_family(order))
       case default
-         allocate(held % scheme, source=crouzeix_two_stage())
+         call set_family(held, crouzeix_two_stage())
       end select
     end subroutine fill
     function named(kind, order) result(text)
@@ -7065,7 +6862,7 @@ contains
       type(chain_block), allocatable :: chain(:)
       type(expansion), allocatable, target :: tower
       real(dp), allocatable :: held(:), dt(:), t(:)
-      call held_for(schemes(1) % scheme, degrees, duration, sum(added), held, dt, t)
+      call cosine_partition(schemes(1) % scheme, degrees, duration, sum(added), held, dt, t)
       call march_chain(schemes, added, van_der_pol(degrees - 1), degrees, &
            & uniform_grid(duration), design, held, chain, tower, dt, t, achieved)
       call chain_expansion(chain, tower, [van_der_pol_energy(degrees - 1)], degrees, max_order, table)
@@ -7089,16 +6886,6 @@ contains
     end subroutine verdict
   end subroutine demo_randomized_checks
   subroutine demo_scheme_weights()
-    use util_precision  , only : dp
-    use view_directed_stored   , only : stored_directed_graph
-    use field_calculus         , only : field
-    use field_stored           , only : stored_field
-    use operation_action       , only : variation
-    use operation_family       , only : family
-    use operation_family_bdf   , only : bdf_family
-    use operation_family_adams , only : adams_family
-    use operation_coupling     , only : coupling_inputs
-    use operation_weight       , only : scheme_weight
     implicit none
     integer :: k
     call bdf_rows(2, 'uniform',     [0.0_dp, (0.5_dp, k = 2, 5)])
@@ -7253,21 +7040,6 @@ contains
     end function digit
   end subroutine demo_scheme_weights
   subroutine demo_sensitivity()
-    use util_precision  , only : dp
-    use view_directed_stored , only : stored_directed_graph
-    use field_stored         , only : stored_field
-    use operation_family_bdf , only : bdf_family
-    use operation_family_adams, only : adams_family
-    use operation_family     , only : family
-    use physics_vanderpol    , only : van_der_pol, van_der_pol_energy
-    use gti_block            , only : block_residual
-    use gti_expansion         , only : expansion, family_holder
-    use operation_grid        , only : uniform_grid
-    use gti_march            , only : partition, block_from, solved, unknowns_graph
-    use gti_driver           , only : exact => cosine
-    use gti_sweeps           , only : functional_of, functional_gradient, &
-         & design_partial
-    use gti_march            , only : by_tangent, by_adjoint, fresh_stamp
     implicit none
     integer , parameter :: state_degree = 2
     integer , parameter :: degrees = state_degree + 1
@@ -7277,30 +7049,23 @@ contains
     call sensitivity_of('bdf 2', bdf_family(2))
     call sensitivity_of('adams-moulton 3', adams_family(3))
   contains
-    function carried_values(scheme, t) result(held)
-      class(family), intent(in) :: scheme
-      real(dp)     , intent(in) :: t(:)
-      real(dp), allocatable :: held(:)
-      integer :: k, d
-      held = [((exact(d, t(k)), d = 0, degrees - 1), k = 1, scheme % history_depth(degrees - 1))]
-    end function carried_values
     real(dp) function marched(scheme, design_value, q) result(f)
       class(family), intent(in) :: scheme
       real(dp)     , intent(in) :: design_value
       real(dp), allocatable, intent(out) :: q(:)
       type(block_residual) :: rows
-  type(expansion) :: tower
-  type(family_holder) :: holder(1)
-  integer, allocatable :: at(:)
+      type(expansion) :: tower
+      type(family_holder) :: holder(1)
+      integer, allocatable :: at(:)
       type(stored_directed_graph) :: unknowns, instants
       type(stored_field) :: state, knobs
-      real(dp), allocatable :: dt(:), t(:)
+      real(dp), allocatable :: dt(:), t(:), held(:)
       real(dp) :: achieved
-      call partition(duration, num_instants, dt, t)
-      allocate(holder(1) % scheme, source=scheme)
+      call cosine_partition(scheme, degrees, duration, num_instants, held, dt, t)
+      call set_family(holder(1), scheme)
       call tower % build(van_der_pol(state_degree), holder, [num_instants], uniform_grid(duration), &
            & 0, 0.0_dp)
-      call block_from(tower, 1, scheme, van_der_pol(state_degree), carried_values(scheme, t), rows, at)
+      call block_from(tower, 1, scheme, van_der_pol(state_degree), held, rows, at)
       call solved(rows, design_value, q, achieved)
       unknowns = unknowns_graph(num_instants, degrees)
       instants = stored_directed_graph(num_instants, tails=[integer ::], heads=[integer ::])
@@ -7336,17 +7101,17 @@ contains
       real(dp), allocatable :: g(:), rate(:)
       integer :: mark
       type(block_residual) :: rows
-  type(expansion) :: tower
-  type(family_holder) :: holder(1)
-  integer, allocatable :: at(:)
+      type(expansion) :: tower
+      type(family_holder) :: holder(1)
+      integer, allocatable :: at(:)
       type(stored_directed_graph) :: unknowns, instants
       type(stored_field) :: state, knobs
-      real(dp), allocatable :: dt(:), t(:)
-      call partition(duration, num_instants, dt, t)
-      allocate(holder(1) % scheme, source=scheme)
+      real(dp), allocatable :: dt(:), t(:), held(:)
+      call cosine_partition(scheme, degrees, duration, num_instants, held, dt, t)
+      call set_family(holder(1), scheme)
       call tower % build(van_der_pol(state_degree), holder, [num_instants], uniform_grid(duration), &
            & 0, 0.0_dp)
-      call block_from(tower, 1, scheme, van_der_pol(state_degree), carried_values(scheme, t), rows, at)
+      call block_from(tower, 1, scheme, van_der_pol(state_degree), held, rows, at)
       unknowns = unknowns_graph(num_instants, degrees)
       instants = stored_directed_graph(num_instants, tails=[integer ::], heads=[integer ::])
       state    = stored_field('state', unknowns % vertex_set(), size(q))
@@ -7355,7 +7120,7 @@ contains
       call knobs % set_real_vector(spread(design, 1, num_instants))
       call functional_gradient(van_der_pol_energy(state_degree), instants, &
            & [state, knobs], dt, num_instants, degrees, unknowns % vertex_set(), g)
-      call design_partial(rows, unknowns, [state, knobs], num_instants, &
+      call sweep_design_partial(rows, unknowns, [state, knobs], num_instants, &
            & unknowns % vertex_set(), rate)
       mark    = fresh_stamp()
       tangent = by_tangent(rows, unknowns, [state, knobs], g, rate, 0.0_dp, mark)
@@ -7363,20 +7128,6 @@ contains
     end subroutine three_objects
   end subroutine demo_sensitivity
   subroutine demo_solve_cost()
-    use iso_fortran_env, only : int64
-    use util_precision  , only : dp
-    use operation_family      , only : family
-    use operation_family_bdf  , only : bdf_family
-    use operation_grid        , only : uniform_grid
-    use operation_expression  , only : expression
-    use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
-    use gti_expansion         , only : family_holder, expansion
-    use gti_driver            , only : clock, cosine
-    use gti_march             , only : partition
-    use gti_chain             , only : first_of
-    use gti_sweeps            , only : forward_route
-    use gti_chain             , only : chain_block, march_chain, &
-         & chain_stamps, chain_derivative
     implicit none
     integer, parameter :: sizes(5) = [41, 61, 81, 101, 121]
     integer :: k
@@ -7398,16 +7149,14 @@ contains
       integer , allocatable :: added(:)
       real(dp), allocatable :: held(:), dt(:), t(:), table(:,:)
       real(dp) :: achieved, duration, design, marched, formed, solved_in, tangent
-      integer  :: n, d, j
+      integer  :: n
       duration = 3.0_dp
       design   = 1.0_dp
       scheme   = bdf_family(2)
       allocate(schemes(1))
-      allocate(schemes(1) % scheme, source=scheme)
+      call set_family(schemes(1), scheme)
       added = [instants]
-      call partition(duration, instants, dt, t)
-      held = [((cosine(d, t(j)), d = 0, degrees - 1), j = 1, &
-           &   scheme % history_depth(degrees - 1))]
+      call cosine_partition(scheme, degrees, duration, instants, held, dt, t)
       marched = clock()
       call march_chain(schemes, added, van_der_pol(degrees - 1), degrees, &
            & uniform_grid(duration), design, held, chain, tower, dt, t, achieved)
@@ -7426,17 +7175,6 @@ contains
     end subroutine cost_at
   end subroutine demo_solve_cost
   subroutine demo_tolerance_form()
-    use util_precision  , only : dp
-    use operation_coupling    , only : weights_of
-    use operation_family      , only : family
-    use operation_family_bdf  , only : bdf_family
-    use operation_grid        , only : uniform_grid
-    use physics_vanderpol     , only : van_der_pol, van_der_pol_energy
-    use gti_expansion         , only : family_holder, expansion
-    use gti_march             , only : partition
-    use gti_driver            , only : dense_jacobian
-    use gti_chain             , only : chain_block, march_chain, &
-         & chain_stamps
     implicit none
     write(*,'(a)') ' '
     write(*,'(a)') '  the velocity row, and the d-th row it composes to'
@@ -7508,7 +7246,7 @@ contains
       scheme   = bdf_family(order)
       top      = degrees - 1
       allocate(schemes(1))
-      allocate(schemes(1) % scheme, source=scheme)
+      call set_family(schemes(1), scheme)
       added = [instants]
       call partition(duration, instants, dt, t)
       held = [((0.0_dp, d = 0, degrees - 1), k = 1, &
@@ -7540,7 +7278,7 @@ contains
       design   = 1.0_dp
       scheme   = bdf_family(order)
       allocate(schemes(1))
-      allocate(schemes(1) % scheme, source=scheme)
+      call set_family(schemes(1), scheme)
       added = [instants]
       call partition(duration, instants, dt, t)
       held = [((0.0_dp, d = 0, degrees - 1), k = 1, &
@@ -7899,7 +7637,6 @@ contains
     num_functionals = size(functionals)
     call chain_stamps(chain, tower, functionals, nd, marks, node_measure=volume)
     num_designs = num_designs_of(tower)
-    if (grid_designed) p = dt(2:cfg % instants)
     route = route_of(num_designs, num_functionals, 1)
     call chain_derivative(chain, tower, marks, functionals, nd, 1, route, df, node_measure=volume)
     write(*,'(a,a,a,i0,a,i0,a,es10.2)') '      first derivatives by the ', &
@@ -7908,6 +7645,7 @@ contains
          & ':  physics column against the expansion ', &
          & maxval(abs(df(:, 1) - f(1, :)) / max(1.0_dp, abs(f(1, :))))
     if (grid_designed) then
+       p = dt(2:cfg % instants)
        do i = 1, num_functionals
           euler = dot_product(p, df(i, 2:)) / max(tiny(1.0_dp), norm2(p) * norm2(df(i, 2:)))
           write(*,'(a,i0,a,es12.4,a,es10.2)') '      grid design, functional ', i, &

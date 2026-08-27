@@ -4,6 +4,14 @@ module gti_configuration
   private
   public :: configuration, read_configuration, override, show
   public :: worded, lists, refuse_unknown, chosen_from
+  ! the levels of this application's hierarchy, outermost first: what
+  ! the tally files an amount under
+  integer, parameter, public :: at_expansion = 1
+  integer, parameter, public :: at_horizon   = 2
+  integer, parameter, public :: at_block     = 3
+  integer, parameter, public :: at_stage     = 4
+  character(len=9), parameter, public :: hierarchy_levels(4) = &
+       & ['expansion', 'horizon  ', 'block    ', 'stage    ']
   type :: configuration
      character(len=32) :: physics      = 'vanderpol'
      character(len=32) :: grid         = 'random'
@@ -3467,7 +3475,8 @@ module gti_chain
   use field_calculus   , only : field
   use field_stored     , only : stored_field
   use gti_sweeps       , only : route_of, route_substitutions, forward_route, reverse_route
-  use util_tally            , only : tally_order, tally_enter, tally_leave, at_horizon, at_block, at_stage
+  use util_tally            , only : tally_order, tally_enter, tally_leave
+  use gti_configuration     , only : at_horizon, at_block, at_stage
   implicit none
   private
   public :: chain_block, march_chain, chain_expansion, instant_components
@@ -7267,8 +7276,8 @@ program graph_time_integrator
        & lists, refuse_unknown, worded
   use util_tally            , only : tally_open, tally_close, tally_order, &
        & tally_enter, tally_leave, tally_amount, tally_event_of, &
-       & tally_num_levels, tally_level_name, tally_event_name, &
-       & at_expansion, at_horizon, wall_time
+       & tally_num_levels, tally_level_name, tally_event_name, wall_time
+  use gti_configuration     , only : at_expansion, at_horizon, hierarchy_levels
   use gti_demos           , only : demo_requested, run_demo
   implicit none
   type(configuration) :: cfg
@@ -7815,7 +7824,7 @@ contains
     call shown_initial(cfg)
     write(*,'(a,a)') '   precision of this build  ', precision_named()
     call heading(cfg)
-    if (cfg % accounting) call tally_open(cfg % max_derivative_degree)
+    if (cfg % accounting) call tally_open(cfg % max_derivative_degree, hierarchy_levels)
     printed = 0
     if (asked(cfg, 'homogeneous')) call tuple_rows(cfg, 1, printed)
     if (asked(cfg, 'pairs'))       call tuple_rows(cfg, 2, printed)

@@ -11,8 +11,10 @@
 ! hierarchy opens a level and closes it again, and every amount
 ! recorded in between - including amounts recorded far below, inside a
 ! minimizer that has never been told what a horizon is - is filed
-! under it. That is how a module which knows nothing of the hierarchy
-! records into it: it names the amount, and the scope names the place.
+! under it. That is how a module which knows nothing of the caller's
+! hierarchy records into it: it names the amount, and the scope names
+! the place. The hierarchy itself is the caller's: its levels are
+! declared, outermost first, when the tally is opened.
 !
 ! Levels nest, so a level's wall time includes the time of the levels
 ! opened inside it.
@@ -44,20 +46,14 @@ module util_tally
   public :: tally_level_name, tally_event_name, tally_event_of
 
   !-------------------------------------------------------------------!
-  ! The levels an amount can be filed under, outermost first, and the
-  ! kinds of amount. Both are named so a caller records by name and
-  ! not by a number it has to keep straight.
+  ! The levels an amount can be filed under are the caller's, declared
+  ! outermost first at tally_open; the kinds of amount are named here
+  ! so a caller records by name and not by a number it has to keep
+  ! straight.
   !-------------------------------------------------------------------!
 
-  integer, parameter, public :: at_expansion = 1
-  integer, parameter, public :: at_horizon   = 2
-  integer, parameter, public :: at_block     = 3
-  integer, parameter, public :: at_stage     = 4
-
-  integer, parameter :: num_levels = 4
-
-  character(len=9), parameter :: level_named(num_levels) = &
-       & ['expansion', 'horizon  ', 'block    ', 'stage    ']
+  integer, save :: num_levels = 0
+  character(len=:), allocatable, save :: level_named(:)
 
   integer, parameter, public :: wall_time      = 1
   integer, parameter, public :: primal_loops   = 2
@@ -92,20 +88,26 @@ module util_tally
 contains
 
   !===================================================================!
-  ! Start recording, with room for orders zero to highest_order. A
-  ! negative highest order stops the program, there being no such
-  ! derivative to file anything under.
+  ! Start recording, with room for orders zero to highest_order, over
+  ! the caller's levels, outermost first. A negative highest order, no
+  ! levels, or more levels than the stack holds stops the program.
   !===================================================================!
 
-  subroutine tally_open(highest_order)
+  subroutine tally_open(highest_order, levels)
 
-    integer, intent(in) :: highest_order
+    integer         , intent(in) :: highest_order
+    character(len=*), intent(in) :: levels(:)
 
     if (highest_order < 0) then
        error stop 'util_tally: the highest order is zero or above'
     end if
+    if (size(levels) < 1 .or. size(levels) > deepest) then
+       error stop 'util_tally: the levels are one to the stack''s depth'
+    end if
 
-    highest = highest_order
+    highest     = highest_order
+    num_levels  = size(levels)
+    level_named = levels
 
     if (allocated(amount)) deallocate(amount)
     allocate(amount(num_levels, 0:highest, num_events), source=0.0_dp)
@@ -213,7 +215,7 @@ contains
     if (.not. recording) return
 
     if (level < 1 .or. level > num_levels) then
-       error stop 'util_tally: a level is one of the four named'
+       error stop 'util_tally: a level is one of those declared'
     end if
     if (depth == deepest) then
        error stop 'util_tally: the levels opened are within the stack'

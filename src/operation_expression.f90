@@ -22,8 +22,8 @@
 !
 !      q  = unknown()
 !      nu = design()
-!      r  = stated(derivative(q, 2) - nu * (1.0_dp - derivative(q, 0)**2) * derivative(q, 1) &
-!                + derivative(q, 0), 2, 'van der pol residual')
+!      r  = stated(derivative(q, 2) + nu * derivative(q, 1) &
+!                + sin(derivative(q, 0)), 2, 'the residual')
 !
 ! derivative(q, d) is the component of degree d: along the instants
 ! the derivatives are unknowns the scheme relates, so the vertex

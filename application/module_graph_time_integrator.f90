@@ -47,6 +47,7 @@ module gti_configuration
      character(len=16)  :: check            = 'none'
      real(dp)          :: tolerance           = 1.0e-12_dp
      character(len=16) :: tolerance_criterion = 'relative'
+     character(len=16) :: adaptive_gate       = 'step_doubling'
      character(len=16) :: iteration_criterion = 'by_rate'
      integer           :: max_iterations      = 100
      integer           :: higher_order_jacobian_product = 1
@@ -195,6 +196,8 @@ contains
        read(value, *) cfg % tolerance
     case ('tolerance_criterion')
        cfg % tolerance_criterion = value
+    case ('adaptive_gate')
+       cfg % adaptive_gate = value
     case ('iteration_criterion')
        cfg % iteration_criterion = value
     case ('krylov_restart')
@@ -323,6 +326,12 @@ contains
     end if
     write(*,'(a,es9.2)')   '   tolerance                ', cfg % tolerance
     write(*,'(a,a)')       '   tolerance criterion      ', trim(cfg % tolerance_criterion)
+    if (trim(cfg % grid) == 'adaptive') then
+       write(*,'(a,a)')    '   adaptive gate            ', trim(cfg % adaptive_gate)
+       if (trim(cfg % adaptive_gate) == 'goal_oriented') then
+          write(*,'(a)')   '     targeting van der Pol energy'
+       end if
+    end if
     write(*,'(a,a)')       '   iteration criterion      ', trim(cfg % iteration_criterion)
     write(*,'(a,i0)')      '   max iterations           ', cfg % max_iterations
     write(*,'(a,i0)')      '   higher order jacobian product ', cfg % higher_order_jacobian_product
@@ -3476,14 +3485,14 @@ end module gti_field
 module gti_chain
   use util_precision  , only : dp
   use operation_family , only : family
-  use operation_grid   , only : grid, partitioned
+  use operation_grid   , only : grid, partitioned, designed_grid
   use operation_expression, only : expression
   use gti_expansion    , only : family_holder, marches_by_stages, expansion, &
        & design_of_physics, design_of_steps
   use gti_block        , only : block_residual
   use gti_march        , only : imbalance, swept, solved_linear, fresh_stamp, horizon_bounds, &
        & frozen_inputs
-  use gti_march        , only : block_from
+  use gti_march        , only : block_from, consistent_state
   use gti_sweeps       , only : choose
   use util_derivative_terms, only : derivative_terms, coefficient, operator(*)
   use operation_stencil, only : stencil
@@ -3502,6 +3511,7 @@ module gti_chain
   public :: chain_stamps
   public :: expansion_substitutions
   public :: sink_costates
+  public :: goal_oriented_partition
   type :: chain_block
      type(block_residual)  :: rows
      integer , allocatable :: instants_at(:)
@@ -4466,6 +4476,118 @@ contains
     integer, intent(in) :: num_blocks, order
     count = num_blocks * route_substitutions(route_of(1, 1, order), 1, 1, order)
   end function expansion_substitutions
+
+  !===================================================================!
+  ! A grid built for one functional, not the state alone.
+  !
+  ! Once the steps are given as a design - gti_expansion's
+  ! design_of_steps - the reverse route already carries dF/d(weight_i)
+  ! for every step i, one adjoint solve over the whole trajectory. It
+  ! is an adjoint-weighted sensitivity to where the grid sits, not the
+  ! residual-weighted local defect a Becker-Rannacher estimator forms
+  ! from a comparison-order scheme - DIRK here carries no embedded
+  ! pair to form one from. The two are related, not the same object.
+  !
+  ! A weight is a share of a duration held fixed, so F, read through
+  ! the weights, is unchanged by scaling every one of them alike:
+  ! degree zero homogeneous in w, and Euler's identity makes
+  ! sum(w_i dF/dw_i) vanish identically, whatever the grid - a
+  ! reparametrisation fact, true of a good grid and a bad one alike,
+  ! and no gate can be read from it. What survives once that direction
+  ! is projected away is the part of dF/dw that does carry local
+  ! information: how much F moves, to first order, from giving a step
+  ! more of the duration at every other step's expense.
+  !
+  ! The grid is accepted once the spread of that projected gradient,
+  ! scaled by one average step's worth of duration, is within
+  ! tolerance of F itself (relative) or of nothing (absolute) - the
+  ! change in F from moving one such share from the least to the most
+  ! sensitive step. Rejected, every step whose projected gradient is
+  ! at least the mean is halved - the ones taking more than their
+  ! share - and the whole trajectory, adjoint included, is walked
+  ! again.
+  !===================================================================!
+
+  function goal_oriented_partition(scheme, physics, functional, degrees, duration, &
+       & lower, design, tolerance, relative, rejects) result(dt)
+
+    class(family)   , intent(in)  :: scheme
+    type(expression), intent(in)  :: physics, functional
+    integer         , intent(in)  :: degrees
+    real(dp)        , intent(in)  :: duration, lower(:), design, tolerance
+    logical         , intent(in)  :: relative
+    integer         , intent(out), optional :: rejects
+    real(dp), allocatable :: dt(:)
+
+    integer, parameter :: seed_instants = 9
+
+    type(family_holder)  :: schemes(1)
+    type(expression)     :: functionals(1)
+    type(chain_block), allocatable :: chain(:)
+    type(expansion)  , allocatable :: tower
+    integer , allocatable :: marks(:)
+    real(dp), allocatable :: state(:), resolved(:), t(:), fvals(:,:), table(:,:), eta(:)
+    logical , allocatable :: split(:)
+    real(dp) :: achieved, f, e, threshold
+    integer  :: attempt, rejected
+
+    allocate(schemes(1) % scheme, source=scheme)
+    functionals(1) = functional
+    state = consistent_state(physics, degrees, lower, design)
+
+    dt = spread(duration / real(seed_instants - 1, dp), 1, seed_instants - 1)
+
+    rejected = 0
+    attempt  = 0
+    do
+       attempt = attempt + 1
+
+       call march_chain(schemes, [size(dt)], physics, degrees, designed_grid(duration), &
+            & design, state, chain, tower, resolved, t, achieved, grid_design=dt)
+
+       call chain_expansion(chain, tower, functionals, degrees, 0, fvals)
+       f = fvals(0, 1)
+
+       call chain_stamps(chain, tower, functionals, degrees, marks)
+       call chain_derivative(chain, tower, marks, functionals, degrees, 1, reverse_route, table)
+
+       ! the scale direction, projected away: see the module header.
+       eta = table(1, 2:size(table, 2))
+       eta = eta - sum(eta * dt) / sum(dt * dt) * dt
+       e   = (maxval(eta) - minval(eta)) * (duration / real(size(eta), dp))
+       if (relative) e = e / max(abs(f), tiny(1.0_dp))
+
+       if (e <= tolerance) exit
+
+       rejected  = rejected + 1
+       threshold = sum(eta) / real(size(eta), dp)
+       split     = eta >= threshold
+       dt        = halved(dt, split)
+
+       if (attempt > 50) then
+          error stop 'gti_chain: a goal-oriented grid stays above the tolerance past fifty attempts'
+       end if
+    end do
+
+    if (present(rejects)) rejects = rejected
+
+  end function goal_oriented_partition
+
+  pure function halved(dt, split) result(refined)
+    real(dp), intent(in) :: dt(:)
+    logical , intent(in) :: split(:)
+    real(dp), allocatable :: refined(:)
+    integer :: i
+    refined = [real(dp) ::]
+    do i = 1, size(dt)
+       if (split(i)) then
+          refined = [refined, dt(i) / 2.0_dp, dt(i) / 2.0_dp]
+       else
+          refined = [refined, dt(i)]
+       end if
+    end do
+  end function halved
+
 end module gti_chain
 module gti_driver
   use iso_fortran_env  , only : int64
@@ -7320,7 +7442,8 @@ program graph_time_integrator
   use gti_expansion         , only : family_holder, expansion
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
        & expansion_substitutions, chain_stamps, num_designs_of, &
-       & instant_components, chain_derivative, asymmetry, sink_costates
+       & instant_components, chain_derivative, asymmetry, sink_costates, &
+       & goal_oriented_partition
   use gti_sweeps            , only : set_linear_solver, set_assembly, set_storage, set_multigrid, &
        & set_coarse_nodes, set_linear_budget, set_newton_order
   use gti_sweeps            , only : route_of, forward_route, reverse_route
@@ -7811,10 +7934,17 @@ contains
        error stop 'graph_time_integrator: an adaptive grid is over time alone'
     end if
     nd = cfg % state_degree + 1
-    adaptive_weights = adaptive_partition(crouzeix_three_stage(), 4, &
-         & van_der_pol(cfg % state_degree), nd, cfg % time_duration, &
-         & q0(1:cfg % state_degree), cfg % design, cfg % tolerance, &
-         & trim(cfg % tolerance_criterion) == 'relative', rejects)
+    if (trim(cfg % adaptive_gate) == 'goal_oriented') then
+       adaptive_weights = goal_oriented_partition(crouzeix_three_stage(), &
+            & van_der_pol(cfg % state_degree), van_der_pol_energy(cfg % state_degree), nd, &
+            & cfg % time_duration, q0(1:cfg % state_degree), cfg % design, cfg % tolerance, &
+            & trim(cfg % tolerance_criterion) == 'relative', rejects)
+    else
+       adaptive_weights = adaptive_partition(crouzeix_three_stage(), 4, &
+            & van_der_pol(cfg % state_degree), nd, cfg % time_duration, &
+            & q0(1:cfg % state_degree), cfg % design, cfg % tolerance, &
+            & trim(cfg % tolerance_criterion) == 'relative', rejects)
+    end if
     cfg % instants = size(adaptive_weights) + 1
     grid_adaptive  = .true.
     write(*,'(a,i0,a,es9.2,a,i0,a)') '   adaptive grid: ', size(adaptive_weights), &
@@ -7845,6 +7975,8 @@ contains
          & 'tolerance_criterion')
     call refuse_unknown(cfg % iteration_criterion, ['by_rate ', 'by_count'], &
          & 'iteration_criterion')
+    call refuse_unknown(cfg % adaptive_gate, ['step_doubling', 'goal_oriented'], &
+         & 'adaptive_gate')
     call set_stopping(cfg % tolerance, &
          & merge(relative, absolute, trim(cfg % tolerance_criterion) == 'relative'), &
          & merge(by_rate, by_count, trim(cfg % iteration_criterion) == 'by_rate'), &

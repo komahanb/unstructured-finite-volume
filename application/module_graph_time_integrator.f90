@@ -49,6 +49,7 @@ module gti_configuration
      character(len=16) :: tolerance_criterion = 'relative'
      character(len=16) :: iteration_criterion = 'by_rate'
      integer           :: max_iterations      = 100
+     integer           :: higher_order_jacobian_product = 1
      integer           :: krylov_restart        = 60
      integer           :: smoothing_sweeps      = 2
      integer           :: max_linear_iterations = 200
@@ -204,6 +205,8 @@ contains
        read(value, *) cfg % max_linear_iterations
     case ('max_iterations')
        read(value, *) cfg % max_iterations
+    case ('higher_order_jacobian_product')
+       read(value, *) cfg % higher_order_jacobian_product
     case ('accounting')
        read(value, *) cfg % accounting
     case ('measurements')
@@ -214,6 +217,8 @@ contains
     end select
     call refuse_below(cfg % max_iterations, 1, &
          & 'max_iterations', 'an iteration budget is at least one')
+    call refuse_below(cfg % higher_order_jacobian_product, 1, &
+         & 'higher_order_jacobian_product', 'one is Newton, and there is no order below it')
     call refuse_below(cfg % spatial_order, 1, &
          & 'spatial_order', 'a form of degree below one fits no gradient')
     call refuse_below(cfg % max_derivative_degree, 0, &
@@ -320,6 +325,7 @@ contains
     write(*,'(a,a)')       '   tolerance criterion      ', trim(cfg % tolerance_criterion)
     write(*,'(a,a)')       '   iteration criterion      ', trim(cfg % iteration_criterion)
     write(*,'(a,i0)')      '   max iterations           ', cfg % max_iterations
+    write(*,'(a,i0)')      '   higher order jacobian product ', cfg % higher_order_jacobian_product
     write(*,'(a,i0)')      '   krylov restart           ', cfg % krylov_restart
     write(*,'(a,i0)')      '   smoothing sweeps         ', cfg % smoothing_sweeps
     write(*,'(a,i0)')      '   max linear iterations    ', cfg % max_linear_iterations
@@ -400,11 +406,13 @@ module gti_sweeps
   integer, parameter :: forward_route = 1
   integer, parameter :: reverse_route = 2
   public :: set_linear_solver, set_assembly, set_storage, set_multigrid
+  public :: set_newton_order, newton_order
   public :: set_aggregates, set_coarse_nodes, coarse_nodes, assembly_present, multigrid_on
   public :: take_inner, keep_inner, forget_inner, set_linear_stopping, set_linear_budget
   public :: functional_of, functional_gradient
   character(len=16), save :: chosen_solver   = 'direct'
   character(len=16), save :: chosen_assembly = 'matrix'
+  integer          , save :: chosen_newton_order = 1
   character(len=16), save :: chosen_storage  = 'dense'
   logical          , save :: chosen_multigrid = .false.
   integer, allocatable, save :: chosen_aggregates(:)
@@ -491,6 +499,14 @@ contains
     chosen_multigrid = on
     call forget_inner()
   end subroutine set_multigrid
+  subroutine set_newton_order(order)
+    integer, intent(in) :: order
+    if (order < 1) error stop 'gti_sweeps: one is Newton, and there is no order below it'
+    chosen_newton_order = order
+  end subroutine set_newton_order
+  pure integer function newton_order() result(order)
+    order = chosen_newton_order
+  end function newton_order
   pure logical function assembly_present() result(yes)
     yes = trim(chosen_assembly) == 'matrix'
   end function assembly_present
@@ -2224,7 +2240,7 @@ module gti_march
        & level_couples
   use graph_fractal           , only : graph
   use map_value               , only : VALUE_KNOWN
-  use gti_sweeps              , only : assembly_present, multigrid_on, &
+  use gti_sweeps              , only : assembly_present, multigrid_on, newton_order, &
        & set_aggregates, coarse_nodes, take_inner, keep_inner, forget_inner, set_linear_stopping
   use util_tally              , only : tally_record, tangent_loops, adjoint_loops
   implicit none
@@ -2679,6 +2695,7 @@ contains
        q = at_first_instant(rows, count)
     end if
     solver % compiled       = assembly_present()
+    solver % higher_order_jacobian_product = newton_order()
     solver % max_iterations = stopping_iterations
     solver % tolerance      = stopping_tolerance
     solver % criterion      = stopping_criterion
@@ -7305,7 +7322,7 @@ program graph_time_integrator
        & expansion_substitutions, chain_stamps, num_designs_of, &
        & instant_components, chain_derivative, asymmetry, sink_costates
   use gti_sweeps            , only : set_linear_solver, set_assembly, set_storage, set_multigrid, &
-       & set_coarse_nodes, set_linear_budget
+       & set_coarse_nodes, set_linear_budget, set_newton_order
   use gti_sweeps            , only : route_of, forward_route, reverse_route
   use operation_minimization, only : relative, absolute, by_count, by_rate
   use gti_driver            , only : settings, chosen_grid, steps_of, family_named, clock, &
@@ -7336,6 +7353,7 @@ program graph_time_integrator
   call settings('homogeneous', cfg)
   call show(cfg)
   call set_linear_solver(cfg % linear_solver)
+  call set_newton_order(cfg % higher_order_jacobian_product)
   call set_assembly(cfg % assembly)
   call set_storage(cfg % storage)
   call set_multigrid(cfg % multigrid)

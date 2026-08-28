@@ -21,6 +21,37 @@
 ! made, kept by one dispatch, and the governance below it never
 ! changes.
 !
+!                  THE HALLEY-CHEBYSHEV FAMILY
+!
+! A statement that reports max_degree above one can be asked for more
+! than its tangent, and higher_order_jacobian_product is how much of
+! it a run asks for. Above the plain Newton step delta_1, solving
+! J delta_1 = -R, each further order s = 2, ..., p adds
+!
+!      J delta_s  =  - B^(s) / s! ,
+!
+! B^(s) the s-th total derivative of R composed with the path whose
+! k-th derivative is k! delta_k for k < s - the chain rule's own
+! composition, assembled by operation_chain_rule - with delta_s left
+! unoccupied, so the one term that would need it is not assembled;
+! that missing term is exactly the J delta_s being solved for. The
+! step taken is delta_1 + delta_2 + ... + delta_p. p = 1 is Newton
+! unchanged; p = 2 is Halley's method, cubically convergent; each
+! further p adds one more derivative of R and one more solve against
+! the SAME jacobian, already frozen and, where the inner minimizer
+! factors, already factored - the higher orders are additional right
+! hand sides against one linear system, not a second one.
+!
+! The expansion is asymptotic: it is trusted only where delta_1 is
+! already a fair local model of the root, and far from there a
+! higher-order term can be larger than the one before it rather than
+! smaller, which is the expansion leaving the regime it describes
+! rather than refining within it. Each delta_s is kept only while it
+! is no bigger than delta_(s-1); the first that is not stops the
+! correction there, so the step taken is never worse than the Newton
+! step this extends, and the check is on the correction's own
+! decline, not a magnitude chosen from outside it.
+!
 !                        WHEN IT IS NOT WORKING
 !
 ! A statement need not have a solution near where it was started, and
@@ -51,7 +82,9 @@ module operation_newton
   use operation_stencil     , only : stencil
   use util_tally, only : tally_record, newton_solves, primal_loops
   use field_stored  , only : stored_field
+  use field_calculus, only : field
   use operation_linearization, only : linearization, tangent_of
+  use operation_chain_rule   , only : chain_rule, argument_path, path_derivative
 
   implicit none
 
@@ -69,6 +102,11 @@ module operation_newton
      ! offers it. Off, the linearization is attached - a matvec, no
      ! matrix anywhere - and the inner minimizer must iterate.
      logical :: compiled = .true.
+
+     ! The order of the Halley-Chebyshev family taken: one is Newton
+     ! unchanged, and the statement's own max_degree is the ceiling
+     ! on how far above one this may be asked to go.
+     integer :: higher_order_jacobian_product = 1
 
      class(minimizer), allocatable :: inner
 
@@ -178,6 +216,12 @@ contains
        if (linear_achieved /= linear_achieved) return
        if (linear_achieved > huge(1.0_dp) / 2.0_dp) return
 
+       if (this % higher_order_jacobian_product > 1) then
+          call halley_correction(this, inputs, dq, linear_achieved)
+          if (linear_achieved /= linear_achieved) return
+          if (linear_achieved > huge(1.0_dp) / 2.0_dp) return
+       end if
+
        x = x + dq
 
     end do
@@ -186,5 +230,75 @@ contains
     achieved = this % norm(y + g - rhs)
 
   end subroutine solve
+
+  !===================================================================!
+  ! Add delta_2, ..., delta_p to the Newton step delta already
+  ! solved, each against the same frozen jacobian this % inner is
+  ! already attached to. achieved is the worst of the extra solves,
+  ! read by the same guard the caller applies to the Newton one.
+  !===================================================================!
+
+  subroutine halley_correction(this, inputs, delta, achieved)
+
+    class(newton)      , intent(inout) :: this
+    type(stored_field) , intent(in)    :: inputs(:)
+    real(dp)           , intent(inout) :: delta(:)
+    real(dp)           , intent(out)   :: achieved
+
+    type(chain_rule) :: assembler
+    type(argument_path) :: path
+    type(path_derivative), allocatable :: derivative(:)
+    class(field), allocatable :: out
+    type(stored_field) :: seeded
+    real(dp), allocatable :: b(:), correction(:), individual(:,:)
+    real(dp) :: fact, one_achieved
+    integer :: s, p
+
+    p = this % higher_order_jacobian_product
+    achieved = 0.0_dp
+
+    allocate(individual(size(delta), p))
+    individual(:, 1) = delta
+
+    allocate(correction(size(delta)))
+    allocate(derivative(p - 1))
+    path % wrt = this % action % argument(1)
+    fact = 1.0_dp
+
+    do s = 2, p
+
+       ! derivative(m) carries m! delta_m; fact holds (s-1)! at the
+       ! point derivative(s-1) is set, so this line and no other
+       ! needs to know a factorial's value.
+       fact = fact * real(s - 1, dp)
+       seeded = stored_field('correction', this % unknown_domain, size(delta))
+       call seeded % set_real_vector(fact * individual(:, s - 1))
+       derivative(s - 1) % occupied  = .true.
+       derivative(s - 1) % direction = seeded
+       path % derivative = derivative(1:s - 1)
+
+       call assembler % assemble(this % action, this % on, inputs, s, [path], out)
+       call out % real_vector(b)
+
+       correction = 0.0_dp
+       call this % inner % solve(-b / (fact * real(s, dp)), correction, one_achieved)
+       achieved = max(achieved, one_achieved)
+       if (one_achieved /= one_achieved) return
+       if (one_achieved > huge(1.0_dp) / 2.0_dp) return
+
+       ! The series is trusted only while it is shrinking: a
+       ! correction no smaller than the one before it says the local
+       ! model has left the regime a truncated expansion describes,
+       ! and adding it would perturb rather than refine. What was
+       ! already accumulated is kept - at s = 2 that is delta_1,
+       ! Newton's own step, so this can never do worse than Newton.
+       if (norm2(correction) >= norm2(individual(:, s - 1))) return
+
+       individual(:, s) = correction
+       delta = delta + correction
+
+    end do
+
+  end subroutine halley_correction
 
 end module operation_newton

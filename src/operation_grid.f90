@@ -477,7 +477,7 @@ contains
     ! a partition's first instant carries no step; a quadrature
     ! weighs every point
     first = merge(1, 2, this % kind == GRID_GAUSS)
-    if (n < first + 1) then
+    if (n < 2) then
        error stop 'operation_grid: a partition needs two instants'
     end if
 

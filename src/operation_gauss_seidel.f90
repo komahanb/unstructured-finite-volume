@@ -86,7 +86,7 @@ contains
     real(dp), intent(inout) :: x(:)
     real(dp), intent(out)   :: achieved
 
-    real(dp), allocatable :: d(:,:,:), y(:), r(:), piece(:)
+    real(dp), allocatable :: d(:,:,:), r(:), piece(:)
     type(dense_factorisation), allocatable :: block(:)
     integer , allocatable :: colours(:)
     integer :: it, col, b, w, nb, i
@@ -118,15 +118,13 @@ contains
 
     do it = 1, this % max_iterations
 
-       call this % matvec(x, y)
-       r = rhs - y
+       call this % imbalance(rhs, x, r)
        achieved = this % norm(r)
        if (this % halted(achieved, it)) return
 
        do col = 1, maxval(colours)
           if (col > 1) then
-             call this % matvec(x, y)
-             r = rhs - y
+             call this % imbalance(rhs, x, r)
           end if
           do b = 1, nb
              if (colours(b) /= col) cycle
@@ -143,8 +141,8 @@ contains
 
     end do
 
-    call this % matvec(x, y)
-    achieved = this % norm(rhs - y)
+    call this % imbalance(rhs, x, r)
+    achieved = this % norm(r)
 
   end subroutine solve
 

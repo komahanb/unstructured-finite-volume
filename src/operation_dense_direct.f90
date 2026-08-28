@@ -99,7 +99,7 @@ contains
     real(dp), intent(inout) :: x(:)
     real(dp), intent(out)   :: achieved
 
-    real(dp), allocatable :: a(:,:), constant(:), y(:), solution(:)
+    real(dp), allocatable :: a(:,:), constant(:), r(:), solution(:)
     integer :: n
     logical :: kept
 
@@ -154,8 +154,8 @@ contains
     ! attached operation's matvec and norm.
     !----------------------------------------------------------------!
 
-    call this % matvec(x, y)
-    achieved = this % norm(rhs - y)
+    call this % imbalance(rhs, x, r)
+    achieved = this % norm(r)
 
   end subroutine dense_direct_solve
 

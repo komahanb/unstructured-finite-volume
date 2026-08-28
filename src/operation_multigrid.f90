@@ -249,7 +249,7 @@ contains
     real(dp), intent(inout) :: x(:)
     real(dp), intent(out)   :: achieved
 
-    real(dp), allocatable :: y(:), r(:), rc(:), ec(:), e(:)
+    real(dp), allocatable :: r(:), rc(:), ec(:), e(:)
     real(dp) :: smoothed, answered
     integer :: it
 
@@ -263,8 +263,7 @@ contains
 
        call this % smoother % solve(rhs, x, smoothed)
 
-       call this % matvec(x, y)
-       r = rhs - y
+       call this % imbalance(rhs, x, r)
 
        achieved = this % norm(r)
        if (this % halted(achieved, it)) return
@@ -281,8 +280,8 @@ contains
 
     end do
 
-    call this % matvec(x, y)
-    achieved = this % norm(rhs - y)
+    call this % imbalance(rhs, x, r)
+    achieved = this % norm(r)
 
   end subroutine solve
 

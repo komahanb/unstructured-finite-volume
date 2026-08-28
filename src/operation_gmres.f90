@@ -78,8 +78,7 @@ contains
 
     do outer = 1, this % max_iterations
 
-       call this % matvec(x, r)
-       r = rhs - r
+       call this % imbalance(rhs, x, r)
        beta = this % norm(r)
 
        achieved = beta
@@ -151,8 +150,8 @@ contains
        deallocate(y)
 
        if (this % converged(achieved)) then
-          call this % matvec(x, r)
-          achieved = this % norm(rhs - r)
+          call this % imbalance(rhs, x, r)
+          achieved = this % norm(r)
           return
        end if
 

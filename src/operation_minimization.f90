@@ -188,7 +188,9 @@ module operation_minimization
 
      procedure :: attach
      procedure :: evaluation_inputs
+     procedure :: raw_apply
      procedure :: matvec
+     procedure :: imbalance
      procedure :: inner_product
      procedure :: norm
      procedure :: sweep_order
@@ -553,26 +555,30 @@ contains
   end subroutine evaluation_inputs
 
   !===================================================================!
-  ! The operation applied as it stands, affine part and all.
+  ! The operation applied as it stands, affine part and all. The
+  ! input tuple it was applied on is returned when asked, so that a
+  ! tangent frozen on it linearizes the function that was evaluated.
   !===================================================================!
 
-  subroutine raw_apply(this, x, y)
+  subroutine raw_apply(this, x, y, inputs)
 
     class(minimizer), intent(in)   :: this
     real(dp), intent(in)               :: x(:)
     real(dp), allocatable, intent(out) :: y(:)
+    type(stored_field), allocatable, intent(out), optional :: inputs(:)
 
-    type(stored_field), allocatable :: inputs(:)
+    type(stored_field), allocatable :: tuple(:)
     class(field), allocatable :: answer
 
-    call this % evaluation_inputs(x, inputs)
-    call this % action % apply(this % on, inputs, answer)
+    call this % evaluation_inputs(x, tuple)
+    call this % action % apply(this % on, tuple, answer)
 
     if (.not. answer % defined_on(this % residual_domain)) then
        error stop 'minimization: the action must answer on its stated residual domain'
     end if
 
     call answer % real_vector(y)
+    if (present(inputs)) call move_alloc(tuple, inputs)
 
   end subroutine raw_apply
 
@@ -590,6 +596,23 @@ contains
     y = y - this % affine
 
   end subroutine matvec
+
+  !===================================================================!
+  ! The linear solver imbalance: rhs - A x, where A is the action
+  ! with its affine part removed by matvec. Iterative solvers ask
+  ! this one question instead of each spelling the residual assembly.
+  !===================================================================!
+
+  subroutine imbalance(this, rhs, x, r)
+
+    class(minimizer), intent(in)   :: this
+    real(dp), intent(in)               :: rhs(:), x(:)
+    real(dp), allocatable, intent(out) :: r(:)
+
+    call this % matvec(x, r)
+    r = rhs - r
+
+  end subroutine imbalance
 
   real(dp) function inner_product(this, u, v) result(prod)
 

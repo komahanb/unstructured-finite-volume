@@ -60,14 +60,13 @@ contains
     real(dp), intent(inout) :: x(:)
     real(dp), intent(out)   :: achieved
 
-    real(dp), allocatable :: r(:), p(:), ap(:), y(:)
+    real(dp), allocatable :: r(:), p(:), ap(:)
     real(dp) :: rr, rr_next, alpha, beta, pap
     integer :: it
 
     call tally_record(linear_solves)
 
-    call this % matvec(x, y)
-    r = rhs - y
+    call this % imbalance(rhs, x, r)
     p = r
 
     rr   = this % inner_product(r, r)

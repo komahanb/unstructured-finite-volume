@@ -69,7 +69,6 @@ module operation_stencil
 
      procedure :: name         => stencil_name
      procedure :: apply        => stencil_apply
-     procedure :: dependencies => stencil_dependencies
      procedure :: transpose     => stencil_transpose
      procedure :: restricted    => stencil_restricted
      procedure :: max_degree     => stencil_max_degree
@@ -447,19 +446,6 @@ contains
     call emit(out, output)
 
   end subroutine stencil_partial_action
-
-  !===================================================================!
-  ! The contract's answer: the pattern IS a graph, handed out whole.
-  !===================================================================!
-
-  subroutine stencil_dependencies(this, pattern)
-
-    class(stencil), intent(in)    :: this
-    class(directed_graph), allocatable, intent(out) :: pattern
-
-    allocate(pattern, source=this % pattern)
-
-  end subroutine stencil_dependencies
 
   !===================================================================!
   ! The transpose: the same pattern read the other way, so the weight

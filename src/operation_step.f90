@@ -45,7 +45,6 @@ module operation_step
   use field_calculus, only : field
   use graph_fractal      , only : graph
   use field_stored  , only : stored_field
-  use view_directed_stored        , only : stored_directed_graph
 
   implicit none
 
@@ -70,7 +69,6 @@ module operation_step
      procedure :: name         => step_name
      procedure :: domain       => step_domain
      procedure :: apply        => step_apply
-     procedure :: dependencies => step_dependencies
      procedure :: set_bdf
 
      procedure :: max_degree     => step_max_degree
@@ -325,44 +323,6 @@ contains
     error stop 'step: the argument is one of the action''s'
 
   end function from_action
-
-  !===================================================================!
-  ! The dependency pattern on the time axis. The residual at the
-  ! newest instant reads every instant its coefficients reach,
-  !
-  !      R_n = a0 q_n + a1 q_(n-1) + a2 q_(n-2) + h S(q_n),
-  !
-  ! so the pattern is a fan-in of reach + 1 vertices onto the
-  ! last, including the self-edge for the implicit unknown:
-  !
-  !      backward euler        bdf-2
-  !          1 --> 2               1 --> 3
-  !          2 --> 2               2 --> 3
-  !                                3 --> 3
-  !
-  ! This records which instants the residual reads, not which
-  ! instant follows which. A stencil's dependencies are
-  ! the same pattern on the dependent-variable axis.
-  !===================================================================!
-
-  subroutine step_dependencies(this, pattern)
-
-    class(scheme), intent(in)       :: this
-    class(directed_graph), allocatable, intent(out) :: pattern
-
-    integer :: n, newest
-
-    newest = this % reach + 1
-
-    allocate(pattern, source=stored_directed_graph(newest, &
-         & tails=[(n, n = 1, newest)], &
-         & heads=[(newest, n = 1, newest)]))
-
-  end subroutine step_dependencies
-
-  !===================================================================!
-  ! The operation interface.
-  !===================================================================!
 
   pure function step_name(this) result(name)
 

@@ -11,10 +11,14 @@
 !      c(d) = n! / ( prod_i d_i!  *  prod_j multiplicity_j! )
 !
 ! where multiplicity_j counts repeated equal entries of d.
-! Partitions are generated, not tabulated, in a fixed order:
+! The partitions of every degree up to the assembler's highest are
+! enumerated once, when it is constructed, in a fixed order:
 ! increasing entry count first, lexicographic within one entry
-! count. Every partition entry ranges over all argument paths
-! providing that derivative order, in ordered tuples - the factor
+! count. They are the index structure of the chain rule; an
+! algorithm supplies only the paths, so Newton's corrections and a
+! march's tangents each read one table. Every partition entry
+! ranges over all argument paths providing that derivative order,
+! in ordered tuples - the factor
 ! a symmetric mixed partial requires. The count multiplies the
 ! result outside the statement's calculus; no derivative tensor is
 ! stored.
@@ -31,15 +35,6 @@
 ! naming a slot the statement does not take, a duplicated slot,
 ! and a partition needing a partial past the statement's
 ! max_degree.
-!
-! PARTIAL CONNECTIVITY. The partition list is also a small index
-! graph. A term node is one partition, for example [1, 2] in degree
-! three. Its ports read path-derivative degrees one and two; the term's
-! coefficient is the multiplicity with which that slot pattern appears
-! in the total derivative. The graph carries only this connectivity:
-! no statement, no input tuple, no direction fields. Those values arrive
-! later through argument_path, and assemble evaluates the operation's
-! partial_action on the indexed slots.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -60,9 +55,6 @@ module operation_chain_rule
   public :: chain_rule
   public :: argument_path
   public :: path_derivative
-  public :: partial_connectivity_element
-  public :: partial_connectivity
-  public :: partial_connectivity_graph
 
   !===================================================================!
   ! One derivative of a path: occupied, it carries x^(k) as a
@@ -93,11 +85,42 @@ module operation_chain_rule
 
   end type argument_path
 
+  interface argument_path
+     module procedure create_argument_path
+  end interface argument_path
+
   !===================================================================!
-  ! The stateless assembler.
+  ! One integer partition of the degree, with its multinomial
+  ! count. Private to this module.
+  !===================================================================!
+
+  type :: derivative_partition
+
+     integer(int64) :: coefficient = 1_int64
+     integer, allocatable :: path_degree(:)
+
+  end type derivative_partition
+
+  !===================================================================!
+  ! The partitions of one degree: the terms of d^n/ds^n.
+  !===================================================================!
+
+  type :: degree_partitions
+
+     type(derivative_partition), allocatable :: term(:)
+
+  end type degree_partitions
+
+  !===================================================================!
+  ! The assembler, constructed for a highest degree. An assembler
+  ! that was not constructed stops the program at assemble.
   !===================================================================!
 
   type :: chain_rule
+
+     private
+
+     type(degree_partitions), allocatable :: of_degree(:)
 
    contains
 
@@ -105,73 +128,33 @@ module operation_chain_rule
 
   end type chain_rule
 
-  !===================================================================!
-  ! One connectivity element in the derivative-degree graph.
-  !
-  ! In a mesh, the element connectivity [b, c, d] says that one
-  ! triangular element reads nodes b, c and d. Here the connectivity
-  ! [1, 2] says that one chain-rule term reads a first path derivative
-  ! and a second path derivative. The coefficient is the multiplicity
-  ! of that slot pattern.
-  !===================================================================!
-
-  type :: partial_connectivity_element
-
-     private
-
-     integer(int64) :: coefficient_value = 1_int64
-     integer, allocatable :: slot_degree(:)
-
-   contains
-
-     procedure :: num_slots     => element_num_slots
-     procedure :: source_degree => element_source_degree
-     procedure :: coefficient   => element_coefficient
-
-  end type partial_connectivity_element
-
-  !===================================================================!
-  ! The index connectivity of one total derivative degree.
-  !
-  ! For degree n, every partition is a term node:
-  !
-  !      [n]        reads one path derivative of degree n
-  !      [1, n-1]   reads two path derivatives, degrees 1 and n-1
-  !      [1, 1, 1]  reads three first-derivative slots
-  !
-  ! The partition entries are the labelled ports of that node. When a
-  ! port says degree k, assemble ranges it over every argument_path that
-  ! has x^(k) occupied. The coefficient is the exact multiplicity of
-  ! the symmetric slot pattern. This is the reusable part: Newton,
-  ! marching, or another driver may supply different paths and fields
-  ! while sharing the same degree graph.
-  !===================================================================!
-
-  type :: partial_connectivity_graph
-
-     private
-
-     integer :: degree = -1
-     type(partial_connectivity_element), allocatable :: elements(:)
-
-   contains
-
-     procedure :: order         => connectivity_order
-     procedure :: num_terms     => connectivity_num_terms
-     procedure :: num_elements  => connectivity_num_terms
-     procedure :: num_edges     => connectivity_num_edges
-     procedure :: element       => connectivity_element
-     procedure :: term_size     => connectivity_term_size
-     procedure :: source_degree => connectivity_source_degree
-     procedure :: coefficient   => connectivity_coefficient
-
-  end type partial_connectivity_graph
-
-  interface partial_connectivity
-     module procedure create_partial_connectivity
-  end interface partial_connectivity
+  interface chain_rule
+     module procedure create_chain_rule
+  end interface chain_rule
 
 contains
+
+  !===================================================================!
+  ! Create the path for one input slot with derivative slots
+  ! 1..degree. Filling those slots is an algorithm decision: Newton
+  ! fills the correction sequence, a march fills state histories, and
+  ! an empty slot contributes zero to the chain-rule assembly.
+  !===================================================================!
+
+  function create_argument_path(wrt, degree) result(path)
+
+    type(argument), intent(in) :: wrt
+    integer       , intent(in) :: degree
+    type(argument_path)        :: path
+
+    if (degree < 0) then
+       error stop 'argument_path: the derivative degree is nonnegative'
+    end if
+
+    path % wrt = wrt
+    allocate(path % derivative(degree))
+
+  end function create_argument_path
 
   !===================================================================!
   ! True when derivative(order) exists and is occupied.
@@ -192,15 +175,35 @@ contains
   end function path_has_degree
 
   !===================================================================!
+  ! Enumerate the partitions of every degree up to the highest. A
+  ! negative highest degree stops the program.
+  !===================================================================!
+
+  function create_chain_rule(max_degree) result(this)
+
+    integer, intent(in) :: max_degree
+    type(chain_rule) :: this
+
+    integer :: degree
+
+    if (max_degree < 0) then
+       error stop 'chain_rule: the highest degree is nonnegative'
+    end if
+
+    allocate(this % of_degree(max_degree))
+    do degree = 1, max_degree
+       call enumerate_partitions(degree, this % of_degree(degree) % term)
+    end do
+
+  end function create_chain_rule
+
+  !===================================================================!
   ! Assemble the total derivative of the given degree. The degree
-  ! and the paths are checked before any statement call runs. If a
-  ! partial_connectivity_graph is supplied, its term/slot graph selects
-  ! the partial_action calls; otherwise the same graph is generated here
-  ! for the call.
+  ! and the paths are checked before any statement call runs.
   !===================================================================!
 
   subroutine assemble(this, statement, input_graph, input_data, degree, &
-       & paths, output, connectivity)
+       & paths, output)
 
     class(chain_rule)              , intent(in)    :: this
     class(operation)               , intent(in)    :: statement
@@ -209,18 +212,16 @@ contains
     integer                        , intent(in)    :: degree
     type(argument_path)            , intent(in)    :: paths(:)
     class(field), allocatable, intent(inout) :: output
-    type(partial_connectivity_graph), intent(in), optional :: connectivity
 
-    type(partial_connectivity_element), allocatable :: partitions(:)
     real(dp), allocatable :: running(:)
     logical :: started
-    integer :: num_components
-
-    associate(unread => this)
-    end associate
+    integer :: p, num_components
 
     if (degree < 0) then
        error stop 'chain_rule: degree is supported'
+    end if
+    if (.not. allocated(this % of_degree)) then
+       error stop 'chain_rule: the assembler is constructed for a highest degree'
     end if
 
     call require_valid_paths(paths, statement)
@@ -231,216 +232,24 @@ contains
        return
     end if
 
+    if (degree > size(this % of_degree)) then
+       error stop 'chain_rule: the degree is no larger than the constructed highest degree'
+    end if
+
     started = .false.
     num_components   = 1
 
-    if (present(connectivity)) then
-       call require_connectivity(connectivity, degree)
-       call assemble_partitions(statement, input_graph, input_data, &
-            & connectivity % elements, paths, running, started, &
-            & num_components)
-    else
-       call enumerate_partitions(degree, partitions)
-       call assemble_partitions(statement, input_graph, input_data, &
-            & partitions, paths, running, started, num_components)
-    end if
+    associate (partitions => this % of_degree(degree) % term)
+      do p = 1, size(partitions)
+         call assemble_partition(statement, input_graph, input_data, &
+              & partitions(p), paths, running, started, num_components)
+      end do
+    end associate
 
     call write_output(statement, input_graph, input_data, running, &
          & started, num_components, output)
 
   end subroutine assemble
-
-  !===================================================================!
-  ! Construct the index graph for one derivative degree. This freezes
-  ! the combinatorics of D^degree S(x(s)): which term nodes exist,
-  ! which derivative degree each slot reads, and the multiplicity of
-  ! each term. It does not freeze S, x, or any direction value.
-  !===================================================================!
-
-  function create_partial_connectivity(degree) result(this)
-
-    integer, intent(in) :: degree
-    type(partial_connectivity_graph) :: this
-
-    if (degree < 0) then
-       error stop 'chain_rule: degree is supported'
-    end if
-
-    this % degree = degree
-
-    if (degree == 0) then
-       allocate(this % elements(0))
-    else
-       call enumerate_partitions(degree, this % elements)
-    end if
-
-  end function create_partial_connectivity
-
-  pure integer function element_num_slots(this) result(num_slots)
-
-    class(partial_connectivity_element), intent(in) :: this
-
-    if (allocated(this % slot_degree)) then
-       num_slots = size(this % slot_degree)
-    else
-       num_slots = 0
-    end if
-
-  end function element_num_slots
-
-  pure integer function element_source_degree(this, slot) result(degree)
-
-    class(partial_connectivity_element), intent(in) :: this
-    integer                            , intent(in) :: slot
-
-    call require_element_slot(this, slot)
-
-    degree = this % slot_degree(slot)
-
-  end function element_source_degree
-
-  pure integer(int64) function element_coefficient(this) result(coefficient)
-
-    class(partial_connectivity_element), intent(in) :: this
-
-    coefficient = this % coefficient_value
-
-  end function element_coefficient
-
-  pure subroutine require_element_slot(element, slot)
-
-    class(partial_connectivity_element), intent(in) :: element
-    integer                            , intent(in) :: slot
-
-    if (.not. allocated(element % slot_degree)) then
-       error stop 'chain_rule: the connectivity element is constructed'
-    end if
-    if (slot < 1 .or. slot > size(element % slot_degree)) then
-       error stop 'chain_rule: the connectivity element slot exists'
-    end if
-
-  end subroutine require_element_slot
-
-  pure integer function connectivity_order(this) result(order)
-
-    class(partial_connectivity_graph), intent(in) :: this
-
-    order = this % degree
-
-  end function connectivity_order
-
-  pure integer function connectivity_num_terms(this) result(num_terms)
-
-    class(partial_connectivity_graph), intent(in) :: this
-
-    if (allocated(this % elements)) then
-       num_terms = size(this % elements)
-    else
-       num_terms = 0
-    end if
-
-  end function connectivity_num_terms
-
-  pure integer function connectivity_num_edges(this) result(num_edges)
-
-    class(partial_connectivity_graph), intent(in) :: this
-
-    integer :: p
-
-    num_edges = 0
-    if (.not. allocated(this % elements)) return
-
-    do p = 1, size(this % elements)
-       num_edges = num_edges + size(this % elements(p) % slot_degree)
-    end do
-
-  end function connectivity_num_edges
-
-  pure function connectivity_element(this, term) result(element)
-
-    class(partial_connectivity_graph), intent(in) :: this
-    integer                          , intent(in) :: term
-    type(partial_connectivity_element) :: element
-
-    call require_term(this, term)
-
-    element = this % elements(term)
-
-  end function connectivity_element
-
-  pure integer function connectivity_term_size(this, term) result(term_size)
-
-    class(partial_connectivity_graph), intent(in) :: this
-    integer                          , intent(in) :: term
-
-    call require_term(this, term)
-
-    term_size = size(this % elements(term) % slot_degree)
-
-  end function connectivity_term_size
-
-  pure integer function connectivity_source_degree(this, term, slot) result(degree)
-
-    class(partial_connectivity_graph), intent(in) :: this
-    integer                          , intent(in) :: term, slot
-
-    call require_slot(this, term, slot)
-
-    degree = this % elements(term) % slot_degree(slot)
-
-  end function connectivity_source_degree
-
-  pure integer(int64) function connectivity_coefficient(this, term) result(coefficient)
-
-    class(partial_connectivity_graph), intent(in) :: this
-    integer                          , intent(in) :: term
-
-    call require_term(this, term)
-
-    coefficient = this % elements(term) % coefficient_value
-
-  end function connectivity_coefficient
-
-  pure subroutine require_connectivity(connectivity, degree)
-
-    type(partial_connectivity_graph), intent(in) :: connectivity
-    integer                         , intent(in) :: degree
-
-    if (connectivity % degree /= degree) then
-       error stop 'chain_rule: the connectivity degree matches the requested degree'
-    end if
-    if (.not. allocated(connectivity % elements)) then
-       error stop 'chain_rule: the connectivity graph is constructed'
-    end if
-
-  end subroutine require_connectivity
-
-  pure subroutine require_term(connectivity, term)
-
-    class(partial_connectivity_graph), intent(in) :: connectivity
-    integer                          , intent(in) :: term
-
-    if (.not. allocated(connectivity % elements)) then
-       error stop 'chain_rule: the connectivity graph is constructed'
-    end if
-    if (term < 1 .or. term > size(connectivity % elements)) then
-       error stop 'chain_rule: the connectivity term exists'
-    end if
-
-  end subroutine require_term
-
-  pure subroutine require_slot(connectivity, term, slot)
-
-    class(partial_connectivity_graph), intent(in) :: connectivity
-    integer                          , intent(in) :: term, slot
-
-    call require_term(connectivity, term)
-
-    if (slot < 1 .or. slot > size(connectivity % elements(term) % slot_degree)) then
-       error stop 'chain_rule: the connectivity slot exists'
-    end if
-
-  end subroutine require_slot
 
   !===================================================================!
   ! Check the paths: each must name an argument of the statement -
@@ -482,7 +291,7 @@ contains
   subroutine enumerate_partitions(degree, partitions)
 
     integer                                , intent(in)  :: degree
-    type(partial_connectivity_element), allocatable, intent(out) :: partitions(:)
+    type(derivative_partition), allocatable, intent(out) :: partitions(:)
 
     integer, allocatable :: tuple(:)
     integer :: entries
@@ -504,7 +313,7 @@ contains
     integer                                , intent(inout) :: tuple(:)
     integer                                , intent(in)    :: position
     integer                                , intent(in)    :: minimum
-    type(partial_connectivity_element), allocatable, intent(inout) :: partitions(:)
+    type(derivative_partition), allocatable, intent(inout) :: partitions(:)
 
     integer :: entries_left, entry_degree
 
@@ -528,17 +337,17 @@ contains
 
   subroutine append_partition(partitions, tuple)
 
-    type(partial_connectivity_element), allocatable, intent(inout) :: partitions(:)
+    type(derivative_partition), allocatable, intent(inout) :: partitions(:)
     integer                                , intent(in)    :: tuple(:)
 
-    type(partial_connectivity_element), allocatable :: grown(:)
+    type(derivative_partition), allocatable :: grown(:)
     integer :: n
 
     n = size(partitions)
     allocate(grown(n + 1))
     grown(1:n) = partitions
-    grown(n + 1) % slot_degree = tuple
-    grown(n + 1) % coefficient_value = partition_coefficient(sum(tuple), tuple)
+    grown(n + 1) % path_degree = tuple
+    grown(n + 1) % coefficient = partition_coefficient(sum(tuple), tuple)
     call move_alloc(grown, partitions)
 
   end subroutine append_partition
@@ -610,17 +419,17 @@ contains
     class(operation)               , intent(in)    :: statement
     class(directed_graph)          , intent(in)    :: input_graph
     type(stored_field)                    , intent(in)    :: input_data(:)
-    type(partial_connectivity_element)     , intent(in)    :: partition
+    type(derivative_partition)     , intent(in)    :: partition
     type(argument_path)            , intent(in)    :: paths(:)
     real(dp), allocatable          , intent(inout) :: running(:)
     logical                        , intent(inout) :: started
     integer                        , intent(inout) :: num_components
 
-    integer :: chosen(size(partition % slot_degree))
+    integer :: chosen(size(partition % path_degree))
     integer :: k, j, npaths
     logical :: admitted
 
-    k      = size(partition % slot_degree)
+    k      = size(partition % path_degree)
     npaths = size(paths)
     if (npaths == 0) return
 
@@ -631,7 +440,7 @@ contains
        admitted = .true.
        do j = 1, k
           if (.not. paths(chosen(j)) % &
-               & has_degree(partition % slot_degree(j))) then
+               & has_degree(partition % path_degree(j))) then
              admitted = .false.
              exit
           end if
@@ -656,27 +465,6 @@ contains
 
   end subroutine assemble_partition
 
-  subroutine assemble_partitions(statement, input_graph, input_data, &
-       & partitions, paths, running, started, num_components)
-
-    class(operation)               , intent(in)    :: statement
-    class(directed_graph)          , intent(in)    :: input_graph
-    type(stored_field)             , intent(in)    :: input_data(:)
-    type(partial_connectivity_element)     , intent(in)    :: partitions(:)
-    type(argument_path)            , intent(in)    :: paths(:)
-    real(dp), allocatable          , intent(inout) :: running(:)
-    logical                        , intent(inout) :: started
-    integer                        , intent(inout) :: num_components
-
-    integer :: p
-
-    do p = 1, size(partitions)
-       call assemble_partition(statement, input_graph, input_data, &
-            & partitions(p), paths, running, started, num_components)
-    end do
-
-  end subroutine assemble_partitions
-
   !===================================================================!
   ! One admitted tuple, one partial action. The order (the tuple
   ! length) must not exceed the statement's max_degree; violation
@@ -692,7 +480,7 @@ contains
     class(operation)               , intent(in)    :: statement
     class(directed_graph)          , intent(in)    :: input_graph
     type(stored_field)                    , intent(in)    :: input_data(:)
-    type(partial_connectivity_element)     , intent(in)    :: partition
+    type(derivative_partition)     , intent(in)    :: partition
     type(argument_path)            , intent(in)    :: paths(:)
     integer                        , intent(in)    :: chosen(:)
     real(dp), allocatable          , intent(inout) :: running(:)
@@ -714,7 +502,7 @@ contains
     ! of the order this partition entry asks for as the direction
     do j = 1, k
        variations(j) = variation(paths(chosen(j)) % wrt, &
-            & paths(chosen(j)) % derivative(partition % slot_degree(j)) % direction)
+            & paths(chosen(j)) % derivative(partition % path_degree(j)) % direction)
     end do
 
     call statement % partial_action(input_graph, input_data, variations, output)
@@ -725,9 +513,9 @@ contains
        if (size(term) /= size(running)) then
           error stop 'chain_rule: accumulated terms share one shape'
        end if
-       running = running + real(partition % coefficient_value, dp) * term
+       running = running + real(partition % coefficient, dp) * term
     else
-       running = real(partition % coefficient_value, dp) * term
+       running = real(partition % coefficient, dp) * term
        num_components   = output % num_components()
        started = .true.
     end if

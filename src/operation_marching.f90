@@ -56,11 +56,6 @@ module operation_marching
   use operation_minimization , only : minimizer
   use operation_linearization, only : linearization, tangent_of
   use operation_chain_rule, only : chain_rule, argument_path
-  use operation_solve_connectivity, only : assembly_connectivity
-  use operation_solve_connectivity, only : tangent_residual_connectivity
-  use operation_solve_connectivity, only : tangent_jacobian_connectivity
-  use operation_solve_connectivity, only : adjoint_residual_connectivity
-  use operation_solve_connectivity, only : adjoint_jacobian_connectivity
   use operation_step_policy, only : step_policy
   use operation_stencil, only : stencil
   use operation_dense_direct, only : dense_direct
@@ -521,13 +516,14 @@ contains
 
     type(stored_directed_graph) :: chain
     type(scheme)       :: statement
-    type(assembly_connectivity) :: residual_connectivity, jacobian_connectivity
+    type(dense_direct) :: direct
+    type(stencil) :: adjoint
     type(stored_field), allocatable :: inputs(:)
     type(graph) :: state_domain
     real(dp), allocatable :: seed(:,:), lambda_k(:), g(:), time(:)
     integer , allocatable :: order(:), slot(:)
     real(dp) :: achieved
-    integer :: i, k, s, n, history, read(2), n_state_domain, num_components
+    integer :: i, k, s, n, read(2), n_state_domain, num_components
 
     call require_valid_steps(steps, nsteps)
     call require_parameters(action, parameters)
@@ -568,25 +564,25 @@ contains
        call configured(this, statement, time, k, read)
        call recorded_inputs(statement, k, read, trajectory, state_domain, &
             & n_state_domain, num_components, inputs, parameters)
-       residual_connectivity = adjoint_residual_connectivity(statement % reach)
-       jacobian_connectivity = adjoint_jacobian_connectivity(size(inputs))
 
-       ! The adjoint Jacobian connectivity names the state block as
-       ! the differentiated slot and marks it as transposed. The
-       ! residual connectivity names the history slots whose residual
-       ! partials push seed backwards.
-       call solve_adjoint_state_block(jacobian_connectivity, statement, &
-            & inputs, on, n, seed(:, k), lambda_k, achieved)
+       ! the state block, transposed and solved
+       if (statement % theta == 0.0_dp) then
+          lambda_k = seed(:, k) / statement % a0
+       else
+          adjoint = transposed_tangent_stencil(statement, inputs, on, n)
+          call direct % attach(adjoint, adjoint % pattern, &
+               & adjoint % pattern % vertex_set(), &
+               & adjoint % pattern % num_vertices())
+          lambda_k = 0.0_dp
+          call direct % solve(seed(:, k), lambda_k, achieved)
+       end if
 
        ! the dual of each history block, subtracted from the seed of
-       ! the instant that slot reads. The slots come from the supplied
-       ! connectivity, not from an inline reach loop.
-       do s = 1, residual_connectivity % num_history()
-          history = residual_connectivity % history(s)
-          if (read(history) == 0) cycle
-          call transposed_block(statement, residual_connectivity, history, &
-               & inputs, on, n, lambda_k, g)
-          seed(:, read(history)) = seed(:, read(history)) - g
+       ! the instant that slot reads
+       do s = 1, statement % reach
+          if (read(s) == 0) cycle
+          call transposed_block(statement, statement % history(s), inputs, on, n, lambda_k, g)
+          seed(:, read(s)) = seed(:, read(s)) - g
        end do
     end do
 
@@ -594,79 +590,28 @@ contains
 
   end subroutine march_adjoint
 
-  subroutine solve_adjoint_state_block(connectivity, statement, inputs, on, &
-       & n, seed, lambda, achieved)
-
-    type(assembly_connectivity), intent(in) :: connectivity
-    type(scheme)              , intent(in) :: statement
-    type(stored_field)        , intent(in) :: inputs(:)
-    class(directed_graph)     , intent(in) :: on
-    integer                   , intent(in) :: n
-    real(dp)                  , intent(in) :: seed(:)
-    real(dp), allocatable     , intent(out) :: lambda(:)
-    real(dp)                  , intent(out) :: achieved
-
-    type(dense_direct) :: direct
-    type(linearization) :: tangent
-    type(stencil) :: compiled, adjoint
-
-    allocate(lambda(size(seed)))
-
-    if (.not. connectivity % transposed()) then
-       error stop 'march_adjoint: the state block connectivity is transposed'
-    end if
-
-    if (statement % theta == 0.0_dp) then
-       lambda = seed / statement % a0
-       achieved = 0.0_dp
-       return
-    end if
-
-    tangent = tangent_of(statement, &
-         & statement % argument(connectivity % differentiated()))
-    call tangent % freeze(inputs)
-    compiled = stencil(tangent, on, n)
-    adjoint  = compiled % transpose()
-    call direct % attach(adjoint, adjoint % pattern, &
-         & adjoint % pattern % vertex_set(), &
-         & adjoint % pattern % num_vertices())
-    lambda = 0.0_dp
-    call direct % solve(seed, lambda, achieved)
-
-  end subroutine solve_adjoint_state_block
-
   !===================================================================!
   ! (D_a R)^T lambda for one argument a of the statement at its input
-  ! tuple: the tangent in a, compiled to a stencil, transposed and
-  ! applied. The block is square - a history state lives on the
+  ! tuple: the local block is compiled once to a stencil, transposed,
+  ! and applied. The block is square - a history state lives on the
   ! state's domain.
   !===================================================================!
 
-  subroutine transposed_block(statement, connectivity, history, inputs, on, &
-       & n, lambda, g)
+  subroutine transposed_block(statement, wrt, inputs, on, n, lambda, g)
 
     type(scheme), intent(in)          :: statement
-    type(assembly_connectivity), intent(in) :: connectivity
-    integer, intent(in)               :: history
+    type(argument), intent(in)        :: wrt
     type(stored_field), intent(in)    :: inputs(:)
     class(directed_graph), intent(in) :: on
     integer, intent(in)               :: n
     real(dp), intent(in)              :: lambda(:)
     real(dp), allocatable, intent(out) :: g(:)
 
-    type(linearization) :: tangent
-    type(stencil) :: compiled, adjoint
+    type(stencil) :: adjoint
     type(stored_field) :: lambda_field
     class(field), allocatable :: answer
 
-    if (.not. connectivity % transposed()) then
-       error stop 'march_adjoint: history block connectivity is transposed'
-    end if
-
-    tangent = tangent_of(statement, statement % history(history), &
-         & at_inputs=inputs)
-    compiled = stencil(tangent, on, n)
-    adjoint  = compiled % transpose()
+    adjoint = transposed_tangent_stencil(statement, inputs, on, n, wrt)
 
     lambda_field = stored_field('lambda', inputs(1) % domain(), inputs(1) % num_entries(), &
          & num_components=inputs(1) % num_components())
@@ -675,6 +620,37 @@ contains
     call answer % real_vector(g)
 
   end subroutine transposed_block
+
+  !===================================================================!
+  ! Compile the tangent block of one step residual and return its
+  ! transpose. The optional argument chooses the slot of R; absent
+  ! means the state slot. This is the local adjoint stencil
+  ! construction shared by the diagonal solve and the off-diagonal
+  ! history couplings.
+  !===================================================================!
+
+  type(stencil) function transposed_tangent_stencil(statement, inputs, on, &
+       & n, wrt) result(adjoint)
+
+    type(scheme), intent(in)          :: statement
+    type(stored_field), intent(in)    :: inputs(:)
+    class(directed_graph), intent(in) :: on
+    integer, intent(in)               :: n
+    type(argument), intent(in), optional :: wrt
+
+    type(linearization) :: tangent
+    type(stencil) :: compiled
+
+    if (present(wrt)) then
+       tangent = tangent_of(statement, wrt, at_inputs=inputs)
+    else
+       tangent = tangent_of(statement, at_inputs=inputs)
+    end if
+
+    compiled = stencil(tangent, on, n)
+    adjoint  = compiled % transpose()
+
+  end function transposed_tangent_stencil
 
   !===================================================================!
   ! Read the action's domain and check the state fits it: the
@@ -748,7 +724,7 @@ contains
     type(chain_rule)            :: composer
     type(scheme)                :: statement
     type(dense_direct)          :: direct
-    type(assembly_connectivity) :: residual_connectivity, jacobian_connectivity
+    type(linearization) :: tangent
     type(argument_path), allocatable :: assembled(:)
     type(stored_field), allocatable  :: inputs(:)
     class(field), allocatable  :: total_field
@@ -769,6 +745,8 @@ contains
        error stop 'march_directional: the action''s max_degree covers the &
             &requested order'
     end if
+
+    composer = chain_rule(order)
 
     call require_valid_steps(steps, nsteps)
     call require_parameters(action, parameters)
@@ -817,23 +795,23 @@ contains
        call configured(this, statement, time, k, read)
        call recorded_inputs(statement, k, read, trajectory, state_domain, &
             & n_state_domain, num_components, inputs, parameters)
-       residual_connectivity = &
-            & tangent_residual_connectivity(order, statement % reach, npaths)
-       jacobian_connectivity = tangent_jacobian_connectivity(size(inputs))
 
-       ! The tangent Jacobian connectivity supplies the diagonal state
-       ! block; the residual connectivity supplies the chain-rule path
-       ! tuple for the right hand side below.
-       call attach_tangent_state_block(jacobian_connectivity, statement, &
-            & inputs, on, state_domain, n_state_domain, num_components, direct)
+       ! the tangent copies the statement, so it is taken after the
+       ! instant is configured, and frozen at its input tuple before
+       ! it is attached
+       if (statement % theta /= 0.0_dp) then
+          tangent = tangent_of(statement)
+          call tangent % freeze(inputs)
+          call direct % attach(tangent, on, state_domain, n_state_domain, &
+               & num_components = num_components)
+       end if
 
        do s_order = 1, order
-          call build_paths(statement, residual_connectivity, sensitivities, &
-               & state_domain, n_state_domain, num_components, k, read, &
-               & s_order, npaths, paths, assembled)
+          call build_paths(statement, sensitivities, state_domain, &
+               & n_state_domain, num_components, k, read, s_order, npaths, paths, &
+               & assembled)
           call composer % assemble(statement, on, inputs, s_order, &
-               & assembled, total_field, &
-               & connectivity=residual_connectivity % partial(s_order))
+               & assembled, total_field)
           call total_field % real_vector(total)
           if (statement % theta == 0.0_dp) then
              q_s = -total / statement % a0
@@ -846,33 +824,6 @@ contains
     end do
 
   end subroutine march_directional
-
-  subroutine attach_tangent_state_block(connectivity, statement, inputs, on, &
-       & state_domain, n_state_domain, num_components, direct)
-
-    type(assembly_connectivity), intent(in) :: connectivity
-    type(scheme)              , intent(in) :: statement
-    type(stored_field)        , intent(in) :: inputs(:)
-    class(directed_graph)     , intent(in) :: on
-    type(graph)               , intent(in) :: state_domain
-    integer                   , intent(in) :: n_state_domain, num_components
-    type(dense_direct)        , intent(inout) :: direct
-
-    type(linearization) :: tangent
-
-    if (connectivity % differentiated() /= connectivity % state()) then
-       error stop 'march_directional: tangent connectivity differentiates the state'
-    end if
-
-    if (statement % theta == 0.0_dp) return
-
-    tangent = tangent_of(statement, &
-         & statement % argument(connectivity % differentiated()))
-    call tangent % freeze(inputs)
-    call direct % attach(tangent, on, state_domain, n_state_domain, &
-         & num_components = num_components)
-
-  end subroutine attach_tangent_state_block
 
   !===================================================================!
   ! Whether a parameter path's argument is one of the action's
@@ -897,21 +848,18 @@ contains
 
   !===================================================================!
   ! The argument paths of the scheme at one instant and one order:
-  ! the supplied connectivity names the state, history, and parameter
-  ! path slots. The state path holds the solved derivatives below the
-  ! current order and zero at the order, which makes the assembled
-  ! total the right-hand side for the unknown q^(s); each history path
-  ! holds every derivative of the state at the instant its slot reads;
-  ! the caller's parameter paths are restated in the scheme's argument
+  ! the state path holds the solved derivatives below the current
+  ! order and zero at the order, which makes the assembled total the
+  ! right-hand side for the unknown q^(s); each history(s) path holds
+  ! every derivative of the state at the instant read at slot s; the
+  ! caller's parameter paths are restated in the scheme's argument
   ! space.
   !===================================================================!
 
-  subroutine build_paths(statement, connectivity, sensitivities, &
-       & state_domain, n_state_domain, num_components, at, read, s_order, &
-       & npaths, parameter_paths, assembled)
+  subroutine build_paths(statement, sensitivities, state_domain, n_state_domain, &
+       & num_components, at, read, s_order, npaths, parameter_paths, assembled)
 
     type(scheme)  , intent(in) :: statement
-    type(assembly_connectivity), intent(in) :: connectivity
     real(dp)      , intent(in) :: sensitivities(:,:,:)
     type(graph), intent(in) :: state_domain
     integer       , intent(in) :: n_state_domain, num_components, at, read(2), s_order, npaths
@@ -919,47 +867,31 @@ contains
     type(argument_path), allocatable, intent(out) :: assembled(:)
 
     real(dp), allocatable :: zero(:)
-    integer :: k, j, slot, history
+    integer :: k, j
 
-    if (connectivity % num_inputs() /= 1 + statement % reach + npaths) then
-       error stop 'march_directional: tangent connectivity matches the path tuple'
-    end if
-    if (connectivity % num_history() /= statement % reach) then
-       error stop 'march_directional: tangent connectivity matches the history reach'
-    end if
-    if (connectivity % num_parameters() /= npaths) then
-       error stop 'march_directional: tangent connectivity matches parameter paths'
-    end if
-
-    allocate(assembled(connectivity % num_inputs()))
+    allocate(assembled(1 + statement % reach + npaths))
     allocate(zero(size(sensitivities, 1)))
     zero = 0.0_dp
 
     ! the state path: the unknown order's entry is zero while the
     ! total is assembled
-    slot = connectivity % state()
-    assembled(slot) % wrt = statement % state()
-    allocate(assembled(slot) % derivative(s_order))
+    assembled(1) = argument_path(statement % state(), s_order)
     do k = 1, s_order - 1
-       call occupy(assembled(slot), k, sensitivities(:, k, at))
+       call occupy(assembled(1), k, sensitivities(:, k, at))
     end do
-    call occupy(assembled(slot), s_order, zero)
+    call occupy(assembled(1), s_order, zero)
 
     ! the history paths: every derivative of the earlier instants
-    do j = 1, connectivity % num_history()
-       history = connectivity % history(j)
-       slot = connectivity % input(1 + j)
-       assembled(slot) % wrt = statement % history(history)
-       allocate(assembled(slot) % derivative(s_order))
+    do j = 1, statement % reach
+       assembled(1 + j) = argument_path(statement % history(j), s_order)
        do k = 1, s_order
-          call occupy(assembled(slot), k, sensitivities(:, k, read(history)))
+          call occupy(assembled(1 + j), k, sensitivities(:, k, read(j)))
        end do
     end do
 
     do k = 1, npaths
-       slot = connectivity % parameter(k)
-       assembled(slot) = parameter_paths(k)
-       assembled(slot) % wrt = &
+       assembled(1 + statement % reach + k) = parameter_paths(k)
+       assembled(1 + statement % reach + k) % wrt = &
             & statement % from_action(parameter_paths(k) % wrt)
     end do
 

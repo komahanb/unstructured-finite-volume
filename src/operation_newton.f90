@@ -84,11 +84,7 @@ module operation_newton
   use field_stored  , only : stored_field
   use field_calculus, only : field
   use operation_linearization, only : linearization, tangent_of
-  use operation_chain_rule   , only : chain_rule, argument_path, path_derivative
-  use operation_solve_connectivity, only : assembly_connectivity
-  use operation_solve_connectivity, only : newton_residual_connectivity
-  use operation_solve_connectivity, only : newton_jacobian_connectivity
-  use operation_solve_connectivity, only : halley_connectivity
+  use operation_chain_rule   , only : chain_rule, argument_path
 
   implicit none
 
@@ -145,11 +141,12 @@ contains
     real(dp), intent(inout) :: x(:)
     real(dp), intent(out)   :: achieved
 
-
-
     type(linearization) :: jacobian
-    type(assembly_connectivity) :: residual_connectivity, jacobian_connectivity
+    type(stencil) :: compiled
     type(stored_field), allocatable :: inputs(:)
+    integer , allocatable :: rows(:), columns(:)
+    real(dp), allocatable :: weights(:)
+    logical :: available
     real(dp), allocatable :: residual(:), y(:), dq(:)
     real(dp) :: linear_achieved
     integer :: it
@@ -160,25 +157,18 @@ contains
 
     call this % begin_imbalance()
 
-    residual_connectivity = &
-         & newton_residual_connectivity(attached_input_count(this))
-    jacobian_connectivity = &
-         & newton_jacobian_connectivity(attached_input_count(this))
-
     ! the tangent in the unknown's argument; which road it takes is
     ! the statement's own answer, and no dispatch lives here
-    jacobian = tangent_of(this % action, &
-         & this % action % argument(jacobian_connectivity % differentiated()))
+    jacobian = tangent_of(this % action, this % action % argument(1))
 
     do it = 1, this % max_iterations
 
        call tally_record(primal_loops)
 
-       ! The nonlinear residual assembly is a supplied connectivity:
-       ! its input slots say which tuple is read, and its state slot
-       ! says which entry is being varied by Newton.
-       call assemble_newton_residual(this, residual_connectivity, x, rhs, &
-            & inputs, residual, y)
+       ! Where we stand: the full statement, whatever its linearity,
+       ! on the input tuple every tangent below is frozen on.
+       call this % raw_apply(x, y, inputs)
+       residual = y - rhs
 
        achieved = this % norm(residual)
 
@@ -188,11 +178,31 @@ contains
        ! against its own scatter, no floor named. One question.
        if (this % halted(achieved, it)) return
 
-       ! The Jacobian assembly is the second supplied connectivity:
-       ! it reads the same input tuple as the residual and opens the
-       ! differentiated state slot for the frozen tangent.
-       call assemble_newton_jacobian(this, jacobian_connectivity, inputs, y, &
-            & jacobian)
+       ! The linear question at this point, answered by the governed
+       ! minimizer: the Jacobian is frozen at the same input tuple the
+       ! residual was evaluated on, held inputs included.
+       call jacobian % freeze(inputs, base=y)
+
+       ! A statement that compiles its tangent hands the inner
+       ! minimizer a stencil, whose pattern is then the coupling a
+       ! structured minimizer sweeps by; any other is handed the
+       ! linearization, a matvec.
+       available = .false.
+       if (this % compiled) then
+          call this % action % compiled_tangent(this % on, inputs, 1, rows, columns, &
+               & weights, available)
+       end if
+       if (available) then
+          compiled = stencil(rows, columns, weights, &
+               & spread(0.0_dp, 1, this % num_unknowns), 'compiled tangent')
+          call compiled % stamped(this % action % stamp(), this % action % stamp_transposed())
+          call this % inner % attach(compiled, compiled % pattern, this % unknown_domain, &
+               & this % num_unknowns, num_components = this % num_components, &
+               & coupling = compiled % pattern)
+       else
+          call this % inner % attach(jacobian, this % on, this % unknown_domain, &
+               & this % num_unknowns, num_components = this % num_components)
+       end if
        dq = 0.0_dp
        call this % inner % solve(-residual, dq, linear_achieved)
 
@@ -212,148 +222,10 @@ contains
 
     end do
 
-    call assemble_newton_residual(this, residual_connectivity, x, rhs, &
-         & inputs, residual, y)
-    achieved = this % norm(residual)
+    call this % raw_apply(x, y)
+    achieved = this % norm(y - rhs)
 
   end subroutine solve
-
-  pure integer function attached_input_count(this) result(num_inputs)
-
-    class(newton), intent(in) :: this
-
-    num_inputs = 1
-    if (allocated(this % held)) num_inputs = num_inputs + size(this % held)
-
-  end function attached_input_count
-
-  !===================================================================!
-  ! The Newton residual stencil:
-  !
-  !      input slots [1, ..., m]  ->  R(U, held)
-  !
-  ! The connectivity carries the slots; this routine supplies the
-  ! concrete fields at the current Newton iterate and subtracts rhs.
-  ! The assembled value y is kept because the Jacobian finite
-  ! difference road can reuse it as the frozen base.
-  !===================================================================!
-
-  subroutine assemble_newton_residual(this, connectivity, x, rhs, &
-       & inputs, residual, y)
-
-    class(newton)      , intent(in)  :: this
-    type(assembly_connectivity), intent(in) :: connectivity
-    real(dp)           , intent(in)  :: x(:), rhs(:)
-    type(stored_field), allocatable, intent(out) :: inputs(:)
-    real(dp), allocatable, intent(out) :: residual(:), y(:)
-
-    class(field), allocatable :: answer
-
-    call require_newton_connectivity(connectivity, attached_input_count(this))
-
-    call this % evaluation_inputs(x, inputs)
-    if (connectivity % num_inputs() /= size(inputs)) then
-       error stop 'newton: residual connectivity matches the input tuple'
-    end if
-
-    call this % action % apply(this % on, inputs, answer)
-
-    if (.not. answer % defined_on(this % residual_domain)) then
-       error stop 'newton: the residual lands on the attached residual domain'
-    end if
-
-    call answer % real_vector(y)
-    if (size(y) /= size(rhs)) then
-       error stop 'newton: residual and right hand side share one shape'
-    end if
-
-    residual = y - rhs
-
-  end subroutine assemble_newton_residual
-
-  !===================================================================!
-  ! The Newton Jacobian stencil:
-  !
-  !      input slots [1, ..., m], differentiated slot 1
-  !              ->  D_U R(U, held)
-  !
-  ! A compiled tangent is attached when the operation supplies one;
-  ! otherwise the frozen linearization operation is attached. In both
-  ! cases the governed solver sees one linear system with the same
-  ! slot structure.
-  !===================================================================!
-
-  subroutine assemble_newton_jacobian(this, connectivity, inputs, base, &
-       & jacobian)
-
-    class(newton)      , intent(inout) :: this
-    type(assembly_connectivity), intent(in) :: connectivity
-    type(stored_field) , intent(in)    :: inputs(:)
-    real(dp)           , intent(in)    :: base(:)
-    type(linearization), intent(inout) :: jacobian
-
-    type(stencil) :: compiled
-    integer , allocatable :: rows(:), columns(:)
-    real(dp), allocatable :: weights(:)
-    logical :: available
-
-    call require_newton_connectivity(connectivity, size(inputs), &
-         & with_derivative=.true.)
-
-    call jacobian % freeze(inputs, base=base)
-
-    available = .false.
-    if (this % compiled) then
-       call this % action % compiled_tangent(this % on, inputs, &
-            & connectivity % differentiated(), rows, columns, weights, &
-            & available)
-    end if
-    if (available) then
-       compiled = stencil(rows, columns, weights, &
-            & spread(0.0_dp, 1, this % num_unknowns), 'compiled tangent')
-       call compiled % stamped(this % action % stamp(), &
-            & this % action % stamp_transposed())
-       call this % inner % attach(compiled, compiled % pattern, &
-            & this % unknown_domain, this % num_unknowns, &
-            & num_components = this % num_components, coupling = compiled % pattern)
-    else
-       call this % inner % attach(jacobian, this % on, this % unknown_domain, &
-            & this % num_unknowns, num_components = this % num_components)
-    end if
-
-  end subroutine assemble_newton_jacobian
-
-  pure subroutine require_newton_connectivity(connectivity, num_inputs, &
-       & with_derivative)
-
-    type(assembly_connectivity), intent(in) :: connectivity
-    integer                    , intent(in) :: num_inputs
-    logical, intent(in), optional           :: with_derivative
-
-    integer :: j
-    logical :: derivative
-
-    if (connectivity % num_inputs() /= num_inputs) then
-       error stop 'newton: connectivity matches the attached input tuple'
-    end if
-    if (connectivity % state() /= 1) then
-       error stop 'newton: connectivity varies the first input slot'
-    end if
-    do j = 1, num_inputs
-       if (connectivity % input(j) /= j) then
-          error stop 'newton: connectivity reads the input tuple in order'
-       end if
-    end do
-
-    derivative = .false.
-    if (present(with_derivative)) derivative = with_derivative
-    if (derivative) then
-       if (connectivity % differentiated() /= connectivity % state()) then
-          error stop 'newton: Jacobian differentiates the state slot'
-       end if
-    end if
-
-  end subroutine require_newton_connectivity
 
   !===================================================================!
   ! Add delta_2, ..., delta_p to the Newton step delta already
@@ -371,8 +243,6 @@ contains
 
     type(chain_rule) :: assembler
     type(argument_path) :: path
-    type(path_derivative), allocatable :: derivative(:)
-    type(assembly_connectivity) :: connectivity
     class(field), allocatable :: out
     type(stored_field) :: seeded
     real(dp), allocatable :: b(:), correction(:), individual(:,:)
@@ -382,17 +252,13 @@ contains
     p = this % higher_order_jacobian_product
     achieved = 0.0_dp
 
+    assembler = chain_rule(p)
+
     allocate(individual(size(delta), p))
     individual(:, 1) = delta
 
     allocate(correction(size(delta)))
-    allocate(derivative(p - 1))
-
-    ! This is the higher-order Newton connectivity: one state path,
-    ! with reusable partial graphs for every degree in the correction
-    ! tower. The loop supplies only the current correction fields.
-    connectivity = halley_connectivity(p)
-    path % wrt = this % action % argument(1)
+    path = argument_path(this % action % argument(1), p - 1)
     fact = 1.0_dp
 
     do s = 2, p
@@ -403,12 +269,10 @@ contains
        fact = fact * real(s - 1, dp)
        seeded = stored_field('correction', this % unknown_domain, size(delta))
        call seeded % set_real_vector(fact * individual(:, s - 1))
-       derivative(s - 1) % occupied  = .true.
-       derivative(s - 1) % direction = seeded
-       path % derivative = derivative(1:s - 1)
+       path % derivative(s - 1) % occupied  = .true.
+       path % derivative(s - 1) % direction = seeded
 
-       call assembler % assemble(this % action, this % on, inputs, s, [path], &
-            & out, connectivity=connectivity % partial(s))
+       call assembler % assemble(this % action, this % on, inputs, s, [path], out)
        call out % real_vector(b)
 
        correction = 0.0_dp

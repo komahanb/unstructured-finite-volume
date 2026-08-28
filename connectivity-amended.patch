@@ -1,0 +1,284 @@
+diff --git a/src/operation_chain_rule.f90 b/src/operation_chain_rule.f90
+index 9f85b9a..c06e93b 100644
+--- a/src/operation_chain_rule.f90
++++ b/src/operation_chain_rule.f90
+@@ -11,10 +11,14 @@
+ !      c(d) = n! / ( prod_i d_i!  *  prod_j multiplicity_j! )
+ !
+ ! where multiplicity_j counts repeated equal entries of d.
+-! Partitions are generated, not tabulated, in a fixed order:
++! The partitions of every degree up to the assembler's highest are
++! enumerated once, when it is constructed, in a fixed order:
+ ! increasing entry count first, lexicographic within one entry
+-! count. Every partition entry ranges over all argument paths
+-! providing that derivative order, in ordered tuples - the factor
++! count. They are the index structure of the chain rule; an
++! algorithm supplies only the paths, so Newton's corrections and a
++! march's tangents each read one table. Every partition entry
++! ranges over all argument paths providing that derivative order,
++! in ordered tuples - the factor
+ ! a symmetric mixed partial requires. The count multiplies the
+ ! result outside the statement's calculus; no derivative tensor is
+ ! stored.
+@@ -82,28 +86,47 @@ module operation_chain_rule
+   end type argument_path
+ 
+   !===================================================================!
+-  ! The stateless assembler.
++  ! One integer partition of the degree, with its multinomial
++  ! count. Private to this module.
+   !===================================================================!
+ 
+-  type :: chain_rule
++  type :: derivative_partition
+ 
+-   contains
++     integer(int64) :: coefficient = 1_int64
++     integer, allocatable :: path_degree(:)
+ 
+-     procedure :: assemble
++  end type derivative_partition
+ 
+-  end type chain_rule
++  !===================================================================!
++  ! The partitions of one degree: the terms of d^n/ds^n.
++  !===================================================================!
++
++  type :: degree_partitions
++
++     type(derivative_partition), allocatable :: term(:)
++
++  end type degree_partitions
+ 
+   !===================================================================!
+-  ! One integer partition of the degree, with its multinomial
+-  ! count. Private to this module.
++  ! The assembler, constructed for a highest degree. An assembler
++  ! that was not constructed stops the program at assemble.
+   !===================================================================!
+ 
+-  type :: derivative_partition
++  type :: chain_rule
+ 
+-     integer(int64) :: coefficient = 1_int64
+-     integer, allocatable :: path_degree(:)
++     private
+ 
+-  end type derivative_partition
++     type(degree_partitions), allocatable :: of_degree(:)
++
++   contains
++
++     procedure :: assemble
++
++  end type chain_rule
++
++  interface chain_rule
++     module procedure create_chain_rule
++  end interface chain_rule
+ 
+ contains
+ 
+@@ -125,6 +148,29 @@ contains
+ 
+   end function path_has_degree
+ 
++  !===================================================================!
++  ! Enumerate the partitions of every degree up to the highest. A
++  ! negative highest degree stops the program.
++  !===================================================================!
++
++  function create_chain_rule(max_degree) result(this)
++
++    integer, intent(in) :: max_degree
++    type(chain_rule) :: this
++
++    integer :: degree
++
++    if (max_degree < 0) then
++       error stop 'chain_rule: the highest degree is supported'
++    end if
++
++    allocate(this % of_degree(max_degree))
++    do degree = 1, max_degree
++       call enumerate_partitions(degree, this % of_degree(degree) % term)
++    end do
++
++  end function create_chain_rule
++
+   !===================================================================!
+   ! Assemble the total derivative of the given degree. The degree
+   ! and the paths are checked before any statement call runs.
+@@ -141,17 +187,16 @@ contains
+     type(argument_path)            , intent(in)    :: paths(:)
+     class(field), allocatable, intent(inout) :: output
+ 
+-    type(derivative_partition), allocatable :: partitions(:)
+     real(dp), allocatable :: running(:)
+     logical :: started
+     integer :: p, num_components
+ 
+-    associate(unread => this)
+-    end associate
+-
+     if (degree < 0) then
+        error stop 'chain_rule: degree is supported'
+     end if
++    if (.not. allocated(this % of_degree)) then
++       error stop 'chain_rule: the assembler is constructed for a highest degree'
++    end if
+ 
+     call require_valid_paths(paths, statement)
+ 
+@@ -161,15 +206,19 @@ contains
+        return
+     end if
+ 
+-    call enumerate_partitions(degree, partitions)
++    if (degree > size(this % of_degree)) then
++       error stop 'chain_rule: the degree is within the constructed highest degree'
++    end if
+ 
+     started = .false.
+     num_components   = 1
+ 
+-    do p = 1, size(partitions)
+-       call assemble_partition(statement, input_graph, input_data, &
+-            & partitions(p), paths, running, started, num_components)
+-    end do
++    associate (partitions => this % of_degree(degree) % term)
++      do p = 1, size(partitions)
++         call assemble_partition(statement, input_graph, input_data, &
++              & partitions(p), paths, running, started, num_components)
++      end do
++    end associate
+ 
+     call write_output(statement, input_graph, input_data, running, &
+          & started, num_components, output)
+diff --git a/src/operation_marching.f90 b/src/operation_marching.f90
+index e96d4d0..5485e64 100644
+--- a/src/operation_marching.f90
++++ b/src/operation_marching.f90
+@@ -722,6 +722,8 @@ contains
+             &requested order'
+     end if
+ 
++    composer = chain_rule(order)
++
+     call require_valid_steps(steps, nsteps)
+     call require_parameters(action, parameters)
+     call this % instants(nsteps, steps, chain, slot, time)
+diff --git a/src/operation_minimization.f90 b/src/operation_minimization.f90
+index 4aeeba3..fc5b6c3 100644
+--- a/src/operation_minimization.f90
++++ b/src/operation_minimization.f90
+@@ -188,6 +188,7 @@ module operation_minimization
+ 
+      procedure :: attach
+      procedure :: evaluation_inputs
++     procedure :: raw_apply
+      procedure :: matvec
+      procedure :: inner_product
+      procedure :: norm
+@@ -553,26 +554,30 @@ contains
+   end subroutine evaluation_inputs
+ 
+   !===================================================================!
+-  ! The operation applied as it stands, affine part and all.
++  ! The operation applied as it stands, affine part and all. The
++  ! input tuple it was applied on is returned when asked, so that a
++  ! tangent frozen on it linearizes the function that was evaluated.
+   !===================================================================!
+ 
+-  subroutine raw_apply(this, x, y)
++  subroutine raw_apply(this, x, y, inputs)
+ 
+     class(minimizer), intent(in)   :: this
+     real(dp), intent(in)               :: x(:)
+     real(dp), allocatable, intent(out) :: y(:)
++    type(stored_field), allocatable, intent(out), optional :: inputs(:)
+ 
+-    type(stored_field), allocatable :: inputs(:)
++    type(stored_field), allocatable :: tuple(:)
+     class(field), allocatable :: answer
+ 
+-    call this % evaluation_inputs(x, inputs)
+-    call this % action % apply(this % on, inputs, answer)
++    call this % evaluation_inputs(x, tuple)
++    call this % action % apply(this % on, tuple, answer)
+ 
+     if (.not. answer % defined_on(this % residual_domain)) then
+        error stop 'minimization: the action must answer on its stated residual domain'
+     end if
+ 
+     call answer % real_vector(y)
++    if (present(inputs)) call move_alloc(tuple, inputs)
+ 
+   end subroutine raw_apply
+ 
+diff --git a/src/operation_newton.f90 b/src/operation_newton.f90
+index 19bdd75..96702a2 100644
+--- a/src/operation_newton.f90
++++ b/src/operation_newton.f90
+@@ -149,7 +149,7 @@ contains
+     integer , allocatable :: rows(:), columns(:)
+     real(dp), allocatable :: weights(:)
+     logical :: available
+-    real(dp), allocatable :: residual(:), g(:), y(:), dq(:)
++    real(dp), allocatable :: residual(:), y(:), dq(:)
+     real(dp) :: linear_achieved
+     integer :: it
+ 
+@@ -159,8 +159,6 @@ contains
+ 
+     call this % begin_imbalance()
+ 
+-    call this % constant(g)
+-
+     ! the tangent in the unknown's argument; which road it takes is
+     ! the statement's own answer, and no dispatch lives here
+     jacobian = tangent_of(this % action, this % action % argument(1))
+@@ -169,9 +167,10 @@ contains
+ 
+        call tally_record(primal_loops)
+ 
+-       ! Where we stand: the full statement, whatever its linearity.
+-       call this % matvec(x, y)
+-       residual = y + g - rhs
++       ! Where we stand: the full statement, whatever its linearity,
++       ! on the input tuple every tangent below is frozen on.
++       call this % raw_apply(x, y, inputs)
++       residual = y - rhs
+ 
+        achieved = this % norm(residual)
+ 
+@@ -184,8 +183,7 @@ contains
+        ! The linear question at this point, answered by the governed
+        ! minimizer: the Jacobian is frozen at the same input tuple the
+        ! residual was evaluated on, held inputs included.
+-       call this % evaluation_inputs(x, inputs)
+-       call jacobian % freeze(inputs, base=y + g)
++       call jacobian % freeze(inputs, base=y)
+ 
+        ! A statement that compiles its tangent hands the inner
+        ! minimizer a stencil, whose pattern is then the coupling a
+@@ -226,8 +224,8 @@ contains
+ 
+     end do
+ 
+-    call this % matvec(x, y)
+-    achieved = this % norm(y + g - rhs)
++    call this % raw_apply(x, y)
++    achieved = this % norm(y - rhs)
+ 
+   end subroutine solve
+ 
+@@ -257,6 +255,8 @@ contains
+     p = this % higher_order_jacobian_product
+     achieved = 0.0_dp
+ 
++    assembler = chain_rule(p)
++
+     allocate(individual(size(delta), p))
+     individual(:, 1) = delta
+ 

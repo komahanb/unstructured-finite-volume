@@ -50,6 +50,7 @@ operation_grid.o \
 operation_step.o \
 operation_linearization.o \
 operation_chain_rule.o \
+operation_solve_connectivity.o \
 field_forms.o \
 operation_reduction.o \
 operation_walk.o \

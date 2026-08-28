@@ -1610,8 +1610,9 @@ contains
   end subroutine block_domain
   pure integer function block_max_degree(this)
     class(block_residual), intent(in) :: this
-    associate (u1 => this); end associate
-    block_max_degree = 3
+    ! the discretization stencils are linear in the state, so every
+    ! partial above the first is the physics' own
+    block_max_degree = this % physics % max_degree()
   end function block_max_degree
   pure function gathered(this, x) result(y)
     class(block_residual), intent(in) :: this
@@ -6644,9 +6645,12 @@ contains
     integer , allocatable :: tails(:), heads(:)
     real(dp), allocatable :: dt(:), t(:), held(:)
     integer :: instants, n, m, h, band, i, j, e
-    call demo_argument(1, what)
+    what     = 'block'
+    instants = 41
+    call demo_argument(1, given)
+    if (len_trim(given) > 0) what = given
     call demo_argument(2, given)
-    read(given,*) instants
+    if (len_trim(given) > 0) read(given,*) instants
     scheme = bdf_family(order)
     h      = scheme % history_depth(degrees - 1)
     n      = (instants - h) * degrees
@@ -6711,8 +6715,12 @@ contains
     integer , parameter :: max_order = 2
     integer :: seed, cases, i, failures, skipped
     character(len=32) :: argument
-    call demo_argument(1, argument); read(argument,*) seed
-    call demo_argument(2, argument); read(argument,*) cases
+    seed  = 7
+    cases = 2
+    call demo_argument(1, argument)
+    if (len_trim(argument) > 0) read(argument,*) seed
+    call demo_argument(2, argument)
+    if (len_trim(argument) > 0) read(argument,*) cases
     failures = 0
     skipped  = 0
     write(*,'(a)') '  case  scheme          split          directions     routes'

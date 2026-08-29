@@ -38,6 +38,14 @@ module operation_gauss_seidel
 
      real(dp) :: omega = 1.0_dp
 
+     ! the diagonal, its factorisations and the colouring belong to the
+     ! attached operator, not to one solve: probing them costs
+     ! maxval(colours) * block_width operator applications, so they are
+     ! held until the operator is attached again
+     real(dp)                 , allocatable, private :: held_diagonal(:,:,:)
+     type(dense_factorisation), allocatable, private :: held_block(:)
+     integer                  , allocatable, private :: held_colours(:)
+
    contains
 
      procedure :: name => gauss_seidel_name
@@ -94,26 +102,45 @@ contains
     call tally_record(linear_solves)
 
     ! the diagonal, a block at a time: a block of width one is the
-    ! number itself, and a wider one is factorised once for the solve
+    ! number itself, and a wider one is factorised once for the operator
     w  = this % block_width
     nb = size(x) / w
-    call this % block_diagonal(d)
 
-    if (w == 1) then
-       do b = 1, nb
-          if (abs(d(1, 1, b)) < tiny(1.0_dp)) d(1, 1, b) = huge(1.0_dp)
-       end do
+    if (.not. this % diagonal_valid) then
+
+       call this % block_diagonal(d)
+
+       if (w == 1) then
+          do b = 1, nb
+             if (abs(d(1, 1, b)) < tiny(1.0_dp)) d(1, 1, b) = huge(1.0_dp)
+          end do
+       else
+          allocate(block(nb))
+          do b = 1, nb
+             call block(b) % factorise(d(:, :, b), tiny(1.0_dp))
+             if (block(b) % singular()) then
+                error stop 'gauss_seidel: a block on the diagonal is singular'
+             end if
+          end do
+       end if
+
+       call this % colouring(nb, colours)
+
+       this % held_diagonal = d
+       if (allocated(block)) then
+          if (allocated(this % held_block)) deallocate(this % held_block)
+          allocate(this % held_block, source=block)
+       end if
+       this % held_colours   = colours
+       this % diagonal_valid = .true.
+
     else
-       allocate(block(nb))
-       do b = 1, nb
-          call block(b) % factorise(d(:, :, b), tiny(1.0_dp))
-          if (block(b) % singular()) then
-             error stop 'gauss_seidel: a block on the diagonal is singular'
-          end if
-       end do
-    end if
 
-    call this % colouring(nb, colours)
+       d       = this % held_diagonal
+       colours = this % held_colours
+       if (allocated(this % held_block)) allocate(block, source=this % held_block)
+
+    end if
     call this % begin_imbalance()
 
     do it = 1, this % max_iterations

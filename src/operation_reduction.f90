@@ -292,15 +292,15 @@ contains
     complex(dp), allocatable :: cv(:)
     logical    , allocatable :: lv(:)
 
-    real(dp)    :: acc
+    real(dp)    :: acc, wi
     complex(dp) :: cacc
-    logical     :: lacc
+    logical     :: lacc, weighted
     integer     :: i, c, k, num_components, nentry
 
     num_components  = values % num_components()
     nentry = values % num_entries()
 
-    call weights_of(measure, nentry, m)
+    call weights_of(measure, nentry, m, weighted)
 
     select case (this % rule)
 
@@ -332,9 +332,11 @@ contains
           call values % complex_vector(cv)
           call state % complex_value(cacc)
           do i = 1, nentry
+             wi = 1.0_dp
+             if (weighted) wi = m(i)
              do c = 1, num_components
                 k = (i - 1) * num_components + c
-                if (k <= size(cv)) cacc = cacc + cv(k) * m(i)
+                if (k <= size(cv)) cacc = cacc + cv(k) * wi
              end do
           end do
           call state % set_complex_value(cacc)
@@ -348,9 +350,11 @@ contains
           case (REDUCE_SUM)
              call state % real_value(acc)
              do i = 1, nentry
+                wi = 1.0_dp
+                if (weighted) wi = m(i)
                 do c = 1, num_components
                    k = (i - 1) * num_components + c
-                   if (k <= size(v)) acc = acc + v(k) * m(i)
+                   if (k <= size(v)) acc = acc + v(k) * wi
                 end do
              end do
              call state % set_real_value(acc)
@@ -361,15 +365,17 @@ contains
              select type (state)
              type is (stored_functional)
                 do i = 1, nentry
+                   wi = 1.0_dp
+                   if (weighted) wi = m(i)
                    do c = 1, num_components
                       k = (i - 1) * num_components + c
                       if (k <= size(v)) then
                          if (this % rule == REDUCE_AVERAGE) then
-                            state % tally = state % tally + v(k) * m(i)
+                            state % tally = state % tally + v(k) * wi
                          else
-                            state % tally = state % tally + abs(v(k))**this % power * m(i)
+                            state % tally = state % tally + abs(v(k))**this % power * wi
                          end if
-                         state % weight = state % weight + m(i)
+                         state % weight = state % weight + wi
                       end if
                    end do
                 end do
@@ -401,21 +407,28 @@ contains
   ! One weight per entry: the measure if there is one, otherwise one.
   !===================================================================!
 
-  pure subroutine weights_of(measure, nentry, m)
+  pure subroutine weights_of(measure, nentry, m, weighted)
 
     class(field), intent(in), optional :: measure
     integer           , intent(in)           :: nentry
     real(dp), allocatable, intent(out)       :: m(:)
+    logical              , intent(out)       :: weighted
 
     real(dp), allocatable :: raw(:)
 
-    allocate(m(max(nentry, 1)))
-    m = 1.0_dp
-
+    ! an absent measure weighs every entry by one, which is a fact
+    ! about the reduction and not a vector to be built and read
+    weighted = .false.
     if (present(measure)) then
        call measure % real_vector(raw)
-       if (size(raw) >= nentry) m(1:nentry) = raw(1:nentry)
+       if (size(raw) >= nentry) then
+          allocate(m(max(nentry, 1)))
+          m = 1.0_dp
+          m(1:nentry) = raw(1:nentry)
+          weighted    = .true.
+       end if
     end if
+    if (.not. weighted) allocate(m(0))
 
   end subroutine weights_of
 

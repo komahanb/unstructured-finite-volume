@@ -52,7 +52,7 @@ module operation_chain_rule
   implicit none
 
   private
-  public :: chain_rule
+  public :: total_derivative, derivative_of
   public :: argument_path
   public :: path_derivative
 
@@ -116,21 +116,37 @@ module operation_chain_rule
   ! that was not constructed stops the program at assemble.
   !===================================================================!
 
-  type :: chain_rule
+  !===================================================================!
+  ! THE CHAIN RULE IS AN OPERATION. Composed over a statement, a
+  ! degree and the paths its arguments follow, it is a map from the
+  ! same inputs the statement reads to the total derivative of that
+  ! order - which is what an operation is. `assemble` remains, for a
+  ! caller that supplies the statement and paths at the call rather
+  ! than holding them; `apply` is that call with them held.
+  !===================================================================!
+
+  type, extends(operation) :: total_derivative
 
      private
 
      type(degree_partitions), allocatable :: of_degree(:)
 
+     ! what the composition is over, when it is held rather than given
+     class(operation)   , allocatable :: statement
+     type(argument_path), allocatable :: along(:)
+     integer                          :: order = -1
+
    contains
 
+     procedure :: name  => total_derivative_name
+     procedure :: apply => total_derivative_apply
      procedure :: assemble
 
-  end type chain_rule
+  end type total_derivative
 
-  interface chain_rule
-     module procedure create_chain_rule
-  end interface chain_rule
+  interface total_derivative
+     module procedure create_total_derivative
+  end interface total_derivative
 
 contains
 
@@ -140,6 +156,88 @@ contains
   ! fills the correction sequence, a march fills state histories, and
   ! an empty slot contributes zero to the chain-rule assembly.
   !===================================================================!
+
+  !===================================================================!
+  ! The name a composed rule carries: the statement's, and the order
+  ! of the derivative taken of it.
+  !===================================================================!
+
+  pure function total_derivative_name(this) result(name)
+
+    class(total_derivative), intent(in) :: this
+    character(len=:), allocatable :: name
+    character(len=12) :: digits
+
+    write(digits,'(i0)') this % order
+    if (allocated(this % statement)) then
+       name = 'derivative ' // trim(digits) // ' of ' // this % statement % name()
+    else
+       name = 'chain rule'
+    end if
+
+  end function total_derivative_name
+
+  !===================================================================!
+  ! THE DERIVATIVE OF A STATEMENT, of the given order, along the
+  ! given directions. What comes back is an operation: applying it to
+  ! the statement's own inputs answers that derivative.
+  !===================================================================!
+
+  function derivative_of(statement, order, along) result(this)
+
+    class(operation)   , intent(in) :: statement
+    integer            , intent(in) :: order
+    type(argument_path), intent(in) :: along(:)
+    type(total_derivative) :: this
+
+    if (order < 0) then
+       error stop 'total_derivative: the order of a derivative is not negative'
+    end if
+
+    this = total_derivative(order)
+    allocate(this % statement, source=statement)
+    this % order = order
+    this % along = along
+    call this % declare_arguments(statement % num_arguments())
+
+  end function derivative_of
+
+  !===================================================================!
+  ! The composed rule applied: the total derivative of the held order,
+  ! from the held statement's partial actions along the held paths.
+  !===================================================================!
+
+  subroutine total_derivative_apply(this, input_graph, input_data, output)
+
+    class(total_derivative)        , intent(in)    :: this
+    class(directed_graph)    , intent(in)    :: input_graph
+    class(field)             , intent(in), optional :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
+
+    type(stored_field), allocatable :: held(:)
+    integer :: k
+
+    if (.not. allocated(this % statement)) then
+       error stop 'total_derivative: a derivative is taken of a statement by derivative_of()'
+    end if
+    if (.not. present(input_data)) then
+       error stop 'total_derivative: the statement''s inputs are given'
+    end if
+
+    allocate(held(size(input_data)))
+    do k = 1, size(input_data)
+       select type (one => input_data(k))
+       type is (stored_field)
+          held(k) = one
+       class default
+          error stop 'total_derivative: the inputs are stored fields'
+       end select
+    end do
+
+    call this % assemble(this % statement, input_graph, held, this % order, &
+         & this % along, output)
+
+  end subroutine total_derivative_apply
 
   function create_argument_path(wrt, degree) result(path)
 
@@ -179,15 +277,15 @@ contains
   ! negative highest degree stops the program.
   !===================================================================!
 
-  function create_chain_rule(max_degree) result(this)
+  function create_total_derivative(max_degree) result(this)
 
     integer, intent(in) :: max_degree
-    type(chain_rule) :: this
+    type(total_derivative) :: this
 
     integer :: degree
 
     if (max_degree < 0) then
-       error stop 'chain_rule: the highest degree is nonnegative'
+       error stop 'total_derivative: the highest degree is nonnegative'
     end if
 
     allocate(this % of_degree(max_degree))
@@ -195,7 +293,7 @@ contains
        call enumerate_partitions(degree, this % of_degree(degree) % term)
     end do
 
-  end function create_chain_rule
+  end function create_total_derivative
 
   !===================================================================!
   ! Assemble the total derivative of the given degree. The degree
@@ -205,7 +303,7 @@ contains
   subroutine assemble(this, statement, input_graph, input_data, degree, &
        & paths, output)
 
-    class(chain_rule)              , intent(in)    :: this
+    class(total_derivative)              , intent(in)    :: this
     class(operation)               , intent(in)    :: statement
     class(directed_graph)          , intent(in)    :: input_graph
     type(stored_field)                    , intent(in)    :: input_data(:)
@@ -218,10 +316,10 @@ contains
     integer :: p, num_components
 
     if (degree < 0) then
-       error stop 'chain_rule: degree is supported'
+       error stop 'total_derivative: degree is supported'
     end if
     if (.not. allocated(this % of_degree)) then
-       error stop 'chain_rule: the assembler is constructed for a highest degree'
+       error stop 'total_derivative: the assembler is constructed for a highest degree'
     end if
 
     call require_valid_paths(paths, statement)
@@ -233,7 +331,7 @@ contains
     end if
 
     if (degree > size(this % of_degree)) then
-       error stop 'chain_rule: the degree is no larger than the constructed highest degree'
+       error stop 'total_derivative: the degree is no larger than the constructed highest degree'
     end if
 
     started = .false.
@@ -268,14 +366,14 @@ contains
 
     do i = 1, size(paths)
        if (.not. statement % owns(paths(i) % wrt)) then
-          error stop 'chain_rule: a path names an argument of the statement'
+          error stop 'total_derivative: a path names an argument of the statement'
        end if
     end do
 
     do i = 1, size(paths)
        do j = i + 1, size(paths)
           if (paths(i) % wrt % matches(paths(j) % wrt)) then
-             error stop 'chain_rule: duplicate argument path is refused'
+             error stop 'total_derivative: duplicate argument path is refused'
           end if
        end do
     end do
@@ -396,7 +494,7 @@ contains
 
     ! 21! overflows int64; stop rather than wrap
     if (n > 20) then
-       error stop 'chain_rule: partition coefficient is representable'
+       error stop 'total_derivative: partition coefficient is representable'
     end if
 
     factorial = 1_int64
@@ -495,7 +593,7 @@ contains
     k = size(chosen)
 
     if (k > statement % max_degree()) then
-       error stop 'chain_rule: the statement supports the requested order'
+       error stop 'total_derivative: the statement supports the requested order'
     end if
 
     ! one factor per chosen path: its argument, and the derivative
@@ -511,7 +609,7 @@ contains
 
     if (started) then
        if (size(term) /= size(running)) then
-          error stop 'chain_rule: accumulated terms share one shape'
+          error stop 'total_derivative: accumulated terms share one shape'
        end if
        running = running + real(partition % coefficient, dp) * term
     else

@@ -84,7 +84,7 @@ module operation_newton
   use field_stored  , only : stored_field
   use field_calculus, only : field
   use operation_linearization, only : linearization, tangent_of
-  use operation_chain_rule   , only : chain_rule, argument_path
+  use operation_chain_rule   , only : total_derivative, derivative_of, argument_path
 
   implicit none
 
@@ -241,7 +241,7 @@ contains
     real(dp)           , intent(inout) :: delta(:)
     real(dp)           , intent(out)   :: achieved
 
-    type(chain_rule) :: assembler
+    type(total_derivative) :: total
     type(argument_path) :: path
     class(field), allocatable :: out
     type(stored_field) :: seeded
@@ -252,7 +252,6 @@ contains
     p = this % higher_order_jacobian_product
     achieved = 0.0_dp
 
-    assembler = chain_rule(p)
 
     allocate(individual(size(delta), p))
     individual(:, 1) = delta
@@ -272,7 +271,10 @@ contains
        path % derivative(s - 1) % occupied  = .true.
        path % derivative(s - 1) % direction = seeded
 
-       call assembler % assemble(this % action, this % on, inputs, s, [path], out)
+       ! the derivative of the statement, of this order, along this
+       ! path: an operation, applied like any other
+       total = derivative_of(this % action, s, [path])
+       call total % apply(this % on, inputs, out)
        call out % real_vector(b)
 
        correction = 0.0_dp

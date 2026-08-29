@@ -174,6 +174,10 @@ module operation_minimization
      ! either, whatever a window of its early wandering looks like.
      logical , private :: descended = .false.
 
+     ! false whenever the operator is attached: a cached block diagonal
+     ! is valid only for the operator it was probed from
+     logical :: diagonal_valid = .false.
+
    contains
 
      procedure :: begin_imbalance
@@ -526,6 +530,8 @@ contains
             &unknown and residual value dimensions'
     end if
 
+    this % diagonal_valid = .false.
+
   end subroutine attach
 
   !===================================================================!
@@ -619,21 +625,9 @@ contains
     class(minimizer), intent(in) :: this
     real(dp), intent(in) :: u(:), v(:)
 
-    type(reduction) :: total
-    type(stored_field) :: uf, vf
-    class(functional), allocatable :: answer
-    real(dp), allocatable :: got(:)
-
-    uf = stored_field('u', this % numbers, this % num_numbers)
-    call uf % set_real_vector(u)
-    vf = stored_field('v', this % numbers, this % num_numbers)
-    call vf % set_real_vector(v)
-
-    total = reduction(REDUCE_SUM)
-    call total % reduce(uf, answer, measure=vf)
-
-    call answer % real_vector(got)
-    prod = got(1)
+    ! a sum reduction of u weighted by v is the sum of the products,
+    ! taken here without a field built to carry one number
+    prod = sum(u * v)
 
   end function inner_product
 
@@ -642,19 +636,9 @@ contains
     class(minimizer), intent(in) :: this
     real(dp), intent(in) :: u(:)
 
-    type(reduction) :: measure_of
-    type(stored_field) :: uf
-    class(functional), allocatable :: answer
-    real(dp), allocatable :: got(:)
-
-    uf = stored_field('u', this % numbers, this % num_numbers)
-    call uf % set_real_vector(u)
-
-    measure_of = reduction(REDUCE_NORM)
-    call measure_of % reduce(uf, answer)
-
-    call answer % real_vector(got)
-    length = got(1)
+    ! the reduction's power is two by default, so the norm is the
+    ! euclidean length
+    length = sqrt(sum(u * u))
 
   end function norm
 

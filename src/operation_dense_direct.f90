@@ -39,6 +39,7 @@ module operation_dense_direct
   use operation_stencil, only : compile_matrix_from_action
   use operation_minimization , only : minimizer
   use util_factorisation, only : dense_factorisation
+  use util_tally        , only : tally_record, linear_solves
 
   implicit none
 
@@ -110,6 +111,8 @@ contains
     if (size(x) /= size(rhs)) then
        error stop 'dense_direct: solution size matches rhs'
     end if
+
+    call tally_record(linear_solves)
 
     n = size(rhs)
 

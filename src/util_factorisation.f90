@@ -40,7 +40,7 @@
 module util_factorisation
 
   use util_precision  , only : dp
-  use util_tally     , only : tally_record, factorisations, linear_solves
+  use util_tally     , only : tally_record, factorisations
 
   implicit none
 
@@ -160,8 +160,6 @@ contains
     if (size(b) /= n) then
        error stop 'util_factorisation: the right side matches the matrix'
     end if
-
-    call tally_record(linear_solves)
 
     x = b
 

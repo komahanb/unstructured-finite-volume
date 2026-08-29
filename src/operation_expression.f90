@@ -66,7 +66,7 @@ module operation_expression
 
   private
   public :: expression
-  public :: unknown, design, constant, derivative, stated
+  public :: unknown, design, constant, derivative, derivative_along, stated, stated_over
   public :: operator(+), operator(-), operator(*), operator(/), operator(**)
   public :: sin, cos, exp, log, sqrt
 
@@ -82,6 +82,12 @@ module operation_expression
   integer, parameter :: VERTEX_FUNCTION      = 9
 
   ! the arguments a leaf reads, in the operation's order
+  ! THE COORDINATE A DERIVATIVE FOLLOWS, named by its place among the
+  ! coordinates the state is declared over. One is the first declared;
+  ! nothing here says which that is, and nothing here limits how many
+  ! there are.
+  integer, parameter, public :: FIRST_COORDINATE = 1
+
   integer, parameter :: ARGUMENT_STATE  = 1
   integer, parameter :: ARGUMENT_DESIGN = 2
 
@@ -94,12 +100,18 @@ module operation_expression
 
   type, extends(operation) :: expression
 
-     integer, private :: degree = 2
+     ! ONE DEGREE PER COORDINATE, in the order the coordinates are
+     ! declared. The first carries the component of order zero, which
+     ! is the state itself, so it holds degrees(1) + 1 components and
+     ! every later coordinate holds degrees(c), its orders running
+     ! from one.
+     integer, allocatable, private :: degrees(:)
 
      integer , allocatable, private :: kind(:)
      integer , allocatable, private :: first(:), second(:)    ! the vertices read; 0 if none
      integer , allocatable, private :: position(:)            ! a leaf's argument
      integer , allocatable, private :: order(:)               ! a leaf's component, or a function index
+     integer , allocatable, private :: along(:)               ! the coordinate a leaf's derivative follows
      real(dp), allocatable, private :: coefficient(:)         ! a constant, or an exponent
      character(len=:), allocatable, private :: label
 
@@ -112,8 +124,10 @@ module operation_expression
      procedure :: partial_action => expression_partial_action
      procedure :: at_instant     => expression_at_instant
      procedure :: equation_degree
+     procedure :: num_components
+     procedure :: component_at
      procedure :: declare_degree
-     procedure :: highest_degree
+     procedure :: highest_degree_along
      procedure :: num_vertices
 
   end type expression
@@ -164,10 +178,11 @@ contains
   ! THE LEAVES.
   !===================================================================!
 
-  function vertex(kind, position, order, coefficient) result(this)
+  function vertex(kind, position, order, coefficient, along) result(this)
 
     integer , intent(in) :: kind, position, order
     real(dp), intent(in) :: coefficient
+    integer , intent(in), optional :: along
     type(expression) :: this
 
     this % kind        = [kind]
@@ -176,6 +191,8 @@ contains
     this % position    = [position]
     this % order       = [order]
     this % coefficient = [coefficient]
+    this % along       = [FIRST_COORDINATE]
+    if (present(along)) this % along = [along]
 
   end function vertex
 
@@ -223,9 +240,35 @@ contains
        error stop 'operation_expression: the degree of a derivative is not negative'
     end if
 
-    this = vertex(VERTEX_LEAF, ARGUMENT_STATE, d, 0.0_dp)
+    this = vertex(VERTEX_LEAF, ARGUMENT_STATE, d, 0.0_dp, FIRST_COORDINATE)
 
   end function derivative
+
+  !===================================================================!
+  ! The same component named along any coordinate: which one is given
+  ! by its place among those declared, so a rule reads no differently
+  ! whether the coordinate is a time, a length or a sample.
+  !===================================================================!
+
+  function derivative_along(x, coordinate, d) result(this)
+
+    type(expression), intent(in) :: x
+    integer         , intent(in) :: coordinate, d
+    type(expression) :: this
+
+    if (size(x % kind) /= 1 .or. x % kind(1) /= VERTEX_LEAF .or. x % position(1) /= ARGUMENT_STATE) then
+       error stop 'operation_expression: a derivative is taken of the unknown'
+    end if
+    if (d < 0) then
+       error stop 'operation_expression: the degree of a derivative is not negative'
+    end if
+    if (coordinate < FIRST_COORDINATE) then
+       error stop 'operation_expression: a coordinate is one of those declared'
+    end if
+
+    this = vertex(VERTEX_LEAF, ARGUMENT_STATE, d, 0.0_dp, coordinate)
+
+  end function derivative_along
 
   !===================================================================!
   ! A rule bound to the degree of the state it reads. A degree below
@@ -240,16 +283,40 @@ contains
     character(len=*), intent(in) :: label
     type(expression) :: this
 
+    this = stated_over(rule, [degree], label)
+
+  end function stated
+
+  !===================================================================!
+  ! A rule bound to a degree along each coordinate the state is
+  ! declared over. The one-coordinate spelling is this with a list of
+  ! one, so a rule over time alone reads no differently than before.
+  !===================================================================!
+
+  function stated_over(rule, degrees, label) result(this)
+
+    type(expression), intent(in) :: rule
+    integer         , intent(in) :: degrees(:)
+    character(len=*), intent(in) :: label
+    type(expression) :: this
+
+    integer :: c
+
     this = rule
     this % label = label
 
-    if (this % highest_degree() > degree) then
-       error stop 'operation_expression: the rule reads a component the state holds'
+    do c = 1, size(degrees)
+       if (this % highest_degree_along(c) > degrees(c)) then
+          error stop 'operation_expression: the rule reads a component the state holds'
+       end if
+    end do
+    if (this % highest_degree_along(size(degrees) + 1) >= 0) then
+       error stop 'operation_expression: the rule reads a coordinate the state is not declared over'
     end if
 
-    call this % declare_degree(degree)
+    call this % declare_degree(degrees)
 
-  end function stated
+  end function stated_over
 
   !===================================================================!
   ! COMPOSITION. A binary vertex reads two roots: the right operand's
@@ -273,6 +340,7 @@ contains
     this % second      = [a % second,      shifted(b % second, na), na + nb]
     this % position    = [a % position,    b % position,    0]
     this % order       = [a % order,       b % order,       0]
+    this % along       = [a % along,       b % along,       FIRST_COORDINATE]
     this % coefficient = [a % coefficient, b % coefficient, 0.0_dp]
 
   end function joined
@@ -289,6 +357,7 @@ contains
     this % second      = [a % second,      0]
     this % position    = [a % position,    0]
     this % order       = [a % order,       order]
+    this % along       = [a % along,       FIRST_COORDINATE]
     this % coefficient = [a % coefficient, coefficient]
 
   end function applied
@@ -459,7 +528,7 @@ contains
     type(derivative_terms) :: r
 
     type(derivative_terms), allocatable :: v(:)
-    integer :: i
+    integer :: i, at
 
     allocate(v(size(this % kind)))
 
@@ -467,10 +536,13 @@ contains
        select case (this % kind(i))
        case (VERTEX_LEAF)
           if (this % position(i) == ARGUMENT_STATE) then
-             if (this % order(i) > ubound(q, 1)) then
+             ! the point's components run along time first, then along
+             ! space, so a spatial order sits past the time degree
+             at = this % component_at(this % along(i), this % order(i))
+             if (at > ubound(q, 1)) then
                 error stop 'operation_expression: the state holds the component read'
              end if
-             v(i) = q(this % order(i))
+             v(i) = q(at)
           else
              v(i) = nu
           end if
@@ -511,20 +583,28 @@ contains
   ! The highest state component read; minus one when none is.
   !===================================================================!
 
-  pure integer function highest_degree(this)
+  !===================================================================!
+  ! The highest order this rule names along one coordinate, and minus
+  ! one when it names none along it. One question serves every
+  ! coordinate, so adding one asks for no new procedure.
+  !===================================================================!
+
+  pure integer function highest_degree_along(this, coordinate)
 
     class(expression), intent(in) :: this
+    integer          , intent(in) :: coordinate
 
     integer :: i
 
-    highest_degree = -1
+    highest_degree_along = -1
     do i = 1, size(this % kind)
-       if (this % kind(i) == VERTEX_LEAF .and. this % position(i) == ARGUMENT_STATE) then
-          highest_degree = max(highest_degree, this % order(i))
+       if (this % kind(i) == VERTEX_LEAF .and. this % position(i) == ARGUMENT_STATE &
+            & .and. this % along(i) == coordinate) then
+          highest_degree_along = max(highest_degree_along, this % order(i))
        end if
     end do
 
-  end function highest_degree
+  end function highest_degree_along
 
   pure integer function num_vertices(this)
 
@@ -553,25 +633,69 @@ contains
   ! derivative then.
   !===================================================================!
 
-  subroutine declare_degree(this, degree)
+  subroutine declare_degree(this, degrees)
 
     class(expression)     , intent(inout) :: this
-    integer               , intent(in)    :: degree
+    integer               , intent(in)    :: degrees(:)
 
-    if (degree < 1) then
+    if (size(degrees) < 1) then
+       error stop 'operation_expression: a state is declared over one coordinate at least'
+    end if
+    if (degrees(FIRST_COORDINATE) < 1) then
        error stop 'operation_expression: the degree of the equation is positive'
     end if
+    if (any(degrees < 0)) then
+       error stop 'operation_expression: a degree along a coordinate is not negative'
+    end if
 
-    this % degree = degree
+    this % degrees = degrees
     call this % declare_arguments(2)
 
   end subroutine declare_degree
+
+  !===================================================================!
+  ! THE COMPONENT A COORDINATE AND AN ORDER NAME. The first
+  ! coordinate's orders run from zero and every later one's from one,
+  ! since order zero is the state itself and is named once.
+  !===================================================================!
+
+  pure integer function component_at(this, coordinate, order) result(at)
+
+    class(expression), intent(in) :: this
+    integer          , intent(in) :: coordinate, order
+
+    integer :: c
+
+    at = order
+    if (coordinate == FIRST_COORDINATE) return
+    at = this % degrees(FIRST_COORDINATE) + 1
+    do c = FIRST_COORDINATE + 1, coordinate - 1
+       at = at + this % degrees(c)
+    end do
+    at = at + order - 1
+
+  end function component_at
+
+  !===================================================================!
+  ! How many components one point of the state carries: the first
+  ! coordinate's orders including zero, and each later coordinate's
+  ! orders from one.
+  !===================================================================!
+
+  pure integer function num_components(this)
+
+    class(expression), intent(in) :: this
+
+    num_components = this % degrees(FIRST_COORDINATE) + 1
+    if (size(this % degrees) > 1) num_components = num_components + sum(this % degrees(2:))
+
+  end function num_components
 
   pure integer function equation_degree(this)
 
     class(expression)     , intent(in) :: this
 
-    equation_degree = this % degree
+    equation_degree = this % degrees(FIRST_COORDINATE)
 
   end function equation_degree
 
@@ -700,7 +824,7 @@ contains
     real(dp), allocatable :: values(:)
     integer :: k, nd, base
 
-    nd = this % degree + 1
+    nd = this % num_components()
 
     if (size(q) /= input_graph % num_vertices() * nd) then
        error stop 'operation_expression: the state holds one component per degree per instant'

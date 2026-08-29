@@ -246,7 +246,31 @@ contains
     type(stored_field)        :: state
     class(field), allocatable :: output
     real(dp), allocatable :: e(:), y(:)
-    integer :: j
+    real(dp), pointer     :: wgt(:)
+    integer :: j, k, ne, row, column
+
+    ! A STENCIL IS ITS OWN MATRIX. Probing it column by column costs
+    ! one application per column to recover numbers the pattern
+    ! already carries, so a stencil answers from its edges and only
+    ! an operation of another kind is probed.
+    select type (action)
+    type is (stencil)
+       if (action % pattern % num_vertices() == width) then
+          call action % constants % real_vector(constant)
+          wgt => action % weights % real_values()
+          if (size(constant) == width .and. associated(wgt)) then
+             allocate(a(width, width))
+             a  = 0.0_dp
+             ne = action % pattern % num_edges()
+             do k = 1, ne
+                row    = action % pattern % edge_head(k)
+                column = action % pattern % edge_tail(k)
+                a(row, column) = a(row, column) + wgt(k)
+             end do
+             return
+          end if
+       end if
+    end select
 
     allocate(a(width, width), e(width))
 
@@ -381,15 +405,42 @@ contains
     real(dp)      , intent(in)    :: q(:)
     real(dp)      , intent(inout) :: y(:)
 
-    real(dp), allocatable :: w(:)
-    integer :: e
+    real(dp), pointer :: w(:)
+    real(dp) :: acc
+    integer :: e, p, v, nv
 
-    call this % weights % real_vector(w)
-    do e = 1, this % pattern % num_edges()
-       y(this % pattern % edge_head(e)) = &
-            & y(this % pattern % edge_head(e)) &
-            & + w(e) * q(this % pattern % edge_tail(e))
-    end do
+    ! the weights are read where they are held: one apply copied the
+    ! whole edge vector before reading it
+    w => this % weights % real_values()
+    if (.not. associated(w)) return
+
+    ! a row at a time, through the lists the pattern already groups by
+    ! endpoint: the row's sum lives in a register and each row is
+    ! written once, where an edge at a time wrote to a scattered
+    ! subscript. which list holds the rows is the reversal's question,
+    ! and it is asked once
+    associate (g => this % pattern)
+      nv = g % num_vertices()
+      if (g % reversed) then
+         do v = 1, nv
+            acc = 0.0_dp
+            do p = g % xout(v), g % xout(v + 1) - 1
+               e   = g % eout(p)
+               acc = acc + w(e) * q(g % head(e))
+            end do
+            y(v) = y(v) + acc
+         end do
+      else
+         do v = 1, nv
+            acc = 0.0_dp
+            do p = g % xin(v), g % xin(v + 1) - 1
+               e   = g % ein(p)
+               acc = acc + w(e) * q(g % tail(e))
+            end do
+            y(v) = y(v) + acc
+         end do
+      end if
+    end associate
 
   end subroutine accumulate_edges
 

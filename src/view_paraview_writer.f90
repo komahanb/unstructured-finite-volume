@@ -684,7 +684,7 @@ contains
       if (present(solution_labels) .and. present(phic)) then
          do iresult = 1, size(solution_labels)
             write(fhandle, '(a,a,a)') '<DataArray type="Float64" Name="', &
-                 & solution_labels(iresult) % str, '" format="ascii">'
+                 & trim(solution_labels(iresult) % str), '" format="ascii">'
             do icell = 1, num_drawn
                write(fhandle, '(es24.16)') phic(this % cells(icell), iresult)
             end do

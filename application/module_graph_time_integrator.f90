@@ -24,10 +24,23 @@ module gti_configuration
      integer  :: seed                     = 20260824
      integer  :: startup_refinement       = 4
      character(len=16) :: linear_solver   = 'direct'
-     character(len=16) :: assembly        = 'matrix'
+     character(len=16) :: jacobian        = 'matrix'
+
+     ! WHAT THE LINEAR SOLVER SEES. Each kind named here is assembled
+     ! as rows of its own and its values are unknowns the solve
+     ! carries. A kind left out has been eliminated, and elimination
+     ! says how. The states are always assembled.
+     character(len=64) :: rows            = 'states state-time-derivatives'
+
+     ! How a kind left out of rows was removed. symbolic composes the
+     ! law away as the system is formed; numerical assembles its rows
+     ! and eliminates them before the solve. Both answer the same
+     ! equations.
+     character(len=16) :: elimination     = 'symbolic'
      character(len=16) :: storage         = 'dense'
      logical           :: multigrid       = .false.
-     character(len=16) :: sweep           = 'space-time'
+     character(len=16) :: space           = 'coupled'
+     character(len=16) :: time            = 'sequential'
      character(len=64) :: designs         = 'physics'
      character(len=64) :: functionals     = 'energy'
      real(dp) :: time_duration = 7.0_dp
@@ -150,14 +163,20 @@ contains
        read(value, *) cfg % startup_refinement
     case ('linear_solver')
        cfg % linear_solver = value
-    case ('sweep')
-       cfg % sweep = value
+    case ('space')
+       cfg % space = value
+    case ('time')
+       cfg % time = value
     case ('designs')
        cfg % designs = value
     case ('functionals')
        cfg % functionals = value
-    case ('assembly')
-       cfg % assembly = value
+    case ('jacobian')
+       cfg % jacobian = value
+    case ('rows')
+       cfg % rows = value
+    case ('elimination')
+       cfg % elimination = value
     case ('storage')
        cfg % storage = value
     case ('multigrid')
@@ -299,10 +318,13 @@ contains
     write(*,'(a,i0)')      '   seed                     ', cfg % seed
     write(*,'(a,i0)')      '   startup refinement       ', cfg % startup_refinement
     write(*,'(a,a)')       '   linear solver            ', trim(cfg % linear_solver)
-    write(*,'(a,a)')       '   sweep                    ', trim(cfg % sweep)
+    write(*,'(a,a)')       '   space                    ', trim(cfg % space)
+    write(*,'(a,a)')       '   time                     ', trim(cfg % time)
     write(*,'(a,a)')       '   designs                  ', trim(cfg % designs)
     write(*,'(a,a)')       '   functionals              ', trim(cfg % functionals)
-    write(*,'(a,a)')       '   assembly                 ', trim(cfg % assembly)
+    write(*,'(a,a)')       '   jacobian                 ', trim(cfg % jacobian)
+    write(*,'(a,a)')       '   rows                     ', trim(cfg % rows)
+    write(*,'(a,a)')       '   elimination              ', trim(cfg % elimination)
     write(*,'(a,a)')       '   storage                  ', trim(cfg % storage)
     write(*,'(a,l1)')      '   multigrid                ', cfg % multigrid
     write(*,'(a,f0.4)')    '   design                   ', cfg % design
@@ -363,11 +385,13 @@ end module gti_configuration
 
 module gti_physics
   use util_precision      , only : dp
-  use operation_expression, only : expression, unknown, design, derivative, stated, &
+  use operation_expression, only : expression, unknown, design, derivative, stated, stated_over, derivative_along, &
+       & FIRST_COORDINATE, &
        & operator(+), operator(-), operator(*), operator(**)
   implicit none
   private
   public :: van_der_pol, van_der_pol_energy, van_der_pol_dissipation
+  public :: van_der_pol_null_spatial
 contains
   function van_der_pol(degree) result(r)
     integer, intent(in) :: degree
@@ -378,6 +402,27 @@ contains
     r = stated(derivative(q, degree) - nu * (1.0_dp - derivative(q, 0)**2) * derivative(q, degree - 1) &
          & + derivative(q, 0), degree, 'van der pol residual')
   end function van_der_pol
+
+  !===================================================================!
+  ! THE SAME LAW WITH A NULL SPATIAL COMPONENT. The rule names a
+  ! spatial derivative and multiplies it by zero, so the state carries
+  ! the component and nothing reads its value. Every answer must match
+  ! the law without it, which is what makes this a check on the layout
+  ! rather than on the physics.
+  !===================================================================!
+
+  function van_der_pol_null_spatial(degree) result(r)
+    integer, intent(in) :: degree
+    type(expression) :: r
+    type(expression) :: q, nu
+    q  = unknown()
+    nu = design()
+    r = stated_over(derivative(q, degree) &
+         & - nu * (1.0_dp - derivative(q, 0)**2) * derivative(q, degree - 1) &
+         & + derivative(q, 0) &
+         & + 0.0_dp * derivative_along(q, FIRST_COORDINATE + 1, 1), &
+         & [degree, 1], 'van der pol, null spatial')
+  end function van_der_pol_null_spatial
 
   function van_der_pol_energy(degree) result(f)
     integer, intent(in) :: degree
@@ -398,7 +443,7 @@ contains
   end function van_der_pol_dissipation
 end module gti_physics
 module gti_sweeps
-  use gti_configuration, only : refuse_unknown
+  use gti_configuration, only : refuse_unknown, lists
   use util_precision  , only : dp, half_digits
   use graph_fractal   , only : graph
   use view_directed   , only : directed_graph
@@ -414,13 +459,16 @@ module gti_sweeps
   public :: forward_route, reverse_route, route_of, route_substitutions, choose
   integer, parameter :: forward_route = 1
   integer, parameter :: reverse_route = 2
-  public :: set_linear_solver, set_assembly, set_storage, set_multigrid
+  public :: set_linear_solver, set_jacobian, set_storage, set_multigrid
+  public :: set_rows, set_elimination
   public :: set_newton_order, newton_order
-  public :: set_aggregates, set_coarse_nodes, coarse_nodes, assembly_present, multigrid_on
+  public :: set_aggregates, set_coarse_nodes, coarse_nodes, jacobian_present, multigrid_on
   public :: take_inner, keep_inner, forget_inner, set_linear_stopping, set_linear_budget
   public :: functional_of, functional_gradient
   character(len=16), save :: chosen_solver   = 'direct'
-  character(len=16), save :: chosen_assembly = 'matrix'
+  character(len=16), save :: chosen_jacobian = 'matrix'
+  character(len=64), save :: chosen_rows        = 'states state-time-derivatives'
+  character(len=16), save :: chosen_elimination = 'symbolic'
   integer          , save :: chosen_newton_order = 1
   character(len=16), save :: chosen_storage  = 'dense'
   logical          , save :: chosen_multigrid = .false.
@@ -491,12 +539,55 @@ contains
     chosen_solver = name
     call forget_inner()
   end subroutine set_linear_solver
-  subroutine set_assembly(name)
+  subroutine set_rows(name)
     character(len=*), intent(in) :: name
-    call refuse_unknown(name, ['matrix', 'free  '], 'assembly')
-    chosen_assembly = name
+    logical :: states, in_time, in_space
+    call refuse_unknown(name, ['states                   ', &
+         &                      'state-time-derivatives   ', &
+         &                      'state-spatial-derivatives'], 'rows')
+    states   = lists(name, 'states')
+    in_time  = lists(name, 'state-time-derivatives')
+    in_space = lists(name, 'state-spatial-derivatives')
+    if (.not. states) then
+       error stop 'gti_sweeps: the states are always assembled; rows names them'
+    end if
+    ! The scheme states one row per derived degree, so the time
+    ! derivatives are assembled today and cannot yet be left out. The
+    ! spatial law is folded into the residual, so its derivatives have
+    ! no rows to assemble yet.
+    if (.not. in_time) then
+       error stop 'gti_sweeps: leaving the time derivatives out of rows is not built; &
+            &the scheme assembles one row for each of them'
+    end if
+    if (in_space) then
+       error stop 'gti_sweeps: assembling rows for the spatial derivatives is not built; &
+            &the spatial law is carried in the state row'
+    end if
+    chosen_rows = name
     call forget_inner()
-  end subroutine set_assembly
+  end subroutine set_rows
+  subroutine set_elimination(name)
+    character(len=*), intent(in) :: name
+    call refuse_unknown(name, ['symbolic ', 'numerical'], 'elimination')
+    ! A numerical elimination assembles the rows it then removes, and
+    ! no kind left out of rows has rows to assemble yet.
+    if (trim(name) == 'numerical') then
+       error stop 'gti_sweeps: a numerical elimination assembles the rows it removes, &
+            &and no kind left out of rows is assembled yet'
+    end if
+    chosen_elimination = name
+    call forget_inner()
+  end subroutine set_elimination
+  pure function rows_named() result(name)
+    character(len=:), allocatable :: name
+    name = trim(chosen_rows) // ', eliminated ' // trim(chosen_elimination)
+  end function rows_named
+  subroutine set_jacobian(name)
+    character(len=*), intent(in) :: name
+    call refuse_unknown(name, ['matrix', 'free  '], 'jacobian')
+    chosen_jacobian = name
+    call forget_inner()
+  end subroutine set_jacobian
   subroutine set_storage(name)
     character(len=*), intent(in) :: name
     call refuse_unknown(name, ['dense ', 'sparse'], 'storage')
@@ -516,9 +607,9 @@ contains
   pure integer function newton_order() result(order)
     order = chosen_newton_order
   end function newton_order
-  pure logical function assembly_present() result(yes)
-    yes = trim(chosen_assembly) == 'matrix'
-  end function assembly_present
+  pure logical function jacobian_present() result(yes)
+    yes = trim(chosen_jacobian) == 'matrix'
+  end function jacobian_present
   pure logical function multigrid_on() result(yes)
     yes = chosen_multigrid
   end function multigrid_on
@@ -576,18 +667,18 @@ contains
     type(dense_direct) :: factorisation
     type(multigrid)    :: levels
     type(gauss_seidel) :: sweeps
-    if (trim(chosen_assembly) == 'free' .and. trim(chosen_solver) == 'direct') then
-       error stop 'gti_sweeps: a free assembly has no matrix to factorise; its solver iterates'
+    if (trim(chosen_jacobian) == 'free' .and. trim(chosen_solver) == 'direct') then
+       error stop 'gti_sweeps: a matrix-free jacobian has no matrix to factorise; its solver iterates'
     end if
     if (trim(chosen_solver) == 'direct' .and. trim(chosen_storage) == 'sparse') then
        error stop 'gti_sweeps: a sparse direct solve is not built'
     end if
-    if (trim(chosen_solver) == 'iterative' .and. trim(chosen_assembly) == 'matrix' &
+    if (trim(chosen_solver) == 'iterative' .and. trim(chosen_jacobian) == 'matrix' &
          & .and. trim(chosen_storage) == 'dense') then
        error stop 'gti_sweeps: an iterative solve reads the sparse stencil; dense storage is for factorising'
     end if
-    if (chosen_multigrid .and. trim(chosen_assembly) == 'free') then
-       error stop 'gti_sweeps: multigrid coarsens a stencil, which a free assembly has not'
+    if (chosen_multigrid .and. trim(chosen_jacobian) == 'free') then
+       error stop 'gti_sweeps: multigrid coarsens a stencil, which a matrix-free jacobian has not'
     end if
     select case (trim(chosen_solver))
     case ('direct')
@@ -717,7 +808,12 @@ module gti_expansion
      type(set_map)           , private :: extents
      type(relational_binding), private :: bindings
      integer                 , private :: root_at = 0
+     ! degrees is the EQUATION'S degree count, which is what every
+     ! scheme question reads. spatial_degrees counts the components the
+     ! spatial law determines. The layout stride is their sum, and is
+     ! asked for by name so the two are never confused.
      integer                 , private :: degrees = 0
+     integer                 , private :: spatial_degrees = 0
      integer                 , private :: node_extent = 1
      integer                 , private :: spatial_coupling_at = 0
      integer, allocatable    , private :: design_at(:), design_kind(:)
@@ -728,6 +824,7 @@ module gti_expansion
      procedure :: root
      procedure :: node
      procedure :: num_nodes
+     procedure :: stride
      procedure :: label_of
      procedure :: status_of
      procedure :: value_of
@@ -850,7 +947,11 @@ contains
     if (size(schemes) /= size(instants)) then
        error stop 'gti_expansion: one family and one instant count per block'
     end if
-    this % degrees = physics % equation_degree() + 1
+    ! degrees is the marching coordinate's own count, which is what
+    ! every scheme question reads; the rest of the point's components
+    ! belong to the coordinates beside it
+    this % degrees         = physics % equation_degree() + 1
+    this % spatial_degrees = physics % num_components() - this % degrees
     this % node_extent = 1
     if (present(nodes)) this % node_extent = nodes
     if (present(spatial_discretization_stencil)) this % spatial_coupling_at = spatial_discretization_coupling(this, spatial_discretization_stencil)
@@ -1093,8 +1194,8 @@ contains
     integer         , intent(in)    :: instant, first
     integer, allocatable :: components(:)
     integer :: d
-    allocate(components(this % degrees))
-    do d = 0, this % degrees - 1
+    allocate(components(this % stride()))
+    do d = 0, this % stride() - 1
        components(d + 1) = one_component(this, scheme, instant, first, d, .true.)
     end do
     at = this % nodes % assemble(components, 0)
@@ -1141,8 +1242,8 @@ contains
     integer         , intent(in)    :: instant, first, index
     integer, allocatable :: components(:)
     integer :: d
-    allocate(components(this % degrees))
-    do d = 0, this % degrees - 1
+    allocate(components(this % stride()))
+    do d = 0, this % stride() - 1
        components(d + 1) = one_component(this, scheme, instant, first, d, index > 0)
     end do
     at = this % nodes % assemble(components, 0)
@@ -1426,6 +1527,16 @@ contains
        end if
     end do
   end subroutine carry_reach
+  !===================================================================!
+  ! THE LAYOUT STRIDE: how many components one node carries at one
+  ! moment. The equation's degrees come first and the spatial law's
+  ! come after, so a scheme question reads degrees and a layout
+  ! question reads this.
+  !===================================================================!
+  pure integer function stride(this)
+    class(expansion), intent(in) :: this
+    stride = this % degrees + this % spatial_degrees
+  end function stride
   integer function carry_coupling(this, scheme, slices, first, last, dt) result(at)
     class(expansion), intent(inout) :: this
     class(family)   , intent(in)    :: scheme
@@ -1486,7 +1597,12 @@ module gti_block
      integer , allocatable               , private :: at(:)
      integer , allocatable               , private :: carried(:)
      real(dp), allocatable               , private :: held(:)
+     ! degrees is the EQUATION'S degree count; spatial_degrees counts
+     ! the components the spatial law determines; the stride is their
+     ! sum. Asking by name keeps a scheme question from reading a
+     ! layout number.
      integer                             , private :: degrees  = 0
+     integer                             , private :: spatial_degrees = 0
      integer                             , private :: unknowns = 0
      integer                             , private :: primary  = 0
      type(graph)    , pointer, private :: node  => null()
@@ -1513,8 +1629,10 @@ module gti_block
      procedure :: rows_terms
      procedure :: linear_block
      procedure :: member_order
+     procedure :: sweep_labels
      procedure :: num_unknowns
      procedure :: num_degrees
+     procedure :: block_stride
      procedure :: num_points
      procedure :: points_at
      procedure :: num_carried
@@ -1549,7 +1667,10 @@ contains
     this % physics = physics
     this % at       = at
     this % unknowns = unknowns
-    this % degrees  = degrees
+    this % degrees       = degrees
+    ! the rule states how many components a point carries; the degrees
+    ! given are the marching coordinate's share of them
+    this % spatial_degrees = physics % num_components() - degrees
     this % primary  = primary
     this % carried  = carried
     this % held     = held
@@ -1570,6 +1691,10 @@ contains
     real(dp), allocatable :: h(:)
     h = this % held
   end function held_values
+  pure integer function block_stride(this)
+    class(block_residual), intent(in) :: this
+    block_stride = this % degrees + this % spatial_degrees
+  end function block_stride
   pure integer function num_degrees(this)
     class(block_residual), intent(in) :: this
     num_degrees = this % degrees
@@ -1619,10 +1744,10 @@ contains
     real(dp)             , intent(in) :: x(:)
     real(dp), allocatable :: y(:)
     integer :: p
-    allocate(y(size(this % at) * this % degrees))
+    allocate(y(size(this % at) * this % block_stride()))
     do p = 1, size(this % at)
-       y((p - 1) * this % degrees + 1:p * this % degrees) = &
-            & x(this % at(p) + 1:this % at(p) + this % degrees)
+       y((p - 1) * this % block_stride() + 1:p * this % block_stride()) = &
+            & x(this % at(p) + 1:this % at(p) + this % block_stride())
     end do
   end function gathered
   subroutine point_inputs(this, input_data, x, inputs)
@@ -1634,7 +1759,7 @@ contains
     real(dp), allocatable :: knob(:)
     call input_data(2) % real_vector(knob)
     state = stored_field('state', this % points % vertex_set(), &
-         & size(this % at) * this % degrees)
+         & size(this % at) * this % block_stride())
     call state % set_real_vector(gathered(this, x))
     design = stored_field('design', this % points % vertex_set(), size(knob))
     call design % set_real_vector(knob)
@@ -2138,7 +2263,7 @@ contains
     end if
     call point_inputs(this, input_data, x, inputs)
     direction = stored_field('direction', this % points % vertex_set(), &
-         & size(this % at) * this % degrees)
+         & size(this % at) * this % block_stride())
     call direction % set_real_vector(gathered(this, v))
     call this % physics % partial_action(this % points, inputs, &
          & [variation(this % physics % argument(1), direction)], half)
@@ -2171,7 +2296,7 @@ contains
     call given % direction(v)
     if (given % argument_is(this % argument(1))) then
        direction = stored_field('direction', this % points % vertex_set(), &
-            & size(this % at) * this % degrees)
+            & size(this % at) * this % block_stride())
        call direction % set_real_vector(gathered(this, v))
        at_points = variation(this % physics % argument(1), direction)
     else if (given % argument_is(this % argument(2))) then
@@ -2194,19 +2319,58 @@ contains
          & [variations(1) % with_argument(this % physics % argument(2))], half)
     call half % real_vector(governing)
   end subroutine design_tangent
-  subroutine member_order(this, by_instants, order)
+  !===================================================================!
+  ! THE LABELLING A SWEEP RUNS OVER, and the order to visit it in.
+  ! Space and time are chosen apart: a dimension left coupled puts
+  ! every one of its members in the same piece, and a dimension made
+  ! sequential separates them. Time is visited in the order its own
+  ! discretisation couples the moments, so a member is solved after
+  ! everything it reads.
+  !===================================================================!
+
+  subroutine sweep_labels(this, sequential_space, sequential_time, label, order)
     class(block_residual), intent(in)  :: this
-    logical              , intent(in)  :: by_instants
-    integer, allocatable , intent(out) :: order(:)
-    integer, allocatable :: table(:,:), label(:), slice(:), node(:), moment(:)
-    type(stored_directed_graph) :: coupling
-    integer :: ne, e, n, t, h, k, members
+    logical              , intent(in)  :: sequential_space, sequential_time
+    integer, allocatable , intent(out) :: label(:), order(:)
+    integer, allocatable :: slice(:), node(:), moment(:), in_time(:)
+    integer :: nodes, k, t, m
+
     call this % labels_of(slice, node, moment)
-    if (.not. by_instants) then
-       order = [(k, k = 1, maxval(node))]
-       return
+    nodes = maxval(node)
+
+    if (sequential_time) then
+       call this % member_order(moment, order=in_time)
+    else
+       in_time = [1]
     end if
-    label   = slice
+
+    if (sequential_time .and. sequential_space) then
+       label = (moment - 1) * nodes + node
+       allocate(order(size(in_time) * nodes))
+       m = 0
+       do t = 1, size(in_time)
+          do k = 1, nodes
+             m        = m + 1
+             order(m) = (in_time(t) - 1) * nodes + k
+          end do
+       end do
+    else if (sequential_time) then
+       label = moment
+       order = in_time
+    else
+       label = node
+       order = [(k, k = 1, nodes)]
+    end if
+
+  end subroutine sweep_labels
+
+  subroutine member_order(this, label, order)
+    class(block_residual), intent(in)  :: this
+    integer              , intent(in)  :: label(:)
+    integer, allocatable , intent(out) :: order(:)
+    integer, allocatable :: table(:,:)
+    type(stored_directed_graph) :: coupling
+    integer :: ne, e, n, t, h, members
     members = maxval(label)
     ne      = this % time_discretization_stencil % pattern % num_edges()
     allocate(table(2, ne))
@@ -2250,7 +2414,7 @@ module gti_march
        & level_couples
   use graph_fractal           , only : graph
   use map_value               , only : VALUE_KNOWN
-  use gti_sweeps              , only : assembly_present, multigrid_on, newton_order, &
+  use gti_sweeps              , only : jacobian_present, multigrid_on, newton_order, &
        & set_aggregates, coarse_nodes, take_inner, keep_inner, forget_inner, set_linear_stopping
   use util_tally              , only : tally_record, tangent_loops, adjoint_loops
   implicit none
@@ -2264,7 +2428,10 @@ module gti_march
      integer  :: steepest_slot = 0, steepest_degree = 0
      real(dp) :: steepest = 0.0_dp
   end type imbalance
-  character(len=16), save :: sweep_level = 'space-time'
+  ! Space and time are chosen apart. A coupled dimension keeps all of
+  ! its members in one system; a sequential one solves them in turn.
+  character(len=16), save :: space_coupling = 'coupled'
+  character(len=16), save :: time_coupling  = 'sequential'
   integer, save :: stamps_given = 0
   real(dp), save :: stopping_tolerance  = 1.0e-12_dp
   integer , save :: stopping_criterion  = relative
@@ -2272,12 +2439,12 @@ module gti_march
   integer , save :: stopping_iterations = 100
   private
   public :: solved, unknowns_graph
-  public :: block_from
+  public :: block_from, instants_at_of
   public :: unknown, consistent_states, frozen_inputs
   public :: set_stopping
   public :: consistent_state
   public :: imbalance
-  public :: swept, set_sweep, sweep_named
+  public :: swept, set_space_coupling, set_time_coupling, coupling_named
   public :: solved_linear, by_tangent, by_adjoint, fresh_stamp
   public :: weight_of, precision_needed
   public :: horizon_bounds
@@ -2461,6 +2628,45 @@ contains
     type(stored_directed_graph) :: g
     g = stored_directed_graph(n * degrees, tails=[integer ::], heads=[integer ::])
   end function unknowns_graph
+  !===================================================================!
+  ! WHERE EACH INSTANT OF A BLOCK BEGINS in the block's own state.
+  ! It is settled by the tower's structure alone - how many moments
+  ! each slice carries, and how wide a moment is - so it is known
+  ! before the block is solved, and before it is even built. An
+  ! assembler that must say which values one block hands to another
+  ! asks this, and never has to run anything first.
+  !===================================================================!
+
+  function instants_at_of(tower, b, scheme, physics) result(instants_at)
+
+    type(expansion) , intent(in), target :: tower
+    integer         , intent(in) :: b
+    class(family)   , intent(in) :: scheme
+    type(expression), intent(in) :: physics
+    integer, allocatable :: instants_at(:)
+
+    type(graph), pointer :: horizon, block
+    integer :: n, k, g, m, width, nd, stride
+    logical :: staged
+
+    nd     = physics % equation_degree() + 1
+    stride = physics % num_components()
+    horizon => level_member(level_member(tower % node(tower % root()), 1), 1)
+    block   => level_member(horizon, b)
+    n       = level_num_members(block)
+    staged  = marches_by_stages(scheme, nd)
+    m       = tower % extent_of(level_member(first_moment(block, staged), 1))
+    width   = stride * m
+
+    allocate(instants_at(n))
+    g = 0
+    do k = 1, n
+       g = g + merge(level_num_members(level_member(block, k)), 1, staged)
+       instants_at(k) = (g - 1) * width
+    end do
+
+  end function instants_at_of
+
   subroutine block_from(tower, b, scheme, physics, held, rows, instants_at)
     type(expansion)       , intent(in), target :: tower
     integer               , intent(in)  :: b
@@ -2475,9 +2681,14 @@ contains
     integer , allocatable :: r(:), c(:), table(:,:)
     real(dp), allocatable :: dt(:), w(:), dt_weights(:), spatial_weights(:)
     logical , allocatable :: point(:)
-    integer :: m, nd, width, n, s, k, j, g, moments, i, d, u, count, e, npts, ncar
+    integer :: m, nd, stride, width, n, s, k, j, g, moments, i, d, u, count, e, npts, ncar
     logical :: staged
-    nd = physics % equation_degree() + 1
+    ! nd is the marching coordinate's degree count, which the scheme
+    ! reads; stride is the point's whole component count, which the
+    ! layout reads. They part company once a rule names a second
+    ! coordinate, so they are never the same name.
+    nd     = physics % equation_degree() + 1
+    stride = physics % num_components()
     horizon => level_member(level_member(tower % node(tower % root()), 1), 1)
     block   => level_member(horizon, b)
     n       = level_num_members(block)
@@ -2485,7 +2696,7 @@ contains
     staged  = marches_by_stages(scheme, nd)
     s       = scheme % num_stages()
     m     = tower % extent_of(level_member(first_moment(block, staged), 1))
-    width = nd * m
+    width = stride * m
     allocate(members(n))
     do k = 1, n
        members(k) = merge(level_num_members(level_member(block, k)), 1, staged)
@@ -2514,18 +2725,18 @@ contains
           moment_node => slice
        end if
        do i = 1, m
-          do d = 0, nd - 1
+          do d = 0, stride - 1
              component => level_member(moment_node, d + 1)
              if (tower % status_of(component) == VALUE_KNOWN) then
                 ncar = ncar + 1
-                carried(ncar) = (g - 1) * width + (i - 1) * nd + d + 1
+                carried(ncar) = (g - 1) * width + (i - 1) * stride + d + 1
              end if
           end do
        end do
        if (point(g)) then
           do i = 1, m
              npts = npts + 1
-             at(npts) = (g - 1) * width + (i - 1) * nd
+             at(npts) = (g - 1) * width + (i - 1) * stride
           end do
           component => level_member(moment_node, scheme % primary_degree(nd - 1) + 1)
           if (level_couples(component) .and. .not. associated(below)) then
@@ -2704,7 +2915,7 @@ contains
     else
        q = at_first_instant(rows, count)
     end if
-    solver % compiled       = assembly_present()
+    solver % compiled       = jacobian_present()
     solver % higher_order_jacobian_product = newton_order()
     solver % max_iterations = stopping_iterations
     solver % tolerance      = stopping_tolerance
@@ -2764,15 +2975,20 @@ contains
     call solved_linear(rows, unknowns, inputs, g, .true., mark, lambda)
     df = explicit - dot_product(lambda, design_rate)
   end function by_adjoint
-  subroutine set_sweep(name)
+  subroutine set_space_coupling(name)
     character(len=*), intent(in) :: name
-    call refuse_unknown(name, ['space-time', 'time      ', 'space     '], 'sweep')
-    sweep_level = name
-  end subroutine set_sweep
-  pure function sweep_named() result(name)
+    call refuse_unknown(name, ['coupled   ', 'sequential'], 'space')
+    space_coupling = name
+  end subroutine set_space_coupling
+  subroutine set_time_coupling(name)
+    character(len=*), intent(in) :: name
+    call refuse_unknown(name, ['coupled   ', 'sequential'], 'time')
+    time_coupling = name
+  end subroutine set_time_coupling
+  pure function coupling_named() result(name)
     character(len=:), allocatable :: name
-    name = trim(sweep_level)
-  end function sweep_named
+    name = 'space ' // trim(space_coupling) // ', time ' // trim(time_coupling)
+  end function coupling_named
   subroutine swept(rows, design_value, q, achieved, left)
     type(block_residual), intent(in)  :: rows
     real(dp)            , intent(in)  :: design_value
@@ -2788,17 +3004,16 @@ contains
     logical , allocatable :: is_carried(:)
     real(dp) :: sub_achieved, before
     integer :: count, npts, members, m, mm, pass, k
-    if (trim(sweep_level) == 'space-time') then
+    logical :: sequential_space, sequential_time
+    sequential_space = trim(space_coupling) == 'sequential'
+    sequential_time  = trim(time_coupling)  == 'sequential'
+    if (.not. sequential_space .and. .not. sequential_time) then
        call solved(rows, design_value, q, achieved, left)
        return
     end if
     count   = rows % num_unknowns()
     npts    = rows % num_points()
-    if (trim(sweep_level) == 'time') then
-       label = rows % slice_of()
-    else
-       label = rows % node_of()
-    end if
+    call rows % sweep_labels(sequential_space, sequential_time, label, order)
     members = maxval(label)
     allocate(is_carried(count), source=.false.)
     is_carried(rows % carried_unknowns()) = .true.
@@ -2812,7 +3027,6 @@ contains
     judge % criterion      = stopping_criterion
     judge % budget         = stopping_budget
     call judge % begin_imbalance()
-    call rows % member_order(trim(sweep_level) == 'time', order)
     achieved = whole_residual(rows, unknowns, design, q)
     call judge % note_imbalance(achieved)
     do pass = 1, stopping_iterations
@@ -2821,7 +3035,7 @@ contains
           m = order(mm)
           member = pack([(k, k = 1, count)], label == m)
           if (all(is_carried(member))) cycle
-          if (pass == 1 .and. trim(sweep_level) == 'time' .and. mm > 1) then
+          if (pass == 1 .and. sequential_time .and. mm > 1) then
              call continued(q, member, pack([(k, k = 1, count)], label == order(mm - 1)))
           end if
           sub = rows % restricted(member, q)
@@ -3463,6 +3677,19 @@ contains
          & '      error at the last instant, against the mode ', sqrt(e_exact / area), &
          & '   semi-discrete ', sqrt(e_semi / area), '   omega ', omega, '   omega_h ', omega_h
   end subroutine against_the_mode
+  !===================================================================!
+  ! The name a derivative of the state carries: the state itself is q,
+  ! and each order appends the letter of the coordinate it is taken
+  ! along, so a time derivative reads qt, qtt and a spatial one qx,
+  ! qxx. The order is legible in the name rather than counted from it.
+  !===================================================================!
+  pure function derivative_named(along, order) result(name)
+    character(len=*), intent(in) :: along
+    integer         , intent(in) :: order
+    character(len=:), allocatable :: name
+    name = 'q'
+    if (order > 0) name = name // repeat(along, order)
+  end function derivative_named
   subroutine export_instant(space, path, degrees, x)
     type(room)      , intent(in) :: space
     character(len=*), intent(in) :: path
@@ -3473,7 +3700,7 @@ contains
     integer :: i, d
     allocate(names(degrees), values(space % num_cells, degrees))
     do d = 0, degrees - 1
-       write(names(d + 1),'(a,i0)') 'q', d
+       names(d + 1) = derivative_named('t', d)
     end do
     do i = 1, space % num_cells
        do d = 0, degrees - 1
@@ -3493,13 +3720,19 @@ module gti_chain
   use gti_block        , only : block_residual
   use gti_march        , only : imbalance, swept, solved_linear, fresh_stamp, horizon_bounds, &
        & frozen_inputs
-  use gti_march        , only : block_from, consistent_state
+  use gti_march        , only : block_from, consistent_state, instants_at_of
   use gti_sweeps       , only : choose
   use util_derivative_terms, only : derivative_terms, coefficient, operator(*)
   use operation_stencil, only : stencil
   use operation_family_dirk, only : crouzeix_three_stage
   use view_directed_stored, only : stored_directed_graph
   use field_calculus   , only : field
+  use operation_action , only : operation, emit
+  use operation_driver , only : driver, rule_graph, data_graph, pairing
+  use view_read_write  , only : bipartite_digraph, FIRST_PART, SECOND_PART
+  use view_directed    , only : forward
+  use view_directed    , only : directed_graph
+  use field_stored     , only : stored_field
   use field_stored     , only : stored_field
   use gti_sweeps       , only : route_of, route_substitutions, forward_route, reverse_route
   use util_tally            , only : tally_order, tally_enter, tally_leave
@@ -3539,6 +3772,65 @@ module gti_chain
      real(dp) :: costate   = 0.0_dp
      real(dp) :: unread    = 0.0_dp
   end type sink_costates
+  !===================================================================!
+  ! ONE BLOCK OF THE CHAIN, AS A RULE. A vertex of the operation
+  ! graph carries an operation, and solving a block was a subroutine
+  ! with twenty arguments, so here it becomes one.
+  !
+  ! EVERYTHING IT HOLDS IS THE ENTANGLEMENT, VISIBLE. A rule that
+  ! carried no data would hold the scheme and the physics and nothing
+  ! else; this one holds the chain it writes into, the tower it reads
+  ! and the steps it marches over, because today those live inside
+  ! the rule rather than beside it. The cut that separates them runs
+  ! through this type, and it is written this way so the cut has
+  ! somewhere to start.
+  !
+  !      (block 1) --> (block 2) --> (block 3)      the arcs
+  !         |             |             |
+  !       [state]       [state]       [state]       what each leaves
+  !===================================================================!
+
+  ! which part of the bipartite digraph is which, for this caller
+  integer, parameter :: BLOCKS = FIRST_PART
+  integer, parameter :: STATES = SECOND_PART
+
+  type, extends(operation) :: block_rule
+
+     type(chain_block), pointer :: chain(:) => null()
+     type(expansion)  , pointer :: tower    => null()
+
+     class(family)   , allocatable :: scheme
+     type(expression), allocatable :: physics
+     real(dp)        , allocatable :: dt(:), initial(:)
+     integer         , allocatable :: coarse_step(:)
+     type(stencil)   , allocatable :: spatial_discretization_stencil
+
+     integer  :: at = 0, in_tower = 0, degrees = 0
+     integer  :: first = 0, last = 0, stride = 1, nodes = 1
+     real(dp) :: fraction = 1.0_dp, design = 0.0_dp
+     logical  :: counted = .true.
+     logical  :: over_nodes = .false.
+
+     ! WHERE ITS HANDOVER COMES FROM. One entry per instant the
+     ! scheme reaches back over: which of the data the driver hands
+     ! in, and where in that datum the instant's values begin. The
+     ! assembler settles both, so this rule never looks in the chain
+     ! to find them.
+     integer, allocatable :: taken_from(:)      ! which input
+     integer, allocatable :: taken_at(:)        ! offset within it
+     integer              :: taken_width = 0
+
+     ! what the solve reported, read back after the graph is evaluated
+     real(dp)        :: achieved = 0.0_dp
+     type(imbalance) :: left
+
+   contains
+
+     procedure :: name  => block_rule_name
+     procedure :: apply => block_rule_apply
+
+  end type block_rule
+
 contains
   pure subroutine locate(chain, fine, held_by, local)
     type(chain_block), intent(in)  :: chain(:)
@@ -3666,22 +3958,279 @@ contains
        achieved = one_achieved
        if (present(left)) left = one_left
     end if
-    do b = 1, size(added)
-       call one_block(chain, before + b, tower, before + b, schemes(b) % scheme, physics, degrees, &
-            & 1 + (first(b) - 1) * r, 1 + (last(b) - 1) * r, r, dt(first(b):last(b)), &
-            & [(k, k = first(b), last(b))], 1.0_dp, .true., design, initial, &
-            & one_achieved, one_left, nodes, spatial_discretization_stencil)
-       achieved = max(achieved, one_achieved)
-       if (present(left)) then
-          if (before + b == 1) left = one_left
-          if (left % converged .and. .not. one_left % converged) left = one_left
-       end if
-    end do
+    ! THE BLOCKS ARE A GRAPH, AND THE DRIVER EVALUATES IT. Block b
+    ! reads block b - 1 in its one slot, so the arcs are the chain's
+    ! own order and no loop here says which block is next.
+    call marched_by_driver(chain, tower, schemes, added, physics, degrees, r, &
+         & first, last, dt, design, initial, before, achieved, left, nodes, &
+         & spatial_discretization_stencil)
     call tally_leave()
   end subroutine march_chain
+  !===================================================================!
+  ! ASSEMBLE THE CHAIN AS A GRAPH AND HAND IT OVER. One vertex per
+  ! block, one arc from each block to the next, one rule standing at
+  ! each vertex. What the driver does with them - the order, the
+  ! lifetimes, and one day which of them run at once - is no longer
+  ! stated here.
+  !===================================================================!
+
+  subroutine marched_by_driver(chain, tower, schemes, added, physics, degrees, r, &
+       & first, last, dt, design, initial, before, achieved, left, nodes, &
+       & spatial_discretization_stencil, held_data)
+
+    type(chain_block)  , intent(inout), target :: chain(:)
+    type(expansion)    , intent(in)   , target :: tower
+    type(family_holder), intent(in)   :: schemes(:)
+    integer            , intent(in)   :: added(:), degrees, r, before
+    type(expression)   , intent(in)   :: physics
+    integer            , intent(in)   :: first(:), last(:)
+    real(dp)           , intent(in)   :: dt(:), design, initial(:)
+    real(dp)           , intent(inout):: achieved
+    type(imbalance), intent(inout), optional :: left
+    integer        , intent(in)   , optional :: nodes
+    type(stencil)  , intent(in)   , optional :: spatial_discretization_stencil
+    ! WHERE THE STATES COME TO REST. The driver places every block's
+    ! state at its data vertex, and a caller that wants them asks for
+    ! the data graph rather than for the chain.
+    type(data_graph), intent(out) , optional :: held_data
+
+    type(data_graph)            :: values
+    type(pairing)               :: rested
+    type(rule_graph)       :: rules
+    type(bipartite_digraph)     :: incidence
+    type(driver)                :: executor
+    type(block_rule)            :: one
+    type(stored_directed_graph) :: bare
+    integer, allocatable :: from_part(:), from_vertex(:), to_part(:), to_vertex(:)
+    integer, allocatable :: handed(:), offsets(:)
+    integer :: nb, b, k, a, n_arc, given, i, e, instant, holder, width_of_block
+
+    nb = size(added)
+    width_of_block = degrees
+    if (present(nodes)) width_of_block = degrees * nodes
+
+    ! THE ARCS ARE READS AND WRITES, and nothing here states which
+    ! block follows which. Block b writes datum b; block b reads
+    ! datum b - 1. The order over the blocks is the projection of
+    ! those arcs onto the blocks, and the driver takes it.
+    !
+    !      (b1) --> [d1] --> (b2) --> [d2] --> (b3)
+    !       write     read    write    read
+    !
+    ! at most one write per block, and at most one read per instant
+    ! its scheme reaches back over
+    n_arc = nb
+    do b = 2, nb
+       n_arc = n_arc + schemes(b) % scheme % history_depth(degrees - 1)
+    end do
+    allocate(from_part(n_arc), from_vertex(n_arc), to_part(n_arc), to_vertex(n_arc))
+    a = 0
+    do b = 1, nb
+       a = a + 1                                  ! block b writes datum b
+       from_part(a)   = BLOCKS
+       from_vertex(a) = b
+       to_part(a)     = STATES
+       to_vertex(a)   = b
+    end do
+    do b = 2, nb
+       ! block b is handed the instants its scheme reaches back over,
+       ! and each of them is held by whichever earlier block covers
+       ! it - the latest one, as locate answers. That block, and no
+       ! other, is read.
+       given = schemes(b) % scheme % history_depth(degrees - 1)
+       do i = 1, given
+          instant = 1 + (first(b) - 1) * r + (i - 1) * r
+          holder  = 0
+          do e = b - 1, 1, -1
+             if (instant < 1 + (first(e) - 1) * r) cycle
+             if (instant > 1 + (last(e)  - 1) * r) cycle
+             if (mod(instant - (1 + (first(e) - 1) * r), r) /= 0) cycle
+             holder = e
+             exit
+          end do
+          if (holder == 0) cycle
+          if (any(from_vertex(1:a) == holder .and. to_vertex(1:a) == b &
+               & .and. from_part(1:a) == STATES)) cycle
+          a = a + 1
+          from_part(a)   = STATES
+          from_vertex(a) = holder
+          to_part(a)     = BLOCKS
+          to_vertex(a)   = b
+       end do
+    end do
+    n_arc = a
+    incidence = bipartite_digraph(nb, nb, from_part(1:n_arc), from_vertex(1:n_arc), &
+         & to_part(1:n_arc), to_vertex(1:n_arc))
+
+    ! one rule per vertex, carrying what solving that block needs
+    allocate(rules % at(nb), values % at(nb))
+    do b = 1, nb
+       one % chain    => chain
+       one % tower    => tower
+       one % at       = before + b
+       one % in_tower = before + b
+       allocate(one % scheme , source=schemes(b) % scheme)
+       allocate(one % physics, source=physics)
+       one % degrees     = degrees
+       one % first       = 1 + (first(b) - 1) * r
+       one % last        = 1 + (last(b) - 1) * r
+       one % stride      = r
+       one % dt          = dt(first(b):last(b))
+       one % coarse_step = [(k, k = first(b), last(b))]
+       one % fraction    = 1.0_dp
+       one % counted     = .true.
+       one % design      = design
+       one % initial     = initial
+       one % over_nodes  = present(nodes)
+       if (present(nodes)) one % nodes = nodes
+       if (present(spatial_discretization_stencil)) &
+            & one % spatial_discretization_stencil = spatial_discretization_stencil
+       allocate(rules % at(b) % rule, source=one)
+       deallocate(one % scheme, one % physics)
+    end do
+
+    ! WHERE EVERY HANDOVER COMES FROM, settled here and not at run
+    ! time. The graph says which data a block is handed and in what
+    ! order; the tower says where each instant sits inside them.
+    do b = 2, nb
+       given = schemes(b) % scheme % history_depth(degrees - 1)
+       call incidence % in_neighbourhood(BLOCKS, b, handed)
+       select type (rule => rules % at(b) % rule)
+       type is (block_rule)
+          allocate(rule % taken_from(given), rule % taken_at(given))
+          rule % taken_width = width_of_block
+          do i = 1, given
+             instant = 1 + (first(b) - 1) * r + (i - 1) * r
+             holder  = 0
+             do e = b - 1, 1, -1
+                if (instant < 1 + (first(e) - 1) * r) cycle
+                if (instant > 1 + (last(e)  - 1) * r) cycle
+                if (mod(instant - (1 + (first(e) - 1) * r), r) /= 0) cycle
+                holder = e
+                exit
+             end do
+             if (holder == 0) then
+                error stop 'gti_chain: an instant handed to a block is held by none'
+             end if
+             rule % taken_from(i) = 0
+             do e = 1, size(handed)
+                if (handed(e) == holder) rule % taken_from(i) = e
+             end do
+             offsets = instants_at_of(tower, before + holder, schemes(holder) % scheme, physics)
+             rule % taken_at(i) = offsets((instant - (1 + (first(holder) - 1) * r)) / r + 1)
+          end do
+       end select
+    end do
+
+    executor = driver(rules % at(1) % rule, incidence, forward)
+    call executor % pair_with(rules % pair(values))
+
+    bare = stored_directed_graph(nb, tails=[integer ::], heads=[integer ::])
+    call executor % evaluate(bare)
+
+    ! WHERE THE STATES COME TO REST. The driver placed each block's
+    ! state at its data vertex; a caller that wants them asks for the
+    ! data branch rather than reaching into the chain.
+    rested = executor % pairing_of()
+    if (present(held_data)) held_data = rested % data_held()
+
+
+    ! what each block reported, read back off the rules
+    do b = 1, nb
+       select type (told => rules % at(b) % rule)
+       type is (block_rule)
+          achieved = max(achieved, told % achieved)
+          if (present(left)) then
+             if (before + b == 1) left = told % left
+             if (left % converged .and. .not. told % left % converged) left = told % left
+          end if
+       end select
+    end do
+
+  end subroutine marched_by_driver
+
+  pure function block_rule_name(this) result(name)
+    class(block_rule), intent(in) :: this
+    character(len=:), allocatable :: name
+    character(len=12) :: digits
+    write(digits,'(i0)') this % at
+    name = 'block ' // trim(digits) // ' of the chain'
+  end function block_rule_name
+
+  !===================================================================!
+  ! Solving the block this rule stands at, and leaving its state as
+  ! the datum the vertex holds. The inputs a driver gathers are not
+  ! read yet: what this block needs from the one before it still
+  ! travels inside the chain the rule points at.
+  !===================================================================!
+
+  subroutine block_rule_apply(this, input_graph, input_data, output)
+    class(block_rule)        , intent(in)    :: this
+    class(directed_graph)    , intent(in)    :: input_graph
+    class(field)             , intent(in), optional :: input_data(:)
+    class(field), allocatable, intent(inout) :: output
+    type(stored_field) :: state
+    real(dp), allocatable :: handover(:), one_datum(:)
+    real(dp) :: achieved
+    type(imbalance) :: left
+    integer :: i
+    if (.not. associated(this % chain) .or. .not. associated(this % tower)) then
+       error stop 'gti_chain: a block rule stands at a block of a chain'
+    end if
+    ! THE HANDOVER, GATHERED FROM WHAT THE DRIVER HANDED IN. Each
+    ! instant the scheme reaches back over is taken from one of the
+    ! data, at the offset the assembler settled. Nothing is looked up
+    ! in the chain: this is the cut, and it is closed here.
+    if (allocated(this % taken_from)) then
+       allocate(handover(size(this % taken_from) * this % taken_width))
+       do i = 1, size(this % taken_from)
+          if (this % taken_from(i) < 1 .or. .not. present(input_data)) then
+             error stop 'gti_chain: a block is handed the data its scheme reaches back over'
+          end if
+          if (this % taken_from(i) > size(input_data)) then
+             error stop 'gti_chain: a block is handed the data its scheme reaches back over'
+          end if
+          call input_data(this % taken_from(i)) % real_vector(one_datum)
+          handover((i - 1) * this % taken_width + 1:i * this % taken_width) = &
+               & one_datum(this % taken_at(i) + 1:this % taken_at(i) + this % taken_width)
+       end do
+    end if
+
+    if (this % over_nodes) then
+       if (allocated(handover)) then
+          call one_block(this % chain, this % at, this % tower, this % in_tower, this % scheme, &
+               & this % physics, this % degrees, this % first, this % last, this % stride, &
+               & this % dt, this % coarse_step, this % fraction, this % counted, this % design, &
+               & this % initial, achieved, left, this % nodes, &
+               & this % spatial_discretization_stencil, handover)
+       else
+          call one_block(this % chain, this % at, this % tower, this % in_tower, this % scheme, &
+               & this % physics, this % degrees, this % first, this % last, this % stride, &
+               & this % dt, this % coarse_step, this % fraction, this % counted, this % design, &
+               & this % initial, achieved, left, this % nodes, this % spatial_discretization_stencil)
+       end if
+    else
+       if (allocated(handover)) then
+          call one_block(this % chain, this % at, this % tower, this % in_tower, this % scheme, &
+               & this % physics, this % degrees, this % first, this % last, this % stride, &
+               & this % dt, this % coarse_step, this % fraction, this % counted, this % design, &
+               & this % initial, achieved, left, handover=handover)
+       else
+          call one_block(this % chain, this % at, this % tower, this % in_tower, this % scheme, &
+               & this % physics, this % degrees, this % first, this % last, this % stride, &
+               & this % dt, this % coarse_step, this % fraction, this % counted, this % design, &
+               & this % initial, achieved, left)
+       end if
+    end if
+    state = stored_field('state', input_graph % vertex_set(), &
+         & size(this % chain(this % at) % state))
+    call state % set_real_vector(this % chain(this % at) % state)
+    call emit(state, output)
+  end subroutine block_rule_apply
+
   subroutine one_block(chain, b, tower, in_tower, scheme, physics, degrees, first, last, &
        & stride, dt, coarse_step, fraction, counted, design, initial, achieved, left, nodes, &
-       & spatial_discretization_stencil)
+       & spatial_discretization_stencil, handover)
     type(chain_block)     , intent(inout) :: chain(:)
     type(expansion)       , intent(in), target :: tower
     integer               , intent(in)    :: b, in_tower, degrees, first, last, stride
@@ -3694,6 +4243,7 @@ contains
     type(imbalance)       , intent(out)   :: left
     integer      , intent(in), optional   :: nodes
     type(stencil), intent(in), optional   :: spatial_discretization_stencil
+    real(dp)     , intent(in), optional   :: handover(:)
     real(dp), allocatable :: held(:)
     chain(b) % first    = first
     chain(b) % last     = last
@@ -3711,7 +4261,15 @@ contains
     chain(b) % coarse_step = coarse_step
     chain(b) % fraction    = fraction
     chain(b) % counted     = counted
-    if (b == 1) then
+    ! WHAT IS HANDED TO THIS BLOCK. The first block is handed the
+    ! initial state; every other is handed the instants its scheme
+    ! reaches back over, taken from whichever earlier block holds
+    ! each. A caller that already has the handover gives it, and then
+    ! nothing here reads the chain at all - that argument is the cut
+    ! between the data and the rule, and it is open on this side.
+    if (present(handover)) then
+       held = handover
+    else if (b == 1) then
        if (size(initial) /= chain(b) % given * chain(b) % width) then
           error stop 'gti_chain: the initial state holds the first block''s given instants'
        end if
@@ -4753,7 +5311,7 @@ module gti_demos
   use operation_coupling    , only : weights_of, coupling_inputs
   use operation_weight      , only : scheme_weight
   use operation_expression  , only : expression
-  use gti_physics           , only : van_der_pol, van_der_pol_energy, van_der_pol_dissipation
+  use gti_physics           , only : van_der_pol, van_der_pol_null_spatial, van_der_pol_energy, van_der_pol_dissipation
   use operation_minimization, only : relative, by_rate
   use gti_expansion         , only : expansion, family_holder
   use gti_block             , only : block_residual
@@ -7435,10 +7993,10 @@ program graph_time_integrator
   use operation_family_bdf  , only : bdf_family
   use operation_family_adams, only : adams_family
   use operation_grid        , only : uniform_grid, random_grid, designed_grid, fixed_grid
-  use operation_expression  , only : expression
-  use gti_physics           , only : van_der_pol, van_der_pol_energy
+  use operation_expression  , only : expression, stated_over
+  use gti_physics           , only : van_der_pol, van_der_pol_null_spatial, van_der_pol_energy
   use operation_grid        , only : grid
-  use gti_march             , only : set_stopping, imbalance, set_sweep, weight_of, precision_needed
+  use gti_march             , only : set_stopping, imbalance, set_space_coupling, set_time_coupling, weight_of, precision_needed
   use gti_adaptive          , only : adaptive_partition
   use operation_family_dirk , only : crouzeix_three_stage
   use operation_stencil     , only : stencil
@@ -7452,7 +8010,8 @@ program graph_time_integrator
        & expansion_substitutions, chain_stamps, num_designs_of, &
        & instant_components, chain_derivative, asymmetry, sink_costates, &
        & goal_oriented_partition
-  use gti_sweeps            , only : set_linear_solver, set_assembly, set_storage, set_multigrid, &
+  use gti_sweeps            , only : set_linear_solver, set_jacobian, set_storage, set_multigrid, &
+       & set_rows, set_elimination, &
        & set_coarse_nodes, set_linear_budget, set_newton_order
   use gti_sweeps            , only : route_of, forward_route, reverse_route
   use operation_minimization, only : relative, absolute, by_count, by_rate
@@ -7485,10 +8044,13 @@ program graph_time_integrator
   call show(cfg)
   call set_linear_solver(cfg % linear_solver)
   call set_newton_order(cfg % higher_order_jacobian_product)
-  call set_assembly(cfg % assembly)
+  call set_jacobian(cfg % jacobian)
+  call set_rows(cfg % rows)
+  call set_elimination(cfg % elimination)
   call set_storage(cfg % storage)
   call set_multigrid(cfg % multigrid)
-  call set_sweep(cfg % sweep)
+  call set_space_coupling(cfg % space)
+  call set_time_coupling(cfg % time)
   call field_context(cfg)
   call chosen_functionals(cfg)
   call table(cfg)
@@ -7538,6 +8100,7 @@ contains
     real(dp), allocatable :: q(:)
     character(len=:), allocatable :: line
     character(len=18) :: cell
+    character(len=12) :: counted
     integer :: i
     q = q0(1:cfg % state_degree + 1)
     line = '   initial state, consistent'
@@ -7545,8 +8108,10 @@ contains
        write(cell,'(es18.10)') q(i)
        line = line // cell
     end do
-    if (over_field) write(cell,'(a,i0)') '   at node 1 of ', nodes
-    if (over_field) line = line // trim(cell)
+    if (over_field) then
+       write(counted,'(i0)') nodes
+       line = line // '   at node 1 of ' // trim(counted)
+    end if
     write(*,'(a)') line
   end subroutine shown_initial
   subroutine heading(cfg)
@@ -7636,6 +8201,38 @@ contains
          & left % steepest_slot, ' degree ', left % steepest_degree, &
          & ', d||r||/dq = ', left % steepest
   end subroutine shown_aspect
+  !===================================================================!
+  ! The law the run marches. One place names it, so every march, every
+  ! tangent and every adjoint reads the same statement.
+  !===================================================================!
+  function physics_of(cfg) result(r)
+    type(configuration), intent(in) :: cfg
+    type(expression) :: r
+    if (trim(cfg % physics) == 'vanderpol-null-space') then
+       r = van_der_pol_null_spatial(cfg % state_degree)
+    else
+       r = van_der_pol(cfg % state_degree)
+    end if
+  end function physics_of
+  !===================================================================!
+  ! The coordinates the run's state is declared over, read from the
+  ! law it marches. Every other rule the run evaluates - a functional,
+  ! a measure - is declared over the same, since all of them read the
+  ! same state.
+  !===================================================================!
+  function state_degrees_of(cfg) result(degrees)
+    type(configuration), intent(in) :: cfg
+    integer, allocatable :: degrees(:)
+    type(expression) :: law
+    integer :: beside
+    law    = physics_of(cfg)
+    beside = law % num_components() - (law % equation_degree() + 1)
+    if (beside > 0) then
+       degrees = [law % equation_degree(), beside]
+    else
+       degrees = [law % equation_degree()]
+    end if
+  end function state_degrees_of
   subroutine one_row(cfg, names, orders, printed)
     type(configuration), intent(in)    :: cfg
     character(len=*)   , intent(in)    :: names(:)
@@ -7663,17 +8260,17 @@ contains
     call tally_order(0)
     if (grid_designed) then
        weights = dt(2:cfg % instants)
-       call march_chain(schemes, added, van_der_pol(cfg % state_degree), nd, &
+       call march_chain(schemes, added, physics_of(cfg), nd, &
             & designed_grid(cfg % time_duration), cfg % design, q0, chain, tower, dt, t, &
             & achieved, grid_design=weights, left=left, nodes=nodes, spatial_discretization_stencil=spatial_discretization_stencil, &
             & startup=cfg % startup_refinement)
     else if (grid_adaptive) then
-       call march_chain(schemes, added, van_der_pol(cfg % state_degree), nd, &
+       call march_chain(schemes, added, physics_of(cfg), nd, &
             & fixed_grid(adaptive_weights), cfg % design, q0, chain, tower, dt, t, achieved, &
             & left=left, nodes=nodes, spatial_discretization_stencil=spatial_discretization_stencil, &
             & startup=cfg % startup_refinement)
     else
-       call march_chain(schemes, added, van_der_pol(cfg % state_degree), nd, &
+       call march_chain(schemes, added, physics_of(cfg), nd, &
             & chosen_grid(cfg), cfg % design, q0, chain, tower, dt, t, achieved, left=left, &
             & nodes=nodes, spatial_discretization_stencil=spatial_discretization_stencil, startup=cfg % startup_refinement)
     end if
@@ -7810,6 +8407,7 @@ contains
     allocate(functionals(size(names)))
     do i = 1, size(names)
        call functional_named(trim(names(i)), cfg % state_degree, functionals(i), ok)
+       if (ok) functionals(i) = stated_over(functionals(i), state_degrees_of(cfg), functionals(i) % name())
     end do
   end subroutine chosen_functionals
   subroutine against_the_ode(cfg, schemes, added, f_field)
@@ -7826,7 +8424,7 @@ contains
     character(len=20) :: cell
     nd   = cfg % state_degree + 1
     area = sum(volume)
-    call march_chain(schemes, added, van_der_pol(cfg % state_degree), nd, chosen_grid(cfg), &
+    call march_chain(schemes, added, physics_of(cfg), nd, chosen_grid(cfg), &
          & cfg % design, q0(1:nd), chain, tower, dt, t, achieved, startup=cfg % startup_refinement)
     call chain_expansion(chain, tower, functionals, nd, ubound(f_field, 1), f)
     line = '      field / area over the node, less one:'
@@ -7857,6 +8455,7 @@ contains
   end subroutine exported
   subroutine field_context(cfg)
     type(configuration), intent(in) :: cfg
+    type(expression) :: law
     real(dp) :: x, y, began
     integer  :: n1, n2
     call refuse_unknown(cfg % initial_field, ['constant', 'mode    ', 'bump    '], 'initial_field')
@@ -7895,7 +8494,10 @@ contains
        nodes  = 1
        volume = [1.0_dp]
     end if
-    q0 = initial_field(van_der_pol(cfg % state_degree), cfg % state_degree + 1, &
+    ! the seed carries one value per component the rule reads, which
+    ! the rule itself states
+    law = physics_of(cfg)
+    q0 = initial_field(law, law % num_components(), &
          & cfg % initial_field, cfg % initial_state, cfg % design, &
          & spatial_discretization_stencil=spatial_discretization_stencil, space=space, a=extent_a, b=extent_b)
   end subroutine field_context
@@ -7944,12 +8546,12 @@ contains
     nd = cfg % state_degree + 1
     if (trim(cfg % adaptive_gate) == 'goal_oriented') then
        adaptive_weights = goal_oriented_partition(crouzeix_three_stage(), &
-            & van_der_pol(cfg % state_degree), van_der_pol_energy(cfg % state_degree), nd, &
+            & physics_of(cfg), van_der_pol_energy(cfg % state_degree), nd, &
             & cfg % time_duration, q0(1:cfg % state_degree), cfg % design, cfg % tolerance, &
             & trim(cfg % tolerance_criterion) == 'relative', rejects)
     else
        adaptive_weights = adaptive_partition(crouzeix_three_stage(), 4, &
-            & van_der_pol(cfg % state_degree), nd, cfg % time_duration, &
+            & physics_of(cfg), nd, cfg % time_duration, &
             & q0(1:cfg % state_degree), cfg % design, cfg % tolerance, &
             & trim(cfg % tolerance_criterion) == 'relative', rejects)
     end if
@@ -7978,7 +8580,7 @@ contains
     type(configuration), intent(inout) :: cfg
     real(dp), allocatable :: dt(:), t(:)
     integer :: widest, printed
-    call refuse_unknown(cfg % physics, ['vanderpol'], 'physics')
+    call refuse_unknown(cfg % physics, ['vanderpol           ', 'vanderpol-null-space'], 'physics')
     call refuse_unknown(cfg % tolerance_criterion, ['relative', 'absolute'], &
          & 'tolerance_criterion')
     call refuse_unknown(cfg % iteration_criterion, ['by_rate ', 'by_count'], &

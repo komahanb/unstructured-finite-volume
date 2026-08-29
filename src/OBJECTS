@@ -47,7 +47,6 @@ operation_advection.o \
 operation_stencil.o \
 operation_scheme_stencil.o \
 operation_grid.o \
-operation_step.o \
 operation_linearization.o \
 operation_chain_rule.o \
 field_forms.o \
@@ -70,8 +69,8 @@ operation_jacobi.o \
 operation_gmres.o \
 operation_newton.o \
 operation_multigrid.o \
-operation_step_policy.o \
-operation_marching.o \
+view_read_write.o \
+operation_driver.o \
 util_verbosity.o \
 util_file.o \
 view_mesh_geometry.o \

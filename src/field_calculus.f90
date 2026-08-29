@@ -62,7 +62,7 @@ module field_calculus
   public :: field
   public :: functional
   public :: FIELD_INTEGER, FIELD_REAL, FIELD_COMPLEX
-  public :: FIELD_LOGICAL, FIELD_CHARACTER
+  public :: FIELD_LOGICAL, FIELD_CHARACTER, FIELD_NONE
 
   !===================================================================!
   ! The five value kinds: one absorbed axis, as ever.
@@ -71,6 +71,9 @@ module field_calculus
   integer, parameter :: FIELD_INTEGER   = 1
   integer, parameter :: FIELD_REAL      = 2
   integer, parameter :: FIELD_COMPLEX   = 3
+  ! A field that has never been set holds no kind. The absence is a
+  ! member of the enumeration, not a default standing in for one.
+  integer, parameter :: FIELD_NONE      = 0
   integer, parameter :: FIELD_LOGICAL   = 4
   integer, parameter :: FIELD_CHARACTER = 5
 
@@ -117,6 +120,7 @@ module field_calculus
      procedure :: integer_vector       => field_integer_vector
      procedure :: set_integer_vector   => field_set_integer_vector
      procedure :: real_vector          => field_real_vector
+     procedure :: real_values          => field_real_values
      procedure :: set_real_vector      => field_set_real_vector
      procedure :: complex_vector       => field_complex_vector
      procedure :: set_complex_vector   => field_set_complex_vector
@@ -287,8 +291,10 @@ contains
 
     class(field), intent(in) :: this
 
-    kind = FIELD_REAL
+    kind = FIELD_NONE
     if (.not. allocated(this % values)) return
+
+    kind = FIELD_REAL
 
     select type (held => this % values)
     type is (integer)
@@ -320,7 +326,40 @@ contains
        error stop 'field: a value vector must fill its domain exactly'
     end if
 
-    if (allocated(this % values)) deallocate(this % values)
+    ! a store of the same kind and length is written in place: the
+    ! deallocate-allocate pair costs the heap twice, and a polymorphic
+    ! copy moves the values one at a time through the type's own copy
+    if (allocated(this % values)) then
+       if (size(this % values) == size(values)) then
+          select type (held => this % values)
+          type is (real(dp))
+             select type (values)
+             type is (real(dp))
+                held = values
+                return
+             end select
+          type is (integer)
+             select type (values)
+             type is (integer)
+                held = values
+                return
+             end select
+          type is (complex(dp))
+             select type (values)
+             type is (complex(dp))
+                held = values
+                return
+             end select
+          type is (logical)
+             select type (values)
+             type is (logical)
+                held = values
+                return
+             end select
+          end select
+       end if
+       deallocate(this % values)
+    end if
     allocate(this % values, source=values)
 
   end subroutine hold
@@ -355,6 +394,28 @@ contains
     call this % hold(values)
 
   end subroutine field_set_integer_vector
+
+  !===================================================================!
+  ! The held reals themselves, without a copy. A field of another kind
+  ! answers null, which is the same signal the zero-length getter
+  ! gives. The result points into the field, so it is valid only while
+  ! the field is unchanged.
+  !===================================================================!
+
+  function field_real_values(this) result(held_values)
+
+    class(field), intent(in), target :: this
+    real(dp), pointer :: held_values(:)
+
+    held_values => null()
+    if (allocated(this % values)) then
+       select type (held => this % values)
+       type is (real(dp))
+          held_values => held
+       end select
+    end if
+
+  end function field_real_values
 
   pure subroutine field_real_vector(this, values)
 

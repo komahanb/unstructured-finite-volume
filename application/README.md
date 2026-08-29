@@ -1,3 +1,117 @@
+
+
+$R$ is the imbalance in physical constraints governing a system.
+
+The linear system
+
+$\left[ \frac{d R}{d Q} \right] \Delta Q = -R(Q)$
+
+is solved repeatedly until $R(Q) = 0$.
+
+Here $Q := Q(\nu)$, and $R:= R(Q(\nu); \nu)$ and $F:= F(Q(\nu); \nu)$, where these are $C^n$ with respect to $\nu$.
+
+The augmented Lagrangian is $\mathcal{L} = F(Q) + \lambda(Q) \cdot R(Q)$ is a functional in $\mathcal{Q}$ domain. 
+
+Differentiating it with respect to $\nu$ yields the relation
+
+$\frac{d \mathcal{L}}{d \nu} = \frac{d F}{d \nu} + \lambda \cdot \frac{d R}{d \nu} + \frac{d \lambda}{d \nu} \cdot R$
+
+Differentiating one more time with respect to $\nu$ yields the relation
+
+$$\frac{d^2 \mathcal{L}}{d\nu^2} = \frac{d^2 F}{d \nu^2} + \lambda \cdot \frac{d^2 R}{d \nu^2} + 2\frac{d \lambda}{d \nu} \cdot \frac{d R}{d \nu} + \frac{d^2 \lambda}{d \nu^2} \cdot R$$
+
+Differentiating one more time with respect to $\nu$ yields the relation
+
+$$\frac{d^3 \mathcal{L}}{d\nu^3} = \frac{d^3 F}{d \nu^3} + \lambda \cdot \frac{d^3 R}{d \nu^3} + 3\frac{d \lambda}{d \nu} \cdot \frac{d^2 R}{d \nu^2} + 3\frac{d^2 \lambda}{d \nu^2} \cdot \frac{d R}{d \nu} + \frac{d^3 \lambda}{d \nu^3} \cdot R$$
+
+Differentiating one more time with respect to $\nu$ yields the relation
+
+$$\frac{d^4 \mathcal{L}}{d\nu^4} = \frac{d^4 F}{d \nu^4} + \lambda \cdot \frac{d^4 R}{d \nu^4} + 4\frac{d \lambda}{d \nu} \cdot \frac{d^3 R}{d \nu^3} + 6\frac{d^2 \lambda}{d \nu^2} \cdot \frac{d^2 R}{d \nu^2} + 4\frac{d^3 \lambda}{d \nu^3} \cdot \frac{d R}{d \nu} + \frac{d^4 \lambda}{d \nu^4} \cdot R$$
+
+The recurrence is written in compact form as 
+
+$$\frac{d^n \mathcal{L}}{d\nu^n} = \frac{d^n F}{d \nu^n} + \sum_{k=0}^{n} \binom{n}{k} \frac{d^k \lambda}{d \nu^k} \cdot \frac{d^{n-k} R}{d \nu^{n-k}}$$
+
+where the the term $\frac{d^n(\lambda \cdot R)}{d\nu^n}$ admits binomial expansion as $\sum_{k=0}^{n} \binom{n}{k} \frac{d^k \lambda}{d \nu^k} \cdot \frac{d^{n-k} R}{d \nu^{n-k}}.$ There are $n+1$ coefficients, and for each coefficient the term's sum total of the degrees would equal $n$.
+
+
+
+Generic Chain Rule Structure (Faà di Bruno's Formula):
+
+For $u = u(Q(\nu))$ depending on $\nu$ only through $Q$:
+
+$$\frac{d^n u}{d\nu^n} = \sum_{m=1}^{n} \frac{\partial^m u}{\partial Q^m} \cdot B_{n,m}\left(\frac{dQ}{d\nu}, \frac{d^2Q}{d\nu^2}, \ldots, \frac{d^{n-m+1}Q}{d\nu^{n-m+1}}\right)$$
+
+where $B_{n,m}$ are partial Bell polynomials (encode all multivariate partitions of $n$ into $m$ parts).
+
+---
+
+Specialization to $\lambda(Q(\nu))$:
+
+Since $\lambda$ has implicit dependence only:
+
+$$\frac{d^k\lambda}{d\nu^k} = \sum_{m=1}^{k} \frac{\partial^m\lambda}{\partial Q^m} \cdot B_{k,m}\left(\dot{Q}, \ddot{Q}, \ldots, Q^{(k-m+1)}\right)$$
+
+Each Bell term $B_{k,m}$ expands into a sum of products of $Q$-derivatives, weighted by multinomial coefficients. For example:
+- $B_{k,1} = Q^{(k)}$ (pure $k$-th derivative of $Q$)
+- $B_{k,2} = \sum_{\text{partitions of } k \text{ into 2}} \text{(product of two } Q\text{-derivatives)}$
+
+---
+
+Specialization to $R(Q(\nu); \nu)$:
+
+Since $R$ has implicit + explicit dependence:
+
+$$\frac{d^{n-k}R}{d\nu^{n-k}} = \underbrace{\sum_{j=0}^{n-k} \binom{n-k}{j}\frac{\partial^j R}{\partial \nu^j}}{\text{explicit derivatives}} + \underbrace{\sum{m=1}^{n-k} \sum_{j=0}^{n-k-m} \binom{n-k-m}{j} \left[\frac{\partial^m R}{\partial Q^m}\frac{\partial^j R}{\partial \nu^j}\right] B_{n-k-m,m}\left(\dot{Q}, \ddot{Q}, \ldots\right)}_{\text{mixed: implicit chain rule on mixed partials}}$$
+
+Two layers:
+1. Pure explicit: $\frac{\partial^j R}{\partial \nu^j}$ (holding $Q$ fixed)
+2. Implicit chain rule: Bell polynomials applied to $\frac{\partial^m R}{\partial Q^m}$ (and mixed partials $\frac{\partial^m R}{\partial Q^m \partial \nu^j}$)
+
+---
+
+Within the binomial:
+
+When you substitute into the recurrence:
+
+$$\frac{d^n\mathcal{L}}{d\nu^n} = \frac{d^nF}{d\nu^n} + \sum_{k=0}^{n}\binom{n}{k} \left[\text{Bell-expanded } \frac{d^k\lambda}{d\nu^k}\right] \left[\text{Bell-expanded } \frac{d^{n-k}R}{d\nu^{n-k}}\right]$$
+
+Each product in the binomial is a full cross-product of the two Bell expansions—that's where the additional complexity comes from.
+
+The formulas are correct if and only if you're accounting for the $Q(\nu)$ dependence implicitly. Given $R(Q(\nu); \nu) = 0$ on the solution path (constraint satisfied at each $\nu$), the total derivative is:
+
+$$\frac{dR}{d\nu} = \frac{\partial R}{\partial Q}\frac{dQ}{d\nu} + \frac{\partial R}{\partial \nu} = 0$$
+
+By the implicit function theorem:
+
+$$\frac{dQ}{d\nu} = -\left[\frac{\partial R}{\partial Q}\right]^{-1}\frac{\partial R}{\partial \nu}$$
+
+Now, if your $\lambda(Q)$ satisfies an optimality condition that makes the bracket term $\left[\frac{\partial F}{\partial Q} + \lambda \frac{\partial R}{\partial Q}\right] = 0$ (stationarity), then this term vanishes and doesn't contribute to $\frac{d\mathcal{L}}{d\nu}$, leaving only the explicit partials.
+
+Question: Are you implicitly assuming that $\lambda$ is the adjoint/costate satisfying optimality at each $\nu$? If so, state that explicitly: it's the key assumption that makes the recurrence work as written. Without it, the chain rule would leave hidden $\frac{dQ}{d\nu}$ terms inside the apparent "explicit" partials.
+
+Alternatively, if $Q(\nu)$ is externally prescribed (not determined by $R$), then the question is moot: but then $R(Q(\nu); \nu)$ is not generally zero.
+
+
+
+
+
+
+
+Yes—using $\frac{d}{d\nu}$ throughout makes the formulas accurate at the formal level. The Leibniz rule then applies directly:
+
+$$\frac{d^n\mathcal{L}}{d\nu^n} = \frac{d^nF}{d\nu^n} + \sum_{k=0}^{n}\binom{n}{k}\frac{d^k\lambda}{d\nu^k}\frac{d^{n-k}R}{d\nu^{n-k}}$$
+
+Critical caveat: When you evaluate each term, you must recursively apply the chain rule to handle $Q(\nu)$ dependence. For example:
+
+$$\frac{d^2F}{d\nu^2} = \frac{\partial^2F}{\partial Q^2}\left(\frac{dQ}{d\nu}\right)^2 + \frac{\partial F}{\partial Q}\frac{d^2Q}{d\nu^2} + 2\frac{\partial^2F}{\partial Q\partial\nu}\frac{dQ}{d\nu} + \frac{\partial^2F}{\partial\nu^2}$$
+
+The hidden chain-rule terms (involving $\frac{dQ}{d\nu}$ and $\frac{d^2Q}{d\nu^2}$) are implicit in the notation but must be computed.
+
+Simplification: If you're on the constraint manifold where $R(Q(\nu); \nu) \equiv 0$ identically, then $\frac{d^nR}{d\nu^n} = 0$ for all $n$, and the recurrence reduces to just:
+
+$$\frac{d^n\mathcal{L}}{d\nu^n} = \frac{d^nF}{d\nu^n}$$
+
 # The graph time integrator
 
 The main program, `graph_time_integrator`, is built from a single
@@ -364,6 +478,7 @@ no silently ignored word.
 | `uniform` | the same schemes on the uniform partition |
 | `linear` | the linear physics of a spatial field |
 | `field` | a two-dimensional field: mesh, operator, march |
+| `visual` | that field on a mesh resolved for paraview, the state alone |
 | `accounting` | the cost of each derivative order, measured |
 
 ## The objects of a run, and the keys that state them
@@ -474,8 +589,15 @@ mapping pushes the parametric measure forward into cell volumes. The
 operator side follows its own arrow, as always: the diffusion operator
 is a fitted polynomial balance of degree `spatial_order` with
 conductivity `diffusion`, bound to that mesh.
-`sweep = space-time | time | space` solves each block whole, instant
-by instant, or node by node to a fixed point.
+`space = coupled | sequential` and `time = coupled | sequential` state
+the two dimensions apart. A coupled dimension keeps every member in
+one system; a sequential one solves the members in turn, time in the
+order its own discretisation couples the moments. Coupled in both is
+the whole block at once; coupled in space and sequential in time is
+the implicit march, one instant at a time, and is the default.
+Sequential in time is exact rather than approximate: the scheme reads
+only earlier moments, so solving them in order answers what solving
+them together answers.
 `export = paraview` writes one `.vtu` per instant to `export_path`.
 
 **Accounting.** `accounting = T` files what the run spends -

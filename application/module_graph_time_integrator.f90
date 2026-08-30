@@ -17,6 +17,28 @@ module gti_configuration
      character(len=32) :: grid         = 'random'
      character(len=32) :: combinations = '1'
 
+     ! HOW AN ORDER OF ACCURACY IS READ OFF REFINED GRIDS. The coarsest
+     ! grid carries coarsest_instants per window; each grid after it
+     ! carries refinement_ratio times the last, rounded to a whole
+     ! number of instants; and all of them are measured against a
+     ! reference reference_refinement beyond the finest.
+     !
+     ! THE RATIO NEED NOT BE TWO, and reading the same order at two
+     ! different ratios is the evidence that a reading is asymptotic
+     ! rather than an accident of where the grids fell.
+     real(dp) :: refinement_ratio     = 2.0_dp
+     integer  :: refinement_grids     = 4
+     integer  :: coarsest_instants    = 10
+     real(dp) :: reference_refinement = 4.0_dp
+
+     ! HOW FAR A READING MAY FALL AND STILL BE THE ORDER, and how far
+     ! the pairwise readings may disagree and still be one power of h.
+     ! Grids coarse enough to afford do not settle a high order to two
+     ! decimal places, and both of these say how much of that a reader
+     ! is willing to allow.
+     real(dp) :: order_tolerance      = 0.5_dp
+     real(dp) :: spread_tolerance     = 1.0_dp
+
      ! ONE CHAIN, NAMED OUTRIGHT. A window per word, each a family and
      ! the order asked of it, so `bdf:2 dirk:3 adams:3 bdf:2` is a
      ! chain of four windows. Any length is admitted, and a family may
@@ -157,6 +179,18 @@ contains
        cfg % combinations = value
     case ('chain')
        cfg % chain = value
+    case ('refinement_ratio')
+       read(value, *) cfg % refinement_ratio
+    case ('refinement_grids')
+       read(value, *) cfg % refinement_grids
+    case ('coarsest_instants')
+       read(value, *) cfg % coarsest_instants
+    case ('reference_refinement')
+       read(value, *) cfg % reference_refinement
+    case ('order_tolerance')
+       read(value, *) cfg % order_tolerance
+    case ('spread_tolerance')
+       read(value, *) cfg % spread_tolerance
     case ('families')
        cfg % families = value
     case ('state_degree')
@@ -5387,9 +5421,15 @@ contains
        if (index(argument, '--config=') == 1) name = trim(argument(10:))
     end do
     call read_configuration(name, cfg)
+    ! WHICH ARGUMENTS NAME A SETTING. Those that select what to run
+    ! rather than how do not: the configuration read, and the
+    ! demonstration asked for, are answered elsewhere and would be
+    ! refused here as settings that do not exist.
     do i = 1, command_argument_count()
        call get_command_argument(i, argument)
        if (index(argument, '--config=') == 1) cycle
+       if (index(argument, '--demo=')   == 1) cycle
+       if (trim(argument) == '--list-demos') cycle
        call override(cfg, argument)
     end do
   end subroutine settings
@@ -5532,7 +5572,8 @@ module gti_demos
   use gti_chain             , only : chain_incidence
   use operation_driver      , only : rule_graph, data_graph, pairing
   use gti_sweeps            , only : route_of, forward_route, reverse_route
-  use gti_driver            , only : clock, cosine, dense_jacobian, family_named
+  use gti_driver            , only : clock, cosine, dense_jacobian, family_named, settings
+  use gti_configuration     , only : configuration
   use view_read_write       , only : bipartite_digraph, FIRST_PART, SECOND_PART
   use operation_driver      , only : driver
   use view_directed         , only : forward
@@ -6073,19 +6114,35 @@ contains
   subroutine demo_order_of_accuracy()
 
     implicit none
-    integer , parameter :: state_degree = 2
-    integer , parameter :: degrees   = state_degree + 1
-    integer , parameter :: max_order = 6      ! derivative degrees 0 through 6
-    real(dp), parameter :: duration  = 2.0_dp
-    integer , parameter :: per_window = 10    ! instants per window, coarsest grid
-    integer , parameter :: grids      = 3     ! grids measured, each double the last
-    integer , parameter :: finer      = 4     ! the reference, against the finest
+    type(configuration) :: cfg
+    integer  :: state_degree, degrees, max_order, per_window, grids
+    real(dp) :: duration, ratio, finer
 
-    ! An observed order this far below the formal one is still read as
-    ! keeping it. Grids this coarse do not settle a fourth-order
-    ! tableau to two decimal places, and the question here is whether
-    ! the order survives the chaining, not what its last digit is.
-    real(dp), parameter :: allowed = 0.5_dp
+    real(dp) :: allowed, settled
+
+    ! THE GRIDS ARE THE CONFIGURATION'S, so a reader may change the
+    ! refinement ratio and read the same table again. An order that
+    ! moves when the ratio does was never asymptotic.
+    call settings('order_of_accuracy', cfg)
+    state_degree = cfg % state_degree
+    degrees      = state_degree + 1
+    max_order    = cfg % max_derivative_degree
+    duration     = cfg % time_duration
+    per_window   = cfg % coarsest_instants
+    grids        = cfg % refinement_grids
+    ratio        = cfg % refinement_ratio
+    finer        = cfg % reference_refinement
+    allowed      = cfg % order_tolerance
+    settled      = cfg % spread_tolerance
+    if (ratio <= 1.0_dp) then
+       error stop 'gti_demos: a refinement ratio is above one'
+    end if
+    if (grids < 3) then
+       error stop 'gti_demos: three grids at least, or no spread can be read'
+    end if
+    if (finer <= 1.0_dp) then
+       error stop 'gti_demos: a reference grid is finer than the finest measured'
+    end if
 
     write(*,'(a)') ' '
     write(*,'(a)') ' DOES CHAINING DIFFERENT SCHEMES KEEP THE ORDER OF ACCURACY?'
@@ -6117,15 +6174,29 @@ contains
     write(*,'(a)') ' '
     write(*,'(a)') ' HOW THE OBSERVED ORDER IS MEASURED'
     write(*,'(a,i0,a,i0,a)') '   Each chain is marched on ', grids, &
-         & ' grids, doubling from ', per_window, ' instants per window,'
-    write(*,'(a,i0,a)') '   and compared against a reference grid ', finer, &
+         & ' grids, the coarsest carrying ', per_window, ' instants per window,'
+    write(*,'(a,f0.3,a)') '   each grid after it ', ratio, ' times the last,'
+    write(*,'(a,f0.2,a)') '   and all of them against a reference grid ', finer, &
          & ' times finer than the finest.'
-    write(*,'(a)') '   Halving h should shrink the error by 2**p, so p is read back as log2'
-    write(*,'(a)') '   of the ratio of successive errors, once for each derivative degree r.'
+    write(*,'(a)') '   An error that is one power of h obeys e = C h**q, so log e falls'
+    write(*,'(a)') '   along a straight line against log N, of slope -q. The order printed'
+    write(*,'(a)') '   is that slope fitted by least squares over every grid at once,'
+    write(*,'(a)') '   separately for each derivative degree r.'
+    write(*,'(a)') '   Beside it is the spread of the readings taken pair by pair. Where'
+    write(*,'(a)') '   the error really is one power they all agree and the spread is near'
+    write(*,'(a)') '   zero. Where a leading coefficient changes sign inside the range of'
+    write(*,'(a)') '   grids the error passes through zero, the points leave the line, and'
+    write(*,'(a)') '   the spread says so instead of letting a meaningless slope pass.'
     write(*,'(a)') '   Every window keeps its share of the horizon as the grid refines, so'
     write(*,'(a)') '   no window boundary moves and the reading is of the schemes.'
-    write(*,'(a,f4.2,a)') '   An observed order within ', allowed, ' of p is read as reaching p.'
-    write(*,'(a)') '   A dash means the error reached round-off, and no order can be read.'
+    write(*,'(a,f4.2,a)') '   An order within ', allowed, ' of p is read as reaching p, and a'
+    write(*,'(a,f4.2,a)') '   spread above ', settled, ' is read as no single power, printed "?".'
+    write(*,'(a)') '   A dash means an error reached round-off, and no order can be read.'
+    write(*,'(a)') ' '
+    write(*,'(a)') '   THE RATIO IS THE CONFIGURATION''S. Reading the same order at a second'
+    write(*,'(a)') '   ratio is what shows the reading is the scheme''s order rather than an'
+    write(*,'(a)') '   accident of where the grids fell:'
+    write(*,'(a)') '     --demo=order_of_accuracy --refinement_ratio=1.618 --refinement_grids=5'
     write(*,'(a)') ' '
     write(*,'(a)') ' WHY THE FAMILIES ARE GROUPED'
     write(*,'(a)') '   The time functional is integrated over each step by the points the'
@@ -6225,66 +6296,153 @@ contains
       integer            , intent(in) :: formal(:)
       type(family_holder), intent(in) :: schemes(:)
       real(dp), allocatable :: f(:), reference(:)
-      real(dp) :: apart(grids, 0:max_order), observed(0:max_order)
+      real(dp), allocatable :: apart(:,:), counts(:)
+      real(dp) :: fitted(0:max_order), spread(0:max_order)
       logical  :: readable(0:max_order)
-      character(len=:), allocatable :: line, orders, verdicts
+      character(len=:), allocatable :: line, orders, spreads, verdicts
       character(len=16) :: cell
-      integer :: g, m, windows, instants, expected, kept, counted
+      integer :: g, m, windows, instants, expected, kept, counted, reaches
+
       windows  = size(schemes)
       expected = minval(formal)
-      call on_grid(schemes, windows * per_window * finer * 2 ** (grids - 1), reference)
+
+      ! A WINDOW TOO SHORT FOR THE FAMILY STANDING AT IT cannot be
+      ! marched at all, and the coarsest grid is the one that decides.
+      ! A reader who lowers coarsest_instants is told which chains
+      ! fell out rather than being stopped.
+      reaches = 0
+      do g = 1, windows
+         reaches = max(reaches, schemes(g) % scheme % history_depth(degrees - 1))
+      end do
+      if (per_window <= reaches) then
+         write(*,'(a)') ' '
+         write(*,'(a,a,i0,a,i0,a)') '   ' // title, '   -   not read: the coarsest grid gives ', &
+              & per_window, ' instants per window and a family here reaches back over ', &
+              & reaches, '.'
+         write(*,'(a,i0,a)') '     raise coarsest_instants above ', reaches, ' to read this chain.'
+         return
+      end if
+
+      allocate(apart(grids, 0:max_order), counts(grids))
+
+      ! the grids, and the reference beyond the finest of them
       do g = 1, grids
-         instants = windows * per_window * 2 ** (g - 1)
+         counts(g) = real(windows * per_window, dp) * ratio ** (g - 1)
+      end do
+      call on_grid(schemes, nint(counts(grids) * finer), reference)
+      do g = 1, grids
+         instants = nint(counts(g))
+         counts(g) = real(instants, dp)
          call on_grid(schemes, instants, f)
          do m = 0, max_order
             apart(g, m) = abs(f(m) - reference(m))
          end do
          deallocate(f)
       end do
-      ! the order the finest pair of grids implies, which is the one
-      ! least troubled by the coarse end of the refinement
+
       do m = 0, max_order
-         readable(m) = apart(grids - 1, m) > 0.0_dp .and. apart(grids, m) > 0.0_dp
-         observed(m) = 0.0_dp
-         if (readable(m)) then
-            observed(m) = log(apart(grids - 1, m) / apart(grids, m)) / log(2.0_dp)
-         end if
+         readable(m) = all(apart(:, m) > 0.0_dp)
+         fitted(m)   = 0.0_dp
+         spread(m)   = 0.0_dp
+         if (readable(m)) call order_of_grids(counts, apart(:, m), fitted(m), spread(m))
       end do
-      kept    = count(readable .and. observed >= real(expected, dp) - allowed)
-      counted = count(readable)
+
+      kept    = count(readable .and. spread <= settled &
+           &          .and. fitted >= real(expected, dp) - allowed)
+      counted = count(readable .and. spread <= settled)
+
       write(*,'(a)') ' '
       write(*,'(a,a,i0,a,i0)') '   ' // title, &
            & '   -   scheme order p = ', expected, ', windows ', windows
       write(cell,'(i0)') expected
       line     = '     r, derivative degree of F in nu  '
-      orders   = '     observed order of accuracy in h  '
+      orders   = '     order fitted over the grids     '
+      spreads  = '     spread of pairwise readings     '
       verdicts = '     does it reach p = ' // trim(cell) // ' ?'
       verdicts = verdicts // repeat(' ', max(1, 38 - len(verdicts)))
       do m = 0, max_order
          write(cell,'(i7)') m
          line = line // cell(1:7)
-         if (readable(m)) then
-            write(cell,'(f7.2)') observed(m)
+         if (.not. readable(m)) then
+            orders   = orders   // '      -'
+            spreads  = spreads  // '      -'
+            verdicts = verdicts // '      -'
+         else
+            write(cell,'(f7.2)') fitted(m)
             orders = orders // cell(1:7)
-            if (observed(m) >= real(expected, dp) - allowed) then
+            write(cell,'(f7.2)') spread(m)
+            spreads = spreads // cell(1:7)
+            if (spread(m) > settled) then
+               verdicts = verdicts // '      ?'
+            else if (fitted(m) >= real(expected, dp) - allowed) then
                verdicts = verdicts // '    yes'
             else
                verdicts = verdicts // '     no'
             end if
-         else
-            orders   = orders   // '      -'
-            verdicts = verdicts // '      -'
          end if
       end do
       write(*,'(a)') line
       write(*,'(a)') orders
+      write(*,'(a)') spreads
       write(*,'(a)') verdicts
       write(cell,'(i0)') kept
       line = '     reaches p at ' // trim(cell) // ' of '
       write(cell,'(i0)') counted
-      line = line // trim(cell) // ' readable derivative degrees'
+      line = line // trim(cell) // ' derivative degrees where one power holds'
       write(*,'(a)') line
     end subroutine reading
+
+    !----------------------------------------------------------------!
+    ! THE ORDER A SET OF GRIDS IMPLIES, AND WHETHER ONE POWER OF h
+    ! EXPLAINS THEM.
+    !
+    ! An error that is a single power of the step satisfies
+    !
+    !        e = C h**q,   so   log e = log C - q log N
+    !
+    ! since h goes as 1/N. So a straight line through the points
+    ! (log N, log e) has slope -q, and the least squares slope over
+    ! every grid is the order. Reading it from all the grids at once
+    ! rather than from one pair is what keeps a single bad point from
+    ! carrying the answer.
+    !
+    ! WHETHER TO BELIEVE IT is a separate question, and the spread of
+    ! the pairwise readings answers it. Where the error really is one
+    ! power, every consecutive pair gives the same order and the
+    ! spread is near zero. Where a coefficient changes sign inside the
+    ! range of grids the error passes through zero, one point falls
+    ! far below the line, and the pairs disagree wildly - so a large
+    ! spread says the fit means nothing rather than letting it pass.
+    !
+    !     log e                    log e
+    !       |  .                     |  .
+    !       |     .                  |     .
+    !       |        .               |            .        <- crossing
+    !       |           .            |        .
+    !       +-------------- log N    +-------------- log N
+    !        one power, small spread   not one power, large spread
+    !----------------------------------------------------------------!
+
+    pure subroutine order_of_grids(counts, apart, fitted, spread)
+      real(dp), intent(in)  :: counts(:), apart(:)
+      real(dp), intent(out) :: fitted, spread
+      real(dp) :: x(size(counts)), y(size(counts)), pair(size(counts) - 1)
+      real(dp) :: mean_x, mean_y, top, bottom
+      integer  :: i, n
+      n = size(counts)
+      x = log(counts)
+      y = log(apart)
+      mean_x = sum(x) / real(n, dp)
+      mean_y = sum(y) / real(n, dp)
+      top    = sum((x - mean_x) * (y - mean_y))
+      bottom = sum((x - mean_x) ** 2)
+      fitted = 0.0_dp
+      if (bottom > 0.0_dp) fitted = -top / bottom
+      do i = 1, n - 1
+         pair(i) = -(y(i + 1) - y(i)) / (x(i + 1) - x(i))
+      end do
+      spread = maxval(pair) - minval(pair)
+    end subroutine order_of_grids
 
   end subroutine demo_order_of_accuracy
   subroutine demo_constraint_rows()
@@ -6342,17 +6500,39 @@ contains
       call governing_rows(physics, q, governing)
       call show_block(governing, residual, maxval(abs(residual - acted)))
     end subroutine derived_rows
+    !--------------------------------------------------------------!
+    ! The rows the family itself states, rather than a shape written
+    ! out here beside it: which degree each row reads, and how far
+    ! back, is the family's to say and not this demonstration's.
+    !--------------------------------------------------------------!
+
     subroutine scheme_reach(tails, heads, source_degree, determines)
       integer, allocatable, intent(out) :: tails(:), heads(:)
       integer, allocatable, intent(out) :: source_degree(:), determines(:)
-      integer :: j, k
-      tails = [((k - j, j = 0, order), k = order + 1, num_instants), &
-           &   ((k - j, j = 0, 2 * order), k = 2 * order + 1, num_instants)]
-      heads = [((k, j = 0, order), k = order + 1, num_instants), &
-           &   ((k, j = 0, 2 * order), k = 2 * order + 1, num_instants)]
-      determines = [((1, j = 0, order), k = order + 1, num_instants), &
-           &        ((2, j = 0, 2 * order), k = 2 * order + 1, num_instants)]
-      allocate(source_degree(size(tails)), source=0)
+      type(bdf_family) :: scheme
+      integer, allocatable :: offset(:), degrees_of(:)
+      integer :: d, k, e, counted, pass
+      scheme = bdf_family(order)
+      do pass = 1, 2
+         counted = 0
+         do d = 1, num_degrees - 1
+            call scheme % row_pattern(d, num_degrees - 1, offset, degrees_of)
+            if (size(offset) == 0) cycle
+            do k = maxval(offset) + 1, num_instants
+               do e = 1, size(offset)
+                  counted = counted + 1
+                  if (pass == 2) then
+                     tails(counted)         = k - offset(e)
+                     heads(counted)         = k
+                     source_degree(counted) = degrees_of(e)
+                     determines(counted)    = d
+                  end if
+               end do
+            end do
+         end do
+         if (pass == 1) allocate(tails(counted), heads(counted), &
+              & source_degree(counted), determines(counted))
+      end do
     end subroutine scheme_reach
     subroutine show_block(governing, residual, jacobian_gap)
       real(dp), intent(in) :: governing(:), residual(:), jacobian_gap
@@ -6530,13 +6710,16 @@ contains
     integer :: slices(num_instants), source_carrier, target_carrier
     integer :: relation_element, coupling, block
     integer :: j, k
+    ! both derived rows reach over order instants, the velocity's on
+    ! the value and the acceleration's on the velocity
     tails = [((k - j, j = 0, order), k = order + 1, num_instants), &
-         &   ((k - j, j = 0, 2 * order), k = 2 * order + 1, num_instants)]
+         &   ((k - j, j = 0, order), k = order + 1, num_instants)]
     heads = [((k, j = 0, order), k = order + 1, num_instants), &
-         &   ((k, j = 0, 2 * order), k = 2 * order + 1, num_instants)]
+         &   ((k, j = 0, order), k = order + 1, num_instants)]
     determines = [((1, j = 0, order), k = order + 1, num_instants), &
-         &        ((2, j = 0, 2 * order), k = 2 * order + 1, num_instants)]
-    allocate(source_degree(size(tails)), source=0)
+         &        ((2, j = 0, order), k = order + 1, num_instants)]
+    source_degree = [((0, j = 0, order), k = order + 1, num_instants), &
+         &           ((1, j = 0, order), k = order + 1, num_instants)]
     do k = 1, num_instants
        slices(k) = store % assemble([integer ::], 0)
     end do
@@ -6705,14 +6888,17 @@ contains
       integer, parameter :: last = 2 * order + 1
       real(dp), allocatable :: c(:)
       real(dp) :: h0, h1
+      ! both rows are the same difference operator, the velocity's on
+      ! the value and the acceleration's on the velocity, so both
+      ! reach over order instants and read the degree below their own
       call coefficients(bdf_family(order), last, &
-           & [(last - k, k = 0, order), (last - k, k = 0, 2 * order)], last, &
-           & [(0, k = 0, order), (0, k = 0, 2 * order)], &
-           & [(1, k = 0, order), (2, k = 0, 2 * order)], dt, c)
+           & [(last - k, k = 0, order), (last - k, k = 0, order)], last, &
+           & [(0, k = 0, order), (1, k = 0, order)], &
+           & [(1, k = 0, order), (2, k = 0, order)], dt, c)
       write(*,'(a)') ' '
       write(*,'(a)') ' bdf 2 on a ' // label // ' grid'
       write(*,'(a,3f10.5)') '   velocity     alpha_0..2      ', c(1:order + 1)
-      write(*,'(a,5f10.5)') '   acceleration beta_0..4       ', c(order + 2:)
+      write(*,'(a,5f10.5)') '   acceleration beta_0..2       ', c(order + 2:)
       if (label == 'uniform') then
          write(*,'(a,3f10.5)') '   tabulated    alpha           ', [1.5_dp, -2.0_dp, 0.5_dp]
          write(*,'(a,5f10.5)') '   convolution  beta            ', [2.25_dp, -6.0_dp, 5.5_dp, -2.0_dp, 0.25_dp]
@@ -8384,9 +8570,12 @@ contains
       call one_row('bdf ' // digit(p) // ' velocity row, ' // label // ' grid', &
            & bdf_family(p), last, [(last - k, k = 0, p)], last, &
            & [(0, k = 0, p)], [(1, k = 0, p)], dt, p + 2)
+      ! the acceleration row differences the velocity, so it reads
+      ! degree one over the same p instants the velocity row reads
+      ! degree zero over
       call one_row('bdf ' // digit(p) // ' acceleration row, ' // label // ' grid', &
-           & bdf_family(p), last, [(last - k, k = 0, 2 * p)], last, &
-           & [(0, k = 0, 2 * p)], [(2, k = 0, 2 * p)], dt, p + 2)
+           & bdf_family(p), last, [(last - k, k = 0, p)], last, &
+           & [(1, k = 0, p)], [(2, k = 0, p)], dt, p + 2)
     end subroutine bdf_rows
     subroutine adams_row(p, label, dt)
       integer         , intent(in) :: p
@@ -8574,8 +8763,8 @@ contains
   subroutine demo_tolerance_form()
     implicit none
     write(*,'(a)') ' '
-    write(*,'(a)') '  the velocity row, and the d-th row it composes to'
-    write(*,'(a)') '  scheme    d    sum|a|    sum|c(d)|   (sum|a|)^d   attained'
+    write(*,'(a)') '  the velocity row, and the d-th row that repeats it'
+    write(*,'(a)') '  scheme    d    sum|a|    sum|c(d)|      sum|a|    the same'
     call composed(1, 2)
     call composed(2, 2)
     call composed(3, 2)
@@ -8609,19 +8798,25 @@ contains
       integer      , intent(in) :: order, determines
       real(dp), allocatable :: c(:)
       integer :: reach, last, k
-      reach = determines * order
+      reach = order
       last  = reach + 1
       call weights_of(scheme, last, [(last - k, k = 0, reach)], [(last, k = 0, reach)], &
-           & [(1.0_dp, k = 1, last)], [(0, k = 0, reach)], [(determines, k = 0, reach)], c)
+           & [(1.0_dp, k = 1, last)], [(determines - 1, k = 0, reach)], &
+           & [(determines, k = 0, reach)], c)
       total = sum(abs(c))
     end function row_sum
     subroutine composed(order, determines)
       integer, intent(in) :: order, determines
       real(dp) :: velocity, derived, powered
       character(len=8) :: named
+      ! EVERY DERIVED ROW IS THE SAME OPERATOR, the velocity's on the
+      ! value and each higher one on the degree below it, so every row
+      ! sums its coefficients to the same total. Composing the
+      ! operator on the value instead would raise that total to the
+      ! power of the degree, and reach as far again for it.
       velocity = row_sum(bdf_family(order), order, 1)
       derived  = row_sum(bdf_family(order), order, determines)
-      powered  = velocity ** determines
+      powered  = velocity
       write(named,'(a,i0)') 'bdf ', order
       write(*,'(a,a,i5,3f12.4,a)') '  ', named, determines, velocity, derived, powered, &
            & merge('   yes', '    no', abs(derived - powered) <= 1.0e-10_dp * powered)
@@ -8651,7 +8846,7 @@ contains
       call march_chain(schemes, added, van_der_pol(degrees - 1), degrees, &
            & uniform_grid(duration), design, held, chain, tower, dt, t, achieved)
       call chain_stamps(chain, tower, [van_der_pol_energy(degrees - 1)], degrees, marks)
-      predicted = 1.0_dp + row_sum(scheme, order, top) / dt(size(dt)) ** top
+      predicted = 1.0_dp + row_sum(scheme, order, top) / dt(size(dt))
       call dense_jacobian(chain, design, a)
       assembled = largest_row(a)
       write(named,'(a,i0)') 'bdf ', order

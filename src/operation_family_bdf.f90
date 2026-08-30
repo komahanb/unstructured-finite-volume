@@ -101,7 +101,8 @@ contains
     class(bdf_family), intent(in) :: this
     integer          , intent(in) :: equation_degree
 
-    bdf_history_depth = equation_degree * this % order
+    associate (u1 => equation_degree); end associate
+    bdf_history_depth = this % order
 
   end function bdf_history_depth
   pure integer function bdf_primary_degree(this, equation_degree)
@@ -115,9 +116,26 @@ contains
   end function bdf_primary_degree
 
   !===================================================================!
-  ! The row on the d-th derivative reads the values over the d p
-  ! instants it reaches back. The degree-zero row belongs to the
+  ! THE ROW ON THE D-TH DERIVATIVE READS THE DEGREE BELOW IT over the
+  ! p instants it reaches back. The degree-zero row belongs to the
   ! governing constraint and has no pattern here.
+  !
+  ! A backward difference of higher order is the first-order operator
+  ! applied again, and the thing it is applied to is already stored:
+  ! every instant carries q, q-dot, q-double-dot alike. So the second
+  ! derivative is the operator on the FIRST derivative's history and
+  ! not the operator twice on the value's,
+  !
+  !     q-dot_k        <- q_k     ... q_{k-p}          p instants
+  !     q-double-dot_k <- q-dot_k ... q-dot_{k-p}      p instants
+  !
+  ! rather than
+  !
+  !     q-double-dot_k <- q_k     ... q_{k-2p}        2p instants
+  !
+  ! which is what reading every degree off the value alone would cost.
+  ! Both carry order p; the second reaches twice as far for it, and
+  ! makes a block of a given length unusable at half the order.
   !===================================================================!
 
   pure subroutine bdf_row_pattern(this, determines, equation_degree, &
@@ -134,9 +152,9 @@ contains
        return
     end if
 
-    reach  = determines * this % order
+    reach  = this % order
     offset = [(j, j = 0, reach)]
-    allocate(source_degree(reach + 1), source=0)
+    allocate(source_degree(reach + 1), source=determines - 1)
 
   end subroutine bdf_row_pattern
 
@@ -155,34 +173,6 @@ contains
 
   end function velocity_coefficient
 
-  !===================================================================!
-  ! The coefficient of the row on the d-th derivative, at offset j
-  ! from instant k: the velocity coefficients composed d times, each
-  ! inner one read at the instant its outer factor points to.
-  !===================================================================!
-
-  pure recursive function derivative_coefficient(dt, k, j, p, d) result(c)
-
-    type(derivative_terms), intent(in) :: dt(:)
-    integer               , intent(in) :: k, j, p, d
-    type(derivative_terms) :: c
-
-    integer :: i
-
-    if (d == 1) then
-       c = velocity_coefficient(dt, k, j, p)
-       return
-    end if
-
-    c = derivative_terms(0.0_dp, dt(k))
-
-    do i = max(0, j - (d - 1) * p), min(j, p)
-       c = c + velocity_coefficient(dt, k, i, p) &
-            & * derivative_coefficient(dt, k - i, j - i, p, d - 1) &
-            & * dt(k) / dt(k - i)
-    end do
-
-  end function derivative_coefficient
 
   pure function bdf_edge_coefficient(this, dt, tail, head, &
        & source_degree, determines) result(c)
@@ -199,18 +189,17 @@ contains
     if (j < 0) then
        error stop 'operation_family_bdf: an edge runs from an earlier instant'
     end if
-    if (source_degree /= 0) then
-       error stop 'operation_family_bdf: every source is a value'
-    end if
-
     if (determines < 1) then
        error stop 'operation_family_bdf: a derived row determines a derivative'
     end if
-    if (j > determines * this % order) then
-       error stop 'operation_family_bdf: the row on the d-th derivative reaches d p instants'
+    if (source_degree /= determines - 1) then
+       error stop 'operation_family_bdf: every source is the degree below the one determined'
+    end if
+    if (j > this % order) then
+       error stop 'operation_family_bdf: a row reaches p instants'
     end if
 
-    c = derivative_coefficient(dt, head, j, this % order, determines)
+    c = velocity_coefficient(dt, head, j, this % order)
 
   end function bdf_edge_coefficient
 

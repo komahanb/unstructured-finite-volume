@@ -385,13 +385,12 @@ end module gti_configuration
 
 module gti_physics
   use util_precision      , only : dp
-  use operation_expression, only : expression, unknown, design, derivative, stated, stated_over, derivative_along, &
+  use operation_expression, only : expression, unknown, design, derivative, stated, stated_over, &
        & FIRST_COORDINATE, &
        & operator(+), operator(-), operator(*), operator(**)
   implicit none
   private
   public :: van_der_pol, van_der_pol_energy, van_der_pol_dissipation
-  public :: van_der_pol_null_spatial
 contains
   function van_der_pol(degree) result(r)
     integer, intent(in) :: degree
@@ -402,27 +401,6 @@ contains
     r = stated(derivative(q, degree) - nu * (1.0_dp - derivative(q, 0)**2) * derivative(q, degree - 1) &
          & + derivative(q, 0), degree, 'van der pol residual')
   end function van_der_pol
-
-  !===================================================================!
-  ! THE SAME LAW WITH A NULL SPATIAL COMPONENT. The rule names a
-  ! spatial derivative and multiplies it by zero, so the state carries
-  ! the component and nothing reads its value. Every answer must match
-  ! the law without it, which is what makes this a check on the layout
-  ! rather than on the physics.
-  !===================================================================!
-
-  function van_der_pol_null_spatial(degree) result(r)
-    integer, intent(in) :: degree
-    type(expression) :: r
-    type(expression) :: q, nu
-    q  = unknown()
-    nu = design()
-    r = stated_over(derivative(q, degree) &
-         & - nu * (1.0_dp - derivative(q, 0)**2) * derivative(q, degree - 1) &
-         & + derivative(q, 0) &
-         & + 0.0_dp * derivative_along(q, FIRST_COORDINATE + 1, 1), &
-         & [degree, 1], 'van der pol, null spatial')
-  end function van_der_pol_null_spatial
 
   function van_der_pol_energy(degree) result(f)
     integer, intent(in) :: degree
@@ -4170,6 +4148,7 @@ contains
     class(field)             , intent(in), optional :: input_data(:)
     class(field), allocatable, intent(inout) :: output
     type(stored_field) :: state
+    type(stored_directed_graph) :: state_domain
     real(dp), allocatable :: handover(:), one_datum(:)
     real(dp) :: achieved
     type(imbalance) :: left
@@ -4222,7 +4201,14 @@ contains
                & this % initial, achieved, left)
        end if
     end if
-    state = stored_field('state', input_graph % vertex_set(), &
+    ! THE DATUM'S DOMAIN IS THE BLOCK'S, NOT THE SCHEDULE'S. The graph
+    ! a driver evaluates over says which rule runs when; it says
+    ! nothing about how many points a state carries, and the two
+    ! counts are unrelated. Borrowing one for the other would give a
+    ! field a domain it does not have.
+    state_domain = stored_directed_graph(this % chain(this % at) % rows % num_points(), &
+         & tails=[integer ::], heads=[integer ::])
+    state = stored_field('state', state_domain % vertex_set(), &
          & size(this % chain(this % at) % state))
     call state % set_real_vector(this % chain(this % at) % state)
     call emit(state, output)
@@ -5311,7 +5297,7 @@ module gti_demos
   use operation_coupling    , only : weights_of, coupling_inputs
   use operation_weight      , only : scheme_weight
   use operation_expression  , only : expression
-  use gti_physics           , only : van_der_pol, van_der_pol_null_spatial, van_der_pol_energy, van_der_pol_dissipation
+  use gti_physics           , only : van_der_pol, van_der_pol_energy, van_der_pol_dissipation
   use operation_minimization, only : relative, by_rate
   use gti_expansion         , only : expansion, family_holder
   use gti_block             , only : block_residual
@@ -7994,7 +7980,7 @@ program graph_time_integrator
   use operation_family_adams, only : adams_family
   use operation_grid        , only : uniform_grid, random_grid, designed_grid, fixed_grid
   use operation_expression  , only : expression, stated_over
-  use gti_physics           , only : van_der_pol, van_der_pol_null_spatial, van_der_pol_energy
+  use gti_physics           , only : van_der_pol, van_der_pol_energy
   use operation_grid        , only : grid
   use gti_march             , only : set_stopping, imbalance, set_space_coupling, set_time_coupling, weight_of, precision_needed
   use gti_adaptive          , only : adaptive_partition
@@ -8208,11 +8194,7 @@ contains
   function physics_of(cfg) result(r)
     type(configuration), intent(in) :: cfg
     type(expression) :: r
-    if (trim(cfg % physics) == 'vanderpol-null-space') then
-       r = van_der_pol_null_spatial(cfg % state_degree)
-    else
-       r = van_der_pol(cfg % state_degree)
-    end if
+    r = van_der_pol(cfg % state_degree)
   end function physics_of
   !===================================================================!
   ! The coordinates the run's state is declared over, read from the
@@ -8580,7 +8562,7 @@ contains
     type(configuration), intent(inout) :: cfg
     real(dp), allocatable :: dt(:), t(:)
     integer :: widest, printed
-    call refuse_unknown(cfg % physics, ['vanderpol           ', 'vanderpol-null-space'], 'physics')
+    call refuse_unknown(cfg % physics, ['vanderpol'], 'physics')
     call refuse_unknown(cfg % tolerance_criterion, ['relative', 'absolute'], &
          & 'tolerance_criterion')
     call refuse_unknown(cfg % iteration_criterion, ['by_rate ', 'by_count'], &

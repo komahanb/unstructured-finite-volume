@@ -150,6 +150,7 @@ module view_read_write
      procedure :: share_a_neighbour
 
      ! the numbering, kept private to this module
+     procedure, private :: require_place
      procedure, private :: whole_of
      procedure, private :: within
 
@@ -195,6 +196,8 @@ contains
        if (from_part(a) == to_part(a)) then
           error stop 'view_read_write: an arc of a bipartite digraph crosses its parts'
        end if
+       call this % require_place(from_part(a), from_vertex(a))
+       call this % require_place(to_part(a)  , to_vertex(a))
        tails(a) = this % whole_of(from_part(a), from_vertex(a))
        heads(a) = this % whole_of(to_part(a)  , to_vertex(a))
     end do
@@ -207,6 +210,24 @@ contains
   ! THE NUMBERING, both ways. A vertex of the second part continues
   ! after the first, and nothing outside this module sees that.
   !===================================================================!
+
+  !===================================================================!
+  ! A PART IS ONE OF THE TWO, and a vertex is one the part carries.
+  ! Neither is defaulted: a label outside the two would otherwise pass
+  ! for the first part and give a structure that looks valid and
+  ! relates the wrong vertices.
+  !===================================================================!
+
+  subroutine require_place(this, part, vertex)
+    class(bipartite_digraph), intent(in) :: this
+    integer                 , intent(in) :: part, vertex
+    if (part /= FIRST_PART .and. part /= SECOND_PART) then
+       error stop 'view_read_write: a part is the first or the second'
+    end if
+    if (vertex < 1 .or. vertex > this % order_of_part(part)) then
+       error stop 'view_read_write: a vertex is one the part carries'
+    end if
+  end subroutine require_place
 
   pure integer function whole_of(this, part, vertex)
     class(bipartite_digraph), intent(in) :: this
@@ -225,7 +246,8 @@ contains
   pure integer function order_of_part(this, part)
     class(bipartite_digraph), intent(in) :: this
     integer                 , intent(in) :: part
-    order_of_part = this % first_order
+    order_of_part = -1
+    if (part == FIRST_PART ) order_of_part = this % first_order
     if (part == SECOND_PART) order_of_part = this % second_order
   end function order_of_part
 
@@ -249,6 +271,7 @@ contains
     integer, allocatable :: incident(:)
     integer :: v, a, kept
 
+    call this % require_place(part, vertex)
     v = this % whole_of(part, vertex)
     call this % arcs % incident_edges(v, incident)
     allocate(neighbours(size(incident)))
@@ -276,6 +299,7 @@ contains
     integer, allocatable :: incident(:)
     integer :: v, a, kept
 
+    call this % require_place(part, vertex)
     v = this % whole_of(part, vertex)
     call this % arcs % incident_edges(v, incident)
     allocate(neighbours(size(incident)))
@@ -447,7 +471,8 @@ contains
 
   pure integer function other_part(part)
     integer, intent(in) :: part
-    other_part = SECOND_PART
+    other_part = -1
+    if (part == FIRST_PART ) other_part = SECOND_PART
     if (part == SECOND_PART) other_part = FIRST_PART
   end function other_part
 

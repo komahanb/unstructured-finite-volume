@@ -15,7 +15,15 @@ module gti_configuration
   type :: configuration
      character(len=32) :: physics      = 'vanderpol'
      character(len=32) :: grid         = 'random'
-     character(len=32) :: combinations = 'homogeneous'
+     character(len=32) :: combinations = '1'
+
+     ! ONE CHAIN, NAMED OUTRIGHT. A window per word, each a family and
+     ! the order asked of it, so `bdf:2 dirk:3 adams:3 bdf:2` is a
+     ! chain of four windows. Any length is admitted, and a family may
+     ! stand at more than one window - neither of which a survey over
+     ! window counts can express. Empty means no such chain is asked
+     ! for, which is the default.
+     character(len=256) :: chain = ''
      character(len=32) :: families     = 'bdf adams dirk'
      integer  :: state_degree             = 2
      integer  :: instants                 = 21
@@ -147,6 +155,8 @@ contains
        cfg % grid = value
     case ('combinations')
        cfg % combinations = value
+    case ('chain')
+       cfg % chain = value
     case ('families')
        cfg % families = value
     case ('state_degree')
@@ -332,6 +342,9 @@ contains
     write(*,'(a,i0)')      '   max discretization order ', cfg % max_discretization_order
     write(*,'(a,a)')       '   families                 ', trim(cfg % families)
     write(*,'(a,a)')       '   combinations             ', trim(cfg % combinations)
+    if (len_trim(cfg % chain) > 0) then
+       write(*,'(a,a)')    '   chain                    ', trim(cfg % chain)
+    end if
     write(*,'(a,l1)')      '   automatic order conservation ', cfg % automatic_order_conservation
     write(*,'(a,l1)')      '   mixed orders             ', cfg % mixed_orders
     write(*,'(a,a)')       '   initial state, given     ', trim(cfg % initial_state)
@@ -5476,15 +5489,15 @@ module gti_demos
   ! which part of the bipartite digraph this demonstration reads as which
   integer, parameter :: BLOCKS_PART = FIRST_PART
   integer, parameter :: DATA_PART   = SECOND_PART
-  character(len=24), parameter :: demo_names(24) = [character(len=24) :: &
+  character(len=24), parameter :: demo_names(25) = [character(len=24) :: &
        & 'adaptive_grid', 'assembled_tower', 'chained_horizon', &
        & 'constraint_rows', 'coupling_relation', 'expansion_check', &
        & 'family_coefficients', 'function_identities', 'grid_design_check', &
        & 'jacobian_shape', 'level_maps', 'level_shape', 'marched_block', &
        & 'marched_horizon', 'marched_stages', 'memory_shape', &
        & 'handover_offsets', 'randomized_checks', 'read_write_graph', &
-       & 'scheme_weights', 'sensitivity', 'solve_cost', 'tolerance_form', &
-       & 'transposed_reads']
+       & 'order_of_accuracy', 'scheme_weights', 'sensitivity', 'solve_cost', &
+       & 'tolerance_form', 'transposed_reads']
 contains
   logical function demo_requested() result(yes)
     character(len=256) :: argument
@@ -5537,6 +5550,8 @@ contains
        call demo_memory_shape()
     case ('randomized_checks')
        call demo_randomized_checks()
+    case ('order_of_accuracy')
+       call demo_order_of_accuracy()
     case ('read_write_graph')
        call demo_read_write_graph()
     case ('transposed_reads')
@@ -5973,6 +5988,158 @@ contains
            & abs(f(1:max_order) - differenced)
     end subroutine across_families
   end subroutine demo_chained_horizon
+
+  !===================================================================!
+  ! THE ORDER OF ACCURACY OF A DERIVATIVE OF THE TIME FUNCTIONAL, read
+  ! off refined grids rather than asserted. The same chain is marched
+  ! on grids of n, 2n and 4n instants per window, and again on 8n as
+  ! the reference. The departure of each grid from the reference is
+  ! then halved once per refinement if the derivative carries order
+  ! one, quartered if order two, and so on, so
+  !
+  !            observed order = log2( e(n) / e(2n) )
+  !
+  ! Three departures give two observed orders per derivative degree.
+  ! The finest grid stands against a reference only twice as fine, so
+  ! the second reading is the weaker of the two and is printed beside
+  ! the first rather than in place of it.
+  !
+  ! HOMOGENEOUS AND HETEROGENEOUS ALIKE. One family over the whole
+  ! horizon is a chain of one window; several families in succession
+  ! is a chain of several. The instants divide in the same proportion
+  ! on every grid, so a refinement moves no window boundary and the
+  ! reading is the scheme's order and not the boundary's placement.
+  !
+  ! NOTHING IS HELD TO A FLOOR HERE. A tableau outside its asymptotic
+  ! range reads below its formal order, and that reading is the result
+  ! rather than a fault - so the formal order is printed beside the
+  ! observed one and neither is checked against the other.
+  !===================================================================!
+
+  subroutine demo_order_of_accuracy()
+
+    implicit none
+    integer , parameter :: state_degree = 2
+    integer , parameter :: degrees   = state_degree + 1
+    integer , parameter :: max_order = 2
+    real(dp), parameter :: duration  = 2.0_dp
+    integer , parameter :: per_window = 8      ! instants per window, coarsest
+    integer , parameter :: grids      = 3      ! and one reference beyond them
+    integer , parameter :: finer      = 8      ! the reference, against the finest grid
+
+    write(*,'(a)') ' '
+    write(*,'(a)') ' order of accuracy, read off refined grids'
+    write(*,'(a,i0,a,i0,a)') '   ', grids, ' grids per chain, doubling from ', per_window, &
+         & ' instants per window'
+    write(*,'(a,i0,a)') '   the reference grid is ', finer, ' times the finest of them'
+    write(*,'(a)') ' '
+    write(*,'(a)') ' HOMOGENEOUS: one family over the whole horizon'
+    call refined('bdf 1', 1, [held_family(bdf_family(1))])
+    call refined('bdf 2', 2, [held_family(bdf_family(2))])
+    call refined('adams 2', 2, [held_family(adams_family(2))])
+    call refined('adams 3', 3, [held_family(adams_family(3))])
+    call refined('implicit midpoint', 2, [held_family(implicit_midpoint())])
+    call refined('crouzeix two-stage', 3, [held_family(crouzeix_two_stage())])
+
+    write(*,'(a)') ' '
+    write(*,'(a)') ' HETEROGENEOUS: a chain of windows, each family in turn'
+    call refined('bdf2 dirk3', 2, &
+         & [held_family(bdf_family(2)), held_family(crouzeix_two_stage())])
+    call refined('dirk3 bdf2', 2, &
+         & [held_family(crouzeix_two_stage()), held_family(bdf_family(2))])
+    call refined('dirk3 bdf2 adams3', 2, &
+         & [held_family(crouzeix_two_stage()), held_family(bdf_family(2)), &
+         &  held_family(adams_family(3))])
+    call refined('bdf2 dirk3 adams3 bdf2', 2, &
+         & [held_family(bdf_family(2)), held_family(crouzeix_two_stage()), &
+         &  held_family(adams_family(3)), held_family(bdf_family(2))])
+
+  contains
+
+    !----------------------------------------------------------------!
+    ! One chain on one grid: the derivatives of the functional up to
+    ! max_order, with the windows in a fixed proportion of the whole.
+    !----------------------------------------------------------------!
+
+    subroutine on_grid(schemes, instants, f)
+      type(family_holder), intent(in) :: schemes(:)
+      integer            , intent(in) :: instants
+      real(dp), allocatable, intent(out) :: f(:)
+      real(dp), allocatable :: table(:,:), dt(:), t(:), held(:)
+      type(chain_block), allocatable :: chain(:)
+      type(expansion), allocatable, target :: tower
+      integer , allocatable :: added(:)
+      real(dp) :: achieved
+      integer :: windows, share
+      windows = size(schemes)
+      share   = instants / windows
+      allocate(added(windows))
+      added    = share
+      added(1) = instants - share * (windows - 1)
+      call cosine_partition(schemes(1) % scheme, degrees, duration, instants, held, dt, t)
+      call march_chain(schemes, added, van_der_pol(state_degree), degrees, &
+           & uniform_grid(duration), 1.0_dp, held, chain, tower, dt, t, achieved)
+      call chain_expansion(chain, tower, [van_der_pol_energy(state_degree)], degrees, &
+           & max_order, table)
+      allocate(f(lbound(table, 1):ubound(table, 1)))
+      f = table(:, 1)
+    end subroutine on_grid
+
+    subroutine refined(title, formal, schemes)
+      character(len=*)   , intent(in) :: title
+      integer            , intent(in) :: formal
+      type(family_holder), intent(in) :: schemes(:)
+      real(dp), allocatable :: f(:), reference(:)
+      real(dp) :: apart(grids, 0:max_order)
+      character(len=:), allocatable :: line
+      character(len=16) :: cell
+      integer :: g, m, windows, instants
+      windows = size(schemes)
+      call on_grid(schemes, windows * per_window * finer * 2 ** (grids - 1), reference)
+      do g = 1, grids
+         instants = windows * per_window * 2 ** (g - 1)
+         call on_grid(schemes, instants, f)
+         do m = 0, max_order
+            apart(g, m) = abs(f(m) - reference(m))
+         end do
+         deallocate(f)
+      end do
+      write(*,'(a)') ' '
+      write(*,'(a,a,i0,a,i0,a,i0)') '   ' // title, &
+           & '    formal order ', formal, ', windows ', windows, &
+           & ', instants per window from ', per_window
+      do m = 0, max_order
+         write(cell,'(i0)') m
+         line = '     k = ' // trim(cell) // '   departures'
+         do g = 1, grids
+            write(cell,'(es11.2)') apart(g, m)
+            line = line // cell(1:11)
+         end do
+         line = line // '    observed'
+         do g = 1, grids - 1
+            line = line // observed_between(apart(g, m), apart(g + 1, m))
+         end do
+         write(*,'(a)') line
+      end do
+    end subroutine refined
+
+    !----------------------------------------------------------------!
+    ! The order two departures imply, or a dash where none does: a
+    ! departure at zero has reached round-off and carries no order,
+    ! and one that grew under refinement carries none either.
+    !----------------------------------------------------------------!
+
+    function observed_between(coarse, fine) result(cell)
+      real(dp), intent(in) :: coarse, fine
+      character(len=9) :: cell
+      if (coarse <= 0.0_dp .or. fine <= 0.0_dp) then
+         cell = '        -'
+         return
+      end if
+      write(cell,'(f9.2)') log(coarse / fine) / log(2.0_dp)
+    end function observed_between
+
+  end subroutine demo_order_of_accuracy
   subroutine demo_constraint_rows()
     implicit none
     integer , parameter :: order = 2
@@ -9033,8 +9200,7 @@ contains
             &  'factorisations'], 'measurements')
     end if
     call refuse_unknown(cfg % families, ['bdf     ', 'adams   ', 'dirk    '], 'families')
-    call refuse_unknown(cfg % combinations, &
-         & ['homogeneous', 'pairs      ', 'triples    '], 'combinations')
+    call refuse_unwindowed(cfg % combinations)
     widest = widest_reach(cfg)
     if (.not. cfg % automatic_order_conservation) then
        write(*,'(a)')    ' '
@@ -9056,9 +9222,8 @@ contains
     call heading(cfg)
     if (cfg % accounting) call tally_open(cfg % max_derivative_degree, hierarchy_levels)
     printed = 0
-    if (asked(cfg, 'homogeneous')) call tuple_rows(cfg, 1, printed)
-    if (asked(cfg, 'pairs'))       call tuple_rows(cfg, 2, printed)
-    if (asked(cfg, 'triples'))     call tuple_rows(cfg, 3, printed)
+    call every_window_count(cfg, printed)
+    call the_named_chain(cfg, printed)
     if (cfg % accounting) then
        call tally_close()
        call accounted(cfg)
@@ -9070,11 +9235,131 @@ contains
        write(*,'(a)') ' no more instants than they look back over is not built either.'
     end if
   end subroutine table
-  pure logical function asked(cfg, what) result(yes)
-    type(configuration), intent(in) :: cfg
-    character(len=*)   , intent(in) :: what
-    yes = lists(cfg % combinations, what)
-  end function asked
+  !===================================================================!
+  ! HOW MANY WINDOWS EACH SURVEYED CHAIN CARRIES. The setting lists
+  ! the counts, so a survey over chains of one, two and three windows
+  ! reads `combinations = 1 2 3`, and any count may be asked for. A
+  ! count above the number of families named yields no chain, because
+  ! a surveyed chain gives each window a family of its own; a chain
+  ! that repeats a family is named outright through `chain`.
+  !===================================================================!
+
+  subroutine every_window_count(cfg, printed)
+    type(configuration), intent(in)    :: cfg
+    integer            , intent(inout) :: printed
+    character(len=32), allocatable :: counts(:)
+    integer :: i, windows
+    counts = worded(cfg % combinations)
+    do i = 1, size(counts)
+       read(counts(i), *) windows
+       call tuple_rows(cfg, windows, printed)
+    end do
+  end subroutine every_window_count
+
+  !===================================================================!
+  ! THE CHAIN NAMED OUTRIGHT, IF ONE IS. One window per word, each
+  ! reading family:order. The instants divide evenly among however
+  ! many windows are named, and a window too short for the family
+  ! standing at it is said so rather than passed over - a chain asked
+  ! for by name is not silently dropped the way a surveyed one is.
+  !===================================================================!
+
+  subroutine the_named_chain(cfg, printed)
+    type(configuration), intent(in)    :: cfg
+    integer            , intent(inout) :: printed
+    character(len=8), allocatable :: names(:)
+    integer         , allocatable :: orders(:)
+    integer :: windows, before
+    if (len_trim(cfg % chain) < 1) return
+    call windows_of(cfg % chain, names, orders)
+    windows = size(names)
+    if (cfg % instants / windows <= 0) then
+       write(*,'(a)') ' '
+       write(*,'(a,i0,a,i0,a)') ' the chain names ', windows, ' windows and the horizon holds ', &
+            & cfg % instants, ' instants, so a window would hold none.'
+       error stop 'graph_time_integrator: a window of a named chain holds instants'
+    end if
+    before = printed
+    call one_row(cfg, names, orders, printed)
+    if (printed == before) then
+       write(*,'(a)') ' '
+       write(*,'(a)') ' the chain ' // trim(cfg % chain) // ' built no row. A family has no'
+       write(*,'(a)') ' scheme at the order asked of it, or a window adds no more instants'
+       write(*,'(a)') ' than the family standing at it looks back over.'
+       error stop 'graph_time_integrator: a named chain builds its row'
+    end if
+  end subroutine the_named_chain
+
+  !===================================================================!
+  ! THE WINDOWS A CHAIN NAMES, read as family and order. A word
+  ! carrying no colon, or an order that is not a whole number, is
+  ! refused where it is written.
+  !===================================================================!
+
+  subroutine windows_of(text, names, orders)
+    character(len=*), intent(in) :: text
+    character(len=8), allocatable, intent(out) :: names(:)
+    integer         , allocatable, intent(out) :: orders(:)
+    character(len=32), allocatable :: words(:)
+    integer :: i, mark, failed
+    words = worded(text)
+    if (size(words) < 1) then
+       error stop 'gti_configuration: a chain names a window at least'
+    end if
+    allocate(names(size(words)), orders(size(words)))
+    do i = 1, size(words)
+       mark = index(words(i), ':')
+       if (mark < 2 .or. mark >= len_trim(words(i))) then
+          write(*,'(a)') ' '
+          write(*,'(a)') ' the chain names ' // trim(words(i)) // &
+               & ', which is not a family and an order.'
+          error stop 'gti_configuration: a setting names something unknown'
+       end if
+       names(i) = words(i)(1:mark - 1)
+       read(words(i)(mark + 1:), *, iostat=failed) orders(i)
+       if (failed /= 0 .or. orders(i) < 1) then
+          write(*,'(a)') ' '
+          write(*,'(a)') ' the chain asks ' // trim(words(i)) // &
+               & ' for an order that is not a whole number of one or more.'
+          error stop 'gti_configuration: a setting names something unknown'
+       end if
+    end do
+    call refuse_unknown(text_of(names), ['bdf  ', 'adams', 'dirk '], 'chain')
+  end subroutine windows_of
+
+  pure function text_of(names) result(text)
+    character(len=*), intent(in) :: names(:)
+    character(len=:), allocatable :: text
+    integer :: i
+    text = ''
+    do i = 1, size(names)
+       text = text // ' ' // trim(names(i))
+    end do
+  end function text_of
+
+  !===================================================================!
+  ! A window count is a whole number of one or more. Anything else is
+  ! refused where it is written rather than where it would be used.
+  !===================================================================!
+
+  subroutine refuse_unwindowed(text)
+    character(len=*), intent(in) :: text
+    character(len=32), allocatable :: counts(:)
+    integer :: i, windows, failed
+    counts = worded(text)
+    if (size(counts) < 1) then
+       error stop 'gti_configuration: the combinations name a window count'
+    end if
+    do i = 1, size(counts)
+       read(counts(i), *, iostat=failed) windows
+       if (failed /= 0 .or. windows < 1) then
+          write(*,'(a)') ' '
+          write(*,'(a)') ' combinations names ' // trim(counts(i)) // &
+               & ', which is not a count of windows.'
+          error stop 'gti_configuration: a setting names something unknown'
+       end if
+    end do
+  end subroutine refuse_unwindowed
   function listed(cfg) result(list)
     type(configuration), intent(in) :: cfg
     character(len=8), allocatable :: list(:)

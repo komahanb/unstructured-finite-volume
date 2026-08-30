@@ -545,12 +545,24 @@ orders up to
 `max_discretization_order`: backward differences and Adams-Moulton at
 any order, diagonally implicit Runge-Kutta at orders two to four (the
 implicit midpoint rule and the two Crouzeix tableaux).
-`combinations = homogeneous | pairs | triples` builds, beside the
-single-family rows, chains whose blocks change family along the
-horizon, joined at their shared instants. A family whose constraint
-reaches back over r > 1 instants is started by a stage block over
-steps refined by `startup_refinement`, so every row integrates the
-same initial-value problem.
+`combinations = 1 2 3` builds chains of that many windows, joined at
+their shared instants: one window is a single family over the whole
+horizon, and more than one changes family along it. Any count may be
+asked for, and the counts are surveyed in the order written. A
+surveyed chain gives each window a family of its own, so a count above
+the number of families named yields no chain.
+
+`chain = bdf:2 dirk:3 adams:3 bdf:2` names one chain outright, a
+window per word, each carrying a family and the order asked of it.
+Any length is admitted and a family may stand at more than one window,
+neither of which a survey over window counts can express. The row is
+built beside the surveyed ones; unlike them it is not passed over in
+silence, so a window too short for the family standing at it, or an
+order the family has no scheme at, is said so and stops the run.
+
+A family whose constraint reaches back over r > 1 instants is started
+by a stage block over steps refined by `startup_refinement`, so every
+row integrates the same initial-value problem.
 
 **The functionals and their derivatives.**
 `functionals = energy dissipation`, `designs = physics [grid]`,

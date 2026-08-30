@@ -410,7 +410,9 @@ contains
        end associate
     end do
 
-    if (minval(face_areas) .lt. 10.0d0 * tiny(1.0d0)) then
+    ! the floor is this build's own, not one kind's: a quadruple build
+    ! reaches far below a double one and the check follows it down
+    if (minval(face_areas) < 10.0_dp * tiny(1.0_dp)) then
        error stop 'view_mesh_geometry: a face has a nonzero area vector'
     end if
 

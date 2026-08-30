@@ -3724,6 +3724,7 @@ module gti_chain
   public :: expansion_substitutions
   public :: sink_costates
   public :: goal_oriented_partition
+  public :: chain_incidence
   type :: chain_block
      type(block_residual)  :: rows
      integer , allocatable :: instants_at(:)
@@ -3945,47 +3946,23 @@ contains
     call tally_leave()
   end subroutine march_chain
   !===================================================================!
-  ! ASSEMBLE THE CHAIN AS A GRAPH AND HAND IT OVER. One vertex per
-  ! block, one arc from each block to the next, one rule standing at
-  ! each vertex. What the driver does with them - the order, the
-  ! lifetimes, and one day which of them run at once - is no longer
-  ! stated here.
+  ! THE CHAIN AS A BIPARTITE DIGRAPH, AND NOTHING ELSE. Which block
+  ! writes which state, which block reads which, and the transpose the
+  ! derivative is taken over. It computes nothing and marches nothing,
+  ! so the visiting order and every datum's lifetime may be read off
+  ! it before a single block is solved.
   !===================================================================!
 
-  subroutine marched_by_driver(chain, tower, schemes, added, physics, degrees, r, &
-       & first, last, dt, design, initial, before, achieved, left, nodes, &
-       & spatial_discretization_stencil, held_data)
+  function chain_incidence(schemes, added, degrees, r, first, last) result(incidence)
 
-    type(chain_block)  , intent(inout), target :: chain(:)
-    type(expansion)    , intent(in)   , target :: tower
-    type(family_holder), intent(in)   :: schemes(:)
-    integer            , intent(in)   :: added(:), degrees, r, before
-    type(expression)   , intent(in)   :: physics
-    integer            , intent(in)   :: first(:), last(:)
-    real(dp)           , intent(in)   :: dt(:), design, initial(:)
-    real(dp)           , intent(inout):: achieved
-    type(imbalance), intent(inout), optional :: left
-    integer        , intent(in)   , optional :: nodes
-    type(stencil)  , intent(in)   , optional :: spatial_discretization_stencil
-    ! WHERE THE STATES COME TO REST. The driver places every block's
-    ! state at its data vertex, and a caller that wants them asks for
-    ! the data graph rather than for the chain.
-    type(data_graph), intent(out) , optional :: held_data
+    type(family_holder), intent(in) :: schemes(:)
+    integer            , intent(in) :: added(:), degrees, r, first(:), last(:)
+    type(bipartite_digraph) :: incidence
 
-    type(data_graph)            :: values
-    type(pairing)               :: rested
-    type(rule_graph)       :: rules
-    type(bipartite_digraph)     :: incidence
-    type(driver)                :: executor
-    type(block_rule)            :: one
-    type(stored_directed_graph) :: bare
     integer, allocatable :: from_part(:), from_vertex(:), to_part(:), to_vertex(:)
-    integer, allocatable :: handed(:), offsets(:)
-    integer :: nb, b, k, a, n_arc, given, i, e, instant, holder, width_of_block
+    integer :: nb, b, a, n_arc, forward_arcs, given, i, e, instant, holder
 
     nb = size(added)
-    width_of_block = degrees
-    if (present(nodes)) width_of_block = degrees * nodes
 
     ! THE ARCS ARE READS AND WRITES, and nothing here states which
     ! block follows which. Block b writes datum b; block b reads
@@ -4001,7 +3978,10 @@ contains
     do b = 2, nb
        n_arc = n_arc + schemes(b) % scheme % history_depth(degrees - 1)
     end do
-    allocate(from_part(n_arc), from_vertex(n_arc), to_part(n_arc), to_vertex(n_arc))
+    ! room for the forward arcs, their transpose, and the state each
+    ! block of the transpose reads
+    allocate(from_part(2 * n_arc + nb), from_vertex(2 * n_arc + nb), &
+         & to_part(2 * n_arc + nb), to_vertex(2 * n_arc + nb))
     a = 0
     do b = 1, nb
        a = a + 1                                  ! block b writes datum b
@@ -4036,12 +4016,108 @@ contains
           to_vertex(a)   = b
        end do
     end do
+    forward_arcs = a
+
+    ! THE TRANSPOSE, AND WHY IT IS HERE. The derivative is taken by a
+    ! reverse pass over these same blocks, and that pass reads every
+    ! block's state. Until those reads are arcs the graph cannot see
+    ! them, and a lifetime read off it would drop a state the reverse
+    ! pass still wants. So block b of the transpose sits at nb + b,
+    ! and three families of arc state it:
+    !
+    !   forward     (b) --> [d_b] --> (c)        c reads what b wrote
+    !
+    !   the state   [d_b] --> (nb+b)             the reverse pass at
+    !               read again, so d_b lives     b reads b's own state
+    !               until step nb+b
+    !
+    !   transposed  (nb+c) --> [e_c] --> (nb+b)  every forward arc,
+    !               with its ends exchanged      reversed
+    !
+    ! The transposed arcs put nb+nb ... nb+1 after every forward
+    ! block and in decreasing order, which is the order the reverse
+    ! pass runs in. So last_reader_of(d_b) is step nb+b, and the
+    ! states fall away one at a time as the reverse pass retires
+    ! them rather than being held to the end.
+    !
+    ! No rule stands at a transposed vertex yet: chain_derivative
+    ! still computes the costates. What stands here is the lifetime,
+    ! which is what the driver is asked for.
+    do e = 1, forward_arcs
+       a = a + 1
+       if (from_part(e) == BLOCKS) then
+          from_part(a)   = BLOCKS
+          from_vertex(a) = nb + from_vertex(e)
+          to_part(a)     = STATES
+          to_vertex(a)   = nb + to_vertex(e)
+       else
+          from_part(a)   = STATES
+          from_vertex(a) = nb + to_vertex(e)
+          to_part(a)     = BLOCKS
+          to_vertex(a)   = nb + from_vertex(e)
+       end if
+    end do
+    do b = 1, nb
+       a = a + 1
+       from_part(a)   = STATES
+       from_vertex(a) = b
+       to_part(a)     = BLOCKS
+       to_vertex(a)   = nb + b
+    end do
     n_arc = a
-    incidence = bipartite_digraph(nb, nb, from_part(1:n_arc), from_vertex(1:n_arc), &
+    incidence = bipartite_digraph(2 * nb, 2 * nb, from_part(1:n_arc), from_vertex(1:n_arc), &
          & to_part(1:n_arc), to_vertex(1:n_arc))
 
-    ! one rule per vertex, carrying what solving that block needs
-    allocate(rules % at(nb), values % at(nb))
+  end function chain_incidence
+
+  !===================================================================!
+  ! ASSEMBLE THE CHAIN AS A GRAPH AND HAND IT OVER. The incidence is
+  ! a value built beside this, and all that is added here is a rule at
+  ! each forward vertex: the transposed vertices carry none, because
+  ! the reverse pass they stand for is still chain_derivative's. What
+  ! the driver does with any of it - the order, the lifetimes, and one
+  ! day which of them run at once - is no longer stated here.
+  !===================================================================!
+
+  subroutine marched_by_driver(chain, tower, schemes, added, physics, degrees, r, &
+       & first, last, dt, design, initial, before, achieved, left, nodes, &
+       & spatial_discretization_stencil, held_data)
+
+    type(chain_block)  , intent(inout), target :: chain(:)
+    type(expansion)    , intent(in)   , target :: tower
+    type(family_holder), intent(in)   :: schemes(:)
+    integer            , intent(in)   :: added(:), degrees, r, before
+    type(expression)   , intent(in)   :: physics
+    integer            , intent(in)   :: first(:), last(:)
+    real(dp)           , intent(in)   :: dt(:), design, initial(:)
+    real(dp)           , intent(inout):: achieved
+    type(imbalance), intent(inout), optional :: left
+    integer        , intent(in)   , optional :: nodes
+    type(stencil)  , intent(in)   , optional :: spatial_discretization_stencil
+    ! WHERE THE STATES COME TO REST. The driver places every block's
+    ! state at its data vertex, and a caller that wants them asks for
+    ! the data graph rather than for the chain.
+    type(data_graph), intent(out) , optional :: held_data
+
+    type(data_graph)            :: values
+    type(pairing)               :: rested
+    type(rule_graph)       :: rules
+    type(bipartite_digraph)     :: incidence
+    type(driver)                :: executor
+    type(block_rule)            :: one
+    type(stored_directed_graph) :: bare
+    integer, allocatable :: handed(:), offsets(:)
+    integer :: nb, b, k, given, i, e, instant, holder, width_of_block
+
+    nb = size(added)
+    width_of_block = degrees
+    if (present(nodes)) width_of_block = degrees * nodes
+
+    incidence = chain_incidence(schemes, added, degrees, r, first, last)
+
+    ! one rule per forward vertex, carrying what solving that block
+    ! needs; the transposed vertices carry none and compute nothing
+    allocate(rules % at(2 * nb), values % at(2 * nb))
     do b = 1, nb
        one % chain    => chain
        one % tower    => tower
@@ -5308,9 +5384,12 @@ module gti_demos
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
        & chain_stamps, chain_derivative, first_of, instant_components, &
        & asymmetry, multiset_count, multiset_rank, multiset_of
+  use gti_chain             , only : chain_incidence
+  use operation_driver      , only : rule_graph, data_graph, pairing
   use gti_sweeps            , only : route_of, forward_route, reverse_route
   use gti_driver            , only : clock, cosine, dense_jacobian, family_named
   use view_read_write       , only : bipartite_digraph, FIRST_PART, SECOND_PART
+  use operation_driver      , only : driver
   use view_directed         , only : forward
   implicit none
   private
@@ -5318,14 +5397,15 @@ module gti_demos
   ! which part of the bipartite digraph this demonstration reads as which
   integer, parameter :: BLOCKS_PART = FIRST_PART
   integer, parameter :: DATA_PART   = SECOND_PART
-  character(len=24), parameter :: demo_names(23) = [character(len=24) :: &
+  character(len=24), parameter :: demo_names(24) = [character(len=24) :: &
        & 'adaptive_grid', 'assembled_tower', 'chained_horizon', &
        & 'constraint_rows', 'coupling_relation', 'expansion_check', &
        & 'family_coefficients', 'function_identities', 'grid_design_check', &
        & 'jacobian_shape', 'level_maps', 'level_shape', 'marched_block', &
        & 'marched_horizon', 'marched_stages', 'memory_shape', &
        & 'handover_offsets', 'randomized_checks', 'read_write_graph', &
-       & 'scheme_weights', 'sensitivity', 'solve_cost', 'tolerance_form']
+       & 'scheme_weights', 'sensitivity', 'solve_cost', 'tolerance_form', &
+       & 'transposed_reads']
 contains
   logical function demo_requested() result(yes)
     character(len=256) :: argument
@@ -5380,6 +5460,8 @@ contains
        call demo_randomized_checks()
     case ('read_write_graph')
        call demo_read_write_graph()
+    case ('transposed_reads')
+       call demo_transposed_reads()
     case ('scheme_weights')
        call demo_scheme_weights()
     case ('sensitivity')
@@ -7669,6 +7751,139 @@ contains
          & b % share_a_neighbour(BLOCKS_PART, 2, 3), '   (nothing joins them)'
 
   end subroutine demo_read_write_graph
+
+  !===================================================================!
+  ! THE STATES ARE READ TWICE, AND THE SECOND READ IS AN ARC. A chain
+  ! of three blocks, and the transpose the derivative is taken over.
+  !
+  !   forward   (1) --> [1] --> (2) --> [2] --> (3) --> [3]
+  !                      |               |               |
+  !                      v               v               v
+  !                     (4) <-- [5] <-- (5) <-- [6] <-- (6)
+  !   the transpose, retiring the states in decreasing b
+  !
+  ! The three downward arcs are the reverse pass reading each block's
+  ! state. Without them the sweep would end at block 3: state 1 would
+  ! be last read at step 2 and state 3 read by nothing at all, so a
+  ! driver would drop both while the derivative still wanted them.
+  !
+  ! Three departures are counted, and each floors at zero. A STATE
+  ! READ BY NOTHING is one the graph would let a driver drop the
+  ! moment it was written. A STATE RETIRED ELSEWHERE is one whose last
+  ! reader is not its own transpose block, or which is never released
+  ! at all: block nb + b is the last reader of state b exactly because
+  ! every forward block that reads state b sends a transposed arc into
+  ! it. A STEP OUT OF REVERSE is one where the transpose does not
+  ! retrace the forward sweep backwards - which is what exchanging the
+  ! ends of every forward arc is for, and what a transpose that kept
+  ! its ends would lose while still reading every state.
+  !
+  ! The fourth count is what the driver does with all that. No rule
+  ! stands at a transposed vertex, and a step that computes nothing
+  ! still retires whatever was last read there - so a traversal that
+  ! placed a value at every state must leave none of them held. STATES
+  ! STILL HELD counts the ones a traversal did not retire.
+  !===================================================================!
+
+  subroutine demo_transposed_reads()
+
+    implicit none
+    integer, parameter :: state_degree = 2
+    integer, parameter :: degrees = state_degree + 1
+
+    write(*,'(a)') ' '
+    write(*,'(a)') ' the states a reverse pass reads, and the step each retires at'
+    write(*,'(a)') ' '
+    call checked('bdf 1 alone       ', [holder_named('bdf', 1)], [8])
+    call checked('bdf 2 then bdf 1  ', [holder_named('bdf', 2), holder_named('bdf', 1)], [8, 8])
+    call checked('adams 2 then bdf 2', [holder_named('adams', 2), holder_named('bdf', 2)], [8, 8])
+    call checked('three of bdf 2    ', [holder_named('bdf', 2), holder_named('bdf', 2), &
+         & holder_named('bdf', 2)], [8, 8, 8])
+
+  contains
+
+    function holder_named(family_of, order) result(h)
+      character(len=*), intent(in) :: family_of
+      integer         , intent(in) :: order
+      type(family_holder) :: h
+      class(family), allocatable :: one
+      logical :: ok
+      call family_named(family_of, order, one, ok)
+      if (.not. ok) error stop 'gti_demos: that family carries that order'
+      allocate(h % scheme, source=one)
+    end function holder_named
+
+    subroutine checked(title, schemes, added)
+      character(len=*)   , intent(in) :: title
+      type(family_holder), intent(in) :: schemes(:)
+      integer            , intent(in) :: added(:)
+      type(bipartite_digraph) :: incidence
+      type(driver)     :: executor
+      type(expression) :: immaterial
+      type(rule_graph) :: rules
+      type(data_graph) :: values, remaining
+      type(pairing)    :: rested
+      type(stored_directed_graph) :: one_point, bare
+      type(stored_field) :: datum
+      integer, allocatable :: first(:), last(:), order(:), droppable(:)
+      integer :: nb, b, k, unread, elsewhere, retired, out_of_reverse, still_held
+
+      nb = size(added)
+      call horizon_bounds(schemes, added, degrees - 1, first, last)
+      incidence = chain_incidence(schemes, added, degrees, 1, first, last)
+
+      ! THE LIFETIMES ARE THE GRAPH'S AND THE ORDER'S, and no rule
+      ! enters either answer, so the one handed over here is never
+      ! applied and nothing is marched.
+      executor = driver(immaterial, incidence, forward)
+      order    = executor % visits()
+
+      unread    = 0
+      elsewhere = 0
+      do b = 1, nb
+         if (executor % last_reader_of(b) < 1) then
+            unread = unread + 1
+            cycle
+         end if
+         if (order(executor % last_reader_of(b)) /= nb + b) elsewhere = elsewhere + 1
+      end do
+
+      ! the transpose retraces the forward sweep backwards, step for
+      ! step, so the last nb steps are the first nb read in reverse
+      out_of_reverse = 0
+      do k = 1, nb
+         if (order(size(order) - k + 1) /= nb + order(k)) out_of_reverse = out_of_reverse + 1
+      end do
+
+      ! every state is released by the end of the transpose
+      droppable = executor % released_after(size(order))
+      retired   = count(droppable <= nb)
+
+      ! A TRAVERSAL RETIRES WHAT IT PASSES. Every state is given a
+      ! value and no rule stands anywhere, so nothing is computed and
+      ! the only thing the traversal can do is obey the lifetimes.
+      allocate(rules % at(2 * nb), values % at(2 * nb))
+      one_point = stored_directed_graph(1, tails=[integer ::], heads=[integer ::])
+      datum     = stored_field('state', one_point % vertex_set(), 1)
+      do b = 1, nb
+         allocate(values % at(b) % datum, source=datum)
+      end do
+      call executor % pair_with(rules % pair(values))
+      bare = stored_directed_graph(nb, tails=[integer ::], heads=[integer ::])
+      call executor % evaluate(bare)
+      rested     = executor % pairing_of()
+      remaining  = rested % data_held()
+      still_held = count([(remaining % at(b) % written(), b = 1, nb)])
+
+      write(*,'(a,a,a,i0,a,i0,a,i0,a,i0,a,i0,a,i0,a,i0,a,i0,a,i0,a,i0)') '   ', title, &
+           & '  blocks ', nb, '  steps ', size(order), &
+           & '   read by nothing ', unread, ', held to ', 0, &
+           & ';  retired elsewhere ', elsewhere + (nb - retired), ', held to ', 0, &
+           & ';  steps out of reverse ', out_of_reverse, ', held to ', 0, &
+           & ';  still held ', still_held, ', held to ', 0
+    end subroutine checked
+
+  end subroutine demo_transposed_reads
 
   subroutine demo_scheme_weights()
     implicit none

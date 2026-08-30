@@ -86,6 +86,16 @@
 ! live set rather than the whole trajectory. Nothing here frees
 ! anything: the driver states the lifetime and the caller obeys it.
 !
+! The lifetime is only as honest as the arcs. A pass that reads a
+! datum without an arc saying so is invisible here, and the answer
+! would drop what that pass still wants - so a reverse pass over the
+! same vertices belongs in the graph as the TRANSPOSE, every forward
+! arc with its ends exchanged, plus an arc from each datum to the
+! transposed vertex that reads it again. A vertex of the transpose
+! need carry no rule to do its work here: standing in the order is
+! what makes it a reader, and a step that computes nothing still
+! retires whatever was last read at it.
+!
 !             WHO ASSEMBLES, WHO DRIVES
 !
 ! Building the two branches is one job and running them is another,
@@ -744,46 +754,53 @@ contains
 
        v = order(k)
        call this % stitched % rule_at(v, rule)
-       if (.not. allocated(rule)) cycle
 
-       ! WHAT THE RULE READS. In the forward orientation a rule reads
-       ! what entered it and writes what leaves; in the reverse the
-       ! two exchange, because reversing an orientation exchanges
-       ! previous with next. One traversal, read either way.
-       if (this % orientation == forward) then
-          call this % over % in_neighbourhood(FIRST_PART, v, reads)
-       else
-          call this % over % out_neighbourhood(FIRST_PART, v, reads)
-       end if
-       allocate(inputs(size(reads)))
-       filled = 0
-       do i = 1, size(reads)
-          call this % stitched % datum_at(reads(i), held)
-          if (.not. allocated(held)) cycle
-          select type (held)
-          type is (stored_field)
-             filled = filled + 1
-             inputs(filled) = held
-          end select
-          deallocate(held)
-       end do
+       ! A VERTEX CARRYING NO RULE STILL OCCUPIES A STEP. It computes
+       ! nothing, but the arcs entering it are reads like any other,
+       ! so a datum's last reader may stand there and the lifetimes
+       ! below must be settled at this step all the same.
+       if (allocated(rule)) then
 
-       call rule % apply(input_graph, inputs(1:filled), value)
-
-       ! what the rule writes: the data on the other side of it
-       if (allocated(value)) then
+          ! WHAT THE RULE READS. In the forward orientation a rule reads
+          ! what entered it and writes what leaves; in the reverse the
+          ! two exchange, because reversing an orientation exchanges
+          ! previous with next. One traversal, read either way.
           if (this % orientation == forward) then
-             call this % over % out_neighbourhood(FIRST_PART, v, writes)
+             call this % over % in_neighbourhood(FIRST_PART, v, reads)
           else
-             call this % over % in_neighbourhood(FIRST_PART, v, writes)
+             call this % over % out_neighbourhood(FIRST_PART, v, reads)
           end if
-          do i = 1, size(writes)
-             call this % stitched % place(writes(i), value)
+          allocate(inputs(size(reads)))
+          filled = 0
+          do i = 1, size(reads)
+             call this % stitched % datum_at(reads(i), held)
+             if (.not. allocated(held)) cycle
+             select type (held)
+             type is (stored_field)
+                filled = filled + 1
+                inputs(filled) = held
+             end select
+             deallocate(held)
           end do
-       end if
 
-       deallocate(inputs)
-       deallocate(rule)
+          call rule % apply(input_graph, inputs(1:filled), value)
+
+          ! what the rule writes: the data on the other side of it
+          if (allocated(value)) then
+             if (this % orientation == forward) then
+                call this % over % out_neighbourhood(FIRST_PART, v, writes)
+             else
+                call this % over % in_neighbourhood(FIRST_PART, v, writes)
+             end if
+             do i = 1, size(writes)
+                call this % stitched % place(writes(i), value)
+             end do
+          end if
+
+          deallocate(inputs)
+          deallocate(rule)
+
+       end if
 
        ! what nothing will read again
        droppable = this % released_after(k)
@@ -828,6 +845,14 @@ contains
   ! THE DATA DROPPABLE AFTER ONE STEP: every vertex already visited
   ! whose last reader is this step or earlier. A caller that releases
   ! these as it goes holds only the live set, never the trajectory.
+  !
+  ! Every datum here is asked for its last reader, and each such
+  ! answer orders the vertices afresh, so a traversal that calls this
+  ! at every step costs the order once per step per datum. Against a
+  ! graph whose vertices carry a linear solve apiece this does not
+  ! show, and it is why a graph carrying its transpose - twice the
+  ! vertices - measures the same. A graph of many cheap vertices
+  ! wants the order held once instead.
   !===================================================================!
 
   function released_after(this, step) result(vertices)

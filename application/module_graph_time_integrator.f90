@@ -3698,7 +3698,7 @@ module gti_chain
   use gti_block        , only : block_residual
   use gti_march        , only : imbalance, swept, solved_linear, fresh_stamp, horizon_bounds, &
        & frozen_inputs
-  use gti_march        , only : block_from, consistent_state, instants_at_of
+  use gti_march        , only : block_from, consistent_state
   use gti_sweeps       , only : choose
   use util_derivative_terms, only : derivative_terms, coefficient, operator(*)
   use operation_stencil, only : stencil
@@ -3773,6 +3773,43 @@ module gti_chain
   integer, parameter :: BLOCKS = FIRST_PART
   integer, parameter :: STATES = SECOND_PART
 
+  !===================================================================!
+  ! ONE BLOCK'S STATE, AS A DATUM THAT DESCRIBES ITSELF. The values a
+  ! block solved for, and the layout needed to read an instant back
+  ! out of them: which instants the block covers, and where each one
+  ! begins inside the values.
+  !
+  !     first        first+stride      first+2*stride     instants
+  !     |            |                 |
+  !     [ ...... ] [ ...... ] [ ...... ]                 values
+  !     ^          ^          ^
+  !     instants_at(1)        instants_at(3)
+  !
+  ! A reader asks for an instant, not for an offset.  So no offset is
+  ! settled before the march, and a block hands its state to whoever
+  ! reads next without either of them agreeing a layout beforehand.
+  !===================================================================!
+
+  type, extends(stored_field) :: block_state
+
+     ! which block solved these values, so that where two blocks
+     ! cover one instant the later of them is the one read
+     integer :: at = 0
+
+     ! the instants covered, as the chain numbers them
+     integer :: first = 0, last = 0, stride = 1
+
+     ! where each covered instant begins inside the values
+     integer, allocatable :: instants_at(:)
+
+   contains
+
+     procedure :: holds                    ! whether an instant is covered
+     procedure :: values_at                ! the values at one instant
+     procedure :: place_in => block_state_place_in
+
+  end type block_state
+
   type, extends(operation) :: block_rule
 
      type(chain_block), pointer :: chain(:) => null()
@@ -3789,15 +3826,6 @@ module gti_chain
      real(dp) :: fraction = 1.0_dp, design = 0.0_dp
      logical  :: counted = .true.
      logical  :: over_nodes = .false.
-
-     ! WHERE ITS HANDOVER COMES FROM. One entry per instant the
-     ! scheme reaches back over: which of the data the driver hands
-     ! in, and where in that datum the instant's values begin. The
-     ! assembler settles both, so this rule never looks in the chain
-     ! to find them.
-     integer, allocatable :: taken_from(:)      ! which input
-     integer, allocatable :: taken_at(:)        ! offset within it
-     integer              :: taken_width = 0
 
      ! what the solve reported, read back after the graph is evaluated
      real(dp)        :: achieved = 0.0_dp
@@ -4106,12 +4134,9 @@ contains
     type(driver)                :: executor
     type(block_rule)            :: one
     type(stored_directed_graph) :: bare
-    integer, allocatable :: handed(:), offsets(:)
-    integer :: nb, b, k, given, i, e, instant, holder, width_of_block
+    integer :: nb, b, k
 
     nb = size(added)
-    width_of_block = degrees
-    if (present(nodes)) width_of_block = degrees * nodes
 
     incidence = chain_incidence(schemes, added, degrees, r, first, last)
 
@@ -4143,39 +4168,6 @@ contains
        deallocate(one % scheme, one % physics)
     end do
 
-    ! WHERE EVERY HANDOVER COMES FROM, settled here and not at run
-    ! time. The graph says which data a block is handed and in what
-    ! order; the tower says where each instant sits inside them.
-    do b = 2, nb
-       given = schemes(b) % scheme % history_depth(degrees - 1)
-       call incidence % in_neighbourhood(BLOCKS, b, handed)
-       select type (rule => rules % at(b) % rule)
-       type is (block_rule)
-          allocate(rule % taken_from(given), rule % taken_at(given))
-          rule % taken_width = width_of_block
-          do i = 1, given
-             instant = 1 + (first(b) - 1) * r + (i - 1) * r
-             holder  = 0
-             do e = b - 1, 1, -1
-                if (instant < 1 + (first(e) - 1) * r) cycle
-                if (instant > 1 + (last(e)  - 1) * r) cycle
-                if (mod(instant - (1 + (first(e) - 1) * r), r) /= 0) cycle
-                holder = e
-                exit
-             end do
-             if (holder == 0) then
-                error stop 'gti_chain: an instant handed to a block is held by none'
-             end if
-             rule % taken_from(i) = 0
-             do e = 1, size(handed)
-                if (handed(e) == holder) rule % taken_from(i) = e
-             end do
-             offsets = instants_at_of(tower, before + holder, schemes(holder) % scheme, physics)
-             rule % taken_at(i) = offsets((instant - (1 + (first(holder) - 1) * r)) / r + 1)
-          end do
-       end select
-    end do
-
     executor = driver(rules % at(1) % rule, incidence, forward)
     call executor % pair_with(rules % pair(values))
 
@@ -4203,6 +4195,68 @@ contains
 
   end subroutine marched_by_driver
 
+  !===================================================================!
+  ! WHETHER THIS STATE COVERS AN INSTANT. The block's instants run
+  ! from first to last by stride, and no others are held.
+  !===================================================================!
+
+  pure logical function holds(this, instant)
+    class(block_state), intent(in) :: this
+    integer           , intent(in) :: instant
+    holds = .false.
+    if (instant < this % first) return
+    if (instant > this % last)  return
+    if (this % stride < 1) return
+    if (mod(instant - this % first, this % stride) /= 0) return
+    holds = .true.
+  end function holds
+
+  !===================================================================!
+  ! THE VALUES THIS STATE HOLDS AT ONE INSTANT. The instant's place
+  ! among the covered ones gives its offset, and the caller's width
+  ! says how many values begin there.
+  !===================================================================!
+
+  subroutine values_at(this, instant, width, values)
+    class(block_state)   , intent(in)  :: this
+    integer              , intent(in)  :: instant, width
+    real(dp), allocatable, intent(out) :: values(:)
+    real(dp), allocatable :: whole(:)
+    integer :: local, offset
+    if (.not. this % holds(instant)) then
+       error stop 'gti_chain: a state holds the instant asked of it'
+    end if
+    local = (instant - this % first) / this % stride + 1
+    if (.not. allocated(this % instants_at)) then
+       error stop 'gti_chain: a state carries the offsets of the instants it holds'
+    end if
+    if (local < 1 .or. local > size(this % instants_at)) then
+       error stop 'gti_chain: a state carries the offsets of the instants it holds'
+    end if
+    offset = this % instants_at(local)
+    call this % real_vector(whole)
+    if (offset < 0 .or. offset + width > size(whole)) then
+       error stop 'gti_chain: an instant lies inside the values a state holds'
+    end if
+    values = whole(offset + 1:offset + width)
+  end subroutine values_at
+
+  !===================================================================!
+  ! Place this state at a location that is a block state. A location
+  ! of any other type would lose the layout and is an error.
+  !===================================================================!
+
+  subroutine block_state_place_in(this, location)
+    class(block_state), intent(in)    :: this
+    class(field)      , intent(inout) :: location
+    select type (location)
+    type is (block_state)
+       location = this
+    class default
+       error stop 'gti_chain: a block state is placed at a block state'
+    end select
+  end subroutine block_state_place_in
+
   pure function block_rule_name(this) result(name)
     class(block_rule), intent(in) :: this
     character(len=:), allocatable :: name
@@ -4223,31 +4277,51 @@ contains
     class(directed_graph)    , intent(in)    :: input_graph
     class(field)             , intent(in), optional :: input_data(:)
     class(field), allocatable, intent(inout) :: output
-    type(stored_field) :: state
+    type(block_state) :: state
     type(stored_directed_graph) :: state_domain
     real(dp), allocatable :: handover(:), one_datum(:)
     real(dp) :: achieved
     type(imbalance) :: left
-    integer :: i
+    integer :: i, e, given, width, instant, held_by, taken
     if (.not. associated(this % chain) .or. .not. associated(this % tower)) then
        error stop 'gti_chain: a block rule stands at a block of a chain'
     end if
-    ! THE HANDOVER, GATHERED FROM WHAT THE DRIVER HANDED IN. Each
-    ! instant the scheme reaches back over is taken from one of the
-    ! data, at the offset the assembler settled. Nothing is looked up
-    ! in the chain: this is the cut, and it is closed here.
-    if (allocated(this % taken_from)) then
-       allocate(handover(size(this % taken_from) * this % taken_width))
-       do i = 1, size(this % taken_from)
-          if (this % taken_from(i) < 1 .or. .not. present(input_data)) then
+    ! THE HANDOVER, ASKED OF THE DATA THEMSELVES. Each instant the
+    ! scheme reaches back over is asked of every datum handed in, and
+    ! a block's state answers from the layout carried inside it. Where
+    ! two states cover one instant the later block is read, which is
+    ! the chain's own order. Nothing is looked up in the chain, and no
+    ! offset is settled before the march: this is the cut, and it is
+    ! closed here.
+    given = 0
+    if (present(input_data)) then
+       if (size(input_data) > 0) given = this % scheme % history_depth(this % degrees - 1)
+    end if
+    if (given > 0) then
+       width = this % degrees
+       if (this % over_nodes) width = this % degrees * this % nodes
+       allocate(handover(given * width))
+       do i = 1, given
+          instant = this % first + (i - 1) * this % stride
+          held_by = 0
+          taken   = 0
+          do e = 1, size(input_data)
+             select type (datum => input_data(e))
+             type is (block_state)
+                if (.not. datum % holds(instant)) cycle
+                if (datum % at < held_by) cycle
+                held_by = datum % at
+                taken   = e
+             end select
+          end do
+          if (taken < 1) then
              error stop 'gti_chain: a block is handed the data its scheme reaches back over'
           end if
-          if (this % taken_from(i) > size(input_data)) then
-             error stop 'gti_chain: a block is handed the data its scheme reaches back over'
-          end if
-          call input_data(this % taken_from(i)) % real_vector(one_datum)
-          handover((i - 1) * this % taken_width + 1:i * this % taken_width) = &
-               & one_datum(this % taken_at(i) + 1:this % taken_at(i) + this % taken_width)
+          select type (datum => input_data(taken))
+          type is (block_state)
+             call datum % values_at(instant, width, one_datum)
+          end select
+          handover((i - 1) * width + 1:i * width) = one_datum
        end do
     end if
 
@@ -4284,9 +4358,14 @@ contains
     ! field a domain it does not have.
     state_domain = stored_directed_graph(this % chain(this % at) % rows % num_points(), &
          & tails=[integer ::], heads=[integer ::])
-    state = stored_field('state', state_domain % vertex_set(), &
+    state % stored_field = stored_field('state', state_domain % vertex_set(), &
          & size(this % chain(this % at) % state))
     call state % set_real_vector(this % chain(this % at) % state)
+    state % at          = this % at
+    state % first       = this % chain(this % at) % first
+    state % last        = this % chain(this % at) % last
+    state % stride      = this % chain(this % at) % stride
+    state % instants_at = this % chain(this % at) % instants_at
     call emit(state, output)
   end subroutine block_rule_apply
 

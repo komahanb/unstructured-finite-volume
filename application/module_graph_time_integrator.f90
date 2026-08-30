@@ -5460,7 +5460,7 @@ module gti_demos
   use operation_family_bdf  , only : bdf_family
   use operation_family_adams, only : adams_family
   use operation_family_dirk , only : dirk_family, implicit_midpoint, &
-       & crouzeix_two_stage, crouzeix_three_stage
+       & crouzeix_two_stage, crouzeix_three_stage, hairer_wanner_five_stage
   use operation_grid        , only : grid, uniform_grid, random_grid, designed_grid, partition
   use operation_coupling    , only : weights_of, coupling_inputs
   use operation_weight      , only : scheme_weight
@@ -5990,30 +5990,31 @@ contains
   end subroutine demo_chained_horizon
 
   !===================================================================!
-  ! THE ORDER OF ACCURACY OF A DERIVATIVE OF THE TIME FUNCTIONAL, read
-  ! off refined grids rather than asserted. The same chain is marched
-  ! on grids of n, 2n and 4n instants per window, and again on 8n as
-  ! the reference. The departure of each grid from the reference is
-  ! then halved once per refinement if the derivative carries order
-  ! one, quartered if order two, and so on, so
+  ! DOES A CHAIN OF DIFFERENT SCHEMES KEEP THE ORDER OF ACCURACY, AND
+  ! DOES IT KEEP IT ON EVERY DERIVATIVE OF THE TIME FUNCTIONAL?
   !
-  !            observed order = log2( e(n) / e(2n) )
+  ! Halving the step should shrink the error by a factor 2**p, where p
+  ! is the order of the scheme. So marching the same problem on two
+  ! grids and comparing the errors gives p back:
   !
-  ! Three departures give two observed orders per derivative degree.
-  ! The finest grid stands against a reference only twice as fine, so
-  ! the second reading is the weaker of the two and is printed beside
-  ! the first rather than in place of it.
+  !          observed order = log2( error(h) / error(h/2) )
   !
-  ! HOMOGENEOUS AND HETEROGENEOUS ALIKE. One family over the whole
-  ! horizon is a chain of one window; several families in succession
-  ! is a chain of several. The instants divide in the same proportion
-  ! on every grid, so a refinement moves no window boundary and the
-  ! reading is the scheme's order and not the boundary's placement.
+  ! There is no exact answer to measure against, so a reference grid
+  ! far finer than any of the three measured grids stands in for one.
   !
-  ! NOTHING IS HELD TO A FLOOR HERE. A tableau outside its asymptotic
-  ! range reads below its formal order, and that reading is the result
-  ! rather than a fault - so the formal order is printed beside the
-  ! observed one and neither is checked against the other.
+  ! Each window keeps the same share of the horizon on every grid, so
+  ! refining never moves a window boundary. Without that the reading
+  ! would be of where the boundaries sit and not of the schemes.
+  !
+  ! A chain can be no better than its weakest window, so the formal
+  ! order of a chain is the smallest among the schemes in it.
+  !
+  ! WHY THE CHAINS HERE ARE ALL RUNGE-KUTTA. The time functional is
+  ! integrated by one point per step for a multistep family, which is
+  ! a rectangle rule and first order whatever the scheme is. Any chain
+  ! holding such a window reads order one and says nothing about the
+  ! chaining. The multistep families are still shown, at the end and
+  ! on their own, so that limit is visible rather than hidden.
   !===================================================================!
 
   subroutine demo_order_of_accuracy()
@@ -6021,44 +6022,78 @@ contains
     implicit none
     integer , parameter :: state_degree = 2
     integer , parameter :: degrees   = state_degree + 1
-    integer , parameter :: max_order = 2
+    integer , parameter :: max_order = 6      ! derivative degrees 0 through 6
     real(dp), parameter :: duration  = 2.0_dp
-    integer , parameter :: per_window = 8      ! instants per window, coarsest
-    integer , parameter :: grids      = 3      ! and one reference beyond them
-    integer , parameter :: finer      = 8      ! the reference, against the finest grid
+    integer , parameter :: per_window = 6     ! instants per window, coarsest grid
+    integer , parameter :: grids      = 3     ! grids measured, each double the last
+    integer , parameter :: finer      = 4     ! the reference, against the finest
+
+    ! An observed order this far below the formal one is still read as
+    ! keeping it. Grids this coarse do not settle a fourth-order
+    ! tableau to two decimal places, and the question here is whether
+    ! the order survives the chaining, not what its last digit is.
+    real(dp), parameter :: allowed = 0.5_dp
 
     write(*,'(a)') ' '
-    write(*,'(a)') ' order of accuracy, read off refined grids'
-    write(*,'(a,i0,a,i0,a)') '   ', grids, ' grids per chain, doubling from ', per_window, &
-         & ' instants per window'
-    write(*,'(a,i0,a)') '   the reference grid is ', finer, ' times the finest of them'
+    write(*,'(a)') ' DOES CHAINING DIFFERENT SCHEMES KEEP THE ORDER OF ACCURACY?'
     write(*,'(a)') ' '
-    write(*,'(a)') ' HOMOGENEOUS: one family over the whole horizon'
-    call refined('bdf 1', 1, [held_family(bdf_family(1))])
-    call refined('bdf 2', 2, [held_family(bdf_family(2))])
-    call refined('adams 2', 2, [held_family(adams_family(2))])
-    call refined('adams 3', 3, [held_family(adams_family(3))])
-    call refined('implicit midpoint', 2, [held_family(implicit_midpoint())])
-    call refined('crouzeix two-stage', 3, [held_family(crouzeix_two_stage())])
+    write(*,'(a,i0,a,i0,a)') '   Each chain is marched on ', grids, &
+         & ' grids, doubling from ', per_window, ' instants per window,'
+    write(*,'(a,i0,a)') '   and compared against a reference grid ', finer, &
+         & ' times finer than the finest.'
+    write(*,'(a)') '   Halving the step should shrink the error by two to the power of the'
+    write(*,'(a)') '   order, so the order is read back as log2 of successive errors.'
+    write(*,'(a)') '   Every window keeps its share of the horizon as the grid refines, so'
+    write(*,'(a)') '   no window boundary moves. A chain is no better than its weakest'
+    write(*,'(a)') '   window, so its formal order is the smallest in it.'
+    write(*,'(a,f4.2,a)') '   An observed order within ', allowed, &
+         & ' of the formal one is read as keeping it.'
+    write(*,'(a)') '   A dash means the error reached round-off, and no order can be read.'
 
     write(*,'(a)') ' '
-    write(*,'(a)') ' HETEROGENEOUS: a chain of windows, each family in turn'
-    call refined('bdf2 dirk3', 2, &
-         & [held_family(bdf_family(2)), held_family(crouzeix_two_stage())])
-    call refined('dirk3 bdf2', 2, &
-         & [held_family(crouzeix_two_stage()), held_family(bdf_family(2))])
-    call refined('dirk3 bdf2 adams3', 2, &
-         & [held_family(crouzeix_two_stage()), held_family(bdf_family(2)), &
-         &  held_family(adams_family(3))])
-    call refined('bdf2 dirk3 adams3 bdf2', 2, &
-         & [held_family(bdf_family(2)), held_family(crouzeix_two_stage()), &
-         &  held_family(adams_family(3)), held_family(bdf_family(2))])
+    write(*,'(a)') ' ONE RUNGE-KUTTA SCHEME OVER THE WHOLE HORIZON'
+    call reading('implicit midpoint', [2], [held_family(implicit_midpoint())])
+    call reading('crouzeix two-stage', [3], [held_family(crouzeix_two_stage())])
+    call reading('crouzeix three-stage', [4], [held_family(crouzeix_three_stage())])
+    call reading('hairer-wanner five-stage', [4], [held_family(hairer_wanner_five_stage())])
+
+    write(*,'(a)') ' '
+    write(*,'(a)') ' CHAINS OF DIFFERENT RUNGE-KUTTA SCHEMES'
+    call reading('midpoint then crouzeix-2', [2, 3], &
+         & [held_family(implicit_midpoint()), held_family(crouzeix_two_stage())])
+    call reading('crouzeix-2 then midpoint', [3, 2], &
+         & [held_family(crouzeix_two_stage()), held_family(implicit_midpoint())])
+    call reading('crouzeix-2 then crouzeix-3', [3, 4], &
+         & [held_family(crouzeix_two_stage()), held_family(crouzeix_three_stage())])
+    call reading('crouzeix-3 then hairer-wanner', [4, 4], &
+         & [held_family(crouzeix_three_stage()), held_family(hairer_wanner_five_stage())])
+    call reading('crouzeix-3, crouzeix-2, midpoint', [4, 3, 2], &
+         & [held_family(crouzeix_three_stage()), held_family(crouzeix_two_stage()), &
+         &  held_family(implicit_midpoint())])
+    call reading('crouzeix-3, hairer-wanner, crouzeix-3', [4, 4, 4], &
+         & [held_family(crouzeix_three_stage()), held_family(hairer_wanner_five_stage()), &
+         &  held_family(crouzeix_three_stage())])
+    call reading('midpoint, crouzeix-2, crouzeix-3, hairer-wanner', [2, 3, 4, 4], &
+         & [held_family(implicit_midpoint()), held_family(crouzeix_two_stage()), &
+         &  held_family(crouzeix_three_stage()), held_family(hairer_wanner_five_stage())])
+    call reading('hairer-wanner, crouzeix-3, crouzeix-2, midpoint, crouzeix-3', &
+         & [4, 4, 3, 2, 4], &
+         & [held_family(hairer_wanner_five_stage()), held_family(crouzeix_three_stage()), &
+         &  held_family(crouzeix_two_stage()), held_family(implicit_midpoint()), &
+         &  held_family(crouzeix_three_stage())])
+
+    write(*,'(a)') ' '
+    write(*,'(a)') ' MULTISTEP FAMILIES, WHERE THE FUNCTIONAL QUADRATURE IS THE LIMIT'
+    call reading('bdf 2', [2], [held_family(bdf_family(2))])
+    call reading('adams 3', [3], [held_family(adams_family(3))])
+    call reading('bdf 2 then crouzeix-3', [2, 4], &
+         & [held_family(bdf_family(2)), held_family(crouzeix_three_stage())])
 
   contains
 
     !----------------------------------------------------------------!
-    ! One chain on one grid: the derivatives of the functional up to
-    ! max_order, with the windows in a fixed proportion of the whole.
+    ! One chain on one grid: the time functional and its derivatives
+    ! in the design, with the windows in a fixed share of the whole.
     !----------------------------------------------------------------!
 
     subroutine on_grid(schemes, instants, f)
@@ -6085,16 +6120,18 @@ contains
       f = table(:, 1)
     end subroutine on_grid
 
-    subroutine refined(title, formal, schemes)
+    subroutine reading(title, formal, schemes)
       character(len=*)   , intent(in) :: title
-      integer            , intent(in) :: formal
+      integer            , intent(in) :: formal(:)
       type(family_holder), intent(in) :: schemes(:)
       real(dp), allocatable :: f(:), reference(:)
-      real(dp) :: apart(grids, 0:max_order)
-      character(len=:), allocatable :: line
+      real(dp) :: apart(grids, 0:max_order), observed(0:max_order)
+      logical  :: readable(0:max_order)
+      character(len=:), allocatable :: line, orders, verdicts
       character(len=16) :: cell
-      integer :: g, m, windows, instants
-      windows = size(schemes)
+      integer :: g, m, windows, instants, expected, kept, counted
+      windows  = size(schemes)
+      expected = minval(formal)
       call on_grid(schemes, windows * per_window * finer * 2 ** (grids - 1), reference)
       do g = 1, grids
          instants = windows * per_window * 2 ** (g - 1)
@@ -6104,40 +6141,48 @@ contains
          end do
          deallocate(f)
       end do
-      write(*,'(a)') ' '
-      write(*,'(a,a,i0,a,i0,a,i0)') '   ' // title, &
-           & '    formal order ', formal, ', windows ', windows, &
-           & ', instants per window from ', per_window
+      ! the order the finest pair of grids implies, which is the one
+      ! least troubled by the coarse end of the refinement
       do m = 0, max_order
-         write(cell,'(i0)') m
-         line = '     k = ' // trim(cell) // '   departures'
-         do g = 1, grids
-            write(cell,'(es11.2)') apart(g, m)
-            line = line // cell(1:11)
-         end do
-         line = line // '    observed'
-         do g = 1, grids - 1
-            line = line // observed_between(apart(g, m), apart(g + 1, m))
-         end do
-         write(*,'(a)') line
+         readable(m) = apart(grids - 1, m) > 0.0_dp .and. apart(grids, m) > 0.0_dp
+         observed(m) = 0.0_dp
+         if (readable(m)) then
+            observed(m) = log(apart(grids - 1, m) / apart(grids, m)) / log(2.0_dp)
+         end if
       end do
-    end subroutine refined
-
-    !----------------------------------------------------------------!
-    ! The order two departures imply, or a dash where none does: a
-    ! departure at zero has reached round-off and carries no order,
-    ! and one that grew under refinement carries none either.
-    !----------------------------------------------------------------!
-
-    function observed_between(coarse, fine) result(cell)
-      real(dp), intent(in) :: coarse, fine
-      character(len=9) :: cell
-      if (coarse <= 0.0_dp .or. fine <= 0.0_dp) then
-         cell = '        -'
-         return
-      end if
-      write(cell,'(f9.2)') log(coarse / fine) / log(2.0_dp)
-    end function observed_between
+      kept    = count(readable .and. observed >= real(expected, dp) - allowed)
+      counted = count(readable)
+      write(*,'(a)') ' '
+      write(*,'(a,a,i0,a,i0)') '   ' // title, &
+           & '   -   formal order ', expected, ', windows ', windows
+      line     = '     derivative degree '
+      orders   = '     observed order    '
+      verdicts = '     keeps the order?  '
+      do m = 0, max_order
+         write(cell,'(i8)') m
+         line = line // cell(1:8)
+         if (readable(m)) then
+            write(cell,'(f8.2)') observed(m)
+            orders = orders // cell(1:8)
+            if (observed(m) >= real(expected, dp) - allowed) then
+               verdicts = verdicts // '     yes'
+            else
+               verdicts = verdicts // '      no'
+            end if
+         else
+            orders   = orders   // '       -'
+            verdicts = verdicts // '       -'
+         end if
+      end do
+      write(*,'(a)') line
+      write(*,'(a)') orders
+      write(*,'(a)') verdicts
+      write(cell,'(i0)') kept
+      line = '     keeps order ' // trim(cell) // ' of '
+      write(cell,'(i0)') counted
+      line = line // trim(cell) // ' readable degrees'
+      write(*,'(a)') line
+    end subroutine reading
 
   end subroutine demo_order_of_accuracy
   subroutine demo_constraint_rows()

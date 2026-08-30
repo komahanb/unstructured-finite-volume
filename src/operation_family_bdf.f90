@@ -38,7 +38,7 @@
 module operation_family_bdf
 
   use util_precision  , only : dp
-  use operation_family     , only : family, offsets, slope_at_zero, negated
+  use operation_family     , only : family, offsets, slope_at_zero, negated, integral_over_step
   use util_derivative_terms, only : derivative_terms, &
        & operator(+), operator(*), operator(/)
 
@@ -55,6 +55,7 @@ module operation_family_bdf
 
      procedure :: name             => bdf_name
      procedure :: history_depth    => bdf_history_depth
+     procedure :: step_quadrature  => bdf_step_quadrature
      procedure :: primary_degree   => bdf_primary_degree
      procedure :: row_pattern      => bdf_row_pattern
      procedure :: edge_coefficient => bdf_edge_coefficient
@@ -212,5 +213,37 @@ contains
     c = derivative_coefficient(dt, head, j, this % order, determines)
 
   end function bdf_edge_coefficient
+
+  !===================================================================!
+  ! THE QUADRATURE OVER ONE STEP FOR BDF. A backward difference
+  ! formula differentiates rather than integrates, so it carries no
+  ! quadrature weights of its own - but its stencil holds the instants
+  ! one needs, and the interpolatory rule on those instants is the
+  ! same rule the Adams family advances its state with.
+  !
+  ! p instants carry order p, which matches the order of the states
+  ! being integrated. Near the start of a block fewer instants stand
+  ! behind k than p, and the rule shortens to what is there.
+  !===================================================================!
+
+  pure subroutine bdf_step_quadrature(this, dt, k, weight)
+
+    class(bdf_family)     , intent(in) :: this
+    type(derivative_terms), intent(in) :: dt(:)
+    integer               , intent(in) :: k
+    type(derivative_terms), allocatable, intent(out) :: weight(:)
+
+    integer :: nodes, j
+
+    if (k < 1 .or. k > size(dt)) then
+       error stop 'operation_family_bdf: a quadrature stands at an instant of the block'
+    end if
+    nodes = min(this % order, k)
+    allocate(weight(nodes))
+    do j = 1, nodes
+       weight(j) = integral_over_step(negated(offsets(dt, k, nodes)), j - 1)
+    end do
+
+  end subroutine bdf_step_quadrature
 
 end module operation_family_bdf

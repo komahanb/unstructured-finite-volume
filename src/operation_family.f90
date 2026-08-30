@@ -49,6 +49,7 @@ module operation_family
      procedure :: history_depth  => family_history_depth
      procedure :: num_stages     => family_num_stages
      procedure :: stage_weight   => family_stage_weight
+     procedure :: step_quadrature => family_step_quadrature
      procedure :: primary_degree => family_primary_degree
      procedure(family_pattern_interface), deferred :: row_pattern
 
@@ -231,6 +232,45 @@ contains
     family_num_stages = 1
 
   end function family_num_stages
+
+  !===================================================================!
+  ! THE QUADRATURE OVER ONE STEP, as the weights of the instants the
+  ! step reaches back over: weight(j) belongs to the instant j - 1
+  ! back from k, so a rule of m nodes returns m weights.
+  !
+  ! A rule on m nodes integrates the degree m - 1 interpolant through
+  ! them exactly. Over a step of width h that leaves a local error of
+  ! order h**(m+1), and over the T/h steps of the horizon an error of
+  ! order h**m. So m nodes carry order m.
+  !
+  ! WHAT A FAMILY ANSWERS UNLESS IT SAYS OTHERWISE: one node at
+  ! weight one, which is the rectangle rule and first order. A family
+  ! whose stencil already holds the instants of an interpolatory rule
+  ! answers that rule instead, and a stage family is never asked -
+  ! its quadrature is the tableau, read through stage_weight.
+  !
+  ! MATCHING THE RULE TO THE STATES. The values integrated are
+  ! themselves accurate to order p, so a rule finer than p buys
+  ! nothing: the error is of order h**min(m,p) either way. Taking m
+  ! as the family's own order is therefore exactly enough, and the
+  ! weights grow and alternate in sign beyond it.
+  !===================================================================!
+
+  pure subroutine family_step_quadrature(this, dt, k, weight)
+
+    class(family)         , intent(in) :: this
+    type(derivative_terms), intent(in) :: dt(:)
+    integer               , intent(in) :: k
+    type(derivative_terms), allocatable, intent(out) :: weight(:)
+
+    associate (u1 => this); end associate
+    if (k < 1 .or. k > size(dt)) then
+       error stop 'operation_family: a quadrature stands at an instant of the block'
+    end if
+    allocate(weight(1))
+    weight(1) = derivative_terms(1.0_dp, dt(k))
+
+  end subroutine family_step_quadrature
 
   !===================================================================!
   ! The quadrature weight of one stage: the tableau's b for a stage

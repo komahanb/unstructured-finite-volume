@@ -4815,15 +4815,43 @@ contains
     end do
     t = rule % at_instant(q, nu)
   end function point_terms
-  subroutine quadrature_points(b, k, offset, weight)
-    type(chain_block)    , intent(in)  :: b
-    integer              , intent(in)  :: k
-    integer , allocatable, intent(out) :: offset(:)
-    real(dp), allocatable, intent(out) :: weight(:)
-    integer :: s, i, width
+  !===================================================================!
+  ! THE POINTS ONE STEP IS INTEGRATED OVER, AND THEIR WEIGHTS.
+  !
+  ! A STAGE FAMILY puts its points inside the step. The stages are
+  ! there already and the tableau weighs them, which is a rule of the
+  ! tableau's order, so a multistage family needs no history at all.
+  !
+  !        |---- step k ----|
+  !        x    o    o    o          o the stages, weighed by beta
+  !
+  ! A MULTISTEP FAMILY has no points inside the step, so the rule
+  ! stands on the instants the step reaches back over - which its own
+  ! stencil already holds. The family answers their weights, and p
+  ! instants carry order p.
+  !
+  !   o----o----o----|---- step k ----|
+  !   k-3  k-2  k-1                   k       the history, weighed by
+  !                                           the family's own rule
+  !===================================================================!
+
+  subroutine quadrature_points(b, k, steps, offset, weight)
+    type(chain_block)     , intent(in)  :: b
+    integer               , intent(in)  :: k
+    type(derivative_terms), intent(in)  :: steps(:)
+    integer , allocatable , intent(out) :: offset(:)
+    type(derivative_terms), allocatable, intent(out) :: weight(:)
+    integer :: s, i, width, nodes
     if (.not. b % staged) then
-       offset = [b % instants_at(k)]
-       weight = [1.0_dp]
+       call b % scheme % step_quadrature(steps, k, weight)
+       nodes = size(weight)
+       allocate(offset(nodes))
+       do i = 1, nodes
+          if (k - i + 1 < 1) then
+             error stop 'gti_chain: a quadrature reads instants the block holds'
+          end if
+          offset(i) = b % instants_at(k - i + 1)
+       end do
        return
     end if
     if (k == 1) then
@@ -4835,9 +4863,31 @@ contains
     allocate(offset(s), weight(s))
     do i = 1, s
        offset(i) = b % instants_at(k) - (s - i + 1) * width
-       weight(i) = b % scheme % stage_weight(i)
+       weight(i) = derivative_terms(b % scheme % stage_weight(i), steps(k))
     end do
   end subroutine quadrature_points
+
+  !===================================================================!
+  ! THE BLOCK'S STEPS AS DERIVATIVE TERMS, each carrying the design
+  ! partials of its own width. A quadrature weight built on a designed
+  ! grid moves with the design, so the weights are terms and not
+  ! numbers, and the width matches what the weights multiply.
+  !===================================================================!
+
+  function stepped_terms(b, step_seed, n, extra) result(steps)
+    type(chain_block), intent(in) :: b
+    real(dp)         , intent(in) :: step_seed(:,:)
+    integer          , intent(in) :: n, extra
+    type(derivative_terms), allocatable :: steps(:)
+    integer :: k, mask
+    allocate(steps(size(b % dt)))
+    do k = 1, size(b % dt)
+       steps(k) = derivative_terms(b % dt(k), n + extra)
+       do mask = 1, 2**n - 1
+          call steps(k) % set_coefficient(mask, step_seed(k, mask))
+       end do
+    end do
+  end function stepped_terms
   function measure_terms(b, k, node, n, extra, step_seed, node_measure) result(t)
     type(chain_block), intent(in) :: b
     integer          , intent(in) :: k, node, n, extra
@@ -4985,7 +5035,7 @@ contains
     integer , allocatable :: tr(:), tc(:), at(:)
     logical , allocatable :: carried(:)
     integer , allocatable :: offset(:)
-    real(dp), allocatable :: beta(:)
+    type(derivative_terms), allocatable :: beta(:), steps(:)
     integer :: n, full, e, mask, p, d, row, k, node, from, to, point, count, pt
     n     = size(s)
     full  = 2**n - 1
@@ -4993,8 +5043,9 @@ contains
     call seeds_of(chain, b, s, 0, .true., w, u, nd, state_seed, step_seed, nu_seed)
     allocate(g(count), source=0.0_dp)
     call owned(chain, b, from, to)
+    steps = stepped_terms(chain(b), step_seed, n, degrees)
     do k = from, to
-       call quadrature_points(chain(b), k, offset, beta)
+       call quadrature_points(chain(b), k, steps, offset, beta)
        do pt = 1, size(offset)
           do node = 1, chain(b) % nodes
              point = offset(pt) + (node - 1) * degrees
@@ -5042,7 +5093,7 @@ contains
     integer , allocatable :: tr(:), tc(:), at(:)
     logical , allocatable :: carried(:)
     integer , allocatable :: offset(:)
-    real(dp), allocatable :: beta(:)
+    type(derivative_terms), allocatable :: beta(:), steps(:)
     integer :: n, fulln, jbit, full, e, mask, sub, p, row, k, node, from, to, point, pt
     n     = size(s)
     fulln = 2**n - 1
@@ -5051,8 +5102,9 @@ contains
     call seeds_of(chain, b, s, j, .true., w, u, nd, state_seed, step_seed, nu_seed)
     part = 0.0_dp
     call owned(chain, b, from, to)
+    steps = stepped_terms(chain(b), step_seed, n + 1, 0)
     do k = from, to
-       call quadrature_points(chain(b), k, offset, beta)
+       call quadrature_points(chain(b), k, steps, offset, beta)
        do pt = 1, size(offset)
           do node = 1, chain(b) % nodes
              point = offset(pt) + (node - 1) * degrees
@@ -5098,15 +5150,16 @@ contains
     type(derivative_terms) :: t
     real(dp), allocatable :: state_seed(:,:), step_seed(:,:), nu_seed(:)
     integer , allocatable :: offset(:)
-    real(dp), allocatable :: beta(:)
+    type(derivative_terms), allocatable :: beta(:), steps(:)
     integer :: n, full, k, node, from, to, point, pt
     n    = size(s) + merge(1, 0, open > 0)
     full = 2**n - 1
     call seeds_of(chain, b, s, open, .true., w, u, nd, state_seed, step_seed, nu_seed)
     part = 0.0_dp
     call owned(chain, b, from, to)
+    steps = stepped_terms(chain(b), step_seed, n, 0)
     do k = from, to
-       call quadrature_points(chain(b), k, offset, beta)
+       call quadrature_points(chain(b), k, steps, offset, beta)
        do pt = 1, size(offset)
           do node = 1, chain(b) % nodes
              point = offset(pt) + (node - 1) * degrees
@@ -7524,22 +7577,6 @@ contains
       write(*,'(a,22x,2f11.3)') '   ratio                    ', e(1:2) / e(2:3)
       write(*,'(a,es11.2)')   '   residual                   ', achieved
     end subroutine across_a_change_of_scheme
-    real(dp) function energy_of(q, n, design_value) result(f)
-      real(dp), intent(in) :: q(:)
-      integer , intent(in) :: n
-      real(dp), intent(in) :: design_value
-      type(stored_directed_graph) :: unknowns, instants
-      type(stored_field) :: state, knobs
-      real(dp), allocatable :: dt(:), t(:)
-      call partition(duration, n, dt, t)
-      unknowns = unknowns_graph(n, degrees)
-      instants = stored_directed_graph(n, tails=[integer ::], heads=[integer ::])
-      state    = stored_field('state', unknowns % vertex_set(), size(q))
-      knobs    = stored_field('design', unknowns % vertex_set(), n)
-      call state % set_real_vector(q)
-      call knobs % set_real_vector(spread(design_value, 1, n))
-      f = functional_of(van_der_pol_energy(state_degree), instants, [state, knobs], dt)
-    end function energy_of
     subroutine sensitivity_across_the_junction()
       real(dp), parameter :: delta = 1.0e-6_dp
       real(dp), parameter :: design = 1.0_dp
@@ -7555,7 +7592,7 @@ contains
       schemes = [held_family(bdf_family(2)), held_family(adams_family(3))]
       n = sum(added)
       call marched(schemes, added, q, achieved, design)
-      f = energy_of(q, n, design)
+      f = chained_energy(schemes, added, design)
       call chained(schemes, added, design, chain, tower, dt)
       energy(1) = van_der_pol_energy(state_degree)
       call chain_stamps(chain, tower, energy, degrees, marks)
@@ -7590,16 +7627,36 @@ contains
            & uniform_grid(duration), design, held, &
            & chain, tower, dt, t, achieved)
     end subroutine chained
+    !--------------------------------------------------------------!
+    ! THE FUNCTIONAL THE CHAIN ITSELF INTEGRATES. A multistep family
+    ! weighs the instants its own stencil reaches back over, so a sum
+    ! of the instants at their step sizes is a different rule and a
+    ! different number - one order lower. A tangent is the derivative
+    ! of the functional it was taken from, so the difference below is
+    ! taken of this one and of no other.
+    !--------------------------------------------------------------!
+
+    real(dp) function chained_energy(schemes, added, design) result(f)
+      type(family_holder), intent(in) :: schemes(:)
+      integer            , intent(in) :: added(:)
+      real(dp)           , intent(in) :: design
+      type(chain_block), allocatable :: chain(:)
+      type(expansion)  , allocatable, target :: tower
+      type(expression) :: energy(1)
+      real(dp), allocatable :: dt(:), table(:,:)
+      call chained(schemes, added, design, chain, tower, dt)
+      energy(1) = van_der_pol_energy(state_degree)
+      call chain_expansion(chain, tower, energy, degrees, 0, table)
+      f = table(0, 1)
+    end function chained_energy
+
     real(dp) function differenced_energy(schemes, added, n, design, delta) result(d)
       type(family_holder), intent(in) :: schemes(:)
       integer            , intent(in) :: added(:), n
       real(dp)           , intent(in) :: design, delta
-      real(dp), allocatable :: plus(:), minus(:)
-      real(dp) :: achieved
-      call marched(schemes, added, plus,  achieved, design + delta)
-      call marched(schemes, added, minus, achieved, design - delta)
-      d = (energy_of(plus, n, design + delta) - &
-         & energy_of(minus, n, design - delta)) / (2.0_dp * delta)
+      associate (u1 => n); end associate
+      d = (chained_energy(schemes, added, design + delta) - &
+         & chained_energy(schemes, added, design - delta)) / (2.0_dp * delta)
     end function differenced_energy
   end subroutine demo_marched_horizon
   subroutine demo_marched_stages()

@@ -45,6 +45,7 @@ module operation_family_adams
 
      procedure :: name             => adams_name
      procedure :: history_depth    => adams_history_depth
+     procedure :: step_quadrature  => adams_step_quadrature
      procedure :: row_pattern      => adams_row_pattern
      procedure :: edge_coefficient => adams_edge_coefficient
 
@@ -160,5 +161,35 @@ contains
     end if
 
   end function adams_edge_coefficient
+
+  !===================================================================!
+  ! THE QUADRATURE OVER ONE STEP FOR ADAMS. The rule is the one the
+  ! family already advances its state with - the same p instants and
+  ! the same weights - so a functional integrated here and a state
+  ! marched here are integrated by one rule and carry one order.
+  !
+  ! Near the start of a block fewer instants stand behind k than p,
+  ! and the rule shortens to what is there.
+  !===================================================================!
+
+  pure subroutine adams_step_quadrature(this, dt, k, weight)
+
+    class(adams_family)   , intent(in) :: this
+    type(derivative_terms), intent(in) :: dt(:)
+    integer               , intent(in) :: k
+    type(derivative_terms), allocatable, intent(out) :: weight(:)
+
+    integer :: nodes, j
+
+    if (k < 1 .or. k > size(dt)) then
+       error stop 'operation_family_adams: a quadrature stands at an instant of the block'
+    end if
+    nodes = min(this % order, k)
+    allocate(weight(nodes))
+    do j = 1, nodes
+       weight(j) = quadrature_weight(dt, k, j - 1, nodes)
+    end do
+
+  end subroutine adams_step_quadrature
 
 end module operation_family_adams

@@ -740,7 +740,7 @@ contains
 
     class(operation), allocatable :: rule
     class(field)    , allocatable :: value, held
-    type(stored_field), allocatable :: inputs(:)
+    class(field), allocatable :: inputs(:)
     integer, allocatable :: order(:), reads(:), writes(:), droppable(:)
     integer :: k, v, i, filled
 
@@ -770,20 +770,25 @@ contains
           else
              call this % over % out_neighbourhood(FIRST_PART, v, reads)
           end if
-          allocate(inputs(size(reads)))
+          ! THE DATA A RULE IS HANDED SHARE ONE TYPE, which the first
+          ! of them settles - so a rule may be given a datum of its
+          ! own making rather than a bare vector of values. A vertex
+          ! nothing has written yet is passed over.
           filled = 0
           do i = 1, size(reads)
              call this % stitched % datum_at(reads(i), held)
              if (.not. allocated(held)) cycle
-             select type (held)
-             type is (stored_field)
-                filled = filled + 1
-                inputs(filled) = held
-             end select
+             if (.not. allocated(inputs)) allocate(inputs(size(reads)), mold=held)
+             filled = filled + 1
+             call held % place_in(inputs(filled))
              deallocate(held)
           end do
 
-          call rule % apply(input_graph, inputs(1:filled), value)
+          if (allocated(inputs)) then
+             call rule % apply(input_graph, inputs(1:filled), value)
+          else
+             call rule % apply(input_graph, output=value)
+          end if
 
           ! what the rule writes: the data on the other side of it
           if (allocated(value)) then
@@ -797,7 +802,7 @@ contains
              end do
           end if
 
-          deallocate(inputs)
+          if (allocated(inputs)) deallocate(inputs)
           deallocate(rule)
 
        end if

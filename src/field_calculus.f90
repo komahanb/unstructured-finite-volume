@@ -130,7 +130,28 @@ module field_calculus
      procedure :: set_character_vector => field_set_character_vector
      procedure, private :: hold
 
+     !---------------------------------------------------------------!
+     ! PLACE THIS VALUE AT A LOCATION OF THE SAME TYPE. Intrinsic
+     ! assignment to a polymorphic location is barred unless that
+     ! location is allocatable, and an element of an array never is.
+     ! So a caller holding an array of class(field) locations cannot
+     ! fill one without naming a type. A concretion names the type
+     ! once, here, and every caller is spared the question. A
+     ! location of any other type is an error and says so.
+     !---------------------------------------------------------------!
+     procedure(field_place_in_interface), deferred :: place_in
+
   end type field
+
+  abstract interface
+
+     subroutine field_place_in_interface(this, location)
+       import :: field
+       class(field), intent(in)    :: this
+       class(field), intent(inout) :: location
+     end subroutine field_place_in_interface
+
+  end interface
 
   !===================================================================!
   ! FUNCTIONAL. The field at domain size one: a single

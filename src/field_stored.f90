@@ -85,6 +85,8 @@ module field_stored
   !===================================================================!
 
   type, extends(field) :: stored_field
+   contains
+     procedure :: place_in => stored_field_place_in
   end type stored_field
 
   !===================================================================!
@@ -117,5 +119,25 @@ contains
     call this % describe(label, on, num_entries, num_components, unit_name)
 
   end function create
+
+  !===================================================================!
+  ! Place this value at a location that is a stored field. A location
+  ! of any other type is an error: the caller asked for a copy the
+  ! location cannot hold.
+  !===================================================================!
+
+  subroutine stored_field_place_in(this, location)
+
+    class(stored_field), intent(in)    :: this
+    class(field)       , intent(inout) :: location
+
+    select type (location)
+    type is (stored_field)
+       location = this
+    class default
+       error stop 'field_stored: a stored field is placed at a stored field'
+    end select
+
+  end subroutine stored_field_place_in
 
 end module field_stored

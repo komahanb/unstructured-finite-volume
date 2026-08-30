@@ -37,7 +37,7 @@ module field_functional
 
   use util_precision  , only : dp
   use view_directed, only : directed_graph
-  use field_calculus     , only : functional
+  use field_calculus     , only : functional, field
   use graph_fractal      , only : graph
 
   implicit none
@@ -61,6 +61,10 @@ module field_functional
 
      real(dp) :: tally  = 0.0_dp
      real(dp) :: weight = 0.0_dp
+
+   contains
+
+     procedure :: place_in => stored_functional_place_in
 
   end type stored_functional
 
@@ -96,5 +100,25 @@ contains
     call this % describe(called, home, 1, 1, measured)
 
   end function create
+
+  !===================================================================!
+  ! Place this value at a location that is a stored functional. A
+  ! location of any other type is an error: the caller asked for a
+  ! copy the location cannot hold.
+  !===================================================================!
+
+  subroutine stored_functional_place_in(this, location)
+
+    class(stored_functional), intent(in)    :: this
+    class(field)            , intent(inout) :: location
+
+    select type (location)
+    type is (stored_functional)
+       location = this
+    class default
+       error stop 'field_functional: a stored functional is placed at a stored functional'
+    end select
+
+  end subroutine stored_functional_place_in
 
 end module field_functional

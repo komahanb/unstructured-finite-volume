@@ -6024,7 +6024,7 @@ contains
     integer , parameter :: degrees   = state_degree + 1
     integer , parameter :: max_order = 6      ! derivative degrees 0 through 6
     real(dp), parameter :: duration  = 2.0_dp
-    integer , parameter :: per_window = 6     ! instants per window, coarsest grid
+    integer , parameter :: per_window = 10    ! instants per window, coarsest grid
     integer , parameter :: grids      = 3     ! grids measured, each double the last
     integer , parameter :: finer      = 4     ! the reference, against the finest
 
@@ -6049,45 +6049,70 @@ contains
     write(*,'(a,f4.2,a)') '   An observed order within ', allowed, &
          & ' of the formal one is read as keeping it.'
     write(*,'(a)') '   A dash means the error reached round-off, and no order can be read.'
+    write(*,'(a)') ' '
+    write(*,'(a)') '   READ THE DIRK ROWS FOR THE CHAINING AND THE BDF AND ABM ROWS FOR THE'
+    write(*,'(a)') '   QUADRATURE. The time functional is integrated over each step by the'
+    write(*,'(a)') '   points the scheme puts there. A Runge-Kutta step carries its stages'
+    write(*,'(a)') '   and the tableau weights, which is a quadrature of the tableau order.'
+    write(*,'(a)') '   A multistep step carries one point at weight one, which is a'
+    write(*,'(a)') '   rectangle rule and first order whatever the scheme is. So a BDF or'
+    write(*,'(a)') '   ABM row reads one because of the quadrature, not because of the'
+    write(*,'(a)') '   scheme or the chaining, and so does any chain holding such a window.'
 
     write(*,'(a)') ' '
-    write(*,'(a)') ' ONE RUNGE-KUTTA SCHEME OVER THE WHOLE HORIZON'
-    call reading('implicit midpoint', [2], [held_family(implicit_midpoint())])
-    call reading('crouzeix two-stage', [3], [held_family(crouzeix_two_stage())])
-    call reading('crouzeix three-stage', [4], [held_family(crouzeix_three_stage())])
-    call reading('hairer-wanner five-stage', [4], [held_family(hairer_wanner_five_stage())])
+    write(*,'(a)') ' ==== DIRK ALONE ===='
+    call reading('DIRK-2   implicit midpoint', [2], [held_family(implicit_midpoint())])
+    call reading('DIRK-3   Crouzeix two-stage', [3], [held_family(crouzeix_two_stage())])
+    call reading('DIRK-4   Crouzeix three-stage', [4], [held_family(crouzeix_three_stage())])
+    call reading('SDIRK-4  Hairer-Wanner five-stage', [4], &
+         & [held_family(hairer_wanner_five_stage())])
 
     write(*,'(a)') ' '
-    write(*,'(a)') ' CHAINS OF DIFFERENT RUNGE-KUTTA SCHEMES'
-    call reading('midpoint then crouzeix-2', [2, 3], &
-         & [held_family(implicit_midpoint()), held_family(crouzeix_two_stage())])
-    call reading('crouzeix-2 then midpoint', [3, 2], &
+    write(*,'(a)') ' ==== BDF ALONE ===='
+    call reading('BDF-1', [1], [held_family(bdf_family(1))])
+    call reading('BDF-2', [2], [held_family(bdf_family(2))])
+    call reading('BDF-3', [3], [held_family(bdf_family(3))])
+    call reading('BDF-4', [4], [held_family(bdf_family(4))])
+
+    write(*,'(a)') ' '
+    write(*,'(a)') ' ==== ABM ALONE ===='
+    call reading('ABM-2', [2], [held_family(adams_family(2))])
+    call reading('ABM-3', [3], [held_family(adams_family(3))])
+    call reading('ABM-4', [4], [held_family(adams_family(4))])
+
+    write(*,'(a)') ' '
+    write(*,'(a)') ' ==== CHAINS ACROSS THE THREE FAMILIES ===='
+    call reading('SDIRK-4 -> BDF-4 -> ABM-4   (the composite of the paper)', [4, 4, 4], &
+         & [held_family(hairer_wanner_five_stage()), held_family(bdf_family(4)), &
+         &  held_family(adams_family(4))])
+    call reading('DIRK-3 -> BDF-2', [3, 2], &
+         & [held_family(crouzeix_two_stage()), held_family(bdf_family(2))])
+    call reading('BDF-2 -> DIRK-3', [2, 3], &
+         & [held_family(bdf_family(2)), held_family(crouzeix_two_stage())])
+    call reading('ABM-3 -> DIRK-4', [3, 4], &
+         & [held_family(adams_family(3)), held_family(crouzeix_three_stage())])
+    call reading('BDF-2 -> ABM-3 -> DIRK-4 -> SDIRK-4', [2, 3, 4, 4], &
+         & [held_family(bdf_family(2)), held_family(adams_family(3)), &
+         &  held_family(crouzeix_three_stage()), held_family(hairer_wanner_five_stage())])
+
+    write(*,'(a)') ' '
+    write(*,'(a)') ' ==== CHAINS WITHIN DIRK, WHERE THE QUADRATURE IS NOT THE LIMIT ===='
+    call reading('DIRK-3 -> DIRK-2', [3, 2], &
          & [held_family(crouzeix_two_stage()), held_family(implicit_midpoint())])
-    call reading('crouzeix-2 then crouzeix-3', [3, 4], &
+    call reading('DIRK-3 -> DIRK-4', [3, 4], &
          & [held_family(crouzeix_two_stage()), held_family(crouzeix_three_stage())])
-    call reading('crouzeix-3 then hairer-wanner', [4, 4], &
+    call reading('DIRK-4 -> SDIRK-4', [4, 4], &
          & [held_family(crouzeix_three_stage()), held_family(hairer_wanner_five_stage())])
-    call reading('crouzeix-3, crouzeix-2, midpoint', [4, 3, 2], &
+    call reading('DIRK-4 -> DIRK-3 -> DIRK-2', [4, 3, 2], &
          & [held_family(crouzeix_three_stage()), held_family(crouzeix_two_stage()), &
          &  held_family(implicit_midpoint())])
-    call reading('crouzeix-3, hairer-wanner, crouzeix-3', [4, 4, 4], &
-         & [held_family(crouzeix_three_stage()), held_family(hairer_wanner_five_stage()), &
-         &  held_family(crouzeix_three_stage())])
-    call reading('midpoint, crouzeix-2, crouzeix-3, hairer-wanner', [2, 3, 4, 4], &
+    call reading('DIRK-2 -> DIRK-3 -> DIRK-4 -> SDIRK-4', [2, 3, 4, 4], &
          & [held_family(implicit_midpoint()), held_family(crouzeix_two_stage()), &
          &  held_family(crouzeix_three_stage()), held_family(hairer_wanner_five_stage())])
-    call reading('hairer-wanner, crouzeix-3, crouzeix-2, midpoint, crouzeix-3', &
-         & [4, 4, 3, 2, 4], &
+    call reading('SDIRK-4 -> DIRK-4 -> DIRK-3 -> DIRK-2 -> DIRK-4', [4, 4, 3, 2, 4], &
          & [held_family(hairer_wanner_five_stage()), held_family(crouzeix_three_stage()), &
          &  held_family(crouzeix_two_stage()), held_family(implicit_midpoint()), &
          &  held_family(crouzeix_three_stage())])
-
-    write(*,'(a)') ' '
-    write(*,'(a)') ' MULTISTEP FAMILIES, WHERE THE FUNCTIONAL QUADRATURE IS THE LIMIT'
-    call reading('bdf 2', [2], [held_family(bdf_family(2))])
-    call reading('adams 3', [3], [held_family(adams_family(3))])
-    call reading('bdf 2 then crouzeix-3', [2, 4], &
-         & [held_family(bdf_family(2)), held_family(crouzeix_three_stage())])
 
   contains
 

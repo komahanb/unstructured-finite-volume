@@ -6090,27 +6090,49 @@ contains
     write(*,'(a)') ' '
     write(*,'(a)') ' DOES CHAINING DIFFERENT SCHEMES KEEP THE ORDER OF ACCURACY?'
     write(*,'(a)') ' '
+    write(*,'(a)') ' THREE DIFFERENT NUMBERS APPEAR BELOW AND NONE OF THEM IS ANOTHER.'
+    write(*,'(a)') ' '
+    write(*,'(a)') '   p, THE ORDER OF ACCURACY OF THE SCHEME. How fast the scheme''s own'
+    write(*,'(a)') '      error falls as the step h shrinks: the error goes as h**p. BDF-2'
+    write(*,'(a)') '      has p = 2 and SDIRK-4 has p = 4. A chain is no better than its'
+    write(*,'(a)') '      weakest window, so a chain''s p is the smallest among them.'
+    write(*,'(a)') '      Written below as "scheme order p". It has nothing to do with r.'
+    write(*,'(a)') ' '
+    write(*,'(a)') '   r, THE DEGREE OF THE DESIGN DERIVATIVE. Which derivative of the time'
+    write(*,'(a)') '      functional F with respect to the design nu is being measured:'
+    write(*,'(a)') '      r = 0 is F itself, r = 1 is dF/dnu, r = 2 is d2F/dnu2, and so on'
+    write(*,'(a)') '      to r = 6. Nothing about r refers to h or to any discretisation.'
+    write(*,'(a)') '      It is the column heading below.'
+    write(*,'(a)') ' '
+    write(*,'(a)') '   THE OBSERVED ORDER, which is p measured rather than claimed, and'
+    write(*,'(a)') '      measured separately for the derivative of each degree r. That is'
+    write(*,'(a)') '      the number in the table. The question here is whether it equals p'
+    write(*,'(a)') '      at every r, or only at the low ones.'
+    write(*,'(a)') ' '
+    write(*,'(a)') '   A FOURTH NUMBER is fixed throughout and appears nowhere below. Van'
+    write(*,'(a,i0,a,i0,a)') '      der Pol is of order ', state_degree, &
+         & ' in time, so every instant carries ', degrees, ' state components'
+    write(*,'(a)') '      (q, q-dot, q-double-dot). That is neither an order of accuracy'
+    write(*,'(a)') '      nor a derivative degree, and it is held fixed here.'
+    write(*,'(a)') ' '
+    write(*,'(a)') ' HOW THE OBSERVED ORDER IS MEASURED'
     write(*,'(a,i0,a,i0,a)') '   Each chain is marched on ', grids, &
          & ' grids, doubling from ', per_window, ' instants per window,'
     write(*,'(a,i0,a)') '   and compared against a reference grid ', finer, &
          & ' times finer than the finest.'
-    write(*,'(a)') '   Halving the step should shrink the error by two to the power of the'
-    write(*,'(a)') '   order, so the order is read back as log2 of successive errors.'
+    write(*,'(a)') '   Halving h should shrink the error by 2**p, so p is read back as log2'
+    write(*,'(a)') '   of the ratio of successive errors, once for each derivative degree r.'
     write(*,'(a)') '   Every window keeps its share of the horizon as the grid refines, so'
-    write(*,'(a)') '   no window boundary moves. A chain is no better than its weakest'
-    write(*,'(a)') '   window, so its formal order is the smallest in it.'
-    write(*,'(a,f4.2,a)') '   An observed order within ', allowed, &
-         & ' of the formal one is read as keeping it.'
+    write(*,'(a)') '   no window boundary moves and the reading is of the schemes.'
+    write(*,'(a,f4.2,a)') '   An observed order within ', allowed, ' of p is read as reaching p.'
     write(*,'(a)') '   A dash means the error reached round-off, and no order can be read.'
     write(*,'(a)') ' '
-    write(*,'(a)') '   READ THE DIRK ROWS FOR THE CHAINING AND THE BDF AND ABM ROWS FOR THE'
-    write(*,'(a)') '   QUADRATURE. The time functional is integrated over each step by the'
-    write(*,'(a)') '   points the scheme puts there. A Runge-Kutta step carries its stages'
-    write(*,'(a)') '   and the tableau weights, which is a quadrature of the tableau order.'
-    write(*,'(a)') '   A multistep step carries one point at weight one, which is a'
-    write(*,'(a)') '   rectangle rule and first order whatever the scheme is. So a BDF or'
-    write(*,'(a)') '   ABM row reads one because of the quadrature, not because of the'
-    write(*,'(a)') '   scheme or the chaining, and so does any chain holding such a window.'
+    write(*,'(a)') ' WHY THE FAMILIES ARE GROUPED'
+    write(*,'(a)') '   The time functional is integrated over each step by the points the'
+    write(*,'(a)') '   scheme puts there. A Runge-Kutta step carries its stages and the'
+    write(*,'(a)') '   tableau weights; a multistep step carries the instants of its own'
+    write(*,'(a)') '   stencil and the interpolatory weights on them. Both rules carry the'
+    write(*,'(a)') '   order p of the scheme they belong to.'
 
     write(*,'(a)') ' '
     write(*,'(a)') ' ==== DIRK ALONE ===='
@@ -6232,33 +6254,35 @@ contains
       counted = count(readable)
       write(*,'(a)') ' '
       write(*,'(a,a,i0,a,i0)') '   ' // title, &
-           & '   -   formal order ', expected, ', windows ', windows
-      line     = '     derivative degree '
-      orders   = '     observed order    '
-      verdicts = '     keeps the order?  '
+           & '   -   scheme order p = ', expected, ', windows ', windows
+      write(cell,'(i0)') expected
+      line     = '     r, derivative degree of F in nu  '
+      orders   = '     observed order of accuracy in h  '
+      verdicts = '     does it reach p = ' // trim(cell) // ' ?'
+      verdicts = verdicts // repeat(' ', max(1, 38 - len(verdicts)))
       do m = 0, max_order
-         write(cell,'(i8)') m
-         line = line // cell(1:8)
+         write(cell,'(i7)') m
+         line = line // cell(1:7)
          if (readable(m)) then
-            write(cell,'(f8.2)') observed(m)
-            orders = orders // cell(1:8)
+            write(cell,'(f7.2)') observed(m)
+            orders = orders // cell(1:7)
             if (observed(m) >= real(expected, dp) - allowed) then
-               verdicts = verdicts // '     yes'
+               verdicts = verdicts // '    yes'
             else
-               verdicts = verdicts // '      no'
+               verdicts = verdicts // '     no'
             end if
          else
-            orders   = orders   // '       -'
-            verdicts = verdicts // '       -'
+            orders   = orders   // '      -'
+            verdicts = verdicts // '      -'
          end if
       end do
       write(*,'(a)') line
       write(*,'(a)') orders
       write(*,'(a)') verdicts
       write(cell,'(i0)') kept
-      line = '     keeps order ' // trim(cell) // ' of '
+      line = '     reaches p at ' // trim(cell) // ' of '
       write(cell,'(i0)') counted
-      line = line // trim(cell) // ' readable degrees'
+      line = line // trim(cell) // ' readable derivative degrees'
       write(*,'(a)') line
     end subroutine reading
 

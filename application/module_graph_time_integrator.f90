@@ -5303,24 +5303,29 @@ module gti_demos
   use gti_block             , only : block_residual
   use gti_march             , only : block_from, solved, unknowns_graph, &
        & horizon_bounds, set_stopping, consistent_state, imbalance, by_tangent, &
-       & by_adjoint, fresh_stamp
+       & by_adjoint, fresh_stamp, instants_at_of
   use gti_adaptive          , only : adaptive_partition
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
        & chain_stamps, chain_derivative, first_of, instant_components, &
        & asymmetry, multiset_count, multiset_rank, multiset_of
   use gti_sweeps            , only : route_of, forward_route, reverse_route
-  use gti_driver            , only : clock, cosine, dense_jacobian
+  use gti_driver            , only : clock, cosine, dense_jacobian, family_named
+  use view_read_write       , only : bipartite_digraph, FIRST_PART, SECOND_PART
+  use view_directed         , only : forward
   implicit none
   private
   public :: demo_requested, run_demo
-  character(len=24), parameter :: demo_names(21) = [character(len=24) :: &
+  ! which part of the bipartite digraph this demonstration reads as which
+  integer, parameter :: BLOCKS_PART = FIRST_PART
+  integer, parameter :: DATA_PART   = SECOND_PART
+  character(len=24), parameter :: demo_names(23) = [character(len=24) :: &
        & 'adaptive_grid', 'assembled_tower', 'chained_horizon', &
        & 'constraint_rows', 'coupling_relation', 'expansion_check', &
        & 'family_coefficients', 'function_identities', 'grid_design_check', &
        & 'jacobian_shape', 'level_maps', 'level_shape', 'marched_block', &
        & 'marched_horizon', 'marched_stages', 'memory_shape', &
-       & 'randomized_checks', 'scheme_weights', 'sensitivity', 'solve_cost', &
-       & 'tolerance_form']
+       & 'handover_offsets', 'randomized_checks', 'read_write_graph', &
+       & 'scheme_weights', 'sensitivity', 'solve_cost', 'tolerance_form']
 contains
   logical function demo_requested() result(yes)
     character(len=256) :: argument
@@ -5355,6 +5360,8 @@ contains
        call demo_function_identities()
     case ('grid_design_check')
        call demo_grid_design_check()
+    case ('handover_offsets')
+       call demo_handover_offsets()
     case ('jacobian_shape')
        call demo_jacobian_shape()
     case ('level_maps')
@@ -5371,6 +5378,8 @@ contains
        call demo_memory_shape()
     case ('randomized_checks')
        call demo_randomized_checks()
+    case ('read_write_graph')
+       call demo_read_write_graph()
     case ('scheme_weights')
        call demo_scheme_weights()
     case ('sensitivity')
@@ -6577,6 +6586,72 @@ contains
       e(j) = 1.0_dp
     end function unit
   end subroutine demo_grid_design_check
+  !===================================================================!
+  ! WHERE ONE BLOCK'S VALUES SIT INSIDE ANOTHER'S STATE. The assembler
+  ! settles every handover offset before a block is built, from the
+  ! tower alone; the block that is then built lays its instants out
+  ! for itself. The two must agree at every instant of every block,
+  ! or a block would be handed the wrong values and solve a different
+  ! problem without complaining. The departure counts offsets that
+  ! differ, so the floor is zero.
+  !===================================================================!
+
+  subroutine demo_handover_offsets()
+    implicit none
+    integer , parameter :: state_degree = 2
+    integer , parameter :: degrees = state_degree + 1
+    real(dp), parameter :: duration = 2.0_dp
+    ! a block adds more instants than its family reaches back over,
+    ! so the counts are above every reach in play
+    call checked('bdf 2 alone      ', [holder_named('bdf', 2)], [8])
+    call checked('bdf 2 then bdf 1 ', [holder_named('bdf', 2), holder_named('bdf', 1)], [8, 8])
+    call checked('adams 2 then bdf2', [holder_named('adams', 2), holder_named('bdf', 2)], [8, 8])
+    call checked('dirk, staged     ', [holder_named('dirk', 3)], [8])
+  contains
+    function holder_named(family_of, order) result(h)
+      character(len=*), intent(in) :: family_of
+      integer         , intent(in) :: order
+      type(family_holder) :: h
+      class(family), allocatable :: one
+      logical :: ok
+      call family_named(family_of, order, one, ok)
+      if (.not. ok) error stop 'gti_demos: that family carries that order'
+      allocate(h % scheme, source=one)
+    end function holder_named
+    subroutine checked(title, schemes, added)
+      character(len=*)   , intent(in) :: title
+      type(family_holder), intent(in) :: schemes(:)
+      integer            , intent(in) :: added(:)
+      type(chain_block), allocatable :: chain(:)
+      type(expansion), allocatable, target :: tower
+      integer, allocatable :: first(:), last(:), settled(:)
+      real(dp), allocatable :: dt(:), t(:), held(:)
+      real(dp) :: achieved
+      integer :: b, k, n, apart, counted
+      call horizon_bounds(schemes, added, degrees - 1, first, last)
+      n = last(size(added))
+      call cosine_partition(schemes(1) % scheme, degrees, duration, n, held, dt, t)
+      call march_chain(schemes, added, van_der_pol(state_degree), degrees, &
+           & uniform_grid(duration), 0.0_dp, held, chain, tower, dt, t, achieved)
+      apart   = 0
+      counted = 0
+      do b = 1, size(chain)
+         settled = instants_at_of(tower, b, chain(b) % scheme, van_der_pol(state_degree))
+         if (size(settled) /= size(chain(b) % instants_at)) then
+            apart   = apart + 1
+            counted = counted + 1
+            cycle
+         end if
+         do k = 1, size(settled)
+            counted = counted + 1
+            if (settled(k) /= chain(b) % instants_at(k)) apart = apart + 1
+         end do
+      end do
+      write(*,'(a,a,i4,a,i0,a,i0)') '   ', title, counted, &
+           & ' offsets settled before building, differing ', apart, ', held to ', 0
+    end subroutine checked
+  end subroutine demo_handover_offsets
+
   subroutine demo_jacobian_shape()
     implicit none
     write(*,'(a)') ' '
@@ -7514,6 +7589,87 @@ contains
       if (route_gap > 1.0e-6_dp) failures = failures + 1
     end subroutine verdict
   end subroutine demo_randomized_checks
+  !===================================================================!
+  ! THE ARCS DECIDE THE ORDER, NOT THE NUMBERING. A bipartite digraph
+  ! is built whose blocks are chained 2 -> 4 -> 1 -> 3, so the order
+  ! the arcs imply is nothing like the order the labels suggest. The
+  ! projection onto the blocks must recover that chain, previous and
+  ! next must be transposes of one another, and every arc must be
+  ! found from both of its ends. Each departure counts an exact
+  ! disagreement, so the floor is zero and nothing is chosen.
+  !===================================================================!
+
+  subroutine demo_read_write_graph()
+
+    integer, parameter :: blocks = 4
+    integer, parameter :: data_of = 3
+
+    ! block 2 writes datum 1; block 4 reads it and writes datum 2;
+    ! block 1 reads that and writes datum 3; block 3 reads datum 3
+    integer, parameter :: from_part(7)   = [BLOCKS_PART, DATA_PART, BLOCKS_PART, &
+         & DATA_PART, BLOCKS_PART, DATA_PART, BLOCKS_PART]
+    integer, parameter :: from_vertex(7) = [2, 1, 4, 2, 1, 3, 3]
+    integer, parameter :: to_part(7)     = [DATA_PART, BLOCKS_PART, DATA_PART, &
+         & BLOCKS_PART, DATA_PART, BLOCKS_PART, DATA_PART]
+    integer, parameter :: to_vertex(7)   = [1, 4, 2, 1, 3, 3, 3]
+
+    integer, parameter :: chained(4) = [2, 4, 1, 3]
+
+    type(bipartite_digraph) :: b
+    type(stored_directed_graph) :: among
+    integer, allocatable :: order(:), forth(:), back(:), reads(:)
+    integer :: u, w, k, e, apart_order, apart_transpose, apart_ends
+
+    b = bipartite_digraph(blocks, data_of, from_part, from_vertex, to_part, to_vertex)
+
+    write(*,'(a)')      ' '
+    write(*,'(a)')      ' a bipartite digraph over blocks and the data between them'
+    write(*,'(a,i0,a,i0,a,i0)') '   blocks ', b % order_of_part(BLOCKS_PART), &
+         & '   data ', b % order_of_part(DATA_PART), &
+         & '   arcs ', b % size_of_digraph()
+
+    ! the projection recovers the chain the arcs imply
+    among = b % projection(BLOCKS_PART)
+    order = among % loop(forward)
+    apart_order = count(order /= chained)
+    write(*,'(a)')      ' '
+    write(*,'(a,4i4)')  '   the arcs chain the blocks   ', chained
+    write(*,'(a,4i4)')  '   the projection orders them  ', order
+    write(*,'(a,i0,a,i0)') '   places apart ', apart_order, ', held to ', 0
+
+    ! previous and next are one relation read two ways
+    apart_transpose = 0
+    do u = 1, blocks
+       call b % next(BLOCKS_PART, u, forth)
+       do k = 1, size(forth)
+          call b % previous(BLOCKS_PART, forth(k), back)
+          if (.not. any(back == u)) apart_transpose = apart_transpose + 1
+       end do
+    end do
+    write(*,'(a,i0,a,i0)') '   next without a previous ', apart_transpose, ', held to ', 0
+
+    ! every arc is found from the end it enters
+    apart_ends = 0
+    do e = 1, b % size_of_digraph()
+       w = to_vertex(e)
+       if (to_part(e) == BLOCKS_PART) then
+          call b % in_neighbourhood(BLOCKS_PART, w, reads)
+       else
+          call b % in_neighbourhood(DATA_PART, w, reads)
+       end if
+       if (.not. any(reads == from_vertex(e))) apart_ends = apart_ends + 1
+    end do
+    write(*,'(a,i0,a,i0)') '   arcs unseen from the head ', apart_ends, ', held to ', 0
+
+    ! a block and the one two steps along it share no datum
+    write(*,'(a)')      ' '
+    write(*,'(a,l1,a)') '   blocks 2 and 4 share a datum   ', &
+         & b % share_a_neighbour(BLOCKS_PART, 2, 4), '   (they are chained)'
+    write(*,'(a,l1,a)') '   blocks 2 and 3 share a datum   ', &
+         & b % share_a_neighbour(BLOCKS_PART, 2, 3), '   (nothing joins them)'
+
+  end subroutine demo_read_write_graph
+
   subroutine demo_scheme_weights()
     implicit none
     integer :: k

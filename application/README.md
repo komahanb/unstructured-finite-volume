@@ -628,6 +628,7 @@ name pass through to it.
 | `family_coefficients` | multistep coefficients on non-uniform steps against the Lagrange functionals | `./graph_time_integrator --demo=family_coefficients` |
 | `function_identities` | the exact arithmetic's elementary functions: fifty-five identities to five directions | `./graph_time_integrator --demo=function_identities` |
 | `grid_design_check` | derivative tables in the step weights, checked three ways at every order | `./graph_time_integrator --demo=grid_design_check` |
+| `handover_offsets` | where one block's values sit inside another's state, settled before building against the layout built | `./graph_time_integrator --demo=handover_offsets` |
 | `jacobian_shape` | how far a block's rows reach, and how much of the square is empty | `./graph_time_integrator --demo=jacobian_shape` |
 | `level_maps` | what each level of the tower carries, read back by one traversal | `./graph_time_integrator --demo=level_maps` |
 | `level_shape` | two blocks built through the level storage and read back through the level view | `./graph_time_integrator --demo=level_shape` |
@@ -636,6 +637,7 @@ name pass through to it.
 | `marched_stages` | a stage block against the cosine, order observed under halving | `./graph_time_integrator --demo=marched_stages` |
 | `memory_shape` | the peak memory of one part of the representation: none, vertices, edges, field or block | `./graph_time_integrator --demo=memory_shape block 41` |
 | `randomized_checks` | the splitting, route and order invariants over drawn parameters | `./graph_time_integrator --demo=randomized_checks 7 2` |
+| `read_write_graph` | the order the read and write arcs imply, recovered by the projection when it is nothing like the numbering | `./graph_time_integrator --demo=read_write_graph` |
 | `scheme_weights` | a row's weights against the polynomial the scheme reproduces | `./graph_time_integrator --demo=scheme_weights` |
 | `sensitivity` | df/dnu by tangent, by adjoint, and by difference | `./graph_time_integrator --demo=sensitivity` |
 | `solve_cost` | what one formation and one solve cost | `./graph_time_integrator --demo=solve_cost` |

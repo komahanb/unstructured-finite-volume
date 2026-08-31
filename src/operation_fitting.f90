@@ -36,10 +36,11 @@
 module operation_fitting
 
   use util_precision  , only : dp, spacing_at_one
-  use operation_action, only : operation
+  use operation_action, only : operation, contract
+  use operation_binding, only : binding, bound_inputs, bound_real_vector
   use operation_action, only : emit
   use view_directed, only : directed_graph
-  use field_calculus, only : field
+  use field_calculus, only : field, FIELD_REAL
   use graph_fractal      , only : graph
   use field_forms        , only : form
   use field_stored  , only : stored_field
@@ -141,7 +142,7 @@ contains
     if (present(scale)) this % scale = scale
 
     ! one argument: the field the form is fitted to
-    call this % declare_arguments(1)
+    call this % declare_arguments(1, [contract(FIELD_REAL, 1)])
 
   end function create_fit
 
@@ -167,6 +168,7 @@ contains
     class(field), allocatable, intent(inout) :: output
 
     type(stored_field)   :: out
+    type(binding), allocatable :: bound(:)
     type(stencil) :: dual
     type(conjugate_gradient) :: solver
     real(dp), allocatable :: positions(:), w(:), b(:,:), bw(:,:)
@@ -183,7 +185,8 @@ contains
 
     if (present(input_data)) then
 
-       call input_data(1) % real_vector(positions)
+       call bound_inputs(this, input_data, bound)
+       call bound_real_vector(bound, this % argument(1), positions)
 
        d = this % shape % dimension()
        if (size(this % at) /= d .or. size(positions) /= d * npts) then

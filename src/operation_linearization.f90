@@ -28,10 +28,11 @@
 module operation_linearization
 
   use util_precision  , only : dp, half_digits
-  use operation_action, only : operation, argument, variation
+  use operation_action, only : operation, argument, variation, contract
+  use operation_binding, only : binding, bound_inputs, bound_value
   use operation_action, only : emit
   use view_directed, only : directed_graph
-  use field_calculus, only : field
+  use field_calculus, only : field, FIELD_REAL
   use graph_fractal      , only : graph
   use field_stored  , only : stored_field
 
@@ -75,14 +76,16 @@ contains
   ! program.
   !===================================================================!
 
-  function tangent_of(of, wrt, at_inputs, at, base) result(this)
+  function tangent_of(of, wrt, at_inputs, at, base, num_components) result(this)
 
     class(operation), intent(in)             :: of
     type(argument), intent(in), optional     :: wrt
     type(stored_field), intent(in), optional :: at_inputs(:)
     real(dp), intent(in), optional           :: at(:)
     real(dp), intent(in), optional           :: base(:)
+    integer , intent(in), optional           :: num_components
     type(linearization)                      :: this
+    integer :: width
 
     allocate(this % of, source=of)
 
@@ -98,8 +101,14 @@ contains
     if (present(at_inputs)) call this % freeze(at_inputs, base)
     if (present(at))        call this % freeze(at, base)
 
-    ! the tangent reads one input, the direction
-    call this % declare_arguments(1)
+    width = 1
+    if (present(num_components)) then
+       if (num_components < 1) error stop 'linearization: a component count is positive'
+       width = num_components
+    end if
+
+    ! The tangent reads one direction of the explicitly stated width.
+    call this % declare_arguments(1, [contract(FIELD_REAL, width)])
 
   end function tangent_of
 
@@ -259,7 +268,8 @@ contains
 
     type(stored_field), allocatable :: tuple(:)
     type(stored_field)   :: direction, out
-    class(field), allocatable :: pushed
+    class(field), allocatable :: pushed, bound_direction
+    type(binding), allocatable :: bound(:)
     type(graph) :: on, along
     real(dp), allocatable :: v(:), y(:), base(:), x(:)
     integer :: n_on, p, width
@@ -277,10 +287,12 @@ contains
     width = size(x)
 
     if (present(input_data)) then
-       if (.not. input_data(1) % defined_on(along)) then
+       call bound_inputs(this, input_data, bound)
+       call bound_value(bound, this % argument(1), bound_direction)
+       if (.not. bound_direction % defined_on(along)) then
           error stop 'linearization: the direction must live on the differentiated argument''s domain'
        end if
-       call input_data(1) % real_vector(v)
+       call bound_direction % real_vector(v)
        if (size(v) /= width) then
           error stop 'linearization: the direction must match the frozen state''s width'
        end if

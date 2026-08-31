@@ -39,8 +39,9 @@ module operation_stencil
 
   use util_precision  , only : dp
   use view_directed, only : directed_graph
-  use field_calculus, only : field
-  use operation_action, only : operation, variation
+  use field_calculus, only : field, FIELD_REAL
+  use operation_action, only : operation, variation, contract
+  use operation_binding, only : binding, bound_inputs, bound_real_vector
   use operation_action, only : emit
   use operation_discretization     , only : discretization
   use relation_binary, only : group_by_key
@@ -137,7 +138,7 @@ contains
     end if
 
     ! one argument: the state the matrix multiplies
-    call this % declare_arguments(1)
+    call this % declare_arguments(1, [contract(FIELD_REAL, 1)])
 
   end function create
 
@@ -378,12 +379,14 @@ contains
     class(field), allocatable, intent(inout) :: output
 
     type(stored_field)   :: out
+    type(binding), allocatable :: bound(:)
     real(dp), allocatable :: q(:), y(:)
 
     call this % constants % real_vector(y)
 
     if (present(input_data)) then
-       call input_data(1) % real_vector(q)
+       call bound_inputs(this, input_data, bound)
+       call bound_real_vector(bound, this % argument(1), q)
        call accumulate_edges(this, q, y)
     end if
 
@@ -525,7 +528,7 @@ contains
 
     ! the transpose is an operation of one argument as the original is;
     ! attached as a matvec, it is asked for that argument
-    call transposed % declare_arguments(1)
+    call transposed % declare_arguments(1, [contract(FIELD_REAL, 1)])
 
   end function stencil_transpose
 

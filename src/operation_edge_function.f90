@@ -40,6 +40,8 @@ module operation_edge_function
 
   use util_precision  , only : dp
   use operation_action      , only : operation, variation
+  use operation_binding     , only : binding, bound_inputs
+  use operation_binding     , only : bound_real_vector, bound_integer_vector
   use operation_action, only : emit
   use view_directed         , only : directed_graph
   use field_calculus        , only : field
@@ -122,19 +124,19 @@ contains
   ! The three inputs, which must all be given.
   !===================================================================!
 
-  subroutine read_inputs(input_data, dt, source_degree, determines)
+  subroutine read_inputs(this, input_data, dt, source_degree, determines)
 
+    class(edge_function), intent(in) :: this
     class(field), intent(in) :: input_data(:)
     real(dp), allocatable, intent(out) :: dt(:)
     integer , allocatable, intent(out) :: source_degree(:), determines(:)
 
-    if (size(input_data) < 3) then
-       error stop 'operation_edge_function: the steps, source degrees and conditions are given'
-    end if
+    type(binding), allocatable :: bound(:)
 
-    call input_data(1) % real_vector(dt)
-    call input_data(2) % integer_vector(source_degree)
-    call input_data(3) % integer_vector(determines)
+    call bound_inputs(this, input_data, bound)
+    call bound_real_vector(bound, this % argument(1), dt)
+    call bound_integer_vector(bound, this % argument(2), source_degree)
+    call bound_integer_vector(bound, this % argument(3), determines)
 
   end subroutine read_inputs
 
@@ -224,7 +226,7 @@ contains
        error stop 'operation_edge_function: the steps, source degrees and conditions are given'
     end if
 
-    call read_inputs(input_data, steps, source_degree, determines)
+    call read_inputs(this, input_data, steps, source_degree, determines)
     allocate(none(0))
     call step_terms(this, steps, none, dt)
     call full_terms(this, input_graph, dt, source_degree, determines, output)
@@ -249,7 +251,7 @@ contains
        error stop 'operation_edge_function: the requested order is within max_degree'
     end if
 
-    call read_inputs(input_data, steps, source_degree, determines)
+    call read_inputs(this, input_data, steps, source_degree, determines)
     call step_terms(this, steps, variations, dt)
     call full_terms(this, input_graph, dt, source_degree, determines, output)
 

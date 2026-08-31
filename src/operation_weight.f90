@@ -39,6 +39,8 @@ module operation_weight
 
   use util_precision  , only : dp
   use operation_edge_function, only : edge_function
+  use operation_action, only : contract
+  use field_calculus  , only : FIELD_REAL, FIELD_INTEGER
   use util_derivative_terms  , only : derivative_terms, integer_power, operator(*)
 
   implicit none
@@ -74,7 +76,8 @@ contains
     type(scheme_weight) :: this
 
     allocate(this % coefficients, source=coefficients)
-    call this % declare_arguments(3)
+    call this % declare_arguments(3, [contract(FIELD_REAL, 1), &
+         & contract(FIELD_INTEGER, 1), contract(FIELD_INTEGER, 1)])
 
   end function create
 

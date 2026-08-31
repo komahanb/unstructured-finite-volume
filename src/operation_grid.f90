@@ -47,11 +47,12 @@ module operation_grid
 
   use iso_fortran_env, only : int64
   use util_precision  , only : dp
-  use operation_action      , only : operation, variation
+  use operation_action      , only : operation, variation, contract
+  use operation_binding     , only : binding, bound_inputs, bound_real_vector
   use operation_action, only : emit
   use view_directed         , only : directed_graph
   use view_directed_stored  , only : stored_directed_graph
-  use field_calculus        , only : field
+  use field_calculus        , only : field, FIELD_REAL
   use graph_fractal         , only : graph
   use field_stored          , only : stored_field
   use util_derivative_terms , only : derivative_terms, value, mixed_partial, &
@@ -144,7 +145,7 @@ contains
     call require_span(span)
     this % kind = GRID_UNIFORM
     this % span = span
-    call this % declare_arguments(1)
+    call this % declare_arguments(1, [contract(FIELD_REAL, 1)])
 
   end function create_uniform
 
@@ -158,7 +159,7 @@ contains
     this % kind = GRID_RANDOM
     this % span = span
     this % seed = seed
-    call this % declare_arguments(1)
+    call this % declare_arguments(1, [contract(FIELD_REAL, 1)])
 
   end function create_random
 
@@ -170,7 +171,7 @@ contains
     call require_span(span)
     this % kind = GRID_DESIGNED
     this % span = span
-    call this % declare_arguments(1)
+    call this % declare_arguments(1, [contract(FIELD_REAL, 1)])
 
   end function create_designed
 
@@ -192,7 +193,7 @@ contains
     this % kind  = GRID_FIXED
     this % span  = sum(steps)
     this % steps = steps
-    call this % declare_arguments(1)
+    call this % declare_arguments(1, [contract(FIELD_REAL, 1)])
 
   end function create_fixed
 
@@ -210,7 +211,7 @@ contains
     call require_span(span)
     this % kind = GRID_GAUSS
     this % span = span
-    call this % declare_arguments(1)
+    call this % declare_arguments(1, [contract(FIELD_REAL, 1)])
 
   end function create_gauss
 
@@ -432,13 +433,11 @@ contains
     type(derivative_terms), allocatable, intent(out) :: design(:)
 
     real(dp), allocatable :: x(:), v(:)
+    type(binding), allocatable :: bound(:)
     integer :: n, i, j
 
-    if (size(input_data) < 1) then
-       error stop 'operation_grid: the design is given'
-    end if
-
-    call input_data(1) % real_vector(x)
+    call bound_inputs(this, input_data, bound)
+    call bound_real_vector(bound, this % argument(1), x)
     n = size(variations)
 
     allocate(design(max(size(x), 1)))

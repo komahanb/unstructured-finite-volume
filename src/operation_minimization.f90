@@ -39,10 +39,11 @@
 module operation_minimization
 
   use util_precision  , only : dp, half_digits
-  use operation_action  , only : operation
+  use operation_action  , only : operation, contract
+  use operation_binding, only : binding, bound_inputs, bound_value
   use operation_action, only : emit
   use view_directed   , only : directed_graph
-  use field_calculus  , only : field
+  use field_calculus  , only : field, FIELD_REAL
   use graph_fractal      , only : graph
   use field_calculus        , only : functional
   use field_stored     , only : stored_field
@@ -476,9 +477,6 @@ contains
     if (allocated(this % held)) deallocate(this % held)
     if (present(held_inputs)) allocate(this % held, source=held_inputs)
 
-    ! the solver's own operation face reads one input, the right-hand side
-    call this % declare_arguments(1)
-
     ! The dependent-variable coupling arrives EXPLICIT or not at all.
     ! No fallback to the execution context: a solver that needs
     ! structure and was given none says so when it reaches for it,
@@ -488,6 +486,9 @@ contains
 
     this % num_components = 1
     if (present(num_components)) this % num_components = max(num_components, 1)
+
+    ! The solver reads one right-hand side with the configured width.
+    call this % declare_arguments(1, [contract(FIELD_REAL, this % num_components)])
 
     ! The unknown domain arrives EXPLICIT and identity-preserving.
     ! No hidden fallback to the host's vertices: a caller that
@@ -788,6 +789,8 @@ contains
     class(field), allocatable, intent(inout) :: output
 
     class(minimizer), allocatable :: worker
+    class(field), allocatable :: right_hand_side
+    type(binding), allocatable :: bound(:)
     type(stored_field) :: out
     real(dp), allocatable :: rhs(:), x(:)
     real(dp) :: achieved
@@ -799,10 +802,12 @@ contains
     x = 0.0_dp
 
     if (present(input_data)) then
-       if (.not. input_data(1) % defined_on(this % residual_domain)) then
+       call bound_inputs(this, input_data, bound)
+       call bound_value(bound, this % argument(1), right_hand_side)
+       if (.not. right_hand_side % defined_on(this % residual_domain)) then
           error stop 'minimization: a right-hand side lives on the residual domain'
        end if
-       call input_data(1) % real_vector(rhs)
+       call right_hand_side % real_vector(rhs)
        allocate(worker, source=this)
        call worker % solve(rhs, x, achieved)
     end if

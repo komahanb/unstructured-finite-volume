@@ -4,10 +4,10 @@
 ! reads between them.
 !
 !      input graph    the instants
-!      input 1        the state, one flat field over instant and
+!      state slot     the state, one flat field over instant and
 !                     degree: the component of degree d at instant k
 !                     is held at (k-1)(N+1) + d + 1
-!      input 2        the design, one value per instant, so a design
+!      design slot    the design, one value per instant, so a design
 !                     that varies in time needs no other shape
 !      output         one value per instant
 !
@@ -55,7 +55,9 @@
 module operation_expression
 
   use util_precision       , only : dp
-  use operation_action     , only : operation, variation
+  use operation_action     , only : operation, variation, contract
+  use operation_binding    , only : binding, bound_inputs, bound_real_vector
+  use field_calculus       , only : FIELD_REAL
   use view_directed        , only : directed_graph
   use field_calculus       , only : field
   use graph_fractal        , only : graph
@@ -649,7 +651,9 @@ contains
     end if
 
     this % degrees = degrees
-    call this % declare_arguments(2)
+    call this % declare_arguments(2, [ &
+         & contract(FIELD_REAL, 1), &
+         & contract(FIELD_REAL, 1) ])
 
   end subroutine declare_degree
 
@@ -728,26 +732,23 @@ contains
   end function expression_max_degree
 
   !===================================================================!
-  ! The state and the design as derivative terms, each direction
-  ! seeded on the argument its variation names.
+  ! The state and the design as derivative terms, read from bindings
+  ! by argument identity; each direction is seeded on the argument its
+  ! variation names.
   !===================================================================!
 
-  subroutine seeded(this, input_data, variations, q, nu)
+  subroutine seeded(this, bound, variations, q, nu)
 
     class(expression)     , intent(in) :: this
-    class(field)          , intent(in) :: input_data(:)
+    type(binding)         , intent(in) :: bound(:)
     type(variation)       , intent(in) :: variations(:)
     type(derivative_terms), allocatable, intent(out) :: q(:), nu(:)
 
     real(dp), allocatable :: state(:), design(:), v(:)
     integer :: n, i
 
-    if (size(input_data) < 2) then
-       error stop 'operation_expression: the state and the design are given'
-    end if
-
-    call input_data(1) % real_vector(state)
-    call input_data(2) % real_vector(design)
+    call bound_real_vector(bound, this % argument(ARGUMENT_STATE), state)
+    call bound_real_vector(bound, this % argument(ARGUMENT_DESIGN), design)
 
     n = size(variations)
     call constants(state, n, q)
@@ -755,9 +756,9 @@ contains
 
     do i = 1, n
        call variations(i) % direction(v)
-       if (variations(i) % argument_is(this % argument(1))) then
+       if (variations(i) % argument_is(this % argument(ARGUMENT_STATE))) then
           call seed(q, i, v)
-       else if (variations(i) % argument_is(this % argument(2))) then
+       else if (variations(i) % argument_is(this % argument(ARGUMENT_DESIGN))) then
           call seed(nu, i, v)
        else
           error stop 'operation_expression: a variation names the state or the design'
@@ -857,6 +858,7 @@ contains
     class(field), allocatable, intent(inout) :: output
 
     type(variation), allocatable :: none(:)
+    type(binding)  , allocatable :: bound(:)
     type(derivative_terms), allocatable :: q(:), nu(:)
 
     if (.not. present(input_data)) then
@@ -864,7 +866,8 @@ contains
     end if
 
     allocate(none(0))
-    call seeded(this, input_data, none, q, nu)
+    call bound_inputs(this, input_data, bound)
+    call seeded(this, bound, none, q, nu)
     call evaluated(this, input_graph, q, nu, output)
 
   end subroutine expression_apply
@@ -877,6 +880,7 @@ contains
     type(variation)       , intent(in)       :: variations(:)
     class(field), allocatable, intent(inout) :: output
 
+    type(binding), allocatable :: bound(:)
     type(derivative_terms), allocatable :: q(:), nu(:)
 
     call this % require_owned(variations)
@@ -885,7 +889,8 @@ contains
        error stop 'operation_expression: the requested order is within max_degree'
     end if
 
-    call seeded(this, input_data, variations, q, nu)
+    call bound_inputs(this, input_data, bound)
+    call seeded(this, bound, variations, q, nu)
     call evaluated(this, input_graph, q, nu, output)
 
   end subroutine expression_partial_action

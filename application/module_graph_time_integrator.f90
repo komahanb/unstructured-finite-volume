@@ -1591,10 +1591,11 @@ contains
 end module gti_expansion
 module gti_block
   use util_precision  , only : dp
-  use operation_action     , only : operation, variation
+  use operation_action     , only : operation, variation, contract
+  use operation_binding    , only : binding, bound_inputs, bound_real_vector
   use view_directed        , only : directed_graph
   use view_directed_stored , only : stored_directed_graph
-  use field_calculus       , only : field
+  use field_calculus       , only : field, FIELD_REAL
   use field_stored         , only : stored_field
   use graph_fractal        , only : graph
   use gti_expansion        , only : expansion
@@ -1700,7 +1701,7 @@ contains
     this % carried  = carried
     this % held     = held
     this % points = stored_directed_graph(size(at), tails=[integer ::], heads=[integer ::])
-    call this % declare_arguments(2)
+    call this % declare_arguments(2, [contract(FIELD_REAL, 1), contract(FIELD_REAL, 1)])
   end function create
   pure integer function num_unknowns(this)
     class(block_residual), intent(in) :: this
@@ -1781,8 +1782,10 @@ contains
     real(dp)             , intent(in) :: x(:)
     type(stored_field), allocatable, intent(out) :: inputs(:)
     type(stored_field) :: state, design
+    type(binding), allocatable :: bound(:)
     real(dp), allocatable :: knob(:)
-    call input_data(2) % real_vector(knob)
+    call bound_inputs(this, input_data, bound)
+    call bound_real_vector(bound, this % argument(2), knob)
     state = stored_field('state', this % points % vertex_set(), &
          & size(this % at) * this % block_stride())
     call state % set_real_vector(gathered(this, x))
@@ -1832,10 +1835,9 @@ contains
     class(directed_graph), intent(in)  :: input_graph
     real(dp), allocatable, intent(out) :: x(:)
     type(stored_field)   , intent(out) :: state
-    if (size(input_data) < 2) then
-       error stop 'gti_block: the state and the design are given'
-    end if
-    call input_data(1) % real_vector(x)
+    type(binding), allocatable :: bound(:)
+    call bound_inputs(this, input_data, bound)
+    call bound_real_vector(bound, this % argument(1), x)
     if (size(x) /= this % num_unknowns()) then
        error stop 'gti_block: the state holds one component per degree per unknown point'
     end if
@@ -3751,8 +3753,9 @@ module gti_chain
   use operation_stencil, only : stencil
   use operation_family_dirk, only : crouzeix_three_stage
   use view_directed_stored, only : stored_directed_graph
-  use field_calculus   , only : field
-  use operation_action , only : operation, emit
+  use field_calculus   , only : field, FIELD_REAL
+  use operation_action , only : operation, emit, contract
+  use operation_binding, only : binding, bound_inputs, bound_value
   use operation_driver , only : driver, rule_graph, data_graph, pairing
   use view_read_write  , only : bipartite_digraph, FIRST_PART, SECOND_PART
   use view_directed    , only : forward
@@ -4180,7 +4183,9 @@ contains
     type(bipartite_digraph)     :: incidence
     type(driver)                :: executor
     type(block_rule)            :: one
+    type(contract), allocatable :: contracts(:)
     type(stored_directed_graph) :: bare
+    integer, allocatable :: reads(:)
     integer :: nb, b, k
 
     nb = size(added)
@@ -4211,7 +4216,11 @@ contains
        if (present(nodes)) one % nodes = nodes
        if (present(spatial_discretization_stencil)) &
             & one % spatial_discretization_stencil = spatial_discretization_stencil
+       call incidence % in_neighbourhood(FIRST_PART, b, reads)
+       allocate(contracts(size(reads)), source=contract(FIELD_REAL, 1))
+       call one % declare_arguments(size(reads), contracts)
        allocate(rules % at(b) % rule, source=one)
+       deallocate(contracts)
        deallocate(one % scheme, one % physics)
     end do
 
@@ -4324,6 +4333,8 @@ contains
     class(directed_graph)    , intent(in)    :: input_graph
     class(field)             , intent(in), optional :: input_data(:)
     class(field), allocatable, intent(inout) :: output
+    type(binding), allocatable :: bound(:)
+    class(field), allocatable :: value
     type(block_state) :: state
     type(stored_directed_graph) :: state_domain
     real(dp), allocatable :: handover(:), one_datum(:)
@@ -4342,7 +4353,8 @@ contains
     ! closed here.
     given = 0
     if (present(input_data)) then
-       if (size(input_data) > 0) given = this % scheme % history_depth(this % degrees - 1)
+       call bound_inputs(this, input_data, bound)
+       if (size(bound) > 0) given = this % scheme % history_depth(this % degrees - 1)
     end if
     if (given > 0) then
        width = this % degrees
@@ -4352,8 +4364,9 @@ contains
           instant = this % first + (i - 1) * this % stride
           held_by = 0
           taken   = 0
-          do e = 1, size(input_data)
-             select type (datum => input_data(e))
+          do e = 1, size(bound)
+             call bound_value(bound, this % argument(e), value)
+             select type (datum => value)
              type is (block_state)
                 if (.not. datum % holds(instant)) cycle
                 if (datum % at < held_by) cycle
@@ -4364,7 +4377,8 @@ contains
           if (taken < 1) then
              error stop 'gti_chain: a block is handed the data its scheme reaches back over'
           end if
-          select type (datum => input_data(taken))
+          call bound_value(bound, this % argument(taken), value)
+          select type (datum => value)
           type is (block_state)
              call datum % values_at(instant, width, one_datum)
           end select

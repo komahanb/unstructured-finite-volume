@@ -38,6 +38,8 @@
 module operation_family_bdf
 
   use util_precision  , only : dp
+  use operation_action, only : contract
+  use field_calculus  , only : FIELD_REAL, FIELD_INTEGER
   use operation_family     , only : family, offsets, slope_at_zero, negated, integral_over_step
   use util_derivative_terms, only : derivative_terms, &
        & operator(+), operator(*), operator(/)
@@ -82,7 +84,8 @@ contains
     end if
 
     this % order = order
-    call this % declare_arguments(3)
+    call this % declare_arguments(3, [contract(FIELD_REAL, 1), &
+         & contract(FIELD_INTEGER, 1), contract(FIELD_INTEGER, 1)])
 
   end function create
 

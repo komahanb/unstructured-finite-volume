@@ -151,7 +151,7 @@
 module operation_driver
 
   use util_precision       , only : dp
-  use operation_action     , only : operation
+  use operation_action     , only : operation, argument, contract
   use view_directed        , only : directed_graph, forward, reverse
   use view_directed_stored , only : stored_directed_graph
   use view_read_write      , only : bipartite_digraph, FIRST_PART, SECOND_PART
@@ -498,6 +498,9 @@ contains
     type(bipartite_digraph), intent(in) :: over
     integer               , intent(in), optional :: orientation
     type(driver) :: this
+    type(contract), allocatable :: contracts(:)
+    type(argument) :: a
+    integer :: k
 
     this % over = over
     allocate(this % rule, source=rule)
@@ -506,7 +509,12 @@ contains
     if (this % orientation /= forward .and. this % orientation /= reverse) then
        error stop 'operation_driver: an orientation is forward or reverse'
     end if
-    call this % declare_arguments(rule % num_arguments())
+    allocate(contracts(rule % num_arguments()))
+    do k = 1, rule % num_arguments()
+       a = rule % argument(k)
+       contracts(k) = a % contract()
+    end do
+    call this % declare_arguments(rule % num_arguments(), contracts)
 
   end function driven_by
 

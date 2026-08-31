@@ -44,6 +44,8 @@
 module operation_family_dirk
 
   use util_precision  , only : dp
+  use operation_action, only : contract
+  use field_calculus  , only : FIELD_REAL, FIELD_INTEGER
   use operation_family     , only : family
   use util_derivative_terms, only : derivative_terms
 
@@ -103,7 +105,8 @@ contains
 
     this % a = a
     this % b = b
-    call this % declare_arguments(3)
+    call this % declare_arguments(3, [contract(FIELD_REAL, 1), &
+         & contract(FIELD_INTEGER, 1), contract(FIELD_INTEGER, 1)])
 
   end function create
 

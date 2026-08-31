@@ -45,10 +45,10 @@
 module operation_balance
 
   use util_precision  , only : dp
-  use operation_action, only : operation
+  use operation_action, only : operation, contract
   use operation_action, only : emit
   use view_directed, only : directed_graph
-  use field_calculus, only : field
+  use field_calculus, only : field, FIELD_REAL
   use graph_fractal      , only : graph
   use field_stored  , only : stored_field
   use operation_differential, only : differential_operator
@@ -72,6 +72,7 @@ module operation_balance
      type(differential_operator), allocatable :: edge_terms(:)
 
      real(dp) :: source = 0.0_dp
+     integer  :: components = 1
 
    contains
 
@@ -92,16 +93,21 @@ contains
   ! balance answers zero.
   !===================================================================!
 
-  type(balance) function create(edge_terms, source) result(this)
+  type(balance) function create(edge_terms, source, num_components) result(this)
 
     type(differential_operator), intent(in), optional :: edge_terms(:)
     real(dp)  , intent(in), optional :: source
+    integer   , intent(in), optional :: num_components
 
     if (present(edge_terms)) allocate(this % edge_terms, source=edge_terms)
     if (present(source))     this % source = source
+    if (present(num_components)) then
+       if (num_components < 1) error stop 'operation_balance: a component count is positive'
+       this % components = num_components
+    end if
 
     ! one argument: the state the balance is taken of
-    call this % declare_arguments(1)
+    call this % declare_arguments(1, [contract(FIELD_REAL, this % components)])
 
   end function create
 

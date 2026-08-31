@@ -82,7 +82,8 @@ module operation_reduction
   use graph_fractal      , only : graph
   use field_calculus  , only : FIELD_REAL, FIELD_COMPLEX
   use field_calculus  , only : FIELD_LOGICAL
-  use operation_action  , only : operation
+  use operation_action  , only : operation, contract
+  use operation_binding, only : binding, bound_inputs, bound_available_inputs, bound_value
   use operation_action, only : emit
   use field_calculus  , only : functional
   use view_directed   , only : SIDE_VERTEX
@@ -218,7 +219,16 @@ contains
 
     ! two readable positions, the values and the measure; a call may
     ! still pass one or none, as it always could
-    call this % declare_arguments(2)
+    select case (rule)
+    case (REDUCE_ALL, REDUCE_ANY)
+       call this % declare_arguments(2, [contract([FIELD_LOGICAL], 1), &
+            & contract([FIELD_LOGICAL], 1)])
+    case (REDUCE_SUM, REDUCE_AVERAGE)
+       call this % declare_arguments(2, [contract([FIELD_REAL, FIELD_COMPLEX], 1), &
+            & contract([FIELD_REAL, FIELD_COMPLEX], 1)])
+    case default
+       call this % declare_arguments(2, [contract(FIELD_REAL, 1), contract(FIELD_REAL, 1)])
+    end select
 
   end function create
 
@@ -233,7 +243,7 @@ contains
 
     this % rule = rule
 
-    call this % declare_arguments(1)
+    call this % declare_arguments(1, [contract([FIELD_REAL, FIELD_COMPLEX], 1)])
 
   end function create_broadcast
 
@@ -620,14 +630,23 @@ contains
     class(field), allocatable, intent(inout) :: output
 
     class(functional), allocatable :: answer
+    class(field), allocatable :: values, measure
+    type(binding), allocatable :: bound(:)
 
     associate (u1 => input_graph); end associate
 
     if (present(input_data)) then
+       if (size(input_data) < 1 .or. size(input_data) > this % num_arguments()) then
+          error stop 'operation_reduction: values and an optional measure are bound'
+       end if
+       call bound_available_inputs(this, input_data, bound)
        if (size(input_data) >= 2) then
-          call reduce_measured(this, input_data(1), input_data(2), answer)
+          call bound_value(bound, this % argument(1), values)
+          call bound_value(bound, this % argument(2), measure)
+          call reduce_measured(this, values, measure, answer)
        else
-          call this % reduce(input_data(1), answer)
+          call bound_value(bound, this % argument(1), values)
+          call this % reduce(values, answer)
        end if
     else
        call this % initialize(answer)
@@ -677,11 +696,15 @@ contains
     class(field), allocatable, intent(inout) :: output
 
     type(stored_field) :: out
+    class(field), allocatable :: value
+    type(binding), allocatable :: bound(:)
 
     out = stored_field('broadcast', input_graph % vertex_set(), input_graph % num_vertices())
 
     if (present(input_data)) then
-       select type (f => input_data(1))
+       call bound_inputs(this, input_data, bound)
+       call bound_value(bound, this % argument(1), value)
+       select type (f => value)
        class is (functional)
           call this % broadcast(f, out)
        class default

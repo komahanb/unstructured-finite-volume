@@ -75,10 +75,11 @@
 module operation_differential
 
   use util_precision  , only : dp
-  use operation_action, only : operation
+  use operation_action, only : operation, contract
+  use operation_binding, only : binding, bound_inputs, bound_value
   use operation_action, only : emit
   use view_directed, only : directed_graph
-  use field_calculus, only : field
+  use field_calculus, only : field, FIELD_REAL
   use graph_fractal      , only : graph
   use view_directed     , only : SIDE_VERTEX, SIDE_EDGE
   use field_stored  , only : stored_field
@@ -110,6 +111,7 @@ module operation_differential
 
      integer :: landing = SIDE_VERTEX
      integer :: order   = 2
+     integer :: components = 1
 
      logical :: adjoint   = .false.
      logical :: one_sided = .false.
@@ -161,7 +163,7 @@ contains
   type(differential_operator) function edge_derivative &
        & (order, coefficient, coefficients, spacing, spacings, &
        &  measure, measures, boundary_value, boundary_values, one_sided, &
-       &  label) result(this)
+       &  label, num_components) result(this)
 
     integer         , intent(in)           :: order
     real(dp)        , intent(in), optional :: coefficient
@@ -174,6 +176,7 @@ contains
     real(dp)        , intent(in), optional :: boundary_values(:)
     logical         , intent(in), optional :: one_sided
     character(len=*), intent(in), optional :: label
+    integer         , intent(in), optional :: num_components
 
     this % landing = SIDE_EDGE
     this % order   = max(order, 0)
@@ -189,9 +192,13 @@ contains
     if (present(boundary_value))  this % boundary_value = boundary_value
     if (present(boundary_values)) allocate(this % boundary_values, source=boundary_values)
     if (present(label))           this % label          = label
+    if (present(num_components)) then
+       if (num_components < 1) error stop 'operation_differential: a component count is positive'
+       this % components = num_components
+    end if
 
     ! one argument: the field differentiated
-    call this % declare_arguments(1)
+    call this % declare_arguments(1, [contract(FIELD_REAL, this % components)])
 
   end function edge_derivative
 
@@ -202,7 +209,8 @@ contains
 
   type(differential_operator) function vertex_derivative &
        & (order, coefficient, coefficients, spacing, spacings, &
-       &  measure, measures, boundary_value, boundary_values, adjoint, label) result(this)
+       &  measure, measures, boundary_value, boundary_values, adjoint, label, &
+       &  num_components) result(this)
 
     integer         , intent(in)           :: order
     real(dp)        , intent(in), optional :: coefficient
@@ -215,6 +223,7 @@ contains
     real(dp)        , intent(in), optional :: boundary_values(:)
     logical         , intent(in), optional :: adjoint
     character(len=*), intent(in), optional :: label
+    integer         , intent(in), optional :: num_components
 
     this % landing = SIDE_VERTEX
     this % order   = max(order, 0)
@@ -229,8 +238,12 @@ contains
     if (present(boundary_values)) allocate(this % boundary_values, source=boundary_values)
     if (present(adjoint))         this % adjoint        = adjoint
     if (present(label))           this % label          = label
+    if (present(num_components)) then
+       if (num_components < 1) error stop 'operation_differential: a component count is positive'
+       this % components = num_components
+    end if
 
-    call this % declare_arguments(1)
+    call this % declare_arguments(1, [contract(FIELD_REAL, this % components)])
 
   end function vertex_derivative
 
@@ -245,55 +258,62 @@ contains
   !===================================================================!
 
   type(differential_operator) function gradient(coefficient, coefficients, &
-       & spacing, spacings, boundary_value, boundary_values) result(this)
+       & spacing, spacings, boundary_value, boundary_values, num_components) result(this)
 
     real(dp), intent(in), optional :: coefficient, coefficients(:)
     real(dp), intent(in), optional :: spacing, spacings(:)
     real(dp), intent(in), optional :: boundary_value, boundary_values(:)
+    integer , intent(in), optional :: num_components
 
     this = edge_derivative(order=1, coefficient=coefficient, &
          & coefficients=coefficients, spacing=spacing, spacings=spacings, &
          & boundary_value=boundary_value, boundary_values=boundary_values, &
-         & label='gradient')
+         & label='gradient', num_components=num_components)
 
   end function gradient
 
   type(differential_operator) function interpolation(coefficient, coefficients, &
-       & boundary_value, boundary_values) result(this)
+       & boundary_value, boundary_values, num_components) result(this)
 
     real(dp), intent(in), optional :: coefficient, coefficients(:)
     real(dp), intent(in), optional :: boundary_value, boundary_values(:)
+    integer , intent(in), optional :: num_components
 
     this = edge_derivative(order=0, coefficient=coefficient, &
          & coefficients=coefficients, boundary_value=boundary_value, &
-         & boundary_values=boundary_values, label='interpolation')
+         & boundary_values=boundary_values, label='interpolation', &
+         & num_components=num_components)
 
   end function interpolation
 
   type(differential_operator) function divergence(coefficient, coefficients, &
-       & measure, measures) result(this)
+       & measure, measures, num_components) result(this)
 
     real(dp), intent(in), optional :: coefficient, coefficients(:)
     real(dp), intent(in), optional :: measure, measures(:)
+    integer , intent(in), optional :: num_components
 
     this = vertex_derivative(order=1, coefficient=coefficient, &
          & coefficients=coefficients, measure=measure, measures=measures, &
-         & label='divergence')
+         & label='divergence', num_components=num_components)
 
   end function divergence
 
   type(differential_operator) function laplacian(coefficient, coefficients, &
-       & spacing, spacings, measure, measures, boundary_value, boundary_values) result(this)
+       & spacing, spacings, measure, measures, boundary_value, boundary_values, &
+       & num_components) result(this)
 
     real(dp), intent(in), optional :: coefficient, coefficients(:)
     real(dp), intent(in), optional :: spacing, spacings(:)
     real(dp), intent(in), optional :: measure, measures(:)
     real(dp), intent(in), optional :: boundary_value, boundary_values(:)
+    integer , intent(in), optional :: num_components
 
     this = vertex_derivative(order=2, coefficient=coefficient, &
          & coefficients=coefficients, spacing=spacing, spacings=spacings, &
          & measure=measure, measures=measures, boundary_value=boundary_value, &
-         & boundary_values=boundary_values, label='laplacian')
+         & boundary_values=boundary_values, label='laplacian', &
+         & num_components=num_components)
 
   end function laplacian
 
@@ -846,6 +866,7 @@ contains
     class(field), allocatable, intent(inout) :: output
 
     type(affine_map) :: a
+    type(binding), allocatable :: bound(:)
     type(stored_field)      :: out
     real(dp), allocatable :: q(:), y(:), qc(:), yc(:)
     integer :: nv, ne, nout, nc, c
@@ -853,13 +874,14 @@ contains
 
     nv = input_graph % num_vertices()
     ne = input_graph % num_edges()
+    if (present(input_data)) call bound_inputs(this, input_data, bound)
 
     ! the input: vertex values first; on the vertex landing an edge
     ! field is also lawful and enters at the incidence step
     enters_on_edges = .false.
-    call fetch_values(input_data, input_graph, .false., nv, q, nc)
+    call fetch_values(this, bound, input_graph, .false., nv, q, nc)
     if (nc == 0 .and. this % landing == SIDE_VERTEX) then
-       call fetch_values(input_data, input_graph, .true., ne, q, nc)
+       call fetch_values(this, bound, input_graph, .true., ne, q, nc)
        enters_on_edges = nc > 0
     end if
 
@@ -903,9 +925,10 @@ contains
   ! else leaves a zero-length array and zero components.
   !===================================================================!
 
-  subroutine fetch_values(input_data, input_graph, on_edges, n, q, num_components)
+  subroutine fetch_values(this, bound, input_graph, on_edges, n, q, num_components)
 
-    class(field), intent(in), optional :: input_data(:)
+    class(differential_operator), intent(in) :: this
+    type(binding), allocatable, intent(in) :: bound(:)
     class(directed_graph)     , intent(in)           :: input_graph
     logical          , intent(in)           :: on_edges
     integer          , intent(in)           :: n
@@ -913,11 +936,13 @@ contains
     integer          , intent(out)          :: num_components
 
     type(graph) :: dom, expected
+    class(field), allocatable :: value
 
     num_components = 0
 
-    if (present(input_data)) then
-       select type (state => input_data(1))
+    if (allocated(bound)) then
+       call bound_value(bound, this % argument(1), value)
+       select type (state => value)
        class is (stored_field)
           dom = state % domain()
           if (on_edges) then

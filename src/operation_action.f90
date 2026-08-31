@@ -14,17 +14,14 @@
 ! constructed - a coefficient, a measure, a geometry field arrives as
 ! an argument the compiler checks - so apply fetches nothing by name.
 !
-! ARGUMENTS. An operation F(x_1, ..., x_m) reads its inputs by
-! position, and the positions form the operation's argument space.
-! The space is declared once, by the constructor, with
-! declare_arguments(m): m is the number of readable positions, not a
-! required input length - an operation may accept fewer inputs than
-! it declares, as it always could. An argument is an opaque ordinal
-! in one operation's space; two arguments match only when they name
-! the same position of the same space, so an argument of another
-! operation can never stand for one of this operation's, whatever its
-! position. Arguments are obtained from the operation that owns
-! them, by argument(k); no caller constructs one.
+! ARGUMENTS. An operation F(x_1, ..., x_m) declares an argument
+! space. The declaration has m slots; the slots supply operation-owned
+! argument identities, not caller-owned names. An argument is an
+! opaque ordinal in one operation's space; two arguments match only
+! when they name the same position of the same space, so an argument
+! of another operation can never stand for one of this operation's,
+! whatever its position. Arguments are obtained from the operation
+! that owns them, by argument(k); no caller constructs one.
 !
 ! VARIATIONS. A partial directional derivative
 !
@@ -50,7 +47,7 @@ module operation_action
   use util_precision  , only : dp
   use view_directed , only : directed_graph
   use graph_fractal       , only : graph
-  use field_calculus, only : field
+  use field_calculus, only : field, FIELD_NONE
   use field_stored  , only : stored_field
   use token_identity, only : token, next_token
 
@@ -61,6 +58,7 @@ module operation_action
   public :: operation
   public :: emit
   public :: argument
+  public :: contract
   public :: variation
   public :: applied, varied
   public :: design_partial, jacobian_of
@@ -71,15 +69,33 @@ module operation_action
   ! the only comparison, and it is false across spaces.
   !===================================================================!
 
+  type :: contract
+
+     integer, allocatable, private :: value_kinds(:)
+     integer, private :: components = 0
+
+   contains
+
+     procedure :: accepts => contract_accepts
+
+  end type contract
+
+  interface contract
+     module procedure create_contract
+     module procedure create_contract_set
+  end interface contract
+
   type :: argument
 
      type(token), private :: space
      integer    , private :: ordinal = 0
+     type(contract), private :: required
 
    contains
 
      procedure :: matches  => argument_matches
      procedure :: is_named => argument_is_named
+     procedure :: contract => argument_contract
 
   end type argument
 
@@ -114,6 +130,7 @@ module operation_action
 
      type(token), private :: arguments_space
      integer    , private :: declared_arguments = 0
+     type(contract), allocatable, private :: argument_contracts(:)
 
      ! THE STAMP. A statement that stays the same between two solves
      ! carries the same stamp, and a direct solver keeps its factors
@@ -171,6 +188,56 @@ module operation_action
 
 contains
 
+  pure function create_contract(value_kind, components) result(this)
+
+    integer, intent(in) :: value_kind, components
+    type(contract) :: this
+
+    if (value_kind == FIELD_NONE) then
+       error stop 'operation: a contract requires a value kind'
+    end if
+    if (components < 1) then
+       error stop 'operation: a contract requires a positive component count'
+    end if
+
+    this % value_kinds = [value_kind]
+    this % components = components
+
+  end function create_contract
+
+  pure function create_contract_set(value_kinds, components) result(this)
+
+    integer, intent(in) :: value_kinds(:)
+    integer, intent(in) :: components
+    type(contract) :: this
+
+    if (size(value_kinds) < 1 .or. any(value_kinds == FIELD_NONE)) then
+       error stop 'operation: a contract requires value kinds'
+    end if
+    if (components < 1) then
+       error stop 'operation: a contract requires a positive component count'
+    end if
+
+    this % value_kinds = value_kinds
+    this % components = components
+
+  end function create_contract_set
+
+  pure logical function contract_accepts(this, value) result(accepted)
+
+    class(contract), intent(in) :: this
+    class(field)   , intent(in) :: value
+
+    if (.not. allocated(this % value_kinds)) then
+       accepted = .true.
+       return
+    end if
+
+    accepted = any(value % value_kind() == this % value_kinds) .and. &
+         & value % num_components() == this % components
+
+  end function contract_accepts
+
   !===================================================================!
   ! Same space, same position. An undeclared space matches nothing,
   ! including itself.
@@ -194,6 +261,19 @@ contains
 
   end function argument_is_named
 
+  pure function argument_contract(this) result(required)
+
+    class(argument), intent(in) :: this
+    type(contract) :: required
+
+    if (.not. this % is_named()) then
+       error stop 'operation: a contract belongs to a named argument'
+    end if
+
+    required = this % required
+
+  end function argument_contract
+
   !===================================================================!
   ! Declare the argument space: mint it once, on the first call, and
   ! record how many positions are readable. A later call changes the
@@ -201,13 +281,19 @@ contains
   ! same space. A negative count stops the program.
   !===================================================================!
 
-  subroutine declare_arguments(this, n)
+  subroutine declare_arguments(this, n, contracts)
 
     class(operation), intent(inout) :: this
     integer         , intent(in)    :: n
+    type(contract)  , intent(in), optional :: contracts(:)
 
     if (n < 0) then
        error stop 'operation: the argument count is nonnegative'
+    end if
+    if (present(contracts)) then
+       if (size(contracts) /= n) then
+          error stop 'operation: every argument has one contract'
+       end if
     end if
 
     if (.not. this % arguments_space % declared()) then
@@ -215,6 +301,9 @@ contains
     end if
 
     this % declared_arguments = n
+    if (allocated(this % argument_contracts)) deallocate(this % argument_contracts)
+    allocate(this % argument_contracts(n))
+    if (present(contracts)) this % argument_contracts = contracts
 
   end subroutine declare_arguments
 
@@ -247,6 +336,7 @@ contains
 
     a % space   = this % arguments_space
     a % ordinal = k
+    a % required = this % argument_contracts(k)
 
   end function operation_argument
 

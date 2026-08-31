@@ -46,7 +46,8 @@ module operation_chain_rule
   use view_directed , only : directed_graph
   use field_calculus, only : field
   use graph_fractal       , only : graph
-  use operation_action    , only : operation, argument, variation
+  use operation_action    , only : operation, argument, variation, contract
+  use operation_binding   , only : binding, bound_inputs, bound_value
   use field_stored   , only : stored_field
 
   implicit none
@@ -189,6 +190,9 @@ contains
     integer            , intent(in) :: order
     type(argument_path), intent(in) :: along(:)
     type(total_derivative) :: this
+    type(contract), allocatable :: contracts(:)
+    type(argument) :: a
+    integer :: k
 
     if (order < 0) then
        error stop 'total_derivative: the order of a derivative is not negative'
@@ -198,7 +202,12 @@ contains
     allocate(this % statement, source=statement)
     this % order = order
     this % along = along
-    call this % declare_arguments(statement % num_arguments())
+    allocate(contracts(statement % num_arguments()))
+    do k = 1, statement % num_arguments()
+       a = statement % argument(k)
+       contracts(k) = a % contract()
+    end do
+    call this % declare_arguments(statement % num_arguments(), contracts)
 
   end function derivative_of
 
@@ -215,6 +224,8 @@ contains
     class(field), allocatable, intent(inout) :: output
 
     type(stored_field), allocatable :: held(:)
+    type(binding), allocatable :: bound(:)
+    class(field), allocatable :: value
     integer :: k
 
     if (.not. allocated(this % statement)) then
@@ -224,9 +235,11 @@ contains
        error stop 'total_derivative: the statement''s inputs are given'
     end if
 
-    allocate(held(size(input_data)))
-    do k = 1, size(input_data)
-       select type (one => input_data(k))
+    call bound_inputs(this, input_data, bound)
+    allocate(held(this % num_arguments()))
+    do k = 1, this % num_arguments()
+       call bound_value(bound, this % argument(k), value)
+       select type (one => value)
        type is (stored_field)
           held(k) = one
        class default

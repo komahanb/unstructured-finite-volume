@@ -141,8 +141,13 @@ contains
     this % direction = direction
     if (present(scale)) this % scale = scale
 
-    ! one argument: the field the form is fitted to
-    call this % declare_arguments(1, [contract(FIELD_REAL, 1)])
+    ! ONE ARGUMENT: THE FIELD THE FORM IS FITTED TO. Its entries are
+    ! the points of the constellation and its components are their
+    ! coordinates, so the count is the dimension of the space the
+    ! form spans and not one. A form over a line takes one component
+    ! and a form over a plane takes two, and stating one for both
+    ! refuses every fit above a line.
+    call this % declare_arguments(1, [contract(FIELD_REAL, shape % dimension())])
 
   end function create_fit
 

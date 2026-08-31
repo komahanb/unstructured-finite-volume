@@ -48,7 +48,7 @@ module operation_grid
   use iso_fortran_env, only : int64
   use util_precision  , only : dp
   use operation_action      , only : operation, variation, contract
-  use operation_binding     , only : binding, bound_inputs, bound_real_vector
+  use operation_action      , only : binding, bound_real_vector
   use operation_action, only : emit
   use view_directed         , only : directed_graph
   use view_directed_stored  , only : stored_directed_graph
@@ -425,19 +425,16 @@ contains
   ! that names anything else stops the program.
   !===================================================================!
 
-  subroutine seeded(this, input_data, variations, design)
+  subroutine seeded(this, inputs, variations, design)
 
     class(grid)    , intent(in) :: this
-    class(field)   , intent(in) :: input_data(:)
+    type(binding)   , intent(in) :: inputs(:)
     type(variation), intent(in) :: variations(:)
     type(derivative_terms), allocatable, intent(out) :: design(:)
 
     real(dp), allocatable :: x(:), v(:)
-    type(binding), allocatable :: bound(:)
     integer :: n, i, j
-
-    call bound_inputs(this, input_data, bound)
-    call bound_real_vector(bound, this % argument(1), x)
+    call bound_real_vector(inputs, this % argument(1), x)
     n = size(variations)
 
     allocate(design(max(size(x), 1)))
@@ -516,7 +513,7 @@ contains
     instants = stored_directed_graph(num_instants, tails=[integer ::], heads=[integer ::])
     knobs    = stored_field('design', instants % vertex_set(), max(size(design), 1))
     call knobs % set_real_vector(padded(design))
-    call steps % apply(instants, [knobs], out)
+    call steps % apply(instants, steps % bind([knobs]), out)
     call out % real_vector(dt)
   end subroutine partition_values
 
@@ -547,7 +544,7 @@ contains
        knobs = stored_field('design', instants % vertex_set(), 1)
        call knobs % set_real_vector([0.0_dp])
     end if
-    call steps % apply(instants, [knobs], out)
+    call steps % apply(instants, steps % bind([knobs]), out)
     call out % real_vector(dt)
     call steps % abscissae(n, dt, t)
   end subroutine partitioned_values
@@ -605,32 +602,32 @@ contains
 
   end subroutine placed
 
-  subroutine grid_apply(this, input_graph, input_data, output)
+  subroutine grid_apply(this, input_graph, inputs, output)
 
     class(grid)          , intent(in)        :: this
     class(directed_graph), intent(in)        :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
+    type(binding), intent(in), optional       :: inputs(:)
     class(field), allocatable, intent(inout) :: output
 
     type(variation), allocatable :: none(:)
     type(derivative_terms), allocatable :: design(:), dt(:)
 
-    if (.not. present(input_data)) then
+    if (.not. present(inputs)) then
        error stop 'operation_grid: the design is given'
     end if
 
     allocate(none(0))
-    call seeded(this, input_data, none, design)
+    call seeded(this, inputs, none, design)
     call partitioned(this, design, input_graph % num_vertices(), dt)
     call placed(this, input_graph, dt, output)
 
   end subroutine grid_apply
 
-  subroutine grid_partial_action(this, input_graph, input_data, variations, output)
+  subroutine grid_partial_action(this, input_graph, inputs, variations, output)
 
     class(grid)          , intent(in)        :: this
     class(directed_graph), intent(in)        :: input_graph
-    class(field)         , intent(in)        :: input_data(:)
+    type(binding)         , intent(in)        :: inputs(:)
     type(variation)      , intent(in)        :: variations(:)
     class(field), allocatable, intent(inout) :: output
 
@@ -642,7 +639,7 @@ contains
        error stop 'operation_grid: the requested order is within max_degree'
     end if
 
-    call seeded(this, input_data, variations, design)
+    call seeded(this, inputs, variations, design)
     call partitioned(this, design, input_graph % num_vertices(), dt)
     call placed(this, input_graph, dt, output)
 

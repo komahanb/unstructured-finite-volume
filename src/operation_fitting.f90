@@ -37,7 +37,7 @@ module operation_fitting
 
   use util_precision  , only : dp, spacing_at_one
   use operation_action, only : operation, contract
-  use operation_binding, only : binding, bound_inputs, bound_real_vector
+  use operation_action, only : binding, bound_real_vector
   use operation_action, only : emit
   use view_directed, only : directed_graph
   use field_calculus, only : field, FIELD_REAL
@@ -160,15 +160,14 @@ contains
   ! dual is handed to the level's own solver.
   !===================================================================!
 
-  subroutine fit_apply(this, input_graph, input_data, output)
+  subroutine fit_apply(this, input_graph, inputs, output)
 
     class(fit), intent(in)                         :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
+    type(binding), intent(in), optional       :: inputs(:)
     class(field), allocatable, intent(inout) :: output
 
     type(stored_field)   :: out
-    type(binding), allocatable :: bound(:)
     type(stencil) :: dual
     type(conjugate_gradient) :: solver
     real(dp), allocatable :: positions(:), w(:), b(:,:), bw(:,:)
@@ -183,10 +182,8 @@ contains
     allocate(w(npts))
     w = 0.0_dp
 
-    if (present(input_data)) then
-
-       call bound_inputs(this, input_data, bound)
-       call bound_real_vector(bound, this % argument(1), positions)
+    if (present(inputs)) then
+       call bound_real_vector(inputs, this % argument(1), positions)
 
        d = this % shape % dimension()
        if (size(this % at) /= d .or. size(positions) /= d * npts) then

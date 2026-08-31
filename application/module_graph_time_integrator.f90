@@ -1074,7 +1074,7 @@ contains
        call direction(i) % set_real_vector(e)
        variations(i) = variation(this % steps_kept % argument(1), direction(i))
     end do
-    call this % steps_kept % partial_action(instants, [knobs], variations, out)
+    call this % steps_kept % partial_action(instants, this % steps_kept % bind([knobs]), variations, out)
     call out % real_vector(u)
   end subroutine step_partial_along
   subroutine step_partials(this, v)
@@ -1592,7 +1592,7 @@ end module gti_expansion
 module gti_block
   use util_precision  , only : dp
   use operation_action     , only : operation, variation, contract
-  use operation_binding    , only : binding, bound_inputs, bound_real_vector
+  use operation_action     , only : binding, bound_real_vector
   use view_directed        , only : directed_graph
   use view_directed_stored , only : stored_directed_graph
   use field_calculus       , only : field, FIELD_REAL
@@ -1776,22 +1776,20 @@ contains
             & x(this % at(p) + 1:this % at(p) + this % block_stride())
     end do
   end function gathered
-  subroutine point_inputs(this, input_data, x, inputs)
+  subroutine point_inputs(this, inputs, x, point_data)
     class(block_residual), intent(in) :: this
-    class(field)         , intent(in) :: input_data(:)
+    type(binding)         , intent(in) :: inputs(:)
     real(dp)             , intent(in) :: x(:)
-    type(stored_field), allocatable, intent(out) :: inputs(:)
+    type(stored_field), allocatable, intent(out) :: point_data(:)
     type(stored_field) :: state, design
-    type(binding), allocatable :: bound(:)
     real(dp), allocatable :: knob(:)
-    call bound_inputs(this, input_data, bound)
-    call bound_real_vector(bound, this % argument(2), knob)
+    call bound_real_vector(inputs, this % argument(2), knob)
     state = stored_field('state', this % points % vertex_set(), &
          & size(this % at) * this % block_stride())
     call state % set_real_vector(gathered(this, x))
     design = stored_field('design', this % points % vertex_set(), size(knob))
     call design % set_real_vector(knob)
-    inputs = [state, design]
+    point_data = [state, design]
   end subroutine point_inputs
   pure subroutine placed(this, governing, r)
     class(block_residual), intent(in)    :: this
@@ -1829,15 +1827,13 @@ contains
        r(this % carried(i)) = 0.0_dp
     end do
   end subroutine carry_held
-  subroutine state_of(this, input_data, input_graph, x, state)
+  subroutine state_of(this, inputs, input_graph, x, state)
     class(block_residual), intent(in)  :: this
-    class(field)         , intent(in)  :: input_data(:)
+    type(binding)         , intent(in)  :: inputs(:)
     class(directed_graph), intent(in)  :: input_graph
     real(dp), allocatable, intent(out) :: x(:)
     type(stored_field)   , intent(out) :: state
-    type(binding), allocatable :: bound(:)
-    call bound_inputs(this, input_data, bound)
-    call bound_real_vector(bound, this % argument(1), x)
+    call bound_real_vector(inputs, this % argument(1), x)
     if (size(x) /= this % num_unknowns()) then
        error stop 'gti_block: the state holds one component per degree per unknown point'
     end if
@@ -1855,28 +1851,28 @@ contains
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
   end subroutine placed_output
-  subroutine block_apply(this, input_graph, input_data, output)
+  subroutine block_apply(this, input_graph, inputs, output)
     class(block_residual), intent(in)        :: this
     class(directed_graph), intent(in)        :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
+    type(binding), intent(in), optional       :: inputs(:)
     class(field), allocatable, intent(inout) :: output
     type(stored_field) :: state
-    type(stored_field), allocatable :: inputs(:)
+    type(stored_field), allocatable :: point_data(:)
     class(field), allocatable :: half
     real(dp), allocatable :: r(:), governing(:), x(:), coupled(:)
-    if (.not. present(input_data)) then
+    if (.not. present(inputs)) then
        error stop 'gti_block: the state and the design are given'
     end if
-    call state_of(this, input_data, input_graph, x, state)
-    call point_inputs(this, input_data, x, inputs)
-    call this % time_discretization_stencil % apply(input_graph, [state], half)
+    call state_of(this, inputs, input_graph, x, state)
+    call point_inputs(this, inputs, x, point_data)
+    call this % time_discretization_stencil % apply(input_graph, this % time_discretization_stencil % bind([state]), half)
     call half % real_vector(r)
     if (allocated(this % spatial_discretization_stencil)) then
-       call this % spatial_discretization_stencil % apply(input_graph, [state], half)
+       call this % spatial_discretization_stencil % apply(input_graph, this % spatial_discretization_stencil % bind([state]), half)
        call half % real_vector(coupled)
        r = r + coupled
     end if
-    call this % physics % apply(this % points, inputs, half)
+    call this % physics % apply(this % points, this % physics % bind(point_data), half)
     call half % real_vector(governing)
     call placed(this, governing, r)
     call carry(this, x, r)
@@ -2074,10 +2070,10 @@ contains
        aggregate(u) = numbered(key)
     end do
   end function aggregates
-  function linear_block(this, input_graph, input_data, rhs, transposed, mark) result(lin)
+  function linear_block(this, input_graph, inputs, rhs, transposed, mark) result(lin)
     class(block_residual), intent(in) :: this
     class(directed_graph), intent(in) :: input_graph
-    class(field)         , intent(in) :: input_data(:)
+    type(binding)         , intent(in) :: inputs(:)
     real(dp)             , intent(in) :: rhs(:)
     logical              , intent(in) :: transposed
     integer              , intent(in) :: mark
@@ -2089,7 +2085,7 @@ contains
     if (size(rhs) /= this % unknowns) then
        error stop 'gti_block: one right side per unknown'
     end if
-    call this % compiled_tangent(input_graph, input_data, 1, r, c, w, available)
+    call this % compiled_tangent(input_graph, inputs, 1, r, c, w, available)
     if (.not. available) then
        error stop 'gti_block: the tangent in the state compiles'
     end if
@@ -2155,17 +2151,17 @@ contains
        sub % kept = kept
     end if
   end function block_restricted
-  subroutine block_compiled_tangent(this, input_graph, input_data, which, &
+  subroutine block_compiled_tangent(this, input_graph, inputs, which, &
        & rows, columns, weights, available)
     class(block_residual), intent(in)  :: this
     class(directed_graph), intent(in)  :: input_graph
-    class(field)         , intent(in)  :: input_data(:)
+    type(binding)         , intent(in)  :: inputs(:)
     integer              , intent(in)  :: which
     integer , allocatable, intent(out) :: rows(:), columns(:)
     real(dp), allocatable, intent(out) :: weights(:)
     logical              , intent(out) :: available
     type(stored_field) :: state, direction
-    type(stored_field), allocatable :: inputs(:)
+    type(stored_field), allocatable :: point_data(:)
     class(field), allocatable :: out
     real(dp), allocatable :: x(:), w(:), governing(:), v(:)
     integer , allocatable :: r(:), c(:)
@@ -2177,8 +2173,8 @@ contains
     npts = size(this % at)
     allocate(is_carried(n), source=.false.)
     is_carried(this % carried) = .true.
-    call state_of(this, input_data, input_graph, x, state)
-    call point_inputs(this, input_data, x, inputs)
+    call state_of(this, inputs, input_graph, x, state)
+    call point_inputs(this, inputs, x, point_data)
     count = this % time_discretization_stencil % pattern % num_edges() + npts * this % degrees + size(this % carried)
     if (allocated(this % spatial_discretization_stencil)) count = count + this % spatial_discretization_stencil % pattern % num_edges()
     allocate(r(count), c(count), w(count))
@@ -2193,7 +2189,7 @@ contains
        end do
        direction = stored_field('direction', this % points % vertex_set(), size(v))
        call direction % set_real_vector(v)
-       call this % physics % partial_action(this % points, inputs, &
+       call this % physics % partial_action(this % points, this % physics % bind(point_data), &
             & [variation(this % physics % argument(1), direction)], out)
        call out % real_vector(governing)
        do p = 1, npts
@@ -2230,10 +2226,10 @@ contains
        w(kept) = weights(e)
     end do
   end subroutine stencil_triples
-  subroutine block_partial_action(this, input_graph, input_data, variations, output)
+  subroutine block_partial_action(this, input_graph, inputs, variations, output)
     class(block_residual), intent(in)        :: this
     class(directed_graph), intent(in)        :: input_graph
-    class(field)         , intent(in)        :: input_data(:)
+    type(binding)         , intent(in)        :: inputs(:)
     type(variation)      , intent(in)        :: variations(:)
     class(field), allocatable, intent(inout) :: output
     type(stored_field) :: state
@@ -2242,9 +2238,9 @@ contains
     if (size(variations) < 1 .or. size(variations) > this % max_degree()) then
        error stop 'gti_block: the requested order is within max_degree'
     end if
-    call state_of(this, input_data, input_graph, x, state)
+    call state_of(this, inputs, input_graph, x, state)
     if (size(variations) >= 2) then
-       call second_tangent(this, input_data, variations, x, governing)
+       call second_tangent(this, inputs, variations, x, governing)
        allocate(r(this % num_unknowns()), source=0.0_dp)
        call placed(this, governing, r)
        call carry_held(this, r)
@@ -2253,12 +2249,12 @@ contains
     end if
     call variations(1) % direction(v)
     if (variations(1) % argument_is(this % argument(1))) then
-       call state_tangent(this, input_graph, input_data, variations, state, x, v, &
+       call state_tangent(this, input_graph, inputs, variations, state, x, v, &
             & r, governing)
        call placed(this, governing, r)
        call carry_direction(this, v, r)
     else if (variations(1) % argument_is(this % argument(2))) then
-       call design_tangent(this, input_data, variations, x, r, governing)
+       call design_tangent(this, inputs, variations, x, r, governing)
        call placed(this, governing, r)
        call carry_held(this, r)
     else
@@ -2266,52 +2262,52 @@ contains
     end if
     call placed_output(this, input_graph, r, output)
   end subroutine block_partial_action
-  subroutine state_tangent(this, input_graph, input_data, variations, state, x, v, &
+  subroutine state_tangent(this, input_graph, inputs, variations, state, x, v, &
        & r, governing)
     class(block_residual), intent(in) :: this
     class(directed_graph), intent(in) :: input_graph
-    class(field)         , intent(in) :: input_data(:)
+    type(binding)         , intent(in) :: inputs(:)
     type(variation)      , intent(in) :: variations(:)
     type(stored_field)   , intent(in) :: state
     real(dp)             , intent(in) :: x(:), v(:)
     real(dp), allocatable, intent(out) :: r(:), governing(:)
     type(stored_field) :: direction
-    type(stored_field), allocatable :: inputs(:)
+    type(stored_field), allocatable :: point_data(:)
     class(field), allocatable :: half
     real(dp), allocatable :: coupled(:)
-    call this % time_discretization_stencil % partial_action(input_graph, [state], &
+    call this % time_discretization_stencil % partial_action(input_graph, this % time_discretization_stencil % bind([state]), &
          & [variations(1) % with_argument(this % time_discretization_stencil % argument(1))], half)
     call half % real_vector(r)
     if (allocated(this % spatial_discretization_stencil)) then
-       call this % spatial_discretization_stencil % partial_action(input_graph, [state], &
+       call this % spatial_discretization_stencil % partial_action(input_graph, this % spatial_discretization_stencil % bind([state]), &
             & [variations(1) % with_argument(this % spatial_discretization_stencil % argument(1))], half)
        call half % real_vector(coupled)
        r = r + coupled
     end if
-    call point_inputs(this, input_data, x, inputs)
+    call point_inputs(this, inputs, x, point_data)
     direction = stored_field('direction', this % points % vertex_set(), &
          & size(this % at) * this % block_stride())
     call direction % set_real_vector(gathered(this, v))
-    call this % physics % partial_action(this % points, inputs, &
+    call this % physics % partial_action(this % points, this % physics % bind(point_data), &
          & [variation(this % physics % argument(1), direction)], half)
     call half % real_vector(governing)
   end subroutine state_tangent
-  subroutine second_tangent(this, input_data, variations, x, governing)
+  subroutine second_tangent(this, inputs, variations, x, governing)
     class(block_residual), intent(in) :: this
-    class(field)         , intent(in) :: input_data(:)
+    type(binding)         , intent(in) :: inputs(:)
     type(variation)      , intent(in) :: variations(:)
     real(dp)             , intent(in) :: x(:)
     real(dp), allocatable, intent(out) :: governing(:)
-    type(stored_field), allocatable :: inputs(:)
+    type(stored_field), allocatable :: point_data(:)
     type(variation), allocatable :: at_points(:)
     class(field), allocatable :: half
     integer :: i
-    call point_inputs(this, input_data, x, inputs)
+    call point_inputs(this, inputs, x, point_data)
     allocate(at_points(size(variations)))
     do i = 1, size(variations)
        at_points(i) = physics_variation(this, variations(i))
     end do
-    call this % physics % partial_action(this % points, inputs, at_points, half)
+    call this % physics % partial_action(this % points, this % physics % bind(point_data), at_points, half)
     call half % real_vector(governing)
   end subroutine second_tangent
   function physics_variation(this, given) result(at_points)
@@ -2332,17 +2328,17 @@ contains
        error stop 'gti_block: a variation names the state or the design'
     end if
   end function physics_variation
-  subroutine design_tangent(this, input_data, variations, x, r, governing)
+  subroutine design_tangent(this, inputs, variations, x, r, governing)
     class(block_residual), intent(in) :: this
-    class(field)         , intent(in) :: input_data(:)
+    type(binding)         , intent(in) :: inputs(:)
     type(variation)      , intent(in) :: variations(:)
     real(dp)             , intent(in) :: x(:)
     real(dp), allocatable, intent(out) :: r(:), governing(:)
-    type(stored_field), allocatable :: inputs(:)
+    type(stored_field), allocatable :: point_data(:)
     class(field), allocatable :: half
     allocate(r(this % num_unknowns()), source=0.0_dp)
-    call point_inputs(this, input_data, x, inputs)
-    call this % physics % partial_action(this % points, inputs, &
+    call point_inputs(this, inputs, x, point_data)
+    call this % physics % partial_action(this % points, this % physics % bind(point_data), &
          & [variations(1) % with_argument(this % physics % argument(2))], half)
     call half % real_vector(governing)
   end subroutine design_tangent
@@ -2587,7 +2583,7 @@ contains
     do iteration = 1, stopping_iterations
        state = stored_field('state', points % vertex_set(), nodes * degrees)
        call state % set_real_vector(q)
-       call physics % apply(points, [state, knobs], out)
+       call physics % apply(points, physics % bind([state, knobs]), out)
        call out % real_vector(r)
        r = r + below
        if (began < 0.0_dp) began = norm2(r)
@@ -2597,7 +2593,7 @@ contains
           target = stopping_tolerance
        end if
        if (norm2(r) <= target) return
-       call physics % partial_action(points, [state, knobs], &
+       call physics % partial_action(points, physics % bind([state, knobs]), &
             & [variation(physics % argument(1), direction)], out)
        call out % real_vector(slope)
        do i = 1, nodes
@@ -2977,7 +2973,7 @@ contains
     else
        call tally_record(tangent_loops)
     end if
-    lin = rows % linear_block(unknowns, inputs, rhs, transposed, mark)
+    lin = rows % linear_block(unknowns, rows % bind(inputs), rhs, transposed, mark)
     call swept(lin, 0.0_dp, w, achieved)
   end subroutine solved_linear
   real(dp) function by_tangent(rows, unknowns, inputs, g, design_rate, explicit, mark) &
@@ -3096,7 +3092,7 @@ contains
     real(dp), allocatable :: r(:)
     state = stored_field('state', unknowns % vertex_set(), size(q))
     call state % set_real_vector(q)
-    call rows % apply(unknowns, [state, design], out)
+    call rows % apply(unknowns, rows % bind([state, design]), out)
     call out % real_vector(r)
     norm = norm2(r)
   end function whole_residual
@@ -3133,7 +3129,7 @@ contains
     nd = rows % num_degrees()
     state = stored_field('state', unknowns % vertex_set(), n)
     call state % set_real_vector(q)
-    call rows % apply(unknowns, [state, design], out)
+    call rows % apply(unknowns, rows % bind([state, design]), out)
     call out % real_vector(r)
     allocate(left % by_degree(0:nd - 1), source=0.0_dp)
     do i = 1, n
@@ -3641,7 +3637,7 @@ contains
     op    = spatial_operator(space, kappa, degree)
     given = stored_field('values', op % pattern % vertex_set(), size(values))
     call given % set_real_vector(values)
-    call op % apply(op % pattern, [given], out)
+    call op % apply(op % pattern, op % bind([given]), out)
     call out % real_vector(balanced)
   end subroutine balance_of
   subroutine against_the_laplacian(space, a, b, kappa, degree)
@@ -3755,7 +3751,7 @@ module gti_chain
   use view_directed_stored, only : stored_directed_graph
   use field_calculus   , only : field, FIELD_REAL
   use operation_action , only : operation, emit, contract
-  use operation_binding, only : binding, bound_inputs, bound_value
+  use operation_action , only : binding, is_bound, bound_value
   use operation_driver , only : driver, rule_graph, data_graph, pairing
   use view_read_write  , only : bipartite_digraph, FIRST_PART, SECOND_PART
   use view_directed    , only : forward
@@ -4328,12 +4324,11 @@ contains
   ! travels inside the chain the rule points at.
   !===================================================================!
 
-  subroutine block_rule_apply(this, input_graph, input_data, output)
+  subroutine block_rule_apply(this, input_graph, inputs, output)
     class(block_rule)        , intent(in)    :: this
     class(directed_graph)    , intent(in)    :: input_graph
-    class(field)             , intent(in), optional :: input_data(:)
+    type(binding)             , intent(in), optional :: inputs(:)
     class(field), allocatable, intent(inout) :: output
-    type(binding), allocatable :: bound(:)
     class(field), allocatable :: value
     type(block_state) :: state
     type(stored_directed_graph) :: state_domain
@@ -4352,9 +4347,8 @@ contains
     ! offset is settled before the march: this is the cut, and it is
     ! closed here.
     given = 0
-    if (present(input_data)) then
-       call bound_inputs(this, input_data, bound)
-       if (size(bound) > 0) given = this % scheme % history_depth(this % degrees - 1)
+    if (present(inputs)) then
+       if (size(inputs) > 0) given = this % scheme % history_depth(this % degrees - 1)
     end if
     if (given > 0) then
        width = this % degrees
@@ -4364,8 +4358,9 @@ contains
           instant = this % first + (i - 1) * this % stride
           held_by = 0
           taken   = 0
-          do e = 1, size(bound)
-             call bound_value(bound, this % argument(e), value)
+          do e = 1, this % num_arguments()
+             if (.not. is_bound(inputs, this % argument(e))) cycle
+             call bound_value(inputs, this % argument(e), value)
              select type (datum => value)
              type is (block_state)
                 if (.not. datum % holds(instant)) cycle
@@ -4377,7 +4372,7 @@ contains
           if (taken < 1) then
              error stop 'gti_chain: a block is handed the data its scheme reaches back over'
           end if
-          call bound_value(bound, this % argument(taken), value)
+          call bound_value(inputs, this % argument(taken), value)
           select type (datum => value)
           type is (block_state)
              call datum % values_at(instant, width, one_datum)
@@ -5026,7 +5021,7 @@ contains
     logical :: available
     integer :: n, e, p, d
     call frozen_at(b, design, unknowns, inputs)
-    call b % rows % compiled_tangent(unknowns, inputs, 1, r, c, w, available)
+    call b % rows % compiled_tangent(unknowns, b % rows % bind(inputs), 1, r, c, w, available)
     if (.not. available) then
        error stop 'gti_chain: the block compiles its tangent in the state'
     end if
@@ -5919,9 +5914,9 @@ contains
       direction = stored_field('v', instants % vertex_set(), size(design))
       call knobs     % set_real_vector(design)
       call direction % set_real_vector(v)
-      call steps % apply(instants, [knobs], out)
+      call steps % apply(instants, steps % bind([knobs]), out)
       call out % real_vector(dt)
-      call steps % partial_action(instants, [knobs], &
+      call steps % partial_action(instants, steps % bind([knobs]), &
            & [variation(steps % argument(1), direction)], out)
       call out % real_vector(exact)
       call differenced(steps, instants, knobs, design, v, delta, plus, minus)
@@ -5982,10 +5977,10 @@ contains
       real(dp), allocatable      , intent(out)   :: plus(:), minus(:)
       class(field), allocatable :: out
       call knobs % set_real_vector(design + delta * v)
-      call steps % apply(instants, [knobs], out)
+      call steps % apply(instants, steps % bind([knobs]), out)
       call out % real_vector(plus)
       call knobs % set_real_vector(design - delta * v)
-      call steps % apply(instants, [knobs], out)
+      call steps % apply(instants, steps % bind([knobs]), out)
       call out % real_vector(minus)
       call knobs % set_real_vector(design)
     end subroutine differenced
@@ -6503,11 +6498,11 @@ contains
       unknowns = stored_directed_graph(num_unknowns, tails=[integer ::], heads=[integer ::])
       state    = stored_field('state', unknowns % vertex_set(), num_unknowns)
       call state % set_real_vector(q)
-      call rows % apply(unknowns, [state], out)
+      call rows % apply(unknowns, rows % bind([state]), out)
       call out % real_vector(residual)
       direction = stored_field('v', unknowns % vertex_set(), num_unknowns)
       call direction % set_real_vector(q)
-      call rows % partial_action(unknowns, [state], &
+      call rows % partial_action(unknowns, rows % bind([state]), &
            & [variation(rows % argument(1), direction)], out)
       call out % real_vector(acted)
       physics = van_der_pol(2)
@@ -6574,7 +6569,7 @@ contains
       design   = stored_field('nu', instants % vertex_set(), num_instants)
       call state  % set_real_vector(q)
       call design % set_real_vector(spread(nu, 1, num_instants))
-      call physics % apply(instants, [state, design], out)
+      call physics % apply(instants, physics % bind([state, design]), out)
       call out % real_vector(r)
     end subroutine governing_rows
     subroutine physics_partials(degree, q0, q_top, design)
@@ -6605,7 +6600,7 @@ contains
             v((k - 1) * nd + d + 1) = 1.0_dp
          end do
          call direction % set_real_vector(v)
-         call physics % partial_action(graph_of, [state, nu_field], &
+         call physics % partial_action(graph_of, physics % bind([state, nu_field]), &
               & [variation(physics % argument(1), direction)], out)
          call out % real_vector(exact)
          taken(d) = exact(1)
@@ -6650,10 +6645,10 @@ contains
       class(field), allocatable :: out
       real(dp), allocatable :: plus(:), minus(:)
       call state % set_real_vector(q + delta * v)
-      call physics % apply(graph_of, [state, nu_field], out)
+      call physics % apply(graph_of, physics % bind([state, nu_field]), out)
       call out % real_vector(plus)
       call state % set_real_vector(q - delta * v)
-      call physics % apply(graph_of, [state, nu_field], out)
+      call physics % apply(graph_of, physics % bind([state, nu_field]), out)
       call out % real_vector(minus)
       call state % set_real_vector(q)
       d = (plus(1) - minus(1)) / (2.0_dp * delta)
@@ -6674,14 +6669,14 @@ contains
       q_below = q(nd - 1)
       direction = stored_field('w', graph_of % vertex_set(), instants)
       call direction % set_real_vector(w)
-      call physics % partial_action(graph_of, [state, nu_field], &
+      call physics % partial_action(graph_of, physics % bind([state, nu_field]), &
            & [variation(physics % argument(2), direction)], out)
       call out % real_vector(exact)
       call nu_field % set_real_vector(spread(nu, 1, instants) + delta * w)
-      call physics % apply(graph_of, [state, nu_field], out)
+      call physics % apply(graph_of, physics % bind([state, nu_field]), out)
       call out % real_vector(plus)
       call nu_field % set_real_vector(spread(nu, 1, instants) - delta * w)
-      call physics % apply(graph_of, [state, nu_field], out)
+      call physics % apply(graph_of, physics % bind([state, nu_field]), out)
       call out % real_vector(minus)
       call nu_field % set_real_vector(spread(nu, 1, instants))
       write(*,'(a,f12.6)') '   partial in the design  ', exact(1)
@@ -6970,13 +6965,13 @@ contains
       allocate(v(last), source=0.0_dp)
       v(last) = 1.0_dp
       call direction % set_real_vector(v)
-      call scheme % partial_action(coupling, inputs, [variation(scheme % argument(1), direction)], out)
+      call scheme % partial_action(coupling, scheme % bind(inputs), [variation(scheme % argument(1), direction)], out)
       call out % real_vector(exact)
       call inputs(1) % set_real_vector(dt + delta * v)
-      call scheme % apply(coupling, inputs, out)
+      call scheme % apply(coupling, scheme % bind(inputs), out)
       call out % real_vector(plus)
       call inputs(1) % set_real_vector(dt - delta * v)
-      call scheme % apply(coupling, inputs, out)
+      call scheme % apply(coupling, scheme % bind(inputs), out)
       call out % real_vector(minus)
       write(*,'(a)') ' '
       write(*,'(a)') ' bdf 2, partial of alpha_0..2 in the last step, non-uniform grid'
@@ -7002,31 +6997,31 @@ contains
       w(size(dt) - 1) = 1.0_dp
       call along_w % set_real_vector(w)
       call steps % set_real_vector(dt)
-      call scheme % partial_action(coupling, [steps, degrees, conditions], &
+      call scheme % partial_action(coupling, scheme % bind([steps, degrees, conditions]), &
            & [variation(scheme % argument(1), along_v), variation(scheme % argument(1), along_v)], out)
       call out % real_vector(second)
-      call scheme % partial_action(coupling, [steps, degrees, conditions], &
+      call scheme % partial_action(coupling, scheme % bind([steps, degrees, conditions]), &
            & [variation(scheme % argument(1), along_v), variation(scheme % argument(1), along_w)], out)
       call out % real_vector(mixed_partial)
       call steps % set_real_vector(dt + delta * v)
-      call scheme % apply(coupling, [steps, degrees, conditions], out)
+      call scheme % apply(coupling, scheme % bind([steps, degrees, conditions]), out)
       call out % real_vector(plus)
       call steps % set_real_vector(dt)
-      call scheme % apply(coupling, [steps, degrees, conditions], out)
+      call scheme % apply(coupling, scheme % bind([steps, degrees, conditions]), out)
       call out % real_vector(at)
       call steps % set_real_vector(dt - delta * v)
-      call scheme % apply(coupling, [steps, degrees, conditions], out)
+      call scheme % apply(coupling, scheme % bind([steps, degrees, conditions]), out)
       call out % real_vector(minus)
       write(*,'(a)') ' '
       write(*,'(a)') ' bdf 2, second partials of alpha_0..2, non-uniform grid'
       write(*,'(a,3f12.6)') '   partial_action, (last, last)  ', second
       write(*,'(a,3f12.6)') '   second central difference     ', (plus - 2.0_dp * at + minus) / delta**2
       call steps % set_real_vector(dt + delta * w)
-      call scheme % partial_action(coupling, [steps, degrees, conditions], &
+      call scheme % partial_action(coupling, scheme % bind([steps, degrees, conditions]), &
            & [variation(scheme % argument(1), along_v)], out)
       call out % real_vector(plus)
       call steps % set_real_vector(dt - delta * w)
-      call scheme % partial_action(coupling, [steps, degrees, conditions], &
+      call scheme % partial_action(coupling, scheme % bind([steps, degrees, conditions]), &
            & [variation(scheme % argument(1), along_v)], out)
       call out % real_vector(minus)
       write(*,'(a,3f12.6)') '   partial_action, (last, before)', mixed_partial
@@ -8528,10 +8523,10 @@ contains
       call coupling_inputs(nv, tails, [(head, e = 1, size(tails))], dt, source_degree, determines, &
            & coupling, inputs)
       tau = [(step_power(dt(head), source_degree(e) - determines(e)), e = 1, size(tails))]
-      call scheme % apply(coupling, inputs, out)
+      call scheme % apply(coupling, scheme % bind(inputs), out)
       call out % real_vector(alpha)
       weights = scheme_weight(scheme)
-      call weights % apply(coupling, inputs, out)
+      call weights % apply(coupling, weights % bind(inputs), out)
       call out % real_vector(w)
     end subroutine row_fields
     pure real(dp) function step_power(h, n) result(p)
@@ -8620,13 +8615,13 @@ contains
       v(last) = 1.0_dp
       call direction % set_real_vector(v)
       weights = scheme_weight(bdf_family(p))
-      call weights % partial_action(coupling, inputs, [variation(weights % argument(1), direction)], out)
+      call weights % partial_action(coupling, weights % bind(inputs), [variation(weights % argument(1), direction)], out)
       call out % real_vector(exact)
       call inputs(1) % set_real_vector(dt + delta * v)
-      call weights % apply(coupling, inputs, out)
+      call weights % apply(coupling, weights % bind(inputs), out)
       call out % real_vector(plus)
       call inputs(1) % set_real_vector(dt - delta * v)
-      call weights % apply(coupling, inputs, out)
+      call weights % apply(coupling, weights % bind(inputs), out)
       call out % real_vector(minus)
       write(*,'(a)') ' '
       write(*,'(a)') ' bdf 2 velocity weights, partial in the last step'

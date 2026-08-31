@@ -46,7 +46,7 @@
 
 module operation_walk
 
-  use operation_action, only : operation
+  use operation_action, only : operation, binding
   use operation_action, only : emit
   use view_directed, only : directed_graph
   use field_calculus, only : field
@@ -130,22 +130,22 @@ contains
   !===================================================================!
   ! Walk the graph and return a whole number per cell.
   !
-  ! Nothing here reads input_data. Every answer comes from the shape
+  ! Nothing here reads inputs. Every answer comes from the shape
   ! of the graph alone: structure in, rule applied, integers out.
   !===================================================================!
 
-  subroutine walk_apply(this, input_graph, input_data, output)
+  subroutine walk_apply(this, input_graph, inputs, output)
 
     class(walk)       , intent(in)                 :: this
     class(directed_graph)      , intent(in)                 :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
+    type(binding), intent(in), optional       :: inputs(:)
     class(field), allocatable, intent(inout) :: output
 
     type(stored_field)           :: out
     integer , allocatable :: mark(:)
     integer :: nv
 
-    associate (u1 => present(input_data)); end associate
+    associate (u1 => present(inputs)); end associate
 
     nv = input_graph % num_vertices()
 

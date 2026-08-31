@@ -60,6 +60,8 @@ module operation_action
   public :: argument
   public :: contract
   public :: variation
+  public :: binding, moved_binding
+  public :: is_bound, bound_value, bound_real_vector, bound_integer_vector
   public :: applied, varied
   public :: design_partial, jacobian_of
 
@@ -126,6 +128,29 @@ module operation_action
      module procedure create_variation
   end interface variation
 
+  !===================================================================!
+  ! One argument bound to one field. The binding owns the field and
+  ! checks the argument's contract at construction; an apply reads
+  ! its inputs by argument identity from an array of these. The
+  ! driver binds a rule's argument k to the datum at the k-th vertex
+  ! the rule reads; a direct caller binds by position through bind.
+  !===================================================================!
+
+  type :: binding
+
+     type(argument)            , private :: to
+     class(field), allocatable , private :: value
+
+   contains
+
+     procedure :: argument_is => binding_argument_is
+
+  end type binding
+
+  interface binding
+     module procedure create_binding
+  end interface binding
+
   type, abstract :: operation
 
      type(token), private :: arguments_space
@@ -157,6 +182,8 @@ module operation_action
      procedure :: argument => operation_argument
      procedure :: owns
      procedure :: require_owned
+     procedure, private :: bind_fields, bind_bindings
+     generic   :: bind => bind_fields, bind_bindings
 
   end type operation
 
@@ -176,11 +203,11 @@ module operation_action
      !---------------------------------------------------------------!
 
 
-     subroutine operation_apply_interface(this, input_graph, input_data, output)
-       import :: operation, directed_graph, field
+     subroutine operation_apply_interface(this, input_graph, inputs, output)
+       import :: operation, directed_graph, field, binding
        class(operation), intent(in) :: this
        class(directed_graph), intent(in) :: input_graph
-       class(field), intent(in), optional :: input_data(:)
+       type(binding), intent(in), optional :: inputs(:)
        class(field), allocatable, intent(inout) :: output
      end subroutine operation_apply_interface
 
@@ -518,32 +545,32 @@ contains
   ! its tangent knows its own structure.
   !===================================================================!
 
-  subroutine operation_compiled_tangent(this, input_graph, input_data, which, &
+  subroutine operation_compiled_tangent(this, input_graph, inputs, which, &
        & rows, columns, weights, available)
 
     class(operation)     , intent(in)  :: this
     class(directed_graph), intent(in)  :: input_graph
-    class(field)         , intent(in)  :: input_data(:)
+    type(binding)        , intent(in)  :: inputs(:)
     integer              , intent(in)  :: which
     integer , allocatable, intent(out) :: rows(:), columns(:)
     real(dp), allocatable, intent(out) :: weights(:)
     logical              , intent(out) :: available
 
-    associate (u1 => this, u2 => input_graph, u3 => input_data, u4 => which); end associate
+    associate (u1 => this, u2 => input_graph, u3 => inputs, u4 => which); end associate
     available = .false.
 
   end subroutine operation_compiled_tangent
 
-  subroutine operation_partial_action(this, input_graph, input_data, &
+  subroutine operation_partial_action(this, input_graph, inputs, &
        & variations, output)
 
     class(operation), intent(in)             :: this
     class(directed_graph), intent(in)        :: input_graph
-    class(field), intent(in)                 :: input_data(:)
+    type(binding), intent(in)                :: inputs(:)
     type(variation), intent(in)              :: variations(:)
     class(field), allocatable, intent(inout) :: output
 
-    associate (u1 => this, u2 => input_graph, u3 => input_data, &
+    associate (u1 => this, u2 => input_graph, u3 => inputs, &
          & u4 => variations); end associate
     if (allocated(output)) deallocate(output)
 
@@ -560,7 +587,7 @@ contains
 
     class(field), allocatable :: out
 
-    call action % apply(on, inputs, out)
+    call action % apply(on, action % bind(inputs), out)
     call out % real_vector(y)
 
   end subroutine applied
@@ -587,11 +614,11 @@ contains
     if (present(which2)) then
        second = stored_field('direction', domain2, size(v2))
        call second % set_real_vector(v2)
-       call action % partial_action(on, inputs, &
+       call action % partial_action(on, action % bind(inputs), &
             & [variation(action % argument(which), direction), &
             &  variation(action % argument(which2), second)], out)
     else
-       call action % partial_action(on, inputs, &
+       call action % partial_action(on, action % bind(inputs), &
             & [variation(action % argument(which), direction)], out)
     end if
 
@@ -627,7 +654,7 @@ contains
     integer :: j, e
 
     allocate(a(num_unknowns, num_unknowns), source=0.0_dp)
-    call rows % compiled_tangent(unknowns, inputs, 1, r, c, w, available)
+    call rows % compiled_tangent(unknowns, rows % bind(inputs), 1, r, c, w, available)
     if (available) then
        do e = 1, size(r)
           a(r(e), c(e)) = a(r(e), c(e)) + w(e)
@@ -644,6 +671,214 @@ contains
     end do
 
   end subroutine jacobian_of
+
+  !===================================================================!
+  ! Bindings.
+  !===================================================================!
+
+  function create_binding(to, value) result(this)
+
+    type(argument), intent(in) :: to
+    class(field)  , intent(in) :: value
+    type(binding) :: this
+    type(contract) :: required
+
+    if (.not. to % is_named()) then
+       error stop 'operation: a binding names an argument'
+    end if
+    required = to % contract()
+    if (.not. required % accepts(value)) then
+       error stop 'operation: a bound field satisfies its argument contract'
+    end if
+
+    this % to = to
+    allocate(this % value, source=value)
+
+  end function create_binding
+
+  !===================================================================!
+  ! The same binding taking the field over rather than copying it;
+  ! the driver hands each datum it fetched to the binding this way.
+  !===================================================================!
+
+  function moved_binding(to, held) result(this)
+
+    type(argument)           , intent(in)    :: to
+    class(field), allocatable, intent(inout) :: held
+    type(binding) :: this
+    type(contract) :: required
+
+    if (.not. to % is_named()) then
+       error stop 'operation: a binding names an argument'
+    end if
+    if (.not. allocated(held)) then
+       error stop 'operation: a binding carries a field'
+    end if
+    required = to % contract()
+    if (.not. required % accepts(held)) then
+       error stop 'operation: a bound field satisfies its argument contract'
+    end if
+
+    this % to = to
+    call move_alloc(held, this % value)
+
+  end function moved_binding
+
+  pure logical function binding_argument_is(this, a)
+
+    class(binding), intent(in) :: this
+    type(argument), intent(in) :: a
+
+    binding_argument_is = this % to % matches(a)
+
+  end function binding_argument_is
+
+  !===================================================================!
+  ! Bind fields to this operation's arguments by position: field k
+  ! to argument k. Fewer fields than arguments leave the rest unbound;
+  ! more than declared is an error.
+  !===================================================================!
+
+  function bind_fields(this, fields) result(bound)
+
+    class(operation), intent(in) :: this
+    class(field)    , intent(in) :: fields(:)
+    type(binding), allocatable :: bound(:)
+
+    integer :: k
+
+    if (size(fields) > this % num_arguments()) then
+       error stop 'operation: every bound field names a declared argument'
+    end if
+
+    allocate(bound(size(fields)))
+    do k = 1, size(fields)
+       bound(k) = binding(this % argument(k), fields(k))
+    end do
+
+  end function bind_fields
+
+  !===================================================================!
+  ! Rebind another operation's bindings to this operation's arguments
+  ! by position, for an operation that hands its inputs on to one it
+  ! composes.
+  !===================================================================!
+
+  function bind_bindings(this, others) result(bound)
+
+    class(operation), intent(in) :: this
+    type(binding)   , intent(in) :: others(:)
+    type(binding), allocatable :: bound(:)
+
+    integer :: k
+
+    if (size(others) > this % num_arguments()) then
+       error stop 'operation: every bound field names a declared argument'
+    end if
+
+    allocate(bound(size(others)))
+    do k = 1, size(others)
+       if (.not. allocated(others(k) % value)) then
+          error stop 'operation: a binding carries a field'
+       end if
+       bound(k) = binding(this % argument(k), others(k) % value)
+    end do
+
+  end function bind_bindings
+
+  !===================================================================!
+  ! The one binding of an argument: absent or repeated stops the
+  ! program.
+  !===================================================================!
+
+  integer function bound_index(bound, a) result(found)
+
+    type(binding) , intent(in) :: bound(:)
+    type(argument), intent(in) :: a
+
+    integer :: k
+
+    if (.not. a % is_named()) then
+       error stop 'operation: a bound value is named by an argument'
+    end if
+
+    found = 0
+    do k = 1, size(bound)
+       if (bound(k) % argument_is(a)) then
+          if (found /= 0) then
+             error stop 'operation: an argument is bound once'
+          end if
+          found = k
+       end if
+    end do
+
+    if (found == 0) then
+       error stop 'operation: the argument is bound'
+    end if
+    if (.not. allocated(bound(found) % value)) then
+       error stop 'operation: a binding carries a field'
+    end if
+
+  end function bound_index
+
+  !===================================================================!
+  ! Whether an argument has a binding: the driver leaves the argument
+  ! of a vertex nothing has written unbound.
+  !===================================================================!
+
+  pure logical function is_bound(bound, a)
+
+    type(binding) , intent(in) :: bound(:)
+    type(argument), intent(in) :: a
+
+    integer :: k
+
+    is_bound = .false.
+    do k = 1, size(bound)
+       if (bound(k) % argument_is(a)) is_bound = allocated(bound(k) % value)
+    end do
+
+  end function is_bound
+
+  subroutine bound_value(bound, a, value)
+
+    type(binding) , intent(in) :: bound(:)
+    type(argument), intent(in) :: a
+    class(field), allocatable, intent(inout) :: value
+
+    integer :: found
+
+    found = bound_index(bound, a)
+    if (allocated(value)) deallocate(value)
+    allocate(value, source=bound(found) % value)
+
+  end subroutine bound_value
+
+  subroutine bound_real_vector(bound, a, values)
+
+    type(binding) , intent(in) :: bound(:)
+    type(argument), intent(in) :: a
+    real(dp), allocatable, intent(out) :: values(:)
+
+    integer :: found
+
+    found = bound_index(bound, a)
+    call bound(found) % value % real_vector(values)
+
+  end subroutine bound_real_vector
+
+  subroutine bound_integer_vector(bound, a, values)
+
+    type(binding) , intent(in) :: bound(:)
+    type(argument), intent(in) :: a
+    integer, allocatable, intent(out) :: values(:)
+
+    integer :: found
+
+    found = bound_index(bound, a)
+    call bound(found) % value % integer_vector(values)
+
+  end subroutine bound_integer_vector
 
   !===================================================================!
   ! Where an operation's answer lives, unless it says otherwise: one

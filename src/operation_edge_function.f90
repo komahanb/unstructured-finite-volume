@@ -40,8 +40,7 @@ module operation_edge_function
 
   use util_precision  , only : dp
   use operation_action      , only : operation, variation
-  use operation_binding     , only : binding, bound_inputs
-  use operation_binding     , only : bound_real_vector, bound_integer_vector
+  use operation_action      , only : binding, bound_real_vector, bound_integer_vector
   use operation_action, only : emit
   use view_directed         , only : directed_graph
   use field_calculus        , only : field
@@ -124,19 +123,15 @@ contains
   ! The three inputs, which must all be given.
   !===================================================================!
 
-  subroutine read_inputs(this, input_data, dt, source_degree, determines)
+  subroutine read_inputs(this, inputs, dt, source_degree, determines)
 
     class(edge_function), intent(in) :: this
-    class(field), intent(in) :: input_data(:)
+    type(binding), intent(in) :: inputs(:)
     real(dp), allocatable, intent(out) :: dt(:)
     integer , allocatable, intent(out) :: source_degree(:), determines(:)
-
-    type(binding), allocatable :: bound(:)
-
-    call bound_inputs(this, input_data, bound)
-    call bound_real_vector(bound, this % argument(1), dt)
-    call bound_integer_vector(bound, this % argument(2), source_degree)
-    call bound_integer_vector(bound, this % argument(3), determines)
+    call bound_real_vector(inputs, this % argument(1), dt)
+    call bound_integer_vector(inputs, this % argument(2), source_degree)
+    call bound_integer_vector(inputs, this % argument(3), determines)
 
   end subroutine read_inputs
 
@@ -210,11 +205,11 @@ contains
 
   end subroutine full_terms
 
-  subroutine edge_apply(this, input_graph, input_data, output)
+  subroutine edge_apply(this, input_graph, inputs, output)
 
     class(edge_function), intent(in)  :: this
     class(directed_graph), intent(in)        :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
+    type(binding), intent(in), optional       :: inputs(:)
     class(field), allocatable, intent(inout) :: output
 
     type(variation), allocatable :: none(:)
@@ -222,22 +217,22 @@ contains
     real(dp), allocatable :: steps(:)
     integer , allocatable :: source_degree(:), determines(:)
 
-    if (.not. present(input_data)) then
+    if (.not. present(inputs)) then
        error stop 'operation_edge_function: the steps, source degrees and conditions are given'
     end if
 
-    call read_inputs(this, input_data, steps, source_degree, determines)
+    call read_inputs(this, inputs, steps, source_degree, determines)
     allocate(none(0))
     call step_terms(this, steps, none, dt)
     call full_terms(this, input_graph, dt, source_degree, determines, output)
 
   end subroutine edge_apply
 
-  subroutine edge_partial_action(this, input_graph, input_data, variations, output)
+  subroutine edge_partial_action(this, input_graph, inputs, variations, output)
 
     class(edge_function), intent(in)  :: this
     class(directed_graph), intent(in)        :: input_graph
-    class(field)         , intent(in)        :: input_data(:)
+    type(binding)         , intent(in)        :: inputs(:)
     type(variation)      , intent(in)        :: variations(:)
     class(field), allocatable, intent(inout) :: output
 
@@ -251,7 +246,7 @@ contains
        error stop 'operation_edge_function: the requested order is within max_degree'
     end if
 
-    call read_inputs(this, input_data, steps, source_degree, determines)
+    call read_inputs(this, inputs, steps, source_degree, determines)
     call step_terms(this, steps, variations, dt)
     call full_terms(this, input_graph, dt, source_degree, determines, output)
 

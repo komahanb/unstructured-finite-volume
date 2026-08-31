@@ -41,7 +41,7 @@ module operation_stencil
   use view_directed, only : directed_graph
   use field_calculus, only : field, FIELD_REAL
   use operation_action, only : operation, variation, contract
-  use operation_binding, only : binding, bound_inputs, bound_real_vector
+  use operation_action, only : binding, bound_real_vector
   use operation_action, only : emit
   use operation_discretization     , only : discretization
   use relation_binary, only : group_by_key
@@ -281,9 +281,9 @@ contains
        state = stored_field('basis', dom, n_dom, num_components=num_components)
        call state % set_real_vector(e)
        if (present(held)) then
-          call action % apply(on, [state, held], output)
+          call action % apply(on, action % bind([state, held]), output)
        else
-          call action % apply(on, [state], output)
+          call action % apply(on, action % bind([state]), output)
        end if
        call output % real_vector(y)
        if (size(y) /= width) then
@@ -371,22 +371,20 @@ contains
   ! carries its weight times the tail's value onto its head.
   !===================================================================!
 
-  subroutine stencil_apply(this, input_graph, input_data, output)
+  subroutine stencil_apply(this, input_graph, inputs, output)
 
     class(stencil), intent(in)            :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
+    type(binding), intent(in), optional       :: inputs(:)
     class(field), allocatable, intent(inout) :: output
 
     type(stored_field)   :: out
-    type(binding), allocatable :: bound(:)
     real(dp), allocatable :: q(:), y(:)
 
     call this % constants % real_vector(y)
 
-    if (present(input_data)) then
-       call bound_inputs(this, input_data, bound)
-       call bound_real_vector(bound, this % argument(1), q)
+    if (present(inputs)) then
+       call bound_real_vector(inputs, this % argument(1), q)
        call accumulate_edges(this, q, y)
     end if
 
@@ -466,19 +464,19 @@ contains
 
   end function stencil_max_degree
 
-  subroutine stencil_partial_action(this, input_graph, input_data, &
+  subroutine stencil_partial_action(this, input_graph, inputs, &
        & variations, output)
 
     class(stencil), intent(in)               :: this
     class(directed_graph), intent(in)        :: input_graph
-    class(field), intent(in)                 :: input_data(:)
+    type(binding), intent(in)                 :: inputs(:)
     type(variation), intent(in)              :: variations(:)
     class(field), allocatable, intent(inout) :: output
 
     type(stored_field)   :: out
     real(dp), allocatable :: v(:), y(:)
 
-    associate (u1 => input_data); end associate
+    associate (u1 => inputs); end associate
 
     call this % require_owned(variations)
 

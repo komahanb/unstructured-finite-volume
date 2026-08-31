@@ -76,7 +76,7 @@ module operation_differential
 
   use util_precision  , only : dp
   use operation_action, only : operation, contract
-  use operation_binding, only : binding, bound_inputs, bound_value
+  use operation_action, only : binding, bound_value
   use operation_action, only : emit
   use view_directed, only : directed_graph
   use field_calculus, only : field, FIELD_REAL
@@ -858,15 +858,14 @@ contains
   ! returns zeros rather than reading memory it was never given.
   !===================================================================!
 
-  subroutine operator_apply(this, input_graph, input_data, output)
+  subroutine operator_apply(this, input_graph, inputs, output)
 
     class(differential_operator), intent(in)       :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
+    type(binding), intent(in), optional       :: inputs(:)
     class(field), allocatable, intent(inout) :: output
 
     type(affine_map) :: a
-    type(binding), allocatable :: bound(:)
     type(stored_field)      :: out
     real(dp), allocatable :: q(:), y(:), qc(:), yc(:)
     integer :: nv, ne, nout, nc, c
@@ -874,14 +873,13 @@ contains
 
     nv = input_graph % num_vertices()
     ne = input_graph % num_edges()
-    if (present(input_data)) call bound_inputs(this, input_data, bound)
 
     ! the input: vertex values first; on the vertex landing an edge
     ! field is also lawful and enters at the incidence step
     enters_on_edges = .false.
-    call fetch_values(this, bound, input_graph, .false., nv, q, nc)
+    call fetch_values(this, inputs, input_graph, .false., nv, q, nc)
     if (nc == 0 .and. this % landing == SIDE_VERTEX) then
-       call fetch_values(this, bound, input_graph, .true., ne, q, nc)
+       call fetch_values(this, inputs, input_graph, .true., ne, q, nc)
        enters_on_edges = nc > 0
     end if
 
@@ -925,10 +923,10 @@ contains
   ! else leaves a zero-length array and zero components.
   !===================================================================!
 
-  subroutine fetch_values(this, bound, input_graph, on_edges, n, q, num_components)
+  subroutine fetch_values(this, inputs, input_graph, on_edges, n, q, num_components)
 
     class(differential_operator), intent(in) :: this
-    type(binding), allocatable, intent(in) :: bound(:)
+    type(binding), intent(in), optional :: inputs(:)
     class(directed_graph)     , intent(in)           :: input_graph
     logical          , intent(in)           :: on_edges
     integer          , intent(in)           :: n
@@ -940,8 +938,8 @@ contains
 
     num_components = 0
 
-    if (allocated(bound)) then
-       call bound_value(bound, this % argument(1), value)
+    if (present(inputs)) then
+       call bound_value(inputs, this % argument(1), value)
        select type (state => value)
        class is (stored_field)
           dom = state % domain()

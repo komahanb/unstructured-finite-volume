@@ -151,7 +151,7 @@
 module operation_driver
 
   use util_precision       , only : dp
-  use operation_action     , only : operation, argument, contract
+  use operation_action     , only : operation, argument, contract, binding, moved_binding
   use view_directed        , only : directed_graph, forward, reverse
   use view_directed_stored , only : stored_directed_graph
   use view_read_write      , only : bipartite_digraph, FIRST_PART, SECOND_PART
@@ -748,7 +748,7 @@ contains
 
     class(operation), allocatable :: rule
     class(field)    , allocatable :: value, held
-    class(field), allocatable :: inputs(:)
+    type(binding)   , allocatable :: inputs(:)
     integer, allocatable :: order(:), reads(:), writes(:), droppable(:)
     integer :: k, v, i, filled
 
@@ -778,21 +778,24 @@ contains
           else
              call this % over % out_neighbourhood(FIRST_PART, v, reads)
           end if
-          ! THE DATA A RULE IS HANDED SHARE ONE TYPE, which the first
-          ! of them settles - so a rule may be given a datum of its
-          ! own making rather than a bare vector of values. A vertex
-          ! nothing has written yet is passed over.
+          ! THE RULE'S ARGUMENT k IS THE DATUM AT THE k-TH VERTEX IT
+          ! READS. The binding carries that identity into the rule, so
+          ! a rule may be given a datum of its own making rather than
+          ! a bare vector of values. A vertex nothing has written yet
+          ! leaves its argument unbound.
+          if (size(reads) > rule % num_arguments()) then
+             error stop 'operation_driver: a rule declares an argument for every vertex it reads'
+          end if
+          allocate(inputs(size(reads)))
           filled = 0
           do i = 1, size(reads)
              call this % stitched % datum_at(reads(i), held)
              if (.not. allocated(held)) cycle
-             if (.not. allocated(inputs)) allocate(inputs(size(reads)), mold=held)
              filled = filled + 1
-             call held % place_in(inputs(filled))
-             deallocate(held)
+             inputs(filled) = moved_binding(rule % argument(i), held)
           end do
 
-          if (allocated(inputs)) then
+          if (filled > 0) then
              call rule % apply(input_graph, inputs(1:filled), value)
           else
              call rule % apply(input_graph, output=value)
@@ -810,7 +813,7 @@ contains
              end do
           end if
 
-          if (allocated(inputs)) deallocate(inputs)
+          deallocate(inputs)
           deallocate(rule)
 
        end if
@@ -891,11 +894,11 @@ contains
   ! by, which the digraph answers and this routine never computes.
   !===================================================================!
 
-  subroutine driver_apply(this, input_graph, input_data, output)
+  subroutine driver_apply(this, input_graph, inputs, output)
 
     class(driver)            , intent(in)    :: this
     class(directed_graph)    , intent(in)    :: input_graph
-    class(field)             , intent(in), optional :: input_data(:)
+    type(binding)            , intent(in), optional :: inputs(:)
     class(field), allocatable, intent(inout) :: output
 
     integer, allocatable :: order(:)
@@ -912,7 +915,11 @@ contains
        ! the rule at v reads the vertices filling its slots; gathering
        ! those values is the caller's field layout and is not settled
        ! in this sketch
-       call this % rule % apply(input_graph, input_data, output)
+       if (present(inputs)) then
+          call this % rule % apply(input_graph, this % rule % bind(inputs), output)
+       else
+          call this % rule % apply(input_graph, output=output)
+       end if
     end do
 
   end subroutine driver_apply

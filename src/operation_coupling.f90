@@ -74,7 +74,7 @@ contains
 
     call coupling_inputs(num_vertices, tails, heads, steps, source_degree, determines, &
          & edges, inputs)
-    call action % apply(edges, inputs, out)
+    call action % apply(edges, action % bind(inputs), out)
     call out % real_vector(w)
 
   end subroutine weights_of

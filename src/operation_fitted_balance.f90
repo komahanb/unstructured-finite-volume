@@ -174,7 +174,7 @@ contains
        fitting = fit(shape, at=xf, &
             & direction=normals(d * e - d + 1 : d * e), &
             & scale=scales(e))
-       call fitting % apply(constellation, [positions], answer)
+       call fitting % apply(constellation, fitting % bind([positions]), answer)
        call answer % real_vector(w)
        do j = 1, size(hood)
           call triples % place(t, hood(j), w(j))

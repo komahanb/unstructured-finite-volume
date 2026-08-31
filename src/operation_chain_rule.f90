@@ -47,7 +47,7 @@ module operation_chain_rule
   use field_calculus, only : field
   use graph_fractal       , only : graph
   use operation_action    , only : operation, argument, variation, contract
-  use operation_binding   , only : binding, bound_inputs, bound_value
+  use operation_action    , only : binding
   use field_stored   , only : stored_field
 
   implicit none
@@ -216,39 +216,22 @@ contains
   ! from the held statement's partial actions along the held paths.
   !===================================================================!
 
-  subroutine total_derivative_apply(this, input_graph, input_data, output)
+  subroutine total_derivative_apply(this, input_graph, inputs, output)
 
     class(total_derivative)        , intent(in)    :: this
     class(directed_graph)    , intent(in)    :: input_graph
-    class(field)             , intent(in), optional :: input_data(:)
+    type(binding)             , intent(in), optional :: inputs(:)
     class(field), allocatable, intent(inout) :: output
-
-    type(stored_field), allocatable :: held(:)
-    type(binding), allocatable :: bound(:)
-    class(field), allocatable :: value
-    integer :: k
 
     if (.not. allocated(this % statement)) then
        error stop 'total_derivative: a derivative is taken of a statement by derivative_of()'
     end if
-    if (.not. present(input_data)) then
+    if (.not. present(inputs)) then
        error stop 'total_derivative: the statement''s inputs are given'
     end if
 
-    call bound_inputs(this, input_data, bound)
-    allocate(held(this % num_arguments()))
-    do k = 1, this % num_arguments()
-       call bound_value(bound, this % argument(k), value)
-       select type (one => value)
-       type is (stored_field)
-          held(k) = one
-       class default
-          error stop 'total_derivative: the inputs are stored fields'
-       end select
-    end do
-
-    call this % assemble(this % statement, input_graph, held, this % order, &
-         & this % along, output)
+    call this % assemble(this % statement, input_graph, &
+         & this % statement % bind(inputs), this % order, this % along, output)
 
   end subroutine total_derivative_apply
 
@@ -313,13 +296,13 @@ contains
   ! and the paths are checked before any statement call runs.
   !===================================================================!
 
-  subroutine assemble(this, statement, input_graph, input_data, degree, &
+  subroutine assemble(this, statement, input_graph, inputs, degree, &
        & paths, output)
 
     class(total_derivative)              , intent(in)    :: this
     class(operation)               , intent(in)    :: statement
     class(directed_graph)          , intent(in)    :: input_graph
-    type(stored_field)                    , intent(in)    :: input_data(:)
+    type(binding)                         , intent(in)    :: inputs(:)
     integer                        , intent(in)    :: degree
     type(argument_path)            , intent(in)    :: paths(:)
     class(field), allocatable, intent(inout) :: output
@@ -339,7 +322,7 @@ contains
 
     ! degree 0 is the statement's own value
     if (degree == 0) then
-       call statement % apply(input_graph, input_data, output)
+       call statement % apply(input_graph, inputs, output)
        return
     end if
 
@@ -352,12 +335,12 @@ contains
 
     associate (partitions => this % of_degree(degree) % term)
       do p = 1, size(partitions)
-         call assemble_partition(statement, input_graph, input_data, &
+         call assemble_partition(statement, input_graph, inputs, &
               & partitions(p), paths, running, started, num_components)
       end do
     end associate
 
-    call write_output(statement, input_graph, input_data, running, &
+    call write_output(statement, input_graph, inputs, running, &
          & started, num_components, output)
 
   end subroutine assemble
@@ -524,12 +507,12 @@ contains
   ! scaled by the partition's count.
   !===================================================================!
 
-  subroutine assemble_partition(statement, input_graph, input_data, &
+  subroutine assemble_partition(statement, input_graph, inputs, &
        & partition, paths, running, started, num_components)
 
     class(operation)               , intent(in)    :: statement
     class(directed_graph)          , intent(in)    :: input_graph
-    type(stored_field)                    , intent(in)    :: input_data(:)
+    type(binding)                         , intent(in)    :: inputs(:)
     type(derivative_partition)     , intent(in)    :: partition
     type(argument_path)            , intent(in)    :: paths(:)
     real(dp), allocatable          , intent(inout) :: running(:)
@@ -558,7 +541,7 @@ contains
        end do
 
        if (admitted) then
-          call emit_term(statement, input_graph, input_data, partition, &
+          call emit_term(statement, input_graph, inputs, partition, &
                & paths, chosen, running, started, num_components)
        end if
 
@@ -585,12 +568,12 @@ contains
   ! shape.
   !===================================================================!
 
-  subroutine emit_term(statement, input_graph, input_data, partition, &
+  subroutine emit_term(statement, input_graph, inputs, partition, &
        & paths, chosen, running, started, num_components)
 
     class(operation)               , intent(in)    :: statement
     class(directed_graph)          , intent(in)    :: input_graph
-    type(stored_field)                    , intent(in)    :: input_data(:)
+    type(binding)                         , intent(in)    :: inputs(:)
     type(derivative_partition)     , intent(in)    :: partition
     type(argument_path)            , intent(in)    :: paths(:)
     integer                        , intent(in)    :: chosen(:)
@@ -616,7 +599,7 @@ contains
             & paths(chosen(j)) % derivative(partition % path_degree(j)) % direction)
     end do
 
-    call statement % partial_action(input_graph, input_data, variations, output)
+    call statement % partial_action(input_graph, inputs, variations, output)
 
     call output % real_vector(term)
 
@@ -639,12 +622,12 @@ contains
   ! is zero, with its shape taken from the statement's own value.
   !===================================================================!
 
-  subroutine write_output(statement, input_graph, input_data, running, &
+  subroutine write_output(statement, input_graph, inputs, running, &
        & started, num_components, output)
 
     class(operation)               , intent(in)    :: statement
     class(directed_graph)          , intent(in)    :: input_graph
-    type(stored_field)                    , intent(in)    :: input_data(:)
+    type(binding)                         , intent(in)    :: inputs(:)
     real(dp), allocatable          , intent(inout) :: running(:)
     logical                        , intent(in)    :: started
     integer                        , intent(in)    :: num_components
@@ -659,7 +642,7 @@ contains
 
     width = num_components
     if (.not. started) then
-       call statement % apply(input_graph, input_data, value)
+       call statement % apply(input_graph, inputs, value)
        call value % real_vector(running)
        running = 0.0_dp
        width   = value % num_components()

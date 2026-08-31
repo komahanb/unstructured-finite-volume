@@ -26,7 +26,6 @@ view_directed.o \
 relation_partition.o \
 field_stored.o \
 operation_action.o \
-operation_binding.o \
 operation_expression.o \
 operation_edge_function.o \
 operation_family.o \

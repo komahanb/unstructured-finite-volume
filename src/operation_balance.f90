@@ -45,7 +45,7 @@
 module operation_balance
 
   use util_precision  , only : dp
-  use operation_action, only : operation, contract
+  use operation_action, only : operation, contract, binding
   use operation_action, only : emit
   use view_directed, only : directed_graph
   use field_calculus, only : field, FIELD_REAL
@@ -135,11 +135,11 @@ contains
   !       through incidence
   !===================================================================!
 
-  subroutine balance_apply(this, input_graph, input_data, output)
+  subroutine balance_apply(this, input_graph, inputs, output)
 
     class(balance)    , intent(in)                 :: this
     class(directed_graph)      , intent(in)                 :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
+    type(binding), intent(in), optional       :: inputs(:)
     class(field), allocatable, intent(inout) :: output
 
     class(field), allocatable :: edge_values
@@ -161,7 +161,8 @@ contains
 
           ! One edge term, computed for every edge at once. This is
           ! the only place the edge values are computed.
-          call this % edge_terms(k) % apply(input_graph, input_data, edge_values)
+          call this % edge_terms(k) % apply(input_graph, &
+               & this % edge_terms(k) % bind(inputs), edge_values)
           call edge_values % real_vector(z)
 
           ! And reduced onto the vertices through incidence, each

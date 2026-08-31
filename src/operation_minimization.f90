@@ -40,7 +40,7 @@ module operation_minimization
 
   use util_precision  , only : dp, half_digits
   use operation_action  , only : operation, contract
-  use operation_binding, only : binding, bound_inputs, bound_value
+  use operation_action, only : binding, bound_value
   use operation_action, only : emit
   use view_directed   , only : directed_graph
   use field_calculus  , only : field, FIELD_REAL
@@ -578,7 +578,7 @@ contains
     class(field), allocatable :: answer
 
     call this % evaluation_inputs(x, tuple)
-    call this % action % apply(this % on, tuple, answer)
+    call this % action % apply(this % on, this % action % bind(tuple), answer)
 
     if (.not. answer % defined_on(this % residual_domain)) then
        error stop 'minimization: the action must answer on its stated residual domain'
@@ -781,16 +781,15 @@ contains
 
   end subroutine solver_domain
 
-  subroutine solver_apply(this, input_graph, input_data, output)
+  subroutine solver_apply(this, input_graph, inputs, output)
 
     class(minimizer), intent(in)                   :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
+    type(binding), intent(in), optional       :: inputs(:)
     class(field), allocatable, intent(inout) :: output
 
     class(minimizer), allocatable :: worker
     class(field), allocatable :: right_hand_side
-    type(binding), allocatable :: bound(:)
     type(stored_field) :: out
     real(dp), allocatable :: rhs(:), x(:)
     real(dp) :: achieved
@@ -801,9 +800,8 @@ contains
     allocate(x(this % num_unknowns * this % num_components))
     x = 0.0_dp
 
-    if (present(input_data)) then
-       call bound_inputs(this, input_data, bound)
-       call bound_value(bound, this % argument(1), right_hand_side)
+    if (present(inputs)) then
+       call bound_value(inputs, this % argument(1), right_hand_side)
        if (.not. right_hand_side % defined_on(this % residual_domain)) then
           error stop 'minimization: a right-hand side lives on the residual domain'
        end if

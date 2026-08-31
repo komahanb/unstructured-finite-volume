@@ -189,7 +189,8 @@ contains
        ! linearization, a matvec.
        available = .false.
        if (this % compiled) then
-          call this % action % compiled_tangent(this % on, inputs, 1, rows, columns, &
+          call this % action % compiled_tangent(this % on, this % action % bind(inputs), &
+               & 1, rows, columns, &
                & weights, available)
        end if
        if (available) then
@@ -274,7 +275,7 @@ contains
        ! the derivative of the statement, of this order, along this
        ! path: an operation, applied like any other
        total = derivative_of(this % action, s, [path])
-       call total % apply(this % on, inputs, out)
+       call total % apply(this % on, total % bind(inputs), out)
        call out % real_vector(b)
 
        correction = 0.0_dp

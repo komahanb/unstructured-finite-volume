@@ -56,7 +56,7 @@ module operation_expression
 
   use util_precision       , only : dp
   use operation_action     , only : operation, variation, contract
-  use operation_binding    , only : binding, bound_inputs, bound_real_vector
+  use operation_action     , only : binding, bound_real_vector
   use field_calculus       , only : FIELD_REAL
   use view_directed        , only : directed_graph
   use field_calculus       , only : field
@@ -737,18 +737,18 @@ contains
   ! variation names.
   !===================================================================!
 
-  subroutine seeded(this, bound, variations, q, nu)
+  subroutine seeded(this, inputs, variations, q, nu)
 
     class(expression)     , intent(in) :: this
-    type(binding)         , intent(in) :: bound(:)
+    type(binding)         , intent(in) :: inputs(:)
     type(variation)       , intent(in) :: variations(:)
     type(derivative_terms), allocatable, intent(out) :: q(:), nu(:)
 
     real(dp), allocatable :: state(:), design(:), v(:)
     integer :: n, i
 
-    call bound_real_vector(bound, this % argument(ARGUMENT_STATE), state)
-    call bound_real_vector(bound, this % argument(ARGUMENT_DESIGN), design)
+    call bound_real_vector(inputs, this % argument(ARGUMENT_STATE), state)
+    call bound_real_vector(inputs, this % argument(ARGUMENT_DESIGN), design)
 
     n = size(variations)
     call constants(state, n, q)
@@ -850,37 +850,33 @@ contains
 
   end subroutine evaluated
 
-  subroutine expression_apply(this, input_graph, input_data, output)
+  subroutine expression_apply(this, input_graph, inputs, output)
 
     class(expression)     , intent(in)       :: this
     class(directed_graph) , intent(in)       :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
+    type(binding), intent(in), optional       :: inputs(:)
     class(field), allocatable, intent(inout) :: output
 
     type(variation), allocatable :: none(:)
-    type(binding)  , allocatable :: bound(:)
     type(derivative_terms), allocatable :: q(:), nu(:)
 
-    if (.not. present(input_data)) then
+    if (.not. present(inputs)) then
        error stop 'operation_expression: the state and the design are given'
     end if
 
     allocate(none(0))
-    call bound_inputs(this, input_data, bound)
-    call seeded(this, bound, none, q, nu)
+    call seeded(this, inputs, none, q, nu)
     call evaluated(this, input_graph, q, nu, output)
 
   end subroutine expression_apply
 
-  subroutine expression_partial_action(this, input_graph, input_data, variations, output)
+  subroutine expression_partial_action(this, input_graph, inputs, variations, output)
 
     class(expression)     , intent(in)       :: this
     class(directed_graph) , intent(in)       :: input_graph
-    class(field)          , intent(in)       :: input_data(:)
+    type(binding)          , intent(in)       :: inputs(:)
     type(variation)       , intent(in)       :: variations(:)
     class(field), allocatable, intent(inout) :: output
-
-    type(binding), allocatable :: bound(:)
     type(derivative_terms), allocatable :: q(:), nu(:)
 
     call this % require_owned(variations)
@@ -888,9 +884,7 @@ contains
     if (size(variations) > this % max_degree()) then
        error stop 'operation_expression: the requested order is within max_degree'
     end if
-
-    call bound_inputs(this, input_data, bound)
-    call seeded(this, bound, variations, q, nu)
+    call seeded(this, inputs, variations, q, nu)
     call evaluated(this, input_graph, q, nu, output)
 
   end subroutine expression_partial_action

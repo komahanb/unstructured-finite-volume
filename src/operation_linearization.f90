@@ -29,7 +29,7 @@ module operation_linearization
 
   use util_precision  , only : dp, half_digits
   use operation_action, only : operation, argument, variation, contract
-  use operation_binding, only : binding, bound_inputs, bound_value
+  use operation_action, only : binding, bound_value
   use operation_action, only : emit
   use view_directed, only : directed_graph
   use field_calculus, only : field, FIELD_REAL
@@ -259,17 +259,16 @@ contains
   ! otherwise. Without input data the direction is zero.
   !===================================================================!
 
-  subroutine linearization_apply(this, input_graph, input_data, output)
+  subroutine linearization_apply(this, input_graph, inputs, output)
 
     class(linearization), intent(in)         :: this
     class(directed_graph), intent(in)        :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
+    type(binding), intent(in), optional       :: inputs(:)
     class(field), allocatable, intent(inout) :: output
 
     type(stored_field), allocatable :: tuple(:)
     type(stored_field)   :: direction, out
     class(field), allocatable :: pushed, bound_direction
-    type(binding), allocatable :: bound(:)
     type(graph) :: on, along
     real(dp), allocatable :: v(:), y(:), base(:), x(:)
     integer :: n_on, p, width
@@ -286,9 +285,8 @@ contains
     call tuple(p) % real_vector(x)
     width = size(x)
 
-    if (present(input_data)) then
-       call bound_inputs(this, input_data, bound)
-       call bound_value(bound, this % argument(1), bound_direction)
+    if (present(inputs)) then
+       call bound_value(inputs, this % argument(1), bound_direction)
        if (.not. bound_direction % defined_on(along)) then
           error stop 'linearization: the direction must live on the differentiated argument''s domain'
        end if
@@ -307,7 +305,7 @@ contains
 
     if (this % exact()) then
 
-       call this % of % partial_action(input_graph, tuple, &
+       call this % of % partial_action(input_graph, this % of % bind(tuple), &
             & [variation(this % wrt, direction)], pushed)
        call require_domain(pushed, on)
        call pushed % real_vector(y)
@@ -319,13 +317,13 @@ contains
        if (allocated(this % base)) then
           base = this % base
        else
-          call this % of % apply(input_graph, tuple, pushed)
+          call this % of % apply(input_graph, this % of % bind(tuple), pushed)
           call require_domain(pushed, on)
           call pushed % real_vector(base)
        end if
 
        call tuple(p) % set_real_vector(x + this % step * v)
-       call this % of % apply(input_graph, tuple, pushed)
+       call this % of % apply(input_graph, this % of % bind(tuple), pushed)
        call require_domain(pushed, on)
        call pushed % real_vector(y)
 
@@ -376,7 +374,7 @@ contains
        basis = stored_field('basis', along, tuple(p) % num_entries(), &
             & num_components=tuple(p) % num_components())
        call basis % set_real_vector(e)
-       call tangent % apply(input_graph, [basis], pushed)
+       call tangent % apply(input_graph, tangent % bind([basis]), pushed)
        call pushed % real_vector(y)
        if (size(y) /= size(lambda)) then
           error stop 'linearization: the dual pairs the tangent''s result with lambda'

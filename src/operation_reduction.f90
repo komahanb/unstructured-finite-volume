@@ -83,7 +83,7 @@ module operation_reduction
   use field_calculus  , only : FIELD_REAL, FIELD_COMPLEX
   use field_calculus  , only : FIELD_LOGICAL
   use operation_action  , only : operation, contract
-  use operation_binding, only : binding, bound_inputs, bound_available_inputs, bound_value
+  use operation_action, only : binding, bound_value
   use operation_action, only : emit
   use field_calculus  , only : functional
   use view_directed   , only : SIDE_VERTEX
@@ -622,30 +622,28 @@ contains
 
   end subroutine reduction_domain
 
-  subroutine reduction_apply(this, input_graph, input_data, output)
+  subroutine reduction_apply(this, input_graph, inputs, output)
 
     class(reduction), intent(in)                   :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
+    type(binding), intent(in), optional       :: inputs(:)
     class(field), allocatable, intent(inout) :: output
 
     class(functional), allocatable :: answer
     class(field), allocatable :: values, measure
-    type(binding), allocatable :: bound(:)
 
     associate (u1 => input_graph); end associate
 
-    if (present(input_data)) then
-       if (size(input_data) < 1 .or. size(input_data) > this % num_arguments()) then
+    if (present(inputs)) then
+       if (size(inputs) < 1 .or. size(inputs) > this % num_arguments()) then
           error stop 'operation_reduction: values and an optional measure are bound'
        end if
-       call bound_available_inputs(this, input_data, bound)
-       if (size(input_data) >= 2) then
-          call bound_value(bound, this % argument(1), values)
-          call bound_value(bound, this % argument(2), measure)
+       if (size(inputs) >= 2) then
+          call bound_value(inputs, this % argument(1), values)
+          call bound_value(inputs, this % argument(2), measure)
           call reduce_measured(this, values, measure, answer)
        else
-          call bound_value(bound, this % argument(1), values)
+          call bound_value(inputs, this % argument(1), values)
           call this % reduce(values, answer)
        end if
     else
@@ -688,22 +686,20 @@ contains
     name = 'broadcast'
 
   end function broadcast_name
-  subroutine broadcast_apply(this, input_graph, input_data, output)
+  subroutine broadcast_apply(this, input_graph, inputs, output)
 
     class(broadcast), intent(in)                   :: this
     class(directed_graph), intent(in)                       :: input_graph
-    class(field), intent(in), optional       :: input_data(:)
+    type(binding), intent(in), optional       :: inputs(:)
     class(field), allocatable, intent(inout) :: output
 
     type(stored_field) :: out
     class(field), allocatable :: value
-    type(binding), allocatable :: bound(:)
 
     out = stored_field('broadcast', input_graph % vertex_set(), input_graph % num_vertices())
 
-    if (present(input_data)) then
-       call bound_inputs(this, input_data, bound)
-       call bound_value(bound, this % argument(1), value)
+    if (present(inputs)) then
+       call bound_value(inputs, this % argument(1), value)
        select type (f => value)
        class is (functional)
           call this % broadcast(f, out)

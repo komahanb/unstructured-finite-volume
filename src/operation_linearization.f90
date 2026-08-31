@@ -76,16 +76,14 @@ contains
   ! program.
   !===================================================================!
 
-  function tangent_of(of, wrt, at_inputs, at, base, num_components) result(this)
+  function tangent_of(of, wrt, at_inputs, at, base) result(this)
 
     class(operation), intent(in)             :: of
     type(argument), intent(in), optional     :: wrt
     type(stored_field), intent(in), optional :: at_inputs(:)
     real(dp), intent(in), optional           :: at(:)
     real(dp), intent(in), optional           :: base(:)
-    integer , intent(in), optional           :: num_components
     type(linearization)                      :: this
-    integer :: width
 
     allocate(this % of, source=of)
 
@@ -101,14 +99,8 @@ contains
     if (present(at_inputs)) call this % freeze(at_inputs, base)
     if (present(at))        call this % freeze(at, base)
 
-    width = 1
-    if (present(num_components)) then
-       if (num_components < 1) error stop 'linearization: a component count is positive'
-       width = num_components
-    end if
-
-    ! The tangent reads one direction of the explicitly stated width.
-    call this % declare_arguments(1, [contract(FIELD_REAL, width)])
+    ! the tangent reads one direction, shaped as the argument differentiated
+    call this % declare_arguments(1, [this % wrt % contract()])
 
   end function tangent_of
 

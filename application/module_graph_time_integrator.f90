@@ -1784,8 +1784,8 @@ contains
     type(stored_field) :: state, design
     real(dp), allocatable :: knob(:)
     call bound_real_vector(inputs, this % argument(2), knob)
-    state = stored_field('state', this % points % vertex_set(), &
-         & size(this % at) * this % block_stride())
+    state = stored_field('state', this % points % vertex_set(), size(this % at), &
+         & num_components=this % block_stride())
     call state % set_real_vector(gathered(this, x))
     design = stored_field('design', this % points % vertex_set(), size(knob))
     call design % set_real_vector(knob)
@@ -2581,7 +2581,8 @@ contains
     call direction % set_real_vector(e)
     began = -1.0_dp
     do iteration = 1, stopping_iterations
-       state = stored_field('state', points % vertex_set(), nodes * degrees)
+       state = stored_field('state', points % vertex_set(), nodes, &
+            & num_components=physics % num_components())
        call state % set_real_vector(q)
        call physics % apply(points, physics % bind([state, knobs]), out)
        call out % real_vector(r)
@@ -6565,7 +6566,8 @@ contains
       type(stored_field) :: state, design
       class(field), allocatable :: out
       instants = stored_directed_graph(num_instants, tails=[integer ::], heads=[integer ::])
-      state    = stored_field('state', instants % vertex_set(), num_unknowns)
+      state    = stored_field('state', instants % vertex_set(), num_instants, &
+           & num_components=physics % num_components())
       design   = stored_field('nu', instants % vertex_set(), num_instants)
       call state  % set_real_vector(q)
       call design % set_real_vector(spread(nu, 1, num_instants))
@@ -6589,7 +6591,8 @@ contains
       physics = van_der_pol(degree)
       call sample(degree, q0, q_top, design, instants, q)
       graph_of = stored_directed_graph(instants, tails=[integer ::], heads=[integer ::])
-      state    = stored_field('state', graph_of % vertex_set(), size(q))
+      state    = stored_field('state', graph_of % vertex_set(), instants, &
+           & num_components=physics % num_components())
       nu_field = stored_field('nu', graph_of % vertex_set(), instants)
       direction = stored_field('v', graph_of % vertex_set(), size(q))
       call state    % set_real_vector(q)
@@ -8656,6 +8659,7 @@ contains
       type(stored_field) :: state, knobs
       real(dp), allocatable :: dt(:), t(:), held(:)
       real(dp) :: achieved
+      type(expression) :: energy
       call cosine_partition(scheme, degrees, duration, num_instants, held, dt, t)
       call set_family(holder(1), scheme)
       call tower % build(van_der_pol(state_degree), holder, [num_instants], uniform_grid(duration), &
@@ -8664,11 +8668,13 @@ contains
       call solved(rows, design_value, q, achieved)
       unknowns = unknowns_graph(num_instants, degrees)
       instants = stored_directed_graph(num_instants, tails=[integer ::], heads=[integer ::])
-      state    = stored_field('state', unknowns % vertex_set(), size(q))
-      knobs    = stored_field('nu', unknowns % vertex_set(), num_instants)
+      energy   = van_der_pol_energy(state_degree)
+      state    = stored_field('state', instants % vertex_set(), num_instants, &
+           & num_components=energy % num_components())
+      knobs    = stored_field('nu', instants % vertex_set(), num_instants)
       call state % set_real_vector(q)
       call knobs % set_real_vector(spread(design_value, 1, num_instants))
-      f = functional_of(van_der_pol_energy(state_degree), instants, [state, knobs], dt)
+      f = functional_of(energy, instants, [state, knobs], dt)
     end function marched
     subroutine sensitivity_of(title, scheme)
       character(len=*), intent(in) :: title
@@ -8700,7 +8706,8 @@ contains
       type(family_holder) :: holder(1)
       integer, allocatable :: at(:)
       type(stored_directed_graph) :: unknowns, instants
-      type(stored_field) :: state, knobs
+      type(stored_field) :: state, knobs, energy_state
+      type(expression) :: energy
       real(dp), allocatable :: dt(:), t(:), held(:)
       call cosine_partition(scheme, degrees, duration, num_instants, held, dt, t)
       call set_family(holder(1), scheme)
@@ -8713,8 +8720,13 @@ contains
       knobs    = stored_field('nu', unknowns % vertex_set(), num_instants)
       call state % set_real_vector(q)
       call knobs % set_real_vector(spread(design, 1, num_instants))
-      call functional_gradient(van_der_pol_energy(state_degree), instants, &
-           & [state, knobs], dt, num_instants, degrees, unknowns % vertex_set(), g)
+      ! the energy reads the same values as one field over the instants
+      energy       = van_der_pol_energy(state_degree)
+      energy_state = stored_field('state', instants % vertex_set(), num_instants, &
+           & num_components=energy % num_components())
+      call energy_state % set_real_vector(q)
+      call functional_gradient(energy, instants, &
+           & [energy_state, knobs], dt, num_instants, degrees, unknowns % vertex_set(), g)
       call sweep_design_partial(rows, unknowns, [state, knobs], num_instants, &
            & unknowns % vertex_set(), rate)
       mark    = fresh_stamp()

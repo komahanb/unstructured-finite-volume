@@ -71,6 +71,13 @@ module operation_action
   ! the only comparison, and it is false across spaces.
   !===================================================================!
 
+  !===================================================================!
+  ! What a bound field must be: one of the value kinds, and the
+  ! component count when the operation fixes it. A count of zero
+  ! leaves the count open for an operation that reads the shape off
+  ! the field.
+  !===================================================================!
+
   type :: contract
 
      integer, allocatable, private :: value_kinds(:)
@@ -217,38 +224,48 @@ contains
 
   pure function create_contract(value_kind, components) result(this)
 
-    integer, intent(in) :: value_kind, components
+    integer, intent(in)           :: value_kind
+    integer, intent(in), optional :: components
     type(contract) :: this
 
     if (value_kind == FIELD_NONE) then
        error stop 'operation: a contract requires a value kind'
     end if
-    if (components < 1) then
-       error stop 'operation: a contract requires a positive component count'
-    end if
 
     this % value_kinds = [value_kind]
-    this % components = components
+    call fix_components(this, components)
 
   end function create_contract
 
   pure function create_contract_set(value_kinds, components) result(this)
 
-    integer, intent(in) :: value_kinds(:)
-    integer, intent(in) :: components
+    integer, intent(in)           :: value_kinds(:)
+    integer, intent(in), optional :: components
     type(contract) :: this
 
     if (size(value_kinds) < 1 .or. any(value_kinds == FIELD_NONE)) then
        error stop 'operation: a contract requires value kinds'
     end if
-    if (components < 1) then
-       error stop 'operation: a contract requires a positive component count'
-    end if
 
     this % value_kinds = value_kinds
-    this % components = components
+    call fix_components(this, components)
 
   end function create_contract_set
+
+  pure subroutine fix_components(this, components)
+
+    type(contract), intent(inout)        :: this
+    integer       , intent(in), optional :: components
+
+    this % components = 0
+    if (present(components)) then
+       if (components < 1) then
+          error stop 'operation: a contract requires a positive component count'
+       end if
+       this % components = components
+    end if
+
+  end subroutine fix_components
 
   pure logical function contract_accepts(this, value) result(accepted)
 
@@ -260,8 +277,10 @@ contains
        return
     end if
 
-    accepted = any(value % value_kind() == this % value_kinds) .and. &
-         & value % num_components() == this % components
+    accepted = any(value % value_kind() == this % value_kinds)
+    if (this % components > 0) then
+       accepted = accepted .and. value % num_components() == this % components
+    end if
 
   end function contract_accepts
 

@@ -111,7 +111,6 @@ module operation_differential
 
      integer :: landing = SIDE_VERTEX
      integer :: order   = 2
-     integer :: components = 1
 
      logical :: adjoint   = .false.
      logical :: one_sided = .false.
@@ -163,7 +162,7 @@ contains
   type(differential_operator) function edge_derivative &
        & (order, coefficient, coefficients, spacing, spacings, &
        &  measure, measures, boundary_value, boundary_values, one_sided, &
-       &  label, num_components) result(this)
+       &  label) result(this)
 
     integer         , intent(in)           :: order
     real(dp)        , intent(in), optional :: coefficient
@@ -176,7 +175,6 @@ contains
     real(dp)        , intent(in), optional :: boundary_values(:)
     logical         , intent(in), optional :: one_sided
     character(len=*), intent(in), optional :: label
-    integer         , intent(in), optional :: num_components
 
     this % landing = SIDE_EDGE
     this % order   = max(order, 0)
@@ -192,13 +190,9 @@ contains
     if (present(boundary_value))  this % boundary_value = boundary_value
     if (present(boundary_values)) allocate(this % boundary_values, source=boundary_values)
     if (present(label))           this % label          = label
-    if (present(num_components)) then
-       if (num_components < 1) error stop 'operation_differential: a component count is positive'
-       this % components = num_components
-    end if
 
-    ! one argument: the field differentiated
-    call this % declare_arguments(1, [contract(FIELD_REAL, this % components)])
+    ! one argument: the field differentiated, of any component count
+    call this % declare_arguments(1, [contract(FIELD_REAL)])
 
   end function edge_derivative
 
@@ -209,8 +203,7 @@ contains
 
   type(differential_operator) function vertex_derivative &
        & (order, coefficient, coefficients, spacing, spacings, &
-       &  measure, measures, boundary_value, boundary_values, adjoint, label, &
-       &  num_components) result(this)
+       &  measure, measures, boundary_value, boundary_values, adjoint, label) result(this)
 
     integer         , intent(in)           :: order
     real(dp)        , intent(in), optional :: coefficient
@@ -223,7 +216,6 @@ contains
     real(dp)        , intent(in), optional :: boundary_values(:)
     logical         , intent(in), optional :: adjoint
     character(len=*), intent(in), optional :: label
-    integer         , intent(in), optional :: num_components
 
     this % landing = SIDE_VERTEX
     this % order   = max(order, 0)
@@ -238,12 +230,8 @@ contains
     if (present(boundary_values)) allocate(this % boundary_values, source=boundary_values)
     if (present(adjoint))         this % adjoint        = adjoint
     if (present(label))           this % label          = label
-    if (present(num_components)) then
-       if (num_components < 1) error stop 'operation_differential: a component count is positive'
-       this % components = num_components
-    end if
 
-    call this % declare_arguments(1, [contract(FIELD_REAL, this % components)])
+    call this % declare_arguments(1, [contract(FIELD_REAL)])
 
   end function vertex_derivative
 
@@ -258,62 +246,55 @@ contains
   !===================================================================!
 
   type(differential_operator) function gradient(coefficient, coefficients, &
-       & spacing, spacings, boundary_value, boundary_values, num_components) result(this)
+       & spacing, spacings, boundary_value, boundary_values) result(this)
 
     real(dp), intent(in), optional :: coefficient, coefficients(:)
     real(dp), intent(in), optional :: spacing, spacings(:)
     real(dp), intent(in), optional :: boundary_value, boundary_values(:)
-    integer , intent(in), optional :: num_components
 
     this = edge_derivative(order=1, coefficient=coefficient, &
          & coefficients=coefficients, spacing=spacing, spacings=spacings, &
          & boundary_value=boundary_value, boundary_values=boundary_values, &
-         & label='gradient', num_components=num_components)
+         & label='gradient')
 
   end function gradient
 
   type(differential_operator) function interpolation(coefficient, coefficients, &
-       & boundary_value, boundary_values, num_components) result(this)
+       & boundary_value, boundary_values) result(this)
 
     real(dp), intent(in), optional :: coefficient, coefficients(:)
     real(dp), intent(in), optional :: boundary_value, boundary_values(:)
-    integer , intent(in), optional :: num_components
 
     this = edge_derivative(order=0, coefficient=coefficient, &
          & coefficients=coefficients, boundary_value=boundary_value, &
-         & boundary_values=boundary_values, label='interpolation', &
-         & num_components=num_components)
+         & boundary_values=boundary_values, label='interpolation')
 
   end function interpolation
 
   type(differential_operator) function divergence(coefficient, coefficients, &
-       & measure, measures, num_components) result(this)
+       & measure, measures) result(this)
 
     real(dp), intent(in), optional :: coefficient, coefficients(:)
     real(dp), intent(in), optional :: measure, measures(:)
-    integer , intent(in), optional :: num_components
 
     this = vertex_derivative(order=1, coefficient=coefficient, &
          & coefficients=coefficients, measure=measure, measures=measures, &
-         & label='divergence', num_components=num_components)
+         & label='divergence')
 
   end function divergence
 
   type(differential_operator) function laplacian(coefficient, coefficients, &
-       & spacing, spacings, measure, measures, boundary_value, boundary_values, &
-       & num_components) result(this)
+       & spacing, spacings, measure, measures, boundary_value, boundary_values) result(this)
 
     real(dp), intent(in), optional :: coefficient, coefficients(:)
     real(dp), intent(in), optional :: spacing, spacings(:)
     real(dp), intent(in), optional :: measure, measures(:)
     real(dp), intent(in), optional :: boundary_value, boundary_values(:)
-    integer , intent(in), optional :: num_components
 
     this = vertex_derivative(order=2, coefficient=coefficient, &
          & coefficients=coefficients, spacing=spacing, spacings=spacings, &
          & measure=measure, measures=measures, boundary_value=boundary_value, &
-         & boundary_values=boundary_values, label='laplacian', &
-         & num_components=num_components)
+         & boundary_values=boundary_values, label='laplacian')
 
   end function laplacian
 

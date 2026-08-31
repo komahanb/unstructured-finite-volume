@@ -4,9 +4,9 @@
 ! reads between them.
 !
 !      input graph    the instants
-!      state slot     the state, one flat field over instant and
-!                     degree: the component of degree d at instant k
-!                     is held at (k-1)(N+1) + d + 1
+!      state slot     the state, one field over the instants with
+!                     num_components() components: the component of
+!                     degree d at instant k is held at (k-1)(N+1)+d+1
 !      design slot    the design, one value per instant, so a design
 !                     that varies in time needs no other shape
 !      output         one value per instant
@@ -652,7 +652,7 @@ contains
 
     this % degrees = degrees
     call this % declare_arguments(2, [ &
-         & contract(FIELD_REAL, 1), &
+         & contract(FIELD_REAL, this % num_components()), &
          & contract(FIELD_REAL, 1) ])
 
   end subroutine declare_degree

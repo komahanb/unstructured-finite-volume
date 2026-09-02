@@ -1,9 +1,9 @@
 !=====================================================================!
 ! The linearization: the tangent of a statement S in one of its
 ! arguments, at a frozen input tuple, behind the operation interface,
-! so a minimizer sees an ordinary linear operation. The primal S is
+! so a minimizer reads an ordinary linear operation. The primal S is
 ! written once; its tangent is this derived operation, evaluated by
-! one of two roads chosen from S's max_degree:
+! one of two modes chosen from S's max_degree:
 !
 !      exact       D_a S(x) [v]                          max_degree >= 1,
 !                  one partial action, one variation (a, v)
@@ -14,8 +14,8 @@
 ! The frozen point is the whole input tuple [x_1, ..., x_m]; freeze
 ! also accepts the first argument's values alone, for a statement of
 ! one argument, and builds the tuple on S's domain when applied. A
-! base residual handed to freeze is used by the difference road and
-! ignored by the exact one.
+! base residual passed to freeze is used by the difference mode and
+! ignored by the exact mode.
 !
 ! dual_by_basis forms (D_a S)^T lambda under the Euclidean pairing
 ! on stored values, one application per basis vector of argument a:
@@ -105,8 +105,8 @@ contains
   end function tangent_of
 
   !===================================================================!
-  ! The exact road is open when the statement computes at least a
-  ! first partial action.
+  ! The exact mode is available when the statement computes at least
+  ! a first partial action.
   !===================================================================!
 
   pure function linearization_exact(this) result(exact)
@@ -120,9 +120,8 @@ contains
 
   !===================================================================!
   ! Move the frozen point: the whole input tuple, or the first
-  ! argument's values alone. The base residual is stored when handed
-  ! over, and forgotten otherwise so the difference road measures it
-  ! fresh.
+  ! argument's values alone. The base residual is stored when passed,
+  ! and cleared otherwise so the difference mode recomputes it.
   !===================================================================!
 
   subroutine freeze_inputs(this, at_inputs, base)
@@ -132,13 +131,13 @@ contains
     real(dp), intent(in), optional       :: base(:)
 
     if (size(at_inputs) < 1) then
-       error stop 'linearization: the frozen tuple holds the statement''s inputs'
+       error stop 'linearization: the frozen tuple contains the statement''s inputs'
     end if
 
     if (allocated(this % at_values)) deallocate(this % at_values)
     this % at = at_inputs
 
-    call keep_base(this, base)
+    call store_base(this, base)
 
   end subroutine freeze_inputs
 
@@ -156,11 +155,11 @@ contains
     if (allocated(this % at)) deallocate(this % at)
     this % at_values = at
 
-    call keep_base(this, base)
+    call store_base(this, base)
 
   end subroutine freeze_values
 
-  subroutine keep_base(this, base)
+  subroutine store_base(this, base)
 
     class(linearization), intent(inout) :: this
     real(dp), intent(in), optional :: base(:)
@@ -171,7 +170,7 @@ contains
        if (allocated(this % base)) deallocate(this % base)
     end if
 
-  end subroutine keep_base
+  end subroutine store_base
 
   pure function linearization_name(this) result(name)
 
@@ -202,7 +201,7 @@ contains
   ! argument in it. Values frozen alone become the state on the
   ! statement's domain. Checks, each stopping the program: a point
   ! must have been frozen; values frozen alone must hold a whole
-  ! number of components per domain member; the tuple must reach the
+  ! number of components per domain member; the tuple must include the
   ! differentiated argument.
   !===================================================================!
 
@@ -220,7 +219,7 @@ contains
        tuple = this % at
     else if (allocated(this % at_values)) then
        if (mod(size(this % at_values), n_on) /= 0) then
-          error stop 'linearization: the frozen state must carry a whole number &
+          error stop 'linearization: the frozen state must store a whole number of values &
                &per member of the operation''s domain'
        end if
        allocate(tuple(1))
@@ -236,7 +235,7 @@ contains
        if (this % wrt % matches(this % of % argument(k))) position = k
     end do
     if (position < 1 .or. position > size(tuple)) then
-       error stop 'linearization: the frozen tuple reaches the differentiated argument'
+       error stop 'linearization: the frozen tuple includes the differentiated argument'
     end if
 
   end subroutine frozen_tuple
@@ -244,9 +243,9 @@ contains
   !===================================================================!
   ! D_a S(x)[v] at the frozen tuple x, on the statement's own domain.
   ! Checks, each stopping the program: the domain must be nonempty;
-  ! a point must have been frozen; the direction must live on the
-  ! differentiated argument's domain and match its width; every
-  ! result of the statement must live on the statement's domain,
+  ! a point must have been frozen; the direction must be defined on
+  ! the differentiated argument's domain and match its width; every
+  ! result of the statement must be defined on the statement's domain,
   ! because a field of equal length from another domain would pass
   ! otherwise. Without input data the direction is zero.
   !===================================================================!
@@ -280,7 +279,7 @@ contains
     if (present(inputs)) then
        call bound_value(inputs, this % argument(1), bound_direction)
        if (.not. bound_direction % defined_on(along)) then
-          error stop 'linearization: the direction must live on the differentiated argument''s domain'
+          error stop 'linearization: the direction must be defined on the differentiated argument''s domain'
        end if
        call bound_direction % real_vector(v)
        if (size(v) /= width) then
@@ -304,8 +303,8 @@ contains
 
     else
 
-       ! the base residual: from freeze when handed over, measured
-       ! here once when not
+       ! the base residual: from freeze when passed, computed here
+       ! once otherwise
        if (allocated(this % base)) then
           base = this % base
        else
@@ -388,7 +387,7 @@ contains
     type(graph) , intent(in) :: expected
 
     if (.not. result % defined_on(expected)) then
-       error stop 'linearization: the operation result lives on its stated domain'
+       error stop 'linearization: the operation result is defined on its stated domain'
     end if
 
   end subroutine require_domain

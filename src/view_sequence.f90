@@ -1,9 +1,9 @@
 !=====================================================================!
 ! SEQUENCE VIEW
 !
-! One view of a graph. The kernel supplies possibility - graph, branch,
+! One view of a graph. The kernel supplies the structure - graph, branch,
 ! graph - and never the word sequence. A finite sequence is
-! REPRESENTABLE over that possibility; it is not encoded by it.
+! REPRESENTABLE over that structure; it is not encoded by it.
 !
 ! THE REPRESENTATION LAW. A sequence is represented by a BRANCH, not by
 ! a graph:
@@ -18,7 +18,7 @@
 !     branch(2)                         the rest, again a sequence branch
 !
 ! So [a,b,c] is (a, (b, (c, NULL))), and the empty sequence has no cell
-! and needs no graph. A holder writes
+! and needs no graph. A containing graph writes
 !
 !     holder % branch(i) = null_branch()
 !
@@ -28,9 +28,10 @@
 !
 !     malformed     a cell whose branch(1) is NULL or UNKNOWN. The
 !                   representation is wrong. Refused, always.
-!     unknown       a spine that reaches UNKNOWN. The representation is
-!                   right and the answer is not yet determined. Refused
-!                   only when the answer depends on the unknown part -
+!     unknown       a chain of cells that reaches UNKNOWN. The
+!                   representation is correct and the result is not yet
+!                   determined. Refused only when the result depends on
+!                   the unknown part -
 !                   sequence_element(b, 1) succeeds on a sequence whose
 !                   tail is UNKNOWN.
 !
@@ -38,7 +39,7 @@
 ! withholds it.
 !
 ! COMPLEXITY. size is O(n) and element(k) is O(k), and this is the
-! semantic view, not the hot representation. Where repeated indexed
+! semantic view, not the low-cost representation. Where repeated indexed
 ! access matters, compile to a contiguous representation.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
@@ -59,7 +60,7 @@ module view_sequence
 contains
 
   !===================================================================!
-  ! Is the whole extent known: does the spine reach NULL. False when
+  ! Is the whole extent known: does the chain of cells reach NULL. False when
   ! it reaches UNKNOWN. A malformed cell is refused rather than
   ! reported, because it is not a state of the sequence.
   !===================================================================!
@@ -89,8 +90,8 @@ contains
   end function sequence_defined
 
   !===================================================================!
-  ! The number of elements. The answer depends on the whole spine, so
-  ! an unknown extent is refused.
+  ! The number of elements. The result depends on the whole chain of
+  ! cells, so an unknown extent is refused.
   !===================================================================!
 
   integer function sequence_num_elements(b) result(n)
@@ -117,7 +118,7 @@ contains
 
   !===================================================================!
   ! The k-th element, counting from one. Only the first k cells are
-  ! traversed, so an unknown tail beyond k is no obstacle.
+  ! traversed, so an unknown tail beyond k is not an error.
   !===================================================================!
 
   function sequence_element(b, k) result(element)
@@ -147,9 +148,9 @@ contains
   end function sequence_element
 
   !===================================================================!
-  ! Does the sequence hold this graph, by identity. Answered as soon
-  ! as it is found; refused if the spine runs into UNKNOWN first,
-  ! because then the answer depends on the unknown part.
+  ! Does the sequence contain this graph, by identity. Returned as
+  ! soon as it is found; refused if the chain of cells reaches UNKNOWN
+  ! first, because then the result depends on the unknown part.
   !
   ! This is one traversal. A caller looping sequence_element instead
   ! would be O(n^2), which is why membership is here and not derived
@@ -189,7 +190,7 @@ contains
   !===================================================================!
   ! The recursive form: a sequence is empty, or it is a first
   ! element followed by the rest. A traversal written on these two
-  ! crosses the spine once, where indexing by position restarts from
+  ! traverses the chain of cells once, where indexing by position restarts from
   ! the head at every step.
   !===================================================================!
 
@@ -222,7 +223,7 @@ contains
 
   !===================================================================!
   ! The sequence after the first element, refused on the same
-  ! grounds. A copy of the branch carries the reference and owns
+  ! grounds. A copy of the branch stores the reference and owns
   ! nothing, which is what lets the result be returned by value.
   !===================================================================!
 
@@ -250,7 +251,7 @@ contains
     type(graph), intent(in) :: cell
 
     if (cell % branch(1) % status() .ne. BRANCH_KNOWN) then
-       error stop 'view_sequence: a sequence cell holds a KNOWN element'
+       error stop 'view_sequence: a sequence cell contains a KNOWN element'
     end if
 
   end subroutine require_cell

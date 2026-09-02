@@ -1,57 +1,60 @@
 !=====================================================================!
 ! LEVEL 4 OF THE NEW TOWER . THE GRAPH ALGORITHMS
 !
-! The level answers one question: WHAT GRAPH-THEORETIC QUESTIONS CAN
-! BE ASKED of an interpretation. The algorithms live HERE, as free
-! module procedures over a binary relation on one domain - never as
-! methods on the relation or on any container:
+! The level defines WHAT GRAPH-THEORETIC PREDICATES CAN BE
+! EVALUATED on an interpretation. The algorithms are defined HERE, as
+! free module procedures over a binary relation on one domain - never
+! as methods on the relation or on any container:
 ! traversal acts on structure, it is not structure (AGENTS.md 18,
-! CALCULATOR.md 11). This module holds exactly what its first real
-! caller - the calculator's dependency walk - has earned:
+! CALCULATOR.md 11). This module contains exactly what its first
+! caller - the calculator's dependency traversal - requires:
 !
-!      sources      the members nothing points at
-!      sinks        the members that point at nothing
-!      reachable    is there a directed path
-!      topological_order   every arrow forward, or refusal
+!      sources      the members with empty preimage
+!      sinks        the members with empty image
+!      reachable    whether a directed path exists
+!      topological_order   every arrow forward, or rejection
 !
 ! No components, no colouring, no condensation, no visitor
-! machinery: each waits for the caller that earns it.
+! machinery: each is added when a caller requires it.
 !
 !                    SUBOBJECTS, NOT INTEGER LISTS
 !
-! Sources and sinks are answered as declared subobjects of the
-! view's own domain - so they carry identity, membership, size and
-! local_index for free, and their enumeration is CANONICAL BY THE
-! DOMAIN'S DECLARATION ORDER: the scan walks V by local index, and a
-! member's numeric value never orders anything. An isolated member,
-! pointing nowhere and pointed at by nothing, is lawfully both.
+! Sources and sinks are returned as declared subobjects of the
+! view's own domain - so they have identity, membership, size and
+! local_index without additional operations, and their enumeration is
+! CANONICAL BY THE DOMAIN'S DECLARATION ORDER: the scan traverses V by
+! local index, and a member's numeric value never orders anything. An
+! isolated member, with empty image and empty preimage, is both by
+! definition.
 !
-!                    CONVENTIONS, PINNED
+!                    CONVENTIONS, FIXED
 !
 ! reachable(v, v) is TRUE for every member v, by the zero-length
-! path; an endpoint outside the domain answers FALSE, never an
+! path; an endpoint outside the domain returns FALSE, never an
 ! index into invalid storage. A topological order is undefined on a
-! cycle: the walk REFUSES loudly rather than inventing an order.
-! A cyclic relation remains a lawful structure - a valid
+! cycle: the algorithm REJECTS the input rather than constructing an
+! order. A cyclic relation remains a valid structure - a valid
 ! interpretation is not a valid input to every algorithm.
 !
 !                    COSTS, AS WRITTEN
 !
-! Nothing here is optimized ahead of a large caller. With n = |V|,
+! Nothing here is optimized before a large caller exists. With n = |V|,
 ! m = |A|, and the carrier's own lookup cost T_idx:
 !
-!      sources/sinks       O(n) fibre borrows, each paying T_idx -
+!      sources/sinks       O(n) fibre reads, each costing T_idx -
 !                          and then the subobject declaration,
-!                          which validates every kept member against
-!                          the ambient (T_has each) and dedupes with
-!                          its current quadratic worst-case check
+!                          which validates every retained member
+!                          against the ambient (T_has each) and
+!                          removes duplicates with its current
+!                          quadratic upper bound check
 !      reachable           breadth-first, O(n + m) fibre reads and
-!                          visited stamps, each stamp one T_idx
-!      topological_order   the plain deterministic Kahn: each round
-!                          rescans the domain for the first ready
-!                          member in declaration order - O(n^2)
-!                          scanning plus O(n + m) fibre and T_idx
-!                          work. A priority structure is unearned.
+!                          visited marks, each mark one T_idx
+!      topological_order   the plain deterministic Kahn algorithm:
+!                          each round rescans the domain for the
+!                          first member of zero indegree in
+!                          declaration order - O(n^2) scanning plus
+!                          O(n + m) fibre and T_idx work. A priority
+!                          structure is not yet required.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -72,7 +75,7 @@ module relation_algorithms
 contains
 
   !===================================================================!
-  ! The members nothing points at, as a subobject of the domain, in
+  ! The members with empty preimage, as a subobject of the domain, in
   ! the domain's own order.
   !===================================================================!
 
@@ -86,12 +89,12 @@ contains
     type(graph)      :: dom
 
     call require_adjacency(adjacency, a, dom)
-    call carve_unpointed(a, 'sources', dom, sets, chosen)
+    call declare_unpointed(a, 'sources', dom, sets, chosen)
 
   end subroutine sources
 
   !===================================================================!
-  ! The members that point at nothing: the sources of the converse,
+  ! The members with empty image: the sources of the converse,
   ! read through the transposed view, so the search is written once.
   !===================================================================!
 
@@ -107,7 +110,7 @@ contains
 
     call require_adjacency(adjacency, a, dom)
     converse = transpose_of(a)
-    call carve_unpointed(converse, 'sinks', dom, sets, chosen)
+    call declare_unpointed(converse, 'sinks', dom, sets, chosen)
 
   end subroutine sinks
 
@@ -116,7 +119,7 @@ contains
   ! domain in the domain's own order.
   !===================================================================!
 
-  subroutine carve_unpointed(a, label, dom, sets, chosen)
+  subroutine declare_unpointed(a, label, dom, sets, chosen)
 
     class(binary_relation), target, intent(in)    :: a
     character(len=*)              , intent(in)    :: label
@@ -124,32 +127,32 @@ contains
     type(set_store)               , intent(inout) :: sets
     type(graph)                   , intent(out)   :: chosen
 
-    integer, allocatable :: keep(:)
+    integer, allocatable :: retained(:)
     integer, pointer     :: fibre(:)
     integer              :: i, n, m, size_of_dom
 
     size_of_dom = sets % num_members_of(dom)
 
-    allocate(keep(size_of_dom))
+    allocate(retained(size_of_dom))
     n = 0
     do i = 1, size_of_dom
        m = sets % member_of(dom, i)
        fibre => a % preimage_view(m)
        if (size(fibre) == 0) then
           n = n + 1
-          keep(n) = m
+          retained(n) = m
        end if
     end do
 
-    call sets % declare_subobject(chosen, keep(1:n), label, dom)
+    call sets % declare_subobject(chosen, retained(1:n), label, dom)
 
-  end subroutine carve_unpointed
+  end subroutine declare_unpointed
 
   !===================================================================!
-  ! Is there a directed path. Every member reaches itself by the
-  ! zero-length path; an outsider reaches nothing and is reached by
+  ! Whether a directed path exists. Every member reaches itself by the
+  ! zero-length path; a non-member reaches nothing and is reached by
   ! nothing. Breadth-first over the successor fibres, visited
-  ! stamped by local index.
+  ! marked by local index.
   !===================================================================!
 
   logical function reachable(adjacency, sets, from, to)
@@ -206,11 +209,12 @@ contains
   end function reachable
 
   !===================================================================!
-  ! The deterministic Kahn walk: n rounds, each taking the FIRST
-  ! ready member in the domain's declaration order - local_index,
-  ! never numeric value - so one graph has one answer. Members come
-  ! back as member values. A cycle leaves no ready member before
-  ! the walk is done, and the walk refuses.
+  ! The deterministic Kahn algorithm: n rounds, each taking the FIRST
+  ! member of zero indegree in the domain's declaration order -
+  ! local_index, never numeric value - so one graph has one order.
+  ! Members are returned as member values. A cycle leaves no member of
+  ! zero indegree before the n rounds are complete, and the algorithm
+  ! rejects the input.
   !===================================================================!
 
   subroutine topological_order(adjacency, sets, order, acyclic)
@@ -225,7 +229,7 @@ contains
     integer, allocatable :: indegree(:)
     logical, allocatable :: placed(:)
     integer, pointer     :: fibre(:)
-    integer              :: n, i, j, round, pick
+    integer              :: n, i, j, round, selected
 
     call require_adjacency(adjacency, a, dom)
     n   = sets % num_members_of(dom)
@@ -239,14 +243,14 @@ contains
     end do
 
     do round = 1, n
-       pick = 0
+       selected = 0
        do i = 1, n
           if (.not. placed(i) .and. indegree(i) == 0) then
-             pick = i
+             selected = i
              exit
           end if
        end do
-       if (pick == 0) then
+       if (selected == 0) then
           if (present(acyclic)) then
              acyclic = .false.
              order   = order(1:round - 1)
@@ -255,10 +259,10 @@ contains
           error stop 'relation_algorithms: a topological order needs an acyclic graph'
        end if
 
-       placed(pick) = .true.
-       order(round) = sets % member_of(dom, pick)
+       placed(selected) = .true.
+       order(round) = sets % member_of(dom, selected)
 
-       fibre => a % image_view(sets % member_of(dom, pick))
+       fibre => a % image_view(sets % member_of(dom, selected))
        do j = 1, size(fibre)
           i = sets % index_in(dom, fibre(j))
           indegree(i) = indegree(i) - 1
@@ -268,9 +272,9 @@ contains
   end subroutine topological_order
 
   !===================================================================!
-  ! The gate every algorithm passes: the adjacency must be a binary
-  ! relation over one domain (source and target the same set).
-  ! Either violation stops the program, because a walk over two
+  ! The precondition every algorithm checks: the adjacency must be a
+  ! binary relation over one domain (source and target the same set).
+  ! Either violation stops the program, because a traversal over two
   ! domains has no single member set to enumerate.
   !===================================================================!
 

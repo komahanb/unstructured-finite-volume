@@ -1,7 +1,7 @@
 !=====================================================================!
-! The advection law: the flow's answer to a state.
+! The advection law: the face coefficients of one velocity.
 !
-! LEVEL 3 OF THE STRATIFICATION. An advection law holds one velocity
+! LEVEL 3 OF THE STRATIFICATION. An advection law stores one velocity
 ! and supplies two coefficient arrays, one entry per face, from the
 ! mesh's own normals and areas:
 !
@@ -12,15 +12,15 @@
 !                                                 coefficient, zero
 !                                                 on the headless
 !                                                 faces - a boundary
-!                                                 face gets its
+!                                                 face takes its
 !                                                 advective closure
 !                                                 from its condition
 !
-! The scheme is not the law's business. Handed to the calculus with
-! one_sided true, the signed coefficient upwinds by itself - the
-! sign of vn picks the end the flow leaves; handed with one_sided
-! false, the term is the central average. The old assembler's
-! weights are exactly these two cases:
+! The scheme is not part of the law. Passed to the calculus with
+! one_sided true, the signed coefficient upwinds - the sign of vn
+! selects the upstream end; passed with one_sided false, the term
+! is the central average. The previous assembler's weights are
+! exactly these two cases:
 !
 !      upwind    wp = max(vn, 0)   wn = min(vn, 0)
 !      central   wp = wn = vn / 2
@@ -81,7 +81,7 @@ contains
     integer :: ne, e, d
 
     d = m % dimension
-    if (size(this % velocity) /= d) error stop 'advection: the velocity is as wide as the space'
+    if (size(this % velocity) /= d) error stop 'advection: the velocity has one component per space dimension'
 
     fn = m % face_normal()
     call fn % real_vector(normals)

@@ -1,8 +1,8 @@
 !=====================================================================!
-! The balance - a vertex field operation built out of smaller ones.
+! The balance - a vertex field operation composed from smaller ones.
 !
-! A balance is what a cell has left over: what its faces bring in,
-! plus whatever the cell itself contributes.
+! A balance is the net quantity of a cell: the sum of its face
+! contributions, plus the cell's own source.
 !
 !                          z_e
 !                   (i) ---------> (j)
@@ -10,19 +10,19 @@
 !                   y_i = y_i - z_e
 !                   y_j = y_j + z_e
 !
-! Every face gives its number to the cell it leaves and takes it from
-! the cell it enters. That is incidence, and it is the whole of the
+! Every face's value is subtracted from the cell it leaves and added
+! to the cell it enters. That is incidence, and it is the whole of the
 ! reduction through incidence.
 !
-! EXACTLY ONCE. Each face is walked one time and touches its two cells
-! one time. Walk a face twice and the balance is wrong by that face;
-! miss one and it is wrong by that face the other way. Neither shows
-! up as a crash - it shows up as a solution that is quietly not the
-! solution, so the incidence count is verified in the test suite
-! rather than assumed.
+! EXACTLY ONCE. Each face is visited one time and updates its two
+! cells one time. Visit a face twice and the balance is wrong by that
+! face; omit one and it is wrong by that face with the opposite sign.
+! Neither produces a run-time error - it produces a solution that
+! differs from the correct solution without any diagnostic, so the
+! incidence count is verified in the test suite rather than assumed.
 !
-! A boundary face has no far cell, so its number lands on the one cell it
-! touches and stops there:
+! A boundary face has no far cell, so its value is applied to the one
+! cell it is incident to:
 !
 !                   (i) --------o
 !
@@ -30,14 +30,14 @@
 !
 !=====================================================================!
 !
-!                   WHY THIS IS NOT A NEW KIND OF THING
+!                 WHY THIS IS NOT A NEW KIND OF OPERATION
 !
-! A balance is a vertex field operation like any other. It happens to
-! drive an edge operation on the way, but what it returns is a
-! value per cell, which is exactly what its type declares.
+! A balance is a vertex field operation like any other. It applies an
+! edge operation in the process, but what it returns is a value per
+! cell, which is exactly what its type declares.
 !
 ! A solver calls the result a residual. That word names a stage in a
-! solve, not a thing in this library, so it does not appear here.
+! solve, not an object in this library, so it does not appear here.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -59,12 +59,12 @@ module operation_balance
   public :: balance
 
   !===================================================================!
-  ! A balance holds its face terms and, if it has one, a number added
-  ! to every cell.
+  ! A balance stores its face terms and, if it has one, a number
+  ! added to every cell.
   !
-  ! The face terms are one concrete type holding a rule. A Fortran
-  ! array holds a single dynamic type, so one concrete edge-derivative
-  ! type is what lets the balance keep its terms in a plain array.
+  ! The face terms are one concrete type storing a rule. A Fortran
+  ! array stores a single dynamic type, so one concrete edge-derivative
+  ! type is what lets the balance store its terms in a plain array.
   !===================================================================!
 
   type, extends(operation) :: balance
@@ -89,7 +89,7 @@ contains
   !===================================================================!
   ! Build a balance from what a model declares: the face terms, and
   ! one number per cell added as a source. Both optional - an empty
-  ! balance answers zero.
+  ! balance returns zero.
   !===================================================================!
 
   type(balance) function create(edge_terms, source) result(this)
@@ -121,10 +121,10 @@ contains
   end function balance_name
 
   !===================================================================!
-  ! Work the balance out.
+  ! Compute the balance.
   !
   !    1. start every cell at its own source term
-  !    2. for each face term, work out every face
+  !    2. for each face term, evaluate every face
   !    3. reduce each edge onto the two vertices it touches, once,
   !       through incidence
   !===================================================================!
@@ -159,9 +159,8 @@ contains
                & this % edge_terms(k) % bind(inputs), edge_values)
           call edge_values % real_vector(z)
 
-          ! And reduced onto the vertices through incidence, each
-          ! edge touching its two
-          ! ends exactly one time.
+          ! Then reduced onto the vertices through incidence, each
+          ! edge updating its two ends exactly one time.
           do e = 1, ne
              if (e > size(z)) exit
 

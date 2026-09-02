@@ -1,18 +1,18 @@
 !=====================================================================!
 ! VALUE MAP: graph identity -> value status x field, stored
 ! outside the graph. Per graph it records whether a value is
-! attached, whether it is trusted, and the value itself, a field
+! attached, whether it is known, and the value itself, a field
 ! on the graph's own domain.
 !
 ! Statuses, closed:
 !
 !     VALUE_UNATTACHED   no row in the map
-!     VALUE_UNKNOWN      a row with no trusted value
-!     VALUE_KNOWN        a row holding a trusted field
+!     VALUE_UNKNOWN      a row with no known value
+!     VALUE_KNOWN        a row storing a known field
 !
 ! Readers accept absence: an unattached graph reads as
 ! VALUE_UNATTACHED. Reading a value requires KNOWN, because an
-! untrusted number must not be consumed. Writers require an
+! unknown number must not be read. Writers require an
 ! assigned identity and (except attach) an existing row, because
 ! updating a missing row or attaching twice would each leave the
 ! map ambiguous.
@@ -147,7 +147,7 @@ contains
 
     at = this % rows % position(key)
     if (at == 0) then
-       error stop 'map_value: an update touches an attached row'
+       error stop 'map_value: an update requires an attached row'
     end if
 
     if (size(values) == 0) then
@@ -182,7 +182,7 @@ contains
 
     at = this % rows % position(key)
     if (at == 0) then
-       error stop 'map_value: an update touches an attached row'
+       error stop 'map_value: an update requires an attached row'
     end if
 
     this % states(at) % value  = nothing
@@ -212,7 +212,7 @@ contains
        error stop 'map_value: a detach removes an attached row'
     end if
 
-    call this % rows % drop(at)
+    call this % rows % remove(at)
 
     n = size(this % states)
     allocate(kept(n - 1))
@@ -229,8 +229,8 @@ contains
   !===================================================================!
   ! Readers. Absence is an accepted input: an undeclared or
   ! unattached graph reads as not present. Only value_of stops the
-  ! program, when the status is not KNOWN, because an untrusted
-  ! number must not be consumed.
+  ! program, when the status is not KNOWN, because an unknown
+  ! number must not be read.
   !===================================================================!
 
   pure logical function attached(this, element)

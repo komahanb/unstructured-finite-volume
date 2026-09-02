@@ -6,9 +6,9 @@
 ! joins two vertices of the same part. Such a digraph is BIPARTITE,
 ! and the parts are its PARTITE SETS.
 !
-!             DIRECTION IS THE WHOLE STORY
+!             DIRECTION IS THE ONLY INFORMATION NEEDED
 !
-! Nothing beyond direction is needed to say which way a value moves.
+! Nothing beyond direction is needed to specify which way a value moves.
 ! An arc y -> x enters x; an arc x -> y leaves it. So for a vertex x
 ! of the first part:
 !
@@ -16,7 +16,7 @@
 !      N+(x)   its OUT-NEIGHBOURHOOD  the y it points to
 !
 ! and for a vertex y of the second part, the same two neighbourhoods
-! read the other way. One relation, two readings, and no second kind
+! read the other way. One relation, two views, and no second kind
 ! of arc.
 !
 !                    N-(x1)          N+(x1)
@@ -37,7 +37,7 @@
 !
 ! The projection is a digraph on one part alone, and it is DERIVED:
 ! nothing states it, and it cannot disagree with the arcs it comes
-! from. A caller that needs an order over one part asks for the
+! from. A caller that needs an order over one part requests the
 ! projection and takes its topological order.
 !
 !             THE TWO-HOP NEIGHBOURHOODS
@@ -104,10 +104,10 @@ module view_read_write
   integer, parameter :: SECOND_PART = 2
 
   !===================================================================!
-  ! THE BIPARTITE DIGRAPH. The two parts are held as counts and the
+  ! THE BIPARTITE DIGRAPH. The two parts are stored as counts and the
   ! arcs as one digraph over their disjoint union: a vertex of the
   ! first part is numbered from one, a vertex of the second continues
-  ! after it. Callers never see that numbering - every procedure here
+  ! after it. Callers never read that numbering - every procedure here
   ! takes a part and a vertex within it.
   !
   !      vertex numbering   1 .. p          first part
@@ -142,15 +142,15 @@ module view_read_write
      procedure :: previous
      procedure :: next
 
-     ! the digraph one part alone carries
+     ! the digraph induced on one part alone
      procedure :: projection
 
      ! whether two vertices of one part share a neighbour, which is
-     ! the question an independent set asks of them
+     ! the predicate an independent set requires of them
      procedure :: share_a_neighbour
 
      ! the numbering, kept private to this module
-     procedure, private :: require_place
+     procedure, private :: require_position
      procedure, private :: whole_of
      procedure, private :: within
 
@@ -166,7 +166,8 @@ contains
   ! THE CROSSING ARCS. Every arc is given as the part and vertex it
   ! leaves and the part and vertex it enters. An arc whose ends lie
   ! in the same part stops the program: a digraph with such an arc is
-  ! not bipartite, and this type would be lying about itself.
+  ! not bipartite, and this type would be inconsistent with its
+  ! definition.
   !===================================================================!
 
   function crossing(first_order, second_order, from_part, from_vertex, &
@@ -185,7 +186,7 @@ contains
        error stop 'view_read_write: an arc has one end in each part'
     end if
     if (first_order < 0 .or. second_order < 0) then
-       error stop 'view_read_write: a part carries no fewer than no vertices'
+       error stop 'view_read_write: a part has a non-negative vertex count'
     end if
 
     this % first_order  = first_order
@@ -196,8 +197,8 @@ contains
        if (from_part(a) == to_part(a)) then
           error stop 'view_read_write: an arc of a bipartite digraph crosses its parts'
        end if
-       call this % require_place(from_part(a), from_vertex(a))
-       call this % require_place(to_part(a)  , to_vertex(a))
+       call this % require_position(from_part(a), from_vertex(a))
+       call this % require_position(to_part(a)  , to_vertex(a))
        tails(a) = this % whole_of(from_part(a), from_vertex(a))
        heads(a) = this % whole_of(to_part(a)  , to_vertex(a))
     end do
@@ -208,26 +209,26 @@ contains
 
   !===================================================================!
   ! THE NUMBERING, both ways. A vertex of the second part continues
-  ! after the first, and nothing outside this module sees that.
+  ! after the first, and nothing outside this module reads that.
   !===================================================================!
 
   !===================================================================!
-  ! A PART IS ONE OF THE TWO, and a vertex is one the part carries.
-  ! Neither is defaulted: a label outside the two would otherwise pass
-  ! for the first part and give a structure that looks valid and
-  ! relates the wrong vertices.
+  ! A PART IS ONE OF THE TWO, and a vertex is one the part contains.
+  ! Neither is defaulted: a label outside the two would otherwise be
+  ! treated as the first part and give a structure that passes every
+  ! structural check and relates the wrong vertices.
   !===================================================================!
 
-  subroutine require_place(this, part, vertex)
+  subroutine require_position(this, part, vertex)
     class(bipartite_digraph), intent(in) :: this
     integer                 , intent(in) :: part, vertex
     if (part /= FIRST_PART .and. part /= SECOND_PART) then
        error stop 'view_read_write: a part is the first or the second'
     end if
     if (vertex < 1 .or. vertex > this % order_of_part(part)) then
-       error stop 'view_read_write: a vertex is one the part carries'
+       error stop 'view_read_write: a vertex is one the part contains'
     end if
-  end subroutine require_place
+  end subroutine require_position
 
   pure integer function whole_of(this, part, vertex)
     class(bipartite_digraph), intent(in) :: this
@@ -259,7 +260,7 @@ contains
   !===================================================================!
   ! THE IN-NEIGHBOURHOOD N-(v): the vertices an arc runs from into v.
   ! Every one of them lies in the other part, so no part need be
-  ! given back with them.
+  ! returned with them.
   !===================================================================!
 
   subroutine in_neighbourhood(this, part, vertex, neighbours)
@@ -271,7 +272,7 @@ contains
     integer, allocatable :: incident(:)
     integer :: v, a, kept
 
-    call this % require_place(part, vertex)
+    call this % require_position(part, vertex)
     v = this % whole_of(part, vertex)
     call this % arcs % incident_edges(v, incident)
     allocate(neighbours(size(incident)))
@@ -299,7 +300,7 @@ contains
     integer, allocatable :: incident(:)
     integer :: v, a, kept
 
-    call this % require_place(part, vertex)
+    call this % require_position(part, vertex)
     v = this % whole_of(part, vertex)
     call this % arcs % incident_edges(v, incident)
     allocate(neighbours(size(incident)))
@@ -382,9 +383,9 @@ contains
   end subroutine next
 
   !===================================================================!
-  ! Both directions of the same walk: one arc into the other part,
-  ! then one more the same way. A vertex is never its own previous
-  ! or next, so u is dropped if the walk returns to it.
+  ! Both directions of the same traversal: one arc into the other
+  ! part, then one more the same way. A vertex is never its own
+  ! previous or next, so u is removed if the traversal returns to it.
   !===================================================================!
 
   subroutine two_hops(this, part, vertex, backwards, vertices)
@@ -488,20 +489,20 @@ contains
     class(bipartite_digraph), intent(in) :: this
     integer                 , intent(in) :: part, one, other
 
-    integer, allocatable :: mine_in(:), mine_out(:), yours_in(:), yours_out(:)
+    integer, allocatable :: one_in(:), one_out(:), other_in(:), other_out(:)
     integer :: i
 
-    call this % in_neighbourhood (part, one  , mine_in )
-    call this % out_neighbourhood(part, one  , mine_out)
-    call this % in_neighbourhood (part, other, yours_in )
-    call this % out_neighbourhood(part, other, yours_out)
+    call this % in_neighbourhood (part, one  , one_in )
+    call this % out_neighbourhood(part, one  , one_out)
+    call this % in_neighbourhood (part, other, other_in )
+    call this % out_neighbourhood(part, other, other_out)
 
     share_a_neighbour = .false.
-    do i = 1, size(mine_in)
-       if (any(yours_in == mine_in(i)) .or. any(yours_out == mine_in(i))) share_a_neighbour = .true.
+    do i = 1, size(one_in)
+       if (any(other_in == one_in(i)) .or. any(other_out == one_in(i))) share_a_neighbour = .true.
     end do
-    do i = 1, size(mine_out)
-       if (any(yours_in == mine_out(i)) .or. any(yours_out == mine_out(i))) share_a_neighbour = .true.
+    do i = 1, size(one_out)
+       if (any(other_in == one_out(i)) .or. any(other_out == one_out(i))) share_a_neighbour = .true.
     end do
 
   end function share_a_neighbour

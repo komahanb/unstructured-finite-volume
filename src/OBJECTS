@@ -51,7 +51,7 @@ operation_linearization.o \
 operation_chain_rule.o \
 field_forms.o \
 operation_reduction.o \
-operation_walk.o \
+operation_traversal.o \
 transform_partitioner.o \
 transform_assembler.o \
 transform_coarsener.o \

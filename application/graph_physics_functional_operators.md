@@ -33,7 +33,7 @@ Two facts settle most of the design.
 
 1. **The partials are already exact and automatic.** `nodal_integrand`
    (`physics/physics_integrand.f90`) evaluates a rule over
-   `derivative_terms` (`src/util_derivative_terms.f90`), which carries
+   `derivative_terms` (`src/util_derivative_terms.f90`), which stores
    the value and every mixed partial along the directions seeded on the
    state and the design. `gti_block` reads the tangent through
    `partial_action`, one direction per degree. So a Jacobian, a design
@@ -43,13 +43,13 @@ Two facts settle most of the design.
    rule, chain rule) grows the tree with every product and needs a
    simplifier; evaluating it over `derivative_terms` does not.
 
-2. **A time derivative is a read, not an operator.** The state holds one
+2. **A time derivative is a read, not an operator.** The state stores one
    component per degree per instant; the scheme (BDF, Adams, DIRK) is
    what relates the degrees. So the vertex `derivative(q, k)` selects the
    component `q(k)` at the instant. A spatial derivative is the stencil
    `gti_block` adds as its `spatial` rows, linear in `q(0)`.
 
-What the framework lacks, and the draft was right to want:
+What the framework lacks, and the draft correctly required:
 
 - elementary functions (`sin`, `cos`, `exp`, `log`, `sqrt`, real powers)
   over `derivative_terms`: the rule today is restricted to `+ - * /` and
@@ -70,13 +70,13 @@ deferred binding, so the abstract and every physics type extending it
 are replaced by one concrete `expression`, and the module moves to
 `src/operation_expression.f90` following doc/coding-standards.md
 (`operation_<subject>`, type in English order like `stencil`, `scheme`,
-`fit`, `walk`).
+`fit`, `traversal`).
 
-A vertex has a kind, reads at most two earlier vertices, and holds one
+A vertex has a kind, reads at most two earlier vertices, and stores one
 number (a constant, or an integer exponent) and one integer (a leaf
 component, or a function index). The vertices are stored in evaluation
 order and the root is the last one. This is the same choice
-`operation_walk` makes: a new operator kind costs a case, not a class.
+`operation_traversal` makes: a new operator kind costs a case, not a class.
 
     module operation_expression
 
@@ -117,9 +117,9 @@ vertex reading both roots.
 
 Two consequences of the storage:
 
-- The table *is* the reads relation R ⊆ V x V, so it can be handed to
-  the framework's directed view when a walk over it is wanted
-  (topological order, display). No walk is needed to evaluate it: the
+- The table *is* the reads relation R ⊆ V x V, so it can be passed to
+  the framework's directed view when a traversal over it is required
+  (topological order, display). No traversal is needed to evaluate it: the
   vertices are already in an order every read precedes.
 - A subexpression used twice is stored twice. That is a tree, not a
   DAG. Sharing would need identity (tokens) on vertices; at the size of
@@ -174,7 +174,7 @@ derivative taken:
 
 `G` is filled in increasing `m`, for `k = 0 .. n - |m|`: a table of
 `(n+1) x 2^n` numbers, each entry a subset sum, so the cost is the same
-`3^n` the product already pays. The function supplies its derivatives
+`3^n` the product already costs. The function supplies its derivatives
 at the value `a_0` for `k = 0 .. n`:
 
     exp     e^x for every k
@@ -188,7 +188,7 @@ short derivative tables, and generic interfaces on the intrinsic names.
 `integer_power` stays: it is exact at a zero base, where the real power
 is not.
 
-## Where it goes in the tower
+## Where it is placed in the module hierarchy
 
     util_derivative_terms      +  composed, sin cos exp log sqrt, real power        (~80 lines)
     operation_expression  NEW     physics_integrand moved to src and made concrete:
@@ -198,15 +198,15 @@ is not.
     gti_block, gti_chain, gti_expansion, gti_field, gti_march, gti_stage, gti_taylor,
     chained_horizon, constraint_rows      one rename, class(nodal_integrand) → type(expression), 40 sites
 
-Where `derivative_terms` sits. Differentiation is an operation, and in
-the tower it already is one: `partial_action`, `linearization`,
+Where `derivative_terms` is placed. Differentiation is an operation, and in
+the hierarchy it already is one: `partial_action`, `linearization`,
 `tangent_of`. `derivative_terms` is not the derivative but the number
 the rule is evaluated in so that the derivative comes out - the role
 `real(dp)` plays for a stencil. It stays beside `util_precision` as the
 arithmetic, and the expression's `partial_action` is the operation that
 uses it.
 
-The same theorem is stated three times on three substrates:
+The same theorem is stated three times on three representations:
 `derivative_terms` does the product rule on subsets of directions,
 `operation_chain_rule` does the total derivative of a composition with
 integer partitions and multinomial counts, and `composed` does a
@@ -228,7 +228,7 @@ is bound to the degree of the state it reads when it is stated:
        ! derived row determines; an integrand may read less.
 
 The van der Pol file becomes the two rules and nothing else; the
-comment block listing the partials by hand is deleted, since they are
+comment block listing the partials explicitly is deleted, since they are
 no longer stated anywhere:
 
     function van_der_pol(n) result(r)
@@ -243,12 +243,12 @@ no longer stated anywhere:
     end function
 
 `chained_horizon` and `constraint_rows` call these as they do today.
-Once `gti_configuration` can pick a rule by name, the file can go
-entirely and the rules live beside the other configured choices.
+Once `gti_configuration` can select a rule by name, the file can be deleted
+entirely and the rules are stored beside the other configured choices.
 
 ### The hierarchy this completes
 
-The tower already evaluates each level as a loop over a reads graph:
+The hierarchy already evaluates each level as a loop over a reads graph:
 the march is the loop over the blocks' reads graph forward and the
 adjoint the same loop in reverse; a block is the loop over its
 instants. The expression is the same structure one level down, inside
@@ -273,7 +273,7 @@ A coordinate is the uniform axis xi on [0, 1], identified by token and
 labelled. Every physical axis is its image under a mapping, and the
 measure on the physical axis is the pushforward of the uniform measure
 under that mapping - the Lebesgue measure on [0, T] is uniform up to
-the scale T, which the mapping's derivative carries:
+the scale T, which the mapping's derivative supplies:
 
     time           t = T xi,  or a designed grid t(xi)        dt = t'(xi) d xi
     space          x = Phi(xi, eta), the geometry              |det D Phi| d xi d eta
@@ -300,7 +300,7 @@ not mapped from xi. For an affine mapping the two coincide (Legendre,
 Gauss-Legendre). For the normal, F^-1 has an unbounded derivative at
 xi = 0 and 1 and mapped Gauss-Legendre points converge poorly; the
 family orthogonal under the pushforward is Hermite, and pspace uses it
-directly. The coordinate carries neither the measure nor the basis;
+directly. The coordinate stores neither the measure nor the basis;
 both follow from the mapping.
 
 A discretisation of a coordinate is a finite measure on it: points and
@@ -324,7 +324,7 @@ cannot express.
 The basis is the third object and is kept apart from both. pspace's
 psi_k are polynomials orthonormal under the axis measure (Hermite for
 normal, Legendre for uniform, Laguerre for exponential); this
-framework's `field_forms` holds the same objects - a table of functions
+framework's `field_forms` stores the same objects - a table of functions
 and their derivatives with an active membership - as `polynomial_form`
 and `harmonic_form`, with no measure to be orthogonal under. The
 orthogonal families are further concretions of `form`, one per
@@ -332,9 +332,9 @@ measure, and the fitted operator gains a well-conditioned basis
 wherever the mapping determines the measure. pspace stores the basis degree on
 the coordinate (`Coordinate.degree`, `CoordinateSystem.basis`); the
 2026-08-21 ruling here keeps basis and coordinates as two branches of
-one graph, queried through it, and that separation is kept.
+one graph, queried through it, and that separation is retained.
 
-Identity: pspace mints coordinate ids from a counter and preserves them
+Identity: pspace generates coordinate ids from a counter and preserves them
 across `make_cs` so a `PolyFunction` remains valid when the degree
 changes; the name is a sympy symbol beside the id. This is
 `token_identity` (assigned once) and `map_label` (a name is not an
@@ -358,11 +358,11 @@ probabilistic axis there is no derivative vertex, since the state is
 sampled there rather than differentiated - the design `nu` *is* the
 coordinate, and its discretisation is either the quadrature (pspace:
 one trajectory per Gauss point, the functional's expectation a weighted
-sum) or the Taylor coefficients this framework already carries (the
+sum) or the Taylor coefficients this framework already computes (the
 mixed partials of the functional in `nu` to any degree at one point).
 Collocation and Taylor are then two grids on the same coordinate,
 compared on the same functional, which is the comparison
-`doc/NEURALNETWORK.md` §"Stochastic parameters" asks for.
+`doc/NEURALNETWORK.md` §"Stochastic parameters" requires.
 
 ### Geometry is the mapping
 
@@ -386,7 +386,7 @@ unchanged: the corners are the mapping evaluated at the corner
 parameters.
 
 A constant of the mapping promoted to a design leaf gives the
-functional's partial in the shape by the same route as its partial in
+functional's partial in the shape by the same pass as its partial in
 `nu`. Caveat: the polygon geometry (areas, centroids, normals) is
 written over `real(dp)`; a shape partial through the mesh needs it
 evaluated over `derivative_terms` too. It is arithmetic on corners, so
@@ -408,8 +408,8 @@ order of exact partial action; for an expression it is
 `max_subset_width()` and limits nothing in practice. The polynomial
 degree is pspace's `Coordinate.degree`, and no coordinate here carries
 one: the coordinate is the uniform axis. What shapes a mapping, a
-physics coefficient or a grid may be built from is a question about
-the *form*, and the tower has the type: `field_forms` holds a family
+physics coefficient or a grid may be built from is a property of
+the *form*, and the hierarchy has the type: `field_forms` stores a family
 of functions of position with `values(x, at)` and `slopes(x, at, n)`,
 `polynomial_form` and `harmonic_form` are its concretions, and
 `operation_fitting`'s `fit` is form + coefficients - the object
@@ -422,7 +422,7 @@ coefficients as leaves:
 
 For derivative propagation every mixed partial of each phi_k is
 needed, and `slopes` gives one first derivative. Rather than extend
-each concretion by hand, each member of a form is itself an expression
+each concretion explicitly, each member of a form is itself an expression
 in the position leaves and is evaluated in the same loop: a monomial is
 PRODUCT and POWER vertices, a harmonic is sin or cos of a PRODUCT,
 `values` and `slopes` are the zero- and one-direction evaluations, and
@@ -431,7 +431,7 @@ every higher derivative comes with them. `polynomial_form` and
 candidate merge of `field_forms` into `expression`, to be measured on
 the fitting hot path before it is taken.
 
-Two vertex kinds carry the expansion and the piecewise case:
+Two vertex kinds represent the expansion and the piecewise case:
 
     EXPANSION(fit)     sum of c_k phi_k over the form's active members (restrict = pspace's adaptive basis)
     PIECE(grid)        the cell of the coordinate value selects a sub-expression
@@ -447,7 +447,7 @@ derivative is one-sided, by the grid's half-open cell convention.
 So a geometry may be a mapping whose components are PIECE vertices over
 a grid of xi with polynomial sub-expressions and the control points as
 design leaves - the CAD form - and its shape partials come by the same
-route as the partial in `nu`. A designed time grid t(xi), a spatially
+pass as the partial in `nu`. A designed time grid t(xi), a spatially
 varying coefficient k(x) in the physics, and a pspace basis are the
 same object with different leaves.
 
@@ -497,9 +497,9 @@ Each stays a percentage against theory, in the existing suites.
 - `composed`: `exp`, `sin`, `log`, `sqrt` against their closed-form
   mixed partials for n = 1, 2, 3 seeded directions, and `sqrt(x)**2`
   against `x`.
-- The stated van der Pol residual against the hand-written one: the
+- The stated van der Pol residual against the manually written one: the
   value, `partial_action` in every degree, and the design partial, to
-  the arithmetic's floor; then the hand-written type is deleted.
+  the arithmetic's floor; then the manually written type is deleted.
 - `chained_horizon` and `constraint_rows` unchanged in output.
 
 ## Line count
@@ -534,7 +534,7 @@ grid and the quadrature are one map. GRID_GAUSS is a kind of the one
 grid type beside uniform, random, designed and fixed: the same
 partitioned machinery yields its weights, abscissae yields each kind's
 points (a partition's instants, the rule's Legendre nodes), and the
-assembled_tower demo holds the exactness law - the n-point rule
+assembled_tower demo checks the exactness law - the n-point rule
 integrates every power below 2n over the span to the arithmetic's
 floor. The probabilistic axis of the pspace review now has its
 collocation half: a quadrature is an ordinary grid to everything that

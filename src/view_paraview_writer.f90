@@ -3,13 +3,13 @@
 ! the UnstructuredGrid format paraview reads.
 !
 ! WHAT THE CALLER SUPPLIES. The mesh is cell-centred - cells as
-! vertices, faces as edges, measurements as fields - and holds no
-! corners, so the corners arrive beside it:
+! vertices, faces as edges, measurements as fields - and stores no
+! corners, so the corners are passed beside it:
 !
 !      m                    the mesh: its cell count and cell_volume()
 !      coordinates(:,:)     (ndim, num_points), any ndim
 !      cell_vertices(:,:)   (corner, cell), padded; 1-based points
-!      num_cell_vertices(:) the corners each cell owns
+!      num_cell_vertices(:) the corner count of each cell
 !                           - or the two as one ragged list of lists
 !                             (relation_binary), which the padded form
 !                             is converted to
@@ -17,7 +17,7 @@
 !                           4 tet, 5 hex, 6 prism, 7 pyramid), or
 !                           polygon_cell, or hypercube_cell
 !
-! and the fields to write ride the call to write, one column per
+! and the fields to write are passed to the call to write, one column per
 ! label; the cell volume is always written first, under 'volume'.
 !
 !      use view_paraview_writer, only : paraview_writer, hypercube_cell
@@ -30,7 +30,7 @@
 ! series of files is read by paraview as steps in time.
 !
 ! FROM A GMSH FILE. mesh_from_gmsh discards the corners it reads, so
-! a caller wanting the picture reads them once more through the
+! a caller that requires the plot reads them again through the
 ! loader and passes them on:
 !
 !      allocate(gl, source=gmsh_loader(file))
@@ -41,8 +41,8 @@
 !      w = paraview_writer(m, vertices, cell_vertices, &
 !                          num_cell_vertices, cell_types)
 !
-! THE HYPERCUBE. Our own convention for a cell in any dimension: a
-! box of 2^ndim corners in tensor order, the first coordinate
+! THE HYPERCUBE. The writer's convention for a cell in any dimension:
+! a cell of 2^ndim corners in tensor order, the first coordinate
 ! varying fastest - corner k (from 0) is at the upper end of axis a
 ! when bit a-1 of k is set. In two dimensions
 !
@@ -51,43 +51,43 @@
 !      1 ---- 2
 !
 ! which is NOT paraview's quadrangle cycle; the writer reorders. A
-! mapped (curved) box is still a hypercube here: the order is the
-! parametric one, the coordinates are wherever the map put them.
+! mapped (curved) cell is still a hypercube here: the order is the
+! parametric one, the coordinates are the images under the map.
 !
 ! THE DIMENSION. Paraview draws three coordinates, so the writer
-! draws the axes asked for
+! draws the axes requested
 !
 !      axes  = [1, 2, 3]     the default: the first three, or fewer
 !      axes  = [1, 3]        the xz view of a three-dimensional mesh
 !      axes  = [3, 1]        x from the third coordinate, y from the first
 !
-! and the coordinates not drawn are either dropped - a projection,
+! and the coordinates not drawn are either omitted - a projection,
 ! every cell drawn, flat - or fixed - a slice
 !
 !      slice = [0.5]                one value per coordinate not
 !      slice = [0.25, 0.75]         drawn, in coordinate order
 !
-! A slice keeps the cells whose extent along each fixed coordinate
+! A slice retains the cells whose extent along each fixed coordinate
 ! contains its value (the extent is closed, so a slice on a face
-! keeps the cells on both sides) and draws each one's cross-section
+! retains the cells on both sides) and draws each one's cross-section
 ! there: for a four-dimensional mesh, axes = [1,2,3] with one value
 ! draws hexahedra, axes = [1,2] with two values draws quadrangles,
 ! one axis with three values draws lines. The cross-section is
 ! computed for hypercube cells only - the hypercube one dimension
 ! down, its corners interpolated between the two opposite faces at
 ! the parameter the value has in the cell's extent, exact when the
-! cell is a box and first order when it is mapped. Any other cell
-! type has a clipped polytope for a section, which this writer does
-! not compute, so a slice through it is refused; a hypercube above
+! cell is rectangular and first order when it is mapped. Any other
+! cell type has a clipped polytope for a section, which this writer
+! does not compute, so a slice through it is rejected; a hypercube above
 ! three dimensions is drawn only through a slice.
 !
 !      w = paraview_writer(m, coordinates, cell_vertices, &
 !                          num_cell_vertices, cell_types, &
 !                          axes=[1, 2, 3], slice=[0.5_dp])
 !
-! THE GATE. Every array must fit the mesh's cells and the points,
-! the drawn axes must be distinct coordinates, a slice must fix
-! every coordinate not drawn, and a hypercube must own 2^ndim
+! THE PRECONDITIONS. Every array must fit the mesh's cells and the
+! points, the drawn axes must be distinct coordinates, a slice must
+! fix every coordinate not drawn, and a hypercube must have 2^ndim
 ! corners; the constructor stops the program otherwise.
 !
 ! THE FILE. Ascii .vtu, points always three wide, Float64 cell data
@@ -114,7 +114,7 @@ module view_paraview_writer
   public :: paraview_writer, linear_cell_type
   public :: polygon_cell, hypercube_cell
 
-  ! our own conventions, gmsh having no such elements
+  ! the writer's conventions, since gmsh defines no such elements
   integer, parameter :: polygon_cell   = -1  ! an agglomerated polygon
   integer, parameter :: hypercube_cell = -2  ! 2^ndim corners in tensor order
 
@@ -152,7 +152,7 @@ module view_paraview_writer
 
   !===================================================================!
   ! This datatype writes a mesh and its cell fields to paraview. It
-  ! holds what is drawn: three coordinates per point, each drawn
+  ! stores what is drawn: three coordinates per point, each drawn
   ! cell's points in order, ragged, its paraview type, and the mesh
   ! cell it draws - a slice draws fewer cells than the mesh has.
   !===================================================================!
@@ -191,7 +191,7 @@ contains
   !===================================================================!
   ! The paraview cell type of a gmsh element number, read from the
   ! element table, and of the agglomerated polygon. A number the
-  ! table has no drawing for stops the program: a polyhedron needs
+  ! table assigns no paraview type stops the program: a polyhedron needs
   ! its faces listed, which write does not do.
   !===================================================================!
 
@@ -206,7 +206,7 @@ contains
     else if (gmsh_type >= 1 .and. gmsh_type <= gmsh_kinds) then
        paraview_type = elements(gmsh_type) % vtk_type
     end if
-    call gate(paraview_type /= this % VTK_EMPTY_CELL, &
+    call require(paraview_type /= this % VTK_EMPTY_CELL, &
          & 'a cell type this writer draws: a first-order gmsh element, polygon_cell, hypercube_cell')
 
   end function element_type
@@ -231,7 +231,7 @@ contains
     case (3)
        paraview_type = this % VTK_HEXAHEDRON
     case default
-       call gate(.false., 'a hypercube of at most three drawn axes')
+       call require(.false., 'a hypercube of at most three drawn axes')
        paraview_type = this % VTK_EMPTY_CELL
     end select
 
@@ -239,8 +239,8 @@ contains
 
   !===================================================================!
   ! This is the constructor for the paraview writer. The corners may
-  ! arrive padded - one fixed width, a count per cell - or as the
-  ! ragged list they are; the padded form is the ragged one with room.
+  ! be passed padded - one fixed width, a count per cell - or as a
+  ! ragged list; the padded form is the ragged one with unused entries.
   !===================================================================!
 
   impure type(paraview_writer) function construct(m, coordinates, &
@@ -261,7 +261,7 @@ contains
   end function construct
 
   !===================================================================!
-  ! The writer from the ragged corners. The gate: the corner lists
+  ! The writer from the ragged corners. The preconditions: the corner lists
   ! must fit the mesh's cells and lie among the points, the drawn
   ! axes must be distinct coordinates, and a slice must fix every
   ! other one.
@@ -286,15 +286,15 @@ contains
     num_points       = size(coordinates, 2)
     this % num_cells = m % num_vertices()
 
-    call gate(corners % num_lists() == this % num_cells, 'one corner list per cell')
-    call gate(size(cell_types)       == this % num_cells, 'one type per cell')
-    call gate(all(corners % entries >= 1) .and. all(corners % entries <= num_points), &
+    call require(corners % num_lists() == this % num_cells, 'one corner list per cell')
+    call require(size(cell_types)       == this % num_cells, 'one type per cell')
+    call require(all(corners % entries >= 1) .and. all(corners % entries <= num_points), &
          &    'corners among the points')
     do c = 1, this % num_cells
        n = corners % length(c)
-       call gate(n >= 1, 'a corner for every cell')
+       call require(n >= 1, 'a corner for every cell')
        if (cell_types(c) == hypercube_cell) then
-          call gate(n == 2 ** ndim, 'a hypercube of 2^ndim corners')
+          call require(n == 2 ** ndim, 'a hypercube of 2^ndim corners')
        end if
     end do
 
@@ -304,25 +304,25 @@ contains
     else
        drawn = [(k, k = 1, min(ndim, 3))]
     end if
-    call gate(size(drawn) >= 1 .and. size(drawn) <= 3, 'one to three axes drawn')
-    call gate(all(drawn >= 1) .and. all(drawn <= ndim), 'drawn axes among the coordinates')
+    call require(size(drawn) >= 1 .and. size(drawn) <= 3, 'one to three axes drawn')
+    call require(all(drawn >= 1) .and. all(drawn <= ndim), 'drawn axes among the coordinates')
     do k = 2, size(drawn)
-       call gate(all(drawn(1:k-1) /= drawn(k)), 'drawn axes distinct')
+       call require(all(drawn(1:k-1) /= drawn(k)), 'drawn axes distinct')
     end do
     fixed = pack([(k, k = 1, ndim)], [(all(drawn /= k), k = 1, ndim)])
 
     sliced = .false.
     if (present(slice)) then
-       call gate(size(slice) == size(fixed), 'one slice value per coordinate not drawn')
+       call require(size(slice) == size(fixed), 'one slice value per coordinate not drawn')
        sliced = size(fixed) >= 1
     end if
 
     volume = m % cell_volume()
     call volume % real_vector(this % volumes)
-    call gate(size(this % volumes) == this % num_cells, 'one volume per cell from the mesh')
+    call require(size(this % volumes) == this % num_cells, 'one volume per cell from the mesh')
 
     if (sliced) then
-       call gate(all(cell_types == hypercube_cell), 'hypercube cells for a slice')
+       call require(all(cell_types == hypercube_cell), 'hypercube cells for a slice')
        call sectioned(this, coordinates, corners, drawn, fixed, slice)
     else
        call projected(this, coordinates, corners, cell_types, drawn)
@@ -367,7 +367,7 @@ contains
        at   = this % first_point(c)
        list = corners % list(c)
        if (cell_types(c) == hypercube_cell) then
-          call gate(ndim <= 3, 'a hypercube above three dimensions drawn through a slice')
+          call require(ndim <= 3, 'a hypercube above three dimensions drawn through a slice')
           this % cell_points(at : at + n - 1) = list(hypercube_order(ndim, [(k, k = 1, ndim)], drawn))
           this % types(c) = this % cell_type % hypercube_type(ndim)
        else
@@ -402,7 +402,7 @@ contains
     num_corners       = 2 ** ndim
     num_drawn_corners = 2 ** size(drawn)
 
-    ! the kept cells first, so the arrays are sized once
+    ! the retained cells first, so the arrays are sized once
     allocate(kept(this % num_cells))
     num_kept = 0
     do c = 1, this % num_cells
@@ -438,8 +438,8 @@ contains
 
   !===================================================================!
   ! Whether a cell's extent along every fixed axis contains the slice
-  ! value there; the extent is closed, so a slice on a face keeps the
-  ! cells on both sides.
+  ! value there; the extent is closed, so a slice on a face retains
+  ! the cells on both sides.
   !===================================================================!
 
   pure logical function within(corners, fixed, slice)
@@ -473,19 +473,19 @@ contains
     integer , intent(in)  :: drawn(:)
     real(dp), allocatable :: section(:,:)
 
-    integer, allocatable :: carried(:)
+    integer, allocatable :: remaining(:)
     integer :: f, j, k
 
     section = corners
-    carried = [(k, k = 1, size(corners, 1))]
+    remaining = [(k, k = 1, size(corners, 1))]
 
     do f = 1, size(fixed)
-       j       = findloc(carried, fixed(f), dim=1)
-       section = cut(section, fixed(f), j, slice(f))
-       carried = pack(carried, carried /= fixed(f))
+       j       = findloc(remaining, fixed(f), dim=1)
+       section = cross_section(section, fixed(f), j, slice(f))
+       remaining = pack(remaining, remaining /= fixed(f))
     end do
 
-    section = section(:, hypercube_order(size(carried), carried, drawn))
+    section = section(:, hypercube_order(size(remaining), remaining, drawn))
 
   end function sectioned_corners
 
@@ -497,7 +497,7 @@ contains
   ! along the axis is its own section.
   !===================================================================!
 
-  pure function cut(corners, axis, j, value) result (section)
+  pure function cross_section(corners, axis, j, value) result (section)
 
     real(dp), intent(in)  :: corners(:,:)
     integer , intent(in)  :: axis, j
@@ -521,33 +521,33 @@ contains
        section(:, k + 1) = (1.0_dp - t) * corners(:, k0 + 1) + t * corners(:, k1 + 1)
     end do
 
-  end function cut
+  end function cross_section
 
   !===================================================================!
-  ! The permutation from tensor order over the carried axes to
+  ! The permutation from tensor order over the remaining axes to
   ! paraview's order: the corners re-indexed with the drawn axes as
   ! the leading bits, in the order drawn, then paraview's cycle of
   ! the quadrangle and of the hexahedron's two faces.
   !===================================================================!
 
-  pure function hypercube_order(n, carried, drawn) result (perm)
+  pure function hypercube_order(n, remaining, drawn) result (perm)
 
     integer, intent(in)  :: n
-    integer, intent(in)  :: carried(:), drawn(:)
+    integer, intent(in)  :: remaining(:), drawn(:)
     integer, allocatable :: perm(:)
 
     integer, allocatable :: order(:), tensor(:), ordering(:)
     integer :: c, q, r, k
 
-    ! the drawn axes that are carried, then the rest of the carried
-    order = pack(drawn, [(any(carried == drawn(k)), k = 1, size(drawn))])
-    order = [order, pack(carried, [(all(drawn /= carried(k)), k = 1, size(carried))])]
+    ! the drawn axes that remain, then the rest of the remaining
+    order = pack(drawn, [(any(remaining == drawn(k)), k = 1, size(drawn))])
+    order = [order, pack(remaining, [(all(drawn /= remaining(k)), k = 1, size(remaining))])]
 
     allocate(tensor(2 ** n))
     do q = 0, 2 ** n - 1
        r = 0
        do c = 1, n
-          if (btest(q, c - 1)) r = ibset(r, findloc(carried, order(c), dim=1) - 1)
+          if (btest(q, c - 1)) r = ibset(r, findloc(remaining, order(c), dim=1) - 1)
        end do
        tensor(q + 1) = r + 1
     end do
@@ -587,8 +587,8 @@ contains
     num_drawn = size(this % cells)
 
     if (present(solution_labels) .and. present(phic)) then
-       call gate(size(phic, 1) == this % num_cells, 'one value per mesh cell per label')
-       call gate(size(phic, 2) == size(solution_labels), 'one label per field')
+       call require(size(phic, 1) == this % num_cells, 'one value per mesh cell per label')
+       call require(size(phic, 2) == size(solution_labels), 'one label per field')
     end if
 
     ! Open the output file for formatted writing.
@@ -706,20 +706,20 @@ contains
   end subroutine write
 
   !===================================================================!
-  ! The gate itself: state what failed, then stop. A picture of the
-  ! wrong cells must not be written.
+  ! The precondition check: state what failed, then stop. A file of
+  ! incorrect cells must not be written.
   !===================================================================!
 
-  subroutine gate(fits, what)
+  subroutine require(fits, what)
 
     logical         , intent(in) :: fits
     character(len=*), intent(in) :: what
 
     if (fits) return
 
-    write(error_unit, *) 'paraview writer gate: expected ', what
+    write(error_unit, *) 'paraview writer precondition: expected ', what
     error stop 'paraview writer: the corners do not fit the mesh'
 
-  end subroutine gate
+  end subroutine require
 
 end module view_paraview_writer

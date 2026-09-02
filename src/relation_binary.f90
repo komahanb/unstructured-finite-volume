@@ -1,39 +1,39 @@
 !=====================================================================!
 ! LEVEL 1 OF THE NEW TOWER . THE BINARY SPECIALIZATION
 !
-! Arity two earns its own contract (AGENTS.md 5.3) because arity two
-! has its own canonical questions. For
+! Arity two has its own contract (AGENTS.md 5.3) because arity two
+! has its own canonical queries. For
 !
 !      P  <=  A x B
 !
-! the specialization adds what no general arity can promise:
+! the specialization adds what no general arity can provide:
 !
 !      source, target      the two ends of the signature, named
 !      image(a)            the members of B that a relates to
 !      preimage(b)         the members of A that relate to b
 !
-! and the transpose is the canonical slot permutation, delivered
+! and the transpose is the canonical slot permutation, produced
 ! here as a VIEW.
 !
 !                    MEMBERS IN, MEMBERS OUT
 !
 ! Every query uses MEMBER VALUES, never storage rows. A sparse
-! carrier may hold { 10 20 30 }; image(20) is asked with 20 and
-! answers members of the far side. The bridge between a member and
+! carrier may store { 10 20 30 }; image(20) is called with 20 and
+! returns members of the other domain. The map between a member and
 ! its storage row is the carrier's own local_index - the inverse
 ! enumeration the carriers guarantee - so the indexed lookup below
-! never assumes a domain is 1..n. The image of an outsider is the
-! empty set: relating to nothing is an answer, not an error.
+! never assumes a domain is 1..n. The image of a non-member is the
+! empty set: relating to nothing is a result, not an error.
 !
 !                    TWO TIERS OF TRAVERSAL
 !
 ! The deferred primitives are the VIEWS: image_view and
-! preimage_view answer a fibre as a pointer into the stored index -
-! no allocation, no copy, the hot-loop road (AGENTS.md 33). The
-! allocating image and preimage stand above them as conveniences,
-! written once for the whole family as copies of the views. A
-! caller holding a view holds a borrow: it lives while the relation
-! lives, and no longer.
+! preimage_view return a fibre as a pointer into the stored index -
+! no allocation, no copy, the hot-loop path (AGENTS.md 33). The
+! allocating image and preimage are defined above them as
+! conveniences, written once for the whole family as copies of the
+! views. A caller storing a view stores a non-owning reference: the
+! view is valid while the relation is allocated, and no longer.
 !
 !                        THE CSR REPRESENTATION
 !
@@ -45,52 +45,54 @@
 ! so each fibre is one row slice, has([a,b]) is one row scan, and
 ! construction - validation, duplicate collapse, both index builds -
 ! is linear in members plus tuples. Set semantics hold here exactly
-! as in the stored relation: a tuple handed in twice is in the
-! relation once, first appearance keeping its place.
+! as in the stored relation: a tuple passed in twice is in the
+! relation once, first appearance retaining its position.
 !
-! COMPLEXITY, PARAMETERIZED HONESTLY. Every fibre first asks the
-! carrier where the member stands, so the true cost is
+! COMPLEXITY, PARAMETERIZED EXACTLY. Every fibre first reads the
+! member's position from the carrier, so the total cost is
 !
 !      T_image(a)  =  T_local_index(a) + O(deg a)
 !
-! and the slice alone is O(deg). A counted carrier answers
-! local_index in O(1), so the promise collapses to O(deg) there -
+! and the slice alone is O(deg). A counted carrier computes
+! local_index in O(1), so the bound reduces to O(deg) there -
 ! the mesh path's case. A carrier whose local_index scans (the
-! listed fixture does) pays its scan on every query; if such a
-! carrier ever matters at scale, it owes itself an index.
+! listed fixture does) performs its scan on every query; if such a
+! carrier is used at scale, it requires an index.
 !
-!                     THE VIEW, AND ITS DEBT
+!                     THE VIEW, AND ITS LIFETIME REQUIREMENT
 !
-! transpose_of(r) answers a lightweight view: O(1) to make, no
+! transpose_of(r) returns a view: O(1) to construct, no
 ! topology copied, image and preimage swapped, the signature read
-! in reverse. A view BORROWS - it holds its base by pointer, and
-! the base must outlive it; the caller's base must carry the target
-! attribute. That is the whole cost of an O(1) transpose in a
-! language of value semantics, and it is stated rather than hidden.
+! in reverse. A view IS NON-OWNING - the view stores its base by pointer,
+! and the base must outlive the view; the caller's base must have
+! the target attribute. That is the whole cost of an O(1) transpose
+! in a language of value semantics, and it is stated explicitly.
 !
 ! THE OWNERSHIP POLICY, DECLARED FOR THE LEVELS ABOVE. When the
-! graph arrives and contains relations (AGENTS.md 14), the law is:
+! graph is constructed and contains relations (AGENTS.md 14), the
+! law is:
 !
 !      the graph OWNS stable relations;
-!      views and fibre borrows may BORROW them.
+!      views and fibre references may REFERENCE them.
 !
-! A graph accessor must therefore hand out its relations by
+! A graph accessor must therefore return its relations by
 ! reference to owned, stable storage - never as temporary copies
-! that a view or fibre could dangle into. Whoever owns the base
-! decides its lifetime; every borrower lives strictly inside it.
+! that a view or fibre could reference after deallocation. The owner
+! of the base decides its lifetime; every borrower's lifetime is
+! strictly contained in it.
 !
 !                  IDENTITY IS NOT EQUALITY
 !
-! same_as answers minted identity: a view signs its own token, so a
-! view is never same_as its base, and the involution
+! same_as compares assigned identity: a view has its own token, so
+! a view is never same_as its base, and the involution
 !
 !      (P^T)^T = P
 !
 ! is a statement about EXTENSION - the same tuples over the same
-! domains - not about stamps. Test it by comparing tuples and
-! judging domains slot against slot; only a deliberate
-! canonicalization could ever promise it by identity, and none is
-! promised here.
+! domains - not about tokens. Test it by comparing tuples and
+! comparing domains slot against slot; only a deliberate
+! canonicalization could guarantee it by identity, and none is
+! guaranteed here.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -112,7 +114,7 @@ module relation_binary
 
   !===================================================================!
   ! The abstract binary relation: the general contract, plus the
-  ! questions only arity two can ask. Arity is answered here, once,
+  ! queries only arity two defines. Arity is returned here, once,
   ! for every descendant: two.
   !===================================================================!
 
@@ -123,7 +125,7 @@ module relation_binary
      procedure :: arity => binary_arity
 
      !----------------------------------------------------------------!
-     ! The deferred primitives: fibres as borrows, no allocation.
+     ! The deferred primitives: fibres as non-owning references, no allocation.
      !----------------------------------------------------------------!
 
      procedure(binary_fibre_view_interface), deferred :: image_view
@@ -131,7 +133,8 @@ module relation_binary
 
      !----------------------------------------------------------------!
      ! The conveniences, written once for the family: copies of the
-     ! views, for callers who would rather own than borrow.
+     ! views, for callers that require an owned copy rather than a
+     ! non-owning reference.
      !----------------------------------------------------------------!
 
      procedure :: image
@@ -159,23 +162,24 @@ module relation_binary
   !===================================================================!
 
   !===================================================================!
-  ! TWO QUESTIONS, TWO STORES, AND THEY DO NOT MEET.
+  ! TWO QUERIES, TWO STORES, AND THEY ARE DISJOINT.
   !
   !     signature      WHICH domains        semantic, identities
   !     coordinates    WHICH ROW a member   compiled, numbering only
   !
-  ! The signature answers domain(k) and nothing else; the coordinates
-  ! answer local_index and nothing else. A coordinate representation
-  ! carries NO identity - it cannot say which set it numbers, and does
-  ! not need to, because the signature beside it already did.
+  ! The signature returns domain(k) and nothing else; the coordinates
+  ! return local_index and nothing else. A coordinate representation
+  ! stores NO identity - it cannot state which set it numbers, and
+  ! does not need to, because the signature beside it already does.
   !
-  ! The coordinates are held BY VALUE, copied out of the caller's set
-  ! map at construction. That is deliberate and is not the field's
-  ! situation: many fields share one domain, so copying an extent per
-  ! field was measured harmful; a CSR relation's row numbering is part
-  ! of its own compiled execution contract, and the hot path may not go
-  ! looking for it. So it is here, and image/preimage/has reach it
-  ! directly - no map row scan, no graph traversal, no label lookup.
+  ! The coordinates are stored BY VALUE, copied out of the caller's
+  ! set map at construction. That is deliberate and differs from the
+  ! field's case: many fields share one domain, so copying an extent
+  ! per field was measured to cost too much; a CSR relation's row
+  ! numbering is part of its own compiled execution contract, and the
+  ! hot path may not search for it. So the coordinates are stored
+  ! here, and image/preimage/has read them directly - no map row
+  ! scan, no graph traversal, no label lookup.
   !===================================================================!
 
   type, extends(binary_relation) :: csr_relation
@@ -208,9 +212,9 @@ module relation_binary
   end interface csr_relation
 
   !===================================================================!
-  ! The transpose view: a borrower. It holds its base by pointer
-  ! and answers every question through it, ends swapped. The base
-  ! must outlive the view.
+  ! The transpose view: a borrower. The view stores its base by
+  ! pointer and evaluates every query through the base, ends
+  ! swapped. The base must outlive the view.
   !===================================================================!
 
   type, extends(binary_relation) :: transposed_relation
@@ -226,20 +230,21 @@ module relation_binary
      procedure :: image_view    => view_image_view
      procedure :: preimage_view => view_preimage_view
 
-     ! No materialized binding, on purpose: the root's fail-closed
-     ! default already answers false, and a borrower - copying it
-     ! copies a pointer to a base it does not keep alive - is
-     ! exactly what the default guards against. Views live OVER
-     ! graph-owned relations, never inside them.
+     ! No materialized binding, deliberately: the root's default
+     ! already returns false, and a borrower - copying it copies a
+     ! pointer to a base it does not keep allocated - is exactly
+     ! what the default rejects. Views are defined OVER graph-owned
+     ! relations, never stored inside them.
 
   end type transposed_relation
 
   !===================================================================!
   ! A list of lists, compressed: the entries of list k are
   ! entries(first(k) : first(k+1) - 1). This is the shape group_by_key
-  ! produces and every compressed walk reads. The padded shape - one
-  ! fixed width with a count per list - is the same relation stored
-  ! with room, and the two are converted here and nowhere else.
+  ! produces and every compressed traversal reads. The padded shape -
+  ! one fixed width with a count per list - is the same relation
+  ! stored with unused capacity, and the two are converted here and
+  ! nowhere else.
   !===================================================================!
 
   type :: ragged
@@ -260,7 +265,7 @@ module relation_binary
 contains
 
   !===================================================================!
-  ! Arity two, for every binary implementation, forever.
+  ! Arity two, for every binary implementation.
   !===================================================================!
 
   pure integer function binary_arity(this)
@@ -292,7 +297,7 @@ contains
   end function target
 
   !===================================================================!
-  ! The conveniences: own a copy of what the view borrows. Written
+  ! The conveniences: an owned copy of what the view references. Written
   ! once, here, for every binary implementation present and future.
   !===================================================================!
 
@@ -318,14 +323,14 @@ contains
 
   !===================================================================!
   ! Declare a CSR relation: a name, the two carriers - any
-  ! concretions, each judged by its own laws - and the tuple table,
-  ! one column per tuple, members throughout. Refusals first, as at
-  ! every gate of the level; then the duplicate collapse and both
-  ! index builds, all linear:
+  ! concretions, each validated by its own checks - and the tuple
+  ! table, one column per tuple, members throughout. Input checks
+  ! first, as at every constructor of the level; then the duplicate
+  ! collapse and both index builds, all linear:
   !
   !      count rows        one pass with local_index
   !      place tuples      counting sort by source row
-  !      collapse          one stamp array over target rows
+  !      collapse          one marker array over target rows
   !      backward build    the same, mirrored
   !===================================================================!
 
@@ -338,7 +343,7 @@ contains
     integer         , intent(in) :: table(:,:)
     type(set_map)   , intent(in) :: sets
 
-    integer, allocatable :: aloc(:), bloc(:), order(:), stamp(:)
+    integer, allocatable :: aloc(:), bloc(:), order(:), marker(:)
     integer, allocatable :: keepa(:), keepb(:)
     integer              :: na, nb, nt
     integer              :: j, p, q, row, col, kept
@@ -355,8 +360,8 @@ contains
     !----------------------------------------------------------------!
     ! COMPILATION. The map is read here and only here: the two extents
     ! are copied in, and from this line on the relation numbers its own
-    ! rows. Nothing below, and nothing in image, preimage or has, asks
-    ! the map anything.
+    ! rows. Nothing below, and nothing in image, preimage or has,
+    ! reads the map.
     !----------------------------------------------------------------!
 
     call sets % extent_of(source, this % source_coords)
@@ -372,14 +377,14 @@ contains
     do j = 1, nt
        if (.not. this % source_coords % has(table(1, j)) .or. &
             & .not. this % target_coords % has(table(2, j))) then
-          error stop 'relation_binary: a tuple names a member its domain does not hold'
+          error stop 'relation_binary: a tuple names a member its domain does not contain'
        end if
        aloc(j) = this % source_coords % local_index(table(1, j))
        bloc(j) = this % target_coords % local_index(table(2, j))
     end do
 
-    ! Forward: group the tuples by source row - duplicates and all -
-    ! then collapse each row with one stamp sweep.
+    ! Forward: group the tuples by source row - duplicates included -
+    ! then collapse each row with one pass over the marker array.
     block
       integer, allocatable :: ptr(:), identity(:)
       allocate(identity(nt))
@@ -387,9 +392,9 @@ contains
       call group_by_key(na, aloc, identity, ptr, order)
 
       allocate(this % xfwd(na + 1))
-      allocate(this % tgt(nt), stamp(max(nb, 1)))
+      allocate(this % tgt(nt), marker(max(nb, 1)))
       allocate(keepa(nt), keepb(nt))
-      stamp = 0
+      marker = 0
       kept  = 0
       do row = 1, na
          p = ptr(row)
@@ -397,8 +402,8 @@ contains
          this % xfwd(row) = kept + 1
          do j = p, q
             col = bloc(order(j))
-            if (stamp(col) /= row) then
-               stamp(col)       = row
+            if (marker(col) /= row) then
+               marker(col)       = row
                kept             = kept + 1
                this % tgt(kept) = table(2, order(j))
                keepa(kept)      = table(1, order(j))
@@ -410,7 +415,7 @@ contains
       this % nnz          = kept
     end block
 
-    ! Backward: the kept tuples grouped by target row.
+    ! Backward: the retained tuples grouped by target row.
     call group_by_key(nb, keepb(1:kept), keepa(1:kept), &
          & this % xbwd, this % src)
 
@@ -433,8 +438,8 @@ contains
 
   !===================================================================!
   ! The fibre views: one local_index, one slice, zero allocation.
-  ! Members in, members out; an outsider's fibre is the empty
-  ! borrow. Cost, honestly: T_local_index(member) + O(1) to make,
+  ! Members in, members out; a non-member's fibre is the empty
+  ! slice. Cost: T_local_index(member) + O(1) to construct,
   ! O(degree) to read.
   !===================================================================!
 
@@ -475,7 +480,7 @@ contains
   end function csr_preimage_view
 
   !===================================================================!
-  ! Membership: one row, one scan - O(degree), as promised.
+  ! Membership: one row, one scan - O(degree), as stated above.
   !===================================================================!
 
   pure logical function csr_has(this, tuple)
@@ -532,9 +537,9 @@ contains
   end subroutine csr_tuples
 
   !===================================================================!
-  ! Make the transpose view: O(1), nothing copied, a fresh identity
-  ! of its own. The base must be a target, and must outlive the
-  ! view - a view borrows, it never owns.
+  ! Construct the transpose view: O(1), nothing copied, a new
+  ! identity of its own. The base must have the target attribute,
+  ! and must outlive the view - a view references, it never owns.
   !===================================================================!
 
   function transpose_of(base) result(view)
@@ -548,7 +553,7 @@ contains
   end function transpose_of
 
   !===================================================================!
-  ! The view's answers: everything through the base, ends swapped.
+  ! The view's results: everything through the base, ends swapped.
   !===================================================================!
 
   type(graph) function view_domain(this, position) result(domain)
@@ -626,7 +631,7 @@ contains
   ! Group a finite family of (key, value) pairs by key: the fibres
   ! of a stored binary relation over one slot, as the compressed
   ! rows ptr(k) .. ptr(k+1)-1 into grouped(:). One counting pass,
-  ! one prefix sum, one scatter - stable, so arrival order is kept
+  ! one prefix sum, one scatter - stable, so input order is retained
   ! within each key. A key outside 1..nkeys is skipped: a pair with
   ! no key belongs to no fibre. This is the one grouping kernel in
   ! the codebase; CSR builds, incidence lists, padded transposes,
@@ -673,7 +678,7 @@ contains
   !===================================================================!
   ! Transpose a binary relation stored as padded lists: forward(k,
   ! key) lists the values of each key with per-key counts; the
-  ! result lists, for each value 1..n_values, the keys that touch
+  ! result lists, for each value 1..n_values, the keys that list
   ! it, in the same padded shape. One grouping, then the pad.
   !===================================================================!
 

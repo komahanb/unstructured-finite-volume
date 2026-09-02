@@ -8,8 +8,8 @@
 !      residual  =  (the component it determines)
 !                     -  sum over its edges of weight * (its source)
 !
-! so the determined component's column carries plus one and every
-! source column carries minus its weight. The constant is zero: a
+! so the determined component's column has plus one and every
+! source column has minus its weight. The constant is zero: a
 ! derived constraint is homogeneous, and the affine part belongs to
 ! the initial conditions, which are not assembled here.
 !
@@ -32,7 +32,7 @@
 ! A derived constraint is linear in the state, so the stencil built
 ! here IS its Jacobian: the stencil's partial action applies the same
 ! weights to a direction. There is no second object to build and no
-! second path to keep in step.
+! second code path to keep consistent.
 !
 !             WHAT IS REFUSED
 !
@@ -89,7 +89,7 @@ contains
   !===================================================================!
   ! Refuse two edges that enter the same row from the same column.
   ! The edges are counted into their rows first, so each row's
-  ! columns are compared only among themselves: a row holds as many
+  ! columns are compared only among themselves: a row contains as many
   ! columns as the scheme reaches, which is small, and the whole
   ! check costs one pass over the edges and one over the unknowns.
   !===================================================================!

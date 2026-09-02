@@ -3,9 +3,9 @@
 ! that also declares how the scheme marches.
 !
 ! Beyond the edge rule it inherits, a family declares how far back
-! its widest constraint reads, how many stages one instant holds, and
+! its widest constraint reads, how many stages one instant contains, and
 ! which derivative degree it solves for. The coefficients it produces
-! are dimensionless: the weight an edge finally carries is the
+! are dimensionless: the weight an edge finally stores is the
 ! coefficient times a power of the step, and that power is fixed by
 ! the two degrees the edge joins, which operation_weight multiplies
 ! in.
@@ -23,7 +23,7 @@
 ! basis function through those nodes (a difference) or its integral
 ! over the last step (a quadrature). Both functionals are supplied
 ! here for the families that extend this type. On a uniform grid
-! every theta_j is j and the tabulated coefficients come out; they
+! every theta_j is j and the tabulated coefficients result; they
 ! are the uniform value of the formula, not a separate case.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
@@ -80,9 +80,9 @@ module operation_family
 
      !----------------------------------------------------------------!
      ! The sources of the derived row that determines one degree: how
-     ! many instants back each one lies, and what degree it holds. A
+     ! many instants back each one lies, and what degree it has. A
      ! degree the family determines by no derived row gives an empty
-     ! pattern rather than stopping, so a caller may ask about every
+     ! pattern rather than stopping, so a caller may query every
      ! degree.
      !----------------------------------------------------------------!
 
@@ -218,9 +218,9 @@ contains
 
   end function integral_over_step
   !===================================================================!
-  ! What a family is unless it says otherwise: one stage, one instant
-  ! of history, and the primary unknown the equation's own highest
-  ! derivative. bdf reaches further back and solves for the value;
+  ! The defaults of a family unless it overrides them: one stage, one
+  ! instant of history, and the primary unknown the equation's own
+  ! highest derivative. bdf reads further back and solves for the value;
   ! dirk has as many stages as its tableau has weights.
   !===================================================================!
 
@@ -241,16 +241,16 @@ contains
   ! A rule on m nodes integrates the degree m - 1 interpolant through
   ! them exactly. Over a step of width h that leaves a local error of
   ! order h**(m+1), and over the T/h steps of the horizon an error of
-  ! order h**m. So m nodes carry order m.
+  ! order h**m. So m nodes give order m.
   !
-  ! WHAT A FAMILY ANSWERS UNLESS IT SAYS OTHERWISE: one node at
+  ! WHAT A FAMILY RETURNS UNLESS IT OVERRIDES THIS: one node at
   ! weight one, which is the rectangle rule and first order. A family
-  ! whose stencil already holds the instants of an interpolatory rule
-  ! answers that rule instead, and a stage family is never asked -
-  ! its quadrature is the tableau, read through stage_weight.
+  ! whose stencil already contains the instants of an interpolatory
+  ! rule returns that rule instead, and a stage family is never
+  ! called - its quadrature is the tableau, read through stage_weight.
   !
   ! MATCHING THE RULE TO THE STATES. The values integrated are
-  ! themselves accurate to order p, so a rule finer than p buys
+  ! themselves accurate to order p, so a rule finer than p gains
   ! nothing: the error is of order h**min(m,p) either way. Taking m
   ! as the family's own order is therefore exactly enough, and the
   ! weights grow and alternate in sign beyond it.
@@ -265,7 +265,7 @@ contains
 
     associate (u1 => this); end associate
     if (k < 1 .or. k > size(dt)) then
-       error stop 'operation_family: a quadrature stands at an instant of the block'
+       error stop 'operation_family: a quadrature is evaluated at an instant of the block'
     end if
     allocate(weight(1))
     weight(1) = derivative_terms(1.0_dp, dt(k))
@@ -313,7 +313,7 @@ contains
 
   !===================================================================!
   ! The offsets negated: the nodes a family reads its coefficients at
-  ! lie the other way from the instant they are measured against.
+  ! lie on the opposite side of the instant they are measured from.
   !===================================================================!
 
   pure function negated(u) result(minus_u)

@@ -1,21 +1,21 @@
 !=====================================================================!
-! The mesh: a stored graph that lives in space.
+! The mesh: a stored graph embedded in space.
 !
-! LEVEL 1 OF THE STRATIFICATION - for measurements are calculus
-! content: values riding on structure, no goal anywhere in them.
-! This is the tower's one inheritance crossing: the mesh IS a graph
+! LEVEL 1 OF THE STRATIFICATION - measurements are calculus
+! content: values defined on structure, with no objective in them.
+! This is the tower's one use of inheritance: the mesh IS a graph
 ! - cells are the vertices, interior faces the edges, boundary
 ! faces the edges without heads - so it extends the stored graph
-! rather than holding one.
+! rather than containing one.
 !
 !     +-----+-----+
 !     |  1  |  2  |            (1)---(2)
-!     +-----+-----+             |     |        the same mesh, seen
-!     |  3  |  4  |            (3)---(4)       as its graph
+!     +-----+-----+             |     |        the same mesh, as
+!     |  3  |  4  |            (3)---(4)       its graph
 !     +-----+-----+
 !
-! Everything else is measurement hung on that graph, carried as typed
-! fields with compiled names:
+! Everything else is measurement defined on that graph, stored as
+! typed fields with fixed names:
 !
 !      cell_volume()    one number per cell
 !      cell_centre()    three per cell
@@ -26,14 +26,15 @@
 !      face_weights()   the interpolation weight, one per face
 !
 ! No string names any of these. The dictionary in
-! geometry-to-operator-mapping.md says which operator argument each
-! one feeds; an operator receives those numbers at construction and
-! never reads the mesh.
+! geometry-to-operator-mapping.md specifies which operator argument
+! each one supplies; an operator receives those numbers at
+! construction and never reads the mesh.
 !
-! THE GATE AT LOAD. Every geometry array must match the structure it
-! measures - one volume per cell, one area per face - and the
-! constructor stops the program on a mismatch rather than storing a
-! lie. A mesh that loads is a mesh whose measurements fit.
+! THE CHECK AT CONSTRUCTION. Every geometry array must match the
+! structure it measures - one volume per cell, one area per face -
+! and the constructor stops the program on a mismatch rather than
+! storing inconsistent data. A mesh that is constructed is a mesh
+! whose measurements match its structure.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -88,9 +89,9 @@ contains
   !===================================================================!
   ! Build a mesh from its structure and its measurements. The
   ! structure arguments are the stored graph's own; the geometry
-  ! arrives as plain arrays, one entry per cell or per face, vector
-  ! quantities three wide in entry order. The gate: every array must
-  ! fit the structure, or the constructor stops.
+  ! is passed as plain arrays, one entry per cell or per face, vector
+  ! quantities three wide in entry order. The check: every array must
+  ! match the structure, or the constructor stops.
   !===================================================================!
 
   impure type(mesh) function create(nv, tails, heads, volumes, &
@@ -125,17 +126,17 @@ contains
     if (present(dimension)) d = dimension
     this % dimension = d
 
-    ! The gate: measurements must fit the structure they measure.
-    call gate(size(volumes)      == nv    , 'one volume per cell')
-    call gate(size(cell_centres) == d * nv, 'd centre parts per cell')
-    call gate(size(areas)        == ne    , 'one area per face')
-    call gate(size(deltas)       == ne    , 'one delta per face')
-    call gate(size(normals)      == d * ne, 'd normal parts per face')
-    call gate(size(face_centres) == d * ne, 'd centre parts per face')
-    call gate(size(weights)      == ne    , 'one weight per face')
+    ! The check: measurement sizes must match the structure they measure.
+    call require(size(volumes)      == nv    , 'one volume per cell')
+    call require(size(cell_centres) == d * nv, 'd centre parts per cell')
+    call require(size(areas)        == ne    , 'one area per face')
+    call require(size(deltas)       == ne    , 'one delta per face')
+    call require(size(normals)      == d * ne, 'd normal parts per face')
+    call require(size(face_centres) == d * ne, 'd centre parts per face')
+    call require(size(weights)      == ne    , 'one weight per face')
 
-    ! Geometry rides the graph's OWN carriers, so a field's domain
-    ! answers the mesh identity every consumer will ask about.
+    ! Geometry is defined on the graph's OWN carriers, so a field's
+    ! domain returns the mesh identity every consumer compares against.
     cells = this % vertex_set()
     faces = this % edge_set()
 
@@ -158,26 +159,26 @@ contains
   end function create
 
   !===================================================================!
-  ! The gate itself: state what failed, then stop. A mesh with wrong
-  ! measurements must not exist.
+  ! The check itself: report which condition failed, then stop. A
+  ! mesh with inconsistent measurements must not exist.
   !===================================================================!
 
-  subroutine gate(fits, what)
+  subroutine require(fits, what)
 
     logical         , intent(in) :: fits
     character(len=*), intent(in) :: what
 
     if (fits) return
 
-    write(error_unit, *) 'mesh gate: expected ', what
-    error stop 'mesh: a measurement does not fit the structure'
+    write(error_unit, *) 'mesh check: expected ', what
+    error stop 'mesh: a measurement size does not match the structure'
 
-  end subroutine gate
+  end subroutine require
 
   !===================================================================!
-  ! The seven answers. Each is a copy of the stored field, so a
-  ! caller may read it, hand its values to an operator, and never
-  ! reach back into the mesh.
+  ! The seven accessors. Each returns a copy of the stored field, so
+  ! a caller may read it, pass its values to an operator, and never
+  ! reference the mesh again.
   !===================================================================!
 
   type(stored_field) function cell_volume(this)

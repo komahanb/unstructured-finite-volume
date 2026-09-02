@@ -2,22 +2,22 @@
 ! The gauss-seidel iteration on the tower, swept by colour.
 !
 ! Jacobi corrects every cell from the old state; gauss-seidel lets
-! each correction see the ones already made. On a graph the safe
-! order is the colouring the sweep_order delegation already answers:
-! all cells of one colour share no face, so a whole colour updates
-! at once, each colour seeing every colour before it,
+! each correction read the corrections already made. On a graph the
+! valid order is the colouring the sweep_order delegation already
+! returns: all cells of one colour share no face, so a whole colour
+! updates at once, each colour reading every colour before it,
 !
 !      for each colour:  r = rhs - A x       (x already partly new)
 !                        x <- x + omega * r / diag   on that colour
 !
 ! The residual measured at the top of an iteration is the first
 ! colour's, so a sweep of c colours costs c products with the
-! operator. Which colouring is swept is a question the type answers
-! for itself - jacobi is this iteration over one colour class, and
-! says so by extension.
+! operator. Which colouring is swept is determined by the type
+! itself - jacobi is this iteration over one colour class, and
+! states so by extension.
 !
-! SOR is not another solver. It is this one at omega away from one -
-! a parameter, absorbed, exactly as the admission law orders.
+! SOR is not another solver. SOR is this one at omega not equal to
+! one - a parameter, absorbed, as the admission law requires.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -39,12 +39,12 @@ module operation_gauss_seidel
      real(dp) :: omega = 1.0_dp
 
      ! the diagonal, its factorisations and the colouring belong to the
-     ! attached operator, not to one solve: probing them costs
+     ! attached operator, not to one solve: computing them costs
      ! maxval(colours) * block_width operator applications, so they are
-     ! held until the operator is attached again
-     real(dp)                 , allocatable, private :: held_diagonal(:,:,:)
-     type(dense_factorisation), allocatable, private :: held_block(:)
-     integer                  , allocatable, private :: held_colours(:)
+     ! stored until the operator is attached again
+     real(dp)                 , allocatable, private :: stored_diagonal(:,:,:)
+     type(dense_factorisation), allocatable, private :: stored_block(:)
+     integer                  , allocatable, private :: stored_colours(:)
 
    contains
 
@@ -126,19 +126,19 @@ contains
 
        call this % colouring(nb, colours)
 
-       this % held_diagonal = d
+       this % stored_diagonal = d
        if (allocated(block)) then
-          if (allocated(this % held_block)) deallocate(this % held_block)
-          allocate(this % held_block, source=block)
+          if (allocated(this % stored_block)) deallocate(this % stored_block)
+          allocate(this % stored_block, source=block)
        end if
-       this % held_colours   = colours
+       this % stored_colours   = colours
        this % diagonal_valid = .true.
 
     else
 
-       d       = this % held_diagonal
-       colours = this % held_colours
-       if (allocated(this % held_block)) allocate(block, source=this % held_block)
+       d       = this % stored_diagonal
+       colours = this % stored_colours
+       if (allocated(this % stored_block)) allocate(block, source=this % stored_block)
 
     end if
     call this % begin_imbalance()

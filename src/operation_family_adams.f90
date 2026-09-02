@@ -12,8 +12,8 @@
 ! with alpha_i the integral over the last step, in scaled units, of
 ! the i-th basis function through those instants. So one edge rule
 ! serves both rows: a source one degree above the constraint's, at
-! offset i < p, carries alpha_i; the source of the same degree at
-! offset one carries one. The row determining q reads q'_k itself
+! offset i < p, has coefficient alpha_i; the source of the same degree
+! at offset one has coefficient one. The row determining q reads q'_k itself
 ! at offset zero, and that value is determined at the same instant
 ! by the row above - the coupled block solves both, and no
 ! elimination is written here.
@@ -94,8 +94,8 @@ contains
 
   end function adams_history_depth
   !===================================================================!
-  ! The row on degree d carries the same degree one instant back and
-  ! quadratures the degree above it over the last p instants. The
+  ! The row on degree d reads the same degree one instant back and
+  ! integrates the degree above it over the last p instants. The
   ! highest degree belongs to the governing constraint and has no
   ! pattern here.
   !===================================================================!
@@ -154,10 +154,10 @@ contains
     end if
 
     if (source_degree == determines) then
-       if (i /= 1) error stop 'operation_family_adams: the same degree is carried one instant'
+       if (i /= 1) error stop 'operation_family_adams: the same degree is read at offset one'
        c = derivative_terms(1.0_dp, dt(head))
     else if (source_degree == determines + 1) then
-       if (i >= this % order) error stop 'operation_family_adams: the quadrature reaches p instants'
+       if (i >= this % order) error stop 'operation_family_adams: the quadrature spans p instants'
        c = quadrature_weight(dt, head, i, this % order)
     else
        error stop 'operation_family_adams: a source is the constraint''s degree or one above'
@@ -169,10 +169,10 @@ contains
   ! THE QUADRATURE OVER ONE STEP FOR ADAMS. The rule is the one the
   ! family already advances its state with - the same p instants and
   ! the same weights - so a functional integrated here and a state
-  ! marched here are integrated by one rule and carry one order.
+  ! marched here are integrated by one rule and have one order.
   !
-  ! Near the start of a block fewer instants stand behind k than p,
-  ! and the rule shortens to what is there.
+  ! Near the start of a block fewer than p instants precede k, and
+  ! the rule shortens to the instants available.
   !===================================================================!
 
   pure subroutine adams_step_quadrature(this, dt, k, weight)
@@ -185,7 +185,7 @@ contains
     integer :: nodes, j
 
     if (k < 1 .or. k > size(dt)) then
-       error stop 'operation_family_adams: a quadrature stands at an instant of the block'
+       error stop 'operation_family_adams: a quadrature is evaluated at an instant of the block'
     end if
     nodes = min(this % order, k)
     allocate(weight(nodes))

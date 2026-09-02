@@ -6,8 +6,8 @@
 !
 !      r  <=  S_part x S_whole
 !
-! and the whole point of this module is that the same value drives all
-! four motions:
+! and the purpose of this module is that the same value determines all
+! four operations:
 !
 !      partition_graph(r, G)     ->  G_p        r is written here
 !      partition_data (r, D_G)   ->  D_p        r read forward
@@ -17,7 +17,7 @@
 ! Nothing else may write it. A partition that invented one relation
 ! and an assembly that invented another would agree only by accident,
 ! and would disagree in exactly the place - a partition boundary -
-! where the disagreement is hardest to see.
+! where the disagreement is hardest to detect.
 !
 !                        WHAT THE RELATION IS
 !
@@ -41,48 +41,48 @@
 !
 ! A relation stored as one array per carrier, therefore, and read
 ! forward or backward on demand. The arrays ARE the tuples; they are
-! not a numbering that stands beside the mathematics.
+! not a numbering separate from the mathematics.
 !
-!                    WHAT RIDES BESIDE THE RELATION
+!                   WHAT IS STORED BESIDE THE RELATION
 !
 ! Ownership is not part of r. It is a FIELD on the part's members,
 !
 !      own : S_part -> K
 !
-! taking values in the set of parts, and it answers a question r
-! cannot: when the parts are added back together, which one speaks
-! for a member that several of them hold? Exactly one, or a conserved
-! quantity is counted twice. So it travels here, beside r, because
-! the two are read together on every backward motion and separating
-! them would let a caller hold one without the other.
+! taking values in the set of parts, and it determines what r
+! cannot: when the parts are assembled, which one contributes a
+! member that several of them contain. Exactly one, or a conserved
+! quantity is counted twice. So it is stored here, beside r, because
+! the two are read together on every backward read and separating
+! them would let a caller store one without the other.
 !
-!                   WHY IT CARRIES SET IDENTITIES TOO
+!                   WHY IT STORES SET IDENTITIES TOO
 !
-! A bare pair of arrays could not say WHICH sets it relates, so a
-! caller holding two relations could hand the wrong one to the wrong
-! part and be wrong in silence. That is not hypothetical: it is the
+! A bare pair of arrays could not record WHICH sets it relates, so a
+! caller that stores two relations could pass the wrong one to the
+! wrong part without any error. That is not hypothetical: it is the
 ! defect this design was built after, and it is why the four set
-! identities and their counts sit beside the arrays, and why
-! `describes(g)` exists - the one question that makes a relation
+! identities and their counts are stored beside the arrays, and why
+! `describes(g)` exists - the one predicate that makes a relation
 ! checkable against the graph it claims to relate.
 !
 !      ONE RELATION PER PART. NEVER ONE RELATION ACROSS TWO PARTS.
 !
-!                       WHAT IT MUST NOT CARRY
+!                       WHAT IT MUST NOT STORE
 !
 ! No set_map, no label_map, no inclusion_map, and it has none. A
-! representation says HOW members are numbered here. What a set MEANS
-! is the caller's, held in the caller's maps, and passed at the
-! semantic boundary - never smuggled inside an action.
+! representation specifies HOW members are numbered here. What a set
+! MEANS is the caller's, stored in the caller's maps, and passed at
+! the semantic boundary - never embedded inside an action.
 !
 ! WHY partition_relation AND NOT relation. relation_finitary already
 ! owns `relation` and `stored_relation`, and they are a different
-! thing: they have identity - they declare, they sign, they answer
+! object: they have identity - they declare, they sign, they evaluate
 ! same_as - and they are built THROUGH a set map that describes their
 ! domains. This one has no identity, is copied freely into an action,
 ! and must be constructible where no map exists yet: inside the cut,
 ! before anything has described the part's carriers. Two public types
-! named `relation` would be the ambiguity, not the economy.
+! named `relation` would be an ambiguity, not a saving.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -101,24 +101,24 @@ module relation_partition
   ! One relation: which sets it relates, how many members on each
   ! side, and the tuples themselves - one array per carrier.
   !
-  ! A graph born whole stands in the IDENTITY relation to itself:
+  ! A graph created whole is in the IDENTITY relation to itself:
   ! one part, every member its own name, everything owned here. That
-  ! is not a special case bolted on - it is what the identity relation
-  ! IS, and the queries below answer it without an allocated array
+  ! is not a special case added on - it is what the identity relation
+  ! IS, and the queries below evaluate it without an allocated array
   ! anywhere.
   !===================================================================!
 
   type :: partition_relation
 
      ! WHICH sets are related, by identity: the part's two carriers,
-     ! and the two of the whole. Identity, never extension - it says
-     ! which sets it relates, not who belongs to them.
+     ! and the two of the whole. Identity, never extension - it records
+     ! which sets it relates, not which members belong to them.
      type(graph), private :: part_vertices
      type(graph), private :: part_edges
      type(graph), private :: whole_vertices
      type(graph), private :: whole_edges
 
-     ! HOW MANY, on both sides. A count is not a membership question.
+     ! HOW MANY, on both sides. A count is not a membership predicate.
      integer, private :: num_part_vertices  = 0
      integer, private :: num_part_edges  = 0
      integer, private :: nwv = 0
@@ -164,8 +164,9 @@ module relation_partition
 contains
 
   !===================================================================!
-  ! The cut relation: a partitioner has decided who holds and who owns
-  ! what, and the relation knows both sets it relates and both counts.
+  ! The cut relation: a partitioner has determined which part contains
+  ! and which part owns each member, and the relation records both sets
+  ! it relates and both counts.
   !===================================================================!
 
   type(partition_relation) function create_relation( &
@@ -201,9 +202,9 @@ contains
   end function create_relation
 
   !===================================================================!
-  ! The identity relation: a graph born whole is the whole of itself.
-  ! One part, every member its own name, nothing borrowed. No array is
-  ! allocated, because none is needed to say `the same'.
+  ! The identity relation: a graph created whole is the whole of itself.
+  ! One part, every member its own name, no halo. No array is
+  ! allocated, because none is needed to represent the identity.
   !===================================================================!
 
   type(partition_relation) function &
@@ -248,7 +249,7 @@ contains
 
   !===================================================================!
   ! THE FORWARD READ: what the whole calls this part's member. The
-  ! identity relation answers the index unchanged, because it is the
+  ! identity relation returns the index unchanged, because it is the
   ! whole.
   !===================================================================!
 
@@ -289,9 +290,9 @@ contains
   end function outward
 
   !===================================================================!
-  ! THE BACKWARD READ: where a whole-graph member sits inside a named
-  ! part. Zero means the tuple is not in r at all - the honest answer
-  ! for a member this part never held.
+  ! THE BACKWARD READ: the index of a whole-graph member inside a
+  ! named part. Zero means the tuple is not in r at all - the result
+  ! for a member this part never contained.
   !===================================================================!
 
   pure integer function part_vertex_index(this, global_index, part_id)
@@ -308,13 +309,13 @@ contains
          &                   this % number, this % cut)
   end function part_edge_index
 
-  pure integer function inward(global, global_index, asked, mine, cut)
+  pure integer function inward(global, global_index, requested, own_part, cut)
     integer, allocatable, intent(in) :: global(:)
-    integer             , intent(in) :: global_index, asked, mine
+    integer             , intent(in) :: global_index, requested, own_part
     logical             , intent(in) :: cut
     integer :: k
     inward = 0
-    if (cut .and. asked /= mine) return
+    if (cut .and. requested /= own_part) return
     if (.not. cut .or. .not. allocated(global)) then
        inward = global_index
        return
@@ -328,9 +329,9 @@ contains
   end function inward
 
   !===================================================================!
-  ! Ownership: which part speaks for a member. This is what stops a
-  ! shared cell being counted twice when the parts are added back
-  ! together. The identity relation owns everything itself.
+  ! Ownership: which part contributes a member. This is what stops a
+  ! shared cell being counted twice when the parts are assembled.
+  ! The identity relation owns everything itself.
   !===================================================================!
 
   pure integer function vertex_owner_part(this, index)
@@ -356,9 +357,9 @@ contains
     end if
   end function owner_part
 
-  pure integer function owner(owners, index, cut, mine)
+  pure integer function owner(owners, index, cut, own_part)
     integer, allocatable, intent(in) :: owners(:)
-    integer             , intent(in) :: index, mine
+    integer             , intent(in) :: index, own_part
     logical             , intent(in) :: cut
     if (cut .and. allocated(owners)) then
        if (index >= 1 .and. index <= size(owners)) then
@@ -366,7 +367,7 @@ contains
           return
        end if
     end if
-    owner = mine
+    owner = own_part
   end function owner
 
   !===================================================================!
@@ -395,15 +396,16 @@ contains
   end function num_whole_edges
 
   !===================================================================!
-  ! THE ONE QUESTION A RELATION MUST ANSWER BEFORE IT IS USED: is this
-  ! the part I relate? Identity first, because two graphs of equal
+  ! THE ONE PREDICATE A RELATION MUST EVALUATE BEFORE IT IS USED: is
+  ! this the part the relation relates? Identity first, because two
+  ! graphs of equal
   ! size are not the same graph; counts second, because a relation
   ! written over a part of six members cannot address a part of seven.
   !
   ! This is what lets the four verbs take r as an ARGUMENT and still
-  ! be safe - the caller may hold two relations, and handing the wrong
-  ! one to a part is caught here rather than producing a wrong answer
-  ! quietly.
+  ! be safe - the caller may store two relations, and passing the wrong
+  ! one to a part is detected here rather than producing a wrong result
+  ! without an error.
   !===================================================================!
 
   logical function describes(this, g)

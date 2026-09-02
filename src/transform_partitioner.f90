@@ -1,19 +1,19 @@
 !=====================================================================!
 ! Concrete graph partitioners.
 !
-! P cuts a graph into parts. One concrete type holds the rule, so a
-! caller can hold partitioners in a plain array and a new rule costs a
+! P cuts a graph into parts. One concrete type stores the rule, so a
+! caller can store partitioners in a plain array and a new rule adds a
 ! case rather than a class.
 !
 !         o---o---o---o---o---o
 !                     :                cut where few edges cross, so
-!         o---o---o   :   o---o---o    the parts have little to say
-!                part 1     part 2     to each other
+!         o---o---o   :   o---o---o    few values pass between the
+!                part 1     part 2     parts
 !
-! What comes out is one part, in its own numbering, and it is still a
-! graph. It also records how it relates to the whole - which cells
-! it owns, which it only borrows, and what each of its own numbers
-! was called in the global graph.
+! The output is one part, in its own numbering, and the part is still
+! a graph. The part also records its relation to the whole - which
+! cells it owns, which it reads as halo copies, and the global index of each
+! of its own numbers.
 !
 !         global graph    1   2   3   4   5   6   7   8
 !                                   |   |   |
@@ -23,12 +23,12 @@
 !
 !=====================================================================!
 !
-!                      OWNED, BORROWED, OVERLAP
+!                      OWNED, HALO, OVERLAP
 !
-! A part owns the cells it must produce answers for. It borrows the
-! neighbouring cells that other parts own, because a face term needs
-! the value on both sides. Together those are the overlap - what
-! this part must be able to see to finish what it owns.
+! A part owns the cells it must produce values for. The part reads as halo copies
+! the neighbouring cells that other parts own, because a face term
+! needs the value on both sides. Together those are the overlap - the
+! cells this part must read to complete what it owns.
 !
 !            part 1                        part 2
 !       +---------------+            +---------------+
@@ -36,7 +36,7 @@
 !       |  o    o    o--|------------|--b    o    o  |
 !       +---------------+            +---------------+
 !                    \______________/
-!                       part 1 borrows one cell from part 2
+!                       part 1 reads one halo cell from part 2
 !
 ! Every cell is owned by exactly one part. That is what stops a
 ! conserved quantity being counted twice when the parts are added back
@@ -46,9 +46,9 @@
 !
 !                        WHAT IS NOT HERE
 !
-! No physics, no geometry, no solver behaviour. A partitioner works
-! out which cells go where and holds the data across the same cut.
-! It does not evaluate anything.
+! No physics, no geometry, no solver behaviour. A partitioner computes
+! which cells belong to which part and restricts the data across the
+! same cut. It evaluates nothing.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -64,7 +64,7 @@ module transform_partitioner
   use transform_structure, only : transform
   use view_directed_stored         , only : stored_directed_graph
   use field_stored   , only : stored_field
-  use operation_walk    , only : walk, WALK_VISIT_ORDER
+  use operation_traversal    , only : traversal, TRAVERSAL_VISIT_ORDER
 
   implicit none
 
@@ -75,24 +75,25 @@ module transform_partitioner
   !===================================================================!
   ! PARTITIONER. The transform that cuts a whole into parts.
   ! partition_graph returns the part and the relation
-  ! r <= S_part x S_whole recording how the part sits in the
+  ! r <= S_part x S_whole recording how the part embeds in the
   ! whole; the relation is required output, because a part without
-  ! it cannot be reassembled. partition_data carries a field onto
+  ! it cannot be reassembled. partition_data restricts a field onto
   ! a part along that same relation, writing the declared domain
   ! into the caller's set store.
   !===================================================================!
 
   !-------------------------------------------------------------------!
-  ! Slice the vertex numbering into equal blocks. Cheap, deterministic,
-  ! and blind to how the cells are actually joined - useful as a
-  ! reference the other rules are judged against.
+  ! Slice the vertex numbering into equal blocks. Low cost,
+  ! deterministic, and independent of how the cells are connected -
+  ! useful as a reference the other rules are compared against.
   !-------------------------------------------------------------------!
 
   integer, parameter :: PARTITION_LINEAR = 1
 
   !-------------------------------------------------------------------!
   ! Grow each part outward from a seed cell, one ring at a time, until
-  ! it has its share. Follows the connections, so it cuts fewer edges.
+  ! the part has its share. The rule follows the connections, so it
+  ! cuts fewer edges.
   !-------------------------------------------------------------------!
 
   integer, parameter :: PARTITION_BREADTH_FIRST = 2
@@ -105,8 +106,8 @@ module transform_partitioner
   integer, parameter :: PARTITION_ADOPTED = 3
 
   !===================================================================!
-  ! One partitioner: how to cut, into how many, and which part to hand
-  ! back.
+  ! One partitioner: how to cut, into how many, and which part to
+  ! return.
   !===================================================================!
 
   type, extends(transform) :: partitioner
@@ -116,7 +117,7 @@ module transform_partitioner
      integer :: part   = 1
 
      !----------------------------------------------------------------!
-     ! The map an adopted partition was handed, one owning part per
+     ! The map an adopted partition was given, one owning part per
      ! whole-graph vertex.
      !----------------------------------------------------------------!
 
@@ -138,8 +139,8 @@ module transform_partitioner
 contains
 
   !===================================================================!
-  ! Build a partitioner. Say how to cut, into how many pieces, and
-  ! which piece you want back.
+  ! Build a partitioner: the rule, the number of parts, and which
+  ! part to return.
   !===================================================================!
 
   pure type(partitioner) function create(rule, num_parts, part, adopted) result(this)
@@ -158,8 +159,8 @@ contains
   end function create
 
   !===================================================================!
-  ! A graph can be cut when it has cells to cut up, and when an
-  ! adopted map - if that is the rule - actually covers them.
+  ! A graph can be partitioned when it has vertices, and when an
+  ! adopted map - if that is the rule - covers them.
   !===================================================================!
 
   pure logical function defined_on_graph(this, input_graph)
@@ -180,8 +181,8 @@ contains
   end function defined_on_graph
 
   !===================================================================!
-  ! Data can be carried across when the graph can be cut and the data
-  ! sits on that graph.
+  ! Data can be restricted when the graph can be partitioned and the
+  ! data is defined on that graph.
   !===================================================================!
 
   logical function defined_on_data(this, input_graph, input_data)
@@ -202,8 +203,8 @@ contains
   end function defined_on_data
 
   !===================================================================!
-  ! P. Work out who owns what, gather this part's cells, and rebuild
-  ! the piece as a graph in its own numbering.
+  ! P. Assign an owner to every cell, gather this part's cells, and
+  ! build the part as a graph in its own numbering.
   !===================================================================!
 
   subroutine partition_graph(this, global_graph, part_graph, rel)
@@ -212,16 +213,16 @@ contains
     class(directed_graph), intent(in)            :: global_graph
     class(directed_graph), allocatable, intent(out) :: part_graph
 
-    ! r <= S_part x S_whole, written here and nowhere else. It leaves
-    ! through the door beside the piece, because the three verbs that
-    ! read it are handed it - none of them may ask the piece, and none
-    ! may invent its own.
+    ! r <= S_part x S_whole, written here and nowhere else. The
+    ! relation is returned beside the part, because the three
+    ! procedures that read it receive it as an argument - none of them
+    ! may read it from the part, and none may construct its own.
     !
-    ! REQUIRED. A cut produces the pair (G_p, r_p); taking the piece
-    ! and leaving the relation is taking half the answer.
+    ! REQUIRED. A cut produces the pair (G_p, r_p); taking the part
+    ! and leaving the relation is taking half the output.
     type(partition_relation), intent(out) :: rel
 
-    integer, allocatable :: owner(:), mine(:), whereis(:)
+    integer, allocatable :: owner(:), own_part(:), part_index(:)
     integer, allocatable :: ltail(:), lhead(:), eglobal(:), eowner(:), vowner(:)
     integer :: nv, ne, e, t, h, k, nkeep
 
@@ -229,11 +230,11 @@ contains
     ne = global_graph % num_edges()
 
     call assign_owners(this, global_graph, owner)
-    call gather_part(global_graph, owner, this % part, mine, whereis)
+    call gather_part(global_graph, owner, this % part, own_part, part_index)
 
-    ! Keep an edge when both its ends are in this part and at least one
-    ! of them is owned here. An edge with neither end owned belongs
-    ! entirely to another part; keeping it here would add its flux to
+    ! Retain an edge when both its ends are in this part and at least
+    ! one of them is owned here. An edge with neither end owned belongs
+    ! entirely to another part; retaining it here would add its flux to
     ! the balance twice.
     allocate(ltail(ne), lhead(ne), eglobal(ne), eowner(ne))
     nkeep = 0
@@ -241,9 +242,9 @@ contains
        t = global_graph % edge_tail(e)
        h = global_graph % edge_head(e)
 
-       if (whereis(t) == 0) cycle
+       if (part_index(t) == 0) cycle
        if (h >= 1) then
-          if (whereis(h) == 0) cycle
+          if (part_index(h) == 0) cycle
        end if
        if (owner(t) /= this % part) then
           if (h < 1) cycle
@@ -251,22 +252,22 @@ contains
        end if
 
        nkeep = nkeep + 1
-       ltail(nkeep) = whereis(t)
+       ltail(nkeep) = part_index(t)
        if (h >= 1) then
-          lhead(nkeep) = whereis(h)
+          lhead(nkeep) = part_index(h)
        else
           lhead(nkeep) = 0
        end if
        eglobal(nkeep) = e
 
        ! An edge is owned by the part that owns its TAIL - always,
-       ! whether this part holds that tail or borrows it. One global
+       ! whether this part owns that tail or reads it as a halo copy. One global
        ! edge therefore has exactly one owner across all parts, which
        ! is what makes assembly reconstruct a global edge field
        ! exactly once. (The branch below is vestigial: both arms
-       ! assign the same thing. An earlier design let the head's
-       ! owner answer for a borrowed tail; that rule was never
-       ! implemented, and the uniqueness law does not need it.)
+       ! assign the same value. An earlier design let the head's
+       ! owner own the edge for a halo tail; that rule was never
+       ! implemented, and the uniqueness property does not need it.)
        if (owner(t) == this % part) then
           eowner(nkeep) = owner(t)
        else
@@ -274,19 +275,20 @@ contains
        end if
     end do
 
-    allocate(vowner(size(mine)))
-    do k = 1, size(mine)
-       vowner(k) = owner(mine(k))
+    allocate(vowner(size(own_part)))
+    do k = 1, size(own_part)
+       vowner(k) = owner(own_part(k))
     end do
 
-    ! The piece is born standing in r. The tuples go in through the
-    ! door, because a graph told its relation after birth would answer
-    ! one question two ways in one lifetime.
+    ! The part is constructed with r. The tuples are passed to the
+    ! constructor, because a graph given its relation after
+    ! construction could return two different relations in one
+    ! lifetime.
     allocate(part_graph, source = &
-         & stored_directed_graph(size(mine), tails=ltail(1:nkeep), heads=lhead(1:nkeep), &
+         & stored_directed_graph(size(own_part), tails=ltail(1:nkeep), heads=lhead(1:nkeep), &
          &              number  = this % part,   &
          &              num_parts  = this % num_parts, &
-         &              vglobal = mine,          &
+         &              vglobal = own_part,          &
          &              vowner  = vowner,        &
          &              eglobal = eglobal(1:nkeep), &
          &              eowner  = eowner(1:nkeep),  &
@@ -303,7 +305,7 @@ contains
   end subroutine partition_graph
 
   !===================================================================!
-  ! Decide which part owns each cell of the whole graph.
+  ! Assign the owning part of each cell of the whole graph.
   !===================================================================!
 
   subroutine assign_owners(this, global_graph, owner)
@@ -342,16 +344,16 @@ contains
     integer, intent(in)    :: nv, num_parts
     integer, intent(inout) :: owner(:)
 
-    integer :: v, base, extra, lo, hi, k
+    integer :: v, base, additional, lo, hi, k
 
     base  = nv / num_parts
-    extra = mod(nv, num_parts)
+    additional = mod(nv, num_parts)
 
     hi = 0
     do k = 1, num_parts
        lo = hi + 1
        hi = lo + base - 1
-       if (k <= extra) hi = hi + 1
+       if (k <= additional) hi = hi + 1
        do v = lo, min(hi, nv)
           owner(v) = k
        end do
@@ -361,7 +363,7 @@ contains
 
   !===================================================================!
   ! Grow every part outward from a seed, one ring at a time, so each
-  ! part comes out connected and few edges are left crossing.
+  ! part is connected and few edges cross.
   !===================================================================!
 
   subroutine assign_owners_breadth_first(global_graph, num_parts, owner)
@@ -371,9 +373,9 @@ contains
     integer     , intent(inout) :: owner(:)
 
     type(stored_directed_graph) :: untaken
-    type(walk)         :: visit
+    type(traversal)         :: visit
     class(field), allocatable :: reached
-    integer, allocatable :: locals(:), whereis(:), tails(:), heads(:), order(:)
+    integer, allocatable :: locals(:), part_index(:), tails(:), heads(:), order(:)
     integer :: nv, ne, share, k, v, e, t, h, n, m
 
     nv    = global_graph % num_vertices()
@@ -381,19 +383,19 @@ contains
     owner = 0
     share = (nv + num_parts - 1) / num_parts
 
-    allocate(locals(nv), whereis(nv), tails(ne), heads(ne))
+    allocate(locals(nv), part_index(nv), tails(ne), heads(ne))
 
     do k = 1, num_parts
 
-       ! The unclaimed remainder, as the graph it is. The walk owns
-       ! breadth-first; this routine only asks and reads.
+       ! The unclaimed remainder, as a graph. The traversal implements
+       ! breadth-first; this routine only calls it and reads the result.
        n = 0
-       whereis = 0
+       part_index = 0
        do v = 1, nv
           if (owner(v) == 0) then
              n = n + 1
              locals(n)  = v
-             whereis(v) = n
+             part_index(v) = n
           end if
        end do
        if (n == 0) exit
@@ -403,18 +405,18 @@ contains
           t = global_graph % edge_tail(e)
           if (.not. global_graph % edge_has_head(e)) cycle
           h = global_graph % edge_head(e)
-          if (whereis(t) > 0 .and. whereis(h) > 0) then
+          if (part_index(t) > 0 .and. part_index(h) > 0) then
              m = m + 1
-             tails(m) = whereis(t)
-             heads(m) = whereis(h)
+             tails(m) = part_index(t)
+             heads(m) = part_index(h)
           end if
        end do
 
        untaken = stored_directed_graph(n, tails=tails(1:m), heads=heads(1:m))
 
        ! The first unclaimed cell seeds the part; the visit order
-       ! says who its share of the ring is.
-       visit = walk(WALK_VISIT_ORDER, seed=1)
+       ! determines which cells form its share.
+       visit = traversal(TRAVERSAL_VISIT_ORDER, seed=1)
        call visit % apply(untaken, output=reached)
        call reached % integer_vector(order)
 
@@ -424,8 +426,8 @@ contains
 
     end do
 
-    ! Anything the rings never reached goes to the last part, so every
-    ! cell ends up owned exactly once.
+    ! Every cell the rings never reached is assigned to the last part,
+    ! so every cell is owned exactly once.
     do v = 1, nv
        if (owner(v) == 0) owner(v) = num_parts
     end do
@@ -434,36 +436,36 @@ contains
 
   !===================================================================!
   ! Collect one part's cells: the ones it owns first, then the ones it
-  ! must borrow to work out its own answers.
+  ! must read as halo copies to compute its own values.
   !
   ! The owned-first order has a practical consequence: a part's owned
-  ! values sit at the front of every vector, so the piece a solver
-  ! reduces over is a contiguous slice.
+  ! values are stored at the front of every vector, so the portion a
+  ! solver reduces over is a contiguous slice.
   !===================================================================!
 
-  subroutine gather_part(global_graph, owner, part, mine, whereis)
+  subroutine gather_part(global_graph, owner, part, own_part, part_index)
 
     class(directed_graph)        , intent(in)  :: global_graph
     integer             , intent(in)  :: owner(:)
     integer             , intent(in)  :: part
-    integer, allocatable, intent(out) :: mine(:)
-    integer, allocatable, intent(out) :: whereis(:)
+    integer, allocatable, intent(out) :: own_part(:)
+    integer, allocatable, intent(out) :: part_index(:)
 
     integer, allocatable :: nbrs(:)
     integer :: nv, v, i, n
 
     nv = global_graph % num_vertices()
 
-    allocate(whereis(nv))
-    whereis = 0
-    allocate(mine(nv))
+    allocate(part_index(nv))
+    part_index = 0
+    allocate(own_part(nv))
     n = 0
 
     do v = 1, nv
        if (owner(v) == part) then
           n = n + 1
-          mine(n)    = v
-          whereis(v) = n
+          own_part(n)    = v
+          part_index(v) = n
        end if
     end do
 
@@ -471,22 +473,22 @@ contains
        if (owner(v) /= part) cycle
        call global_graph % adjacent_vertices(v, nbrs)
        do i = 1, size(nbrs)
-          if (owner(nbrs(i)) /= part .and. whereis(nbrs(i)) == 0) then
+          if (owner(nbrs(i)) /= part .and. part_index(nbrs(i)) == 0) then
              n = n + 1
-             mine(n)          = nbrs(i)
-             whereis(nbrs(i)) = n
+             own_part(n)          = nbrs(i)
+             part_index(nbrs(i)) = n
           end if
        end do
     end do
 
-    mine = mine(1:n)
+    own_part = own_part(1:n)
 
   end subroutine gather_part
 
   !===================================================================!
-  ! Carry the data across the very same cut, by the map the part graph
-  ! already holds. Nothing here recomputes the cut, so the values
-  ! cannot drift out of step with the structure.
+  ! Restrict the data across the same cut, by the map the part graph
+  ! already stores. Nothing here recomputes the cut, so the values
+  ! cannot become inconsistent with the structure.
   !===================================================================!
 
   subroutine partition_data(this, rel, global_graph, global_data, part_graph, &
@@ -505,10 +507,10 @@ contains
 
     associate (u1 => this); end associate
 
-    ! ONE RELATION PER PART, guarded on the forward motion too. This
-    ! is the direction where a wrong r is SILENT: values carried onto
-    ! a part by another part's numbering, no abort, wrong answers near
-    ! a cut - which is the failure the design exists to prevent.
+    ! ONE RELATION PER PART, checked on the restriction too. This
+    ! is the direction where a wrong r is SILENT: values restricted
+    ! onto a part by another part's numbering, no abort, wrong values
+    ! near a cut - which is the failure the design exists to prevent.
     if (.not. rel % describes(part_graph)) then
        error stop 'partition: this relation was not written for this part'
     end if
@@ -518,18 +520,18 @@ contains
     class is (stored_field)
        dom   = global_data % domain()
        n_dom = global_data % num_entries()
-       ! Classify by embedding - a DECLARED question answered through
-       ! the set store. Coverage decides the carry inside.
+       ! Classify by embedding - a DECLARED predicate evaluated through
+       ! the set store. Coverage selects the restriction inside.
        if (sets % subobject_of(dom, global_graph % vertex_set())) then
-          call carry_field(global_data, dom, n_dom, &
+          call restrict_field(global_data, dom, n_dom, &
                & global_graph % vertex_set(), global_graph % num_vertices(), &
                & part_graph, rel, .true., sets, part_data)
        else if (sets % subobject_of(dom, global_graph % edge_set())) then
-          call carry_field(global_data, dom, n_dom, &
+          call restrict_field(global_data, dom, n_dom, &
                & global_graph % edge_set(), global_graph % num_edges(), &
                & part_graph, rel, .false., sets, part_data)
        else
-          error stop 'partition: this field does not live on this graph''s domains'
+          error stop 'partition: this field is not defined on this graph''s domains'
        end if
 
     class default
@@ -539,18 +541,18 @@ contains
   end subroutine partition_data
 
   !===================================================================!
-  ! One carry for both families and both coverages. A FULL field -
-  ! domain same_as the global carrier - lands on the part's own
-  ! carrier, every part member valued through the global map. A
-  ! PROPER SUBSET travels as a subset: the part-local members whose
-  ! global names the subset holds, each value fetched through the
-  ! GLOBAL DOMAIN'S local_index - never by raw member arithmetic -
-  ! and seated on a new subobject of the part's carrier. A new
-  ! ambient means a new declared subset: identity is not preserved
-  ! across transport, extension and values are.
+  ! One restriction for both families and both coverages. A FULL
+  ! field - domain same_as the global carrier - is defined on the
+  ! part's own carrier, every part member valued through the global
+  ! map. A PROPER SUBSET is restricted as a subset: the part-local
+  ! members whose global indices the subset contains, each value read
+  ! through the GLOBAL DOMAIN'S local_index - never by raw member
+  ! arithmetic - and stored on a new subobject of the part's carrier.
+  ! A new ambient means a new declared subset: identity is not
+  ! preserved across restriction, extension and values are.
   !===================================================================!
 
-  subroutine carry_field(global_data, dom, n_dom, global_carrier, &
+  subroutine restrict_field(global_data, dom, n_dom, global_carrier, &
        &                 n_global_carrier, part_graph, rel, on_vertices, &
        &                 sets, part_data)
 
@@ -585,7 +587,7 @@ contains
 
     if (dom % same_as(global_carrier)) then
 
-       ! Full coverage: the part field lives on the part's carrier.
+       ! Full coverage: the part field is defined on the part's carrier.
        allocate(lv(nlocal * num_components))
        lv = 0.0_dp
        do l = 1, nlocal
@@ -615,9 +617,9 @@ contains
        end do
        !-------------------------------------------------------------!
        ! A new ambient means a new declared subset, so this operation
-       ! obeys the subobject law: identity, extension, label and
-       ! embedding, together. The label is the one the global domain
-       ! carried - transport renames nothing.
+       ! satisfies the subobject invariant: identity, extension, label
+       ! and embedding, together. The label is the global domain's
+       ! label - restriction renames nothing.
        !-------------------------------------------------------------!
 
        call sets % declare_subobject(sp, kept(1:n), sets % label_of(dom), part_carrier)
@@ -638,6 +640,6 @@ contains
 
     allocate(part_data, source=out)
 
-  end subroutine carry_field
+  end subroutine restrict_field
 
 end module transform_partitioner

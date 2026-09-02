@@ -1,11 +1,11 @@
 #!/bin/bash
-# The naming law (doc/coding-standards.md), statically enforced.
+# The naming rules (doc/coding-standards.md), statically enforced.
 #
 #   usage: check_naming.sh [tree]
 #
 # tree is a directory holding src/ (default: this script's own
-# directory). Two callers share this one implementation, so the law
-# has exactly one set of teeth:
+# directory). Two callers share this one implementation, so the rules
+# are enforced at exactly one point:
 #
 #   githooks/pre-commit           runs it on the STAGED tree
 #   test/graph-ordinary/run.sh    runs it on the working tree
@@ -22,14 +22,14 @@ objects="$srcdir/OBJECTS"
 [ -d "$srcdir" ] || { echo " FAIL : no src/ under $root"; exit 1; }
 
 # Comments stripped and continuations merged, so a name split
-# across & lines cannot hide from the token checks below.
+# across & lines is still matched by the token checks below.
 joined() {
     sed 's/!.*//' "$1" | sed -e ':a' -e '/&[ ]*$/{N;s/&[ ]*\n[ ]*&\{0,1\}/ /;ta}'
 }
 
 #---------------------------------------------------------------------
 # 1. Modules read namespace order: every src file begins with a prime
-#    (or util_). Types read english order: no type wears a namespace
+#    (or util_). Types read english order: no type carries a namespace
 #    prefix, so a type can never collide with a module name.
 #---------------------------------------------------------------------
 
@@ -47,7 +47,7 @@ bad_types=$(grep -hE '^ *type(, *(abstract|extends\([a-z_]+\)|public|private))* 
     | grep -oE ':: *[a-z_]+' | sed 's/:: *//' | sort -u \
     | grep -E "^($primes)_" || true)
 if [ -n "$bad_types" ]; then
-    echo " FAIL : types wearing a module namespace: $bad_types"
+    echo " FAIL : types carrying a module namespace: $bad_types"
     exit 1
 fi
 echo " PASS : modules read namespace order, types read english order"
@@ -84,12 +84,12 @@ echo " PASS : OBJECTS is complete and dependency-ordered"
 
 #---------------------------------------------------------------------
 # 3. One type, one name: no import alias in src except the kind
-#    constant dp => real64, the law's one named exception.
+#    constant dp => real64, the one named exception to the rules.
 #---------------------------------------------------------------------
 
 for f in "$srcdir"/*.f90; do
     if joined "$f" | grep -iE 'only *:.*=>' | grep -ivE 'dp *=> *real64' | grep -q .; then
-        echo " FAIL : $(basename "$f") carries an import alias other than dp => real64"
+        echo " FAIL : $(basename "$f") declares an import alias other than dp => real64"
         exit 1
     fi
 done
@@ -133,7 +133,7 @@ done
 echo " PASS : no module re-exports a name it does not define"
 
 #---------------------------------------------------------------------
-# 6. British spelling, oxford -ize: the closed list of refused
+# 6. British spelling, oxford -ize: the closed list of rejected
 #    spellings (identifiers and comments alike).
 #---------------------------------------------------------------------
 
@@ -144,13 +144,13 @@ if grep -inwE 'fiber|fibers|center|centers|centered|coloring|colored|neighbor|ne
     echo " FAIL : an american spelling exists in src (fibre, centre, colouring, neighbour)"
     exit 1
 fi
-echo " PASS : british spelling holds (fibre, centre, colouring, neighbour)"
+echo " PASS : british spelling is used (fibre, centre, colouring, neighbour)"
 
 #---------------------------------------------------------------------
 # 7. The application layer, packed as one file of many modules, keeps
 #    the per-name rules: types read english order, readers are bare
 #    nouns, and the spelling is British. The module-namespace, alias
-#    and re-export rules are per-module laws over src and are not
+#    and re-export rules are per-module rules over src and are not
 #    applied here, where one file holds modules that import each
 #    other.
 #---------------------------------------------------------------------
@@ -162,7 +162,7 @@ if ls "$appdir"/*.f90 >/dev/null 2>&1; then
         | grep -oE ':: *[a-z_]+' | sed 's/:: *//' | sort -u \
         | grep -E "^($primes)_" || true)
     if [ -n "$bad_types" ]; then
-        echo " FAIL : application types wearing a module namespace: $bad_types"
+        echo " FAIL : application types carrying a module namespace: $bad_types"
         exit 1
     fi
     if grep -nE '(procedure[^!]*:: *get_|function +get_|subroutine +get_|public[^!]*\bget_)' \
@@ -178,4 +178,26 @@ if ls "$appdir"/*.f90 >/dev/null 2>&1; then
     echo " PASS : the application keeps the per-name rules"
 fi
 
-echo " PASS : the naming law holds"
+#---------------------------------------------------------------------
+# 8. Vocabulary: names and comments denote mathematical objects and
+#    operations. The closed list below holds the colloquial,
+#    metaphorical and anthropomorphic words removed from the sources
+#    on 2026-09-02, matched as whole words in identifiers, comments
+#    and strings alike, over src and the application. A refused word
+#    names the mathematical term instead: traversal not walk, version
+#    not stamp, boundary not wall, iteration limit not budget, stored
+#    not held, returns not answers, pass not route, halo not borrowed.
+#---------------------------------------------------------------------
+
+banned='walk|walks|walked|walking|stamp|stamps|stamped|gate|gates|gated|gatekeeper|room|rooms|cliff|cliffs|spine|knob|knobs|dial|dials|lever|verdict|verdicts|judge|judges|judged|liar|liars|honest|honestly|stranger|strangers|alien|aliens|citizen|citizens|seat|seats|seated|teeth|tooth|door|doors|road|roads|journey|journeys|plumbing|wiring|glue|glued|bucket|buckets|handover|handovers|handed|borrow|borrows|borrowed|carve|carves|carved|fetch|fetches|fetched|grab|grabs|grabbed|budget|budgets|cheap|cheaply|expensive|costly|noisy|answer|answers|answered|asks|asked|says|knows|knowing|wants|wanted|lives|dies|died|dead|born|fresh|afresh|anew|held|holds|carry|carried|carries|carrying|worst|worse|best|probe|probes|probed|channel|channels|fold|folded|folds|route|routes|stitched|hood|mine|yours|ok|okay|price|priced|roll|said|seen|worker|got|spent|home|homes|ceiling|wall|walls|stands|sits|sitting|rides|riding|peek|peeks|poke|pokes|trick|tricks|hack|hacks|kludge|magic|fancy|nasty|ugly|nice|sweet|basically|essentially|actually|really|stuff|thing|things|guy|guys|bunch|handy|dumb|silly|cook|cooked|baked|punt|bail|nuke|kick|kicks|kicked|chunk|chunky|mess|messy|junk|garbage|trash|tidy|neat|hatched|squint|story|stories|chapter|book|books|tale|tales|readings|spelling|spellings|ghost|ghosts|lazy|heap|delivered|caught|bring|brings|brought|liar'
+
+for d in "$srcdir" "$appdir"; do
+    if ls "$d"/*.f90 >/dev/null 2>&1 && grep -inwE "$banned" "$d"/*.f90 | grep -q .; then
+        grep -inwE "$banned" "$d"/*.f90 | head -5
+        echo " FAIL : a colloquial word exists in $(basename "$d") (see the list in check 8)"
+        exit 1
+    fi
+done
+echo " PASS : the vocabulary is mathematical - no word from the colloquial list"
+
+echo " PASS : the naming rules hold"

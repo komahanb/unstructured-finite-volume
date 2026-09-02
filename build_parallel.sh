@@ -2,13 +2,13 @@
 # build the ufvm library for DISTRIBUTED (coarray) runs, into lib_par/.
 #
 # every source is compiled with -fcoarray=lib so the coarray code in
-# class_distributed_cg gets a real runtime; the rest of the library has no
+# class_distributed_cg is linked against the coarray runtime; the rest of the library has no
 # coarray syntax and is unaffected by the flag. the serial build (build.sh,
-# -fcoarray=single, into lib/) is left completely alone.
+# -fcoarray=single, into lib/) is unaffected.
 #
 # NOTE: uses the Ubuntu-packaged OpenCoarrays wrapper /usr/bin/caf.openmpi.
 # the bare `caf` on PATH (/usr/local, 2.9.2) is mismatched against the system
-# OpenMPI here and silently breaks co_sum - do not use it. override with CAF=.
+# OpenMPI here and co_sum returns wrong results - do not use it. override with CAF=.
 set -e
 
 root="$(cd "$(dirname "$0")" && pwd)"
@@ -18,9 +18,9 @@ flags="-fcoarray=lib -cpp -fPIC -std=f2018 -Wno-line-truncation -O2 -g -fbacktra
 mkdir -p "$root/lib_par"
 
 # compile FROM lib_par: gfortran always searches the working directory
-# for .mod files first, and src/ holds .mod droppings from the serial
+# for .mod files first, and src/ holds .mod files left by the serial
 # build's (possibly newer) compiler - reading one of those is a fatal
-# version mismatch. lib_par as cwd sees only this build's own modules.
+# version mismatch. lib_par as cwd exposes only this build's own modules.
 cd "$root/lib_par"
 
 # OBJECTS lists the .o files in dependency order; compile each .f90 with caf,

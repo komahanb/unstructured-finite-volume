@@ -5,7 +5,7 @@
 ! the source and the degree the edge's condition determines. A
 ! family, a scheme weight and a step scaling all read exactly this
 ! tuple, so it is built here and nowhere else; weights_of applies
-! any of them to it and reads the answer out as a vector.
+! any of them to it and reads the result out as a vector.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -55,7 +55,7 @@ contains
   end subroutine coupling_inputs
 
   !===================================================================!
-  ! An action applied to that coupling, its answer read out.
+  ! An action applied to that coupling, its result read out.
   !===================================================================!
 
   subroutine weights_of(action, num_vertices, tails, heads, steps, source_degree, &
@@ -83,12 +83,12 @@ contains
   ! Every coefficient of an action's weights over n directions in the
   ! steps, the steps seeded subset by subset: seeds(k, m) is the total
   ! derivative of step k along the subset with mask m, for m = 1 to
-  ! 2^n - 1, and table(e, m) comes out as the total derivative of edge
-  ! e's weight along that subset, the value at m = 0. Singleton seeds
+  ! 2^n - 1, and table(e, m) is the total derivative of edge e's
+  ! weight along that subset, the value at m = 0. Singleton seeds
   ! alone give the mixed partials; the total derivatives of the steps
   ! along subsets of designs give the weights' total derivatives along
   ! the same, every set partition included by the product rule. The
-  ! action carries the weights over derivative terms, so every number
+  ! action computes the weights over derivative terms, so every number
   ! is exact. Invalid input: a seed table of other than one row per
   ! vertex and 2^n - 1 columns, or an action that is not an edge
   ! function.

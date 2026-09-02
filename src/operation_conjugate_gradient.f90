@@ -1,17 +1,17 @@
 !=====================================================================!
-! The conjugate gradient iteration on the tower.
+! The conjugate gradient iteration on the minimizer hierarchy.
 !
-! For a symmetric positive operator, the best correction in every
+! For a symmetric positive operator, the optimal correction in every
 ! direction already searched, at the cost of one matvec and two
 ! inner products a step:
 !
-!      alpha = (r, r) / (p, A p)         walk this far
+!      alpha = (r, r) / (p, A p)         the step length
 !      x <- x + alpha p                  along this direction
-!      r <- r - alpha A p                what remains
-!      p <- r + beta p                   the next direction, kept
+!      r <- r - alpha A p                the residual
+!      p <- r + beta p                   the next direction,
 !                                        conjugate to all before it
 !
-! Everything it needs is inherited: matvec from the attached
+! Everything the iteration needs is inherited: matvec from the attached
 ! operation, the inner product from the sum reduction with its
 ! measure, the norm from the norm reduction. This file states the
 ! iteration and nothing else.

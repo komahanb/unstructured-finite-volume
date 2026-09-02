@@ -6,7 +6,7 @@ below came from a run; nothing here is inferred from the source alone.
 `--config=uniform` with `--instants` and `--max-derivative-degree` the
 timing ones.
 
-The three axes are taken in the order they bite: state variables now,
+The three axes are taken in the order they bind: state variables now,
 design variables and functionals later but structurally.
 
 ---
@@ -14,8 +14,8 @@ design variables and functionals later but structurally.
 ## 0. A convergence tolerance that stops being reachable
 
 This binds before any of the three axes, and it is not an asymptotic
-cost at all - it is a cliff, and everything downstream of it was
-misread as one until it was separated out.
+cost at all - it is a threshold, and everything downstream of it was
+misread as an asymptotic cost until it was separated out.
 
 `gti_march % solved` sets `tolerance = 1e-12 x max(1, scale_of(...))`.
 The iteration counts below are counted by the accounting layer, not
@@ -35,13 +35,13 @@ count of unknowns. At a fixed duration of three, raising the instants:
 ```
 
 bdf1 takes eight iterations at every size and never degrades. bdf2
-reaches the budget of forty and stays there, and the row prints as
-converged while it does: newton leaves at the budget, the residual it
-leaves at is 1.4e-11, and show_row calls a march unconverged only
+reaches the iteration limit of forty and stays there, and the row prints as
+converged while it does: newton stops at the iteration limit, the residual it
+stops at is 1.4e-11, and show_row reports a march as unconverged only
 above 1e-8.
 
 Holding the instants at 161 and varying only the duration shows what
-it actually follows:
+the count follows:
 
 ```
  dt          0.15    0.075   0.0375   0.01875
@@ -49,18 +49,18 @@ it actually follows:
 ```
 
 **The step, not the count.** Halving dt from 0.0375 takes bdf2 from ten
-iterations to the budget, at 161 instants either way. Refining a
+iterations to the iteration limit, at 161 instants either way. Refining a
 grid is the whole of what scaling up means, so this is met by every
 run that refines rather than by every run that grows.
 
 The reference is the wrong one. `scale_of` is the norm of the residual
-at the state newton starts from, and that state holds one instant's
+at the state newton starts from, and that state contains one instant's
 components repeated. A difference row of a constant vanishes, by the
 same consistency that makes the coefficients sum to zero, so the
-starting residual carries none of the `1/dt^2` the rows carry. The
-floor round-off leaves at the solution does carry it. One rises as the
+starting residual contains none of the `1/dt^2` weight the rows contain. The
+rounding-error floor at the solution does contain it. One rises as the
 grid refines and the other does not, and where they cross the march
-cannot reach what it is asked for.
+cannot reach the requested tolerance.
 
 A first-order scheme's rows are weighted by `1/dt` and a second-order
 scheme's by `1/dt^2`, which is why bdf1 is untouched at every size
@@ -74,20 +74,20 @@ on the column a row determines and the `1/dt^d` weights on the
 sources, which are off the diagonal. Scaling by the diagonal changes
 the tolerance not at all, the starting residual being larger anyway.
 The largest row sum does carry the weight - 5.12e5 on the same block -
-but scaling by it gives 5.1e-7, looser than the 1e-8 a row is called
+but scaling by it gives 5.1e-7, looser than the 1e-8 a row is reported
 unconverged above.
 
-No tolerance is the lever, because the floor is not where a tolerance
-can be told to be. Tracing every iteration of bdf2 at 161 instants:
+No tolerance is the control parameter, because the floor is not at a value
+a tolerance can be set to. Tracing every iteration of bdf2 at 161 instants:
 the residual falls quadratically to 2.7e-11 by the eighth, and then
-bounces between 2.3e-11 and 3.2e-11 for thirty-two more. The tolerance
-sat at 1.25e-11, a factor of two under a floor it could never reach.
+oscillates between 2.3e-11 and 3.2e-11 for thirty-two more. The tolerance
+was 1.25e-11, a factor of two under a floor the iteration cannot reach.
 
 So newton stops when it stops progressing: a residual that has not
-bettered the best seen by a tenth, four iterations running, once it is
+improved on the best recorded by a tenth, four iterations running, once it is
 already a millionth of where it began. The last clause is what makes
-it safe - newton wanders early, a residual rising once before it falls
-is ordinary, and without it the rule cuts marches off in their first
+the rule valid - early newton iterates are non-monotone, a residual rising once before it falls
+is ordinary, and without the clause the rule stops marches in their first
 few iterations and reports them unconverged.
 
 ```
@@ -104,7 +104,7 @@ unchanged.
 
 ---
 
-## 1. State variables — the cost that remains once the cliff is set aside
+## 1. State variables — the cost that remains once the threshold is set aside
 
 One `bdf2` row, state degree 2, uniform grid, no derivative columns.
 Unknowns are `(instants - history) x components`.
@@ -116,10 +116,10 @@ Unknowns are `(instants - history) x components`.
 
 An earlier account of this row called the growth `n^3.7` to `n^4.0`
 and took the last two doublings for an asymptote. That was wrong. The
-step between 231 and 471 is the cliff of section 0, and averaging
-across it manufactures a power that nothing in the algorithm produces.
+step between 231 and 471 is the threshold of section 0, and averaging
+across it yields a power that nothing in the algorithm produces.
 
-Taken apart, each piece is what theory says it is:
+Taken apart, each part matches theory:
 
 ```
   unknowns    form(s)   solve(s)      form growth   solve growth
@@ -130,10 +130,10 @@ Taken apart, each piece is what theory says it is:
        723      0.191      6.453            2.2          3.4
 ```
 
-Formation is quadratic and cheap - `n` partial-action passes at `O(n)`
+Formation is quadratic and low cost - `n` partial-action passes at `O(n)`
 each, 0.19s of 6.6s at 723 unknowns, three per cent. **The solve is
-cleanly cubic** at every step, which is the elimination and nothing
-more. The cubic term is the one worth attacking; the quartic never
+cubic** at every step, which is the elimination and nothing
+more. The cubic term is the one to reduce; the quartic never
 existed.
 
 ### Why: a matrix that is 98 per cent empty is eliminated as if it were full
@@ -161,19 +161,19 @@ at the same instant. Occupancy falls as the horizon widens - 5.9 per
 cent at 63 unknowns, 2.0 per cent at 244 - because the band is fixed
 and the square is not.
 
-The band is bounded end to end. `handed_over` in `gti_chain` gathers
+The band is bounded end to end. `transferred` in `gti_chain` gathers
 exactly `given` instants, which is the same history depth, so a
 junction between two blocks of different layout does not reach outside
 the band either.
 
-Against that structure the solver does two things it need not:
+Against that structure the solver performs two operations it need not:
 
 - `operation_dense_direct` forms the matrix as `A(:,j) = matvec(e_j)`,
   one matvec per unknown, then runs Gaussian elimination with partial
   pivoting over the whole square. That is `O(n^3)` flops and `O(n^2)`
   storage on a matrix with `O(n b)` entries.
 - Partial pivoting may exchange any two rows, so even a banded matrix
-  handed to it would be treated as full.
+  passed to it would be treated as full.
 
 At the largest measured horizon, `n = 951` and `b = 14 + 2`:
 
@@ -186,8 +186,8 @@ At the largest measured horizon, `n = 951` and `b = 14 + 2`:
 The ratio is `O(n^2 / b^2)` and therefore grows without limit.
 
 On memory the arithmetic above is right about the order and wrong
-about what dominates. Measured, the matrix is not where the memory
-goes:
+about what dominates. Measured, the matrix is not the dominant
+memory:
 
 ```
  unknowns   peak, factorising   peak, matrix-free
@@ -196,9 +196,9 @@ goes:
 ```
 
 The krylov path forms no matrix at all and at 471 unknowns uses
-essentially the same memory. So the memory was ascribed to the
+nearly the same memory. So the memory was ascribed to the
 representation. It measures otherwise. One part per run, because
-within a process the allocator's arena is warm and a difference
+within a process the allocator's arena is already grown and a difference
 reports nothing:
 
 ```
@@ -210,25 +210,25 @@ reports nothing:
   the block statement the march solves      4.07
 ```
 
-**The representation is cheap.** A vertex set costs nothing
+**The representation is low cost.** A vertex set costs nothing
 measurable, a field over it nothing, an edge about 184 bytes, and the
 whole block statement 2.5 MB above a bare run - one and a half per
 cent of the 185 MB that same size reaches while solving.
 
-The memory is transient, and it is the cliff of section 0 wearing
-another face. `dense_direct_solve` allocates its `n by n` array inside
-the solve, so a fresh one is taken every newton iteration and handed
-back; at 471 unknowns that is 1.7 MB an iteration, and the allocator
+The memory is transient, and it is the threshold of section 0 measured
+in memory. `dense_direct_solve` allocates its `n by n` array inside
+the solve, so a new array is allocated every newton iteration and
+deallocated; at 471 unknowns that is 1.7 MB an iteration, and the allocator
 does not return it. Peak memory over the sweep is 7.5, 8.1, 10.3, 14.6
 then 84.7 MB - flat while the march converges in a few iterations, six
-times higher the moment it starts spending all forty. Per iteration it
+times higher as soon as it uses all forty. Per iteration it
 is about 2 MB either side of the step, so the step is the iteration
 count and nothing else.
 
-Two things follow, in order. Settle the tolerance and the memory falls
-with the time, by the same factor. Then hoist the matrix out of the
+Two consequences follow, in order. Settle the tolerance and the memory falls
+with the time, by the same factor. Then move the matrix allocation out of the
 iteration: it is the same shape every time, and there is no reason to
-take a new one per step.
+allocate a new one per step.
 
 ### What one processor should do instead
 
@@ -249,14 +249,14 @@ the same solution to the same tolerance.
  krylov      0.04   2.62   4.26   7.65
 ```
 
-Krylov grows about linearly (1.6x, 1.8x per doubling) because it spends
-a fixed iteration budget and each matvec is `O(n b)`. It crosses dense
+Krylov grows about linearly (1.6x, 1.8x per doubling) because it runs
+to a fixed iteration limit and each matvec is `O(n b)`. It crosses dense
 at roughly 470 unknowns. But it does not converge on a difference
 block - at 121 instants it returns a functional of 3.40 against the
 dense 11.67 and is reported unconverged - because nothing
 preconditions it and a row on the second derivative is weighted by
-`1/dt^2`. Iterating buys bounded work, not a solution. A banded direct
-solve buys both.
+`1/dt^2`. Iterating gives bounded work, not a solution. A banded direct
+solve gives both.
 
 ---
 
@@ -268,7 +268,7 @@ nothing here is a regression. It is what the architecture forecloses.
 `by_tangent` and `by_adjoint` each take one vector and return one
 scalar, and each calls `dense_solve`, which builds the matrix and
 factorises it from scratch. `chain_by_tangent` and `chain_by_adjoint`
-do the same once per block. **No factor is kept anywhere in the
+do the same once per block. **No factor is retained anywhere in the
 module.**
 
 So `n_d` design variables cost `n_d` full factorisations per block,
@@ -286,7 +286,7 @@ each is currently paid in full for every design variable.
 
 ### What one processor should do instead
 
-A factorisation that outlives the solve which produced it: an object
+A factorisation that persists after the solve which produced it: an object
 holding the banded factors, constructed once per block per state, then
 applied to as many right-hand sides as there are design variables. The
 tangent then costs one factorisation plus `n_d` substitutions.
@@ -299,8 +299,8 @@ out, nothing retained - cannot express it.
 
 ## 3. Functionals — the same shape, transposed
 
-`by_adjoint` has the identical structure: one `g`, one scalar back,
-one fresh factorisation. `n_f` functionals cost `n_f` factorisations.
+`by_adjoint` has the identical structure: one `g`, one scalar returned,
+one new factorisation. `n_f` functionals cost `n_f` factorisations.
 
 The correct choice between the two modes is by count, and the
 framework cannot currently make it because neither mode amortises:
@@ -316,12 +316,12 @@ both modes and the choice becomes a count comparison rather than two
 separate code paths.
 
 `functional_of` returns a scalar and `owned_gradient` fills one `g`
-per block. Carrying `n_f` functionals means those become a second
+per block. Storing `n_f` functionals means those become a second
 dimension, not a loop over independent solves.
 
 ---
 
-## 4. The gradient path carries an avoidable order
+## 4. The gradient path has an avoidable order
 
 Measured as the difference between `--max-derivative-degree=1` and
 `=0`, which is exactly the sensitivity work:
@@ -350,10 +350,10 @@ flop is done. At `n = 951` the middle representation alone is about
 This does **not** happen on the Newton hot path: `gti_march` attaches
 the `linearization` directly, so the matrix is formed once by matvecs
 against it. The waste is confined to sensitivity, where it is paid per
-gradient - which is per design variable once axis 2 opens up.
+gradient - which is per design variable once axis 2 is extended.
 
 The fix follows axis 1: if the solver takes a banded matrix, the
-gradient path hands it the band it already has, and neither the dense
+gradient path passes it the band it already has, and neither the dense
 array nor the `n^2`-edge graph is built.
 
 ---
@@ -362,16 +362,16 @@ array nor the `n^2`-edge graph is built.
 
 1. ~~**A tolerance that stops being reachable.**~~ **Settled.** It
    followed the step rather than the count, and no tolerance was the
-   lever: newton now stops when it stops progressing. Two and a half
-   times less time at the sizes it bit, with every functional
+   control parameter: newton now stops when it stops progressing. Two and a half
+   times less time at the sizes where it bound, with every functional
    unchanged. Measurements taken before this are still measuring the
-   budget where the step was small.
-2. **A matrix taken afresh every iteration.** `dense_direct_solve`
+   iteration limit where the step was small.
+2. **A matrix allocated again every iteration.** `dense_direct_solve`
    allocates `n by n` inside itself, about 2 MB an iteration at 471
    unknowns, which is the whole of the memory growth. The shape does
-   not change between iterations. Falls out with 1, and cheap to fix
+   not change between iterations. Follows from 1, and low cost to fix
    on its own.
-3. **Dense elimination of a banded matrix.** The solve is cleanly
+3. **Dense elimination of a banded matrix.** The solve is
    cubic; ~1250x flops available at the largest size measured, the
    ratio growing as `n^2/b^2`. The representation is not the problem -
    the block statement is 2.5 MB where the run reaches 185.
@@ -381,7 +381,7 @@ array nor the `n^2`-edge graph is built.
 5. **Triple materialisation on the gradient path.** `n^2` edges to
    carry a matrix already held as an array. Confined to sensitivity,
    not the hot path.
-6. **Krylov as the escape hatch.** Linear in `n` but does not converge
+6. **Krylov as the fallback.** Linear in `n` but does not converge
    on difference blocks. Superseded by 1, and should be retired as the
    remedy for large horizons once 1 is done.
 
@@ -398,7 +398,7 @@ of blocks is what a time-parallel method partitions.
 Everything above was measured at no optimisation: neither build passed
 an -O flag. That does not change any order stated - a cubic is a cubic
 at -O0 - but it changes every constant by more than an order of
-magnitude, and one of the two "binding" items dissolves under it.
+magnitude, and one of the two "binding" items is removed under it.
 
 ```
                                           before        after
@@ -407,35 +407,36 @@ magnitude, and one of the two "binding" items dissolves under it.
  fitted operator, 32x32 cells              179 s        0.059 s
 ```
 
-Three things did that, in the order they matter:
+Three changes did that, in the order they matter:
 
 - `-O3` on the library, `-O2` on the application. The dense elimination
   is 98 per cent of a field march (gprof), and it was 50 times slower
-  than it needed to be for want of a flag.
+  than it needed to be for lack of a flag.
 - The elimination and the substitutions run down columns. The array is
-  column-major, and the row-oriented loop it had strode across it.
+  column-major, and the row-oriented loop it had traversed it against
+  the storage order.
 - The fitted balance appended one triple at a time to an array, which
   copies the array each time. It grows by doubling now; the assembly
   is linear, and 32x32 cells at any form degree take under a tenth of
   a second where they took three minutes.
 
-None of this is parallelism. All of it was one processor doing what
-it was asked in the way the memory lies.
+None of this is parallelism. All of it is one processor performing the
+requested operations in the order the memory is laid out.
 
 **The field block as a statement.** A spatial mesh under every instant
 multiplies the unknowns by the cell count, so the dense elimination
 binds at a few thousand unknowns - 8x8 cells by 11 instants is 2112,
 16x16 by 41 is 31,000, and the latter's factorisation is an hour. The
-block now writes its own tangent down as triples (`compiled_tangent`),
+block now records its own tangent as triples (`compiled_tangent`),
 so the matrix is formed at the cost of its nonzeros and not by n
 applies, and newton attaches it as a stencil; that is what a banded
 or a multigrid solve needs, and the dense one already gains from it.
 
 **Multigrid over the space-time block does not converge with a point
 smoother**, and the reason is structural, not a defect in the
-plumbing. A derived row carries one on the degree it determines and
+composition. A derived row has one on the degree it determines and
 1/dt^d on the same instant's value; a point Gauss-Seidel sweep pivots
-on the one and diverges. What the structure wants is a sweep by
+on the one and diverges. What the structure requires is a sweep by
 instant - the time coupling is lower triangular, so a sweep in
 instant order is exact in time - with multigrid inside each instant
 over the nodes, on the system reduced to values. That is the

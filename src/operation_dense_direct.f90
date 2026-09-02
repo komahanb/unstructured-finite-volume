@@ -14,7 +14,7 @@
 ! operation.
 !
 ! A direct solve is a single pass, so the tolerance and iteration
-! budget inherited from the minimizer family are unused. The one
+! limit inherited from the minimizer family are unused. The one
 ! numerical check is on the pivot: a pivot at or below
 ! singular_tolerance times the largest entry of the matrix cannot be
 ! divided by, being indistinguishable from zero at the matrix's own
@@ -23,8 +23,8 @@
 ! expected it not to be.
 !
 ! A caller whose matrix is a tangent frozen at an intermediate
-! iterate expects no such thing, since singularity there is a fact
-! about the iterate and not a fault. Such a caller sets
+! iterate does not expect that, since singularity there is a property
+! of the iterate and not a fault. Such a caller sets
 ! singular_reported, and a singular pivot then leaves the unknown
 ! unchanged and reports huge(1.0_dp) as the achieved residual - a
 ! value no completed elimination produces - for the outer iteration
@@ -53,17 +53,18 @@ module operation_dense_direct
      ! Whether a singular pivot is reported through the achieved
      ! residual instead of stopping the program. False by default,
      ! a singular matrix being a fault wherever the caller has not
-     ! said otherwise.
+     ! specified otherwise.
      logical  :: singular_reported = .false.
 
-     ! The factors kept, and the stamp of the statement they belong
-     ! to. A statement stamped the same is not formed or factorised
-     ! again; one stamped zero always is. A statement stamped the same
-     ! but the other way round is the transpose of the one kept, and
-     ! is substituted against the same factors the other way.
+     ! The factors retained, and the version of the statement they
+     ! belong to. A statement with the same version is not formed or
+     ! factorised again; one with version zero always is. A statement
+     ! with the same version but the opposite orientation is the
+     ! transpose of the one retained, and is substituted against the
+     ! same factors transposed.
      type(dense_factorisation), private :: factor
-     integer                  , private :: kept_stamp  = 0
-     logical                  , private :: kept_turned = .false.
+     integer                  , private :: retained_version  = 0
+     logical                  , private :: retained_transposed = .false.
 
    contains
 
@@ -116,27 +117,27 @@ contains
 
     n = size(rhs)
 
-    kept = this % action % stamp() /= 0 .and. &
-         & this % action % stamp() == this % kept_stamp .and. &
+    kept = this % action % version() /= 0 .and. &
+         & this % action % version() == this % retained_version .and. &
          & this % factor % order() == n
 
     !----------------------------------------------------------------!
     ! Assemble the matrix - one matvec per basis vector, one column
-    ! each - and factorise, unless the factors kept are this
-    ! statement's already.
+    ! each - and factorise, unless the factors retained are already
+    ! this statement's.
     !----------------------------------------------------------------!
 
     if (.not. kept) then
        call compile_matrix_from_action(this % action, this % on, this % unknown_domain, &
-            & this % num_unknowns, n, this % num_components, a, constant, held=this % held)
+            & this % num_unknowns, n, this % num_components, a, constant, stored=this % stored)
        call this % factor % factorise(a, this % singular_tolerance * maxval(abs(a)))
-       this % kept_stamp  = this % action % stamp()
-       this % kept_turned = this % action % stamp_transposed()
+       this % retained_version  = this % action % version()
+       this % retained_transposed = this % action % version_transposed()
     end if
 
     !----------------------------------------------------------------!
     ! Factorise, and substitute. A singular pivot is reported through
-    ! the achieved residual where the caller asked for that, and stops
+    ! the achieved residual where the caller requested that, and stops
     ! the program otherwise.
     !----------------------------------------------------------------!
 
@@ -149,7 +150,7 @@ contains
     end if
 
     call this % factor % substitute(rhs, solution, &
-         & transposed = this % action % stamp_transposed() .neqv. this % kept_turned)
+         & transposed = this % action % version_transposed() .neqv. this % retained_transposed)
     x = solution
 
     !----------------------------------------------------------------!

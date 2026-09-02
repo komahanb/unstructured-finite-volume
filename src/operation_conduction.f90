@@ -1,7 +1,7 @@
 !=====================================================================!
-! The conduction law: the material's answer to a gradient.
+! The conduction law: the flux a material produces from a gradient.
 !
-! LEVEL 3 OF THE STRATIFICATION. A conduction law holds one tensor,
+! LEVEL 3 OF THE STRATIFICATION. A conduction law stores one tensor,
 !
 !      K = | kxx kxy kxz |
 !          | kyx kyy kyz |         isotropic k is K = k * I
@@ -10,19 +10,19 @@
 ! and supplies two coefficient arrays, one entry per face, from the
 ! mesh's own normals and areas:
 !
-!      normal_conductivity   keff_e = n^T K n    what the old flux
-!                                                called the normal
-!                                                diffusivity
+!      normal_conductivity   keff_e = n^T K n    the normal
+!                                                diffusivity of the
+!                                                earlier flux code
 !      edge_coefficients     keff_e * area_e     the dictionary's
 !                                                interior diffusion
 !                                                coefficient, zero on
 !                                                the headless faces -
-!                                                a boundary face gets
+!                                                a boundary face takes
 !                                                its coefficient from
 !                                                its condition, not
 !                                                from the material
 !
-! It owns no operator and no balance; it computes numbers.
+! The law stores no operator and no balance; it computes coefficients.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -40,8 +40,8 @@ module operation_conduction
 
   type :: conduction
 
-     ! one number for an isotropic material, or the tensor, as wide
-     ! as the space the mesh lives in
+     ! one number for an isotropic material, or the tensor, with the
+     ! dimension of the mesh's space
      real(dp) :: scalar = 0.0_dp
      real(dp), allocatable :: k(:,:)
 
@@ -103,7 +103,7 @@ contains
 
     if (allocated(this % k)) then
        if (size(this % k, 1) /= d) then
-          error stop 'conduction: the conductivity tensor is as wide as the space'
+          error stop 'conduction: the conductivity tensor has the dimension of the space'
        end if
     end if
 

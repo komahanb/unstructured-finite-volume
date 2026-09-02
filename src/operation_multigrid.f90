@@ -1,36 +1,38 @@
 !=====================================================================!
-! Two-grid multigrid: a minimizer that changes resolution mid-fight.
+! Two-grid multigrid: a minimizer that changes resolution within one
+! iteration.
 !
-! One family, one story - and this member's policy is the coarse
-! detour. A smoother kills the rough part of the error cheaply; the
-! smooth remainder, expensive on the fine graph, is cheap one level
-! down, so the residual travels to the blocks, is answered there,
-! and the answer travels back:
+! One family, one iteration structure - and this member's policy is
+! the coarse correction. A smoother removes the high-frequency part
+! of the error at low cost; the smooth remainder, high cost on the
+! fine graph, is low cost one level down, so the residual is
+! restricted to the blocks, solved there, and the correction is
+! prolonged back:
 !
 !      smooth . restrict . solve coarse . prolong . correct . smooth
 !
-! GOVERNANCE, twice. The smoother is a held minimizer sweeping the
-! fine statement; the coarse answer is a held minimizer solving the
-! block statement. Multigrid does not iterate on its own - it
-! schedules the two it governs.
+! GOVERNANCE, twice. The smoother is a stored minimizer sweeping the
+! fine statement; the coarse correction is a stored minimizer solving
+! the block statement. Multigrid does not iterate on its own - it
+! schedules the two minimizers it governs.
 !
-! THE GALERKIN ROAD. The coarse operator is not re-derived: it is
+! THE GALERKIN CONSTRUCTION. The coarse operator is not re-derived: it is
 ! the fine stencil operator READ THROUGH THE AGGREGATES - each
 ! dependency (row, column, weight) becomes (block of row, block of
-! column, weight), and the dependencies landing between one block
+! column, weight), and the dependencies mapped to one block
 ! pair are combined into one entry (combine_triples), so the
 ! coarse matrix has one entry per pair. That is R A P with summing
-! restriction and injected prolongation, and it obeys the
-! commutation square the suite holds:
+! restriction and injected prolongation, and it satisfies the
+! commutation identity the test suite checks:
 !
 !      solve_coarse( R(A(P e)) ) = e        the coarsened statement
-!                                           answers as the fine one
-!                                           would have, on anything
-!                                           the blocks can express
+!                                           returns what the fine one
+!                                           would, on any vector the
+!                                           blocks can express
 !
-! The compiled road is required: attach a stencil operator. The
-! interpreted road would re-derive per level; that is a different
-! member for another day.
+! The compiled path is required: attach a stencil operator. The
+! interpreted path would re-derive per level; that is a different
+! member, not implemented.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -52,7 +54,7 @@ module operation_multigrid
 
   private
 
-  ! a stamp for every coarse statement made
+  ! a version number for every coarse statement made
   integer, save :: statements_made = 0
   public :: multigrid
 
@@ -88,18 +90,18 @@ contains
 
   !===================================================================!
   ! After attach: read the fine stencil through the aggregates and
-  ! hand the governed pair their statements. The smoother sweeps the
-  ! fine one; the coarse minimizer answers the block one.
+  ! pass the governed pair their statements. The smoother sweeps the
+  ! fine one; the coarse minimizer solves the block one.
   !===================================================================!
 
   !===================================================================!
-  ! Attach, and where aggregates are already held, set the two levels
-  ! up at once: a governing minimizer that re-attaches its inner at
-  ! every iteration need not know the coarse level exists.
+  ! Attach, and where aggregates are already stored, set the two levels
+  ! up at once: a governing minimizer that re-attaches its inner
+  ! minimizer at every iteration need not reference the coarse level.
   !===================================================================!
 
   subroutine multigrid_attach(this, action, on, unknown_domain, num_unknowns, &
-       & num_components, coupling, held_inputs)
+       & num_components, coupling, stored_inputs)
 
     class(multigrid)     , intent(inout)        :: this
     class(operation)     , intent(in)           :: action
@@ -108,12 +110,12 @@ contains
     integer              , intent(in)           :: num_unknowns
     integer              , intent(in), optional :: num_components
     class(directed_graph), intent(in), optional :: coupling
-    type(stored_field)   , intent(in), optional :: held_inputs(:)
+    type(stored_field)   , intent(in), optional :: stored_inputs(:)
 
     integer, allocatable :: kept(:)
 
     call attach(this, action, on, unknown_domain, num_unknowns, &
-         & num_components, coupling, held_inputs)
+         & num_components, coupling, stored_inputs)
 
     if (allocated(this % aggregates)) then
        kept = this % aggregates
@@ -135,7 +137,7 @@ contains
     this % aggregates = aggregates
     this % nblocks    = maxval(aggregates)
 
-    ! The Galerkin road: every dependency lands between blocks.
+    ! The Galerkin construction: every dependency is mapped to a block pair.
     select type (fine => this % action)
 
     type is (stencil)
@@ -152,8 +154,8 @@ contains
        allocate(zeros(this % nblocks))
        zeros = 0.0_dp
 
-       ! many fine dependencies land between one block pair; the
-       ! coarse matrix carries their sum as one entry
+       ! many fine dependencies map to one block pair; the
+       ! coarse matrix stores their sum as one entry
        block
          integer , allocatable :: crows(:), ccolumns(:)
          real(dp), allocatable :: cweights(:)
@@ -161,10 +163,10 @@ contains
               & rows, columns, weights, crows, ccolumns, cweights)
          block_statement = stencil(crows, ccolumns, cweights, &
               & zeros, label='block statement')
-         ! stamped, so a direct coarse solver factorises it once and
-         ! not once a cycle
+         ! versioned, so a direct coarse solver factorises it once and
+         ! not once per cycle
          statements_made = statements_made + 1
-         call block_statement % stamped(statements_made)
+         call block_statement % versioned(statements_made)
        end block
 
     class default
@@ -174,9 +176,9 @@ contains
     end select
 
     ! The smoother is a STRUCTURED one - jacobi, gauss-seidel - so it
-    ! is handed the dependent-variable coupling explicitly. On this
+    ! is passed the dependent-variable coupling explicitly. On this
     ! path the mesh the action executes over IS the coupling of its
-    ! unknowns, and saying so here makes that a caller's statement
+    ! unknowns, and stating so here makes that a caller's statement
     ! rather than the minimizer's assumption.
     ! the smoother sweeps a block at a time where the unknowns come in
     ! blocks, and colours the coupling between blocks: the fine
@@ -191,7 +193,7 @@ contains
             & this % unknown_domain, this % num_unknowns, coupling = this % on)
     end if
 
-    ! The coarse statement carries its own stencil, and that stencil
+    ! The coarse statement stores its own stencil, and that stencil
     ! is exactly the coupling of the coarse unknowns.
     call this % coarse % attach(block_statement, block_statement % pattern, &
          & block_statement % pattern % vertex_set(), &
@@ -201,14 +203,14 @@ contains
   end subroutine setup
 
   !===================================================================!
-  ! The cycle: smooth, send the remainder down, bring the answer
-  ! back, smooth again.
+  ! The cycle: smooth, restrict the residual, prolong the correction,
+  ! smooth again.
   !===================================================================!
 
   !===================================================================!
   ! A stencil's pattern read through blocks of consecutive unknowns:
   ! the graph over the blocks with an edge where any unknown of one
-  ! reads any unknown of the other, self-edges dropped. The coupling
+  ! reads any unknown of the other, self-edges removed. The coupling
   ! a block smoother colours.
   !===================================================================!
 
@@ -250,7 +252,7 @@ contains
     real(dp), intent(out)   :: achieved
 
     real(dp), allocatable :: r(:), rc(:), ec(:), e(:)
-    real(dp) :: smoothed, answered
+    real(dp) :: smoothed, coarse_residual
     integer :: it
 
     call tally_record(linear_solves)
@@ -268,11 +270,12 @@ contains
        achieved = this % norm(r)
        if (this % halted(achieved, it)) return
 
-       ! Down: the residual restricted onto the blocks; up: the
-       ! correction found there, prolonged by the transpose.
+       ! Restriction: the residual restricted onto the blocks;
+       ! prolongation: the correction computed there, prolonged by the
+       ! transpose.
        call through_blocks(this % aggregates, this % nblocks, 1, r, rc, transposed=.false.)
        ec = 0.0_dp
-       call this % coarse % solve(rc, ec, answered)
+       call this % coarse % solve(rc, ec, coarse_residual)
        call through_blocks(this % aggregates, this % nblocks, 1, e, ec, transposed=.true.)
        x = x + e
 

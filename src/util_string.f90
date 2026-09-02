@@ -69,7 +69,7 @@ contains
     if (len(delimiter) .eq. 0) return ! The delimiter does not match.
     if (index(this % str, delimiter) .eq. 0) return ! The delimiter does not match.
 
-    ! The table holds the lower and upper index of each token.
+    ! The table stores the lower and upper index of each token.
     allocate(tidx(2, this % count))
     
     ! Initialize the indices and the token counter.

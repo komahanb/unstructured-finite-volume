@@ -8,64 +8,64 @@
 !     branch(2) = the sequence of relations
 !
 ! (S, P) is a view. The same graph remains readable under any other,
-! and the kernel learns none of these words.
+! and the kernel defines none of these terms.
 !
 ! THE BINDING. A branch references a GRAPH, never an arbitrary object.
 ! The member sets and relations of this repository are not yet graphs,
-! so each element graph stands for one of them and a binding maps the
+! so each element graph denotes one of them and a binding maps the
 ! element to the legacy object it denotes. The binding OWNS its
-! objects, because a borrowed pointer handed to a caller outlives
-! whatever lent it.
+! objects, because a non-owning pointer passed to a caller can outlive
+! the object it references.
 !
 ! THE STORAGE LAW.
 !
 !     relational_binding is not assignable; bind_* preserves every
 !     outstanding object pointer until the binding is destroyed.
 !
-! That law is not free. A row holds a POINTER to an individually
+! That law has a cost. A row stores a POINTER to an individually
 ! allocated object, never the object itself: when the row array grows,
-! the rows are copied and the objects do not move. Holding the object
+! the rows are copied and the objects do not move. Storing the object
 ! in the row - as an allocatable component - was measured and rejected,
-! because growth relocates the array and every borrowed pointer then
-! reads freed storage: silently wrong first, fatal next. See
-! test/graph-relational/lifetime.f90, which holds this law on every run.
+! because growth relocates the array and every non-owning pointer then
+! reads freed storage: incorrect values first, a fatal error next. See
+! test/graph-relational/lifetime.f90, which checks this law on every run.
 !
-! ASSIGNMENT IS REFUSED, at run time, because no Fortran mechanism
+! ASSIGNMENT IS REJECTED, at run time, because no Fortran mechanism
 ! prohibits it at compile time; four were compiled and measured in
 ! test/graph-relational/fortran-assignment. Extension and replacement
-! are different operations: bind_* extends a binding and preserves what
-! it lent, and there is no replacement that can.
+! are different operations: bind_* extends a binding and preserves every
+! pointer it has returned, and no replacement can.
 !
-! The refusing procedure takes its left-hand side INTENT(INOUT), not
+! The rejecting procedure takes its left-hand side INTENT(INOUT), not
 ! INTENT(OUT), because an INTENT(OUT) dummy of a finalizable type is
-! finalized on entry - which would destroy the lender before refusing
-! to destroy it.
+! finalized on entry - which would finalize the binding before the
+! rejection executes.
 !
-! Because a row holds a pointer rather than the object, the pointer
+! Because a row stores a pointer rather than the object, the pointer
 ! this module returns does not point into the binding. The binding
 ! therefore needs no TARGET attribute at any call site.
 !
-! The binding is storage keyed on identity, not ontology. It is where
-! the wrappers that used to sit inside the retired container belong:
-! they existed only because a Fortran array carries one dynamic type,
-! and that was always a storage fact.
+! The binding is storage keyed on identity, not ontology. The binding
+! is where the wrappers that were stored inside the retired container
+! belong: they existed only because a Fortran array has one dynamic
+! type, and that is a storage fact.
 !
 ! Sequence behaviour is delegated to view_sequence. Nothing here
-! traverses a spine.
+! traverses the sequence's cells.
 !
 ! THREE FAILURES, STRUCTURALLY APART.
 !
-!     malformed sequence   refused, by view_sequence
-!     unstorable object    refused, by bind_set / bind_relation
-!     relationally invalid answered .false. by relational_valid
+!     malformed sequence   rejected, by view_sequence
+!     unstorable object    rejected, by bind_set / bind_relation
+!     relationally invalid returned .false. by relational_valid
 !
-! A view over an existing graph reports invalidity; it does not refuse
-! a graph it did not construct. The retired constructor refused at
+! A view over an existing graph reports invalidity; it does not reject
+! a graph it did not construct. The retired constructor rejected at
 ! construction because it was a constructor; this is not one. What the
-! binding refuses is not the view but the storage: an object with no
+! binding rejects is not the view but the storage: an object with no
 ! identity cannot be compared, and a borrowing view cannot be owned,
 ! because copying it into owned storage copies a reference to a base
-! the binding does not keep alive.
+! the binding does not keep allocated.
 !
 ! THE VALIDITY LAW:
 !
@@ -75,9 +75,9 @@
 !       (iii) every domain of every relation is a member set of G.
 !
 ! S and P are SETS; the branches represent them as sequences, and a
-! sequence may repeat what a set cannot. (i) and (ii) are that gap,
-! answered rather than refused, because repetition is a property of a
-! graph already built.
+! sequence may repeat what a set cannot. (i) and (ii) are that
+! difference, reported rather than rejected, because repetition is a
+! property of a constructed graph.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -139,8 +139,9 @@ contains
   ! What may be stored: an object with an assigned identity, because
   ! the view compares objects and nothing else; and, for a relation,
   ! one that is materialized, because a borrowing view copied into
-  ! owned storage carries a reference to a base the binding does not
-  ! keep alive. A view rides above a bound relation, never inside one.
+  ! owned storage stores a reference to a base the binding does not
+  ! keep allocated. A view is defined over a bound relation, never
+  ! stored inside one.
   !===================================================================!
 
   subroutine bind_set(this, element, object)
@@ -195,7 +196,7 @@ contains
   end subroutine bind_relation
 
   !===================================================================!
-  ! Lookup by element identity, answering a reference into owned
+  ! Lookup by element identity, returning a reference into owned
   ! storage.
   !===================================================================!
 
@@ -242,9 +243,9 @@ contains
   end function relation_for
 
   !===================================================================!
-  ! Refusal. Replacing a binding cannot preserve what it lent, so it is
-  ! not an operation. INTENT(INOUT): an INTENT(OUT) dummy would be
-  ! finalized before this body ran.
+  ! Rejection. Replacing a binding cannot preserve the pointers it has
+  ! returned, so replacement is not an operation. INTENT(INOUT): an
+  ! INTENT(OUT) dummy would be finalized before this body executed.
   !===================================================================!
 
   subroutine refuse_assignment(lhs, rhs)
@@ -334,12 +335,12 @@ contains
   end function relation_at
 
   !===================================================================!
-  ! Does this graph hold that member set. One scan of the binding to
+  ! Whether this graph contains that member set. One scan of the binding to
   ! find the element that denotes it, then one traversal of the
   ! sequence: O(m + n), never O(m*n).
   !===================================================================!
 
-  logical function has_set(g, b, s) result(held)
+  logical function has_set(g, b, s) result(stored)
 
     type(graph)             , intent(in) :: g
     type(relational_binding), intent(in) :: b
@@ -347,12 +348,12 @@ contains
 
     integer :: k
 
-    held = .false.
+    stored = .false.
     if (.not. allocated(b % sets)) return
 
     do k = 1, size(b % sets)
        if (b % sets(k) % object % same_as(s)) then
-          held = sequence_has(g % branch(1), b % sets(k) % element)
+          stored = sequence_has(g % branch(1), b % sets(k) % element)
           return
        end if
     end do
@@ -364,7 +365,7 @@ contains
   ! relation is a member set of this graph.
   !===================================================================!
 
-  logical function relational_valid(g, b) result(ok)
+  logical function relational_valid(g, b) result(valid)
 
     type(graph)             , intent(in) :: g
     type(relational_binding), intent(in) :: b
@@ -374,7 +375,7 @@ contains
     type(graph)                :: d
     integer                        :: k, j
 
-    ok = .false.
+    valid = .false.
 
     do k = 1, num_member_sets(g)                     ! (i) S is a set
        s => member_set_at(g, b, k)
@@ -400,7 +401,7 @@ contains
        end do
     end do
 
-    ok = .true.
+    valid = .true.
 
   end function relational_valid
 

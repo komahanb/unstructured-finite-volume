@@ -2,9 +2,9 @@
 
 ## Overview
 
-The finite volume framework is fundamentally a **differentiable operator**: it maps design parameters to functional outputs via stencils, time integration, and solvers. A `type :: neural_network` wraps this capability into a learnable, composable abstraction.
+The finite volume framework is a **differentiable operator**: it maps design parameters to functional outputs via stencils, time integration, and solvers. A `type :: neural_network` wraps this capability into a learnable, composable abstraction.
 
-The key insight is that traditional neural networks and PDE solvers are mathematically identical:
+The central observation is that traditional neural networks and PDE solvers are mathematically identical:
 - **Forward pass**: compute outputs from inputs
 - **Backpropagation**: compute gradients via automatic differentiation
 - **Training**: optimize parameters via gradient descent
@@ -13,7 +13,7 @@ This document describes the neural network type, its hierarchical deployment, an
 
 ---
 
-## Analogy: Neural Network ↔ PDE Solver
+## Correspondence: Neural Network ↔ PDE Solver
 
 | Concept | Traditional NN | Differentiable PDE Solver |
 |---------|---|---|
@@ -37,7 +37,7 @@ module operation_neural
 
   use util_precision, only : dp
   use graph_fractal, only : graph
-  use gti_expansion, only : expansion, family_holder
+  use gti_expansion, only : expansion, family_container
   use gti_chain, only : chain_block
 
   implicit none
@@ -119,7 +119,7 @@ end do
 subroutine forward(this, physics, schemes, instants, dt)
   class(neural_network), intent(inout) :: this
   class(nodal_integrand), intent(in) :: physics
-  type(family_holder), intent(in) :: schemes(:)
+  type(family_container), intent(in) :: schemes(:)
   integer, intent(in) :: instants(:)
   real(dp), intent(in) :: dt(:)
 
@@ -169,7 +169,7 @@ subroutine backward(this, physics)
 end subroutine backward
 ```
 
-#### `child_networks`: Spawn networks at child nodes
+#### `child_networks`: Create networks at child nodes
 
 ```fortran
 function child_networks(this, child_level) result(children)
@@ -246,7 +246,7 @@ end do
 
 **Use case**: Adaptive mesh refinement, locally-tuned discretizations, spatially-varying physics.
 
-**Efficiency**: Gradient of block B doesn't depend on state of block A—can be parallelized.
+**Efficiency**: The gradient of block B does not depend on the state of block A; the blocks can be computed in parallel.
 
 ### Level 3: Multi-Fidelity (Hierarchical Resolution)
 
@@ -271,7 +271,7 @@ functional_coarse = net_coarse % forward(...)
 functional_fine = net_fine % forward(...)
 total_functional = functional_coarse + weight * functional_fine
 
-! Backward: gradients flow independently
+! Backward: gradients are computed independently
 call net_coarse % backward(...)
 call net_fine % backward(...)
 grad_coarse = net_coarse % gradient()
@@ -307,7 +307,7 @@ end do
 
 ### Level 5: Hierarchical Composition
 
-Networks at multiple levels working together.
+Networks at multiple levels composed.
 
 ```fortran
 type(neural_network) :: root
@@ -325,7 +325,7 @@ do b = 1, size(children)
    call children(b) % forward(...)
 end do
 
-! Backward: gradients flow from blocks to root
+! Backward: gradients are accumulated from blocks to root
 do b = 1, size(children)
    call children(b) % backward(...)
 end do
@@ -474,7 +474,7 @@ do iteration = 1, max_iterations
    design_robust = design_robust - learning_rate * net % gradient()
 end do
 
-! Result: design works for ANY μ in [μ_mean - 3·σ_μ, μ_mean + 3·σ_μ]
+! Result: design is valid for every μ in [μ_mean - 3·σ_μ, μ_mean + 3·σ_μ]
 ```
 
 **Loss function**: Loss = E_μ[||u(T; design, μ) - target||²]
@@ -487,17 +487,17 @@ The learned design minimizes expected error **across the parameter distribution*
 
 #### 1. **Robust Discretization**
 
-Learn stencil weights and solver parameters that work well **everywhere in the parameter range**.
+Learn stencil weights and solver parameters that are accurate **everywhere in the parameter range**.
 
 ```fortran
 ! Old: optimize for μ = 1.5
 ! New: optimize for μ ~ N(1.5, 0.3)
 
-! The learned design trades off: good for all μ in range
-! vs. excellent at one μ but poor elsewhere
+! The learned design trades off: accurate for all μ in the range
+! vs. most accurate at one μ but inaccurate elsewhere
 ```
 
-**Benefit**: Transfer learning becomes built-in. No need to retrain for new μ in the range.
+**Benefit**: Transfer learning is built in. No retraining is needed for a new μ in the range.
 
 #### 2. **Uncertainty Propagation (Forward Problem)**
 
@@ -571,7 +571,7 @@ design_variance = design_variance - alpha * net_variance % gradient()
 
 #### 4. **Bayesian Inference (Inverse Problem)**
 
-Efficiently infer parameters from noisy measurements.
+Efficiently infer parameters from measurements with measurement error.
 
 **Prior**: μ ~ N(μ₀, Σ_prior)  
 **Likelihood**: observations ~ u(T; μ) + measurement_noise  
@@ -590,7 +590,7 @@ subroutine bayesian_inference(net, physics, observations, &
    
    num_chains = 10
    
-   ! MCMC: use trained network to evaluate likelihood cheaply
+   ! MCMC: use trained network to evaluate likelihood at low cost
    do mcmc_iter = 1, num_mcmc_iterations
       
       ! Propose new μ
@@ -620,9 +620,9 @@ Exact gradients for gradient-based MCMC.
 
 #### 5. **Automatic Robustness**
 
-Training on a stochastic parameter distribution naturally makes the design robust.
+Training on a stochastic parameter distribution makes the design robust.
 
-**Why**: Stochastic gradient descent explores the parameter space during training.  
+**Why**: Stochastic gradient descent samples the parameter space during training.  
 **Effect**: The learned design minimizes loss **in expectation** over the distribution.
 
 ```fortran
@@ -633,32 +633,32 @@ do iteration = 1, max_iterations
    call net % backward()
    design = design - alpha * net % gradient()
 end do
-! No explicit robustness constraint needed; it emerges from the data
+! No explicit robustness constraint needed; it follows from the sampled data
 ```
 
 ---
 
 #### 6. **Dimension Reduction and Feature Discovery**
 
-When learning across distributions, the framework discovers which discretization features **truly matter** for the entire parameter range.
+When learning across distributions, the framework identifies which discretization features **are significant** for the entire parameter range.
 
 Example:
-- Maybe fine mesh is needed near bifurcation points (parameter-dependent)
-- Maybe solver tolerance must scale with μ (parameter-dependent)
-- Maybe stencil weights change slowly with μ (smooth, low-dimensional submanifold)
+- A fine mesh may be needed near bifurcation points (parameter-dependent)
+- Solver tolerance may need to scale with μ (parameter-dependent)
+- Stencil weights may change slowly with μ (smooth, low-dimensional submanifold)
 
 ```fortran
 ! Sensitivity of design w.r.t. μ
 real(dp) :: design_sensitivity(num_params)
 design_sensitivity = d(design)/d(mu)
 
-! Low sensitivity → robust feature (doesn't change much with μ)
+! Low sensitivity → robust feature (varies little with μ)
 ! High sensitivity → μ-dependent feature (needs local adaptation)
 
 where (design_sensitivity < threshold)
    design_robust = design  ! Use this everywhere
 elsewhere
-   design_local(mu) = design % at(mu)  ! Keep local
+   design_local(mu) = design % at(mu)  ! Retain local
 end where
 ```
 
@@ -666,14 +666,14 @@ end where
 
 ### Parameter-Independent Networks
 
-This approach gives you **parameter-independent networks with interpretable structure**:
+This approach yields **parameter-independent networks with interpretable structure**:
 
-| Aspect | DeepONet | Your Framework (Stochastic μ) |
+| Aspect | DeepONet | This Framework (Stochastic μ) |
 |--------|----------|---|
 | **Parameter independence** | Yes (learns operator for all μ) | Yes (learns design for all μ) |
 | **Interpretability** | Black box weights θ | Stencil weights, solver params |
 | **Structure** | None | Stencil + solver + time step |
-| **Training data** | Expensive (1000s of solutions) | Cheap (sample from distribution) |
+| **Training data** | High cost (1000s of solutions) | Low cost (sample from distribution) |
 | **Transfer** | Automatic | Built-in (design works across range) |
 | **Uncertainty quantification** | No | Yes (propagate μ distribution → u distribution) |
 
@@ -757,7 +757,7 @@ Testing on unseen μ values:
   3.00: error =  1.345e-02
 ```
 
-**Interpretation**: Design learned on μ ~ N(2.0, 0.5) works well across the entire range [1.0, 3.0], with lowest error near the nominal value.
+**Interpretation**: Design learned on μ ~ N(2.0, 0.5) is accurate across the entire range [1.0, 3.0], with lowest error near the nominal value.
 
 ---
 
@@ -765,7 +765,7 @@ Testing on unseen μ values:
 
 ### 1. Parameter Estimation (Inverse Problem)
 
-**Goal**: Given measurements of solution, find best design.
+**Goal**: Given measurements of the solution, find the optimal design.
 
 ```fortran
 ! Minimize: J(u(design)) - measurements
@@ -841,5 +841,5 @@ end do
 - **Automatic Differentiation**: Griewank & Walther (2008)
 - **Adjoint Methods for PDE-Constrained Optimization**: Formaggia et al. (2012)
 - **Physics-Informed Neural Networks**: Raissi et al. (2019)
-- **Hierarchical Decomposition for PDE Inverse Problems**: [Your work]
+- **Hierarchical Decomposition for PDE Inverse Problems**: [this work]
 

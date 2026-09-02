@@ -6,7 +6,7 @@
 !
 ! Each term is indexed by an integer partition of n: a
 ! nondecreasing positive tuple d = [d_1, ..., d_k] with
-! d_1 + ... + d_k = n, carrying the multinomial count
+! d_1 + ... + d_k = n, with the multinomial count
 !
 !      c(d) = n! / ( prod_i d_i!  *  prod_j multiplicity_j! )
 !
@@ -23,11 +23,11 @@
 ! result outside the statement's calculus; no derivative tensor is
 ! stored.
 !
-! An argument_path names one input slot and carries the derivative
+! An argument_path names one input slot and stores the derivative
 ! sequence x^(1), ..., x^(k) of that argument, so one path cannot
 ! mix two arguments' derivatives. Two paths naming the same slot
 ! would double count and stop the program. An unoccupied
-! derivative is read as zero: the terms it would feed are not
+! derivative is read as zero: the terms it would enter are not
 ! assembled.
 !
 ! Degree 0 is the statement's value. Inputs that stop the program:
@@ -58,7 +58,7 @@ module operation_chain_rule
   public :: path_derivative
 
   !===================================================================!
-  ! One derivative of a path: occupied, it carries x^(k) as a
+  ! One derivative of a path: occupied, it stores x^(k) as a
   ! direction field; unoccupied, it is read as zero.
   !===================================================================!
 
@@ -72,7 +72,7 @@ module operation_chain_rule
   !===================================================================!
   ! One argument's path: the argument of the statement it perturbs,
   ! obtained from the statement itself, and its derivative sequence
-  ! - derivative(k) holds x^(k).
+  ! - derivative(k) stores x^(k).
   !===================================================================!
 
   type :: argument_path
@@ -123,7 +123,7 @@ module operation_chain_rule
   ! same inputs the statement reads to the total derivative of that
   ! order - which is what an operation is. `assemble` remains, for a
   ! caller that supplies the statement and paths at the call rather
-  ! than holding them; `apply` is that call with them held.
+  ! than storing them; `apply` is that call with them stored.
   !===================================================================!
 
   type, extends(operation) :: total_derivative
@@ -132,7 +132,7 @@ module operation_chain_rule
 
      type(degree_partitions), allocatable :: of_degree(:)
 
-     ! what the composition is over, when it is held rather than given
+     ! what the composition is over, when it is stored rather than passed
      class(operation)   , allocatable :: statement
      type(argument_path), allocatable :: along(:)
      integer                          :: order = -1
@@ -159,8 +159,8 @@ contains
   !===================================================================!
 
   !===================================================================!
-  ! The name a composed rule carries: the statement's, and the order
-  ! of the derivative taken of it.
+  ! The name of a composed rule: the statement's, and the order of
+  ! the derivative taken of it.
   !===================================================================!
 
   pure function total_derivative_name(this) result(name)
@@ -180,8 +180,8 @@ contains
 
   !===================================================================!
   ! THE DERIVATIVE OF A STATEMENT, of the given order, along the
-  ! given directions. What comes back is an operation: applying it to
-  ! the statement's own inputs answers that derivative.
+  ! given directions. The result is an operation: applying it to the
+  ! statement's own inputs returns that derivative.
   !===================================================================!
 
   function derivative_of(statement, order, along) result(this)
@@ -212,8 +212,9 @@ contains
   end function derivative_of
 
   !===================================================================!
-  ! The composed rule applied: the total derivative of the held order,
-  ! from the held statement's partial actions along the held paths.
+  ! The composed rule applied: the total derivative of the stored
+  ! order, from the stored statement's partial actions along the
+  ! stored paths.
   !===================================================================!
 
   subroutine total_derivative_apply(this, input_graph, inputs, output)
@@ -369,7 +370,7 @@ contains
     do i = 1, size(paths)
        do j = i + 1, size(paths)
           if (paths(i) % wrt % matches(paths(j) % wrt)) then
-             error stop 'total_derivative: duplicate argument path is refused'
+             error stop 'total_derivative: a duplicate argument path is rejected'
           end if
        end do
     end do
@@ -409,11 +410,11 @@ contains
     integer                                , intent(in)    :: minimum
     type(derivative_partition), allocatable, intent(inout) :: partitions(:)
 
-    integer :: entries_left, entry_degree
+    integer :: entries_remaining, entry_degree
 
-    entries_left = size(tuple) - position + 1
+    entries_remaining = size(tuple) - position + 1
 
-    if (entries_left == 1) then
+    if (entries_remaining == 1) then
        if (remaining >= minimum) then
           tuple(position) = remaining
           call append_partition(partitions, tuple)
@@ -421,7 +422,7 @@ contains
        return
     end if
 
-    do entry_degree = minimum, remaining / entries_left
+    do entry_degree = minimum, remaining / entries_remaining
        tuple(position) = entry_degree
        call generate_partitions(remaining - entry_degree, tuple, &
             & position + 1, entry_degree, partitions)
@@ -545,7 +546,8 @@ contains
                & paths, chosen, running, started, num_components)
        end if
 
-       ! the odometer: advance the last entry, carrying leftwards
+       ! mixed-radix increment: advance the last entry, with overflow into
+       ! the left
        j = k
        do
           chosen(j) = chosen(j) + 1
@@ -593,7 +595,7 @@ contains
     end if
 
     ! one factor per chosen path: its argument, and the derivative
-    ! of the order this partition entry asks for as the direction
+    ! of the order this partition entry specifies as the direction
     do j = 1, k
        variations(j) = variation(paths(chosen(j)) % wrt, &
             & paths(chosen(j)) % derivative(partition % path_degree(j)) % direction)

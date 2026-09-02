@@ -18,7 +18,7 @@
 !             THE PARTIALS IN THE STEPS, TO ANY DEGREE
 !
 ! The rule is evaluated over derivative_terms, so the value and every
-! mixed partial in the steps are carried together and the result is
+! mixed partial in the steps are computed together and the result is
 ! the coefficient of the full subset: with no directions that is the
 ! value, with n directions it is the n-th mixed partial. apply and
 ! partial_action are therefore one code path, no perturbation is
@@ -29,8 +29,8 @@
 ! Missing inputs, and a variation on anything but the steps, stop the
 ! program. A step that a rule divides by must be positive, and is
 ! refused where it is read: the first vertex of a chain has no step
-! ending at it and carries zero, which is only an error if a rule
-! asks for it. An edge a concretion does not define is refused by
+! ending at it and has step zero, which is only an error if a rule
+! reads it. An edge a concretion does not define is refused by
 ! that concretion.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
@@ -89,7 +89,7 @@ module operation_edge_function
 contains
 
   !
-  ! The coefficients live on the coupling's edges.
+  ! The coefficients are defined on the coupling's edges.
   !===================================================================!
 
   subroutine edge_domain(this, input_graph, domain, num_entries)
@@ -107,7 +107,7 @@ contains
 
   !===================================================================!
   ! The degree the subset masks can index: the bit width less the
-  ! sign bit and the bit the full mask would carry past it.
+  ! sign bit and the bit the full mask would overflow into.
   !===================================================================!
 
   pure integer function edge_max_degree(this)

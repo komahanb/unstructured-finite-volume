@@ -1,15 +1,15 @@
 !=====================================================================!
-! The transform prime: the verb between graphs, graph -> graph with
-! data carried along. Two symbols at this level, both admissibility
-! questions: may this transform act on that graph, and on that data
-! riding on it. The concretions - partition, assemble, coarsen,
-! refine - are each judged by a round-trip law:
+! The transform prime: the operation between graphs, graph -> graph
+! with data mapped along. Two symbols at this level, both
+! admissibility predicates: may this transform act on that graph, and
+! on that data defined on it. The concrete types - partition,
+! assemble, coarsen, refine - are each checked by a round-trip law:
 !
 !      exact        assemble(partition(G)) = G      both ways
 !      one-sided    coarsen(refine(G)) = G          one way only
 !
 ! The interfaces are impure for a historical language constraint that
-! no longer binds (F2018 C1594 on copying a pointer-carrying set
+! no longer binds (F2018 C1594 on copying a set that contains pointers
 ! graph inside a pure subprogram); an impure interface permits a pure
 ! override, and every implementation is pure.
 !
@@ -60,7 +60,7 @@ contains
   !===================================================================!
   ! The one map between a level and its blocks, read both ways. Read
   ! forward it is restriction R: each block the sum of its members,
-  ! or their mean where average is asked. Read backward it is R^T,
+  ! or their mean where average is requested. Read backward it is R^T,
   ! every member taking its block's value - the injected prolongation.
   ! Values are num_components wide per member. coarsen(refine(G)) = G
   ! is this map read twice, which is why it is written once.

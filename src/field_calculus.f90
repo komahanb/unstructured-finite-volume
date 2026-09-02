@@ -1,7 +1,7 @@
 !=====================================================================!
 ! LEVEL 5 OF THE NEW TOWER . THE FIELD CALCULUS
 !
-! The level answers one question: WHAT VALUES LIVE ON A DOMAIN. A
+! The level defines one concept: WHAT VALUES ARE DEFINED ON A DOMAIN. A
 ! field is a function over one finite domain,
 !
 !      f : A -> V         or        f : S -> V,   S c--> A
@@ -10,30 +10,31 @@
 ! union, never a side flag (AGENTS.md 20, CALCULATOR.md 12). A field
 ! needs a domain; it does not need a graph container.
 !
-!             WHAT A FIELD KEEPS, AND WHAT IT ASKS FOR
+!             WHAT A FIELD STORES, AND WHAT IT REQUIRES
 !
 ! Identity and a frozen count, and nothing else about the domain:
 !
 !      domain()        WHICH set - a set graph, by value
 !      num_entries()   HOW MANY - the count taken at construction
 !
-! Those are the only two questions every field caller asks, and
-! neither is a question about membership, so neither needs a map.
-! Whoever wants to know WHO belongs, WHERE a member stands, or WHAT
-! the domain is called asks the set map, the inclusion map or the
-! label map - explicitly, holding them, at the call site.
+! Those are the only two queries every field caller makes, and
+! neither is a query about membership, so neither needs a map.
+! A caller that requires WHICH members belong, WHERE a member is
+! positioned, or WHAT the domain is called reads the set map, the
+! inclusion map or the label map - explicitly, with those maps in
+! scope, at the call site.
 !
-! The count is frozen because it always was: a field has held a COPY
+! The count is frozen because it always was: a field has stored a COPY
 ! of its domain since the first version, so num_entries never tracked
-! later mutation of the caller's set. Storing the integer says out
-! loud what copying said in private, and stops N fields on one domain
-! from holding N copies of its extension.
+! later mutation of the caller's set. Storing the integer states
+! explicitly what copying implied, and stops N fields on one domain
+! from storing N copies of its extension.
 !
-! This module is the REHOMED field ontology: the one abstract
+! This module is the RELOCATED field ontology: the one abstract
 ! field and its value-kind constants. They came from the old
-! grammar, which re-exported them for a while and was drained and
-! deleted in PR2; every consumer now asks here, which is where they
-! are defined. One abstract field, one concrete field
+! grammar, which re-exported them for a period and was emptied and
+! deleted in PR2; every consumer now imports from here, which is
+! where they are defined. One abstract field, one concrete field
 ! (field_stored), before and after the move.
 !
 ! THE SHAPE INVARIANT, now that the domain is mathematically real:
@@ -46,7 +47,7 @@
 !
 ! Values are addressed by the DOMAIN'S local position, never by raw
 ! member value: a field on the subset declared { d a b } stores d's
-! value first, whatever integer d happens to be.
+! value first, whatever integer d is.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -65,37 +66,37 @@ module field_calculus
   public :: FIELD_LOGICAL, FIELD_CHARACTER, FIELD_NONE
 
   !===================================================================!
-  ! The five value kinds: one absorbed axis, as ever.
+  ! The five value kinds: one absorbed axis.
   !===================================================================!
 
   integer, parameter :: FIELD_INTEGER   = 1
   integer, parameter :: FIELD_REAL      = 2
   integer, parameter :: FIELD_COMPLEX   = 3
-  ! A field that has never been set holds no kind. The absence is a
-  ! member of the enumeration, not a default standing in for one.
+  ! A field that has never been set stores no kind. The absence is a
+  ! member of the enumeration, not a default substituted for one.
   integer, parameter :: FIELD_NONE      = 0
   integer, parameter :: FIELD_LOGICAL   = 4
   integer, parameter :: FIELD_CHARACTER = 5
 
   !===================================================================!
   ! The abstract field: identity, domain, shape, and the
-  ! plain-vector adapters - fetch once, work in arrays, write back
+  ! plain-vector adapters - read once, compute in arrays, write back
   ! once. num_entries is the construction snapshot, not a query.
   !===================================================================!
 
   type, abstract :: field
 
-     ! THE VALUES, held once for every field in the tower: one kind
+     ! THE VALUES, stored once for every field in the tower: one kind
      ! at a time, of whichever kind was last set, in the order the
      ! domain lists its members with the components of one member
-     ! next to each other. Only this module reads or writes them.
+     ! adjacent. Only this module reads or writes them.
      class(*), allocatable, private :: values(:)
 
-     ! THE DESCRIPTION, held once for every field in the tower: what
-     ! it is called, what its values are measured in, WHICH set they
-     ! live on and HOW MANY entries that set had at construction, and
-     ! how many components each entry holds. A concretion states all
-     ! of it through describe, once.
+     ! THE DESCRIPTION, stored once for every field in the tower: the
+     ! field's name, the unit of its values, WHICH set they are
+     ! defined on and HOW MANY entries that set had at construction,
+     ! and how many components each entry contains. A concretion
+     ! states all of it through describe, once.
      character(len=:), allocatable, private :: label
      character(len=:), allocatable, private :: unit_name
      type(graph), private :: on
@@ -113,8 +114,8 @@ module field_calculus
      procedure :: value_kind     => field_value_kind
      procedure :: describe
 
-     ! The ten adapters: fetch once, work in arrays, write back once.
-     ! A getter of the wrong kind answers a zero-length array; any
+     ! The ten adapters: read once, compute in arrays, write back once.
+     ! A getter of the wrong kind returns a zero-length array; any
      ! setter replaces the values and the kind together, and must
      ! fill the domain exactly.
      procedure :: integer_vector       => field_integer_vector
@@ -128,37 +129,37 @@ module field_calculus
      procedure :: set_logical_vector   => field_set_logical_vector
      procedure :: character_vector     => field_character_vector
      procedure :: set_character_vector => field_set_character_vector
-     procedure, private :: hold
+     procedure, private :: store
 
      !---------------------------------------------------------------!
      ! PLACE THIS VALUE AT A LOCATION OF THE SAME TYPE. Intrinsic
      ! assignment to a polymorphic location is barred unless that
      ! location is allocatable, and an element of an array never is.
-     ! So a caller holding an array of class(field) locations cannot
+     ! So a caller with an array of class(field) locations cannot
      ! fill one without naming a type. A concretion names the type
-     ! once, here, and every caller is spared the question. A
-     ! location of any other type is an error and says so.
+     ! once, here, and no caller needs to name it. A location of any
+     ! other type is an error and stops the program with a message.
      !---------------------------------------------------------------!
-     procedure(field_place_in_interface), deferred :: place_in
+     procedure(field_assign_in_interface), deferred :: assign_in
 
   end type field
 
   abstract interface
 
-     subroutine field_place_in_interface(this, location)
+     subroutine field_assign_in_interface(this, location)
        import :: field
        class(field), intent(in)    :: this
        class(field), intent(inout) :: location
-     end subroutine field_place_in_interface
+     end subroutine field_assign_in_interface
 
   end interface
 
   !===================================================================!
   ! FUNCTIONAL. The field at domain size one: a single
   ! value with the whole inherited interface. The type exists so
-  ! an argument may demand the one-entry case at compile time - a
-  ! reduction returns a functional, not a field that happens to be
-  ! small. The law num_entries() == 1 is held by the test suite,
+  ! an argument may require the one-entry case at compile time - a
+  ! reduction returns a functional, not a field of size one. The
+  ! invariant num_entries() == 1 is checked by the test suite,
   ! because the type system cannot state it.
   !===================================================================!
 
@@ -167,7 +168,7 @@ module field_calculus
    contains
 
      !----------------------------------------------------------------!
-     ! The law of the type, stated here rather than stored: a
+     ! The invariant of the type, stated here rather than stored: a
      ! functional is one entry of one component, however it was
      ! allocated.
      !----------------------------------------------------------------!
@@ -179,7 +180,7 @@ module field_calculus
      ! The scalar adapters: the vector adapters at length one, since
      ! a one-entry field and a scalar are the same value. Written
      ! here once for every functional, through the vector adapters
-     ! only - no storage is known at this level.
+     ! only - no storage is defined at this level.
      !----------------------------------------------------------------!
 
      procedure :: integer_value       => functional_integer_value
@@ -212,10 +213,10 @@ contains
     character(len=*), intent(in), optional :: unit_name
 
     if (.not. on % same_as(on)) then
-       error stop 'field: a field needs a declared domain'
+       error stop 'field: a field requires a declared domain'
     end if
     if (num_entries < 0) then
-       error stop 'field: a domain does not have fewer than no entries'
+       error stop 'field: the entry count of a domain is not negative'
     end if
 
     this % label = label
@@ -229,8 +230,8 @@ contains
   end subroutine describe
 
   !===================================================================!
-  ! What the field is called, and what its values are measured in: an
-  ! empty name when nobody named it, a dash when nobody said.
+  ! The field's name, and the unit of its values: an empty name when
+  ! no label was given, a dash when no unit was given.
   !===================================================================!
 
   pure function field_name(this) result(name)
@@ -254,9 +255,10 @@ contains
   end function field_units
 
   !===================================================================!
-  ! WHICH set the values live on, by value: a copy of a set graph
-  ! carries its token, so the answer IS the domain - same_as decides,
-  ! and nothing is lent. The counts were frozen at construction.
+  ! WHICH set the values are defined on, by value: a copy of a set
+  ! graph stores its token, so the result IS the domain - same_as
+  ! decides, and no reference is returned. The counts were frozen at
+  ! construction.
   !===================================================================!
 
   type(graph) function field_domain(this) result(domain)
@@ -286,9 +288,9 @@ contains
   !===================================================================!
   ! Whether this field is defined on that domain: the same set by
   ! identity, never by extent. Every check that a state, a history
-  ! state, a direction, a right-hand side or an action's result lives
-  ! where a calculation expects it asks this one question; what is
-  ! refused, and why, is said at the call site.
+  ! state, a direction, a right-hand side or an action's result is
+  ! defined on the domain a calculation expects evaluates this one
+  ! predicate; what is rejected, and why, is stated at the call site.
   !===================================================================!
 
   logical function field_defined_on(this, domain) result(defined)
@@ -304,8 +306,8 @@ contains
   end function field_defined_on
 
   !===================================================================!
-  ! The kind held: read off the values themselves. A field that holds
-  ! nothing yet reads as real, the kind a field is born to.
+  ! The kind stored: read from the values themselves. A field that
+  ! stores nothing yet reads as FIELD_NONE.
   !===================================================================!
 
   pure integer function field_value_kind(this) result(kind)
@@ -317,7 +319,7 @@ contains
 
     kind = FIELD_REAL
 
-    select type (held => this % values)
+    select type (stored => this % values)
     type is (integer)
        kind = FIELD_INTEGER
     type is (real(dp))
@@ -335,10 +337,10 @@ contains
   !===================================================================!
   ! The one setter behind the five: the values must fill the domain
   ! exactly - num_entries times num_components - or the program
-  ! stops; they replace whatever kind was held.
+  ! stops; they replace whatever kind was stored.
   !===================================================================!
 
-  pure subroutine hold(this, values)
+  pure subroutine store(this, values)
 
     class(field), intent(inout) :: this
     class(*)    , intent(in)    :: values(:)
@@ -348,33 +350,34 @@ contains
     end if
 
     ! a store of the same kind and length is written in place: the
-    ! deallocate-allocate pair costs the heap twice, and a polymorphic
-    ! copy moves the values one at a time through the type's own copy
+    ! deallocate-allocate pair performs two allocator operations, and a
+    ! polymorphic copy moves the values one at a time through the
+    ! type's own copy
     if (allocated(this % values)) then
        if (size(this % values) == size(values)) then
-          select type (held => this % values)
+          select type (stored => this % values)
           type is (real(dp))
              select type (values)
              type is (real(dp))
-                held = values
+                stored = values
                 return
              end select
           type is (integer)
              select type (values)
              type is (integer)
-                held = values
+                stored = values
                 return
              end select
           type is (complex(dp))
              select type (values)
              type is (complex(dp))
-                held = values
+                stored = values
                 return
              end select
           type is (logical)
              select type (values)
              type is (logical)
-                held = values
+                stored = values
                 return
              end select
           end select
@@ -383,12 +386,12 @@ contains
     end if
     allocate(this % values, source=values)
 
-  end subroutine hold
+  end subroutine store
 
   !===================================================================!
-  ! The adapters, one pair per kind. A getter of another kind answers
+  ! The adapters, one pair per kind. A getter of another kind returns
   ! a zero-length array: no conversion, no inference, and a pure
-  ! procedure has no error path, so the zero length is the signal.
+  ! procedure has no error path, so the zero length is the indicator.
   !===================================================================!
 
   pure subroutine field_integer_vector(this, values)
@@ -397,9 +400,9 @@ contains
     integer, allocatable, intent(out) :: values(:)
 
     if (allocated(this % values)) then
-       select type (held => this % values)
+       select type (stored => this % values)
        type is (integer)
-          values = held
+          values = stored
           return
        end select
     end if
@@ -412,27 +415,27 @@ contains
     class(field), intent(inout) :: this
     integer     , intent(in)    :: values(:)
 
-    call this % hold(values)
+    call this % store(values)
 
   end subroutine field_set_integer_vector
 
   !===================================================================!
-  ! The held reals themselves, without a copy. A field of another kind
-  ! answers null, which is the same signal the zero-length getter
-  ! gives. The result points into the field, so it is valid only while
-  ! the field is unchanged.
+  ! The stored reals themselves, without a copy. A field of another
+  ! kind returns null, which is the same indicator the zero-length
+  ! getter gives. The result points into the field, so it is valid
+  ! only while the field is unchanged.
   !===================================================================!
 
-  function field_real_values(this) result(held_values)
+  function field_real_values(this) result(stored_values)
 
     class(field), intent(in), target :: this
-    real(dp), pointer :: held_values(:)
+    real(dp), pointer :: stored_values(:)
 
-    held_values => null()
+    stored_values => null()
     if (allocated(this % values)) then
-       select type (held => this % values)
+       select type (stored => this % values)
        type is (real(dp))
-          held_values => held
+          stored_values => stored
        end select
     end if
 
@@ -444,9 +447,9 @@ contains
     real(dp), allocatable, intent(out) :: values(:)
 
     if (allocated(this % values)) then
-       select type (held => this % values)
+       select type (stored => this % values)
        type is (real(dp))
-          values = held
+          values = stored
           return
        end select
     end if
@@ -459,7 +462,7 @@ contains
     class(field), intent(inout) :: this
     real(dp)    , intent(in)    :: values(:)
 
-    call this % hold(values)
+    call this % store(values)
 
   end subroutine field_set_real_vector
 
@@ -469,9 +472,9 @@ contains
     complex(dp), allocatable, intent(out) :: values(:)
 
     if (allocated(this % values)) then
-       select type (held => this % values)
+       select type (stored => this % values)
        type is (complex(dp))
-          values = held
+          values = stored
           return
        end select
     end if
@@ -484,7 +487,7 @@ contains
     class(field), intent(inout) :: this
     complex(dp) , intent(in)    :: values(:)
 
-    call this % hold(values)
+    call this % store(values)
 
   end subroutine field_set_complex_vector
 
@@ -494,9 +497,9 @@ contains
     logical, allocatable, intent(out) :: values(:)
 
     if (allocated(this % values)) then
-       select type (held => this % values)
+       select type (stored => this % values)
        type is (logical)
-          values = held
+          values = stored
           return
        end select
     end if
@@ -509,7 +512,7 @@ contains
     class(field), intent(inout) :: this
     logical     , intent(in)    :: values(:)
 
-    call this % hold(values)
+    call this % store(values)
 
   end subroutine field_set_logical_vector
 
@@ -519,9 +522,9 @@ contains
     character(len=:), allocatable, intent(out) :: values(:)
 
     if (allocated(this % values)) then
-       select type (held => this % values)
+       select type (stored => this % values)
        type is (character(len=*))
-          values = held
+          values = stored
           return
        end select
     end if
@@ -534,7 +537,7 @@ contains
     class(field)    , intent(inout) :: this
     character(len=*), intent(in)    :: values(:)
 
-    call this % hold(values)
+    call this % store(values)
 
   end subroutine field_set_character_vector
 
@@ -550,9 +553,9 @@ contains
   !===================================================================!
   ! The scalar adapters of a functional. A getter reads the vector
   ! adapter of its kind and takes the one entry; when the functional
-  ! holds another kind the adapter answers zero-length and the getter
-  ! answers the zero of the asked kind. A setter hands the one value
-  ! to the vector adapter, which replaces the value and the kind.
+  ! stores another kind the adapter returns zero-length and the getter
+  ! returns the zero of the requested kind. A setter passes the one
+  ! value to the vector adapter, which replaces the value and the kind.
   !===================================================================!
 
   pure subroutine functional_integer_value(this, value)

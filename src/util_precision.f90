@@ -7,8 +7,8 @@
 ! builds keep their own library and binaries, so they coexist.
 !
 ! The three kinds' spacings at one are given by name, so a caller can
-! say which kind a target needs from the floor eps ||A|| ||q|| a
-! march can reach, without naming a number.
+! determine which kind a target requires from the lower bound
+! eps ||A|| ||q|| a march can reach, without stating a number.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -34,12 +34,12 @@ module util_precision
   real(real128), parameter :: double_spacing    = real(epsilon(1.0_real64), real128)
   real(real128), parameter :: quadruple_spacing = epsilon(1.0_real128)
 
-  ! The floor of this build's own kind, from which every tolerance in
-  ! the tower is measured: the spacing at one, below which a residual
-  ! cannot be told from zero, and its square root, the step at which a
-  ! first difference loses half its digits to rounding and half to
-  ! truncation - and so the reduction past which a first-order iterate
-  ! is not telling a caller anything more.
+  ! The lower bound of this build's own kind, from which every tolerance
+  ! in the tower is measured: the spacing at one, below which a residual
+  ! cannot be distinguished from zero, and its square root, the step at
+  ! which a first difference loses half its digits to rounding and half
+  ! to truncation - and so the reduction past which a first-order
+  ! iterate gives a caller no further information.
   real(dp), parameter :: spacing_at_one = epsilon(1.0_dp)
   real(dp), parameter :: half_digits    = sqrt(epsilon(1.0_dp))
 

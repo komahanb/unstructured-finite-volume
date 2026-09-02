@@ -1,8 +1,8 @@
 !=====================================================================!
 ! A concrete graph that stores its structure.
 !
-! Hand it a vertex count and an edge list and it works out, once, the
-! neighbour lists every later query reads:
+! Given a vertex count and an edge list, the constructor computes,
+! once, the neighbour lists every later query reads:
 !
 !            tails  1 1 2 3            e1: 1 -> 2
 !            heads  2 3 4 4            e2: 1 -> 3
@@ -17,35 +17,35 @@
 !                       v   v
 !                        (4)
 !
-! An edge whose head is not a real vertex has no head at all. That is
-! a boundary face: it is attached to one cell alone, and no imaginary
-! cell is invented on the far side of the wall.
+! An edge whose head is not a vertex of the graph has no head. That is
+! a boundary face: it is attached to one cell alone, and no fictitious
+! cell is created beyond the boundary.
 !
 ! Four compressed lists are built at construction and never rebuilt -
-! edges touching a vertex, vertices next to it, and the same two split
-! by which way the edges point. Every walking query is then a slice of
-! an array, which is what lets those queries stay pure and cheap
-! enough to sit inside a loop over a million cells.
+! the edges incident to a vertex, the vertices adjacent to it, and the
+! same two split by edge direction. Every traversal query is then a
+! slice of an array, which is what lets those queries stay pure and of
+! low enough cost to be called inside a loop over a million cells.
 !
 !=====================================================================!
 !
-!                       WHAT THIS GRAPH DOES NOT DO
+!                       WHAT THIS GRAPH DOES NOT CONTAIN
 !
-! It holds no geometry, no physics, no solver state, and no algorithm.
-! Colouring, traversal order, partitioning and the rest are operations
-! and transforms that read a graph; they are not things a graph does.
-! Each convenience procedure added here erodes that separation, one
-! procedure at a time.
+! The graph stores no geometry, no physics, no solver state, and no
+! algorithm. Colouring, traversal order, partitioning and the rest are
+! operations and transforms that read a graph; they are not procedures
+! of the graph. Each convenience procedure added here weakens that
+! separation, one procedure at a time.
 !
-! IT CARRIES NO VALUES. A field references its domain; the reference
-! never points the other way. What an operation reads, it is handed
-! at construction, as arguments the compiler can see. The one string
-! kept is the tag, which is data: the mesh file named its boundary
-! groups, and those names flow in from outside the code.
+! THE GRAPH STORES NO VALUES. A field references its domain; the
+! reference never points the other way. What an operation reads is
+! passed to the operation at construction, as explicit arguments. The
+! one string stored is the tag, which is data: the mesh file named its
+! boundary groups, and those names are read from outside the code.
 !
 ! READ ONLY. No procedure puts data on a graph after construction.
 ! Anything computed leaves as an operation's output. Without this rule
-! the graph accumulates state, and its answers come to depend on the
+! the graph accumulates state, and its results come to depend on the
 ! order of past calls rather than on the mesh it was built from.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
@@ -72,7 +72,7 @@ module view_directed_stored
   public :: stored_directed_graph
 
   !===================================================================!
-  ! A graph that keeps its own structure in arrays.
+  ! A graph that stores its own structure in arrays.
   !===================================================================!
 
   type, extends(directed_graph) :: stored_directed_graph
@@ -84,8 +84,8 @@ module view_directed_stored
      !----------------------------------------------------------------!
      ! THE ORIENTATION. D = (V, E, tail, head) and its transpose
      ! D^T = (V, E, head, tail) are one stored object read two ways:
-     ! both endpoint lists and both compressed directions are kept,
-     ! and reversed says which is which. The transpose of the
+     ! both endpoint lists and both compressed directions are stored,
+     ! and reversed records which is which. The transpose of the
      ! transpose is the object itself, exactly, and the identity is
      ! the same relation's.
      !----------------------------------------------------------------!
@@ -109,7 +109,7 @@ module view_directed_stored
      integer, allocatable :: xin(:) , ein(:)
 
      !----------------------------------------------------------------!
-     ! Names carried by vertices and edges. Blank means untagged.
+     ! Names stored on vertices and edges. Blank means untagged.
      !----------------------------------------------------------------!
 
      character(len=:), allocatable :: vtag(:)
@@ -119,11 +119,11 @@ module view_directed_stored
      ! HOW THIS GRAPH RELATES TO A WHOLE ONE, and it is one component
      ! now rather than six: the relation r <= S_part x S_whole. The
      ! record is a REPRESENTATION - part-local numbering, ownership,
-     ! provenance - and none of it is a question about
+     ! provenance - and none of it is a predicate on
      ! D = (V, E, tail, head), which is why it stopped being a binding
-     ! on the contract and became a value the graph carries.
+     ! on the contract and became a value the graph stores.
      !
-     ! A graph straight off a mesh file carries the IDENTITY relation:
+     ! A graph read directly from a mesh file stores the IDENTITY relation:
      ! one part, itself, every member its own name.
      !----------------------------------------------------------------!
 
@@ -131,13 +131,13 @@ module view_directed_stored
 
      !----------------------------------------------------------------!
      ! The graph's two carriers (AGENTS.md, phase 1): its vertices
-     ! and its edges as declared set GRAPHS, stamped once at
-     ! construction and handed out beside the old vocabulary. Every
-     ! call to vertex_set answers the SAME domain, so a relation
-     ! signature can hold onto the identity.
+     ! and its edges as declared set GRAPHS, declared once at
+     ! construction and returned beside the old vocabulary. Every
+     ! call to vertex_set returns the SAME domain, so a relation
+     ! signature can retain the identity.
      !
      ! Identity only. The extension is 1..nv and 1..ne, which the
-     ! graph already answers through num_vertices/num_edges, so
+     ! graph already returns through num_vertices/num_edges, so
      ! storing a representation here would store a second copy of a
      ! fact - and storing a map would make the graph a registry of
      ! interpretations, which it is not.
@@ -162,10 +162,10 @@ module view_directed_stored
 
      procedure :: vertex_set
      procedure :: edge_set
-     procedure :: name_carriers
+     procedure :: name_domains
 
      !----------------------------------------------------------------!
-     ! Where an edge goes.
+     ! The endpoints of an edge.
      !----------------------------------------------------------------!
 
      procedure :: edge_tail
@@ -196,14 +196,14 @@ module view_directed_stored
      !----------------------------------------------------------------!
 
      procedure :: owned_vertices
-     procedure :: borrowed_vertices
+     procedure :: halo_vertices
      procedure :: overlap_vertices
      procedure :: owned_edges
-     procedure :: borrowed_edges
+     procedure :: halo_edges
      procedure :: overlap_edges
 
      !----------------------------------------------------------------!
-     ! Walking, without regard to direction and with it.
+     ! Traversal, without regard to direction and with it.
      !----------------------------------------------------------------!
 
      procedure :: incident_edges
@@ -214,10 +214,10 @@ module view_directed_stored
      procedure :: incoming_vertices
 
      !----------------------------------------------------------------!
-     ! How a part relates to the whole: ONE accessor, handing back the
-     ! relation by value. The eight questions that used to stand here
-     ! are r's, and a caller that needs them takes r and asks it -
-     ! which is also what lets the four verbs be handed one explicitly.
+     ! How a part relates to the whole: ONE accessor, returning the
+     ! relation by value. The eight queries that used to stand here
+     ! are r's, and a caller that needs them takes r and queries it -
+     ! which is also what lets the four verbs be passed one explicitly.
      !
      ! whole_relation, not relation: this graph CONTAINS relations -
      ! its incidence and its adjacency are two of them - and this is
@@ -230,9 +230,9 @@ module view_directed_stored
      ! The structure read as relations (AGENTS.md section 16):
      ! T <= E x V (edge to tail) and H <= E x V (edge to head; a
      ! boundary edge is an absence in H). Derived from the stored
-     ! table when asked, so a pattern graph or a part graph that
-     ! nobody reads relationally never pays for them - the
-     ! section-66 benchmark caught the eager version costing every
+     ! table on request, so a pattern graph or a part graph that
+     ! no caller reads relationally never builds them - the
+     ! section-66 benchmark measured the eager version costing every
      ! construction 2.2x.
      !----------------------------------------------------------------!
 
@@ -274,11 +274,11 @@ contains
     !----------------------------------------------------------------!
     ! The tuples of r, for a graph that is a piece of a larger one:
     ! what each of its own members is called in the whole, and which
-    ! part owns it. These arrive HERE or not at all - a graph that
-    ! could be told its relation afterwards would answer the same
-    ! question two ways in one lifetime, which is the one thing the
-    ! grammar says a graph may never do. Present vglobal is what makes
-    ! a graph a piece; absent, it is a whole.
+    ! part owns it. These are passed HERE or not at all - a graph whose
+    ! relation could be set afterwards would return two results for
+    ! the same query in one lifetime, which the grammar forbids.
+    ! Present vglobal is what makes a graph a piece; absent, it is a
+    ! whole.
     !----------------------------------------------------------------!
 
     integer           , intent(in), optional :: vglobal(:)
@@ -288,10 +288,10 @@ contains
     integer           , intent(in), optional :: num_parts
 
     !----------------------------------------------------------------!
-    ! The far side of r, by identity and count. A relation that could
-    ! not say WHICH sets it relates would let a caller holding two of
-    ! them hand the wrong one to the wrong graph and be wrong in
-    ! silence.
+    ! The far side of r, by identity and count. A relation that did
+    ! not record WHICH sets it relates would let a caller that stores
+    ! two of them pass the wrong one to the wrong graph without any
+    ! error.
     !----------------------------------------------------------------!
 
     type(graph)   , intent(in), optional :: whole_vertices, whole_edges
@@ -302,8 +302,8 @@ contains
     this % nv = nv
     this % ne = size(tails)
 
-    ! Declare the two domains once, here, so every later answer
-    ! carries one identity per side for this graph's whole life.
+    ! Declare the two domains once, here, so every later result
+    ! has one identity per side for this graph's whole lifetime.
     call this % vset % declare()
     call this % eset % declare()
 
@@ -312,7 +312,7 @@ contains
     allocate(this % tail, source=tails)
     allocate(this % head(this % ne))
 
-    ! Normalize every missing head to zero, so one test answers
+    ! Normalise every missing head to zero, so one test suffices
     ! everywhere afterwards.
     do e = 1, this % ne
        if (heads(e) >= 1 .and. heads(e) <= nv) then
@@ -323,10 +323,10 @@ contains
     end do
 
     !----------------------------------------------------------------!
-    ! The relation goes in through the door, or the identity relation
-    ! does. A graph that could be told its relation afterwards would
-    ! answer one question two ways in one lifetime; present vglobal is
-    ! what makes a graph a piece, and absent, it is a whole.
+    ! The relation is stored here at construction, or the identity
+    ! relation is. A graph whose relation could be set afterwards would
+    ! return two results for one query in one lifetime; present vglobal
+    ! is what makes a graph a piece, and absent, it is a whole.
     !----------------------------------------------------------------!
 
     if (present(vglobal)) then
@@ -340,9 +340,9 @@ contains
             & number  = this % number,                               &
             & num_parts  = merge_count(num_parts, 1),                      &
             & vglobal = vglobal,                                     &
-            & vowner  = pick_owner(vowner, size(vglobal), this % number), &
-            & eglobal = pick_global(eglobal, this % ne),             &
-            & eowner  = pick_owner(eowner, this % ne, this % number))
+            & vowner  = select_owner(vowner, size(vglobal), this % number), &
+            & eglobal = select_global(eglobal, this % ne),             &
+            & eowner  = select_owner(eowner, this % ne, this % number))
     else
        this % whole_rel = partition_relation( &
             & this % vset, this % nv, this % eset, this % ne)
@@ -351,7 +351,7 @@ contains
     if (present(vtags)) allocate(this % vtag, source=vtags)
     if (present(etags)) allocate(this % etag, source=etags)
 
-    ! Everything the mesh knew arrives here and never changes again.
+    ! Everything the mesh recorded is stored here and never changes again.
 
     call build_incidence(this % nv, this % tail, this % head, &
          &               this % xinc, this % einc)
@@ -379,7 +379,7 @@ contains
     integer :: ne, e
 
     ! one (endpoint, edge) pair per end, interleaved tail-then-head
-    ! so each vertex's fibre keeps the single-pass edge order; a
+    ! so each vertex's fibre retains the single-pass edge order; a
     ! missing head is key zero and belongs to no vertex
     ne = size(tail)
     allocate(keys(2 * ne), values(2 * ne))
@@ -406,12 +406,12 @@ contains
     integer             , intent(in)  :: xinc(:), einc(:)
     integer, allocatable, intent(out) :: xptr(:), vlist(:)
 
-    integer, allocatable :: seen(:), scratch(:)
+    integer, allocatable :: last_marked(:), scratch(:)
     integer :: v, k, e, other, ndistinct, total
 
     allocate(xptr(nv + 1))
-    allocate(seen(nv))
-    seen = 0
+    allocate(last_marked(nv))
+    last_marked = 0
 
     ! First pass counts the distinct neighbours of every vertex.
     xptr(1) = 1
@@ -421,8 +421,8 @@ contains
           e = einc(k)
           other = far_end(tail(e), head(e), v)
           if (other >= 1 .and. other /= v) then
-             if (seen(other) /= v) then
-                seen(other) = v
+             if (last_marked(other) /= v) then
+                last_marked(other) = v
                 ndistinct = ndistinct + 1
              end if
           end if
@@ -435,15 +435,15 @@ contains
 
     ! Second pass writes them, with the marker reset so the same test
     ! can run again.
-    seen = 0
+    last_marked = 0
     allocate(scratch, source=xptr(1:nv))
     do v = 1, nv
        do k = xinc(v), xinc(v + 1) - 1
           e = einc(k)
           other = far_end(tail(e), head(e), v)
           if (other >= 1 .and. other /= v) then
-             if (seen(other) /= v) then
-                seen(other) = v
+             if (last_marked(other) /= v) then
+                last_marked(other) = v
                 vlist(scratch(v)) = other
                 scratch(v) = scratch(v) + 1
              end if
@@ -454,9 +454,9 @@ contains
   end subroutine build_adjacency
 
   !===================================================================!
-  ! Given both ends of an edge and one of them, name the other.
-  ! Answers zero when the edge has no head, which is how a boundary
-  ! face reports that there is nothing on the far side.
+  ! Given both ends of an edge and one of them, return the other.
+  ! Returns zero when the edge has no head, which is how a boundary
+  ! face records that there is no cell beyond it.
   !===================================================================!
 
   pure integer function far_end(tail, head, here)
@@ -521,7 +521,7 @@ contains
 
   !===================================================================!
   ! The two carriers, as declared at construction. Copies of one
-  ! stamped domain: every call answers a set that same_as agrees is
+  ! declared domain: every call returns a set that same_as reports is
   ! the same set (AGENTS.md, phase 1).
   !===================================================================!
 
@@ -542,12 +542,12 @@ contains
   end function edge_set
 
   !===================================================================!
-  ! What this graph calls its own two domains, bound into the CALLER'S
-  ! label map. The graph knows the names; it does not keep the map, so
-  ! a caller that names nothing never calls this and carries nothing.
+  ! The names of this graph's two domains, bound into the CALLER'S
+  ! label map. The graph stores the names; it does not store the map,
+  ! so a caller that names nothing never calls this and stores nothing.
   !===================================================================!
 
-  subroutine name_carriers(this, labels)
+  subroutine name_domains(this, labels)
 
     class(stored_directed_graph), intent(in)    :: this
     type(label_map)    , intent(inout) :: labels
@@ -555,7 +555,7 @@ contains
     call labels % bind(this % vset, 'vertices')
     call labels % bind(this % eset, 'edges')
 
-  end subroutine name_carriers
+  end subroutine name_domains
 
   !===================================================================!
   ! How many edges.
@@ -570,7 +570,7 @@ contains
   end function num_edges
 
   !===================================================================!
-  ! Where an edge goes.
+  ! The endpoints of an edge.
   !===================================================================!
   ! THE LOOP over the graph: its vertices in an order every edge
   ! respects - a tail before its head in the forward orientation, a
@@ -578,8 +578,8 @@ contains
   ! transpose. It exists only where the graph has no cycle; a graph
   ! with one has no loop, and the request stops the program. A march
   ! is this loop forward and its adjoint this loop in reverse, and
-  ! neither writes an instant's number down. The order is the one
-  ! topological sort in the tree, over the graph's own adjacency.
+  ! neither records an instant's index. The order is the one
+  ! topological sort in the source tree, over the graph's own adjacency.
   !===================================================================!
 
   function loop(this, orientation) result(order)
@@ -622,14 +622,14 @@ contains
   end function loop
 
   !===================================================================!
-  ! The transpose: the same object read the other way, every edge's
-  ! tail its head and head its tail, so that transposing twice gives
-  ! back what was there. An edge without a head would become an edge
-  ! without a tail, which is not an edge; such a graph has no
+  ! The transpose: the same object read in the reverse orientation,
+  ! every edge's tail its head and head its tail, so that transposing
+  ! twice returns the original. An edge without a head would become an
+  ! edge without a tail, which is not an edge; such a graph has no
   ! transpose and the request stops the program.
   !===================================================================!
 
-  type(stored_directed_graph) function transpose(this) result(turned)
+  type(stored_directed_graph) function transpose(this) result(transposed_graph)
 
     class(stored_directed_graph), intent(in) :: this
 
@@ -637,8 +637,8 @@ contains
        error stop 'stored_directed_graph: a graph with an edge without a head has no transpose'
     end if
 
-    turned = this
-    turned % reversed = .not. this % reversed
+    transposed_graph = this
+    transposed_graph % reversed = .not. this % reversed
 
   end function transpose
 
@@ -666,8 +666,8 @@ contains
   end function edge_tail
 
   !===================================================================!
-  ! The vertex an edge enters:  (i) --e--> (j)  answers j. A
-  ! boundary edge enters nothing and answers zero.
+  ! The vertex an edge enters:  (i) --e--> (j)  returns j. A
+  ! boundary edge enters no vertex and returns zero.
   !===================================================================!
 
   pure integer function edge_head(this, edge_index)
@@ -733,7 +733,7 @@ contains
   end subroutine boundary_vertices
 
   !===================================================================!
-  ! The vertices carrying this tag - a mesh's named patches arrive
+  ! The vertices with this tag - a mesh's named patches are queried
   ! here.
   !===================================================================!
 
@@ -751,8 +751,8 @@ contains
 
 
   !===================================================================!
-  ! Does any edge touching this vertex stop here rather than holding
-  ! on to another vertex?
+  ! Whether any edge incident to this vertex has no head rather than
+  ! joining a second vertex.
   !===================================================================!
 
   !===================================================================!
@@ -762,19 +762,19 @@ contains
   ! predicates times two sides, written once.
   !===================================================================!
 
-  pure function selected(this, which, on_vertices, tag) result(pick)
+  pure function selected(this, which, on_vertices, tag) result(selected_members)
 
     class(stored_directed_graph), intent(in) :: this
     integer                     , intent(in) :: which
     logical                     , intent(in) :: on_vertices
     character(len=*), optional  , intent(in) :: tag
-    integer, allocatable :: pick(:)
+    integer, allocatable :: selected_members(:)
 
     integer :: i, n, k
     logical :: keep
 
     n = merge(this % nv, this % ne, on_vertices)
-    allocate(pick(n))
+    allocate(selected_members(n))
     k = 0
     do i = 1, n
        select case (which)
@@ -798,10 +798,10 @@ contains
        end select
        if (keep) then
           k = k + 1
-          pick(k) = i
+          selected_members(k) = i
        end if
     end do
-    pick = pick(1:k)
+    selected_members = selected_members(1:k)
 
   end function selected
 
@@ -827,7 +827,7 @@ contains
   !===================================================================!
 
   !===================================================================!
-  ! The edges with a head: both ends real.
+  ! The edges with a head: both ends are vertices of the graph.
   !===================================================================!
 
   subroutine interior_edges(this, sets, members)
@@ -842,7 +842,7 @@ contains
   end subroutine interior_edges
 
   !===================================================================!
-  ! The edges with no head - the open ends of the graph.
+  ! The edges with no head - the boundary of the graph.
   !===================================================================!
 
   subroutine boundary_edges(this, sets, members)
@@ -857,7 +857,7 @@ contains
   end subroutine boundary_edges
 
   !===================================================================!
-  ! The edges carrying this tag - a mesh's named patches arrive
+  ! The edges with this tag - a mesh's named patches are queried
   ! here.
   !===================================================================!
 
@@ -876,9 +876,9 @@ contains
   !===================================================================!
   ! The named sets of one part.
   !
-  ! A graph that was never cut owns everything and borrows nothing,
+  ! A graph that was never cut owns everything and has no halo,
   ! whichever part the query names. A partitioner fills in the owner
-  ! arrays and these answers become real.
+  ! arrays and these sets become non-trivial.
   !===================================================================!
 
   subroutine owned_vertices(this, part_id, sets, members)
@@ -894,11 +894,11 @@ contains
   end subroutine owned_vertices
 
   !===================================================================!
-  ! The vertices this part reads but does not own - the neighbours'
-  ! cells along the cut.
+  ! The vertices this part reads but does not own - the cells of the
+  ! neighbouring parts along the cut.
   !===================================================================!
 
-  subroutine borrowed_vertices(this, part_id, sets, members)
+  subroutine halo_vertices(this, part_id, sets, members)
 
     class(stored_directed_graph), intent(in)    :: this
     integer            , intent(in)    :: part_id
@@ -906,13 +906,13 @@ contains
     type(graph)    , intent(out)   :: members
 
     call sets % declare_subobject(members, owner_matches(this % whole_rel, this % nv, part_id, .true., .false.), &
-         & 'borrowed_vertices', this % vset)
+         & 'halo_vertices', this % vset)
 
-  end subroutine borrowed_vertices
+  end subroutine halo_vertices
 
   !===================================================================!
-  ! The overlap is everything this part must see to finish what it
-  ! owns: what it owns, plus what it borrows.
+  ! The overlap is everything this part must read to compute what it
+  ! owns: what it owns, plus its halo.
   !===================================================================!
 
   subroutine overlap_vertices(this, part_id, sets, members)
@@ -922,17 +922,17 @@ contains
     type(set_store)    , intent(inout) :: sets
     type(graph)    , intent(out)   :: members
 
-    integer, allocatable :: owned(:), borrowed(:)
+    integer, allocatable :: owned(:), halo(:)
 
     allocate(owned   , source=owner_matches(this % whole_rel, this % nv, part_id, .true., .true.))
-    allocate(borrowed, source=owner_matches(this % whole_rel, this % nv, part_id, .true., .false.))
+    allocate(halo, source=owner_matches(this % whole_rel, this % nv, part_id, .true., .false.))
 
-    call sets % declare_subobject(members, [owned, borrowed], 'overlap_vertices', this % vset)
+    call sets % declare_subobject(members, [owned, halo], 'overlap_vertices', this % vset)
 
   end subroutine overlap_vertices
 
   !===================================================================!
-  ! The edges whose keeper is this part.
+  ! The edges whose owner is this part.
   !===================================================================!
 
   subroutine owned_edges(this, part_id, sets, members)
@@ -951,7 +951,7 @@ contains
   ! The edges this part reads but does not own.
   !===================================================================!
 
-  subroutine borrowed_edges(this, part_id, sets, members)
+  subroutine halo_edges(this, part_id, sets, members)
 
     class(stored_directed_graph), intent(in)    :: this
     integer            , intent(in)    :: part_id
@@ -959,12 +959,12 @@ contains
     type(graph)    , intent(out)   :: members
 
     call sets % declare_subobject(members, owner_matches(this % whole_rel, this % ne, part_id, .false., .false.), &
-         & 'borrowed_edges', this % eset)
+         & 'halo_edges', this % eset)
 
-  end subroutine borrowed_edges
+  end subroutine halo_edges
 
   !===================================================================!
-  ! Owned and borrowed together: every edge this part can see.
+  ! Owned and halo together: every edge this part reads.
   !===================================================================!
 
   subroutine overlap_edges(this, part_id, sets, members)
@@ -974,12 +974,12 @@ contains
     type(set_store)    , intent(inout) :: sets
     type(graph)    , intent(out)   :: members
 
-    integer, allocatable :: owned(:), borrowed(:)
+    integer, allocatable :: owned(:), halo(:)
 
     allocate(owned   , source=owner_matches(this % whole_rel, this % ne, part_id, .false., .true.))
-    allocate(borrowed, source=owner_matches(this % whole_rel, this % ne, part_id, .false., .false.))
+    allocate(halo, source=owner_matches(this % whole_rel, this % ne, part_id, .false., .false.))
 
-    call sets % declare_subobject(members, [owned, borrowed], 'overlap_edges', this % eset)
+    call sets % declare_subobject(members, [owned, halo], 'overlap_edges', this % eset)
 
   end subroutine overlap_edges
 
@@ -987,14 +987,14 @@ contains
   ! Collect the indices a part owns, or the ones it does not.
   !
   ! An uncut graph has no ownership record to read. The result: everything
-  ! owned, nothing borrowed - correct for a graph that is the whole
+  ! owned, no halo - correct for a graph that is the whole
   ! of itself.
   !===================================================================!
 
   !===================================================================!
-  ! Optional arguments, defaulted where the relation demands a value.
-  ! A piece told its global vertex names but not its whole's identity
-  ! answers about itself, which is the honest reading of silence.
+  ! Optional arguments, defaulted where the relation requires a value.
+  ! A piece given its global vertex names but not its whole's identity
+  ! defaults the whole to itself.
   !===================================================================!
 
   function merge_set(given, fallback) result(s)
@@ -1018,7 +1018,7 @@ contains
     end if
   end function merge_count
 
-  pure function pick_global(given, n) result(g)
+  pure function select_global(given, n) result(g)
     integer, intent(in), optional :: given(:)
     integer, intent(in)           :: n
     integer, allocatable          :: g(:)
@@ -1028,59 +1028,59 @@ contains
     else
        g = [(i, i = 1, n)]
     end if
-  end function pick_global
+  end function select_global
 
-  pure function pick_owner(given, n, mine) result(o)
+  pure function select_owner(given, n, own_part) result(o)
     integer, intent(in), optional :: given(:)
-    integer, intent(in)           :: n, mine
+    integer, intent(in)           :: n, own_part
     integer, allocatable          :: o(:)
     integer                       :: i
     if (present(given)) then
        o = given
     else
-       o = [(mine, i = 1, n)]
+       o = [(own_part, i = 1, n)]
     end if
-  end function pick_owner
+  end function select_owner
 
-  pure function owner_matches(r, n, part_id, on_vertices, want_owned) result(pick)
+  pure function owner_matches(r, n, part_id, on_vertices, select_owned) result(selected_members)
 
     type(partition_relation), intent(in) :: r
     integer                             , intent(in) :: n
     integer                             , intent(in) :: part_id
     logical                             , intent(in) :: on_vertices
-    logical                             , intent(in) :: want_owned
+    logical                             , intent(in) :: select_owned
 
-    integer, allocatable :: pick(:)
+    integer, allocatable :: selected_members(:)
     integer :: i, k, owns
 
-    ! A graph born whole owns everything and borrows nothing. That is
+    ! A graph created whole owns everything and has no halo. That is
     ! not a special case: it is what the identity relation means.
     if (.not. r % has_part_relation()) then
-       if (want_owned) then
-          pick = [(i, i = 1, n)]
+       if (select_owned) then
+          selected_members = [(i, i = 1, n)]
        else
-          allocate(pick(0))
+          allocate(selected_members(0))
        end if
        return
     end if
 
-    allocate(pick(n))
+    allocate(selected_members(n))
     k = 0
     do i = 1, n
        owns = r % owner_part(i, on_vertices)
-       if ((owns == part_id) .eqv. want_owned) then
+       if ((owns == part_id) .eqv. select_owned) then
           k = k + 1
-          pick(k) = i
+          selected_members(k) = i
        end if
     end do
-    pick = pick(1:k)
+    selected_members = selected_members(1:k)
 
   end function owner_matches
 
   !===================================================================!
-  ! Walking the graph. Each of these is a slice of a list built once
-  ! at construction, which is what keeps them pure and cheap enough to
-  ! call per vertex.
+  ! Traversing the graph. Each of these is a slice of a list built
+  ! once at construction, which is what keeps them pure and of low
+  ! enough cost to call per vertex.
   !===================================================================!
 
   pure subroutine incident_edges(this, vertex_index, indices)
@@ -1144,8 +1144,8 @@ contains
   end subroutine incoming_edges
 
   !===================================================================!
-  ! Where the outgoing edges land, and where the incoming ones came
-  ! from. An edge with no head leads nowhere and is left out.
+  ! The heads of the outgoing edges, and the tails of the incoming
+  ! ones. An edge with no head has no head vertex and is omitted.
   !===================================================================!
 
   pure subroutine outgoing_vertices(this, vertex_index, indices)
@@ -1171,8 +1171,7 @@ contains
   end subroutine outgoing_vertices
 
   !===================================================================!
-  ! The vertices whose edges enter this one - the upstream
-  ! neighbours.
+  ! The vertices whose edges enter this one - the in-neighbours.
   !===================================================================!
 
   pure subroutine incoming_vertices(this, vertex_index, indices)
@@ -1193,15 +1192,15 @@ contains
   end subroutine incoming_vertices
 
   !===================================================================!
-  ! THE RELATION TO THE WHOLE, HANDED BACK BY VALUE.
+  ! THE RELATION TO THE WHOLE, RETURNED BY VALUE.
   !
-  ! Eight questions used to stand here as bindings on the contract:
+  ! Eight queries used to stand here as bindings on the contract:
   ! how many parts, which part owns what, and the maps both ways. Not
-  ! one of them is a question about D = (V, E, tail, head). They are
-  ! r's - r <= S_part x S_whole - and this graph answers only WHICH
-  ! relation it stands in.
+  ! one of them is a predicate on D = (V, E, tail, head). They are
+  ! r's - r <= S_part x S_whole - and this graph returns only WHICH
+  ! relation it is in.
   !
-  ! By value, and deliberately: the four verbs are HANDED r, so what
+  ! By value, and deliberately: the four verbs are PASSED r, so what
   ! they receive must be something that cannot change under them when
   ! the graph it came from goes out of scope.
   !===================================================================!
@@ -1218,10 +1217,10 @@ contains
   !===================================================================!
   ! The structure read as relations, derived on request from the
   ! stored table over counted coordinates (1..nv, 1..ne), which
-  ! keeps every query on the result O(1). A caller holding T and H
+  ! keeps every query on the result O(1). A caller that stores T and H
   ! may compose, transpose, and query them as relations; the
-  ! graph's own answers keep reading the compiled snapshots, and a
-  ! graph nobody reads relationally never builds these.
+  ! graph's own queries keep reading the compiled lists, and a
+  ! graph no caller reads relationally never builds these.
   !===================================================================!
 
   type(csr_relation) function tail_relation(this)

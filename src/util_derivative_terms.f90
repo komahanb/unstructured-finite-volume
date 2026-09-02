@@ -2,18 +2,18 @@
 ! A number together with every mixed derivative of it along n given
 ! directions.
 !
-! A quantity built from the four arithmetic operations alone carries
-! its derivatives with it if each operation is given the rule for
-! them. That is what this type holds: one coefficient per subset of
-! the n directions, 2^n in all, the empty subset holding the value
-! and the full subset holding the n-th mixed partial. Nothing is
+! A quantity built from the four arithmetic operations alone stores
+! its derivatives beside its value if each operation is given the
+! rule for them. That is what this type stores: one coefficient per
+! subset of the n directions, 2^n in all, the empty subset storing the
+! value and the full subset storing the n-th mixed partial. Nothing is
 ! perturbed and nothing is truncated - each coefficient is the exact
 ! derivative.
 !
 !             THE SUBSET INDEX
 !
-! A subset is a bit mask, and the mask m is held at index m + 1.
-! Allocatable assignment does not carry a zero lower bound in the
+! A subset is a bit mask, and the mask m is stored at index m + 1.
+! Allocatable assignment does not preserve a zero lower bound in the
 ! compilers this is built with, so the masks are stored from one and
 ! the two are never confused.
 !
@@ -25,12 +25,12 @@
 ! parameter, and the coefficient of the full subset comes out as the
 ! n-th derivative of whatever was built from it. That is the product
 ! rule read on subsets - splitting a set of size k into two parts
-! counts each split once, which is the binomial coefficient Leibniz
-! asks for - so nothing here changes; only what the numbers are taken
-! to mean does.
+! counts each split once, which is the binomial coefficient the
+! Leibniz rule requires - so nothing here changes; only the
+! interpretation of the numbers does.
 !
 ! The convention is derivatives, not derivatives over factorials: a
-! subset of size k holds the k-th derivative itself.
+! subset of size k stores the k-th derivative itself.
 !
 !             SUBSET SEEDING
 !
@@ -40,7 +40,7 @@
 ! those derivatives - is seeded subset by subset, and the coefficient
 ! of a subset of anything built from the quantity is then the total derivative
 ! along that subset: the sum over the set partitions of the subset
-! that the chain rule asks for is what the product rule on subsets
+! that the chain rule requires is what the product rule on subsets
 ! computes, so no partition is listed. Symmetric seeding is the case
 ! of one direction repeated.
 !
@@ -64,15 +64,15 @@
 !
 ! computed without listing partitions. With i the lowest element of m
 ! and G(k, m) the same sum with f^(p+k) in place of f^(p), the block
-! holding i is S + i for some S within m - i and the rest is
+! containing i is S + i for some S within m - i and the rest is
 ! partitioned with one more derivative taken:
 !
 !      G(k, empty)  =  f^(k)(a_0)
 !      G(k, m)      =  sum over S within m - i  of  a_{S+i} G(k+1, m - i - S)
 !
 ! filled in increasing m, for k up to n - |m|; the coefficient of g on
-! m is G(0, m). Each entry is a subset sum, so the cost is the 3^n a
-! product pays. A function supplies its derivatives at the value of a
+! m is G(0, m). Each entry is a subset sum, so the cost is the 3^n
+! operations of a product. A function supplies its derivatives at the value of a
 ! for k = 0 .. n: exp is its own; sin and cos cycle through four; log
 ! and a real power recur by one division of the value each, so no
 ! factorial is formed. sqrt is the power one half, and an integer
@@ -80,10 +80,10 @@
 !
 ! A product costs up to 3^n operations and a quotient the same, which
 ! is what a mixed partial of degree n costs; the storage is 2^n
-! numbers per quantity. The degree is bounded by the width a default
-! integer can carry a mask in, which max_subset_width reports.
+! numbers per quantity. The degree is bounded by the width of mask a
+! default integer can store, which max_subset_width reports.
 !
-!             WHAT IS REFUSED
+!             WHAT IS REJECTED
 !
 ! A quotient whose divisor has a zero value, and a direction index
 ! outside one to n. log, sqrt and a real power at a value that is not
@@ -101,7 +101,7 @@ module util_derivative_terms
 
   private
   public :: derivative_terms, value, mixed_partial, coefficient, max_subset_width
-  public :: integer_power, composed
+  public :: integer_power, composed, leibniz_parts
   public :: operator(+), operator(-), operator(*), operator(/), operator(**)
   public :: sin, cos, exp, log, sqrt
 
@@ -122,6 +122,7 @@ module util_derivative_terms
   interface derivative_terms
      module procedure create_constant
      module procedure create_like
+     module procedure create_from_coefficients
   end interface derivative_terms
 
   interface operator(+)
@@ -171,7 +172,7 @@ contains
 
   !===================================================================!
   ! The widest mask a default integer indexes: the bit width less the
-  ! sign bit and the bit that 2 raised to the width would carry.
+  ! sign bit and the bit that 2 raised to the width would occupy.
   !===================================================================!
 
   pure integer function max_subset_width()
@@ -211,6 +212,30 @@ contains
     this = create_constant(x, other % directions)
 
   end function create_like
+
+  !===================================================================!
+  ! A quantity from its coefficients, one per subset, indexed by the
+  ! mask from zero. A count that is not a power of two within the
+  ! mask width names no set of directions and stops the program.
+  !===================================================================!
+
+  pure function create_from_coefficients(c) result(this)
+
+    real(dp), intent(in) :: c(0:)
+    type(derivative_terms) :: this
+
+    integer :: n
+
+    n = trailz(max(size(c), 1))
+    if (size(c) < 1 .or. 2**n /= size(c) .or. n > max_subset_width()) then
+       error stop 'util_derivative_terms: the coefficients number a power of two, one per subset'
+    end if
+
+    this % directions = n
+    allocate(this % terms(2**n))
+    this % terms(:) = c
+
+  end function create_from_coefficients
 
   pure integer function num_directions(this)
 
@@ -255,7 +280,7 @@ contains
     integer :: m
 
     if (order < 0 .or. order > this % directions) then
-       error stop 'util_derivative_terms: the order is one the directions carry'
+       error stop 'util_derivative_terms: the order is at most the count of directions'
     end if
 
     do m = 0, size(this % terms) - 1
@@ -266,7 +291,7 @@ contains
 
   !===================================================================!
   ! Seed the coefficient of the subset with mask m: the total
-  ! derivative along the directions m holds. A mask outside 1 to
+  ! derivative along the directions m contains. A mask outside 1 to
   ! 2^n - 1 stops the program: the value is not a derivative, and no
   ! other subset exists.
   !===================================================================!
@@ -303,7 +328,7 @@ contains
 
   !===================================================================!
   ! The coefficient of the subset with mask m: the mixed partial along
-  ! the directions m holds. A mask outside 0 to 2^n - 1 stops the
+  ! the directions m contains. A mask outside 0 to 2^n - 1 stops the
   ! program.
   !===================================================================!
 
@@ -413,6 +438,34 @@ contains
   end function terms_over
 
   !===================================================================!
+  ! THE PRODUCT RULE ON THE FULL SUBSET, READ BY THE SIZE OF ONE
+  ! FACTOR'S PART: parts(k) is the sum over the subsets S of size k
+  ! of a_S b_(full - S), so the parts add to the n-th mixed partial of
+  ! a b. Under symmetric seeding parts(k) is C(n, k) a^(k) b^(n-k),
+  ! the k-th term of Leibniz. Factors over different counts of
+  ! directions stop the program.
+  !===================================================================!
+
+  pure function leibniz_parts(a, b) result(parts)
+
+    type(derivative_terms), intent(in) :: a, b
+    real(dp) :: parts(0:a % directions)
+
+    integer :: full, s
+
+    if (a % directions /= b % directions) then
+       error stop 'util_derivative_terms: the factors of a product have the same count of directions'
+    end if
+
+    full  = size(a % terms) - 1
+    parts = 0.0_dp
+    do s = 0, full
+       parts(popcnt(s)) = parts(popcnt(s)) + a % terms(s + 1) * b % terms(ieor(full, s) + 1)
+    end do
+
+  end function leibniz_parts
+
+  !===================================================================!
   ! x raised to an integer exponent, of either sign. A zero exponent
   ! is one, whatever the value; a negative exponent divides, and a
   ! zero value then stops the program inside the quotient.
@@ -449,7 +502,7 @@ contains
   !===================================================================!
   ! COMPOSITION WITH A FUNCTION: g = f(a) from the derivatives f(0:n)
   ! of f at the value of a. A table shorter than n + 1 stops the
-  ! program: the highest subset has no derivative to draw on.
+  ! program: the full subset has no derivative to read.
   !===================================================================!
 
   pure function composed(a, f) result(g)

@@ -3,9 +3,9 @@
 !
 ! The coupling here is within one step. Its vertices are
 !
-!      1              the instant the step leaves from
+!      1              the initial instant of the step
 !      1 + i          stage i, i = 1 .. s
-!      2 + s          the instant the step arrives at
+!      2 + s          the final instant of the step
 !
 ! and the primary unknown at a stage is its acceleration. Each lower
 ! component at a stage is the incoming one plus the step times the
@@ -15,27 +15,27 @@
 !      u'_i = q'_in + dt sum_j a_ij u"_j        determines 1
 !      u_i  = q_in  + dt sum_j a_ij u'_j        determines 0
 !
-! and the arriving instant reads the stages through the weights b:
+! and the final instant reads the stages through the weights b:
 !
 !      q"_out = sum_j b_j u"_j                   determines 2
 !      q'_out = q'_in + dt sum_j b_j u"_j        determines 1
 !      q_out  = q_in  + dt sum_j b_j u'_j        determines 0
 !
-! So the edge rule is: from the incoming instant, one; from stage j
+! So the edge rule is: from the initial instant, one; from stage j
 ! into stage i, a_ij with j at or before i; from stage j into the
-! arriving instant, b_j. No coefficient depends on dt, so the
-! tableau serves any step.
+! final instant, b_j. No coefficient depends on dt, so the
+! tableau applies to any step.
 !
-! The incoming instant reaches the arriving one directly: every row
-! below the highest degree carries its own degree across the step
-! unchanged, which is the one in q'_out = q'_in + dt sum_j b_j u"_j.
-! The highest degree has no such term, and a caller assembling the
-! step simply does not make that edge.
+! The initial instant reaches the final one directly: every row
+! below the highest degree includes its own degree from the initial
+! instant unchanged, which is the q'_in term in
+! q'_out = q'_in + dt sum_j b_j u"_j. The highest degree has no such
+! term, and a caller assembling the step does not create that edge.
 !
-! An edge from a stage after its head, an edge into the incoming
-! instant, an edge out of the arriving instant, or a source degree
+! An edge from a stage after its head, an edge into the initial
+! instant, an edge out of the final instant, or a source degree
 ! that is neither the constraint's nor one above it: each stops the
-! program. A tableau with an entry above its diagonal is refused at
+! program. A tableau with an entry above its diagonal is rejected at
 ! construction, since the stages could not then be ordered.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
@@ -148,7 +148,7 @@ contains
   ! between instants, so they have no pattern in instant offsets. A
   ! caller assembling a stage block reads the tableau through
   ! num_stages and edge_coefficient instead, and an empty pattern is
-  ! how this family says so.
+  ! how this family declares that.
   !===================================================================!
 
   pure subroutine dirk_row_pattern(this, determines, equation_degree, &
@@ -177,7 +177,7 @@ contains
     s = size(this % b)
 
     if (head == 1 .or. tail == 2 + s) then
-       error stop 'operation_family_dirk: an edge runs from the incoming instant or a stage into a later vertex'
+       error stop 'operation_family_dirk: an edge runs from the initial instant or a stage into a later vertex'
     end if
     if (source_degree /= determines .and. source_degree /= determines + 1) then
        error stop 'operation_family_dirk: a source is the constraint''s degree or one above'

@@ -1,26 +1,26 @@
 !=====================================================================!
-! A factorisation kept: P A = L U with partial pivoting, formed once
-! from a square matrix and applied to as many right sides as are
-! brought to it, against A or against its transpose.
+! A factorisation retained: P A = L U with partial pivoting, formed
+! once from a square matrix and applied to every right side passed to
+! it, against A or against its transpose.
 !
-! The point of keeping it is the count. A tangent solve, an adjoint
-! solve and every order of an expansion read the same matrix frozen
-! at the same state, so one factorisation serves them all and each
-! costs a substitution. Formed afresh per solve, each would cost the
-! factorisation over again.
+! The purpose of retaining it is the operation count. A tangent solve,
+! an adjoint solve and every order of an expansion read the same
+! matrix frozen at the same state, so one factorisation serves them
+! all and each costs a substitution. Formed again per solve, each
+! would cost the factorisation again.
 !
 !=====================================================================!
 !
 !                        THE COST MODEL
 !
-! Every procedure that costs carries its own count, so a caller
-! choosing between routes can add rather than guess:
+! Every procedure with a cost reports its own count, so a caller
+! choosing between modes can add the counts rather than estimate:
 !
 !      factorise      n^3 / 3      multiplications
 !      substitute     n^2          multiplications, either way round
 !
-! and the count of each is filed with util_tally, so what a run did
-! can be read beside what the model said it would.
+! and the count of each is recorded with util_tally, so the measured
+! count can be read beside the model's count.
 !
 !=====================================================================!
 !
@@ -31,8 +31,8 @@
 !
 ! A pivot at or below the threshold given leaves the factorisation
 ! singular: no further elimination is done, and a substitution
-! against it stops the program. Whether a singular pivot is a fault or
-! a fact is the caller's to decide, from singular().
+! against it stops the program. Whether a singular pivot is an error
+! or an expected result is the caller's decision, read from singular().
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -103,7 +103,7 @@ contains
     ! Right-looking elimination, column by column: the multipliers of
     ! column k are formed at once, and each later column is updated
     ! as a whole, so every inner sweep runs down a column, which is
-    ! how the array lies in memory.
+    ! the array's memory order.
     do k = 1, n
 
        p = k - 1 + maxloc(abs(this % lu(k:n, k)), dim=1)
@@ -135,7 +135,7 @@ contains
 
   !===================================================================!
   ! x with A x = b, or with A^T x = b where transposed. A right side of
-  ! the wrong extent, or a factorisation left singular or never made,
+  ! the wrong extent, or a factorisation left singular or never formed,
   ! stops the program.
   !===================================================================!
 
@@ -146,7 +146,7 @@ contains
     real(dp), allocatable     , intent(out) :: x(:)
     logical                   , intent(in)  :: transposed
 
-    real(dp) :: held
+    real(dp) :: stored
     integer  :: n, i, j, k
 
     n = this % n
@@ -167,14 +167,14 @@ contains
 
        do k = 1, n
           if (this % exchanged(k) /= k) then
-             held                    = x(k)
+             stored                    = x(k)
              x(k)                    = x(this % exchanged(k))
-             x(this % exchanged(k))  = held
+             x(this % exchanged(k))  = stored
           end if
        end do
 
        ! L y = b, then U x = y, each a sweep of columns: once x(j) is
-       ! known its column is taken off everything below (or above).
+       ! computed its column is subtracted from every entry below (or above).
        do j = 1, n - 1
           x(j+1:n) = x(j+1:n) - x(j) * this % lu(j+1:n, j)
        end do
@@ -198,9 +198,9 @@ contains
 
        do k = n, 1, -1
           if (this % exchanged(k) /= k) then
-             held                    = x(k)
+             stored                    = x(k)
              x(k)                    = x(this % exchanged(k))
-             x(this % exchanged(k))  = held
+             x(this % exchanged(k))  = stored
           end if
        end do
 

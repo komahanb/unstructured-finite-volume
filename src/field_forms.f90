@@ -1,48 +1,51 @@
 !=====================================================================!
 ! LEVEL 1 . THE FORMS
 !
-! A form is a family of functions of position - a basis shape. It is
-! two independent things held together, and it HAS them rather than
+! A form is a family of functions of position - a basis. A form is
+! composed of two independent objects, and HAS them rather than
 ! being either:
 !
 !      evaluation      num_members, the table's width recorded where
 !                      the basis is declared; values, slopes - the
 !                      concretion's own table of functions, read whole
-!      active basis    WHICH table entries stand, as a declared set:
+!      active basis    WHICH table entries are active, as a declared set:
 !                      an identity, and a representation listing them
 !
-! It once EXTENDED subset_set, which said a form IS a set of basis
-! functions. That inheritance bought one method - members() - and
-! charged for the whole carrier contract: a form answered has(),
-! local_index() and ambient() that nothing asked, and could not be a
-! set of anything else without becoming a different type. Composition
-! buys the same method and charges for nothing.
+! The type once EXTENDED subset_set, which stated that a form IS a
+! set of basis functions. That inheritance provided one method -
+! members() - and required the whole carrier contract: a form
+! implemented has(), local_index() and ambient() that nothing called,
+! and could not be a set of anything else without becoming a
+! different type. Composition provides the same method and requires
+! nothing.
 !
-! Everything a roster once did, the representation does: the standing
-! basis members ARE the listed representation's members, indices into
-! the concretion's own table. Pruning a form is relisting them. No
-! second active(:) array survives, for the same reason as before - a
-! set does not need two lists to say who belongs to it.
+! Everything a member array once did, the representation does: the
+! active basis members ARE the listed representation's members,
+! indices into the concretion's own table. Restricting a form is
+! relisting them. No second active(:) array remains, for the same
+! reason as before - a set does not need two lists to record its
+! members.
 !
 ! What the form adds beyond membership is only its evaluation
-! symbols, read over the FULL table, membership saying who stands:
+! procedures, read over the FULL table, membership recording which
+! entries are active:
 !
 !      num_members                  the table's width
 !      values(x, at)            each table entry, evaluated at x,
 !                               reckoned about the point `at`
 !      slopes(x, at, n)         each entry's derivative along n
 !
-! and one act of its own: restrict, which sets that membership. It
-! is here rather than at the caller because a form's structure is
-! its own business - whoever decides a member should go says so, and
-! the form does it. When the form sector becomes a transform the
-! restriction will hand back a NEW form and this verb becomes the
+! and one operation of its own: restrict, which sets that membership.
+! restrict is here rather than at the caller because a form owns its
+! structure - the caller decides which member is removed, and the
+! form removes it. When the form sector becomes a transform the
+! restriction will return a NEW form and this procedure becomes the
 ! constructor it calls.
 !
 ! Evaluating a form at a point is calculus; choosing its
-! coefficients is minimization and lives one level up. Polynomials
-! are one concretion, waves another; a fit holds a form the way an
-! operator holds coefficients - as data about shape.
+! coefficients is minimization and is defined one level up.
+! Polynomials are one concretion, waves another; a fit stores a form
+! as data describing the basis, as an operator stores coefficients.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -62,7 +65,7 @@ module field_forms
   type, abstract :: form
 
      !----------------------------------------------------------------!
-     ! WHICH basis, and WHO stands in it. The identity is declared once
+     ! WHICH basis, and WHICH entries are active. The identity is declared once
      ! by the concretion; the representation is what restrict replaces.
      !----------------------------------------------------------------!
 
@@ -70,7 +73,7 @@ module field_forms
      type(listed_set_representation), private :: active
 
      ! the table's width, stated once where the basis is declared;
-     ! restriction narrows the roster, never the table
+     ! restriction narrows the active set, never the table
      integer, private :: width = 0
 
    contains
@@ -115,10 +118,10 @@ module field_forms
 ! The polynomial form: every monomial in the coordinates, as many as
 ! the space has,
 ! reckoned about the point of interest, up to a degree - the Taylor
-! shape at that degree, whose span is every polynomial field of it.
-! Degree one is the constant and the three coordinates, and is what
-! a form asked for without a degree is. The monomials stand in order
-! of total degree, and within a degree with the first coordinate's
+! basis at that degree, whose span is every polynomial field of it.
+! Degree one is the constant and the three coordinates, and is the
+! default when no degree is given. The monomials are ordered by
+! total degree, and within a degree with the first coordinate's
 ! power falling, so degree one is 1, x, y, z in that order.
 !
 !=====================================================================!
@@ -146,7 +149,7 @@ module field_forms
 !
 !      { 1,  sin(k . (x - at)),  cos(k . (x - at)) }
 !
-! whose span holds every wave of that wavenumber, whatever its
+! whose span contains every wave of that wavenumber, whatever its
 ! phase. A fit over this form differentiates such waves exactly,
 ! where a polynomial of any finite degree only approximates them.
 !
@@ -172,10 +175,10 @@ module field_forms
 contains
 
   !===================================================================!
-  ! A concretion declares its basis once, standing every entry of its
-  ! table. The identity is minted here so no concretion has to
-  ! remember to; the roster starts full because an unrestricted form
-  ! stands whole.
+  ! A concretion declares its basis once, with every entry of its
+  ! table active. The identity is declared here so no concretion has
+  ! to declare it; the active set starts full because an unrestricted
+  ! form has every entry active.
   !===================================================================!
 
   subroutine declare_basis(this, width)
@@ -194,7 +197,7 @@ contains
   !===================================================================!
   ! The table's width, as declared. Restriction does not change it:
   ! a restricted form still evaluates every entry of its table and
-  ! stands only some.
+  ! has only some active.
   !===================================================================!
 
   pure integer function num_members(this)
@@ -206,9 +209,9 @@ contains
   end function num_members
 
   !===================================================================!
-  ! WHICH basis this form's standing members belong to. The identity
-  ! survives restriction: restricting a form narrows who stands, and
-  ! does not make it a different basis.
+  ! WHICH basis this form's active members belong to. The identity
+  ! survives restriction: restricting a form narrows the active set,
+  ! and does not make the form a different basis.
   !===================================================================!
 
   type(graph) function basis_set(this) result(b)
@@ -220,26 +223,26 @@ contains
   end function basis_set
 
   !===================================================================!
-  ! Who stands, in declaration order.
+  ! The active members, in declaration order.
   !===================================================================!
 
-  pure subroutine members(this, standing)
+  pure subroutine members(this, active_members)
 
     class(form)         , intent(in)  :: this
-    integer, allocatable, intent(out) :: standing(:)
+    integer, allocatable, intent(out) :: active_members(:)
 
-    call this % active % members(standing)
+    call this % active % members(active_members)
 
   end subroutine members
 
   !===================================================================!
-  ! Stand only these table entries. The kept indices name entries of
-  ! the concretion's own table, and the roster is the whole statement
-  ! of who belongs.
+  ! Activate only these table entries. The kept indices name entries
+  ! of the concretion's own table, and the active set is the whole
+  ! record of membership.
   !
-  ! It MUTATES, as it always has. Making restriction functional - a
+  ! restrict MUTATES, as before. Making restriction functional - a
   ! new form, a new basis identity - is a separate transformation and
-  ! is not smuggled in behind a type change.
+  ! is not included in a type change.
   !===================================================================!
 
   subroutine restrict(this, kept)
@@ -252,7 +255,7 @@ contains
   end subroutine restrict
 
 
-  ! Born with every table entry standing: the members are the four.
+  ! Constructed with every table entry active: the members are the four.
   type(polynomial_form) function create_polynomial(degree, dimension) result(this)
 
     integer, intent(in), optional :: degree, dimension
@@ -346,8 +349,8 @@ contains
 
   !-------------------------------------------------------------------!
   ! The derivative of each monomial along the direction: the sum over
-  ! the coordinates of the direction's component times the power
-  ! brought down.
+  ! the coordinates of the direction's component times the power as
+  ! a factor.
   !-------------------------------------------------------------------!
 
   pure subroutine polynomial_slopes(this, x, at, direction, dphi)
@@ -391,7 +394,7 @@ contains
 
 
 
-  ! Born with every table entry standing: the members are the three.
+  ! Constructed with every table entry active: the members are the three.
   type(harmonic_form) function create_harmonic(wavenumber) result(this)
 
     real(dp), intent(in) :: wavenumber(:)
@@ -420,7 +423,7 @@ contains
   end subroutine harmonic_values
 
   !===================================================================!
-  ! d/dn of a wave: the chain rule brings down k . n.
+  ! d/dn of a wave: the chain rule gives the factor k . n.
   !===================================================================!
 
   pure subroutine harmonic_slopes(this, x, at, direction, dphi)

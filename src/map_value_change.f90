@@ -4,19 +4,19 @@
 !
 !      apply    save the row's prior state, then store the new
 !               values (attaching first when no row exists)
-!      check    report the caller-provided verdict
-!      keep     leave the map as updated
+!      check    report the caller-provided check result
+!      commit   leave the map as updated
 !      revert   restore the row exactly: a row that did not exist
 !               is removed, an UNKNOWN row is set back to UNKNOWN,
-!               a KNOWN row gets its old values back
+!               a KNOWN row receives its old values
 !
 ! The change owns the rollback record; the map owns identity,
-! status, and storage; the protocol owns the lifecycle. It touches
-! values and never structure.
+! status, and storage; the protocol owns the lifecycle. The change
+! modifies values and never structure.
 !
 ! Bound state is copied at bind - the element with its identity,
-! the new values whole - so mutating the caller's array after
-! binding changes nothing. Only the map is held by pointer,
+! the new values in full - so mutating the caller's array after
+! binding changes nothing. Only the map is referenced by pointer,
 ! because the map is the object being changed.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
@@ -57,7 +57,7 @@ module map_value_change
      procedure :: bind
      procedure :: apply
      procedure :: check
-     procedure :: keep
+     procedure :: commit
      procedure :: revert
 
   end type value_change
@@ -66,7 +66,7 @@ contains
 
   !===================================================================!
   ! Bind one update: point at the map, copy the element and the
-  ! new values, take the check verdict (true unless the caller
+  ! new values, take the check result (true unless the caller
   ! passes otherwise), and clear any saved state from an earlier
   ! use.
   !===================================================================!
@@ -127,7 +127,7 @@ contains
   end subroutine apply
 
   !===================================================================!
-  ! Check: report the caller-provided verdict.
+  ! Check: report the caller-provided check result.
   !===================================================================!
 
   subroutine check(this, result)
@@ -140,11 +140,11 @@ contains
   end subroutine check
 
   !===================================================================!
-  ! Keep: the map already holds the update, so only the mark is
-  ! written.
+  ! Commit: the map already stores the update, so only the record is
+  ! marked.
   !===================================================================!
 
-  subroutine keep(this, result)
+  subroutine commit(this, result)
 
     class(value_change), intent(inout) :: this
     type(change_record), intent(inout) :: result
@@ -152,14 +152,14 @@ contains
     associate(unread => this)
     end associate
 
-    call result % mark_kept()
+    call result % mark_committed()
 
-  end subroutine keep
+  end subroutine commit
 
   !===================================================================!
-  ! Revert: restore the row exactly as apply found it. A row that
+  ! Revert: restore the row exactly as apply recorded it. A row that
   ! did not exist is removed; a previously UNKNOWN row is set back
-  ! to UNKNOWN; a previously KNOWN row gets its old values back.
+  ! to UNKNOWN; a previously KNOWN row receives its old values.
   !===================================================================!
 
   subroutine revert(this, result)

@@ -1,25 +1,25 @@
 !=====================================================================!
-! The operation prime: the verb within a graph, (graph, fields) ->
-! field. Three symbols. name says what it is; domain says which
-! member set the result lives on and how many entries it has; apply
-! does the work.
+! The operation prime: the map within a graph, (graph, fields) ->
+! field. Three symbols. name states the operation's name; domain
+! states which member set the result is defined on and how many
+! entries it has; apply computes the result.
 !
 ! apply writes its result into the output argument and never adds to
 ! what was there. The argument is intent(inout) only so a caller
-! already holding a buffer of the right shape can lend it and save
-! an allocation; lending changes the cost of the call, not its
-! meaning.
+! already storing a buffer of the right shape can pass it and avoid
+! an allocation; passing a buffer changes the cost of the call, not
+! its result.
 !
-! A concrete operation is handed the fields it reads when it is
-! constructed - a coefficient, a measure, a geometry field arrives as
-! an argument the compiler checks - so apply fetches nothing by name.
+! A concrete operation receives the fields it reads at construction
+! - a coefficient, a measure, a geometry field is passed as an
+! argument the compiler checks - so apply retrieves nothing by name.
 !
 ! ARGUMENTS. An operation F(x_1, ..., x_m) declares an argument
 ! space. The declaration has m slots; the slots supply operation-owned
 ! argument identities, not caller-owned names. An argument is an
 ! opaque ordinal in one operation's space; two arguments match only
 ! when they name the same position of the same space, so an argument
-! of another operation can never stand for one of this operation's,
+! of another operation can never denote one of this operation's,
 ! whatever its position. Arguments are obtained from the operation
 ! that owns them, by argument(k); no caller constructs one.
 !
@@ -74,7 +74,7 @@ module operation_action
   !===================================================================!
   ! What a bound field must be: one of the value kinds, and the
   ! component count when the operation fixes it. A count of zero
-  ! leaves the count open for an operation that reads the shape off
+  ! leaves the count open for an operation that reads the shape from
   ! the field.
   !===================================================================!
 
@@ -111,8 +111,8 @@ module operation_action
   !===================================================================!
   ! One differentiation factor: the argument differentiated and the
   ! direction the derivative is contracted against. The direction is
-  ! held by value, a stored field, behind the accessor: a later
-  ! borrowed representation changes no caller.
+  ! stored by value, as a stored field, behind the accessor: a later
+  ! non-owning representation changes no caller.
   !===================================================================!
 
   type :: variation
@@ -164,12 +164,12 @@ module operation_action
      integer    , private :: declared_arguments = 0
      type(contract), allocatable, private :: argument_contracts(:)
 
-     ! THE STAMP. A statement that stays the same between two solves
-     ! carries the same stamp, and a direct solver keeps its factors
-     ! while the stamp it last factorised is unchanged. Zero is no
-     ! stamp: the default, and always factorised afresh.
+     ! THE VERSION. A statement that is unchanged between two solves
+     ! has the same version, and a direct solver retains its factors
+     ! while the version it last factorised is unchanged. Zero is no
+     ! version: the default, and always factorised again.
      integer    , private :: mark = 0
-     logical    , private :: turned = .false.
+     logical    , private :: is_transposed = .false.
 
    contains
 
@@ -182,9 +182,9 @@ module operation_action
      procedure :: compiled_tangent => operation_compiled_tangent
 
      procedure :: declare_arguments
-     procedure :: stamped
-     procedure :: stamp
-     procedure :: stamp_transposed
+     procedure :: versioned
+     procedure :: version
+     procedure :: version_transposed
      procedure :: num_arguments
      procedure :: argument => operation_argument
      procedure :: owns
@@ -203,10 +203,10 @@ module operation_action
      end function operation_name_interface
 
      !---------------------------------------------------------------!
-     ! Where the result lives: WHICH set, and HOW MANY entries it
-     ! has. The count travels beside the identity because every
-     ! caller wants exactly those two things - to check the domain
-     ! matches, and to size a field.
+     ! The domain of the result: WHICH set, and HOW MANY entries it
+     ! has. The count is returned beside the identity because every
+     ! caller requires exactly those two quantities - to check the
+     ! domain matches, and to size a field.
      !---------------------------------------------------------------!
 
 
@@ -321,10 +321,10 @@ contains
   end function argument_contract
 
   !===================================================================!
-  ! Declare the argument space: mint it once, on the first call, and
-  ! record how many positions are readable. A later call changes the
-  ! count only, so arguments handed out earlier still belong to the
-  ! same space. A negative count stops the program.
+  ! Declare the argument space: allocate its token once, on the first
+  ! call, and record how many positions are readable. A later call
+  ! changes the count only, so arguments returned earlier still
+  ! belong to the same space. A negative count stops the program.
   !===================================================================!
 
   subroutine declare_arguments(this, n, contracts)
@@ -402,7 +402,7 @@ contains
   end function owns
 
   !===================================================================!
-  ! Refuse a variation list that names an argument of another
+  ! Reject a variation list that names an argument of another
   ! operation. Every partial_action calls this first.
   !===================================================================!
 
@@ -514,54 +514,54 @@ contains
   end function operation_max_degree
 
   !===================================================================!
-  ! The default refuses every request, because max_degree is 0. A
+  ! The default rejects every request, because max_degree is 0. A
   ! concrete type that declares a positive max_degree overrides both
   ! bindings; the order requested must not exceed its max_degree.
   !===================================================================!
 
-  subroutine stamped(this, mark, transposed)
+  subroutine versioned(this, mark, transposed)
 
     class(operation), intent(inout) :: this
     integer         , intent(in)    :: mark
     logical         , intent(in), optional :: transposed
 
     this % mark   = mark
-    this % turned = .false.
-    if (present(transposed)) this % turned = transposed
+    this % is_transposed = .false.
+    if (present(transposed)) this % is_transposed = transposed
 
-  end subroutine stamped
+  end subroutine versioned
 
   !===================================================================!
-  ! Whether the statement stamped is the transpose of the one the
-  ! stamp names: read off its pattern where the statement is made,
-  ! and carried with the stamp so that a solver holding the factors
-  ! of the one substitutes them the other way for the other.
+  ! Whether the versioned statement is the transpose of the one the
+  ! version names: read from its pattern where the statement is
+  ! formed, and stored with the version so that a solver storing the
+  ! factors of the one substitutes them transposed for the other.
   !===================================================================!
 
-  pure logical function stamp_transposed(this)
+  pure logical function version_transposed(this)
 
     class(operation), intent(in) :: this
 
-    stamp_transposed = this % turned
+    version_transposed = this % is_transposed
 
-  end function stamp_transposed
+  end function version_transposed
 
-  pure integer function stamp(this) result(mark)
+  pure integer function version(this) result(mark)
 
     class(operation), intent(in) :: this
 
     mark = this % mark
 
-  end function stamp
+  end function version
 
   !===================================================================!
-  ! THE COMPILED TANGENT. A statement that can write its own tangent
-  ! in one argument down as triples - row, column, weight - says so
-  ! here, and a minimizer governing it may then attach the compiled
-  ! operator instead of forming the tangent by matvecs. The default
-  ! is that it cannot, and available says so; the arrays are then
-  ! untouched. Nothing here is a matvec: a statement that compiles
-  ! its tangent knows its own structure.
+  ! THE COMPILED TANGENT. A statement that can express its own
+  ! tangent in one argument as triples - row, column, weight -
+  ! reports so here, and a minimizer governing it may then attach the
+  ! compiled operator instead of forming the tangent by matvecs. The
+  ! default is that it cannot, and available reports so; the arrays
+  ! are then not assigned. Nothing here is a matvec: a statement that
+  ! compiles its tangent stores its own structure.
   !===================================================================!
 
   subroutine operation_compiled_tangent(this, input_graph, inputs, which, &
@@ -716,30 +716,31 @@ contains
   end function create_binding
 
   !===================================================================!
-  ! The same binding taking the field over rather than copying it;
-  ! the driver hands each datum it fetched to the binding this way.
+  ! The same binding taking ownership of the field rather than
+  ! copying it; the driver passes each datum it read to the binding
+  ! this way.
   !===================================================================!
 
-  function moved_binding(to, held) result(this)
+  function moved_binding(to, stored) result(this)
 
     type(argument)           , intent(in)    :: to
-    class(field), allocatable, intent(inout) :: held
+    class(field), allocatable, intent(inout) :: stored
     type(binding) :: this
     type(contract) :: required
 
     if (.not. to % is_named()) then
        error stop 'operation: a binding names an argument'
     end if
-    if (.not. allocated(held)) then
-       error stop 'operation: a binding carries a field'
+    if (.not. allocated(stored)) then
+       error stop 'operation: a binding contains a field'
     end if
     required = to % contract()
-    if (.not. required % accepts(held)) then
+    if (.not. required % accepts(stored)) then
        error stop 'operation: a bound field satisfies its argument contract'
     end if
 
     this % to = to
-    call move_alloc(held, this % value)
+    call move_alloc(stored, this % value)
 
   end function moved_binding
 
@@ -779,7 +780,7 @@ contains
 
   !===================================================================!
   ! Rebind another operation's bindings to this operation's arguments
-  ! by position, for an operation that hands its inputs on to one it
+  ! by position, for an operation that passes its inputs to one it
   ! composes.
   !===================================================================!
 
@@ -798,7 +799,7 @@ contains
     allocate(bound(size(others)))
     do k = 1, size(others)
        if (.not. allocated(others(k) % value)) then
-          error stop 'operation: a binding carries a field'
+          error stop 'operation: a binding contains a field'
        end if
        bound(k) = binding(this % argument(k), others(k) % value)
     end do
@@ -835,14 +836,14 @@ contains
        error stop 'operation: the argument is bound'
     end if
     if (.not. allocated(bound(found) % value)) then
-       error stop 'operation: a binding carries a field'
+       error stop 'operation: a binding contains a field'
     end if
 
   end function bound_index
 
   !===================================================================!
-  ! Whether an argument has a binding: the driver leaves the argument
-  ! of a vertex nothing has written unbound.
+  ! Whether an argument has a binding: the driver leaves unbound the
+  ! argument of a vertex that no operation has written.
   !===================================================================!
 
   pure logical function is_bound(bound, a)
@@ -900,9 +901,10 @@ contains
   end subroutine bound_integer_vector
 
   !===================================================================!
-  ! Where an operation's answer lives, unless it says otherwise: one
-  ! entry per vertex of the graph it is applied on. An operation that
-  ! answers on its edges, or on a domain of its own, overrides this.
+  ! The domain of an operation's result, unless the operation
+  ! overrides it: one entry per vertex of the graph it is applied on.
+  ! An operation whose result is defined on its edges, or on a domain
+  ! of its own, overrides this.
   !===================================================================!
 
   subroutine operation_domain(this, input_graph, domain, num_entries)
@@ -919,7 +921,7 @@ contains
   end subroutine operation_domain
 
   !===================================================================!
-  ! The one way an operation hands its answer back: a supplied buffer
+  ! The one way an operation returns its result: a supplied buffer
   ! is overwritten, never added to.
   !===================================================================!
 

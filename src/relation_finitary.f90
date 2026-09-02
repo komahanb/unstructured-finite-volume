@@ -8,9 +8,9 @@
 !
 ! A relation has identity, arity, an ordered signature, and a
 ! membership law - and it is FIRST-CLASS: constructible, queryable
-! and testable with no graph anywhere in sight. A graph, when it
-! arrives on a higher level, will CONTAIN relations; a relation
-! never needs a graph in order to exist.
+! and testable with no graph required. A graph, defined on a higher
+! level, CONTAINS relations; a relation does not require a graph in
+! order to exist.
 !
 !                          THE SIGNATURE
 !
@@ -18,24 +18,25 @@
 !
 !      sig(P) = (A_1, ..., A_k)
 !
-! It is small control-plane data - k identities - so it is stored
+! It is small control data - k identities - so it is stored
 ! contiguously, as an array of graph values. That IS the ordered graph
-! sequence; view_sequence represents the same mathematics as a
-! branch spine and says so itself: indexed access there is O(k) and
-! hands back a POINTER into cells the holder must keep alive. A
-! signature is indexed constantly and copied freely, so it takes the
-! view's own advice and compiles to the contiguous form. No borrow, no
-! spine to own, and the map law of the identity maps is kept: a
-! signature owns its identities by value.
+! sequence; view_sequence represents the same mathematics as a linked
+! chain of cells and states so: indexed access there is O(k) and
+! returns a POINTER into cells the owner must retain. A signature is
+! indexed frequently and copied freely, so it is compiled to the
+! contiguous form. No non-owning reference, no chain of cells to own,
+! and the map law of the identity maps is preserved: a signature owns
+! its identities by value.
 !
-! THE SLOT IS GONE. It existed because an array carries one dynamic
-! type and the old carriers were a class hierarchy; every domain is a
-! type(graph) now, so the wrapper wrapped nothing. It carried no
-! mathematical information and left with the type that needed it.
+! THE SLOT WRAPPER IS REMOVED. It existed because an array stores one
+! dynamic type and the previous domain types were a class hierarchy;
+! every domain is a type(graph) now, so the wrapper contained nothing.
+! It stored no mathematical information and was removed with the type
+! that required it.
 !
-! The signature holds copies, and a copy IS the declared domain - so
-! two relations built over one domain answer same_as across each
-! other's positions, and no relation ever assumes its domains are
+! The signature stores copies, and a copy IS the declared domain - so
+! two relations built over one domain return true from same_as across
+! each other's positions, and no relation ever assumes its domains are
 ! owned by one graph. A position may repeat a domain:
 !
 !      P_CC  <=  cells x cells         adjacency
@@ -47,43 +48,43 @@
 !
 !      T_end <=  edges x vertices x roles
 !
-! holds (e, v, tail) and (e, v, head) for an interior edge and one
-! lone (e, v, tail) for a boundary face - no imaginary far-side
-! member, the same wall the old grammar drew with a headless edge.
+! contains (e, v, tail) and (e, v, head) for an interior edge and one
+! single (e, v, tail) for a boundary face - no fictitious far-side
+! member, the same boundary the previous grammar represented with a
+! headless edge.
 !
-!                         A SET, NOT A BAG
+!                       A SET, NOT A MULTISET
 !
 ! A relation is a set of tuples: no tuple is in it twice. The
 ! constructor collapses duplicate columns to the first occurrence,
-! order kept, so num_tuples, tuples and has all answer set
-! semantics and nothing else. Multiplicity that MEANS something -
-! two parallel edges between one pair of cells - is already carried
-! by distinct members of an edge domain; the day counted repetition
-! itself is the mathematics, that is a distinct multirelation
-! abstraction, not a quiet flag here.
+! order preserved, so num_tuples, tuples and has all follow set
+! semantics and nothing else. Multiplicity that denotes something -
+! two parallel edges between one pair of cells - is already
+! represented by distinct members of an edge domain; when counted
+! repetition itself is the mathematics required, that is a distinct
+! multirelation abstraction, not an undocumented flag here.
 !
 !                       WHAT IS VALIDATED
 !
-! Construction refuses, loudly: a tuple table whose row count is not
-! the arity; a signature position that was never declared; a tuple
-! component its domain does not hold.
+! Construction stops the program on: a tuple table whose row count is
+! not the arity; a signature position that was never declared; a
+! tuple component its domain does not contain.
 !
-! That last check is a MEMBERSHIP question, and membership belongs to
+! That last check is a MEMBERSHIP query, and membership belongs to
 ! a representation - so construction takes the caller's set map and
-! asks it. The map is used HERE and nowhere else: it is a compilation
-! input, not a stored dependency, and the relation keeps no reference
-! to it. After construction the relation is immutable, so the laws
-! hold for life without it.
+! queries it. The map is used HERE and nowhere else: it is a
+! compilation input, not a stored dependency, and the relation
+! retains no reference to it. After construction the relation is
+! immutable, so the laws hold for its whole lifetime without it.
 !
-!                     CAPABILITY, NOT FICTION
+!                       STATED CAPABILITY
 !
-! This stored relation carries NO per-domain index yet: has() is a
+! This stored relation stores NO per-domain index yet: has() is a
 ! linear scan over the tuple table, and the constructor's duplicate
-! collapse is quadratic in the tuple count - both honest, both
+! collapse is quadratic in the tuple count - both exact, both
 ! stated (AGENTS.md 53), both construction-or-query costs no hot
-! loop should sit on. The indexed, CSR-backed binary specialization
-! is the next phase's business; nothing here pretends to be
-! O(degree).
+! loop should depend on. The indexed, CSR-backed binary
+! specialisation is a later phase; nothing here is O(degree).
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -114,7 +115,7 @@ module relation_finitary
    contains
 
      !----------------------------------------------------------------!
-     ! The structural questions, deferred to each concretion.
+     ! The structural queries, deferred to each concrete type.
      !----------------------------------------------------------------!
 
      procedure(relation_arity_interface)  , deferred :: arity
@@ -124,9 +125,10 @@ module relation_finitary
      procedure(relation_tuples_interface) , deferred :: tuples
 
      !----------------------------------------------------------------!
-     ! Identity, answered once for every concretion - the one token
-     ! law of token_identity: sign once, refuse twice, copies carry
-     ! the stamp, the undeclared equal nothing.
+     ! Identity, implemented once for every concrete type - the one
+     ! token law of token_identity: declare once, reject a second
+     ! declaration, copies retain the token, the undeclared equal
+     ! nothing.
      !----------------------------------------------------------------!
 
      procedure :: declare
@@ -134,12 +136,12 @@ module relation_finitary
      procedure :: same_as
 
      !----------------------------------------------------------------!
-     ! Self-containment, FAILING CLOSED. A relation is assumed a
-     ! borrower - unsafe to own - until a concretion CLAIMS to be
-     ! materialized: whole unto itself, safe to copy and to own.
-     ! Stored citizens claim it; views never do, and a view an
-     ! author forgets to mark stays unownable by default, which is
-     ! the only safe direction for the mistake.
+     ! Self-containment, DEFAULTING TO FALSE. A relation is assumed
+     ! to store non-owning references - unsafe to own - until a concrete
+     ! type DECLARES itself materialized: self-contained, safe to copy
+     ! and to own. Stored types declare it; views never do, and a view
+     ! an author omits to mark stays unownable by default, which is
+     ! the only safe direction for the omission.
      !----------------------------------------------------------------!
 
      procedure :: materialized
@@ -160,11 +162,11 @@ module relation_finitary
      end function relation_arity_interface
 
      !--------------------------------------------------------------!
-     ! WHICH domain stands at this position, by value. Not pure: a set
-     ! graph carries a pointer component, so copying one out of an
+     ! WHICH domain is at this position, by value. Not pure: a set
+     ! graph contains a pointer component, so copying one out of an
      ! INTENT(IN) dummy is barred from a pure subprogram (F2018
-     ! C1594). This is a control-plane question and no hot path asks
-     ! it - the numbering the hot path needs lives in the
+     ! C1594). This is a control query and no hot path calls it -
+     ! the numbering the hot path requires is stored in the
      ! representation, never here.
      !--------------------------------------------------------------!
 
@@ -195,13 +197,14 @@ module relation_finitary
 
   !===================================================================!
   ! The stored relation: the deduplicated tuple table, and the
-  ! signature as domain identities. The first inhabitant of the
-  ! contract, and the validation gate of the level.
+  ! signature as domain identities. The first implementation of the
+  ! contract, and the validation check of the level.
   !
-  ! It keeps NO representation. A generic table relation answers has()
-  ! by scanning its own tuples, and answers domain(k) by identity, so
-  ! nothing it does after construction is a membership question. The
-  ! set map validates it into existence and is then not its business.
+  ! It stores NO representation. A generic table relation evaluates
+  ! has() by scanning its own tuples, and evaluates domain(k) by
+  ! identity, so nothing it does after construction is a membership
+  ! query. The set map validates it at construction and is not
+  ! referenced afterwards.
   !===================================================================!
 
   type, extends(relation) :: stored_relation
@@ -227,7 +230,7 @@ module relation_finitary
 contains
 
   !===================================================================!
-  ! The identity block, one law with the carriers'.
+  ! The identity block, the same law as the graph types'.
   !===================================================================!
 
   subroutine declare(this, name)
@@ -236,7 +239,7 @@ contains
     character(len=*), intent(in), optional :: name
 
     if (this % identity % declared()) then
-       error stop 'relation_finitary: a relation never signs twice'
+       error stop 'relation_finitary: a relation is declared at most once'
     end if
 
     this % identity = next_token()
@@ -245,8 +248,8 @@ contains
   end subroutine declare
 
   !===================================================================!
-  ! id answers the whole opaque token - the identity itself, honest
-  ! across images, never a bare local integer.
+  ! id returns the whole opaque token - the identity itself,
+  ! consistent across images, never a bare local integer.
   !===================================================================!
 
   pure type(token) function id(this)
@@ -297,21 +300,21 @@ contains
 
   !===================================================================!
   ! Declare a stored relation: a name, the ordered domains, the tuple
-  ! table one column per tuple, and the set map that says what those
-  ! domains contain. Refusals, in the order they are checked:
+  ! table one column per tuple, and the set map that states what those
+  ! domains contain. Invalid inputs, in the order they are checked:
   !
   !     an empty signature            k >= 1 is the definition
   !     an undeclared domain          a signature names declared sets
   !     a row count off the arity     each tuple has exactly k parts
-  !     a member no domain holds      domain validity, through the map
+  !     a member no domain contains   domain validity, through the map
   !
   ! The map is a COMPILATION INPUT. It is read here, to decide what may
-  ! exist, and never stored - the finished relation holds identities
-  ! and integers, so it copies freely and outlives the map that judged
-  ! it.
+  ! exist, and never stored - the finished relation stores identities
+  ! and integers, so it copies freely and outlives the map that
+  ! validated it.
   !
   ! Duplicate tuple columns then collapse to the first occurrence,
-  ! order kept: a relation is a set.
+  ! order preserved: a relation is a set.
   !===================================================================!
 
   type(stored_relation) function create_stored(name, domains, table, sets) &
@@ -324,7 +327,7 @@ contains
 
     integer, allocatable :: kept(:)
     integer              :: k, j, i, nkept
-    logical              :: fresh
+    logical              :: first_occurrence
 
     if (size(domains) < 1) then
        error stop 'relation_finitary: a relation relates at least one domain'
@@ -351,18 +354,18 @@ contains
        end do
     end do
 
-    ! A set, not a bag: keep each tuple's first appearance, in order.
+    ! A set, not a multiset: retain each tuple's first occurrence, in order.
     allocate(kept(size(table, 2)))
     nkept = 0
     do j = 1, size(table, 2)
-       fresh = .true.
+       first_occurrence = .true.
        do i = 1, nkept
           if (all(table(:, kept(i)) == table(:, j))) then
-             fresh = .false.
+             first_occurrence = .false.
              exit
           end if
        end do
-       if (fresh) then
+       if (first_occurrence) then
           nkept       = nkept + 1
           kept(nkept) = j
        end if
@@ -391,8 +394,8 @@ contains
   end function stored_arity
 
   !===================================================================!
-  ! The domain standing at this position, as a copy - which is to say,
-  ! as the same declared domain.
+  ! The domain at this position, as a copy - that is, the same
+  ! declared domain.
   !===================================================================!
 
   type(graph) function stored_domain(this, position) result(domain)
@@ -405,8 +408,8 @@ contains
   end function stored_domain
 
   !===================================================================!
-  ! Membership by linear scan - stated capability, no fiction. The
-  ! indexed lookup belongs to the binary specialization.
+  ! Membership by linear scan, as stated. The indexed lookup belongs
+  ! to the binary specialisation.
   !===================================================================!
 
   pure logical function stored_has(this, tuple)

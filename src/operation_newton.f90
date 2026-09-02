@@ -1,31 +1,32 @@
 !=====================================================================!
 ! Newton's iteration: a minimizer like every other.
 !
-! One family, one story: attach a statement, drive its residual to
-! zero. The linear members reach the answer in the statement's own
-! space; newton reaches it by linearizing where it stands,
+! One family, one protocol: attach a statement, drive its residual to
+! zero. The linear members reach the solution in the statement's own
+! space; newton reaches it by linearising at the current iterate,
 !
 !      J(q) dq = rhs - action(q)          q <- q + dq
 !
-! and it is not a different kind of thing for that - it extends the
-! same base, wears the same operation face, and answers the same
-! solve(rhs, x, achieved). A network's training loop would join the
-! family the same way: another concretion of the one creed.
+! and it is not a different kind of object for that - it extends the
+! same base, implements the same operation interface, and implements
+! the same solve(rhs, x, achieved). A network's training loop would
+! join the family the same way: another concrete type of the one
+! interface.
 !
-! Newton owns no derivative mathematics. The tangent is a level-1
-! citizen - the linearization operator - and newton merely governs:
-! freeze the linearization at the standing state, hand the linear
-! question to the inner minimizer, step. The seat is filled by what
-! the statement IS: a differentiable statement linearizes itself
-! exactly, anything else is differenced - the promise the family
-! made, kept by one dispatch, and the governance below it never
-! changes.
+! Newton contains no derivative mathematics. The tangent is a level-1
+! member - the linearisation operator - and newton only controls the
+! iteration: freeze the linearisation at the current iterate, pass
+! the linear system to the inner minimizer, step. The linearisation
+! is determined by the statement's type: a differentiable statement
+! linearises itself exactly, any other is differenced - the contract
+! the family declares, implemented by one dispatch, and the iteration
+! control below it never changes.
 !
 !                  THE HALLEY-CHEBYSHEV FAMILY
 !
-! A statement that reports max_degree above one can be asked for more
-! than its tangent, and higher_order_jacobian_product is how much of
-! it a run asks for. Above the plain Newton step delta_1, solving
+! A statement that reports max_degree above one can return more than
+! its tangent, and higher_order_jacobian_product is the order a run
+! requests. Above the plain Newton step delta_1, solving
 ! J delta_1 = -R, each further order s = 2, ..., p adds
 !
 !      J delta_s  =  - B^(s) / s! ,
@@ -42,35 +43,36 @@
 ! factors, already factored - the higher orders are additional right
 ! hand sides against one linear system, not a second one.
 !
-! The expansion is asymptotic: it is trusted only where delta_1 is
-! already a fair local model of the root, and far from there a
+! The expansion is asymptotic: it is valid only where delta_1 is
+! already an accurate local model of the root, and far from there a
 ! higher-order term can be larger than the one before it rather than
 ! smaller, which is the expansion leaving the regime it describes
-! rather than refining within it. Each delta_s is kept only while it
-! is no bigger than delta_(s-1); the first that is not stops the
-! correction there, so the step taken is never worse than the Newton
-! step this extends, and the check is on the correction's own
-! decline, not a magnitude chosen from outside it.
+! rather than refining within it. Each delta_s is retained only while
+! its norm is no larger than that of delta_(s-1); the first that is
+! not ends the correction there, so the step taken is never longer
+! than the Newton step this extends, and the check is on the
+! correction's own decrease, not a magnitude chosen from outside it.
 !
-!                        WHEN IT IS NOT WORKING
+!                     WHEN THE ITERATION DIVERGES
 !
-! A statement need not have a solution near where it was started, and
-! one that does not sends the iterate away rather than toward it. Left
-! to run, that reaches a jacobian the inner minimizer cannot factor,
-! and a direct one stops the program there - so a caller loses the
-! whole run to one statement that was never going to be solved.
+! A statement need not have a solution near the initial iterate, and
+! one that does not moves the iterate away from any root rather than
+! toward one. Left to run, that reaches a jacobian the inner
+! minimizer cannot factor, and a direct one stops the program there -
+! so a caller loses the whole run to one statement that has no
+! solution.
 !
-! So a residual that grows far past the one the first guess gave, or
-! that is no longer a number at all, is taken as a statement
-! diverging, and the iteration returns with that residual rather than
-! pursuing it. The caller then sees what it
-! would have seen from any other failure to converge, which is a
-! number too large, and may say so and carry on.
+! So a residual that grows far past the residual of the initial
+! iterate, or that is not a number, is classified as a diverging
+! statement, and the iteration returns with that residual rather than
+! continuing. The caller then receives what it would have received
+! from any other failure to converge, which is a residual above
+! tolerance, and may report so and continue.
 !
-! The factor is wide on purpose. Newton's first steps on a hard
-! statement often climb before they fall, and this is not a line
-! search; it is only the difference between reporting a failure and
-! becoming one.
+! The factor is large by design. Newton's first steps on a difficult
+! statement often increase the residual before it decreases, and this
+! is not a line search; it is only the difference between reporting
+! a failure and stopping the program.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -93,19 +95,20 @@ module operation_newton
 
   !===================================================================!
   ! Newton: one component beyond the family - the minimizer it
-  ! governs, one rank down, handed one linear question per step.
+  ! controls, one level down, passed one linear system per step.
   !===================================================================!
 
   type, extends(minimizer) :: newton
 
      ! Whether the tangent is taken compiled where the statement
-     ! offers it. Off, the linearization is attached - a matvec, no
-     ! matrix anywhere - and the inner minimizer must iterate.
+     ! provides it. When false, the linearization is attached - a
+     ! matrix-vector product, no stored matrix - and the inner
+     ! minimizer must iterate.
      logical :: compiled = .true.
 
      ! The order of the Halley-Chebyshev family taken: one is Newton
-     ! unchanged, and the statement's own max_degree is the ceiling
-     ! on how far above one this may be asked to go.
+     ! unchanged, and the statement's own max_degree is the upper
+     ! bound on this order.
      integer :: higher_order_jacobian_product = 1
 
      class(minimizer), allocatable :: inner
@@ -157,36 +160,37 @@ contains
 
     call this % begin_imbalance()
 
-    ! the tangent in the unknown's argument; which road it takes is
-    ! the statement's own answer, and no dispatch lives here
+    ! the tangent in the unknown's argument; which mode it uses is
+    ! determined by the statement, and no dispatch is defined here
     jacobian = tangent_of(this % action, this % action % argument(1))
 
     do it = 1, this % max_iterations
 
        call tally_record(primal_loops)
 
-       ! Where we stand: the full statement, whatever its linearity,
-       ! on the input tuple every tangent below is frozen on.
+       ! The current iterate: the full statement, of any linearity,
+       ! evaluated on the input tuple every tangent below is frozen on.
        call this % raw_apply(x, y, inputs)
        residual = y - rhs
 
        achieved = this % norm(residual)
 
-       ! Met; or no longer a number; or past what the arithmetic
-       ! holds; or diverging; or, where the budget is taken from the
-       ! rate, flattened - the slope of the residual's logarithm
-       ! against its own scatter, no floor named. One question.
+       ! Converged; or not a number; or past the range of the
+       ! arithmetic; or diverging; or, where the iteration limit is
+       ! derived from the rate, stagnant - the slope of the residual's
+       ! logarithm compared with its own variance, no absolute lower
+       ! bound named. One predicate.
        if (this % halted(achieved, it)) return
 
-       ! The linear question at this point, answered by the governed
+       ! The linear system at this iterate, solved by the inner
        ! minimizer: the Jacobian is frozen at the same input tuple the
-       ! residual was evaluated on, held inputs included.
+       ! residual was evaluated on, stored inputs included.
        call jacobian % freeze(inputs, base=y)
 
-       ! A statement that compiles its tangent hands the inner
+       ! A statement that compiles its tangent passes the inner
        ! minimizer a stencil, whose pattern is then the coupling a
-       ! structured minimizer sweeps by; any other is handed the
-       ! linearization, a matvec.
+       ! structured minimizer sweeps by; any other is passed the
+       ! linearization, a matrix-vector product.
        available = .false.
        if (this % compiled) then
           call this % action % compiled_tangent(this % on, this % action % bind(inputs), &
@@ -196,7 +200,7 @@ contains
        if (available) then
           compiled = stencil(rows, columns, weights, &
                & spread(0.0_dp, 1, this % num_unknowns), 'compiled tangent')
-          call compiled % stamped(this % action % stamp(), this % action % stamp_transposed())
+          call compiled % versioned(this % action % version(), this % action % version_transposed())
           call this % inner % attach(compiled, compiled % pattern, this % unknown_domain, &
                & this % num_unknowns, num_components = this % num_components, &
                & coupling = compiled % pattern)
@@ -207,9 +211,10 @@ contains
        dq = 0.0_dp
        call this % inner % solve(-residual, dq, linear_achieved)
 
-       ! An inner minimizer that met a singular tangent reports a
-       ! residual no completed solve produces, and one that overflowed
-       ! reports no number at all. Neither leaves a step to take.
+       ! An inner minimizer that encountered a singular tangent reports
+       ! a residual no completed solve produces, and one that
+       ! overflowed reports a value that is not a number. Neither
+       ! yields a step.
        if (linear_achieved /= linear_achieved) return
        if (linear_achieved > huge(1.0_dp) / 2.0_dp) return
 
@@ -231,8 +236,9 @@ contains
   !===================================================================!
   ! Add delta_2, ..., delta_p to the Newton step delta already
   ! solved, each against the same frozen jacobian this % inner is
-  ! already attached to. achieved is the worst of the extra solves,
-  ! read by the same guard the caller applies to the Newton one.
+  ! already attached to. achieved is the maximum over the additional
+  ! solves, checked by the same guard condition the caller applies to
+  ! the Newton solve.
   !===================================================================!
 
   subroutine halley_correction(this, inputs, delta, achieved)
@@ -263,9 +269,9 @@ contains
 
     do s = 2, p
 
-       ! derivative(m) carries m! delta_m; fact holds (s-1)! at the
-       ! point derivative(s-1) is set, so this line and no other
-       ! needs to know a factorial's value.
+       ! derivative(m) stores m! delta_m; fact stores (s-1)! when
+       ! derivative(s-1) is set, so this line and no other requires a
+       ! factorial's value.
        fact = fact * real(s - 1, dp)
        seeded = stored_field('correction', this % unknown_domain, size(delta))
        call seeded % set_real_vector(fact * individual(:, s - 1))
@@ -284,12 +290,13 @@ contains
        if (one_achieved /= one_achieved) return
        if (one_achieved > huge(1.0_dp) / 2.0_dp) return
 
-       ! The series is trusted only while it is shrinking: a
-       ! correction no smaller than the one before it says the local
-       ! model has left the regime a truncated expansion describes,
-       ! and adding it would perturb rather than refine. What was
-       ! already accumulated is kept - at s = 2 that is delta_1,
-       ! Newton's own step, so this can never do worse than Newton.
+       ! The series is valid only while it is decreasing: a
+       ! correction no smaller than the one before it indicates the
+       ! local model has left the regime a truncated expansion
+       ! describes, and adding it would perturb rather than refine.
+       ! What was already accumulated is retained - at s = 2 that is
+       ! delta_1, Newton's own step, so this is never larger than
+       ! Newton.
        if (norm2(correction) >= norm2(individual(:, s - 1))) return
 
        individual(:, s) = correction

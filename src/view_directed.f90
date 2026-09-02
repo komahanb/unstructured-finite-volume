@@ -1,7 +1,7 @@
 !=====================================================================!
 ! THE DIRECTED GRAPH, AS A VIEW
 !
-! One reading of the kernel graph:
+! One view of the kernel graph:
 !
 !            D = ( V, E, tail, head )
 !
@@ -9,37 +9,40 @@
 !            E              edge set identity, and its count
 !            tail, head     E -> V
 !
-! and its transpose D^T = ( V, E, head, tail ) is the same view read the
-! other way: a stored graph carries both readings and turns between
-! them without rebuilding an edge, so that (D^T)^T = D exactly.
+! and its transpose D^T = ( V, E, head, tail ) is the same view read in
+! the reverse orientation: a stored graph stores both orientations and
+! switches between them without rebuilding an edge, so that
+! (D^T)^T = D exactly.
 !
 ! That is the whole of the role. `directed` is what the structure IS -
 ! two finite domains and two maps between them - and it is a view over
 ! the ontology, never a kind of graph.
 !
 ! Named vertex and edge subsets are not extra
-! structure: each is a subobject of V or of E, answered as a set graph
+! structure: each is a subobject of V or of E, returned as a set graph
 ! identity and described in the caller's set store. Neighbourhood queries
 ! are compositions of tail and head, materialized because they are
-! asked inside loops.
+! called inside loops.
 !
 ! This module was split out of graph_grammar, which had become the
-! one place everything legacy met (doc/final-codebase-cutover-plan.md,
-! PR2). The type was renamed from `graph`, and then from `ordinary_`
-! to `directed_`, because `ordinary` names no mathematical role and
-! `directed` names the one this contract actually holds.
+! one module every legacy dependency passed through
+! (doc/final-codebase-cutover-plan.md, PR2). The type was renamed from
+! `graph`, and then from `ordinary_` to `directed_`, because `ordinary`
+! names no mathematical role and `directed` names the role this
+! contract has.
 !
-! WHAT IT LENDS. One name: the abstract type. graph is imported
-! to spell the signatures below and is NOT re-exported - a consumer
-! wanting the kernel graph asks the kernel, which mints it. Importing
-! a name to write a declaration is not the same act as lending it on.
+! WHAT THIS MODULE EXPORTS. One name: the abstract type. graph is
+! imported to write the signatures below and is NOT re-exported - a
+! consumer that requires the kernel graph imports it from the kernel,
+! which defines it. Importing a name to write a declaration is not the
+! same as re-exporting it.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 !
 !                      WHAT A GRAPH IS MADE OF
 !
-! A vertex is a thing. An edge joins two of them, tail to head.
+! A vertex is a member of V. An edge joins two vertices, tail to head.
 !
 !                            e
 !                     i ----------> j       edge_tail(e) = i
@@ -51,21 +54,21 @@
 !                                           edge_has_head(b) = .false.
 !
 ! The second edge is attached to vertex i alone. That is a boundary
-! face, and this is how it is written without inventing an imaginary
-! cell on the far side of the wall.
+! face, and this is how it is written without introducing a fictitious
+! cell beyond the boundary.
 !
 !
 !=====================================================================!
 !
 !                        CAN A GRAPH CHANGE?
 !
-! CAN A GRAPH CHANGE? No. Everything a graph holds - structure,
-! tags, its relation to the whole it came from - goes in at
+! CAN A GRAPH CHANGE? No. Everything a graph stores - structure,
+! tags, its relation to the whole it was partitioned from - is set at
 ! construction, and no procedure below accepts data afterwards.
-! When an operation computes something new, the result leaves through
-! that operation's output argument. The reason is repeatability: ask
-! a graph the same question twice and it gives the same answer twice,
-! no matter what ran in between.
+! When an operation computes a new quantity, the result is returned
+! through that operation's output argument. The reason is
+! repeatability: the same query on a graph evaluated twice returns the
+! same value twice, whatever executed between the two evaluations.
 !
 !=====================================================================!
 
@@ -75,19 +78,20 @@ module view_directed
   ! THE DOMAIN IS A GRAPH, AND ITS INTERPRETATION IS THE CALLER'S.
   !
   ! graph is the kernel's graph, renamed on import for one reason
-  ! only: this module and the kernel both speak of graphs, and a
+  ! only: this module and the kernel both define graph types, and a
   ! reader of a signature must be able to tell which. The COLLISION is
   ! gone - the abstract type below is `directed_graph` now, and no
-  ! other module lends a type called `graph` to anyone who reads this
-  ! one. What remains is a convenience rename, not a disambiguation.
+  ! other module exports a type called `graph` to any module that
+  ! uses this one. What remains is a convenience rename, not a
+  ! disambiguation.
   !
-  ! A domain-producing symbol here answers WHICH set. Where the answer
-  ! is a set the graph already holds, that is all it answers, and the
-  ! caller reconstructs the extension from a count it can already read.
-  ! Where the answer is a subset declared on demand, the symbol writes its
-  ! extension, name and embedding into one set store. The graph does
-  ! not own those side facts, and callers no longer drag three maps
-  ! through every signature.
+  ! A domain-producing symbol here returns WHICH set. Where the result
+  ! is a set the graph already stores, the identity is all the symbol
+  ! returns, and the caller reconstructs the extension from a count it
+  ! can already read. Where the result is a subset declared on demand,
+  ! the symbol writes its extension, name and embedding into one set
+  ! store. The graph does not own those associated data, and callers
+  ! no longer pass three maps through every signature.
   !===================================================================!
 
   use graph_fractal       , only : graph
@@ -108,8 +112,8 @@ module view_directed
   public :: SIDE_EDGE
 
   !===================================================================!
-  ! The two sides of a directed graph an operation's output may
-  ! land on. Output-landing identity only - not field-domain
+  ! The two sides of a directed graph an operation's output may be
+  ! defined on. Output-side identity only - not field-domain
   ! identity and not a subset: domains are set graph identities.
   !===================================================================!
 
@@ -117,41 +121,41 @@ module view_directed
   integer, parameter :: SIDE_EDGE   = 2
 
   !===================================================================!
-  ! GRAPH. The reader of structure.
+  ! GRAPH. The structure query interface.
   !
   ! Thirty-four symbols, all queries: identity, counts, incidence,
-  ! named sets, and neighbourhoods. A graph answers; it
-  ! never acts. Algorithms act on it from the levels above, which is
-  ! what keeps this contract small.
+  ! named sets, and neighbourhoods. A graph returns values; it
+  ! performs no algorithm. Algorithms are applied to it from the
+  ! levels above, which is what keeps this contract small.
   !
-  ! THE GRAPH CARRIES NO VALUES. A field references its domain; the
-  ! reference never points the other way. What an operation reads it
-  ! is handed at construction, as a field argument the compiler can
-  ! see - a name passed as a string would hide the same binding until
+  ! THE GRAPH STORES NO VALUES. A field references its domain; the
+  ! reference never points the other way. What an operation reads is
+  ! passed at construction, as a field argument the compiler can
+  ! check - a name passed as a string would defer the same binding to
   ! run time. Vocabulary that names particular data (a cell volume,
-  ! a face normal) belongs to the level that owns those words, as
-  ! typed procedures on its concretes, never as string keys here.
+  ! a face normal) belongs to the level that defines those quantities,
+  ! as typed procedures on its concretes, never as string keys here.
   ! The one string below is the tag, and it is data, not a symbol:
   ! it originates outside the code, in the mesh file that named its
   ! boundary groups.
   !
   ! A NAMED SET IS A SET GRAPH. The whole sets are the graph's own
-  ! carriers - one stable identity, asked twice, answering once; the
-  ! subsets declared on demand answer a FRESH identity and bind what
-  ! it means into the caller's set store,
+  ! carriers - one stable identity, queried twice, returning the same
+  ! identity; the subsets declared on demand return a NEW identity and
+  ! bind its extension into the caller's set store,
   !
-  !      vertex_set             tagged_edges('wall')
+  !      vertex_set             tagged_edges('edge')
   !      the vertex carrier     a new set { 11 14 19 } c--> edges
   !
-  ! and membership, size, order and standing are questions for the
-  ! representation the caller holds - not for the graph, which knows
+  ! and membership, size, order and position are queries on the
+  ! representation the caller stores - not on the graph, which records
   ! only which set it named.
   !
-  ! THE FRAME. How a part relates to the whole it was cut from:
+  ! THE FRAME. How a part relates to the whole it was partitioned from:
   !
-  !    owned      this part answers for the value here
-  !    borrowed   this part only reads it; someone else owns it
-  !    overlap    everything this part must see to finish what it owns
+  !    owned      this part computes the value here
+  !    halo       this part only reads the value; another part owns it
+  !    overlap    every member this part must read to complete what it owns
   !
   !            part 1                        part 2
   !       +---------------+            +---------------+
@@ -161,10 +165,10 @@ module view_directed
   !                    \______________/
   !                       the overlap of part 1
   !
-  ! A part graph is still a graph. It holds the relation back to the
-  ! whole - how many parts, which part owns what, and the index maps
-  ! both ways - because an assembler must read that relation rather
-  ! than invent one.
+  ! A part graph is still a graph. The part graph stores the relation
+  ! to the whole - how many parts, which part owns what, and the index
+  ! maps both ways - because an assembler must read that relation
+  ! rather than construct one.
   !===================================================================!
 
   !===================================================================!
@@ -174,12 +178,12 @@ module view_directed
   !     view_directed :: directed_graph  this contract, D
   !     view_directed_stored :: stored_directed_graph   one stored realization
   !
-  ! The migration debt that made this type share the ontology's name
-  ! is discharged. What remains of it is the module name view_directed_stored,
-  ! which says less than the type inside it does.
+  ! The migration state that made this type share the ontology's name
+  ! is resolved. What remains of it is the module name view_directed_stored,
+  ! which states less than the type inside it does.
   !
   ! Do not present this as ontology, and add no NEW concretion: one
-  ! realization is what a contract needs to be inhabited.
+  ! realization is what a contract needs to be instantiated.
   !===================================================================!
 
   type, abstract :: directed_graph
@@ -191,9 +195,9 @@ module view_directed
      procedure(directed_count_interface) , deferred :: num_vertices
      procedure(directed_count_interface) , deferred :: num_edges
 
-     ! The carrier bridge (migration, AGENTS.md 5B): the graph's two
-     ! persistent declared domains, for consumers that must ask
-     ! where a field domain ultimately lives. This root is already
+     ! The carrier map (migration, AGENTS.md 5B): the graph's two
+     ! persistent declared domains, for consumers that must determine
+     ! which set a field domain is defined on. This root is already
      ! explicitly the directed vertex/edge contract: V and E, by
      ! identity.
      procedure(member_set_interface), deferred :: vertex_set
@@ -204,10 +208,10 @@ module view_directed
      procedure(directed_edge_end_interface)     , deferred :: edge_head
      procedure(directed_edge_has_head_interface), deferred :: edge_has_head
 
-     ! The named subsets, declared on demand: a fresh set each call,
+     ! The named subsets, declared on demand: a new set each call,
      ! so each call binds its extension, its label and its declared
-     ! embedding into the caller's set store - asked twice, they
-     ! answer two sets. The whole vertex and edge sets are the
+     ! embedding into the caller's set store - called twice, they
+     ! return two sets. The whole vertex and edge sets are the
      ! carriers above, vertex_set and edge_set: stable identities, no
      ! binding.
      procedure(directed_subset_interface), deferred :: interior_vertices
@@ -219,14 +223,14 @@ module view_directed
 
      ! Ownership subsets, one part at a time.
      procedure(directed_part_set_interface), deferred :: owned_vertices
-     procedure(directed_part_set_interface), deferred :: borrowed_vertices
+     procedure(directed_part_set_interface), deferred :: halo_vertices
      procedure(directed_part_set_interface), deferred :: overlap_vertices
      procedure(directed_part_set_interface), deferred :: owned_edges
-     procedure(directed_part_set_interface), deferred :: borrowed_edges
+     procedure(directed_part_set_interface), deferred :: halo_edges
      procedure(directed_part_set_interface), deferred :: overlap_edges
 
-     ! Neighbourhoods. Called inside loops, so the answers are bare
-     ! indices and the procedures are pure; handing back a graph here
+     ! Neighbourhoods. Called inside loops, so the results are bare
+     ! indices and the procedures are pure; returning a graph here
      ! would allocate three times per neighbour query.
      procedure(directed_from_vertex_interface), deferred :: incident_edges
      procedure(directed_from_vertex_interface), deferred :: adjacent_vertices
@@ -236,21 +240,21 @@ module view_directed
      procedure(directed_from_vertex_interface), deferred :: incoming_vertices
 
      !----------------------------------------------------------------!
-     ! THE PARTITION RELATION IS GONE FROM HERE, and this note stands
-     ! in its place so nobody puts it back.
+     ! THE PARTITION RELATION IS REMOVED FROM HERE, and this note
+     ! records the reason so the relation is not added back.
      !
-     ! Eight bindings sat at this point - num_parts,
+     ! Eight bindings were declared at this point - num_parts,
      ! has_part_relation, the two maps each way, and the two ownership
-     ! questions. Not one of them is a question about
+     ! queries. Not one of them is a query about
      ! D = (V, E, tail, head): they are the tuples of
      ! r <= S_part x S_whole read both ways, r's provenance, and an
      ! integer field on the part's members. They are
-     ! partition_relation now - a value the cut writes, a graph
-     ! carries, and the four verbs are handed.
+     ! partition_relation now - a value the partitioner writes, a graph
+     ! stores, and the four procedures are passed.
      !
-     ! The six SETS above stayed. owned, borrowed and overlap declare
-     ! subobjects of V or of E and bind what they mean into the caller's
-     ! set store, which is a view question and always was.
+     ! The six SETS above remain. owned, halo and overlap declare
+     ! subobjects of V or of E and bind their extensions into the
+     ! caller's set store, which is a view query.
      !----------------------------------------------------------------!
 
   end type directed_graph
@@ -271,15 +275,15 @@ module view_directed
      end function directed_count_interface
 
      !---------------------------------------------------------------!
-     ! A domain the graph already holds: identity, and nothing else.
+     ! A domain the graph already stores: identity, and nothing else.
      ! The extension is 1..num_vertices() or 1..num_edges(), which the
      ! caller can already read, so a counted representation is one
-     ! constructor call away and no map need travel with the answer.
+     ! constructor call, and no map need be returned with the result.
      !---------------------------------------------------------------!
 
-     ! Not pure: a set graph carries a pointer component, so copying
+     ! Not pure: a set graph contains a pointer component, so copying
      ! one out of an INTENT(IN) dummy is barred from a pure subprogram
-     ! (F2018 C1594). Identity is still answered by value.
+     ! (F2018 C1594). Identity is still returned by value.
      type(graph) function member_set_interface(this)
        import :: directed_graph, graph
        class(directed_graph), intent(in) :: this
@@ -299,18 +303,18 @@ module view_directed
 
      !===============================================================!
      ! THE DECLARED SUBSETS. Called once, when an operation begins, so the
-     ! cost is paid per sweep and not per cell.
+     ! cost is incurred per sweep and not per cell.
      !
-     ! Each call declares a NEW set - a fresh identity - because that
-     ! is what these have always done: the old code built a fresh
-     ! subset_set per call, and a subset signs its own identity. Two
+     ! Each call declares a NEW set - a new identity - because that
+     ! is the established behaviour: the old code built a new
+     ! subset_set per call, and a subset declares its own identity. Two
      ! calls to boundary_vertices() were never one domain, and are not
      ! one domain now.
      !
-     ! What the answer needs beyond identity, it binds in the caller's
-     ! set store: listed extension, name and embedding into the
-     ! graph's own carrier. The store is borrowed for the duration of
-     ! the call and never kept.
+     ! What the result needs beyond identity, the call binds in the
+     ! caller's set store: listed extension, name and embedding into
+     ! the graph's own carrier. The store is referenced for the
+     ! duration of the call and never retained.
      !===============================================================!
 
      subroutine directed_subset_interface(this, sets, members)

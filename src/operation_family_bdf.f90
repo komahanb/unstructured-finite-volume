@@ -10,7 +10,7 @@
 !      determines d   the constraint on the d-th derivative: the
 !                     velocity constraint applied d times, each inner
 !                     one at instant k - i with its own offsets and
-!                     the step ratio carrying its 1/dt onto instant
+!                     the step ratio converting its 1/dt to instant
 !                     k's,
 !
 !         c(d, j at k) = sum over i of
@@ -124,8 +124,8 @@ contains
   ! governing constraint and has no pattern here.
   !
   ! A backward difference of higher order is the first-order operator
-  ! applied again, and the thing it is applied to is already stored:
-  ! every instant carries q, q-dot, q-double-dot alike. So the second
+  ! applied again, and the quantity it is applied to is already stored:
+  ! every instant stores q, q-dot, q-double-dot alike. So the second
   ! derivative is the operator on the FIRST derivative's history and
   ! not the operator twice on the value's,
   !
@@ -137,7 +137,7 @@ contains
   !     q-double-dot_k <- q_k     ... q_{k-2p}        2p instants
   !
   ! which is what reading every degree off the value alone would cost.
-  ! Both carry order p; the second reaches twice as far for it, and
+  ! Both have order p; the second reaches twice as far for it, and
   ! makes a block of a given length unusable at half the order.
   !===================================================================!
 
@@ -208,14 +208,14 @@ contains
 
   !===================================================================!
   ! THE QUADRATURE OVER ONE STEP FOR BDF. A backward difference
-  ! formula differentiates rather than integrates, so it carries no
-  ! quadrature weights of its own - but its stencil holds the instants
-  ! one needs, and the interpolatory rule on those instants is the
+  ! formula differentiates rather than integrates, so it defines no
+  ! quadrature weights of its own - but its stencil contains the instants
+  ! a quadrature needs, and the interpolatory rule on those instants is the
   ! same rule the Adams family advances its state with.
   !
-  ! p instants carry order p, which matches the order of the states
-  ! being integrated. Near the start of a block fewer instants stand
-  ! behind k than p, and the rule shortens to what is there.
+  ! p instants give order p, which matches the order of the states
+  ! being integrated. Near the start of a block fewer instants precede
+  ! k than p, and the rule shortens to the instants available.
   !===================================================================!
 
   pure subroutine bdf_step_quadrature(this, dt, k, weight)
@@ -228,7 +228,7 @@ contains
     integer :: nodes, j
 
     if (k < 1 .or. k > size(dt)) then
-       error stop 'operation_family_bdf: a quadrature stands at an instant of the block'
+       error stop 'operation_family_bdf: a quadrature is located at an instant of the block'
     end if
     nodes = min(this % order, k)
     allocate(weight(nodes))

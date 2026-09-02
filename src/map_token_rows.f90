@@ -3,39 +3,41 @@
 !
 ! A map keyed on identity is a set of rows, each a copied identity
 ! token beside a payload the map owns. The token column and its
-! mechanics are the same in every such map, and they live here once:
+! mechanics are the same in every such map, and they are defined here
+! once:
 !
-!      position      the row of a key, or zero when no row holds it;
-!                    unallocated storage answers zero
+!      position      the row of a key, or zero when no row stores it;
+!                    unallocated storage returns zero
 !      append        one more row, its key copied by value, the new
 !                    row's position returned
-!      removal       one row dropped, the rest keeping their order
+!      removal       one row removed, the rest retaining their order
 !
 ! A key is a declared token: a map checks token % declared() before a
 ! write, since a row keyed on an undeclared token could never be found
-! again, and states its own refusal. This module owns the token column ALONE. It knows nothing of set
-! representations, labels, inclusions, fields, or graph mathematics: a
-! map hangs its own payload off the row positions this table hands
-! back, and reads that payload itself. So the different laws the maps
-! enforce - one ambient per part, a status that must be known before
-! it is read, a representation copied whole - stay in the maps, and
-! only the copied-token bookkeeping is shared.
+! again, and states its own rejection. This module owns the token
+! column ALONE. It has no dependency on set representations, labels,
+! inclusions, fields, or graph mathematics: a map indexes its own
+! payload by the row positions this table returns, and reads that
+! payload itself. So the different laws the maps enforce - one ambient
+! per part, a status that must be known before it is read, a
+! representation copied whole - stay in the maps, and only the
+! copied-token bookkeeping is shared.
 !
 !             THE LIFETIME LAW
 !
-! Keys are type(token), copied by value at append. The table borrows
+! Keys are type(token), copied by value at append. The table references
 ! no object it was built from, so a map may outlive every variable
-! that populated it, and append demands no TARGET. Nothing here stores
+! that populated it, and append requires no TARGET. Nothing here stores
 ! a pointer or a graph.
 !
-!             WHAT IS REFUSED
+!             WHAT IS REJECTED
 !
 ! An append of a key already present, and a removal of a position
 ! outside the rows, each stop the program: a caller that has not first
-! asked position would otherwise duplicate or misplace a row. The
+! called position would otherwise duplicate or misplace a row. The
 ! message is generic here; a map states its own law before it calls,
-! so the map-specific refusal (named once, attached once, one ambient)
-! is reported there and this is only the backstop.
+! so the map-specific rejection (named once, attached once, one ambient)
+! is reported there and this check is only the fallback.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -58,15 +60,15 @@ module map_token_rows
      procedure :: position
      procedure :: num_rows
      procedure :: append
-     procedure :: drop
+     procedure :: remove
 
   end type identity_rows
 
 contains
 
   !===================================================================!
-  ! The row of a key, or zero. Unallocated storage answers zero, so a
-  ! map need not guard an empty table itself.
+  ! The row of a key, or zero. Unallocated storage returns zero, so a
+  ! map need not check for an empty table itself.
   !===================================================================!
 
   pure integer function position(this, key) result(at)
@@ -91,8 +93,8 @@ contains
 
   !===================================================================!
   ! Append one row and return its position. The key is copied by
-  ! value. A key already present stops the program; the caller refuses
-  ! it first with its own message, so this is the backstop.
+  ! value. A key already present stops the program; the caller rejects
+  ! it first with its own message, so this check is the fallback.
   !===================================================================!
 
   function append(this, key) result(at)
@@ -121,12 +123,12 @@ contains
   end function append
 
   !===================================================================!
-  ! Drop the row at a position; the rest keep their order, because a
+  ! Remove the row at a position; the rest retain their order, because a
   ! map's parallel payload is compacted the same way. A position
   ! outside the rows stops the program.
   !===================================================================!
 
-  subroutine drop(this, at)
+  subroutine remove(this, at)
 
     class(identity_rows), intent(inout) :: this
     integer          , intent(in)    :: at
@@ -136,7 +138,7 @@ contains
 
     n = this % num_rows()
     if (at < 1 .or. at > n) then
-       error stop 'map_token_rows: a removal touches an existing row'
+       error stop 'map_token_rows: a removal requires an existing row'
     end if
 
     allocate(kept(n - 1))
@@ -148,6 +150,6 @@ contains
     end do
     call move_alloc(kept, this % keys)
 
-  end subroutine drop
+  end subroutine remove
 
 end module map_token_rows

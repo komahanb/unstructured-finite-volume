@@ -15,18 +15,18 @@
 !
 ! LAWS
 !
-!     graph -> branch -> graph, and no type stands between them
+!     graph -> branch -> graph, and no type is defined between them
 !     status == KNOWN iff associated(known)
 !     NULL and UNKNOWN imply .not. associated(known)
 !     NULL and UNKNOWN are distinct by status, not by association
 !     (NULL, NULL) is a graph
 !     graph identity is independent of branch state
-!     each branch may carry independent data or interpretation
+!     each branch may store independent data or interpretation
 !     branch references do not own their targets
 !     identity is assigned once, and is not chosen
 !
 ! The status and the reference are private, so no caller can set one
-! without the other. A branch enters existence only through the three
+! without the other. A branch is created only through the three
 ! constructors below, each of which establishes the iff.
 !
 ! branch(2) stays a public component: assigning a whole branch value
@@ -35,7 +35,7 @@
 ! so callers can exploit the natural pairing of the two branches for
 ! their own semantics.
 !
-! The kernel carries shape, status, reference and identity. Numbers,
+! The kernel stores shape, status, reference and identity. Numbers,
 ! symbols and indices are bound in graph_views. Interpretation belongs
 ! to the caller: this module defines only the scaffold.
 !
@@ -97,7 +97,7 @@ module graph_fractal
 contains
 
   !===================================================================!
-  ! Branch queries. known answers a disassociated pointer whenever
+  ! Branch queries. known returns a disassociated pointer whenever
   ! the status is NULL or UNKNOWN, so the iff is directly observable.
   !
   ! known is not pure: a pure function result may not be associated
@@ -154,7 +154,7 @@ contains
   end function known_branch
 
   !===================================================================!
-  ! Identity. Minted, never chosen; assigned once; the sole equality.
+  ! Identity. Generated, never chosen; assigned once; the sole equality.
   !===================================================================!
 
   subroutine declare(this)

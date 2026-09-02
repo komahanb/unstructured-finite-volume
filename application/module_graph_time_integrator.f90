@@ -3,9 +3,9 @@ module gti_configuration
   implicit none
   private
   public :: configuration, read_configuration, override, show
-  public :: worded, lists, refuse_unknown, chosen_from
-  ! the levels of this application's hierarchy, outermost first: what
-  ! the tally files an amount under
+  public :: words_of, lists, refuse_unknown, chosen_from
+  ! the levels of this application's hierarchy, outermost first: the
+  ! level an accounting count is recorded under
   integer, parameter, public :: at_expansion = 1
   integer, parameter, public :: at_horizon   = 2
   integer, parameter, public :: at_block     = 3
@@ -17,34 +17,34 @@ module gti_configuration
      character(len=32) :: grid         = 'random'
      character(len=32) :: combinations = '1'
 
-     ! HOW AN ORDER OF ACCURACY IS READ OFF REFINED GRIDS. The coarsest
-     ! grid carries coarsest_instants per window; each grid after it
-     ! carries refinement_ratio times the last, rounded to a whole
-     ! number of instants; and all of them are measured against a
-     ! reference reference_refinement beyond the finest.
+     ! HOW AN ORDER OF ACCURACY IS ESTIMATED FROM REFINED GRIDS. The coarsest
+     ! grid has coarsest_instants per window; each grid after it
+     ! has refinement_ratio times the previous count, rounded to a whole
+     ! number of instants; and all of them are compared against a
+     ! reference grid refined reference_refinement times beyond the finest.
      !
-     ! THE RATIO NEED NOT BE TWO, and reading the same order at two
-     ! different ratios is the evidence that a reading is asymptotic
-     ! rather than an accident of where the grids fell.
+     ! THE RATIO NEED NOT BE TWO. The same order estimated at two
+     ! different ratios is evidence that the estimate is asymptotic
+     ! rather than dependent on the particular grid spacings.
      real(dp) :: refinement_ratio     = 2.0_dp
      integer  :: refinement_grids     = 4
      integer  :: coarsest_instants    = 10
      real(dp) :: reference_refinement = 4.0_dp
 
-     ! HOW FAR A READING MAY FALL AND STILL BE THE ORDER, and how far
-     ! the pairwise readings may disagree and still be one power of h.
-     ! Grids coarse enough to afford do not settle a high order to two
-     ! decimal places, and both of these say how much of that a reader
-     ! is willing to allow.
+     ! HOW FAR AN ESTIMATE MAY DEVIATE AND STILL MATCH THE ORDER, and how far
+     ! the pairwise estimates may differ and still count as one power of h.
+     ! Grids coarse enough to compute at low cost do not determine a high order to two
+     ! decimal places, and both tolerances state how much deviation is
+     ! accepted.
      real(dp) :: order_tolerance      = 0.5_dp
      real(dp) :: spread_tolerance     = 1.0_dp
 
-     ! ONE CHAIN, NAMED OUTRIGHT. A window per word, each a family and
-     ! the order asked of it, so `bdf:2 dirk:3 adams:3 bdf:2` is a
-     ! chain of four windows. Any length is admitted, and a family may
-     ! stand at more than one window - neither of which a survey over
-     ! window counts can express. Empty means no such chain is asked
-     ! for, which is the default.
+     ! ONE CHAIN, STATED EXPLICITLY. A window per word, each a family and
+     ! the order required of it, so `bdf:2 dirk:3 adams:3 bdf:2` is a
+     ! chain of four windows. Any length is accepted, and a family may
+     ! occupy more than one window - neither of which a survey over
+     ! window counts can express. Empty means no such chain is
+     ! requested, which is the default.
      character(len=256) :: chain = ''
      character(len=32) :: families     = 'bdf adams dirk'
      integer  :: state_degree             = 2
@@ -56,15 +56,15 @@ module gti_configuration
      character(len=16) :: linear_solver   = 'direct'
      character(len=16) :: jacobian        = 'matrix'
 
-     ! WHAT THE LINEAR SOLVER SEES. Each kind named here is assembled
-     ! as rows of its own and its values are unknowns the solve
-     ! carries. A kind left out has been eliminated, and elimination
-     ! says how. The states are always assembled.
+     ! THE ROWS THE LINEAR SOLVER READS. Each kind named here is assembled
+     ! as rows of its own and its values are unknowns of the
+     ! solve. A kind left out has been eliminated, and elimination
+     ! states how. The states are always assembled.
      character(len=64) :: rows            = 'states state-time-derivatives'
 
-     ! How a kind left out of rows was removed. symbolic composes the
-     ! law away as the system is formed; numerical assembles its rows
-     ! and eliminates them before the solve. Both answer the same
+     ! How a kind left out of rows was removed. symbolic substitutes the
+     ! equation out as the system is formed; numerical assembles its rows
+     ! and eliminates them before the solve. Both solve the same
      ! equations.
      character(len=16) :: elimination     = 'symbolic'
      character(len=16) :: storage         = 'dense'
@@ -90,7 +90,7 @@ module gti_configuration
      character(len=16)  :: check            = 'none'
      real(dp)          :: tolerance           = 1.0e-12_dp
      character(len=16) :: tolerance_criterion = 'relative'
-     character(len=16) :: adaptive_gate       = 'step_doubling'
+     character(len=16) :: adaptive_check       = 'step_doubling'
      character(len=16) :: iteration_criterion = 'by_rate'
      integer           :: max_iterations      = 100
      integer           :: higher_order_jacobian_product = 1
@@ -99,7 +99,7 @@ module gti_configuration
      integer           :: max_linear_iterations = 200
      logical  :: accounting                   = .false.
      character(len=256) :: measurements       = &
-          & 'wall_time primal_loops tangent_loops adjoint_loops ' // &
+          & 'elapsed_time primal_loops tangent_loops adjoint_loops ' // &
           & 'newton_solves linear_solves factorisations'
   end type configuration
 contains
@@ -114,10 +114,10 @@ contains
        if (c >= iachar('A') .and. c <= iachar('Z')) name(i:i) = achar(c + 32)
     end do
   end function levelled
-  pure function worded(text) result(list)
+  pure function words_of(text) result(list)
     character(len=*), intent(in) :: text
     character(len=32), allocatable :: list(:)
-    character(len=32) :: held(32)
+    character(len=32) :: words(32)
     integer :: i, first, n, last
     n    = 0
     i    = 1
@@ -132,17 +132,17 @@ contains
           if (text(i:i) == ' ') exit
           i = i + 1
        end do
-       if (n == size(held)) exit
+       if (n == size(words)) exit
        n = n + 1
-       held(n) = text(first:i-1)
+       words(n) = text(first:i-1)
     end do
-    list = held(1:n)
-  end function worded
+    list = words(1:n)
+  end function words_of
   pure logical function lists(text, what) result(yes)
     character(len=*), intent(in) :: text, what
     character(len=32), allocatable :: list(:)
     integer :: i
-    list = worded(text)
+    list = words_of(text)
     yes  = .false.
     do i = 1, size(list)
        if (trim(list(i)) == what) yes = .true.
@@ -153,7 +153,7 @@ contains
     character(len=32), allocatable :: list(:)
     integer :: i, j
     logical :: known
-    list = worded(text)
+    list = words_of(text)
     do i = 1, size(list)
        known = .false.
        do j = 1, size(every)
@@ -162,7 +162,7 @@ contains
        if (.not. known) then
           write(*,'(a)') ' '
           write(*,'(a)') ' ' // subject // ' names ' // trim(list(i)) // &
-               & ', which this program has nothing for.'
+               & ', which this program does not define.'
           error stop 'gti_configuration: a setting names something unknown'
        end if
     end do
@@ -259,8 +259,8 @@ contains
        read(value, *) cfg % tolerance
     case ('tolerance_criterion')
        cfg % tolerance_criterion = value
-    case ('adaptive_gate')
-       cfg % adaptive_gate = value
+    case ('adaptive_check')
+       cfg % adaptive_check = value
     case ('iteration_criterion')
        cfg % iteration_criterion = value
     case ('krylov_restart')
@@ -282,7 +282,7 @@ contains
        error stop 'gti_configuration: every setting given is one that exists'
     end select
     call refuse_below(cfg % max_iterations, 1, &
-         & 'max_iterations', 'an iteration budget is at least one')
+         & 'max_iterations', 'an iteration limit is at least one')
     call refuse_below(cfg % higher_order_jacobian_product, 1, &
          & 'higher_order_jacobian_product', 'one is Newton, and there is no order below it')
     call refuse_below(cfg % spatial_order, 1, &
@@ -299,9 +299,9 @@ contains
     write(*,'(a)') ' '
     write(*,'(a,i0,a,i0,a)') ' ' // name // ' is ', given, ', under ', least, &
          & ': ' // why // '.'
-    error stop 'gti_configuration: a setting is under the value it means anything at'
+    error stop 'gti_configuration: a setting is below its least meaningful value'
   end subroutine refuse_below
-  subroutine take_line(cfg, line)
+  subroutine read_line(cfg, line)
     type(configuration), intent(inout) :: cfg
     character(len=*)   , intent(in)    :: line
     character(len=:), allocatable :: text
@@ -316,7 +316,7 @@ contains
        error stop 'gti_configuration: a setting is named, then given its value'
     end if
     call assign(cfg, text(:at - 1), trim(adjustl(text(at + 1:))))
-  end subroutine take_line
+  end subroutine read_line
   subroutine read_configuration(name, cfg)
     character(len=*)   , intent(in)  :: name
     type(configuration), intent(out) :: cfg
@@ -331,7 +331,7 @@ contains
     do
        read(unit, '(a)', iostat=status) line
        if (status /= 0) exit
-       call take_line(cfg, line)
+       call read_line(cfg, line)
     end do
     close(unit)
   end subroutine read_configuration
@@ -396,8 +396,8 @@ contains
     write(*,'(a,es9.2)')   '   tolerance                ', cfg % tolerance
     write(*,'(a,a)')       '   tolerance criterion      ', trim(cfg % tolerance_criterion)
     if (trim(cfg % grid) == 'adaptive') then
-       write(*,'(a,a)')    '   adaptive gate            ', trim(cfg % adaptive_gate)
-       if (trim(cfg % adaptive_gate) == 'goal_oriented') then
+       write(*,'(a,a)')    '   adaptive check           ', trim(cfg % adaptive_check)
+       if (trim(cfg % adaptive_check) == 'goal_oriented') then
           write(*,'(a)')   '     targeting van der Pol energy'
        end if
     end if
@@ -426,8 +426,8 @@ end module gti_configuration
 !=====================================================================!
 ! The equations this application integrates, each stated once as an
 ! expression: the van der Pol residual at any degree, its energy, and
-! the power its damping draws. The expression machinery knows none of
-! them; they are this application's physics, so they live here.
+! the power its damping dissipates. The expression module defines none of
+! them; they are this application's physics, so they are defined here.
 !=====================================================================!
 
 module gti_physics
@@ -481,14 +481,14 @@ module gti_sweeps
   use operation_minimization, only : minimizer, relative, absolute, by_rate, by_count
   implicit none
   private
-  public :: forward_route, reverse_route, route_of, route_substitutions, choose
-  integer, parameter :: forward_route = 1
-  integer, parameter :: reverse_route = 2
+  public :: forward_pass, reverse_pass, pass_of, pass_substitutions, choose
+  integer, parameter :: forward_pass = 1
+  integer, parameter :: reverse_pass = 2
   public :: set_linear_solver, set_jacobian, set_storage, set_multigrid
   public :: set_rows, set_elimination
   public :: set_newton_order, newton_order
   public :: set_aggregates, set_coarse_nodes, coarse_nodes, jacobian_present, multigrid_on
-  public :: take_inner, keep_inner, forget_inner, set_linear_stopping, set_linear_budget
+  public :: read_inner, store_inner, clear_inner, set_linear_stopping, set_linear_budget
   public :: functional_of, functional_gradient
   character(len=16), save :: chosen_solver   = 'direct'
   character(len=16), save :: chosen_jacobian = 'matrix'
@@ -500,7 +500,7 @@ module gti_sweeps
   integer, allocatable, save :: chosen_aggregates(:)
   real(dp), save :: linear_tolerance  = half_digits
   integer , save :: linear_criterion  = relative
-  integer , save :: linear_budget     = by_rate
+  integer , save :: linear_limit_kind     = by_rate
   integer , save :: linear_restart    = 60
   integer , save :: linear_sweeps     = 2
   integer , save :: linear_iterations = 200
@@ -562,7 +562,7 @@ contains
     character(len=*), intent(in) :: name
     call refuse_unknown(name, ['direct   ', 'iterative'], 'linear_solver')
     chosen_solver = name
-    call forget_inner()
+    call clear_inner()
   end subroutine set_linear_solver
   subroutine set_rows(name)
     character(len=*), intent(in) :: name
@@ -577,19 +577,19 @@ contains
        error stop 'gti_sweeps: the states are always assembled; rows names them'
     end if
     ! The scheme states one row per derived degree, so the time
-    ! derivatives are assembled today and cannot yet be left out. The
-    ! spatial law is folded into the residual, so its derivatives have
+    ! derivatives are assembled in the current implementation and cannot yet be left out. The
+    ! spatial law is substituted into the residual, so its derivatives have
     ! no rows to assemble yet.
     if (.not. in_time) then
-       error stop 'gti_sweeps: leaving the time derivatives out of rows is not built; &
+       error stop 'gti_sweeps: leaving the time derivatives out of rows is not implemented; &
             &the scheme assembles one row for each of them'
     end if
     if (in_space) then
-       error stop 'gti_sweeps: assembling rows for the spatial derivatives is not built; &
-            &the spatial law is carried in the state row'
+       error stop 'gti_sweeps: assembling rows for the spatial derivatives is not implemented; &
+            &the spatial law is stored in the state row'
     end if
     chosen_rows = name
-    call forget_inner()
+    call clear_inner()
   end subroutine set_rows
   subroutine set_elimination(name)
     character(len=*), intent(in) :: name
@@ -598,10 +598,10 @@ contains
     ! no kind left out of rows has rows to assemble yet.
     if (trim(name) == 'numerical') then
        error stop 'gti_sweeps: a numerical elimination assembles the rows it removes, &
-            &and no kind left out of rows is assembled yet'
+            &and no kind final_imbalance out of rows is assembled yet'
     end if
     chosen_elimination = name
-    call forget_inner()
+    call clear_inner()
   end subroutine set_elimination
   pure function rows_named() result(name)
     character(len=:), allocatable :: name
@@ -611,18 +611,18 @@ contains
     character(len=*), intent(in) :: name
     call refuse_unknown(name, ['matrix', 'free  '], 'jacobian')
     chosen_jacobian = name
-    call forget_inner()
+    call clear_inner()
   end subroutine set_jacobian
   subroutine set_storage(name)
     character(len=*), intent(in) :: name
     call refuse_unknown(name, ['dense ', 'sparse'], 'storage')
     chosen_storage = name
-    call forget_inner()
+    call clear_inner()
   end subroutine set_storage
   subroutine set_multigrid(on)
     logical, intent(in) :: on
     chosen_multigrid = on
-    call forget_inner()
+    call clear_inner()
   end subroutine set_multigrid
   subroutine set_newton_order(order)
     integer, intent(in) :: order
@@ -661,24 +661,24 @@ contains
        cell = [(i, i = 1, nodes)]
     end if
   end function coarse_nodes
-  subroutine set_linear_stopping(tolerance, criterion, budget)
+  subroutine set_linear_stopping(tolerance, criterion, limit_kind)
     real(dp), intent(in) :: tolerance
-    integer , intent(in) :: criterion, budget
+    integer , intent(in) :: criterion, limit_kind
     if (tolerance <= 0.0_dp) error stop 'gti_sweeps: a tolerance is positive'
     if (criterion /= relative .and. criterion /= absolute) then
        error stop 'gti_sweeps: a tolerance is measured relative or absolute'
     end if
-    if (budget /= by_count .and. budget /= by_rate) then
-       error stop 'gti_sweeps: a budget is counted or taken from the rate'
+    if (limit_kind /= by_count .and. limit_kind /= by_rate) then
+       error stop 'gti_sweeps: an iteration limit is counted or taken from the rate'
     end if
     linear_tolerance = tolerance
     linear_criterion = criterion
-    linear_budget    = budget
+    linear_limit_kind    = limit_kind
   end subroutine set_linear_stopping
   subroutine set_linear_budget(restart, sweeps, iterations)
     integer, intent(in) :: restart, sweeps, iterations
     if (restart < 1 .or. sweeps < 1 .or. iterations < 1) then
-       error stop 'gti_sweeps: a restart, a sweep count and a ceiling are positive'
+       error stop 'gti_sweeps: a restart, a sweep count and an iteration limit are positive'
     end if
     linear_restart    = restart
     linear_sweeps     = sweeps
@@ -696,14 +696,14 @@ contains
        error stop 'gti_sweeps: a matrix-free jacobian has no matrix to factorise; its solver iterates'
     end if
     if (trim(chosen_solver) == 'direct' .and. trim(chosen_storage) == 'sparse') then
-       error stop 'gti_sweeps: a sparse direct solve is not built'
+       error stop 'gti_sweeps: a sparse direct solve is not implemented'
     end if
     if (trim(chosen_solver) == 'iterative' .and. trim(chosen_jacobian) == 'matrix' &
          & .and. trim(chosen_storage) == 'dense') then
        error stop 'gti_sweeps: an iterative solve reads the sparse stencil; dense storage is for factorising'
     end if
     if (chosen_multigrid .and. trim(chosen_jacobian) == 'free') then
-       error stop 'gti_sweeps: multigrid coarsens a stencil, which a matrix-free jacobian has not'
+       error stop 'gti_sweeps: multigrid coarsens a stencil, which a matrix-free jacobian does not store'
     end if
     select case (trim(chosen_solver))
     case ('direct')
@@ -715,7 +715,7 @@ contains
        krylov % restart        = min(count, linear_restart)
        krylov % tolerance      = linear_tolerance
        krylov % criterion      = linear_criterion
-       krylov % budget         = linear_budget
+       krylov % limit_kind         = linear_limit_kind
        krylov % max_iterations = linear_iterations
        allocate(named, source=krylov)
     end select
@@ -737,51 +737,51 @@ contains
     levels % aggregates     = chosen_aggregates
     levels % tolerance      = linear_tolerance
     levels % criterion      = linear_criterion
-    levels % budget         = linear_budget
+    levels % limit_kind         = linear_limit_kind
     levels % max_iterations = linear_iterations
     allocate(inner, source=levels)
   end function inner_minimizer
-  subroutine take_inner(inner, count, width)
+  subroutine read_inner(inner, count, width)
     class(minimizer), allocatable, intent(out) :: inner
     integer                      , intent(in)  :: count, width
     if (allocated(kept_inner) .and. .not. chosen_multigrid) then
        call move_alloc(kept_inner, inner)
     else
-       call forget_inner()
+       call clear_inner()
        allocate(inner, source=inner_minimizer(count, width))
     end if
-  end subroutine take_inner
-  subroutine keep_inner(inner)
+  end subroutine read_inner
+  subroutine store_inner(inner)
     class(minimizer), allocatable, intent(inout) :: inner
     if (allocated(kept_inner)) deallocate(kept_inner)
     call move_alloc(inner, kept_inner)
-  end subroutine keep_inner
-  subroutine forget_inner()
+  end subroutine store_inner
+  subroutine clear_inner()
     if (allocated(kept_inner)) deallocate(kept_inner)
-  end subroutine forget_inner
-  pure integer function route_of(num_designs, num_functionals, order) result(route)
+  end subroutine clear_inner
+  pure integer function pass_of(num_designs, num_functionals, order) result(pass_kind)
     integer, intent(in) :: num_designs, num_functionals, order
     if (num_designs < 1 .or. num_functionals < 1 .or. order < 1) then
-       error stop 'gti_sweeps: a route is chosen for at least one design, one functional and order one'
+       error stop 'gti_sweeps: a differentiation pass is chosen for at least one design, one functional and order one'
     end if
     if (num_designs <= order * num_functionals) then
-       route = forward_route
+       pass_kind = forward_pass
     else
-       route = reverse_route
+       pass_kind = reverse_pass
     end if
-  end function route_of
-  pure integer function route_substitutions(route, num_designs, num_functionals, order) &
+  end function pass_of
+  pure integer function pass_substitutions(pass_kind, num_designs, num_functionals, order) &
        & result(count)
-    integer, intent(in) :: route, num_designs, num_functionals, order
-    select case (route)
-    case (forward_route)
+    integer, intent(in) :: pass_kind, num_designs, num_functionals, order
+    select case (pass_kind)
+    case (forward_pass)
        count = choose(num_designs + order - 1, order)
-    case (reverse_route)
+    case (reverse_pass)
        count = (1 + num_functionals) * choose(num_designs + order - 2, order - 1)
     case default
-       error stop 'gti_sweeps: a route is forward or reverse'
+       error stop 'gti_sweeps: a pass is forward or reverse'
     end select
-  end function route_substitutions
+  end function pass_substitutions
   pure integer function choose(n, k) result(c)
     integer, intent(in) :: n, k
     integer :: i
@@ -817,15 +817,15 @@ module gti_expansion
   use operation_expression     , only : expression
   implicit none
   private
-  public :: expansion, family_holder
+  public :: expansion, family_container
   public :: design_of_physics, design_of_steps
   public :: marches_by_stages
   public :: block_reach
   integer, parameter :: design_of_physics = 1
   integer, parameter :: design_of_steps   = 2
-  type :: family_holder
+  type :: family_container
      class(family), allocatable :: scheme
-  end type family_holder
+  end type family_container
   type :: expansion
      type(level_storage)     , private :: nodes
      type(label_map)         , private :: labels
@@ -834,9 +834,9 @@ module gti_expansion
      type(relational_binding), private :: bindings
      integer                 , private :: root_at = 0
      ! degrees is the EQUATION'S degree count, which is what every
-     ! scheme question reads. spatial_degrees counts the components the
+     ! scheme query reads. spatial_degrees counts the components the
      ! spatial law determines. The layout stride is their sum, and is
-     ! asked for by name so the two are never confused.
+     ! requested by name so the two are never confused.
      integer                 , private :: degrees = 0
      integer                 , private :: spatial_degrees = 0
      integer                 , private :: node_extent = 1
@@ -919,7 +919,7 @@ contains
     integer, allocatable, intent(out) :: table(:,:)
     class(relation), pointer :: r
     if (num_relations(coupling) /= 1) then
-       error stop 'gti_expansion: a coupling holds one relation'
+       error stop 'gti_expansion: a coupling contains one relation'
     end if
     r => relation_at(coupling, this % bindings, 1)
     select type (r)
@@ -955,7 +955,7 @@ contains
        & max_derivative_degree, parameter, nodes, spatial_discretization_stencil, weights, block_steps)
     class(expansion)      , intent(inout) :: this
     type(expression)      , intent(in)    :: physics
-    type(family_holder)   , intent(in)    :: schemes(:)
+    type(family_container)   , intent(in)    :: schemes(:)
     integer               , intent(in)    :: instants(:)
     class(grid)           , intent(in)    :: steps
     integer               , intent(in)    :: max_derivative_degree
@@ -973,8 +973,8 @@ contains
        error stop 'gti_expansion: one family and one instant count per block'
     end if
     ! degrees is the marching coordinate's own count, which is what
-    ! every scheme question reads; the rest of the point's components
-    ! belong to the coordinates beside it
+    ! every scheme query reads; the rest of the point's components
+    ! belong to the other coordinates
     this % degrees         = physics % equation_degree() + 1
     this % spatial_degrees = physics % num_components() - this % degrees
     this % node_extent = 1
@@ -1052,7 +1052,7 @@ contains
     integer              , intent(in)  :: weights_varied(:)
     real(dp), allocatable, intent(out) :: u(:)
     type(stored_directed_graph) :: instants
-    type(stored_field) :: knobs
+    type(stored_field) :: designs
     type(stored_field), allocatable :: direction(:)
     type(variation)   , allocatable :: variations(:)
     class(field), allocatable :: out
@@ -1064,8 +1064,8 @@ contains
     end if
     n = size(weights) + 1
     instants = stored_directed_graph(n, tails=[integer ::], heads=[integer ::])
-    knobs    = stored_field('design', instants % vertex_set(), size(weights))
-    call knobs % set_real_vector(weights)
+    designs  = stored_field('design', instants % vertex_set(), size(weights))
+    call designs % set_real_vector(weights)
     allocate(e(size(weights)), direction(size(weights_varied)), variations(size(weights_varied)))
     do i = 1, size(weights_varied)
        e = 0.0_dp
@@ -1074,7 +1074,7 @@ contains
        call direction(i) % set_real_vector(e)
        variations(i) = variation(this % steps_kept % argument(1), direction(i))
     end do
-    call this % steps_kept % partial_action(instants, this % steps_kept % bind([knobs]), variations, out)
+    call this % steps_kept % partial_action(instants, this % steps_kept % bind([designs]), variations, out)
     call out % real_vector(u)
   end subroutine step_partial_along
   subroutine step_partials(this, v)
@@ -1099,14 +1099,14 @@ contains
           return
        end if
     end do
-    error stop 'gti_expansion: the steps of this tower are not designs'
+    error stop 'gti_expansion: the steps of this expansion are not designs'
   end subroutine weights_of_steps
   integer function spatial_discretization_coupling(this, spatial_discretization_stencil) result(at)
     class(expansion), intent(inout) :: this
     type(stencil)   , intent(in)    :: spatial_discretization_stencil
     integer , allocatable :: table(:,:), heads(:), tails(:), rows(:), cols(:)
     real(dp), allocatable :: given(:), w(:)
-    integer :: read_nodes, entered_nodes, holder, e, ne
+    integer :: read_nodes, entered_nodes, owner, e, ne
     if (spatial_discretization_stencil % pattern % num_vertices() /= this % node_extent) then
        error stop 'gti_expansion: the spatial discretization stencil is a stencil over the nodes'
     end if
@@ -1121,11 +1121,11 @@ contains
     table(2, :) = rows
     read_nodes    = named_set(this, this % node_extent, 'the nodes the spatial discretization stencil reads')
     entered_nodes = named_set(this, this % node_extent, 'the nodes whose rows the spatial discretization stencil enters')
-    holder = this % nodes % assemble([integer ::], 0)
-    call this % labels % bind(this % node(holder), 'the spatial discretization stencil''s reach')
-    at = this % nodes % couple([read_nodes, entered_nodes], [holder])
+    owner = this % nodes % assemble([integer ::], 0)
+    call this % labels % bind(this % node(owner), 'the spatial discretization stencil''s reach')
+    at = this % nodes % couple([read_nodes, entered_nodes], [owner])
     call bind_carriers(this, [read_nodes, entered_nodes])
-    call bind_reach(this, holder, read_nodes, entered_nodes, table)
+    call bind_reach(this, owner, read_nodes, entered_nodes, table)
     call this % labels % bind(this % node(at), 'the spatial discretization stencil')
     call attach_known(this, at, in_relation_order(this, this % node(at), table, w))
   end function spatial_discretization_coupling
@@ -1143,7 +1143,7 @@ contains
   integer function one_sweep(this, physics, schemes, instants, dt, sensitivity) result(at)
     class(expansion)      , intent(inout) :: this
     type(expression)      , intent(in)    :: physics
-    type(family_holder)   , intent(in)    :: schemes(:)
+    type(family_container)   , intent(in)    :: schemes(:)
     integer               , intent(in)    :: instants(:)
     real(dp)              , intent(in)    :: dt(:)
     integer               , intent(in)    :: sensitivity
@@ -1159,7 +1159,7 @@ contains
   integer function one_horizon(this, physics, schemes, instants, dt) result(at)
     class(expansion)      , intent(inout) :: this
     type(expression)      , intent(in)    :: physics
-    type(family_holder)   , intent(in)    :: schemes(:)
+    type(family_container)   , intent(in)    :: schemes(:)
     integer               , intent(in)    :: instants(:)
     real(dp)              , intent(in)    :: dt(:)
     integer, allocatable :: blocks(:)
@@ -1184,14 +1184,14 @@ contains
     integer, allocatable :: slices(:)
     integer :: k, coupling
     if (last - first + 1 <= scheme % history_depth(this % degrees - 1)) then
-       error stop 'gti_expansion: a block holds more instants than its family reaches'
+       error stop 'gti_expansion: a block contains more instants than its family''s history depth'
     end if
     allocate(slices(last - first + 1))
     do k = first, last
        slices(k - first + 1) = one_slice(this, physics, scheme, k, first, dt(k))
     end do
     if (marches_by_stages(scheme, this % degrees)) then
-       coupling = carry_coupling(this, scheme, slices, first, last, dt)
+       coupling = add_coupling(this, scheme, slices, first, last, dt)
     else
        coupling = block_coupling(this, physics, scheme, slices, first, last, dt)
     end if
@@ -1209,11 +1209,11 @@ contains
     if (marches_by_stages(scheme, this % degrees)) then
        at = staged_slice(this, scheme, instant, first, step)
     else
-       at = plain_slice(this, scheme, instant, first)
+       at = unstaged_slice(this, scheme, instant, first)
     end if
     call this % labels % bind(this % node(at), 'slice at instant ' // written(instant))
   end function one_slice
-  integer function plain_slice(this, scheme, instant, first) result(at)
+  integer function unstaged_slice(this, scheme, instant, first) result(at)
     class(expansion), intent(inout) :: this
     class(family)   , intent(in)    :: scheme
     integer         , intent(in)    :: instant, first
@@ -1224,7 +1224,7 @@ contains
        components(d + 1) = one_component(this, scheme, instant, first, d, .true.)
     end do
     at = this % nodes % assemble(components, 0)
-  end function plain_slice
+  end function unstaged_slice
   logical function marches_by_stages(scheme, nd) result(staged)
     class(family), intent(in) :: scheme
     integer      , intent(in) :: nd
@@ -1359,7 +1359,7 @@ contains
     integer, allocatable :: tails(:), heads(:), source_degree(:), determines(:)
     integer, allocatable :: table(:,:)
     real(dp), allocatable :: w(:)
-    integer :: n, nd, components, constraints, holder
+    integer :: n, nd, components, constraints, owner
     associate (u1 => physics); end associate
     n  = last - first + 1
     nd = this % degrees
@@ -1369,11 +1369,11 @@ contains
     components  = named_set(this, n * nd, 'the components of this block')
     constraints = named_set(this, n * nd, 'the constraint instances of this block')
     table       = tuples(nd, tails, heads, source_degree, determines)
-    holder = this % nodes % assemble([integer ::], 0)
-    call this % labels % bind(this % node(holder), 'the scheme reach')
-    at = this % nodes % couple([slices, components, constraints], [holder])
+    owner = this % nodes % assemble([integer ::], 0)
+    call this % labels % bind(this % node(owner), 'the scheme reach')
+    at = this % nodes % couple([slices, components, constraints], [owner])
     call bind_carriers(this, [slices, components, constraints])
-    call bind_reach(this, holder, components, constraints, table)
+    call bind_reach(this, owner, components, constraints, table)
     call this % labels % bind(this % node(at), scheme % name() // ' coupling')
     call attach_known(this, at, in_relation_order(this, this % node(at), table, w))
   end function block_coupling
@@ -1403,39 +1403,39 @@ contains
        call this % bindings % bind_set(g, g)
     end do
   end subroutine bind_carriers
-  subroutine bind_reach(this, holder, components, constraints, table)
+  subroutine bind_reach(this, owner, components, constraints, table)
     class(expansion), intent(inout) :: this
-    integer         , intent(in)    :: holder, components, constraints, table(:,:)
+    integer         , intent(in)    :: owner, components, constraints, table(:,:)
     type(graph), pointer :: g, from, into
     from => this % nodes % node(components)
     into => this % nodes % node(constraints)
-    g    => this % nodes % node(holder)
+    g    => this % nodes % node(owner)
     call this % bindings % bind_relation(g, &
          & csr_relation('scheme reach', from, into, table, this % extents))
   end subroutine bind_reach
-  recursive logical function consistent(this, g) result(ok)
+  recursive logical function consistent(this, g) result(passes_check)
     class(expansion), intent(in) :: this
     type(graph)     , intent(in) :: g
     type(graph), pointer :: coupling
-    ok = level_consistent(g)
-    if (.not. ok) return
+    passes_check = level_consistent(g)
+    if (.not. passes_check) return
     if (level_couples(g)) then
        coupling => level_coupling(g)
-       ok = relational_valid(coupling, this % bindings)
-       if (.not. ok) return
+       passes_check = relational_valid(coupling, this % bindings)
+       if (.not. passes_check) return
     end if
     if (level_is_leaf(g)) return
-    ok = every_member(this, level_members(g))
+    passes_check = every_member(this, level_members(g))
   end function consistent
-  recursive logical function every_member(this, members) result(ok)
+  recursive logical function every_member(this, members) result(passes_check)
     class(expansion), intent(in) :: this
     type(branch)    , intent(in) :: members
     type(graph), pointer :: first
-    ok = .true.
+    passes_check = .true.
     if (sequence_empty(members)) return
     first => sequence_first(members)
-    ok = this % consistent(first)
-    if (ok) ok = every_member(this, sequence_rest(members))
+    passes_check = this % consistent(first)
+    if (passes_check) passes_check = every_member(this, sequence_rest(members))
   end function every_member
   subroutine stage_reach(nd, s, tails, heads, source_degree, determines)
     integer, intent(in) :: nd, s
@@ -1491,7 +1491,7 @@ contains
     integer, allocatable :: tails(:), heads(:), source_degree(:), determines(:)
     integer, allocatable :: table(:,:)
     real(dp), allocatable :: w(:)
-    integer :: nd, components, constraints, holder, e
+    integer :: nd, components, constraints, owner, e
     nd = this % degrees
     call stage_reach(nd, s, tails, heads, source_degree, determines)
     call stage_weights(scheme, s, tails, heads, source_degree, determines, step, w)
@@ -1500,11 +1500,11 @@ contains
     allocate(table(2, size(tails)))
     table(1,:) = [(stage_unknown(tails(e), source_degree(e), s, nd), e = 1, size(tails))]
     table(2,:) = [(stage_unknown(heads(e), determines(e), s, nd), e = 1, size(heads))]
-    holder = this % nodes % assemble([integer ::], 0)
-    call this % labels % bind(this % node(holder), 'the butcher reach')
-    at = this % nodes % couple([members, components, constraints], [holder])
+    owner = this % nodes % assemble([integer ::], 0)
+    call this % labels % bind(this % node(owner), 'the butcher reach')
+    at = this % nodes % couple([members, components, constraints], [owner])
     call bind_carriers(this, [members, components, constraints])
-    call bind_reach(this, holder, components, constraints, table)
+    call bind_reach(this, owner, components, constraints, table)
     call this % labels % bind(this % node(at), scheme % name() // ' stage coupling')
     call attach_known(this, at, in_relation_order(this, this % node(at), table, w))
   end function slice_coupling
@@ -1524,7 +1524,7 @@ contains
        at = slice_base(kk, s, nd) + s * nd
     end if
   end function closing_instant
-  subroutine carry_reach(this, s, n, table, sources)
+  subroutine reach_table(this, s, n, table, sources)
     class(expansion), intent(in) :: this
     integer         , intent(in) :: s, n
     integer, allocatable, intent(out) :: table(:,:)
@@ -1551,43 +1551,43 @@ contains
           allocate(table(2, counted), sources(counted))
        end if
     end do
-  end subroutine carry_reach
+  end subroutine reach_table
   !===================================================================!
-  ! THE LAYOUT STRIDE: how many components one node carries at one
+  ! THE LAYOUT STRIDE: how many components one node stores at one
   ! moment. The equation's degrees come first and the spatial law's
-  ! come after, so a scheme question reads degrees and a layout
-  ! question reads this.
+  ! come after, so a scheme query reads degrees and a layout
+  ! query reads this.
   !===================================================================!
   pure integer function stride(this)
     class(expansion), intent(in) :: this
     stride = this % degrees + this % spatial_degrees
   end function stride
-  integer function carry_coupling(this, scheme, slices, first, last, dt) result(at)
+  integer function add_coupling(this, scheme, slices, first, last, dt) result(at)
     class(expansion), intent(inout) :: this
     class(family)   , intent(in)    :: scheme
     integer         , intent(in)    :: slices(:), first, last
     real(dp)        , intent(in)    :: dt(:)
     integer, allocatable :: table(:,:), sources(:)
     real(dp), allocatable :: w(:)
-    integer :: n, nd, s, unknowns, components, constraints, holder, e
+    integer :: n, nd, s, unknowns, components, constraints, owner, e
     n  = last - first + 1
     nd = this % degrees
     s  = scheme % num_stages()
-    call carry_reach(this, s, n, table, sources)
+    call reach_table(this, s, n, table, sources)
     unknowns = (1 + (n - 1) * (s + 1)) * nd
     call stage_weights(scheme, s, [(1, e = 1, size(sources))], sources, &
          & [((mod(table(1, e) - 1, nd)), e = 1, size(sources))], &
          & [((mod(table(2, e) - 1, nd)), e = 1, size(sources))], dt(first), w)
     components  = named_set(this, unknowns, 'the components of this block')
     constraints = named_set(this, unknowns, 'the constraint instances of this block')
-    holder = this % nodes % assemble([integer ::], 0)
-    call this % labels % bind(this % node(holder), 'the carry between steps')
-    at = this % nodes % couple([slices, components, constraints], [holder])
+    owner = this % nodes % assemble([integer ::], 0)
+    call this % labels % bind(this % node(owner), 'the transfer between steps')
+    at = this % nodes % couple([slices, components, constraints], [owner])
     call bind_carriers(this, [slices, components, constraints])
-    call bind_reach(this, holder, components, constraints, table)
-    call this % labels % bind(this % node(at), scheme % name() // ' carry coupling')
+    call bind_reach(this, owner, components, constraints, table)
+    call this % labels % bind(this % node(at), scheme % name() // ' transfer coupling')
     call attach_known(this, at, in_relation_order(this, this % node(at), table, w))
-  end function carry_coupling
+  end function add_coupling
 end module gti_expansion
 module gti_block
   use util_precision  , only : dp
@@ -1621,12 +1621,12 @@ module gti_block
      type(stencil), allocatable, private :: spatial_discretization_stencil
      type(stored_directed_graph)         , private :: points
      integer , allocatable               , private :: at(:)
-     integer , allocatable               , private :: carried(:)
-     real(dp), allocatable               , private :: held(:)
+     integer , allocatable               , private :: fixed_rows(:)
+     real(dp), allocatable               , private :: fixed(:)
      ! degrees is the EQUATION'S degree count; spatial_degrees counts
      ! the components the spatial law determines; the stride is their
-     ! sum. Asking by name keeps a scheme question from reading a
-     ! layout number.
+     ! sum. Requesting by name keeps a scheme query from reading a
+     ! layout count.
      integer                             , private :: degrees  = 0
      integer                             , private :: spatial_degrees = 0
      integer                             , private :: unknowns = 0
@@ -1661,32 +1661,32 @@ module gti_block
      procedure :: block_stride
      procedure :: num_points
      procedure :: points_at
-     procedure :: num_carried
-     procedure :: carried_unknowns
-     procedure :: held_values
-     procedure :: first_held
+     procedure :: num_fixed
+     procedure :: fixed_unknowns
+     procedure :: fixed_values
+     procedure :: first_fixed
   end type block_residual
   interface block_residual
      module procedure create
   end interface block_residual
 contains
-  function create(derived, physics, at, unknowns, degrees, primary, carried, held, &
+  function create(derived, physics, at, unknowns, degrees, primary, fixed_rows, fixed, &
        & spatial_discretization_stencil) result(this)
     type(stencil)         , intent(in) :: derived
     type(expression)      , intent(in) :: physics
     integer               , intent(in) :: at(:), unknowns, degrees, primary
-    integer               , intent(in) :: carried(:)
-    real(dp)              , intent(in) :: held(:)
+    integer               , intent(in) :: fixed_rows(:)
+    real(dp)              , intent(in) :: fixed(:)
     type(stencil)         , intent(in), optional :: spatial_discretization_stencil
     type(block_residual) :: this
-    if (size(carried) /= size(held)) then
-       error stop 'gti_block: one value per carried component'
+    if (size(fixed_rows) /= size(fixed)) then
+       error stop 'gti_block: one value per fixed component'
     end if
-    if (any(carried < 1) .or. any(carried > unknowns)) then
-       error stop 'gti_block: every carried row names an unknown'
+    if (any(fixed_rows < 1) .or. any(fixed_rows > unknowns)) then
+       error stop 'gti_block: every fixed row names an unknown'
     end if
     if (any(at < 0) .or. any(at + degrees > unknowns)) then
-       error stop 'gti_block: an evaluation point holds its degrees within the unknowns'
+       error stop 'gti_block: an evaluation point''s degree components lie within the unknowns'
     end if
     this % time_discretization_stencil  = derived
     if (present(spatial_discretization_stencil)) this % spatial_discretization_stencil = spatial_discretization_stencil
@@ -1694,12 +1694,12 @@ contains
     this % at       = at
     this % unknowns = unknowns
     this % degrees       = degrees
-    ! the rule states how many components a point carries; the degrees
-    ! given are the marching coordinate's share of them
+    ! the rule states how many components a point stores; the degrees
+    ! given are the marching coordinate's portion of them
     this % spatial_degrees = physics % num_components() - degrees
     this % primary  = primary
-    this % carried  = carried
-    this % held     = held
+    this % fixed_rows  = fixed_rows
+    this % fixed     = fixed
     this % points = stored_directed_graph(size(at), tails=[integer ::], heads=[integer ::])
     call this % declare_arguments(2, [contract(FIELD_REAL, 1), contract(FIELD_REAL, 1)])
   end function create
@@ -1707,16 +1707,16 @@ contains
     class(block_residual), intent(in) :: this
     num_unknowns = this % unknowns
   end function num_unknowns
-  pure function carried_unknowns(this) result(c)
+  pure function fixed_unknowns(this) result(c)
     class(block_residual), intent(in) :: this
     integer, allocatable :: c(:)
-    c = this % carried
-  end function carried_unknowns
-  pure function held_values(this) result(h)
+    c = this % fixed_rows
+  end function fixed_unknowns
+  pure function fixed_values(this) result(h)
     class(block_residual), intent(in) :: this
     real(dp), allocatable :: h(:)
-    h = this % held
-  end function held_values
+    h = this % fixed
+  end function fixed_values
   pure integer function block_stride(this)
     class(block_residual), intent(in) :: this
     block_stride = this % degrees + this % spatial_degrees
@@ -1734,16 +1734,16 @@ contains
     integer, allocatable :: at(:)
     at = this % at
   end function points_at
-  pure function first_held(this) result(x)
+  pure function first_fixed(this) result(x)
     class(block_residual), intent(in) :: this
     real(dp), allocatable :: x(:)
     allocate(x(this % degrees), source=0.0_dp)
-    if (size(this % held) >= this % degrees) x = this % held(1:this % degrees)
-  end function first_held
-  pure integer function num_carried(this)
+    if (size(this % fixed) >= this % degrees) x = this % fixed(1:this % degrees)
+  end function first_fixed
+  pure integer function num_fixed(this)
     class(block_residual), intent(in) :: this
-    num_carried = size(this % carried)
-  end function num_carried
+    num_fixed = size(this % fixed_rows)
+  end function num_fixed
   pure function block_name(this) result(name)
     class(block_residual), intent(in) :: this
     character(len=:), allocatable :: name
@@ -1762,7 +1762,7 @@ contains
   pure integer function block_max_degree(this)
     class(block_residual), intent(in) :: this
     ! the discretization stencils are linear in the state, so every
-    ! partial above the first is the physics' own
+    ! partial above the first is the physics expression's alone
     block_max_degree = this % physics % max_degree()
   end function block_max_degree
   pure function gathered(this, x) result(y)
@@ -1782,13 +1782,13 @@ contains
     real(dp)             , intent(in) :: x(:)
     type(stored_field), allocatable, intent(out) :: point_data(:)
     type(stored_field) :: state, design
-    real(dp), allocatable :: knob(:)
-    call bound_real_vector(inputs, this % argument(2), knob)
+    real(dp), allocatable :: design_values(:)
+    call bound_real_vector(inputs, this % argument(2), design_values)
     state = stored_field('state', this % points % vertex_set(), size(this % at), &
          & num_components=this % block_stride())
     call state % set_real_vector(gathered(this, x))
-    design = stored_field('design', this % points % vertex_set(), size(knob))
-    call design % set_real_vector(knob)
+    design = stored_field('design', this % points % vertex_set(), size(design_values))
+    call design % set_real_vector(design_values)
     point_data = [state, design]
   end subroutine point_inputs
   pure subroutine placed(this, governing, r)
@@ -1801,32 +1801,32 @@ contains
             & r(this % at(p) + this % primary + 1) + governing(p)
     end do
   end subroutine placed
-  pure subroutine carry(this, x, r)
+  pure subroutine accumulate_state(this, x, r)
     class(block_residual), intent(in)    :: this
     real(dp)             , intent(in)    :: x(:)
     real(dp)             , intent(inout) :: r(:)
     integer :: i
-    do i = 1, size(this % carried)
-       r(this % carried(i)) = x(this % carried(i)) - this % held(i)
+    do i = 1, size(this % fixed_rows)
+       r(this % fixed_rows(i)) = x(this % fixed_rows(i)) - this % fixed(i)
     end do
-  end subroutine carry
-  pure subroutine carry_direction(this, v, r)
+  end subroutine accumulate_state
+  pure subroutine accumulate_direction(this, v, r)
     class(block_residual), intent(in)    :: this
     real(dp)             , intent(in)    :: v(:)
     real(dp)             , intent(inout) :: r(:)
     integer :: i
-    do i = 1, size(this % carried)
-       r(this % carried(i)) = v(this % carried(i))
+    do i = 1, size(this % fixed_rows)
+       r(this % fixed_rows(i)) = v(this % fixed_rows(i))
     end do
-  end subroutine carry_direction
-  pure subroutine carry_held(this, r)
+  end subroutine accumulate_direction
+  pure subroutine zero_fixed_rows(this, r)
     class(block_residual), intent(in)    :: this
     real(dp)             , intent(inout) :: r(:)
     integer :: i
-    do i = 1, size(this % carried)
-       r(this % carried(i)) = 0.0_dp
+    do i = 1, size(this % fixed_rows)
+       r(this % fixed_rows(i)) = 0.0_dp
     end do
-  end subroutine carry_held
+  end subroutine zero_fixed_rows
   subroutine state_of(this, inputs, input_graph, x, state)
     class(block_residual), intent(in)  :: this
     type(binding)         , intent(in)  :: inputs(:)
@@ -1835,7 +1835,7 @@ contains
     type(stored_field)   , intent(out) :: state
     call bound_real_vector(inputs, this % argument(1), x)
     if (size(x) /= this % num_unknowns()) then
-       error stop 'gti_block: the state holds one component per degree per unknown point'
+       error stop 'gti_block: the state contains one component per degree per unknown point'
     end if
     state = stored_field('state', input_graph % vertex_set(), size(x))
     call state % set_real_vector(x)
@@ -1875,7 +1875,7 @@ contains
     call this % physics % apply(this % points, this % physics % bind(point_data), half)
     call half % real_vector(governing)
     call placed(this, governing, r)
-    call carry(this, x, r)
+    call accumulate_state(this, x, r)
     call placed_output(this, input_graph, r, output)
   end subroutine block_apply
   subroutine placed_on(this, tower, node)
@@ -1969,7 +1969,7 @@ contains
     class(block_residual), intent(inout) :: this
     type(stencil)        , intent(in)    :: spatial_discretization_stencil
     integer , allocatable :: base(:,:), r(:), c(:), slice(:), node(:), moment(:)
-    real(dp), allocatable :: lw(:), held(:), w(:)
+    real(dp), allocatable :: lw(:), fixed(:), w(:)
     integer :: nodes, moments, p, u, e, g, ne, n, rc, cc
     call this % labels_of(slice, node, moment)
     nodes   = maxval(node)
@@ -1977,9 +1977,9 @@ contains
     if (spatial_discretization_stencil % pattern % num_vertices() /= nodes) then
        error stop 'gti_block: the spatial discretization stencil is a stencil over the nodes'
     end if
-    call spatial_discretization_stencil % constants % real_vector(held)
-    if (any(abs(held) > 0.0_dp)) then
-       error stop 'gti_block: the spatial discretization stencil carries no constant'
+    call spatial_discretization_stencil % constants % real_vector(fixed)
+    if (any(abs(fixed) > 0.0_dp)) then
+       error stop 'gti_block: the spatial discretization stencil has no constant term'
     end if
     call spatial_discretization_stencil % weights % real_vector(lw)
     allocate(base(nodes, moments), source=-1)
@@ -1996,7 +1996,7 @@ contains
           cc = spatial_discretization_stencil % pattern % edge_tail(e)
           if (base(rc, g) < 0) cycle
           if (base(cc, g) < 0) then
-             error stop 'gti_block: a moment holds every node or none'
+             error stop 'gti_block: a moment contains every node or none'
           end if
           n    = n + 1
           r(n) = base(rc, g) + this % primary + 1
@@ -2094,7 +2094,7 @@ contains
     call a % constants % set_real_vector(-rhs)
     lin = block_residual(a, stated(constant(0.0_dp), this % degrees - 1, 'zero'), this % at, this % unknowns, &
          & this % degrees, this % primary, [integer ::], [real(dp) ::])
-    call lin % stamped(mark, transposed=a % pattern % transposed())
+    call lin % versioned(mark, transposed=a % pattern % transposed())
     lin % tower => this % tower
     lin % node  => this % node
     if (allocated(this % kept)) lin % kept = this % kept
@@ -2105,8 +2105,8 @@ contains
     real(dp)             , intent(in) :: values(:)
     type(block_residual) :: sub
     type(stencil) :: derived, spatial_discretization_stencil
-    integer , allocatable :: sub_of(:), at(:), carried(:)
-    real(dp), allocatable :: held(:)
+    integer , allocatable :: sub_of(:), at(:), fixed_rows(:)
+    real(dp), allocatable :: fixed(:)
     integer :: e, p, d, inside, npts, ncar
     allocate(sub_of(this % unknowns), source=0)
     do e = 1, size(kept)
@@ -2121,27 +2121,27 @@ contains
        end do
        if (inside == 0) cycle
        if (inside /= this % degrees) then
-          error stop 'gti_block: a member holds whole points'
+          error stop 'gti_block: a member contains whole points'
        end if
        npts     = npts + 1
        at(npts) = sub_of(this % at(p) + 1) - 1
     end do
     ncar = 0
-    allocate(carried(size(this % carried)), held(size(this % carried)))
-    do e = 1, size(this % carried)
-       if (sub_of(this % carried(e)) == 0) cycle
+    allocate(fixed_rows(size(this % fixed_rows)), fixed(size(this % fixed_rows)))
+    do e = 1, size(this % fixed_rows)
+       if (sub_of(this % fixed_rows(e)) == 0) cycle
        ncar          = ncar + 1
-       carried(ncar) = sub_of(this % carried(e))
-       held(ncar)    = this % held(e)
+       fixed_rows(ncar) = sub_of(this % fixed_rows(e))
+       fixed(ncar)    = this % fixed(e)
     end do
     derived = this % time_discretization_stencil % restricted(kept, values)
     if (allocated(this % spatial_discretization_stencil)) then
        spatial_discretization_stencil = this % spatial_discretization_stencil % restricted(kept, values)
        sub = block_residual(derived, this % physics, at(1:npts), size(kept), &
-            & this % degrees, this % primary, carried(1:ncar), held(1:ncar), spatial_discretization_stencil=spatial_discretization_stencil)
+            & this % degrees, this % primary, fixed_rows(1:ncar), fixed(1:ncar), spatial_discretization_stencil=spatial_discretization_stencil)
     else
        sub = block_residual(derived, this % physics, at(1:npts), size(kept), &
-            & this % degrees, this % primary, carried(1:ncar), held(1:ncar))
+            & this % degrees, this % primary, fixed_rows(1:ncar), fixed(1:ncar))
     end if
     sub % tower => this % tower
     sub % node  => this % node
@@ -2165,22 +2165,22 @@ contains
     class(field), allocatable :: out
     real(dp), allocatable :: x(:), w(:), governing(:), v(:)
     integer , allocatable :: r(:), c(:)
-    logical , allocatable :: is_carried(:)
+    logical , allocatable :: is_fixed(:)
     integer :: e, d, p, npts, n, kept, count
     available = which == 1
     if (.not. available) return
     n    = this % unknowns
     npts = size(this % at)
-    allocate(is_carried(n), source=.false.)
-    is_carried(this % carried) = .true.
+    allocate(is_fixed(n), source=.false.)
+    is_fixed(this % fixed_rows) = .true.
     call state_of(this, inputs, input_graph, x, state)
     call point_inputs(this, inputs, x, point_data)
-    count = this % time_discretization_stencil % pattern % num_edges() + npts * this % degrees + size(this % carried)
+    count = this % time_discretization_stencil % pattern % num_edges() + npts * this % degrees + size(this % fixed_rows)
     if (allocated(this % spatial_discretization_stencil)) count = count + this % spatial_discretization_stencil % pattern % num_edges()
     allocate(r(count), c(count), w(count))
     kept = 0
-    call stencil_triples(this % time_discretization_stencil, is_carried, r, c, w, kept)
-    if (allocated(this % spatial_discretization_stencil)) call stencil_triples(this % spatial_discretization_stencil, is_carried, r, c, w, kept)
+    call stencil_triples(this % time_discretization_stencil, is_fixed, r, c, w, kept)
+    if (allocated(this % spatial_discretization_stencil)) call stencil_triples(this % spatial_discretization_stencil, is_fixed, r, c, w, kept)
     allocate(v(npts * this % degrees))
     do d = 0, this % degrees - 1
        v = 0.0_dp
@@ -2193,24 +2193,24 @@ contains
             & [variation(this % physics % argument(1), direction)], out)
        call out % real_vector(governing)
        do p = 1, npts
-          if (is_carried(this % at(p) + this % primary + 1)) cycle
+          if (is_fixed(this % at(p) + this % primary + 1)) cycle
           kept    = kept + 1
           r(kept) = this % at(p) + this % primary + 1
           c(kept) = this % at(p) + d + 1
           w(kept) = governing(p)
        end do
     end do
-    do e = 1, size(this % carried)
+    do e = 1, size(this % fixed_rows)
        kept    = kept + 1
-       r(kept) = this % carried(e)
-       c(kept) = this % carried(e)
+       r(kept) = this % fixed_rows(e)
+       c(kept) = this % fixed_rows(e)
        w(kept) = 1.0_dp
     end do
     call combine_triples(n, n, r(1:kept), c(1:kept), w(1:kept), rows, columns, weights)
   end subroutine block_compiled_tangent
-  subroutine stencil_triples(op, is_carried, r, c, w, kept)
+  subroutine stencil_triples(op, is_fixed, r, c, w, kept)
     type(stencil), intent(in)    :: op
-    logical      , intent(in)    :: is_carried(:)
+    logical      , intent(in)    :: is_fixed(:)
     integer      , intent(inout) :: r(:), c(:)
     real(dp)     , intent(inout) :: w(:)
     integer      , intent(inout) :: kept
@@ -2219,7 +2219,7 @@ contains
     call op % weights % real_vector(weights)
     do e = 1, op % pattern % num_edges()
        row = op % pattern % edge_head(e)
-       if (is_carried(row)) cycle
+       if (is_fixed(row)) cycle
        kept    = kept + 1
        r(kept) = row
        c(kept) = op % pattern % edge_tail(e)
@@ -2243,7 +2243,7 @@ contains
        call second_tangent(this, inputs, variations, x, governing)
        allocate(r(this % num_unknowns()), source=0.0_dp)
        call placed(this, governing, r)
-       call carry_held(this, r)
+       call zero_fixed_rows(this, r)
        call placed_output(this, input_graph, r, output)
        return
     end if
@@ -2252,11 +2252,11 @@ contains
        call state_tangent(this, input_graph, inputs, variations, state, x, v, &
             & r, governing)
        call placed(this, governing, r)
-       call carry_direction(this, v, r)
+       call accumulate_direction(this, v, r)
     else if (variations(1) % argument_is(this % argument(2))) then
        call design_tangent(this, inputs, variations, x, r, governing)
        call placed(this, governing, r)
-       call carry_held(this, r)
+       call zero_fixed_rows(this, r)
     else
        error stop 'gti_block: a variation names the state or the design'
     end if
@@ -2343,12 +2343,12 @@ contains
     call half % real_vector(governing)
   end subroutine design_tangent
   !===================================================================!
-  ! THE LABELLING A SWEEP RUNS OVER, and the order to visit it in.
-  ! Space and time are chosen apart: a dimension left coupled puts
-  ! every one of its members in the same piece, and a dimension made
-  ! sequential separates them. Time is visited in the order its own
+  ! THE LABELLING A SWEEP ITERATES OVER, and the order of traversal.
+  ! Space and time are chosen separately: a dimension left coupled places
+  ! every one of its members in the same partition member, and a dimension made
+  ! sequential separates them. Time is traversed in the order its own
   ! discretisation couples the moments, so a member is solved after
-  ! everything it reads.
+  ! every member it reads.
   !===================================================================!
 
   subroutine sweep_labels(this, sequential_space, sequential_time, label, order)
@@ -2431,14 +2431,14 @@ module gti_march
   use operation_weight        , only : scheme_weight
   use operation_scheme_stencil, only : derived_constraints
   use operation_expression       , only : expression
-  use gti_expansion           , only : family_holder, expansion, marches_by_stages
+  use gti_expansion           , only : family_container, expansion, marches_by_stages
   use gti_block               , only : block_residual, coupling_reach
   use view_level              , only : level_member, level_num_members, level_coupling, &
        & level_couples
   use graph_fractal           , only : graph
   use map_value               , only : VALUE_KNOWN
   use gti_sweeps              , only : jacobian_present, multigrid_on, newton_order, &
-       & set_aggregates, coarse_nodes, take_inner, keep_inner, forget_inner, set_linear_stopping
+       & set_aggregates, coarse_nodes, read_inner, store_inner, clear_inner, set_linear_stopping
   use util_tally              , only : tally_record, tangent_loops, adjoint_loops
   implicit none
   type :: imbalance
@@ -2447,15 +2447,15 @@ module gti_march
      real(dp) :: norm      = 0.0_dp
      real(dp) :: began     = 0.0_dp
      real(dp), allocatable :: by_degree(:)
-     integer  :: worst_slot = 0, worst_degree = 0
+     integer  :: largest_slot = 0, largest_degree = 0
      integer  :: steepest_slot = 0, steepest_degree = 0
      real(dp) :: steepest = 0.0_dp
   end type imbalance
-  ! Space and time are chosen apart. A coupled dimension keeps all of
-  ! its members in one system; a sequential one solves them in turn.
+  ! Space and time are configured independently. A coupled dimension
+  ! places all of its members in one system; a sequential one solves them one after another.
   character(len=16), save :: space_coupling = 'coupled'
   character(len=16), save :: time_coupling  = 'sequential'
-  integer, save :: stamps_given = 0
+  integer, save :: versions_given = 0
   real(dp), save :: stopping_tolerance  = 1.0e-12_dp
   integer , save :: stopping_criterion  = relative
   integer , save :: stopping_budget     = by_rate
@@ -2468,7 +2468,7 @@ module gti_march
   public :: consistent_state
   public :: imbalance
   public :: swept, set_space_coupling, set_time_coupling, coupling_named
-  public :: solved_linear, by_tangent, by_adjoint, fresh_stamp
+  public :: solved_linear, by_tangent, by_adjoint, next_version
   public :: weight_of, precision_needed
   public :: horizon_bounds
 contains
@@ -2545,7 +2545,7 @@ contains
     type(stencil)         , intent(in), optional :: spatial_discretization_stencil
     real(dp), allocatable :: q(:)
     type(stored_directed_graph) :: points
-    type(stored_field) :: state, knobs, direction
+    type(stored_field) :: state, design_field, direction
     class(field), allocatable :: out
     real(dp), allocatable :: below(:), r(:), slope(:), weights(:), e(:)
     real(dp) :: began, target
@@ -2575,8 +2575,8 @@ contains
     do i = 1, nodes
        e(i * degrees) = 1.0_dp
     end do
-    knobs = stored_field('design', points % vertex_set(), nodes)
-    call knobs % set_real_vector(spread(design_value, 1, nodes))
+    design_field = stored_field('design', points % vertex_set(), nodes)
+    call design_field % set_real_vector(spread(design_value, 1, nodes))
     direction = stored_field('direction', points % vertex_set(), nodes * degrees)
     call direction % set_real_vector(e)
     began = -1.0_dp
@@ -2584,7 +2584,7 @@ contains
        state = stored_field('state', points % vertex_set(), nodes, &
             & num_components=physics % num_components())
        call state % set_real_vector(q)
-       call physics % apply(points, physics % bind([state, knobs]), out)
+       call physics % apply(points, physics % bind([state, design_field]), out)
        call out % real_vector(r)
        r = r + below
        if (began < 0.0_dp) began = norm2(r)
@@ -2594,14 +2594,14 @@ contains
           target = stopping_tolerance
        end if
        if (norm2(r) <= target) return
-       call physics % partial_action(points, physics % bind([state, knobs]), &
+       call physics % partial_action(points, physics % bind([state, design_field]), &
             & [variation(physics % argument(1), direction)], out)
        call out % real_vector(slope)
        do i = 1, nodes
           q(i * degrees) = q(i * degrees) - r(i) / slope(i)
        end do
     end do
-    write(*,'(a,es12.3)') ' the physics at the initial instant left a residual of ', norm2(r)
+    write(*,'(a,es12.3)') ' the residual of the physics at the initial instant is ', norm2(r)
     error stop 'gti_march: the initial state is consistent with the physics'
   end function consistent_states
   subroutine frozen_inputs(q, design, num_points, unknowns, inputs)
@@ -2616,26 +2616,26 @@ contains
     call inputs(1) % set_real_vector(q)
     call inputs(2) % set_real_vector(spread(design, 1, num_points))
   end subroutine frozen_inputs
-  subroutine set_stopping(tolerance, criterion, budget, iterations)
+  subroutine set_stopping(tolerance, criterion, limit_kind, iterations)
     real(dp), intent(in) :: tolerance
-    integer , intent(in) :: criterion, budget, iterations
+    integer , intent(in) :: criterion, limit_kind, iterations
     if (tolerance <= 0.0_dp) then
        error stop 'gti_march: a tolerance is positive'
     end if
     if (criterion /= relative .and. criterion /= absolute) then
        error stop 'gti_march: a tolerance is measured relative or absolute'
     end if
-    if (budget /= by_count .and. budget /= by_rate) then
-       error stop 'gti_march: a budget is counted or taken from the rate'
+    if (limit_kind /= by_count .and. limit_kind /= by_rate) then
+       error stop 'gti_march: an iteration limit is by count or by rate'
     end if
     if (iterations < 1) then
-       error stop 'gti_march: an iteration budget is positive'
+       error stop 'gti_march: an iteration limit is positive'
     end if
     stopping_tolerance  = tolerance
     stopping_criterion  = criterion
-    stopping_budget     = budget
+    stopping_budget     = limit_kind
     stopping_iterations = iterations
-    call set_linear_stopping(tolerance, criterion, budget)
+    call set_linear_stopping(tolerance, criterion, limit_kind)
   end subroutine set_stopping
   pure integer function unknown(instant, degree, degrees, node, nodes) result(at)
     integer, intent(in)           :: instant, degree, degrees
@@ -2653,12 +2653,12 @@ contains
     g = stored_directed_graph(n * degrees, tails=[integer ::], heads=[integer ::])
   end function unknowns_graph
   !===================================================================!
-  ! WHERE EACH INSTANT OF A BLOCK BEGINS in the block's own state.
-  ! It is settled by the tower's structure alone - how many moments
-  ! each slice carries, and how wide a moment is - so it is known
-  ! before the block is solved, and before it is even built. An
-  ! assembler that must say which values one block hands to another
-  ! asks this, and never has to run anything first.
+  ! THE OFFSET OF EACH INSTANT OF A BLOCK in the block's own state.
+  ! The offset is determined by the tower's structure alone - the
+  ! number of moments in each slice, and the width of a moment - so
+  ! it is computed before the block is solved, and before the block
+  ! is built. An assembler that must state which values one block
+  ! passes to another calls this, and requires no prior evaluation.
   !===================================================================!
 
   function instants_at_of(tower, b, scheme, physics) result(instants_at)
@@ -2691,17 +2691,17 @@ contains
 
   end function instants_at_of
 
-  subroutine block_from(tower, b, scheme, physics, held, rows, instants_at)
+  subroutine block_from(tower, b, scheme, physics, fixed, rows, instants_at)
     type(expansion)       , intent(in), target :: tower
     integer               , intent(in)  :: b
     class(family)         , intent(in)  :: scheme
     type(expression)      , intent(in)  :: physics
-    real(dp)              , intent(in)  :: held(:)
+    real(dp)              , intent(in)  :: fixed(:)
     type(block_residual)  , intent(out) :: rows
     integer, allocatable  , intent(out) :: instants_at(:)
     type(graph), pointer :: horizon, block, slice, moment_node, component, below
     type(coupling_reach), allocatable :: reach(:)
-    integer , allocatable :: slice_of(:), member_of(:), members(:), at(:), carried(:)
+    integer , allocatable :: slice_of(:), member_of(:), members(:), at(:), fixed_rows(:)
     integer , allocatable :: r(:), c(:), table(:,:)
     real(dp), allocatable :: dt(:), w(:), dt_weights(:), spatial_weights(:)
     logical , allocatable :: point(:)
@@ -2709,8 +2709,8 @@ contains
     logical :: staged
     ! nd is the marching coordinate's degree count, which the scheme
     ! reads; stride is the point's whole component count, which the
-    ! layout reads. They part company once a rule names a second
-    ! coordinate, so they are never the same name.
+    ! layout reads. The two differ once a rule names a second
+    ! coordinate, so they are kept as distinct names.
     nd     = physics % equation_degree() + 1
     stride = physics % num_components()
     horizon => level_member(level_member(tower % node(tower % root()), 1), 1)
@@ -2738,7 +2738,7 @@ contains
     end do
     count = moments * width
     below => null()
-    allocate(carried(count), at(moments * m))
+    allocate(fixed_rows(count), at(moments * m))
     ncar = 0
     npts = 0
     do g = 1, moments
@@ -2753,7 +2753,7 @@ contains
              component => level_member(moment_node, d + 1)
              if (tower % status_of(component) == VALUE_KNOWN) then
                 ncar = ncar + 1
-                carried(ncar) = (g - 1) * width + (i - 1) * stride + d + 1
+                fixed_rows(ncar) = (g - 1) * width + (i - 1) * stride + d + 1
              end if
           end do
        end do
@@ -2768,8 +2768,8 @@ contains
           end if
        end if
     end do
-    if (size(held) /= ncar) then
-       error stop 'gti_march: one value per carried component'
+    if (size(fixed) /= ncar) then
+       error stop 'gti_march: one fixed value per known component'
     end if
     if (staged) then
        call stage_reach_of(tower, block, n, s, nd, width, slice_of, &
@@ -2799,7 +2799,7 @@ contains
     end do
     rows = block_residual(derived_constraints(r, c, w, moments * width, 'time discretization stencil'), &
          & physics, at(1:npts), moments * width, nd, scheme % primary_degree(nd - 1), &
-         & carried(1:ncar), held)
+         & fixed_rows(1:ncar), fixed)
     call rows % placed_on(tower, block)
     call rows % with_reach(reach)
     if (associated(below)) then
@@ -2851,7 +2851,7 @@ contains
     type(graph)    , intent(in) :: block
     integer        , intent(in) :: n, s, nd, width, slice_of(:), member_of(:)
     type(coupling_reach), allocatable, intent(out) :: reach(:)
-    integer, allocatable :: table(:,:), carry(:,:), first_moment(:), counted(:), filled(:)
+    integer, allocatable :: table(:,:), accumulate_state(:,:), first_moment(:), counted(:), filled(:)
     integer :: kk, e, tail_moment, head_moment, vertex_tail, vertex_head
     allocate(reach(n - 1), first_moment(n), counted(n), filled(n))
     first_moment(1) = 1
@@ -2863,9 +2863,9 @@ contains
        call tower % tuples_of(level_coupling(level_member(block, kk)), table)
        counted(kk) = size(table, 2)
     end do
-    call tower % tuples_of(level_coupling(block), carry)
-    do e = 1, size(carry, 2)
-       head_moment = (carry(2, e) - 1) / nd + 1
+    call tower % tuples_of(level_coupling(block), accumulate_state)
+    do e = 1, size(accumulate_state, 2)
+       head_moment = (accumulate_state(2, e) - 1) / nd + 1
        kk          = slice_of(head_moment)
        counted(kk) = counted(kk) + 1
     end do
@@ -2889,13 +2889,13 @@ contains
                & (first_moment(kk) + vertex_head - 2 - 1) * width)
        end do
     end do
-    do e = 1, size(carry, 2)
-       tail_moment = (carry(1, e) - 1) / nd + 1
-       head_moment = (carry(2, e) - 1) / nd + 1
+    do e = 1, size(accumulate_state, 2)
+       tail_moment = (accumulate_state(1, e) - 1) / nd + 1
+       head_moment = (accumulate_state(2, e) - 1) / nd + 1
        kk          = slice_of(head_moment)
        filled(kk)  = filled(kk) + 1
        call put(reach(kk - 1), filled(kk), 1, member_of(head_moment) + 1, &
-            & mod(carry(1, e) - 1, nd), mod(carry(2, e) - 1, nd), &
+            & mod(accumulate_state(1, e) - 1, nd), mod(accumulate_state(2, e) - 1, nd), &
             & (tail_moment - 1) * width, (head_moment - 1) * width)
     end do
     if (any(filled /= counted)) then
@@ -2914,12 +2914,12 @@ contains
       one % row(e)           = row_base + determines + 1
     end subroutine put
   end subroutine stage_reach_of
-  subroutine solved(rows, design_value, q, achieved, left, seed)
+  subroutine solved(rows, design_value, q, achieved, final_imbalance, seed)
     type(block_residual), intent(in)  :: rows
     real(dp)            , intent(in)  :: design_value
     real(dp), allocatable, intent(out) :: q(:)
     real(dp)            , intent(out) :: achieved
-    type(imbalance), intent(out), optional :: left
+    type(imbalance), intent(out), optional :: final_imbalance
     real(dp)       , intent(in) , optional :: seed(:)
     type(newton) :: solver
     type(stored_directed_graph) :: unknowns
@@ -2931,9 +2931,9 @@ contains
     call design % set_real_vector(spread(design_value, 1, rows % num_points()))
     width = rows % num_degrees()
     if (multigrid_on()) call set_aggregates(rows % aggregates(coarse_nodes(rows % num_nodes())))
-    call take_inner(solver % inner, count, width)
+    call read_inner(solver % inner, count, width)
     call solver % attach(rows, unknowns, unknowns % vertex_set(), count, &
-         & held_inputs = [design])
+         & stored_inputs = [design])
     if (present(seed)) then
        q = seed
     else
@@ -2944,21 +2944,21 @@ contains
     solver % max_iterations = stopping_iterations
     solver % tolerance      = stopping_tolerance
     solver % criterion      = stopping_criterion
-    solver % budget         = stopping_budget
+    solver % limit_kind         = stopping_budget
     call solver % solve(spread(0.0_dp, 1, count), q, achieved)
-    call keep_inner(solver % inner)
-    if (present(left)) then
-       left % converged = solver % converged(achieved)
-       left % diverging = solver % diverging(achieved)
-       left % norm      = achieved
-       left % began     = solver % began()
-       if (.not. left % converged) call by_aspect(rows, unknowns, q, design, left)
+    call store_inner(solver % inner)
+    if (present(final_imbalance)) then
+       final_imbalance % converged = solver % converged(achieved)
+       final_imbalance % diverging = solver % diverging(achieved)
+       final_imbalance % norm      = achieved
+       final_imbalance % began     = solver % began()
+       if (.not. final_imbalance % converged) call by_aspect(rows, unknowns, q, design, final_imbalance)
     end if
   end subroutine solved
-  integer function fresh_stamp() result(mark)
-    stamps_given = stamps_given + 1
-    mark = stamps_given
-  end function fresh_stamp
+  integer function next_version() result(mark)
+    versions_given = versions_given + 1
+    mark = versions_given
+  end function next_version
   subroutine solved_linear(rows, unknowns, inputs, rhs, transposed, mark, w)
     type(block_residual)       , intent(in)  :: rows
     class(directed_graph)      , intent(in)  :: unknowns
@@ -3013,74 +3013,74 @@ contains
     character(len=:), allocatable :: name
     name = 'space ' // trim(space_coupling) // ', time ' // trim(time_coupling)
   end function coupling_named
-  subroutine swept(rows, design_value, q, achieved, left)
+  subroutine swept(rows, design_value, q, achieved, final_imbalance)
     type(block_residual), intent(in)  :: rows
     real(dp)            , intent(in)  :: design_value
     real(dp), allocatable, intent(out) :: q(:)
     real(dp)            , intent(out) :: achieved
-    type(imbalance), intent(out), optional :: left
+    type(imbalance), intent(out), optional :: final_imbalance
     type(block_residual) :: sub
-    type(newton) :: judge
+    type(newton) :: newton_solver
     type(stored_directed_graph) :: unknowns
     type(stored_field) :: design
     integer , allocatable :: member(:), order(:), label(:)
     real(dp), allocatable :: piece(:)
-    logical , allocatable :: is_carried(:)
+    logical , allocatable :: is_fixed(:)
     real(dp) :: sub_achieved, before
     integer :: count, npts, members, m, mm, pass, k
     logical :: sequential_space, sequential_time
     sequential_space = trim(space_coupling) == 'sequential'
     sequential_time  = trim(time_coupling)  == 'sequential'
     if (.not. sequential_space .and. .not. sequential_time) then
-       call solved(rows, design_value, q, achieved, left)
+       call solved(rows, design_value, q, achieved, final_imbalance)
        return
     end if
     count   = rows % num_unknowns()
     npts    = rows % num_points()
     call rows % sweep_labels(sequential_space, sequential_time, label, order)
     members = maxval(label)
-    allocate(is_carried(count), source=.false.)
-    is_carried(rows % carried_unknowns()) = .true.
+    allocate(is_fixed(count), source=.false.)
+    is_fixed(rows % fixed_unknowns()) = .true.
     q = at_first_instant(rows, count)
-    q(rows % carried_unknowns()) = rows % held_values()
+    q(rows % fixed_unknowns()) = rows % fixed_values()
     unknowns = stored_directed_graph(count, tails=[integer ::], heads=[integer ::])
     design   = stored_field('nu', unknowns % vertex_set(), npts)
     call design % set_real_vector(spread(design_value, 1, npts))
-    judge % max_iterations = stopping_iterations
-    judge % tolerance      = stopping_tolerance
-    judge % criterion      = stopping_criterion
-    judge % budget         = stopping_budget
-    call judge % begin_imbalance()
+    newton_solver % max_iterations = stopping_iterations
+    newton_solver % tolerance      = stopping_tolerance
+    newton_solver % criterion      = stopping_criterion
+    newton_solver % limit_kind         = stopping_budget
+    call newton_solver % begin_imbalance()
     achieved = whole_residual(rows, unknowns, design, q)
-    call judge % note_imbalance(achieved)
+    call newton_solver % note_imbalance(achieved)
     do pass = 1, stopping_iterations
        before = achieved
        do mm = 1, members
           m = order(mm)
           member = pack([(k, k = 1, count)], label == m)
-          if (all(is_carried(member))) cycle
+          if (all(is_fixed(member))) cycle
           if (pass == 1 .and. sequential_time .and. mm > 1) then
              call continued(q, member, pack([(k, k = 1, count)], label == order(mm - 1)))
           end if
           sub = rows % restricted(member, q)
-          if (rows % stamp() /= 0) then
-             call sub % stamped(abs(rows % stamp()) * members + m, rows % stamp_transposed())
+          if (rows % version() /= 0) then
+             call sub % versioned(abs(rows % version()) * members + m, rows % version_transposed())
           end if
           call solved(sub, design_value, piece, sub_achieved, seed=q(member))
           q(member) = piece
        end do
        achieved = whole_residual(rows, unknowns, design, q)
-       call judge % note_imbalance(achieved)
-       if (judge % converged(achieved)) exit
-       if (judge % exhausted(pass)) exit
+       call newton_solver % note_imbalance(achieved)
+       if (newton_solver % converged(achieved)) exit
+       if (newton_solver % exhausted(pass)) exit
        if (achieved == before) exit
     end do
-    if (present(left)) then
-       left % converged = judge % converged(achieved)
-       left % diverging = judge % diverging(achieved)
-       left % norm      = achieved
-       left % began     = judge % began()
-       if (.not. left % converged) call by_aspect(rows, unknowns, q, design, left)
+    if (present(final_imbalance)) then
+       final_imbalance % converged = newton_solver % converged(achieved)
+       final_imbalance % diverging = newton_solver % diverging(achieved)
+       final_imbalance % norm      = achieved
+       final_imbalance % began     = newton_solver % began()
+       if (.not. final_imbalance % converged) call by_aspect(rows, unknowns, q, design, final_imbalance)
     end if
   end subroutine swept
   real(dp) function whole_residual(rows, unknowns, design, q) result(norm)
@@ -3116,12 +3116,12 @@ contains
        error stop 'gti_march: a member is seeded from one of its extent, a multiple of it, or a divisor'
     end if
   end subroutine continued
-  subroutine by_aspect(rows, unknowns, q, design, left)
+  subroutine by_aspect(rows, unknowns, q, design, final_imbalance)
     type(block_residual)       , intent(in)    :: rows
     type(stored_directed_graph), intent(in)    :: unknowns
     real(dp)                   , intent(in)    :: q(:)
     type(stored_field)         , intent(in)    :: design
-    type(imbalance)            , intent(inout) :: left
+    type(imbalance)            , intent(inout) :: final_imbalance
     type(stored_field) :: state
     class(field), allocatable :: out
     real(dp), allocatable :: r(:), a(:,:), slope(:)
@@ -3132,22 +3132,22 @@ contains
     call state % set_real_vector(q)
     call rows % apply(unknowns, rows % bind([state, design]), out)
     call out % real_vector(r)
-    allocate(left % by_degree(0:nd - 1), source=0.0_dp)
+    allocate(final_imbalance % by_degree(0:nd - 1), source=0.0_dp)
     do i = 1, n
        d = mod(i - 1, nd)
-       left % by_degree(d) = left % by_degree(d) + r(i) ** 2
+       final_imbalance % by_degree(d) = final_imbalance % by_degree(d) + r(i) ** 2
     end do
-    left % by_degree = sqrt(left % by_degree)
+    final_imbalance % by_degree = sqrt(final_imbalance % by_degree)
     i = maxloc(abs(r), dim=1)
-    left % worst_slot   = (i - 1) / nd + 1
-    left % worst_degree = mod(i - 1, nd)
-    if (left % norm <= 0.0_dp) return
+    final_imbalance % largest_slot   = (i - 1) / nd + 1
+    final_imbalance % largest_degree = mod(i - 1, nd)
+    if (final_imbalance % norm <= 0.0_dp) return
     call jacobian_of(rows, unknowns, [state, design], n, unknowns % vertex_set(), a)
-    slope = matmul(r, a) / left % norm
+    slope = matmul(r, a) / final_imbalance % norm
     i = maxloc(abs(slope), dim=1)
-    left % steepest_slot   = (i - 1) / nd + 1
-    left % steepest_degree = mod(i - 1, nd)
-    left % steepest        = slope(i)
+    final_imbalance % steepest_slot   = (i - 1) / nd + 1
+    final_imbalance % steepest_degree = mod(i - 1, nd)
+    final_imbalance % steepest        = slope(i)
   end subroutine by_aspect
   function at_first_instant(rows, count) result(q)
     type(block_residual), intent(in) :: rows
@@ -3156,7 +3156,7 @@ contains
     real(dp), allocatable :: one(:)
     integer , allocatable :: at(:)
     integer :: p, nd
-    one = rows % first_held()
+    one = rows % first_fixed()
     nd  = size(one)
     at  = rows % points_at()
     allocate(q(count), source=0.0_dp)
@@ -3165,7 +3165,7 @@ contains
     end do
   end function at_first_instant
   subroutine horizon_bounds(schemes, added, equation_degree, first, last)
-    type(family_holder), intent(in) :: schemes(:)
+    type(family_container), intent(in) :: schemes(:)
     integer            , intent(in) :: added(:), equation_degree
     integer, allocatable, intent(out) :: first(:), last(:)
     integer :: b
@@ -3181,11 +3181,20 @@ contains
           first(b) = last(b - 1) - schemes(b) % scheme % history_depth(equation_degree) + 1
           last(b)  = last(b - 1) + added(b)
        end if
-       if (added(b) <= schemes(b) % scheme % history_depth(equation_degree)) then
+       ! A single-instant block is accepted where the family reaches
+       ! back one instant: a first-order-history or multistage family.
+       ! The horizon then advances one step per block at the family's
+       ! own order. A deeper family still adds more instants than it
+       ! reaches back over, so its given instants are in one block.
+       if (added(b) < 1) then
+          error stop 'gti_march: a block adds an instant at least'
+       end if
+       if ((b == 1 .or. schemes(b) % scheme % history_depth(equation_degree) > 1) .and. &
+            & added(b) <= schemes(b) % scheme % history_depth(equation_degree)) then
           error stop 'gti_march: a block adds more instants than its family reaches'
        end if
        if (first(b) < 1) then
-          error stop 'gti_march: the horizon holds every instant its blocks reach back over'
+          error stop 'gti_march: the horizon contains every instant its blocks reach back over'
        end if
     end do
   end subroutine horizon_bounds
@@ -3196,7 +3205,7 @@ module gti_adaptive
   use operation_grid   , only : uniform_grid
   use operation_expression, only : expression
   use gti_block        , only : block_residual
-  use gti_expansion    , only : expansion, family_holder
+  use gti_expansion    , only : expansion, family_container
   use gti_march        , only : consistent_state, block_from, solved
   implicit none
   private
@@ -3209,14 +3218,14 @@ contains
     real(dp)        , intent(in)  :: state(:), h, design
     real(dp), allocatable, intent(out) :: arrived(:)
     type(expansion)      :: tower
-    type(family_holder)  :: holder(1)
+    type(family_container)  :: owner(1)
     type(block_residual) :: rows
     integer, allocatable :: at(:)
     real(dp), allocatable :: q(:)
     real(dp) :: achieved
     integer  :: last
-    allocate(holder(1) % scheme, source=scheme)
-    call tower % build(physics, holder, [n], uniform_grid(h), 0, design)
+    allocate(owner(1) % scheme, source=scheme)
+    call tower % build(physics, owner, [n], uniform_grid(h), 0, design)
     call block_from(tower, 1, scheme, physics, state, rows, at)
     call solved(rows, design, q, achieved)
     last    = at(size(at))
@@ -3238,7 +3247,7 @@ contains
     logical         , intent(in)  :: relative
     integer         , intent(out), optional :: rejects
     real(dp), allocatable :: dt(:)
-    real(dp), parameter :: safety = 0.9_dp, grow = 5.0_dp, shrink = 0.2_dp
+    real(dp), parameter :: safety = 0.9_dp, growth = 5.0_dp, shrinkage = 0.2_dp
     real(dp), allocatable :: state(:), coarse(:), fine(:)
     real(dp) :: t, h, e, factor
     integer  :: attempt, rejected
@@ -3262,12 +3271,12 @@ contains
           call stepped(scheme, physics, degrees, state, h, 3, design, fine)
           e      = estimate(coarse, fine, degrees, relative)
           factor = safety * (tolerance / max(e, tiny(1.0_dp))) ** (1.0_dp / real(p + 1, dp))
-          factor = min(grow, max(shrink, factor))
+          factor = min(growth, max(shrinkage, factor))
           if (e <= tolerance .or. h <= duration * 1.0e-10_dp) exit
           rejected = rejected + 1
           h = h * factor
           if (attempt > 50) then
-             error stop 'gti_adaptive: a step stays above the tolerance past fifty attempts'
+             error stop 'gti_adaptive: a step remains above the tolerance after fifty attempts'
           end if
        end do
        dt    = [dt, h]
@@ -3295,12 +3304,12 @@ module gti_space
   use gti_configuration         , only : chosen_from
   implicit none
   private
-  public :: room, spatial_mesh, spatial_operator, written_paraview, coarse_cells
+  public :: spatial_domain, spatial_mesh, spatial_operator, written_paraview, coarse_cells
   public :: cartesian, circular, elliptical, geometry_of
   integer, parameter :: cartesian  = 1
   integer, parameter :: circular   = 2
   integer, parameter :: elliptical = 3
-  type :: room
+  type :: spatial_domain
      integer :: geometry  = cartesian
      integer :: num_cells = 0
      integer :: num_faces = 0
@@ -3312,7 +3321,7 @@ module gti_space
      real(dp), allocatable :: volume(:)
      integer , allocatable :: cell_ij(:,:)
      integer :: n1 = 0, n2 = 0
-  end type room
+  end type spatial_domain
   type :: face_record
      integer :: tail = 0, head = 0, corner_a = 0, corner_b = 0
   end type face_record
@@ -3341,7 +3350,7 @@ contains
     integer , intent(in) :: geometry, n1, n2, seed
     real(dp), intent(in) :: a, b
     logical , intent(in) :: drawn
-    type(room) :: this
+    type(spatial_domain) :: this
     real(dp), allocatable :: xi(:), eta(:), dxi(:), deta(:)
     type(face_record), allocatable :: faces(:)
     integer :: i, j, c, f, polar, cells, ring
@@ -3450,7 +3459,7 @@ contains
     end if
   end function cell_index
   subroutine quad(this, c, i, j, n2)
-    type(room), intent(inout) :: this
+    type(spatial_domain), intent(inout) :: this
     integer   , intent(in)    :: c, i, j, n2
     integer :: at, polar
     polar = merge(1, 0, this % geometry /= cartesian)
@@ -3469,7 +3478,7 @@ contains
     faces(f) = face_record(tail, head, corner_a, corner_b)
   end subroutine face_between
   subroutine measured(this, faces)
-    type(room)       , intent(inout) :: this
+    type(spatial_domain)       , intent(inout) :: this
     type(face_record), intent(in)    :: faces(:)
     integer , allocatable :: cell_vertices(:,:), num_cell_vertices(:)
     integer , allocatable :: face_vertices(:,:), num_face_vertices(:), face_cells(:,:), num_face_cells(:)
@@ -3487,7 +3496,7 @@ contains
        num_face_vertices(f) = 2
        face_cells(:, f)     = [faces(f) % tail, faces(f) % head]
        num_face_cells(f)    = merge(2, 1, faces(f) % head > 0)
-       tags(f)              = merge('    ', 'wall', faces(f) % head > 0)
+       tags(f)              = merge('    ', 'edge', faces(f) % head > 0)
     end do
     this % m = mesh_from_incidence(2, this % corner, cell_vertices, num_cell_vertices, &
          & face_vertices, num_face_vertices, face_cells, num_face_cells, tags)
@@ -3498,19 +3507,19 @@ contains
     call measure % real_vector(this % volume)
   end subroutine measured
   function spatial_operator(this, kappa, degree) result(op)
-    type(room), intent(in) :: this
+    type(spatial_domain), intent(in) :: this
     real(dp)  , intent(in) :: kappa
     integer   , intent(in) :: degree
     type(stencil) :: op
-    type(robin_condition) :: wall(1)
+    type(robin_condition) :: boundary_condition(1)
     if (degree < 1) then
        error stop 'gti_space: a form of degree below one fits no gradient'
     end if
-    wall(1) = neumann('wall', 0.0_dp)
-    op = diffusion_stencil(this % m, conduction(kappa), wall, polynomial_form(degree, this % m % dimension))
+    boundary_condition(1) = neumann('edge', 0.0_dp)
+    op = diffusion_stencil(this % m, conduction(kappa), boundary_condition, polynomial_form(degree, this % m % dimension))
   end function spatial_operator
   function coarse_cells(this) result(aggregate)
-    type(room), intent(in) :: this
+    type(spatial_domain), intent(in) :: this
     integer, allocatable :: aggregate(:)
     integer :: c, i, j, n2c, polar
     polar = merge(1, 0, this % geometry /= cartesian)
@@ -3527,7 +3536,7 @@ contains
     end do
   end function coarse_cells
   subroutine written_paraview(this, path, names, values)
-    type(room)      , intent(in) :: this
+    type(spatial_domain)      , intent(in) :: this
     character(len=*), intent(in) :: path, names(:)
     real(dp)        , intent(in) :: values(:,:)
     type(paraview_writer) :: writer
@@ -3546,34 +3555,34 @@ module gti_field
   use field_calculus   , only : field
   use field_stored     , only : stored_field
   use operation_expression, only : expression
-  use gti_configuration, only : worded
+  use gti_configuration, only : words_of
   use gti_march        , only : consistent_states
-  use gti_space        , only : room, spatial_operator, cartesian, written_paraview
+  use gti_space        , only : spatial_domain, spatial_operator, cartesian, written_paraview
   implicit none
   private
   public :: spatial_discretization_stencil_of, initial_field
   public :: against_the_laplacian, against_the_mode, export_instant
 contains
   function spatial_discretization_stencil_of(space, kappa, degree) result(op)
-    type(room), intent(in) :: space
+    type(spatial_domain), intent(in) :: space
     real(dp)  , intent(in) :: kappa
     integer   , intent(in) :: degree
     type(stencil) :: op
     type(stencil) :: balance
     integer , allocatable :: r(:), c(:)
-    real(dp), allocatable :: lw(:), w(:), held(:)
+    real(dp), allocatable :: lw(:), w(:), fixed(:)
     integer :: e, m
     balance = spatial_operator(space, kappa, degree)
     m       = balance % pattern % num_edges()
     call balance % weights % real_vector(lw)
-    call balance % constants % real_vector(held)
+    call balance % constants % real_vector(fixed)
     allocate(r(m), c(m), w(m))
     do e = 1, m
        r(e) = balance % pattern % edge_head(e)
        c(e) = balance % pattern % edge_tail(e)
        w(e) = -lw(e) / space % volume(r(e))
     end do
-    op = stencil(r, c, w, held, 'spatial discretization stencil')
+    op = stencil(r, c, w, fixed, 'spatial discretization stencil')
   end function spatial_discretization_stencil_of
   function initial_field(physics, degrees, kind, initial_state, design, spatial_discretization_stencil, space, a, b) &
        & result(q)
@@ -3582,7 +3591,7 @@ contains
     character(len=*)      , intent(in)           :: kind, initial_state
     real(dp)              , intent(in)           :: design
     type(stencil)         , intent(in), optional :: spatial_discretization_stencil
-    type(room)            , intent(in), optional :: space
+    type(spatial_domain)            , intent(in), optional :: space
     real(dp)              , intent(in), optional :: a, b
     real(dp), allocatable :: q(:)
     character(len=32), allocatable :: given(:)
@@ -3593,10 +3602,10 @@ contains
     allocate(lower(degrees - 1, nodes), source=0.0_dp)
     select case (trim(kind))
     case ('constant')
-       given = worded(initial_state)
+       given = words_of(initial_state)
        if (size(given) > degrees - 1) then
-          write(*,'(a,i0,a)') ' the initial state holds the ', degrees - 1, &
-               & ' components below the highest, which the physics gives.'
+          write(*,'(a,i0,a)') ' the initial state contains the ', degrees - 1, &
+               & ' components below the highest; the physics determines the highest.'
           error stop 'gti_field: the initial state is given below the highest derivative'
        end if
        do d = 1, size(given)
@@ -3607,7 +3616,7 @@ contains
        end do
     case ('mode')
        if (.not. present(space)) error stop 'gti_field: the mode is a field over a mesh'
-       if (space % geometry /= cartesian) error stop 'gti_field: the mode is the rectangle''s'
+       if (space % geometry /= cartesian) error stop 'gti_field: the mode is defined on the rectangle'
        lower(1, :) = mode_shape(space, a, b)
     case ('bump')
        if (.not. present(space)) error stop 'gti_field: the bump is a field over a mesh'
@@ -3618,7 +3627,7 @@ contains
     q = consistent_states(physics, degrees, lower, design, spatial_discretization_stencil)
   end function initial_field
   pure function mode_shape(space, a, b) result(shape)
-    type(room), intent(in) :: space
+    type(spatial_domain), intent(in) :: space
     real(dp)  , intent(in) :: a, b
     real(dp), allocatable :: shape(:)
     real(dp) :: pi
@@ -3628,7 +3637,7 @@ contains
          &    i = 1, space % num_cells)]
   end function mode_shape
   subroutine balance_of(space, kappa, degree, values, balanced)
-    type(room), intent(in) :: space
+    type(spatial_domain), intent(in) :: space
     real(dp)  , intent(in) :: kappa, values(:)
     integer   , intent(in) :: degree
     real(dp), allocatable, intent(out) :: balanced(:)
@@ -3642,14 +3651,14 @@ contains
     call out % real_vector(balanced)
   end subroutine balance_of
   subroutine against_the_laplacian(space, a, b, kappa, degree)
-    type(room), intent(in) :: space
+    type(spatial_domain), intent(in) :: space
     real(dp)  , intent(in) :: a, b, kappa
     integer   , intent(in) :: degree
     real(dp), allocatable :: shape(:), balanced(:), exact(:)
     real(dp) :: pi, err(0:2), norm(0:2)
-    integer  :: i, walls, count(0:2)
+    integer  :: i, boundary_count, count(0:2)
     if (space % geometry /= cartesian) then
-       error stop 'gti_field: the laplacian check is the rectangle''s'
+       error stop 'gti_field: the laplacian check is defined on the rectangle'
     end if
     pi    = acos(-1.0_dp)
     shape = mode_shape(space, a, b)
@@ -3659,22 +3668,22 @@ contains
     norm  = 0.0_dp
     count = 0
     do i = 1, space % num_cells
-       walls = 0
-       if (space % cell_ij(1, i) == 1 .or. space % cell_ij(1, i) == space % n2) walls = walls + 1
-       if (space % cell_ij(2, i) == 1 .or. space % cell_ij(2, i) == space % n1) walls = walls + 1
-       err(walls)   = err(walls)   + (balanced(i) / space % volume(i) - exact(i)) ** 2
-       norm(walls)  = norm(walls)  + exact(i) ** 2
-       count(walls) = count(walls) + 1
+       boundary_count = 0
+       if (space % cell_ij(1, i) == 1 .or. space % cell_ij(1, i) == space % n2) boundary_count = boundary_count + 1
+       if (space % cell_ij(2, i) == 1 .or. space % cell_ij(2, i) == space % n1) boundary_count = boundary_count + 1
+       err(boundary_count)   = err(boundary_count)   + (balanced(i) / space % volume(i) - exact(i)) ** 2
+       norm(boundary_count)  = norm(boundary_count)  + exact(i) ** 2
+       count(boundary_count) = count(boundary_count) + 1
     end do
-    write(*,'(a,i0,a,i0,a)') '   the operator against kappa laplacian of the mode, ', &
+    write(*,'(a,i0,a,i0,a)') '   the operator compared with kappa times the laplacian of the mode, ', &
          & space % num_cells, ' cells, form degree ', degree, ':'
     write(*,'(a,3(a,es10.3))') '   relative rms error', &
          & '   interior ', sqrt(err(0) / max(norm(0), tiny(1.0_dp))), &
-         & '   one wall ', sqrt(err(1) / max(norm(1), tiny(1.0_dp))), &
+         & '   one boundary ', sqrt(err(1) / max(norm(1), tiny(1.0_dp))), &
          & '   corner ',   sqrt(err(2) / max(norm(2), tiny(1.0_dp)))
   end subroutine against_the_laplacian
   subroutine against_the_mode(space, a, b, kappa, degree, design, t_last, x, degrees)
-    type(room), intent(in) :: space
+    type(spatial_domain), intent(in) :: space
     real(dp)  , intent(in) :: a, b, kappa, design, t_last, x(:)
     integer   , intent(in) :: degree, degrees
     real(dp) :: pi, omega, omega_h, exact, semi, e_exact, e_semi, area, mode
@@ -3698,14 +3707,14 @@ contains
        e_semi  = e_semi  + space % volume(i) * (x((i - 1) * degrees + 1) - semi) ** 2
     end do
     write(*,'(a,es12.3,a,es12.3,a,f10.6,a,f10.6)') &
-         & '      error at the last instant, against the mode ', sqrt(e_exact / area), &
+         & '      error at the last instant, compared with the mode ', sqrt(e_exact / area), &
          & '   semi-discrete ', sqrt(e_semi / area), '   omega ', omega, '   omega_h ', omega_h
   end subroutine against_the_mode
   !===================================================================!
-  ! The name a derivative of the state carries: the state itself is q,
+  ! The name of a derivative of the state: the state itself is q,
   ! and each order appends the letter of the coordinate it is taken
-  ! along, so a time derivative reads qt, qtt and a spatial one qx,
-  ! qxx. The order is legible in the name rather than counted from it.
+  ! along, so a time derivative is named qt, qtt and a spatial one qx,
+  ! qxx. The order is read from the name rather than counted from it.
   !===================================================================!
   pure function derivative_named(along, order) result(name)
     character(len=*), intent(in) :: along
@@ -3715,7 +3724,7 @@ contains
     if (order > 0) name = name // repeat(along, order)
   end function derivative_named
   subroutine export_instant(space, path, degrees, x)
-    type(room)      , intent(in) :: space
+    type(spatial_domain)      , intent(in) :: space
     character(len=*), intent(in) :: path
     integer         , intent(in) :: degrees
     real(dp)        , intent(in) :: x(:)
@@ -3739,14 +3748,15 @@ module gti_chain
   use operation_family , only : family
   use operation_grid   , only : grid, partitioned, designed_grid
   use operation_expression, only : expression
-  use gti_expansion    , only : family_holder, marches_by_stages, expansion, &
+  use gti_expansion    , only : family_container, marches_by_stages, expansion, &
        & design_of_physics, design_of_steps
   use gti_block        , only : block_residual
-  use gti_march        , only : imbalance, swept, solved_linear, fresh_stamp, horizon_bounds, &
+  use gti_march        , only : imbalance, swept, solved_linear, next_version, horizon_bounds, &
        & frozen_inputs
   use gti_march        , only : block_from, consistent_state
   use gti_sweeps       , only : choose
-  use util_derivative_terms, only : derivative_terms, coefficient, operator(*)
+  use util_derivative_terms, only : derivative_terms, coefficient, mixed_partial, leibniz_parts, &
+       & operator(+), operator(-), operator(*)
   use operation_stencil, only : stencil
   use operation_family_dirk, only : crouzeix_three_stage
   use view_directed_stored, only : stored_directed_graph
@@ -3759,7 +3769,7 @@ module gti_chain
   use view_directed    , only : directed_graph
   use field_stored     , only : stored_field
   use field_stored     , only : stored_field
-  use gti_sweeps       , only : route_of, route_substitutions, forward_route, reverse_route
+  use gti_sweeps       , only : pass_of, pass_substitutions, forward_pass, reverse_pass
   use util_tally            , only : tally_order, tally_enter, tally_leave
   use gti_configuration     , only : at_horizon, at_block, at_stage
   implicit none
@@ -3767,7 +3777,7 @@ module gti_chain
   public :: chain_block, march_chain, chain_expansion, instant_components
   public :: first_of, chain_derivative, asymmetry
   public :: multiset_count, multiset_rank, multiset_of, num_designs_of
-  public :: chain_stamps
+  public :: chain_versions
   public :: expansion_substitutions
   public :: sink_costates
   public :: goal_oriented_partition
@@ -3792,39 +3802,71 @@ module gti_chain
      real(dp) :: began = 0.0_dp
   end type chain_block
   type :: sink_costates
-     integer , allocatable :: carried(:), last(:), interior(:)
+     integer , allocatable :: fixed_rows(:), last(:), interior(:)
      real(dp) :: departure = 0.0_dp
      real(dp) :: gradient  = 0.0_dp
      real(dp) :: costate   = 0.0_dp
      real(dp) :: unread    = 0.0_dp
   end type sink_costates
   !===================================================================!
+  ! THE TANGENT TOWER OF ONE BLOCK: the derivatives of its state along
+  ! every multiset of designs, of every order, w(unknown, multiset,
+  ! order). Stored per block, so that a block's tower can be deallocated
+  ! once the last block reading it has been solved.
+  !===================================================================!
+  type :: tangent_tower
+     real(dp), allocatable :: w(:,:,:)
+  end type tangent_tower
+  !===================================================================!
+  ! WHAT THE PIPELINED MARCH SHARES ACROSS ITS BLOCKS: the physics and
+  ! the functionals, the derivative order, the towers with their last
+  ! readers, the accumulated tables, and the storage counters. One
+  ! design, the physics' parameter; a designed grid is rejected.
+  !===================================================================!
+  type :: taylor_context
+     integer  :: order = 0, nf = 0, degrees = 0
+     real(dp) :: design = 0.0_dp
+     type(expression)              :: physics
+     type(expression), allocatable :: functionals(:)
+     real(dp)        , allocatable :: u(:,:,:)
+     type(tangent_tower), allocatable :: w(:)
+     integer , allocatable :: last_reader(:), marks(:)
+     real(dp), allocatable :: f(:,:)
+     integer :: tower_live = 0, tower_high = 0, tower_total = 0
+     integer :: state_live = 0, state_high = 0, state_total = 0
+  end type taylor_context
+  !===================================================================!
   ! ONE BLOCK OF THE CHAIN, AS A RULE. A vertex of the operation
-  ! graph carries an operation, and solving a block was a subroutine
-  ! with twenty arguments, so here it becomes one.
+  ! graph stores an operation, and solving a block was a subroutine
+  ! with twenty arguments, so here that subroutine becomes a rule.
   !
-  ! EVERYTHING IT HOLDS IS THE ENTANGLEMENT, VISIBLE. A rule that
-  ! carried no data would hold the scheme and the physics and nothing
-  ! else; this one holds the chain it writes into, the tower it reads
-  ! and the steps it marches over, because today those live inside
-  ! the rule rather than beside it. The cut that separates them runs
-  ! through this type, and it is written this way so the cut has
-  ! somewhere to start.
+  ! EVERY COMPONENT OF THIS TYPE IS A DEPENDENCY, MADE EXPLICIT. A
+  ! rule without data would store the scheme and the physics and
+  ! nothing else; this one stores the chain it writes into, the tower
+  ! it reads and the steps it marches over, because at present those
+  ! are stored inside the rule rather than beside it. The separation
+  ! of data from rule passes through this type, and the type is
+  ! written this way so that the separation has a defined start.
   !
   !      (block 1) --> (block 2) --> (block 3)      the arcs
   !         |             |             |
-  !       [state]       [state]       [state]       what each leaves
+  !       [state]       [state]       [state]       the output of each
   !===================================================================!
 
-  ! which part of the bipartite digraph is which, for this caller
+  ! THE PIPELINED MARCH'S CONTEXT, stored by the module for the one
+  ! march in progress: a rule is copied through the driver, so the rule
+  ! stores a flag and never a pointer.
+  type(taylor_context), allocatable :: pipelined
+
+  ! the two parts of the bipartite digraph, named for this caller
   integer, parameter :: BLOCKS = FIRST_PART
   integer, parameter :: STATES = SECOND_PART
 
   !===================================================================!
-  ! ONE BLOCK'S STATE, AS A DATUM THAT DESCRIBES ITSELF. The values a
-  ! block solved for, and the layout needed to read an instant back
-  ! out of them: which instants the block covers, and where each one
-  ! begins inside the values.
+  ! ONE BLOCK'S STATE, AS A DATUM THAT STORES ITS OWN LAYOUT. The
+  ! values a block solved for, and the layout needed to read an instant
+  ! from them: which instants the block covers, and the offset at which
+  ! each one begins inside the values.
   !
   !     first        first+stride      first+2*stride     instants
   !     |            |                 |
@@ -3832,9 +3874,9 @@ module gti_chain
   !     ^          ^          ^
   !     instants_at(1)        instants_at(3)
   !
-  ! A reader asks for an instant, not for an offset.  So no offset is
-  ! settled before the march, and a block hands its state to whoever
-  ! reads next without either of them agreeing a layout beforehand.
+  ! A reader requests an instant, not an offset.  So no offset is
+  ! fixed before the march, and a block passes its state to the next
+  ! reader without a layout agreed between the two beforehand.
   !===================================================================!
 
   type, extends(stored_field) :: block_state
@@ -3846,14 +3888,14 @@ module gti_chain
      ! the instants covered, as the chain numbers them
      integer :: first = 0, last = 0, stride = 1
 
-     ! where each covered instant begins inside the values
+     ! the offset at which each covered instant begins inside the values
      integer, allocatable :: instants_at(:)
 
    contains
 
-     procedure :: holds                    ! whether an instant is covered
+     procedure :: covers                    ! whether an instant is covered
      procedure :: values_at                ! the values at one instant
-     procedure :: place_in => block_state_place_in
+     procedure :: assign_in => block_state_assign_in
 
   end type block_state
 
@@ -3874,9 +3916,12 @@ module gti_chain
      logical  :: counted = .true.
      logical  :: over_nodes = .false.
 
-     ! what the solve reported, read back after the graph is evaluated
+     ! the pipelined derivative, when one is requested of the march
+     logical :: taylor = .false.
+
+     ! the result the solve recorded, read after the graph is evaluated
      real(dp)        :: achieved = 0.0_dp
-     type(imbalance) :: left
+     type(imbalance) :: final_imbalance
 
    contains
 
@@ -3886,17 +3931,17 @@ module gti_chain
   end type block_rule
 
 contains
-  pure subroutine locate(chain, fine, held_by, local)
+  pure subroutine locate(chain, fine, owner_block, local)
     type(chain_block), intent(in)  :: chain(:)
     integer          , intent(in)  :: fine
-    integer          , intent(out) :: held_by, local
+    integer          , intent(out) :: owner_block, local
     integer :: b
-    held_by = 0
+    owner_block = 0
     local   = 0
     do b = size(chain), 1, -1
        if (fine < chain(b) % first .or. fine > chain(b) % last) cycle
        if (mod(fine - chain(b) % first, chain(b) % stride) /= 0) cycle
-       held_by = b
+       owner_block = b
        local   = (fine - chain(b) % first) / chain(b) % stride + 1
        return
     end do
@@ -3907,7 +3952,7 @@ contains
     real(dp), allocatable :: x(:)
     integer :: b, local, at
     call locate(chain, fine, b, local)
-    if (b == 0) error stop 'gti_chain: that instant lies outside the chain'
+    if (b == 0) error stop 'gti_chain: the instant lies outside the chain'
     at = chain(b) % instants_at(local)
     x  = chain(b) % state(at + 1:at + chain(b) % width)
   end function fine_components
@@ -3917,31 +3962,31 @@ contains
     real(dp), allocatable :: x(:)
     x = fine_components(chain, 1 + (instant - 1) * chain(size(chain)) % stride)
   end function instant_components
-  pure function handed_over(earlier, first, stride, given) result(held)
+  pure function transferred(earlier, first, stride, given) result(fixed)
     type(chain_block), intent(in) :: earlier(:)
     integer          , intent(in) :: first, stride, given
-    real(dp), allocatable :: held(:)
+    real(dp), allocatable :: fixed(:)
     integer :: i, width
     width = earlier(1) % width
-    allocate(held(given * width))
+    allocate(fixed(given * width))
     do i = 1, given
-       held((i - 1) * width + 1:i * width) = fine_components(earlier, first + (i - 1) * stride)
+       fixed((i - 1) * width + 1:i * width) = fine_components(earlier, first + (i - 1) * stride)
     end do
-  end function handed_over
-  subroutine built(tower, b, scheme, physics, held, rows, instants_at)
+  end function transferred
+  subroutine built(tower, b, scheme, physics, fixed, rows, instants_at)
     type(expansion)       , intent(in), target :: tower
     integer               , intent(in)  :: b
     class(family)         , intent(in)  :: scheme
     type(expression)      , intent(in)  :: physics
-    real(dp)              , intent(in)  :: held(:)
+    real(dp)              , intent(in)  :: fixed(:)
     type(block_residual)  , intent(out) :: rows
     integer, allocatable  , intent(out) :: instants_at(:)
-    call block_from(tower, b, scheme, physics, held, rows, instants_at)
+    call block_from(tower, b, scheme, physics, fixed, rows, instants_at)
   end subroutine built
   subroutine march_chain(schemes, added, physics, degrees, steps, &
-       & design, initial, chain, tower, dt, t, achieved, grid_design, left, nodes, spatial_discretization_stencil, &
-       & startup)
-    type(family_holder)   , intent(in) :: schemes(:)
+       & design, initial, chain, tower, dt, t, achieved, grid_design, final_imbalance, nodes, spatial_discretization_stencil, &
+       & startup, functionals, derivative_order, f, tower_storage, state_storage)
+    type(family_container)   , intent(in) :: schemes(:)
     integer               , intent(in) :: added(:), degrees
     type(expression)      , intent(in) :: physics
     real(dp)              , intent(in) :: design, initial(:)
@@ -3951,19 +3996,30 @@ contains
     real(dp)         , allocatable, intent(out) :: dt(:), t(:)
     real(dp)              , intent(out) :: achieved
     real(dp), intent(in), optional     :: grid_design(:)
-    type(imbalance), intent(out), optional :: left
+    type(imbalance), intent(out), optional :: final_imbalance
     integer        , intent(in) , optional :: nodes
     type(stencil)  , intent(in) , optional :: spatial_discretization_stencil
     integer        , intent(in) , optional :: startup
-    type(family_holder), allocatable :: every(:)
-    type(imbalance) :: one_left
+    ! THE PIPELINED DERIVATIVE. With functionals and an order given,
+    ! every block's tangent tower is solved immediately after the block,
+    ! the tables accumulate block by block, and states and towers are
+    ! deallocated once their last reader has been solved. f is returned
+    ! as (0:order, functional); each storage pair is [maximum live,
+    ! total], towers and states separately.
+    type(expression), intent(in), optional :: functionals(:)
+    integer         , intent(in), optional :: derivative_order
+    real(dp), allocatable, intent(out), optional :: f(:,:)
+    integer, intent(out), optional :: tower_storage(2), state_storage(2)
+    logical :: fused
+    type(family_container), allocatable :: every(:)
+    type(imbalance) :: one_imbalance
     integer , allocatable :: first(:), last(:), spans(:)
-    real(dp), allocatable :: fine(:), knobs(:)
+    real(dp), allocatable :: fine(:), design_field(:)
     real(dp) :: one_achieved
     integer :: b, k, r, given, before
     logical :: with_startup
     if (size(added) < 1) then
-       error stop 'gti_chain: a chain holds at least one block'
+       error stop 'gti_chain: a chain contains at least one block'
     end if
     call horizon_bounds(schemes, added, degrees - 1, first, last)
     call partitioned(steps, last(size(added)), dt, t, grid_design)
@@ -3978,18 +4034,18 @@ contains
     end if
     before = merge(1, 0, with_startup)
     allocate(chain(size(added) + before))
-    knobs = [real(dp) ::]
+    design_field = [real(dp) ::]
     allocate(every(size(added) + before))
     if (with_startup) then
        fine  = [0.0_dp, (dt(1 + (k - 1) / r + 1) / real(r, dp), k = 1, (given - 1) * r)]
-       knobs = fine(2:)
+       design_field = fine(2:)
        allocate(every(1) % scheme, source=crouzeix_three_stage())
     end if
     do b = 1, size(added)
        if (b == 1 .and. with_startup) then
-          knobs = [knobs, fine(size(fine)), dt(2:last(1))]
+          design_field = [design_field, fine(size(fine)), dt(2:last(1))]
        else
-          knobs = [knobs, dt(first(b) + merge(1, 0, b == 1):last(b))]
+          design_field = [design_field, dt(first(b) + merge(1, 0, b == 1):last(b))]
        end if
        allocate(every(before + b) % scheme, source=schemes(b) % scheme)
     end do
@@ -4001,48 +4057,189 @@ contains
     if (allocated(tower)) deallocate(tower)
     allocate(tower)
     call tower % build(physics, every, spans, steps, 0, design, nodes, spatial_discretization_stencil, &
-         & weights=grid_design, block_steps=knobs)
+         & weights=grid_design, block_steps=design_field)
+    fused = present(functionals) .and. present(derivative_order)
+    if (fused) then
+       if (allocated(pipelined)) deallocate(pipelined)
+       allocate(pipelined)
+       call taylor_prepare(pipelined, tower, functionals, derivative_order, degrees, &
+            & schemes, added, r, first, last, before)
+    end if
     achieved = 0.0_dp
     call tally_enter(at_horizon)
     if (with_startup) then
        call one_block(chain, 1, tower, 1, every(1) % scheme, physics, degrees, 1, &
             & (given - 1) * r + 1, 1, fine, [0, (1 + (k - 1) / r + 1, k = 1, (given - 1) * r)], &
-            & 1.0_dp / real(r, dp), .false., design, initial, one_achieved, one_left, nodes, &
+            & 1.0_dp / real(r, dp), .false., design, initial, one_achieved, one_imbalance, nodes, &
             & spatial_discretization_stencil)
        achieved = one_achieved
-       if (present(left)) left = one_left
+       if (present(final_imbalance)) final_imbalance = one_imbalance
+       if (fused) call taylor_block(pipelined, chain, 1)
     end if
     ! THE BLOCKS ARE A GRAPH, AND THE DRIVER EVALUATES IT. Block b
     ! reads block b - 1 in its one slot, so the arcs are the chain's
-    ! own order and no loop here says which block is next.
+    ! own order and no loop here specifies which block is next.
     call marched_by_driver(chain, tower, schemes, added, physics, degrees, r, &
-         & first, last, dt, design, initial, before, achieved, left, nodes, &
-         & spatial_discretization_stencil)
+         & first, last, dt, design, initial, before, achieved, final_imbalance, nodes, &
+         & spatial_discretization_stencil, taylor=fused)
     call tally_leave()
+    if (fused) then
+       if (present(f)) f = pipelined % f
+       if (present(tower_storage)) tower_storage = [pipelined % tower_high, pipelined % tower_total]
+       if (present(state_storage)) state_storage = [pipelined % state_high, pipelined % state_total]
+       deallocate(pipelined)
+    end if
   end subroutine march_chain
+  !===================================================================!
+  ! PREPARE THE PIPELINED MARCH: the shared context, and the last block
+  ! reading each block's data, determined from the horizon's layout
+  ! before any block is solved. A tower with more designs than the
+  ! physics' parameter is rejected.
+  !===================================================================!
+  subroutine taylor_prepare(context, tower, functionals, order, degrees, &
+       & schemes, added, r, first, last, before)
+    type(taylor_context), intent(inout) :: context
+    type(expansion)     , intent(in)    :: tower
+    type(expression)    , intent(in)    :: functionals(:)
+    integer             , intent(in)    :: order, degrees, r, before
+    type(family_container) , intent(in)    :: schemes(:)
+    integer             , intent(in)    :: added(:), first(:), last(:)
+    real(dp), allocatable :: step_partials(:,:)
+    integer , allocatable :: bfirst(:), blast(:), bstride(:), bgiven(:)
+    integer :: nbb, bb, b, i, instant, owner, e
+    if (order < 0) then
+       error stop 'gti_chain: a derivative has an order of zero or more'
+    end if
+    if (num_designs_of(tower) /= 1) then
+       error stop 'gti_chain: the pipelined march runs over the physics'' parameter alone'
+    end if
+    context % order   = order
+    context % nf      = size(functionals)
+    context % degrees = degrees
+    call designs_of(tower, context % design, step_partials)
+    context % physics     = tower % rule()
+    context % functionals = functionals
+    call steps_along(tower, 1, max(order, 1), context % u)
+    nbb = size(added) + before
+    allocate(context % w(nbb), context % marks(nbb), context % last_reader(nbb))
+    allocate(context % f(0:order, context % nf), source=0.0_dp)
+    allocate(bfirst(nbb), blast(nbb), bstride(nbb), bgiven(nbb))
+    if (before == 1) then
+       bfirst(1)  = 1
+       blast(1)   = 1 + (schemes(1) % scheme % history_depth(degrees - 1) - 1) * r
+       bstride(1) = 1
+       bgiven(1)  = 0
+    end if
+    do b = 1, size(added)
+       bfirst(before + b)  = 1 + (first(b) - 1) * r
+       blast(before + b)   = 1 + (last(b) - 1) * r
+       bstride(before + b) = r
+       bgiven(before + b)  = schemes(b) % scheme % history_depth(degrees - 1)
+    end do
+    do bb = 1, nbb
+       context % last_reader(bb) = bb
+    end do
+    do bb = 2, nbb
+       do i = 1, bgiven(bb)
+          instant = bfirst(bb) + (i - 1) * bstride(bb)
+          owner  = 0
+          do e = bb - 1, 1, -1
+             if (instant < bfirst(e) .or. instant > blast(e)) cycle
+             if (mod(instant - bfirst(e), bstride(e)) /= 0) cycle
+             owner = e
+             exit
+          end do
+          if (owner > 0) context % last_reader(owner) = max(context % last_reader(owner), bb)
+       end do
+    end do
+  end subroutine taylor_prepare
+  !===================================================================!
+  ! THE PIPELINED TAYLOR STATE MARCH, ONE BLOCK'S CONTRIBUTION: solve
+  ! the block's tangent tower with its own factorisation, add the
+  ! block's contribution to every table, and deallocate each state and
+  ! tower whose last reader has now been solved. The storage counters
+  ! record the live size.
+  !===================================================================!
+  subroutine taylor_block(context, chain, at)
+    type(taylor_context), intent(inout) :: context
+    type(chain_block)   , intent(inout) :: chain(:)
+    integer             , intent(in)    :: at
+    type(stored_directed_graph) :: unknowns
+    type(stored_field), allocatable :: inputs(:)
+    real(dp), allocatable :: r(:), one(:)
+    integer , allocatable :: s(:)
+    integer :: count, k, i, d, h, instant, owner_block, pos, size_of
+    count = chain(at) % rows % num_unknowns()
+    context % marks(at) = next_version()
+    allocate(context % w(at) % w(count, 1, max(context % order, 1)), source=0.0_dp)
+    context % tower_live  = context % tower_live + size(context % w(at) % w)
+    context % tower_total = context % tower_total + size(context % w(at) % w)
+    context % tower_high  = max(context % tower_high, context % tower_live)
+    context % state_live  = context % state_live + size(chain(at) % state)
+    context % state_total = context % state_total + size(chain(at) % state)
+    context % state_high  = max(context % state_high, context % state_live)
+    do k = 1, context % order
+       call tally_order(k)
+       call tally_enter(at_block)
+       s = [(1, i = 1, k)]
+       call rows_along(chain, at, context % physics, context % degrees, context % design, s, &
+            & context % w, context % u, 1, r)
+       r = -r
+       do i = 1, chain(at) % given * chain(at) % width
+          instant = chain(at) % first + ((i - 1) / chain(at) % width) * chain(at) % stride
+          d       = mod(i - 1, chain(at) % width)
+          call block_of(chain(1:at - 1), instant, owner_block, pos)
+          if (owner_block > 0) r(i) = context % w(owner_block) % w(pos + d + 1, 1, k)
+       end do
+       call frozen_at(chain(at), context % design, unknowns, inputs)
+       call solved_linear(chain(at) % rows, unknowns, inputs, r, .false., context % marks(at), one)
+       context % w(at) % w(1:count, 1, k) = one
+       call tally_leave()
+    end do
+    call tally_order(0)
+    do size_of = 0, context % order
+       s = [(1, i = 1, size_of)]
+       do i = 1, context % nf
+          context % f(size_of, i) = context % f(size_of, i) + functional_along(chain, at, &
+               & context % functionals(i), context % degrees, context % design, s, 0, &
+               & context % w, context % u, 1)
+       end do
+    end do
+    do h = 1, at
+       if (context % last_reader(h) /= at) cycle
+       if (allocated(context % w(h) % w)) then
+          context % tower_live = context % tower_live - size(context % w(h) % w)
+          deallocate(context % w(h) % w)
+       end if
+       if (allocated(chain(h) % state)) then
+          context % state_live = context % state_live - size(chain(h) % state)
+          deallocate(chain(h) % state)
+       end if
+    end do
+  end subroutine taylor_block
   !===================================================================!
   ! THE CHAIN AS A BIPARTITE DIGRAPH, AND NOTHING ELSE. Which block
   ! writes which state, which block reads which, and the transpose the
-  ! derivative is taken over. It computes nothing and marches nothing,
-  ! so the visiting order and every datum's lifetime may be read off
-  ! it before a single block is solved.
+  ! derivative is taken over. The incidence computes nothing and
+  ! marches nothing, so the evaluation order and every datum's lifetime
+  ! can be read from it before any block is solved.
   !===================================================================!
 
   function chain_incidence(schemes, added, degrees, r, first, last) result(incidence)
 
-    type(family_holder), intent(in) :: schemes(:)
+    type(family_container), intent(in) :: schemes(:)
     integer            , intent(in) :: added(:), degrees, r, first(:), last(:)
     type(bipartite_digraph) :: incidence
 
     integer, allocatable :: from_part(:), from_vertex(:), to_part(:), to_vertex(:)
-    integer :: nb, b, a, n_arc, forward_arcs, given, i, e, instant, holder
+    integer :: nb, b, a, n_arc, forward_arcs, given, i, e, instant, owner
 
     nb = size(added)
 
     ! THE ARCS ARE READS AND WRITES, and nothing here states which
     ! block follows which. Block b writes datum b; block b reads
     ! datum b - 1. The order over the blocks is the projection of
-    ! those arcs onto the blocks, and the driver takes it.
+    ! those arcs onto the blocks, and the driver derives it.
     !
     !      (b1) --> [d1] --> (b2) --> [d2] --> (b3)
     !       write     read    write    read
@@ -4053,7 +4250,7 @@ contains
     do b = 2, nb
        n_arc = n_arc + schemes(b) % scheme % history_depth(degrees - 1)
     end do
-    ! room for the forward arcs, their transpose, and the state each
+    ! capacity for the forward arcs, their transpose, and the state each
     ! block of the transpose reads
     allocate(from_part(2 * n_arc + nb), from_vertex(2 * n_arc + nb), &
          & to_part(2 * n_arc + nb), to_vertex(2 * n_arc + nb))
@@ -4066,27 +4263,27 @@ contains
        to_vertex(a)   = b
     end do
     do b = 2, nb
-       ! block b is handed the instants its scheme reaches back over,
-       ! and each of them is held by whichever earlier block covers
-       ! it - the latest one, as locate answers. That block, and no
+       ! block b is passed the instants its scheme reaches back over,
+       ! and each of them is stored by the latest earlier block that
+       ! covers it - the block locate returns. That block, and no
        ! other, is read.
        given = schemes(b) % scheme % history_depth(degrees - 1)
        do i = 1, given
           instant = 1 + (first(b) - 1) * r + (i - 1) * r
-          holder  = 0
+          owner  = 0
           do e = b - 1, 1, -1
              if (instant < 1 + (first(e) - 1) * r) cycle
              if (instant > 1 + (last(e)  - 1) * r) cycle
              if (mod(instant - (1 + (first(e) - 1) * r), r) /= 0) cycle
-             holder = e
+             owner = e
              exit
           end do
-          if (holder == 0) cycle
-          if (any(from_vertex(1:a) == holder .and. to_vertex(1:a) == b &
+          if (owner == 0) cycle
+          if (any(from_vertex(1:a) == owner .and. to_vertex(1:a) == b &
                & .and. from_part(1:a) == STATES)) cycle
           a = a + 1
           from_part(a)   = STATES
-          from_vertex(a) = holder
+          from_vertex(a) = owner
           to_part(a)     = BLOCKS
           to_vertex(a)   = b
        end do
@@ -4095,29 +4292,29 @@ contains
 
     ! THE TRANSPOSE, AND WHY IT IS HERE. The derivative is taken by a
     ! reverse pass over these same blocks, and that pass reads every
-    ! block's state. Until those reads are arcs the graph cannot see
-    ! them, and a lifetime read off it would drop a state the reverse
-    ! pass still wants. So block b of the transpose sits at nb + b,
-    ! and three families of arc state it:
+    ! block's state. Until those reads are arcs the graph does not
+    ! contain them, and a lifetime read from it would deallocate a
+    ! state the reverse pass still reads. So block b of the transpose
+    ! is placed at nb + b, and three families of arc define it:
     !
     !   forward     (b) --> [d_b] --> (c)        c reads what b wrote
     !
     !   the state   [d_b] --> (nb+b)             the reverse pass at
-    !               read again, so d_b lives     b reads b's own state
-    !               until step nb+b
+    !               read again, so d_b is        b reads b's own state
+    !               allocated until step nb+b
     !
     !   transposed  (nb+c) --> [e_c] --> (nb+b)  every forward arc,
     !               with its ends exchanged      reversed
     !
-    ! The transposed arcs put nb+nb ... nb+1 after every forward
+    ! The transposed arcs place nb+nb ... nb+1 after every forward
     ! block and in decreasing order, which is the order the reverse
     ! pass runs in. So last_reader_of(d_b) is step nb+b, and the
-    ! states fall away one at a time as the reverse pass retires
-    ! them rather than being held to the end.
+    ! states are deallocated one at a time as the reverse pass
+    ! completes them rather than being retained to the end.
     !
-    ! No rule stands at a transposed vertex yet: chain_derivative
-    ! still computes the costates. What stands here is the lifetime,
-    ! which is what the driver is asked for.
+    ! No rule is placed at a transposed vertex yet: chain_derivative
+    ! still computes the costates. What is placed here is the
+    ! lifetime, which is the quantity the driver requires.
     do e = 1, forward_arcs
        a = a + 1
        if (from_part(e) == BLOCKS) then
@@ -4146,36 +4343,37 @@ contains
   end function chain_incidence
 
   !===================================================================!
-  ! ASSEMBLE THE CHAIN AS A GRAPH AND HAND IT OVER. The incidence is
-  ! a value built beside this, and all that is added here is a rule at
-  ! each forward vertex: the transposed vertices carry none, because
-  ! the reverse pass they stand for is still chain_derivative's. What
-  ! the driver does with any of it - the order, the lifetimes, and one
-  ! day which of them run at once - is no longer stated here.
+  ! ASSEMBLE THE CHAIN AS A GRAPH AND PASS IT TO THE DRIVER. The
+  ! incidence is a value built separately, and all that is added here
+  ! is a rule at each forward vertex: the transposed vertices store
+  ! none, because the reverse pass they represent is still
+  ! chain_derivative's. What the driver does with any of it - the order,
+  ! the lifetimes, and in future which of them run concurrently - is not stated here.
   !===================================================================!
 
   subroutine marched_by_driver(chain, tower, schemes, added, physics, degrees, r, &
-       & first, last, dt, design, initial, before, achieved, left, nodes, &
-       & spatial_discretization_stencil, held_data)
+       & first, last, dt, design, initial, before, achieved, final_imbalance, nodes, &
+       & spatial_discretization_stencil, data_stored, taylor)
 
     type(chain_block)  , intent(inout), target :: chain(:)
     type(expansion)    , intent(in)   , target :: tower
-    type(family_holder), intent(in)   :: schemes(:)
+    type(family_container), intent(in)   :: schemes(:)
     integer            , intent(in)   :: added(:), degrees, r, before
     type(expression)   , intent(in)   :: physics
     integer            , intent(in)   :: first(:), last(:)
     real(dp)           , intent(in)   :: dt(:), design, initial(:)
     real(dp)           , intent(inout):: achieved
-    type(imbalance), intent(inout), optional :: left
+    type(imbalance), intent(inout), optional :: final_imbalance
     integer        , intent(in)   , optional :: nodes
     type(stencil)  , intent(in)   , optional :: spatial_discretization_stencil
-    ! WHERE THE STATES COME TO REST. The driver places every block's
-    ! state at its data vertex, and a caller that wants them asks for
-    ! the data graph rather than for the chain.
-    type(data_graph), intent(out) , optional :: held_data
+    ! WHERE THE STATES ARE STORED. The driver places every block's
+    ! state at its data vertex, and a caller that requires them
+    ! requests the data graph rather than the chain.
+    type(data_graph), intent(out) , optional :: data_stored
+    logical, intent(in), optional :: taylor
 
     type(data_graph)            :: values
-    type(pairing)               :: rested
+    type(pairing)               :: pairs
     type(rule_graph)       :: rules
     type(bipartite_digraph)     :: incidence
     type(driver)                :: executor
@@ -4189,8 +4387,8 @@ contains
 
     incidence = chain_incidence(schemes, added, degrees, r, first, last)
 
-    ! one rule per forward vertex, carrying what solving that block
-    ! needs; the transposed vertices carry none and compute nothing
+    ! one rule per forward vertex, storing what solving that block
+    ! requires; the transposed vertices store none and compute nothing
     allocate(rules % at(2 * nb), values % at(2 * nb))
     do b = 1, nb
        one % chain    => chain
@@ -4207,6 +4405,7 @@ contains
        one % coarse_step = [(k, k = first(b), last(b))]
        one % fraction    = 1.0_dp
        one % counted     = .true.
+       if (present(taylor)) one % taylor = taylor
        one % design      = design
        one % initial     = initial
        one % over_nodes  = present(nodes)
@@ -4227,21 +4426,21 @@ contains
     bare = stored_directed_graph(nb, tails=[integer ::], heads=[integer ::])
     call executor % evaluate(bare)
 
-    ! WHERE THE STATES COME TO REST. The driver placed each block's
-    ! state at its data vertex; a caller that wants them asks for the
-    ! data branch rather than reaching into the chain.
-    rested = executor % pairing_of()
-    if (present(held_data)) held_data = rested % data_held()
+    ! WHERE THE STATES ARE STORED. The driver placed each block's
+    ! state at its data vertex; a caller that requires them requests
+    ! the data branch rather than reading the chain.
+    pairs = executor % pairing_of()
+    if (present(data_stored)) data_stored = pairs % stored_data()
 
 
-    ! what each block reported, read back off the rules
+    ! the result each block recorded, read from the rules
     do b = 1, nb
-       select type (told => rules % at(b) % rule)
+       select type (solved_rule => rules % at(b) % rule)
        type is (block_rule)
-          achieved = max(achieved, told % achieved)
-          if (present(left)) then
-             if (before + b == 1) left = told % left
-             if (left % converged .and. .not. told % left % converged) left = told % left
+          achieved = max(achieved, solved_rule % achieved)
+          if (present(final_imbalance)) then
+             if (before + b == 1) final_imbalance = solved_rule % final_imbalance
+             if (final_imbalance % converged .and. .not. solved_rule % final_imbalance % converged) final_imbalance = solved_rule % final_imbalance
           end if
        end select
     end do
@@ -4250,24 +4449,24 @@ contains
 
   !===================================================================!
   ! WHETHER THIS STATE COVERS AN INSTANT. The block's instants run
-  ! from first to last by stride, and no others are held.
+  ! from first to last by stride, and no others are stored.
   !===================================================================!
 
-  pure logical function holds(this, instant)
+  pure logical function covers(this, instant)
     class(block_state), intent(in) :: this
     integer           , intent(in) :: instant
-    holds = .false.
+    covers = .false.
     if (instant < this % first) return
     if (instant > this % last)  return
     if (this % stride < 1) return
     if (mod(instant - this % first, this % stride) /= 0) return
-    holds = .true.
-  end function holds
+    covers = .true.
+  end function covers
 
   !===================================================================!
-  ! THE VALUES THIS STATE HOLDS AT ONE INSTANT. The instant's place
+  ! THE VALUES THIS STATE STORES AT ONE INSTANT. The instant's position
   ! among the covered ones gives its offset, and the caller's width
-  ! says how many values begin there.
+  ! specifies how many values begin there.
   !===================================================================!
 
   subroutine values_at(this, instant, width, values)
@@ -4276,20 +4475,20 @@ contains
     real(dp), allocatable, intent(out) :: values(:)
     real(dp), allocatable :: whole(:)
     integer :: local, offset
-    if (.not. this % holds(instant)) then
-       error stop 'gti_chain: a state holds the instant asked of it'
+    if (.not. this % covers(instant)) then
+       error stop 'gti_chain: a state covers the instant requested of it'
     end if
     local = (instant - this % first) / this % stride + 1
     if (.not. allocated(this % instants_at)) then
-       error stop 'gti_chain: a state carries the offsets of the instants it holds'
+       error stop 'gti_chain: a state stores the offsets of the instants it covers'
     end if
     if (local < 1 .or. local > size(this % instants_at)) then
-       error stop 'gti_chain: a state carries the offsets of the instants it holds'
+       error stop 'gti_chain: a state stores the offsets of the instants it covers'
     end if
     offset = this % instants_at(local)
     call this % real_vector(whole)
     if (offset < 0 .or. offset + width > size(whole)) then
-       error stop 'gti_chain: an instant lies inside the values a state holds'
+       error stop 'gti_chain: an instant lies inside the values a state stores'
     end if
     values = whole(offset + 1:offset + width)
   end subroutine values_at
@@ -4299,7 +4498,7 @@ contains
   ! of any other type would lose the layout and is an error.
   !===================================================================!
 
-  subroutine block_state_place_in(this, location)
+  subroutine block_state_assign_in(this, location)
     class(block_state), intent(in)    :: this
     class(field)      , intent(inout) :: location
     select type (location)
@@ -4308,7 +4507,7 @@ contains
     class default
        error stop 'gti_chain: a block state is placed at a block state'
     end select
-  end subroutine block_state_place_in
+  end subroutine block_state_assign_in
 
   pure function block_rule_name(this) result(name)
     class(block_rule), intent(in) :: this
@@ -4319,10 +4518,10 @@ contains
   end function block_rule_name
 
   !===================================================================!
-  ! Solving the block this rule stands at, and leaving its state as
-  ! the datum the vertex holds. The inputs a driver gathers are not
-  ! read yet: what this block needs from the one before it still
-  ! travels inside the chain the rule points at.
+  ! Solving the block this rule is placed at, and storing its state as
+  ! the datum of the vertex. The inputs a driver gathers are not
+  ! read yet: what this block requires from the one before it is still
+  ! stored inside the chain the rule points at.
   !===================================================================!
 
   subroutine block_rule_apply(this, input_graph, inputs, output)
@@ -4333,20 +4532,20 @@ contains
     class(field), allocatable :: value
     type(block_state) :: state
     type(stored_directed_graph) :: state_domain
-    real(dp), allocatable :: handover(:), one_datum(:)
+    real(dp), allocatable :: transferred_values(:), one_datum(:)
     real(dp) :: achieved
-    type(imbalance) :: left
-    integer :: i, e, given, width, instant, held_by, taken
+    type(imbalance) :: final_imbalance
+    integer :: i, e, given, width, instant, owner_block, taken
     if (.not. associated(this % chain) .or. .not. associated(this % tower)) then
-       error stop 'gti_chain: a block rule stands at a block of a chain'
+       error stop 'gti_chain: a block rule is placed at a block of a chain'
     end if
-    ! THE HANDOVER, ASKED OF THE DATA THEMSELVES. Each instant the
-    ! scheme reaches back over is asked of every datum handed in, and
-    ! a block's state answers from the layout carried inside it. Where
-    ! two states cover one instant the later block is read, which is
-    ! the chain's own order. Nothing is looked up in the chain, and no
-    ! offset is settled before the march: this is the cut, and it is
-    ! closed here.
+    ! THE TRANSFER, READ FROM THE DATA THEMSELVES. Each instant the
+    ! scheme reaches back over is requested of every datum passed in,
+    ! and a block's state returns it from the layout stored inside it.
+    ! Where two states cover one instant the later block is read, which
+    ! is the chain's own order. Nothing is read from the chain, and no
+    ! offset is fixed before the march: this is the separation of data
+    ! from rule, and it is complete here.
     given = 0
     if (present(inputs)) then
        if (size(inputs) > 0) given = this % scheme % history_depth(this % degrees - 1)
@@ -4354,65 +4553,65 @@ contains
     if (given > 0) then
        width = this % degrees
        if (this % over_nodes) width = this % degrees * this % nodes
-       allocate(handover(given * width))
+       allocate(transferred_values(given * width))
        do i = 1, given
           instant = this % first + (i - 1) * this % stride
-          held_by = 0
+          owner_block = 0
           taken   = 0
           do e = 1, this % num_arguments()
              if (.not. is_bound(inputs, this % argument(e))) cycle
              call bound_value(inputs, this % argument(e), value)
              select type (datum => value)
              type is (block_state)
-                if (.not. datum % holds(instant)) cycle
-                if (datum % at < held_by) cycle
-                held_by = datum % at
+                if (.not. datum % covers(instant)) cycle
+                if (datum % at < owner_block) cycle
+                owner_block = datum % at
                 taken   = e
              end select
           end do
           if (taken < 1) then
-             error stop 'gti_chain: a block is handed the data its scheme reaches back over'
+             error stop 'gti_chain: a block is passed the data its scheme reaches back over'
           end if
           call bound_value(inputs, this % argument(taken), value)
           select type (datum => value)
           type is (block_state)
              call datum % values_at(instant, width, one_datum)
           end select
-          handover((i - 1) * width + 1:i * width) = one_datum
+          transferred_values((i - 1) * width + 1:i * width) = one_datum
        end do
     end if
 
     if (this % over_nodes) then
-       if (allocated(handover)) then
+       if (allocated(transferred_values)) then
           call one_block(this % chain, this % at, this % tower, this % in_tower, this % scheme, &
                & this % physics, this % degrees, this % first, this % last, this % stride, &
                & this % dt, this % coarse_step, this % fraction, this % counted, this % design, &
-               & this % initial, achieved, left, this % nodes, &
-               & this % spatial_discretization_stencil, handover)
+               & this % initial, achieved, final_imbalance, this % nodes, &
+               & this % spatial_discretization_stencil, transferred_values)
        else
           call one_block(this % chain, this % at, this % tower, this % in_tower, this % scheme, &
                & this % physics, this % degrees, this % first, this % last, this % stride, &
                & this % dt, this % coarse_step, this % fraction, this % counted, this % design, &
-               & this % initial, achieved, left, this % nodes, this % spatial_discretization_stencil)
+               & this % initial, achieved, final_imbalance, this % nodes, this % spatial_discretization_stencil)
        end if
     else
-       if (allocated(handover)) then
+       if (allocated(transferred_values)) then
           call one_block(this % chain, this % at, this % tower, this % in_tower, this % scheme, &
                & this % physics, this % degrees, this % first, this % last, this % stride, &
                & this % dt, this % coarse_step, this % fraction, this % counted, this % design, &
-               & this % initial, achieved, left, handover=handover)
+               & this % initial, achieved, final_imbalance, transferred_values=transferred_values)
        else
           call one_block(this % chain, this % at, this % tower, this % in_tower, this % scheme, &
                & this % physics, this % degrees, this % first, this % last, this % stride, &
                & this % dt, this % coarse_step, this % fraction, this % counted, this % design, &
-               & this % initial, achieved, left)
+               & this % initial, achieved, final_imbalance)
        end if
     end if
     ! THE DATUM'S DOMAIN IS THE BLOCK'S, NOT THE SCHEDULE'S. The graph
-    ! a driver evaluates over says which rule runs when; it says
-    ! nothing about how many points a state carries, and the two
-    ! counts are unrelated. Borrowing one for the other would give a
-    ! field a domain it does not have.
+    ! a driver evaluates over specifies which rule runs when; it
+    ! specifies nothing about how many points a state stores, and the
+    ! two counts are unrelated. Substituting one for the other would
+    ! give a field a domain it does not have.
     state_domain = stored_directed_graph(this % chain(this % at) % rows % num_points(), &
          & tails=[integer ::], heads=[integer ::])
     state % stored_field = stored_field('state', state_domain % vertex_set(), &
@@ -4424,11 +4623,17 @@ contains
     state % stride      = this % chain(this % at) % stride
     state % instants_at = this % chain(this % at) % instants_at
     call emit(state, output)
+    ! THE PIPELINED DERIVATIVE. With a context attached, the block's
+    ! tower is solved immediately after the block, and every datum
+    ! with no later reader is deallocated.
+    if (this % taylor .and. allocated(pipelined)) then
+       call taylor_block(pipelined, this % chain, this % at)
+    end if
   end subroutine block_rule_apply
 
   subroutine one_block(chain, b, tower, in_tower, scheme, physics, degrees, first, last, &
-       & stride, dt, coarse_step, fraction, counted, design, initial, achieved, left, nodes, &
-       & spatial_discretization_stencil, handover)
+       & stride, dt, coarse_step, fraction, counted, design, initial, achieved, final_imbalance, nodes, &
+       & spatial_discretization_stencil, transferred_values)
     type(chain_block)     , intent(inout) :: chain(:)
     type(expansion)       , intent(in), target :: tower
     integer               , intent(in)    :: b, in_tower, degrees, first, last, stride
@@ -4438,11 +4643,11 @@ contains
     real(dp)              , intent(in)    :: dt(:), fraction, design, initial(:)
     logical               , intent(in)    :: counted
     real(dp)              , intent(out)   :: achieved
-    type(imbalance)       , intent(out)   :: left
+    type(imbalance)       , intent(out)   :: final_imbalance
     integer      , intent(in), optional   :: nodes
     type(stencil), intent(in), optional   :: spatial_discretization_stencil
-    real(dp)     , intent(in), optional   :: handover(:)
-    real(dp), allocatable :: held(:)
+    real(dp)     , intent(in), optional   :: transferred_values(:)
+    real(dp), allocatable :: fixed(:)
     chain(b) % first    = first
     chain(b) % last     = last
     chain(b) % stride   = stride
@@ -4459,32 +4664,32 @@ contains
     chain(b) % coarse_step = coarse_step
     chain(b) % fraction    = fraction
     chain(b) % counted     = counted
-    ! WHAT IS HANDED TO THIS BLOCK. The first block is handed the
-    ! initial state; every other is handed the instants its scheme
-    ! reaches back over, taken from whichever earlier block holds
-    ! each. A caller that already has the handover gives it, and then
-    ! nothing here reads the chain at all - that argument is the cut
-    ! between the data and the rule, and it is open on this side.
-    if (present(handover)) then
-       held = handover
+    ! WHAT IS PASSED TO THIS BLOCK. The first block is passed the
+    ! initial state; every other is passed the instants its scheme
+    ! reaches back over, read from the earlier block that stores
+    ! each. A caller that already has the transfer passes it, and then
+    ! nothing here reads the chain - that argument is the separation
+    ! between the data and the rule, and on this side it is incomplete.
+    if (present(transferred_values)) then
+       fixed = transferred_values
     else if (b == 1) then
        if (size(initial) /= chain(b) % given * chain(b) % width) then
-          error stop 'gti_chain: the initial state holds the first block''s given instants'
+          error stop 'gti_chain: the initial state contains the first block''s given instants'
        end if
-       held = initial
+       fixed = initial
     else
-       held = handed_over(chain(1:b - 1), first, stride, chain(b) % given)
+       fixed = transferred(chain(1:b - 1), first, stride, chain(b) % given)
     end if
     if (scheme % num_stages() > 1) then
        call tally_enter(at_stage)
     else
        call tally_enter(at_block)
     end if
-    call built(tower, in_tower, scheme, physics, held, chain(b) % rows, &
+    call built(tower, in_tower, scheme, physics, fixed, chain(b) % rows, &
          & chain(b) % instants_at)
     associate (u1 => nodes, u2 => spatial_discretization_stencil); end associate
-    call swept(chain(b) % rows, design, chain(b) % state, achieved, left)
-    chain(b) % began = left % began
+    call swept(chain(b) % rows, design, chain(b) % state, achieved, final_imbalance)
+    chain(b) % began = final_imbalance % began
     call tally_leave()
   end subroutine one_block
   pure subroutine owned(chain, b, from, to)
@@ -4511,8 +4716,8 @@ contains
     integer , allocatable :: marks(:)
     real(dp), allocatable :: by_order(:,:,:), table(:,:)
     integer :: m
-    call chain_stamps(chain, tower, functionals, degrees, marks)
-    call chain_derivative(chain, tower, marks, functionals, degrees, max_order, forward_route, &
+    call chain_versions(chain, tower, functionals, degrees, marks)
+    call chain_derivative(chain, tower, marks, functionals, degrees, max_order, forward_pass, &
          & table, node_measure, designs=1, by_order=by_order)
     allocate(f(0:max_order, size(functionals)))
     do m = 0, max_order
@@ -4526,7 +4731,7 @@ contains
     type(stored_field), allocatable, intent(out) :: inputs(:)
     call frozen_inputs(b % state, design, b % rows % num_points(), unknowns, inputs)
   end subroutine frozen_at
-  subroutine chain_stamps(chain, tower, functionals, degrees, marks, node_measure)
+  subroutine chain_versions(chain, tower, functionals, degrees, marks, node_measure)
     type(chain_block), intent(in) :: chain(:)
     type(expansion)  , intent(in) :: tower
     type(expression) , intent(in) :: functionals(:)
@@ -4537,9 +4742,9 @@ contains
     associate (u1 => tower, u2 => functionals, u3 => degrees, u4 => node_measure); end associate
     allocate(marks(size(chain)))
     do b = 1, size(chain)
-       marks(b) = fresh_stamp()
+       marks(b) = next_version()
     end do
-  end subroutine chain_stamps
+  end subroutine chain_versions
   integer function num_designs_of(tower)
     type(expansion), intent(in) :: tower
     real(dp), allocatable :: step_partials(:,:)
@@ -4575,29 +4780,39 @@ contains
        along(k) = v(b % coarse_step(k)) * b % fraction
     end do
   end function along_of
-  pure subroutine holder_of(chain, fine, held_by, at)
+  pure subroutine block_of(chain, fine, owner_block, at)
     type(chain_block), intent(in)  :: chain(:)
     integer          , intent(in)  :: fine
-    integer          , intent(out) :: held_by, at
+    integer          , intent(out) :: owner_block, at
     integer :: local
-    call locate(chain, fine, held_by, local)
+    call locate(chain, fine, owner_block, local)
     at = 0
-    if (held_by > 0) at = chain(held_by) % instants_at(local)
-  end subroutine holder_of
-  subroutine chain_derivative(chain, tower, marks, functionals, degrees, order, route, &
-       & table, node_measure, entries, designs, by_order, sinks)
+    if (owner_block > 0) at = chain(owner_block) % instants_at(local)
+  end subroutine block_of
+  subroutine chain_derivative(chain, tower, marks, functionals, degrees, order, pass_kind, &
+       & table, node_measure, entries, designs, by_order, sinks, leibniz, tower_storage)
     type(chain_block), intent(in) :: chain(:)
     type(expansion)  , intent(in) :: tower
     integer          , intent(in) :: marks(:)
     type(expression) , intent(in) :: functionals(:)
-    integer                , intent(in) :: degrees, order, route
+    integer                , intent(in) :: degrees, order, pass_kind
     real(dp), allocatable  , intent(out) :: table(:,:)
     real(dp), intent(in), optional      :: node_measure(:)
     real(dp), allocatable, intent(out), optional :: entries(:,:,:)
     integer, intent(in), optional :: designs
     real(dp), allocatable, intent(out), optional :: by_order(:,:,:)
     type(sink_costates), intent(out), optional :: sinks
-    real(dp), allocatable :: w(:,:,:,:), lambda(:,:,:,:,:), u(:,:,:)
+    real(dp), allocatable, intent(out), optional :: leibniz(:,:,:,:)
+    ! the maximum live and the total tower sizes: the storage the pass used
+    integer, intent(out), optional :: tower_storage(2)
+    type(tangent_tower), allocatable :: w(:)
+    real(dp), allocatable :: lambda(:,:,:,:,:), u(:,:,:)
+    integer , allocatable :: last_reader(:)
+    integer :: live, peak_storage, total, h
+    type(derivative_terms) :: l
+    type(derivative_terms), allocatable :: products(:,:,:)
+    real(dp), allocatable :: split(:)
+    integer :: m, rank_s, mask
     logical , allocatable :: is_sink(:,:)
     real(dp), allocatable :: diagonal(:,:)
     type(stored_directed_graph) :: unknowns
@@ -4606,12 +4821,12 @@ contains
     integer , allocatable :: s(:)
     type(expression) :: physics
     real(dp) :: design
-    integer :: nf, nd, nb, top, widest, k, b, i, j, p, d, count, rank, held_by, at, instant
+    integer :: nf, nd, nb, top, widest, k, b, i, j, p, d, count, rank, owner_block, at, instant
     if (order < 0) then
        error stop 'gti_chain: a derivative has an order of zero or more'
     end if
-    if (route /= forward_route .and. route /= reverse_route) then
-       error stop 'gti_chain: a route is forward or reverse'
+    if (pass_kind /= forward_pass .and. pass_kind /= reverse_pass) then
+       error stop 'gti_chain: a pass is forward or reverse'
     end if
     call designs_of(tower, design, step_partials)
     nd = 1
@@ -4630,50 +4845,94 @@ contains
        widest = max(widest, chain(b) % rows % num_unknowns())
     end do
     top = order
-    if (route == reverse_route) top = max(order - 1, 0)
+    if (pass_kind == reverse_pass) top = max(order - 1, 0)
     call steps_along(tower, nd, max(order, 1), u)
     if (present(by_order)) then
        allocate(by_order(nf, multiset_count(nd, order), 0:order), source=0.0_dp)
     end if
-    allocate(w(widest, nb, multiset_count(nd, max(top, 1)), max(top, 1)), source=0.0_dp)
+    allocate(w(nb), last_reader(nb))
     allocate(rhs(widest, nb))
-    if (present(by_order)) call functional_tables(0)
-    do k = 1, top
-       call tally_order(k)
-       call tally_enter(at_horizon)
-       do rank = 1, multiset_count(nd, k)
-          s = multiset_of(rank, k, nd)
-          do b = 1, nb
+    if (pass_kind == forward_pass .or. order == 0) then
+       allocate(table(nf, multiset_count(nd, order)), source=0.0_dp)
+    end if
+    ! THE LAST BLOCK THAT READS EACH BLOCK'S TOWER: the latest block
+    ! whose given instants that block stores, and the block itself.
+    do b = 1, nb
+       last_reader(b) = b
+    end do
+    do b = 2, nb
+       do i = 1, chain(b) % given * chain(b) % width
+          instant = chain(b) % first + ((i - 1) / chain(b) % width) * chain(b) % stride
+          call block_of(chain(1:b - 1), instant, owner_block, at)
+          if (owner_block > 0) last_reader(owner_block) = max(last_reader(owner_block), b)
+       end do
+    end do
+    ! THE TAYLOR STATE MARCH: block outer, order inner. A block's tower
+    ! of order k reads the towers of the blocks storing its given
+    ! instants and its own lower orders, all solved already. So the
+    ! forward pass accumulates each block's contribution to every
+    ! table block by block and deallocates a tower once its last reader
+    ! has been solved; the live storage is the reach in blocks, for any
+    ! horizon length. The reverse pass reads every tower again in its
+    ! reverse pass, so it retains them all.
+    live       = 0
+    peak_storage = 0
+    total      = 0
+    do b = 1, nb
+       count = chain(b) % rows % num_unknowns()
+       allocate(w(b) % w(count, multiset_count(nd, max(top, 1)), max(top, 1)), source=0.0_dp)
+       live       = live + size(w(b) % w)
+       total      = total + size(w(b) % w)
+       peak_storage = max(peak_storage, live)
+       do k = 1, top
+          call tally_order(k)
+          call tally_enter(at_horizon)
+          do rank = 1, multiset_count(nd, k)
+             s = multiset_of(rank, k, nd)
              call tally_enter(at_block)
-             count = chain(b) % rows % num_unknowns()
              call rows_along(chain, b, physics, degrees, design, s, w, u, nd, r)
              r = -r
              do i = 1, chain(b) % given * chain(b) % width
                 instant = chain(b) % first + ((i - 1) / chain(b) % width) * chain(b) % stride
                 d       = mod(i - 1, chain(b) % width)
-                call holder_of(chain(1:b - 1), instant, held_by, at)
-                if (held_by > 0) r(i) = w(at + d + 1, held_by, rank, k)
+                call block_of(chain(1:b - 1), instant, owner_block, at)
+                if (owner_block > 0) r(i) = w(owner_block) % w(at + d + 1, rank, k)
              end do
              call frozen_at(chain(b), design, unknowns, inputs)
              call solved_linear(chain(b) % rows, unknowns, inputs, r, .false., marks(b), one)
-             w(1:count, b, rank, k) = one
+             w(b) % w(1:count, rank, k) = one
              call tally_leave()
           end do
+          call tally_leave()
        end do
-       call tally_leave()
-       if (present(by_order) .and. k < order) call functional_tables(k)
+       if (pass_kind == forward_pass .or. order == 0) then
+          if (present(by_order)) then
+             do k = 0, order - 1
+                call functional_share(b, k)
+             end do
+          end if
+          call functional_share(b, order)
+          do h = 1, b
+             if (last_reader(h) == b .and. allocated(w(h) % w)) then
+                live = live - size(w(h) % w)
+                deallocate(w(h) % w)
+             end if
+          end do
+       else if (present(by_order)) then
+          call functional_share(b, 0)
+       end if
     end do
-    if (route == forward_route .or. order == 0) then
-       call functional_tables(order)
+    call tally_order(0)
+    if (present(tower_storage)) tower_storage = [peak_storage, total]
+    if (pass_kind == forward_pass .or. order == 0) then
        if (present(sinks)) then
-          error stop 'gti_chain: the sinks are checked on the reverse route'
+          error stop 'gti_chain: the sinks are checked on the reverse pass'
        end if
        if (present(by_order)) by_order(:, :, order) = table
-       call tally_order(0)
        return
     end if
     if (present(sinks)) then
-       allocate(sinks % carried(0:degrees - 1), source=0)
+       allocate(sinks % fixed_rows(0:degrees - 1), source=0)
        allocate(sinks % last(0:degrees - 1), source=0)
        allocate(sinks % interior(0:degrees - 1), source=0)
        allocate(is_sink(widest, nb), source=.false.)
@@ -4704,15 +4963,15 @@ contains
                      & marks(b), one)
                 lambda(1:count, b, i, rank, k) = one
                 if (present(sinks)) then
-                   call sink_departure(is_sink(1:count, b), diagonal(1:count, b), &
+                   call sink_residual(is_sink(1:count, b), diagonal(1:count, b), &
                         & rhs(1:count, b), one, sinks)
                 end if
                 call tally_leave()
                 do p = 1, chain(b) % given * chain(b) % width
                    instant = chain(b) % first + ((p - 1) / chain(b) % width) * chain(b) % stride
                    d       = mod(p - 1, chain(b) % width)
-                   call holder_of(chain(1:b - 1), instant, held_by, at)
-                   if (held_by > 0) rhs(at + d + 1, held_by) = rhs(at + d + 1, held_by) + one(p)
+                   call block_of(chain(1:b - 1), instant, owner_block, at)
+                   if (owner_block > 0) rhs(at + d + 1, owner_block) = rhs(at + d + 1, owner_block) + one(p)
                 end do
              end do
           end do
@@ -4721,14 +4980,22 @@ contains
     end do
     call tally_order(0)
     allocate(every(nf, nd, multiset_count(nd, top)), source=0.0_dp)
+    if (present(leibniz))  allocate(leibniz(nf, nd, multiset_count(nd, top), 0:top + 1), source=0.0_dp)
+    if (present(by_order)) allocate(products(nf, nd, multiset_count(nd, top)))
+    allocate(split(0:top + 1))
     do rank = 1, multiset_count(nd, top)
        s = multiset_of(rank, top, nd)
        do j = 1, nd
-          do b = 1, nb
-             do i = 1, nf
-                every(i, j, rank) = every(i, j, rank) + entry_of(chain, b, physics, &
-                     & functionals(i), degrees, design, s, j, w, lambda, u, nd, i, node_measure)
+          do i = 1, nf
+             l     = derivative_terms(0.0_dp, top + 1)
+             split = 0.0_dp
+             do b = 1, nb
+                l = l + entry_of(chain, b, physics, functionals(i), degrees, design, s, j, &
+                     & w, lambda, u, nd, i, node_measure, split)
              end do
+             every(i, j, rank) = mixed_partial(l)
+             if (present(leibniz))  leibniz(i, j, rank, :) = split
+             if (present(by_order)) products(i, j, rank)   = l
           end do
        end do
     end do
@@ -4738,29 +5005,40 @@ contains
        table(:, rank) = every(:, s(order), multiset_rank(s(1:order - 1), nd))
     end do
     if (present(entries)) entries = every
-    if (present(by_order)) by_order(:, :, order) = table
+    if (present(by_order)) then
+       by_order(:, :, order) = table
+       ! the lower orders, read from the same products: a multiset of
+       ! size m - 1 with the explicit design is a subset of one of size
+       ! top containing it, and the coefficient there is its entry
+       do m = 1, order - 1
+          do rank = 1, multiset_count(nd, m)
+             s = multiset_of(rank, m, nd)
+             call embedding_of(s(1:m - 1), top, nd, rank_s, mask)
+             do i = 1, nf
+                by_order(i, rank, m) = coefficient(products(i, s(m), rank_s), ior(mask, 2**top))
+             end do
+          end do
+       end do
+    end if
   contains
-    subroutine functional_tables(size_of)
-      integer, intent(in) :: size_of
-      real(dp), allocatable :: t(:,:)
+    subroutine functional_share(b, size_of)
+      integer, intent(in) :: b, size_of
       integer , allocatable :: s(:)
-      integer :: rank, b, i
-      allocate(t(nf, multiset_count(nd, size_of)), source=0.0_dp)
+      real(dp) :: share
+      integer :: rank, i
       do rank = 1, multiset_count(nd, size_of)
          s = multiset_of(rank, size_of, nd)
-         do b = 1, nb
-            do i = 1, nf
-               t(i, rank) = t(i, rank) + functional_along(chain, b, functionals(i), &
-                    & degrees, design, s, 0, w, u, nd, node_measure)
-            end do
+         do i = 1, nf
+            share = functional_along(chain, b, functionals(i), degrees, design, s, 0, w, u, nd, &
+                 & node_measure)
+            if (size_of == order) then
+               table(i, rank) = table(i, rank) + share
+            else
+               by_order(i, rank, size_of) = by_order(i, rank, size_of) + share
+            end if
          end do
       end do
-      if (size_of == order) then
-         table = t
-      else
-         by_order(:, 1:size(t, 2), size_of) = t
-      end if
-    end subroutine functional_tables
+    end subroutine functional_share
   end subroutine chain_derivative
   subroutine steps_along(tower, nd, max_size, u)
     type(expansion), intent(in) :: tower
@@ -4789,7 +5067,8 @@ contains
     type(chain_block)   , intent(in) :: chain(:)
     integer             , intent(in) :: b, s(:), open, nd
     logical             , intent(in) :: with_full
-    real(dp)            , intent(in) :: w(:,:,:,:), u(:,:,:)
+    type(tangent_tower) , intent(in) :: w(:)
+    real(dp)            , intent(in) :: u(:,:,:)
     real(dp), allocatable, intent(out) :: state_seed(:,:), step_seed(:,:), nu_seed(:)
     integer, allocatable :: designs(:), t(:)
     integer :: n, full, mask, size_of, count, rank, i
@@ -4819,41 +5098,41 @@ contains
        else if (mask == full .and. .not. with_full) then
           state_seed(:, mask) = 0.0_dp
        else
-          state_seed(:, mask) = w(1:count, b, multiset_rank(t, nd), size_of)
+          state_seed(:, mask) = w(b) % w(1:count, multiset_rank(t, nd), size_of)
        end if
     end do
   end subroutine seeds_of
   pure function sorted(x) result(y)
     integer, intent(in) :: x(:)
     integer :: y(size(x))
-    integer :: i, j, held
+    integer :: i, j, fixed
     y = x
     do i = 2, size(y)
-       held = y(i)
+       fixed = y(i)
        j    = i - 1
        do while (j >= 1)
-          if (y(j) <= held) exit
+          if (y(j) <= fixed) exit
           y(j + 1) = y(j)
           j        = j - 1
        end do
-       y(j + 1) = held
+       y(j + 1) = fixed
     end do
   end function sorted
-  function point_terms(rule, degrees, design, at, n, extra, state_seed, nu_seed) result(t)
+  function point_terms(rule, degrees, design, at, n, additional, state_seed, nu_seed) result(t)
     type(expression), intent(in) :: rule
-    integer         , intent(in) :: degrees, at, n, extra
+    integer         , intent(in) :: degrees, at, n, additional
     real(dp)        , intent(in) :: design, state_seed(:, 0:), nu_seed(:)
     type(derivative_terms) :: t
     type(derivative_terms) :: q(0:degrees - 1), nu
     integer :: d, mask
     do d = 0, degrees - 1
-       q(d) = derivative_terms(state_seed(at + d + 1, 0), n + extra)
+       q(d) = derivative_terms(state_seed(at + d + 1, 0), n + additional)
        do mask = 1, 2**n - 1
           call q(d) % set_coefficient(mask, state_seed(at + d + 1, mask))
        end do
-       if (extra > 0) call q(d) % set_direction(n + d + 1, 1.0_dp)
+       if (additional > 0) call q(d) % set_direction(n + d + 1, 1.0_dp)
     end do
-    nu = derivative_terms(design, n + extra)
+    nu = derivative_terms(design, n + additional)
     do mask = 1, 2**n - 1
        if (nu_seed(mask) /= 0.0_dp) call nu % set_coefficient(mask, nu_seed(mask))
     end do
@@ -4862,20 +5141,20 @@ contains
   !===================================================================!
   ! THE POINTS ONE STEP IS INTEGRATED OVER, AND THEIR WEIGHTS.
   !
-  ! A STAGE FAMILY puts its points inside the step. The stages are
-  ! there already and the tableau weighs them, which is a rule of the
-  ! tableau's order, so a multistage family needs no history at all.
+  ! A STAGE FAMILY places its points inside the step. The stages are
+  ! already computed and the tableau weights them, which is a rule of
+  ! the tableau's order, so a multistage family requires no history.
   !
   !        |---- step k ----|
-  !        x    o    o    o          o the stages, weighed by beta
+  !        x    o    o    o          o the stages, weighted by beta
   !
-  ! A MULTISTEP FAMILY has no points inside the step, so the rule
-  ! stands on the instants the step reaches back over - which its own
-  ! stencil already holds. The family answers their weights, and p
-  ! instants carry order p.
+  ! A MULTISTEP FAMILY has no points inside the step, so the rule is
+  ! placed on the instants the step reaches back over - which its own
+  ! stencil already contains. The family returns their weights, and p
+  ! instants give order p.
   !
   !   o----o----o----|---- step k ----|
-  !   k-3  k-2  k-1                   k       the history, weighed by
+  !   k-3  k-2  k-1                   k       the history, weighted by
   !                                           the family's own rule
   !===================================================================!
 
@@ -4892,7 +5171,7 @@ contains
        allocate(offset(nodes))
        do i = 1, nodes
           if (k - i + 1 < 1) then
-             error stop 'gti_chain: a quadrature reads instants the block holds'
+             error stop 'gti_chain: a quadrature reads instants the block stores'
           end if
           offset(i) = b % instants_at(k - i + 1)
        end do
@@ -4912,29 +5191,29 @@ contains
   end subroutine quadrature_points
 
   !===================================================================!
-  ! THE BLOCK'S STEPS AS DERIVATIVE TERMS, each carrying the design
+  ! THE BLOCK'S STEPS AS DERIVATIVE TERMS, each storing the design
   ! partials of its own width. A quadrature weight built on a designed
-  ! grid moves with the design, so the weights are terms and not
-  ! numbers, and the width matches what the weights multiply.
+  ! grid varies with the design, so the weights are terms and not
+  ! numbers, and the width matches the quantity the weights multiply.
   !===================================================================!
 
-  function stepped_terms(b, step_seed, n, extra) result(steps)
+  function stepped_terms(b, step_seed, n, additional) result(steps)
     type(chain_block), intent(in) :: b
     real(dp)         , intent(in) :: step_seed(:,:)
-    integer          , intent(in) :: n, extra
+    integer          , intent(in) :: n, additional
     type(derivative_terms), allocatable :: steps(:)
     integer :: k, mask
     allocate(steps(size(b % dt)))
     do k = 1, size(b % dt)
-       steps(k) = derivative_terms(b % dt(k), n + extra)
+       steps(k) = derivative_terms(b % dt(k), n + additional)
        do mask = 1, 2**n - 1
           call steps(k) % set_coefficient(mask, step_seed(k, mask))
        end do
     end do
   end function stepped_terms
-  function measure_terms(b, k, node, n, extra, step_seed, node_measure) result(t)
+  function measure_terms(b, k, node, n, additional, step_seed, node_measure) result(t)
     type(chain_block), intent(in) :: b
-    integer          , intent(in) :: k, node, n, extra
+    integer          , intent(in) :: k, node, n, additional
     real(dp)         , intent(in) :: step_seed(:,:)
     real(dp), intent(in), optional :: node_measure(:)
     type(derivative_terms) :: t
@@ -4947,7 +5226,7 @@ contains
        end if
        measure = node_measure(node)
     end if
-    t = derivative_terms(b % dt(k), n + extra)
+    t = derivative_terms(b % dt(k), n + additional)
     do mask = 1, 2**n - 1
        call t % set_coefficient(mask, step_seed(k, mask))
     end do
@@ -4959,38 +5238,39 @@ contains
     type(expression)    , intent(in) :: physics
     integer             , intent(in) :: degrees, s(:), nd
     real(dp)            , intent(in) :: design
-    real(dp), intent(in) :: w(:,:,:,:), u(:,:,:)
+    type(tangent_tower), intent(in) :: w(:)
+    real(dp), intent(in) :: u(:,:,:)
     real(dp), allocatable, intent(out) :: r(:)
     real(dp), allocatable :: state_seed(:,:), step_seed(:,:), nu_seed(:), tw(:,:)
     integer , allocatable :: tr(:), tc(:), at(:)
-    logical , allocatable :: carried(:)
+    logical , allocatable :: fixed_rows(:)
     integer :: n, full, e, mask, p, row
     n    = size(s)
     full = 2**n - 1
     call seeds_of(chain, b, s, 0, .false., w, u, nd, state_seed, step_seed, nu_seed)
     call chain(b) % rows % rows_terms(chain(b) % scheme, chain(b) % dt, step_seed, tr, tc, tw)
-    carried = is_carried(chain(b))
+    fixed_rows = is_fixed(chain(b))
     at      = chain(b) % rows % points_at()
     allocate(r(size(state_seed, 1)), source=0.0_dp)
     do e = 1, size(tr)
-       if (carried(tr(e))) cycle
+       if (fixed_rows(tr(e))) cycle
        do mask = 0, full - 1
           r(tr(e)) = r(tr(e)) + tw(e, ieor(full, mask)) * state_seed(tc(e), mask)
        end do
     end do
     do p = 1, size(at)
        row = at(p) + chain(b) % primary + 1
-       if (carried(row)) cycle
+       if (fixed_rows(row)) cycle
        r(row) = r(row) + coefficient(point_terms(physics, degrees, design, at(p), n, 0, &
             & state_seed, nu_seed), full)
     end do
   end subroutine rows_along
-  pure function is_carried(b) result(carried)
+  pure function is_fixed(b) result(fixed_rows)
     type(chain_block), intent(in) :: b
-    logical, allocatable :: carried(:)
-    allocate(carried(b % rows % num_unknowns()), source=.false.)
-    carried(b % rows % carried_unknowns()) = .true.
-  end function is_carried
+    logical, allocatable :: fixed_rows(:)
+    allocate(fixed_rows(b % rows % num_unknowns()), source=.false.)
+    fixed_rows(b % rows % fixed_unknowns()) = .true.
+  end function is_fixed
   subroutine costates_at(chain, b, s, lambda, nd, i, lam)
     type(chain_block)   , intent(in) :: chain(:)
     integer             , intent(in) :: b, s(:), nd, i
@@ -5018,7 +5298,7 @@ contains
     type(stored_field), allocatable :: inputs(:)
     integer , allocatable :: r(:), c(:), reads(:)
     real(dp), allocatable :: w(:)
-    logical , allocatable :: has_diagonal(:), carried(:)
+    logical , allocatable :: has_diagonal(:), fixed_rows(:)
     logical :: available
     integer :: n, e, p, d
     call frozen_at(b, design, unknowns, inputs)
@@ -5039,12 +5319,12 @@ contains
        end if
     end do
     is_sink(1:n) = reads == 1 .and. has_diagonal
-    carried = is_carried(b)
+    fixed_rows = is_fixed(b)
     do p = 1, n
        if (.not. is_sink(p)) cycle
        d = mod(p - 1, degrees)
-       if (carried(p)) then
-          sinks % carried(d) = sinks % carried(d) + 1
+       if (fixed_rows(p)) then
+          sinks % fixed_rows(d) = sinks % fixed_rows(d) + 1
        else if (p > n - degrees) then
           sinks % last(d) = sinks % last(d) + 1
        else
@@ -5052,7 +5332,7 @@ contains
        end if
     end do
   end subroutine sinks_of
-  subroutine sink_departure(is_sink, diagonal, g, lambda, sinks)
+  subroutine sink_residual(is_sink, diagonal, g, lambda, sinks)
     logical            , intent(in)    :: is_sink(:)
     real(dp)           , intent(in)    :: diagonal(:), g(:), lambda(:)
     type(sink_costates), intent(inout) :: sinks
@@ -5064,20 +5344,21 @@ contains
        sinks % departure = max(sinks % departure, abs(diagonal(p) * lambda(p) - g(p)))
        if (g(p) == 0.0_dp) sinks % unread = max(sinks % unread, abs(lambda(p)))
     end do
-  end subroutine sink_departure
+  end subroutine sink_residual
   subroutine costate_rows(chain, b, physics, rule, degrees, design, s, w, lambda, u, nd, i, &
        & node_measure, g)
     type(chain_block)   , intent(in) :: chain(:)
     integer             , intent(in) :: b, degrees, s(:), nd, i
     type(expression)    , intent(in) :: physics, rule
     real(dp)            , intent(in) :: design
-    real(dp), intent(in) :: w(:,:,:,:), lambda(:,:,:,:,0:), u(:,:,:)
+    type(tangent_tower), intent(in) :: w(:)
+    real(dp), intent(in) :: lambda(:,:,:,:,0:), u(:,:,:)
     real(dp), intent(in), optional   :: node_measure(:)
     real(dp), allocatable, intent(out) :: g(:)
     type(derivative_terms) :: t
     real(dp), allocatable :: state_seed(:,:), step_seed(:,:), nu_seed(:), tw(:,:), lam(:,:)
     integer , allocatable :: tr(:), tc(:), at(:)
-    logical , allocatable :: carried(:)
+    logical , allocatable :: fixed_rows(:)
     integer , allocatable :: offset(:)
     type(derivative_terms), allocatable :: beta(:), steps(:)
     integer :: n, full, e, mask, p, d, row, k, node, from, to, point, count, pt
@@ -5104,17 +5385,17 @@ contains
     if (n == 0) return
     call costates_at(chain, b, s, lambda, nd, i, lam)
     call chain(b) % rows % rows_terms(chain(b) % scheme, chain(b) % dt, step_seed, tr, tc, tw)
-    carried = is_carried(chain(b))
+    fixed_rows = is_fixed(chain(b))
     at      = chain(b) % rows % points_at()
     do e = 1, size(tr)
-       if (carried(tr(e))) cycle
+       if (fixed_rows(tr(e))) cycle
        do mask = 1, full
           g(tc(e)) = g(tc(e)) - tw(e, mask) * lam(tr(e), ieor(full, mask))
        end do
     end do
     do p = 1, size(at)
        row = at(p) + chain(b) % primary + 1
-       if (carried(row)) cycle
+       if (fixed_rows(row)) cycle
        t = point_terms(physics, degrees, design, at(p), n, degrees, state_seed, nu_seed)
        do mask = 1, full
           do d = 0, degrees - 1
@@ -5124,27 +5405,52 @@ contains
        end do
     end do
   end subroutine costate_rows
-  real(dp) function entry_of(chain, b, physics, rule, degrees, design, s, j, w, lambda, u, nd, i, &
-       & node_measure) result(part)
+  !===================================================================!
+  ! THE LAGRANGIAN'S TERMS AT ONE BLOCK, for the multiset s of designs
+  ! the state is differentiated along and the design j it is not:
+  ! over n + 1 directions, the first n storing the state's
+  ! derivatives along s and the last storing j alone,
+  !
+  !      L  =  F  -  sum over the rows  lambda_row * R_row
+  !
+  ! with lambda_row the costates along the subsets of s and constant
+  ! along j. The coefficient of the full subset is the block's contribution
+  ! to the table entry of order n + 1 along s with j; the coefficient
+  ! of a subset containing j and m of the first n directions is its contribution
+  ! of the entry of order m + 1 along that sub-multiset. One product
+  ! per row yields every order. parts accumulates the same product
+  ! split by the order of the costate's factor - the terms of Leibniz,
+  ! a subset of size k representing its binomial count once - and the
+  ! functional's own term at n + 1. A parts of any other length stops
+  ! the program.
+  !===================================================================!
+  function entry_of(chain, b, physics, rule, degrees, design, s, j, w, lambda, u, nd, i, &
+       & node_measure, parts) result(l)
     type(chain_block)   , intent(in) :: chain(:)
     integer             , intent(in) :: b, degrees, s(:), j, nd, i
     type(expression)    , intent(in) :: physics, rule
     real(dp)            , intent(in) :: design
-    real(dp), intent(in) :: w(:,:,:,:), lambda(:,:,:,:,0:), u(:,:,:)
+    type(tangent_tower), intent(in) :: w(:)
+    real(dp), intent(in) :: lambda(:,:,:,:,0:), u(:,:,:)
     real(dp), intent(in), optional   :: node_measure(:)
-    type(derivative_terms) :: t
+    real(dp), intent(inout)          :: parts(0:)
+    type(derivative_terms) :: l
+    type(derivative_terms) :: f, costate
+    type(derivative_terms), allocatable :: residual(:), beta(:), steps(:)
     real(dp), allocatable :: state_seed(:,:), step_seed(:,:), nu_seed(:), tw(:,:), lam(:,:)
+    real(dp) :: along(0:2**(size(s) + 1) - 1), split(0:size(s) + 1)
     integer , allocatable :: tr(:), tc(:), at(:)
-    logical , allocatable :: carried(:)
+    logical , allocatable :: fixed_rows(:)
     integer , allocatable :: offset(:)
-    type(derivative_terms), allocatable :: beta(:), steps(:)
-    integer :: n, fulln, jbit, full, e, mask, sub, p, row, k, node, from, to, point, pt
+    integer :: n, fulln, e, p, row, k, node, from, to, point, pt, count
     n     = size(s)
     fulln = 2**n - 1
-    jbit  = 2**n
-    full  = 2**(n + 1) - 1
+    count = chain(b) % rows % num_unknowns()
+    if (size(parts) /= n + 2) then
+       error stop 'gti_chain: the parts number the costate orders and the functional''s own term'
+    end if
     call seeds_of(chain, b, s, j, .true., w, u, nd, state_seed, step_seed, nu_seed)
-    part = 0.0_dp
+    f = derivative_terms(0.0_dp, n + 1)
     call owned(chain, b, from, to)
     steps = stepped_terms(chain(b), step_seed, n + 1, 0)
     do k = from, to
@@ -5152,35 +5458,36 @@ contains
        do pt = 1, size(offset)
           do node = 1, chain(b) % nodes
              point = offset(pt) + (node - 1) * degrees
-             t = beta(pt) * measure_terms(chain(b), k, node, n + 1, 0, step_seed, node_measure) &
+             f = f + beta(pt) * measure_terms(chain(b), k, node, n + 1, 0, step_seed, node_measure) &
                   & * point_terms(rule, degrees, design, point, n + 1, 0, state_seed, nu_seed)
-             part = part + coefficient(t, full)
           end do
        end do
     end do
-    call costates_at(chain, b, s, lambda, nd, i, lam)
     call chain(b) % rows % rows_terms(chain(b) % scheme, chain(b) % dt, step_seed, tr, tc, tw)
-    carried = is_carried(chain(b))
+    fixed_rows = is_fixed(chain(b))
     at      = chain(b) % rows % points_at()
+    allocate(residual(count))
+    residual = derivative_terms(0.0_dp, n + 1)
     do e = 1, size(tr)
-       if (carried(tr(e))) cycle
-       do mask = 0, fulln
-          sub = mask
-          do
-             part = part - lam(tr(e), ieor(fulln, mask)) * tw(e, ior(ieor(mask, sub), jbit)) &
-                  & * state_seed(tc(e), sub)
-             if (sub == 0) exit
-             sub = iand(sub - 1, mask)
-          end do
-       end do
+       if (fixed_rows(tr(e))) cycle
+       residual(tr(e)) = residual(tr(e)) + derivative_terms(tw(e, :)) * derivative_terms(state_seed(tc(e), :))
     end do
     do p = 1, size(at)
        row = at(p) + chain(b) % primary + 1
-       if (carried(row)) cycle
-       t = point_terms(physics, degrees, design, at(p), n + 1, 0, state_seed, nu_seed)
-       do mask = 0, fulln
-          part = part - lam(row, ieor(fulln, mask)) * coefficient(t, ior(mask, jbit))
-       end do
+       if (fixed_rows(row)) cycle
+       residual(row) = residual(row) + point_terms(physics, degrees, design, at(p), n + 1, 0, state_seed, nu_seed)
+    end do
+    call costates_at(chain, b, s, lambda, nd, i, lam)
+    l            = f
+    parts(n + 1) = parts(n + 1) + mixed_partial(f)
+    do row = 1, count
+       if (fixed_rows(row)) cycle
+       along          = 0.0_dp
+       along(0:fulln) = lam(row, :)
+       costate        = derivative_terms(along)
+       l              = l - costate * residual(row)
+       split          = leibniz_parts(costate, residual(row))
+       parts(0:n)     = parts(0:n) - split(0:n)
     end do
   end function entry_of
   real(dp) function functional_along(chain, b, rule, degrees, design, s, open, w, u, nd, &
@@ -5189,7 +5496,8 @@ contains
     integer             , intent(in) :: b, degrees, s(:), open, nd
     type(expression)    , intent(in) :: rule
     real(dp)            , intent(in) :: design
-    real(dp), intent(in) :: w(:,:,:,:), u(:,:,:)
+    type(tangent_tower), intent(in) :: w(:)
+    real(dp), intent(in) :: u(:,:,:)
     real(dp), intent(in), optional   :: node_measure(:)
     type(derivative_terms) :: t
     real(dp), allocatable :: state_seed(:,:), step_seed(:,:), nu_seed(:)
@@ -5223,7 +5531,7 @@ contains
     integer :: k, i, y, previous
     k = size(s)
     if (any(s < 1) .or. any(s > designs)) then
-       error stop 'gti_chain: a multiset holds designs of the tower'
+       error stop 'gti_chain: a multiset contains designs of the tower'
     end if
     do i = 2, k
        if (s(i) < s(i - 1)) error stop 'gti_chain: a multiset is nondecreasing'
@@ -5256,6 +5564,33 @@ contains
        s(i) = y
     end do
   end function multiset_of
+  !===================================================================!
+  ! A multiset of the given size containing the sub-multiset t - t with
+  ! copies of the first design added - as its rank, and the positions
+  ! t occupies in it as a mask, so that a coefficient along t is read
+  ! from the terms formed along the larger multiset. A t larger than
+  ! the size stops the program.
+  !===================================================================!
+  pure subroutine embedding_of(t, size_of, designs, rank, mask)
+    integer, intent(in)  :: t(:), size_of, designs
+    integer, intent(out) :: rank, mask
+    integer :: padded(size_of)
+    integer :: k, p
+    if (size(t) > size_of) then
+       error stop 'gti_chain: a sub-multiset is no larger than the multiset containing it'
+    end if
+    padded = sorted([t, (1, k = 1, size_of - size(t))])
+    rank   = multiset_rank(padded, designs)
+    mask   = 0
+    p      = 1
+    do k = 1, size(t)
+       do while (padded(p) /= t(k))
+          p = p + 1
+       end do
+       mask = ibset(mask, p - 1)
+       p    = p + 1
+    end do
+  end subroutine embedding_of
   pure real(dp) function asymmetry(entries, designs, order)
     real(dp), intent(in) :: entries(:,:,:)
     integer , intent(in) :: designs, order
@@ -5284,38 +5619,38 @@ contains
   end function asymmetry
   pure integer function expansion_substitutions(num_blocks, order) result(count)
     integer, intent(in) :: num_blocks, order
-    count = num_blocks * route_substitutions(route_of(1, 1, order), 1, 1, order)
+    count = num_blocks * pass_substitutions(pass_of(1, 1, order), 1, 1, order)
   end function expansion_substitutions
 
   !===================================================================!
   ! A grid built for one functional, not the state alone.
   !
   ! Once the steps are given as a design - gti_expansion's
-  ! design_of_steps - the reverse route already carries dF/d(weight_i)
+  ! design_of_steps - the reverse pass already returns dF/d(weight_i)
   ! for every step i, one adjoint solve over the whole trajectory. It
-  ! is an adjoint-weighted sensitivity to where the grid sits, not the
+  ! is an adjoint-weighted sensitivity to the grid's position, not the
   ! residual-weighted local defect a Becker-Rannacher estimator forms
-  ! from a comparison-order scheme - DIRK here carries no embedded
-  ! pair to form one from. The two are related, not the same object.
+  ! from a comparison-order scheme - DIRK here has no embedded pair
+  ! to form one from. The two are related, not the same object.
   !
-  ! A weight is a share of a duration held fixed, so F, read through
-  ! the weights, is unchanged by scaling every one of them alike:
-  ! degree zero homogeneous in w, and Euler's identity makes
-  ! sum(w_i dF/dw_i) vanish identically, whatever the grid - a
-  ! reparametrisation fact, true of a good grid and a bad one alike,
-  ! and no gate can be read from it. What survives once that direction
-  ! is projected away is the part of dF/dw that does carry local
-  ! information: how much F moves, to first order, from giving a step
-  ! more of the duration at every other step's expense.
+  ! A weight is a fraction of a fixed duration, so F, as a function of
+  ! the weights, is unchanged by scaling all of them by one factor: F
+  ! is homogeneous of degree zero in w, and Euler's identity makes
+  ! sum(w_i dF/dw_i) vanish identically for every grid - a
+  ! reparametrisation identity, true of an accurate grid and an
+  ! inaccurate one alike, and no acceptance check can be read from it.
+  ! What remains once that direction is projected away is the part of
+  ! dF/dw that does contain local information: the first-order change
+  ! in F from assigning a step more of the duration and every other step less.
   !
   ! The grid is accepted once the spread of that projected gradient,
-  ! scaled by one average step's worth of duration, is within
-  ! tolerance of F itself (relative) or of nothing (absolute) - the
-  ! change in F from moving one such share from the least to the most
-  ! sensitive step. Rejected, every step whose projected gradient is
-  ! at least the mean is halved - the ones taking more than their
-  ! share - and the whole trajectory, adjoint included, is walked
-  ! again.
+  ! scaled by one average step's duration, is within tolerance
+  ! relative to F (relative) or as an absolute value (absolute) - the
+  ! change in F from moving one such fraction from the least to the
+  ! most sensitive step. On rejection, every step whose projected
+  ! gradient is at least the mean is halved - the steps with more than
+  ! the mean sensitivity - and the whole trajectory, adjoint included,
+  ! is computed again.
   !===================================================================!
 
   function goal_oriented_partition(scheme, physics, functional, degrees, duration, &
@@ -5331,7 +5666,7 @@ contains
 
     integer, parameter :: seed_instants = 9
 
-    type(family_holder)  :: schemes(1)
+    type(family_container)  :: schemes(1)
     type(expression)     :: functionals(1)
     type(chain_block), allocatable :: chain(:)
     type(expansion)  , allocatable :: tower
@@ -5358,10 +5693,10 @@ contains
        call chain_expansion(chain, tower, functionals, degrees, 0, fvals)
        f = fvals(0, 1)
 
-       call chain_stamps(chain, tower, functionals, degrees, marks)
-       call chain_derivative(chain, tower, marks, functionals, degrees, 1, reverse_route, table)
+       call chain_versions(chain, tower, functionals, degrees, marks)
+       call chain_derivative(chain, tower, marks, functionals, degrees, 1, reverse_pass, table)
 
-       ! the scale direction, projected away: see the module header.
+       ! the scale direction, projected away: see the banner of this function.
        eta = table(1, 2:size(table, 2))
        eta = eta - sum(eta * dt) / sum(dt * dt) * dt
        e   = (maxval(eta) - minval(eta)) * (duration / real(size(eta), dp))
@@ -5375,7 +5710,7 @@ contains
        dt        = halved(dt, split)
 
        if (attempt > 50) then
-          error stop 'gti_chain: a goal-oriented grid stays above the tolerance past fifty attempts'
+          error stop 'gti_chain: a goal-oriented grid remains above the tolerance after fifty attempts'
        end if
     end do
 
@@ -5432,9 +5767,9 @@ contains
     end do
     call read_configuration(name, cfg)
     ! WHICH ARGUMENTS NAME A SETTING. Those that select what to run
-    ! rather than how do not: the configuration read, and the
-    ! demonstration asked for, are answered elsewhere and would be
-    ! refused here as settings that do not exist.
+    ! rather than how do not: the configuration file, and the
+    ! demonstration requested, are handled elsewhere and would be
+    ! rejected here as settings that do not exist.
     do i = 1, command_argument_count()
        call get_command_argument(i, argument)
        if (index(argument, '--config=') == 1) cycle
@@ -5484,22 +5819,22 @@ contains
     real(dp)         , intent(in) :: design
     real(dp), allocatable, intent(out) :: a(:,:)
     type(stored_directed_graph) :: unknowns
-    type(stored_field) :: state, knobs
+    type(stored_field) :: state, design_field
     integer :: n
     n        = chain(1) % rows % num_unknowns()
     unknowns = stored_directed_graph(n, tails=[integer ::], heads=[integer ::])
     state    = stored_field('state', unknowns % vertex_set(), n)
-    knobs    = stored_field('nu', unknowns % vertex_set(), chain(1) % rows % num_points())
+    design_field    = stored_field('nu', unknowns % vertex_set(), chain(1) % rows % num_points())
     call state % set_real_vector(chain(1) % state)
-    call knobs % set_real_vector(spread(design, 1, chain(1) % rows % num_points()))
-    call jacobian_of(chain(1) % rows, unknowns, [state, knobs], n, unknowns % vertex_set(), a)
+    call design_field % set_real_vector(spread(design, 1, chain(1) % rows % num_points()))
+    call jacobian_of(chain(1) % rows, unknowns, [state, design_field], n, unknowns % vertex_set(), a)
   end subroutine dense_jacobian
-  subroutine family_named(name, order, scheme, ok)
+  subroutine family_named(name, order, scheme, passes_check)
     character(len=*), intent(in)  :: name
     integer         , intent(in)  :: order
     class(family), allocatable, intent(out) :: scheme
-    logical         , intent(out) :: ok
-    ok = .true.
+    logical         , intent(out) :: passes_check
+    passes_check = .true.
     select case (name)
     case ('bdf')
        allocate(scheme, source=bdf_family(order))
@@ -5514,25 +5849,25 @@ contains
        case (4)
           allocate(scheme, source=crouzeix_three_stage())
        case default
-          ok = .false.
+          passes_check = .false.
        end select
     case default
-       ok = .false.
+       passes_check = .false.
     end select
   end subroutine family_named
-  subroutine functional_named(name, degree, rule, ok)
+  subroutine functional_named(name, degree, rule, passes_check)
     character(len=*), intent(in)  :: name
     integer         , intent(in)  :: degree
     type(expression), intent(out) :: rule
-    logical         , intent(out) :: ok
-    ok = .true.
+    logical         , intent(out) :: passes_check
+    passes_check = .true.
     select case (name)
     case ('energy')
        rule = van_der_pol_energy(degree)
     case ('dissipation')
        rule = van_der_pol_dissipation(degree)
     case default
-       ok = .false.
+       passes_check = .false.
     end select
   end subroutine functional_named
 end module gti_driver
@@ -5570,18 +5905,18 @@ module gti_demos
   use operation_expression  , only : expression
   use gti_physics           , only : van_der_pol, van_der_pol_energy, van_der_pol_dissipation
   use operation_minimization, only : relative, by_rate
-  use gti_expansion         , only : expansion, family_holder
+  use gti_expansion         , only : expansion, family_container
   use gti_block             , only : block_residual
   use gti_march             , only : block_from, solved, unknowns_graph, &
        & horizon_bounds, set_stopping, consistent_state, imbalance, by_tangent, &
-       & by_adjoint, fresh_stamp, instants_at_of
+       & by_adjoint, next_version, instants_at_of
   use gti_adaptive          , only : adaptive_partition
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
-       & chain_stamps, chain_derivative, first_of, instant_components, &
+       & chain_versions, chain_derivative, first_of, instant_components, &
        & asymmetry, multiset_count, multiset_rank, multiset_of
   use gti_chain             , only : chain_incidence
   use operation_driver      , only : rule_graph, data_graph, pairing
-  use gti_sweeps            , only : route_of, forward_route, reverse_route
+  use gti_sweeps            , only : pass_of, forward_pass, reverse_pass, choose
   use gti_driver            , only : clock, cosine, dense_jacobian, family_named, settings
   use gti_configuration     , only : configuration
   use view_read_write       , only : bipartite_digraph, FIRST_PART, SECOND_PART
@@ -5593,14 +5928,14 @@ module gti_demos
   ! which part of the bipartite digraph this demonstration reads as which
   integer, parameter :: BLOCKS_PART = FIRST_PART
   integer, parameter :: DATA_PART   = SECOND_PART
-  character(len=24), parameter :: demo_names(25) = [character(len=24) :: &
+  character(len=24), parameter :: demo_names(27) = [character(len=24) :: &
        & 'adaptive_grid', 'assembled_tower', 'chained_horizon', &
        & 'constraint_rows', 'coupling_relation', 'expansion_check', &
        & 'family_coefficients', 'function_identities', 'grid_design_check', &
-       & 'jacobian_shape', 'level_maps', 'level_shape', 'marched_block', &
+       & 'jacobian_shape', 'lagrangian_expansion', 'level_maps', 'level_shape', 'marched_block', &
        & 'marched_horizon', 'marched_stages', 'memory_shape', &
-       & 'handover_offsets', 'randomized_checks', 'read_write_graph', &
-       & 'order_of_accuracy', 'scheme_weights', 'sensitivity', 'solve_cost', &
+       & 'transfer_offsets', 'randomized_checks', 'read_write_graph', &
+       & 'order_of_accuracy', 'scheme_weights', 'sensitivity', 'solve_cost', 'taylor_state', &
        & 'tolerance_form', 'transposed_reads']
 contains
   logical function demo_requested() result(yes)
@@ -5636,10 +5971,12 @@ contains
        call demo_function_identities()
     case ('grid_design_check')
        call demo_grid_design_check()
-    case ('handover_offsets')
-       call demo_handover_offsets()
+    case ('transfer_offsets')
+       call demo_transfer_offsets()
     case ('jacobian_shape')
        call demo_jacobian_shape()
+    case ('lagrangian_expansion')
+       call demo_lagrangian_expansion()
     case ('level_maps')
        call demo_level_maps()
     case ('level_shape')
@@ -5666,6 +6003,8 @@ contains
        call demo_sensitivity()
     case ('solve_cost')
        call demo_solve_cost()
+    case ('taylor_state')
+       call demo_taylor_state()
     case ('tolerance_form')
        call demo_tolerance_form()
     case default
@@ -5701,16 +6040,16 @@ contains
   subroutine demo_argument(which, argument)
     integer, intent(in) :: which
     character(len=*), intent(out) :: argument
-    character(len=256) :: held
+    character(len=256) :: fixed
     integer :: i, count
     argument = ''
     count = 0
     do i = 1, command_argument_count()
-       call get_command_argument(i, held)
-       if (index(trim(held), '--demo=') == 1 .or. trim(held) == '--list-demos') cycle
+       call get_command_argument(i, fixed)
+       if (index(trim(fixed), '--demo=') == 1 .or. trim(fixed) == '--list-demos') cycle
        count = count + 1
        if (count == which) then
-          argument = held
+          argument = fixed
           return
        end if
     end do
@@ -5722,32 +6061,32 @@ contains
        write(*,'(a)') '   ' // trim(demo_names(i))
     end do
   end subroutine list_demos
-  type(family_holder) function held_family(scheme) result(held)
+  type(family_container) function stored_family(scheme) result(fixed)
     class(family), intent(in) :: scheme
-    call set_family(held, scheme)
-  end function held_family
-  subroutine set_family(held, scheme)
-    type(family_holder), intent(inout) :: held
+    call set_family(fixed, scheme)
+  end function stored_family
+  subroutine set_family(fixed, scheme)
+    type(family_container), intent(inout) :: fixed
     class(family)     , intent(in)    :: scheme
-    if (allocated(held % scheme)) deallocate(held % scheme)
-    allocate(held % scheme, source=scheme)
+    if (allocated(fixed % scheme)) deallocate(fixed % scheme)
+    allocate(fixed % scheme, source=scheme)
   end subroutine set_family
-  function cosine_history(scheme, degrees, t) result(held)
+  function cosine_history(scheme, degrees, t) result(fixed)
     class(family), intent(in) :: scheme
     integer      , intent(in) :: degrees
     real(dp)     , intent(in) :: t(:)
-    real(dp), allocatable :: held(:)
+    real(dp), allocatable :: fixed(:)
     integer :: k, d
-    held = [((cosine(d, t(k)), d = 0, degrees - 1), &
+    fixed = [((cosine(d, t(k)), d = 0, degrees - 1), &
          & k = 1, scheme % history_depth(degrees - 1))]
   end function cosine_history
-  subroutine cosine_partition(scheme, degrees, duration, instants, held, dt, t)
+  subroutine cosine_partition(scheme, degrees, duration, instants, fixed, dt, t)
     class(family), intent(in) :: scheme
     integer      , intent(in) :: degrees, instants
     real(dp)     , intent(in) :: duration
-    real(dp), allocatable, intent(out) :: held(:), dt(:), t(:)
+    real(dp), allocatable, intent(out) :: fixed(:), dt(:), t(:)
     call partition(duration, instants, dt, t)
-    held = cosine_history(scheme, degrees, t)
+    fixed = cosine_history(scheme, degrees, t)
   end subroutine cosine_partition
   subroutine demo_adaptive_grid()
     implicit none
@@ -5773,7 +6112,7 @@ contains
       class(family), intent(in)  :: scheme
       real(dp)     , intent(in)  :: dt(:)
       real(dp)     , intent(out) :: f, forward, reverse
-      type(family_holder)     :: schemes(1)
+      type(family_container)     :: schemes(1)
       type(expression)       :: functionals(1)
       type(chain_block), allocatable :: chain(:)
       integer, allocatable :: marks(:)
@@ -5790,9 +6129,9 @@ contains
            & chain, tower, grid_dt, t, achieved, grid_design=dt)
       call chain_expansion(chain, tower, functionals, degrees, 1, fvals)
       f = fvals(0, 1)
-      call chain_stamps(chain, tower, functionals, degrees, marks)
-      call chain_derivative(chain, tower, marks, functionals, degrees, 1, forward_route, df)
-      call chain_derivative(chain, tower, marks, functionals, degrees, 1, reverse_route, other)
+      call chain_versions(chain, tower, functionals, degrees, marks)
+      call chain_derivative(chain, tower, marks, functionals, degrees, 1, forward_pass, df)
+      call chain_derivative(chain, tower, marks, functionals, degrees, 1, reverse_pass, other)
       forward = df(1, 1)
       reverse = other(1, 1)
     end subroutine on_grid
@@ -5822,8 +6161,8 @@ contains
     real(dp), parameter :: duration = 7.0_dp
     integer , parameter :: seed = 20260824
     type(expansion) :: one, two
-    type(family_holder) :: schemes(2)
-    schemes = [held_family(bdf_family(2)), held_family(adams_family(3))]
+    type(family_container) :: schemes(2)
+    schemes = [stored_family(bdf_family(2)), stored_family(adams_family(3))]
     call one % build(van_der_pol(2), schemes, [5, 5], random_grid(duration, seed), 0, &
          & 0.0_dp)
     write(*,'(a)') ' a horizon of two blocks, marched by different families'
@@ -5874,7 +6213,7 @@ contains
       select case (tower % status_of(g))
       case (VALUE_KNOWN)
          call tower % value_of(g, x)
-         text = '   holds ' // count_of(size(x))
+         text = '   stores ' // count_of(size(x))
       case (VALUE_UNKNOWN)
          text = '   not yet known'
       case (VALUE_UNATTACHED)
@@ -5902,7 +6241,7 @@ contains
       real(dp), parameter :: delta = 1.0e-6_dp
       type(grid) :: steps
       type(stored_directed_graph) :: instants
-      type(stored_field) :: knobs, direction
+      type(stored_field) :: design_field, direction
       class(field), allocatable :: out
       real(dp) :: design(num_instants - 1), v(num_instants - 1)
       real(dp), allocatable :: dt(:), exact(:), plus(:), minus(:)
@@ -5911,22 +6250,22 @@ contains
       v(2)   = 1.0_dp
       steps    = designed_grid(duration)
       instants = stored_directed_graph(num_instants, tails=[integer ::], heads=[integer ::])
-      knobs     = stored_field('design', instants % vertex_set(), size(design))
+      design_field     = stored_field('design', instants % vertex_set(), size(design))
       direction = stored_field('v', instants % vertex_set(), size(design))
-      call knobs     % set_real_vector(design)
+      call design_field     % set_real_vector(design)
       call direction % set_real_vector(v)
-      call steps % apply(instants, steps % bind([knobs]), out)
+      call steps % apply(instants, steps % bind([design_field]), out)
       call out % real_vector(dt)
-      call steps % partial_action(instants, steps % bind([knobs]), &
+      call steps % partial_action(instants, steps % bind([design_field]), &
            & [variation(steps % argument(1), direction)], out)
       call out % real_vector(exact)
-      call differenced(steps, instants, knobs, design, v, delta, plus, minus)
+      call differenced(steps, instants, design_field, design, v, delta, plus, minus)
       call show_grid(dt, exact, (plus - minus) / (2.0_dp * delta))
     end subroutine grid_partials
     !-----------------------------------------------------------------!
     ! The quadrature kind of the same map: the n-point rule integrates
-    ! t to every power below 2n exactly over [0, span]. The floor each
-    ! difference is held to is the arithmetic's: n products, each
+    ! t to every power below 2n exactly over [0, span]. The bound each
+    ! difference is bound to is the arithmetic's: n products, each
     ! within one epsilon of the integral's size.
     !-----------------------------------------------------------------!
 
@@ -5936,26 +6275,26 @@ contains
 
       real(dp), parameter :: span = 2.0_dp
       real(dp), allocatable :: w(:), t(:)
-      real(dp) :: quadrature, integral, floor, worst
+      real(dp) :: quadrature, integral, rounding_bound, maximum_departure
       integer :: n, m, k
 
       write(*,'(a)') ' '
       write(*,'(a)') ' the gauss kind of the grid, exact to twice its points less one'
       do n = 3, 5, 2
          call partitioned(gauss_grid(span), n, w, t)
-         worst = 0.0_dp
+         maximum_departure = 0.0_dp
          do m = 0, 2 * n - 1
             quadrature = 0.0_dp
             do k = 1, n
                quadrature = quadrature + w(k) * t(k) ** m
             end do
             integral = span ** (m + 1) / real(m + 1, dp)
-            floor    = real(n, dp) * epsilon(1.0_dp) * integral
-            worst    = max(worst, abs(quadrature - integral) / floor)
+            rounding_bound    = real(n, dp) * epsilon(1.0_dp) * integral
+            maximum_departure    = max(maximum_departure, abs(quadrature - integral) / rounding_bound)
          end do
          write(*,'(a,i0,a,i0,a,f8.3,a,es9.2)') '   ', n, ' points, powers 0 to ', &
               & 2 * n - 1, ':  sum of weights - span ', sum(w) - span, &
-              & '   worst difference over its floor ', worst
+              & '   largest difference over its bound ', maximum_departure
       end do
 
     end subroutine gauss_exactness
@@ -5968,32 +6307,32 @@ contains
       write(*,'(a,f10.5)')    '   their sum                   ', sum(dt)
       write(*,'(a,6f10.5)')   '   partial in design 2         ', exact
       write(*,'(a,6f10.5)')   '   central difference          ', differenced
-      write(*,'(a,es10.2)')   '   the sum is unchanged along it', sum(exact)
+      write(*,'(a,es10.2)')   '   sum of the partial, theory 0 ', sum(exact)
     end subroutine show_grid
-    subroutine differenced(steps, instants, knobs, design, v, delta, plus, minus)
+    subroutine differenced(steps, instants, design_field, design, v, delta, plus, minus)
       type(grid)                 , intent(in)    :: steps
       type(stored_directed_graph), intent(in)    :: instants
-      type(stored_field)         , intent(inout) :: knobs
+      type(stored_field)         , intent(inout) :: design_field
       real(dp)                   , intent(in)    :: design(:), v(:), delta
       real(dp), allocatable      , intent(out)   :: plus(:), minus(:)
       class(field), allocatable :: out
-      call knobs % set_real_vector(design + delta * v)
-      call steps % apply(instants, steps % bind([knobs]), out)
+      call design_field % set_real_vector(design + delta * v)
+      call steps % apply(instants, steps % bind([design_field]), out)
       call out % real_vector(plus)
-      call knobs % set_real_vector(design - delta * v)
-      call steps % apply(instants, steps % bind([knobs]), out)
+      call design_field % set_real_vector(design - delta * v)
+      call steps % apply(instants, steps % bind([design_field]), out)
       call out % real_vector(minus)
-      call knobs % set_real_vector(design)
+      call design_field % set_real_vector(design)
     end subroutine differenced
     subroutine stage_block()
       integer , parameter :: num_instants = 3
       real(dp), parameter :: gamma = (3.0_dp + sqrt(3.0_dp)) / 6.0_dp
       type(expansion) :: staged
-      type(family_holder) :: schemes(1)
+      type(family_container) :: schemes(1)
       type(graph), pointer :: g, coupling
       real(dp), allocatable :: w(:)
       real(dp) :: step
-      schemes = [held_family(crouzeix_two_stage())]
+      schemes = [stored_family(crouzeix_two_stage())]
       call staged % build(van_der_pol(2), schemes, [num_instants], &
            & uniform_grid(duration), 0, 0.0_dp)
       write(*,'(a)') ' '
@@ -6011,7 +6350,7 @@ contains
       write(*,'(a,5f10.5)') '   step times the tableau           ', &
            & step * [gamma, 1.0_dp - 2.0_dp * gamma, gamma, 0.5_dp, 0.5_dp]
       write(*,'(a,2f10.5)') '   recovery of the highest degree   ', w(size(w) - 1:)
-      write(*,'(a,2f10.5)') '   the tableau weights themselves   ', [0.5_dp, 0.5_dp]
+      write(*,'(a,2f10.5)') '   the tableau weights b_1 b_2      ', [0.5_dp, 0.5_dp]
     end subroutine stage_block
     function second_slice(tower) result(g)
       type(expansion), intent(in) :: tower
@@ -6031,47 +6370,47 @@ contains
     integer , parameter :: max_order = 3
     real(dp), parameter :: duration = 2.0_dp
     real(dp), parameter :: delta = 1.0e-4_dp
-    call splitting_changes_nothing()
+    call splitting_is_invariant()
     call across_families('bdf 2 then crouzeix two-stage', &
-         & held_family(bdf_family(2)), held_family(crouzeix_two_stage()))
+         & stored_family(bdf_family(2)), stored_family(crouzeix_two_stage()))
     call across_families('crouzeix two-stage then bdf 2', &
-         & held_family(crouzeix_two_stage()), held_family(bdf_family(2)))
+         & stored_family(crouzeix_two_stage()), stored_family(bdf_family(2)))
     call across_families('adams 3 then crouzeix two-stage', &
-         & held_family(adams_family(3)), held_family(crouzeix_two_stage()))
+         & stored_family(adams_family(3)), stored_family(crouzeix_two_stage()))
   contains
     subroutine expanded(schemes, added, design, f)
-      type(family_holder), intent(in) :: schemes(:)
+      type(family_container), intent(in) :: schemes(:)
       integer            , intent(in) :: added(:)
       real(dp)           , intent(in) :: design
       real(dp), allocatable, intent(out) :: f(:)
       real(dp), allocatable :: table(:,:)
       type(chain_block), allocatable :: chain(:)
       type(expansion), allocatable, target :: tower
-      real(dp), allocatable :: dt(:), t(:), held(:)
+      real(dp), allocatable :: dt(:), t(:), fixed(:)
       real(dp) :: achieved
-      call cosine_partition(schemes(1) % scheme, degrees, duration, sum(added), held, dt, t)
+      call cosine_partition(schemes(1) % scheme, degrees, duration, sum(added), fixed, dt, t)
       call march_chain(schemes, added, van_der_pol(state_degree), degrees, &
-           & uniform_grid(duration), design, held, chain, tower, dt, t, achieved)
+           & uniform_grid(duration), design, fixed, chain, tower, dt, t, achieved)
       call chain_expansion(chain, tower, [van_der_pol_energy(state_degree)], degrees, max_order, table)
       allocate(f(lbound(table, 1):ubound(table, 1)))
       f = table(:, 1)
     end subroutine expanded
-    subroutine splitting_changes_nothing()
-      type(family_holder) :: whole(1), split(2)
+    subroutine splitting_is_invariant()
+      type(family_container) :: whole(1), split(2)
       real(dp), allocatable :: f_whole(:), f_split(:)
-      whole = [held_family(bdf_family(2))]
-      split = [held_family(bdf_family(2)), held_family(bdf_family(2))]
+      whole = [stored_family(bdf_family(2))]
+      split = [stored_family(bdf_family(2)), stored_family(bdf_family(2))]
       call expanded(whole, [20], 1.0_dp, f_whole)
       call expanded(split, [10, 10], 1.0_dp, f_split)
       write(*,'(a)')        ' bdf 2 over twenty instants, in one block and in two'
       write(*,'(a,4f14.8)') '   whole                    ', f_whole
       write(*,'(a,4f14.8)') '   split                    ', f_split
-      write(*,'(a,4es14.2)')'   apart                    ', abs(f_whole - f_split)
-    end subroutine splitting_changes_nothing
+      write(*,'(a,4es14.2)')'   difference               ', abs(f_whole - f_split)
+    end subroutine splitting_is_invariant
     subroutine across_families(title, one, two)
       character(len=*)   , intent(in) :: title
-      type(family_holder), intent(in) :: one, two
-      type(family_holder) :: schemes(2)
+      type(family_container), intent(in) :: one, two
+      type(family_container) :: schemes(2)
       real(dp), allocatable :: f(:), plus(:), minus(:)
       real(dp) :: differenced(max_order)
       integer :: m
@@ -6088,37 +6427,37 @@ contains
       write(*,'(a,4i14)')       '   derivative order         ', [(m, m = 0, max_order)]
       write(*,'(a,4f14.8)')     '   from the expansion       ', f
       write(*,'(a,14x,3f14.8)') '   differenced              ', differenced
-      write(*,'(a,14x,3es14.2)')'   apart                    ', &
+      write(*,'(a,14x,3es14.2)')'   difference               ', &
            & abs(f(1:max_order) - differenced)
     end subroutine across_families
   end subroutine demo_chained_horizon
 
   !===================================================================!
-  ! DOES A CHAIN OF DIFFERENT SCHEMES KEEP THE ORDER OF ACCURACY, AND
-  ! DOES IT KEEP IT ON EVERY DERIVATIVE OF THE TIME FUNCTIONAL?
+  ! DOES A CHAIN OF DIFFERENT SCHEMES PRESERVE THE ORDER OF ACCURACY,
+  ! AND IS THE ORDER PRESERVED ON EVERY DERIVATIVE OF THE TIME FUNCTIONAL?
   !
   ! Halving the step should shrink the error by a factor 2**p, where p
   ! is the order of the scheme. So marching the same problem on two
-  ! grids and comparing the errors gives p back:
+  ! grids and comparing the errors yields p:
   !
   !          observed order = log2( error(h) / error(h/2) )
   !
-  ! There is no exact answer to measure against, so a reference grid
-  ! far finer than any of the three measured grids stands in for one.
+  ! There is no exact solution to measure against, so a reference grid
+  ! far finer than any of the three measured grids is the reference.
   !
-  ! Each window keeps the same share of the horizon on every grid, so
-  ! refining never moves a window boundary. Without that the reading
-  ! would be of where the boundaries sit and not of the schemes.
+  ! Each window retains the same share of the horizon on every grid, so
+  ! refining never moves a window boundary. Without that the measured
+  ! order would depend on the boundary positions and not on the schemes.
   !
-  ! A chain can be no better than its weakest window, so the formal
-  ! order of a chain is the smallest among the schemes in it.
+  ! A chain has order no higher than its lowest-order window, so the
+  ! formal order of a chain is the minimum among the schemes in it.
   !
   ! WHY THE CHAINS HERE ARE ALL RUNGE-KUTTA. The time functional is
   ! integrated by one point per step for a multistep family, which is
   ! a rectangle rule and first order whatever the scheme is. Any chain
-  ! holding such a window reads order one and says nothing about the
-  ! chaining. The multistep families are still shown, at the end and
-  ! on their own, so that limit is visible rather than hidden.
+  ! containing such a window measures order one and gives no information
+  ! about the chaining. The multistep families are still shown, at the
+  ! end and on their own, so that limit is displayed.
   !===================================================================!
 
   subroutine demo_order_of_accuracy()
@@ -6130,9 +6469,9 @@ contains
 
     real(dp) :: allowed, settled
 
-    ! THE GRIDS ARE THE CONFIGURATION'S, so a reader may change the
-    ! refinement ratio and read the same table again. An order that
-    ! moves when the ratio does was never asymptotic.
+    ! THE GRIDS ARE THE CONFIGURATION'S, so the refinement ratio can be
+    ! changed and the same table recomputed. An order that changes
+    ! with the ratio is not asymptotic.
     call settings('order_of_accuracy', cfg)
     state_degree = cfg % state_degree
     degrees      = state_degree + 1
@@ -6148,22 +6487,22 @@ contains
        error stop 'gti_demos: a refinement ratio is above one'
     end if
     if (grids < 3) then
-       error stop 'gti_demos: three grids at least, or no spread can be read'
+       error stop 'gti_demos: three grids at least, or no spread can be computed'
     end if
     if (finer <= 1.0_dp) then
        error stop 'gti_demos: a reference grid is finer than the finest measured'
     end if
 
     write(*,'(a)') ' '
-    write(*,'(a)') ' DOES CHAINING DIFFERENT SCHEMES KEEP THE ORDER OF ACCURACY?'
+    write(*,'(a)') ' DOES CHAINING DIFFERENT SCHEMES PRESERVE THE ORDER OF ACCURACY?'
     write(*,'(a)') ' '
-    write(*,'(a)') ' THREE DIFFERENT NUMBERS APPEAR BELOW AND NONE OF THEM IS ANOTHER.'
+    write(*,'(a)') ' THREE DISTINCT NUMBERS APPEAR BELOW, AND NO TWO OF THEM COINCIDE.'
     write(*,'(a)') ' '
-    write(*,'(a)') '   p, THE ORDER OF ACCURACY OF THE SCHEME. How fast the scheme''s own'
-    write(*,'(a)') '      error falls as the step h shrinks: the error goes as h**p. BDF-2'
-    write(*,'(a)') '      has p = 2 and SDIRK-4 has p = 4. A chain is no better than its'
-    write(*,'(a)') '      weakest window, so a chain''s p is the smallest among them.'
-    write(*,'(a)') '      Written below as "scheme order p". It has nothing to do with r.'
+    write(*,'(a)') '   p, THE ORDER OF ACCURACY OF THE SCHEME. The rate at which the scheme''s'
+    write(*,'(a)') '      own error decreases as the step h decreases: the error is O(h**p).'
+    write(*,'(a)') '      BDF-2 has p = 2 and SDIRK-4 has p = 4. A chain has order no higher'
+    write(*,'(a)') '      than its lowest-order window, so a chain''s p is the minimum among them.'
+    write(*,'(a)') '      Written below as "scheme order p". p is independent of r.'
     write(*,'(a)') ' '
     write(*,'(a)') '   r, THE DEGREE OF THE DESIGN DERIVATIVE. Which derivative of the time'
     write(*,'(a)') '      functional F with respect to the design nu is being measured:'
@@ -6171,104 +6510,104 @@ contains
     write(*,'(a)') '      to r = 6. Nothing about r refers to h or to any discretisation.'
     write(*,'(a)') '      It is the column heading below.'
     write(*,'(a)') ' '
-    write(*,'(a)') '   THE OBSERVED ORDER, which is p measured rather than claimed, and'
+    write(*,'(a)') '   THE OBSERVED ORDER, which is p measured rather than formal, and'
     write(*,'(a)') '      measured separately for the derivative of each degree r. That is'
-    write(*,'(a)') '      the number in the table. The question here is whether it equals p'
+    write(*,'(a)') '      the number in the table. The check here is whether it equals p'
     write(*,'(a)') '      at every r, or only at the low ones.'
     write(*,'(a)') ' '
     write(*,'(a)') '   A FOURTH NUMBER is fixed throughout and appears nowhere below. Van'
     write(*,'(a,i0,a,i0,a)') '      der Pol is of order ', state_degree, &
-         & ' in time, so every instant carries ', degrees, ' state components'
+         & ' in time, so every instant stores ', degrees, ' state components'
     write(*,'(a)') '      (q, q-dot, q-double-dot). That is neither an order of accuracy'
-    write(*,'(a)') '      nor a derivative degree, and it is held fixed here.'
+    write(*,'(a)') '      nor a derivative degree, and it is fixed here.'
     write(*,'(a)') ' '
     write(*,'(a)') ' HOW THE OBSERVED ORDER IS MEASURED'
     write(*,'(a,i0,a,i0,a)') '   Each chain is marched on ', grids, &
-         & ' grids, the coarsest carrying ', per_window, ' instants per window,'
-    write(*,'(a,f0.3,a)') '   each grid after it ', ratio, ' times the last,'
+         & ' grids, the coarsest having ', per_window, ' instants per window,'
+    write(*,'(a,f0.3,a)') '   each grid after it ', ratio, ' times the previous,'
     write(*,'(a,f0.2,a)') '   and all of them against a reference grid ', finer, &
          & ' times finer than the finest.'
-    write(*,'(a)') '   An error that is one power of h obeys e = C h**q, so log e falls'
-    write(*,'(a)') '   along a straight line against log N, of slope -q. The order printed'
+    write(*,'(a)') '   An error that is one power of h obeys e = C h**q, so log e is a'
+    write(*,'(a)') '   straight line in log N, of slope -q. The order printed'
     write(*,'(a)') '   is that slope fitted by least squares over every grid at once,'
     write(*,'(a)') '   separately for each derivative degree r.'
-    write(*,'(a)') '   Beside it is the spread of the readings taken pair by pair. Where'
-    write(*,'(a)') '   the error really is one power they all agree and the spread is near'
+    write(*,'(a)') '   Beside it is the spread of the slopes taken pair by pair. Where'
+    write(*,'(a)') '   the error is a single power they all agree and the spread is near'
     write(*,'(a)') '   zero. Where a leading coefficient changes sign inside the range of'
     write(*,'(a)') '   grids the error passes through zero, the points leave the line, and'
-    write(*,'(a)') '   the spread says so instead of letting a meaningless slope pass.'
-    write(*,'(a)') '   Every window keeps its share of the horizon as the grid refines, so'
-    write(*,'(a)') '   no window boundary moves and the reading is of the schemes.'
-    write(*,'(a,f4.2,a)') '   An order within ', allowed, ' of p is read as reaching p, and a'
-    write(*,'(a,f4.2,a)') '   spread above ', settled, ' is read as no single power, printed "?".'
-    write(*,'(a)') '   A dash means an error reached round-off, and no order can be read.'
+    write(*,'(a)') '   the spread records this instead of accepting a meaningless slope.'
+    write(*,'(a)') '   Every window retains its share of the horizon as the grid refines, so'
+    write(*,'(a)') '   no window boundary moves and the measured order depends on the schemes alone.'
+    write(*,'(a,f4.2,a)') '   An order within ', allowed, ' of p is counted as reaching p, and a'
+    write(*,'(a,f4.2,a)') '   spread above ', settled, ' is counted as no single power, printed "?".'
+    write(*,'(a)') '   A dash means an error reached round-off, and no order can be measured.'
     write(*,'(a)') ' '
-    write(*,'(a)') '   THE RATIO IS THE CONFIGURATION''S. Reading the same order at a second'
-    write(*,'(a)') '   ratio is what shows the reading is the scheme''s order rather than an'
-    write(*,'(a)') '   accident of where the grids fell:'
+    write(*,'(a)') '   THE RATIO IS THE CONFIGURATION''S. Measuring the same order at a second'
+    write(*,'(a)') '   ratio shows the measurement is the scheme''s order and not an'
+    write(*,'(a)') '   artefact of the grid positions:'
     write(*,'(a)') '     --demo=order_of_accuracy --refinement_ratio=1.618 --refinement_grids=5'
     write(*,'(a)') ' '
     write(*,'(a)') ' WHY THE FAMILIES ARE GROUPED'
     write(*,'(a)') '   The time functional is integrated over each step by the points the'
-    write(*,'(a)') '   scheme puts there. A Runge-Kutta step carries its stages and the'
-    write(*,'(a)') '   tableau weights; a multistep step carries the instants of its own'
-    write(*,'(a)') '   stencil and the interpolatory weights on them. Both rules carry the'
+    write(*,'(a)') '   scheme places there. A Runge-Kutta step contributes its stages and the'
+    write(*,'(a)') '   tableau weights; a multistep step contributes the instants of its own'
+    write(*,'(a)') '   stencil and the interpolatory weights on them. Both rules have the'
     write(*,'(a)') '   order p of the scheme they belong to.'
 
     write(*,'(a)') ' '
     write(*,'(a)') ' ==== DIRK ALONE ===='
-    call reading('DIRK-2   implicit midpoint', [2], [held_family(implicit_midpoint())])
-    call reading('DIRK-3   Crouzeix two-stage', [3], [held_family(crouzeix_two_stage())])
-    call reading('DIRK-4   Crouzeix three-stage', [4], [held_family(crouzeix_three_stage())])
-    call reading('SDIRK-4  Hairer-Wanner five-stage', [4], &
-         & [held_family(hairer_wanner_five_stage())])
+    call order_row('DIRK-2   implicit midpoint', [2], [stored_family(implicit_midpoint())])
+    call order_row('DIRK-3   Crouzeix two-stage', [3], [stored_family(crouzeix_two_stage())])
+    call order_row('DIRK-4   Crouzeix three-stage', [4], [stored_family(crouzeix_three_stage())])
+    call order_row('SDIRK-4  Hairer-Wanner five-stage', [4], &
+         & [stored_family(hairer_wanner_five_stage())])
 
     write(*,'(a)') ' '
     write(*,'(a)') ' ==== BDF ALONE ===='
-    call reading('BDF-1', [1], [held_family(bdf_family(1))])
-    call reading('BDF-2', [2], [held_family(bdf_family(2))])
-    call reading('BDF-3', [3], [held_family(bdf_family(3))])
-    call reading('BDF-4', [4], [held_family(bdf_family(4))])
+    call order_row('BDF-1', [1], [stored_family(bdf_family(1))])
+    call order_row('BDF-2', [2], [stored_family(bdf_family(2))])
+    call order_row('BDF-3', [3], [stored_family(bdf_family(3))])
+    call order_row('BDF-4', [4], [stored_family(bdf_family(4))])
 
     write(*,'(a)') ' '
     write(*,'(a)') ' ==== ABM ALONE ===='
-    call reading('ABM-2', [2], [held_family(adams_family(2))])
-    call reading('ABM-3', [3], [held_family(adams_family(3))])
-    call reading('ABM-4', [4], [held_family(adams_family(4))])
+    call order_row('ABM-2', [2], [stored_family(adams_family(2))])
+    call order_row('ABM-3', [3], [stored_family(adams_family(3))])
+    call order_row('ABM-4', [4], [stored_family(adams_family(4))])
 
     write(*,'(a)') ' '
     write(*,'(a)') ' ==== CHAINS ACROSS THE THREE FAMILIES ===='
-    call reading('SDIRK-4 -> BDF-4 -> ABM-4   (the composite of the paper)', [4, 4, 4], &
-         & [held_family(hairer_wanner_five_stage()), held_family(bdf_family(4)), &
-         &  held_family(adams_family(4))])
-    call reading('DIRK-3 -> BDF-2', [3, 2], &
-         & [held_family(crouzeix_two_stage()), held_family(bdf_family(2))])
-    call reading('BDF-2 -> DIRK-3', [2, 3], &
-         & [held_family(bdf_family(2)), held_family(crouzeix_two_stage())])
-    call reading('ABM-3 -> DIRK-4', [3, 4], &
-         & [held_family(adams_family(3)), held_family(crouzeix_three_stage())])
-    call reading('BDF-2 -> ABM-3 -> DIRK-4 -> SDIRK-4', [2, 3, 4, 4], &
-         & [held_family(bdf_family(2)), held_family(adams_family(3)), &
-         &  held_family(crouzeix_three_stage()), held_family(hairer_wanner_five_stage())])
+    call order_row('SDIRK-4 -> BDF-4 -> ABM-4   (the composite of the paper)', [4, 4, 4], &
+         & [stored_family(hairer_wanner_five_stage()), stored_family(bdf_family(4)), &
+         &  stored_family(adams_family(4))])
+    call order_row('DIRK-3 -> BDF-2', [3, 2], &
+         & [stored_family(crouzeix_two_stage()), stored_family(bdf_family(2))])
+    call order_row('BDF-2 -> DIRK-3', [2, 3], &
+         & [stored_family(bdf_family(2)), stored_family(crouzeix_two_stage())])
+    call order_row('ABM-3 -> DIRK-4', [3, 4], &
+         & [stored_family(adams_family(3)), stored_family(crouzeix_three_stage())])
+    call order_row('BDF-2 -> ABM-3 -> DIRK-4 -> SDIRK-4', [2, 3, 4, 4], &
+         & [stored_family(bdf_family(2)), stored_family(adams_family(3)), &
+         &  stored_family(crouzeix_three_stage()), stored_family(hairer_wanner_five_stage())])
 
     write(*,'(a)') ' '
     write(*,'(a)') ' ==== CHAINS WITHIN DIRK, WHERE THE QUADRATURE IS NOT THE LIMIT ===='
-    call reading('DIRK-3 -> DIRK-2', [3, 2], &
-         & [held_family(crouzeix_two_stage()), held_family(implicit_midpoint())])
-    call reading('DIRK-3 -> DIRK-4', [3, 4], &
-         & [held_family(crouzeix_two_stage()), held_family(crouzeix_three_stage())])
-    call reading('DIRK-4 -> SDIRK-4', [4, 4], &
-         & [held_family(crouzeix_three_stage()), held_family(hairer_wanner_five_stage())])
-    call reading('DIRK-4 -> DIRK-3 -> DIRK-2', [4, 3, 2], &
-         & [held_family(crouzeix_three_stage()), held_family(crouzeix_two_stage()), &
-         &  held_family(implicit_midpoint())])
-    call reading('DIRK-2 -> DIRK-3 -> DIRK-4 -> SDIRK-4', [2, 3, 4, 4], &
-         & [held_family(implicit_midpoint()), held_family(crouzeix_two_stage()), &
-         &  held_family(crouzeix_three_stage()), held_family(hairer_wanner_five_stage())])
-    call reading('SDIRK-4 -> DIRK-4 -> DIRK-3 -> DIRK-2 -> DIRK-4', [4, 4, 3, 2, 4], &
-         & [held_family(hairer_wanner_five_stage()), held_family(crouzeix_three_stage()), &
-         &  held_family(crouzeix_two_stage()), held_family(implicit_midpoint()), &
-         &  held_family(crouzeix_three_stage())])
+    call order_row('DIRK-3 -> DIRK-2', [3, 2], &
+         & [stored_family(crouzeix_two_stage()), stored_family(implicit_midpoint())])
+    call order_row('DIRK-3 -> DIRK-4', [3, 4], &
+         & [stored_family(crouzeix_two_stage()), stored_family(crouzeix_three_stage())])
+    call order_row('DIRK-4 -> SDIRK-4', [4, 4], &
+         & [stored_family(crouzeix_three_stage()), stored_family(hairer_wanner_five_stage())])
+    call order_row('DIRK-4 -> DIRK-3 -> DIRK-2', [4, 3, 2], &
+         & [stored_family(crouzeix_three_stage()), stored_family(crouzeix_two_stage()), &
+         &  stored_family(implicit_midpoint())])
+    call order_row('DIRK-2 -> DIRK-3 -> DIRK-4 -> SDIRK-4', [2, 3, 4, 4], &
+         & [stored_family(implicit_midpoint()), stored_family(crouzeix_two_stage()), &
+         &  stored_family(crouzeix_three_stage()), stored_family(hairer_wanner_five_stage())])
+    call order_row('SDIRK-4 -> DIRK-4 -> DIRK-3 -> DIRK-2 -> DIRK-4', [4, 4, 3, 2, 4], &
+         & [stored_family(hairer_wanner_five_stage()), stored_family(crouzeix_three_stage()), &
+         &  stored_family(crouzeix_two_stage()), stored_family(implicit_midpoint()), &
+         &  stored_family(crouzeix_three_stage())])
 
   contains
 
@@ -6278,10 +6617,10 @@ contains
     !----------------------------------------------------------------!
 
     subroutine on_grid(schemes, instants, f)
-      type(family_holder), intent(in) :: schemes(:)
+      type(family_container), intent(in) :: schemes(:)
       integer            , intent(in) :: instants
       real(dp), allocatable, intent(out) :: f(:)
-      real(dp), allocatable :: table(:,:), dt(:), t(:), held(:)
+      real(dp), allocatable :: table(:,:), dt(:), t(:), fixed(:)
       type(chain_block), allocatable :: chain(:)
       type(expansion), allocatable, target :: tower
       integer , allocatable :: added(:)
@@ -6292,48 +6631,48 @@ contains
       allocate(added(windows))
       added    = share
       added(1) = instants - share * (windows - 1)
-      call cosine_partition(schemes(1) % scheme, degrees, duration, instants, held, dt, t)
+      call cosine_partition(schemes(1) % scheme, degrees, duration, instants, fixed, dt, t)
       call march_chain(schemes, added, van_der_pol(state_degree), degrees, &
-           & uniform_grid(duration), 1.0_dp, held, chain, tower, dt, t, achieved)
+           & uniform_grid(duration), 1.0_dp, fixed, chain, tower, dt, t, achieved)
       call chain_expansion(chain, tower, [van_der_pol_energy(state_degree)], degrees, &
            & max_order, table)
       allocate(f(lbound(table, 1):ubound(table, 1)))
       f = table(:, 1)
     end subroutine on_grid
 
-    subroutine reading(title, formal, schemes)
+    subroutine order_row(title, formal, schemes)
       character(len=*)   , intent(in) :: title
       integer            , intent(in) :: formal(:)
-      type(family_holder), intent(in) :: schemes(:)
+      type(family_container), intent(in) :: schemes(:)
       real(dp), allocatable :: f(:), reference(:)
-      real(dp), allocatable :: apart(:,:), counts(:)
+      real(dp), allocatable :: discrepancy(:,:), counts(:)
       real(dp) :: fitted(0:max_order), spread(0:max_order)
       logical  :: readable(0:max_order)
-      character(len=:), allocatable :: line, orders, spreads, verdicts
+      character(len=:), allocatable :: line, orders, spreads, outcomes
       character(len=16) :: cell
       integer :: g, m, windows, instants, expected, kept, counted, reaches
 
       windows  = size(schemes)
       expected = minval(formal)
 
-      ! A WINDOW TOO SHORT FOR THE FAMILY STANDING AT IT cannot be
-      ! marched at all, and the coarsest grid is the one that decides.
-      ! A reader who lowers coarsest_instants is told which chains
-      ! fell out rather than being stopped.
+      ! A WINDOW TOO SHORT FOR THE FAMILY ASSIGNED TO IT cannot be
+      ! marched at all, and the coarsest grid determines this.
+      ! A configuration that lowers coarsest_instants is reported the
+      ! chains that are excluded rather than stopped.
       reaches = 0
       do g = 1, windows
          reaches = max(reaches, schemes(g) % scheme % history_depth(degrees - 1))
       end do
       if (per_window <= reaches) then
          write(*,'(a)') ' '
-         write(*,'(a,a,i0,a,i0,a)') '   ' // title, '   -   not read: the coarsest grid gives ', &
-              & per_window, ' instants per window and a family here reaches back over ', &
+         write(*,'(a,a,i0,a,i0,a)') '   ' // title, '   -   not measured: the coarsest grid gives ', &
+              & per_window, ' instants per window and a family here has history depth ', &
               & reaches, '.'
-         write(*,'(a,i0,a)') '     raise coarsest_instants above ', reaches, ' to read this chain.'
+         write(*,'(a,i0,a)') '     raise coarsest_instants above ', reaches, ' to measure this chain.'
          return
       end if
 
-      allocate(apart(grids, 0:max_order), counts(grids))
+      allocate(discrepancy(grids, 0:max_order), counts(grids))
 
       ! the grids, and the reference beyond the finest of them
       do g = 1, grids
@@ -6345,16 +6684,16 @@ contains
          counts(g) = real(instants, dp)
          call on_grid(schemes, instants, f)
          do m = 0, max_order
-            apart(g, m) = abs(f(m) - reference(m))
+            discrepancy(g, m) = abs(f(m) - reference(m))
          end do
          deallocate(f)
       end do
 
       do m = 0, max_order
-         readable(m) = all(apart(:, m) > 0.0_dp)
+         readable(m) = all(discrepancy(:, m) > 0.0_dp)
          fitted(m)   = 0.0_dp
          spread(m)   = 0.0_dp
-         if (readable(m)) call order_of_grids(counts, apart(:, m), fitted(m), spread(m))
+         if (readable(m)) call order_of_grids(counts, discrepancy(:, m), fitted(m), spread(m))
       end do
 
       kept    = count(readable .and. spread <= settled &
@@ -6367,40 +6706,40 @@ contains
       write(cell,'(i0)') expected
       line     = '     r, derivative degree of F in nu  '
       orders   = '     order fitted over the grids     '
-      spreads  = '     spread of pairwise readings     '
-      verdicts = '     does it reach p = ' // trim(cell) // ' ?'
-      verdicts = verdicts // repeat(' ', max(1, 38 - len(verdicts)))
+      spreads  = '     spread of pairwise slopes       '
+      outcomes = '     order reaches p = ' // trim(cell) // ' ?'
+      outcomes = outcomes // repeat(' ', max(1, 38 - len(outcomes)))
       do m = 0, max_order
          write(cell,'(i7)') m
          line = line // cell(1:7)
          if (.not. readable(m)) then
             orders   = orders   // '      -'
             spreads  = spreads  // '      -'
-            verdicts = verdicts // '      -'
+            outcomes = outcomes // '      -'
          else
             write(cell,'(f7.2)') fitted(m)
             orders = orders // cell(1:7)
             write(cell,'(f7.2)') spread(m)
             spreads = spreads // cell(1:7)
             if (spread(m) > settled) then
-               verdicts = verdicts // '      ?'
+               outcomes = outcomes // '      ?'
             else if (fitted(m) >= real(expected, dp) - allowed) then
-               verdicts = verdicts // '    yes'
+               outcomes = outcomes // '    yes'
             else
-               verdicts = verdicts // '     no'
+               outcomes = outcomes // '     no'
             end if
          end if
       end do
       write(*,'(a)') line
       write(*,'(a)') orders
       write(*,'(a)') spreads
-      write(*,'(a)') verdicts
+      write(*,'(a)') outcomes
       write(cell,'(i0)') kept
       line = '     reaches p at ' // trim(cell) // ' of '
       write(cell,'(i0)') counted
-      line = line // trim(cell) // ' derivative degrees where one power holds'
+      line = line // trim(cell) // ' derivative degrees where one power applies'
       write(*,'(a)') line
-    end subroutine reading
+    end subroutine order_row
 
     !----------------------------------------------------------------!
     ! THE ORDER A SET OF GRIDS IMPLIES, AND WHETHER ONE POWER OF h
@@ -6410,19 +6749,19 @@ contains
     !
     !        e = C h**q,   so   log e = log C - q log N
     !
-    ! since h goes as 1/N. So a straight line through the points
-    ! (log N, log e) has slope -q, and the least squares slope over
-    ! every grid is the order. Reading it from all the grids at once
-    ! rather than from one pair is what keeps a single bad point from
-    ! carrying the answer.
+    ! since h is proportional to 1/N. So a straight line through the
+    ! points (log N, log e) has slope -q, and the least squares slope
+    ! over every grid is the order. Fitting over all the grids at once
+    ! rather than one pair prevents a single outlying point from
+    ! determining the result.
     !
-    ! WHETHER TO BELIEVE IT is a separate question, and the spread of
-    ! the pairwise readings answers it. Where the error really is one
+    ! WHETHER THE FIT IS VALID is a separate check, and the spread of
+    ! the pairwise slopes decides it. Where the error is a single
     ! power, every consecutive pair gives the same order and the
     ! spread is near zero. Where a coefficient changes sign inside the
     ! range of grids the error passes through zero, one point falls
-    ! far below the line, and the pairs disagree wildly - so a large
-    ! spread says the fit means nothing rather than letting it pass.
+    ! far below the line, and the pairs disagree by a large amount - so
+    ! a large spread marks the fit as invalid rather than accepting it.
     !
     !     log e                    log e
     !       |  .                     |  .
@@ -6433,15 +6772,15 @@ contains
     !        one power, small spread   not one power, large spread
     !----------------------------------------------------------------!
 
-    pure subroutine order_of_grids(counts, apart, fitted, spread)
-      real(dp), intent(in)  :: counts(:), apart(:)
+    pure subroutine order_of_grids(counts, discrepancy, fitted, spread)
+      real(dp), intent(in)  :: counts(:), discrepancy(:)
       real(dp), intent(out) :: fitted, spread
       real(dp) :: x(size(counts)), y(size(counts)), pair(size(counts) - 1)
       real(dp) :: mean_x, mean_y, top, bottom
       integer  :: i, n
       n = size(counts)
       x = log(counts)
-      y = log(apart)
+      y = log(discrepancy)
       mean_x = sum(x) / real(n, dp)
       mean_y = sum(y) / real(n, dp)
       top    = sum((x - mean_x) * (y - mean_y))
@@ -6511,9 +6850,9 @@ contains
       call show_block(governing, residual, maxval(abs(residual - acted)))
     end subroutine derived_rows
     !--------------------------------------------------------------!
-    ! The rows the family itself states, rather than a shape written
-    ! out here beside it: which degree each row reads, and how far
-    ! back, is the family's to say and not this demonstration's.
+    ! The rows the family itself states, rather than a pattern written
+    ! out here beside it: which degree each row reads, and its history
+    ! depth, are declared by the family and not by this demonstration.
     !--------------------------------------------------------------!
 
     subroutine scheme_reach(tails, heads, source_degree, determines)
@@ -6789,20 +7128,20 @@ contains
     end subroutine bind_reach
     subroutine show_tuples()
       class(relation), pointer :: r
-      integer, allocatable :: held(:,:)
+      integer, allocatable :: fixed(:,:)
       integer :: i, e, target_index
       dt = [0.0_dp, 0.30_dp, 0.20_dp, 0.40_dp, 0.25_dp]
       call edge_weights(dt, weight)
       r => relation_at(store % node(coupling), binding, 1)
       write(*,'(a)')    ' '
-      write(*,'(a,i3)') ' tuples the relation holds     ', r % num_tuples()
+      write(*,'(a,i3)') ' tuples the relation contains  ', r % num_tuples()
       write(*,'(a)')    '   component   constraint   instant  determines      weight'
-      call r % tuples(held)
-      do i = 1, size(held, 2)
+      call r % tuples(fixed)
+      do i = 1, size(fixed, 2)
          do e = 1, size(tails)
             target_index = (heads(e) - 1) * num_conditions + determines(e)
-            if (tails(e) == held(1, i) .and. target_index == held(2, i)) then
-               write(*,'(i12,i13,i10,i12,f12.5)') held(1, i), held(2, i), &
+            if (tails(e) == fixed(1, i) .and. target_index == fixed(2, i)) then
+               write(*,'(i12,i13,i10,i12,f12.5)') fixed(1, i), fixed(2, i), &
                     & heads(e), determines(e), weight(e)
                exit
             end if
@@ -6841,15 +7180,15 @@ contains
       class(family), intent(in) :: scheme
       real(dp)     , intent(in) :: design_value
       real(dp), allocatable, intent(out) :: f(:)
-      type(family_holder) :: holder(1)
+      type(family_container) :: owner(1)
       type(chain_block), allocatable :: chain(:)
       type(expansion)  , allocatable, target :: tower
-      real(dp), allocatable :: dt(:), t(:), held(:), table(:,:)
+      real(dp), allocatable :: dt(:), t(:), fixed(:), table(:,:)
       real(dp) :: achieved
-      call cosine_partition(scheme, degrees, duration, instants, held, dt, t)
-      call set_family(holder(1), scheme)
-      call march_chain(holder, [instants], van_der_pol(state_degree), degrees, uniform_grid(duration), &
-           & design_value, held, chain, tower, dt, t, achieved)
+      call cosine_partition(scheme, degrees, duration, instants, fixed, dt, t)
+      call set_family(owner(1), scheme)
+      call march_chain(owner, [instants], van_der_pol(state_degree), degrees, uniform_grid(duration), &
+           & design_value, fixed, chain, tower, dt, t, achieved)
       call chain_expansion(chain, tower, [van_der_pol_energy(state_degree)], degrees, &
            & max_order, table)
       allocate(f(0:max_order))
@@ -6872,7 +7211,7 @@ contains
       write(*,'(a,5i15)')     '   derivative order    ', [(m, m = 0, max_order)]
       write(*,'(a,5f15.8)')   '   from the expansion  ', f
       write(*,'(a,15x,4f15.8)') '   differenced       ', differenced
-      write(*,'(a,15x,4es15.2)') '   apart             ', abs(f(1:max_order) - differenced)
+      write(*,'(a,15x,4es15.2)') '   difference        ', abs(f(1:max_order) - differenced)
     end subroutine expansion_of
   end subroutine demo_expansion_check
   subroutine demo_family_coefficients()
@@ -6947,7 +7286,7 @@ contains
       write(*,'(a,3f10.5)') '   a_21, a_21, a_22                ', c
       call coefficients(scheme, 2 + s, [2, 3], 2 + s, [2, 2], [2, 2], &
            & [(0.5_dp, k = 1, 2 + s)], c)
-      write(*,'(a,2f10.5)') '   b_1, b_2 into the arriving instant', c
+      write(*,'(a,2f10.5)') '   b_1, b_2 into the end instant   ', c
       write(*,'(a,3f10.5)') '   tableau gamma, 1 - 2 gamma, b   ', &
            & (3.0_dp + sqrt(3.0_dp)) / 6.0_dp, 1.0_dp - (3.0_dp + sqrt(3.0_dp)) / 3.0_dp, 0.5_dp
     end subroutine dirk_on
@@ -7042,7 +7381,7 @@ contains
        call identities(n, failures)
     end do
     if (failures > 0) then
-       write(*,'(a,i0,a)') ' FAIL : ', failures, ' identities exceeded the floor'
+       write(*,'(a,i0,a)') ' FAIL : ', failures, ' identities exceeded the rounding bound'
        error stop
     end if
     write(*,'(a)') ' PASS : the elementary functions compose exactly to five directions'
@@ -7062,20 +7401,20 @@ contains
       b = seeded(0.8_dp, w)
       b = integer_power(b, n)
       one = derivative_terms(1.0_dp, n)
-      call held(n, 'exp(a+b) = exp(a) exp(b)', exp(a + b), exp(a) * exp(b), exp(a + b), failures)
-      call held(n, 'sin^2 + cos^2 = 1', sin(a) * sin(a) + cos(a) * cos(a), one, sin(a) * sin(a), failures)
-      call held(n, 'sin(a+b) addition', sin(a + b), sin(a) * cos(b) + cos(a) * sin(b), sin(a) * cos(b), failures)
-      call held(n, 'log(exp(a)) = a', log(exp(a)), a, exp(a), failures)
-      call held(n, 'exp(log(a)) = a', exp(log(a)), a, a, failures)
-      call held(n, 'sqrt(a) sqrt(a) = a', sqrt(a) * sqrt(a), a, a, failures)
-      call held(n, 'a**0.5 = sqrt(a)', a ** 0.5_dp, sqrt(a), sqrt(a), failures)
-      call held(n, 'a**3.0 = a a a', a ** 3.0_dp, a * a * a, a * a * a, failures)
-      call held(n, 'a**(-1.0) = 1/a', a ** (-1.0_dp), one / a, one / a, failures)
+      call agrees(n, 'exp(a+b) = exp(a) exp(b)', exp(a + b), exp(a) * exp(b), exp(a + b), failures)
+      call agrees(n, 'sin^2 + cos^2 = 1', sin(a) * sin(a) + cos(a) * cos(a), one, sin(a) * sin(a), failures)
+      call agrees(n, 'sin(a+b) addition', sin(a + b), sin(a) * cos(b) + cos(a) * sin(b), sin(a) * cos(b), failures)
+      call agrees(n, 'log(exp(a)) = a', log(exp(a)), a, exp(a), failures)
+      call agrees(n, 'exp(log(a)) = a', exp(log(a)), a, a, failures)
+      call agrees(n, 'sqrt(a) sqrt(a) = a', sqrt(a) * sqrt(a), a, a, failures)
+      call agrees(n, 'a**0.5 = sqrt(a)', a ** 0.5_dp, sqrt(a), sqrt(a), failures)
+      call agrees(n, 'a**3.0 = a a a', a ** 3.0_dp, a * a * a, a * a * a, failures)
+      call agrees(n, 'a**(-1.0) = 1/a', a ** (-1.0_dp), one / a, one / a, failures)
       a = seeded(0.4_dp, v)
       closed = exp(0.4_dp) * product(v)
-      call held_scalar(n, 'full partial of exp', mixed_partial(exp(a)), closed, failures)
+      call agrees_scalar(n, 'full partial of exp', mixed_partial(exp(a)), closed, failures)
       closed = sin(0.4_dp + real(n, dp) * acos(-1.0_dp) / 2.0_dp) * product(v)
-      call held_scalar(n, 'full partial of sin', mixed_partial(sin(a)), closed, failures)
+      call agrees_scalar(n, 'full partial of sin', mixed_partial(sin(a)), closed, failures)
     end subroutine identities
     function seeded(x, v) result(a)
       real(dp), intent(in) :: x, v(:)
@@ -7086,38 +7425,38 @@ contains
          call a % set_direction(i, v(i))
       end do
     end function seeded
-    subroutine held(n, label, got, reference, operand, failures)
+    subroutine agrees(n, label, obtained, reference, operand, failures)
       integer               , intent(in)    :: n
       character(len=*)      , intent(in)    :: label
-      type(derivative_terms), intent(in)    :: got, reference, operand
+      type(derivative_terms), intent(in)    :: obtained, reference, operand
       integer               , intent(inout) :: failures
-      real(dp) :: worst, scale, floor
+      real(dp) :: maximum_departure, scale, rounding_bound
       integer  :: m
-      worst = 0.0_dp
+      maximum_departure = 0.0_dp
       scale = 0.0_dp
       do m = 0, 2**n - 1
-         worst = max(worst, abs(coefficient(got, m) - coefficient(reference, m)))
+         maximum_departure = max(maximum_departure, abs(coefficient(obtained, m) - coefficient(reference, m)))
          scale = max(scale, abs(coefficient(operand, m)))
       end do
-      floor = real(3**n, dp) * epsilon(1.0_dp) * scale
-      call reported(n, label, worst, floor, failures)
-    end subroutine held
-    subroutine held_scalar(n, label, got, reference, failures)
+      rounding_bound = real(3**n, dp) * epsilon(1.0_dp) * scale
+      call reported(n, label, maximum_departure, rounding_bound, failures)
+    end subroutine agrees
+    subroutine agrees_scalar(n, label, obtained, reference, failures)
       integer         , intent(in)    :: n
       character(len=*), intent(in)    :: label
-      real(dp)        , intent(in)    :: got, reference
+      real(dp)        , intent(in)    :: obtained, reference
       integer         , intent(inout) :: failures
-      call reported(n, label, abs(got - reference), &
+      call reported(n, label, abs(obtained - reference), &
            & real(3**n, dp) * epsilon(1.0_dp) * abs(reference), failures)
-    end subroutine held_scalar
-    subroutine reported(n, label, worst, floor, failures)
+    end subroutine agrees_scalar
+    subroutine reported(n, label, maximum_departure, rounding_bound, failures)
       integer         , intent(in)    :: n
       character(len=*), intent(in)    :: label
-      real(dp)        , intent(in)    :: worst, floor
+      real(dp)        , intent(in)    :: maximum_departure, rounding_bound
       integer         , intent(inout) :: failures
       write(*,'(a,i0,a,a28,a,es9.2,a,es9.2)') '   n = ', n, '  ', label, &
-           & '  difference ', worst, '  floor ', floor
-      if (worst > floor) failures = failures + 1
+           & '  difference ', maximum_departure, '  bound ', rounding_bound
+      if (maximum_departure > rounding_bound) failures = failures + 1
     end subroutine reported
   end subroutine demo_function_identities
   subroutine demo_grid_design_check()
@@ -7125,7 +7464,7 @@ contains
     integer , parameter :: state_degree = 2, degrees = state_degree + 1
     integer , parameter :: instants = 21, checked(3) = [1, 7, 20]
     real(dp), parameter :: duration = 4.0_dp, design = 0.8_dp
-    type(family_holder)     :: schemes(2)
+    type(family_container)     :: schemes(2)
     type(expression)       :: functionals(2)
     type(chain_block) , allocatable :: chain(:)
     type(expansion), allocatable, target :: tower
@@ -7133,9 +7472,9 @@ contains
     real(dp), allocatable :: p(:), dt(:), t(:), v(:,:), f(:,:), tangent(:,:), adjoint(:,:)
     real(dp), allocatable :: plus(:,:), minus(:,:), q0(:), table(:,:), entries(:,:,:)
     real(dp), allocatable :: below(:,:), above(:,:), by_class(:)
-    real(dp) :: tau, delta, achieved, worst
+    real(dp) :: tau, delta, achieved, maximum_departure
     character(len=32) :: argument
-    integer :: k, j, i, route, order, max_order, nd
+    integer :: k, j, i, pass_kind, order, max_order, nd
     tau       = 1.0e-12_dp
     max_order = 3
     call demo_argument(1, argument)
@@ -7144,21 +7483,21 @@ contains
     if (len_trim(argument) > 0) read(argument, *) max_order
     call set_stopping(tau, relative, by_rate, 100)
     delta = tau ** (1.0_dp / 3.0_dp)
-    schemes = [held_family(bdf_family(3)), held_family(adams_family(3))]
+    schemes = [stored_family(bdf_family(3)), stored_family(adams_family(3))]
     functionals(1) = van_der_pol_energy(state_degree)
     functionals(2) = van_der_pol_dissipation(state_degree)
     p  = [(1.0_dp + 0.5_dp * sin(real(k, dp)), k = 1, instants - 1)]
     q0 = consistent_state(van_der_pol(state_degree), degrees, [1.0_dp, 0.0_dp], design)
     call marched(p, design, f)
     call tower % step_partials(v)
-    call chain_stamps(chain, tower, functionals, degrees, marks)
-    call chain_derivative(chain, tower, marks, functionals, degrees, 1, forward_route, tangent)
-    call chain_derivative(chain, tower, marks, functionals, degrees, 1, reverse_route, adjoint)
-    route   = route_of(size(tangent, 2), size(tangent, 1), 1)
+    call chain_versions(chain, tower, functionals, degrees, marks)
+    call chain_derivative(chain, tower, marks, functionals, degrees, 1, forward_pass, tangent)
+    call chain_derivative(chain, tower, marks, functionals, degrees, 1, reverse_pass, adjoint)
+    pass_kind   = pass_of(size(tangent, 2), size(tangent, 1), 1)
     write(*,'(a,es9.2,a,es9.2,a,es9.2)') ' relative tolerance', tau, '   difference step', delta, &
          & '   expected agreement tau^(2/3)', tau ** (2.0_dp / 3.0_dp)
     write(*,'(a,i0,a,i0,a,a)') ' designs ', size(tangent, 2), '   functionals ', size(tangent, 1), &
-         & '   the gate chooses the ', trim(merge('forward', 'reverse', route == forward_route))
+         & '   pass_of selects the ', trim(merge('forward', 'reverse', pass_kind == forward_pass))
     write(*,'(a,es10.2)') ' tangent against adjoint over the table, relative  ', &
          & maxval(abs(tangent - adjoint)) / maxval(abs(tangent))
     write(*,'(a,es10.2,a,es10.2)') ' physics column against the expansion, relative   ', &
@@ -7169,30 +7508,30 @@ contains
             & dot_product(p, adjoint(i, 2:)) / (norm2(p) * norm2(adjoint(i, 2:))), &
             & '   f ', f(0, i), '   |df/dp| ', norm2(adjoint(i, 2:))
     end do
-    worst = 0.0_dp
+    maximum_departure = 0.0_dp
     do k = 1, size(checked)
        j = checked(k)
        call marched(p + delta * unit(j), design, plus)
        call marched(p - delta * unit(j), design, minus)
        do i = 1, 2
-          worst = max(worst, abs((plus(0, i) - minus(0, i)) / (2.0_dp * delta) - adjoint(i, 1 + j)) &
+          maximum_departure = max(maximum_departure, abs((plus(0, i) - minus(0, i)) / (2.0_dp * delta) - adjoint(i, 1 + j)) &
                & / max(1.0_dp, abs(adjoint(i, 1 + j))))
        end do
     end do
-    write(*,'(a,es10.2)') ' differenced in three weights against the route, worst   ', worst
+    write(*,'(a,es10.2)') ' differenced in three weights against the pass, largest ', maximum_departure
     call marched(p, design + delta, plus)
     call marched(p, design - delta, minus)
-    write(*,'(a,es10.2)') ' differenced in the parameter against the route, worst   ', &
+    write(*,'(a,es10.2)') ' differenced in the parameter against the pass, largest ', &
          & maxval(abs((plus(0, :) - minus(0, :)) / (2.0_dp * delta) - adjoint(:, 1)) / &
          &        max(1.0_dp, abs(adjoint(:, 1))))
     nd = size(tangent, 2)
     do order = 2, max_order
        call marched(p, design, f, order)
-       call chain_stamps(chain, tower, functionals, degrees, marks)
-       call chain_derivative(chain, tower, marks, functionals, degrees, order, reverse_route, &
+       call chain_versions(chain, tower, functionals, degrees, marks)
+       call chain_derivative(chain, tower, marks, functionals, degrees, order, reverse_pass, &
             & table, entries=entries)
        write(*,'(a)') ' '
-       write(*,'(a,i0,a,i0,a,i0,a,i0)') ' derivatives of order ', order, ' by the reverse route: ', &
+       write(*,'(a,i0,a,i0,a,i0,a,i0)') ' derivatives of order ', order, ' by the reverse pass: ', &
             & size(table, 1), ' tables of ', size(table, 2), ' multisets over ', nd
        do i = 1, 2
           write(*,'(a,i0,a,es10.2,a,es10.2)') ' functional ', i, &
@@ -7212,7 +7551,7 @@ contains
        call differenced_table(p, design - delta, order - 1, below)
        call classed((above - below) / (2.0_dp * delta), 1)
        write(*,'(a,i0,a,*(es10.2))') ' differenced tables of order ', order - 1, &
-            & ' against the entries, worst by parameter count from ', &
+            & ' against the entries, largest by parameter count from ', &
             & by_class(order:0:-1) / max(1.0_dp, maxval(abs(table)))
        deallocate(by_class)
     end do
@@ -7221,14 +7560,14 @@ contains
       real(dp), intent(in) :: weights(:), nu
       real(dp), allocatable, intent(out) :: f(:,:)
       integer , intent(in), optional :: order
-      type(imbalance) :: left
+      type(imbalance) :: final_imbalance
       integer :: m
       m = 1
       if (present(order)) m = order
       call march_chain(schemes, [11, 10], van_der_pol(state_degree), degrees, &
            & designed_grid(duration), nu, q0, chain, tower, dt, t, achieved, grid_design=weights, &
-           & left=left, startup=4)
-      if (.not. left % converged) error stop 'grid_design_check: the march converged'
+           & final_imbalance=final_imbalance, startup=4)
+      if (.not. final_imbalance % converged) error stop 'grid_design_check: the march converged'
       call chain_expansion(chain, tower, functionals, degrees, m, f)
     end subroutine marched
     subroutine differenced_table(weights, nu, order, t)
@@ -7237,8 +7576,8 @@ contains
       real(dp), allocatable, intent(out) :: t(:,:)
       real(dp), allocatable :: f(:,:)
       call marched(weights, nu, f)
-      call chain_stamps(chain, tower, functionals, degrees, marks)
-      call chain_derivative(chain, tower, marks, functionals, degrees, order, reverse_route, t)
+      call chain_versions(chain, tower, functionals, degrees, marks)
+      call chain_derivative(chain, tower, marks, functionals, degrees, order, reverse_pass, t)
     end subroutine differenced_table
     subroutine classed(e, l)
       real(dp), intent(in) :: e(:,:)
@@ -7260,70 +7599,318 @@ contains
     end function unit
   end subroutine demo_grid_design_check
   !===================================================================!
-  ! WHERE ONE BLOCK'S VALUES SIT INSIDE ANOTHER'S STATE. The assembler
-  ! settles every handover offset before a block is built, from the
-  ! tower alone; the block that is then built lays its instants out
-  ! for itself. The two must agree at every instant of every block,
-  ! or a block would be handed the wrong values and solve a different
-  ! problem without complaining. The departure counts offsets that
-  ! differ, so the floor is zero.
+  ! THE LEIBNIZ EXPANSION OF THE LAGRANGIAN. With L = F - lambda . R
+  ! and R(Q(nu); nu) = 0 along the march, the derivative of order n of
+  ! the functional in the design is the explicit derivative of the
+  ! Lagrangian of order n - 1,
+  !
+  !    d^n F     d  [  (n-1)    n-1  (n-1)     (k)    (n-1-k) ]
+  !    ----- = ---- [ F      -  sum  (   ) lambda  . R        ]
+  !    dnu^n   dnu  [           k=0  ( k )                    ]
+  !
+  ! the outer derivative holding every derivative of the state fixed,
+  ! and the costate of order k solving the transposed block with the
+  ! lower costates on its right-hand side. The reverse pass forms
+  ! this as one product per row over n directions, n - 1 for the
+  ! state's derivatives and one for the design alone: a subset of
+  ! size k of the n - 1 represents the binomial count once, and the
+  ! coefficient of a smaller subset containing the explicit direction is
+  ! the entry of a lower order, so one reverse pass at order N yields
+  ! every order to N. The costates come from the transposed solves and
+  ! the state's derivatives from the forward ones as before: the one
+  ! product is the assembly, not the solves.
+  !
+  ! Bounds, each stated: the terms add to the table to the rounding of
+  ! their count; the table of every order from one reverse pass agrees
+  ! with the forward pass to what two solves at the march's relative
+  ! tolerance tau admit, tau^(2/3).
+  !===================================================================!
+  subroutine demo_lagrangian_expansion()
+    integer , parameter :: state_degree = 2, degrees = state_degree + 1, instants = 21
+    real(dp), parameter :: duration = 4.0_dp, design = 0.8_dp
+    type(family_container) :: schemes(1)
+    type(expression)    :: functionals(2)
+    type(chain_block), allocatable :: chain(:)
+    type(expansion)  , allocatable, target :: tower
+    type(imbalance)  :: final_imbalance
+    integer , allocatable :: marks(:)
+    real(dp), allocatable :: q0(:), dt(:), t(:), f(:,:), table(:,:), by_order(:,:,:), terms(:,:,:,:)
+    real(dp) :: tau, achieved, agreement, departure, scale, rounding_bound
+    character(len=32) :: argument
+    integer :: max_order, order, n, k, i, b, rows, failures
+    failures  = 0
+    tau       = 1.0e-12_dp
+    max_order = 4
+    call demo_argument(1, argument)
+    if (len_trim(argument) > 0) read(argument, *) tau
+    call demo_argument(2, argument)
+    if (len_trim(argument) > 0) read(argument, *) max_order
+    call set_stopping(tau, relative, by_rate, 100)
+    agreement      = tau ** (2.0_dp / 3.0_dp)
+    schemes(1)     = stored_family(bdf_family(3))
+    functionals(1) = van_der_pol_energy(state_degree)
+    functionals(2) = van_der_pol_dissipation(state_degree)
+    q0 = consistent_state(van_der_pol(state_degree), degrees, [1.0_dp, 0.0_dp], design)
+    call march_chain(schemes, [instants], van_der_pol(state_degree), degrees, uniform_grid(duration), &
+         & design, q0, chain, tower, dt, t, achieved, final_imbalance=final_imbalance, startup=4)
+    if (.not. final_imbalance % converged) error stop 'lagrangian_expansion: the march converged'
+    rows = 0
+    do b = 1, size(chain)
+       rows = rows + chain(b) % rows % num_unknowns()
+    end do
+    call chain_expansion(chain, tower, functionals, degrees, max_order, f)
+    call chain_versions(chain, tower, functionals, degrees, marks)
+    call chain_derivative(chain, tower, marks, functionals, degrees, max_order, reverse_pass, table, &
+         & by_order=by_order)
+    write(*,'(a)') ' bdf 3 over a crouzeix start, van der pol, the physics'' parameter the one design'
+    write(*,'(a,es9.2,a,es9.2)') ' relative tolerance', tau, &
+         & '   agreement of two solves at it, tau^(2/3)', agreement
+    write(*,'(a)') ' '
+    write(*,'(a,i0,a)') ' every order from one reverse pass at order ', max_order, ', against the forward pass'
+    write(*,'(a)') '   order  functional       forward pass         reverse pass    departure'
+    do n = 0, max_order
+       do i = 1, size(functionals)
+          departure = abs(by_order(i, 1, n) - f(n, i)) / max(1.0_dp, abs(f(n, i)))
+          write(*,'(i8,i12,2es20.10,es13.2)') n, i, f(n, i), by_order(i, 1, n), departure
+          if (departure > agreement) failures = failures + 1
+       end do
+    end do
+    do order = 1, max_order
+       call chain_derivative(chain, tower, marks, functionals, degrees, order, reverse_pass, table, &
+            & leibniz=terms)
+       n = order - 1
+       write(*,'(a)') ' '
+       write(*,'(a,i0,a,i0,a)') ' order ', order, ': the explicit derivative of the lagrangian of order ', &
+            & n, ', term by term'
+       do i = 1, size(functionals)
+          scale = sum(abs(terms(i, 1, 1, :)))
+          rounding_bound = real(rows, dp) * real(2**order, dp) * epsilon(1.0_dp) * scale
+          write(*,'(a,i0)') '   functional ', i
+          do k = 0, n
+             write(*,'(a,i0,a,i0,a,i0,a,i0,a,i0,a,es20.10)') '     C(', n, ',', k, ') = ', choose(n, k), &
+                  & '   lambda^(', k, ') . d/dnu R^(', n - k, ')   ', terms(i, 1, 1, k)
+          end do
+          write(*,'(a,i0,a,es20.10)') '     d/dnu F^(', n, ')                            ', terms(i, 1, 1, n + 1)
+          departure = abs(sum(terms(i, 1, 1, :)) - table(i, 1))
+          write(*,'(a,es20.10,a,es9.2,a,es9.2)') '     the terms summed, against the table  ', table(i, 1), &
+               & '   difference ', departure, '   bound ', rounding_bound
+          if (departure > rounding_bound) failures = failures + 1
+          departure = abs(table(i, 1) - f(order, i)) / max(1.0_dp, abs(f(order, i)))
+          write(*,'(a,es20.10,a,es9.2)') '     the forward pass                       ', f(order, i), &
+               & '   departure ', departure
+          if (departure > agreement) failures = failures + 1
+       end do
+    end do
+    write(*,'(a)') ' '
+    if (failures > 0) then
+       write(*,'(a,i0,a)') ' FAIL : ', failures, ' checks exceeded their bound'
+       error stop
+    end if
+    write(*,'(a)') ' PASS : the reverse pass is the leibniz expansion of the lagrangian, every order from one pass'
+  end subroutine demo_lagrangian_expansion
+  !===================================================================!
+  ! THE TAYLOR STATE MARCH. The forward pass solves, block by block,
+  ! the tower of the state's derivatives in the design to the requested
+  ! order: the zeroth order by Newton in the march, every higher order
+  ! by one linear solve against the block's own factorisation. A
+  ! block's tower is read by the blocks whose given instants lie in it
+  ! and by no later block, so it is released once the last such block
+  ! has been solved. The live storage is then the history depth in
+  ! blocks, independent of the horizon; the reverse pass reads every
+  ! tower during the reverse traversal and retains them all.
+  !
+  ! One horizon is marched in one block, two, four and eight. The
+  ! tables agree to what two solves at the tolerance admit, tau^(2/3);
+  ! the maximum live tower storage equals the largest sum of two
+  ! consecutive towers, an exact count, so its bound is zero.
+  !===================================================================!
+  subroutine demo_taylor_state()
+    integer , parameter :: state_degree = 2, degrees = state_degree + 1, solved = 40
+    integer , parameter :: splits(4) = [1, 2, 4, 8]
+    real(dp), parameter :: duration = 8.0_dp, design = 0.8_dp
+    type(family_container), allocatable :: schemes(:)
+    type(expression)    :: functionals(2)
+    type(chain_block), allocatable :: chain(:)
+    type(expansion)  , allocatable, target :: tower
+    type(imbalance)  :: final_imbalance
+    integer , allocatable :: marks(:), added(:), sizes(:)
+    real(dp), allocatable :: q0(:), dt(:), t(:), table(:,:), whole(:,:), by_order(:,:,:)
+    real(dp) :: tau, achieved, agreement, departure
+    character(len=32) :: argument
+    integer :: max_order, storage(2), expected, nb, b, k, failures
+    failures  = 0
+    tau       = 1.0e-12_dp
+    max_order = 4
+    call demo_argument(1, argument)
+    if (len_trim(argument) > 0) read(argument, *) tau
+    call demo_argument(2, argument)
+    if (len_trim(argument) > 0) read(argument, *) max_order
+    call set_stopping(tau, relative, by_rate, 100)
+    agreement      = tau ** (2.0_dp / 3.0_dp)
+    functionals(1) = van_der_pol_energy(state_degree)
+    functionals(2) = van_der_pol_dissipation(state_degree)
+    q0 = consistent_state(van_der_pol(state_degree), degrees, [1.0_dp, 0.0_dp], design)
+    write(*,'(a,i0,a,i0,a)') ' bdf 3 over a crouzeix start, van der pol, ', solved, &
+         & ' instants, derivatives to order ', max_order, ' in the physics'' parameter'
+    write(*,'(a,es9.2,a,es9.2)') ' relative tolerance', tau, &
+         & '   agreement of two solves at it, tau^(2/3)', agreement
+    write(*,'(a)') ' '
+    write(*,'(a)') '   blocks   tower numbers live at most   of all tower numbers   expected' // &
+         & '   departure of the tables from one block'
+    do k = 1, size(splits)
+       nb = splits(k)
+       allocate(schemes(nb), added(nb))
+       do b = 1, nb
+          schemes(b) = stored_family(bdf_family(3))
+          added(b)   = solved / nb
+       end do
+       call march_chain(schemes, added, van_der_pol(state_degree), degrees, uniform_grid(duration), &
+            & design, q0, chain, tower, dt, t, achieved, final_imbalance=final_imbalance, startup=4)
+       if (.not. final_imbalance % converged) error stop 'taylor_state: the march converged'
+       call chain_versions(chain, tower, functionals, degrees, marks)
+       call chain_derivative(chain, tower, marks, functionals, degrees, max_order, forward_pass, &
+            & table, designs=1, by_order=by_order, tower_storage=storage)
+       allocate(sizes(size(chain)))
+       do b = 1, size(chain)
+          sizes(b) = chain(b) % rows % num_unknowns() * max_order
+       end do
+       expected = sizes(1)
+       do b = 2, size(chain)
+          expected = max(expected, sizes(b - 1) + sizes(b))
+       end do
+       if (k == 1) whole = by_order(:, 1, :)
+       departure = maxval(abs(by_order(:, 1, :) - whole) / max(1.0_dp, abs(whole)))
+       write(*,'(i9,i22,i22,i11,es30.2)') nb, storage(1), storage(2), expected, departure
+       if (storage(1) /= expected) failures = failures + 1
+       if (departure > agreement) failures = failures + 1
+       deallocate(schemes, added, sizes)
+    end do
+    call chain_derivative(chain, tower, marks, functionals, degrees, max_order, reverse_pass, &
+         & table, designs=1, tower_storage=storage)
+    write(*,'(a)') ' '
+    write(*,'(a,i0,a,i0)') ' the reverse pass over the last chain retains every tower: live at most ', &
+         & storage(1), ' of ', storage(2)
+    if (storage(1) /= storage(2)) failures = failures + 1
+    write(*,'(a)') ' '
+    call pipelined()
+    write(*,'(a)') ' '
+    if (failures > 0) then
+       write(*,'(a,i0,a)') ' FAIL : ', failures, ' checks exceeded their bound'
+       error stop
+    end if
+    write(*,'(a)') ' PASS : the taylor state march stores one block''s history depth of towers, and the tables are unchanged'
+  contains
+    !----------------------------------------------------------------!
+    ! THE PIPELINED MARCH: dirk 3, one instant per block, so the
+    ! horizon advances one instant per block at the family's order. Each block's tower is
+    ! solved with the block and released past its last reader, states
+    ! included, inside the march itself. Doubling the horizon must
+    ! leave the live storage unchanged - an integer, bound zero -
+    ! while the totals double; the tables agree with the
+    ! whole-horizon march of the same grid to tau^(2/3).
+    !----------------------------------------------------------------!
+    subroutine pipelined()
+      integer, parameter :: horizons(3) = [20, 40, 80]
+      type(family_container), allocatable :: steps(:)
+      real(dp), allocatable :: fp(:,:), fr(:,:)
+      integer :: ts(2), ss(2), previous_ts, previous_ss, n, j
+      previous_ts = 0
+      previous_ss = 0
+      write(*,'(a,i0)') ' dirk 3, one instant per block: the pipelined march, derivatives to order ', max_order
+      write(*,'(a)') '   instants    towers live   of all    states live   of all   departure from the whole march'
+      do j = 1, size(horizons)
+         n = horizons(j)
+         allocate(steps(n - 1))
+         do b = 1, n - 1
+            steps(b) = stored_family(crouzeix_three_stage())
+         end do
+         call march_chain(steps, [2, (1, b = 2, n - 1)], van_der_pol(state_degree), degrees, &
+              & uniform_grid(duration), design, q0, chain, tower, dt, t, achieved, final_imbalance=final_imbalance, &
+              & functionals=functionals, derivative_order=max_order, f=fp, &
+              & tower_storage=ts, state_storage=ss)
+         if (.not. final_imbalance % converged) error stop 'taylor_state: the pipelined march converged'
+         deallocate(steps)
+         allocate(steps(1))
+         steps(1) = stored_family(crouzeix_three_stage())
+         call march_chain(steps, [n], van_der_pol(state_degree), degrees, uniform_grid(duration), &
+              & design, q0, chain, tower, dt, t, achieved, final_imbalance=final_imbalance)
+         if (.not. final_imbalance % converged) error stop 'taylor_state: the whole march converged'
+         call chain_expansion(chain, tower, functionals, degrees, max_order, fr)
+         departure = maxval(abs(fp - fr) / max(1.0_dp, abs(fr)))
+         write(*,'(i11,i15,i9,i15,i9,es22.2)') n, ts(1), ts(2), ss(1), ss(2), departure
+         if (departure > agreement) failures = failures + 1
+         if (j > 1 .and. (ts(1) /= previous_ts .or. ss(1) /= previous_ss)) failures = failures + 1
+         previous_ts = ts(1)
+         previous_ss = ss(1)
+         deallocate(steps)
+      end do
+    end subroutine pipelined
+  end subroutine demo_taylor_state
+  !===================================================================!
+  ! WHERE ONE BLOCK'S VALUES ARE STORED INSIDE ANOTHER'S STATE. The
+  ! assembler computes every transfer offset before a block is built,
+  ! from the tower alone; the block that is then built computes its
+  ! instant offsets independently. The two must agree at every instant
+  ! of every block, or a block would receive the wrong values and solve
+  ! a different problem without detection. The departure counts offsets
+  ! that differ, so the bound is zero.
   !===================================================================!
 
-  subroutine demo_handover_offsets()
+  subroutine demo_transfer_offsets()
     implicit none
     integer , parameter :: state_degree = 2
     integer , parameter :: degrees = state_degree + 1
     real(dp), parameter :: duration = 2.0_dp
-    ! a block adds more instants than its family reaches back over,
-    ! so the counts are above every reach in play
-    call checked('bdf 2 alone      ', [holder_named('bdf', 2)], [8])
-    call checked('bdf 2 then bdf 1 ', [holder_named('bdf', 2), holder_named('bdf', 1)], [8, 8])
-    call checked('adams 2 then bdf2', [holder_named('adams', 2), holder_named('bdf', 2)], [8, 8])
-    call checked('dirk, staged     ', [holder_named('dirk', 3)], [8])
+    ! a block adds more instants than its family's history depth,
+    ! so the counts exceed every history depth used
+    call checked('bdf 2 alone      ', [container_named('bdf', 2)], [8])
+    call checked('bdf 2 then bdf 1 ', [container_named('bdf', 2), container_named('bdf', 1)], [8, 8])
+    call checked('adams 2 then bdf2', [container_named('adams', 2), container_named('bdf', 2)], [8, 8])
+    call checked('dirk, staged     ', [container_named('dirk', 3)], [8])
   contains
-    function holder_named(family_of, order) result(h)
+    function container_named(family_of, order) result(h)
       character(len=*), intent(in) :: family_of
       integer         , intent(in) :: order
-      type(family_holder) :: h
+      type(family_container) :: h
       class(family), allocatable :: one
-      logical :: ok
-      call family_named(family_of, order, one, ok)
-      if (.not. ok) error stop 'gti_demos: that family carries that order'
+      logical :: passes_check
+      call family_named(family_of, order, one, passes_check)
+      if (.not. passes_check) error stop 'gti_demos: the named family has a scheme at that order'
       allocate(h % scheme, source=one)
-    end function holder_named
+    end function container_named
     subroutine checked(title, schemes, added)
       character(len=*)   , intent(in) :: title
-      type(family_holder), intent(in) :: schemes(:)
+      type(family_container), intent(in) :: schemes(:)
       integer            , intent(in) :: added(:)
       type(chain_block), allocatable :: chain(:)
       type(expansion), allocatable, target :: tower
       integer, allocatable :: first(:), last(:), settled(:)
-      real(dp), allocatable :: dt(:), t(:), held(:)
+      real(dp), allocatable :: dt(:), t(:), fixed(:)
       real(dp) :: achieved
-      integer :: b, k, n, apart, counted
+      integer :: b, k, n, discrepancy, counted
       call horizon_bounds(schemes, added, degrees - 1, first, last)
       n = last(size(added))
-      call cosine_partition(schemes(1) % scheme, degrees, duration, n, held, dt, t)
+      call cosine_partition(schemes(1) % scheme, degrees, duration, n, fixed, dt, t)
       call march_chain(schemes, added, van_der_pol(state_degree), degrees, &
-           & uniform_grid(duration), 0.0_dp, held, chain, tower, dt, t, achieved)
-      apart   = 0
+           & uniform_grid(duration), 0.0_dp, fixed, chain, tower, dt, t, achieved)
+      discrepancy   = 0
       counted = 0
       do b = 1, size(chain)
          settled = instants_at_of(tower, b, chain(b) % scheme, van_der_pol(state_degree))
          if (size(settled) /= size(chain(b) % instants_at)) then
-            apart   = apart + 1
+            discrepancy   = discrepancy + 1
             counted = counted + 1
             cycle
          end if
          do k = 1, size(settled)
             counted = counted + 1
-            if (settled(k) /= chain(b) % instants_at(k)) apart = apart + 1
+            if (settled(k) /= chain(b) % instants_at(k)) discrepancy = discrepancy + 1
          end do
       end do
       write(*,'(a,a,i4,a,i0,a,i0)') '   ', title, counted, &
-           & ' offsets settled before building, differing ', apart, ', held to ', 0
+           & ' offsets computed before building, differing ', discrepancy, ', bound ', 0
     end subroutine checked
-  end subroutine demo_handover_offsets
+  end subroutine demo_transfer_offsets
 
   subroutine demo_jacobian_shape()
     implicit none
@@ -7343,22 +7930,22 @@ contains
       character(len=*), intent(in) :: label
       class(family)   , intent(in) :: scheme
       integer         , intent(in) :: degrees, instants
-      type(family_holder), allocatable :: schemes(:)
+      type(family_container), allocatable :: schemes(:)
       type(chain_block) , allocatable :: chain(:)
       type(expansion), allocatable, target :: tower
       integer, allocatable :: marks(:)
       integer , allocatable :: added(:)
-      real(dp), allocatable :: held(:), dt(:), t(:), a(:,:)
+      real(dp), allocatable :: fixed(:), dt(:), t(:), a(:,:)
       real(dp) :: achieved, duration, design
       duration = 3.0_dp
       design   = 1.0_dp
       allocate(schemes(1))
       call set_family(schemes(1), scheme)
       added = [instants]
-      call cosine_partition(scheme, degrees, duration, instants, held, dt, t)
+      call cosine_partition(scheme, degrees, duration, instants, fixed, dt, t)
       call march_chain(schemes, added, van_der_pol(degrees - 1), degrees, &
-           & uniform_grid(duration), design, held, chain, tower, dt, t, achieved)
-      call chain_stamps(chain, tower, [van_der_pol_energy(degrees - 1)], degrees, marks)
+           & uniform_grid(duration), design, fixed, chain, tower, dt, t, achieved)
+      call chain_versions(chain, tower, [van_der_pol_energy(degrees - 1)], degrees, marks)
       call dense_jacobian(chain, design, a)
       call reported(label, a)
     end subroutine shape_of
@@ -7366,10 +7953,10 @@ contains
       character(len=*), intent(in) :: label
       real(dp)        , intent(in) :: a(:,:)
       integer  :: n, i, j, filled, below, above
-      real(dp) :: biggest, least, on_diagonal, row_most
+      real(dp) :: largest_entry, least, on_diagonal, row_most
       n       = size(a, 1)
-      biggest = maxval(abs(a))
-      least   = 1.0e-12_dp * biggest
+      largest_entry = maxval(abs(a))
+      least   = 1.0e-12_dp * largest_entry
       filled = 0
       below  = 0
       above  = 0
@@ -7388,7 +7975,7 @@ contains
       row_most = maxval(sum(abs(a), dim=2))
       write(*,'(a,a,i8,i10,i8,i8,f12.2,3es15.4)') '  ', label // repeat(' ', 12 - len(label)), &
            & n, filled, below, above, 100.0_dp * real(filled, dp) / real(n * n, dp), &
-           & biggest, on_diagonal, row_most
+           & largest_entry, on_diagonal, row_most
     end subroutine reported
   end subroutine demo_jacobian_shape
   subroutine demo_level_maps()
@@ -7408,7 +7995,7 @@ contains
     call sets % name(store % node(expansion), 'expansion of the van der pol functional in nu')
     call sets % bind(store % node(expansion), counted_set_representation(1))
     call attach_known(store % node(expansion), [1.0_dp])
-    write(*,'(a)') ' the tower, and what each level carries'
+    write(*,'(a)') ' the tower, and what each level stores'
     call show(store % node(expansion), 0)
     write(*,'(a)')    ' '
     write(*,'(a,i0)') ' nodes owned by the storage      ', store % num_nodes()
@@ -7563,16 +8150,16 @@ contains
     integer :: multistep, multistage
     multistep  = one_block(one_multistep_slice)
     multistage = one_block(one_multistage_slice)
-    write(*,'(a)') ' a multistep block: slices hold components'
+    write(*,'(a)') ' a multistep block: slices contain components'
     root => store % node(multistep)
     call show(root, 1)
     write(*,'(a)') ' '
-    write(*,'(a)') ' a multistage block: slices hold stages'
+    write(*,'(a)') ' a multistage block: slices contain stages'
     root => store % node(multistage)
     call show(root, 1)
     write(*,'(a)')    ' '
     write(*,'(a,i0)') ' nodes owned by the storage   ', store % num_nodes()
-    call the_stranger_is_refused()
+    call foreign_member_is_refused()
   contains
     recursive function members_of(n, make) result(members)
       integer, intent(in) :: n
@@ -7637,25 +8224,25 @@ contains
       call show(first, depth)
       call show_each(sequence_rest(members), depth)
     end subroutine show_each
-    subroutine the_stranger_is_refused()
+    subroutine foreign_member_is_refused()
       type(graph), pointer :: subject_node, other
-      integer, allocatable :: mine(:)
-      integer :: stranger, alien, subject
-      mine     = members_of(2, one_leaf)
-      stranger = one_leaf()
-      alien    = store % assemble([mine(1), stranger], 0)
-      subject = coupled(mine)
+      integer, allocatable :: own(:)
+      integer :: non_member, foreign, subject
+      own        = members_of(2, one_leaf)
+      non_member = one_leaf()
+      foreign    = store % assemble([own(1), non_member], 0)
+      subject = coupled(own)
       subject_node => store % node(subject)
       write(*,'(a)')    ' '
       write(*,'(a,l1)') ' coupling beginning with its own members is consistent ', &
            & level_consistent(subject_node)
-      other => store % node(alien)
+      other => store % node(foreign)
       subject_node % branch(2) = known_branch(other)
-      write(*,'(a,i0)') ' the other coupling carries the same count             ', &
+      write(*,'(a,i0)') ' the other coupling has the same count                 ', &
            & level_num_members(subject_node)
       write(*,'(a,l1)') ' and is refused by identity                            ', &
            & level_consistent(subject_node)
-    end subroutine the_stranger_is_refused
+    end subroutine foreign_member_is_refused
   end subroutine demo_level_shape
   subroutine demo_marched_block()
     implicit none
@@ -7679,23 +8266,23 @@ contains
       real(dp)     , intent(out) :: achieved
       type(block_residual) :: rows
       type(expansion) :: tower
-      type(family_holder) :: holder(1)
+      type(family_container) :: owner(1)
       integer, allocatable :: at(:)
-      real(dp), allocatable :: dt(:), held(:)
-      call cosine_partition(scheme, degrees, duration, n, held, dt, t)
-      call set_family(holder(1), scheme)
-      call tower % build(van_der_pol(max_state_degree), holder, [n], uniform_grid(duration), 0, 0.0_dp)
-      call block_from(tower, 1, scheme, van_der_pol(max_state_degree), held, rows, at)
+      real(dp), allocatable :: dt(:), fixed(:)
+      call cosine_partition(scheme, degrees, duration, n, fixed, dt, t)
+      call set_family(owner(1), scheme)
+      call tower % build(van_der_pol(max_state_degree), owner, [n], uniform_grid(duration), 0, 0.0_dp)
+      call block_from(tower, 1, scheme, van_der_pol(max_state_degree), fixed, rows, at)
       call solved(rows, design_value, q, achieved)
     end subroutine march
-    pure real(dp) function worst(q, t) result(e)
+    pure real(dp) function maximum_departure(q, t) result(e)
       real(dp), intent(in) :: q(:), t(:)
       integer :: k
       e = 0.0_dp
       do k = 1, size(t)
          e = max(e, abs(q(unknown(k, 0)) - cosine(0, t(k))))
       end do
-    end function worst
+    end function maximum_departure
     subroutine order_of(title, scheme, expected)
       character(len=*), intent(in) :: title
       class(family)   , intent(in) :: scheme
@@ -7706,12 +8293,12 @@ contains
       do level = 1, 4
          steps = 10 * 2 ** (level - 1)
          call march(scheme, steps + 1, 0.0_dp, q, t, achieved)
-         e(level) = worst(q, t)
+         e(level) = maximum_departure(q, t)
       end do
       write(*,'(a)')          ' '
       write(*,'(a)')          ' ' // title // ' on the harmonic oscillator'
       write(*,'(a,4i11)')     '   steps                      ', [(10 * 2 ** (level - 1), level = 1, 4)]
-      write(*,'(a,4es11.3)')  '   worst error                ', e
+      write(*,'(a,4es11.3)')  '   maximum error              ', e
       write(*,'(a,33x,3f11.3)') '   ratio                    ', e(1:3) / e(2:4)
       write(*,'(a,f11.3)')    '   two to the scheme order    ', 2.0_dp ** expected
       write(*,'(a,es11.3)')   '   residual newton achieved   ', achieved
@@ -7732,12 +8319,12 @@ contains
     integer , parameter :: state_degree = 2
     integer , parameter :: degrees = state_degree + 1
     real(dp), parameter :: duration = 2.0_dp
-    call splitting_changes_nothing()
+    call splitting_is_invariant()
     call across_a_change_of_scheme()
-    call sensitivity_across_the_junction()
+    call sensitivity_across_the_block_boundary()
   contains
     subroutine marched(schemes, added, q, achieved, design_value)
-      type(family_holder), intent(in) :: schemes(:)
+      type(family_container), intent(in) :: schemes(:)
       integer            , intent(in) :: added(:)
       real(dp), allocatable, intent(out) :: q(:)
       real(dp)           , intent(out) :: achieved
@@ -7745,43 +8332,43 @@ contains
       type(chain_block), allocatable :: chain(:)
       type(expansion), allocatable, target :: tower
       integer, allocatable :: first(:), last(:)
-      real(dp), allocatable :: dt(:), t(:), held(:)
+      real(dp), allocatable :: dt(:), t(:), fixed(:)
       real(dp) :: design
       integer :: k, n
       design = 0.0_dp
       if (present(design_value)) design = design_value
       call horizon_bounds(schemes, added, degrees - 1, first, last)
       n = last(size(added))
-      call cosine_partition(schemes(1) % scheme, degrees, duration, n, held, dt, t)
+      call cosine_partition(schemes(1) % scheme, degrees, duration, n, fixed, dt, t)
       call march_chain(schemes, added, van_der_pol(state_degree), degrees, &
-           & uniform_grid(duration), design, held, &
+           & uniform_grid(duration), design, fixed, &
            & chain, tower, dt, t, achieved)
       allocate(q(n * degrees))
       do k = 1, n
          q((k - 1) * degrees + 1:k * degrees) = instant_components(chain, k)
       end do
     end subroutine marched
-    subroutine splitting_changes_nothing()
-      type(family_holder) :: whole(1), split(2)
+    subroutine splitting_is_invariant()
+      type(family_container) :: whole(1), split(2)
       real(dp), allocatable :: q_whole(:), q_split(:)
       real(dp) :: achieved_whole, achieved_split
-      whole = [held_family(bdf_family(2))]
-      split = [held_family(bdf_family(2)), held_family(bdf_family(2))]
+      whole = [stored_family(bdf_family(2))]
+      split = [stored_family(bdf_family(2)), stored_family(bdf_family(2))]
       call marched(whole, [40], q_whole, achieved_whole)
       call marched(split, [20, 20], q_split, achieved_split)
       write(*,'(a)')        ' bdf 2 over forty instants, in one block and in two'
       write(*,'(a,i0)')     '   unknowns, whole             ', size(q_whole)
       write(*,'(a,i0)')     '   unknowns, split             ', size(q_split)
-      write(*,'(a,es11.2)') '   worst difference between them', maxval(abs(q_whole - q_split))
+      write(*,'(a,es11.2)') '   maximum difference           ', maxval(abs(q_whole - q_split))
       write(*,'(a,es11.2)') '   residual, whole             ', achieved_whole
       write(*,'(a,es11.2)') '   residual, split             ', achieved_split
-    end subroutine splitting_changes_nothing
+    end subroutine splitting_is_invariant
     subroutine across_a_change_of_scheme()
-      type(family_holder) :: schemes(2)
+      type(family_container) :: schemes(2)
       real(dp), allocatable :: q(:), dt(:), t(:)
       real(dp) :: e(3), achieved
       integer :: level, added, k, n
-      schemes = [held_family(bdf_family(2)), held_family(adams_family(3))]
+      schemes = [stored_family(bdf_family(2)), stored_family(adams_family(3))]
       do level = 1, 3
          added = 10 * 2 ** (level - 1)
          call marched(schemes, [added, added], q, achieved)
@@ -7795,15 +8382,15 @@ contains
       write(*,'(a)')          ' '
       write(*,'(a)')          ' bdf 2 then adams-moulton 3, on the harmonic oscillator'
       write(*,'(a,3i11)')     '   instants                   ', [(20 * 2 ** (level - 1), level = 1, 3)]
-      write(*,'(a,3es11.3)')  '   worst error                ', e
+      write(*,'(a,3es11.3)')  '   maximum error              ', e
       write(*,'(a,22x,2f11.3)') '   ratio                    ', e(1:2) / e(2:3)
       write(*,'(a,es11.2)')   '   residual                   ', achieved
     end subroutine across_a_change_of_scheme
-    subroutine sensitivity_across_the_junction()
+    subroutine sensitivity_across_the_block_boundary()
       real(dp), parameter :: delta = 1.0e-6_dp
       real(dp), parameter :: design = 1.0_dp
       integer , parameter :: added(2) = [10, 10]
-      type(family_holder) :: schemes(2)
+      type(family_container) :: schemes(2)
       type(chain_block) , allocatable :: chain(:)
       type(expansion), allocatable, target :: tower
       integer, allocatable :: marks(:)
@@ -7811,16 +8398,16 @@ contains
       real(dp), allocatable :: q(:), dt(:), table(:,:)
       real(dp) :: f, tangent, adjoint, differenced, achieved
       integer :: n
-      schemes = [held_family(bdf_family(2)), held_family(adams_family(3))]
+      schemes = [stored_family(bdf_family(2)), stored_family(adams_family(3))]
       n = sum(added)
       call marched(schemes, added, q, achieved, design)
       f = chained_energy(schemes, added, design)
       call chained(schemes, added, design, chain, tower, dt)
       energy(1) = van_der_pol_energy(state_degree)
-      call chain_stamps(chain, tower, energy, degrees, marks)
-      call chain_derivative(chain, tower, marks, energy, degrees, 1, forward_route, table)
+      call chain_versions(chain, tower, energy, degrees, marks)
+      call chain_derivative(chain, tower, marks, energy, degrees, 1, forward_pass, table)
       tangent     = first_of(table)
-      call chain_derivative(chain, tower, marks, energy, degrees, 1, reverse_route, table)
+      call chain_derivative(chain, tower, marks, energy, degrees, 1, reverse_pass, table)
       adjoint     = first_of(table)
       differenced = differenced_energy(schemes, added, n, design, delta)
       write(*,'(a)')        ' '
@@ -7832,34 +8419,34 @@ contains
       write(*,'(a,f16.10)') '   sensitivity, differenced   ', differenced
       write(*,'(a,es16.2)') '   tangent against adjoint    ', abs(tangent - adjoint)
       write(*,'(a,es16.2)') '   tangent against difference ', abs(tangent - differenced)
-    end subroutine sensitivity_across_the_junction
+    end subroutine sensitivity_across_the_block_boundary
     subroutine chained(schemes, added, design, chain, tower, dt)
-      type(family_holder), intent(in) :: schemes(:)
+      type(family_container), intent(in) :: schemes(:)
       integer            , intent(in) :: added(:)
       real(dp)           , intent(in) :: design
       type(chain_block), allocatable, intent(out) :: chain(:)
       type(expansion)  , allocatable, intent(inout), target :: tower
       real(dp)         , allocatable, intent(out) :: dt(:)
       integer , allocatable :: first(:), last(:)
-      real(dp), allocatable :: t(:), held(:)
+      real(dp), allocatable :: t(:), fixed(:)
       real(dp) :: achieved
       call horizon_bounds(schemes, added, degrees - 1, first, last)
-      call cosine_partition(schemes(1) % scheme, degrees, duration, last(size(added)), held, dt, t)
+      call cosine_partition(schemes(1) % scheme, degrees, duration, last(size(added)), fixed, dt, t)
       call march_chain(schemes, added, van_der_pol(state_degree), degrees, &
-           & uniform_grid(duration), design, held, &
+           & uniform_grid(duration), design, fixed, &
            & chain, tower, dt, t, achieved)
     end subroutine chained
     !--------------------------------------------------------------!
     ! THE FUNCTIONAL THE CHAIN ITSELF INTEGRATES. A multistep family
-    ! weighs the instants its own stencil reaches back over, so a sum
+    ! weights the instants within its own stencil's history, so a sum
     ! of the instants at their step sizes is a different rule and a
     ! different number - one order lower. A tangent is the derivative
-    ! of the functional it was taken from, so the difference below is
-    ! taken of this one and of no other.
+    ! of the functional it was taken from, so the finite difference
+    ! below is taken of this functional and of no other.
     !--------------------------------------------------------------!
 
     real(dp) function chained_energy(schemes, added, design) result(f)
-      type(family_holder), intent(in) :: schemes(:)
+      type(family_container), intent(in) :: schemes(:)
       integer            , intent(in) :: added(:)
       real(dp)           , intent(in) :: design
       type(chain_block), allocatable :: chain(:)
@@ -7873,7 +8460,7 @@ contains
     end function chained_energy
 
     real(dp) function differenced_energy(schemes, added, n, design, delta) result(d)
-      type(family_holder), intent(in) :: schemes(:)
+      type(family_container), intent(in) :: schemes(:)
       integer            , intent(in) :: added(:), n
       real(dp)           , intent(in) :: design, delta
       associate (u1 => n); end associate
@@ -7890,19 +8477,19 @@ contains
     call order_of('crouzeix two-stage', crouzeix_two_stage())
     call order_of('crouzeix three-stage', crouzeix_three_stage())
   contains
-    real(dp) function worst_error(scheme, n) result(e)
+    real(dp) function maximum_error(scheme, n) result(e)
       class(family), intent(in) :: scheme
       integer      , intent(in) :: n
       type(block_residual) :: rows
       type(expansion) :: tower
-      type(family_holder) :: holder(1)
+      type(family_container) :: owner(1)
       real(dp), allocatable :: dt(:), t(:), q(:)
       integer , allocatable :: at(:)
       real(dp) :: achieved
       integer :: k, d
       call partition(duration, n, dt, t)
-      call set_family(holder(1), scheme)
-      call tower % build(van_der_pol(state_degree), holder, [n], uniform_grid(duration), 0, 0.0_dp)
+      call set_family(owner(1), scheme)
+      call tower % build(van_der_pol(state_degree), owner, [n], uniform_grid(duration), 0, 0.0_dp)
       call block_from(tower, 1, scheme, van_der_pol(state_degree), &
            & [(cosine(d, t(1)), d = 0, degrees - 1)], rows, at)
       call solved(rows, 0.0_dp, q, achieved)
@@ -7910,20 +8497,20 @@ contains
       do k = 1, n
          e = max(e, abs(q(at(k) + 1) - cosine(0, t(k))))
       end do
-    end function worst_error
+    end function maximum_error
     subroutine order_of(title, scheme)
       character(len=*), intent(in) :: title
       class(family)   , intent(in) :: scheme
       real(dp) :: e(3)
       integer :: level
       do level = 1, 3
-         e(level) = worst_error(scheme, 5 * 2 ** (level - 1) + 1)
+         e(level) = maximum_error(scheme, 5 * 2 ** (level - 1) + 1)
       end do
       write(*,'(a)')            ' '
       write(*,'(a)')            ' ' // title // ' on the harmonic oscillator'
       write(*,'(a,i0,a)')       '   stages                     ', scheme % num_stages(), ''
       write(*,'(a,3i11)')       '   steps                      ', [(5 * 2 ** (level - 1), level = 1, 3)]
-      write(*,'(a,3es11.3)')    '   worst error                ', e
+      write(*,'(a,3es11.3)')    '   maximum error              ', e
       write(*,'(a,22x,2f11.3)') '   ratio                    ', e(1:2) / e(2:3)
     end subroutine order_of
   end subroutine demo_marched_stages
@@ -7934,12 +8521,12 @@ contains
     type(stored_field)          :: over
     type(block_residual)        :: rows
     type(expansion) :: tower
-    type(family_holder) :: holder(1)
+    type(family_container) :: owner(1)
     integer, allocatable :: at(:)
     type(bdf_family)            :: scheme
     character(len=32) :: what, given
     integer , allocatable :: tails(:), heads(:)
-    real(dp), allocatable :: dt(:), t(:), held(:)
+    real(dp), allocatable :: dt(:), t(:), fixed(:)
     integer :: instants, n, m, h, band, i, j, e
     what     = 'block'
     instants = 41
@@ -7980,10 +8567,10 @@ contains
        call over % set_real_vector(spread(1.0_dp, 1, n))
     case ('block')
        call partition(3.0_dp, instants, dt, t)
-       allocate(held(h * degrees), source=0.0_dp)
-       call set_family(holder(1), scheme)
-       call tower % build(van_der_pol(degrees - 1), holder, [instants], uniform_grid(3.0_dp), 0, 0.0_dp)
-       call block_from(tower, 1, scheme, van_der_pol(degrees - 1), held, rows, at)
+       allocate(fixed(h * degrees), source=0.0_dp)
+       call set_family(owner(1), scheme)
+       call tower % build(van_der_pol(degrees - 1), owner, [instants], uniform_grid(3.0_dp), 0, 0.0_dp)
+       call block_from(tower, 1, scheme, van_der_pol(degrees - 1), fixed, rows, at)
     case default
        error stop 'memory_shape: the part is none, vertices, edges, field or block'
     end select
@@ -8019,7 +8606,7 @@ contains
     if (len_trim(argument) > 0) read(argument,*) cases
     failures = 0
     skipped  = 0
-    write(*,'(a)') '  case  scheme          split          directions     routes'
+    write(*,'(a)') '  case  scheme          split          directions     passes'
     do i = 1, cases
        call one_case(seed + 7919 * i, i, failures, skipped)
     end do
@@ -8030,7 +8617,7 @@ contains
     end do
     write(*,'(a)')      ' '
     write(*,'(a,i0,a,i0,a,i0,a)') ' ', cases - skipped, ' cases checked, ', &
-         & failures, ' failed, ', skipped, ' passed over'
+         & failures, ' failed, ', skipped, ' skipped'
     if (failures > 0) error stop 'randomized_checks: an invariant did not hold'
   contains
     logical function verbose()
@@ -8056,7 +8643,7 @@ contains
       x = low + (high - low) * real(state, dp) / 2147483648.0_dp
     end function drawn_real
     subroutine directions_of(schemes, added, degrees, duration, design, tangent, adjoint)
-      type(family_holder), intent(in)  :: schemes(:)
+      type(family_container), intent(in)  :: schemes(:)
       integer            , intent(in)  :: added(:), degrees
       real(dp)           , intent(in)  :: duration, design
       real(dp)           , intent(out) :: tangent, adjoint
@@ -8064,22 +8651,22 @@ contains
       type(expansion), allocatable, target :: tower
       integer, allocatable :: marks(:)
       type(expression)       :: energy(1)
-      real(dp), allocatable :: held(:), dt(:), t(:), table(:,:)
+      real(dp), allocatable :: fixed(:), dt(:), t(:), table(:,:)
       real(dp) :: achieved
-      call cosine_partition(schemes(1) % scheme, degrees, duration, sum(added), held, dt, t)
+      call cosine_partition(schemes(1) % scheme, degrees, duration, sum(added), fixed, dt, t)
       call march_chain(schemes, added, van_der_pol(degrees - 1), degrees, &
-           & uniform_grid(duration), design, held, chain, tower, dt, t, achieved)
+           & uniform_grid(duration), design, fixed, chain, tower, dt, t, achieved)
       energy(1) = van_der_pol_energy(degrees - 1)
-      call chain_stamps(chain, tower, energy, degrees, marks)
-      call chain_derivative(chain, tower, marks, energy, degrees, 1, forward_route, table)
+      call chain_versions(chain, tower, energy, degrees, marks)
+      call chain_derivative(chain, tower, marks, energy, degrees, 1, forward_pass, table)
       tangent = first_of(table)
-      call chain_derivative(chain, tower, marks, energy, degrees, 1, reverse_route, table)
+      call chain_derivative(chain, tower, marks, energy, degrees, 1, reverse_pass, table)
       adjoint = first_of(table)
     end subroutine directions_of
     subroutine one_case(from, index, failures, skipped)
       integer, intent(in)    :: from, index
       integer, intent(inout) :: failures, skipped
-      type(family_holder), allocatable :: whole(:), split(:)
+      type(family_container), allocatable :: whole(:), split(:)
       real(dp), allocatable :: f_whole(:), f_split(:)
       real(dp) :: duration, design, tangent, adjoint, achieved
       integer :: degrees, order, kind, instants, half
@@ -8096,21 +8683,21 @@ contains
       if (verbose()) write(*,'(a,i0,a,i0,a,i0,a,f8.4,a,f8.4)') &
            & '        degrees ', degrees, '  instants ', instants, '  half ', half, &
            & '  duration ', duration, '  design ', design
-      call both_ways(whole, split, instants, half, degrees, duration, design, &
+      call whole_and_split(whole, split, instants, half, degrees, duration, design, &
            & f_whole, f_split, achieved)
       if (achieved > 1.0e-6_dp) then
          skipped = skipped + 1
          write(*,'(i6,2x,a16,a,es9.2)') index, label, &
-              & '   a march did not converge, passed over: ', achieved
+              & '   a march did not converge, skipped: ', achieved
          return
       end if
       call directions_of(whole, [instants], degrees, duration, design, tangent, adjoint)
       if (verbose()) write(*,'(a,2es14.6)') '        f whole and split ', f_whole(0), f_split(0)
-      call verdict(index, label, f_whole, f_split, tangent, adjoint, failures)
+      call check_agreement(index, label, f_whole, f_split, tangent, adjoint, failures)
     end subroutine one_case
-    subroutine both_ways(whole, split, instants, half, degrees, duration, design, &
+    subroutine whole_and_split(whole, split, instants, half, degrees, duration, design, &
          & f_whole, f_split, achieved)
-      type(family_holder), intent(in)  :: whole(:), split(:)
+      type(family_container), intent(in)  :: whole(:), split(:)
       integer            , intent(in)  :: instants, half, degrees
       real(dp)           , intent(in)  :: duration, design
       real(dp), allocatable, intent(out) :: f_whole(:), f_split(:)
@@ -8120,12 +8707,12 @@ contains
       call expanded(split, [half, instants - half], degrees, duration, design, &
            & f_split, two)
       achieved = max(one, two)
-    end subroutine both_ways
+    end subroutine whole_and_split
     subroutine mixed_case(from, index, failures, skipped)
       integer, intent(in)    :: from, index
       integer, intent(inout) :: failures, skipped
       real(dp), parameter :: delta = 1.0e-4_dp
-      type(family_holder), allocatable :: schemes(:)
+      type(family_container), allocatable :: schemes(:)
       integer , allocatable :: added(:)
       real(dp), allocatable :: f(:), plus(:), minus(:)
       real(dp) :: duration, design, achieved, gap, differenced
@@ -8136,7 +8723,7 @@ contains
       call expanded(schemes, added, degrees, duration, design, f, achieved)
       if (achieved > 1.0e-6_dp) then
          skipped = skipped + 1
-         write(*,'(i6,2x,a28,a)') index, label, '  march did not converge, passed over'
+         write(*,'(i6,2x,a28,a)') index, label, '  march did not converge, skipped'
          return
       end if
       call expanded(schemes, added, degrees, duration, design + delta, plus, achieved)
@@ -8153,7 +8740,7 @@ contains
       integer            , intent(in)  :: from
       integer            , intent(out) :: degrees, blocks
       real(dp)           , intent(out) :: duration, design
-      type(family_holder), allocatable, intent(inout) :: schemes(:)
+      type(family_container), allocatable, intent(inout) :: schemes(:)
       integer            , allocatable, intent(inout) :: added(:)
       character(len=*)   , intent(out) :: label
       integer(int64) :: state
@@ -8207,16 +8794,16 @@ contains
          half     = instants / 2
       end if
     end subroutine halved
-    subroutine fill(held, kind, order)
-      type(family_holder), intent(out) :: held
+    subroutine fill(fixed, kind, order)
+      type(family_container), intent(out) :: fixed
       integer            , intent(in)  :: kind, order
       select case (kind)
       case (1)
-         call set_family(held, bdf_family(order))
+         call set_family(fixed, bdf_family(order))
       case (2)
-         call set_family(held, adams_family(order))
+         call set_family(fixed, adams_family(order))
       case default
-         call set_family(held, crouzeix_two_stage())
+         call set_family(fixed, crouzeix_two_stage())
       end select
     end subroutine fill
     function named(kind, order) result(text)
@@ -8234,7 +8821,7 @@ contains
       end select
     end function named
     subroutine expanded(schemes, added, degrees, duration, design, f, achieved)
-      type(family_holder), intent(in) :: schemes(:)
+      type(family_container), intent(in) :: schemes(:)
       integer            , intent(in) :: added(:), degrees
       real(dp)           , intent(in) :: duration, design
       real(dp), allocatable, intent(out) :: f(:)
@@ -8242,38 +8829,38 @@ contains
       real(dp)           , intent(out) :: achieved
       type(chain_block), allocatable :: chain(:)
       type(expansion), allocatable, target :: tower
-      real(dp), allocatable :: held(:), dt(:), t(:)
-      call cosine_partition(schemes(1) % scheme, degrees, duration, sum(added), held, dt, t)
+      real(dp), allocatable :: fixed(:), dt(:), t(:)
+      call cosine_partition(schemes(1) % scheme, degrees, duration, sum(added), fixed, dt, t)
       call march_chain(schemes, added, van_der_pol(degrees - 1), degrees, &
-           & uniform_grid(duration), design, held, chain, tower, dt, t, achieved)
+           & uniform_grid(duration), design, fixed, chain, tower, dt, t, achieved)
       call chain_expansion(chain, tower, [van_der_pol_energy(degrees - 1)], degrees, max_order, table)
       allocate(f(lbound(table, 1):ubound(table, 1)))
       f = table(:, 1)
     end subroutine expanded
-    subroutine verdict(index, label, f_whole, f_split, tangent, adjoint, failures)
+    subroutine check_agreement(index, label, f_whole, f_split, tangent, adjoint, failures)
       integer         , intent(in)    :: index
       character(len=*), intent(in)    :: label
       real(dp)        , intent(in)    :: f_whole(0:), f_split(0:), tangent, adjoint
       integer         , intent(inout) :: failures
-      real(dp) :: split_gap, direction_gap, route_gap, scale
+      real(dp) :: split_gap, direction_gap, pass_gap, scale
       scale         = max(1.0_dp, maxval(abs(f_whole)))
       split_gap     = maxval(abs(f_whole - f_split)) / scale
       direction_gap = abs(tangent - adjoint) / max(1.0_dp, abs(tangent))
-      route_gap     = abs(tangent - f_whole(1)) / max(1.0_dp, abs(tangent))
-      write(*,'(i6,2x,a16,3es15.2)') index, label, split_gap, direction_gap, route_gap
+      pass_gap     = abs(tangent - f_whole(1)) / max(1.0_dp, abs(tangent))
+      write(*,'(i6,2x,a16,3es15.2)') index, label, split_gap, direction_gap, pass_gap
       if (split_gap > 1.0e-6_dp) failures = failures + 1
       if (direction_gap > 1.0e-8_dp) failures = failures + 1
-      if (route_gap > 1.0e-6_dp) failures = failures + 1
-    end subroutine verdict
+      if (pass_gap > 1.0e-6_dp) failures = failures + 1
+    end subroutine check_agreement
   end subroutine demo_randomized_checks
   !===================================================================!
-  ! THE ARCS DECIDE THE ORDER, NOT THE NUMBERING. A bipartite digraph
+  ! THE ARCS DETERMINE THE ORDER, NOT THE NUMBERING. A bipartite digraph
   ! is built whose blocks are chained 2 -> 4 -> 1 -> 3, so the order
-  ! the arcs imply is nothing like the order the labels suggest. The
+  ! the arcs imply differs from the order of the labels. The
   ! projection onto the blocks must recover that chain, previous and
   ! next must be transposes of one another, and every arc must be
   ! found from both of its ends. Each departure counts an exact
-  ! disagreement, so the floor is zero and nothing is chosen.
+  ! disagreement, so the bound is zero and no tolerance is chosen.
   !===================================================================!
 
   subroutine demo_read_write_graph()
@@ -8295,7 +8882,7 @@ contains
     type(bipartite_digraph) :: b
     type(stored_directed_graph) :: among
     integer, allocatable :: order(:), forth(:), back(:), reads(:)
-    integer :: u, w, k, e, apart_order, apart_transpose, apart_ends
+    integer :: u, w, k, e, discrepancy_order, discrepancy_transpose, discrepancy_ends
 
     b = bipartite_digraph(blocks, data_of, from_part, from_vertex, to_part, to_vertex)
 
@@ -8308,25 +8895,25 @@ contains
     ! the projection recovers the chain the arcs imply
     among = b % projection(BLOCKS_PART)
     order = among % loop(forward)
-    apart_order = count(order /= chained)
+    discrepancy_order = count(order /= chained)
     write(*,'(a)')      ' '
     write(*,'(a,4i4)')  '   the arcs chain the blocks   ', chained
     write(*,'(a,4i4)')  '   the projection orders them  ', order
-    write(*,'(a,i0,a,i0)') '   places apart ', apart_order, ', held to ', 0
+    write(*,'(a,i0,a,i0)') '   positions differing ', discrepancy_order, ', bound ', 0
 
-    ! previous and next are one relation read two ways
-    apart_transpose = 0
+    ! previous and next are one relation and its transpose
+    discrepancy_transpose = 0
     do u = 1, blocks
        call b % next(BLOCKS_PART, u, forth)
        do k = 1, size(forth)
           call b % previous(BLOCKS_PART, forth(k), back)
-          if (.not. any(back == u)) apart_transpose = apart_transpose + 1
+          if (.not. any(back == u)) discrepancy_transpose = discrepancy_transpose + 1
        end do
     end do
-    write(*,'(a,i0,a,i0)') '   next without a previous ', apart_transpose, ', held to ', 0
+    write(*,'(a,i0,a,i0)') '   next without a previous ', discrepancy_transpose, ', bound ', 0
 
-    ! every arc is found from the end it enters
-    apart_ends = 0
+    ! every arc is found from its head
+    discrepancy_ends = 0
     do e = 1, b % size_of_digraph()
        w = to_vertex(e)
        if (to_part(e) == BLOCKS_PART) then
@@ -8334,16 +8921,16 @@ contains
        else
           call b % in_neighbourhood(DATA_PART, w, reads)
        end if
-       if (.not. any(reads == from_vertex(e))) apart_ends = apart_ends + 1
+       if (.not. any(reads == from_vertex(e))) discrepancy_ends = discrepancy_ends + 1
     end do
-    write(*,'(a,i0,a,i0)') '   arcs unseen from the head ', apart_ends, ', held to ', 0
+    write(*,'(a,i0,a,i0)') '   arcs not found from the head ', discrepancy_ends, ', bound ', 0
 
     ! a block and the one two steps along it share no datum
     write(*,'(a)')      ' '
     write(*,'(a,l1,a)') '   blocks 2 and 4 share a datum   ', &
          & b % share_a_neighbour(BLOCKS_PART, 2, 4), '   (they are chained)'
     write(*,'(a,l1,a)') '   blocks 2 and 3 share a datum   ', &
-         & b % share_a_neighbour(BLOCKS_PART, 2, 3), '   (nothing joins them)'
+         & b % share_a_neighbour(BLOCKS_PART, 2, 3), '   (no arc joins them)'
 
   end subroutine demo_read_write_graph
 
@@ -8355,29 +8942,29 @@ contains
   !                      |               |               |
   !                      v               v               v
   !                     (4) <-- [5] <-- (5) <-- [6] <-- (6)
-  !   the transpose, retiring the states in decreasing b
+  !   the transpose, releasing the states in decreasing b
   !
   ! The three downward arcs are the reverse pass reading each block's
   ! state. Without them the sweep would end at block 3: state 1 would
   ! be last read at step 2 and state 3 read by nothing at all, so a
-  ! driver would drop both while the derivative still wanted them.
+  ! driver would release both while the derivative still required them.
   !
-  ! Three departures are counted, and each floors at zero. A STATE
-  ! READ BY NOTHING is one the graph would let a driver drop the
-  ! moment it was written. A STATE RETIRED ELSEWHERE is one whose last
+  ! Three departures are counted, and each has bound zero. A STATE
+  ! READ BY NOTHING is one the graph would let a driver release
+  ! immediately after it was written. A STATE RELEASED ELSEWHERE is one whose last
   ! reader is not its own transpose block, or which is never released
   ! at all: block nb + b is the last reader of state b exactly because
   ! every forward block that reads state b sends a transposed arc into
   ! it. A STEP OUT OF REVERSE is one where the transpose does not
-  ! retrace the forward sweep backwards - which is what exchanging the
-  ! ends of every forward arc is for, and what a transpose that kept
-  ! its ends would lose while still reading every state.
+  ! retrace the forward sweep backwards - which is the purpose of
+  ! exchanging the ends of every forward arc, and which a transpose that
+  ! retained its ends would not satisfy while still reading every state.
   !
-  ! The fourth count is what the driver does with all that. No rule
-  ! stands at a transposed vertex, and a step that computes nothing
-  ! still retires whatever was last read there - so a traversal that
-  ! placed a value at every state must leave none of them held. STATES
-  ! STILL HELD counts the ones a traversal did not retire.
+  ! The fourth count is the driver's result. No rule is bound at a
+  ! transposed vertex, and a step that computes nothing still
+  ! releases whatever was last read there - so a traversal that
+  ! placed a value at every state must leave none of them stored. STATES
+  ! STILL STORED counts the ones a traversal did not release.
   !===================================================================!
 
   subroutine demo_transposed_reads()
@@ -8387,48 +8974,48 @@ contains
     integer, parameter :: degrees = state_degree + 1
 
     write(*,'(a)') ' '
-    write(*,'(a)') ' the states a reverse pass reads, and the step each retires at'
+    write(*,'(a)') ' the states a reverse pass reads, and the step each is released at'
     write(*,'(a)') ' '
-    call checked('bdf 1 alone       ', [holder_named('bdf', 1)], [8])
-    call checked('bdf 2 then bdf 1  ', [holder_named('bdf', 2), holder_named('bdf', 1)], [8, 8])
-    call checked('adams 2 then bdf 2', [holder_named('adams', 2), holder_named('bdf', 2)], [8, 8])
-    call checked('three of bdf 2    ', [holder_named('bdf', 2), holder_named('bdf', 2), &
-         & holder_named('bdf', 2)], [8, 8, 8])
+    call checked('bdf 1 alone       ', [container_named('bdf', 1)], [8])
+    call checked('bdf 2 then bdf 1  ', [container_named('bdf', 2), container_named('bdf', 1)], [8, 8])
+    call checked('adams 2 then bdf 2', [container_named('adams', 2), container_named('bdf', 2)], [8, 8])
+    call checked('three of bdf 2    ', [container_named('bdf', 2), container_named('bdf', 2), &
+         & container_named('bdf', 2)], [8, 8, 8])
 
   contains
 
-    function holder_named(family_of, order) result(h)
+    function container_named(family_of, order) result(h)
       character(len=*), intent(in) :: family_of
       integer         , intent(in) :: order
-      type(family_holder) :: h
+      type(family_container) :: h
       class(family), allocatable :: one
-      logical :: ok
-      call family_named(family_of, order, one, ok)
-      if (.not. ok) error stop 'gti_demos: that family carries that order'
+      logical :: passes_check
+      call family_named(family_of, order, one, passes_check)
+      if (.not. passes_check) error stop 'gti_demos: the named family has a scheme at that order'
       allocate(h % scheme, source=one)
-    end function holder_named
+    end function container_named
 
     subroutine checked(title, schemes, added)
       character(len=*)   , intent(in) :: title
-      type(family_holder), intent(in) :: schemes(:)
+      type(family_container), intent(in) :: schemes(:)
       integer            , intent(in) :: added(:)
       type(bipartite_digraph) :: incidence
       type(driver)     :: executor
       type(expression) :: immaterial
       type(rule_graph) :: rules
       type(data_graph) :: values, remaining
-      type(pairing)    :: rested
+      type(pairing)    :: pairs
       type(stored_directed_graph) :: one_point, bare
       type(stored_field) :: datum
-      integer, allocatable :: first(:), last(:), order(:), droppable(:)
-      integer :: nb, b, k, unread, elsewhere, retired, out_of_reverse, still_held
+      integer, allocatable :: first(:), last(:), order(:), releasable(:)
+      integer :: nb, b, k, unread, elsewhere, released, out_of_reverse, still_stored
 
       nb = size(added)
       call horizon_bounds(schemes, added, degrees - 1, first, last)
       incidence = chain_incidence(schemes, added, degrees, 1, first, last)
 
       ! THE LIFETIMES ARE THE GRAPH'S AND THE ORDER'S, and no rule
-      ! enters either answer, so the one handed over here is never
+      ! enters either result, so the rule passed here is never
       ! applied and nothing is marched.
       executor = driver(immaterial, incidence, forward)
       order    = executor % visits()
@@ -8451,12 +9038,12 @@ contains
       end do
 
       ! every state is released by the end of the transpose
-      droppable = executor % released_after(size(order))
-      retired   = count(droppable <= nb)
+      releasable = executor % released_after(size(order))
+      released   = count(releasable <= nb)
 
-      ! A TRAVERSAL RETIRES WHAT IT PASSES. Every state is given a
-      ! value and no rule stands anywhere, so nothing is computed and
-      ! the only thing the traversal can do is obey the lifetimes.
+      ! A TRAVERSAL RELEASES WHAT IT VISITS. Every state is given a
+      ! value and no rule is bound anywhere, so nothing is computed and
+      ! the traversal's only effect is to apply the lifetimes.
       allocate(rules % at(2 * nb), values % at(2 * nb))
       one_point = stored_directed_graph(1, tails=[integer ::], heads=[integer ::])
       datum     = stored_field('state', one_point % vertex_set(), 1)
@@ -8466,16 +9053,16 @@ contains
       call executor % pair_with(rules % pair(values))
       bare = stored_directed_graph(nb, tails=[integer ::], heads=[integer ::])
       call executor % evaluate(bare)
-      rested     = executor % pairing_of()
-      remaining  = rested % data_held()
-      still_held = count([(remaining % at(b) % written(), b = 1, nb)])
+      pairs     = executor % pairing_of()
+      remaining  = pairs % stored_data()
+      still_stored = count([(remaining % at(b) % written(), b = 1, nb)])
 
       write(*,'(a,a,a,i0,a,i0,a,i0,a,i0,a,i0,a,i0,a,i0,a,i0,a,i0,a,i0)') '   ', title, &
            & '  blocks ', nb, '  steps ', size(order), &
-           & '   read by nothing ', unread, ', held to ', 0, &
-           & ';  retired elsewhere ', elsewhere + (nb - retired), ', held to ', 0, &
-           & ';  steps out of reverse ', out_of_reverse, ', held to ', 0, &
-           & ';  still held ', still_held, ', held to ', 0
+           & '   read by nothing ', unread, ', bound ', 0, &
+           & ';  released elsewhere ', elsewhere + (nb - released), ', bound ', 0, &
+           & ';  steps out of reverse ', out_of_reverse, ', bound ', 0, &
+           & ';  still stored ', still_stored, ', bound ', 0
     end subroutine checked
 
   end subroutine demo_transposed_reads
@@ -8653,28 +9240,28 @@ contains
       real(dp), allocatable, intent(out) :: q(:)
       type(block_residual) :: rows
       type(expansion) :: tower
-      type(family_holder) :: holder(1)
+      type(family_container) :: owner(1)
       integer, allocatable :: at(:)
       type(stored_directed_graph) :: unknowns, instants
-      type(stored_field) :: state, knobs
-      real(dp), allocatable :: dt(:), t(:), held(:)
+      type(stored_field) :: state, design_field
+      real(dp), allocatable :: dt(:), t(:), fixed(:)
       real(dp) :: achieved
       type(expression) :: energy
-      call cosine_partition(scheme, degrees, duration, num_instants, held, dt, t)
-      call set_family(holder(1), scheme)
-      call tower % build(van_der_pol(state_degree), holder, [num_instants], uniform_grid(duration), &
+      call cosine_partition(scheme, degrees, duration, num_instants, fixed, dt, t)
+      call set_family(owner(1), scheme)
+      call tower % build(van_der_pol(state_degree), owner, [num_instants], uniform_grid(duration), &
            & 0, 0.0_dp)
-      call block_from(tower, 1, scheme, van_der_pol(state_degree), held, rows, at)
+      call block_from(tower, 1, scheme, van_der_pol(state_degree), fixed, rows, at)
       call solved(rows, design_value, q, achieved)
       unknowns = unknowns_graph(num_instants, degrees)
       instants = stored_directed_graph(num_instants, tails=[integer ::], heads=[integer ::])
       energy   = van_der_pol_energy(state_degree)
       state    = stored_field('state', instants % vertex_set(), num_instants, &
            & num_components=energy % num_components())
-      knobs    = stored_field('nu', instants % vertex_set(), num_instants)
+      design_field    = stored_field('nu', instants % vertex_set(), num_instants)
       call state % set_real_vector(q)
-      call knobs % set_real_vector(spread(design_value, 1, num_instants))
-      f = functional_of(energy, instants, [state, knobs], dt)
+      call design_field % set_real_vector(spread(design_value, 1, num_instants))
+      f = functional_of(energy, instants, [state, design_field], dt)
     end function marched
     subroutine sensitivity_of(title, scheme)
       character(len=*), intent(in) :: title
@@ -8703,35 +9290,35 @@ contains
       integer :: mark
       type(block_residual) :: rows
       type(expansion) :: tower
-      type(family_holder) :: holder(1)
+      type(family_container) :: owner(1)
       integer, allocatable :: at(:)
       type(stored_directed_graph) :: unknowns, instants
-      type(stored_field) :: state, knobs, energy_state
+      type(stored_field) :: state, design_field, energy_state
       type(expression) :: energy
-      real(dp), allocatable :: dt(:), t(:), held(:)
-      call cosine_partition(scheme, degrees, duration, num_instants, held, dt, t)
-      call set_family(holder(1), scheme)
-      call tower % build(van_der_pol(state_degree), holder, [num_instants], uniform_grid(duration), &
+      real(dp), allocatable :: dt(:), t(:), fixed(:)
+      call cosine_partition(scheme, degrees, duration, num_instants, fixed, dt, t)
+      call set_family(owner(1), scheme)
+      call tower % build(van_der_pol(state_degree), owner, [num_instants], uniform_grid(duration), &
            & 0, 0.0_dp)
-      call block_from(tower, 1, scheme, van_der_pol(state_degree), held, rows, at)
+      call block_from(tower, 1, scheme, van_der_pol(state_degree), fixed, rows, at)
       unknowns = unknowns_graph(num_instants, degrees)
       instants = stored_directed_graph(num_instants, tails=[integer ::], heads=[integer ::])
       state    = stored_field('state', unknowns % vertex_set(), size(q))
-      knobs    = stored_field('nu', unknowns % vertex_set(), num_instants)
+      design_field    = stored_field('nu', unknowns % vertex_set(), num_instants)
       call state % set_real_vector(q)
-      call knobs % set_real_vector(spread(design, 1, num_instants))
+      call design_field % set_real_vector(spread(design, 1, num_instants))
       ! the energy reads the same values as one field over the instants
       energy       = van_der_pol_energy(state_degree)
       energy_state = stored_field('state', instants % vertex_set(), num_instants, &
            & num_components=energy % num_components())
       call energy_state % set_real_vector(q)
       call functional_gradient(energy, instants, &
-           & [energy_state, knobs], dt, num_instants, degrees, unknowns % vertex_set(), g)
-      call sweep_design_partial(rows, unknowns, [state, knobs], num_instants, &
+           & [energy_state, design_field], dt, num_instants, degrees, unknowns % vertex_set(), g)
+      call sweep_design_partial(rows, unknowns, [state, design_field], num_instants, &
            & unknowns % vertex_set(), rate)
-      mark    = fresh_stamp()
-      tangent = by_tangent(rows, unknowns, [state, knobs], g, rate, 0.0_dp, mark)
-      adjoint = by_adjoint(rows, unknowns, [state, knobs], g, rate, 0.0_dp, mark)
+      mark    = next_version()
+      tangent = by_tangent(rows, unknowns, [state, design_field], g, rate, 0.0_dp, mark)
+      adjoint = by_adjoint(rows, unknowns, [state, design_field], g, rate, 0.0_dp, mark)
     end subroutine three_objects
   end subroutine demo_sensitivity
   subroutine demo_solve_cost()
@@ -8747,14 +9334,14 @@ contains
     subroutine cost_at(instants)
       integer, intent(in) :: instants
       integer, parameter :: degrees = 3
-      type(family_holder), allocatable :: schemes(:)
+      type(family_container), allocatable :: schemes(:)
       type(chain_block) , allocatable :: chain(:)
       type(expansion), allocatable, target :: tower
       integer, allocatable :: marks(:)
       type(expression)       :: energy(1)
       type(bdf_family) :: scheme
       integer , allocatable :: added(:)
-      real(dp), allocatable :: held(:), dt(:), t(:), table(:,:)
+      real(dp), allocatable :: fixed(:), dt(:), t(:), table(:,:)
       real(dp) :: achieved, duration, design, marched, formed, solved_in, tangent
       integer  :: n
       duration = 3.0_dp
@@ -8763,18 +9350,18 @@ contains
       allocate(schemes(1))
       call set_family(schemes(1), scheme)
       added = [instants]
-      call cosine_partition(scheme, degrees, duration, instants, held, dt, t)
+      call cosine_partition(scheme, degrees, duration, instants, fixed, dt, t)
       marched = clock()
       call march_chain(schemes, added, van_der_pol(degrees - 1), degrees, &
-           & uniform_grid(duration), design, held, chain, tower, dt, t, achieved)
+           & uniform_grid(duration), design, fixed, chain, tower, dt, t, achieved)
       marched = clock() - marched
       energy(1) = van_der_pol_energy(degrees - 1)
       formed = clock()
-      call chain_stamps(chain, tower, energy, degrees, marks)
+      call chain_versions(chain, tower, energy, degrees, marks)
       formed = clock() - formed
       n = chain(1) % rows % num_unknowns()
       solved_in = clock()
-      call chain_derivative(chain, tower, marks, energy, degrees, 1, forward_route, table)
+      call chain_derivative(chain, tower, marks, energy, degrees, 1, forward_pass, table)
       tangent   = first_of(table)
       solved_in = clock() - solved_in
       write(*,'(i10,3f11.3,2es15.3)') n, marched, formed, solved_in, &
@@ -8804,7 +9391,7 @@ contains
     write(*,'(a)') ' '
     write(*,'(a)') '  conditioning, and what the same form removes from it'
     write(*,'(a)') '  the row determining degree d is divided by dt^-d, which is the'
-    write(*,'(a)') '  weight the family says it carries'
+    write(*,'(a)') '  weight the family declares for it'
     write(*,'(a)') ' '
     write(*,'(a)') '  scheme    d   instants       dt      kappa(A)   kappa(DA)     ratio'
     call conditioned(2, 3, 21)
@@ -8834,7 +9421,7 @@ contains
       ! value and each higher one on the degree below it, so every row
       ! sums its coefficients to the same total. Composing the
       ! operator on the value instead would raise that total to the
-      ! power of the degree, and reach as far again for it.
+      ! power of the degree, and double the stencil's history depth.
       velocity = row_sum(bdf_family(order), order, 1)
       derived  = row_sum(bdf_family(order), order, determines)
       powered  = velocity
@@ -8844,13 +9431,13 @@ contains
     end subroutine composed
     subroutine against(order, degrees, instants)
       integer, intent(in) :: order, degrees, instants
-      type(family_holder), allocatable :: schemes(:)
+      type(family_container), allocatable :: schemes(:)
       type(chain_block) , allocatable :: chain(:)
       type(expansion), allocatable, target :: tower
       integer, allocatable :: marks(:)
       type(bdf_family) :: scheme
       integer , allocatable :: added(:)
-      real(dp), allocatable :: held(:), dt(:), t(:), a(:,:)
+      real(dp), allocatable :: fixed(:), dt(:), t(:), a(:,:)
       real(dp) :: achieved, duration, design, predicted, assembled
       character(len=8) :: named
       integer :: k, d, top
@@ -8862,11 +9449,11 @@ contains
       call set_family(schemes(1), scheme)
       added = [instants]
       call partition(duration, instants, dt, t)
-      held = [((0.0_dp, d = 0, degrees - 1), k = 1, &
+      fixed = [((0.0_dp, d = 0, degrees - 1), k = 1, &
            &   scheme % history_depth(degrees - 1))]
       call march_chain(schemes, added, van_der_pol(degrees - 1), degrees, &
-           & uniform_grid(duration), design, held, chain, tower, dt, t, achieved)
-      call chain_stamps(chain, tower, [van_der_pol_energy(degrees - 1)], degrees, marks)
+           & uniform_grid(duration), design, fixed, chain, tower, dt, t, achieved)
+      call chain_versions(chain, tower, [van_der_pol_energy(degrees - 1)], degrees, marks)
       predicted = 1.0_dp + row_sum(scheme, order, top) / dt(size(dt))
       call dense_jacobian(chain, design, a)
       assembled = largest_row(a)
@@ -8877,13 +9464,13 @@ contains
     end subroutine against
     subroutine conditioned(order, degrees, instants)
       integer, intent(in) :: order, degrees, instants
-      type(family_holder), allocatable :: schemes(:)
+      type(family_container), allocatable :: schemes(:)
       type(chain_block) , allocatable :: chain(:)
       type(expansion), allocatable, target :: tower
       integer, allocatable :: marks(:)
       type(bdf_family) :: scheme
       integer , allocatable :: added(:)
-      real(dp), allocatable :: held(:), dt(:), t(:), b(:,:), a(:,:)
+      real(dp), allocatable :: fixed(:), dt(:), t(:), b(:,:), a(:,:)
       real(dp) :: achieved, duration, design, bare, scaled, step
       character(len=8) :: named
       integer :: k, d, i, n
@@ -8894,11 +9481,11 @@ contains
       call set_family(schemes(1), scheme)
       added = [instants]
       call partition(duration, instants, dt, t)
-      held = [((0.0_dp, d = 0, degrees - 1), k = 1, &
+      fixed = [((0.0_dp, d = 0, degrees - 1), k = 1, &
            &   scheme % history_depth(degrees - 1))]
       call march_chain(schemes, added, van_der_pol(degrees - 1), degrees, &
-           & uniform_grid(duration), design, held, chain, tower, dt, t, achieved)
-      call chain_stamps(chain, tower, [van_der_pol_energy(degrees - 1)], degrees, marks)
+           & uniform_grid(duration), design, fixed, chain, tower, dt, t, achieved)
+      call chain_versions(chain, tower, [van_der_pol_energy(degrees - 1)], degrees, marks)
       step = dt(size(dt))
       call dense_jacobian(chain, design, a)
       bare = kappa(a)
@@ -8970,33 +9557,33 @@ program graph_time_integrator
   use gti_adaptive          , only : adaptive_partition
   use operation_family_dirk , only : crouzeix_three_stage
   use operation_stencil     , only : stencil
-  use gti_space             , only : room, spatial_mesh, geometry_of, coarse_cells
+  use gti_space             , only : spatial_domain, spatial_mesh, geometry_of, coarse_cells
   use gti_field             , only : spatial_discretization_stencil_of, initial_field, against_the_laplacian, &
        & against_the_mode, export_instant
   use util_precision        , only : precision_named
   use iso_fortran_env       , only : real128
-  use gti_expansion         , only : family_holder, expansion
+  use gti_expansion         , only : family_container, expansion
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
-       & expansion_substitutions, chain_stamps, num_designs_of, &
+       & expansion_substitutions, chain_versions, num_designs_of, &
        & instant_components, chain_derivative, asymmetry, sink_costates, &
        & goal_oriented_partition
   use gti_sweeps            , only : set_linear_solver, set_jacobian, set_storage, set_multigrid, &
        & set_rows, set_elimination, &
        & set_coarse_nodes, set_linear_budget, set_newton_order
-  use gti_sweeps            , only : route_of, forward_route, reverse_route
+  use gti_sweeps            , only : pass_of, forward_pass, reverse_pass
   use operation_minimization, only : relative, absolute, by_count, by_rate
   use gti_driver            , only : settings, chosen_grid, steps_of, family_named, clock, &
        & functional_named
   use gti_configuration     , only : configuration, read_configuration, override, show, &
-       & lists, refuse_unknown, worded
+       & lists, refuse_unknown, words_of
   use util_tally            , only : tally_open, tally_close, tally_order, &
        & tally_enter, tally_leave, tally_amount, tally_event_of, &
-       & tally_num_levels, tally_level_name, tally_event_name, wall_time
+       & tally_num_levels, tally_level_name, tally_event_name, elapsed_time
   use gti_configuration     , only : at_expansion, at_horizon, hierarchy_levels
   use gti_demos           , only : demo_requested, run_demo
   implicit none
   type(configuration) :: cfg
-  type(room)   , allocatable :: space
+  type(spatial_domain)   , allocatable :: space
   type(stencil), allocatable :: spatial_discretization_stencil
   real(dp)     , allocatable :: volume(:), q0(:)
   real(dp) :: extent_a = 0.0_dp, extent_b = 0.0_dp
@@ -9029,28 +9616,28 @@ contains
     type(configuration), intent(in) :: cfg
     character(len=8) :: every(3)
     class(family), allocatable :: scheme
-    logical :: staged, ok
+    logical :: staged, passes_check
     integer :: i, order, reach
     every  = ['bdf     ', 'adams   ', 'dirk    ']
     widest = 0
     do i = 1, 3
        if (index(cfg % families, trim(every(i))) == 0) cycle
        do order = 1, cfg % max_discretization_order
-          call chosen(trim(every(i)), order, scheme, staged, ok)
-          if (.not. ok) cycle
+          call chosen(trim(every(i)), order, scheme, staged, passes_check)
+          if (.not. passes_check) cycle
           reach = scheme % history_depth(cfg % state_degree)
           if (reach < cfg % instants) widest = max(widest, reach)
        end do
     end do
   end function widest_reach
-  subroutine chosen(name, order, scheme, staged, ok)
+  subroutine chosen(name, order, scheme, staged, passes_check)
     character(len=*), intent(in)  :: name
     integer         , intent(in)  :: order
     class(family), allocatable, intent(out) :: scheme
-    logical         , intent(out) :: staged, ok
-    call family_named(name, order, scheme, ok)
+    logical         , intent(out) :: staged, passes_check
+    call family_named(name, order, scheme, passes_check)
     staged = .false.
-    if (ok) staged = scheme % num_stages() > 1
+    if (passes_check) staged = scheme % num_stages() > 1
   end subroutine chosen
   function labelled(names, orders) result(text)
     character(len=*), intent(in) :: names(:)
@@ -9096,11 +9683,11 @@ contains
     write(*,'(a)') ' '
     write(*,'(a)') line
   end subroutine heading
-  subroutine show_row(label, solved, f, left, columns)
+  subroutine show_row(label, solved, f, final_imbalance, columns)
     character(len=*), intent(in) :: label
     integer         , intent(in) :: solved
     real(dp)        , intent(in) :: f(0:)
-    type(imbalance) , intent(in) :: left
+    type(imbalance) , intent(in) :: final_imbalance
     integer         , intent(in) :: columns
     character(len=21) :: cell
     character(len=6)  :: counted
@@ -9117,15 +9704,15 @@ contains
        end if
        line = line // cell
     end do
-    if (.not. left % converged) then
-       if (left % diverging) then
+    if (.not. final_imbalance % converged) then
+       if (final_imbalance % diverging) then
           line = line // '   diverging'
        else
           line = line // '   unconverged'
        end if
     end if
     write(*,'(a)') line
-    if (.not. left % converged) call shown_aspect(left)
+    if (.not. final_imbalance % converged) call shown_aspect(final_imbalance)
   end subroutine show_row
   subroutine shown_precision(nd, chain, cfg)
     integer            , intent(in) :: nd
@@ -9152,28 +9739,28 @@ contains
             & '  least kind ', least, '  this build ', precision_named()
     end do
   end subroutine shown_precision
-  subroutine shown_aspect(left)
-    type(imbalance), intent(in) :: left
+  subroutine shown_aspect(final_imbalance)
+    type(imbalance), intent(in) :: final_imbalance
     character(len=:), allocatable :: line
     character(len=14) :: cell
     integer :: d
-    write(*,'(a,es10.3,a,es10.3,a)') '      imbalance ', left % norm, &
-         & ' against ', left % began, ' where the march began'
+    write(*,'(a,es10.3,a,es10.3,a)') '      imbalance ', final_imbalance % norm, &
+         & ' against ', final_imbalance % began, ' at the start of the march'
     line = '      by degree '
-    do d = 0, ubound(left % by_degree, 1)
-       write(cell,'(es14.3)') left % by_degree(d)
+    do d = 0, ubound(final_imbalance % by_degree, 1)
+       write(cell,'(es14.3)') final_imbalance % by_degree(d)
        line = line // cell
     end do
     write(*,'(a)') line
-    write(*,'(a,i0,a,i0)') '      largest entry at slot ', left % worst_slot, &
-         & ' degree ', left % worst_degree
+    write(*,'(a,i0,a,i0)') '      largest entry at slot ', final_imbalance % largest_slot, &
+         & ' degree ', final_imbalance % largest_degree
     write(*,'(a,i0,a,i0,a,es10.3)') '      steepest in the state at slot ', &
-         & left % steepest_slot, ' degree ', left % steepest_degree, &
-         & ', d||r||/dq = ', left % steepest
+         & final_imbalance % steepest_slot, ' degree ', final_imbalance % steepest_degree, &
+         & ', d||r||/dq = ', final_imbalance % steepest
   end subroutine shown_aspect
   !===================================================================!
-  ! The law the run marches. One place names it, so every march, every
-  ! tangent and every adjoint reads the same statement.
+  ! The governing law the run marches. One procedure defines it, so
+  ! every march, tangent and adjoint reads the same expression.
   !===================================================================!
   function physics_of(cfg) result(r)
     type(configuration), intent(in) :: cfg
@@ -9204,22 +9791,22 @@ contains
     character(len=*)   , intent(in)    :: names(:)
     integer            , intent(in)    :: orders(:)
     integer            , intent(inout) :: printed
-    type(family_holder), allocatable :: schemes(:)
+    type(family_container), allocatable :: schemes(:)
     type(chain_block)  , allocatable :: chain(:)
     type(expansion), allocatable, target :: tower
     integer , allocatable :: added(:)
     real(dp), allocatable :: dt(:), t(:), f(:,:), weights(:)
-    type(imbalance) :: left
+    type(imbalance) :: final_imbalance
     real(dp) :: achieved
     integer :: nd, width, given, reported, i, m
-    logical :: ok
+    logical :: passes_check
     character(len=20) :: cell
     character(len=:), allocatable :: line
     nd    = cfg % state_degree + 1
     width = nd * nodes
     allocate(schemes(size(names)), added(size(names)))
-    call assembled(cfg, names, orders, schemes, added, ok)
-    if (.not. ok) return
+    call assembled(cfg, names, orders, schemes, added, passes_check)
+    if (.not. passes_check) return
     call grid_partition(cfg, dt, t)
     given = schemes(1) % scheme % history_depth(nd - 1)
     call tally_enter(at_expansion)
@@ -9228,26 +9815,26 @@ contains
        weights = dt(2:cfg % instants)
        call march_chain(schemes, added, physics_of(cfg), nd, &
             & designed_grid(cfg % time_duration), cfg % design, q0, chain, tower, dt, t, &
-            & achieved, grid_design=weights, left=left, nodes=nodes, spatial_discretization_stencil=spatial_discretization_stencil, &
+            & achieved, grid_design=weights, final_imbalance=final_imbalance, nodes=nodes, spatial_discretization_stencil=spatial_discretization_stencil, &
             & startup=cfg % startup_refinement)
     else if (grid_adaptive) then
        call march_chain(schemes, added, physics_of(cfg), nd, &
             & fixed_grid(adaptive_weights), cfg % design, q0, chain, tower, dt, t, achieved, &
-            & left=left, nodes=nodes, spatial_discretization_stencil=spatial_discretization_stencil, &
+            & final_imbalance=final_imbalance, nodes=nodes, spatial_discretization_stencil=spatial_discretization_stencil, &
             & startup=cfg % startup_refinement)
     else
        call march_chain(schemes, added, physics_of(cfg), nd, &
-            & chosen_grid(cfg), cfg % design, q0, chain, tower, dt, t, achieved, left=left, &
+            & chosen_grid(cfg), cfg % design, q0, chain, tower, dt, t, achieved, final_imbalance=final_imbalance, &
             & nodes=nodes, spatial_discretization_stencil=spatial_discretization_stencil, startup=cfg % startup_refinement)
     end if
-    if (.not. left % converged) then
+    if (.not. final_imbalance % converged) then
        reported = 0
     else
        reported = cfg % max_derivative_degree
     end if
     call chain_expansion(chain, tower, functionals, nd, reported, f, node_measure=volume)
     call tally_leave()
-    call show_row(labelled(names, orders), cfg % instants - given, f(:, 1), left, &
+    call show_row(labelled(names, orders), cfg % instants - given, f(:, 1), final_imbalance, &
          & cfg % max_derivative_degree)
     do i = 2, size(functionals)
        line = '      ' // functionals(i) % name()
@@ -9259,7 +9846,7 @@ contains
        write(*,'(a)') line
     end do
     call shown_precision(nd, chain, cfg)
-    if (reported >= 1 .and. (grid_designed .or. lists(cfg % check, 'routes') &
+    if (reported >= 1 .and. (grid_designed .or. lists(cfg % check, 'passes') &
          & .or. lists(cfg % check, 'sinks'))) then
        call first_derivatives(cfg, chain, tower, nd, dt, f)
     end if
@@ -9283,14 +9870,14 @@ contains
     real(dp), allocatable :: p(:), df(:,:), other(:,:), table(:,:), entries(:,:,:)
     type(sink_costates) :: sinks
     real(dp) :: euler
-    integer  :: num_designs, num_functionals, route, i, order
+    integer  :: num_designs, num_functionals, pass_kind, i, order
     num_functionals = size(functionals)
-    call chain_stamps(chain, tower, functionals, nd, marks, node_measure=volume)
+    call chain_versions(chain, tower, functionals, nd, marks, node_measure=volume)
     num_designs = num_designs_of(tower)
-    route = route_of(num_designs, num_functionals, 1)
-    call chain_derivative(chain, tower, marks, functionals, nd, 1, route, df, node_measure=volume)
+    pass_kind = pass_of(num_designs, num_functionals, 1)
+    call chain_derivative(chain, tower, marks, functionals, nd, 1, pass_kind, df, node_measure=volume)
     write(*,'(a,a,a,i0,a,i0,a,es10.2)') '      first derivatives by the ', &
-         & trim(merge('forward', 'reverse', route == forward_route)), ' route, designs ', &
+         & trim(merge('forward', 'reverse', pass_kind == forward_pass)), ' pass, designs ', &
          & num_designs, ' functionals ', num_functionals, &
          & ':  physics column against the expansion ', &
          & maxval(abs(df(:, 1) - f(1, :)) / max(1.0_dp, abs(f(1, :))))
@@ -9302,33 +9889,33 @@ contains
                & ':  |df/dp| ', norm2(df(i, 2:)), '   p . df/dp / |p||df/dp| (theory 0) ', euler
        end do
     end if
-    if (lists(cfg % check, 'routes')) then
+    if (lists(cfg % check, 'passes')) then
        call chain_derivative(chain, tower, marks, functionals, nd, 1, &
-            & merge(reverse_route, forward_route, route == forward_route), other, node_measure=volume)
+            & merge(reverse_pass, forward_pass, pass_kind == forward_pass), other, node_measure=volume)
        write(*,'(a,es10.2)') '      tangent against adjoint over the table, relative ', &
             & maxval(abs(df - other)) / max(1.0_dp, maxval(abs(df)))
     end if
     if (lists(cfg % check, 'sinks')) then
-       call chain_derivative(chain, tower, marks, functionals, nd, 1, reverse_route, other, &
+       call chain_derivative(chain, tower, marks, functionals, nd, 1, reverse_pass, other, &
             & node_measure=volume, sinks=sinks)
        call shown_sinks(sinks, nd)
     end if
     if (grid_designed) then
        do order = 2, ubound(f, 1)
-          route = route_of(num_designs, num_functionals, order)
-          call chain_derivative(chain, tower, marks, functionals, nd, order, route, table, &
+          pass_kind = pass_of(num_designs, num_functionals, order)
+          call chain_derivative(chain, tower, marks, functionals, nd, order, pass_kind, table, &
                & node_measure=volume, entries=entries)
           do i = 1, num_functionals
-             if (route == reverse_route) then
+             if (pass_kind == reverse_pass) then
                 write(*,'(a,i0,a,a,i0,a,es12.4,a,es10.2,a,es10.2)') '      derivatives of order ', &
-                     & order, ' by the reverse route, functional ', '', i, ':  |T| ', &
+                     & order, ' by the reverse pass, functional ', '', i, ':  |T| ', &
                      & maxval(abs(table(i, :))), '   departure among the entries of a multiset ', &
                      & asymmetry(entries, num_designs, order), &
                      & '   parameter entry against the expansion ', &
                      & abs(table(i, 1) - f(order, i)) / max(1.0_dp, abs(f(order, i)))
              else
                 write(*,'(a,i0,a,i0,a,es12.4,a,es10.2)') '      derivatives of order ', order, &
-                     & ' by the forward route, functional ', i, ':  |T| ', maxval(abs(table(i, :))), &
+                     & ' by the forward pass, functional ', i, ':  |T| ', maxval(abs(table(i, :))), &
                      & '   parameter entry against the expansion ', &
                      & abs(table(i, 1) - f(order, i)) / max(1.0_dp, abs(f(order, i)))
              end if
@@ -9341,7 +9928,7 @@ contains
     integer            , intent(in) :: nd
     write(*,'(a,a,a,a,a,a)') '      sink costates: unknowns no row of their block reads, by degree 0..', &
          & trim(counted(nd, sinks % interior)), ' interior', trim(counted(nd, sinks % last)), &
-         & ' at the last point', trim(counted(nd, sinks % carried)), ' carried'
+         & ' at the last point', trim(counted(nd, sinks % fixed_rows)), ' in fixed rows'
     write(*,'(a,es10.2,a,es10.2)') '         J_ii lambda_i - g_i on the sinks, relative ', &
          & sinks % departure / max(1.0_dp, sinks % gradient), &
          & '   lambda where the functional reads nothing, relative ', &
@@ -9361,7 +9948,7 @@ contains
   subroutine chosen_functionals(cfg)
     type(configuration), intent(in) :: cfg
     character(len=32), allocatable :: names(:)
-    logical :: ok
+    logical :: passes_check
     integer :: i
     call refuse_unknown(cfg % designs, ['physics', 'grid   '], 'designs')
     call refuse_unknown(cfg % functionals, ['energy     ', 'dissipation'], 'functionals')
@@ -9369,16 +9956,16 @@ contains
        error stop 'graph_time_integrator: the physics'' parameter is the first design'
     end if
     grid_designed = lists(cfg % designs, 'grid')
-    names = worded(cfg % functionals)
+    names = words_of(cfg % functionals)
     allocate(functionals(size(names)))
     do i = 1, size(names)
-       call functional_named(trim(names(i)), cfg % state_degree, functionals(i), ok)
-       if (ok) functionals(i) = stated_over(functionals(i), state_degrees_of(cfg), functionals(i) % name())
+       call functional_named(trim(names(i)), cfg % state_degree, functionals(i), passes_check)
+       if (passes_check) functionals(i) = stated_over(functionals(i), state_degrees_of(cfg), functionals(i) % name())
     end do
   end subroutine chosen_functionals
   subroutine against_the_ode(cfg, schemes, added, f_field)
     type(configuration), intent(in) :: cfg
-    type(family_holder), intent(in) :: schemes(:)
+    type(family_container), intent(in) :: schemes(:)
     integer            , intent(in) :: added(:)
     real(dp)           , intent(in) :: f_field(0:)
     type(chain_block), allocatable :: chain(:)
@@ -9426,7 +10013,7 @@ contains
     integer  :: n1, n2
     call refuse_unknown(cfg % initial_field, ['constant', 'mode    ', 'bump    '], 'initial_field')
     call refuse_unknown(cfg % export, ['none    ', 'paraview'], 'export')
-    call refuse_unknown(cfg % check, ['none    ', 'ode     ', 'mode    ', 'operator', 'routes  ', &
+    call refuse_unknown(cfg % check, ['none    ', 'ode     ', 'mode    ', 'operator', 'passes  ', &
          & 'sinks   '], &
          & 'check')
     call pair_of(cfg % spatial_counts, x, y, 'counts')
@@ -9460,8 +10047,8 @@ contains
        nodes  = 1
        volume = [1.0_dp]
     end if
-    ! the seed carries one value per component the rule reads, which
-    ! the rule itself states
+    ! the initial state stores one value per component the rule reads,
+    ! a count the rule itself declares
     law = physics_of(cfg)
     q0 = initial_field(law, law % num_components(), &
          & cfg % initial_field, cfg % initial_state, cfg % design, &
@@ -9471,35 +10058,35 @@ contains
     character(len=*), intent(in)  :: text, subject
     real(dp)        , intent(out) :: x, y
     character(len=32), allocatable :: w(:)
-    w = worded(text)
+    w = words_of(text)
     if (size(w) /= 2) error stop 'graph_time_integrator: two ' // subject // ', one per coordinate'
     read(w(1), *) x
     read(w(2), *) y
   end subroutine pair_of
-  subroutine assembled(cfg, names, orders, schemes, added, ok)
+  subroutine assembled(cfg, names, orders, schemes, added, passes_check)
     type(configuration), intent(in)  :: cfg
     character(len=*)   , intent(in)  :: names(:)
     integer            , intent(in)  :: orders(:)
-    type(family_holder), intent(inout) :: schemes(:)
+    type(family_container), intent(inout) :: schemes(:)
     integer            , intent(inout) :: added(:)
-    logical            , intent(out)   :: ok
+    logical            , intent(out)   :: passes_check
     class(family), allocatable :: scheme
     logical :: staged, exists
     integer :: b, blocks, share
     blocks = size(names)
-    ok = .true.
+    passes_check = .true.
     share = cfg % instants / blocks
     added = share
     added(1) = cfg % instants - share * (blocks - 1)
     do b = 1, blocks
        call chosen(names(b), orders(b), scheme, staged, exists)
        if (.not. exists) then
-          ok = .false.
+          passes_check = .false.
           cycle
        end if
        allocate(schemes(b) % scheme, source=scheme)
        deallocate(scheme)
-       if (added(b) <= schemes(b) % scheme % history_depth(cfg % state_degree)) ok = .false.
+       if (added(b) <= schemes(b) % scheme % history_depth(cfg % state_degree)) passes_check = .false.
     end do
   end subroutine assembled
   subroutine adaptive_context(cfg)
@@ -9510,7 +10097,7 @@ contains
        error stop 'graph_time_integrator: an adaptive grid is over time alone'
     end if
     nd = cfg % state_degree + 1
-    if (trim(cfg % adaptive_gate) == 'goal_oriented') then
+    if (trim(cfg % adaptive_check) == 'goal_oriented') then
        adaptive_weights = goal_oriented_partition(crouzeix_three_stage(), &
             & physics_of(cfg), van_der_pol_energy(cfg % state_degree), nd, &
             & cfg % time_duration, q0(1:cfg % state_degree), cfg % design, cfg % tolerance, &
@@ -9551,8 +10138,8 @@ contains
          & 'tolerance_criterion')
     call refuse_unknown(cfg % iteration_criterion, ['by_rate ', 'by_count'], &
          & 'iteration_criterion')
-    call refuse_unknown(cfg % adaptive_gate, ['step_doubling', 'goal_oriented'], &
-         & 'adaptive_gate')
+    call refuse_unknown(cfg % adaptive_check, ['step_doubling', 'goal_oriented'], &
+         & 'adaptive_check')
     call set_stopping(cfg % tolerance, &
          & merge(relative, absolute, trim(cfg % tolerance_criterion) == 'relative'), &
          & merge(by_rate, by_count, trim(cfg % iteration_criterion) == 'by_rate'), &
@@ -9562,7 +10149,7 @@ contains
     call adaptive_context(cfg)
     if (cfg % accounting) then
        call refuse_unknown(cfg % measurements, &
-            & ['wall_time     ', 'primal_loops  ', 'tangent_loops ', &
+            & ['elapsed_time  ', 'primal_loops  ', 'tangent_loops ', &
             &  'adjoint_loops ', 'newton_solves ', 'linear_solves ', &
             &  'factorisations'], 'measurements')
     end if
@@ -9571,16 +10158,16 @@ contains
     widest = widest_reach(cfg)
     if (.not. cfg % automatic_order_conservation) then
        write(*,'(a)')    ' '
-       write(*,'(a,i0)') ' the widest row here looks back over instants: ', widest
+       write(*,'(a,i0)') ' the widest row here has history depth in instants: ', widest
        write(*,'(a)')    ' filling them by any other means leaves the rows solving different'
-       write(*,'(a)')    ' problems from different starting states, and no table read across'
-       write(*,'(a)')    ' such rows means anything.'
+       write(*,'(a)')    ' problems from different initial states, and no table compared across'
+       write(*,'(a)')    ' such rows is meaningful.'
        error stop 'graph_time_integrator: order conservation is the only startup built'
     end if
     if (widest == 0) then
        write(*,'(a)')    ' '
-       write(*,'(a,i0)') ' every family and order asked for looks further back than the'
-       write(*,'(a,i0)') ' horizon holds, which is instants: ', cfg % instants
+       write(*,'(a,i0)') ' every family and order requested has a history depth beyond the'
+       write(*,'(a,i0)') ' horizon, whose instant count is: ', cfg % instants
        error stop 'graph_time_integrator: no row fits in this horizon'
     end if
     call grid_partition(cfg, dt, t)
@@ -9599,16 +10186,16 @@ contains
        write(*,'(a)') ' '
        write(*,'(a)') ' no row was built. A family has no scheme at every order - a stage'
        write(*,'(a)') ' family has none below order two - and a row whose blocks would add'
-       write(*,'(a)') ' no more instants than they look back over is not built either.'
+       write(*,'(a)') ' no more instants than their history depth is not built either.'
     end if
   end subroutine table
   !===================================================================!
-  ! HOW MANY WINDOWS EACH SURVEYED CHAIN CARRIES. The setting lists
+  ! HOW MANY WINDOWS EACH SURVEYED CHAIN HAS. The setting lists
   ! the counts, so a survey over chains of one, two and three windows
-  ! reads `combinations = 1 2 3`, and any count may be asked for. A
+  ! reads `combinations = 1 2 3`, and any count may be requested. A
   ! count above the number of families named yields no chain, because
   ! a surveyed chain gives each window a family of its own; a chain
-  ! that repeats a family is named outright through `chain`.
+  ! that repeats a family is specified explicitly through `chain`.
   !===================================================================!
 
   subroutine every_window_count(cfg, printed)
@@ -9616,7 +10203,7 @@ contains
     integer            , intent(inout) :: printed
     character(len=32), allocatable :: counts(:)
     integer :: i, windows
-    counts = worded(cfg % combinations)
+    counts = words_of(cfg % combinations)
     do i = 1, size(counts)
        read(counts(i), *) windows
        call tuple_rows(cfg, windows, printed)
@@ -9624,11 +10211,11 @@ contains
   end subroutine every_window_count
 
   !===================================================================!
-  ! THE CHAIN NAMED OUTRIGHT, IF ONE IS. One window per word, each
+  ! THE CHAIN SPECIFIED EXPLICITLY, IF ONE IS. One window per word, each
   ! reading family:order. The instants divide evenly among however
   ! many windows are named, and a window too short for the family
-  ! standing at it is said so rather than passed over - a chain asked
-  ! for by name is not silently dropped the way a surveyed one is.
+  ! assigned to it is reported rather than skipped - a chain requested
+  ! by name is not silently omitted the way a surveyed one is.
   !===================================================================!
 
   subroutine the_named_chain(cfg, printed)
@@ -9642,24 +10229,24 @@ contains
     windows = size(names)
     if (cfg % instants / windows <= 0) then
        write(*,'(a)') ' '
-       write(*,'(a,i0,a,i0,a)') ' the chain names ', windows, ' windows and the horizon holds ', &
-            & cfg % instants, ' instants, so a window would hold none.'
-       error stop 'graph_time_integrator: a window of a named chain holds instants'
+       write(*,'(a,i0,a,i0,a)') ' the chain names ', windows, ' windows and the horizon contains ', &
+            & cfg % instants, ' instants, so a window would contain none.'
+       error stop 'graph_time_integrator: a window of a named chain contains instants'
     end if
     before = printed
     call one_row(cfg, names, orders, printed)
     if (printed == before) then
        write(*,'(a)') ' '
        write(*,'(a)') ' the chain ' // trim(cfg % chain) // ' built no row. A family has no'
-       write(*,'(a)') ' scheme at the order asked of it, or a window adds no more instants'
-       write(*,'(a)') ' than the family standing at it looks back over.'
+       write(*,'(a)') ' scheme at the order requested of it, or a window adds no more instants'
+       write(*,'(a)') ' than the history depth of the family assigned to it.'
        error stop 'graph_time_integrator: a named chain builds its row'
     end if
   end subroutine the_named_chain
 
   !===================================================================!
   ! THE WINDOWS A CHAIN NAMES, read as family and order. A word
-  ! carrying no colon, or an order that is not a whole number, is
+  ! without a colon, or an order that is not a whole number, is
   ! refused where it is written.
   !===================================================================!
 
@@ -9669,7 +10256,7 @@ contains
     integer         , allocatable, intent(out) :: orders(:)
     character(len=32), allocatable :: words(:)
     integer :: i, mark, failed
-    words = worded(text)
+    words = words_of(text)
     if (size(words) < 1) then
        error stop 'gti_configuration: a chain names a window at least'
     end if
@@ -9686,7 +10273,7 @@ contains
        read(words(i)(mark + 1:), *, iostat=failed) orders(i)
        if (failed /= 0 .or. orders(i) < 1) then
           write(*,'(a)') ' '
-          write(*,'(a)') ' the chain asks ' // trim(words(i)) // &
+          write(*,'(a)') ' the chain requests ' // trim(words(i)) // &
                & ' for an order that is not a whole number of one or more.'
           error stop 'gti_configuration: a setting names something unknown'
        end if
@@ -9713,7 +10300,7 @@ contains
     character(len=*), intent(in) :: text
     character(len=32), allocatable :: counts(:)
     integer :: i, windows, failed
-    counts = worded(text)
+    counts = words_of(text)
     if (size(counts) < 1) then
        error stop 'gti_configuration: the combinations name a window count'
     end if
@@ -9784,17 +10371,17 @@ contains
   end subroutine tuple_rows
   subroutine accounted(cfg)
     type(configuration), intent(in) :: cfg
-    character(len=32), allocatable :: wanted(:)
+    character(len=32), allocatable :: requested(:)
     integer :: i, event
-    wanted = worded(cfg % measurements)
-    do i = 1, size(wanted)
-       event = tally_event_of(trim(wanted(i)))
+    requested = words_of(cfg % measurements)
+    do i = 1, size(requested)
+       event = tally_event_of(trim(requested(i)))
        call one_measurement(cfg, event)
     end do
-    call route_note(cfg)
-    call cliff_note(cfg)
+    call substitution_note(cfg)
+    call iteration_limit_note(cfg)
   end subroutine accounted
-  subroutine route_note(cfg)
+  subroutine substitution_note(cfg)
     type(configuration), intent(in) :: cfg
     character(len=:), allocatable :: line
     character(len=14) :: cell
@@ -9817,7 +10404,7 @@ contains
        line = line // cell
     end do
     write(*,'(a)') line
-  end subroutine route_note
+  end subroutine substitution_note
   subroutine one_measurement(cfg, event)
     type(configuration), intent(in) :: cfg
     integer            , intent(in) :: event
@@ -9827,7 +10414,7 @@ contains
     top = cfg % max_derivative_degree
     allocate(whole(0:top), source=0.0_dp)
     do m = 0, top
-       if (event == wall_time) then
+       if (event == elapsed_time) then
           whole(m) = tally_amount(at_horizon, m, event)
        else
           whole(m) = over_levels(m, event)
@@ -9835,8 +10422,8 @@ contains
     end do
     write(*,'(a)') ' '
     write(*,'(a)') ' accounting: ' // tally_event_name(event)
-    if (event == wall_time) then
-       write(*,'(a)') '   seconds. A level holds the levels opened inside it, and the'
+    if (event == elapsed_time) then
+       write(*,'(a)') '   seconds. A level contains the levels opened inside it, and the'
        write(*,'(a)') '   expansion spans every order, so the ratios are the horizon.'
     end if
     write(*,'(a)') ' '
@@ -9853,7 +10440,7 @@ contains
        end do
        write(*,'(a)') line
     end do
-    if (event == wall_time) then
+    if (event == elapsed_time) then
        line = '   per order        '
     else
        line = '   whole run        '
@@ -9889,7 +10476,7 @@ contains
        write(*,'(a)') line
     end do
   end subroutine ratio_matrix
-  subroutine cliff_note(cfg)
+  subroutine iteration_limit_note(cfg)
     type(configuration), intent(in) :: cfg
     real(dp) :: loops, solves
     integer  :: m
@@ -9903,19 +10490,19 @@ contains
     write(*,'(a)') ' '
     write(*,'(a,f8.1)') '   primal loops per newton solve      ', loops / solves
     if (loops / solves >= 39.0_dp) then
-       write(*,'(a)') '   at the iteration budget: the march is not converging, so'
-       write(*,'(a)') '   these ratios report the budget and not the derivative order.'
+       write(*,'(a)') '   at the iteration limit: the march is not converging, so'
+       write(*,'(a)') '   these ratios report the limit and not the derivative order.'
     end if
-  end subroutine cliff_note
-  function amount_text(spent, event) result(text)
-    real(dp), intent(in) :: spent
+  end subroutine iteration_limit_note
+  function amount_text(elapsed, event) result(text)
+    real(dp), intent(in) :: elapsed
     integer , intent(in) :: event
     character(len=:), allocatable :: text
     character(len=14) :: cell
-    if (event == wall_time) then
-       write(cell,'(f14.4)') spent
+    if (event == elapsed_time) then
+       write(cell,'(f14.4)') elapsed
     else
-       write(cell,'(i14)') nint(spent)
+       write(cell,'(i14)') nint(elapsed)
     end if
     text = trim(adjustl(cell))
   end function amount_text

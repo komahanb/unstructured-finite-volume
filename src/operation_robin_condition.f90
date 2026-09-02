@@ -1,9 +1,9 @@
 !=====================================================================!
 ! The robin condition: one tagged boundary statement.
 !
-! LEVEL 3 OF THE STRATIFICATION. The condition says what the
-! material does at a boundary, and it says it as COEFFICIENTS - this
-! class computes numbers and hands them to the calculus; it owns no
+! LEVEL 3 OF THE STRATIFICATION. The condition specifies the
+! boundary behaviour of the material as COEFFICIENTS - this type
+! computes numbers and passes them to the calculus; it owns no
 ! operator, no balance, no solve.
 !
 ! Every boundary condition is one statement,
@@ -17,27 +17,27 @@
 !
 ! and the face flux splits into a phi_p coefficient and a constant.
 ! With denom = a + b/delta, the four numbers per face (matching
-! class_boundary_condition of the old world, checked to machine
-! precision in the suite):
+! class_boundary_condition of the previous implementation, checked to
+! machine precision in the test suite):
 !
 !      lhs     = -kappa*area*a/(delta*denom)      multiplies phi_p
 !      rhs     = -kappa*area*c/(delta*denom)      the constant
 !      adv lhs = -vn*area*(b/delta)/denom         multiplies phi_p
 !      adv rhs =  vn*area*c/denom                 the constant
 !
-! THE STRING ENTERS ONCE. The condition holds its tag, and resolves
-! it through tagged_edges at the moment coefficients are asked for.
-! Nothing downstream holds the string; everything downstream holds
+! THE STRING ENTERS ONCE. The condition stores its tag, and resolves
+! it through tagged_edges when coefficients are requested.
+! No later stage stores the string; every later stage stores
 ! arrays.
 !
 ! THE OPERATOR PATH, for a > 0: the diffusive part uses the
 ! calculus directly. An edge coefficient kappa*area*a/denom with
 ! spacing delta and the stored value c/a in the operator's boundary
-! argument reproduces the eliminated flux with the old row's own
-! sign, so a boundary strengthens the diagonal exactly as the old
-! assembler's lhs does - the suite demonstrates the row. For a = 0
-! the constant travels as a source in the balance instead, because
-! a zero coefficient carries nothing.
+! argument reproduces the eliminated flux with the sign of the
+! previous row, so a boundary increases the diagonal exactly as the
+! previous assembler's lhs does - the test suite checks the row. For
+! a = 0 the constant enters as a source in the balance instead,
+! because a zero coefficient contributes nothing.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -84,7 +84,7 @@ module operation_robin_condition
      procedure :: advection_rhs_coefficients
      procedure :: operator_coefficients
      procedure :: boundary_values
-     procedure :: wall_relation
+     procedure :: boundary_relation
 
   end type robin_condition
 
@@ -92,7 +92,7 @@ contains
 
   !===================================================================!
   ! The three constructors: the general statement and its two
-  ! famous specializations.
+  ! standard specializations.
   !===================================================================!
 
   pure type(robin_condition) function robin(tag, a, b, c) result(this)
@@ -128,11 +128,11 @@ contains
   !===================================================================!
   ! The tag resolved, once: WHICH edges this condition covers.
   !
-  ! The answer is a declared subset, so it is a new declared domain, and
-  ! the caller's set store says who belongs, what it is called and
-  ! which ambient set it sits under. It is an argument because the answer
-  ! outlives this call - a set the caller cannot interpret would be no
-  ! answer at all.
+  ! The result is a declared subset, so it is a new declared domain, and
+  ! the caller's set store records its members, its label and its
+  ! ambient set. The set store is an argument because the result
+  ! outlives this call - a set the caller cannot interpret would be
+  ! unusable.
   !===================================================================!
 
   subroutine faces(this, m, sets, members)
@@ -197,7 +197,7 @@ contains
   end subroutine advection_rhs_coefficients
 
   !===================================================================!
-  ! The operator road, for a > 0. The edge coefficient and the
+  ! The operator path, for a > 0. The edge coefficient and the
   ! stored value that make the calculus reproduce the eliminated
   ! flux on a headless edge:
   !
@@ -276,15 +276,15 @@ contains
     if (abs(this % a) > 0.0_dp) then
        values = this % c / this % a
     else
-       ! A pure neumann condition has no value to stand in; its
-       ! constant travels as a source in the balance instead.
+       ! A pure neumann condition has no substitute value; its
+       ! constant enters as a source in the balance instead.
        values = 0.0_dp
     end if
 
   end subroutine boundary_values
 
   !===================================================================!
-  ! THE WHOLE WALL, IN TWO NUMBERS. Eliminating the face value from
+  ! THE WHOLE BOUNDARY CONDITION, IN TWO NUMBERS. Eliminating the face value from
   !
   !      a*phi_b + b*(phi_b - phi_p)/delta = c
   !
@@ -293,13 +293,13 @@ contains
   !      phi_b = (1 - w)*phi_p + v        w = a/denom, v = c/denom
   !
   ! and that one line is the entire condition: dirichlet is w = 1,
-  ! phi_b = c; neumann is w = 0, phi_b = phi_p + c*delta, the wall
-  ! that carries a gradient rather than a value; anything mixed
-  ! stands between them. A caller that takes only v can express
-  ! dirichlet and nothing else, which is why both numbers travel.
+  ! phi_b = c; neumann is w = 0, phi_b = phi_p + c*delta, the boundary
+  ! that specifies a gradient rather than a value; anything mixed
+  ! lies between them. A caller that takes only v can express
+  ! dirichlet and nothing else, which is why both numbers are returned.
   !===================================================================!
 
-  subroutine wall_relation(this, m, weights, values)
+  subroutine boundary_relation(this, m, weights, values)
 
     class(robin_condition), intent(in) :: this
     type(mesh), intent(in)             :: m
@@ -317,7 +317,7 @@ contains
        values(f)  = this % c / denom(this, delta(f))
     end do
 
-  end subroutine wall_relation
+  end subroutine boundary_relation
 
   !===================================================================!
   ! The mesh's area and delta at this condition's faces, in member
@@ -333,8 +333,8 @@ contains
 
     !----------------------------------------------------------------!
     ! The declared set is local to this call, so its interpretation is
-    ! local too: this store is not a hidden environment. Nothing that
-    ! needs it escapes.
+    ! local too: this store is not a hidden global. Nothing that
+    ! depends on it is returned.
     !----------------------------------------------------------------!
 
     type(graph)     :: members

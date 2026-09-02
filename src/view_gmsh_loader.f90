@@ -4,8 +4,8 @@
 ! http://gmsh.info/doc/texinfo/gmsh.html#MSH-file-format
 !
 ! 4.1 differs from the legacy 2.2 in three ways the parser handles:
-!   - $Entities: an element no longer carries a physical tag per line;
-!     it belongs to a geometric entity that carries the tag. So the
+!   - $Entities: an element line no longer lists a physical tag; the
+!     element belongs to a geometric entity that stores the tag. So the
 !     per-element tag is a lookup:
 !
 !        element -> (entityDim, entityTag) -> physical tag
@@ -176,7 +176,7 @@ contains
 
       if (verbosity .ge. 1) write(*,'(a)') "Reading mesh information..."
 
-      ! The first line of $MeshFormat carries the version number.
+      ! The first line of $MeshFormat contains the version number.
       associate(mlines => lines(idx_start_mesh+1:idx_start_mesh+1))
         call mlines(1) % tokenize(" ", num_tokens, tokens)
         if (floor(tokens(1) % as_real()) .ne. 4) then
@@ -224,7 +224,7 @@ contains
            !----------------------------------------------------------!
            ! The name is the quoted string on the line. Take everything
            ! between the first and last double quote so names with
-           ! spaces (e.g. "cylindrical wall") survive.
+           ! spaces (e.g. "outer boundary") are preserved.
            !----------------------------------------------------------!
 
            associate(s => tag_lines(iline+1) % str)
@@ -280,7 +280,7 @@ contains
 
       il = il + 1
 
-      ! A point line reads: tag x y z numPhys phys... (numPhys sits at token 5).
+      ! A point line reads: tag x y z numPhys phys... (numPhys is token 5).
       do ie = 1, np
          call lines(il) % tokenize(" ", num_tokens, tokens)
          ent_tag0(ie) = tokens(1) % as_integer()
@@ -289,7 +289,7 @@ contains
          il = il + 1
       end do
 
-      ! A curve, surface or volume line reads: tag bbox(6) numPhys phys... (numPhys sits at token 8).
+      ! A curve, surface or volume line reads: tag bbox(6) numPhys phys... (numPhys is token 8).
       do ie = 1, nc
          call lines(il) % tokenize(" ", num_tokens, tokens)
          ent_tag1(ie) = tokens(1) % as_integer()
@@ -357,9 +357,9 @@ contains
          il = il + 1
 
          !------------------------------------------------------------!
-         ! The node tags arrive one bare integer per line, so they are
-         ! read directly; tokenize needs a delimiter and a single
-         ! value carries none.
+         ! The node tags are listed one integer per line, so they are
+         ! read directly; tokenize requires a delimiter and a single
+         ! value contains none.
          !------------------------------------------------------------!
 
          do i = 1, k
@@ -387,10 +387,10 @@ contains
     end block process_nodes
 
     !----------------------------------------------------------------!
-    ! $Elements is block-structured. The top dimension holds the
+    ! $Elements is block-structured. The top dimension contains the
     ! cells, one lower the faces, two lower the edges (so 2d and 3d
-    ! both work). The physical tag of each element comes from its
-    ! block's entity.
+    ! are both handled). The physical tag of each element comes from
+    ! its block's entity.
     !----------------------------------------------------------------!
 
     process_elements: block
@@ -549,9 +549,9 @@ contains
 
       if (allocated(tokens)) deallocate(tokens)
 
-      ! Warn when no face carries a physical tag.
+      ! Warn when no face has a physical tag.
       if (count(face_tags .ne. 0) .eq. 0) then
-         write(*,*) "untagged faces exist - mesh not useful for simulation"
+         write(*,*) "no face has a physical tag - the mesh cannot be used for simulation"
       end if
 
       if (verbosity .ge. 1) write(*,'(a)') "Reading elements completed..."
@@ -564,7 +564,7 @@ contains
 
     !==================================================================!
     ! Return the physical tag of the entity (edim, etag), or 0 if it
-    ! carries no physical group.
+    ! belongs to no physical group.
     !==================================================================!
 
     pure integer function entity_phys(edim, etag)
@@ -589,7 +589,7 @@ contains
   end subroutine mesh_data
 
   !====================================================================!
-  ! Scan the file for the start and end line of each section we need.
+  ! Scan the file for the start and end line of each section the parser reads.
   !====================================================================!
 
   pure subroutine find_tags(lines, &
@@ -621,7 +621,7 @@ contains
 
     integer :: num_lines, iline
 
-    ! These sections stay absent unless found.
+    ! These indices are zero unless the section is found.
     idx_start_entities = 0
     idx_end_entities   = 0
 

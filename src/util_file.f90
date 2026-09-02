@@ -1,12 +1,12 @@
 !=====================================================================!
-! A file, seen the way we see everything here: a chain. Lines are the
-! vertices, "next line" is the only edge, and the reader can do just
-! one thing - take the edge forward:
+! A file, represented as a chain graph. Lines are the vertices,
+! "next line" is the only edge, and the reader has exactly one
+! operation - traverse the edge forward:
 !
 !     (line 1)──▶(line 2)──▶(line 3)──▶ ...
 !
-! Open and close bracket the walk, read_line takes one step,
-! read_lines walks the whole chain into memory, and num_lines
+! Open and close delimit the traversal, read_line takes one step,
+! read_lines reads the whole chain into memory, and num_lines
 ! measures its length.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
@@ -64,7 +64,7 @@ contains
 
     type(character(*)), intent(in)           :: filename
     type(integer)     , intent(in), optional :: line_width
-    logical :: ok
+    logical :: valid
     integer :: i
 
     ! Set the file name.
@@ -77,12 +77,12 @@ contains
        this % buffer_size = 100
     end if
 
-    ! Use an available handle for opening.
+    ! Use an unopened unit number for opening.
     i = 99
     check_unit: do 
        i = i + 1 
-       inquire(unit=i, opened=ok)
-       if(ok .eqv. .false.) then
+       inquire(unit=i, opened=valid)
+       if(valid .eqv. .false.) then
           this % file_unit = i
           exit check_unit
        end if
@@ -199,14 +199,14 @@ contains
 
     !-----------------------------------------------------------------!
     ! Count the lines in the file so that space can be allocated.
-    ! This measurement walks the chain on a separate handle, which
-    ! needs a fix.
+    ! This measurement opens and traverses the file a second time,
+    ! which needs a fix.
     !-----------------------------------------------------------------!
 
     num_lines = this % num_lines()
     allocate(lines(num_lines))
 
-    ! Walk the chain and store each line into the lines array.
+    ! Traverse the chain and store each line into the lines array.
     call this % open()
     do iline = 1, num_lines
        call this % read_line(lines(iline))

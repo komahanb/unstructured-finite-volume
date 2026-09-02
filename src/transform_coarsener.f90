@@ -1,8 +1,8 @@
 !=====================================================================!
 ! The concrete graph coarsener.
 !
-! C makes a smaller graph out of a bigger one by gluing cells into
-! blocks. Same shape, less detail:
+! C maps a larger graph to a smaller one by merging cells into
+! blocks. Same structure, lower resolution:
 !
 !      o o o o                 O   O
 !      o o o o     ------>
@@ -10,18 +10,18 @@
 !
 !      twelve cells            four blocks
 !
-! Two fine cells joined by a face put a face between their blocks,
-! unless they landed in the same block - then that face disappears
-! inside it. That is the whole rule.
+! Two fine cells joined by a face produce a face between their
+! blocks, unless both are in the same block - then that face is
+! interior to the block and is removed. That is the complete rule.
 !
 ! Coarsening and partitioning are both transforms and they are not the
-! same family. Partitioning changes WHO HOLDS WHAT: whole to parts,
-! same detail. Coarsening changes the detail: fine to coarse, same
-! whole.
+! same family. Partitioning changes WHICH PART STORES WHICH CELLS:
+! whole to parts, same resolution. Coarsening changes the resolution:
+! fine to coarse, same whole.
 !
-! What it is for: a multigrid level, where the slow smooth part of an
-! error is cheap to damp; a first guess to start a fine solve from;
-! and a quick look at a mesh too big to draw.
+! Uses: a multigrid level, where the smooth part of an error is
+! damped at lower cost; an initial iterate for a fine solve; and a
+! reduced view of a mesh too large to render.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -50,21 +50,21 @@ module transform_coarsener
   !===================================================================!
 
   !-------------------------------------------------------------------!
-  ! Walk the cells and glue each unclaimed one to a neighbour that is
-  ! also unclaimed. Cheap, deterministic, and it follows the
-  ! connections rather than the numbering.
+  ! Traverse the cells and merge each unassigned one with a neighbour
+  ! that is also unassigned. Low cost, deterministic, and it follows
+  ! the adjacency rather than the numbering.
   !-------------------------------------------------------------------!
 
   integer, parameter :: COARSEN_PAIRWISE = 1
 
   !-------------------------------------------------------------------!
-  ! Take a map computed elsewhere: which block each cell goes to.
+  ! Take a map computed elsewhere: which block each cell is assigned to.
   !-------------------------------------------------------------------!
 
   integer, parameter :: COARSEN_ADOPTED = 2
 
   !===================================================================!
-  ! One coarsener, holding how it glues and the map it ends up with.
+  ! One coarsener, storing its merge rule and the resulting map.
   !===================================================================!
 
   type, extends(transform) :: coarsener
@@ -80,8 +80,9 @@ module transform_coarsener
      integer              :: nblocks = 0
 
      !----------------------------------------------------------------!
-     ! Add the fine values or average them. A residual adds, because
-     ! it is a total. A state averages, because it is a level.
+     ! Add the fine values or average them. A residual is summed,
+     ! because it is an extensive quantity. A state is averaged,
+     ! because it is an intensive quantity.
      !----------------------------------------------------------------!
 
      logical :: average = .true.
@@ -103,10 +104,10 @@ module transform_coarsener
 contains
 
   !===================================================================!
-  ! Build a coarsener that follows one rule. Pairwise needs nothing
-  ! more; adopted brings its own map, cell -> block. The average flag
-  ! picks what a block's value is: the mean of its cells, or their
-  ! sum.
+  ! Build a coarsener that follows one rule. Pairwise requires no
+  ! further input; adopted supplies its own map, cell -> block. The
+  ! average flag selects a block's value: the mean of its cells, or
+  ! their sum.
   !===================================================================!
 
   pure type(coarsener) function create(rule, block_of, nblocks, average) result(this)
@@ -125,13 +126,13 @@ contains
   end function create
 
   !===================================================================!
-  ! Can this coarsener say anything about that graph?
+  ! Whether this coarsener is defined on the graph.
   !
-  ! A graph already down to one cell is accepted: it is as coarse as
-  ! a graph gets, so coarsening returns it unchanged, and returning
-  ! the input unchanged is a valid result. Rejecting it would push a
-  ! special case onto every caller - including the smallest level of
-  ! a multigrid hierarchy, the worst place for one.
+  ! A graph with one cell is accepted: no coarser graph exists, so
+  ! coarsening returns it unchanged, and returning the input
+  ! unchanged is a valid result. Rejecting it would require a special
+  ! case in every caller - including the smallest level of a
+  ! multigrid hierarchy, where a special case is least acceptable.
   !
   ! What is rejected is an adopted map that does not cover the graph,
   ! because no valid block assignment exists then.
@@ -155,8 +156,8 @@ contains
   end function defined_on_graph
 
   !===================================================================!
-  ! Can this coarsener say anything about that data? Yes for a field
-  ! whose entries match the graph; the graph gate answers first.
+  ! Whether this coarsener is defined on the data: true for a field
+  ! whose entries match the graph; the graph check is evaluated first.
   !===================================================================!
 
   logical function defined_on_data(this, input_graph, input_data)
@@ -188,8 +189,8 @@ contains
   end function defined_on_data
 
   !===================================================================!
-  ! C. Work out the blocks, then draw a face between two blocks
-  ! wherever a fine face ran between them.
+  ! C. Compute the blocks, then create a face between two blocks
+  ! wherever a fine face joined them.
   !===================================================================!
 
   subroutine coarsen_graph(this, fine_graph, coarse_graph)
@@ -216,7 +217,8 @@ contains
        bt = blk(t)
 
        if (.not. fine_graph % edge_has_head(e)) then
-          ! A wall stays a wall. The block behind it inherits it.
+          ! A boundary face remains a boundary face. The block
+          ! containing its tail cell inherits it.
           n = n + 1
           tails(n) = bt
           heads(n) = 0
@@ -226,9 +228,9 @@ contains
        h  = fine_graph % edge_head(e)
        bh = blk(h)
 
-       ! A face whose two cells landed in the same block vanishes
-       ! inside it. A face between two blocks is drawn once, however
-       ! many fine faces ran between them.
+       ! A face whose two cells are in the same block is removed. A
+       ! face between two blocks is created once, whatever the number
+       ! of fine faces joining them.
        if (bt == bh) cycle
        if (drawn(bt, bh)) cycle
 
@@ -246,10 +248,10 @@ contains
   end subroutine coarsen_graph
 
   !===================================================================!
-  ! The aggregate map, answered publicly: which block each fine cell
+  ! The aggregate map, returned publicly: which block each fine cell
   ! belongs to, and how many blocks there are. A multigrid reads
-  ! this to build its coarse operator; the map is the coarsener's to
-  ! own and everyone else's to consume.
+  ! this to build its coarse operator; the coarsener owns the map and
+  ! every other caller reads it.
   !===================================================================!
 
   subroutine blocks(this, fine_graph, assignment, nblocks)
@@ -286,9 +288,9 @@ contains
        return
     end if
 
-    ! Pairwise. Walk the cells; each unclaimed one starts a block and
-    ! pulls in the first unclaimed neighbour it can find. A cell with
-    ! no free neighbour is a block of one.
+    ! Pairwise. Traverse the cells; each unassigned one starts a block
+    ! and adds the first unassigned neighbour found. A cell with no
+    ! unassigned neighbour is a block of one.
     blk = 0
     nb  = 0
 
@@ -310,13 +312,13 @@ contains
   end subroutine blocks_of
 
   !===================================================================!
-  ! Lift the values onto the blocks. Several fine cells land on one
-  ! coarse cell, so this has to say how they merge - added when the
-  ! value is a total, averaged when it is a level.
+  ! Restrict the values onto the blocks. Several fine cells map to
+  ! one coarse cell, so the rule specifies how they merge - summed
+  ! when the value is extensive, averaged when it is intensive.
   !
-  ! Getting that choice wrong is quiet: a residual that gets averaged
-  ! instead of added comes out too small by the block size, and a
-  ! multigrid cycle simply converges more slowly than it should.
+  ! A wrong choice raises no error: a residual that is averaged
+  ! instead of summed is too small by the block size, and a
+  ! multigrid cycle converges more slowly than the correct one.
   !===================================================================!
 
   subroutine coarsen_data(this, fine_graph, fine_data, coarse_graph, coarse_data)
@@ -351,7 +353,7 @@ contains
        allocate(coarse_data, source=out)
 
     class default
-       error stop 'coarsen: this data does not ride on this transform'
+       error stop 'coarsen: the transform is defined on stored_field data only'
     end select
 
   end subroutine coarsen_data

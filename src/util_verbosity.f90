@@ -1,7 +1,7 @@
 !=====================================================================!
-! This module holds the global verbosity for library diagnostics. One
-! knob decides how much the mesh loader, the mesh and the assembler
-! print:
+! This module stores the global verbosity for library diagnostics.
+! One parameter decides how much the mesh loader, the mesh and the
+! assembler print:
 !
 !   0 : quiet (default) - errors and warnings only
 !   1 : progress        - "reading / forming / evaluating" milestones
@@ -20,7 +20,7 @@ module util_verbosity
   private
   public :: verbosity, set_verbosity
 
-  ! The knob is read everywhere and written only through
+  ! The parameter is read everywhere and written only through
   ! set_verbosity.
   integer, protected, save :: verbosity = 0
 

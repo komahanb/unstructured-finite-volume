@@ -2,11 +2,11 @@
 ! SET REPRESENTATION
 !
 ! How a finite set's members are stored and enumerated HERE. Three
-! primitive questions, and nothing else:
+! primitive operations, and nothing else:
 !
 !     num_members    how many
-!     member(k)      which one stands at position k
-!     local_index(v) where does v stand, 0 for an outsider
+!     member(k)      the member at position k
+!     local_index(v) the position of v, 0 for a non-member
 !
 ! bound by the enumeration laws
 !
@@ -14,20 +14,21 @@
 !     local_index(member(k)) = k      for k = 1 .. num_members
 !
 ! which force enumeration to be injective: a representation lists each
-! member once. Two further questions are theorems of those laws and
-! are answered once, on the abstract type, for every concretion:
+! member once. Two further operations are consequences of those laws
+! and are implemented once, on the abstract type, for every concretion:
 !
 !     has(v)    = (local_index(v) /= 0)
 !     members   = [ member(k), k = 1 .. num_members ]
 !
-! A concretion that overrides either must answer the same; in
-! particular an outsider's local_index is 0 and no other sentinel.
+! A concretion that overrides either must return the same; in
+! particular a non-member's local_index is 0 and no other sentinel.
 !
 !                       NO SEMANTIC IDENTITY
 !
-! A representation carries NO token, NO declare, NO id, NO same_as and
-! NO name. WHICH set this describes is not its question - that is
-! answered by a type(graph), and by nothing else. Two representations
+! A representation stores NO token, NO declare, NO id, NO same_as and
+! NO name. WHICH set this describes is not the representation's
+! concern - that is determined by a type(graph), and by nothing else.
+! Two representations
 ! with equal extensions are interchangeable descriptions; two graphs
 ! with equal extensions are two sets.
 !
@@ -40,15 +41,15 @@
 !
 ! A bulk extension must not require O(N_extent) semantic graph objects
 ! merely in order to exist. A counted representation of 10^9 members is
-! one integer; a genuinely million-node semantic task graph may
-! legitimately hold 10^6 graphs. Semantic complexity and extensional
+! one integer; a million-node semantic task graph may validly
+! contain 10^6 graphs. Semantic complexity and extensional
 ! cardinality are different quantities.
 !
 !                     THE NAMESPACE CONVENTION
 !
 ! Fortran forbids a module and its type sharing one name. The
-! convention, recorded once and applied throughout: the MODULE carries
-! the systematic name graph_<noun>_<role>; the TYPES inside drop the
+! convention, recorded once and applied throughout: the MODULE has
+! the systematic name graph_<noun>_<role>; the TYPES inside omit the
 ! graph_ prefix. map_set/set_map is the precedent.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
@@ -123,14 +124,14 @@ module map_set_representation
   end interface counted_set_representation
 
   !===================================================================!
-  ! The listed representation: an explicit roll of member values, in
-  ! declaration order. It describes a set with or without any declared
-  ! ambient - the embedding is not its business.
+  ! The listed representation: an explicit array of member values, in
+  ! declaration order. The representation describes a set with or
+  ! without any declared ambient - the embedding is not stored here.
   !===================================================================!
 
   type, extends(set_representation) :: listed_set_representation
 
-     integer, allocatable, private :: roll(:)
+     integer, allocatable, private :: listed(:)
 
    contains
 
@@ -212,9 +213,9 @@ contains
   end function counted_local_index
 
   !===================================================================!
-  ! Listed: the values handed in, each kept once, first appearance
-  ! keeping its place - the enumeration law needs injectivity, and
-  ! declaration order is the representation's own.
+  ! Listed: the values passed in, each retained once, the first
+  ! occurrence retaining its position - the enumeration law needs
+  ! injectivity, and declaration order is the representation's own.
   !===================================================================!
 
   pure type(listed_set_representation) function create_listed(values) &
@@ -222,18 +223,18 @@ contains
 
     integer, intent(in) :: values(:)
 
-    integer :: keep(size(values))
-    integer :: j, nkept
+    integer :: retained(size(values))
+    integer :: j, num_retained
 
-    nkept = 0
+    num_retained = 0
     do j = 1, size(values)
-       if (.not. any(keep(1:nkept) == values(j))) then
-          nkept       = nkept + 1
-          keep(nkept) = values(j)
+       if (.not. any(retained(1:num_retained) == values(j))) then
+          num_retained           = num_retained + 1
+          retained(num_retained) = values(j)
        end if
     end do
 
-    this % roll = keep(1:nkept)
+    this % listed = retained(1:num_retained)
 
   end function create_listed
 
@@ -241,8 +242,8 @@ contains
 
     class(listed_set_representation), intent(in) :: this
 
-    if (allocated(this % roll)) then
-       listed_num_members = size(this % roll)
+    if (allocated(this % listed)) then
+       listed_num_members = size(this % listed)
     else
        listed_num_members = 0
     end if
@@ -254,7 +255,7 @@ contains
     class(listed_set_representation), intent(in) :: this
     integer                         , intent(in) :: position
 
-    listed_member = this % roll(position)
+    listed_member = this % listed(position)
 
   end function listed_member
 
@@ -266,10 +267,10 @@ contains
     integer :: k
 
     listed_local_index = 0
-    if (.not. allocated(this % roll)) return
+    if (.not. allocated(this % listed)) return
 
-    do k = 1, size(this % roll)
-       if (this % roll(k) == value) then
+    do k = 1, size(this % listed)
+       if (this % listed(k) == value) then
           listed_local_index = k
           return
        end if

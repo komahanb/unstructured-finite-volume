@@ -1,22 +1,22 @@
 !=====================================================================!
-! THE IDENTITY . INFRASTRUCTURE BENEATH THE TOWER
+! THE IDENTITY . INFRASTRUCTURE SHARED BY EVERY LEVEL OF THE TOWER
 !
-! Not a level: a service every identified object draws on. Carriers
+! Not a level: a service every identified object uses. Carriers
 ! have identity; relations have identity; the relational graph will
-! be the third to sign. What they share is not mathematics but the
-! identity rules, and those live here once:
+! be the third to use it. What they share is not mathematics but the
+! identity rules, and those are defined here once:
 !
-!      minting    fresh, unrepeatable, contents unchoosable
+!      creation   new, unrepeatable, contents not selectable
 !      copying    whole-object only - and a copy IS the identity
 !      matching   the one comparison; serial zero matches nothing
 !
 ! The token is OPAQUE. Its parts are private, so no caller can
 ! compose one with chosen contents - the only ways a token comes to
-! exist are minting and copying, which is precisely the difference
-! between declaring a domain and being one. Today a token is an
-! (image, serial) pair, so two coarray images can never mint the
-! same stamp; nothing outside this module can read the parts, so
-! the representation stays free to grow distributed-safe further.
+! exist are creation and copying, which is the difference
+! between declaring a domain and being one. Currently a token is an
+! (image, serial) pair, so two coarray images can never create the
+! same token; nothing outside this module can read the parts, so
+! the representation can be extended for distributed use.
 !
 ! serial_number() is a read-only diagnostic for messages and tests,
 ! local to one image BY DESIGN - matches is the one comparison,
@@ -34,7 +34,7 @@ module token_identity
   public :: index_of
 
   !===================================================================!
-  ! The stamp roll of this image. Serial zero is reserved for the
+  ! The serial counter of this image. Serial zero is reserved for the
   ! undeclared: a default-initialized token is no identity at all.
   !===================================================================!
 
@@ -56,8 +56,8 @@ module token_identity
 contains
 
   !===================================================================!
-  ! next_token hands out the next stamp of this image: fresh,
-  ! unrepeatable, contents unchoosable.
+  ! next_token returns the next token of this image: new,
+  ! unrepeatable, contents not selectable.
   !===================================================================!
 
   type(token) function next_token()

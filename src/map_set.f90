@@ -6,57 +6,57 @@
 !
 !     set graph  ->  set representation
 !
-! A graph answers WHICH SET. A representation answers HOW ITS MEMBERS
-! ARE STORED. This map is the association between them, and it is the
-! only place the two ever meet.
+! A graph identifies WHICH SET. A representation specifies HOW ITS
+! MEMBERS ARE STORED. This map is the association between them, and it
+! is the only module where the two are combined.
 !
-!                  IT LENDS NOTHING, AND SO IT IS SIMPLE
+!        THE MAP RETURNS NO REFERENCES, SO ITS STORAGE IS SIMPLE
 !
-! Every question is answered by VALUE. No caller receives a pointer
+! Every query is returned by VALUE. No caller receives a pointer
 ! into this map's storage, so:
 !
-!     rows may hold their representation as an ALLOCATABLE component
+!     rows may store their representation as an ALLOCATABLE component
 !     the row array may grow by move_alloc and relocate freely
 !     intrinsic assignment deep-copies, so no defined assignment
 !     nothing is freed twice, so no finalizer
 !
-! relational_binding needed all of that machinery because it lends
-! pointers into its rows; this map needs none of it because it does
-! not. Not lending is what removes the lifetime problem, not care.
+! relational_binding needs all of that because it returns pointers
+! into its rows; this map needs none of it because it returns none.
+! Returning no reference is what removes the lifetime problem.
 !
-! If a caller ever genuinely needs a borrowed representation, that is
-! a new lifetime gate to be written and measured FIRST - not an
-! accessor to be added quietly.
+! If a caller needs a non-owning representation, that is a new lifetime
+! check to be written and measured FIRST - not an accessor to be added
+! without one.
 !
-!                AND IT BORROWS NOTHING EITHER
+!                AND THE MAP REFERENCES NOTHING EITHER
 !
-! Lending nothing OUTWARD was only half the law. This map once keyed
-! its rows on
+! Returning no reference OUTWARD was only half the law. This map once
+! keyed its rows on
 !
 !     type(graph), pointer :: element
 !
-! which borrows the caller's graph INWARD, merely in order to
-! recognize it later. Then the map outlived its own key: with the
-! binder's graph destroyed, every lookup scanned freed storage, and
-! the native allocator answered CORRECTLY - 170 invalid reads under
-! valgrind, in every lookup and so in all six questions and in bind itself.
-! An answer that is right because the page has not been reused yet is
-! not an answer.
+! which references the caller's graph INWARD, in order to identify it
+! later. Then the map outlived its own key: with the binder's graph
+! deallocated, every lookup scanned freed storage, and the native
+! allocator returned CORRECT values - 170 invalid reads under
+! valgrind, in every lookup and so in all six queries and in bind itself.
+! A value that is correct because the page has not been reused yet is
+! not a valid result.
 !
-! A row now keeps a COPY of the identity:
+! A row now stores a COPY of the identity:
 !
 !     identity map owns its keys by value;
-!     it borrows no graph object merely to recognize it.
+!     it references no graph object in order to identify it.
 !
-! A token is the whole of what recognition needs - matches is the one
+! A token is all that identification needs - matches is the one
 ! comparison, and it reads nothing outside this map. So bind no longer
-! demands TARGET, and a map may outlive every graph variable that
-! built it, which is what an association stored OUTSIDE both parties
-! was supposed to mean in the first place.
+! requires TARGET, and a map may outlive every graph variable that
+! built it, which is what an association stored OUTSIDE both objects
+! means.
 !
 ! The token is infrastructure and stays here: nothing in the set view
 ! takes or returns one. A caller names a set with a type(graph), as
-! before - a copy of a graph carries its token, so a copy is the same
+! before - a copy of a graph stores its token, so a copy is the same
 ! set, and that is exactly why the key may be copied.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
@@ -76,7 +76,7 @@ module map_set
 
   !===================================================================!
   ! The extent of one set: how its members are stored. The extents run
-  ! parallel to the table's keys, and each carries its own kind of
+  ! parallel to the table's keys, and each stores its own kind of
   ! representation.
   !===================================================================!
 
@@ -94,8 +94,8 @@ module map_set
      procedure :: bind
 
      !----------------------------------------------------------------!
-     ! The dispatched questions. Each finds the row by identity and
-     ! asks the representation, answering a value.
+     ! The dispatched queries. Each finds the row by identity and
+     ! calls the representation, returning a value.
      !----------------------------------------------------------------!
 
      procedure :: describes
@@ -108,13 +108,14 @@ module map_set
      !----------------------------------------------------------------!
      ! The extent itself, COPIED. This is how a compiled representation
      ! - a CSR relation's row numbering - takes the coordinates it will
-     ! need for life, at the one moment a map is in scope.
+     ! need for its whole lifetime, at the one point where a map is in
+     ! scope.
      !
-     ! It is not the borrowed accessor the header warns about: the
-     ! answer is a fresh allocatable, so the caller owns it and the map
-     ! may grow, move or die without touching it. Lending is what would
-     ! need a gate. Copying needs only a reason, and compiling one is
-     ! the reason.
+     ! It is not the non-owning accessor the header describes: the
+     ! result is a newly allocated copy, so the caller owns it and the
+     ! map may grow, relocate or be deallocated without affecting it.
+     ! Returning a reference is what would need a lifetime check.
+     ! Copying needs only a reason, and compiling one is the reason.
      !----------------------------------------------------------------!
 
      procedure :: extent_of
@@ -125,7 +126,7 @@ contains
 
   !===================================================================!
   ! Bind a representation to a set. A set is described once: a second
-  ! binding would leave two answers to one question.
+  ! binding would leave two representations for one key.
   !===================================================================!
 
   subroutine bind(this, element, representation)
@@ -169,7 +170,8 @@ contains
 
   !===================================================================!
   ! The dispatch. A set with no representation is not a set this map
-  ! can answer for, and it says so rather than inventing an extent.
+  ! can evaluate, and the program stops rather than fabricating an
+  ! extent.
   !===================================================================!
 
   integer function num_members_of(this, element)

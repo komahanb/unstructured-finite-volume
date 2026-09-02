@@ -2,7 +2,7 @@
 
 ## Overview
 
-This framework unifies **Model-Driven Neural Networks (MDNN)** and **Data-Driven Neural Networks (DDNN)** into a single, coherent hybrid system. The key insight: the fractal graph's binary tree structure naturally encodes this duality.
+This framework unifies **Model-Driven Neural Networks (MDNN)** and **Data-Driven Neural Networks (DDNN)** into a single, coherent hybrid system. The central observation: the fractal graph's binary tree structure encodes this duality.
 
 ```
 graph (any level: expansion, sweep, block, slice, component)
@@ -37,7 +37,7 @@ graph (any level: expansion, sweep, block, slice, component)
 - Conservative (laws built in)
 - Transferable (structure transfers across meshes, parameters don't)
 
-**Limitation**: Fixed model can't adapt to data it doesn't know about
+**Limitation**: A fixed model cannot adapt to data outside its model
 
 ### DDNN (Data-Driven): The Coefficients
 
@@ -50,12 +50,12 @@ graph (any level: expansion, sweep, block, slice, component)
 - Uncertainty quantification (parameter distributions)
 
 **Advantages**: 
-- Learns from data (no hand-tuning)
-- Adapts to reality (unmodeled phenomena)
+- Learns from data (no manual tuning)
+- Adapts to measured data (unmodeled phenomena)
 - Flexible (no fixed assumptions)
 - Data-efficient (only learns unknowns)
 
-**Limitation**: Black-box NN weights are uninterpretable; needs lots of data for accuracy
+**Limitation**: Black-box NN weights are uninterpretable; needs large data sets for accuracy
 
 ---
 
@@ -72,7 +72,7 @@ type :: graph
 end type graph
 ```
 
-This binary nature is **not accidental**—it's the perfect vessel for MDNN ↔ DDNN:
+This binary structure is **not accidental**: it is the representation of the MDNN ↔ DDNN pair:
 
 ```
 Expansion (root graph)
@@ -160,7 +160,7 @@ end subroutine adjoint_hybrid
 ```
 
 **Information flow**:
-- Same adjoint vector flows through both branches
+- The same adjoint vector is propagated through both branches
 - Each computes its own gradient
 - Gradients are independent and additive
 
@@ -183,7 +183,7 @@ Example: Diffusion with unknown diffusion coefficient
 
 ### Level 2: Correction Terms (Hybrid)
 
-**Use case**: Good model, but incomplete
+**Use case**: Accurate model, but incomplete
 
 ```
 MDNN provides: ∂u/∂t = k·∇²u + f(x,t) (base model + unknown correction)
@@ -199,7 +199,7 @@ Example: Reaction-diffusion with unknown reaction rate
 **Use case**: Structure known, discretization uncertain
 
 ```
-MDNN provides: Stencil operators, time integration (skeleton)
+MDNN provides: Stencil operators, time integration (structure)
 DDNN learns:  Basis functions, refinement strategy, local metrics
 
 Example: Multi-scale problem
@@ -275,7 +275,7 @@ mdnn_eq = d('u', t=2) + variable('mu') * (1.0_dp - variable('u')**2) * d('u', t=
 ### DDNN Side (Learning)
 
 ```fortran
-! From noisy measurements, learn mu
+! From measurements with measurement error, learn mu
 measurements = read_experimental_data()
 
 ! Neural network learns: mu(t) or just constant mu
@@ -312,7 +312,7 @@ call net_ddnn % backward()
 
 ### Result
 
-- **Interpretable**: μ_learned is a single number, easy to verify against physics
+- **Interpretable**: μ_learned is a single number, directly verifiable against physics
 - **Data-efficient**: Only μ is learned; everything else is structure
 - **Robust**: If measurements fail, μ defaults to physics-based prior
 - **Transferable**: μ learned on one mesh transfers to another
@@ -349,7 +349,7 @@ do iteration = 1, num_iterations
    learned_params = learned_params - alpha * net_ddnn % gradient()
 end do
 
-! Deployment: use fast coarse + cheap correction
+! Deployment: use the coarse model + low-cost correction
 prediction = model_coarse_mdnn + net_ddnn
 ```
 
@@ -360,9 +360,9 @@ prediction = model_coarse_mdnn + net_ddnn
 | Property | Pure MDNN | Pure DDNN | MDNN + DDNN |
 |----------|----------|----------|-----------|
 | **Interpretability** | ✓✓✓ (exact) | ✗ (black-box) | ✓✓ (structure visible) |
-| **Data required** | ✗ (none) | ✓✓ (lots) | ✓ (only unknowns) |
+| **Data required** | ✗ (none) | ✓✓ (large) | ✓ (only unknowns) |
 | **Robustness** | ✓ (guaranteed) | ✗ (extrapolation fails) | ✓✓ (structure + learning) |
-| **Accuracy** | Limited by model | ✓✓ (if data good) | ✓✓ (best of both) |
+| **Accuracy** | Limited by model | ✓✓ (if data adequate) | ✓✓ (both) |
 | **Computational cost** | Low (exact) | High (NN overhead) | Low (minimal NN) |
 | **Physics enforcement** | ✓ (by design) | ✗ (learned) | ✓ (by design) |
 | **Adaptability** | ✗ (fixed) | ✓ (flexible) | ✓ (guided flexibility) |
@@ -374,9 +374,9 @@ prediction = model_coarse_mdnn + net_ddnn
 
 ### Why This Works
 
-1. **MDNN handles the easy part**: Physics that's well-understood, modeled accurately, discretizable
-2. **DDNN handles the hard part**: Unmodeled dynamics, parameter uncertainty, systematic errors
-3. **Together**: Leverage model strength + learning flexibility without sacrificing either
+1. **MDNN computes the modelled part**: Physics that is well understood, modeled accurately, discretizable
+2. **DDNN computes the unmodelled part**: Unmodeled dynamics, parameter uncertainty, systematic errors
+3. **Together**: Model structure and learning flexibility, with neither removed
 
 ### Automatic Differentiation Through Both
 
@@ -386,7 +386,7 @@ Since both MDNN (stencils, solvers) and DDNN (neural network) are differentiable
 ∂loss/∂design = ∂loss/∂(MDNN) + ∂loss/∂(DDNN)
 ```
 
-No special machinery needed—chain rule handles it.
+No additional code is needed; the chain rule applies.
 
 ### Data Efficiency
 
@@ -416,7 +416,7 @@ block_graph = construct_block(...)
 
 ! At component level
 component_graph = construct_stencil(...)
-! branch(2) = MDNN (the actual stencil)
+! branch(2) = MDNN (the stencil itself)
 ! branch(1) = DDNN (learned stencil weight corrections)
 ```
 
@@ -454,7 +454,7 @@ One graph, two branches. No parallel infrastructure needed.
 
 ## Conclusion
 
-The hybrid MDNN/DDNN architecture unifies model-driven and data-driven learning into a single, coherent framework. The fractal graph's binary structure wasn't accidental—it's the natural home for this duality.
+The hybrid MDNN/DDNN architecture unifies model-driven and data-driven learning into a single, coherent framework. The fractal graph's binary structure was not accidental: it is the representation of this duality.
 
-**Key insight**: You don't have to choose between interpretability and adaptability. You get both.
+**Result**: interpretability and adaptability are both retained; no choice between them is required.
 

@@ -1,27 +1,27 @@
 !=====================================================================!
 ! LEVEL 7 OF THE NEW TOWER . THE MINIMIZATION
 !
-! The first level with a goal, and its law in one line: given a
+! The first level with an objective, stated once: given a
 ! residual map R : U -> Y, vary the values on the UNKNOWN domain U
 ! to drive the values on the RESIDUAL domain Y toward zero. U and Y
-! are set graph identities - never assumed to be anyone's
-! vertices; the graph argument survives only as the legacy
-! operation host the compatibility apply() signature still wants. This
-! module holds the minimizer base - ONE family for one story:
+! are set graph identities - never assumed to be the vertices of any
+! graph; the graph argument remains only as the legacy
+! operation host the compatibility apply() signature still requires. This
+! module stores the minimizer base - ONE family for one purpose:
 ! attach a statement, drive its residual to zero. Linear solvers,
-! newton, and whatever else minimizes a residual are its
+! newton, and every other operation that minimizes a residual are its
 ! concretions; their differences are governance inside the family,
 ! never a second taxonomy. The solver vocabulary is defined here as
-! thin delegations to engine entries, so the engine never learns a
-! solver word and the solver never says apply or measure:
+! thin delegations to engine entries, so the engine defines no
+! solver term and the solver never calls apply or measure directly:
 !
 !      matvec ········· the operation applied, minus its constant
 !      inner_product ·· a sum reduction with the second field as
 !                       the measure
 !      norm ··········· the norm reduction
-!      sweep_order ···· the colouring walk
-!      diagonal ······· matvec probed by colour: applied to one
-!                       colour's indicator, the answer at a member
+!      sweep_order ···· the colouring traversal
+!      diagonal ······· matvec evaluated by colour: applied to one
+!                       colour's indicator, the result at a member
 !                       IS its diagonal entry, because no two
 !                       neighbours share a colour
 !      constant ······· the affine part of the attached operation -
@@ -29,8 +29,8 @@
 !                       at zero state; the assembled right hand side
 !                       is its negative
 !
-! A concrete solver works in plain arrays - fetched once, worked,
-! written back once, as the field banner orders - and states only
+! A concrete solver works in plain arrays - read once, updated,
+! written back once, as the field banner specifies - and defines only
 ! its iteration. Everything else is inherited from here.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
@@ -48,7 +48,7 @@ module operation_minimization
   use field_calculus        , only : functional
   use field_stored     , only : stored_field
   use operation_reduction , only : reduction, REDUCE_SUM, REDUCE_NORM
-  use operation_walk      , only : walk, WALK_COLOURING
+  use operation_traversal      , only : traversal, TRAVERSAL_COLOURING
 
   implicit none
 
@@ -66,8 +66,8 @@ module operation_minimization
   integer, parameter, public :: by_rate  = 2
 
   ! How many of the last imbalances a rate is fitted over. Three would
-  ! leave one degree of freedom for the scatter and no more, so the
-  ! smallest window that gives a slope an error worth comparing to.
+  ! leave one degree of freedom for the scatter and no more, so five is
+  ! the smallest window that gives the slope a usable standard error.
   integer, parameter :: window = 5
   public :: minimizer
   public :: attach
@@ -81,42 +81,44 @@ module operation_minimization
 
      class(operation), allocatable :: action
 
-     ! THE EXECUTION CONTEXT. The graph handed to the action when it
-     ! is applied, and nothing more. It is whatever the action needs
-     ! to compute with - a mesh, a compatibility host, a conduit -
-     ! and it carries no authority over the solver's own structure.
+     ! THE EXECUTION CONTEXT. The graph passed to the action when the
+     ! action is applied, and nothing more. The graph is whatever the
+     ! action needs to compute with - a mesh, a compatibility host, an
+     ! interface - and the graph determines nothing of the solver's
+     ! own structure.
      class(directed_graph)          , allocatable :: on
 
-     ! THE DEPENDENT-VARIABLE COUPLING. Which unknowns feed which:
-     ! the stencil the structural algorithms need, and the ONLY thing
+     ! THE DEPENDENT-VARIABLE COUPLING. Which unknowns depend on which:
+     ! the stencil the structural algorithms need, and the ONLY graph
      ! sweep_order is permitted to colour.
      !
-     ! It is OPTIONAL AT ATTACH AND HAS NO FALLBACK. A structure-free
-     ! minimizer - gmres, conjugate gradient, newton - never asks for
-     ! it and need never supply one. A structured one - jacobi,
-     ! gauss-seidel - is handed it by a caller that knows which object
-     ! owns the dependent axis, and fails loudly if it was not.
+     ! The coupling is OPTIONAL AT ATTACH AND HAS NO FALLBACK. A
+     ! structure-free minimizer - gmres, conjugate gradient, newton -
+     ! never reads the coupling and need never supply one. A structured
+     ! minimizer - jacobi, gauss-seidel - receives the coupling from a
+     ! caller that records which object owns the dependent axis, and
+     ! stops the program if the coupling was not supplied.
      !
-     ! `coupling := on` would be exactly the mistake this component exists
-     ! to prevent: the graph an action happens to execute over is not
-     ! evidence about which unknowns are coupled. Where the two really
-     ! are the same graph, the CALLER says so, at its own call site.
+     ! `coupling := on` is the error this component exists to prevent:
+     ! the graph an action executes over does not determine which
+     ! unknowns are coupled. Where the two are the same graph, the
+     ! CALLER states so, at its own call site.
      class(directed_graph)          , allocatable :: coupling
 
-     ! The unknown domain U: where the answer lives, explicit at
+     ! The unknown domain U: the domain of the solution, explicit at
      ! attach, identity preserved - never inferred from the host.
      type(graph) :: unknown_domain
      integer         :: num_unknowns = 0
 
-     ! The residual domain Y: what the action answers on, asked of
+     ! The residual domain Y: the codomain of the action, read from
      ! the action itself at attach.
      type(graph) :: residual_domain
      integer         :: num_residuals = 0
 
      ! A second domain, one member per NUMBER rather than per cell.
-     ! The pairings live here: a measure carries one weight per
+     ! The pairings are defined here: a measure stores one weight per
      ! entry, so a dot product over wide entries must be taken on
-     ! the values themselves - the calculus says as much in its own
+     ! the values themselves - the calculus states this in its own
      ! banner. With one number per cell the two domains are the same
      ! set, and nothing changes.
      type(graph) :: numbers
@@ -125,34 +127,34 @@ module operation_minimization
      ! How wide an entry is. One number per cell is the common case
      ! and the default; a state with several numbers per cell - a
      ! complex plane point, a species vector, a whole spatial field
-     ! standing at one instant - says so at attach, and every word
-     ! below then measures the entire vector instead of its first
-     ! stripe.
+     ! at one instant - declares the width at attach, and every
+     ! procedure below then measures the entire vector instead of its
+     ! first component.
      integer :: num_components = 1
 
      ! THE BLOCK WIDTH. Unknowns that come in consecutive blocks of
-     ! this width - a point's components, say - and are coupled within
-     ! the block far more strongly than across it, are smoothed a
-     ! block at a time: the coupling attached is then over blocks, one
-     ! vertex each, and the indicator reads a block's square. One is the
-     ! ordinary case, an unknown its own block.
+     ! this width - a point's components, for example - and are coupled
+     ! within the block far more strongly than across it, are smoothed
+     ! one block at a time: the coupling attached is then over blocks,
+     ! one vertex each, and the indicator reads a block's square
+     ! submatrix. One is the default case, each unknown its own block.
      integer :: block_width = 1
 
      real(dp), allocatable :: affine(:)
 
-     ! THE HELD INPUTS. Inputs held fixed during this solve - a
+     ! THE FIXED INPUTS. Inputs fixed during this solve - a
      ! scheme's history, an action's parameters - applied after the
      ! unknown on every evaluation. Solve-context data: the solver
      ! varies the unknown and nothing else.
-     type(stored_field), allocatable :: held(:)
+     type(stored_field), allocatable :: stored(:)
 
      integer  :: max_iterations = 1000
      real(dp) :: tolerance      = half_digits
 
      ! WHAT THE TOLERANCE IS MEASURED AGAINST. relative divides the
-     ! imbalance by the one the iteration began with, which is the
-     ! question asked whenever the target is a reduction. absolute
-     ! compares the imbalance itself, which is the question asked only
+     ! imbalance by the imbalance the iteration began with, which is
+     ! the criterion whenever the target is a reduction. absolute
+     ! compares the imbalance itself, which is the criterion only
      ! when the number has a meaning of its own - a functional driven
      ! under a stated value, and nothing else.
      integer :: criterion = relative
@@ -162,21 +164,21 @@ module operation_minimization
      ! has flattened, which is where the slope of its logarithm over
      ! the last few iterations is no longer distinguishable from zero
      ! against its own scatter.
-     integer :: budget = by_count
+     integer :: limit_kind = by_count
 
-     ! The imbalance the iteration began at, and the last few it has
-     ! seen. Written by note_imbalance and by nothing else.
+     ! The imbalance the iteration began at, and the last few
+     ! recorded. Written by note_imbalance and by nothing else.
      real(dp), private :: began_at = 0.0_dp
      real(dp), private :: recent(window) = 0.0_dp
      integer , private :: noted = 0
 
-     ! Whether a window has yet shown a slope significantly below
+     ! Whether any window has yet had a slope significantly below
      ! zero. An iteration that has never descended has not flattened
-     ! either, whatever a window of its early wandering looks like.
+     ! either, whatever the slope over a window of its early iterations.
      logical , private :: descended = .false.
 
      ! false whenever the operator is attached: a cached block diagonal
-     ! is valid only for the operator it was probed from
+     ! is valid only for the operator it was evaluated from
      logical :: diagonal_valid = .false.
 
    contains
@@ -203,10 +205,10 @@ module operation_minimization
      procedure :: block_diagonal
      procedure :: constant
 
-     ! The operation face: a solver IS an operation - the one that
-     ! answers the attached statement. apply solves from zero, so a
-     ! solver composes wherever operations go; a preconditioner is
-     ! exactly this face of an inner solver.
+     ! The operation interface: a solver IS an operation - the one
+     ! that solves the attached statement. apply solves from zero, so a
+     ! solver composes wherever operations compose; a preconditioner is
+     ! exactly this interface of an inner solver.
      procedure :: domain => solver_domain
      procedure :: apply  => solver_apply
 
@@ -218,8 +220,8 @@ module operation_minimization
 
      !----------------------------------------------------------------!
      ! Drive || rhs - matvec(x) || under the tolerance, within the
-     ! iteration budget. The achieved norm reports the truth either
-     ! way.
+     ! iteration limit. The achieved norm is reported whether or not
+     ! the tolerance was met.
      !----------------------------------------------------------------!
 
      subroutine solve_interface(this, rhs, x, achieved)
@@ -236,7 +238,7 @@ contains
 
   !===================================================================!
   ! The imbalance an iteration begins at, against which a relative
-  ! tolerance is measured, and the last few it has seen, from which a
+  ! tolerance is measured, and the last few recorded, from which a
   ! rate is fitted. Written here and nowhere else: begin clears them,
   ! and the first imbalance noted is the one the iteration began at.
   !===================================================================!
@@ -278,7 +280,7 @@ contains
   end subroutine note_imbalance
 
   !===================================================================!
-  ! Whether the imbalance meets what was asked of it. Relative divides
+  ! Whether the imbalance meets the tolerance. Relative divides
   ! by the imbalance the iteration began at; absolute does not divide
   ! at all. A criterion that is neither stops the program.
   !===================================================================!
@@ -303,8 +305,8 @@ contains
   ! Whether the imbalance has stopped falling: the slope of its
   ! logarithm over the last window against the standard error of that
   ! slope. A descent still under way has a slope far outside its own
-  ! error; scatter about a floor has a slope inside it. Nothing is
-  ! chosen here except the width of the window, and no scale enters,
+  ! error; scatter about a lower bound has a slope inside it. No
+  ! constant is chosen here except the width of the window, and no scale enters,
   ! the slope of a logarithm being dimensionless.
   !===================================================================!
 
@@ -362,12 +364,13 @@ contains
   end subroutine fitted
 
   !===================================================================!
-  ! Whether the imbalance is out of control: above where the iteration
-  ! began, growing, and at the least rate consistent with the window -
-  ! the slope less its error - due to pass what the arithmetic can
-  ! hold before the budget is spent. An early rise that will turn is
-  ! not that: its projection over the remaining iterations stays
-  ! finite. The one limit named is the arithmetic's own.
+  ! Whether the imbalance is diverging: above the imbalance the
+  ! iteration began at, growing, and at the least rate consistent with
+  ! the window - the slope less its error - projected to exceed the
+  ! largest representable number before the iteration limit is
+  ! reached. An early rise that later descends is not divergence: its
+  ! projection over the remaining iterations stays finite. The one
+  ! limit named is the arithmetic's own.
   !===================================================================!
 
   logical function diverging(this, imbalance) result(yes)
@@ -398,8 +401,8 @@ contains
   end function began
 
   !===================================================================!
-  ! Whether the iteration has run out of what it was given. A budget
-  ! that is neither counted nor taken from the rate stops the program.
+  ! Whether the iteration has reached its limit. A limit setting
+  ! that is neither by_count nor by_rate stops the program.
   !===================================================================!
 
   logical function exhausted(this, iteration) result(done)
@@ -409,23 +412,24 @@ contains
 
     done = iteration >= this % max_iterations
 
-    select case (this % budget)
+    select case (this % limit_kind)
     case (by_count)
        continue
     case (by_rate)
        done = done .or. this % flattened()
     case default
-       error stop 'minimizer: a budget is counted or taken from the rate'
+       error stop 'minimizer: an iteration limit is counted or taken from the rate'
     end select
 
   end function exhausted
 
   !===================================================================!
-  ! Whether an iteration stops at this imbalance: noted, then judged -
-  ! met; or no longer a number; or past what the arithmetic holds; or
-  ! diverging; or the budget spent. Every iteration on the tower asks
-  ! this one question of the imbalance it has just measured, and the
-  ! loop around it is the member's own.
+  ! Whether an iteration stops at this imbalance: recorded, then
+  ! tested - converged; or not a number; or above the largest
+  ! representable number; or diverging; or the iteration limit
+  ! reached. Every iteration in the hierarchy evaluates this one
+  ! predicate on the imbalance just measured, and the loop around it
+  ! belongs to the member.
   !===================================================================!
 
   logical function halted(this, imbalance, iteration) result(stop_here)
@@ -447,13 +451,13 @@ contains
   end function halted
 
   !===================================================================!
-  ! Take the operation and the graph it reads. The affine part is
-  ! measured here, once: the operation applied to nothing is what
-  ! its boundary values and sources say by themselves.
+  ! Store the operation and the graph it reads. The affine part is
+  ! evaluated here, once: the operation applied to the zero state is
+  ! the contribution of its boundary values and sources alone.
   !===================================================================!
 
   subroutine attach(this, action, on, unknown_domain, num_unknowns, &
-       & num_components, coupling, held_inputs)
+       & num_components, coupling, stored_inputs)
 
     class(minimizer)  , intent(inout) :: this
     class(operation), intent(in)    :: action
@@ -462,7 +466,7 @@ contains
     integer               , intent(in)    :: num_unknowns
     integer, intent(in), optional         :: num_components
     class(directed_graph)  , intent(in), optional  :: coupling
-    type(stored_field), intent(in), optional :: held_inputs(:)
+    type(stored_field), intent(in), optional :: stored_inputs(:)
 
     real(dp), allocatable :: zero(:)
     integer :: n
@@ -472,15 +476,15 @@ contains
     if (allocated(this % on)) deallocate(this % on)
     allocate(this % on, source=on)
 
-    ! the inputs held fixed during this solve follow the unknown in
+    ! the inputs fixed during this solve follow the unknown in
     ! every evaluation, the affine part's included
-    if (allocated(this % held)) deallocate(this % held)
-    if (present(held_inputs)) allocate(this % held, source=held_inputs)
+    if (allocated(this % stored)) deallocate(this % stored)
+    if (present(stored_inputs)) allocate(this % stored, source=stored_inputs)
 
     ! The dependent-variable coupling arrives EXPLICIT or not at all.
     ! No fallback to the execution context: a solver that needs
-    ! structure and was given none says so when it reaches for it,
-    ! rather than colouring whatever graph happened to be nearby.
+    ! structure and was given none stops the program when it reads
+    ! the coupling, rather than colouring the execution context.
     if (allocated(this % coupling)) deallocate(this % coupling)
     if (present(coupling)) allocate(this % coupling, source=coupling)
 
@@ -492,20 +496,21 @@ contains
 
     ! The unknown domain arrives EXPLICIT and identity-preserving.
     ! No hidden fallback to the host's vertices: a caller that
-    ! means vertices says so at its own call site.
+    ! means vertices passes them at its own call site.
     this % unknown_domain   = unknown_domain
     this % num_unknowns = num_unknowns
 
-    ! The residual domain is the action's own answer.
+    ! The residual domain is the action's own codomain.
     call action % domain(on, this % residual_domain, this % num_residuals)
 
     !----------------------------------------------------------------!
     ! attach is re-enterable - Newton calls it once per iteration - and
-    ! a graph signs ONCE. The old counted_set constructor minted a
-    ! fresh number domain on every attach, so a fresh one is minted
-    ! here too, by resetting the component to an unsigned graph before
-    ! declaring it. Signing the same variable twice is refused, and
-    ! rightly; this says which of the two meanings was intended.
+    ! a graph declares its identity ONCE. The old counted_set
+    ! constructor created a new number domain on every attach, so a
+    ! new one is created here too, by resetting the component to an
+    ! undeclared graph before declaring it. Declaring the same variable
+    ! twice is rejected; the reset states which of the two meanings was
+    ! intended.
     !----------------------------------------------------------------!
 
     n = this % num_unknowns
@@ -525,7 +530,7 @@ contains
     ! Classification is not admissibility: U and Y stay distinct
     ! identities, but THIS solver family is square - the scalar
     ! dimensions must agree. A rectangular least-squares family may
-    ! earn R^n -> R^m later; it has not yet.
+    ! support R^n -> R^m later; none exists yet.
     if (size(this % affine) /= n * this % num_components) then
        error stop 'minimization: the current solver family requires equal &
             &unknown and residual value dimensions'
@@ -537,7 +542,7 @@ contains
 
   !===================================================================!
   ! The inputs the statement is evaluated on at the unknown x: the
-  ! state on the unknown domain, then the held inputs. The residual
+  ! state on the unknown domain, then the fixed inputs. The residual
   ! and every tangent taken of it are built on this one tuple, so
   ! they linearize the same function.
   !===================================================================!
@@ -553,8 +558,8 @@ contains
     state = stored_field('state', this % unknown_domain, this % num_unknowns, num_components=this % num_components)
     call state % set_real_vector(x)
 
-    if (allocated(this % held)) then
-       inputs = [state, this % held]
+    if (allocated(this % stored)) then
+       inputs = [state, this % stored]
     else
        inputs = [state]
     end if
@@ -562,9 +567,10 @@ contains
   end subroutine evaluation_inputs
 
   !===================================================================!
-  ! The operation applied as it stands, affine part and all. The
-  ! input tuple it was applied on is returned when asked, so that a
-  ! tangent frozen on it linearizes the function that was evaluated.
+  ! The operation applied unmodified, affine part included. The
+  ! input tuple the operation was applied on is returned when
+  ! requested, so that a tangent frozen on that tuple linearizes the
+  ! function that was evaluated.
   !===================================================================!
 
   subroutine raw_apply(this, x, y, inputs)
@@ -575,22 +581,22 @@ contains
     type(stored_field), allocatable, intent(out), optional :: inputs(:)
 
     type(stored_field), allocatable :: tuple(:)
-    class(field), allocatable :: answer
+    class(field), allocatable :: image
 
     call this % evaluation_inputs(x, tuple)
-    call this % action % apply(this % on, this % action % bind(tuple), answer)
+    call this % action % apply(this % on, this % action % bind(tuple), image)
 
-    if (.not. answer % defined_on(this % residual_domain)) then
-       error stop 'minimization: the action must answer on its stated residual domain'
+    if (.not. image % defined_on(this % residual_domain)) then
+       error stop 'minimization: the action must return a field on its stated residual domain'
     end if
 
-    call answer % real_vector(y)
+    call image % real_vector(y)
     if (present(inputs)) call move_alloc(tuple, inputs)
 
   end subroutine raw_apply
 
   !===================================================================!
-  ! The solver's words, each a delegation.
+  ! The solver's operations, each a delegation.
   !===================================================================!
 
   subroutine matvec(this, x, y)
@@ -606,8 +612,8 @@ contains
 
   !===================================================================!
   ! The linear solver imbalance: rhs - A x, where A is the action
-  ! with its affine part removed by matvec. Iterative solvers ask
-  ! this one question instead of each spelling the residual assembly.
+  ! with its affine part removed by matvec. Iterative solvers call
+  ! this one procedure instead of each assembling the residual.
   !===================================================================!
 
   subroutine imbalance(this, rhs, x, r)
@@ -627,7 +633,7 @@ contains
     real(dp), intent(in) :: u(:), v(:)
 
     ! a sum reduction of u weighted by v is the sum of the products,
-    ! taken here without a field built to carry one number
+    ! taken here without a field allocated to store one number
     prod = sum(u * v)
 
   end function inner_product
@@ -648,29 +654,29 @@ contains
     class(minimizer), intent(in)  :: this
     integer, allocatable, intent(out) :: colours(:)
 
-    type(walk) :: colouring
-    class(field), allocatable :: answer
+    type(traversal) :: colouring
+    class(field), allocatable :: image
 
     ! THE COLOURING IS OF THE UNKNOWNS' COUPLING, never of the
     ! execution context. Two unknowns may share a colour only when
-    ! nothing couples them, and the graph an action runs over knows
-    ! nothing about that.
+    ! nothing couples them, and the graph an action executes over does
+    ! not record that.
     if (.not. allocated(this % coupling)) then
        error stop 'minimization: a sweep needs the dependent-variable &
             &coupling - attach it with coupling='
     end if
 
-    colouring = walk(WALK_COLOURING)
-    call colouring % apply(this % coupling, output=answer)
-    call answer % integer_vector(colours)
+    colouring = traversal(TRAVERSAL_COLOURING)
+    call colouring % apply(this % coupling, output=image)
+    call image % integer_vector(colours)
 
   end subroutine sweep_order
 
   !===================================================================!
-  ! The diagonal, probed by colour. Applied to the indicator of one
-  ! colour class, the answer at a member is that member's diagonal
+  ! The diagonal, evaluated by colour. Applied to the indicator of one
+  ! colour class, the result at a member is that member's diagonal
   ! entry, because none of its neighbours is in the class. One
-  ! matvec per colour, a handful in all.
+  ! matvec per colour, as many matvecs as colours in all.
   !===================================================================!
 
   subroutine diagonal(this, d)
@@ -696,9 +702,9 @@ contains
   !===================================================================!
   ! THE BLOCK DIAGONAL by coloured indicators. The coupling attached is over
   ! the blocks; blocks of one colour do not couple, so an indicator of
-  ! one on the k-th component of every block of a colour, sent through
-  ! the matvec, brings back the k-th column of every one of those
-  ! blocks' squares at once. width indicators per colour read the whole
+  ! one on the k-th component of every block of a colour, applied
+  ! through the matvec, returns the k-th column of every one of those
+  ! blocks' square submatrices at once. width indicators per colour read the whole
   ! block diagonal, and with a width of one this is the diagonal.
   !===================================================================!
 
@@ -712,7 +718,7 @@ contains
     integer :: n, w, nb, col, b, k, i
 
     if (this % num_components > 1) then
-       error stop 'diagonal: the coloured probe answers one number per cell'
+       error stop 'diagonal: the coloured indicator evaluates one number per cell'
     end if
 
     n  = size(this % affine)
@@ -763,7 +769,7 @@ contains
   end subroutine constant
 
   !===================================================================!
-  ! The operation face.
+  ! The operation interface.
   !===================================================================!
 
   subroutine solver_domain(this, input_graph, domain, num_entries)
@@ -775,7 +781,7 @@ contains
 
     associate (u1 => input_graph); end associate
 
-    ! The solver's answer is a solution on U.
+    ! The solver's output is a solution on U.
     domain   = this % unknown_domain
     num_entries = this % num_unknowns
 
@@ -788,7 +794,7 @@ contains
     type(binding), intent(in), optional       :: inputs(:)
     class(field), allocatable, intent(inout) :: output
 
-    class(minimizer), allocatable :: worker
+    class(minimizer), allocatable :: copy
     class(field), allocatable :: right_hand_side
     type(stored_field) :: out
     real(dp), allocatable :: rhs(:), x(:)
@@ -796,18 +802,18 @@ contains
 
     associate (u1 => input_graph); end associate
 
-    ! x IS a state on the unknown domain; say so.
+    ! x IS a state on the unknown domain, allocated at that extent.
     allocate(x(this % num_unknowns * this % num_components))
     x = 0.0_dp
 
     if (present(inputs)) then
        call bound_value(inputs, this % argument(1), right_hand_side)
        if (.not. right_hand_side % defined_on(this % residual_domain)) then
-          error stop 'minimization: a right-hand side lives on the residual domain'
+          error stop 'minimization: a right-hand side is defined on the residual domain'
        end if
        call right_hand_side % real_vector(rhs)
-       allocate(worker, source=this)
-       call worker % solve(rhs, x, achieved)
+       allocate(copy, source=this)
+       call copy % solve(rhs, x, achieved)
     end if
 
     out = stored_field('solution', this % unknown_domain, this % num_unknowns, num_components=this % num_components)

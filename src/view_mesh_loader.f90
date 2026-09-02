@@ -1,12 +1,12 @@
 !=====================================================================!
-! The loader contract: whoever claims to be a mesh source must hand
-! over the raw incidence lists - vertices with coordinates, then the
+! The loader contract: every mesh source must return the raw
+! incidence lists - vertices with coordinates, then the
 ! edge -> vertex, face -> vertex and cell -> vertex tables, plus the
-! physical tags. That is a graph described by its edges, delivered
-! before any geometry is measured; class_mesh does the wiring and
-! the measuring. One deferred procedure, mesh_data, carries it
-! all - a gmsh file on disk and an in-memory array satisfy the same
-! contract.
+! physical tags. That is a graph described by its edges, returned
+! before any geometry is measured; class_mesh builds the connectivity
+! and computes the measurements. One deferred procedure, mesh_data,
+! returns all of it - a gmsh file on disk and an in-memory array
+! satisfy the same contract.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -38,7 +38,7 @@ module view_mesh_loader
   interface
 
      !================================================================!
-     ! This is the one deferred procedure of the contract: hand over
+     ! This is the one deferred procedure of the contract: return
      ! the raw incidence lists, the type codes, and the tag table that
      ! describe the mesh graph.
      !================================================================!
@@ -55,16 +55,16 @@ module view_mesh_loader
        import dp
        import string
        
-       ! This is the loader being asked.
+       ! This is the loader being read.
        class(mesh_loader)  , intent(in)   :: this
 
-       ! These arguments carry the vertices.
+       ! These arguments return the vertices.
        integer , intent(out)              :: num_vertices
        integer , intent(out), allocatable :: vertex_numbers(:)
        integer , intent(out), allocatable :: vertex_tags(:)
        real(dp), intent(out), allocatable :: vertices(:,:)
 
-       ! These arguments carry the edges.
+       ! These arguments return the edges.
        integer, intent(out)              :: num_edges
        integer, intent(out), allocatable :: edge_numbers(:)
        integer, intent(out), allocatable :: edge_tags(:)
@@ -72,7 +72,7 @@ module view_mesh_loader
        integer, intent(out), allocatable :: num_edge_vertices(:)
        integer, intent(out), allocatable :: edge_types(:)
 
-       ! These arguments carry the faces.
+       ! These arguments return the faces.
        integer, intent(out)              :: num_faces
        integer, intent(out), allocatable :: face_numbers(:)
        integer, intent(out), allocatable :: face_tags(:)
@@ -80,7 +80,7 @@ module view_mesh_loader
        integer, intent(out), allocatable :: num_face_vertices(:)
        integer, intent(out), allocatable :: face_types(:)
 
-       ! These arguments carry the cells.
+       ! These arguments return the cells.
        integer, intent(out)              :: num_cells
        integer, intent(out), allocatable :: cell_numbers(:)
        integer, intent(out), allocatable :: cell_tags(:)

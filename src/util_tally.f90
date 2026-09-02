@@ -1,31 +1,31 @@
 !=====================================================================!
-! What a run spends, attributed to where it was spent.
+! What a run consumes, attributed to where it was consumed.
 !
-! An amount is filed under three things: the level of the hierarchy
-! the computation was inside, the derivative order being computed, and
-! what kind of amount it is. That triple is the whole of the
-! structure, and a matrix over any two of its axes falls out of it
-! without anything further being carried.
+! An amount is recorded under three indices: the level of the
+! hierarchy the computation was inside, the derivative order being
+! computed, and the kind of amount. That triple is the whole of the
+! structure, and a matrix over any two of its axes is derived from it
+! without any further data being stored.
 !
 ! The level is a scope, not an argument. A caller descending the
 ! hierarchy opens a level and closes it again, and every amount
 ! recorded in between - including amounts recorded far below, inside a
-! minimizer that has never been told what a horizon is - is filed
-! under it. That is how a module which knows nothing of the caller's
-! hierarchy records into it: it names the amount, and the scope names
-! the place. The hierarchy itself is the caller's: its levels are
-! declared, outermost first, when the tally is opened.
+! minimizer that has no record of the caller's levels - is recorded
+! under it. That is how a module which stores nothing of the caller's
+! hierarchy records into it: the module names the amount, and the
+! scope names the level. The hierarchy itself is the caller's: its
+! levels are declared, outermost first, when the tally is opened.
 !
-! Levels nest, so a level's wall time includes the time of the levels
+! Levels nest, so a level's elapsed time includes the time of the levels
 ! opened inside it.
 !
 ! Recording is off until tally_open, and an amount recorded while off
 ! costs one test of a logical. Nothing here alters a computed value;
 ! an amount is observed and never fed back.
 !
-! An amount recorded with no level open is dropped rather than filed
-! somewhere it did not happen. An order outside the range tally_open
-! was given is dropped for the same reason.
+! An amount recorded with no level open is discarded rather than
+! recorded under a level it did not occur in. An order outside the
+! range tally_open was given is discarded for the same reason.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -46,16 +46,16 @@ module util_tally
   public :: tally_level_name, tally_event_name, tally_event_of
 
   !-------------------------------------------------------------------!
-  ! The levels an amount can be filed under are the caller's, declared
-  ! outermost first at tally_open; the kinds of amount are named here
-  ! so a caller records by name and not by a number it has to keep
-  ! straight.
+  ! The levels an amount can be recorded under are the caller's,
+  ! declared outermost first at tally_open; the kinds of amount are
+  ! named here so a caller records by name and not by a number the
+  ! caller has to maintain.
   !-------------------------------------------------------------------!
 
   integer, save :: num_levels = 0
   character(len=:), allocatable, save :: level_named(:)
 
-  integer, parameter, public :: wall_time      = 1
+  integer, parameter, public :: elapsed_time      = 1
   integer, parameter, public :: primal_loops   = 2
   integer, parameter, public :: tangent_loops  = 3
   integer, parameter, public :: adjoint_loops  = 4
@@ -66,13 +66,13 @@ module util_tally
   integer, parameter :: num_events = 7
 
   character(len=14), parameter :: event_named(num_events) = &
-       & ['wall_time     ', 'primal_loops  ', 'tangent_loops ', &
+       & ['elapsed_time  ', 'primal_loops  ', 'tangent_loops ', &
        &  'adjoint_loops ', 'newton_solves ', 'linear_solves ', &
        &  'factorisations']
 
   !-------------------------------------------------------------------!
-  ! One tally to a run. It observes and owns nothing the computation
-  ! reads, so a single one serves every caller.
+  ! One tally per run. The tally observes and owns nothing the
+  ! computation reads, so a single tally serves every caller.
   !-------------------------------------------------------------------!
 
   integer, parameter :: deepest = 32
@@ -88,9 +88,9 @@ module util_tally
 contains
 
   !===================================================================!
-  ! Start recording, with room for orders zero to highest_order, over
+  ! Start recording, with storage for orders zero to highest_order, over
   ! the caller's levels, outermost first. A negative highest order, no
-  ! levels, or more levels than the stack holds stops the program.
+  ! levels, or more levels than the stack contains stops the program.
   !===================================================================!
 
   subroutine tally_open(highest_order, levels)
@@ -119,8 +119,8 @@ contains
   end subroutine tally_open
 
   !===================================================================!
-  ! Stop recording. What was recorded stays legible, so a caller
-  ! closes before it prints.
+  ! Stop recording. The recorded amounts remain readable, so a caller
+  ! closes before printing.
   !===================================================================!
 
   subroutine tally_close()
@@ -172,7 +172,7 @@ contains
   end function tally_event_name
 
   !===================================================================!
-  ! The event a name denotes, or zero where no event carries it.
+  ! The event a name denotes, or zero where no event has that name.
   !===================================================================!
 
   pure integer function tally_event_of(named) result(event)
@@ -203,9 +203,9 @@ contains
   end subroutine tally_order
 
   !===================================================================!
-  ! Open a level. Deeper than the stack holds, or a level that is not
-  ! one of the four, stops the program: filing under the wrong place
-  ! is worse than not filing.
+  ! Open a level. A depth beyond the stack, or a level that is not
+  ! one of those declared, stops the program: recording under the
+  ! wrong level is less useful than not recording.
   !===================================================================!
 
   subroutine tally_enter(level)
@@ -228,13 +228,13 @@ contains
   end subroutine tally_enter
 
   !===================================================================!
-  ! Close the innermost level, filing the time it was open. Closing
+  ! Close the innermost level, recording the time it was open. Closing
   ! one that was never opened stops the program.
   !===================================================================!
 
   subroutine tally_leave()
 
-    real(dp) :: spent
+    real(dp) :: elapsed
 
     if (.not. recording) return
 
@@ -242,10 +242,10 @@ contains
        error stop 'util_tally: a level closed was opened'
     end if
 
-    spent = clock() - entered_at(depth)
+    elapsed = clock() - entered_at(depth)
     if (order_now >= 0 .and. order_now <= highest) then
-       amount(level_now(depth), order_now, wall_time) = &
-            & amount(level_now(depth), order_now, wall_time) + spent
+       amount(level_now(depth), order_now, elapsed_time) = &
+            & amount(level_now(depth), order_now, elapsed_time) + elapsed
     end if
 
     depth = depth - 1
@@ -253,7 +253,7 @@ contains
   end subroutine tally_leave
 
   !===================================================================!
-  ! File one of something under the level now open.
+  ! Record one event under the level now open.
   !===================================================================!
 
   subroutine tally_record(event)
@@ -274,28 +274,28 @@ contains
   end subroutine tally_record
 
   !===================================================================!
-  ! What was filed. An index outside what tally_open made room for
-  ! stops the program.
+  ! The recorded amount. An index outside the extent tally_open
+  ! allocated stops the program.
   !===================================================================!
 
-  pure real(dp) function tally_amount(level, order, event) result(spent)
+  pure real(dp) function tally_amount(level, order, event) result(elapsed)
 
     integer, intent(in) :: level, order, event
 
     if (.not. allocated(amount)) then
-       error stop 'util_tally: what is asked for was opened'
+       error stop 'util_tally: an amount is read after tally_open'
     end if
     if (level < 1 .or. level > num_levels) then
-       error stop 'util_tally: a level is one of the four named'
+       error stop 'util_tally: a level is one of those declared'
     end if
     if (order < 0 .or. order > highest) then
-       error stop 'util_tally: an order is within what was opened'
+       error stop 'util_tally: an order is within the range opened'
     end if
     if (event < 1 .or. event > num_events) then
        error stop 'util_tally: an event is one of the kinds named'
     end if
 
-    spent = amount(level, order, event)
+    elapsed = amount(level, order, event)
 
   end function tally_amount
 

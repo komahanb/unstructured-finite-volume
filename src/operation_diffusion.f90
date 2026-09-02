@@ -1,22 +1,23 @@
 !=====================================================================!
 ! The diffusion statement: coefficients in, operator out.
 !
-! LEVEL 3 OF THE STRATIFICATION. This is where the physics words
-! live and stop: a conduction law says what the material carries, a
-! set of robin conditions says what the walls hold, and this module
-! translates both into the assembly's neutral vocabulary - scales
-! per face, values per wall - then delegates. It owns no
-! mathematics, no loops over neighbourhoods, no fitting: physics
-! words in, one compiled operator out,
+! LEVEL 3 OF THE STRATIFICATION. This is the level where the physics
+! vocabulary is defined and ends: a conduction law specifies the
+! material's conductivity, a set of robin conditions specifies the
+! boundary conditions, and this module translates both into the
+! assembly's neutral vocabulary - scales per face, values per
+! boundary face - then delegates. It defines no mathematics, no
+! loops over neighbourhoods, no fitting: physics terms in, one
+! compiled operator out,
 !
-!      scales ·········· keff * area, the conductivity's answer
-!                        through every face
-!      wall relation ··· two numbers per tagged face, the eliminated
-!                        face value as an affine function of its
-!                        cell: a held value, a held gradient, or
-!                        anything between
-!      the form ········ the caller's choice of shape; polynomials
-!                        unless said otherwise
+!      scales ·············· keff * area, the conductivity's value
+!                            through every face
+!      boundary relation ·· two numbers per tagged face, the
+!                            eliminated face value as an affine
+!                            function of its cell: a fixed value, a
+!                            fixed gradient, or any combination
+!      the form ············ the caller's choice of form; polynomials
+!                            unless specified otherwise
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -55,10 +56,10 @@ contains
 
     class(form), allocatable :: chosen
     !----------------------------------------------------------------!
-    ! Each condition's faces are declared, read and dropped inside this
-    ! call, so their interpretation is local too. A fresh identity per
-    ! call is what lets one map hold every condition's faces without
-    ! two of them claiming to describe one set.
+    ! Each condition's faces are declared, read and discarded inside
+    ! this call, so their interpretation is local too. A new identity
+    ! per call lets one map store every condition's faces without two
+    ! of them describing one set.
     !----------------------------------------------------------------!
 
     type(graph)     :: members
@@ -78,10 +79,10 @@ contains
     call fa % real_vector(areas)
     scales = keff * areas
 
-    ! The walls, each condition on its own tagged faces. Both
-    ! numbers of the wall relation travel: a wall that holds a value
-    ! and a wall that holds a gradient are not the same wall, and
-    ! one number cannot tell them apart.
+    ! The boundary, each condition on its own tagged faces. Both
+    ! numbers of the boundary relation are passed: a boundary that
+    ! fixes a value and a boundary that fixes a gradient are not the
+    ! same boundary, and one number cannot distinguish them.
     allocate(vb(ne), wb(ne), flux(ne), known(ne))
     vb    = 0.0_dp
     wb    = 1.0_dp
@@ -89,21 +90,22 @@ contains
     known = .false.
     do k = 1, size(conditions)
        call conditions(k) % faces(m, sets, members)
-       call conditions(k) % wall_relation(m, weights, values)
+       call conditions(k) % boundary_relation(m, weights, values)
        do f = 1, sets % num_members_of(members)
           e = sets % member_of(members, f)
           wb(e) = weights(f)
           vb(e) = values(f)
        end do
 
-       ! A wall that holds a gradient - a = 0 - holds the flux itself,
-       ! c / b, and there is nothing at such a face to fit: the flux
-       ! goes straight into the balance. A wall relation fitted there
-       ! is right for the value and wrong for the slope, and a cell on
-       ! that wall then carries an error that no refinement removes.
+       ! A boundary that fixes a gradient - a = 0 - fixes the flux
+       ! itself, c / b, and there is nothing at such a face to fit:
+       ! the flux enters the balance directly. A boundary relation
+       ! fitted there is correct for the value and incorrect for the
+       ! slope, and a cell on that boundary then has an error that no
+       ! refinement removes.
        if (conditions(k) % a == 0.0_dp) then
           if (conditions(k) % b == 0.0_dp) then
-             error stop 'operation_diffusion: a wall holds a value, a gradient, or both'
+             error stop 'operation_diffusion: a boundary condition fixes a value, a gradient, or both'
           end if
           do f = 1, sets % num_members_of(members)
              e        = sets % member_of(members, f)
@@ -113,7 +115,7 @@ contains
        end if
     end do
 
-    ! The shape, chosen or defaulted; then the assembly does the act.
+    ! The form, chosen or defaulted; then the assembly is called.
     if (present(shape)) then
        allocate(chosen, source=shape)
     else

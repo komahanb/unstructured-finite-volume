@@ -19,17 +19,17 @@
 !
 ! NULL is outside that domain. The view has no name for a branch
 ! that is definitely absent, and the 3x3 state space is not forced
-! back into the old 2x2: epistemic_defined answers whether a name
+! back into the old 2x2: epistemic_defined returns whether a name
 ! exists, and epistemic_name refuses when one does not.
 !
 ! REALIZED IS NOT SOLVED. A realized graph asserts that both branches
 ! reference a graph, and nothing more. R(Q) = 0 is a separate property
-! with its own words, asserted elsewhere.
+! with its own predicate, asserted elsewhere.
 !
 ! UNKNOWN IS NOT NULL. Unrealized is not absent, and neither is an
 ! empty Q: a Q that references a graph with no members is KNOWN.
 !
-! No host. A graph does not ride on a graph of another kind; where a
+! No host. A graph is not attached to a graph of another kind; where a
 ! view needs another graph it references it, or an external map
 ! associates the two.
 !
@@ -50,7 +50,7 @@ module view_epistemic
 contains
 
   !===================================================================!
-  ! The two primitive questions of this view.
+  ! The two primitive predicates of this view.
   !===================================================================!
 
   logical function has_data(g)
@@ -93,10 +93,10 @@ contains
   ! The canonical name, for the four combinations that have one.
   !===================================================================!
 
-  function epistemic_name(g) result(said)
+  function epistemic_name(g) result(name)
 
     type(graph), intent(in)       :: g
-    character(len=:), allocatable :: said
+    character(len=:), allocatable :: name
 
     if (.not. epistemic_defined(g)) then
        error stop 'view_epistemic: NULL has no epistemic name'
@@ -104,15 +104,15 @@ contains
 
     if (has_data(g)) then
        if (has_operator(g)) then
-          said = 'realized'
+          name = 'realized'
        else
-          said = 'data'
+          name = 'data'
        end if
     else
        if (has_operator(g)) then
-          said = 'operator'
+          name = 'operator'
        else
-          said = 'void'
+          name = 'void'
        end if
     end if
 

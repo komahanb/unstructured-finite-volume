@@ -4,19 +4,19 @@
 ! One lifecycle for every reversible mutation of a graph and its
 ! attached values:
 !
-!      apply -> check -> keep | revert
+!      apply -> check -> commit | revert
 !
 ! The controller owns only the lifecycle; the change object owns
-! the mutation, its memory, and its undoing. A change may touch
-! structure, attached values, or both; the controller never reads
-! which.
+! the mutation, its stored state, and its reversal. A change may
+! touch structure, attached values, or both; the controller never
+! reads which.
 !
 ! A failure reported by apply or check is reverted and returned,
-! not refused. What stops the program: a change that returns from
+! not rejected. What stops the program: a change that returns from
 ! a step without marking either the step or failure, because its
 ! record would then misreport what happened; and a terminal record
 ! with contradictory flags. This module imports nothing; concrete
-! changes live next to the data they mutate.
+! changes are defined beside the data they mutate.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -44,7 +44,7 @@ module map_change_protocol
      logical :: checked      = .false.
      logical :: check_passed = .false.
      logical :: accepted     = .false.
-     logical :: kept         = .false.
+     logical :: committed         = .false.
      logical :: reverted     = .false.
      logical :: failed       = .false.
 
@@ -57,7 +57,7 @@ module map_change_protocol
      procedure :: mark_attempted
      procedure :: mark_applied
      procedure :: mark_checked
-     procedure :: mark_kept
+     procedure :: mark_committed
      procedure :: mark_reverted
      procedure :: mark_failed
      procedure :: validate_terminal
@@ -66,7 +66,7 @@ module map_change_protocol
 
   !===================================================================!
   ! The abstract reversible change: four deferred steps. What
-  ! apply builds, revert must undo; keep makes the applied state
+  ! apply builds, revert must reverse; commit makes the applied state
   ! permanent.
   !===================================================================!
 
@@ -76,7 +76,7 @@ module map_change_protocol
 
      procedure(change_apply_interface) , deferred :: apply
      procedure(change_check_interface) , deferred :: check
-     procedure(change_keep_interface)  , deferred :: keep
+     procedure(change_commit_interface)  , deferred :: commit
      procedure(change_revert_interface), deferred :: revert
 
   end type reversible_change
@@ -95,11 +95,11 @@ module map_change_protocol
        type(change_record)     , intent(inout) :: result
      end subroutine change_check_interface
 
-     subroutine change_keep_interface(this, result)
+     subroutine change_commit_interface(this, result)
        import :: reversible_change, change_record
        class(reversible_change), intent(inout) :: this
        type(change_record)     , intent(inout) :: result
-     end subroutine change_keep_interface
+     end subroutine change_commit_interface
 
      subroutine change_revert_interface(this, result)
        import :: reversible_change, change_record
@@ -112,8 +112,8 @@ module map_change_protocol
 contains
 
   !===================================================================!
-  ! The result verbs: each marks exactly what its name says, and
-  ! reset returns the whole record to false.
+  ! The record procedures: each marks exactly the flag its name
+  ! states, and reset returns the whole record to false.
   !===================================================================!
 
   pure subroutine reset(this)
@@ -125,7 +125,7 @@ contains
     this % checked      = .false.
     this % check_passed = .false.
     this % accepted     = .false.
-    this % kept         = .false.
+    this % committed         = .false.
     this % reverted     = .false.
     this % failed       = .false.
 
@@ -151,10 +151,10 @@ contains
     this % check_passed = pass
   end subroutine mark_checked
 
-  pure subroutine mark_kept(this)
+  pure subroutine mark_committed(this)
     class(change_record), intent(inout) :: this
-    this % kept = .true.
-  end subroutine mark_kept
+    this % committed = .true.
+  end subroutine mark_committed
 
   pure subroutine mark_reverted(this)
     class(change_record), intent(inout) :: this
@@ -168,35 +168,35 @@ contains
 
   !===================================================================!
   ! Check a terminal record for contradictions, each stopping the
-  ! program: kept and reverted cannot both be set; accepted
-  ! requires kept; failed excludes kept.
+  ! program: committed and reverted cannot both be set; accepted
+  ! requires committed; failed excludes committed.
   !===================================================================!
 
   pure subroutine validate_terminal(this)
 
     class(change_record), intent(in) :: this
 
-    if (this % kept .and. this % reverted) then
+    if (this % committed .and. this % reverted) then
        error stop 'change_record: terminal state is consistent'
     end if
 
-    if (this % accepted .and. .not. this % kept) then
+    if (this % accepted .and. .not. this % committed) then
        error stop 'change_record: terminal state is consistent'
     end if
 
-    if (this % failed .and. this % kept) then
+    if (this % failed .and. this % committed) then
        error stop 'change_record: terminal state is consistent'
     end if
 
   end subroutine validate_terminal
 
   !===================================================================!
-  ! Run the lifecycle: apply, then check, then keep on acceptance
+  ! Run the lifecycle: apply, then check, then commit on acceptance
   ! or revert otherwise. A failure reported by apply or check is
   ! reverted and returned. A step that returns without marking its
-  ! work stops the program - including every controller-called
-  ! revert, on failure and reject paths alike - so no terminal
-  ! record can be silently incomplete.
+  ! result stops the program - including every controller-called
+  ! revert, on failure and rejection paths alike - so no terminal
+  ! record can be incomplete without detection.
   !===================================================================!
 
   subroutine run_change(change, accept, result)
@@ -242,9 +242,9 @@ contains
 
     if (accept) then
        result % accepted = .true.
-       call change % keep(result)
-       if (.not. result % kept) then
-          error stop 'run_change: kept change reports kept'
+       call change % commit(result)
+       if (.not. result % committed) then
+          error stop 'run_change: committed change reports committed'
        end if
     else
        call change % revert(result)

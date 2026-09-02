@@ -1,44 +1,44 @@
 !=====================================================================!
 ! DRIVING A RULE OVER A DIGRAPH.
 !
-! A marcher walks instants; a sweep walks nodes; a smoother walks
-! colours; an adjoint walks the same vertices backwards. All four are
-! ONE act: visit the vertices of a digraph in an order its arcs
-! admit, and apply a rule at each. Nothing in that act is temporal.
-! This module states it once.
+! A marcher traverses instants; a sweep traverses nodes; a smoother
+! traverses colours; an adjoint traverses the same vertices in
+! reverse. All four are ONE operation: visit the vertices of a
+! digraph in an order its arcs admit, and apply a rule at each.
+! Nothing in that operation is temporal. This module states it once.
 !
 !             THE TAXONOMY
 !
 !   VERTEX          What the rule is applied at. What a vertex
-!                   denotes - an instant, a cell, a block - is the
-!                   caller's business and never this module's.
+!                   denotes - an instant, a cell, a block - is
+!                   decided by the caller and never by this module.
 !
-!   ARC             An ordered pair of vertices. The arc j -> k says
-!                   the rule at k READS the value at j.
+!   ARC             An ordered pair of vertices. The arc j -> k states
+!                   that the rule at k READS the value at j.
 !
 !   SLOT            Which argument of k's rule the arc fills. Two
 !                   arcs into the same vertex fill different slots:
 !                   that is what distinguishes q_(n-1) from q_(n-2).
 !
-!   LABELLING       The map ell : A -> S carrying the slot of every
-!                   arc. Held WITH the arcs, never beside them, so
-!                   restricting or transposing the digraph carries
-!                   the slots along and cannot leave them behind.
+!   LABELLING       The map ell : A -> S storing the slot of every
+!                   arc. Stored WITH the arcs, never beside them, so
+!                   restricting or transposing the digraph transports
+!                   the slots with the arcs and cannot separate them.
 !
 !   ORIENTATION     forward or reverse. A traversal in the forward
 !                   orientation reaches a vertex only after every
 !                   vertex it reads; reverse is the same order read
-!                   backwards, which is what an adjoint wants.
+!                   backwards, which is the order an adjoint requires.
 !
-!   RULE            The operation carried at a vertex. Its arguments
+!   RULE            The operation stored at a vertex. Its arguments
 !                   are the slots the labelling names.
 !
 !   DRIVER          The operation that applies the rule at every
 !                   vertex in an admissible order. It is itself an
 !                   operation, so a driver over a digraph of drivers
-!                   is a driver, and nothing new is needed to nest.
+!                   is a driver, and nesting requires no new type.
 !
-!             THE TWO BRANCHES, AND WHAT THE DRIVER STITCHES
+!             THE TWO BRANCHES, AND WHAT THE DRIVER PAIRS
 !
 ! A computation has two graphs over one skeleton, and they are the
 ! fractal graph's two branches: G = (B1, B2), symmetric in structure
@@ -54,25 +54,25 @@
 !
 !      B1   the DATA graph             what is computed ON
 !
-! The arcs live in B2: they say which rule reads which. The values
-! live in B1: one datum per vertex. The PAIRING is the bijection
-! between them, and the driver is the thing that holds it.
+! The arcs are stored in B2: they state which rule reads which. The
+! values are stored in B1: one datum per vertex. The PAIRING is the
+! bijection between them, and the driver is the object that stores it.
 !
 ! Neither branch is derivable from the other. B2 without B1 is a
 ! plan with nothing to compute on; B1 without B2 is an array with
-! nothing to say about it. Held apart and linked, each may be
-! restricted, transposed or refined without disturbing the other -
-! which is what lets one skeleton carry a model and its correction,
+! no operation over it. Stored apart and linked, each may be
+! restricted, transposed or refined without altering the other -
+! which is what lets one skeleton store a model and its correction,
 ! a stencil and its coefficients, a structure and what is learned on
 ! it.
 !
-!             WHY THE LINKAGE BUYS MEMORY
+!             WHY THE LINKAGE REDUCES MEMORY
 !
-! A datum must live from the moment its rule writes it until the
-! last rule that reads it has fired - no longer. The driver knows
-! both facts: the visiting order, and every arc that reads a vertex.
-! So it can say, for each datum, the step after which nothing will
-! read it again.
+! A datum must be stored from the step its rule writes it until the
+! last rule that reads it has been applied - no longer. The driver
+! stores both facts: the visiting order, and every arc that reads a
+! vertex. So it can report, for each datum, the step after which
+! nothing reads it again.
 !
 !             visiting order   1     2     3     4
 !             d1 written       #-----+-----x
@@ -81,60 +81,62 @@
 !             d2 written             #-----+-----x
 !             d3 written                   #-----x
 !
-! A caller that asks `released_after` gets the vertices whose data
-! may be dropped at each step, so the high-water mark is the widest
-! live set rather than the whole trajectory. Nothing here frees
-! anything: the driver states the lifetime and the caller obeys it.
+! A caller that calls `released_after` receives the vertices whose
+! data may be deallocated at each step, so the peak storage is the
+! widest live set rather than the whole trajectory. Nothing here
+! deallocates anything: the driver reports the lifetime and the
+! caller applies it.
 !
-! The lifetime is only as honest as the arcs. A pass that reads a
-! datum without an arc saying so is invisible here, and the answer
-! would drop what that pass still wants - so a reverse pass over the
-! same vertices belongs in the graph as the TRANSPOSE, every forward
-! arc with its ends exchanged, plus an arc from each datum to the
-! transposed vertex that reads it again. A vertex of the transpose
-! need carry no rule to do its work here: standing in the order is
-! what makes it a reader, and a step that computes nothing still
-! retires whatever was last read at it.
+! The lifetime is only as exact as the arcs. A pass that reads a
+! datum without an arc recording that read is invisible here, and the
+! result would deallocate what that pass still requires - so a
+! reverse pass over the same vertices belongs in the graph as the
+! TRANSPOSE, every forward arc with its ends exchanged, plus an arc
+! from each datum to the transposed vertex that reads it again. A
+! vertex of the transpose need store no rule for this purpose: its
+! position in the order is what makes it a reader, and a step that
+! computes nothing still releases whatever was last read at it.
 !
-!             WHO ASSEMBLES, WHO DRIVES
+!             WHAT ASSEMBLES, WHAT DRIVES
 !
-! Building the two branches is one job and running them is another,
-! and they belong to different layers:
+! Building the two branches is one task and evaluating them is
+! another, and they belong to different layers:
 !
 !      an ASSEMBLER   states the vertices, the arcs and their slots,
-!                     which rule stands where, and which datum. It
-!                     knows the physics, the scheme and the mesh.
+!                     which rule is stored where, and which datum. It
+!                     depends on the physics, the scheme and the mesh.
 !
-!      the DRIVER     is handed that and runs it. It knows the order,
-!                     the connection and the lifetimes, and nothing
-!                     about what any of it means.
+!      the DRIVER     receives that and evaluates it. It stores the
+!                     order, the connection and the lifetimes, and
+!                     nothing about what any of it denotes.
 !
-! So a caller assembles and then hands over:
+! So a caller assembles and then passes the pairing:
 !
 !      link = operations % pair(values)
 !      call runner % pair_with(link)
 !      call runner % evaluate(on)
 !
-! The seam is deliberate. An assembler may be rewritten - a different
-! scheme, a different mesh, a coarser chain - without the driver
-! changing, and the driver may learn to run two vertices at once
-! without any assembler knowing.
+! The separation is deliberate. An assembler may be rewritten - a
+! different scheme, a different mesh, a coarser chain - without the
+! driver changing, and the driver may be extended to evaluate two
+! vertices at once without any assembler changing.
 !
-!             WHERE PARALLELISM LIVES, AND ONLY THERE
+!             WHERE PARALLELISM IS DEFINED, AND ONLY THERE
 !
 ! Two vertices with no arc between them may be driven at once. Only
-! the driver can see that, because only here are the order, the rules
-! and the data all in one hand. Every hardware question - which
-! device a rule runs on, where a datum resides, when it moves -
-! is a question about `evaluate` and about nothing above or below it.
+! the driver can detect that, because only here are the order, the
+! rules and the data all stored in one object. Every hardware
+! decision - which device a rule runs on, where a datum resides, when
+! it moves - is a decision about `evaluate` and about nothing above
+! or below it.
 !
 !             THE DIGRAPH IS THE ONLY ORDER
 !
-! No routine here writes a vertex's number down, adds one to an
-! index, or asks which vertex is "next". The order comes from
+! No routine here records a vertex's number, adds one to an
+! index, or requests the "next" vertex. The order comes from
 ! `visiting_order`, which is the digraph's own topological order in
 ! the given orientation. A digraph with a cycle has no such order and
-! is refused, because a rule that reads its own result is not a rule
+! is rejected, because a rule that reads its own result is not a rule
 ! this driver can drive.
 !
 !             WHAT IS NOT HERE
@@ -142,7 +144,7 @@
 ! The MEASURE along the coordinate the vertices discretise - the step
 ! between two instants, the volume of a cell - belongs to a grid, and
 ! a grid is an operation of its own. The driver reads a measure when
-! a rule asks for one and never computes it. That separation is why
+! a rule requires one and never computes it. That separation is why
 ! this module has no notion of time.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
@@ -169,8 +171,8 @@ module operation_driver
 
   !===================================================================!
   ! THE DIGRAPH WITH ITS SLOTS. A digraph and the labelling of its
-  ! arcs, held as one value. The digraph answers what a digraph
-  ! answers; the labelling answers which slot an arc fills.
+  ! arcs, stored as one value. The digraph returns the digraph
+  ! queries; the labelling returns which slot an arc fills.
   !===================================================================!
 
   type :: labelled_digraph
@@ -182,7 +184,7 @@ module operation_driver
 
    contains
 
-     ! the digraph's own questions
+     ! the digraph's own queries
      procedure :: order_of_digraph        ! how many vertices
      procedure :: size_of_digraph         ! how many arcs
      procedure :: tail_of                 ! the vertex an arc leaves
@@ -190,14 +192,14 @@ module operation_driver
      procedure :: in_arcs                 ! the arcs entering a vertex
      procedure :: in_degree               ! how many there are
 
-     ! the labelling's question
+     ! the labelling's query
      procedure :: slot_of                 ! which slot an arc fills
      procedure :: in_neighbour            ! the vertex filling a slot
 
      ! the order a traversal may visit in
      procedure :: visiting_order
 
-     ! the digraph itself, for a caller that wants it bare
+     ! the digraph itself, for a caller that requires it without labels
      procedure :: digraph
 
   end type labelled_digraph
@@ -220,14 +222,14 @@ module operation_driver
 
    contains
 
-     procedure :: computes                ! whether a rule stands here
+     procedure :: computes                ! whether a rule is stored here
 
   end type rule_vertex
 
   !===================================================================!
-  ! ONE VERTEX OF B1. The datum held there, and nothing about how it
+  ! ONE VERTEX OF B1. The datum stored there, and nothing about how it
   ! was computed. A datum not yet written is unallocated, and that is
-  ! the only way to ask whether a step has run.
+  ! the only way to query whether a step has run.
   !
   !        [ d ]               the value, and nothing else
   !===================================================================!
@@ -238,13 +240,13 @@ module operation_driver
 
    contains
 
-     procedure :: written                 ! whether a value stands here
+     procedure :: written                 ! whether a value is stored here
 
   end type data_vertex
 
   !===================================================================!
   ! B2 WHOLE. The rules over every vertex, as one value. Connecting
-  ! it to a data graph answers a linkage; which side is asked is
+  ! it to a data graph returns a pairing; which side is called is
   ! immaterial, because the branches are symmetric.
   !===================================================================!
 
@@ -275,11 +277,11 @@ module operation_driver
   end type data_graph
 
   !===================================================================!
-  ! THE PAIRING. The bijection between B2's vertices and B1's, held
+  ! THE PAIRING. The bijection between B2's vertices and B1's, stored
   ! as one value so neither branch can be indexed without the other
-  ! being meant. Both branches carry the same count of vertices by
-  ! construction: that IS the bijection, and a constructor that is
-  ! handed unequal counts stops the program.
+  ! being referenced. Both branches store the same count of vertices
+  ! by construction: that IS the bijection, and a constructor that is
+  ! passed unequal counts stops the program.
   !
   !        B2   (r1)   (r2)   (r3)
   !               |      |      |          the linkage is the
@@ -292,16 +294,16 @@ module operation_driver
      private
 
      type(rule_vertex), allocatable :: computed_by(:)
-     type(data_vertex)     , allocatable :: held_at(:)
+     type(data_vertex)     , allocatable :: stored_at(:)
 
    contains
 
      procedure :: paired_order            ! how many vertices are linked
      procedure :: rule_at                 ! the rule computing a vertex
-     procedure :: datum_at                ! the value held at a vertex
-     procedure :: place                   ! write a value at a vertex
-     procedure :: release                 ! drop the value at a vertex
-     procedure :: data_held                ! the data branch, to keep
+     procedure :: datum_at                ! the value stored at a vertex
+     procedure :: assign                   ! write a value at a vertex
+     procedure :: release                 ! deallocate the value at a vertex
+     procedure :: stored_data                ! the data branch, to retain
      procedure, private :: require_vertex
 
   end type pairing
@@ -326,9 +328,9 @@ module operation_driver
      class(operation), allocatable :: rule
      integer                       :: orientation = forward
 
-     ! B1 and B2 stitched: present once a driver is given them, and
-     ! absent while a driver carries one rule for every vertex alike
-     type(pairing), allocatable    :: stitched
+     ! B1 and B2 paired: allocated once a driver is given them, and
+     ! unallocated while a driver stores one rule for every vertex alike
+     type(pairing), allocatable    :: stored_pairing
 
    contains
 
@@ -336,12 +338,12 @@ module operation_driver
      procedure :: apply => driver_apply
 
      procedure :: visits                  ! the order this driver visits in
-     procedure :: driven_rule             ! the rule it carries
+     procedure :: driven_rule             ! the rule it stores
      procedure :: pair_with               ! give it B1 paired to B2
-     procedure :: pairing_of              ! the pairing it holds
+     procedure :: pairing_of              ! the pairing it stores
      procedure :: evaluate                ! the rules over the data, in order
      procedure :: last_reader_of          ! the step a datum is last read at
-     procedure :: released_after          ! the data droppable after a step
+     procedure :: released_after          ! the data releasable after a step
 
   end type driver
 
@@ -353,7 +355,7 @@ contains
 
   !===================================================================!
   ! THE READS RELATION as a labelled digraph. Every arc is given as
-  ! the triple it is: the vertex read, the slot it fills, the vertex
+  ! a triple: the vertex read, the slot it fills, the vertex
   ! reading. Lengths that disagree, or a slot below one, stop the
   ! program - a labelling that names no slot is not a labelling.
   !===================================================================!
@@ -370,7 +372,7 @@ contains
        error stop 'operation_driver: one slot and one reader per vertex read'
     end if
     if (num_vertices < 1) then
-       error stop 'operation_driver: a digraph carries a vertex at least'
+       error stop 'operation_driver: a digraph has at least one vertex'
     end if
     if (any(in_slot < 1)) then
        error stop 'operation_driver: a slot is one of the rule''s arguments'
@@ -382,7 +384,7 @@ contains
   end function reads
 
   !===================================================================!
-  ! THE DIGRAPH'S OWN QUESTIONS. Order is the count of vertices and
+  ! THE DIGRAPH'S OWN QUERIES. Order is the count of vertices and
   ! size the count of arcs, as graph theory names them.
   !===================================================================!
 
@@ -416,7 +418,7 @@ contains
 
   !===================================================================!
   ! The arcs entering a vertex, and how many. These are the arcs that
-  ! fill the slots of the rule carried there.
+  ! fill the slots of the rule stored there.
   !===================================================================!
 
   subroutine in_arcs(this, vertex, arcs)
@@ -488,7 +490,7 @@ contains
   end function digraph
 
   !===================================================================!
-  ! A RULE DRIVEN OVER A DIGRAPH, in an orientation. What comes back
+  ! A RULE DRIVEN OVER A DIGRAPH, in an orientation. The result
   ! is an operation, so it composes with any other.
   !===================================================================!
 
@@ -530,9 +532,10 @@ contains
 
   !===================================================================!
   ! THE ORDER THE RULES ARE VISITED IN: the topological order of the
-  ! projection onto the first part. The arcs between the parts say
+  ! projection onto the first part. The arcs between the parts state
   ! which rule reads what another wrote; the projection turns that
-  ! into an order over the rules alone, and nothing here states it.
+  ! into an order over the rules alone, and no routine here states
+  ! the order explicitly.
   !===================================================================!
 
   function visits(this) result(order)
@@ -550,9 +553,9 @@ contains
   end function driven_rule
 
   !===================================================================!
-  ! WHETHER A VERTEX CARRIES ANYTHING. A rule that is not allocated
+  ! WHETHER A VERTEX STORES ANYTHING. A rule that is not allocated
   ! computes nothing; a datum that is not allocated has not been
-  ! written. Both are legitimate states and neither is an error.
+  ! written. Both are valid states and neither is an error.
   !===================================================================!
 
   pure logical function computes(this)
@@ -568,29 +571,29 @@ contains
   !===================================================================!
   ! PAIR THE TWO BRANCHES. A rule for every vertex of the first part
   ! and a datum for every vertex of the second. The counts need not
-  ! agree: which datum a rule reads and which it writes is the
-  ! bipartite digraph's to say, and once it says it the two parts are
-  ! free to differ in size. An operation may write two data, a datum
+  ! agree: which datum a rule reads and which it writes is specified
+  ! by the bipartite digraph, and given that specification the two
+  ! parts may differ in size. An operation may write two data, a datum
   ! may be read by three operations, and a datum nothing writes is a
   ! source of the digraph.
   !
-  ! The branches are symmetric, so either may be asked, and there is
+  ! The branches are symmetric, so either may be called, and there is
   ! nothing else either could be paired with:
   !
   !      link = operations % pair(values)
   !      link = values % pair(operations)
   !
-  ! and the two answer the same pairing.
+  ! and the two return the same pairing.
   !===================================================================!
 
-  function paired(computed_by, held_at) result(this)
+  function paired(computed_by, stored_at) result(this)
 
     type(rule_vertex), intent(in) :: computed_by(:)
-    type(data_vertex)     , intent(in) :: held_at(:)
+    type(data_vertex)     , intent(in) :: stored_at(:)
     type(pairing) :: this
 
     this % computed_by = computed_by
-    this % held_at     = held_at
+    this % stored_at     = stored_at
 
   end function paired
 
@@ -625,15 +628,15 @@ contains
     integer       , intent(in) :: part
     paired_order = 0
     if (part == SECOND_PART) then
-       if (allocated(this % held_at)) paired_order = size(this % held_at)
+       if (allocated(this % stored_at)) paired_order = size(this % stored_at)
     else
        if (allocated(this % computed_by)) paired_order = size(this % computed_by)
     end if
   end function paired_order
 
   !===================================================================!
-  ! THE RULE AT A VERTEX and THE VALUE AT A VERTEX. Two readings of
-  ! one position, which is what the linkage is for.
+  ! THE RULE AT A VERTEX and THE VALUE AT A VERTEX. Two reads of
+  ! one position, which is what the pairing is for.
   !===================================================================!
 
   subroutine rule_at(this, vertex, rule)
@@ -650,56 +653,57 @@ contains
     integer                   , intent(in)  :: vertex
     class(field), allocatable , intent(out) :: datum
     call this % require_vertex(SECOND_PART, vertex)
-    if (this % held_at(vertex) % written()) &
-         & allocate(datum, source=this % held_at(vertex) % datum)
+    if (this % stored_at(vertex) % written()) &
+         & allocate(datum, source=this % stored_at(vertex) % datum)
   end subroutine datum_at
 
-  subroutine place(this, vertex, datum)
+  subroutine assign(this, vertex, datum)
     class(pairing), intent(inout) :: this
     integer       , intent(in)    :: vertex
     class(field)  , intent(in)    :: datum
     call this % require_vertex(SECOND_PART, vertex)
-    if (allocated(this % held_at(vertex) % datum)) deallocate(this % held_at(vertex) % datum)
-    allocate(this % held_at(vertex) % datum, source=datum)
-  end subroutine place
+    if (allocated(this % stored_at(vertex) % datum)) deallocate(this % stored_at(vertex) % datum)
+    allocate(this % stored_at(vertex) % datum, source=datum)
+  end subroutine assign
 
   !===================================================================!
-  ! DROP THE VALUE AT A VERTEX. The driver says when this is allowed;
-  ! this routine does not check, because a caller may drop a datum it
-  ! knows it will not read for reasons the digraph cannot see.
+  ! DEALLOCATE THE VALUE AT A VERTEX. The driver reports when this is
+  ! permitted; this routine does not check, because a caller may
+  ! deallocate a datum it will not read for reasons the digraph does
+  ! not record.
   !===================================================================!
 
   subroutine release(this, vertex)
     class(pairing), intent(inout) :: this
     integer       , intent(in)    :: vertex
     call this % require_vertex(SECOND_PART, vertex)
-    if (allocated(this % held_at(vertex) % datum)) deallocate(this % held_at(vertex) % datum)
+    if (allocated(this % stored_at(vertex) % datum)) deallocate(this % stored_at(vertex) % datum)
   end subroutine release
 
   !===================================================================!
-  ! THE DATA BRANCH AS ONE VALUE, for a caller that wants the values
-  ! after the rules have run. The pairing keeps its own copy; this is
-  ! what came to rest, handed over whole.
+  ! THE DATA BRANCH AS ONE VALUE, for a caller that requires the
+  ! values after the rules have been applied. The pairing retains its
+  ! own copy; this is the final data branch, returned whole.
   !===================================================================!
 
-  function data_held(this) result(values)
+  function stored_data(this) result(values)
     class(pairing), intent(in) :: this
     type(data_graph) :: values
-    if (allocated(this % held_at)) values % at = this % held_at
-  end function data_held
+    if (allocated(this % stored_at)) values % at = this % stored_at
+  end function stored_data
 
   subroutine require_vertex(this, part, vertex)
     class(pairing), intent(in) :: this
     integer       , intent(in) :: part, vertex
     if (vertex < 1 .or. vertex > this % paired_order(part)) then
-       error stop 'operation_driver: a vertex is one the pairing carries'
+       error stop 'operation_driver: a vertex is one the pairing stores'
     end if
   end subroutine require_vertex
 
   !===================================================================!
   ! GIVE A DRIVER ITS CONNECTED BRANCHES. Until connected, a driver
-  ! carries one rule for every vertex alike; connected, each vertex
-  ! carries its own rule and its own datum.
+  ! stores one rule for every vertex alike; connected, each vertex
+  ! stores its own rule and its own datum.
   !===================================================================!
 
   subroutine pair_with(this, connection)
@@ -709,23 +713,23 @@ contains
         & connection % paired_order(SECOND_PART) /= this % over % order_of_part(SECOND_PART)) then
        error stop 'operation_driver: the pairing labels one vertex of each part'
     end if
-    this % stitched = connection
+    this % stored_pairing = connection
   end subroutine pair_with
 
-  function pairing_of(this) result(held)
+  function pairing_of(this) result(stored)
     class(driver), intent(in) :: this
-    type(pairing) :: held
-    if (.not. allocated(this % stitched)) then
+    type(pairing) :: stored
+    if (.not. allocated(this % stored_pairing)) then
        error stop 'operation_driver: this driver is not paired with its data'
     end if
-    held = this % stitched
+    stored = this % stored_pairing
   end function pairing_of
 
   !===================================================================!
   ! EVALUATE. Visit the vertices in an admissible order; at each, read
-  ! the data its in-neighbours hold, apply the rule standing there,
-  ! and place the result. A datum whose last reader has passed is
-  ! reported as droppable, and the caller drops it.
+  ! the data its in-neighbours store, apply the rule stored there,
+  ! and place the result. A datum whose last reader has been visited
+  ! is reported as releasable by released_after, and is then released.
   !
   !      for each v in visiting order
   !          inputs  <- datum at in_neighbour(v, s), for each slot s
@@ -734,11 +738,11 @@ contains
   !          release every vertex in released_after(this step)
   !
   ! THE ONE PLACE PARALLELISM BELONGS. Two vertices with no arc
-  ! between them may be driven at once, and only this routine knows
-  ! that, because only here are the order, the rules and the data all
-  ! in hand. Every hardware question - where a datum lives, which
-  ! device a rule runs on - is a question about this loop and about
-  ! nothing above or below it.
+  ! between them may be driven at once, and only this routine can
+  ! detect that, because only here are the order, the rules and the
+  ! data all available. Every hardware decision - where a datum is
+  ! stored, which device a rule runs on - is a decision about this
+  ! loop and about nothing above or below it.
   !===================================================================!
 
   subroutine evaluate(this, input_graph)
@@ -747,12 +751,12 @@ contains
     class(directed_graph), intent(in)    :: input_graph
 
     class(operation), allocatable :: rule
-    class(field)    , allocatable :: value, held
+    class(field)    , allocatable :: value, stored
     type(binding)   , allocatable :: inputs(:)
-    integer, allocatable :: order(:), reads(:), writes(:), droppable(:)
+    integer, allocatable :: order(:), reads(:), writes(:), releasable(:)
     integer :: k, v, i, filled
 
-    if (.not. allocated(this % stitched)) then
+    if (.not. allocated(this % stored_pairing)) then
        error stop 'operation_driver: a driver is paired with its data before it evaluates'
     end if
 
@@ -761,12 +765,12 @@ contains
     do k = 1, size(order)
 
        v = order(k)
-       call this % stitched % rule_at(v, rule)
+       call this % stored_pairing % rule_at(v, rule)
 
-       ! A VERTEX CARRYING NO RULE STILL OCCUPIES A STEP. It computes
+       ! A VERTEX STORING NO RULE STILL OCCUPIES A STEP. It computes
        ! nothing, but the arcs entering it are reads like any other,
-       ! so a datum's last reader may stand there and the lifetimes
-       ! below must be settled at this step all the same.
+       ! so a datum's last reader may be located there and the
+       ! lifetimes below must be resolved at this step as well.
        if (allocated(rule)) then
 
           ! WHAT THE RULE READS. In the forward orientation a rule reads
@@ -779,8 +783,8 @@ contains
              call this % over % out_neighbourhood(FIRST_PART, v, reads)
           end if
           ! THE RULE'S ARGUMENT k IS THE DATUM AT THE k-TH VERTEX IT
-          ! READS. The binding carries that identity into the rule, so
-          ! a rule may be given a datum of its own making rather than
+          ! READS. The binding passes that identity into the rule, so
+          ! a rule may receive a datum of its own type rather than
           ! a bare vector of values. A vertex nothing has written yet
           ! leaves its argument unbound.
           if (size(reads) > rule % num_arguments()) then
@@ -789,10 +793,10 @@ contains
           allocate(inputs(size(reads)))
           filled = 0
           do i = 1, size(reads)
-             call this % stitched % datum_at(reads(i), held)
-             if (.not. allocated(held)) cycle
+             call this % stored_pairing % datum_at(reads(i), stored)
+             if (.not. allocated(stored)) cycle
              filled = filled + 1
-             inputs(filled) = moved_binding(rule % argument(i), held)
+             inputs(filled) = moved_binding(rule % argument(i), stored)
           end do
 
           if (filled > 0) then
@@ -809,7 +813,7 @@ contains
                 call this % over % in_neighbourhood(FIRST_PART, v, writes)
              end if
              do i = 1, size(writes)
-                call this % stitched % place(writes(i), value)
+                call this % stored_pairing % assign(writes(i), value)
              end do
           end if
 
@@ -818,10 +822,10 @@ contains
 
        end if
 
-       ! what nothing will read again
-       droppable = this % released_after(k)
-       do i = 1, size(droppable)
-          call this % stitched % release(droppable(i))
+       ! the data nothing reads again
+       releasable = this % released_after(k)
+       do i = 1, size(releasable)
+          call this % stored_pairing % release(releasable(i))
        end do
 
     end do
@@ -829,10 +833,10 @@ contains
   end subroutine evaluate
 
   !===================================================================!
-  ! THE STEP A DATUM IS LAST READ AT. Walk the visiting order; the
-  ! answer is the latest step whose vertex has an arc from this one.
-  ! Zero says nothing reads it, so it may be dropped as soon as it is
-  ! written.
+  ! THE STEP A DATUM IS LAST READ AT. Traverse the visiting order;
+  ! the result is the latest step whose vertex has an arc from this
+  ! one. Zero records that nothing reads it, so it may be released as
+  ! soon as it is written.
   !
   !      order    1     2     3     4
   !      from v         .-----+-----'      last_reader_of(v) = 3
@@ -858,17 +862,17 @@ contains
   end function last_reader_of
 
   !===================================================================!
-  ! THE DATA DROPPABLE AFTER ONE STEP: every vertex already visited
+  ! THE DATA RELEASABLE AFTER ONE STEP: every vertex already visited
   ! whose last reader is this step or earlier. A caller that releases
-  ! these as it goes holds only the live set, never the trajectory.
+  ! these at each step stores only the live set, never the trajectory.
   !
-  ! Every datum here is asked for its last reader, and each such
-  ! answer orders the vertices afresh, so a traversal that calls this
-  ! at every step costs the order once per step per datum. Against a
-  ! graph whose vertices carry a linear solve apiece this does not
-  ! show, and it is why a graph carrying its transpose - twice the
-  ! vertices - measures the same. A graph of many cheap vertices
-  ! wants the order held once instead.
+  ! The last reader of every datum is computed here, and each such
+  ! computation orders the vertices again, so a traversal that calls
+  ! this at every step computes the order once per step per datum.
+  ! For a graph whose vertices each store a linear solve this cost is
+  ! not measurable, and it is why a graph storing its transpose -
+  ! twice the vertices - measures the same. A graph of many low-cost
+  ! vertices requires the order stored once instead.
   !===================================================================!
 
   function released_after(this, step) result(vertices)
@@ -891,7 +895,7 @@ contains
   !===================================================================!
   ! THE TRAVERSAL. Visit the vertices in an admissible order and
   ! apply the rule at each. The rule reads what its slots are filled
-  ! by, which the digraph answers and this routine never computes.
+  ! by, which the digraph returns and this routine never computes.
   !===================================================================!
 
   subroutine driver_apply(this, input_graph, inputs, output)
@@ -905,7 +909,7 @@ contains
     integer :: v, k
 
     if (.not. allocated(this % rule)) then
-       error stop 'operation_driver: a driver carries the rule it drives'
+       error stop 'operation_driver: a driver stores the rule it drives'
     end if
 
     order = this % visits()
@@ -913,8 +917,8 @@ contains
     do k = 1, size(order)
        v = order(k)
        ! the rule at v reads the vertices filling its slots; gathering
-       ! those values is the caller's field layout and is not settled
-       ! in this sketch
+       ! those values depends on the caller's field layout and is not
+       ! implemented in this routine
        if (present(inputs)) then
           call this % rule % apply(input_graph, this % rule % bind(inputs), output)
        else

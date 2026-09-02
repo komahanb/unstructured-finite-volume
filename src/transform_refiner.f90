@@ -1,7 +1,7 @@
 !=====================================================================!
 ! The concrete graph refiner.
 !
-! R is the other way from C. One cell becomes several:
+! R is the inverse direction of C. One cell becomes several:
 !
 !      O   O                   o o o o
 !               ------>        o o o o
@@ -13,11 +13,11 @@
 ! between two parents becomes a face between one child of each. The
 ! second rule is the strongest statement the connectivity supports: a
 ! geometric refiner, with positions available, joins exactly the
-! children that touch; this refiner has no positions, so it
+! children that are adjacent; this refiner has no positions, so it
 ! preserves the shape and asserts nothing beyond it.
 !
-! What it is for: sharpening a mesh where an error measure requires
-! it, and holding a coarse multigrid correction back down.
+! Purpose: refining a mesh where an error measure requires it, and
+! prolongating a coarse multigrid correction to the fine level.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -42,7 +42,7 @@ module transform_refiner
   ! pair's identity is one-sided - coarsen(refine(G)) = G - and
   ! only that direction, because refinement invents detail that
   ! coarsening cannot recover. refine_data states how one coarse
-  ! value lands on the new cells: copied, or interpolated.
+  ! value maps onto the new cells: copied, or interpolated.
   !===================================================================!
 
   !===================================================================!
@@ -76,8 +76,8 @@ module transform_refiner
 contains
 
   !===================================================================!
-  ! Build a refiner that opens every cell into this many. A split
-  ! below one is read as one: refine by doing nothing.
+  ! Build a refiner that splits every cell into this many. A split
+  ! below one is taken as one: the identity refinement.
   !===================================================================!
 
   pure type(refiner) function create(split) result(this)
@@ -89,8 +89,8 @@ contains
   end function create
 
   !===================================================================!
-  ! Can this refiner say anything about that graph? Any graph with a
-  ! cell to open qualifies.
+  ! Whether this refiner is defined on that graph: any graph with at
+  ! least one cell qualifies.
   !===================================================================!
 
   pure logical function defined_on_graph(this, input_graph)
@@ -103,8 +103,8 @@ contains
   end function defined_on_graph
 
   !===================================================================!
-  ! Can this refiner say anything about that data? Yes for a field
-  ! whose entries match the graph it rides on.
+  ! Whether this refiner is defined on that data: true for a field
+  ! whose entries match the graph it is defined on.
   !===================================================================!
 
   logical function defined_on_data(this, input_graph, input_data)
@@ -136,8 +136,8 @@ contains
   end function defined_on_data
 
   !===================================================================!
-  ! R. Split every cell, join each family together, and carry every
-  ! face down to one child on each side.
+  ! R. Split every cell, join the children of each cell to one
+  ! another, and map every face to one child on each side.
   !===================================================================!
 
   subroutine refine_graph(this, coarse_graph, fine_graph)
@@ -147,17 +147,18 @@ contains
     class(directed_graph)  , allocatable, intent(out) :: fine_graph
 
     integer, allocatable :: tails(:), heads(:)
-    integer :: nv, ne, v, e, i, j, n, room
+    integer :: nv, ne, v, e, i, j, n, capacity
 
     nv = coarse_graph % num_vertices()
     ne = coarse_graph % num_edges()
 
-    ! Room for every sibling pair plus one child face per coarse face.
-    room = nv * this % split * this % split + ne
-    allocate(tails(room), heads(room))
+    ! Capacity for every sibling pair plus one child face per coarse face.
+    capacity = nv * this % split * this % split + ne
+    allocate(tails(capacity), heads(capacity))
     n = 0
 
-    ! Siblings are joined to each other, so a family stays connected.
+    ! Siblings are joined to each other, so the children of one cell
+    ! stay connected.
     do v = 1, nv
        do i = 1, this % split - 1
           do j = i + 1, this % split
@@ -168,8 +169,9 @@ contains
        end do
     end do
 
-    ! A coarse face lands between the last child of its tail and the
-    ! first child of its head. A wall stays a wall, on the first child.
+    ! A coarse face maps to an edge between the last child of its tail
+    ! and the first child of its head. A boundary face stays a boundary
+    ! face, on the first child.
     do e = 1, ne
        n = n + 1
        tails(n) = child_of(coarse_graph % edge_tail(e), this % split, this % split)
@@ -199,14 +201,13 @@ contains
   end function child_of
 
   !===================================================================!
-  ! Carry the values down. Every child starts from its parent's value.
+  ! Prolongate the values. Every child takes its parent's value.
   !
   ! This is injection - the transpose of the block sum the coarsener
-  ! takes, read through the same map: a child of a cell holding 3.0
-  ! holds 3.0. A
-  ! geometric refiner interpolates so the result stays smooth across
-  ! the new faces, but interpolation needs the children's positions,
-  ! and this refiner has none.
+  ! takes, read through the same map: a child of a cell storing 3.0
+  ! stores 3.0. A geometric refiner interpolates so the result stays
+  ! smooth across the new faces, but interpolation requires the
+  ! children's positions, and this refiner has none.
   !===================================================================!
 
   subroutine refine_data(this, coarse_graph, coarse_data, fine_graph, fine_data)
@@ -238,7 +239,7 @@ contains
        allocate(fine_data, source=out)
 
     class default
-       error stop 'refine: this data does not ride on this transform'
+       error stop 'refine: this data is not handled by this transform'
     end select
 
   end subroutine refine_data

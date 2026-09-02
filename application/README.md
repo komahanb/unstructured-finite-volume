@@ -34,7 +34,65 @@ $$\frac{d^n \mathcal{L}}{d\nu^n} = \frac{d^n F}{d \nu^n} + \sum_{k=0}^{n} \binom
 
 where the the term $\frac{d^n(\lambda \cdot R)}{d\nu^n}$ admits binomial expansion as $\sum_{k=0}^{n} \binom{n}{k} \frac{d^k \lambda}{d \nu^k} \cdot \frac{d^{n-k} R}{d \nu^{n-k}}.$ There are $n+1$ coefficients, and for each coefficient the term's sum total of the degrees would equal $n$.
 
+### Adjoint and Tangent Sensitivities
 
+Along the march $R(Q(\nu);\nu) = 0$ holds identically.
+Every total derivative $\frac{d^m R}{d\nu^m}$ is then zero.
+The recurrence collapses to $\frac{d^n \mathcal{L}}{d\nu^n} = \frac{d^n F}{d\nu^n}$ for any $\lambda(\nu)$.
+The binomial terms contain information only when one derivative is taken explicitly, with every derivative of the state held fixed.
+Write $\partial_\nu$ for that derivative.
+Write $F^{(m)}$ and $R^{(m)}$ for the total derivatives of order $m$ along the solved path, functions of $Q, Q^{(1)}, \ldots, Q^{(m)}$ and $\nu$.
+Write $\lambda^{(k)}$ for the costate of order $k$, the solution of the transposed block whose right-hand side is built from the costates below it.
+Then
+
+$$\frac{d^n F}{d\nu^n} = \partial_\nu\left[ F^{(n-1)} - \sum_{k=0}^{n-1}\binom{n-1}{k}\, \lambda^{(k)} \cdot R^{(n-1-k)} \right].$$
+
+The term $\lambda^{(0)} \cdot \partial_\nu R^{(n-1)}$ is the tangent term.
+It pairs the first costate with the explicit derivative of the highest residual derivative available, and it replaces the solve of $Q^{(n)}$.
+The terms $\lambda^{(k)} \cdot \partial_\nu R^{(n-1-k)}$ for $k \geq 1$ are the adjoint terms.
+Each pairs a higher costate with a lower residual derivative, weighed by $\binom{n-1}{k}$.
+The term $\partial_\nu F^{(n-1)}$ is the functional's own explicit dependence.
+
+The reverse pass of `gti_chain` (`entry_of`) forms this as one product per residual row.
+$\lambda_{\text{row}}$ and $R_{\text{row}}$ are `derivative_terms` over $n$ directions: $n-1$ store the state's derivatives, one stores $\nu$ alone, and $\lambda$ is constant along that one.
+The product rule on subsets (`terms_times` in `src/util_derivative_terms.f90`) is the binomial expansion: a subset of size $k$ of the $n-1$ implicit directions represents $\binom{n-1}{k}$ once.
+`leibniz_parts` reads the product by the order of the costate's factor.
+The coefficient of a smaller subset containing the explicit direction is the entry of a lower order.
+One reverse pass at order $N$ therefore reads every order $1..N$ from the same products (`chain_derivative`, `by_order` on the reverse pass).
+
+What is not single: the costates $\lambda^{(k)}$ come from $N$ transposed solves and the state derivatives $Q^{(k)}$ from $N-1$ forward solves.
+The one product is the assembly, not the solves.
+
+Measured by `--demo=lagrangian_expansion` (BDF 3 over a Crouzeix start, van der Pol, $\nu = 0.8$, 21 instants, relative tolerance $10^{-12}$):
+every order $0..4$ from one reverse pass agrees with the forward pass to at most $4.3 \times 10^{-15}$ relative;
+the terms summed agree with the table to at most $7.1 \times 10^{-15}$ against floors of $10^{-13}$ to $3 \times 10^{-11}$;
+for the energy at order 4 the terms read $\lambda^{(0)} \cdot \partial_\nu R^{(3)} = 5.641$, $3\lambda^{(1)} \cdot \partial_\nu R^{(2)} = -0.242$, $3\lambda^{(2)} \cdot \partial_\nu R^{(1)} = -0.643$, $\lambda^{(3)} \cdot \partial_\nu R^{(0)} = 13.629$, $\partial_\nu F^{(3)} = 0$, and the sum $18.384$ is $\frac{d^4 F}{d\nu^4}$ by the forward pass.
+
+### The Taylor State March
+
+The forward pass solves, at each block, the tower of the state's derivatives in the design,
+
+$$R_{n,0}(Q_{n,0}) = 0, \qquad A_n\,Q_{n,\alpha} = -B_{n,\alpha}, \quad 1 \le |\alpha| \le p,$$
+
+with $A_n$ the block's own Jacobian, factorised once, and $B_{n,\alpha}$ the $\alpha$ coefficient of the residual over `derivative_terms` with $Q_{n,\alpha}$ withheld.
+The multisets of designs of size $k \le p$ are the multi-indices $|\alpha| \le p$, $\binom{r+p}{p}$ in all.
+A block's tower is read by the blocks whose given instants lie in it and by no later block.
+`chain_derivative` therefore runs block outer and order inner, accumulates each block's contribution to every table during the traversal, and releases a tower once its last reader has been solved (`tangent_tower`, `last_reader`, `tower_storage`).
+The live storage is the reach in blocks, independent of the horizon.
+The reverse pass reads every tower during the reverse traversal and retains them all.
+The former route names are now pass names.
+
+Measured by `--demo=taylor_state` (BDF 3 over a Crouzeix start, van der Pol, 40 instants, order 4, one design), the same horizon marched in 1, 2, 4 and 8 blocks:
+tower numbers allocated at once are at most $876, 636, 516, 456$ against $876, 912, 984, 1128$ in all, each equal to the largest pair of consecutive towers;
+the tables depart from the one-block tables by at most $10^{-15}$ relative;
+the reverse pass over the eight-block chain retains $846$ of $846$.
+The primal states of every block are still stored by the chain; streaming those is the fusion of this loop into the march the driver evaluates, with `released_after` releasing states and towers alike.
+The pipelined march removes that: `march_chain` given `functionals` and a `derivative_order` solves each block's tower as soon as the block is solved (`taylor_context`, `taylor_block`, called at the end of the block rule), accumulates the tables block by block, and releases states and towers past their last reader inside the march itself.
+A block may add a single instant where its family reaches back one instant or none - a first-order-history or multistage family - so a horizon pipelines step by step at the family's own order; the first block still carries the initial instant and one step, and a deeper family still adds more instants than it reaches back over (`horizon_bounds`).
+One design, the physics' parameter; a designed grid is refused.
+
+Measured by `--demo=taylor_state` (Crouzeix three-stage DIRK, order 3, one instant per block, derivatives to order 4): over horizons of 20, 40 and 80 instants the live storage is 120 tower numbers and 30 state numbers at every horizon, exactly, while the totals grow 1140, 2340, 4740 and 285, 585, 1185; the tables agree with the whole-horizon march to at most $1.7 \times 10^{-15}$ relative.
+Memory is flat in the horizon; the cost is in the design dimension, $\binom{r+p}{p}$ coefficients per retained step.
 
 Generic Chain Rule Structure (Faà di Bruno's Formula):
 
@@ -72,13 +130,13 @@ Two layers:
 
 Within the binomial:
 
-When you substitute into the recurrence:
+On substitution into the recurrence:
 
 $$\frac{d^n\mathcal{L}}{d\nu^n} = \frac{d^nF}{d\nu^n} + \sum_{k=0}^{n}\binom{n}{k} \left[\text{Bell-expanded } \frac{d^k\lambda}{d\nu^k}\right] \left[\text{Bell-expanded } \frac{d^{n-k}R}{d\nu^{n-k}}\right]$$
 
-Each product in the binomial is a full cross-product of the two Bell expansions—that's where the additional complexity comes from.
+Each product in the binomial is a full cross-product of the two Bell expansions; that cross-product is the source of the additional complexity.
 
-The formulas are correct if and only if you're accounting for the $Q(\nu)$ dependence implicitly. Given $R(Q(\nu); \nu) = 0$ on the solution path (constraint satisfied at each $\nu$), the total derivative is:
+The formulas are correct if and only if the $Q(\nu)$ dependence is accounted for implicitly. Given $R(Q(\nu); \nu) = 0$ on the solution path (constraint satisfied at each $\nu$), the total derivative is:
 
 $$\frac{dR}{d\nu} = \frac{\partial R}{\partial Q}\frac{dQ}{d\nu} + \frac{\partial R}{\partial \nu} = 0$$
 
@@ -86,29 +144,29 @@ By the implicit function theorem:
 
 $$\frac{dQ}{d\nu} = -\left[\frac{\partial R}{\partial Q}\right]^{-1}\frac{\partial R}{\partial \nu}$$
 
-Now, if your $\lambda(Q)$ satisfies an optimality condition that makes the bracket term $\left[\frac{\partial F}{\partial Q} + \lambda \frac{\partial R}{\partial Q}\right] = 0$ (stationarity), then this term vanishes and doesn't contribute to $\frac{d\mathcal{L}}{d\nu}$, leaving only the explicit partials.
+If $\lambda(Q)$ satisfies an optimality condition that makes the bracket term $\left[\frac{\partial F}{\partial Q} + \lambda \frac{\partial R}{\partial Q}\right] = 0$ (stationarity), then this term vanishes and does not contribute to $\frac{d\mathcal{L}}{d\nu}$, leaving only the explicit partials.
 
-Question: Are you implicitly assuming that $\lambda$ is the adjoint/costate satisfying optimality at each $\nu$? If so, state that explicitly: it's the key assumption that makes the recurrence work as written. Without it, the chain rule would leave hidden $\frac{dQ}{d\nu}$ terms inside the apparent "explicit" partials.
+Open query: is $\lambda$ implicitly assumed to be the adjoint costate satisfying optimality at each $\nu$? If so, that assumption is to be stated explicitly: it is the assumption on which the recurrence as written depends. Without it, the chain rule would leave hidden $\frac{dQ}{d\nu}$ terms inside the apparent "explicit" partials.
 
-Alternatively, if $Q(\nu)$ is externally prescribed (not determined by $R$), then the question is moot: but then $R(Q(\nu); \nu)$ is not generally zero.
-
-
+Alternatively, if $Q(\nu)$ is externally prescribed (not determined by $R$), then the query does not arise: but then $R(Q(\nu); \nu)$ is not generally zero.
 
 
 
 
 
-Yes—using $\frac{d}{d\nu}$ throughout makes the formulas accurate at the formal level. The Leibniz rule then applies directly:
+
+
+Using $\frac{d}{d\nu}$ throughout makes the formulas exact at the formal level. The Leibniz rule then applies directly:
 
 $$\frac{d^n\mathcal{L}}{d\nu^n} = \frac{d^nF}{d\nu^n} + \sum_{k=0}^{n}\binom{n}{k}\frac{d^k\lambda}{d\nu^k}\frac{d^{n-k}R}{d\nu^{n-k}}$$
 
-Critical caveat: When you evaluate each term, you must recursively apply the chain rule to handle $Q(\nu)$ dependence. For example:
+Caveat: evaluating each term requires recursive application of the chain rule to the $Q(\nu)$ dependence. For example:
 
 $$\frac{d^2F}{d\nu^2} = \frac{\partial^2F}{\partial Q^2}\left(\frac{dQ}{d\nu}\right)^2 + \frac{\partial F}{\partial Q}\frac{d^2Q}{d\nu^2} + 2\frac{\partial^2F}{\partial Q\partial\nu}\frac{dQ}{d\nu} + \frac{\partial^2F}{\partial\nu^2}$$
 
 The hidden chain-rule terms (involving $\frac{dQ}{d\nu}$ and $\frac{d^2Q}{d\nu^2}$) are implicit in the notation but must be computed.
 
-Simplification: If you're on the constraint manifold where $R(Q(\nu); \nu) \equiv 0$ identically, then $\frac{d^nR}{d\nu^n} = 0$ for all $n$, and the recurrence reduces to just:
+Simplification: on the constraint manifold where $R(Q(\nu); \nu) \equiv 0$ identically, $\frac{d^nR}{d\nu^n} = 0$ for all $n$, and the recurrence reduces to:
 
 $$\frac{d^n\mathcal{L}}{d\nu^n} = \frac{d^nF}{d\nu^n}$$
 
@@ -138,9 +196,9 @@ graph LR
   F --> f["f — sink"]
 ```
 
-A control knob is turned to pitch the airfoil; higher-order
+A control parameter is changed to pitch the airfoil; higher-order
 information about the change of lift with the pitch input is of
-enormous value. A high-fidelity computation of the lift and its m-th
+high value. A high-fidelity computation of the lift and its m-th
 rate with respect to the design is non-trivial because of the
 complexity of the framework that simulates the output: the larger the
 codebase, the harder it becomes to extend the output's derivative
@@ -150,19 +208,19 @@ advancement.
 The remedy is a separation of concerns into basis and coefficients:
 the basis is the topology of the graph - which vertex reads which,
 fixed once by the statement of the problem - and the coefficients are
-the numbers its edges carry, the partials the arithmetic evaluates.
+the numbers stored on its edges, the partials the arithmetic evaluates.
 The rate df/dnu is then not code but a coefficient of the graph: it
-captures how the output moves along the one free vertex, and the
+is the rate of change of the output along the one free vertex, and the
 m-th rate is reached by adding levels to the derivative tower below,
 never by writing new code paths. That is what removes the barrier by
 construction: the derivatives are properties of the graph, not code
 to be written.
 
-In this pass every vertex lives on a point domain: that is what
-steady means in this reading, and it is why discretisation has
+In this pass every vertex is defined on a point domain: that is what
+steady means in this pass, and it is why discretisation has
 nothing to act on here and the square's vertical arrows are
 identities. The model is
-a relation between knob and state:
+a relation between control parameter and state:
 
     R(Q; nu) = 0,        f = F(Q; nu).
 
@@ -170,15 +228,15 @@ Which vertex is the input is not a convention but an accounting: the
 input is whatever the constraints leave free; everything else is
 determined, and the determined vertices split into the state - read
 again downstream - and the outputs, read by nothing. R is square
-against Q and consumes exactly its freedom; nothing closes over nu;
+against Q and consumes exactly its freedom; no constraint determines nu;
 so nu is the source, Q interior, f a sink. Where no model connects two
 vertices, the identity relation Q = I(nu) is the default operator
-between them. An edge is a read and carries the relation, never a
+between them. An edge is a read and represents the relation, never a
 rate: the partials are not edges but the weights the linearised
 traversal assigns to these same edges.
 
-**The derivative tower.** The rates of change are not a chain hanging
-off f; they are a second layer of vertices over the same topology,
+**The derivative tower.** The rates of change are not a chain appended
+to f; they are a second layer of vertices over the same topology,
 with known connectivity. Writing V^(s) = d^s Q / dnu^s and
 differentiating the one functional R(Q(nu); nu) = 0 repeatedly along
 the design, every level obeys the same equation:
@@ -199,7 +257,7 @@ The structure is strictly lower triangular and dense below the
 diagonal, not diagonal: V^(s) reads all of V^(1..s-1), never its
 predecessor alone. The outputs are parallel sinks over the shared
 tower - f^(m) reads V^(1..m) and nu, and no output reads another
-output. The edges now carry the weights they always deserved, on the
+output. The edges now store their weights, on the
 vertices they belong to:
 
 ```mermaid
@@ -225,7 +283,7 @@ graph TD
 ```
 
 **Three systems, one after another.** U is the primal state (Q of
-section 2, written U here to sit beside its own derivatives), V the
+section 2, written U here to be placed beside its own derivatives), V the
 tangent, W the adjoint. Only the first is nonlinear.
 
     nonlinear (state U, Newton):
@@ -249,7 +307,7 @@ later system reuses, unrefactored.
     [             J^T   ] [ W^(3) ]     [ g^(3) ]
 
 with the L's the partial-of-R couplings drawn above, and g^(s) the
-seed the functional releases at order s - the F-partials read into
+seed the functional supplies at order s - the F-partials read into
 V^(s) in the tower diagram above. Back substitution reads the upper
 system bottom row first: J^T W^(3) = g^(3), then
 J^T W^(2) = g^(2) - L32^T W^(3), then
@@ -259,17 +317,17 @@ untransposed, and exactly the J the nonlinear solve above already
 factored once.
 
 The last two are the generalized sensitivity statement: one matrix,
-its two triangles the two traversal directions. Each output closes
+its two triangles the two traversal directions. Each output is evaluated
 either way - as the contraction g . V along the tower (tangent), or
 as W . (-R) along the seeded column (adjoint) - and the two are the
 two evaluations of one bilinear form, W^T (block matrix) V. In the
-code this is literal: one operator, one boolean naming the
+code this is direct: one operator, one boolean naming the
 orientation, and their agreement to round-off is what
-`check = routes` measures.
+`check = passes` measures.
 
-Seen from linear algebra alone, this is an LU solve whose
+In linear-algebra terms, this is an LU solve whose
 factorisation was performed by causality: the time ordering of the
-graph is an elimination ordering, so the space-time operator arrives
+graph is an elimination ordering, so the space-time operator is
 already triangular - the march is the forward substitution, the
 adjoint the back substitution of the transpose, as in a Cholesky
 solve where one factor serves both directions. And what the two
@@ -277,19 +335,19 @@ substitutions compute is an entry of the inverse: every sensitivity
 is the bilinear form g . T^-1 r, evaluated either as a column of the
 inverse (tangent, one solve per input) or as a row (adjoint, one
 solve per output - the discrete Green's function of the functional).
-The route gate chooses rows against columns of an inverse never
-formed, and the routes check is, in classical language, a reciprocity
+The pass check selects rows or columns of an inverse never
+formed, and the passes check is, in classical language, a reciprocity
 test: g . (T^-1 r) = (T^-T g) . r.
 
-The inverse itself is never the thing to compute - it costs a
+The inverse itself is never the object to compute - it costs a
 factorisation but applies with worse rounding and fills the sparsity
-in - and what stands in for it is the factorisation of J, held under
-a stamp and reused exactly across every level of the tower, the
+in - and what replaces it is the factorisation of J, stored under
+a version and reused exactly across every level of the tower, the
 adjoint included, since they share J to the last bit. Where J drifts,
-the old factors become a preconditioner rather than an answer, and
-each drift names an economy: frozen factors across Newton iterates,
-factors carried from one step to the next until the inner iteration
-count degrades, factors carried from one design to the neighbouring
+the old factors become a preconditioner rather than an exact solve, and
+each drift corresponds to a saving: frozen factors across Newton iterates,
+factors retained from one step to the next until the inner iteration
+count degrades, factors retained from one design to the neighbouring
 one. And preconditioning the whole space-time matrix T is meaningful
 in exactly one circumstance - when the causal order is deliberately
 broken to solve across time in parallel, an approximate triangular
@@ -303,12 +361,12 @@ F-triangle is only ever applied: nothing in an output is implicit.
 The framework therefore never assembles it; it forms its action by
 evaluation - the tower is loaded into the arithmetic's subsets, the
 functional's expression is evaluated over them, and the coefficient
-that comes back is one block-row already contracted. In the joint
-matrix of states and outputs the observation rows carry the identity
+returned is one block-row already contracted. In the joint
+matrix of states and outputs the observation rows have the identity
 on their diagonal, which is the precise sense in which outputs are
 sinks - their costate equation is trivial, the functional's own
 multiplier is one - and why assembling the F-triangle would be
-assembling rows whose solves are free.
+assembling rows whose solves require no operations.
 
 
 
@@ -349,8 +407,8 @@ an unknown y with a residual in R's own form,
 
 The diagonal of the y-rows is the identity - a zero diagonal would be
 singular; the structural zero is the upper block, R never reading y,
-which is "outputs are sinks" said in algebra and what keeps J_aug
-triangular, so the augmentation is free: the tower recursion on J_aug
+which is "outputs are sinks" stated in algebra and what keeps J_aug
+triangular, so the augmentation costs no additional solve: the tower recursion on J_aug
 delivers V^(s) and f^(s) together, and the adjoint seeded with e_y
 gives W_y = 1 by the identity block - the functional's
 multiplier held at one is the trivial back-substitution. In time the
@@ -359,8 +417,8 @@ the most degenerate family, one-step reach, the quadrature weights
 its coefficients. Both R and F already enter as expressions; what the
 uniform treatment costs is exactly the several-unknowns extension,
 so that (q, y) share a slice - after which the functional's separate
-machinery collapses into the ordinary rows, the terminal seed on y
-replaces g, and the sinks check certifies the functional rows with no
+code path merges into the ordinary rows, the terminal seed on y
+replaces g, and the sinks check verifies the functional rows with no
 new code. The extension deletes a code path rather than adding one.
 
 The continuous statement and its discrete image commute: discretising
@@ -370,16 +428,16 @@ the state and discretising the model are the two sides of one square,
     |           |
     Q̄  ———————  R̄          (discretised)
 
-and the program lives on the bottom row. Every derivative it reports
+and the program is defined on the bottom row. Every derivative it reports
 is exact with respect to the bottom row — the discrete problem — not
 an approximation of the top one.
 
 **Pass 2 — unsteady: time, a line domain.**
 
-Into the same graph we plug the time-dependent model, and apply the
-one rule of a pass to *every* vertex: open it into its members.
+The time-dependent model is substituted into the same graph, and the
+one rule of a pass is applied to *every* vertex: expand it into its members.
 
-The knob opens, and its members carry their own domains. What was the
+The control parameter expands, and each member has its own domain. What was the
 point {nu} is now the set
 
     {nu}  <——  { mu, t },        mu on a point domain, t on the line [0, T],
@@ -392,27 +450,27 @@ stated over both:
 The domain of a member decides everything that follows. A point domain
 carries one value and needs no grid, so mu passes to the discrete row
 unchanged. A one-dimensional domain must be discretised, so t is the
-member the grid acts on: it opens into the instants {t_1, ..., t_n},
+member the grid acts on: it expands into the instants {t_1, ..., t_n},
 equivalently the steps {h_k}, which is precisely how the domain joins
 mu as a design (`designs = grid`) and why T is not the only parameter.
 For van der Pol the edge from t into R carries zero — the equation is
 autonomous — but the vertex is there systematically. The state q is a
-field over t's line, so it opens twice: degree-wise here, instant-wise
-under the grid. And f closes the ledger: the integral collapses the
-line back to a point, so the output lives where the knob mu does —
+field over t's line, so it expands twice: degree-wise here, instant-wise
+under the grid. And f completes the graph: the integral collapses the
+line back to a point, so the output is defined where the parameter mu is —
 which is what makes df/dmu a number.
 
-The state opens. What was the point {Q} is now the set, ordered lowest
+The state expands. What was the point {Q} is now the set, ordered lowest
 degree to highest,
 
     {Q}  <——  { q, q', ..., q^(N) },      N = state_degree,
 
-with the edges carrying the scheme's coefficients that relate the
+with the edges storing the scheme's coefficients that relate the
 members: along the instants the derivatives are unknowns, and the
 integration stencil of the configured family and order connects them.
 
-The output opens. What was the value f is now the time functional and
-its derivatives in the opened knob,
+The output expands. What was the value f is now the time functional and
+its derivatives in the expanded parameter,
 
     f(mu) = integral over [0, T] of  F( q, q', ..., q^(N-1) ; mu ) dt,
 
@@ -442,10 +500,10 @@ the configuration names, and computes
 and, when the steps are designs, df/dh_k beside them. Every derivative
 is exact with respect to the discrete problem: the residual and the
 functional are stated as expressions over the state's components and
-the knob's — mu is a leaf of both trees, t a leaf of R — and their
+the parameter's — mu is a leaf of both trees, t a leaf of R — and their
 partials of any order are obtained by evaluating those expressions
-over an arithmetic that carries mixed derivatives. Nothing is
-differentiated by hand and nothing is differenced. In the
+over an arithmetic that propagates mixed derivatives. No derivative is
+written out explicitly and nothing is differenced. In the
 configuration's flat vocabulary the one physics parameter mu is the
 key `design`, written nu in the code.
 
@@ -531,9 +589,9 @@ the identity sum over k of h_k df/dh_k = 0, the steps being
 homogeneous of degree zero in their weights. The same map carries a
 quadrature kind in the library — the Gauss rule's points and weights,
 exact on polynomials of degree below 2n, demonstrated in
-`assembled_tower` — which is the measure a knob would take were its
-point domain widened to an axis with a distribution: the third pass
-this document does not yet write.
+`assembled_tower` — which is the measure a parameter would take were its
+point domain extended to an axis with a distribution: the third pass
+this document does not yet describe.
 
 **The schemes.** The scheme is the operator-side vertical arrow of
 the square: R bound to the grid's arithmetic. Its exactness class is
@@ -548,17 +606,17 @@ implicit midpoint rule and the two Crouzeix tableaux).
 `combinations = 1 2 3` builds chains of that many windows, joined at
 their shared instants: one window is a single family over the whole
 horizon, and more than one changes family along it. Any count may be
-asked for, and the counts are surveyed in the order written. A
+requested, and the counts are surveyed in the order written. A
 surveyed chain gives each window a family of its own, so a count above
 the number of families named yields no chain.
 
 `chain = bdf:2 dirk:3 adams:3 bdf:2` names one chain outright, a
-window per word, each carrying a family and the order asked of it.
-Any length is admitted and a family may stand at more than one window,
+window per word, each specifying a family and the order requested of it.
+Any length is admitted and a family may be placed at more than one window,
 neither of which a survey over window counts can express. The row is
-built beside the surveyed ones; unlike them it is not passed over in
-silence, so a window too short for the family standing at it, or an
-order the family has no scheme at, is said so and stops the run.
+built beside the surveyed ones; unlike them it is not silently skipped,
+so a window too short for the family placed at it, or an
+order the family has no scheme at, is reported and stops the run.
 
 A family whose constraint reaches back over r > 1 instants is started
 by a stage block over steps refined by `startup_refinement`, so every
@@ -568,16 +626,16 @@ row integrates the same initial-value problem.
 `functionals = energy dissipation`, `designs = physics [grid]`,
 `max_derivative_degree = m`. The derivatives are computed by a forward
 expansion in the design; with several designs the tangent and adjoint
-routes are chosen by counting sources against sinks - the tangent
+passes are chosen by counting sources against sinks - the tangent
 sweeps forward from the free vertices and costs one solve per design,
 the adjoint sweeps backward from the outputs and costs one per
 functional - and either can be checked against the other, the two
 being the same linearised operator traversed with and against its
-edges. `check` names a comparison against something known:
+edges. `check` names a comparison against a known quantity:
 
 | check | the statement verified |
 |---|---|
-| `routes` | the tangent and adjoint routes agree over the whole derivative table |
+| `passes` | the tangent and adjoint passes agree over the whole derivative table |
 | `sinks` | J_ii lambda_i = g_i on every unknown no row reads, at every degree |
 | `ode` | a field at kappa = 0 equals one node's ordinary equation |
 | `mode` | a rectangle at nu = 0 against the separated solution of the heat equation |
@@ -589,16 +647,16 @@ edges. `check` names a comparison against something known:
 `max_linear_iterations`. `tolerance` with
 `tolerance_criterion = relative | absolute` and
 `iteration_criterion = by_rate | by_count` govern every stopping
-question: each tolerance is relative or declared absolute, each budget
+criterion: each tolerance is relative or declared absolute, each iteration limit
 by rate or by count, and no threshold is a chosen number.
 
 **A spatial field.** `spatial_counts = n1 n2` above zero widen the
 state's domain a second time: beside t's line, two parametric lines
-xi and eta, discretised by the very same grid machinery — extended
+xi and eta, discretised by the same grid procedures — extended
 domains get grids, points pass through — and mapped into the plane by
 `spatial_geometry` (`cartesian | circular | elliptical`), whose
 mapping pushes the parametric measure forward into cell volumes. The
-operator side follows its own arrow, as always: the diffusion operator
+operator side follows its own arrow: the diffusion operator
 is a fitted polynomial balance of degree `spatial_order` with
 conductivity `diffusion`, bound to that mesh.
 `space = coupled | sequential` and `time = coupled | sequential` state
@@ -608,20 +666,20 @@ order its own discretisation couples the moments. Coupled in both is
 the whole block at once; coupled in space and sequential in time is
 the implicit march, one instant at a time, and is the default.
 Sequential in time is exact rather than approximate: the scheme reads
-only earlier moments, so solving them in order answers what solving
-them together answers.
+only earlier moments, so solving them in order returns what solving
+them together returns.
 `export = paraview` writes one `.vtu` per instant to `export_path`.
 
-**Accounting.** `accounting = T` files what the run spends -
-`measurements` among wall_time, primal_loops, tangent_loops,
+**Accounting.** `accounting = T` records the cost of the run -
+`measurements` among elapsed_time, primal_loops, tangent_loops,
 adjoint_loops, newton_solves, linear_solves, factorisations - under
-the level of the hierarchy it was spent in (expansion, horizon, block,
+the level of the hierarchy it was incurred in (expansion, horizon, block,
 stage) and the derivative order, with a model-against-count table for
 the sensitivity substitutions.
 
 ## The demonstrations
 
-Each former standalone driver survives inside the program as a
+Each former standalone driver is retained inside the program as a
 demonstration. Each prints the quantity it checks and the measured
 departure beside the floor it is held to; every floor is derived from
 the arithmetic, none is chosen. Arguments after the demonstration's
@@ -640,20 +698,20 @@ name pass through to it.
 | `family_coefficients` | multistep coefficients on non-uniform steps against the Lagrange functionals | `./graph_time_integrator --demo=family_coefficients` |
 | `function_identities` | the exact arithmetic's elementary functions: fifty-five identities to five directions | `./graph_time_integrator --demo=function_identities` |
 | `grid_design_check` | derivative tables in the step weights, checked three ways at every order | `./graph_time_integrator --demo=grid_design_check` |
-| `handover_offsets` | where one block's values sit inside another's state, settled before building against the layout built | `./graph_time_integrator --demo=handover_offsets` |
+| `transfer_offsets` | where one block's values are placed inside another's state, determined before building against the layout built | `./graph_time_integrator --demo=handover_offsets` |
 | `jacobian_shape` | how far a block's rows reach, and how much of the square is empty | `./graph_time_integrator --demo=jacobian_shape` |
-| `level_maps` | what each level of the tower carries, read back by one traversal | `./graph_time_integrator --demo=level_maps` |
+| `level_maps` | what each level of the tower stores, read back by one traversal | `./graph_time_integrator --demo=level_maps` |
 | `level_shape` | two blocks built through the level storage and read back through the level view | `./graph_time_integrator --demo=level_shape` |
 | `marched_block` | one block against the cosine of the harmonic oscillator; steps halved, the observed order against 2^p | `./graph_time_integrator --demo=marched_block` |
 | `marched_horizon` | a horizon marched and its sensitivities, tangent against adjoint | `./graph_time_integrator --demo=marched_horizon` |
 | `marched_stages` | a stage block against the cosine, order observed under halving | `./graph_time_integrator --demo=marched_stages` |
 | `memory_shape` | the peak memory of one part of the representation: none, vertices, edges, field or block | `./graph_time_integrator --demo=memory_shape block 41` |
-| `randomized_checks` | the splitting, route and order invariants over drawn parameters | `./graph_time_integrator --demo=randomized_checks 7 2` |
-| `read_write_graph` | the order the read and write arcs imply, recovered by the projection when it is nothing like the numbering | `./graph_time_integrator --demo=read_write_graph` |
+| `randomized_checks` | the splitting, pass and order invariants over drawn parameters | `./graph_time_integrator --demo=randomized_checks 7 2` |
+| `read_write_graph` | the order the read and write arcs imply, recovered by the projection when it differs from the numbering | `./graph_time_integrator --demo=read_write_graph` |
 | `scheme_weights` | a row's weights against the polynomial the scheme reproduces | `./graph_time_integrator --demo=scheme_weights` |
 | `sensitivity` | df/dnu by tangent, by adjoint, and by difference | `./graph_time_integrator --demo=sensitivity` |
 | `solve_cost` | what one formation and one solve cost | `./graph_time_integrator --demo=solve_cost` |
-| `tolerance_form` | where a march's tolerance floor lies: eps times the norms the solve carries | `./graph_time_integrator --demo=tolerance_form` |
+| `tolerance_form` | where a march's tolerance floor lies: eps times the norms the solve uses | `./graph_time_integrator --demo=tolerance_form` |
 
 `memory_shape` takes a part and an instant count, `block` and 41 unless
 given; `randomized_checks` takes a seed and a case count, 7 and 2 unless

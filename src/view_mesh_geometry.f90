@@ -34,7 +34,7 @@
 ! padded rectangles with per-entry counts, entries numbered from 1.
 !
 ! Checks that stop the program: a face vertex count outside 2..4,
-! a face touching no cell, a nonpositive face area, and a negative
+! a face incident to no cell, a nonpositive face area, and a negative
 ! cell volume (an inside-out cell).
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
@@ -65,14 +65,14 @@ module view_mesh_geometry
   public :: element_kind, elements, gmsh_kinds, widest_element, face_kind
 
   !===================================================================!
-  ! THE ELEMENT TABLE: what gmsh's element numbers mean, once. Each
-  ! kind carries its dimension, its vertex count, its faces - which of
-  ! its vertices make each face, in the order that turns the face
-  ! outward - and the paraview type that draws it. Every question
-  ! about an element kind is a read of this table: the loader's
-  ! widths, the face count the algebraic face total needs, the
-  ! ordering of a shared face, the writer's cell type. A gmsh number
-  ! the table does not carry has dimension -1 and nothing else.
+  ! THE ELEMENT TABLE: the meaning of each gmsh element number, stated
+  ! once. Each kind stores its dimension, its vertex count, its faces
+  ! - which of its vertices form each face, in the order that makes
+  ! the face normal outward - and the paraview type that renders it.
+  ! Every query about an element kind is a read of this table: the
+  ! loader's widths, the face count the algebraic face total needs,
+  ! the ordering of a shared face, the writer's cell type. A gmsh
+  ! number absent from the table has dimension -1 and no other data.
   !===================================================================!
 
   type :: element_kind
@@ -108,7 +108,7 @@ module view_mesh_geometry
        ! 7: a 5-node pyramid, one quadrangle and four triangles
        & element_kind(3, 5, 5, 14, [4, 3, 3, 3, 3, 0], &
        &   reshape([1,2,3,4, 1,2,5,0, 2,3,5,0, 3,4,5,0, 1,5,4,0, 0,0,0,0], [4, 6])), &
-       ! 8 to 14: second-order elements, which this tower does not carry
+       ! 8 to 14: second-order elements, which this table does not define
        & element_kind(), element_kind(), element_kind(), element_kind(), &
        & element_kind(), element_kind(), element_kind(), &
        ! 15: a 1-node point
@@ -122,13 +122,13 @@ contains
   ! boundary faces; the interior faces are derived: two cells share
   ! an interior face when they share 2 vertices in 2d (a segment),
   ! or 3 or 4 vertices in 3d (a triangle or quadrilateral). The
-  ! total count is known algebraically before the search,
+  ! total count is computed algebraically before the search,
   !
   !      num_faces = (sum of per-cell face counts - nbfaces)/2
   !                  + nbfaces,
   !
   ! because every interior face is counted by exactly two cells.
-  ! Boundary faces keep the file's order and tags, positions
+  ! Boundary faces retain the file's order and tags, positions
   ! 1..nbfaces; interior faces follow in cell-pair order. A shared
   ! vertex count above 4 stops the program.
   !===================================================================!
@@ -204,11 +204,11 @@ contains
 
           ! a shared vertex is never a face, and in 3d neither is a
           ! shared segment: a face has as many vertices as the space
-          ! has dimensions, at the least, and is a kind the table has
+          ! has dimensions, at the least, and is a kind the table defines
           if (shared_node_count >= spatial_dim) then
              shared_kind = face_kind(spatial_dim - 1, shared_node_count)
              if (shared_kind == 0) then
-                error stop 'view_mesh_geometry: two cells share the vertices of a face the table has'
+                error stop 'view_mesh_geometry: two cells share the vertices of a face the table defines'
              end if
              nf = nf + 1
              face_tags(nf)         = cell_tags(icell)
@@ -229,16 +229,16 @@ contains
     end if
 
     if (maxval(face_vertices) .ne. num_points) then
-       error stop 'view_mesh_geometry: every last vertex belongs to a face'
+       error stop 'view_mesh_geometry: every vertex belongs to a face'
     end if
 
   end subroutine derive_faces
 
   !===================================================================!
-  ! F2C: a cell contains a face when it holds every one of the
-  ! face's vertices; the candidates are the cells touching the
+  ! F2C: a cell contains a face when the cell contains every one of
+  ! the face's vertices; the candidates are the cells incident to the
   ! face's first vertex (V2C supplies them), so the search is
-  ! local. At most two cells hold a face; exactly one means a
+  ! local. At most two cells contain a face; exactly one means a
   ! boundary face. A face with no cell stops the program.
   !===================================================================!
 
@@ -257,7 +257,7 @@ contains
     integer, allocatable, intent(out) :: num_face_cells(:)
 
     integer :: icell, iface, k, iv
-    logical :: holds_all
+    logical :: contains_all
 
     allocate(num_face_cells(num_faces))
     allocate(face_cells(2, num_faces))
@@ -267,22 +267,22 @@ contains
     do iface = 1, num_faces
        do k = 1, num_vertex_cells(face_vertices(1, iface))
           icell = vertex_cells(k, face_vertices(1, iface))
-          holds_all = .true.
+          contains_all = .true.
           do iv = 1, num_face_vertices(iface)
              if (.not. any(cell_vertices(1:num_cell_vertices(icell), icell) &
                   &        .eq. face_vertices(iv, iface))) then
-                holds_all = .false.
+                contains_all = .false.
                 exit
              end if
           end do
-          if (.not. holds_all) cycle
+          if (.not. contains_all) cycle
           num_face_cells(iface) = num_face_cells(iface) + 1
           face_cells(num_face_cells(iface), iface) = icell
        end do
     end do
 
     if (minval(num_face_cells) .lt. 1) then
-       error stop 'view_mesh_geometry: every face touches a cell'
+       error stop 'view_mesh_geometry: every face is incident to a cell'
     end if
 
   end subroutine derive_face_cells
@@ -296,7 +296,7 @@ contains
   ! with sigma_cf the sign that turns S_f out of the cell and x_f the
   ! face's centroid - the dual of the volume sum, and exact for any
   ! cell with flat faces. It is the true centroid, about which the
-  ! first moment vanishes, so a cell average read there is second
+  ! first moment vanishes, so a cell average evaluated there is second
   ! order; the vertex mean is not, except by symmetry.
   !===================================================================!
 
@@ -317,8 +317,9 @@ contains
     allocate(cell_centres(size(face_centres, 1), size(num_cell_faces)))
     cell_centres = 0.0_dp
 
-    ! the sign turns each face's area vector out of this cell, read
-    ! against any interior point - the vertex mean serves
+    ! the sign orients each face's area vector out of this cell,
+    ! evaluated against any interior point; the vertex mean is one
+    ! such point
     do lcell = 1, size(num_cell_faces)
        do lface = 1, num_cell_faces(lcell)
           gface = cell_faces(lface, lcell)
@@ -342,12 +343,12 @@ contains
   ! sum of the fan's cross products, one triangle plus a second for
   ! a quadrilateral, so |S_f| is the vector area - for a planar face
   ! the scalar area, for a non-planar quadrilateral the area the
-  ! divergence theorem sees. Neither is written here: one formula
-  ! serves every dimension. The scalar area is its norm; the unit
-  ! normal is S_f over its norm and is taken where it is needed. The
-  ! centre is the vertex mean. A face whose area vector vanishes -
-  ! coincident points, a degenerate fan - stops the program before
-  ! anything divides by it.
+  ! divergence theorem integrates. Neither case is written out here:
+  ! one formula serves every dimension. The scalar area is its norm;
+  ! the unit normal is S_f over its norm and is computed where it is
+  ! needed. The centre is the vertex mean. A face whose area vector
+  ! vanishes - coincident points, a degenerate fan - stops the program
+  ! before any division by it.
   !===================================================================!
 
   pure subroutine derive_face_vectors(spatial_dim, coordinates, &
@@ -410,8 +411,9 @@ contains
        end associate
     end do
 
-    ! the floor is this build's own, not one kind's: a quadruple build
-    ! reaches far below a double one and the check follows it down
+    ! the lower bound is the build's own real kind's, not one fixed
+    ! kind's: a quadruple-precision build has a far smaller tiny()
+    ! than a double-precision build, and the check scales with it
     if (minval(face_areas) < 10.0_dp * tiny(1.0_dp)) then
        error stop 'view_mesh_geometry: a face has a nonzero area vector'
     end if
@@ -420,10 +422,10 @@ contains
 
   !===================================================================!
   ! The sign that points a face's area vector out of a cell: +1 when
-  ! S_f leaves the cell centre toward the face centre, -1 when it
-  ! must be turned. The same interior face carries opposite signs
-  ! seen from its two cells, which is what makes the assembled
-  ! operator conservative.
+  ! S_f points from the cell centre toward the face centre, -1 when
+  ! S_f must be reversed. The same interior face has opposite signs
+  ! relative to its two cells, which makes the assembled operator
+  ! conservative.
   !===================================================================!
 
   pure real(dp) function outward_sign(face_vector, face_centre, cell_centre)
@@ -517,8 +519,8 @@ contains
   !===================================================================!
   ! Face deltas: the centre-to-centre vector projected on the unit
   ! normal, |l_f . S_f| / |S_f|, one per face - the sign of the
-  ! normal drops out under the modulus. On a skewed mesh the segment
-  ! crosses its face at a slant, so this normal distance is shorter
+  ! normal cancels under the modulus. On a skewed mesh the segment
+  ! crosses its face obliquely, so this normal distance is shorter
   ! than the segment; it is the denominator of every two-point face
   ! gradient.
   !===================================================================!
@@ -541,9 +543,9 @@ contains
   end subroutine derive_face_deltas
 
   !===================================================================!
-  ! Interpolation weights per face: the two cells' shares by
+  ! Interpolation weights per face: the two cells' fractions by
   ! inverse distance to the face centre, stored as (w, 1-w). A
-  ! boundary face has one cell, which takes the whole weight.
+  ! boundary face has one cell, which receives the whole weight.
   !===================================================================!
 
   pure subroutine derive_face_weights(face_cells, num_face_cells, &
@@ -590,8 +592,8 @@ contains
   ! the cofactors of the matrix whose columns they are, component i
   ! being (-1)^(i+1) times the minor with row i struck. One formula
   ! serves every dimension, so no dimension is written out. The
-  ! vectors arrive as many rows as the coordinates carry; only the
-  ! first d are read, and the components past d are zero.
+  ! vectors have as many rows as the coordinates have; only the
+  ! first d rows are read, and the components past d are zero.
   !===================================================================!
 
   pure function dual(d, vectors) result(s)
@@ -613,8 +615,8 @@ contains
 
   !===================================================================!
   ! The determinant, by expansion along the first row. The minors
-  ! here are at most (d-1) square, so the expansion costs nothing
-  ! worth a factorisation.
+  ! here are at most (d-1) square, so the expansion's operation count
+  ! is small and a factorisation is not warranted.
   !===================================================================!
 
   pure recursive function determinant(a) result(det)
@@ -665,20 +667,20 @@ contains
   end function distance
 
   !===================================================================!
-  ! THE MESH FROM ITS INCIDENCES. Every measurement a mesh carries is
+  ! THE MESH FROM ITS INCIDENCES. Every measurement a mesh stores is
   ! a function of the coordinates and three relations - each cell's
   ! vertices, each face's vertices, each face's cells - and of nothing
   ! else: not of element types, not of how the faces were found. So
-  ! this is the one ending of every mesh pipeline: the gmsh builder
-  ! reaches it after deriving its faces, the spatial level after
-  ! enumerating its own, and the measurements are computed once.
+  ! this is the one terminal step of every mesh construction: the gmsh
+  ! builder reaches it after deriving its faces, the spatial level
+  ! after enumerating its own, and the measurements are computed once.
   !
-  ! The coordinates may carry more rows than the space has dimensions
+  ! The coordinates may have more rows than the space has dimensions
   ! (a two-dimensional mesh read from a three-dimensional file); the
-  ! mesh keeps the first spatial_dim of them. A face with one cell is
-  ! a boundary face, an edge without a head, and carries the tag
+  ! mesh retains the first spatial_dim of them. A face with one cell
+  ! is a boundary face, an edge without a head, and stores the tag
   ! given; the unit normal points out of the tail cell; the weight is
-  ! the tail cell's interpolation share.
+  ! the tail cell's interpolation fraction.
   !===================================================================!
 
   impure type(mesh) function mesh_from_incidence(spatial_dim, coordinates, &
@@ -706,7 +708,7 @@ contains
     num_faces = size(num_face_vertices)
 
     if (size(coordinates, 1) < d) then
-       error stop 'view_mesh_geometry: the coordinates carry every dimension of the space'
+       error stop 'view_mesh_geometry: the coordinates have a row for every dimension of the space'
     end if
 
     call transpose_padded(face_cells, num_face_cells, num_cells, cell_faces, num_cell_faces)
@@ -780,7 +782,7 @@ contains
   end function find
 
   !===================================================================!
-  ! Return the number of faces a gmsh cell type owns. The name could
+  ! Return the number of faces a gmsh cell type has. The name could
   ! generalize to the number of lower dimensional entities.
   !===================================================================!
 
@@ -794,24 +796,24 @@ contains
 
 
   !===================================================================!
-  ! Return the number of vertices a gmsh element type owns. The name
+  ! Return the number of vertices a gmsh element type has. The name
   ! could generalize to the number of lower dimensional entities.
   !===================================================================!
 
 
   !===================================================================!
-  ! Put a face's vertices into the cell's own winding order. Each
-  ! cell type carries a wiring table that says which corners bound
-  ! which face, wound so that the normal points outward. Match the
-  ! unordered face against the table and hand it back in the table's
-  ! order.
+  ! Put a face's vertices into the cell's own vertex order. Each
+  ! cell type stores a face table that specifies which vertices bound
+  ! which face, ordered so that the normal points outward. Match the
+  ! unordered face against the table and return the face in the
+  ! table's order.
   !===================================================================!
 
 
 
   !===================================================================!
-  ! The table read three ways, elementally, a number outside the table
-  ! reading as no dimension, no vertices, no faces.
+  ! Three elemental reads of the table; a number outside the table
+  ! reads as dimension -1, zero vertices, zero faces.
   !===================================================================!
 
   pure elemental integer function element_dimension(elem_type) result (dim)
@@ -842,10 +844,10 @@ contains
   end function element_num_faces
 
   !===================================================================!
-  ! The most vertices any element of a dimension owns - the width a
+  ! The most vertices any element of a dimension has - the width a
   ! padded list of such elements needs - and the kind of a face of a
-  ! dimension with this many vertices, or zero where the table has
-  ! none.
+  ! dimension with this many vertices, or zero where the table
+  ! defines none.
   !===================================================================!
 
   pure integer function widest_element(dimension)
@@ -874,10 +876,10 @@ contains
 
   !===================================================================!
   ! The vertices of a face a cell shares, put in the order the table
-  ! gives that face of that cell, which is the order that turns its
+  ! gives that face of that cell, which is the order that orients its
   ! area vector outward. The face is found among the cell's faces by
-  ! its vertex set; a set that is no face of the cell stops the
-  ! program, the mesh being nonconforming.
+  ! its vertex set; a vertex set that is no face of the cell stops the
+  ! program, because the mesh is then nonconforming.
   !===================================================================!
 
   impure subroutine order_face_vertices(cell_type, cell_vertices, face_vertices_unordered)

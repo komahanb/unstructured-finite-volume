@@ -1,16 +1,16 @@
 !=====================================================================!
 ! The jacobi iteration on the tower.
 !
-! The oldest idea in iterative solving: correct every cell by its
-! own residual over its own diagonal, all cells at once,
+! Correct every cell by its own residual divided by its own
+! diagonal, all cells at once,
 !
 !      x  <-  x + omega * (rhs - A x) / diag
 !
 ! which is the gauss-seidel sweep over one colour class - every cell
-! the same colour, so every correction sees the old state and none
-! sees another's. That is stated by extension: the sweep, the
-! diagonal, the judgement of each residual are gauss-seidel's, and
-! this file says only which colouring is swept.
+! the same colour, so every correction reads the old state and none
+! reads another correction. That is stated by extension: the sweep,
+! the diagonal, the evaluation of each residual are gauss-seidel's,
+! and this module specifies only which colouring is swept.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -47,7 +47,7 @@ contains
 
   !===================================================================!
   ! One colour class: every unknown corrected at once from the state
-  ! the iteration began at. The coupling is never asked.
+  ! the iteration began at. The coupling is never read.
   !===================================================================!
 
   subroutine one_colour(this, n, colours)

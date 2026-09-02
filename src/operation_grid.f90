@@ -1,7 +1,7 @@
 !=====================================================================!
 ! The discretisation of a coordinate: the operation that produces a
 ! finite measure on a duration - points of the axis and the weight
-! each carries. A partition and a quadrature are the two readings of
+! at each point. A partition and a quadrature are the two views of
 ! the one map: a partition's points are the instants and its weights
 ! the steps, exact on piecewise constants; the gauss kind's points
 ! are the Legendre nodes and its weights the rule's, exact on
@@ -11,7 +11,7 @@
 !      input 1        the design, a real field
 !      output         dt, one per instant: the step that ends there
 !
-! The first instant has no step ending at it and carries zero, so a
+! The first instant has no step ending at it and has step zero, so a
 ! grid over n instants is a partition of the duration into n-1
 ! steps. Every concretion supplies one unnormalised weight per step
 ! and nothing else; the weights are then scaled so that the steps sum
@@ -20,19 +20,19 @@
 !      dt(k)  =  duration * w(k) / sum of the weights
 !
 ! Because the normalisation is part of the operation rather than
-! something a caller does afterwards, the partials carry it: a design
+! something a caller does afterwards, the partials include it: a design
 ! that changes one weight changes every step, and the constraint that
-! the steps sum to the duration holds along every direction. A grid
+! the steps sum to the duration is satisfied along every direction. A grid
 ! whose weights are the design is therefore a design on the simplex,
-! which is what grid design needs and what a caller normalising by
-! hand would lose.
+! which is what grid design needs and what a caller normalising
+! explicitly would lose.
 !
 !             THE PARTIALS
 !
 ! The weights are computed over derivative_terms, so the value and
-! every mixed partial in the design are carried together and are
+! every mixed partial in the design are computed together and are
 ! exact. A grid whose weights do not read the design has zero
-! partials and says so; it does not refuse the question.
+! partials and returns them; it does not refuse the request.
 !
 !             WHAT IS REFUSED
 !
@@ -66,7 +66,7 @@ module operation_grid
 
   ! One representation, the weight rule a case: uniform weighs every
   ! step one, random a bounded deterministic draw, designed the design
-  ! itself, fixed a stored partition carried as constants.
+  ! itself, fixed a stored partition stored as constants.
   integer, parameter :: GRID_UNIFORM  = 1
   integer, parameter :: GRID_RANDOM   = 2
   integer, parameter :: GRID_DESIGNED = 3
@@ -285,7 +285,7 @@ contains
   !===================================================================!
   ! The k-th weight of the n-point Gauss-Legendre rule on [0, span],
   ! a constant in the design. The node and weight on [-1, 1] come
-  ! from Newton on the Legendre polynomial through its recurrence,
+  ! from Newton's iteration on the Legendre polynomial through its recurrence,
   ! seeded by the Chebyshev estimate; the iteration is stopped at the
   ! arithmetic's spacing of the node.
   !===================================================================!
@@ -378,7 +378,7 @@ contains
 
     associate (u1 => n); end associate
 
-    ! modulo, not mod: mod carries the sign of its first argument, so
+    ! modulo, not mod: mod takes the sign of its first argument, so
     ! a negative seed would leave x below zero and the weight at or
     ! below it. The two agree wherever the seed is positive.
     x = modulo(int(this % seed, int64) * 40503_int64 + int(k, int64) * 65537_int64, modulus)
@@ -404,7 +404,7 @@ contains
     associate (u1 => this, u2 => n); end associate
 
     if (k - 1 < 1 .or. k - 1 > size(design)) then
-       error stop 'operation_grid: the design holds one entry per step'
+       error stop 'operation_grid: the design has one entry per step'
     end if
 
     w = design(k - 1)
@@ -470,7 +470,7 @@ contains
     type(derivative_terms) :: total
     integer :: k, first
 
-    ! a partition's first instant carries no step; a quadrature
+    ! a partition's first instant has no step; a quadrature
     ! weighs every point
     first = merge(1, 2, this % kind == GRID_GAUSS)
     if (n < 2) then
@@ -508,12 +508,12 @@ contains
     real(dp)   , intent(in) :: design(:)
     real(dp), allocatable, intent(out) :: dt(:)
     type(stored_directed_graph) :: instants
-    type(stored_field) :: knobs
+    type(stored_field) :: design_field
     class(field), allocatable :: out
     instants = stored_directed_graph(num_instants, tails=[integer ::], heads=[integer ::])
-    knobs    = stored_field('design', instants % vertex_set(), max(size(design), 1))
-    call knobs % set_real_vector(padded(design))
-    call steps % apply(instants, steps % bind([knobs]), out)
+    design_field = stored_field('design', instants % vertex_set(), max(size(design), 1))
+    call design_field % set_real_vector(padded(design))
+    call steps % apply(instants, steps % bind([design_field]), out)
     call out % real_vector(dt)
   end subroutine partition_values
 
@@ -533,24 +533,24 @@ contains
     real(dp), allocatable, intent(out) :: dt(:), t(:)
     real(dp), intent(in), optional :: design(:)
     type(stored_directed_graph) :: instants
-    type(stored_field) :: knobs
+    type(stored_field) :: design_field
     class(field), allocatable :: out
     integer :: k
     instants = stored_directed_graph(n, tails=[integer ::], heads=[integer ::])
     if (present(design)) then
-       knobs = stored_field('design', instants % vertex_set(), size(design))
-       call knobs % set_real_vector(design)
+       design_field = stored_field('design', instants % vertex_set(), size(design))
+       call design_field % set_real_vector(design)
     else
-       knobs = stored_field('design', instants % vertex_set(), 1)
-       call knobs % set_real_vector([0.0_dp])
+       design_field = stored_field('design', instants % vertex_set(), 1)
+       call design_field % set_real_vector([0.0_dp])
     end if
-    call steps % apply(instants, steps % bind([knobs]), out)
+    call steps % apply(instants, steps % bind([design_field]), out)
     call out % real_vector(dt)
     call steps % abscissae(n, dt, t)
   end subroutine partitioned_values
 
   !===================================================================!
-  ! The points of the axis the weights sit at: a partition's are its
+  ! The points of the axis at which the weights are located: a partition's are its
   ! instants, accumulated from the steps; the gauss kind's are its
   ! nodes. One weight per point either way.
   !===================================================================!

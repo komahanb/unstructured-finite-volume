@@ -1,14 +1,15 @@
 !=====================================================================!
 ! SET STORE
 !
-! One owner for the ordinary facts attached to set identities:
-! extension, name and declared inclusion. The separate maps remain the
-! storage detail. Callers that only need to read or declare sets should
-! not carry three side tables through every signature.
+! One owner for the data attached to set identities: extension, name
+! and declared inclusion. The separate maps remain the storage
+! detail. Callers that only read or declare sets need not pass three
+! side tables through every signature.
 !
-! The store does not make labels, extents and inclusions one vague
-! attribute system. It keeps the three laws distinct and gives each a
-! narrow verb. What disappears is the public plumbing, not the meaning.
+! The store does not merge labels, extents and inclusions into one
+! attribute system. It keeps the three maps distinct and gives each a
+! narrow procedure. What is removed is the public interface to three
+! maps, not the meaning.
 !
 ! Lifetime law: every stored key is a copied token owned by the map
 ! below. No graph pointer is stored here, and no TARGET argument is
@@ -92,16 +93,16 @@ contains
 
   end subroutine include_in
 
-  subroutine declare_subobject(this, members, roll, text, ambient)
+  subroutine declare_subobject(this, members, listed_members, text, ambient)
 
     class(set_store), intent(inout) :: this
     type(graph)     , intent(out)   :: members
-    integer         , intent(in)    :: roll(:)
+    integer         , intent(in)    :: listed_members(:)
     character(len=*), intent(in)    :: text
     type(graph)     , intent(in)    :: ambient
 
     call members % declare()
-    call this % bind(members, listed_set_representation(roll))
+    call this % bind(members, listed_set_representation(listed_members))
     call this % name(members, text)
     call this % include_in(members, ambient)
 

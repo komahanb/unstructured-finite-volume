@@ -1,18 +1,18 @@
 !=====================================================================!
-! A rule stated at one instant of a time hierarchy, held as data: a
+! A rule stated at one instant of a time hierarchy, stored as data: a
 ! graph whose vertices are typed operators and whose edges are the
 ! reads between them.
 !
 !      input graph    the instants
-!      state slot     the state, one field over the instants with
+!      state argument the state, one field over the instants with
 !                     num_components() components: the component of
-!                     degree d at instant k is held at (k-1)(N+1)+d+1
-!      design slot    the design, one value per instant, so a design
+!                     degree d at instant k is stored at (k-1)(N+1)+d+1
+!      design argument the design, one value per instant, so a design
 !                     that varies in time needs no other shape
 !      output         one value per instant
 !
 ! A leaf reads a component of an argument - the state's component of
-! degree d, or the design - or holds a constant. Every other vertex
+! degree d, or the design - or stores a constant. Every other vertex
 ! is an arithmetic operation, a power, or an elementary function of
 ! the vertices it reads. The vertices are stored in evaluation order,
 ! every read before its reader, and the root is the last one.
@@ -33,14 +33,14 @@
 !
 ! The rule is evaluated over derivative_terms by one loop over the
 ! vertices, so the value and every mixed partial in the directions
-! asked for come from one pass and are exact; nothing is
+! requested come from one pass and are exact; nothing is
 ! differentiated symbolically. A variation may name either argument,
 ! so the Q-partials, the X-partials and the mixed Q-X partials all
-! come from one path and to any degree. A Newton block wants the
+! come from one path and to any degree. A Newton block requires the
 ! Q-partials as a row of numbers, which is one call per degree with a
 ! direction that is one at that degree and zero elsewhere.
 !
-!             WHAT IS REFUSED
+!             WHAT IS REJECTED
 !
 ! A derivative of anything but the unknown, or of negative degree; a
 ! rule stated at a degree below one, or below the highest component
@@ -86,8 +86,8 @@ module operation_expression
   ! the arguments a leaf reads, in the operation's order
   ! THE COORDINATE A DERIVATIVE FOLLOWS, named by its place among the
   ! coordinates the state is declared over. One is the first declared;
-  ! nothing here says which that is, and nothing here limits how many
-  ! there are.
+  ! nothing here specifies which that is, and nothing here limits how
+  ! many there are.
   integer, parameter, public :: FIRST_COORDINATE = 1
 
   integer, parameter :: ARGUMENT_STATE  = 1
@@ -103,9 +103,9 @@ module operation_expression
   type, extends(operation) :: expression
 
      ! ONE DEGREE PER COORDINATE, in the order the coordinates are
-     ! declared. The first carries the component of order zero, which
-     ! is the state itself, so it holds degrees(1) + 1 components and
-     ! every later coordinate holds degrees(c), its orders running
+     ! declared. The first includes the component of order zero, which
+     ! is the state itself, so it stores degrees(1) + 1 components and
+     ! every later coordinate stores degrees(c), its orders running
      ! from one.
      integer, allocatable, private :: degrees(:)
 
@@ -274,7 +274,7 @@ contains
 
   !===================================================================!
   ! A rule bound to the degree of the state it reads. A degree below
-  ! the highest component read stops the program: the state holds no
+  ! the highest component read stops the program: the state stores no
   ! such component.
   !===================================================================!
 
@@ -291,7 +291,7 @@ contains
 
   !===================================================================!
   ! A rule bound to a degree along each coordinate the state is
-  ! declared over. The one-coordinate spelling is this with a list of
+  ! declared over. The one-coordinate form is this with a list of
   ! one, so a rule over time alone reads no differently than before.
   !===================================================================!
 
@@ -309,7 +309,7 @@ contains
 
     do c = 1, size(degrees)
        if (this % highest_degree_along(c) > degrees(c)) then
-          error stop 'operation_expression: the rule reads a component the state holds'
+          error stop 'operation_expression: the rule reads a component the state stores'
        end if
     end do
     if (this % highest_degree_along(size(degrees) + 1) >= 0) then
@@ -539,10 +539,10 @@ contains
        case (VERTEX_LEAF)
           if (this % position(i) == ARGUMENT_STATE) then
              ! the point's components run along time first, then along
-             ! space, so a spatial order sits past the time degree
+             ! space, so a spatial order is indexed past the time degree
              at = this % component_at(this % along(i), this % order(i))
              if (at > ubound(q, 1)) then
-                error stop 'operation_expression: the state holds the component read'
+                error stop 'operation_expression: the state stores the component read'
              end if
              v(i) = q(at)
           else
@@ -587,8 +587,8 @@ contains
 
   !===================================================================!
   ! The highest order this rule names along one coordinate, and minus
-  ! one when it names none along it. One question serves every
-  ! coordinate, so adding one asks for no new procedure.
+  ! one when it names none along it. One query serves every
+  ! coordinate, so adding a coordinate requires no new procedure.
   !===================================================================!
 
   pure integer function highest_degree_along(this, coordinate)
@@ -681,7 +681,7 @@ contains
   end function component_at
 
   !===================================================================!
-  ! How many components one point of the state carries: the first
+  ! How many components one point of the state stores: the first
   ! coordinate's orders including zero, and each later coordinate's
   ! orders from one.
   !===================================================================!
@@ -704,7 +704,7 @@ contains
   end function equation_degree
 
   !===================================================================!
-  ! THE MACHINERY.
+  ! THE OPERATION INTERFACE.
   !
   ! One value per instant.
   !===================================================================!
@@ -768,7 +768,7 @@ contains
   end subroutine seeded
 
   !===================================================================!
-  ! A real vector as terms that carry no derivative yet.
+  ! A real vector as terms with no derivative direction set yet.
   !===================================================================!
 
   subroutine constants(x, n, terms)
@@ -788,7 +788,7 @@ contains
   end subroutine constants
 
   !===================================================================!
-  ! One direction laid into every entry of a quantity.
+  ! One direction set in every entry of a quantity.
   !===================================================================!
 
   subroutine seed(x, i, v)
@@ -810,7 +810,7 @@ contains
   end subroutine seed
 
   !===================================================================!
-  ! The rule at every instant, answering the coefficient of the full
+  ! The rule at every instant, returning the coefficient of the full
   ! subset: the value with no directions, the mixed partial with n.
   !===================================================================!
 
@@ -828,10 +828,10 @@ contains
     nd = this % num_components()
 
     if (size(q) /= input_graph % num_vertices() * nd) then
-       error stop 'operation_expression: the state holds one component per degree per instant'
+       error stop 'operation_expression: the state stores one component per degree per instant'
     end if
     if (size(nu) /= input_graph % num_vertices()) then
-       error stop 'operation_expression: the design holds one value per instant'
+       error stop 'operation_expression: the design stores one value per instant'
     end if
 
     allocate(values(input_graph % num_vertices()))

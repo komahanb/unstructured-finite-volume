@@ -7,8 +7,8 @@
 ! view_mesh_geometry: the loader parses the file into member sets,
 ! the cell-to-vertex relation, the vertex coordinates, and the tag
 ! names; the geometry module derives the face set, the incidence
-! relations, and every measurement; this builder places the results
-! as the mesh - the directed view whose vertices are cells and
+! relations, and every measurement; this builder assembles the
+! results as the mesh - the directed view whose vertices are cells and
 ! whose edges are the two-cell faces, with the measurements as
 ! fields and the tag names on the boundary edges.
 !
@@ -35,12 +35,12 @@ module view_mesh_builder
 contains
 
   !===================================================================!
-  ! Load, derive, place. Tails and heads come from the face-to-cell
+  ! Load, derive, assemble. Tails and heads come from the face-to-cell
   ! relation - a face with one cell is a boundary face, an edge
-  ! without a head. The per-face normal is the one its tail cell
-  ! sees; the per-face weight is the tail cell's interpolation
-  ! share. Tag names are stamped on the boundary faces, read from
-  ! the file's tag table by tag number.
+  ! without a head. The per-face normal is the normal oriented from
+  ! its tail cell; the per-face weight is the tail cell's
+  ! interpolation share. Tag names are assigned to the boundary faces,
+  ! read from the file's tag table by tag number.
   !===================================================================!
 
   impure type(mesh) function mesh_from_gmsh(filename) result(m)

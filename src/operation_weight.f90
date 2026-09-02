@@ -1,13 +1,13 @@
 !=====================================================================!
 ! The weight of an edge: the product of a family's dimensionless
-! coefficient with the step scaling that carries the source's units
+! coefficient with the step scaling that converts the source's units
 ! into its constraint's.
 !
 !      weight  =  alpha  *  dt_head ** (source_degree - determines)
 !
-! This is the product of the two fields the coupling carries - the
+! This is the product of the two fields the coupling stores - the
 ! tau field of step powers and the alpha field of coefficients - and
-! it is the entry the constraint row holds for that source. The row
+! it is the entry the constraint row stores for that source. The row
 ! itself reads
 !
 !      (the component this constraint determines)
@@ -20,17 +20,18 @@
 ! one on the incoming component and dt a_ij on the stage above it.
 !
 ! A weight is an edge function over the same coupling as the
-! coefficients it multiplies, so it plugs in wherever they do and the
-! caller chooses whether the step powers are already carried.
+! coefficients it multiplies, so it is substitutable wherever they
+! are, and the caller chooses whether the step powers are already
+! included.
 !
 !             THE STEP AT A STAGE
 !
 ! The step is read at the edge's head, so a coupling whose vertices
-! are stages must carry the step of the step being taken at every one
-! of those stage vertices, not only at the two instants. A stage
-! vertex left at zero stops the program in any edge whose exponent is
-! negative, and silently carries the wrong scale in any edge whose
-! exponent is positive.
+! are stages must store the step size of the step being taken at
+! every one of those stage vertices, not only at the two instants. A
+! stage vertex left at zero stops the program in any edge whose
+! exponent is negative, and produces the wrong scale without an
+! error in any edge whose exponent is positive.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -66,8 +67,8 @@ module operation_weight
 contains
 
   !===================================================================!
-  ! The weights of a family. The family is copied in, so the weights
-  ! outlive whatever was handed here.
+  ! The weights of a family. The family is copied, so the weights
+  ! outlive the argument passed here.
   !===================================================================!
 
   function create(coefficients) result(this)
@@ -91,7 +92,7 @@ contains
   end function weight_name
 
   !===================================================================!
-  ! The product. Both factors carry their own partials in the steps,
+  ! The product. Both factors store their own partials in the steps,
   ! so the product rule is applied by the arithmetic and the result
   ! is exact at every degree.
   !===================================================================!

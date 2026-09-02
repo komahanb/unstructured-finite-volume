@@ -51,7 +51,7 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 
 ## assembler
 **Location:** `src/transform_assembler.f90:106`  
-**Description:** Transform assembler that glues coarser blocks to finer neighboring domains.
+**Description:** Transform assembler that couples coarser blocks to finer neighboring domains.
 
 - `defined_on_graph` - Query assembly support on graph structure
 - `defined_on_data` - Query assembly support on field values
@@ -123,18 +123,18 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 - `num_degrees` - Count of state degrees
 - `num_points` - Count of spatial points
 - `points_at` - Get points in block domain
-- `num_carried` - Count of fields carried
-- `carried_unknowns` - Get list of carried unknowns
-- `held_values` - Get held field values
-- `first_held` - Get index of first held value
+- `num_fixed` - Count of fields carried
+- `fixed_unknowns` - Get list of carried unknowns
+- `fixed_values` - Get held field values
+- `first_fixed` - Get index of first held value
 
 ---
 
 ## block_sinks
 **Location:** `application/gti_chain.f90:210`  
-**Description:** One block sinks and jacobian diagonal on them block-level flow information.
+**Description:** One block's sinks and the jacobian diagonal on them, block-level data.
 
-- (no public procedures - data holder)
+- (no public procedures - data container)
 
 ---
 
@@ -191,21 +191,21 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 
 ## chain_system
 **Location:** `application/gti_chain.f90:148`  
-**Description:** Stamp of one block tangent at frozen state every order either route.
+**Description:** Version of one block tangent at frozen state, every order, either route.
 
-- (no public procedures - data holder)
+- (no public procedures - data container)
 
 ---
 
 ## change_record
 **Location:** `src/map_change_protocol.f90:40`  
-**Description:** Protocol tracking which steps reported changes touch flag state validation.
+**Description:** Protocol tracking which steps reported changes modify; flag state validation.
 
 - `reset` - Reset change record to initial state
 - `mark_attempted` - Mark that change was attempted
 - `mark_applied` - Mark that change was successfully applied
 - `mark_checked` - Mark that change was validated
-- `mark_kept` - Mark that change is retained
+- `mark_committed` - Mark that change is retained
 - `mark_reverted` - Mark that change was undone
 - `mark_failed` - Mark that change failed
 - `validate_terminal` - Check if record is in valid terminal state
@@ -214,7 +214,7 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 
 ## coarsener
 **Location:** `src/transform_coarsener.f90:70`  
-**Description:** Transform that glues and coarsens finer blocks into aggregated structure.
+**Description:** Transform that couples and coarsens finer blocks into aggregated structure.
 
 - `defined_on_graph` - Query coarsening support on graph
 - `defined_on_data` - Query coarsening support on data
@@ -252,7 +252,7 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 
 ## counted_set_representation
 **Location:** `src/map_set_representation.f90:109`  
-**Description:** Counted representation storing member count O(1) lookup whatever size is.
+**Description:** Counted representation storing member count, O(1) lookup at any size.
 
 - `num_members` - Count of members in set
 - `member` - Get member at given local index
@@ -262,7 +262,7 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 
 ## coupling_reach
 **Location:** `application/gti_block.f90:87`  
-**Description:** Block coupling reach along step direction vertices each block reads each.
+**Description:** Block coupling reach along the step direction: which vertices each block reads.
 
 - (no public procedures)
 
@@ -371,10 +371,10 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 - `boundary_edges` - Get boundary edges
 - `tagged_edges` - Get tagged edges
 - `owned_vertices` - Get owned vertices
-- `borrowed_vertices` - Get borrowed vertices
+- `halo_vertices` - Get halo vertices
 - `overlap_vertices` - Get overlap vertices
 - `owned_edges` - Get owned edges
-- `borrowed_edges` - Get borrowed edges
+- `halo_edges` - Get halo edges
 - `overlap_edges` - Get overlap edges
 - `incident_edges` - Get edges incident to vertex
 - `adjacent_vertices` - Get vertices adjacent to vertex
@@ -399,7 +399,7 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 
 ## discretization
 **Location:** `src/operation_discretization.f90:33`  
-**Description:** Stencil pattern on dependent variable which unknown feeds which.
+**Description:** Stencil pattern on dependent variable: which unknown is read by which.
 
 - `dependencies` - Get stencil dependencies
 
@@ -489,9 +489,9 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 
 ---
 
-## family_holder
+## family_container
 **Location:** `application/gti_expansion.f90:94`  
-**Description:** Family holder integer tag stores reference to family object.
+**Description:** Family container: integer tag, stores reference to family object.
 
 - (no public procedures)
 
@@ -518,7 +518,7 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 - `set_logical_vector` - Set from logical vector
 - `character_vector` - Get as character vector
 - `set_character_vector` - Set from character vector
-- `hold` - Hold values in field
+- `store` - Store values in field
 
 ---
 
@@ -537,7 +537,7 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 
 ## fit
 **Location:** `src/operation_fitting.f90:62`  
-**Description:** Fit operation holds form level coefficients maintained by fit sector.
+**Description:** Fit operation stores form-level coefficients maintained by the fit.
 
 - `name` - Name of fit operation
 - `apply` - Apply fit operation
@@ -546,7 +546,7 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 
 ## fixed_grid
 **Location:** `src/operation_grid.f90:111`  
-**Description:** Fixed grid weights are steps themselves carried as constants form.
+**Description:** Fixed grid: the weights are the steps themselves, stored as constants.
 
 - `name` - Name of fixed grid
 - `weight_of` - Get weight at vertex
@@ -570,7 +570,7 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 
 ## form_optimizer
 **Location:** `src/operation_fitting.f90:86`  
-**Description:** Optimizer holds no machinery itself reads form and adapts coefficients.
+**Description:** Optimizer stores no state itself; reads form and adapts coefficients.
 
 - `adapt` - Adapt form coefficients
 
@@ -595,7 +595,7 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 
 ## functional_holder
 **Location:** `application/gti_chain.f90:138`  
-**Description:** Functional holder storage so several can be handed over simultaneously.
+**Description:** Functional container storage so several can be passed simultaneously.
 
 - (no public procedures)
 
@@ -653,7 +653,7 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 
 ## halving_policy
 **Location:** `src/operation_step_policy.f90:68`  
-**Description:** Step halving policy proposing judging step sizes retry logic.
+**Description:** Step halving policy: proposing and evaluating step sizes, retry logic.
 
 - `propose` - Propose step size
 - `judge` - Evaluate step success
@@ -718,7 +718,7 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 
 ## label_pair
 **Location:** `src/map_label.f90:77`  
-**Description:** One row which set by value what it is called specification.
+**Description:** One row: which set, by value, and its label.
 
 - (no public procedures)
 
@@ -728,10 +728,10 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 **Location:** `src/view_level.f90:78`  
 **Description:** Storage of spatial hierarchy levels nodes relations assembler coupling.
 
-- `fresh` - Create fresh level
+- `allocate_node` - Create new level
 - `node` - Get node at index
 - `num_nodes` - Count nodes
-- `spine` - Get spine relation
+- `member_list` - Get the level chain relation
 - `assemble` - Assemble level
 - `couple` - Couple levels
 - `refuse_assignment` - Prevent assignment
@@ -762,7 +762,7 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 
 ## listed_set_representation
 **Location:** `src/map_set_representation.f90:131`  
-**Description:** Listed representation explicit roll member values declaration order describe.
+**Description:** Listed representation: explicit list of member values in declaration order.
 
 - `num_members` - Count members
 - `member` - Get member at index
@@ -863,9 +863,9 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 - `partial_action` - Apply directional derivative
 - `compiled_tangent` - Get compiled derivatives
 - `declare_arguments` - Declare argument space
-- `stamped` - Get stamped derivatives
-- `stamp` - Stamp forward derivatives
-- `stamp_transposed` - Stamp adjoint derivatives
+- `versioned` - Get versioned derivatives
+- `version` - Version forward derivatives
+- `version_transposed` - Version adjoint derivatives
 - `num_arguments` - Count arguments
 - `argument` - Get argument by index
 - `owns` - Test ownership
@@ -876,7 +876,7 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 
 ## paraview_writer
 **Location:** `src/view_paraview_writer.f90:160`  
-**Description:** Holds drawn data three coordinates point cells ragged organization.
+**Description:** Stores drawn data: three coordinates, point cells, ragged organization.
 
 - `write` - Write mesh to paraview format
 
@@ -907,7 +907,7 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 
 ## partitioner
 **Location:** `src/transform_partitioner.f90:115`  
-**Description:** Transform how cut into how many which part hand back partition.
+**Description:** Transform: how to cut, into how many parts, which part; returns the partition.
 
 - `defined_on_graph` - Query partition support on graph
 - `defined_on_data` - Query partition support on data
@@ -918,7 +918,7 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 
 ## path_derivative
 **Location:** `src/operation_chain_rule.f90:60`  
-**Description:** Derivative of path occupied carries x^(k) direction field unoccupied.
+**Description:** Derivative of path: occupied stores the x^(k) direction field, or unoccupied.
 
 - (no public procedures)
 
@@ -936,7 +936,7 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 
 ## pruner
 **Location:** `src/operation_fitting.f90:119`  
-**Description:** Pruning form optimizer adaptively removes weak coefficients from.
+**Description:** Pruning form optimizer adaptively removes small coefficients from the form.
 
 - `adapt` - Adapt and prune form
 
@@ -944,7 +944,7 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 
 ## ragged
 **Location:** `src/relation_binary.f90:247`  
-**Description:** Ragged array structure padded shape fixed width walk reads.
+**Description:** Ragged array structure: padded shape, fixed-width traversal reads.
 
 - `num_lists` - Count lists
 - `length` - Get length of list
@@ -1024,7 +1024,7 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 
 - `apply` - Apply the change
 - `check` - Validate change
-- `keep` - Accept change permanently
+- `commit` - Commit change permanently
 - `revert` - Undo the change
 
 ---
@@ -1040,13 +1040,13 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 - `advection_rhs_coefficients` - Advection RHS coefficients
 - `operator_coefficients` - Operator coefficients
 - `boundary_values` - Boundary value data
-- `wall_relation` - Wall relation data
+- `boundary_relation` - Boundary relation data
 
 ---
 
-## room
+## spatial_domain
 **Location:** `application/gti_space.f90:59`  
-**Description:** Mesh space room corner vertices face edges cells connectivity.
+**Description:** Mesh space container: corner vertices, face edges, cells, connectivity.
 
 - (no public procedures)
 
@@ -1167,10 +1167,10 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 
 ## step_policy
 **Location:** `src/operation_step_policy.f90:32`  
-**Description:** Abstract step policy proposing judging retrying stepping logic.
+**Description:** Abstract step policy: proposing, evaluating and retrying steps.
 
 - `propose` - Propose step size
-- `judge` - Judge step success
+- `judge` - Evaluate step success
 - `retry` - Retry step
 
 ---
@@ -1186,14 +1186,14 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 
 ## stored_directed_graph
 **Location:** `src/view_directed_stored.f90:79`  
-**Description:** Stored graph keeps own structure arrays vertices edges relations.
+**Description:** Stored graph owns its structure arrays: vertices, edges, relations.
 
 - `id` - Get identifier
 - `num_vertices` - Count vertices
 - `num_edges` - Count edges
 - `vertex_set` - Get vertices
 - `edge_set` - Get edges
-- `name_carriers` - Get name carriers
+- `name_domains` - Get name carriers
 - `edge_tail` - Get edge tail
 - `edge_head` - Get edge head
 - `edge_has_head` - Test edge head
@@ -1207,10 +1207,10 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 - `boundary_edges` - Get boundary edges
 - `tagged_edges` - Get tagged edges
 - `owned_vertices` - Get owned vertices
-- `borrowed_vertices` - Get borrowed vertices
+- `halo_vertices` - Get halo vertices
 - `overlap_vertices` - Get overlap vertices
 - `owned_edges` - Get owned edges
-- `borrowed_edges` - Get borrowed edges
+- `halo_edges` - Get halo edges
 - `overlap_edges` - Get overlap edges
 - `incident_edges` - Get incident edges
 - `adjacent_vertices` - Get adjacent vertices
@@ -1226,7 +1226,7 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 
 ## stored_field
 **Location:** `src/field_stored.f90:86`  
-**Description:** Stored field name unit domain width live store allocation.
+**Description:** Stored field: name, unit, domain, width, allocated store.
 
 - `name` - Name of field
 - `units` - Units of values
@@ -1239,7 +1239,7 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 
 ## stored_functional
 **Location:** `src/field_functional.f90:53`  
-**Description:** Stored functional value whichever kind last set held store.
+**Description:** Stored functional: the value of whichever kind was last set.
 
 - `name` - Name of functional
 - `units` - Units of value
@@ -1252,7 +1252,7 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 
 ## stored_relation
 **Location:** `src/relation_finitary.f90:207`  
-**Description:** Stored relation materializes tuples scans domain identity answers.
+**Description:** Stored relation materializes tuples; scans domain; returns identity.
 
 - `arity` - Get arity
 - `domain` - Query domain
@@ -1298,7 +1298,7 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 
 ## transposed_relation
 **Location:** `src/relation_binary.f90:218`  
-**Description:** Transpose view borrower holds base pointer answers every question.
+**Description:** Transpose view: stores a base pointer and evaluates every query through it.
 
 - `domain` - Query domain set
 - `has` - Test if contains
@@ -1313,7 +1313,7 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 **Location:** `src/operation_stencil.f90:87`  
 **Description:** Dynamic triple list for sparse matrix coefficients doubling growth.
 
-- `place` - Add entry to list
+- `assign` - Add entry to list
 - `entries` - Get entry data
 
 ---
@@ -1334,7 +1334,7 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 - `bind` - Bind to value map
 - `apply` - Apply the change
 - `check` - Validate change
-- `keep` - Accept change
+- `commit` - Commit change
 - `revert` - Undo change
 
 ---
@@ -1374,12 +1374,12 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 
 ---
 
-## walk
-**Location:** `src/operation_walk.f90:71`  
-**Description:** Walk question answered starting point structured graph navigation.
+## traversal
+**Location:** `src/operation_traversal.f90:71`  
+**Description:** Traversal query evaluated from a starting point; structured graph navigation.
 
-- `name` - Name of walk
-- `apply` - Apply walk operation
+- `name` - Name of traversal
+- `apply` - Apply traversal operation
 
 ---
 

@@ -1,10 +1,10 @@
 #!/bin/bash
 # build the ufvm library into lib/.
-# the compiler is auto-detected in Makefile.in, so a bare make just works -
+# the compiler is auto-detected in Makefile.in, so a bare make is sufficient -
 # here, in every example and in the tests. override with `make F90=...`.
 set -e
 
-# PRECISION=quad builds the whole tower at real128 into lib_quad/;
+# PRECISION=quad builds the whole library at real128 into lib_quad/;
 # the default is real64 into lib/.
 PRECISION=${PRECISION:-double}
 

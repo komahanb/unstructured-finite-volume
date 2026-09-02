@@ -11,7 +11,7 @@
 !        element -> (entityDim, entityTag) -> physical tag
 !
 !   - $Nodes is block-structured: per entity block, all node tags then
-!     all coordinates (node tags may be sparse - mapped through find).
+!     all coordinates (node tags may be sparse - mapped through findloc).
 !   - $Elements is block-structured: per entity block, element lines
 !     with no per-element tag list.
 !
@@ -28,7 +28,7 @@ module view_gmsh_loader
   use view_mesh_loader , only : mesh_loader
   use util_file            , only : file
   use util_string          , only : string
-  use view_mesh_geometry   , only : find, element_dimension, &
+  use view_mesh_geometry   , only : element_dimension, &
        & element_num_vertices, widest_element
   use util_verbosity      , only : verbosity
 
@@ -36,6 +36,15 @@ module view_gmsh_loader
 
   private
   public :: gmsh_loader
+
+  !-------------------------------------------------------------------!
+  ! The sections the parser reads, in the order they are numbered.
+  !-------------------------------------------------------------------!
+
+  integer, parameter :: num_sections = 5
+  integer, parameter :: MESH = 1, PHYSICAL_NAMES = 2, ENTITIES = 3, NODES = 4, ELEMENTS = 5
+  character(len=13), parameter :: sections(num_sections) = &
+       & [character(len=13) :: 'MeshFormat', 'PhysicalNames', 'Entities', 'Nodes', 'Elements']
 
   !-------------------------------------------------------------------!
   ! The interface to construct a mesh_loader for GMSH.
@@ -134,18 +143,11 @@ contains
     ! Local variables.
     type(string), allocatable, dimension(:) :: lines
 
-    ! The section markers.
-    integer :: idx_start_mesh     , idx_end_mesh
-    integer :: idx_start_physical_names, idx_end_physical_names
-    integer :: idx_start_entities , idx_end_entities
-    integer :: idx_start_nodes    , idx_end_nodes
-    integer :: idx_start_elements , idx_end_elements
+    ! The section markers: the line each section starts and ends on.
+    integer :: section_start(num_sections), section_end(num_sections), s
 
-    ! The entity -> physical-tag maps: one (tag, phys) pair list per dimension.
-    integer, allocatable :: ent_tag0(:), ent_phys0(:)   ! Points.
-    integer, allocatable :: ent_tag1(:), ent_phys1(:)   ! Curves.
-    integer, allocatable :: ent_tag2(:), ent_phys2(:)   ! Surfaces.
-    integer, allocatable :: ent_tag3(:), ent_phys3(:)   ! Volumes.
+    ! The entity table: each entity's dimension, tag and physical tag.
+    integer, allocatable :: ent_dim(:), ent_tag(:), ent_phys(:)
 
     integer :: mesh_dim
 
@@ -154,19 +156,12 @@ contains
     call this % file % read_lines(lines)
 
     if (verbosity .ge. 1) write(*,'(a)') "Identifying tags..."
-    call find_tags(lines, &
-         & idx_start_mesh           , idx_end_mesh  , &
-         & idx_start_physical_names , idx_end_physical_names , &
-         & idx_start_entities       , idx_end_entities , &
-         & idx_start_nodes          , idx_end_nodes, &
-         & idx_start_elements       , idx_end_elements)
+    call find_tags(lines, section_start, section_end)
 
     if (verbosity .ge. 1) then
-       write(*,*) "mesh           : " , idx_start_mesh           , idx_end_mesh
-       write(*,*) "physical names : " , idx_start_physical_names , idx_end_physical_names
-       write(*,*) "entities       : " , idx_start_entities       , idx_end_entities
-       write(*,*) "nodes          : " , idx_start_nodes          , idx_end_nodes
-       write(*,*) "elements       : " , idx_start_elements       , idx_end_elements
+       do s = 1, num_sections
+          write(*,*) sections(s), " : ", section_start(s), section_end(s)
+       end do
     end if
 
     process_mesh_version: block
@@ -177,7 +172,7 @@ contains
       if (verbosity .ge. 1) write(*,'(a)') "Reading mesh information..."
 
       ! The first line of $MeshFormat contains the version number.
-      associate(mlines => lines(idx_start_mesh+1:idx_start_mesh+1))
+      associate(mlines => lines(section_start(MESH)+1:section_start(MESH)+1))
         call mlines(1) % tokenize(" ", num_tokens, tokens)
         if (floor(tokens(1) % as_real()) .ne. 4) then
            print *, "mesh format ", tokens(1) % str, &
@@ -200,17 +195,14 @@ contains
 
       if (verbosity .ge. 1) write(*,'(a)') "Reading physical tags..."
 
-      associate(tag_lines => lines(idx_start_physical_names+1:idx_end_physical_names-1))
+      associate(tag_lines => lines(section_start(PHYSICAL_NAMES)+1:section_end(PHYSICAL_NAMES)-1))
 
         ! Set the intent(out) variable for the number of tags present.
         num_tags = tag_lines(1) % as_integer()
 
         ! Allocate space for the other two return variables.
         allocate(tag_info(num_tags))
-        allocate(tag_numbers(num_tags))
-        tag_numbers = 0
-        allocate(tag_physical_dimensions(num_tags))
-        tag_physical_dimensions = 0
+        allocate(tag_numbers(num_tags), tag_physical_dimensions(num_tags), source=0)
 
         do iline = 1, num_tags
 
@@ -248,70 +240,39 @@ contains
     end block process_tags
 
     !----------------------------------------------------------------!
-    ! Build the entity -> physical-tag maps from $Entities. An
-    ! element gets its physical tag from the entity it belongs to
-    ! (a 4.1 change).
+    ! Build the entity table from $Entities. An element takes its
+    ! physical tag from the entity it belongs to (a 4.1 change). The
+    ! header counts the points, curves, surfaces and volumes, and the
+    ! lines follow in that order; a point line reads tag x y z numPhys
+    ! phys..., the others tag bbox(6) numPhys phys..., so numPhys is
+    ! token 5 of a point and token 8 otherwise.
     !----------------------------------------------------------------!
 
     process_entities: block
 
       type(string), allocatable :: tokens(:)
       integer                   :: num_tokens
-      integer                   :: np, nc, ns, nv, ie, il, nphys
+      integer                   :: counts(0:3), d, i, ie, il, at
 
       if (verbosity .ge. 1) write(*,'(a)') "Reading entities..."
 
-      ! The header line counts the points, curves, surfaces and volumes.
-      il = idx_start_entities + 1
+      il = section_start(ENTITIES) + 1
       call lines(il) % tokenize(" ", num_tokens, tokens)
-      np = tokens(1) % as_integer()
-      nc = tokens(2) % as_integer()
-      ns = tokens(3) % as_integer()
-      nv = tokens(4) % as_integer()
+      counts = tokens(1:4) % as_integer()
 
-      allocate(ent_tag0(np), ent_phys0(np))
-      ent_phys0 = 0
-      allocate(ent_tag1(nc), ent_phys1(nc))
-      ent_phys1 = 0
-      allocate(ent_tag2(ns), ent_phys2(ns))
-      ent_phys2 = 0
-      allocate(ent_tag3(nv), ent_phys3(nv))
-      ent_phys3 = 0
+      allocate(ent_dim(sum(counts)), ent_tag(sum(counts)), ent_phys(sum(counts)), source=0)
 
-      il = il + 1
-
-      ! A point line reads: tag x y z numPhys phys... (numPhys is token 5).
-      do ie = 1, np
-         call lines(il) % tokenize(" ", num_tokens, tokens)
-         ent_tag0(ie) = tokens(1) % as_integer()
-         nphys = tokens(5) % as_integer()
-         if (nphys .gt. 0) ent_phys0(ie) = tokens(6) % as_integer()
-         il = il + 1
-      end do
-
-      ! A curve, surface or volume line reads: tag bbox(6) numPhys phys... (numPhys is token 8).
-      do ie = 1, nc
-         call lines(il) % tokenize(" ", num_tokens, tokens)
-         ent_tag1(ie) = tokens(1) % as_integer()
-         nphys = tokens(8) % as_integer()
-         if (nphys .gt. 0) ent_phys1(ie) = tokens(9) % as_integer()
-         il = il + 1
-      end do
-
-      do ie = 1, ns
-         call lines(il) % tokenize(" ", num_tokens, tokens)
-         ent_tag2(ie) = tokens(1) % as_integer()
-         nphys = tokens(8) % as_integer()
-         if (nphys .gt. 0) ent_phys2(ie) = tokens(9) % as_integer()
-         il = il + 1
-      end do
-
-      do ie = 1, nv
-         call lines(il) % tokenize(" ", num_tokens, tokens)
-         ent_tag3(ie) = tokens(1) % as_integer()
-         nphys = tokens(8) % as_integer()
-         if (nphys .gt. 0) ent_phys3(ie) = tokens(9) % as_integer()
-         il = il + 1
+      ie = 0
+      do d = 0, 3
+         at = merge(5, 8, d == 0)
+         do i = 1, counts(d)
+            ie = ie + 1
+            il = il + 1
+            call lines(il) % tokenize(" ", num_tokens, tokens)
+            ent_dim(ie) = d
+            ent_tag(ie) = tokens(1) % as_integer()
+            if (tokens(at) % as_integer() .gt. 0) ent_phys(ie) = tokens(at + 1) % as_integer()
+         end do
       end do
 
       if (allocated(tokens)) deallocate(tokens)
@@ -323,7 +284,7 @@ contains
     !----------------------------------------------------------------!
     ! $Nodes is block-structured: per block, all node tags then all
     ! coordinates. Node tags can be sparse and are mapped through
-    ! find.
+    ! findloc.
     !----------------------------------------------------------------!
 
     process_nodes: block
@@ -334,17 +295,13 @@ contains
 
       if (verbosity .ge. 1) write(*,'(a)') "Reading nodes..."
 
-      il = idx_start_nodes + 1
+      il = section_start(NODES) + 1
       call lines(il) % tokenize(" ", num_tokens, tokens)
       numblocks    = tokens(1) % as_integer()
       num_vertices = tokens(2) % as_integer()
 
-      allocate(vertex_numbers(num_vertices))
-      vertex_numbers = 0
-      allocate(vertex_tags(num_vertices))
-      vertex_tags = 0
-      allocate(vertices(3, num_vertices))
-      vertices = 0.0_dp
+      allocate(vertex_numbers(num_vertices), vertex_tags(num_vertices), source=0)
+      allocate(vertices(3, num_vertices), source=0.0_dp)
 
       il    = il + 1
       ivert = 0
@@ -397,16 +354,16 @@ contains
 
       type(string), allocatable :: tokens(:)
       integer                   :: num_tokens
-      integer                   :: numblocks, il0, il, ib, k, i, j
+      integer                   :: numblocks, il0, il, ib, k, i
       integer                   :: bdim, btag, etype, nv, edim, phys
-      integer                   :: cell_idx, face_idx, edge_idx
+      integer                   :: filled(0:2)
 
       if (verbosity .ge. 1) write(*,'(a)') "Reading elements..."
 
-      il = idx_start_elements + 1
+      il = section_start(ELEMENTS) + 1
       call lines(il) % tokenize(" ", num_tokens, tokens)
       numblocks = tokens(1) % as_integer()
-      il0       = idx_start_elements + 2
+      il0       = section_start(ELEMENTS) + 2
 
       ! Pass A finds the mesh (top) dimension from the element types present.
       mesh_dim = 0
@@ -445,46 +402,17 @@ contains
          write(*,'(4x,a,i0)')  "num cells                 : ", num_cells
       end if
 
-      ! Allocate space for the cells (at most an 8-noded hexahedron).
-      allocate(cell_numbers(num_cells))
-      cell_numbers = 0
-      allocate(num_cell_vertices(num_cells))
-      num_cell_vertices = 0
-      allocate(cell_vertices(widest_element(3), num_cells))
-      cell_vertices = 0
-      allocate(cell_tags(num_cells))
-      cell_tags = 0
-      allocate(cell_types(num_cells))
-      cell_types = 0
-
-      ! Allocate space for the faces (at most a 4-noded quadrilateral).
-      allocate(face_numbers(num_faces))
-      face_numbers = 0
-      allocate(num_face_vertices(num_faces))
-      num_face_vertices = 0
-      allocate(face_vertices(widest_element(2), num_faces))
-      face_vertices = 0
-      allocate(face_tags(num_faces))
-      face_tags = 0
-      allocate(face_types(num_faces))
-      face_types = 0
-
-      ! Allocate space for the edges.
-      allocate(edge_numbers(num_edges))
-      edge_numbers = 0
-      allocate(edge_vertices(widest_element(1), num_edges))
-      edge_vertices = 0
-      allocate(num_edge_vertices(num_edges))
-      num_edge_vertices = 0
-      allocate(edge_tags(num_edges))
-      edge_tags = 0
-      allocate(edge_types(num_edges))
-      edge_types = 0
+      ! Allocate space for the cells, the faces and the edges, each as
+      ! wide as the widest element of its dimension.
+      allocate(cell_numbers(num_cells), num_cell_vertices(num_cells), cell_tags(num_cells), &
+           & cell_types(num_cells), cell_vertices(widest_element(3), num_cells), source=0)
+      allocate(face_numbers(num_faces), num_face_vertices(num_faces), face_tags(num_faces), &
+           & face_types(num_faces), face_vertices(widest_element(2), num_faces), source=0)
+      allocate(edge_numbers(num_edges), num_edge_vertices(num_edges), edge_tags(num_edges), &
+           & edge_types(num_edges), edge_vertices(widest_element(1), num_edges), source=0)
 
       ! Pass C fills the arrays, taking the physical tag from the block's entity.
-      cell_idx = 0
-      face_idx = 0
-      edge_idx = 0
+      filled = 0
       il = il0
       do ib = 1, numblocks
 
@@ -506,40 +434,20 @@ contains
             ! An element line reads: elementTag node1 node2 ...
             call lines(il) % tokenize(" ", num_tokens, tokens)
 
-            if (edim .eq. mesh_dim) then
-
-               cell_idx = cell_idx + 1
-               cell_numbers(cell_idx)      = tokens(1) % as_integer()
-               cell_types(cell_idx)        = etype
-               cell_tags(cell_idx)         = phys
-               num_cell_vertices(cell_idx) = nv
-               do j = 1, nv
-                  cell_vertices(j,cell_idx) = find(vertex_numbers, tokens(1+j) % as_integer())
-               end do
-
-            else if (edim .eq. mesh_dim - 1) then
-
-               face_idx = face_idx + 1
-               face_numbers(face_idx)      = tokens(1) % as_integer()
-               face_types(face_idx)        = etype
-               face_tags(face_idx)         = phys
-               num_face_vertices(face_idx) = nv
-               do j = 1, nv
-                  face_vertices(j,face_idx) = find(vertex_numbers, tokens(1+j) % as_integer())
-               end do
-
-            else if (edim .eq. mesh_dim - 2) then
-
-               edge_idx = edge_idx + 1
-               edge_numbers(edge_idx)      = tokens(1) % as_integer()
-               edge_types(edge_idx)        = etype
-               edge_tags(edge_idx)         = phys
-               num_edge_vertices(edge_idx) = nv
-               do j = 1, nv
-                  edge_vertices(j,edge_idx) = find(vertex_numbers, tokens(1+j) % as_integer())
-               end do
-
-            end if
+            select case (mesh_dim - edim)
+            case (0)
+               filled(0) = filled(0) + 1
+               call record(tokens, etype, phys, nv, filled(0), &
+                    & cell_numbers, cell_types, cell_tags, num_cell_vertices, cell_vertices)
+            case (1)
+               filled(1) = filled(1) + 1
+               call record(tokens, etype, phys, nv, filled(1), &
+                    & face_numbers, face_types, face_tags, num_face_vertices, face_vertices)
+            case (2)
+               filled(2) = filled(2) + 1
+               call record(tokens, etype, phys, nv, filled(2), &
+                    & edge_numbers, edge_types, edge_tags, num_edge_vertices, edge_vertices)
+            end select
 
             il = il + 1
 
@@ -571,102 +479,65 @@ contains
 
       integer, intent(in) :: edim, etag
 
-      select case (edim)
-      case (0)
-         entity_phys = ent_phys0(find(ent_tag0, etag))
-      case (1)
-         entity_phys = ent_phys1(find(ent_tag1, etag))
-      case (2)
-         entity_phys = ent_phys2(find(ent_tag2, etag))
-      case (3)
-         entity_phys = ent_phys3(find(ent_tag3, etag))
-      case default
-         entity_phys = 0
-      end select
+      integer :: at
+
+      entity_phys = 0
+      at = findloc(ent_dim == edim .and. ent_tag == etag, .true., dim=1)
+      if (at >= 1) entity_phys = ent_phys(at)
 
     end function entity_phys
+
+    !==================================================================!
+    ! Record one element line - its number, then its nodes - at
+    ! position `at` of one of the three element lists, the nodes
+    ! mapped from file tags to positions in vertex_numbers.
+    !==================================================================!
+
+    pure subroutine record(tokens, etype, phys, nv, at, numbers, types, tags, counts, vertices)
+
+      type(string), intent(in)    :: tokens(:)
+      integer     , intent(in)    :: etype, phys, nv, at
+      integer     , intent(inout) :: numbers(:), types(:), tags(:), counts(:), vertices(:,:)
+
+      integer :: j
+
+      numbers(at) = tokens(1) % as_integer()
+      types(at)   = etype
+      tags(at)    = phys
+      counts(at)  = nv
+      do j = 1, nv
+         vertices(j, at) = findloc(vertex_numbers, tokens(1 + j) % as_integer(), dim=1)
+      end do
+
+    end subroutine record
 
   end subroutine mesh_data
 
   !====================================================================!
-  ! Scan the file for the start and end line of each section the parser reads.
+  ! Scan the file for the start and end line of each section the
+  ! parser reads: $Name opens a section and $EndName closes it. A
+  ! section absent from the file has both lines zero.
   !====================================================================!
 
-  pure subroutine find_tags(lines, &
-       & idx_start_mesh           , idx_end_mesh  , &
-       & idx_start_physical_names , idx_end_physical_names , &
-       & idx_start_entities       , idx_end_entities , &
-       & idx_start_nodes          , idx_end_nodes, &
-       & idx_start_elements       , idx_end_elements)
+  pure subroutine find_tags(lines, section_start, section_end)
 
-    ! The arguments.
-    type(string)       , intent(in) :: lines(:)
+    type(string), intent(in)  :: lines(:)
+    integer     , intent(out) :: section_start(num_sections), section_end(num_sections)
 
-    integer, intent(out) :: idx_start_mesh           , idx_end_mesh
-    integer, intent(out) :: idx_start_physical_names , idx_end_physical_names
-    integer, intent(out) :: idx_start_entities       , idx_end_entities
-    integer, intent(out) :: idx_start_nodes          , idx_end_nodes
-    integer, intent(out) :: idx_start_elements       , idx_end_elements
+    integer :: iline, s
 
-    character(len=*), parameter :: BEGIN_MESH           = "$MeshFormat"
-    character(len=*), parameter :: END_MESH             = "$EndMeshFormat"
-    character(len=*), parameter :: BEGIN_PHYSICAL_NAMES = "$PhysicalNames"
-    character(len=*), parameter :: END_PHYSICAL_NAMES   = "$EndPhysicalNames"
-    character(len=*), parameter :: BEGIN_ENTITIES       = "$Entities"
-    character(len=*), parameter :: END_ENTITIES         = "$EndEntities"
-    character(len=*), parameter :: BEGIN_NODES          = "$Nodes"
-    character(len=*), parameter :: END_NODES            = "$EndNodes"
-    character(len=*), parameter :: BEGIN_ELEMENTS       = "$Elements"
-    character(len=*), parameter :: END_ELEMENTS         = "$EndElements"
+    section_start = 0
+    section_end   = 0
 
-    integer :: num_lines, iline
-
-    ! These indices are zero unless the section is found.
-    idx_start_entities = 0
-    idx_end_entities   = 0
-
-    num_lines = size(lines)
-    do iline = 1, num_lines
-       ! Find the mesh start and end.
-       if (index(lines(iline) % str, BEGIN_MESH) .eq. 1) then
-          idx_start_mesh = iline
-       end if
-       if (index(lines(iline) % str, END_MESH) .eq. 1) then
-          idx_end_mesh = iline
-       end if
-
-       ! Find the physical-names start and end.
-       if (index(lines(iline) % str, BEGIN_PHYSICAL_NAMES) .eq. 1) then
-          idx_start_physical_names = iline
-       end if
-       if (index(lines(iline) % str, END_PHYSICAL_NAMES) .eq. 1) then
-          idx_end_physical_names = iline
-       end if
-
-       ! Find the entities start and end.
-       if (index(lines(iline) % str, BEGIN_ENTITIES) .eq. 1) then
-          idx_start_entities = iline
-       end if
-       if (index(lines(iline) % str, END_ENTITIES) .eq. 1) then
-          idx_end_entities = iline
-       end if
-
-       ! Find the nodes start and end.
-       if (index(lines(iline) % str, BEGIN_NODES) .eq. 1) then
-          idx_start_nodes = iline
-       end if
-       if (index(lines(iline) % str, END_NODES) .eq. 1) then
-          idx_end_nodes = iline
-       end if
-
-       ! Find the elements start and end.
-       if (index(lines(iline) % str, BEGIN_ELEMENTS) .eq. 1) then
-          idx_start_elements = iline
-       end if
-       if (index(lines(iline) % str, END_ELEMENTS) .eq. 1) then
-          idx_end_elements = iline
-       end if
-
+    do iline = 1, size(lines)
+       do s = 1, num_sections
+          if (index(lines(iline) % str, '$' // trim(sections(s))) .eq. 1) then
+             section_start(s) = iline
+          end if
+          if (index(lines(iline) % str, '$End' // trim(sections(s))) .eq. 1) then
+             section_end(s) = iline
+          end if
+       end do
     end do
 
   end subroutine find_tags

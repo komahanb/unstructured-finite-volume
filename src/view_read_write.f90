@@ -151,8 +151,7 @@ module view_read_write
 
      ! the numbering, kept private to this module
      procedure, private :: require_position
-     procedure, private :: whole_of
-     procedure, private :: within
+     procedure, private :: offset
 
   end type bipartite_digraph
 
@@ -199,8 +198,8 @@ contains
        end if
        call this % require_position(from_part(a), from_vertex(a))
        call this % require_position(to_part(a)  , to_vertex(a))
-       tails(a) = this % whole_of(from_part(a), from_vertex(a))
-       heads(a) = this % whole_of(to_part(a)  , to_vertex(a))
+       tails(a) = this % offset(from_part(a)) + from_vertex(a)
+       heads(a) = this % offset(to_part(a))   + to_vertex(a)
     end do
 
     this % arcs = stored_directed_graph(first_order + second_order, tails=tails, heads=heads)
@@ -208,9 +207,17 @@ contains
   end function crossing
 
   !===================================================================!
-  ! THE NUMBERING, both ways. A vertex of the second part continues
-  ! after the first, and nothing outside this module reads that.
+  ! THE NUMBERING. A vertex of the second part continues after the
+  ! first: its whole number is its number within the part plus the
+  ! part's offset. Nothing outside this module reads that.
   !===================================================================!
+
+  pure integer function offset(this, part)
+    class(bipartite_digraph), intent(in) :: this
+    integer                 , intent(in) :: part
+    offset = 0
+    if (part == SECOND_PART) offset = this % first_order
+  end function offset
 
   !===================================================================!
   ! A PART IS ONE OF THE TWO, and a vertex is one the part contains.
@@ -230,20 +237,6 @@ contains
     end if
   end subroutine require_position
 
-  pure integer function whole_of(this, part, vertex)
-    class(bipartite_digraph), intent(in) :: this
-    integer                 , intent(in) :: part, vertex
-    whole_of = vertex
-    if (part == SECOND_PART) whole_of = this % first_order + vertex
-  end function whole_of
-
-  pure integer function within(this, whole) result(vertex)
-    class(bipartite_digraph), intent(in) :: this
-    integer                 , intent(in) :: whole
-    vertex = whole
-    if (whole > this % first_order) vertex = whole - this % first_order
-  end function within
-
   pure integer function order_of_part(this, part)
     class(bipartite_digraph), intent(in) :: this
     integer                 , intent(in) :: part
@@ -257,62 +250,61 @@ contains
     size_of_digraph = this % arcs % num_edges()
   end function size_of_digraph
 
+  pure integer function other_part(part)
+    integer, intent(in) :: part
+    other_part = -1
+    if (part == FIRST_PART ) other_part = SECOND_PART
+    if (part == SECOND_PART) other_part = FIRST_PART
+  end function other_part
+
   !===================================================================!
-  ! THE IN-NEIGHBOURHOOD N-(v): the vertices an arc runs from into v.
-  ! Every one of them lies in the other part, so no part need be
-  ! returned with them.
+  ! ONE STEP along the arcs, or against them, from a vertex in the
+  ! whole numbering: the stored graph's out- or in-neighbours, in
+  ! the order the arcs were given.
   !===================================================================!
+
+  pure subroutine step(this, whole, backwards, vertices)
+    class(bipartite_digraph), intent(in)  :: this
+    integer                 , intent(in)  :: whole
+    logical                 , intent(in)  :: backwards
+    integer, allocatable    , intent(out) :: vertices(:)
+    if (backwards) then
+       call this % arcs % incoming_vertices(whole, vertices)
+    else
+       call this % arcs % outgoing_vertices(whole, vertices)
+    end if
+  end subroutine step
+
+  !===================================================================!
+  ! THE IN-NEIGHBOURHOOD N-(v): the vertices an arc runs from into v,
+  ! and THE OUT-NEIGHBOURHOOD N+(v): the vertices an arc runs from v
+  ! into. Every one of them lies in the other part, so no part need
+  ! be returned with them: one step in the whole numbering, then the
+  ! other part's offset removed.
+  !===================================================================!
+
+  subroutine neighbourhood(this, part, vertex, backwards, neighbours)
+    class(bipartite_digraph), intent(in)  :: this
+    integer                 , intent(in)  :: part, vertex
+    logical                 , intent(in)  :: backwards
+    integer, allocatable    , intent(out) :: neighbours(:)
+    call this % require_position(part, vertex)
+    call step(this, this % offset(part) + vertex, backwards, neighbours)
+    neighbours = neighbours - this % offset(other_part(part))
+  end subroutine neighbourhood
 
   subroutine in_neighbourhood(this, part, vertex, neighbours)
-
     class(bipartite_digraph), intent(in)  :: this
     integer                 , intent(in)  :: part, vertex
     integer, allocatable    , intent(out) :: neighbours(:)
-
-    integer, allocatable :: incident(:)
-    integer :: v, a, kept
-
-    call this % require_position(part, vertex)
-    v = this % whole_of(part, vertex)
-    call this % arcs % incident_edges(v, incident)
-    allocate(neighbours(size(incident)))
-    kept = 0
-    do a = 1, size(incident)
-       if (this % arcs % edge_head(incident(a)) == v) then
-          kept = kept + 1
-          neighbours(kept) = this % within(this % arcs % edge_tail(incident(a)))
-       end if
-    end do
-    neighbours = neighbours(1:kept)
-
+    call neighbourhood(this, part, vertex, .true., neighbours)
   end subroutine in_neighbourhood
 
-  !===================================================================!
-  ! THE OUT-NEIGHBOURHOOD N+(v): the vertices an arc runs from v into.
-  !===================================================================!
-
   subroutine out_neighbourhood(this, part, vertex, neighbours)
-
     class(bipartite_digraph), intent(in)  :: this
     integer                 , intent(in)  :: part, vertex
     integer, allocatable    , intent(out) :: neighbours(:)
-
-    integer, allocatable :: incident(:)
-    integer :: v, a, kept
-
-    call this % require_position(part, vertex)
-    v = this % whole_of(part, vertex)
-    call this % arcs % incident_edges(v, incident)
-    allocate(neighbours(size(incident)))
-    kept = 0
-    do a = 1, size(incident)
-       if (this % arcs % edge_tail(incident(a)) == v) then
-          kept = kept + 1
-          neighbours(kept) = this % within(this % arcs % edge_head(incident(a)))
-       end if
-    end do
-    neighbours = neighbours(1:kept)
-
+    call neighbourhood(this, part, vertex, .false., neighbours)
   end subroutine out_neighbourhood
 
   integer function in_degree(this, part, vertex)
@@ -350,84 +342,67 @@ contains
   end function is_sink
 
   !===================================================================!
+  ! THE PATHS OF LENGTH TWO from a vertex, one arc into the other part
+  ! and one more the same way: the far end of each path, one entry
+  ! per path, in the order the arcs are stored - within the vertex's
+  ! own part, so the part's offset is removed. A path that returns to
+  ! the vertex is omitted. Forward follows the arcs; backwards runs
+  ! against them.
+  !===================================================================!
+
+  function two_paths(this, part, vertex, backwards) result(ends)
+
+    class(bipartite_digraph), intent(in) :: this
+    integer                 , intent(in) :: part, vertex
+    logical                 , intent(in) :: backwards
+    integer, allocatable :: ends(:)
+
+    integer, allocatable :: across(:), back(:)
+    integer :: y, u
+
+    call this % require_position(part, vertex)
+    u = this % offset(part) + vertex
+    call step(this, u, backwards, across)
+    ends = [integer ::]
+    do y = 1, size(across)
+       call step(this, across(y), backwards, back)
+       ends = [ends, pack(back, back /= u)]
+    end do
+    ends = ends - this % offset(part)
+
+  end function two_paths
+
+  !===================================================================!
   ! PREVIOUS: the vertices of u's own part that reach it by a
-  ! directed path of length two. Where the part is a set of
-  ! operations, these are the ones that must run before u, because
-  ! each writes something u reads.
+  ! directed path of length two - each written something u reads -
+  ! and NEXT: the ones u reaches - each reads something u writes.
+  ! Each vertex once, at its first path.
   !===================================================================!
 
   subroutine previous(this, part, vertex, vertices)
-
     class(bipartite_digraph), intent(in)  :: this
     integer                 , intent(in)  :: part, vertex
     integer, allocatable    , intent(out) :: vertices(:)
-
-    call two_hops(this, part, vertex, .true., vertices)
-
+    vertices = distinct(two_paths(this, part, vertex, .true.))
   end subroutine previous
 
-  !===================================================================!
-  ! NEXT: the vertices of u's own part that u reaches by a directed
-  ! path of length two - the ones that must run after it, because
-  ! each reads something u writes.
-  !===================================================================!
-
   subroutine next(this, part, vertex, vertices)
-
     class(bipartite_digraph), intent(in)  :: this
     integer                 , intent(in)  :: part, vertex
     integer, allocatable    , intent(out) :: vertices(:)
-
-    call two_hops(this, part, vertex, .false., vertices)
-
+    vertices = distinct(two_paths(this, part, vertex, .false.))
   end subroutine next
 
-  !===================================================================!
-  ! Both directions of the same traversal: one arc into the other
-  ! part, then one more the same way. A vertex is never its own
-  ! previous or next, so u is removed if the traversal returns to it.
-  !===================================================================!
-
-  subroutine two_hops(this, part, vertex, backwards, vertices)
-
-    class(bipartite_digraph), intent(in)  :: this
-    integer                 , intent(in)  :: part, vertex
-    logical                 , intent(in)  :: backwards
-    integer, allocatable    , intent(out) :: vertices(:)
-
-    integer, allocatable :: across(:), back(:), keep(:)
-    integer :: y, w, kept
-
-    if (backwards) then
-       call this % in_neighbourhood(part, vertex, across)
-    else
-       call this % out_neighbourhood(part, vertex, across)
-    end if
-
-    allocate(keep(this % order_of_part(part)))
-    kept = 0
-    do y = 1, size(across)
-       if (backwards) then
-          call this % in_neighbourhood(other_part(part), across(y), back)
-       else
-          call this % out_neighbourhood(other_part(part), across(y), back)
-       end if
-       do w = 1, size(back)
-          if (back(w) == vertex) cycle
-          if (kept > 0) then
-             if (any(keep(1:kept) == back(w))) cycle
-          end if
-          kept = kept + 1
-          keep(kept) = back(w)
-       end do
-    end do
-    vertices = keep(1:kept)
-
-  end subroutine two_hops
+  pure function distinct(list) result(kept)
+    integer, intent(in)  :: list(:)
+    integer, allocatable :: kept(:)
+    integer :: i
+    kept = pack(list, [(all(list(1:i-1) /= list(i)), i = 1, size(list))])
+  end function distinct
 
   !===================================================================!
-  ! THE PROJECTION ONTO ONE PART: u -> w when a directed path of
-  ! length two runs from u to w through the other part.
+  ! THE PROJECTION ONTO ONE PART: u -> w once for every directed path
+  ! of length two from u to w through the other part.
   !
   !      ( u ) ---> [ y ] ---> ( w )      in the digraph
   !      ( u ) -------------> ( w )       in the projection
@@ -442,46 +417,27 @@ contains
     integer                 , intent(in) :: part
     type(stored_directed_graph) :: induced
 
-    integer, allocatable :: crossings(:), backs(:), tails(:), heads(:)
-    integer :: u, y, w, n, counted, pass
+    integer, allocatable :: tails(:), heads(:), ends(:)
+    integer :: u
 
-    n = this % order_of_part(part)
-
-    do pass = 1, 2
-       counted = 0
-       do u = 1, n
-          call this % out_neighbourhood(part, u, crossings)
-          do y = 1, size(crossings)
-             call this % out_neighbourhood(other_part(part), crossings(y), backs)
-             do w = 1, size(backs)
-                if (backs(w) == u) cycle
-                counted = counted + 1
-                if (pass == 2) then
-                   tails(counted) = u
-                   heads(counted) = backs(w)
-                end if
-             end do
-          end do
-       end do
-       if (pass == 1) allocate(tails(counted), heads(counted))
+    tails = [integer ::]
+    heads = [integer ::]
+    do u = 1, this % order_of_part(part)
+       ends  = two_paths(this, part, u, .false.)
+       tails = [tails, spread(u, 1, size(ends))]
+       heads = [heads, ends]
     end do
 
-    induced = stored_directed_graph(n, tails=tails(1:counted), heads=heads(1:counted))
+    induced = stored_directed_graph(this % order_of_part(part), tails=tails, heads=heads)
 
   end function projection
 
-  pure integer function other_part(part)
-    integer, intent(in) :: part
-    other_part = -1
-    if (part == FIRST_PART ) other_part = SECOND_PART
-    if (part == SECOND_PART) other_part = FIRST_PART
-  end function other_part
-
   !===================================================================!
   ! WHETHER TWO VERTICES OF ONE PART MEET THE SAME VERTEX of the
-  ! other, in either direction. Two that do not are non-adjacent in
-  ! every projection, and a set of pairwise non-adjacent vertices is
-  ! an INDEPENDENT SET.
+  ! other, in either direction: whether their neighbourhoods in the
+  ! stored graph intersect. Two that do not are non-adjacent in every
+  ! projection, and a set of pairwise non-adjacent vertices is an
+  ! INDEPENDENT SET.
   !===================================================================!
 
   logical function share_a_neighbour(this, part, one, other)
@@ -489,21 +445,15 @@ contains
     class(bipartite_digraph), intent(in) :: this
     integer                 , intent(in) :: part, one, other
 
-    integer, allocatable :: one_in(:), one_out(:), other_in(:), other_out(:)
+    integer, allocatable :: of_one(:), of_other(:)
     integer :: i
 
-    call this % in_neighbourhood (part, one  , one_in )
-    call this % out_neighbourhood(part, one  , one_out)
-    call this % in_neighbourhood (part, other, other_in )
-    call this % out_neighbourhood(part, other, other_out)
+    call this % require_position(part, one)
+    call this % require_position(part, other)
+    call this % arcs % adjacent_vertices(this % offset(part) + one  , of_one)
+    call this % arcs % adjacent_vertices(this % offset(part) + other, of_other)
 
-    share_a_neighbour = .false.
-    do i = 1, size(one_in)
-       if (any(other_in == one_in(i)) .or. any(other_out == one_in(i))) share_a_neighbour = .true.
-    end do
-    do i = 1, size(one_out)
-       if (any(other_in == one_out(i)) .or. any(other_out == one_out(i))) share_a_neighbour = .true.
-    end do
+    share_a_neighbour = any([(any(of_other == of_one(i)), i = 1, size(of_one))])
 
   end function share_a_neighbour
 

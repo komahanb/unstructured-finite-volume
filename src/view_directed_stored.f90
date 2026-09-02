@@ -58,17 +58,14 @@ module view_directed_stored
   use graph_fractal      , only : graph
   use relation_binary, only : group_by_key, csr_relation
   use relation_partition, only : partition_relation
-  use view_directed     , only : SIDE_VERTEX, SIDE_EDGE
   use map_set_representation, only : counted_set_representation
   use map_set      , only : set_map
-  use map_label    , only : label_map
   use map_set_store, only : set_store
 
   implicit none
 
   private
 
-  integer, parameter :: SELECT_INTERIOR = 1, SELECT_BOUNDARY = 2, SELECT_TAGGED = 3
   public :: stored_directed_graph
 
   !===================================================================!
@@ -162,7 +159,6 @@ module view_directed_stored
 
      procedure :: vertex_set
      procedure :: edge_set
-     procedure :: name_domains
 
      !----------------------------------------------------------------!
      ! The endpoints of an edge.
@@ -176,31 +172,10 @@ module view_directed_stored
      procedure :: loop
 
      !----------------------------------------------------------------!
-     ! The named vertex sets.
+     ! The named edge set.
      !----------------------------------------------------------------!
 
-     procedure :: interior_vertices
-     procedure :: boundary_vertices
-     procedure :: tagged_vertices
-
-     !----------------------------------------------------------------!
-     ! The named edge sets.
-     !----------------------------------------------------------------!
-
-     procedure :: interior_edges
-     procedure :: boundary_edges
      procedure :: tagged_edges
-
-     !----------------------------------------------------------------!
-     ! The named sets of one part.
-     !----------------------------------------------------------------!
-
-     procedure :: owned_vertices
-     procedure :: halo_vertices
-     procedure :: overlap_vertices
-     procedure :: owned_edges
-     procedure :: halo_edges
-     procedure :: overlap_edges
 
      !----------------------------------------------------------------!
      ! Traversal, without regard to direction and with it.
@@ -225,19 +200,6 @@ module view_directed_stored
      !----------------------------------------------------------------!
 
      procedure :: whole_relation
-
-     !----------------------------------------------------------------!
-     ! The structure read as relations (AGENTS.md section 16):
-     ! T <= E x V (edge to tail) and H <= E x V (edge to head; a
-     ! boundary edge is an absence in H). Derived from the stored
-     ! table on request, so a pattern graph or a part graph that
-     ! no caller reads relationally never builds them - the
-     ! section-66 benchmark measured the eager version costing every
-     ! construction 2.2x.
-     !----------------------------------------------------------------!
-
-     procedure :: tail_relation
-     procedure :: head_relation
 
   end type stored_directed_graph
 
@@ -396,7 +358,10 @@ contains
 
   !===================================================================!
   ! A vertex's neighbours are the far ends of the edges touching it,
-  ! each counted once however many edges join the pair.
+  ! each counted once however many edges join the pair. The incident
+  ! list is already grouped by vertex, so one pass writes the distinct
+  ! far ends; a marker records the vertex each far end was last
+  ! written for.
   !===================================================================!
 
   pure subroutine build_adjacency(nv, tail, head, xinc, einc, xptr, vlist)
@@ -406,50 +371,29 @@ contains
     integer             , intent(in)  :: xinc(:), einc(:)
     integer, allocatable, intent(out) :: xptr(:), vlist(:)
 
-    integer, allocatable :: last_marked(:), scratch(:)
-    integer :: v, k, e, other, ndistinct, total
+    integer, allocatable :: last_marked(:)
+    integer :: v, k, e, other, total
 
-    allocate(xptr(nv + 1))
-    allocate(last_marked(nv))
+    allocate(xptr(nv + 1), vlist(size(einc)), last_marked(nv))
     last_marked = 0
 
-    ! First pass counts the distinct neighbours of every vertex.
+    total   = 0
     xptr(1) = 1
     do v = 1, nv
-       ndistinct = 0
        do k = xinc(v), xinc(v + 1) - 1
           e = einc(k)
           other = far_end(tail(e), head(e), v)
           if (other >= 1 .and. other /= v) then
              if (last_marked(other) /= v) then
                 last_marked(other) = v
-                ndistinct = ndistinct + 1
+                total = total + 1
+                vlist(total) = other
              end if
           end if
        end do
-       xptr(v + 1) = xptr(v) + ndistinct
+       xptr(v + 1) = total + 1
     end do
-
-    total = xptr(nv + 1) - 1
-    allocate(vlist(max(total, 0)))
-
-    ! Second pass writes them, with the marker reset so the same test
-    ! can run again.
-    last_marked = 0
-    allocate(scratch, source=xptr(1:nv))
-    do v = 1, nv
-       do k = xinc(v), xinc(v + 1) - 1
-          e = einc(k)
-          other = far_end(tail(e), head(e), v)
-          if (other >= 1 .and. other /= v) then
-             if (last_marked(other) /= v) then
-                last_marked(other) = v
-                vlist(scratch(v)) = other
-                scratch(v) = scratch(v) + 1
-             end if
-          end if
-       end do
-    end do
+    vlist = vlist(1:total)
 
   end subroutine build_adjacency
 
@@ -540,22 +484,6 @@ contains
     edge_set = this % eset
 
   end function edge_set
-
-  !===================================================================!
-  ! The names of this graph's two domains, bound into the CALLER'S
-  ! label map. The graph stores the names; it does not store the map,
-  ! so a caller that names nothing never calls this and stores nothing.
-  !===================================================================!
-
-  subroutine name_domains(this, labels)
-
-    class(stored_directed_graph), intent(in)    :: this
-    type(label_map)    , intent(inout) :: labels
-
-    call labels % bind(this % vset, 'vertices')
-    call labels % bind(this % eset, 'edges')
-
-  end subroutine name_domains
 
   !===================================================================!
   ! How many edges.
@@ -698,167 +626,8 @@ contains
   end function edge_has_head
 
   !===================================================================!
-  ! The named vertex subsets. A boundary vertex is one that touches a
-  ! boundary edge; an interior vertex is one that does not.
-  !===================================================================!
-
-  !===================================================================!
-  ! The vertices that touch no boundary edge.
-  !===================================================================!
-
-  subroutine interior_vertices(this, sets, members)
-
-    class(stored_directed_graph), intent(in)    :: this
-    type(set_store)    , intent(inout) :: sets
-    type(graph)    , intent(out)   :: members
-
-    call sets % declare_subobject(members, selected(this, SELECT_INTERIOR, .true.), &
-         & 'interior_vertices', this % vset)
-
-  end subroutine interior_vertices
-
-  !===================================================================!
-  ! The vertices that touch a boundary edge.
-  !===================================================================!
-
-  subroutine boundary_vertices(this, sets, members)
-
-    class(stored_directed_graph), intent(in)    :: this
-    type(set_store)    , intent(inout) :: sets
-    type(graph)    , intent(out)   :: members
-
-    call sets % declare_subobject(members, selected(this, SELECT_BOUNDARY, .true.), &
-         & 'boundary_vertices', this % vset)
-
-  end subroutine boundary_vertices
-
-  !===================================================================!
-  ! The vertices with this tag - a mesh's named patches are queried
-  ! here.
-  !===================================================================!
-
-  subroutine tagged_vertices(this, tag, sets, members)
-
-    class(stored_directed_graph), intent(in)    :: this
-    character(len=*)   , intent(in)    :: tag
-    type(set_store)    , intent(inout) :: sets
-    type(graph)    , intent(out)   :: members
-
-    call sets % declare_subobject(members, selected(this, SELECT_TAGGED, .true., tag), &
-         & 'tagged_vertices', this % vset)
-
-  end subroutine tagged_vertices
-
-
-  !===================================================================!
-  ! Whether any edge incident to this vertex has no head rather than
-  ! joining a second vertex.
-  !===================================================================!
-
-  !===================================================================!
-  ! The members selected by one predicate, on either side: interior
-  ! (a vertex touching no boundary edge; an edge with a head),
-  ! boundary (the complement), or tagged with a name. Three
-  ! predicates times two sides, written once.
-  !===================================================================!
-
-  pure function selected(this, which, on_vertices, tag) result(selected_members)
-
-    class(stored_directed_graph), intent(in) :: this
-    integer                     , intent(in) :: which
-    logical                     , intent(in) :: on_vertices
-    character(len=*), optional  , intent(in) :: tag
-    integer, allocatable :: selected_members(:)
-
-    integer :: i, n, k
-    logical :: keep
-
-    n = merge(this % nv, this % ne, on_vertices)
-    allocate(selected_members(n))
-    k = 0
-    do i = 1, n
-       select case (which)
-       case (SELECT_INTERIOR, SELECT_BOUNDARY)
-          if (on_vertices) then
-             keep = .not. touches_boundary(this, i)
-          else
-             keep = this % edge_has_head(i)
-          end if
-          if (which == SELECT_BOUNDARY) keep = .not. keep
-       case (SELECT_TAGGED)
-          keep = .false.
-          if (.not. present(tag)) error stop 'stored_directed_graph: a tagged selection names its tag'
-          if (on_vertices) then
-             if (allocated(this % vtag)) keep = trim(this % vtag(i)) == tag
-          else
-             if (allocated(this % etag)) keep = trim(this % etag(i)) == tag
-          end if
-       case default
-          error stop 'stored_directed_graph: a selection is interior, boundary or tagged'
-       end select
-       if (keep) then
-          k = k + 1
-          selected_members(k) = i
-       end if
-    end do
-    selected_members = selected_members(1:k)
-
-  end function selected
-
-  pure logical function touches_boundary(this, v)
-
-    class(stored_directed_graph), intent(in) :: this
-    integer            , intent(in) :: v
-
-    integer :: k
-
-    touches_boundary = .false.
-    do k = this % xinc(v), this % xinc(v + 1) - 1
-       if (.not. this % edge_has_head(this % einc(k))) then
-          touches_boundary = .true.
-          return
-       end if
-    end do
-
-  end function touches_boundary
-
-  !===================================================================!
-  ! The named edge subsets. A boundary edge is one with no head.
-  !===================================================================!
-
-  !===================================================================!
-  ! The edges with a head: both ends are vertices of the graph.
-  !===================================================================!
-
-  subroutine interior_edges(this, sets, members)
-
-    class(stored_directed_graph), intent(in)    :: this
-    type(set_store)    , intent(inout) :: sets
-    type(graph)    , intent(out)   :: members
-
-    call sets % declare_subobject(members, selected(this, SELECT_INTERIOR, .false.), &
-         & 'interior_edges', this % eset)
-
-  end subroutine interior_edges
-
-  !===================================================================!
-  ! The edges with no head - the boundary of the graph.
-  !===================================================================!
-
-  subroutine boundary_edges(this, sets, members)
-
-    class(stored_directed_graph), intent(in)    :: this
-    type(set_store)    , intent(inout) :: sets
-    type(graph)    , intent(out)   :: members
-
-    call sets % declare_subobject(members, selected(this, SELECT_BOUNDARY, .false.), &
-         & 'boundary_edges', this % eset)
-
-  end subroutine boundary_edges
-
-  !===================================================================!
   ! The edges with this tag - a mesh's named patches are queried
-  ! here.
+  ! here. An untagged graph returns an empty set.
   !===================================================================!
 
   subroutine tagged_edges(this, tag, sets, members)
@@ -868,128 +637,16 @@ contains
     type(set_store)    , intent(inout) :: sets
     type(graph)    , intent(out)   :: members
 
-    call sets % declare_subobject(members, selected(this, SELECT_TAGGED, .false., tag), &
+    logical, allocatable :: tagged(:)
+    integer :: e
+
+    allocate(tagged(this % ne), source=.false.)
+    if (allocated(this % etag)) tagged = [(trim(this % etag(e)) == tag, e = 1, this % ne)]
+
+    call sets % declare_subobject(members, pack([(e, e = 1, this % ne)], tagged), &
          & 'tagged_edges', this % eset)
 
   end subroutine tagged_edges
-
-  !===================================================================!
-  ! The named sets of one part.
-  !
-  ! A graph that was never cut owns everything and has no halo,
-  ! whichever part the query names. A partitioner fills in the owner
-  ! arrays and these sets become non-trivial.
-  !===================================================================!
-
-  subroutine owned_vertices(this, part_id, sets, members)
-
-    class(stored_directed_graph), intent(in)    :: this
-    integer            , intent(in)    :: part_id
-    type(set_store)    , intent(inout) :: sets
-    type(graph)    , intent(out)   :: members
-
-    call sets % declare_subobject(members, owner_matches(this % whole_rel, this % nv, part_id, .true., .true.), &
-         & 'owned_vertices', this % vset)
-
-  end subroutine owned_vertices
-
-  !===================================================================!
-  ! The vertices this part reads but does not own - the cells of the
-  ! neighbouring parts along the cut.
-  !===================================================================!
-
-  subroutine halo_vertices(this, part_id, sets, members)
-
-    class(stored_directed_graph), intent(in)    :: this
-    integer            , intent(in)    :: part_id
-    type(set_store)    , intent(inout) :: sets
-    type(graph)    , intent(out)   :: members
-
-    call sets % declare_subobject(members, owner_matches(this % whole_rel, this % nv, part_id, .true., .false.), &
-         & 'halo_vertices', this % vset)
-
-  end subroutine halo_vertices
-
-  !===================================================================!
-  ! The overlap is everything this part must read to compute what it
-  ! owns: what it owns, plus its halo.
-  !===================================================================!
-
-  subroutine overlap_vertices(this, part_id, sets, members)
-
-    class(stored_directed_graph), intent(in)    :: this
-    integer            , intent(in)    :: part_id
-    type(set_store)    , intent(inout) :: sets
-    type(graph)    , intent(out)   :: members
-
-    integer, allocatable :: owned(:), halo(:)
-
-    allocate(owned   , source=owner_matches(this % whole_rel, this % nv, part_id, .true., .true.))
-    allocate(halo, source=owner_matches(this % whole_rel, this % nv, part_id, .true., .false.))
-
-    call sets % declare_subobject(members, [owned, halo], 'overlap_vertices', this % vset)
-
-  end subroutine overlap_vertices
-
-  !===================================================================!
-  ! The edges whose owner is this part.
-  !===================================================================!
-
-  subroutine owned_edges(this, part_id, sets, members)
-
-    class(stored_directed_graph), intent(in)    :: this
-    integer            , intent(in)    :: part_id
-    type(set_store)    , intent(inout) :: sets
-    type(graph)    , intent(out)   :: members
-
-    call sets % declare_subobject(members, owner_matches(this % whole_rel, this % ne, part_id, .false., .true.), &
-         & 'owned_edges', this % eset)
-
-  end subroutine owned_edges
-
-  !===================================================================!
-  ! The edges this part reads but does not own.
-  !===================================================================!
-
-  subroutine halo_edges(this, part_id, sets, members)
-
-    class(stored_directed_graph), intent(in)    :: this
-    integer            , intent(in)    :: part_id
-    type(set_store)    , intent(inout) :: sets
-    type(graph)    , intent(out)   :: members
-
-    call sets % declare_subobject(members, owner_matches(this % whole_rel, this % ne, part_id, .false., .false.), &
-         & 'halo_edges', this % eset)
-
-  end subroutine halo_edges
-
-  !===================================================================!
-  ! Owned and halo together: every edge this part reads.
-  !===================================================================!
-
-  subroutine overlap_edges(this, part_id, sets, members)
-
-    class(stored_directed_graph), intent(in)    :: this
-    integer            , intent(in)    :: part_id
-    type(set_store)    , intent(inout) :: sets
-    type(graph)    , intent(out)   :: members
-
-    integer, allocatable :: owned(:), halo(:)
-
-    allocate(owned   , source=owner_matches(this % whole_rel, this % ne, part_id, .false., .true.))
-    allocate(halo, source=owner_matches(this % whole_rel, this % ne, part_id, .false., .false.))
-
-    call sets % declare_subobject(members, [owned, halo], 'overlap_edges', this % eset)
-
-  end subroutine overlap_edges
-
-  !===================================================================!
-  ! Collect the indices a part owns, or the ones it does not.
-  !
-  ! An uncut graph has no ownership record to read. The result: everything
-  ! owned, no halo - correct for a graph that is the whole
-  ! of itself.
-  !===================================================================!
 
   !===================================================================!
   ! Optional arguments, defaulted where the relation requires a value.
@@ -1041,41 +698,6 @@ contains
        o = [(own_part, i = 1, n)]
     end if
   end function select_owner
-
-  pure function owner_matches(r, n, part_id, on_vertices, select_owned) result(selected_members)
-
-    type(partition_relation), intent(in) :: r
-    integer                             , intent(in) :: n
-    integer                             , intent(in) :: part_id
-    logical                             , intent(in) :: on_vertices
-    logical                             , intent(in) :: select_owned
-
-    integer, allocatable :: selected_members(:)
-    integer :: i, k, owns
-
-    ! A graph created whole owns everything and has no halo. That is
-    ! not a special case: it is what the identity relation means.
-    if (.not. r % has_part_relation()) then
-       if (select_owned) then
-          selected_members = [(i, i = 1, n)]
-       else
-          allocate(selected_members(0))
-       end if
-       return
-    end if
-
-    allocate(selected_members(n))
-    k = 0
-    do i = 1, n
-       owns = r % owner_part(i, on_vertices)
-       if ((owns == part_id) .eqv. select_owned) then
-          k = k + 1
-          selected_members(k) = i
-       end if
-    end do
-    selected_members = selected_members(1:k)
-
-  end function owner_matches
 
   !===================================================================!
   ! Traversing the graph. Each of these is a slice of a list built
@@ -1155,18 +777,11 @@ contains
     integer, allocatable, intent(out) :: indices(:)
 
     integer, allocatable :: edges(:)
-    integer :: k, n
+    integer :: k
 
     call this % outgoing_edges(vertex_index, edges)
-    allocate(indices(size(edges)))
-    n = 0
-    do k = 1, size(edges)
-       if (this % edge_has_head(edges(k))) then
-          n = n + 1
-          indices(n) = this % edge_head(edges(k))
-       end if
-    end do
-    indices = indices(1:n)
+    indices = [(this % edge_head(edges(k)), k = 1, size(edges))]
+    indices = pack(indices, indices >= 1)
 
   end subroutine outgoing_vertices
 
@@ -1184,10 +799,7 @@ contains
     integer :: k
 
     call this % incoming_edges(vertex_index, edges)
-    allocate(indices(size(edges)))
-    do k = 1, size(edges)
-       indices(k) = this % edge_tail(edges(k))
-    end do
+    indices = [(this % edge_tail(edges(k)), k = 1, size(edges))]
 
   end subroutine incoming_vertices
 
@@ -1212,65 +824,5 @@ contains
     whole_relation = this % whole_rel
 
   end function whole_relation
-
-
-  !===================================================================!
-  ! The structure read as relations, derived on request from the
-  ! stored table over counted coordinates (1..nv, 1..ne), which
-  ! keeps every query on the result O(1). A caller that stores T and H
-  ! may compose, transpose, and query them as relations; the
-  ! graph's own queries keep reading the compiled lists, and a
-  ! graph no caller reads relationally never builds these.
-  !===================================================================!
-
-  type(csr_relation) function tail_relation(this)
-
-    class(stored_directed_graph), intent(in) :: this
-
-    type(set_map) :: sets
-    integer, allocatable :: table(:,:)
-    integer :: k
-
-    call sets % bind(this % vset, counted_set_representation(this % nv))
-    call sets % bind(this % eset, counted_set_representation(this % ne))
-
-    allocate(table(2, this % ne))
-    do k = 1, this % ne
-       table(:, k) = [k, this % edge_tail(k)]
-    end do
-
-    tail_relation = csr_relation('edge tails', this % eset, &
-         & this % vset, table, sets)
-
-  end function tail_relation
-
-  type(csr_relation) function head_relation(this)
-
-    class(stored_directed_graph), intent(in) :: this
-
-    type(set_map) :: sets
-    integer, allocatable :: table(:,:)
-    integer :: nh, k
-
-    call sets % bind(this % vset, counted_set_representation(this % nv))
-    call sets % bind(this % eset, counted_set_representation(this % ne))
-
-    nh = 0
-    do k = 1, this % ne
-       if (this % edge_has_head(k)) nh = nh + 1
-    end do
-    allocate(table(2, nh))
-    nh = 0
-    do k = 1, this % ne
-       if (this % edge_has_head(k)) then
-          nh = nh + 1
-          table(:, nh) = [k, this % edge_head(k)]
-       end if
-    end do
-
-    head_relation = csr_relation('edge heads', this % eset, &
-         & this % vset, table, sets)
-
-  end function head_relation
 
 end module view_directed_stored

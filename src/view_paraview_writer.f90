@@ -100,55 +100,28 @@
 
 module view_paraview_writer
 
-  use iso_fortran_env, only : error_unit, int32
+  use iso_fortran_env, only : error_unit
   use util_precision , only : dp
-  use view_mesh_geometry, only : elements, gmsh_kinds
+  use view_mesh_geometry, only : elements, gmsh_kinds, face_kind
   use util_string    , only : string
   use field_stored   , only : stored_field
-  use view_mesh      , only : mesh
+  use view_mesh      , only : mesh, require
   use relation_binary, only : ragged
 
   implicit none
 
   private
-  public :: paraview_writer, linear_cell_type
+  public :: paraview_writer
   public :: polygon_cell, hypercube_cell
 
   ! the writer's conventions, since gmsh defines no such elements
   integer, parameter :: polygon_cell   = -1  ! an agglomerated polygon
   integer, parameter :: hypercube_cell = -2  ! 2^ndim corners in tensor order
 
-  !===================================================================!
-  ! This datatype enumerates the paraview cell types.
-  !===================================================================!
-
-  type :: linear_cell_type
-
-     integer(kind=int32) :: VTK_EMPTY_CELL        = 0
-     integer(kind=int32) :: VTK_VERTEX            = 1
-     integer(kind=int32) :: VTK_POLY_VERTEX       = 2
-     integer(kind=int32) :: VTK_LINE              = 3
-     integer(kind=int32) :: VTK_POLY_LINE         = 4
-     integer(kind=int32) :: VTK_TRIANGLE          = 5
-     integer(kind=int32) :: VTK_TRIANGLE_STRIP    = 6
-     integer(kind=int32) :: VTK_POLYGON           = 7
-     integer(kind=int32) :: VTK_PIXEL             = 8
-     integer(kind=int32) :: VTK_QUAD              = 9
-     integer(kind=int32) :: VTK_TETRA             = 10
-     integer(kind=int32) :: VTK_VOXEL             = 11
-     integer(kind=int32) :: VTK_HEXAHEDRON        = 12
-     integer(kind=int32) :: VTK_WEDGE             = 13
-     integer(kind=int32) :: VTK_PYRAMID           = 14
-     integer(kind=int32) :: VTK_PENTAGONAL_PRISM  = 15
-     integer(kind=int32) :: VTK_HEXAGONAL_PRISM   = 16
-     integer(kind=int32) :: VTK_POLYHEDRON        = 42
-
-   contains
-
-     procedure :: element_type
-     procedure :: hypercube_type
-
-  end type linear_cell_type
+  ! the paraview cell types absent from the element table: the
+  ! empty cell, which no element maps to, and the polygon
+  integer, parameter :: vtk_empty_cell = 0
+  integer, parameter :: vtk_polygon    = 7
 
   !===================================================================!
   ! This datatype writes a mesh and its cell fields to paraview. It
@@ -168,8 +141,6 @@ module view_paraview_writer
      ! the mesh's own count and volumes, one per mesh cell
      integer               :: num_cells = 0
      real(dp), allocatable :: volumes(:)
-
-     type(linear_cell_type) :: cell_type
 
    contains
 
@@ -195,45 +166,33 @@ contains
   ! its faces listed, which write does not do.
   !===================================================================!
 
-  type(integer) function element_type(this, gmsh_type) result (paraview_type)
+  integer function element_type(gmsh_type) result (paraview_type)
 
-    class(linear_cell_type), intent(in) :: this
-    integer                , intent(in) :: gmsh_type
+    integer, intent(in) :: gmsh_type
 
-    paraview_type = this % VTK_EMPTY_CELL
+    paraview_type = vtk_empty_cell
     if (gmsh_type == polygon_cell) then
-       paraview_type = this % VTK_POLYGON
+       paraview_type = vtk_polygon
     else if (gmsh_type >= 1 .and. gmsh_type <= gmsh_kinds) then
        paraview_type = elements(gmsh_type) % vtk_type
     end if
-    call require(paraview_type /= this % VTK_EMPTY_CELL, &
+    call require(paraview_type /= vtk_empty_cell, &
          & 'a cell type this writer draws: a first-order gmsh element, polygon_cell, hypercube_cell')
 
   end function element_type
 
   !===================================================================!
-  ! The paraview type of a hypercube of n axes: a point, a line, a
-  ! quadrangle, a hexahedron. Paraview draws nothing above three.
+  ! The paraview type of a hypercube of n axes: the element of
+  ! dimension n with 2^n vertices - a point, a line, a quadrangle, a
+  ! hexahedron. Paraview draws nothing above three.
   !===================================================================!
 
-  type(integer) function hypercube_type(this, n) result (paraview_type)
+  integer function hypercube_type(n) result (paraview_type)
 
-    class(linear_cell_type), intent(in) :: this
-    integer                , intent(in) :: n
+    integer, intent(in) :: n
 
-    select case (n)
-    case (0)
-       paraview_type = this % VTK_VERTEX
-    case (1)
-       paraview_type = this % VTK_LINE
-    case (2)
-       paraview_type = this % VTK_QUAD
-    case (3)
-       paraview_type = this % VTK_HEXAHEDRON
-    case default
-       call require(.false., 'a hypercube of at most three drawn axes')
-       paraview_type = this % VTK_EMPTY_CELL
-    end select
+    call require(n <= 3, 'a hypercube of at most three drawn axes')
+    paraview_type = element_type(face_kind(n, 2 ** n))
 
   end function hypercube_type
 
@@ -369,10 +328,10 @@ contains
        if (cell_types(c) == hypercube_cell) then
           call require(ndim <= 3, 'a hypercube above three dimensions drawn through a slice')
           this % cell_points(at : at + n - 1) = list(hypercube_order(ndim, [(k, k = 1, ndim)], drawn))
-          this % types(c) = this % cell_type % hypercube_type(ndim)
+          this % types(c) = hypercube_type(ndim)
        else
           this % cell_points(at : at + n - 1) = list
-          this % types(c) = this % cell_type % element_type(cell_types(c))
+          this % types(c) = element_type(cell_types(c))
        end if
        this % first_point(c + 1) = at + n
     end do
@@ -394,43 +353,32 @@ contains
     integer              , intent(in)    :: fixed(:)
     real(dp)             , intent(in)    :: slice(:)
 
-    integer :: ndim, num_corners, num_drawn_corners, num_kept, c, i, j, k
-    integer , allocatable :: kept(:)
-    real(dp), allocatable :: cell_corners(:,:), section(:,:)
+    integer :: num_drawn_corners, num_kept, c, i, j, k
+    real(dp), allocatable :: section(:,:)
 
-    ndim              = size(coordinates, 1)
-    num_corners       = 2 ** ndim
     num_drawn_corners = 2 ** size(drawn)
 
     ! the retained cells first, so the arrays are sized once
-    allocate(kept(this % num_cells))
-    num_kept = 0
-    do c = 1, this % num_cells
-       cell_corners = coordinates(:, corners % list(c))
-       if (within(cell_corners, fixed, slice)) then
-          num_kept       = num_kept + 1
-          kept(num_kept) = c
-       end if
-    end do
+    this % cells = pack([(c, c = 1, this % num_cells)], &
+         & [(within(coordinates(:, corners % list(c)), fixed, slice), c = 1, this % num_cells)])
+    num_kept = size(this % cells)
 
     allocate(this % points(3, num_drawn_corners * num_kept))
     allocate(this % cell_points(num_drawn_corners * num_kept))
     allocate(this % first_point(num_kept + 1))
     allocate(this % types(num_kept))
     this % points = 0.0_dp
-    this % cells  = kept(1:num_kept)
 
     do i = 1, num_kept
-       c       = kept(i)
-       cell_corners = coordinates(:, corners % list(c))
-       section = sectioned_corners(cell_corners, fixed, slice, drawn)
+       c       = this % cells(i)
+       section = sectioned_corners(coordinates(:, corners % list(c)), fixed, slice, drawn)
        do j = 1, num_drawn_corners
           k = (i - 1) * num_drawn_corners + j
           this % points(1:size(drawn), k) = section(drawn, j)
           this % cell_points(k)           = k
        end do
        this % first_point(i) = (i - 1) * num_drawn_corners + 1
-       this % types(i)       = this % cell_type % hypercube_type(size(drawn))
+       this % types(i)       = hypercube_type(size(drawn))
     end do
     this % first_point(num_kept + 1) = num_drawn_corners * num_kept + 1
 
@@ -704,22 +652,5 @@ contains
     close(unit=fhandle)
 
   end subroutine write
-
-  !===================================================================!
-  ! The precondition check: state what failed, then stop. A file of
-  ! incorrect cells must not be written.
-  !===================================================================!
-
-  subroutine require(fits, what)
-
-    logical         , intent(in) :: fits
-    character(len=*), intent(in) :: what
-
-    if (fits) return
-
-    write(error_unit, *) 'paraview writer precondition: expected ', what
-    error stop 'paraview writer: the corners do not fit the mesh'
-
-  end subroutine require
 
 end module view_paraview_writer

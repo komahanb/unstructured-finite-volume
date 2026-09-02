@@ -51,15 +51,13 @@ module view_mesh_geometry
   private
   public :: derive_faces
   public :: derive_face_cells
-  public :: derive_cell_centres
+  public :: derive_cell_moments
   public :: derive_face_vectors
   public :: outward_sign
-  public :: derive_cell_volumes
   public :: derive_centroidal_vectors
   public :: derive_face_deltas
   public :: derive_face_weights
   public :: mesh_from_incidence
-  public :: find
   public :: element_dimension
   public :: element_num_vertices
   public :: element_kind, elements, gmsh_kinds, widest_element, face_kind
@@ -288,53 +286,6 @@ contains
   end subroutine derive_face_cells
 
   !===================================================================!
-  ! Cell centroids by the divergence theorem: since div(x_i x) is
-  ! (d + 1) x_i, and x . n is constant on a flat face,
-  !
-  !      x_c = sum_f sigma_cf (x_f . S_f) x_f / ((d + 1) V)
-  !
-  ! with sigma_cf the sign that turns S_f out of the cell and x_f the
-  ! face's centroid - the dual of the volume sum, and exact for any
-  ! cell with flat faces. It is the true centroid, about which the
-  ! first moment vanishes, so a cell average evaluated there is second
-  ! order; the vertex mean is not, except by symmetry.
-  !===================================================================!
-
-  pure subroutine derive_cell_centres(spatial_dim, face_centres, face_vectors, &
-       & interior, cell_faces, num_cell_faces, cell_volumes, cell_centres)
-
-    integer , intent(in)  :: spatial_dim
-    real(dp), intent(in)  :: face_centres(:,:)
-    real(dp), intent(in)  :: face_vectors(:,:)
-    real(dp), intent(in)  :: interior(:,:)
-    integer , intent(in)  :: cell_faces(:,:)
-    integer , intent(in)  :: num_cell_faces(:)
-    real(dp), intent(in)  :: cell_volumes(:)
-    real(dp), allocatable, intent(out) :: cell_centres(:,:)
-
-    integer :: lcell, lface, gface
-
-    allocate(cell_centres(size(face_centres, 1), size(num_cell_faces)))
-    cell_centres = 0.0_dp
-
-    ! the sign orients each face's area vector out of this cell,
-    ! evaluated against any interior point; the vertex mean is one
-    ! such point
-    do lcell = 1, size(num_cell_faces)
-       do lface = 1, num_cell_faces(lcell)
-          gface = cell_faces(lface, lcell)
-          cell_centres(:, lcell) = cell_centres(:, lcell) &
-               & + outward_sign(face_vectors(:, gface), face_centres(:, gface), interior(:, lcell)) &
-               & * dot_product(face_vectors(:, gface), face_centres(:, gface)) &
-               & * face_centres(:, gface)
-       end do
-       cell_centres(:, lcell) = cell_centres(:, lcell) &
-            & / (real(spatial_dim + 1, dp) * cell_volumes(lcell))
-    end do
-
-  end subroutine derive_cell_centres
-
-  !===================================================================!
   ! Face centres and area vectors. The one measurement of a face is
   ! its area vector S_f: the corner fan from the first vertex, each
   ! simplex of d-1 edge vectors taken through the dual and summed,
@@ -441,47 +392,58 @@ contains
 
 
   !===================================================================!
-  ! Cell volumes by the divergence theorem,
+  ! Cell volumes and centroids by the divergence theorem. With S_f
+  ! the face's area vector, x_f its centroid, sigma_cf the sign that
+  ! points S_f out of the cell and d the spatial dimension,
   !
-  !      V = (1/d) sum over the cell's faces of  sigma_cf (S_f . x_f),
+  !      V   = (1/d) sum_f sigma_cf (S_f . x_f)
+  !      x_c = sum_f sigma_cf (S_f . x_f) x_f / ((d + 1) V)
   !
-  ! with d the spatial dimension, S_f the face's area vector and
-  ! sigma_cf the sign that points it out of the cell. A negative
+  ! since div(x) is d and div(x_i x) is (d + 1) x_i, and x . n is
+  ! constant on a flat face: exact for any cell with flat faces. The
+  ! centroid is the point about which the first moment vanishes, so a
+  ! cell average evaluated there is second order; the vertex mean is
+  ! not, except by symmetry. The sign is evaluated against any
+  ! interior point; the vertex mean is one such point. A negative
   ! volume is an inside-out cell and stops the program.
   !===================================================================!
 
-  pure subroutine derive_cell_volumes(spatial_dim, face_centres, face_vectors, &
-       & cell_centres, cell_faces, num_cell_faces, cell_volumes)
+  pure subroutine derive_cell_moments(spatial_dim, face_centres, face_vectors, &
+       & interior, cell_faces, num_cell_faces, cell_volumes, cell_centres)
 
     integer , intent(in)  :: spatial_dim
     real(dp), intent(in)  :: face_centres(:,:)
     real(dp), intent(in)  :: face_vectors(:,:)
-    real(dp), intent(in)  :: cell_centres(:,:)
+    real(dp), intent(in)  :: interior(:,:)
     integer , intent(in)  :: cell_faces(:,:)
     integer , intent(in)  :: num_cell_faces(:)
     real(dp), allocatable, intent(out) :: cell_volumes(:)
+    real(dp), allocatable, intent(out) :: cell_centres(:,:)
 
-    integer :: lcell, lface, gface
+    integer  :: lcell, lface, gface
+    real(dp) :: flux
 
     allocate(cell_volumes(size(num_cell_faces)))
+    allocate(cell_centres(size(face_centres, 1), size(num_cell_faces)))
     cell_volumes = 0.0_dp
+    cell_centres = 0.0_dp
 
     do lcell = 1, size(num_cell_faces)
        do lface = 1, num_cell_faces(lcell)
           gface = cell_faces(lface, lcell)
-          cell_volumes(lcell) = cell_volumes(lcell) + &
-               & outward_sign(face_vectors(:, gface), face_centres(:, gface), &
-               &              cell_centres(:, lcell)) &
-               & * dot_product(face_vectors(:, gface), face_centres(:, gface)) &
-               & / real(spatial_dim, dp)
+          flux  = outward_sign(face_vectors(:, gface), face_centres(:, gface), interior(:, lcell)) &
+               & * dot_product(face_vectors(:, gface), face_centres(:, gface))
+          cell_volumes(lcell)    = cell_volumes(lcell) + flux / real(spatial_dim, dp)
+          cell_centres(:, lcell) = cell_centres(:, lcell) + flux * face_centres(:, gface)
        end do
+       if (cell_volumes(lcell) .lt. 0.0_dp) then
+          error stop 'view_mesh_geometry: a cell volume is nonnegative'
+       end if
+       cell_centres(:, lcell) = cell_centres(:, lcell) &
+            & / (real(spatial_dim + 1, dp) * cell_volumes(lcell))
     end do
 
-    if (minval(cell_volumes) .lt. 0.0_dp) then
-       error stop 'view_mesh_geometry: a cell volume is nonnegative'
-    end if
-
-  end subroutine derive_cell_volumes
+  end subroutine derive_cell_moments
 
   !===================================================================!
   ! The centre-to-centre vector of each face: cell centre to cell
@@ -564,13 +526,11 @@ contains
 
     do iface = 1, size(num_face_cells)
 
-       d1    = distance(cell_centres(:, face_cells(1, iface)), &
-            &           face_centres(:, iface))
+       d1    = sqrt(sum((cell_centres(:, face_cells(1, iface)) - face_centres(:, iface))**2))
        dinv1 = 1.0_dp/d1
 
        if (num_face_cells(iface) .ne. 1) then
-          d2    = distance(cell_centres(:, face_cells(2, iface)), &
-               &           face_centres(:, iface))
+          d2    = sqrt(sum((cell_centres(:, face_cells(2, iface)) - face_centres(:, iface))**2))
           dinv2 = 1.0_dp/d2
        else
           dinv2 = 0.0_dp
@@ -655,18 +615,6 @@ contains
   end function factorial
 
   !===================================================================!
-  ! Compute the geometric distance between two points.
-  !===================================================================!
-
-  pure real(dp) function distance(x, y)
-
-    real(dp), intent(in)  :: X(:), y(:) ! The shape is [[x,y,z], [1:2]].
-
-    distance = sqrt(sum((x-y)**2))
-
-  end function distance
-
-  !===================================================================!
   ! THE MESH FROM ITS INCIDENCES. Every measurement a mesh stores is
   ! a function of the coordinates and three relations - each cell's
   ! vertices, each face's vertices, each face's cells - and of nothing
@@ -724,9 +672,7 @@ contains
             & / real(num_cell_vertices(c), dp)
     end do
 
-    call derive_cell_volumes(d, face_centres, face_vectors, interior, cell_faces, &
-         & num_cell_faces, cell_volumes)
-    call derive_cell_centres(d, face_centres, face_vectors, interior, cell_faces, &
+    call derive_cell_moments(d, face_centres, face_vectors, interior, cell_faces, &
          & num_cell_faces, cell_volumes, cell_centres)
     call derive_centroidal_vectors(face_cells, num_face_cells, cell_centres, face_centres, lvec)
     call derive_face_deltas(lvec, face_vectors, face_deltas)
@@ -756,60 +702,6 @@ contains
          & dimension    = d)
 
   end function mesh_from_incidence
-
-  !===================================================================!
-  ! Return the index of a target value if it is present in the array;
-  ! return -1 otherwise.
-  !===================================================================!
-
-  pure type(integer) function find(array, target_value)
-
-    integer, intent(in) :: array(:)
-    integer, intent(in) :: target_value
-    integer :: i, num_entries
-
-    num_entries = size(array, dim=1)
-
-    do i = 1, num_entries
-       if (array(i) .eq. target_value) then
-          find = i
-          return
-       endif
-    end do
-
-    find = -1
-
-  end function find
-
-  !===================================================================!
-  ! Return the number of faces a gmsh cell type has. The name could
-  ! generalize to the number of lower dimensional entities.
-  !===================================================================!
-
-
-  !===================================================================!
-  ! Return the spatial dimension of a gmsh element type: a point is
-  ! 0, a line is 1, a triangle or quadrangle is 2, and a tet, hex,
-  ! prism, or pyramid is 3. The mesh classifies elements into cells,
-  ! faces, and edges by dimension rather than by type.
-  !===================================================================!
-
-
-  !===================================================================!
-  ! Return the number of vertices a gmsh element type has. The name
-  ! could generalize to the number of lower dimensional entities.
-  !===================================================================!
-
-
-  !===================================================================!
-  ! Put a face's vertices into the cell's own vertex order. Each
-  ! cell type stores a face table that specifies which vertices bound
-  ! which face, ordered so that the normal points outward. Match the
-  ! unordered face against the table and return the face in the
-  ! table's order.
-  !===================================================================!
-
-
 
   !===================================================================!
   ! Three elemental reads of the table; a number outside the table

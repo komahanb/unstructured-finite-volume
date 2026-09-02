@@ -123,8 +123,8 @@ module view_directed
   !===================================================================!
   ! GRAPH. The structure query interface.
   !
-  ! Thirty-four symbols, all queries: identity, counts, incidence,
-  ! named sets, and neighbourhoods. A graph returns values; it
+  ! Fifteen symbols, all queries: identity, counts, incidence, the
+  ! tagged edge set, and neighbourhoods. A graph returns values; it
   ! performs no algorithm. Algorithms are applied to it from the
   ! levels above, which is what keeps this contract small.
   !
@@ -150,20 +150,6 @@ module view_directed
   ! and membership, size, order and position are queries on the
   ! representation the caller stores - not on the graph, which records
   ! only which set it named.
-  !
-  ! THE FRAME. How a part relates to the whole it was partitioned from:
-  !
-  !    owned      this part computes the value here
-  !    halo       this part only reads the value; another part owns it
-  !    overlap    every member this part must read to complete what it owns
-  !
-  !            part 1                        part 2
-  !       +---------------+            +---------------+
-  !       |  o    o    o  |            |  o    o    o  |
-  !       |  o    o    o--|------------|--b    o    o  |
-  !       +---------------+            +---------------+
-  !                    \______________/
-  !                       the overlap of part 1
   !
   ! A part graph is still a graph. The part graph stores the relation
   ! to the whole - how many parts, which part owns what, and the index
@@ -208,26 +194,13 @@ module view_directed
      procedure(directed_edge_end_interface)     , deferred :: edge_head
      procedure(directed_edge_has_head_interface), deferred :: edge_has_head
 
-     ! The named subsets, declared on demand: a new set each call,
+     ! The one named subset, declared on demand: a new set each call,
      ! so each call binds its extension, its label and its declared
-     ! embedding into the caller's set store - called twice, they
-     ! return two sets. The whole vertex and edge sets are the
+     ! embedding into the caller's set store - called twice, it
+     ! returns two sets. The whole vertex and edge sets are the
      ! carriers above, vertex_set and edge_set: stable identities, no
      ! binding.
-     procedure(directed_subset_interface), deferred :: interior_vertices
-     procedure(directed_subset_interface), deferred :: boundary_vertices
-     procedure(directed_tagged_set_interface), deferred :: tagged_vertices
-     procedure(directed_subset_interface), deferred :: interior_edges
-     procedure(directed_subset_interface), deferred :: boundary_edges
      procedure(directed_tagged_set_interface), deferred :: tagged_edges
-
-     ! Ownership subsets, one part at a time.
-     procedure(directed_part_set_interface), deferred :: owned_vertices
-     procedure(directed_part_set_interface), deferred :: halo_vertices
-     procedure(directed_part_set_interface), deferred :: overlap_vertices
-     procedure(directed_part_set_interface), deferred :: owned_edges
-     procedure(directed_part_set_interface), deferred :: halo_edges
-     procedure(directed_part_set_interface), deferred :: overlap_edges
 
      ! Neighbourhoods. Called inside loops, so the results are bare
      ! indices and the procedures are pure; returning a graph here
@@ -240,21 +213,12 @@ module view_directed
      procedure(directed_from_vertex_interface), deferred :: incoming_vertices
 
      !----------------------------------------------------------------!
-     ! THE PARTITION RELATION IS REMOVED FROM HERE, and this note
-     ! records the reason so the relation is not added back.
-     !
-     ! Eight bindings were declared at this point - num_parts,
-     ! has_part_relation, the two maps each way, and the two ownership
-     ! queries. Not one of them is a query about
-     ! D = (V, E, tail, head): they are the tuples of
-     ! r <= S_part x S_whole read both ways, r's provenance, and an
-     ! integer field on the part's members. They are
-     ! partition_relation now - a value the partitioner writes, a graph
-     ! stores, and the four procedures are passed.
-     !
-     ! The six SETS above remain. owned, halo and overlap declare
-     ! subobjects of V or of E and bind their extensions into the
-     ! caller's set store, which is a view query.
+     ! THE PARTITION RELATION IS NOT HERE. Its queries - how many
+     ! parts, which part owns what, the maps each way, the owned,
+     ! halo and overlap subsets - are queries on r <= S_part x S_whole,
+     ! not on D = (V, E, tail, head). They are partition_relation: a
+     ! value the partitioner writes, a graph stores, and a caller
+     ! queries directly.
      !----------------------------------------------------------------!
 
   end type directed_graph
@@ -302,27 +266,18 @@ module view_directed
      end function directed_edge_has_head_interface
 
      !===============================================================!
-     ! THE DECLARED SUBSETS. Called once, when an operation begins, so the
+     ! THE DECLARED SUBSET. Called once, when an operation begins, so the
      ! cost is incurred per sweep and not per cell.
      !
-     ! Each call declares a NEW set - a new identity - because that
-     ! is the established behaviour: the old code built a new
-     ! subset_set per call, and a subset declares its own identity. Two
-     ! calls to boundary_vertices() were never one domain, and are not
-     ! one domain now.
+     ! Each call declares a NEW set - a new identity: a subset
+     ! declares its own identity, so two calls to tagged_edges() are
+     ! two domains.
      !
      ! What the result needs beyond identity, the call binds in the
      ! caller's set store: listed extension, name and embedding into
      ! the graph's own carrier. The store is referenced for the
      ! duration of the call and never retained.
      !===============================================================!
-
-     subroutine directed_subset_interface(this, sets, members)
-       import :: directed_graph, graph, set_store
-       class(directed_graph)       , intent(in)    :: this
-       type(set_store)    , intent(inout) :: sets
-       type(graph)    , intent(out)   :: members
-     end subroutine directed_subset_interface
 
      subroutine directed_tagged_set_interface(this, tag, sets, members)
        import :: directed_graph, graph, set_store
@@ -331,14 +286,6 @@ module view_directed
        type(set_store)    , intent(inout) :: sets
        type(graph)    , intent(out)   :: members
      end subroutine directed_tagged_set_interface
-
-     subroutine directed_part_set_interface(this, part_id, sets, members)
-       import :: directed_graph, graph, set_store
-       class(directed_graph)       , intent(in)    :: this
-       integer            , intent(in)    :: part_id
-       type(set_store)    , intent(inout) :: sets
-       type(graph)    , intent(out)   :: members
-     end subroutine directed_part_set_interface
 
      !===============================================================!
      ! Neighbourhoods. Bare indices, pure, loop-safe.

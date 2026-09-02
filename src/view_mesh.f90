@@ -50,7 +50,7 @@ module view_mesh
   implicit none
 
   private
-  public :: mesh
+  public :: mesh, require
 
   !===================================================================!
   ! One mesh: the inherited structure, plus seven measurements.
@@ -160,7 +160,9 @@ contains
 
   !===================================================================!
   ! The check itself: report which condition failed, then stop. A
-  ! mesh with inconsistent measurements must not exist.
+  ! mesh with inconsistent measurements must not exist, and a file of
+  ! incorrect cells must not be written: the writer checks through
+  ! this procedure too.
   !===================================================================!
 
   subroutine require(fits, what)
@@ -171,7 +173,7 @@ contains
     if (fits) return
 
     write(error_unit, *) 'mesh check: expected ', what
-    error stop 'mesh: a measurement size does not match the structure'
+    error stop 'mesh: a precondition on the structure or its measurements failed'
 
   end subroutine require
 

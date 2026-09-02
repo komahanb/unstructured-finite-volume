@@ -31,7 +31,6 @@ operation_edge_function.o \
 operation_family.o \
 operation_weight.o \
 transform_structure.o \
-operation_discretization.o \
 map_value.o \
 map_value_change.o \
 field_functional.o \

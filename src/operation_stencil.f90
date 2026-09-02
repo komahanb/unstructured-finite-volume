@@ -14,7 +14,7 @@
 ! additional operations: the sparsity gives adjacency, the colouring
 ! traversal runs on it for probing and sweeps, and a coarsener
 ! applied to it is the Galerkin construction of a coarse operator.
-! This is the spatial concretion of the discretization operator, and
+! This is the spatial concretion of the discretization, and
 ! the family contract is satisfied: the pattern is exposed by contract.
 ! Nothing here records where the weights came from: a scheme
 ! computes them from geometry, a multigrid from a product, a test
@@ -44,7 +44,6 @@ module operation_stencil
   use operation_action, only : operation, variation, contract
   use operation_action, only : binding, bound_real_vector
   use operation_action, only : emit
-  use operation_discretization     , only : discretization
   use relation_binary, only : group_by_key
   use field_stored  , only : stored_field
   use view_directed_stored        , only : stored_directed_graph
@@ -58,22 +57,18 @@ module operation_stencil
   public :: triple_list
   public :: compile_matrix_from_action
 
-  type, extends(discretization) :: stencil
+  type, extends(operation) :: stencil
 
      type(stored_directed_graph) :: pattern
 
      type(stored_field) :: weights
      type(stored_field) :: constants
 
-     character(len=:), allocatable :: label
-
    contains
 
-     procedure :: name         => stencil_name
      procedure :: apply        => stencil_apply
      procedure :: transpose     => stencil_transpose
      procedure :: restricted    => stencil_restricted
-     procedure :: max_degree     => stencil_max_degree
      procedure :: partial_action => stencil_partial_action
 
   end type stencil
@@ -121,6 +116,7 @@ contains
     real(dp), intent(in) :: constant(:)
     character(len=*), intent(in), optional :: label
 
+    character(len=:), allocatable :: named
     integer :: nv
 
     nv = size(constant)
@@ -132,14 +128,12 @@ contains
     this % constants = stored_field('stencil constants', this % pattern % vertex_set(), this % pattern % num_vertices())
     call this % constants % set_real_vector(constant)
 
-    if (present(label)) then
-       this % label = label
-    else
-       this % label = 'stencil'
-    end if
+    named = 'stencil'
+    if (present(label)) named = label
 
-    ! one argument: the state the matrix multiplies
-    call this % declare_arguments(1, [contract(FIELD_REAL, 1)])
+    ! one argument: the state the matrix multiplies; linear, so its
+    ! one exact partial action is of degree one
+    call this % declare_arguments(1, [contract(FIELD_REAL, 1)], label=named, max_degree=1)
 
   end function create
 
@@ -355,18 +349,10 @@ contains
     end do
 
     call triples % entries(rows, columns, weights)
-    sub = stencil(rows, columns, weights, constant, label=this % label // ' restricted')
+    sub = stencil(rows, columns, weights, constant, label=this % name() // ' restricted')
 
   end function stencil_restricted
 
-  pure function stencil_name(this) result(name)
-
-    class(stencil), intent(in) :: this
-    character(len=:), allocatable :: name
-
-    name = this % label
-
-  end function stencil_name
   !===================================================================!
   ! y = constants + the dependency edges, traversed once: each edge
   ! adds its weight times the tail's value to its head.
@@ -389,7 +375,7 @@ contains
        call accumulate_edges(this, q, y)
     end if
 
-    out = stored_field(this % label, input_graph % vertex_set(), input_graph % num_vertices())
+    out = stored_field(this % name(), input_graph % vertex_set(), input_graph % num_vertices())
     call out % set_real_vector(y)
 
     call emit(out, output)
@@ -454,17 +440,6 @@ contains
   ! has no other partial.
   !===================================================================!
 
-  pure function stencil_max_degree(this) result(degree)
-
-    class(stencil), intent(in) :: this
-    integer :: degree
-
-    associate (u1 => this); end associate
-
-    degree = 1
-
-  end function stencil_max_degree
-
   subroutine stencil_partial_action(this, input_graph, inputs, &
        & variations, output)
 
@@ -493,7 +468,7 @@ contains
     y = 0.0_dp
     call accumulate_edges(this, v, y)
 
-    out = stored_field(this % label, input_graph % vertex_set(), input_graph % num_vertices())
+    out = stored_field(this % name(), input_graph % vertex_set(), input_graph % num_vertices())
     call out % set_real_vector(y)
 
     call emit(out, output)
@@ -524,11 +499,10 @@ contains
          & transposed % pattern % vertex_set(), transposed % pattern % num_vertices())
     call transposed % constants % set_real_vector(zeros)
 
-    transposed % label = 'transpose of ' // this % label
-
     ! the transpose is an operation of one argument as the original is;
     ! attached as a matrix-vector product, it is called with that argument
-    call transposed % declare_arguments(1, [contract(FIELD_REAL, 1)])
+    call transposed % declare_arguments(1, [contract(FIELD_REAL, 1)], &
+         & label='transpose of ' // this % name(), max_degree=1)
 
   end function stencil_transpose
 

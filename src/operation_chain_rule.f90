@@ -46,8 +46,8 @@ module operation_chain_rule
   use view_directed , only : directed_graph
   use field_calculus, only : field
   use graph_fractal       , only : graph
-  use operation_action    , only : operation, argument, variation, contract
-  use operation_action    , only : binding
+  use operation_action    , only : operation, argument, variation
+  use operation_action    , only : binding, emit_real
   use field_stored   , only : stored_field
 
   implicit none
@@ -190,9 +190,6 @@ contains
     integer            , intent(in) :: order
     type(argument_path), intent(in) :: along(:)
     type(total_derivative) :: this
-    type(contract), allocatable :: contracts(:)
-    type(argument) :: a
-    integer :: k
 
     if (order < 0) then
        error stop 'total_derivative: the order of a derivative is not negative'
@@ -202,12 +199,7 @@ contains
     allocate(this % statement, source=statement)
     this % order = order
     this % along = along
-    allocate(contracts(statement % num_arguments()))
-    do k = 1, statement % num_arguments()
-       a = statement % argument(k)
-       contracts(k) = a % contract()
-    end do
-    call this % declare_arguments(statement % num_arguments(), contracts)
+    call this % declare_arguments(statement % num_arguments(), statement % contracts())
 
   end function derivative_of
 
@@ -636,7 +628,6 @@ contains
     class(field), allocatable, intent(inout) :: output
 
     class(field), allocatable :: value
-    type(stored_field)     :: total
     type(graph) :: on
     integer         :: n_on, width
 
@@ -650,11 +641,7 @@ contains
        width   = value % num_components()
     end if
 
-    total = stored_field('total derivative', on, size(running) / width, num_components=width)
-    call total % set_real_vector(running)
-
-    if (allocated(output)) deallocate(output)
-    allocate(output, source=total)
+    call emit_real('total derivative', on, size(running) / width, running, output, width)
 
   end subroutine write_output
 

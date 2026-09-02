@@ -75,7 +75,6 @@ module operation_balance
 
    contains
 
-     procedure :: name   => balance_name
      procedure :: apply  => balance_apply
 
   end type balance
@@ -101,24 +100,9 @@ contains
     if (present(source))     this % source = source
 
     ! one argument: the state the balance is taken of, of any component count
-    call this % declare_arguments(1, [contract(FIELD_REAL)])
+    call this % declare_arguments(1, [contract(FIELD_REAL)], label='balance')
 
   end function create
-
-  !===================================================================!
-  ! The operation's name, for reports.
-  !===================================================================!
-
-  pure function balance_name(this) result(name)
-
-    class(balance), intent(in)    :: this
-    character(len=:), allocatable :: name
-
-    associate (u1 => this); end associate
-
-    name = 'balance'
-
-  end function balance_name
 
   !===================================================================!
   ! Compute the balance.
@@ -140,7 +124,7 @@ contains
 
     type(stored_field)           :: out
     real(dp), allocatable :: y(:), z(:)
-    integer               :: nv, ne, v, e, t, h, k
+    integer               :: nv, ne, e, t, h, k
 
     nv = input_graph % num_vertices()
     ne = input_graph % num_edges()

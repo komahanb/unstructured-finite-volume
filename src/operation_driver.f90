@@ -153,7 +153,7 @@
 module operation_driver
 
   use util_precision       , only : dp
-  use operation_action     , only : operation, argument, contract, binding, moved_binding
+  use operation_action     , only : operation, binding, moved_binding
   use view_directed        , only : directed_graph, forward, reverse
   use view_directed_stored , only : stored_directed_graph
   use view_read_write      , only : bipartite_digraph, FIRST_PART, SECOND_PART
@@ -164,49 +164,10 @@ module operation_driver
 
   private
 
-  public :: labelled_digraph, driver
+  public :: driver
   public :: rule_vertex, data_vertex, pairing
   public :: rule_graph, data_graph
-  public :: reads, driven_by, paired
-
-  !===================================================================!
-  ! THE DIGRAPH WITH ITS SLOTS. A digraph and the labelling of its
-  ! arcs, stored as one value. The digraph returns the digraph
-  ! queries; the labelling returns which slot an arc fills.
-  !===================================================================!
-
-  type :: labelled_digraph
-
-     private
-
-     type(stored_directed_graph) :: arcs
-     integer, allocatable        :: slot_of_arc(:)
-
-   contains
-
-     ! the digraph's own queries
-     procedure :: order_of_digraph        ! how many vertices
-     procedure :: size_of_digraph         ! how many arcs
-     procedure :: tail_of                 ! the vertex an arc leaves
-     procedure :: head_of                 ! the vertex an arc enters
-     procedure :: in_arcs                 ! the arcs entering a vertex
-     procedure :: in_degree               ! how many there are
-
-     ! the labelling's query
-     procedure :: slot_of                 ! which slot an arc fills
-     procedure :: in_neighbour            ! the vertex filling a slot
-
-     ! the order a traversal may visit in
-     procedure :: visiting_order
-
-     ! the digraph itself, for a caller that requires it without labels
-     procedure :: digraph
-
-  end type labelled_digraph
-
-  interface labelled_digraph
-     module procedure reads
-  end interface labelled_digraph
+  public :: driven_by, paired
 
   !===================================================================!
   ! ONE VERTEX OF B2. The rule computed there. A vertex whose rule is
@@ -257,7 +218,6 @@ module operation_driver
    contains
 
      procedure :: pair => rules_pair
-     procedure :: rule_graph_order
 
   end type rule_graph
 
@@ -272,7 +232,6 @@ module operation_driver
    contains
 
      procedure :: pair => data_pair
-     procedure :: data_graph_order
 
   end type data_graph
 
@@ -344,6 +303,7 @@ module operation_driver
      procedure :: evaluate                ! the rules over the data, in order
      procedure :: last_reader_of          ! the step a datum is last read at
      procedure :: released_after          ! the data releasable after a step
+     procedure, private :: neighbourhood
 
   end type driver
 
@@ -352,142 +312,6 @@ module operation_driver
   end interface driver
 
 contains
-
-  !===================================================================!
-  ! THE READS RELATION as a labelled digraph. Every arc is given as
-  ! a triple: the vertex read, the slot it fills, the vertex
-  ! reading. Lengths that disagree, or a slot below one, stop the
-  ! program - a labelling that names no slot is not a labelling.
-  !===================================================================!
-
-  function reads(num_vertices, read_vertex, in_slot, by_vertex) result(this)
-
-    integer, intent(in) :: num_vertices
-    integer, intent(in) :: read_vertex(:)   ! the tail of each arc
-    integer, intent(in) :: in_slot(:)       ! the slot that arc fills
-    integer, intent(in) :: by_vertex(:)     ! the head of each arc
-    type(labelled_digraph) :: this
-
-    if (size(read_vertex) /= size(by_vertex) .or. size(in_slot) /= size(by_vertex)) then
-       error stop 'operation_driver: one slot and one reader per vertex read'
-    end if
-    if (num_vertices < 1) then
-       error stop 'operation_driver: a digraph has at least one vertex'
-    end if
-    if (any(in_slot < 1)) then
-       error stop 'operation_driver: a slot is one of the rule''s arguments'
-    end if
-
-    this % arcs = stored_directed_graph(num_vertices, tails=read_vertex, heads=by_vertex)
-    this % slot_of_arc = in_slot
-
-  end function reads
-
-  !===================================================================!
-  ! THE DIGRAPH'S OWN QUERIES. Order is the count of vertices and
-  ! size the count of arcs, as graph theory names them.
-  !===================================================================!
-
-  pure integer function order_of_digraph(this)
-    class(labelled_digraph), intent(in) :: this
-    order_of_digraph = this % arcs % num_vertices()
-  end function order_of_digraph
-
-  pure integer function size_of_digraph(this)
-    class(labelled_digraph), intent(in) :: this
-    size_of_digraph = this % arcs % num_edges()
-  end function size_of_digraph
-
-  pure integer function tail_of(this, arc)
-    class(labelled_digraph), intent(in) :: this
-    integer                , intent(in) :: arc
-    tail_of = this % arcs % edge_tail(arc)
-  end function tail_of
-
-  pure integer function head_of(this, arc)
-    class(labelled_digraph), intent(in) :: this
-    integer                , intent(in) :: arc
-    head_of = this % arcs % edge_head(arc)
-  end function head_of
-
-  pure integer function slot_of(this, arc)
-    class(labelled_digraph), intent(in) :: this
-    integer                , intent(in) :: arc
-    slot_of = this % slot_of_arc(arc)
-  end function slot_of
-
-  !===================================================================!
-  ! The arcs entering a vertex, and how many. These are the arcs that
-  ! fill the slots of the rule stored there.
-  !===================================================================!
-
-  subroutine in_arcs(this, vertex, arcs)
-    class(labelled_digraph), intent(in)  :: this
-    integer                , intent(in)  :: vertex
-    integer, allocatable   , intent(out) :: arcs(:)
-    integer, allocatable :: incident(:)
-    integer :: e, kept
-    call this % arcs % incident_edges(vertex, incident)
-    allocate(arcs(size(incident)))
-    kept = 0
-    do e = 1, size(incident)
-       if (this % arcs % edge_head(incident(e)) == vertex) then
-          kept = kept + 1
-          arcs(kept) = incident(e)
-       end if
-    end do
-    arcs = arcs(1:kept)
-  end subroutine in_arcs
-
-  integer function in_degree(this, vertex)
-    class(labelled_digraph), intent(in) :: this
-    integer                , intent(in) :: vertex
-    integer, allocatable :: arcs(:)
-    call this % in_arcs(vertex, arcs)
-    in_degree = size(arcs)
-  end function in_degree
-
-  !===================================================================!
-  ! THE IN-NEIGHBOUR ALONG A LABEL. The digraph's in-neighbourhood of
-  ! v is N-(v); this is the member of it reached by the arc labelled
-  ! s, and zero when that arc is absent. The first instant of a march
-  ! has an empty in-neighbourhood, which is a fact about the digraph
-  ! and not a failure.
-  !===================================================================!
-
-  integer function in_neighbour(this, vertex, slot)
-    class(labelled_digraph), intent(in) :: this
-    integer                , intent(in) :: vertex, slot
-    integer, allocatable :: arcs(:)
-    integer :: e
-    in_neighbour = 0
-    call this % in_arcs(vertex, arcs)
-    do e = 1, size(arcs)
-       if (this % slot_of_arc(arcs(e)) == slot) then
-          in_neighbour = this % arcs % edge_tail(arcs(e))
-          return
-       end if
-    end do
-  end function in_neighbour
-
-  !===================================================================!
-  ! AN ORDER THE ARCS ADMIT: the digraph's topological order in the
-  ! given orientation. Forward reaches a vertex only after every
-  ! vertex it reads. A cyclic digraph admits no such order.
-  !===================================================================!
-
-  function visiting_order(this, orientation) result(order)
-    class(labelled_digraph), intent(in) :: this
-    integer                , intent(in) :: orientation
-    integer, allocatable :: order(:)
-    order = this % arcs % loop(orientation)
-  end function visiting_order
-
-  function digraph(this) result(bare)
-    class(labelled_digraph), intent(in) :: this
-    type(stored_directed_graph) :: bare
-    bare = this % arcs
-  end function digraph
 
   !===================================================================!
   ! A RULE DRIVEN OVER A DIGRAPH, in an orientation. The result
@@ -500,9 +324,6 @@ contains
     type(bipartite_digraph), intent(in) :: over
     integer               , intent(in), optional :: orientation
     type(driver) :: this
-    type(contract), allocatable :: contracts(:)
-    type(argument) :: a
-    integer :: k
 
     this % over = over
     allocate(this % rule, source=rule)
@@ -511,12 +332,7 @@ contains
     if (this % orientation /= forward .and. this % orientation /= reverse) then
        error stop 'operation_driver: an orientation is forward or reverse'
     end if
-    allocate(contracts(rule % num_arguments()))
-    do k = 1, rule % num_arguments()
-       a = rule % argument(k)
-       contracts(k) = a % contract()
-    end do
-    call this % declare_arguments(rule % num_arguments(), contracts)
+    call this % declare_arguments(rule % num_arguments(), rule % contracts())
 
   end function driven_by
 
@@ -610,18 +426,6 @@ contains
     type(pairing) :: link
     link = paired(operations % at, this % at)
   end function data_pair
-
-  pure integer function rule_graph_order(this)
-    class(rule_graph), intent(in) :: this
-    rule_graph_order = 0
-    if (allocated(this % at)) rule_graph_order = size(this % at)
-  end function rule_graph_order
-
-  pure integer function data_graph_order(this)
-    class(data_graph), intent(in) :: this
-    data_graph_order = 0
-    if (allocated(this % at)) data_graph_order = size(this % at)
-  end function data_graph_order
 
   pure integer function paired_order(this, part)
     class(pairing), intent(in) :: this
@@ -726,6 +530,25 @@ contains
   end function pairing_of
 
   !===================================================================!
+  ! THE NEIGHBOURHOOD READ IN THIS DRIVER'S ORIENTATION. In the forward
+  ! orientation a rule reads what entered it and writes what leaves;
+  ! in the reverse the two exchange, because reversing an orientation
+  ! exchanges previous with next. One traversal, read either way.
+  !===================================================================!
+
+  subroutine neighbourhood(this, part, vertex, entering, vertices)
+    class(driver), intent(in)  :: this
+    integer      , intent(in)  :: part, vertex
+    logical      , intent(in)  :: entering   ! the in-neighbourhood, when forward
+    integer, allocatable, intent(out) :: vertices(:)
+    if ((this % orientation == forward) .eqv. entering) then
+       call this % over % in_neighbourhood(part, vertex, vertices)
+    else
+       call this % over % out_neighbourhood(part, vertex, vertices)
+    end if
+  end subroutine neighbourhood
+
+  !===================================================================!
   ! EVALUATE. Visit the vertices in an admissible order; at each, read
   ! the data its in-neighbours store, apply the rule stored there,
   ! and place the result. A datum whose last reader has been visited
@@ -773,15 +596,8 @@ contains
        ! lifetimes below must be resolved at this step as well.
        if (allocated(rule)) then
 
-          ! WHAT THE RULE READS. In the forward orientation a rule reads
-          ! what entered it and writes what leaves; in the reverse the
-          ! two exchange, because reversing an orientation exchanges
-          ! previous with next. One traversal, read either way.
-          if (this % orientation == forward) then
-             call this % over % in_neighbourhood(FIRST_PART, v, reads)
-          else
-             call this % over % out_neighbourhood(FIRST_PART, v, reads)
-          end if
+          ! what the rule reads
+          call this % neighbourhood(FIRST_PART, v, .true., reads)
           ! THE RULE'S ARGUMENT k IS THE DATUM AT THE k-TH VERTEX IT
           ! READS. The binding passes that identity into the rule, so
           ! a rule may receive a datum of its own type rather than
@@ -807,11 +623,7 @@ contains
 
           ! what the rule writes: the data on the other side of it
           if (allocated(value)) then
-             if (this % orientation == forward) then
-                call this % over % out_neighbourhood(FIRST_PART, v, writes)
-             else
-                call this % over % in_neighbourhood(FIRST_PART, v, writes)
-             end if
+             call this % neighbourhood(FIRST_PART, v, .false., writes)
              do i = 1, size(writes)
                 call this % stored_pairing % assign(writes(i), value)
              end do
@@ -849,11 +661,7 @@ contains
     integer :: k, i
     last_reader_of = 0
     order = this % visits()
-    if (this % orientation == forward) then
-       call this % over % out_neighbourhood(SECOND_PART, datum, readers)
-    else
-       call this % over % in_neighbourhood(SECOND_PART, datum, readers)
-    end if
+    call this % neighbourhood(SECOND_PART, datum, .false., readers)
     do k = 1, size(order)
        do i = 1, size(readers)
           if (readers(i) == order(k)) last_reader_of = k
@@ -893,9 +701,9 @@ contains
   end function released_after
 
   !===================================================================!
-  ! THE TRAVERSAL. Visit the vertices in an admissible order and
-  ! apply the rule at each. The rule reads what its slots are filled
-  ! by, which the digraph returns and this routine never computes.
+  ! THE OPERATION INTERFACE IS NOT THE TRAVERSAL. A driver reads its
+  ! inputs from the data it is paired with, not from bindings, so
+  ! apply stops the program: the rules are driven by evaluate.
   !===================================================================!
 
   subroutine driver_apply(this, input_graph, inputs, output)
@@ -905,26 +713,10 @@ contains
     type(binding)            , intent(in), optional :: inputs(:)
     class(field), allocatable, intent(inout) :: output
 
-    integer, allocatable :: order(:)
-    integer :: v, k
+    associate (u1 => this, u2 => input_graph, u3 => present(inputs)); end associate
+    if (allocated(output)) deallocate(output)
 
-    if (.not. allocated(this % rule)) then
-       error stop 'operation_driver: a driver stores the rule it drives'
-    end if
-
-    order = this % visits()
-
-    do k = 1, size(order)
-       v = order(k)
-       ! the rule at v reads the vertices filling its slots; gathering
-       ! those values depends on the caller's field layout and is not
-       ! implemented in this routine
-       if (present(inputs)) then
-          call this % rule % apply(input_graph, this % rule % bind(inputs), output)
-       else
-          call this % rule % apply(input_graph, output=output)
-       end if
-    end do
+    error stop 'operation_driver: a driver is driven by evaluate, not applied'
 
   end subroutine driver_apply
 

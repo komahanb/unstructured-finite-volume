@@ -48,12 +48,10 @@ module operation_grid
   use iso_fortran_env, only : int64
   use util_precision  , only : dp
   use operation_action      , only : operation, variation, contract
-  use operation_action      , only : binding, bound_real_vector
-  use operation_action, only : emit
+  use operation_action      , only : binding, seeded_argument, applied, emit_real
   use view_directed         , only : directed_graph
   use view_directed_stored  , only : stored_directed_graph
   use field_calculus        , only : field, FIELD_REAL
-  use graph_fractal         , only : graph
   use field_stored          , only : stored_field
   use util_derivative_terms , only : derivative_terms, value, mixed_partial, &
        & max_subset_width, operator(+), operator(*), operator(/)
@@ -82,10 +80,8 @@ module operation_grid
 
    contains
 
-     procedure :: name           => grid_name
      procedure :: duration
      procedure :: apply          => grid_apply
-     procedure :: max_degree     => grid_max_degree
      procedure :: partial_action => grid_partial_action
      procedure :: abscissae
      procedure, private :: weight_of
@@ -123,29 +119,34 @@ module operation_grid
 contains
 
   !===================================================================!
-  ! A duration that is not positive stops the program: there is no
-  ! partition of it.
+  ! One representation for every kind: the rule, the duration it
+  ! partitions and the name reported. A duration that is not positive
+  ! stops the program: there is no partition of it.
   !===================================================================!
 
-  subroutine require_span(span)
+  function grid_of(kind, span, label) result(this)
 
-    real(dp), intent(in) :: span
+    integer         , intent(in) :: kind
+    real(dp)        , intent(in) :: span
+    character(len=*), intent(in) :: label
+    type(grid) :: this
 
     if (span <= 0.0_dp) then
        error stop 'operation_grid: a duration is positive'
     end if
+    this % kind = kind
+    this % span = span
+    call this % declare_arguments(1, [contract(FIELD_REAL, 1)], label=label, &
+         & max_degree=max_subset_width())
 
-  end subroutine require_span
+  end function grid_of
 
   function create_uniform(span) result(this)
 
     real(dp), intent(in) :: span
     type(grid) :: this
 
-    call require_span(span)
-    this % kind = GRID_UNIFORM
-    this % span = span
-    call this % declare_arguments(1, [contract(FIELD_REAL, 1)])
+    this = grid_of(GRID_UNIFORM, span, 'uniform grid')
 
   end function create_uniform
 
@@ -155,11 +156,8 @@ contains
     integer , intent(in) :: seed
     type(grid) :: this
 
-    call require_span(span)
-    this % kind = GRID_RANDOM
-    this % span = span
+    this = grid_of(GRID_RANDOM, span, 'random grid')
     this % seed = seed
-    call this % declare_arguments(1, [contract(FIELD_REAL, 1)])
 
   end function create_random
 
@@ -168,10 +166,7 @@ contains
     real(dp), intent(in) :: span
     type(grid) :: this
 
-    call require_span(span)
-    this % kind = GRID_DESIGNED
-    this % span = span
-    call this % declare_arguments(1, [contract(FIELD_REAL, 1)])
+    this = grid_of(GRID_DESIGNED, span, 'designed grid')
 
   end function create_designed
 
@@ -189,11 +184,8 @@ contains
        error stop 'operation_grid: every given step is positive'
     end if
 
-    call require_span(sum(steps))
-    this % kind  = GRID_FIXED
-    this % span  = sum(steps)
+    this = grid_of(GRID_FIXED, sum(steps), 'fixed grid')
     this % steps = steps
-    call this % declare_arguments(1, [contract(FIELD_REAL, 1)])
 
   end function create_fixed
 
@@ -208,10 +200,7 @@ contains
     real(dp), intent(in) :: span
     type(grid) :: this
 
-    call require_span(span)
-    this % kind = GRID_GAUSS
-    this % span = span
-    call this % declare_arguments(1, [contract(FIELD_REAL, 1)])
+    this = grid_of(GRID_GAUSS, span, 'gauss grid')
 
   end function create_gauss
 
@@ -222,21 +211,6 @@ contains
     duration = this % span
 
   end function duration
-
-  pure function grid_name(this) result(name)
-
-    class(grid), intent(in) :: this
-    character(len=:), allocatable :: name
-
-    select case (this % kind)
-    case (GRID_UNIFORM);  name = 'uniform grid'
-    case (GRID_RANDOM);   name = 'random grid'
-    case (GRID_DESIGNED); name = 'designed grid'
-    case (GRID_GAUSS);    name = 'gauss grid'
-    case default;         name = 'fixed grid'
-    end select
-
-  end function grid_name
 
   !===================================================================!
   ! The unnormalised weight of the step ending at instant k, of n:
@@ -411,50 +385,6 @@ contains
 
   end function designed_weight
 
-  pure integer function grid_max_degree(this)
-
-    class(grid), intent(in) :: this
-
-    associate (u1 => this); end associate
-    grid_max_degree = max_subset_width()
-
-  end function grid_max_degree
-
-  !===================================================================!
-  ! The design as terms, each direction seeded on it. A variation
-  ! that names anything else stops the program.
-  !===================================================================!
-
-  subroutine seeded(this, inputs, variations, design)
-
-    class(grid)    , intent(in) :: this
-    type(binding)   , intent(in) :: inputs(:)
-    type(variation), intent(in) :: variations(:)
-    type(derivative_terms), allocatable, intent(out) :: design(:)
-
-    real(dp), allocatable :: x(:), v(:)
-    integer :: n, i, j
-    call bound_real_vector(inputs, this % argument(1), x)
-    n = size(variations)
-
-    allocate(design(max(size(x), 1)))
-    design = derivative_terms(0.0_dp, n)
-    do j = 1, size(x)
-       design(j) = derivative_terms(x(j), n)
-    end do
-
-    do i = 1, n
-       if (.not. variations(i) % argument_is(this % argument(1))) then
-          error stop 'operation_grid: the steps vary with the design alone'
-       end if
-       call variations(i) % direction(v)
-       do j = 1, size(x)
-          call design(j) % set_direction(i, v(j))
-       end do
-    end do
-
-  end subroutine seeded
-
   !===================================================================!
   ! The weights, scaled so that the steps sum to the duration. A
   ! weight that is not positive stops the program.
@@ -509,12 +439,10 @@ contains
     real(dp), allocatable, intent(out) :: dt(:)
     type(stored_directed_graph) :: instants
     type(stored_field) :: design_field
-    class(field), allocatable :: out
     instants = stored_directed_graph(num_instants, tails=[integer ::], heads=[integer ::])
     design_field = stored_field('design', instants % vertex_set(), max(size(design), 1))
     call design_field % set_real_vector(padded(design))
-    call steps % apply(instants, steps % bind([design_field]), out)
-    call out % real_vector(dt)
+    call applied(steps, instants, [design_field], dt)
   end subroutine partition_values
 
   pure function padded(design) result(x)
@@ -532,20 +460,11 @@ contains
     integer    , intent(in) :: n
     real(dp), allocatable, intent(out) :: dt(:), t(:)
     real(dp), intent(in), optional :: design(:)
-    type(stored_directed_graph) :: instants
-    type(stored_field) :: design_field
-    class(field), allocatable :: out
-    integer :: k
-    instants = stored_directed_graph(n, tails=[integer ::], heads=[integer ::])
     if (present(design)) then
-       design_field = stored_field('design', instants % vertex_set(), size(design))
-       call design_field % set_real_vector(design)
+       call partition(steps, n, design, dt)
     else
-       design_field = stored_field('design', instants % vertex_set(), 1)
-       call design_field % set_real_vector([0.0_dp])
+       call partition(steps, n, [0.0_dp], dt)
     end if
-    call steps % apply(instants, steps % bind([design_field]), out)
-    call out % real_vector(dt)
     call steps % abscissae(n, dt, t)
   end subroutine partitioned_values
 
@@ -586,7 +505,6 @@ contains
     type(derivative_terms), intent(in) :: dt(:)
     class(field), allocatable, intent(inout) :: output
 
-    type(stored_field) :: out
     real(dp), allocatable :: values(:)
     integer :: k
 
@@ -595,10 +513,7 @@ contains
        values(k) = mixed_partial(dt(k))
     end do
 
-    out = stored_field(this % name(), input_graph % vertex_set(), size(dt))
-    call out % set_real_vector(values)
-
-    call emit(out, output)
+    call emit_real(this % name(), input_graph % vertex_set(), size(dt), values, output)
 
   end subroutine placed
 
@@ -609,19 +524,15 @@ contains
     type(binding), intent(in), optional       :: inputs(:)
     class(field), allocatable, intent(inout) :: output
 
-    type(variation), allocatable :: none(:)
-    type(derivative_terms), allocatable :: design(:), dt(:)
-
-    if (.not. present(inputs)) then
-       error stop 'operation_grid: the design is given'
-    end if
-
-    allocate(none(0))
-    call seeded(this, inputs, none, design)
-    call partitioned(this, design, input_graph % num_vertices(), dt)
-    call placed(this, input_graph, dt, output)
+    call this % value_by_partial_action(input_graph, inputs, output)
 
   end subroutine grid_apply
+
+  !===================================================================!
+  ! The design as terms seeded by the variations, which must all be
+  ! on the design; one naming another argument stops the program. A
+  ! design of no entries is read as one entry of zero.
+  !===================================================================!
 
   subroutine grid_partial_action(this, input_graph, inputs, variations, output)
 
@@ -632,14 +543,14 @@ contains
     class(field), allocatable, intent(inout) :: output
 
     type(derivative_terms), allocatable :: design(:), dt(:)
+    integer :: consumed
 
-    call this % require_owned(variations)
-
-    if (size(variations) > this % max_degree()) then
-       error stop 'operation_grid: the requested order is within max_degree'
+    call this % require_variations(variations)
+    call seeded_argument(this, inputs, variations, 1, design, consumed)
+    if (consumed < size(variations)) then
+       error stop 'operation_grid: the steps vary with the design alone'
     end if
-
-    call seeded(this, inputs, variations, design)
+    if (size(design) == 0) design = [derivative_terms(0.0_dp, size(variations))]
     call partitioned(this, design, input_graph % num_vertices(), dt)
     call placed(this, input_graph, dt, output)
 

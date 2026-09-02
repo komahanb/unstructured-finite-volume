@@ -156,7 +156,6 @@ module operation_reduction
      ! the measure passed as the second input field.
      !----------------------------------------------------------------!
 
-     procedure :: name   => reduction_name
      procedure :: domain => reduction_domain
      procedure :: apply  => reduction_apply
 
@@ -196,7 +195,6 @@ module operation_reduction
      ! vertices.
      !----------------------------------------------------------------!
 
-     procedure :: name   => broadcast_name
      procedure :: apply  => broadcast_apply
 
   end type broadcast
@@ -212,6 +210,8 @@ contains
     integer , intent(in)           :: rule
     real(dp), intent(in), optional :: power
 
+    type(contract) :: required
+
     this % rule = rule
 
     if (present(power)) this % power = power
@@ -222,14 +222,13 @@ contains
     ! pass one or none
     select case (rule)
     case (REDUCE_ALL, REDUCE_ANY)
-       call this % declare_arguments(2, [contract([FIELD_LOGICAL], 1), &
-            & contract([FIELD_LOGICAL], 1)])
+       required = contract([FIELD_LOGICAL], 1)
     case (REDUCE_SUM, REDUCE_AVERAGE)
-       call this % declare_arguments(2, [contract([FIELD_REAL, FIELD_COMPLEX], 1), &
-            & contract([FIELD_REAL, FIELD_COMPLEX], 1)])
+       required = contract([FIELD_REAL, FIELD_COMPLEX], 1)
     case default
-       call this % declare_arguments(2, [contract(FIELD_REAL, 1), contract(FIELD_REAL, 1)])
+       required = contract(FIELD_REAL, 1)
     end select
+    call this % declare_arguments(2, [required, required], label='reduction')
 
   end function create
 
@@ -244,7 +243,7 @@ contains
 
     this % rule = rule
 
-    call this % declare_arguments(1, [contract([FIELD_REAL, FIELD_COMPLEX], 1)])
+    call this % declare_arguments(1, [contract([FIELD_REAL, FIELD_COMPLEX], 1)], label='broadcast')
 
   end function create_broadcast
 
@@ -600,17 +599,6 @@ contains
   ! field.
   !===================================================================!
 
-  pure function reduction_name(this) result(name)
-
-    class(reduction), intent(in) :: this
-    character(len=:), allocatable :: name
-
-    associate (u1 => this); end associate
-
-    name = 'reduction'
-
-  end function reduction_name
-
   subroutine reduction_domain(this, input_graph, domain, num_entries)
 
     class(reduction), intent(in)           :: this
@@ -654,8 +642,7 @@ contains
        call this % initialize(reduced)
     end if
 
-    if (allocated(output)) deallocate(output)
-    allocate(output, source=reduced)
+    call emit(reduced, output)
 
   end subroutine reduction_apply
 
@@ -681,16 +668,6 @@ contains
   ! field is returned on the graph's vertices.
   !===================================================================!
 
-  pure function broadcast_name(this) result(name)
-
-    class(broadcast), intent(in) :: this
-    character(len=:), allocatable :: name
-
-    associate (u1 => this); end associate
-
-    name = 'broadcast'
-
-  end function broadcast_name
   subroutine broadcast_apply(this, input_graph, inputs, output)
 
     class(broadcast), intent(in)                   :: this

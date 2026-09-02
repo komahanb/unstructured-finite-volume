@@ -13,10 +13,9 @@
 module operation_coupling
 
   use util_precision      , only : dp
-  use field_calculus      , only : field
   use field_stored        , only : stored_field
   use view_directed_stored, only : stored_directed_graph
-  use operation_action    , only : operation
+  use operation_action    , only : operation, applied
   use operation_edge_function, only : edge_function
   use util_derivative_terms, only : derivative_terms, coefficient
 
@@ -70,12 +69,10 @@ contains
 
     type(stored_directed_graph)     :: edges
     type(stored_field), allocatable :: inputs(:)
-    class(field)      , allocatable :: out
 
     call coupling_inputs(num_vertices, tails, heads, steps, source_degree, determines, &
          & edges, inputs)
-    call action % apply(edges, action % bind(inputs), out)
-    call out % real_vector(w)
+    call applied(action, edges, inputs, w)
 
   end subroutine weights_of
 

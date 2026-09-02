@@ -56,12 +56,10 @@ module operation_expression
 
   use util_precision       , only : dp
   use operation_action     , only : operation, variation, contract
-  use operation_action     , only : binding, bound_real_vector
+  use operation_action     , only : binding, seeded_argument, emit_real
   use field_calculus       , only : FIELD_REAL
   use view_directed        , only : directed_graph
   use field_calculus       , only : field
-  use graph_fractal        , only : graph
-  use field_stored         , only : stored_field
   use util_derivative_terms, only : derivative_terms, mixed_partial, max_subset_width, integer_power
 
   implicit none
@@ -115,14 +113,10 @@ module operation_expression
      integer , allocatable, private :: order(:)               ! a leaf's component, or a function index
      integer , allocatable, private :: along(:)               ! the coordinate a leaf's derivative follows
      real(dp), allocatable, private :: coefficient(:)         ! a constant, or an exponent
-     character(len=:), allocatable, private :: label
 
    contains
 
-     procedure :: name           => expression_name
-     procedure :: domain         => expression_domain
      procedure :: apply          => expression_apply
-     procedure :: max_degree     => expression_max_degree
      procedure :: partial_action => expression_partial_action
      procedure :: at_instant     => expression_at_instant
      procedure :: equation_degree
@@ -305,7 +299,6 @@ contains
     integer :: c
 
     this = rule
-    this % label = label
 
     do c = 1, size(degrees)
        if (this % highest_degree_along(c) > degrees(c)) then
@@ -316,7 +309,7 @@ contains
        error stop 'operation_expression: the rule reads a coordinate the state is not declared over'
     end if
 
-    call this % declare_degree(degrees)
+    call this % declare_degree(degrees, label)
 
   end function stated_over
 
@@ -616,29 +609,18 @@ contains
 
   end function num_vertices
 
-  pure function expression_name(this) result(name)
-
-    class(expression), intent(in) :: this
-    character(len=:), allocatable :: name
-
-    if (allocated(this % label)) then
-       name = this % label
-    else
-       name = 'expression'
-    end if
-
-  end function expression_name
-
   !===================================================================!
-  ! The degree of the equation, declared when the rule is stated. A
-  ! degree below one stops the program: there is no highest
-  ! derivative then.
+  ! The degree of the equation, declared when the rule is stated,
+  ! with the name the rule reports and the highest exact degree: the
+  ! width the subset masks can index. A degree below one stops the
+  ! program: there is no highest derivative then.
   !===================================================================!
 
-  subroutine declare_degree(this, degrees)
+  subroutine declare_degree(this, degrees, label)
 
     class(expression)     , intent(inout) :: this
     integer               , intent(in)    :: degrees(:)
+    character(len=*)      , intent(in), optional :: label
 
     if (size(degrees) < 1) then
        error stop 'operation_expression: a state is declared over one coordinate at least'
@@ -653,7 +635,7 @@ contains
     this % degrees = degrees
     call this % declare_arguments(2, [ &
          & contract(FIELD_REAL, this % num_components()), &
-         & contract(FIELD_REAL, 1) ])
+         & contract(FIELD_REAL, 1) ], label=label, max_degree=max_subset_width())
 
   end subroutine declare_degree
 
@@ -704,112 +686,6 @@ contains
   end function equation_degree
 
   !===================================================================!
-  ! THE OPERATION INTERFACE.
-  !
-  ! One value per instant.
-  !===================================================================!
-
-  subroutine expression_domain(this, input_graph, domain, num_entries)
-
-    class(expression)     , intent(in)  :: this
-    class(directed_graph) , intent(in)  :: input_graph
-    type(graph)           , intent(out) :: domain
-    integer               , intent(out) :: num_entries
-
-    associate (u1 => this); end associate
-    domain      = input_graph % vertex_set()
-    num_entries = input_graph % num_vertices()
-
-  end subroutine expression_domain
-
-  pure integer function expression_max_degree(this)
-
-    class(expression)     , intent(in) :: this
-
-    associate (u1 => this); end associate
-    expression_max_degree = max_subset_width()
-
-  end function expression_max_degree
-
-  !===================================================================!
-  ! The state and the design as derivative terms, read from bindings
-  ! by argument identity; each direction is seeded on the argument its
-  ! variation names.
-  !===================================================================!
-
-  subroutine seeded(this, inputs, variations, q, nu)
-
-    class(expression)     , intent(in) :: this
-    type(binding)         , intent(in) :: inputs(:)
-    type(variation)       , intent(in) :: variations(:)
-    type(derivative_terms), allocatable, intent(out) :: q(:), nu(:)
-
-    real(dp), allocatable :: state(:), design(:), v(:)
-    integer :: n, i
-
-    call bound_real_vector(inputs, this % argument(ARGUMENT_STATE), state)
-    call bound_real_vector(inputs, this % argument(ARGUMENT_DESIGN), design)
-
-    n = size(variations)
-    call constants(state, n, q)
-    call constants(design, n, nu)
-
-    do i = 1, n
-       call variations(i) % direction(v)
-       if (variations(i) % argument_is(this % argument(ARGUMENT_STATE))) then
-          call seed(q, i, v)
-       else if (variations(i) % argument_is(this % argument(ARGUMENT_DESIGN))) then
-          call seed(nu, i, v)
-       else
-          error stop 'operation_expression: a variation names the state or the design'
-       end if
-    end do
-
-  end subroutine seeded
-
-  !===================================================================!
-  ! A real vector as terms with no derivative direction set yet.
-  !===================================================================!
-
-  subroutine constants(x, n, terms)
-
-    real(dp), intent(in) :: x(:)
-    integer , intent(in) :: n
-    type(derivative_terms), allocatable, intent(out) :: terms(:)
-
-    integer :: j
-
-    allocate(terms(size(x)))
-
-    do j = 1, size(x)
-       terms(j) = derivative_terms(x(j), n)
-    end do
-
-  end subroutine constants
-
-  !===================================================================!
-  ! One direction set in every entry of a quantity.
-  !===================================================================!
-
-  subroutine seed(x, i, v)
-
-    type(derivative_terms), intent(inout) :: x(:)
-    integer               , intent(in)    :: i
-    real(dp)              , intent(in)    :: v(:)
-
-    integer :: j
-
-    if (size(v) /= size(x)) then
-       error stop 'operation_expression: a direction has one entry per unknown it varies'
-    end if
-
-    do j = 1, size(x)
-       call x(j) % set_direction(i, v(j))
-    end do
-
-  end subroutine seed
-
-  !===================================================================!
   ! The rule at every instant, returning the coefficient of the full
   ! subset: the value with no directions, the mixed partial with n.
   !===================================================================!
@@ -821,7 +697,6 @@ contains
     type(derivative_terms), intent(in) :: q(:), nu(:)
     class(field), allocatable, intent(inout) :: output
 
-    type(stored_field) :: out
     real(dp), allocatable :: values(:)
     integer :: k, nd, base
 
@@ -841,12 +716,8 @@ contains
        values(k) = mixed_partial(this % at_instant(q(base + 1:base + nd), nu(k)))
     end do
 
-    out = stored_field(this % name(), input_graph % vertex_set(), &
-         & input_graph % num_vertices())
-    call out % set_real_vector(values)
-
-    if (allocated(output)) deallocate(output)
-    allocate(output, source=out)
+    call emit_real(this % name(), input_graph % vertex_set(), &
+         & input_graph % num_vertices(), values, output)
 
   end subroutine evaluated
 
@@ -857,18 +728,15 @@ contains
     type(binding), intent(in), optional       :: inputs(:)
     class(field), allocatable, intent(inout) :: output
 
-    type(variation), allocatable :: none(:)
-    type(derivative_terms), allocatable :: q(:), nu(:)
-
-    if (.not. present(inputs)) then
-       error stop 'operation_expression: the state and the design are given'
-    end if
-
-    allocate(none(0))
-    call seeded(this, inputs, none, q, nu)
-    call evaluated(this, input_graph, q, nu, output)
+    call this % value_by_partial_action(input_graph, inputs, output)
 
   end subroutine expression_apply
+
+  !===================================================================!
+  ! The state and the design as derivative terms, read from bindings
+  ! by argument identity, each seeded by the variations naming it. A
+  ! variation naming neither stops the program.
+  !===================================================================!
 
   subroutine expression_partial_action(this, input_graph, inputs, variations, output)
 
@@ -877,14 +745,16 @@ contains
     type(binding)          , intent(in)       :: inputs(:)
     type(variation)       , intent(in)       :: variations(:)
     class(field), allocatable, intent(inout) :: output
+
     type(derivative_terms), allocatable :: q(:), nu(:)
+    integer :: on_state, on_design
 
-    call this % require_owned(variations)
-
-    if (size(variations) > this % max_degree()) then
-       error stop 'operation_expression: the requested order is within max_degree'
+    call this % require_variations(variations)
+    call seeded_argument(this, inputs, variations, ARGUMENT_STATE , q , on_state)
+    call seeded_argument(this, inputs, variations, ARGUMENT_DESIGN, nu, on_design)
+    if (on_state + on_design < size(variations)) then
+       error stop 'operation_expression: a variation names the state or the design'
     end if
-    call seeded(this, inputs, variations, q, nu)
     call evaluated(this, input_graph, q, nu, output)
 
   end subroutine expression_partial_action

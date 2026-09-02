@@ -33,7 +33,7 @@
 ! directions is not representable.
 !
 ! Every operation reports max_degree, the highest order of exact
-! partial action it computes (0 unless overridden), and
+! partial action it computes (0 unless declared), and
 ! partial_action, one mixed partial - differentiated once per
 ! variation, contracted against that variation's direction, on its
 ! own domain. The default stops the program, since an operation with
@@ -50,13 +50,15 @@ module operation_action
   use field_calculus, only : field, FIELD_NONE
   use field_stored  , only : stored_field
   use token_identity, only : token, next_token
+  use util_derivative_terms, only : derivative_terms
 
   implicit none
 
   private
 
   public :: operation
-  public :: emit
+  public :: emit, emit_real
+  public :: seeded_argument
   public :: argument
   public :: contract
   public :: variation
@@ -164,6 +166,12 @@ module operation_action
      integer    , private :: declared_arguments = 0
      type(contract), allocatable, private :: argument_contracts(:)
 
+     ! the name reported, and the highest order of exact partial
+     ! action, both declared with the arguments; a concretion that
+     ! computes either overrides the accessor
+     character(len=:), allocatable, private :: label
+     integer, private :: exact_degree = 0
+
      ! THE VERSION. A statement that is unchanged between two solves
      ! has the same version, and a direct solver retains its factors
      ! while the version it last factorised is unchanged. Zero is no
@@ -173,12 +181,13 @@ module operation_action
 
    contains
 
-     procedure(operation_name_interface)  , deferred :: name
+     procedure :: name   => operation_name
      procedure :: domain => operation_domain
      procedure(operation_apply_interface) , deferred :: apply
 
      procedure :: max_degree       => operation_max_degree
      procedure :: partial_action   => operation_partial_action
+     procedure :: value_by_partial_action
      procedure :: compiled_tangent => operation_compiled_tangent
 
      procedure :: declare_arguments
@@ -187,20 +196,16 @@ module operation_action
      procedure :: version_transposed
      procedure :: num_arguments
      procedure :: argument => operation_argument
+     procedure :: contracts
      procedure :: owns
      procedure :: require_owned
+     procedure :: require_variations
      procedure, private :: bind_fields, bind_bindings
      generic   :: bind => bind_fields, bind_bindings
 
   end type operation
 
   abstract interface
-
-     pure function operation_name_interface(this) result(name)
-       import :: operation
-       class(operation), intent(in) :: this
-       character(len=:), allocatable :: name
-     end function operation_name_interface
 
      !---------------------------------------------------------------!
      ! The domain of the result: WHICH set, and HOW MANY entries it
@@ -325,13 +330,17 @@ contains
   ! call, and record how many positions are readable. A later call
   ! changes the count only, so arguments returned earlier still
   ! belong to the same space. A negative count stops the program.
+  ! The label and the highest exact degree are recorded when given
+  ! and kept otherwise.
   !===================================================================!
 
-  subroutine declare_arguments(this, n, contracts)
+  subroutine declare_arguments(this, n, contracts, label, max_degree)
 
     class(operation), intent(inout) :: this
     integer         , intent(in)    :: n
     type(contract)  , intent(in), optional :: contracts(:)
+    character(len=*), intent(in), optional :: label
+    integer         , intent(in), optional :: max_degree
 
     if (n < 0) then
        error stop 'operation: the argument count is nonnegative'
@@ -349,7 +358,9 @@ contains
     this % declared_arguments = n
     if (allocated(this % argument_contracts)) deallocate(this % argument_contracts)
     allocate(this % argument_contracts(n))
-    if (present(contracts)) this % argument_contracts = contracts
+    if (present(contracts))  this % argument_contracts = contracts
+    if (present(label))      this % label = label
+    if (present(max_degree)) this % exact_degree = max_degree
 
   end subroutine declare_arguments
 
@@ -360,6 +371,35 @@ contains
     num_arguments = this % declared_arguments
 
   end function num_arguments
+
+  !===================================================================!
+  ! The contracts in argument order, for an operation that declares
+  ! the argument space of one it composes.
+  !===================================================================!
+
+  pure function contracts(this) result(required)
+
+    class(operation), intent(in) :: this
+    type(contract), allocatable :: required(:)
+
+    allocate(required(this % declared_arguments))
+    if (allocated(this % argument_contracts)) required = this % argument_contracts
+
+  end function contracts
+
+  !===================================================================!
+  ! The declared label, or 'operation' when none was declared.
+  !===================================================================!
+
+  pure function operation_name(this) result(name)
+
+    class(operation), intent(in) :: this
+    character(len=:), allocatable :: name
+
+    name = 'operation'
+    if (allocated(this % label)) name = this % label
+
+  end function operation_name
 
   !===================================================================!
   ! The k-th argument of this operation. An undeclared space or a
@@ -420,6 +460,70 @@ contains
     end do
 
   end subroutine require_owned
+
+  !===================================================================!
+  ! Reject a variation list that names an argument of another
+  ! operation, or that is longer than the highest exact degree. A
+  ! partial_action computed over derivative terms calls this first.
+  !===================================================================!
+
+  pure subroutine require_variations(this, variations)
+
+    class(operation), intent(in) :: this
+    type(variation) , intent(in) :: variations(:)
+
+    call this % require_owned(variations)
+    if (size(variations) > this % max_degree()) then
+       error stop 'operation: the requested order is within max_degree'
+    end if
+
+  end subroutine require_variations
+
+  !===================================================================!
+  ! Argument k read from the bindings as derivative terms over the
+  ! variations: entry j is x_j with direction i set to the i-th
+  ! variation's j-th entry for every variation naming argument k, and
+  ! consumed counts those variations. A direction of another length
+  ! than the argument stops the program. The caller rejects a
+  ! variation naming another argument by comparing consumed with the
+  ! count of variations.
+  !===================================================================!
+
+  subroutine seeded_argument(this, inputs, variations, k, terms, consumed)
+
+    class(operation), intent(in) :: this
+    type(binding)   , intent(in) :: inputs(:)
+    type(variation) , intent(in) :: variations(:)
+    integer         , intent(in) :: k
+    type(derivative_terms), allocatable, intent(out) :: terms(:)
+    integer         , intent(out) :: consumed
+
+    real(dp), allocatable :: x(:), v(:)
+    type(argument) :: a
+    integer :: i, j
+
+    a = this % argument(k)
+    call bound_real_vector(inputs, a, x)
+
+    allocate(terms(size(x)))
+    do j = 1, size(x)
+       terms(j) = derivative_terms(x(j), size(variations))
+    end do
+
+    consumed = 0
+    do i = 1, size(variations)
+       if (.not. variations(i) % argument_is(a)) cycle
+       call variations(i) % direction(v)
+       if (size(v) /= size(x)) then
+          error stop 'operation: a direction has one entry per value of the argument it varies'
+       end if
+       do j = 1, size(x)
+          call terms(j) % set_direction(i, v(j))
+       end do
+       consumed = consumed + 1
+    end do
+
+  end subroutine seeded_argument
 
   !===================================================================!
   ! Variations.
@@ -499,7 +603,8 @@ contains
   end function variation_with_argument
 
   !===================================================================!
-  ! The default: no exact partial action of any order.
+  ! The highest exact degree declared with the arguments: zero, no
+  ! exact partial action of any order, unless declared.
   !===================================================================!
 
   pure function operation_max_degree(this) result(degree)
@@ -507,9 +612,7 @@ contains
     class(operation), intent(in) :: this
     integer :: degree
 
-    associate (u1 => this); end associate
-
-    degree = 0
+    degree = this % exact_degree
 
   end function operation_max_degree
 
@@ -576,6 +679,7 @@ contains
     logical              , intent(out) :: available
 
     associate (u1 => this, u2 => input_graph, u3 => inputs, u4 => which); end associate
+    allocate(rows(0), columns(0), weights(0))
     available = .false.
 
   end subroutine operation_compiled_tangent
@@ -596,6 +700,29 @@ contains
     error stop 'operation: the requested order is within max_degree'
 
   end subroutine operation_partial_action
+
+  !===================================================================!
+  ! The value as the partial action of order zero, for an operation
+  ! computed over derivative terms: apply is this call. Absent inputs
+  ! stop the program.
+  !===================================================================!
+
+  subroutine value_by_partial_action(this, input_graph, inputs, output)
+
+    class(operation)     , intent(in)        :: this
+    class(directed_graph), intent(in)        :: input_graph
+    type(binding)        , intent(in), optional :: inputs(:)
+    class(field), allocatable, intent(inout) :: output
+
+    type(variation) :: none(0)
+
+    if (.not. present(inputs)) then
+       error stop 'operation: the arguments are bound'
+    end if
+
+    call this % partial_action(input_graph, inputs, none, output)
+
+  end subroutine value_by_partial_action
 
   subroutine applied(action, on, inputs, y)
 
@@ -700,16 +827,8 @@ contains
     type(argument), intent(in) :: to
     class(field)  , intent(in) :: value
     type(binding) :: this
-    type(contract) :: required
 
-    if (.not. to % is_named()) then
-       error stop 'operation: a binding names an argument'
-    end if
-    required = to % contract()
-    if (.not. required % accepts(value)) then
-       error stop 'operation: a bound field satisfies its argument contract'
-    end if
-
+    call require_bindable(to, value)
     this % to = to
     allocate(this % value, source=value)
 
@@ -726,23 +845,36 @@ contains
     type(argument)           , intent(in)    :: to
     class(field), allocatable, intent(inout) :: stored
     type(binding) :: this
+
+    if (.not. allocated(stored)) then
+       error stop 'operation: a binding contains a field'
+    end if
+    call require_bindable(to, stored)
+    this % to = to
+    call move_alloc(stored, this % value)
+
+  end function moved_binding
+
+  !===================================================================!
+  ! An unnamed argument, or a field outside the argument's contract,
+  ! stops the program.
+  !===================================================================!
+
+  subroutine require_bindable(to, value)
+
+    type(argument), intent(in) :: to
+    class(field)  , intent(in) :: value
     type(contract) :: required
 
     if (.not. to % is_named()) then
        error stop 'operation: a binding names an argument'
     end if
-    if (.not. allocated(stored)) then
-       error stop 'operation: a binding contains a field'
-    end if
     required = to % contract()
-    if (.not. required % accepts(stored)) then
+    if (.not. required % accepts(value)) then
        error stop 'operation: a bound field satisfies its argument contract'
     end if
 
-    this % to = to
-    call move_alloc(stored, this % value)
-
-  end function moved_binding
+  end subroutine require_bindable
 
   pure logical function binding_argument_is(this, a)
 
@@ -807,11 +939,11 @@ contains
   end function bind_bindings
 
   !===================================================================!
-  ! The one binding of an argument: absent or repeated stops the
-  ! program.
+  ! The position of an argument's binding, zero when it has none. An
+  ! unnamed argument or a repeated binding stops the program.
   !===================================================================!
 
-  integer function bound_index(bound, a) result(found)
+  pure integer function binding_position(bound, a) result(found)
 
     type(binding) , intent(in) :: bound(:)
     type(argument), intent(in) :: a
@@ -832,6 +964,18 @@ contains
        end if
     end do
 
+  end function binding_position
+
+  !===================================================================!
+  ! The one binding of an argument: absent stops the program.
+  !===================================================================!
+
+  integer function bound_index(bound, a) result(found)
+
+    type(binding) , intent(in) :: bound(:)
+    type(argument), intent(in) :: a
+
+    found = binding_position(bound, a)
     if (found == 0) then
        error stop 'operation: the argument is bound'
     end if
@@ -853,10 +997,9 @@ contains
 
     integer :: k
 
+    k = binding_position(bound, a)
     is_bound = .false.
-    do k = 1, size(bound)
-       if (bound(k) % argument_is(a)) is_bound = allocated(bound(k) % value)
-    end do
+    if (k > 0) is_bound = allocated(bound(k) % value)
 
   end function is_bound
 
@@ -934,5 +1077,27 @@ contains
     allocate(output, source=out)
 
   end subroutine emit
+
+  !===================================================================!
+  ! Real values emitted as a stored field named name on the domain
+  ! on, with n entries of num_components components each.
+  !===================================================================!
+
+  subroutine emit_real(name, on, n, values, output, num_components)
+
+    character(len=*), intent(in) :: name
+    type(graph)     , intent(in) :: on
+    integer         , intent(in) :: n
+    real(dp)        , intent(in) :: values(:)
+    class(field), allocatable, intent(inout) :: output
+    integer, intent(in), optional :: num_components
+
+    type(stored_field) :: out
+
+    out = stored_field(name, on, n, num_components)
+    call out % set_real_vector(values)
+    call emit(out, output)
+
+  end subroutine emit_real
 
 end module operation_action

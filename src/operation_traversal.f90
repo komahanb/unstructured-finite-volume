@@ -76,7 +76,6 @@ module operation_traversal
 
    contains
 
-     procedure :: name   => traversal_name
      procedure :: apply  => traversal_apply
 
   end type traversal
@@ -88,8 +87,9 @@ module operation_traversal
 contains
 
   !===================================================================!
-  ! Construct a traversal that follows one rule. The seed names the
-  ! vertex a depth traversal starts from; the other rules need no seed.
+  ! Construct a traversal that follows one rule, named after it. The
+  ! seed names the vertex a depth traversal starts from; the other
+  ! rules need no seed.
   !===================================================================!
 
   type(traversal) function create(rule, seed) result(this)
@@ -102,31 +102,18 @@ contains
     if (present(seed)) this % seed = seed
 
     ! a traversal reads no input: every value comes from the graph
-    call this % declare_arguments(0)
-
-  end function create
-
-  !===================================================================!
-  ! The traversal's name is its rule's name.
-  !===================================================================!
-
-  pure function traversal_name(this) result(name)
-
-    class(traversal), intent(in)       :: this
-    character(len=:), allocatable :: name
-
-    select case (this % rule)
+    select case (rule)
     case (TRAVERSAL_VISIT_ORDER)
-       name = 'visit order'
+       call this % declare_arguments(0, label='visit order')
     case (TRAVERSAL_COMPONENT)
-       name = 'component'
+       call this % declare_arguments(0, label='component')
     case (TRAVERSAL_DEPTH)
-       name = 'depth'
+       call this % declare_arguments(0, label='depth')
     case default
-       name = 'colouring'
+       call this % declare_arguments(0, label='colouring')
     end select
 
-  end function traversal_name
+  end function create
 
   !===================================================================!
   ! Traverse the graph and return a whole number per cell.

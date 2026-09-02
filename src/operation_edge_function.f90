@@ -39,13 +39,12 @@
 module operation_edge_function
 
   use util_precision  , only : dp
-  use operation_action      , only : operation, variation
-  use operation_action      , only : binding, bound_real_vector, bound_integer_vector
-  use operation_action, only : emit
+  use operation_action      , only : operation, variation, contract
+  use operation_action      , only : binding, bound_integer_vector, seeded_argument
+  use operation_action, only : emit_real
   use view_directed         , only : directed_graph
-  use field_calculus        , only : field
+  use field_calculus        , only : field, FIELD_REAL, FIELD_INTEGER
   use graph_fractal         , only : graph
-  use field_stored          , only : stored_field
   use util_derivative_terms , only : derivative_terms, mixed_partial, &
        & max_subset_width
 
@@ -62,8 +61,8 @@ module operation_edge_function
 
      procedure :: domain         => edge_domain
      procedure :: apply          => edge_apply
-     procedure :: max_degree     => edge_max_degree
      procedure :: partial_action => edge_partial_action
+     procedure :: declare_edge_arguments
 
   end type edge_function
 
@@ -106,69 +105,21 @@ contains
   end subroutine edge_domain
 
   !===================================================================!
-  ! The degree the subset masks can index: the bit width less the
-  ! sign bit and the bit the full mask would overflow into.
+  ! The three arguments every edge function reads, the label it
+  ! reports, and the highest exact degree: the width the subset
+  ! masks can index.
   !===================================================================!
 
-  pure integer function edge_max_degree(this)
+  subroutine declare_edge_arguments(this, label)
 
-    class(edge_function), intent(in) :: this
+    class(edge_function), intent(in out) :: this
+    character(len=*)    , intent(in)     :: label
 
-    associate (u1 => this); end associate
-    edge_max_degree = max_subset_width()
+    call this % declare_arguments(3, [contract(FIELD_REAL, 1), &
+         & contract(FIELD_INTEGER, 1), contract(FIELD_INTEGER, 1)], &
+         & label=label, max_degree=max_subset_width())
 
-  end function edge_max_degree
-
-  !===================================================================!
-  ! The three inputs, which must all be given.
-  !===================================================================!
-
-  subroutine read_inputs(this, inputs, dt, source_degree, determines)
-
-    class(edge_function), intent(in) :: this
-    type(binding), intent(in) :: inputs(:)
-    real(dp), allocatable, intent(out) :: dt(:)
-    integer , allocatable, intent(out) :: source_degree(:), determines(:)
-    call bound_real_vector(inputs, this % argument(1), dt)
-    call bound_integer_vector(inputs, this % argument(2), source_degree)
-    call bound_integer_vector(inputs, this % argument(3), determines)
-
-  end subroutine read_inputs
-
-  !===================================================================!
-  ! The steps as derivative terms: the value at each vertex, and along
-  ! direction i the i-th variation's entry there. Every variation
-  ! must be on the steps, the operation's first argument.
-  !===================================================================!
-
-  subroutine step_terms(this, dt, variations, terms)
-
-    class(edge_function), intent(in)  :: this
-    real(dp)       , intent(in) :: dt(:)
-    type(variation), intent(in) :: variations(:)
-    type(derivative_terms), allocatable, intent(out) :: terms(:)
-
-    real(dp), allocatable :: v(:)
-    integer :: n, i, k
-
-    n = size(variations)
-    allocate(terms(size(dt)))
-
-    do k = 1, size(dt)
-       terms(k) = derivative_terms(dt(k), n)
-    end do
-
-    do i = 1, n
-       if (.not. variations(i) % argument_is(this % argument(1))) then
-          error stop 'operation_edge_function: the coefficients vary with the steps alone'
-       end if
-       call variations(i) % direction(v)
-       do k = 1, size(dt)
-          call terms(k) % set_direction(i, v(k))
-       end do
-    end do
-
-  end subroutine step_terms
+  end subroutine declare_edge_arguments
 
   !===================================================================!
   ! The coefficient of the full subset on every edge: the value when
@@ -184,7 +135,6 @@ contains
     integer               , intent(in) :: source_degree(:), determines(:)
     class(field), allocatable, intent(inout) :: output
 
-    type(stored_field) :: out
     type(derivative_terms) :: c
     real(dp), allocatable :: values(:)
     integer :: e
@@ -197,11 +147,8 @@ contains
        values(e) = mixed_partial(c)
     end do
 
-    out = stored_field(this % name() // ' coefficients', input_graph % edge_set(), &
-         & input_graph % num_edges())
-    call out % set_real_vector(values)
-
-    call emit(out, output)
+    call emit_real(this % name() // ' coefficients', input_graph % edge_set(), &
+         & input_graph % num_edges(), values, output)
 
   end subroutine full_terms
 
@@ -212,21 +159,15 @@ contains
     type(binding), intent(in), optional       :: inputs(:)
     class(field), allocatable, intent(inout) :: output
 
-    type(variation), allocatable :: none(:)
-    type(derivative_terms), allocatable :: dt(:)
-    real(dp), allocatable :: steps(:)
-    integer , allocatable :: source_degree(:), determines(:)
-
-    if (.not. present(inputs)) then
-       error stop 'operation_edge_function: the steps, source degrees and conditions are given'
-    end if
-
-    call read_inputs(this, inputs, steps, source_degree, determines)
-    allocate(none(0))
-    call step_terms(this, steps, none, dt)
-    call full_terms(this, input_graph, dt, source_degree, determines, output)
+    call this % value_by_partial_action(input_graph, inputs, output)
 
   end subroutine edge_apply
+
+  !===================================================================!
+  ! The steps as derivative terms seeded by the variations, which
+  ! must all be on the steps, the first argument; one naming another
+  ! argument stops the program.
+  !===================================================================!
 
   subroutine edge_partial_action(this, input_graph, inputs, variations, output)
 
@@ -237,18 +178,18 @@ contains
     class(field), allocatable, intent(inout) :: output
 
     type(derivative_terms), allocatable :: dt(:)
-    real(dp), allocatable :: steps(:)
     integer , allocatable :: source_degree(:), determines(:)
+    integer :: consumed
 
-    call this % require_owned(variations)
-
-    if (size(variations) > this % max_degree()) then
-       error stop 'operation_edge_function: the requested order is within max_degree'
+    call this % require_variations(variations)
+    call seeded_argument(this, inputs, variations, 1, dt, consumed)
+    if (consumed < size(variations)) then
+       error stop 'operation_edge_function: the coefficients vary with the steps alone'
     end if
-
-    call read_inputs(this, inputs, steps, source_degree, determines)
-    call step_terms(this, steps, variations, dt)
+    call bound_integer_vector(inputs, this % argument(2), source_degree)
+    call bound_integer_vector(inputs, this % argument(3), determines)
     call full_terms(this, input_graph, dt, source_degree, determines, output)
 
   end subroutine edge_partial_action
+
 end module operation_edge_function

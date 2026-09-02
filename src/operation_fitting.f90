@@ -181,7 +181,7 @@ contains
     integer , allocatable :: member_list(:)
     logical , allocatable :: active(:)
     real(dp) :: achieved, d2, nearest
-    integer :: npts, nc, i, j, v, d
+    integer :: npts, nc, i, j, d
 
     npts = input_graph % num_vertices()
 

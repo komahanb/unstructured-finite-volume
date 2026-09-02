@@ -124,11 +124,8 @@ module operation_differential
      real(dp)              :: boundary_value = 0.0_dp
      real(dp), allocatable :: boundary_values(:)
 
-     character(len=:), allocatable :: label
-
    contains
 
-     procedure :: name   => operator_name
      procedure :: domain => operator_domain
      procedure :: apply  => operator_apply
 
@@ -189,10 +186,9 @@ contains
     if (present(measures))        allocate(this % measures, source=measures)
     if (present(boundary_value))  this % boundary_value = boundary_value
     if (present(boundary_values)) allocate(this % boundary_values, source=boundary_values)
-    if (present(label))           this % label          = label
 
     ! one argument: the field differentiated, of any component count
-    call this % declare_arguments(1, [contract(FIELD_REAL)])
+    call this % declare_arguments(1, [contract(FIELD_REAL)], label=operator_label(this % order, label))
 
   end function edge_derivative
 
@@ -229,9 +225,8 @@ contains
     if (present(boundary_value))  this % boundary_value = boundary_value
     if (present(boundary_values)) allocate(this % boundary_values, source=boundary_values)
     if (present(adjoint))         this % adjoint        = adjoint
-    if (present(label))           this % label          = label
 
-    call this % declare_arguments(1, [contract(FIELD_REAL)])
+    call this % declare_arguments(1, [contract(FIELD_REAL)], label=operator_label(this % order, label))
 
   end function vertex_derivative
 
@@ -299,25 +294,23 @@ contains
   end function laplacian
 
   !===================================================================!
-  ! Names. A named operator returns its label; any other returns
+  ! Names. A named operator reports its label; any other reports
   ! its order.
   !===================================================================!
 
-  pure function operator_name(this) result(name)
+  pure function operator_label(order, label) result(name)
 
-    class(differential_operator), intent(in) :: this
-    character(len=:), allocatable            :: name
+    integer         , intent(in)           :: order
+    character(len=*), intent(in), optional :: label
+    character(len=:), allocatable          :: name
 
     character(len=12) :: digits
 
-    if (allocated(this % label)) then
-       name = this % label
-    else
-       write(digits, '(i0)') this % order
-       name = 'derivative of order ' // trim(digits)
-    end if
+    write(digits, '(i0)') order
+    name = 'derivative of order ' // trim(digits)
+    if (present(label)) name = label
 
-  end function operator_name
+  end function operator_label
 
   !===================================================================!
   ! Domains: every edge, or every vertex, by the landing. An

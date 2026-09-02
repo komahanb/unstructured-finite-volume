@@ -32,8 +32,6 @@
 module operation_family
 
   use util_precision  , only : dp
-  use operation_action, only : contract
-  use field_calculus  , only : FIELD_REAL, FIELD_INTEGER
   use operation_edge_function , only : edge_function
   use util_derivative_terms   , only : derivative_terms, value, &
        & operator(+), operator(-), operator(*), operator(/)
@@ -61,7 +59,6 @@ module operation_family
 
   type, extends(edge_function) :: family
 
-     character(len=:), allocatable, private :: label
      integer , private :: geometry = FAMILY_BDF
      integer , private :: order    = 1
      real(dp), private, allocatable :: a(:,:)
@@ -69,7 +66,6 @@ module operation_family
 
    contains
 
-     procedure :: name             => family_name
      procedure :: history_depth    => family_history_depth
      procedure :: num_stages       => family_num_stages
      procedure :: stage_weight     => family_stage_weight
@@ -94,13 +90,11 @@ contains
     real(dp)        , intent(in) :: a(:,:), b(:)
     type(family) :: this
 
-    this % label    = label
     this % geometry = geometry
     this % order    = order
     this % a        = a
     this % b        = b
-    call this % declare_arguments(3, [contract(FIELD_REAL, 1), &
-         & contract(FIELD_INTEGER, 1), contract(FIELD_INTEGER, 1)])
+    call this % declare_edge_arguments(label)
 
   end function create
 
@@ -150,15 +144,6 @@ contains
   !===================================================================!
   ! The queries, each one read from the data.
   !===================================================================!
-
-  pure function family_name(this) result(name)
-
-    class(family), intent(in) :: this
-    character(len=:), allocatable :: name
-
-    name = this % label
-
-  end function family_name
 
   pure integer function family_history_depth(this, equation_degree)
 

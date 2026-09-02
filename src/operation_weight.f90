@@ -40,8 +40,6 @@ module operation_weight
 
   use util_precision  , only : dp
   use operation_edge_function, only : edge_function
-  use operation_action, only : contract
-  use field_calculus  , only : FIELD_REAL, FIELD_INTEGER
   use util_derivative_terms  , only : derivative_terms, integer_power, operator(*)
 
   implicit none
@@ -55,7 +53,6 @@ module operation_weight
 
    contains
 
-     procedure :: name             => weight_name
      procedure :: edge_coefficient => weight_edge_coefficient
 
   end type scheme_weight
@@ -67,8 +64,8 @@ module operation_weight
 contains
 
   !===================================================================!
-  ! The weights of a family. The family is copied, so the weights
-  ! outlive the argument passed here.
+  ! The weights of a family, named after it. The family is copied,
+  ! so the weights outlive the argument passed here.
   !===================================================================!
 
   function create(coefficients) result(this)
@@ -77,19 +74,9 @@ contains
     type(scheme_weight) :: this
 
     allocate(this % coefficients, source=coefficients)
-    call this % declare_arguments(3, [contract(FIELD_REAL, 1), &
-         & contract(FIELD_INTEGER, 1), contract(FIELD_INTEGER, 1)])
+    call this % declare_edge_arguments(coefficients % name() // ' weight')
 
   end function create
-
-  pure function weight_name(this) result(name)
-
-    class(scheme_weight), intent(in) :: this
-    character(len=:), allocatable :: name
-
-    name = this % coefficients % name() // ' weight'
-
-  end function weight_name
 
   !===================================================================!
   ! The product. Both factors store their own partials in the steps,

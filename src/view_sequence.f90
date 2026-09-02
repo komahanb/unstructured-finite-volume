@@ -65,27 +65,17 @@ contains
   ! reported, because it is not a state of the sequence.
   !===================================================================!
 
-  logical function sequence_defined(b) result(known_extent)
+  recursive logical function sequence_defined(b) result(known_extent)
 
     type(branch), intent(in) :: b
 
-    type(graph), pointer :: cell
-
     known_extent = .false.
     if (b % status() .eq. BRANCH_UNKNOWN) return
-    if (b % status() .eq. BRANCH_NULL) then
-       known_extent = .true.
-       return
-    end if
 
-    cell => b % known()
-    do
-       call require_cell(cell)
-       if (cell % branch(2) % status() .eq. BRANCH_NULL) exit
-       if (cell % branch(2) % status() .eq. BRANCH_UNKNOWN) return
-       cell => cell % branch(2) % known()
-    end do
     known_extent = .true.
+    if (sequence_empty(b)) return
+
+    known_extent = sequence_defined(sequence_rest(b))
 
   end function sequence_defined
 
@@ -94,25 +84,18 @@ contains
   ! cells, so an unknown extent is refused.
   !===================================================================!
 
-  integer function sequence_num_elements(b) result(n)
+  recursive integer function sequence_num_elements(b) result(n)
 
     type(branch), intent(in) :: b
 
-    type(graph), pointer :: cell
-
-    if (.not. sequence_defined(b)) then
+    if (b % status() .eq. BRANCH_UNKNOWN) then
        error stop 'view_sequence: the extent depends on an unknown tail'
     end if
 
     n = 0
-    if (b % status() .eq. BRANCH_NULL) return
+    if (sequence_empty(b)) return
 
-    cell => b % known()
-    do
-       n = n + 1
-       if (cell % branch(2) % status() .eq. BRANCH_NULL) exit
-       cell => cell % branch(2) % known()
-    end do
+    n = 1 + sequence_num_elements(sequence_rest(b))
 
   end function sequence_num_elements
 
@@ -121,29 +104,21 @@ contains
   ! traversed, so an unknown tail beyond k is not an error.
   !===================================================================!
 
-  function sequence_element(b, k) result(element)
+  recursive function sequence_element(b, k) result(element)
 
     type(branch), intent(in) :: b
-    integer           , intent(in) :: k
-    type(graph), pointer           :: element
-
-    type(graph), pointer :: cell
-    integer              :: i
+    integer     , intent(in) :: k
+    type(graph), pointer     :: element
 
     if (k .lt. 1) then
        error stop 'view_sequence: a sequence is indexed from one'
     end if
-    call require_reachable(b)
 
-    cell => b % known()
-    do i = 1, k - 1
-       call require_cell(cell)
-       call require_reachable(cell % branch(2))
-       cell => cell % branch(2) % known()
-    end do
-
-    call require_cell(cell)
-    element => cell % branch(1) % known()
+    if (k .eq. 1) then
+       element => sequence_first(b)
+    else
+       element => sequence_element(sequence_rest(b), k - 1)
+    end if
 
   end function sequence_element
 
@@ -157,41 +132,37 @@ contains
   ! outside.
   !===================================================================!
 
-  logical function sequence_has(b, g) result(found)
+  recursive logical function sequence_has(b, g) result(found)
 
     type(branch), intent(in) :: b
-    type(graph)       , intent(in) :: g
+    type(graph) , intent(in) :: g
 
-    type(graph), pointer :: cell, element
+    type(graph), pointer :: element
+    type(branch)         :: rest
 
     found = .false.
-    if (b % status() .eq. BRANCH_NULL) return
+    if (sequence_empty(b)) return
     if (b % status() .eq. BRANCH_UNKNOWN) then
        error stop 'view_sequence: membership depends on an unknown sequence'
     end if
 
-    cell => b % known()
-    do
-       call require_cell(cell)
-       element => cell % branch(1) % known()
-       if (element % same_as(g)) then
-          found = .true.
-          return
-       end if
-       if (cell % branch(2) % status() .eq. BRANCH_NULL) return
-       if (cell % branch(2) % status() .eq. BRANCH_UNKNOWN) then
-          error stop 'view_sequence: membership depends on an unknown tail'
-       end if
-       cell => cell % branch(2) % known()
-    end do
+    element => sequence_first(b)
+    found   =  element % same_as(g)
+    if (found) return
+
+    rest = sequence_rest(b)
+    if (rest % status() .eq. BRANCH_UNKNOWN) then
+       error stop 'view_sequence: membership depends on an unknown tail'
+    end if
+    found = sequence_has(rest, g)
 
   end function sequence_has
 
   !===================================================================!
-  ! The recursive form: a sequence is empty, or it is a first
-  ! element followed by the rest. A traversal written on these two
-  ! traverses the chain of cells once, where indexing by position restarts from
-  ! the head at every step.
+  ! The three primitives: a sequence is empty, or it is a first
+  ! element followed by the rest. Every traversal above is a
+  ! recursion over these three, so the chain of cells is read in one
+  ! place.
   !===================================================================!
 
   logical function sequence_empty(b) result(empty)

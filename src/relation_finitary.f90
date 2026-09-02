@@ -111,29 +111,31 @@ module relation_finitary
 
      type(token)                  , private :: identity
      character(len=:), allocatable, private :: label
+     type(graph)     , allocatable, private :: signature(:)
 
    contains
 
      !----------------------------------------------------------------!
-     ! The structural queries, deferred to each concrete type.
+     ! The membership queries, deferred to each concrete type.
      !----------------------------------------------------------------!
 
-     procedure(relation_arity_interface)  , deferred :: arity
-     procedure(relation_domain_interface) , deferred :: domain
      procedure(relation_has_interface)    , deferred :: has
      procedure(relation_count_interface)  , deferred :: num_tuples
      procedure(relation_tuples_interface) , deferred :: tuples
 
      !----------------------------------------------------------------!
-     ! Identity, implemented once for every concrete type - the one
-     ! token law of token_identity: declare once, reject a second
-     ! declaration, copies retain the token, the undeclared equal
-     ! nothing.
+     ! Identity and signature, implemented once for every concrete
+     ! type - the one token law of token_identity: declare once,
+     ! reject a second declaration, copies retain the token, the
+     ! undeclared equal nothing - and the ordered domains, checked
+     ! declared at the one declaration.
      !----------------------------------------------------------------!
 
      procedure :: declare
      procedure :: id
      procedure :: same_as
+     procedure :: arity
+     procedure :: domain
 
      !----------------------------------------------------------------!
      ! Self-containment, DEFAULTING TO FALSE. A relation is assumed
@@ -156,26 +158,6 @@ module relation_finitary
 
   abstract interface
 
-     pure integer function relation_arity_interface(this)
-       import relation
-       class(relation), intent(in) :: this
-     end function relation_arity_interface
-
-     !--------------------------------------------------------------!
-     ! WHICH domain is at this position, by value. Not pure: a set
-     ! graph contains a pointer component, so copying one out of an
-     ! INTENT(IN) dummy is barred from a pure subprogram (F2018
-     ! C1594). This is a control query and no hot path calls it -
-     ! the numbering the hot path requires is stored in the
-     ! representation, never here.
-     !--------------------------------------------------------------!
-
-     type(graph) function relation_domain_interface(this, position)
-       import relation, graph
-       class(relation), intent(in) :: this
-       integer        , intent(in) :: position
-     end function relation_domain_interface
-
      pure logical function relation_has_interface(this, tuple)
        import relation
        class(relation), intent(in) :: this
@@ -196,26 +178,22 @@ module relation_finitary
   end interface
 
   !===================================================================!
-  ! The stored relation: the deduplicated tuple table, and the
-  ! signature as domain identities. The first implementation of the
+  ! The stored relation: the deduplicated tuple table over the
+  ! signature the root stores. The first implementation of the
   ! contract, and the validation check of the level.
   !
   ! It stores NO representation. A generic table relation evaluates
-  ! has() by scanning its own tuples, and evaluates domain(k) by
-  ! identity, so nothing it does after construction is a membership
-  ! query. The set map validates it at construction and is not
-  ! referenced afterwards.
+  ! has() by scanning its own tuples, so nothing it does after
+  ! construction is a membership query. The set map validates it at
+  ! construction and is not referenced afterwards.
   !===================================================================!
 
   type, extends(relation) :: stored_relation
 
-     type(graph), allocatable, private :: signature(:)
-     integer        , allocatable, private :: entry(:,:)
+     integer, allocatable, private :: entry(:,:)
 
    contains
 
-     procedure :: arity        => stored_arity
-     procedure :: domain       => stored_domain
      procedure :: has          => stored_has
      procedure :: num_tuples   => stored_num_tuples
      procedure :: tuples       => stored_tuples
@@ -230,22 +208,66 @@ module relation_finitary
 contains
 
   !===================================================================!
-  ! The identity block, the same law as the graph types'.
+  ! The identity block, the same law as the graph types', and the
+  ! signature. Invalid inputs: a second declaration; an empty
+  ! signature, since k >= 1 is the definition; an undeclared domain,
+  ! since a signature names declared sets (an undeclared token does
+  ! not match itself).
   !===================================================================!
 
-  subroutine declare(this, name)
+  subroutine declare(this, name, domains)
 
-    class(relation) , intent(inout)        :: this
-    character(len=*), intent(in), optional :: name
+    class(relation) , intent(inout) :: this
+    character(len=*), intent(in)    :: name
+    type(graph)     , intent(in)    :: domains(:)
+
+    integer :: k
 
     if (this % identity % declared()) then
        error stop 'relation_finitary: a relation is declared at most once'
     end if
 
-    this % identity = next_token()
-    if (present(name)) this % label = name
+    if (size(domains) < 1) then
+       error stop 'relation_finitary: a relation relates at least one domain'
+    end if
+
+    do k = 1, size(domains)
+       if (.not. domains(k) % same_as(domains(k))) then
+          error stop 'relation_finitary: a signature refers to declared domains only'
+       end if
+    end do
+
+    this % identity  = next_token()
+    this % label     = name
+    this % signature = domains
 
   end subroutine declare
+
+  pure integer function arity(this)
+
+    class(relation), intent(in) :: this
+
+    arity = size(this % signature)
+
+  end function arity
+
+  !===================================================================!
+  ! WHICH domain is at this position, by value - that is, the same
+  ! declared domain. Not pure: a set graph contains a pointer
+  ! component, so copying one out of an INTENT(IN) dummy is barred
+  ! from a pure subprogram (F2018 C1594). This is a control query and
+  ! no hot path calls it - the numbering the hot path requires is
+  ! stored in the representation, never here.
+  !===================================================================!
+
+  type(graph) function domain(this, position)
+
+    class(relation), intent(in) :: this
+    integer        , intent(in) :: position
+
+    domain = this % signature(position)
+
+  end function domain
 
   !===================================================================!
   ! id returns the whole opaque token - the identity itself,
@@ -303,8 +325,9 @@ contains
   ! table one column per tuple, and the set map that states what those
   ! domains contain. Invalid inputs, in the order they are checked:
   !
-  !     an empty signature            k >= 1 is the definition
+  !     an empty signature            k >= 1, checked by declare
   !     an undeclared domain          a signature names declared sets
+  !     an undescribed domain         the map describes every domain
   !     a row count off the arity     each tuple has exactly k parts
   !     a member no domain contains   domain validity, through the map
   !
@@ -329,14 +352,9 @@ contains
     integer              :: k, j, i, nkept
     logical              :: first_occurrence
 
-    if (size(domains) < 1) then
-       error stop 'relation_finitary: a relation relates at least one domain'
-    end if
+    call this % declare(name, domains)
 
     do k = 1, size(domains)
-       if (.not. domains(k) % same_as(domains(k))) then
-          error stop 'relation_finitary: a signature refers to declared domains only'
-       end if
        if (.not. sets % describes(domains(k))) then
           error stop 'relation_finitary: a signature refers to described domains only'
        end if
@@ -371,41 +389,12 @@ contains
        end if
     end do
 
-    allocate(this % signature(size(domains)))
-    do k = 1, size(domains)
-       this % signature(k) = domains(k)
-    end do
-
     allocate(this % entry(size(domains), nkept))
     do i = 1, nkept
        this % entry(:, i) = table(:, kept(i))
     end do
 
-    call this % declare(name)
-
   end function create_stored
-
-  pure integer function stored_arity(this)
-
-    class(stored_relation), intent(in) :: this
-
-    stored_arity = size(this % signature)
-
-  end function stored_arity
-
-  !===================================================================!
-  ! The domain at this position, as a copy - that is, the same
-  ! declared domain.
-  !===================================================================!
-
-  type(graph) function stored_domain(this, position) result(domain)
-
-    class(stored_relation), intent(in) :: this
-    integer               , intent(in) :: position
-
-    domain = this % signature(position)
-
-  end function stored_domain
 
   !===================================================================!
   ! Membership by linear scan, as stated. The indexed lookup belongs
@@ -421,7 +410,7 @@ contains
 
     stored_has = .false.
 
-    if (size(tuple) /= size(this % signature)) return
+    if (size(tuple) /= this % arity()) return
 
     do j = 1, size(this % entry, 2)
        if (all(this % entry(:, j) == tuple)) then

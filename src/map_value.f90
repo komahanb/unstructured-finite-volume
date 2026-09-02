@@ -12,10 +12,10 @@
 !
 ! Readers accept absence: an unattached graph reads as
 ! VALUE_UNATTACHED. Reading a value requires KNOWN, because an
-! unknown number must not be read. Writers require an
-! assigned identity and (except attach) an existing row, because
-! updating a missing row or attaching twice would each leave the
-! map ambiguous.
+! unknown number must not be read. Attach requires an assigned
+! identity and no row; every other writer requires an existing row,
+! because updating a missing row or attaching twice would each leave
+! the map ambiguous.
 !
 ! Rows are keyed on type(token) identity tokens copied at attach,
 ! never on position, so growing, reordering, or compacting the
@@ -29,7 +29,6 @@ module map_value
 
   use util_precision  , only : dp
   use graph_fractal    , only : graph
-  use token_identity   , only : token
   use map_token_rows   , only : identity_rows
   use field_stored, only : stored_field
 
@@ -76,24 +75,6 @@ module map_value
 contains
 
   !===================================================================!
-  ! Check that the element has an assigned identity before any write:
-  ! an undeclared token could never be found again. Violation stops
-  ! the program.
-  !===================================================================!
-
-  pure function writer_key(element) result(key)
-
-    type(graph), intent(in) :: element
-    type(token)             :: key
-
-    key = element % id()
-    if (.not. key % declared()) then
-       error stop 'map_value: a value map is keyed on assigned identity'
-    end if
-
-  end function writer_key
-
-  !===================================================================!
   ! Add one row for a graph, status UNKNOWN, no value. Attaching
   ! twice stops the program, because two rows for one identity
   ! would make lookups ambiguous.
@@ -104,24 +85,14 @@ contains
     class(value_map), intent(inout) :: this
     type(graph)     , intent(in)    :: element
 
-    type(value_state), allocatable :: grown(:)
-    type(token) :: key
-    integer     :: n, at
+    integer :: at
 
-    key = writer_key(element)
-
-    if (this % rows % position(key) /= 0) then
-       error stop 'map_value: a value row is attached once'
-    end if
-
-    at = this % rows % append(key)
+    at = this % rows % append(element % id(), &
+         & 'map_value: a value map is keyed on assigned identity', &
+         & 'map_value: a value row is attached once')
 
     if (.not. allocated(this % states)) allocate(this % states(0))
-    n = size(this % states)
-    allocate(grown(n + 1))
-    grown(1:n)          = this % states
-    grown(n + 1) % status = VALUE_UNKNOWN
-    call move_alloc(grown, this % states)
+    this % states = [this % states, value_state()]
 
   end subroutine attach_unknown
 
@@ -140,15 +111,9 @@ contains
     real(dp)          , intent(in)    :: values(:)
     integer , optional, intent(in)    :: num_components
 
-    type(token) :: key
-    integer     :: at, width
+    integer :: at, width
 
-    key = writer_key(element)
-
-    at = this % rows % position(key)
-    if (at == 0) then
-       error stop 'map_value: an update requires an attached row'
-    end if
+    at = this % rows % row(element % id(), 'map_value: an update requires an attached row')
 
     if (size(values) == 0) then
        error stop 'map_value: a known value has values'
@@ -175,15 +140,9 @@ contains
     type(graph)     , intent(in)    :: element
 
     type(stored_field) :: nothing
-    type(token) :: key
-    integer     :: at
+    integer :: at
 
-    key = writer_key(element)
-
-    at = this % rows % position(key)
-    if (at == 0) then
-       error stop 'map_value: an update requires an attached row'
-    end if
+    at = this % rows % row(element % id(), 'map_value: an update requires an attached row')
 
     this % states(at) % value  = nothing
     this % states(at) % status = VALUE_UNKNOWN
@@ -201,28 +160,12 @@ contains
     class(value_map), intent(inout) :: this
     type(graph)     , intent(in)    :: element
 
-    type(value_state), allocatable :: kept(:)
-    type(token) :: key
-    integer     :: at, n, k, m
+    integer :: at
 
-    key = writer_key(element)
-
-    at = this % rows % position(key)
-    if (at == 0) then
-       error stop 'map_value: a detach removes an attached row'
-    end if
+    at = this % rows % row(element % id(), 'map_value: a detach removes an attached row')
 
     call this % rows % remove(at)
-
-    n = size(this % states)
-    allocate(kept(n - 1))
-    m = 0
-    do k = 1, n
-       if (k == at) cycle
-       m = m + 1
-       kept(m) = this % states(k)
-    end do
-    call move_alloc(kept, this % states)
+    this % states = [this % states(1:at - 1), this % states(at + 1:)]
 
   end subroutine detach
 
@@ -267,11 +210,7 @@ contains
 
     integer :: at
 
-    at = this % rows % position(element % id())
-
-    if (at == 0) then
-       error stop 'map_value: a known value is read'
-    end if
+    at = this % rows % row(element % id(), 'map_value: a known value is read')
 
     if (this % states(at) % status /= VALUE_KNOWN) then
        error stop 'map_value: a known value is read'

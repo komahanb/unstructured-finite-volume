@@ -245,40 +245,19 @@ contains
     class(graph), intent(in) :: this
     type(graph) , intent(in) :: other
 
-    type(graph), pointer :: this_known_1, this_known_2
-    type(graph), pointer :: other_known_1, other_known_2
+    type(graph), pointer :: this_known, other_known
+    integer :: k
 
-    ! Branch(1) states must match
-    if (this % branch(1) % status() /= other % branch(1) % status()) then
-       similar_to = .false.
-       return
-    end if
+    similar_to = .false.
 
-    ! Branch(2) states must match
-    if (this % branch(2) % status() /= other % branch(2) % status()) then
-       similar_to = .false.
-       return
-    end if
-
-    ! If branch(1) is KNOWN, recursively check the referenced graphs
-    if (this % branch(1) % status() == BRANCH_KNOWN) then
-       this_known_1  => this % branch(1) % known()
-       other_known_1 => other % branch(1) % known()
-       if (.not. this_known_1 % similar_to(other_known_1)) then
-          similar_to = .false.
-          return
+    do k = 1, 2
+       if (this % branch(k) % status() /= other % branch(k) % status()) return
+       if (this % branch(k) % status() == BRANCH_KNOWN) then
+          this_known  => this % branch(k) % known()
+          other_known => other % branch(k) % known()
+          if (.not. this_known % similar_to(other_known)) return
        end if
-    end if
-
-    ! If branch(2) is KNOWN, recursively check the referenced graphs
-    if (this % branch(2) % status() == BRANCH_KNOWN) then
-       this_known_2  => this % branch(2) % known()
-       other_known_2 => other % branch(2) % known()
-       if (.not. this_known_2 % similar_to(other_known_2)) then
-          similar_to = .false.
-          return
-       end if
-    end if
+    end do
 
     similar_to = .true.
 

@@ -2,9 +2,9 @@
 ! SET STORE
 !
 ! One owner for the data attached to set identities: extension, name
-! and declared inclusion. The separate maps remain the storage
-! detail. Callers that only read or declare sets need not pass three
-! side tables through every signature.
+! and declared inclusion. The store IS the set map, extended by a
+! label map and an inclusion map. Callers that only read or declare
+! sets need not pass three side tables through every signature.
 !
 ! The store does not merge labels, extents and inclusions into one
 ! attribute system. It keeps the three maps distinct and gives each a
@@ -24,54 +24,38 @@ module map_set_store
   use map_set                , only : set_map
   use map_label              , only : label_map
   use map_inclusion          , only : inclusion_map, declared_subobject
-  use map_set_representation , only : set_representation, listed_set_representation
+  use map_set_representation , only : listed_set_representation
 
   implicit none
 
   private
   public :: set_store
 
-  type :: set_store
+  !===================================================================!
+  ! A set map, with a label map and an inclusion map beside it. Every
+  ! extent query and bind is the set map's own; the store adds the
+  ! name, the declared inclusion and the subobject order.
+  !===================================================================!
 
-     type(set_map)       , private :: extents
+  type, extends(set_map) :: set_store
+
      type(label_map)     , private :: labels
      type(inclusion_map) , private :: inclusions
 
    contains
 
-     procedure :: bind
      procedure :: name
      procedure :: include_in
      procedure :: declare_subobject
 
-     procedure :: describes
      procedure :: labelled
      procedure :: label_of
 
-     procedure :: num_members_of
-     procedure :: member_of
-     procedure :: members_of
-     procedure :: has
-     procedure :: index_in
-     procedure :: extent_of
-
-     procedure :: included
-     procedure :: declared_into
      procedure :: subobject_of
 
   end type set_store
 
 contains
-
-  subroutine bind(this, element, representation)
-
-    class(set_store)          , intent(inout) :: this
-    type(graph)               , intent(in)    :: element
-    class(set_representation) , intent(in)    :: representation
-
-    call this % extents % bind(element, representation)
-
-  end subroutine bind
 
   subroutine name(this, element, text)
 
@@ -108,15 +92,6 @@ contains
 
   end subroutine declare_subobject
 
-  logical function describes(this, element)
-
-    class(set_store), intent(in) :: this
-    type(graph)     , intent(in) :: element
-
-    describes = this % extents % describes(element)
-
-  end function describes
-
   logical function labelled(this, element)
 
     class(set_store), intent(in) :: this
@@ -135,84 +110,6 @@ contains
     text = this % labels % label_of(element)
 
   end function label_of
-
-  integer function num_members_of(this, element)
-
-    class(set_store), intent(in) :: this
-    type(graph)     , intent(in) :: element
-
-    num_members_of = this % extents % num_members_of(element)
-
-  end function num_members_of
-
-  integer function member_of(this, element, position)
-
-    class(set_store), intent(in) :: this
-    type(graph)     , intent(in) :: element
-    integer         , intent(in) :: position
-
-    member_of = this % extents % member_of(element, position)
-
-  end function member_of
-
-  subroutine members_of(this, element, values)
-
-    class(set_store)   , intent(in)  :: this
-    type(graph)        , intent(in)  :: element
-    integer, allocatable, intent(out) :: values(:)
-
-    call this % extents % members_of(element, values)
-
-  end subroutine members_of
-
-  logical function has(this, element, value)
-
-    class(set_store), intent(in) :: this
-    type(graph)     , intent(in) :: element
-    integer         , intent(in) :: value
-
-    has = this % extents % has(element, value)
-
-  end function has
-
-  integer function index_in(this, element, value)
-
-    class(set_store), intent(in) :: this
-    type(graph)     , intent(in) :: element
-    integer         , intent(in) :: value
-
-    index_in = this % extents % index_in(element, value)
-
-  end function index_in
-
-  subroutine extent_of(this, element, extent)
-
-    class(set_store)                     , intent(in)  :: this
-    type(graph)                          , intent(in)  :: element
-    class(set_representation), allocatable, intent(out) :: extent
-
-    call this % extents % extent_of(element, extent)
-
-  end subroutine extent_of
-
-  logical function included(this, part)
-
-    class(set_store), intent(in) :: this
-    type(graph)     , intent(in) :: part
-
-    included = this % inclusions % included(part)
-
-  end function included
-
-  logical function declared_into(this, part, ambient)
-
-    class(set_store), intent(in) :: this
-    type(graph)     , intent(in) :: part
-    type(graph)     , intent(in) :: ambient
-
-    declared_into = this % inclusions % declared_into(part, ambient)
-
-  end function declared_into
 
   logical function subobject_of(this, part, ancestor)
 

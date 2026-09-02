@@ -65,7 +65,6 @@
 module map_set
 
   use graph_fractal          , only : graph
-  use token_identity         , only : token
   use map_token_rows         , only : identity_rows
   use map_set_representation, only : set_representation
 
@@ -136,19 +135,11 @@ contains
     class(set_representation), intent(in)    :: representation
 
     type(extent), allocatable :: grown(:)
-    type(token) :: key
-    integer     :: n, at
+    integer :: n, at
 
-    key = element % id()
-    if (.not. key % declared()) then
-       error stop 'map_set: a set map is keyed on assigned identity'
-    end if
-
-    if (this % rows % position(key) /= 0) then
-       error stop 'map_set: a set is described once'
-    end if
-
-    at = this % rows % append(key)
+    at = this % rows % append(element % id(), &
+         & 'map_set: a set map is keyed on assigned identity', &
+         & 'map_set: a set is described once')
 
     if (.not. allocated(this % extents)) allocate(this % extents(0))
     n = size(this % extents)
@@ -181,8 +172,7 @@ contains
 
     integer :: at
 
-    at = this % rows % position(element % id())
-    if (at == 0) error stop 'map_set: no representation describes that set'
+    at = this % rows % row(element % id(), 'map_set: no representation describes that set')
 
     num_members_of = this % extents(at) % representation % num_members()
 
@@ -196,8 +186,7 @@ contains
 
     integer :: at
 
-    at = this % rows % position(element % id())
-    if (at == 0) error stop 'map_set: no representation describes that set'
+    at = this % rows % row(element % id(), 'map_set: no representation describes that set')
 
     member_of = this % extents(at) % representation % member(position)
 
@@ -211,8 +200,7 @@ contains
 
     integer :: at
 
-    at = this % rows % position(element % id())
-    if (at == 0) error stop 'map_set: no representation describes that set'
+    at = this % rows % row(element % id(), 'map_set: no representation describes that set')
 
     call this % extents(at) % representation % members(values)
 
@@ -226,8 +214,7 @@ contains
 
     integer :: at
 
-    at = this % rows % position(element % id())
-    if (at == 0) error stop 'map_set: no representation describes that set'
+    at = this % rows % row(element % id(), 'map_set: no representation describes that set')
 
     has = this % extents(at) % representation % has(value)
 
@@ -241,8 +228,7 @@ contains
 
     integer :: at
 
-    at = this % rows % position(element % id())
-    if (at == 0) error stop 'map_set: no representation describes that set'
+    at = this % rows % row(element % id(), 'map_set: no representation describes that set')
 
     allocate(extent, source=this % extents(at) % representation)
 
@@ -256,8 +242,7 @@ contains
 
     integer :: at
 
-    at = this % rows % position(element % id())
-    if (at == 0) error stop 'map_set: no representation describes that set'
+    at = this % rows % row(element % id(), 'map_set: no representation describes that set')
 
     index_in = this % extents(at) % representation % local_index(value)
 

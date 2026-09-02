@@ -64,7 +64,6 @@
 module map_label
 
   use graph_fractal , only : graph
-  use token_identity, only : token
   use map_token_rows, only : identity_rows
   use util_string   , only : string
 
@@ -106,20 +105,14 @@ contains
     character(len=*), intent(in)    :: label
 
     type(string), allocatable :: grown(:)
-    type(token) :: key
-    integer     :: n, at
+    integer :: n, at
 
-    key = element % id()
-    if (.not. key % declared()) then
-       error stop 'map_label: a label map is keyed on assigned identity'
-    end if
+    at = this % rows % append(element % id(), &
+         & 'map_label: a label map is keyed on assigned identity', &
+         & 'map_label: a set is named once')
 
-    if (this % rows % position(key) /= 0) then
-       error stop 'map_label: a set is named once'
-    end if
-
-    at = this % rows % append(key)
-
+    ! type(string) is finalizable, so the array-constructor grow is
+    ! not admitted under -std=f2023; the payload grows by move_alloc.
     if (.not. allocated(this % labels)) allocate(this % labels(0))
     n = size(this % labels)
     allocate(grown(n + 1))

@@ -8,16 +8,20 @@
 !
 !      position      the row of a key, or zero when no row stores it;
 !                    unallocated storage returns zero
+!      row           the row of a key; no row stops the program with
+!                    the map's own message
 !      append        one more row, its key copied by value, the new
-!                    row's position returned
+!                    row's position returned; an undeclared key or a
+!                    key already present stops the program with the
+!                    map's own message
+!      key           the token stored at a row
 !      removal       one row removed, the rest retaining their order
 !
-! A key is a declared token: a map checks token % declared() before a
-! write, since a row keyed on an undeclared token could never be found
-! again, and states its own rejection. This module owns the token
-! column ALONE. It has no dependency on set representations, labels,
-! inclusions, fields, or graph mathematics: a map indexes its own
-! payload by the row positions this table returns, and reads that
+! A key is a declared token: a row keyed on an undeclared token could
+! never be found again, so append rejects one. This module owns the
+! token column ALONE. It has no dependency on set representations,
+! labels, inclusions, fields, or graph mathematics: a map indexes its
+! own payload by the row positions this table returns, and reads that
 ! payload itself. So the different laws the maps enforce - one ambient
 ! per part, a status that must be known before it is read, a
 ! representation copied whole - stay in the maps, and only the
@@ -32,12 +36,11 @@
 !
 !             WHAT IS REJECTED
 !
-! An append of a key already present, and a removal of a position
-! outside the rows, each stop the program: a caller that has not first
-! called position would otherwise duplicate or misplace a row. The
-! message is generic here; a map states its own law before it calls,
-! so the map-specific rejection (named once, attached once, one ambient)
-! is reported there and this check is only the fallback.
+! An append of an undeclared key or of a key already present, a row
+! query for a key with no row, and a removal of a position outside the
+! rows, each stop the program. The map passes the message that states
+! its own law (named once, attached once, one ambient), so the
+! rejection is reported in the map's terms and checked here once.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -58,6 +61,8 @@ module map_token_rows
    contains
 
      procedure :: position
+     procedure :: row
+     procedure :: key
      procedure :: num_rows
      procedure :: append
      procedure :: remove
@@ -82,6 +87,31 @@ contains
 
   end function position
 
+  !===================================================================!
+  ! The row of a key. No row stops the program with the caller's
+  ! message, so a map's read is one call.
+  !===================================================================!
+
+  integer function row(this, key, message) result(at)
+
+    class(identity_rows), intent(in) :: this
+    type(token)         , intent(in) :: key
+    character(len=*)    , intent(in) :: message
+
+    at = this % position(key)
+    if (at == 0) error stop message
+
+  end function row
+
+  pure type(token) function key(this, at)
+
+    class(identity_rows), intent(in) :: this
+    integer             , intent(in) :: at
+
+    key = this % keys(at)
+
+  end function key
+
   pure integer function num_rows(this)
 
     class(identity_rows), intent(in) :: this
@@ -93,32 +123,23 @@ contains
 
   !===================================================================!
   ! Append one row and return its position. The key is copied by
-  ! value. A key already present stops the program; the caller rejects
-  ! it first with its own message, so this check is the fallback.
+  ! value. An undeclared key stops the program with the first
+  ! message, a key already present with the second.
   !===================================================================!
 
-  function append(this, key) result(at)
+  function append(this, key, undeclared, duplicate) result(at)
 
     class(identity_rows), intent(inout) :: this
-    type(token)      , intent(in)    :: key
+    type(token)         , intent(in)    :: key
+    character(len=*)    , intent(in)    :: undeclared, duplicate
     integer :: at
 
-    type(token), allocatable :: grown(:)
-    integer :: n
-
-    if (this % position(key) /= 0) then
-       error stop 'map_token_rows: a row is appended for a key not already present'
-    end if
+    if (.not. key % declared())     error stop undeclared
+    if (this % position(key) /= 0) error stop duplicate
 
     if (.not. allocated(this % keys)) allocate(this % keys(0))
-
-    n = size(this % keys)
-    allocate(grown(n + 1))
-    grown(1:n)   = this % keys
-    grown(n + 1) = key
-    call move_alloc(grown, this % keys)
-
-    at = n + 1
+    this % keys = [this % keys, key]
+    at = size(this % keys)
 
   end function append
 
@@ -133,22 +154,11 @@ contains
     class(identity_rows), intent(inout) :: this
     integer          , intent(in)    :: at
 
-    type(token), allocatable :: kept(:)
-    integer :: n, k, m
-
-    n = this % num_rows()
-    if (at < 1 .or. at > n) then
+    if (at < 1 .or. at > this % num_rows()) then
        error stop 'map_token_rows: a removal requires an existing row'
     end if
 
-    allocate(kept(n - 1))
-    m = 0
-    do k = 1, n
-       if (k == at) cycle
-       m = m + 1
-       kept(m) = this % keys(k)
-    end do
-    call move_alloc(kept, this % keys)
+    this % keys = [this % keys(1:at - 1), this % keys(at + 1:)]
 
   end subroutine remove
 

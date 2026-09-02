@@ -89,6 +89,7 @@ module view_level
      procedure :: assemble
      procedure :: couple
 
+     procedure, private :: branch_to
      procedure, private :: refuse_assignment
      generic :: assignment(=) => refuse_assignment
 
@@ -321,7 +322,6 @@ contains
     class(level_storage), intent(inout) :: this
     integer             , intent(in)    :: members(:)
 
-    type(graph), pointer :: element, rest
     integer :: tail
 
     if (size(members) == 0) then
@@ -329,20 +329,35 @@ contains
        return
     end if
 
-    tail    =  this % member_list(members(2:))
-    head    =  this % allocate_node()
-    element => this % nodes(members(1)) % node
+    tail = this % member_list(members(2:))
+    head = this % allocate_node()
 
-    this % nodes(head) % node % branch(1) = known_branch(element)
-
-    if (tail == 0) then
-       this % nodes(head) % node % branch(2) = null_branch()
-    else
-       rest => this % nodes(tail) % node
-       this % nodes(head) % node % branch(2) = known_branch(rest)
-    end if
+    this % nodes(head) % node % branch(1) = this % branch_to(members(1))
+    this % nodes(head) % node % branch(2) = this % branch_to(tail)
 
   end function member_list
+
+  !===================================================================!
+  ! The branch that references the node at an index: NULL for index
+  ! zero, KNOWN -> node otherwise.
+  !===================================================================!
+
+  function branch_to(this, at) result(b)
+
+    class(level_storage), intent(in) :: this
+    integer             , intent(in) :: at
+    type(branch)                     :: b
+
+    type(graph), pointer :: g
+
+    if (at == 0) then
+       b = null_branch()
+    else
+       g => this % nodes(at) % node
+       b = known_branch(g)
+    end if
+
+  end function branch_to
 
   !===================================================================!
   ! One level: its members as a list in branch(1), its coupling in
@@ -359,25 +374,13 @@ contains
     integer             , intent(in)    :: members(:)
     integer             , intent(in)    :: coupling
 
-    type(graph), pointer :: first, pairing
     integer :: head
 
     head = this % member_list(members)
     at   = this % allocate_node()
 
-    if (head == 0) then
-       this % nodes(at) % node % branch(1) = null_branch()
-    else
-       first => this % nodes(head) % node
-       this % nodes(at) % node % branch(1) = known_branch(first)
-    end if
-
-    if (coupling == 0) then
-       this % nodes(at) % node % branch(2) = null_branch()
-    else
-       pairing => this % nodes(coupling) % node
-       this % nodes(at) % node % branch(2) = known_branch(pairing)
-    end if
+    this % nodes(at) % node % branch(1) = this % branch_to(head)
+    this % nodes(at) % node % branch(2) = this % branch_to(coupling)
 
     if (.not. level_consistent(this % nodes(at) % node)) then
        error stop 'view_level: the coupling''s carriers begin with this level''s own members'
@@ -400,26 +403,14 @@ contains
     class(level_storage), intent(inout) :: this
     integer             , intent(in)    :: carriers(:), relations(:)
 
-    type(graph), pointer :: first_carrier, first_relation
     integer :: carrier_head, relation_head
 
     carrier_head  = this % member_list(carriers)
     relation_head = this % member_list(relations)
     at            = this % allocate_node()
 
-    if (carrier_head == 0) then
-       this % nodes(at) % node % branch(1) = null_branch()
-    else
-       first_carrier => this % nodes(carrier_head) % node
-       this % nodes(at) % node % branch(1) = known_branch(first_carrier)
-    end if
-
-    if (relation_head == 0) then
-       this % nodes(at) % node % branch(2) = null_branch()
-    else
-       first_relation => this % nodes(relation_head) % node
-       this % nodes(at) % node % branch(2) = known_branch(first_relation)
-    end if
+    this % nodes(at) % node % branch(1) = this % branch_to(carrier_head)
+    this % nodes(at) % node % branch(2) = this % branch_to(relation_head)
 
   end function couple
 

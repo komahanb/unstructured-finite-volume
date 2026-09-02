@@ -55,9 +55,9 @@
 !     identity map owns its keys by value;
 !     it references no graph object in order to identify it.
 !
-! Every query here - included, declared_into, and the transitive
-! order - is a comparison of identities, so all of them are computable
-! from the stored pairs alone. The traversal reads only this map.
+! The one query here, the transitive order, is a comparison of
+! identities, so it is computable from the stored pairs alone. The
+! traversal reads only this map.
 !
 !                  WHY THERE IS NO ambient_of
 !
@@ -73,9 +73,9 @@
 !     host = m % ambient_of(s);  host % same_as(a)
 !
 ! which is not a request for a graph - it is the identity predicate,
-! written in two steps. declared_into evaluates it in one, and the
-! operation that would have needed a registry is removed rather than
-! implemented.
+! written in two steps. declared_subobject evaluates it in one, and
+! the operation that would have needed a registry is removed rather
+! than implemented.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -105,8 +105,6 @@ module map_inclusion
    contains
 
      procedure :: include_in
-     procedure :: included
-     procedure :: declared_into
 
   end type inclusion_map
 
@@ -124,71 +122,27 @@ contains
     type(graph)         , intent(in)    :: part
     type(graph)         , intent(in)    :: ambient
 
-    type(token), allocatable :: grown(:)
-    type(token) :: below, above
-    integer     :: n, at
+    type(token) :: above
+    integer     :: at
 
-    below = part % id()
     above = ambient % id()
 
-    if (.not. below % declared() .or. .not. above % declared()) then
+    if (.not. above % declared()) then
        error stop 'map_inclusion: an inclusion is keyed on assigned identity'
     end if
 
-    if (below % matches(above)) then
+    if (part % same_as(ambient)) then
        error stop 'map_inclusion: a set is not declared into itself'
     end if
 
-    if (this % rows % position(below) /= 0) then
-       error stop 'map_inclusion: a set is declared into one ambient'
-    end if
-
-    at = this % rows % append(below)
+    at = this % rows % append(part % id(), &
+         & 'map_inclusion: an inclusion is keyed on assigned identity', &
+         & 'map_inclusion: a set is declared into one ambient')
 
     if (.not. allocated(this % ambients)) allocate(this % ambients(0))
-    n = size(this % ambients)
-    allocate(grown(n + 1))
-    grown(1:n)   = this % ambients
-    grown(n + 1) = above
-    call move_alloc(grown, this % ambients)
+    this % ambients = [this % ambients, above]
 
   end subroutine include_in
-
-  pure logical function included(this, part)
-
-    class(inclusion_map), intent(in) :: this
-    type(graph)         , intent(in) :: part
-
-    included = this % rows % position(part % id()) /= 0
-
-  end function included
-
-  !===================================================================!
-  ! The declared edge itself: was S declared into exactly this A. One
-  ! step, not the transitive order - S c--> S' c--> A returns false
-  ! here and true from declared_subobject, and the difference is the
-  ! reason both exist.
-  !===================================================================!
-
-  pure logical function declared_into(this, part, ambient) result(declared)
-
-    class(inclusion_map), intent(in) :: this
-    type(graph)         , intent(in) :: part
-    type(graph)         , intent(in) :: ambient
-
-    type(token) :: below, above
-    integer     :: at
-
-    declared = .false.
-
-    below = part % id()
-    at    = this % rows % position(below)
-    if (at == 0) return
-
-    above  = ambient % id()
-    declared = this % ambients(at) % matches(above)
-
-  end function declared_into
 
   !===================================================================!
   ! THE SUBOBJECT ORDER: reflexive, and transitive along declared

@@ -45,13 +45,15 @@
 ! this module returns does not point into the binding. The binding
 ! therefore needs no TARGET attribute at any call site.
 !
-! The binding is storage keyed on identity, not ontology. The binding
-! is where the wrappers that were stored inside the retired container
-! belong: they existed only because a Fortran array has one dynamic
+! The binding is storage keyed on identity, not ontology: its rows are
+! an identity-row table of copied element tokens (map_token_rows), so
+! it references no element graph and bind_* needs no TARGET either.
+! The wrappers that were stored inside the retired container belong
+! here: they existed only because a Fortran array has one dynamic
 ! type, and that is a storage fact.
 !
 ! Sequence behaviour is delegated to view_sequence. Nothing here
-! traverses the sequence's cells.
+! reads a cell.
 !
 ! THREE FAILURES, STRUCTURALLY APART.
 !
@@ -84,10 +86,12 @@
 
 module view_relational
 
-  use graph_fractal      , only : graph
-  use relation_finitary     , only : relation
-  use view_sequence, only : sequence_num_elements, sequence_element, &
-       & sequence_has
+  use graph_fractal    , only : graph, branch
+  use token_identity   , only : token
+  use map_token_rows   , only : identity_rows
+  use relation_finitary, only : relation
+  use view_sequence    , only : sequence_num_elements, sequence_element, &
+       & sequence_empty, sequence_first, sequence_rest
 
   implicit none
 
@@ -98,21 +102,22 @@ module view_relational
   public :: has_set, relational_valid
 
   !===================================================================!
-  ! Owned storage. One row per bound element.
+  ! Owned storage. The elements are the keys of two identity-row
+  ! tables; the objects run parallel to the rows, each allocated
+  ! separately and referenced by pointer.
   !===================================================================!
 
   type :: bound_set
-     type(graph)      , pointer :: element => null()
-     type(graph)  , pointer :: object  => null()
+     type(graph)    , pointer :: object => null()
   end type bound_set
 
   type :: bound_relation
-     type(graph)    , pointer :: element => null()
-     class(relation), pointer :: object  => null()
+     class(relation), pointer :: object => null()
   end type bound_relation
 
   type :: relational_binding
 
+     type(identity_rows)              , private :: set_rows, relation_rows
      type(bound_set)     , allocatable, private :: sets(:)
      type(bound_relation), allocatable, private :: relations(:)
 
@@ -133,8 +138,8 @@ module view_relational
 contains
 
   !===================================================================!
-  ! Binding. The object is copied into owned storage; the element is
-  ! referenced.
+  ! Binding. The object is copied into owned storage; the element's
+  ! identity is the key, so an element is declared and bound once.
   !
   ! What may be stored: an object with an assigned identity, because
   ! the view compares objects and nothing else; and, for a relation,
@@ -146,36 +151,34 @@ contains
 
   subroutine bind_set(this, element, object)
 
-    class(relational_binding), intent(inout)        :: this
-    type(graph)              , intent(in) , target  :: element
-    type(graph)          , intent(in)           :: object
+    class(relational_binding), intent(inout) :: this
+    type(graph)              , intent(in)    :: element
+    type(graph)              , intent(in)    :: object
 
-    type(bound_set), allocatable :: grown(:)
-    integer                      :: n
+    integer :: at
 
     ! An undeclared token does not match itself.
     if (.not. object % same_as(object)) then
        error stop 'view_relational: a binding stores identified objects'
     end if
 
+    at = this % set_rows % append(element % id(), &
+         & 'view_relational: a binding is keyed on assigned identity', &
+         & 'view_relational: an element is bound once')
+
     if (.not. allocated(this % sets)) allocate(this % sets(0))
-    n = size(this % sets)
-    allocate(grown(n + 1))
-    grown(1:n) = this % sets
-    grown(n + 1) % element => element
-    allocate(grown(n + 1) % object, source=object)
-    call move_alloc(grown, this % sets)
+    this % sets = [this % sets, bound_set()]
+    allocate(this % sets(at) % object, source=object)
 
   end subroutine bind_set
 
   subroutine bind_relation(this, element, object)
 
-    class(relational_binding), intent(inout)       :: this
-    type(graph)              , intent(in), target  :: element
-    class(relation)          , intent(in)          :: object
+    class(relational_binding), intent(inout) :: this
+    type(graph)              , intent(in)    :: element
+    class(relation)          , intent(in)    :: object
 
-    type(bound_relation), allocatable :: grown(:)
-    integer                           :: n
+    integer :: at
 
     if (.not. object % same_as(object)) then
        error stop 'view_relational: a binding stores identified objects'
@@ -185,13 +188,13 @@ contains
        error stop 'view_relational: a binding owns whole relations; a view cannot be bound'
     end if
 
+    at = this % relation_rows % append(element % id(), &
+         & 'view_relational: a binding is keyed on assigned identity', &
+         & 'view_relational: an element is bound once')
+
     if (.not. allocated(this % relations)) allocate(this % relations(0))
-    n = size(this % relations)
-    allocate(grown(n + 1))
-    grown(1:n) = this % relations
-    grown(n + 1) % element => element
-    allocate(grown(n + 1) % object, source=object)
-    call move_alloc(grown, this % relations)
+    this % relations = [this % relations, bound_relation()]
+    allocate(this % relations(at) % object, source=object)
 
   end subroutine bind_relation
 
@@ -204,20 +207,10 @@ contains
 
     class(relational_binding), intent(in) :: this
     type(graph)              , intent(in) :: element
-    type(graph), pointer              :: s
+    type(graph), pointer                  :: s
 
-    integer :: k
-
-    if (allocated(this % sets)) then
-       do k = 1, size(this % sets)
-          if (this % sets(k) % element % same_as(element)) then
-             s => this % sets(k) % object
-             return
-          end if
-       end do
-    end if
-
-    error stop 'view_relational: no member set is bound to that element'
+    s => this % sets(this % set_rows % row(element % id(), &
+         & 'view_relational: no member set is bound to that element')) % object
 
   end function set_for
 
@@ -227,18 +220,8 @@ contains
     type(graph)              , intent(in) :: element
     class(relation), pointer              :: r
 
-    integer :: k
-
-    if (allocated(this % relations)) then
-       do k = 1, size(this % relations)
-          if (this % relations(k) % element % same_as(element)) then
-             r => this % relations(k) % object
-             return
-          end if
-       end do
-    end if
-
-    error stop 'view_relational: no relation is bound to that element'
+    r => this % relations(this % relation_rows % row(element % id(), &
+         & 'view_relational: no relation is bound to that element')) % object
 
   end function relation_for
 
@@ -267,21 +250,13 @@ contains
 
     integer :: k
 
-    if (allocated(this % sets)) then
-       do k = 1, size(this % sets)
-          if (associated(this % sets(k) % object)) then
-             deallocate(this % sets(k) % object)
-          end if
-       end do
-    end if
+    do k = 1, this % set_rows % num_rows()
+       if (associated(this % sets(k) % object)) deallocate(this % sets(k) % object)
+    end do
 
-    if (allocated(this % relations)) then
-       do k = 1, size(this % relations)
-          if (associated(this % relations(k) % object)) then
-             deallocate(this % relations(k) % object)
-          end if
-       end do
-    end if
+    do k = 1, this % relation_rows % num_rows()
+       if (associated(this % relations(k) % object)) deallocate(this % relations(k) % object)
+    end do
 
   end subroutine release_binding
 
@@ -344,21 +319,42 @@ contains
 
     type(graph)             , intent(in) :: g
     type(relational_binding), intent(in) :: b
-    type(graph)         , intent(in) :: s
+    type(graph)             , intent(in) :: s
 
     integer :: k
 
     stored = .false.
-    if (.not. allocated(b % sets)) return
 
-    do k = 1, size(b % sets)
+    do k = 1, b % set_rows % num_rows()
        if (b % sets(k) % object % same_as(s)) then
-          stored = sequence_has(g % branch(1), b % sets(k) % element)
+          stored = sequence_has_key(g % branch(1), b % set_rows % key(k))
           return
        end if
     end do
 
   end function has_set
+
+  !===================================================================!
+  ! Does the sequence contain the element with this identity: the
+  ! element is stored as a key, so membership is read by token. A
+  ! chain of cells that reaches UNKNOWN is refused by sequence_first.
+  !===================================================================!
+
+  recursive logical function sequence_has_key(b, key) result(found)
+
+    type(branch), intent(in) :: b
+    type(token) , intent(in) :: key
+
+    type(graph), pointer :: element
+
+    found = .false.
+    if (sequence_empty(b)) return
+
+    element => sequence_first(b)
+    found   =  key % matches(element % id())
+    if (.not. found) found = sequence_has_key(sequence_rest(b), key)
+
+  end function sequence_has_key
 
   !===================================================================!
   ! The validity law. S and P are sets, and every domain of every

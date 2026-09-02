@@ -114,15 +114,13 @@ module relation_binary
 
   !===================================================================!
   ! The abstract binary relation: the general contract, plus the
-  ! queries only arity two defines. Arity is returned here, once,
-  ! for every descendant: two.
+  ! queries only arity two defines. Every descendant declares a
+  ! signature of two domains, so arity is the root's.
   !===================================================================!
 
   type, abstract, extends(relation) :: binary_relation
 
    contains
-
-     procedure :: arity => binary_arity
 
      !----------------------------------------------------------------!
      ! The deferred primitives: fibres as non-owning references, no allocation.
@@ -167,10 +165,11 @@ module relation_binary
   !     signature      WHICH domains        semantic, identities
   !     coordinates    WHICH ROW a member   compiled, numbering only
   !
-  ! The signature returns domain(k) and nothing else; the coordinates
-  ! return local_index and nothing else. A coordinate representation
-  ! stores NO identity - it cannot state which set it numbers, and
-  ! does not need to, because the signature beside it already does.
+  ! The signature, stored by the root relation, returns domain(k) and
+  ! nothing else; the coordinates return local_index and nothing
+  ! else. A coordinate representation stores NO identity - it cannot
+  ! state which set it numbers, and does not need to, because the
+  ! signature beside it already does.
   !
   ! The coordinates are stored BY VALUE, copied out of the caller's
   ! set map at construction. That is deliberate and differs from the
@@ -184,10 +183,8 @@ module relation_binary
 
   type, extends(binary_relation) :: csr_relation
 
-     ! Semantic: which two domains.
-     type(graph), allocatable, private :: signature(:)
-
      ! Compiled: how a member value becomes a row, each direction.
+     ! The signature - which two domains - is the root's.
      class(set_representation), allocatable, private :: source_coords
      class(set_representation), allocatable, private :: target_coords
 
@@ -197,7 +194,6 @@ module relation_binary
 
    contains
 
-     procedure :: domain        => csr_domain
      procedure :: has           => csr_has
      procedure :: num_tuples    => csr_num_tuples
      procedure :: tuples        => csr_tuples
@@ -213,8 +209,9 @@ module relation_binary
 
   !===================================================================!
   ! The transpose view: a borrower. The view stores its base by
-  ! pointer and evaluates every query through the base, ends
-  ! swapped. The base must outlive the view.
+  ! pointer and evaluates every tuple query through the base, ends
+  ! swapped; its signature is the base's two domains swapped, copied
+  ! at construction. The base must outlive the view.
   !===================================================================!
 
   type, extends(binary_relation) :: transposed_relation
@@ -223,7 +220,6 @@ module relation_binary
 
    contains
 
-     procedure :: domain        => view_domain
      procedure :: has           => view_has
      procedure :: num_tuples    => view_num_tuples
      procedure :: tuples        => view_tuples
@@ -263,18 +259,6 @@ module relation_binary
   end interface ragged
 
 contains
-
-  !===================================================================!
-  ! Arity two, for every binary implementation.
-  !===================================================================!
-
-  pure integer function binary_arity(this)
-
-    class(binary_relation), intent(in) :: this
-
-    binary_arity = 2
-
-  end function binary_arity
 
   !===================================================================!
   ! The two ends of the signature, named as arity two names them.
@@ -348,10 +332,7 @@ contains
     integer              :: na, nb, nt
     integer              :: j, p, q, row, col, kept
 
-    if (.not. source % same_as(source) .or. &
-         & .not. target % same_as(target)) then
-       error stop 'relation_binary: a signature refers to declared domains only'
-    end if
+    call this % declare(name, [source, target])
 
     if (size(table, 1) /= 2) then
        error stop 'relation_binary: each tuple has exactly one part per position'
@@ -419,22 +400,7 @@ contains
     call group_by_key(nb, keepb(1:kept), keepa(1:kept), &
          & this % xbwd, this % src)
 
-    allocate(this % signature(2))
-    this % signature(1) = source
-    this % signature(2) = target
-
-    call this % declare(name)
-
   end function create_csr
-
-  type(graph) function csr_domain(this, position) result(domain)
-
-    class(csr_relation), intent(in) :: this
-    integer            , intent(in) :: position
-
-    domain = this % signature(position)
-
-  end function csr_domain
 
   !===================================================================!
   ! The fibre views: one local_index, one slice, zero allocation.
@@ -548,22 +514,13 @@ contains
     type(transposed_relation)                      :: view
 
     view % base => base
-    call view % declare(base % name() // '^T')
+    call view % declare(base % name() // '^T', [base % domain(2), base % domain(1)])
 
   end function transpose_of
 
   !===================================================================!
   ! The view's results: everything through the base, ends swapped.
   !===================================================================!
-
-  type(graph) function view_domain(this, position) result(domain)
-
-    class(transposed_relation), intent(in) :: this
-    integer               , intent(in) :: position
-
-    domain = this % base % domain(3 - position)
-
-  end function view_domain
 
   pure logical function view_has(this, tuple)
 

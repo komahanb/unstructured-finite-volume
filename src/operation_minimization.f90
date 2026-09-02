@@ -20,14 +20,10 @@
 !                       the measure
 !      norm ··········· the norm reduction
 !      sweep_order ···· the colouring traversal
-!      diagonal ······· matvec evaluated by colour: applied to one
-!                       colour's indicator, the result at a member
-!                       IS its diagonal entry, because no two
-!                       neighbours share a colour
-!      constant ······· the affine part of the attached operation -
-!                       what boundary values and sources contribute
-!                       at zero state; the assembled right hand side
-!                       is its negative
+!      block_diagonal · matvec evaluated by colour: applied to the
+!                       indicator of one colour, the result at a
+!                       member is that member's block column, because
+!                       no two coupled blocks share a colour
 !
 ! A concrete solver works in plain arrays - read once, updated,
 ! written back once, as the field banner specifies - and defines only
@@ -71,6 +67,7 @@ module operation_minimization
   integer, parameter :: window = 5
   public :: minimizer
   public :: attach
+  public :: state_tuple
 
   !===================================================================!
   ! The base: an attached operation, the graph it reads, and the
@@ -114,15 +111,6 @@ module operation_minimization
      ! the action itself at attach.
      type(graph) :: residual_domain
      integer         :: num_residuals = 0
-
-     ! A second domain, one member per NUMBER rather than per cell.
-     ! The pairings are defined here: a measure stores one weight per
-     ! entry, so a dot product over wide entries must be taken on
-     ! the values themselves - the calculus states this in its own
-     ! banner. With one number per cell the two domains are the same
-     ! set, and nothing changes.
-     type(graph) :: numbers
-     integer         :: num_numbers = 0
 
      ! How wide an entry is. One number per cell is the common case
      ! and the default; a state with several numbers per cell - a
@@ -194,16 +182,13 @@ module operation_minimization
      procedure :: halted
 
      procedure :: attach
-     procedure :: evaluation_inputs
      procedure :: raw_apply
      procedure :: matvec
      procedure :: imbalance
      procedure :: inner_product
      procedure :: norm
      procedure :: sweep_order
-     procedure :: diagonal
      procedure :: block_diagonal
-     procedure :: constant
 
      ! The operation interface: a solver IS an operation - the one
      ! that solves the attached statement. apply solves from zero, so a
@@ -503,25 +488,7 @@ contains
     ! The residual domain is the action's own codomain.
     call action % domain(on, this % residual_domain, this % num_residuals)
 
-    !----------------------------------------------------------------!
-    ! attach is re-enterable - Newton calls it once per iteration - and
-    ! a graph declares its identity ONCE. The old counted_set
-    ! constructor created a new number domain on every attach, so a
-    ! new one is created here too, by resetting the component to an
-    ! undeclared graph before declaring it. Declaring the same variable
-    ! twice is rejected; the reset states which of the two meanings was
-    ! intended.
-    !----------------------------------------------------------------!
-
     n = this % num_unknowns
-
-    block
-      type(graph) :: unsigned
-      this % numbers = unsigned
-    end block
-    call this % numbers % declare()
-
-    this % num_numbers = n * this % num_components
 
     allocate(zero(n * this % num_components))
     zero = 0.0_dp
@@ -541,30 +508,32 @@ contains
   end subroutine attach
 
   !===================================================================!
-  ! The inputs the statement is evaluated on at the unknown x: the
-  ! state on the unknown domain, then the fixed inputs. The residual
-  ! and every tangent taken of it are built on this one tuple, so
-  ! they linearize the same function.
+  ! The inputs a statement is evaluated on at the state x: x stored
+  ! on the unknown domain, n members of the given width, then the
+  ! fixed inputs where given. The residual and every tangent taken of
+  ! it are built on this one tuple, so they linearize the same function.
   !===================================================================!
 
-  subroutine evaluation_inputs(this, x, inputs)
+  function state_tuple(on, n, components, x, stored) result(inputs)
 
-    class(minimizer), intent(in) :: this
-    real(dp), intent(in)         :: x(:)
-    type(stored_field), allocatable, intent(out) :: inputs(:)
+    type(graph)       , intent(in)           :: on
+    integer           , intent(in)           :: n, components
+    real(dp)          , intent(in)           :: x(:)
+    type(stored_field), intent(in), optional :: stored(:)
+    type(stored_field), allocatable          :: inputs(:)
 
     type(stored_field) :: state
 
-    state = stored_field('state', this % unknown_domain, this % num_unknowns, num_components=this % num_components)
+    state = stored_field('state', on, n, num_components=components)
     call state % set_real_vector(x)
 
-    if (allocated(this % stored)) then
-       inputs = [state, this % stored]
+    if (present(stored)) then
+       inputs = [state, stored]
     else
        inputs = [state]
     end if
 
-  end subroutine evaluation_inputs
+  end function state_tuple
 
   !===================================================================!
   ! The operation applied unmodified, affine part included. The
@@ -583,7 +552,7 @@ contains
     type(stored_field), allocatable :: tuple(:)
     class(field), allocatable :: image
 
-    call this % evaluation_inputs(x, tuple)
+    tuple = state_tuple(this % unknown_domain, this % num_unknowns, this % num_components, x, this % stored)
     call this % action % apply(this % on, this % action % bind(tuple), image)
 
     if (.not. image % defined_on(this % residual_domain)) then
@@ -673,33 +642,6 @@ contains
   end subroutine sweep_order
 
   !===================================================================!
-  ! The diagonal, evaluated by colour. Applied to the indicator of one
-  ! colour class, the result at a member is that member's diagonal
-  ! entry, because none of its neighbours is in the class. One
-  ! matvec per colour, as many matvecs as colours in all.
-  !===================================================================!
-
-  subroutine diagonal(this, d)
-
-    class(minimizer), intent(in)   :: this
-    real(dp), allocatable, intent(out) :: d(:)
-
-    real(dp), allocatable :: blocks(:,:,:)
-    integer :: b
-
-    if (this % block_width /= 1) then
-       error stop 'diagonal: the unknowns come in blocks; read the block diagonal'
-    end if
-
-    call this % block_diagonal(blocks)
-    allocate(d(size(blocks, 3)))
-    do b = 1, size(blocks, 3)
-       d(b) = blocks(1, 1, b)
-    end do
-
-  end subroutine diagonal
-
-  !===================================================================!
   ! THE BLOCK DIAGONAL by coloured indicators. The coupling attached is over
   ! the blocks; blocks of one colour do not couple, so an indicator of
   ! one on the k-th component of every block of a colour, applied
@@ -753,20 +695,6 @@ contains
     end do
 
   end subroutine block_diagonal
-
-  !===================================================================!
-  ! The affine part, for the caller assembling an equation: the
-  ! statement action(q) = 0 reads matvec(q) = -constant.
-  !===================================================================!
-
-  subroutine constant(this, g)
-
-    class(minimizer), intent(in)   :: this
-    real(dp), allocatable, intent(out) :: g(:)
-
-    g = this % affine
-
-  end subroutine constant
 
   !===================================================================!
   ! The operation interface.

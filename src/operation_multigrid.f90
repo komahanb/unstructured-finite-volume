@@ -132,48 +132,22 @@ contains
     type(stencil) :: block_statement
     integer , allocatable :: rows(:), columns(:)
     real(dp), allocatable :: weights(:), zeros(:)
-    integer :: e, ne, b
 
     this % aggregates = aggregates
     this % nblocks    = maxval(aggregates)
 
-    ! The Galerkin construction: every dependency is mapped to a block pair.
-    select type (fine => this % action)
+    ! The Galerkin construction: every dependency mapped to a block
+    ! pair, the dependencies of one pair summed into one entry.
+    call through_map(this % action, aggregates, this % nblocks, rows, columns, weights)
 
-    type is (stencil)
+    allocate(zeros(this % nblocks))
+    zeros = 0.0_dp
 
-       ne = fine % pattern % num_edges()
-       allocate(rows(ne), columns(ne), weights(ne))
-
-       call fine % weights % real_vector(weights)
-       do e = 1, ne
-          rows(e)    = aggregates(fine % pattern % edge_head(e))
-          columns(e) = aggregates(fine % pattern % edge_tail(e))
-       end do
-
-       allocate(zeros(this % nblocks))
-       zeros = 0.0_dp
-
-       ! many fine dependencies map to one block pair; the
-       ! coarse matrix stores their sum as one entry
-       block
-         integer , allocatable :: crows(:), ccolumns(:)
-         real(dp), allocatable :: cweights(:)
-         call combine_triples(this % nblocks, this % nblocks, &
-              & rows, columns, weights, crows, ccolumns, cweights)
-         block_statement = stencil(crows, ccolumns, cweights, &
-              & zeros, label='block statement')
-         ! versioned, so a direct coarse solver factorises it once and
-         ! not once per cycle
-         statements_made = statements_made + 1
-         call block_statement % versioned(statements_made)
-       end block
-
-    class default
-
-       error stop 'multigrid: attach a compiled (stencil) operator'
-
-    end select
+    block_statement = stencil(rows, columns, weights, zeros, label='block statement')
+    ! versioned, so a direct coarse solver factorises it once and
+    ! not once per cycle
+    statements_made = statements_made + 1
+    call block_statement % versioned(statements_made)
 
     ! The smoother is a STRUCTURED one - jacobi, gauss-seidel - so it
     ! is passed the dependent-variable coupling explicitly. On this
@@ -187,7 +161,7 @@ contains
     if (this % block_width > 1) then
        call this % smoother % attach(this % action, this % on, &
             & this % unknown_domain, this % num_unknowns, &
-            & coupling = read_through(this % action, this % block_width))
+            & coupling = read_through(this % action, size(this % affine), this % block_width))
     else
        call this % smoother % attach(this % action, this % on, &
             & this % unknown_domain, this % num_unknowns, coupling = this % on)
@@ -208,39 +182,64 @@ contains
   !===================================================================!
 
   !===================================================================!
-  ! A stencil's pattern read through blocks of consecutive unknowns:
-  ! the graph over the blocks with an edge where any unknown of one
-  ! reads any unknown of the other, self-edges removed. The coupling
-  ! a block smoother colours.
+  ! A stencil's dependencies read through a map of its vertices onto
+  ! nb blocks: (row, column, weight) becomes (block of row, block of
+  ! column, weight), and the dependencies of one block pair are
+  ! summed into one entry, in the order combine_triples defines. An
+  ! action that is not a stencil stops the program.
   !===================================================================!
 
-  function read_through(action, width) result(coupling)
+  subroutine through_map(fine, block_of, nb, rows, columns, weights)
 
-    class(operation), intent(in) :: action
-    integer         , intent(in) :: width
-    type(stored_directed_graph)  :: coupling
+    class(operation), intent(in) :: fine
+    integer         , intent(in) :: block_of(:), nb
+    integer , allocatable, intent(out) :: rows(:), columns(:)
+    real(dp), allocatable, intent(out) :: weights(:)
 
-    integer , allocatable :: rows(:), columns(:), crows(:), ccolumns(:)
-    real(dp), allocatable :: ones(:), cweights(:)
-    logical , allocatable :: kept(:)
-    integer :: e, ne, nb
+    integer , allocatable :: r(:), c(:)
+    real(dp), allocatable :: w(:)
+    integer :: e, ne
 
-    select type (fine => action)
+    select type (fine)
     type is (stencil)
        ne = fine % pattern % num_edges()
-       nb = fine % pattern % num_vertices() / width
-       allocate(rows(ne), columns(ne), ones(ne))
+       allocate(r(ne), c(ne))
+       call fine % weights % real_vector(w)
        do e = 1, ne
-          rows(e)    = (fine % pattern % edge_head(e) - 1) / width + 1
-          columns(e) = (fine % pattern % edge_tail(e) - 1) / width + 1
+          r(e) = block_of(fine % pattern % edge_head(e))
+          c(e) = block_of(fine % pattern % edge_tail(e))
        end do
-       ones = 1.0_dp
-       call combine_triples(nb, nb, rows, columns, ones, crows, ccolumns, cweights)
-       kept = crows /= ccolumns
-       coupling = stored_directed_graph(nb, tails=pack(ccolumns, kept), heads=pack(crows, kept))
+       call combine_triples(nb, nb, r, c, w, rows, columns, weights)
     class default
        error stop 'multigrid: attach a compiled (stencil) operator'
     end select
+
+  end subroutine through_map
+
+  !===================================================================!
+  ! A stencil's pattern read through blocks of consecutive unknowns:
+  ! the graph over the blocks with an edge where any unknown of one
+  ! reads any unknown of the other, self-edges removed. The coupling
+  ! a block smoother colours. num_vertices is the stencil's vertex
+  ! count: the extent of the affine part attach evaluated from it.
+  !===================================================================!
+
+  function read_through(action, num_vertices, width) result(coupling)
+
+    class(operation), intent(in) :: action
+    integer         , intent(in) :: num_vertices, width
+    type(stored_directed_graph)  :: coupling
+
+    integer , allocatable :: crows(:), ccolumns(:)
+    real(dp), allocatable :: cweights(:)
+    logical , allocatable :: kept(:)
+    integer :: v, nb
+
+    nb = num_vertices / width
+    call through_map(action, [((v - 1) / width + 1, v = 1, num_vertices)], nb, &
+         & crows, ccolumns, cweights)
+    kept = crows /= ccolumns
+    coupling = stored_directed_graph(nb, tails=pack(ccolumns, kept), heads=pack(crows, kept))
 
   end function read_through
 

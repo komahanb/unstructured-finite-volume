@@ -7,22 +7,8 @@
 ! an adjoint solve and every order of an expansion read the same
 ! matrix frozen at the same state, so one factorisation serves them
 ! all and each costs a substitution. Formed again per solve, each
-! would cost the factorisation again.
-!
-!=====================================================================!
-!
-!                        THE COST MODEL
-!
-! Every procedure with a cost reports its own count, so a caller
-! choosing between modes can add the counts rather than estimate:
-!
-!      factorise      n^3 / 3      multiplications
-!      substitute     n^2          multiplications, either way round
-!
-! and the count of each is recorded with util_tally, so the measured
-! count can be read beside the model's count.
-!
-!=====================================================================!
+! would cost the factorisation again. Each factorisation is recorded
+! with util_tally, so the count is measured rather than modelled.
 !
 ! Solving against the transpose uses the same factors. P A = L U gives
 ! A^T P^T = U^T L^T, so A^T x = b is U^T y = b, then L^T z = y, then
@@ -53,7 +39,6 @@ module util_factorisation
      integer , allocatable, private :: exchanged(:)
      integer , private :: n = 0
      logical , private :: is_singular = .false.
-     real(dp), private :: least_pivot = 0.0_dp
 
    contains
 
@@ -61,9 +46,6 @@ module util_factorisation
      procedure :: substitute
      procedure :: order
      procedure :: singular
-     procedure :: smallest_pivot
-     procedure, nopass :: factorise_cost
-     procedure, nopass :: substitute_cost
 
   end type dense_factorisation
 
@@ -95,7 +77,6 @@ contains
     this % n           = n
     this % lu          = a
     this % is_singular = .false.
-    this % least_pivot = huge(1.0_dp)
     if (allocated(this % exchanged)) deallocate(this % exchanged)
     allocate(this % exchanged(n), source=0)
     allocate(row(n))
@@ -114,8 +95,6 @@ contains
           this % lu(k, :)  = this % lu(p, :)
           this % lu(p, :)  = row
        end if
-
-       this % least_pivot = min(this % least_pivot, abs(this % lu(k, k)))
 
        if (abs(this % lu(k, k)) <= threshold) then
           this % is_singular = .true.
@@ -223,33 +202,5 @@ contains
     yes = this % is_singular
 
   end function singular
-
-  pure real(dp) function smallest_pivot(this) result(least)
-
-    class(dense_factorisation), intent(in) :: this
-
-    least = this % least_pivot
-
-  end function smallest_pivot
-
-  !===================================================================!
-  ! THE COST MODEL, in multiplications.
-  !===================================================================!
-
-  pure real(dp) function factorise_cost(n) result(cost)
-
-    integer, intent(in) :: n
-
-    cost = real(n, dp) ** 3 / 3.0_dp
-
-  end function factorise_cost
-
-  pure real(dp) function substitute_cost(n) result(cost)
-
-    integer, intent(in) :: n
-
-    cost = real(n, dp) ** 2
-
-  end function substitute_cost
 
 end module util_factorisation

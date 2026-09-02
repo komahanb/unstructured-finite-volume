@@ -2,29 +2,29 @@
 ! The time-marching family: an edge function on a scheme's coupling
 ! that also declares how the scheme marches.
 !
-! Beyond the edge rule it inherits, a family declares how far back
-! its widest constraint reads, how many stages one instant contains, and
-! which derivative degree it solves for. The coefficients it produces
-! are dimensionless: the weight an edge finally stores is the
-! coefficient times a power of the step, and that power is fixed by
-! the two degrees the edge joins, which operation_weight multiplies
-! in.
+! One type stores every family as data. A multistep family (Adams,
+! BDF) is an order p and the functional its coefficients are read
+! from; a Runge-Kutta family (DIRK) is a tableau. The three
+! constructors below fix the data, and every query is one procedure
+! that reads it. The coefficients produced are dimensionless: the
+! weight an edge finally stores is the coefficient times a power of
+! the step, and that power is fixed by the two degrees the edge
+! joins, which operation_weight multiplies in.
 !
 !=====================================================================!
 !
 !                    THE TWO LAGRANGE FUNCTIONALS
 !
 ! A multistep family interpolates through the instants behind k at
-! scaled offsets
+! the nodes
 !
-!      theta_j  =  (t_k - t_(k-j)) / dt_k ,     theta_0 = 0 ,
+!      u_j  =  -(t_k - t_(k-j)) / dt_k ,     u_0 = 0 ,
 !
 ! and every coefficient is either the slope at zero of a Lagrange
 ! basis function through those nodes (a difference) or its integral
-! over the last step (a quadrature). Both functionals are supplied
-! here for the families that extend this type. On a uniform grid
-! every theta_j is j and the tabulated coefficients result; they
-! are the uniform value of the formula, not a separate case.
+! over the last step (a quadrature). On a uniform grid every u_j is
+! -j and the tabulated coefficients result; they are the uniform
+! value of the formula, not a separate case.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -32,6 +32,8 @@
 module operation_family
 
   use util_precision  , only : dp
+  use operation_action, only : contract
+  use field_calculus  , only : FIELD_REAL, FIELD_INTEGER
   use operation_edge_function , only : edge_function
   use util_derivative_terms   , only : derivative_terms, value, &
        & operator(+), operator(-), operator(*), operator(/)
@@ -40,78 +42,314 @@ module operation_family
 
   private
   public :: family
-  public :: offsets, slope_at_zero, integral_over_step, negated
+  public :: adams_family, bdf_family, dirk_family
+  public :: implicit_midpoint, crouzeix_two_stage, crouzeix_three_stage, &
+       & hairer_wanner_five_stage
+  public :: slope_at_zero, integral_over_step
 
-  type, abstract, extends(edge_function) :: family
+  ! The three coupling geometries a family reads its edges by.
+
+  integer, parameter :: FAMILY_ADAMS = 1
+  integer, parameter :: FAMILY_BDF   = 2
+  integer, parameter :: FAMILY_DIRK  = 3
+
+  !===================================================================!
+  ! A family is its label, its geometry and its data: the order of a
+  ! multistep family, or the tableau (a, b) of a DIRK family. A
+  ! multistep family has one stage with weight one, so b = [1].
+  !===================================================================!
+
+  type, extends(edge_function) :: family
+
+     character(len=:), allocatable, private :: label
+     integer , private :: geometry = FAMILY_BDF
+     integer , private :: order    = 1
+     real(dp), private, allocatable :: a(:,:)
+     real(dp), private, allocatable :: b(:)
 
    contains
 
-     procedure :: history_depth  => family_history_depth
-     procedure :: num_stages     => family_num_stages
-     procedure :: stage_weight   => family_stage_weight
-     procedure :: step_quadrature => family_step_quadrature
-     procedure :: primary_degree => family_primary_degree
-     procedure(family_pattern_interface), deferred :: row_pattern
+     procedure :: name             => family_name
+     procedure :: history_depth    => family_history_depth
+     procedure :: num_stages       => family_num_stages
+     procedure :: stage_weight     => family_stage_weight
+     procedure :: step_quadrature  => family_step_quadrature
+     procedure :: primary_degree   => family_primary_degree
+     procedure :: row_pattern      => family_row_pattern
+     procedure :: edge_coefficient => family_edge_coefficient
 
   end type family
-
-  abstract interface
-
-     pure integer function family_count_interface(this)
-       import :: family
-       class(family), intent(in) :: this
-     end function family_count_interface
-
-     !----------------------------------------------------------------!
-     ! Two counts that read the degree of the equation, because the
-     ! rows a family makes depend on how many derivatives there are
-     ! to determine: how far back the widest of those rows reaches,
-     ! and which degree the governing constraint determines. The
-     ! second is the value for a difference family and the highest
-     ! degree for a quadrature or a stage family; every other degree
-     ! is determined by a derived row.
-     !----------------------------------------------------------------!
-
-     pure integer function family_degree_interface(this, equation_degree)
-       import :: family
-       class(family), intent(in) :: this
-       integer      , intent(in) :: equation_degree
-     end function family_degree_interface
-
-     !----------------------------------------------------------------!
-     ! The sources of the derived row that determines one degree: how
-     ! many instants back each one lies, and what degree it has. A
-     ! degree the family determines by no derived row gives an empty
-     ! pattern rather than stopping, so a caller may query every
-     ! degree.
-     !----------------------------------------------------------------!
-
-     pure subroutine family_pattern_interface(this, determines, equation_degree, &
-          & offset, source_degree)
-       import :: family
-       class(family), intent(in) :: this
-       integer      , intent(in) :: determines, equation_degree
-       integer, allocatable, intent(out) :: offset(:), source_degree(:)
-     end subroutine family_pattern_interface
-
-  end interface
 
 contains
 
   !===================================================================!
-  ! THE LAGRANGE FUNCTIONALS.
-  !
-  ! The scaled offsets at instant k of the n instants k, k-1, ...,
-  ! k-n+1: theta_j is the distance back to instant k - j in units of
-  ! the step ending at k. Every step read must be positive; a zero
-  ! or negative one stops the program, the ratio being undefined.
+  ! The constructors. An order below one, a non-square tableau, or a
+  ! tableau entry above the diagonal stops the program.
   !===================================================================!
 
-  pure function offsets(dt, k, n) result(theta)
+  function create(label, geometry, order, a, b) result(this)
+
+    character(len=*), intent(in) :: label
+    integer         , intent(in) :: geometry, order
+    real(dp)        , intent(in) :: a(:,:), b(:)
+    type(family) :: this
+
+    this % label    = label
+    this % geometry = geometry
+    this % order    = order
+    this % a        = a
+    this % b        = b
+    call this % declare_arguments(3, [contract(FIELD_REAL, 1), &
+         & contract(FIELD_INTEGER, 1), contract(FIELD_INTEGER, 1)])
+
+  end function create
+
+  function adams_family(order) result(this)
+
+    integer, intent(in) :: order
+    type(family) :: this
+
+    if (order < 1) error stop 'operation_family: the order is positive'
+    this = create('adams-moulton', FAMILY_ADAMS, order, &
+         & reshape([1.0_dp], [1, 1]), [1.0_dp])
+
+  end function adams_family
+
+  function bdf_family(order) result(this)
+
+    integer, intent(in) :: order
+    type(family) :: this
+
+    if (order < 1) error stop 'operation_family: the order is positive'
+    this = create('bdf', FAMILY_BDF, order, reshape([1.0_dp], [1, 1]), [1.0_dp])
+
+  end function bdf_family
+
+  function dirk_family(a, b) result(this)
+
+    real(dp), intent(in) :: a(:,:)
+    real(dp), intent(in) :: b(:)
+    type(family) :: this
+
+    integer :: i, j
+
+    if (size(a, 1) /= size(a, 2) .or. size(b) /= size(a, 1)) then
+       error stop 'operation_family: the tableau is square with one weight per stage'
+    end if
+    do i = 1, size(a, 1)
+       do j = i + 1, size(a, 2)
+          if (a(i, j) /= 0.0_dp) then
+             error stop 'operation_family: a diagonally implicit tableau has no entry above its diagonal'
+          end if
+       end do
+    end do
+    this = create('dirk', FAMILY_DIRK, 1, a, b)
+
+  end function dirk_family
+
+  !===================================================================!
+  ! The queries, each one read from the data.
+  !===================================================================!
+
+  pure function family_name(this) result(name)
+
+    class(family), intent(in) :: this
+    character(len=:), allocatable :: name
+
+    name = this % label
+
+  end function family_name
+
+  pure integer function family_history_depth(this, equation_degree)
+
+    class(family), intent(in) :: this
+    integer      , intent(in) :: equation_degree
+
+    associate (u1 => equation_degree); end associate
+    select case (this % geometry)
+    case (FAMILY_ADAMS)
+       family_history_depth = max(this % order - 1, 1)
+    case (FAMILY_BDF)
+       family_history_depth = this % order
+    case default
+       family_history_depth = 1
+    end select
+
+  end function family_history_depth
+
+  pure integer function family_primary_degree(this, equation_degree)
+
+    class(family), intent(in) :: this
+    integer      , intent(in) :: equation_degree
+
+    family_primary_degree = merge(0, equation_degree, this % geometry == FAMILY_BDF)
+
+  end function family_primary_degree
+
+  pure integer function family_num_stages(this)
+
+    class(family), intent(in) :: this
+
+    family_num_stages = size(this % b)
+
+  end function family_num_stages
+
+  pure real(dp) function family_stage_weight(this, i)
+
+    class(family), intent(in) :: this
+    integer      , intent(in) :: i
+
+    if (i < 1 .or. i > size(this % b)) then
+       error stop 'operation_family: the stage is one of the tableau'
+    end if
+    family_stage_weight = this % b(i)
+
+  end function family_stage_weight
+
+  !===================================================================!
+  ! The interpolatory quadrature over the step ending at k, on the
+  ! nodes the family reads: min(order, k) for a multistep family,
+  ! one for DIRK (the rectangle rule). An instant outside the block
+  ! stops the program.
+  !===================================================================!
+
+  pure subroutine family_step_quadrature(this, dt, k, weight)
+
+    class(family)         , intent(in) :: this
+    type(derivative_terms), intent(in) :: dt(:)
+    integer               , intent(in) :: k
+    type(derivative_terms), allocatable, intent(out) :: weight(:)
+
+    integer :: num_nodes, j
+
+    if (k < 1 .or. k > size(dt)) then
+       error stop 'operation_family: a quadrature is evaluated at an instant of the block'
+    end if
+    num_nodes = merge(1, min(this % order, k), this % geometry == FAMILY_DIRK)
+    allocate(weight(num_nodes))
+    do j = 1, num_nodes
+       weight(j) = integral_over_step(nodes(dt, k, num_nodes), j - 1)
+    end do
+
+  end subroutine family_step_quadrature
+
+  !===================================================================!
+  ! The row pattern: the offsets an edge reads and the degree at each,
+  ! for the row that determines a degree. Adams reads the value at
+  ! offset one and the derivative at the p previous instants; BDF
+  ! reads the degree below at offsets 0..p; DIRK has no derived rows.
+  !===================================================================!
+
+  pure subroutine family_row_pattern(this, determines, equation_degree, &
+       & offset, source_degree)
+
+    class(family), intent(in) :: this
+    integer      , intent(in) :: determines, equation_degree
+    integer, allocatable, intent(out) :: offset(:), source_degree(:)
+
+    integer :: i
+
+    select case (this % geometry)
+    case (FAMILY_ADAMS)
+       if (determines < 0 .or. determines >= equation_degree) then
+          allocate(offset(0), source_degree(0))
+          return
+       end if
+       offset        = [1, (i, i = 0, this % order - 1)]
+       source_degree = [determines, (determines + 1, i = 0, this % order - 1)]
+    case (FAMILY_BDF)
+       if (determines < 1 .or. determines > equation_degree) then
+          allocate(offset(0), source_degree(0))
+          return
+       end if
+       offset = [(i, i = 0, this % order)]
+       allocate(source_degree(this % order + 1), source=determines - 1)
+    case default
+       allocate(offset(0), source_degree(0))
+    end select
+
+  end subroutine family_row_pattern
+
+  !===================================================================!
+  ! The dimensionless coefficient on one edge. An edge from an earlier
+  ! instant, a source degree the geometry does not read, or an offset
+  ! beyond the order stops the program.
+  !===================================================================!
+
+  pure function family_edge_coefficient(this, dt, tail, head, &
+       & source_degree, determines) result(c)
+
+    class(family)         , intent(in) :: this
+    type(derivative_terms), intent(in) :: dt(:)
+    integer               , intent(in) :: tail, head, source_degree, determines
+    type(derivative_terms) :: c
+
+    integer :: i, j, s
+
+    select case (this % geometry)
+
+    case (FAMILY_ADAMS)
+       i = head - tail
+       if (i < 0) error stop 'operation_family: an edge runs from an earlier instant'
+       if (determines < 0) then
+          error stop 'operation_family: a constraint determines a degree at or above the value'
+       end if
+       if (source_degree == determines) then
+          if (i /= 1) error stop 'operation_family: the same degree is read at offset one'
+          c = derivative_terms(1.0_dp, dt(head))
+       else if (source_degree == determines + 1) then
+          if (i >= this % order) error stop 'operation_family: the quadrature spans p instants'
+          c = integral_over_step(nodes(dt, head, this % order), i)
+       else
+          error stop 'operation_family: a source is the constraint''s degree or one above'
+       end if
+
+    case (FAMILY_BDF)
+       j = head - tail
+       if (j < 0) error stop 'operation_family: an edge runs from an earlier instant'
+       if (determines < 1) error stop 'operation_family: a derived row determines a derivative'
+       if (source_degree /= determines - 1) then
+          error stop 'operation_family: every source is the degree below the one determined'
+       end if
+       if (j > this % order) error stop 'operation_family: a row reaches p instants'
+       c = slope_at_zero(nodes(dt, head, this % order + 1), j)
+
+    case default
+       s = size(this % b)
+       if (head == 1 .or. tail == 2 + s) then
+          error stop 'operation_family: an edge runs from the initial instant or a stage into a later vertex'
+       end if
+       if (source_degree /= determines .and. source_degree /= determines + 1) then
+          error stop 'operation_family: a source is the constraint''s degree or one above'
+       end if
+       if (tail == 1) then
+          c = derivative_terms(1.0_dp, dt(head))
+          return
+       end if
+       j = tail - 1
+       if (head == 2 + s) then
+          c = derivative_terms(this % b(j), dt(head))
+          return
+       end if
+       i = head - 1
+       if (j > i) error stop 'operation_family: a stage reads stages at or before it'
+       c = derivative_terms(this % a(i, j), dt(head))
+
+    end select
+
+  end function family_edge_coefficient
+
+  !===================================================================!
+  ! The n Lagrange nodes ending at instant k, scaled by dt(k) and
+  ! negated so that the step just taken is the interval [-1, 0]. A
+  ! step read that is not positive stops the program.
+  !===================================================================!
+
+  pure function nodes(dt, k, n) result(u)
 
     type(derivative_terms), intent(in) :: dt(:)
     integer               , intent(in) :: k, n
-    type(derivative_terms) :: theta(0:n-1)
+    type(derivative_terms) :: u(0:n-1)
 
     integer :: j
 
@@ -120,18 +358,16 @@ contains
           error stop 'operation_family: every time step read is positive'
        end if
     end do
-
-    theta(0) = derivative_terms(0.0_dp, dt(k))
+    u(0) = derivative_terms(0.0_dp, dt(k))
     do j = 1, n - 1
-       theta(j) = theta(j - 1) + dt(k - j + 1) / dt(k)
+       u(j) = u(j - 1) - dt(k - j + 1) / dt(k)
     end do
 
-  end function offsets
+  end function nodes
 
   !===================================================================!
   ! The slope at zero of the j-th Lagrange basis function through the
-  ! nodes u: the sum over the other nodes m of one over (u_j - u_m)
-  ! times the product over the remaining nodes of (0 - u_i)/(u_j - u_i).
+  ! nodes u.
   !===================================================================!
 
   pure function slope_at_zero(u, j) result(s)
@@ -145,7 +381,6 @@ contains
 
     n = ubound(u, 1)
     s = derivative_terms(0.0_dp, u(j))
-
     do m = 0, n
        if (m == j) cycle
        term = derivative_terms(1.0_dp, u(j)) / (u(j) - u(m))
@@ -159,10 +394,9 @@ contains
   end function slope_at_zero
 
   !===================================================================!
-  ! The coefficients of the j-th Lagrange basis function through the
-  ! nodes u as a polynomial in u, lowest power first: the product of
-  ! (u - u_m)/(u_j - u_m) over the other nodes, multiplied out one
-  ! factor at a time.
+  ! The monomial coefficients of the j-th Lagrange basis function
+  ! through the nodes u, by repeated multiplication of the linear
+  ! factors.
   !===================================================================!
 
   pure function basis_polynomial(u, j) result(c)
@@ -179,7 +413,6 @@ contains
        c(l) = derivative_terms(0.0_dp, u(j))
     end do
     c(0) = derivative_terms(1.0_dp, u(j))
-
     do m = 0, n
        if (m == j) cycle
        shifted(0) = derivative_terms(0.0_dp, u(j))
@@ -194,10 +427,8 @@ contains
   end function basis_polynomial
 
   !===================================================================!
-  ! The integral from -1 to 0 of the j-th Lagrange basis function
-  ! through the nodes u: each power u^n contributes (-1)^n / (n + 1).
-  ! That is the last step in scaled units, so the result is the
-  ! quadrature weight of node j over the step ending at zero.
+  ! The integral over [-1, 0] of the j-th Lagrange basis function
+  ! through the nodes u.
   !===================================================================!
 
   pure function integral_over_step(u, j) result(w)
@@ -211,122 +442,65 @@ contains
 
     c = basis_polynomial(u, j)
     w = derivative_terms(0.0_dp, u(j))
-
     do n = 0, ubound(u, 1)
        w = w + (real((-1)**n, dp) / real(n + 1, dp)) * c(n)
     end do
 
   end function integral_over_step
-  !===================================================================!
-  ! The defaults of a family unless it overrides them: one stage, one
-  ! instant of history, and the primary unknown the equation's own
-  ! highest derivative. bdf reads further back and solves for the value;
-  ! dirk has as many stages as its tableau has weights.
-  !===================================================================!
-
-  pure integer function family_num_stages(this)
-
-    class(family), intent(in) :: this
-
-    associate (u1 => this); end associate
-    family_num_stages = 1
-
-  end function family_num_stages
 
   !===================================================================!
-  ! THE QUADRATURE OVER ONE STEP, as the weights of the instants the
-  ! step reaches back over: weight(j) belongs to the instant j - 1
-  ! back from k, so a rule of m nodes returns m weights.
-  !
-  ! A rule on m nodes integrates the degree m - 1 interpolant through
-  ! them exactly. Over a step of width h that leaves a local error of
-  ! order h**(m+1), and over the T/h steps of the horizon an error of
-  ! order h**m. So m nodes give order m.
-  !
-  ! WHAT A FAMILY RETURNS UNLESS IT OVERRIDES THIS: one node at
-  ! weight one, which is the rectangle rule and first order. A family
-  ! whose stencil already contains the instants of an interpolatory
-  ! rule returns that rule instead, and a stage family is never
-  ! called - its quadrature is the tableau, read through stage_weight.
-  !
-  ! MATCHING THE RULE TO THE STATES. The values integrated are
-  ! themselves accurate to order p, so a rule finer than p gains
-  ! nothing: the error is of order h**min(m,p) either way. Taking m
-  ! as the family's own order is therefore exactly enough, and the
-  ! weights grow and alternate in sign beyond it.
+  ! The tabulated DIRK families.
   !===================================================================!
 
-  pure subroutine family_step_quadrature(this, dt, k, weight)
+  function implicit_midpoint() result(this)
 
-    class(family)         , intent(in) :: this
-    type(derivative_terms), intent(in) :: dt(:)
-    integer               , intent(in) :: k
-    type(derivative_terms), allocatable, intent(out) :: weight(:)
+    type(family) :: this
 
-    associate (u1 => this); end associate
-    if (k < 1 .or. k > size(dt)) then
-       error stop 'operation_family: a quadrature is evaluated at an instant of the block'
-    end if
-    allocate(weight(1))
-    weight(1) = derivative_terms(1.0_dp, dt(k))
+    this = dirk_family(reshape([0.5_dp], [1, 1]), [1.0_dp])
 
-  end subroutine family_step_quadrature
+  end function implicit_midpoint
 
-  !===================================================================!
-  ! The quadrature weight of one stage: the tableau's b for a stage
-  ! family, one for a multistep family, whose single quadrature point
-  ! is the instant itself. An index outside the stages stops the
-  ! program.
-  !===================================================================!
+  function crouzeix_two_stage() result(this)
 
-  pure real(dp) function family_stage_weight(this, i)
+    type(family) :: this
+    real(dp) :: g
 
-    class(family), intent(in) :: this
-    integer      , intent(in) :: i
+    g = (3.0_dp + sqrt(3.0_dp)) / 6.0_dp
+    this = dirk_family(reshape([g, 1.0_dp - 2.0_dp * g, 0.0_dp, g], [2, 2]), &
+         & [0.5_dp, 0.5_dp])
 
-    if (i /= 1) then
-       error stop 'operation_family: a multistep family has one quadrature point per instant'
-    end if
-    family_stage_weight = 1.0_dp
+  end function crouzeix_two_stage
 
-  end function family_stage_weight
+  function crouzeix_three_stage() result(this)
 
-  pure integer function family_history_depth(this, equation_degree)
+    type(family) :: this
+    real(dp) :: g, w, pi
 
-    class(family), intent(in) :: this
-    integer      , intent(in) :: equation_degree
+    pi = acos(-1.0_dp)
+    g  = cos(pi / 18.0_dp) / sqrt(3.0_dp) + 0.5_dp
+    w  = 1.0_dp / (6.0_dp * (1.0_dp - 2.0_dp * g)**2)
+    this = dirk_family(reshape( &
+         & [g,             0.5_dp - g, 2.0_dp * g,      &
+         &  0.0_dp,        g,          1.0_dp - 4.0_dp * g, &
+         &  0.0_dp,        0.0_dp,     g], [3, 3]),    &
+         & [w, 1.0_dp - 2.0_dp * w, w])
 
-    associate (u1 => this, u2 => equation_degree); end associate
-    family_history_depth = 1
+  end function crouzeix_three_stage
 
-  end function family_history_depth
+  function hairer_wanner_five_stage() result(this)
 
-  pure integer function family_primary_degree(this, equation_degree)
+    type(family) :: this
+    real(dp) :: a(5, 5)
 
-    class(family), intent(in) :: this
-    integer      , intent(in) :: equation_degree
+    a = 0.0_dp
+    a(1, 1:1) = [1.0_dp / 4.0_dp]
+    a(2, 1:2) = [1.0_dp / 2.0_dp, 1.0_dp / 4.0_dp]
+    a(3, 1:3) = [17.0_dp / 50.0_dp, -1.0_dp / 25.0_dp, 1.0_dp / 4.0_dp]
+    a(4, 1:4) = [371.0_dp / 1360.0_dp, -137.0_dp / 2720.0_dp, 15.0_dp / 544.0_dp, 1.0_dp / 4.0_dp]
+    a(5, 1:5) = [25.0_dp / 24.0_dp, -49.0_dp / 48.0_dp, 125.0_dp / 16.0_dp, -85.0_dp / 12.0_dp, &
+         &       1.0_dp / 4.0_dp]
+    this = dirk_family(a, a(5, :))
 
-    associate (u1 => this); end associate
-    family_primary_degree = equation_degree
-
-  end function family_primary_degree
-
-  !===================================================================!
-  ! The offsets negated: the nodes a family reads its coefficients at
-  ! lie on the opposite side of the instant they are measured from.
-  !===================================================================!
-
-  pure function negated(u) result(minus_u)
-
-    type(derivative_terms), intent(in) :: u(0:)
-    type(derivative_terms) :: minus_u(0:ubound(u, 1))
-
-    integer :: i
-
-    do i = 0, ubound(u, 1)
-       minus_u(i) = (-1.0_dp) * u(i)
-    end do
-
-  end function negated
+  end function hairer_wanner_five_stage
 
 end module operation_family

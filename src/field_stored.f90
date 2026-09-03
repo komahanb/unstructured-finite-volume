@@ -9,7 +9,7 @@
 !
 !                  WHAT THE FIELD STORES OF ITS DOMAIN
 !
-!      type(graph) :: on          which set        O(1)
+!      type(graph) :: graph       which set        O(1)
 !      integer     :: num_entries    how many         O(1)
 !
 ! and nothing else. An earlier version stored a COPY of the whole
@@ -109,16 +109,16 @@ contains
   ! store the fact a second time.
   !===================================================================!
 
-  type(stored_field) function create(label, on, num_entries, num_components, unit_name) &
+  type(stored_field) function create(label, domain, num_entries, num_components, unit_name) &
        & result(this)
 
     character(len=*), intent(in)           :: label
-    type(graph) , intent(in)           :: on
+    type(graph) , intent(in)           :: domain
     integer         , intent(in)           :: num_entries
     integer         , intent(in), optional :: num_components
     character(len=*), intent(in), optional :: unit_name
 
-    call this % describe(label, on, num_entries, num_components, unit_name)
+    call this % describe(label, domain, num_entries, num_components, unit_name)
 
   end function create
 

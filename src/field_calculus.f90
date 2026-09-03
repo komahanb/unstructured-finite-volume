@@ -99,7 +99,7 @@ module field_calculus
      ! states all of it through describe, once.
      character(len=:), allocatable, private :: label
      character(len=:), allocatable, private :: unit_name
-     type(graph), private :: on
+     type(graph), private :: graph
      integer    , private :: ne = 0
      integer    , private :: nc = 1
 
@@ -109,6 +109,7 @@ module field_calculus
      procedure :: units          => field_units
      procedure :: domain         => field_domain
      procedure :: defined_on     => field_defined_on
+     procedure :: inner_product  => field_inner_product
      procedure :: num_components => field_num_components
      procedure :: num_entries    => field_num_entries
      procedure :: value_kind     => field_value_kind
@@ -203,16 +204,16 @@ contains
   ! undeclared domain, or a negative entry count, stops the program.
   !===================================================================!
 
-  subroutine describe(this, label, on, num_entries, num_components, unit_name)
+  subroutine describe(this, label, domain, num_entries, num_components, unit_name)
 
     class(field)    , intent(inout)        :: this
     character(len=*), intent(in)           :: label
-    type(graph)     , intent(in)           :: on
+    type(graph)     , intent(in)           :: domain
     integer         , intent(in)           :: num_entries
     integer         , intent(in), optional :: num_components
     character(len=*), intent(in), optional :: unit_name
 
-    if (.not. on % same_as(on)) then
+    if (.not. domain % same_as(domain)) then
        error stop 'field: a field requires a declared domain'
     end if
     if (num_entries < 0) then
@@ -220,7 +221,7 @@ contains
     end if
 
     this % label = label
-    this % on    = on
+    this % graph = domain
     this % ne    = num_entries
     this % nc    = 1
     if (present(num_components)) this % nc = num_components
@@ -265,7 +266,7 @@ contains
 
     class(field), intent(in) :: this
 
-    domain = this % on
+    domain = this % graph
 
   end function field_domain
 
@@ -298,12 +299,37 @@ contains
     class(field), intent(in) :: this
     type(graph) , intent(in) :: domain
 
-    type(graph) :: on
-
-    on      = this % domain()
-    defined = on % same_as(domain)
+    defined = this % graph % same_as(domain)
 
   end function field_defined_on
+
+  !===================================================================!
+  ! THE INNER PRODUCT sum_i this(i) other(i): the reduction
+  ! dot_product performs on real arrays, taken here over two fields -
+  ! two graphs with values. Fields on different domains, or of a kind
+  ! other than real, stop the program rather than pair mismatched or
+  ! non-numeric values as a silent zero.
+  !===================================================================!
+
+  real(dp) function field_inner_product(this, other) result(prod)
+
+    class(field), intent(in) :: this
+    class(field), intent(in) :: other
+
+    real(dp), allocatable :: u(:), v(:)
+
+    if (.not. this % defined_on(other % domain())) then
+       error stop 'field: an inner product pairs fields on the same domain'
+    end if
+    if (this % value_kind() /= FIELD_REAL .or. other % value_kind() /= FIELD_REAL) then
+       error stop 'field: an inner product pairs real-valued fields'
+    end if
+
+    call this  % real_vector(u)
+    call other % real_vector(v)
+    prod = dot_product(u, v)
+
+  end function field_inner_product
 
   !===================================================================!
   ! The kind stored: read from the values themselves. A field that

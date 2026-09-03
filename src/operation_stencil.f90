@@ -43,7 +43,7 @@ module operation_stencil
   use field_calculus, only : field, FIELD_REAL
   use operation_action, only : operation, variation, contract
   use operation_action, only : binding, bound_real_vector
-  use operation_action, only : emit
+  use operation_action, only : emit, dense_of_triples
   use relation_binary, only : group_by_key
   use field_stored  , only : stored_field
   use view_directed_stored        , only : stored_directed_graph
@@ -67,6 +67,7 @@ module operation_stencil
    contains
 
      procedure :: apply        => stencil_apply
+     procedure :: entries       => stencil_entries
      procedure :: transpose     => stencil_transpose
      procedure :: restricted    => stencil_restricted
      procedure :: partial_action => stencil_partial_action
@@ -241,11 +242,11 @@ contains
 
     type(stored_field)        :: state
     class(field), allocatable :: output
-    real(dp), allocatable :: e(:), y(:)
-    real(dp), pointer     :: wgt(:)
-    integer :: j, k, ne, row, column
+    real(dp), allocatable :: e(:), y(:), weights(:)
+    integer , allocatable :: rows(:), columns(:)
+    integer :: j
 
-    ! A STENCIL IS ITS OWN MATRIX. Probing it column by column costs
+    ! A STENCIL IS ITS OWN MATRIX. Evaluating it column by column costs
     ! one application per column to recover numbers the pattern
     ! already stores, so a stencil returns its matrix from its edges
     ! and only an operation of another kind is evaluated.
@@ -253,16 +254,9 @@ contains
     type is (stencil)
        if (action % pattern % num_vertices() == width) then
           call action % constants % real_vector(constant)
-          wgt => action % weights % real_values()
-          if (size(constant) == width .and. associated(wgt)) then
-             allocate(a(width, width))
-             a  = 0.0_dp
-             ne = action % pattern % num_edges()
-             do k = 1, ne
-                row    = action % pattern % edge_head(k)
-                column = action % pattern % edge_tail(k)
-                a(row, column) = a(row, column) + wgt(k)
-             end do
+          call action % entries(rows, columns, weights)
+          if (size(constant) == width .and. size(weights) == size(rows)) then
+             call dense_of_triples(width, rows, columns, weights, a)
              return
           end if
        end if
@@ -311,10 +305,10 @@ contains
     real(dp)      , intent(in) :: values(:)
     type(stencil) :: sub
 
-    integer , allocatable :: sub_of(:), rows(:), columns(:)
+    integer , allocatable :: sub_of(:), rows(:), columns(:), heads(:), tails(:)
     real(dp), allocatable :: weights(:), w(:), constant(:), stored(:)
     type(triple_list) :: triples
-    integer :: n, m, e, row, column
+    integer :: n, m, e, row
 
     n = this % pattern % num_vertices()
     m = size(retained)
@@ -331,20 +325,19 @@ contains
        sub_of(retained(e)) = e
     end do
 
-    call this % weights   % real_vector(w)
+    call this % entries(heads, tails, w)
     call this % constants % real_vector(stored)
 
     allocate(constant(m))
     constant = stored(retained)
 
-    do e = 1, this % pattern % num_edges()
-       row    = sub_of(this % pattern % edge_head(e))
+    do e = 1, size(heads)
+       row = sub_of(heads(e))
        if (row == 0) cycle
-       column = this % pattern % edge_tail(e)
-       if (sub_of(column) > 0) then
-          call triples % assign(row, sub_of(column), w(e))
+       if (sub_of(tails(e)) > 0) then
+          call triples % assign(row, sub_of(tails(e)), w(e))
        else
-          constant(row) = constant(row) + w(e) * values(column)
+          constant(row) = constant(row) + w(e) * values(tails(e))
        end if
     end do
 
@@ -352,6 +345,26 @@ contains
     sub = stencil(rows, columns, weights, constant, label=this % name() // ' restricted')
 
   end function stencil_restricted
+
+  !===================================================================!
+  ! The (row, column, weight) triples of the matrix, one per edge in
+  ! the pattern's edge order: the row is the head, the column the
+  ! tail. Weights not yet stored give an empty weight list.
+  !===================================================================!
+
+  pure subroutine stencil_entries(this, rows, columns, weights)
+
+    class(stencil)       , intent(in)  :: this
+    integer , allocatable, intent(out) :: rows(:), columns(:)
+    real(dp), allocatable, intent(out) :: weights(:)
+
+    integer :: e
+
+    rows    = [(this % pattern % edge_head(e), e = 1, this % pattern % num_edges())]
+    columns = [(this % pattern % edge_tail(e), e = 1, this % pattern % num_edges())]
+    call this % weights % real_vector(weights)
+
+  end subroutine stencil_entries
 
   !===================================================================!
   ! y = constants + the dependency edges, traversed once: each edge

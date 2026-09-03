@@ -29,7 +29,6 @@ module operation_diffusion
   use graph_fractal      , only : graph
   use map_set_store, only : set_store
   use field_forms          , only : form
-  use field_stored    , only : stored_field
   use view_mesh     , only : mesh
   use operation_stencil  , only : stencil
   use operation_fitted_balance , only : fitted_balance_stencil
@@ -65,19 +64,16 @@ contains
     type(graph)     :: members
     type(set_store) :: sets
 
-    type(stored_field) :: fa
-    real(dp), allocatable :: keff(:), areas(:), scales(:)
+    real(dp), allocatable :: scales(:)
     real(dp), allocatable :: vb(:), wb(:), values(:), weights(:), flux(:)
     logical , allocatable :: known(:)
     integer :: k, f, e, ne
 
     ne = m % num_edges()
 
-    ! The material, through every face.
-    call law % normal_conductivity(m, keff)
-    fa = m % face_area()
-    call fa % real_vector(areas)
-    scales = keff * areas
+    ! The material, through every face, the headless ones included:
+    ! the fit reads the scale on a boundary face.
+    call law % edge_coefficients(m, .false., scales)
 
     ! The boundary, each condition on its own tagged faces. Both
     ! numbers of the boundary relation are passed: a boundary that
@@ -90,7 +86,7 @@ contains
     known = .false.
     do k = 1, size(conditions)
        call conditions(k) % faces(m, sets, members)
-       call conditions(k) % boundary_relation(m, weights, values)
+       call conditions(k) % boundary_relation(m, sets, members, weights, values)
        do f = 1, sets % num_members_of(members)
           e = sets % member_of(members, f)
           wb(e) = weights(f)

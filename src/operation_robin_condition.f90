@@ -16,7 +16,11 @@
 !      phi_b = (c + (b/delta)*phi_p) / (a + b/delta)
 !
 ! and the face flux splits into a phi_p coefficient and a constant.
-! With denom = a + b/delta, the four numbers per face (matching
+! With denom = a + b/delta, every number per face is one formula,
+!
+!      sign * scale * area * (coefficient / delta^q) / (delta^p * denom)
+!
+! and the five coefficients are its table (matching
 ! class_boundary_condition of the previous implementation, checked to
 ! machine precision in the test suite):
 !
@@ -24,6 +28,7 @@
 !      rhs     = -kappa*area*c/(delta*denom)      the constant
 !      adv lhs = -vn*area*(b/delta)/denom         multiplies phi_p
 !      adv rhs =  vn*area*c/denom                 the constant
+!      operator = kappa*area*a/denom              the edge coefficient
 !
 ! THE STRING ENTERS ONCE. The condition stores its tag, and resolves
 ! it through tagged_edges when coefficients are requested.
@@ -48,17 +53,16 @@ module operation_robin_condition
   use view_directed, only : directed_graph
   use graph_fractal      , only : graph
   use map_set_store, only : set_store
-  use field_stored, only : stored_field
-  use view_mesh, only : mesh
+  use view_mesh, only : mesh, values_of
 
   implicit none
 
   private
-  integer, parameter :: COEFFICIENT_LHS = 1
-  integer, parameter :: COEFFICIENT_RHS = 2
-  integer, parameter :: COEFFICIENT_ADVECTION_LHS = 3
-  integer, parameter :: COEFFICIENT_ADVECTION_RHS = 4
-  integer, parameter :: COEFFICIENT_OPERATOR = 5
+  integer, parameter, public :: COEFFICIENT_LHS = 1
+  integer, parameter, public :: COEFFICIENT_RHS = 2
+  integer, parameter, public :: COEFFICIENT_ADVECTION_LHS = 3
+  integer, parameter, public :: COEFFICIENT_ADVECTION_RHS = 4
+  integer, parameter, public :: COEFFICIENT_OPERATOR = 5
 
   public :: robin_condition
   public :: robin, dirichlet, neumann
@@ -78,11 +82,7 @@ module operation_robin_condition
    contains
 
      procedure :: faces
-     procedure :: lhs_coefficients
-     procedure :: rhs_coefficients
-     procedure :: advection_lhs_coefficients
-     procedure :: advection_rhs_coefficients
-     procedure :: operator_coefficients
+     procedure :: coefficient_values
      procedure :: boundary_values
      procedure :: boundary_relation
 
@@ -147,76 +147,10 @@ contains
   end subroutine faces
 
   !===================================================================!
-  ! The four coefficient arrays, one entry per tagged face, in the
-  ! member set's order. Each reads the mesh's own area and delta at
-  ! its face.
+  ! One of the five coefficients, one entry per tagged face, in the
+  ! member set's order: the formula's table, selected by which.
+  ! Invalid input: a selector outside the five.
   !===================================================================!
-
-  subroutine lhs_coefficients(this, m, kappa, values)
-
-    class(robin_condition), intent(in) :: this
-    type(mesh), intent(in)             :: m
-    real(dp)  , intent(in)             :: kappa
-    real(dp), allocatable, intent(out) :: values(:)
-
-    call coefficient_values(this, m, kappa, COEFFICIENT_LHS, values)
-
-  end subroutine lhs_coefficients
-
-  subroutine rhs_coefficients(this, m, kappa, values)
-
-    class(robin_condition), intent(in) :: this
-    type(mesh), intent(in)             :: m
-    real(dp)  , intent(in)             :: kappa
-    real(dp), allocatable, intent(out) :: values(:)
-
-    call coefficient_values(this, m, kappa, COEFFICIENT_RHS, values)
-
-  end subroutine rhs_coefficients
-
-  subroutine advection_lhs_coefficients(this, m, vn, values)
-
-    class(robin_condition), intent(in) :: this
-    type(mesh), intent(in)             :: m
-    real(dp)  , intent(in)             :: vn
-    real(dp), allocatable, intent(out) :: values(:)
-
-    call coefficient_values(this, m, vn, COEFFICIENT_ADVECTION_LHS, values)
-
-  end subroutine advection_lhs_coefficients
-
-  subroutine advection_rhs_coefficients(this, m, vn, values)
-
-    class(robin_condition), intent(in) :: this
-    type(mesh), intent(in)             :: m
-    real(dp)  , intent(in)             :: vn
-    real(dp), allocatable, intent(out) :: values(:)
-
-    call coefficient_values(this, m, vn, COEFFICIENT_ADVECTION_RHS, values)
-
-  end subroutine advection_rhs_coefficients
-
-  !===================================================================!
-  ! The operator path, for a > 0. The edge coefficient and the
-  ! stored value that make the calculus reproduce the eliminated
-  ! flux on a headless edge:
-  !
-  !      z = c_f*(value - phi_p)/delta  =  lhs*phi_p - rhs
-  !
-  !      c_f   = kappa*area*a/denom  =  -lhs*delta
-  !      value = c/a
-  !===================================================================!
-
-  subroutine operator_coefficients(this, m, kappa, values)
-
-    class(robin_condition), intent(in) :: this
-    type(mesh), intent(in)             :: m
-    real(dp)  , intent(in)             :: kappa
-    real(dp), allocatable, intent(out) :: values(:)
-
-    call coefficient_values(this, m, kappa, COEFFICIENT_OPERATOR, values)
-
-  end subroutine operator_coefficients
 
   subroutine coefficient_values(this, m, scale, which, values)
 
@@ -226,41 +160,38 @@ contains
     integer   , intent(in)             :: which
     real(dp), allocatable, intent(out) :: values(:)
 
+    type(graph)     :: members
+    type(set_store) :: sets
     real(dp), allocatable :: area(:), delta(:)
-    integer :: f
-
-    call measures_of(this, m, area, delta)
-    allocate(values(size(area)))
+    real(dp) :: sign_factor, coefficient
+    integer  :: q, p
 
     select case (which)
     case (COEFFICIENT_LHS)
-       do f = 1, size(values)
-          values(f) = -scale * area(f) * this % a &
-               & / (delta(f) * denom(this, delta(f)))
-       end do
+       sign_factor = -1.0_dp; coefficient = this % a; q = 0; p = 1
     case (COEFFICIENT_RHS)
-       do f = 1, size(values)
-          values(f) = -scale * area(f) * this % c &
-               & / (delta(f) * denom(this, delta(f)))
-       end do
+       sign_factor = -1.0_dp; coefficient = this % c; q = 0; p = 1
     case (COEFFICIENT_ADVECTION_LHS)
-       do f = 1, size(values)
-          values(f) = -scale * area(f) * (this % b / delta(f)) &
-               & / denom(this, delta(f))
-       end do
+       sign_factor = -1.0_dp; coefficient = this % b; q = 1; p = 0
     case (COEFFICIENT_ADVECTION_RHS)
-       do f = 1, size(values)
-          values(f) = scale * area(f) * this % c / denom(this, delta(f))
-       end do
+       sign_factor =  1.0_dp; coefficient = this % c; q = 0; p = 0
     case (COEFFICIENT_OPERATOR)
-       do f = 1, size(values)
-          values(f) = scale * area(f) * this % a / denom(this, delta(f))
-       end do
+       sign_factor =  1.0_dp; coefficient = this % a; q = 0; p = 0
     case default
        error stop 'operation_robin_condition: unknown coefficient projection'
     end select
 
+    call this % faces(m, sets, members)
+    call measures_at(m, sets, members, delta, area)
+    call face_formula(this, delta, coefficient, q, p, values, prefactor=sign_factor * scale * area)
+
   end subroutine coefficient_values
+
+  !===================================================================!
+  ! The stored value of the operator path, c/a, one entry per tagged
+  ! face. A pure neumann condition has no substitute value; its
+  ! constant enters as a source in the balance instead.
+  !===================================================================!
 
   subroutine boundary_values(this, m, values)
 
@@ -268,16 +199,15 @@ contains
     type(mesh), intent(in)             :: m
     real(dp), allocatable, intent(out) :: values(:)
 
-    real(dp), allocatable :: area(:), delta(:)
+    type(graph)     :: members
+    type(set_store) :: sets
 
-    call measures_of(this, m, area, delta)
-    allocate(values(size(area)))
+    call this % faces(m, sets, members)
+    allocate(values(sets % num_members_of(members)))
 
     if (abs(this % a) > 0.0_dp) then
        values = this % c / this % a
     else
-       ! A pure neumann condition has no substitute value; its
-       ! constant enters as a source in the balance instead.
        values = 0.0_dp
     end if
 
@@ -297,70 +227,88 @@ contains
   ! that specifies a gradient rather than a value; anything mixed
   ! lies between them. A caller that takes only v can express
   ! dirichlet and nothing else, which is why both numbers are returned.
+  ! The members are the caller's, resolved once through faces.
   !===================================================================!
 
-  subroutine boundary_relation(this, m, weights, values)
+  subroutine boundary_relation(this, m, sets, members, weights, values)
 
     class(robin_condition), intent(in) :: this
     type(mesh), intent(in)             :: m
+    type(set_store), intent(in)        :: sets
+    type(graph)    , intent(in)        :: members
     real(dp), allocatable, intent(out) :: weights(:)
     real(dp), allocatable, intent(out) :: values(:)
 
-    real(dp), allocatable :: area(:), delta(:)
-    integer :: f
+    real(dp), allocatable :: delta(:)
 
-    call measures_of(this, m, area, delta)
-    allocate(weights(size(area)), values(size(area)))
-
-    do f = 1, size(area)
-       weights(f) = this % a / denom(this, delta(f))
-       values(f)  = this % c / denom(this, delta(f))
-    end do
+    call measures_at(m, sets, members, delta)
+    call face_formula(this, delta, this % a, 0, 0, weights)
+    call face_formula(this, delta, this % c, 0, 0, values)
 
   end subroutine boundary_relation
 
   !===================================================================!
-  ! The mesh's area and delta at this condition's faces, in member
-  ! order. The one place the tag is resolved.
+  ! The one formula, per face:
+  !
+  !      prefactor * (coefficient / delta^q) / (delta^p * denom)
+  !
+  ! with q and p zero or one and the prefactor one when absent.
   !===================================================================!
 
-  subroutine measures_of(this, m, area, delta)
+  pure subroutine face_formula(this, delta, coefficient, q, p, values, prefactor)
 
-    class(robin_condition), intent(in) :: this
-    type(mesh), intent(in)             :: m
-    real(dp), allocatable, intent(out) :: area(:)
-    real(dp), allocatable, intent(out) :: delta(:)
+    class(robin_condition), intent(in)     :: this
+    real(dp)              , intent(in)     :: delta(:)
+    real(dp)              , intent(in)     :: coefficient
+    integer               , intent(in)     :: q, p
+    real(dp), allocatable , intent(out)    :: values(:)
+    real(dp), intent(in), optional         :: prefactor(:)
 
-    !----------------------------------------------------------------!
-    ! The declared set is local to this call, so its interpretation is
-    ! local too: this store is not a hidden global. Nothing that
-    ! depends on it is returned.
-    !----------------------------------------------------------------!
+    real(dp) :: numerator
+    integer  :: f
 
-    type(graph)     :: members
-    type(set_store) :: sets
+    allocate(values(size(delta)))
 
-    type(stored_field) :: fa, fd
-    real(dp), allocatable :: all_areas(:), all_deltas(:)
-    integer :: f, e
-
-    call m % tagged_edges(this % tag, sets, members)
-
-    fa = m % face_area()
-    call fa % real_vector(all_areas)
-    fd = m % face_delta()
-    call fd % real_vector(all_deltas)
-
-    allocate(area(sets % num_members_of(members)))
-    allocate(delta(sets % num_members_of(members)))
-
-    do f = 1, size(area)
-       e = sets % member_of(members, f)
-       area(f)  = all_areas(e)
-       delta(f) = all_deltas(e)
+    do f = 1, size(delta)
+       numerator = coefficient / delta(f) ** q
+       if (present(prefactor)) numerator = prefactor(f) * numerator
+       values(f) = numerator / (delta(f) ** p * denom(this, delta(f)))
     end do
 
-  end subroutine measures_of
+  end subroutine face_formula
+
+  !===================================================================!
+  ! The mesh's delta, and the area when requested, at the member
+  ! faces, in member order.
+  !===================================================================!
+
+  subroutine measures_at(m, sets, members, delta, area)
+
+    type(mesh)     , intent(in) :: m
+    type(set_store), intent(in) :: sets
+    type(graph)    , intent(in) :: members
+    real(dp), allocatable, intent(out)           :: delta(:)
+    real(dp), allocatable, intent(out), optional :: area(:)
+
+    real(dp), allocatable :: all_areas(:), all_deltas(:)
+    integer :: f, e, n
+
+    n = sets % num_members_of(members)
+
+    call values_of(m % face_delta(), all_deltas)
+    allocate(delta(n))
+    if (present(area)) then
+       call values_of(m % face_area(), all_areas)
+       allocate(area(n))
+    end if
+
+    do f = 1, n
+       e = sets % member_of(members, f)
+       delta(f) = all_deltas(e)
+       if (present(area)) area(f) = all_areas(e)
+    end do
+
+  end subroutine measures_at
 
   !===================================================================!
   ! The shared denominator of every formula: a + b/delta.

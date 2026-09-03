@@ -90,8 +90,6 @@ module operation_differential
 
   private
   public :: differential_operator
-  public :: edge_derivative
-  public :: vertex_derivative
   public :: gradient, interpolation, divergence, laplacian
   public :: stencil_of
 
@@ -131,6 +129,10 @@ module operation_differential
 
   end type differential_operator
 
+  interface differential_operator
+     module procedure create
+  end interface differential_operator
+
   !===================================================================!
   ! One affine sparse map, y = A q + k: the triples of A and the
   ! constant k, with the two extents. Private: maps are the module's
@@ -152,15 +154,18 @@ module operation_differential
 contains
 
   !===================================================================!
-  ! Constructors. Order first; every parameter optional; each array
-  ! takes precedence over its scalar when given.
+  ! The constructor: landing and order first; every parameter
+  ! optional; each array takes precedence over its scalar when given.
+  ! one_sided applies to the edge landing, adjoint to the vertex
+  ! landing - when true, the operator applies its transpose.
   !===================================================================!
 
-  type(differential_operator) function edge_derivative &
-       & (order, coefficient, coefficients, spacing, spacings, &
+  type(differential_operator) function create &
+       & (landing, order, coefficient, coefficients, spacing, spacings, &
        &  measure, measures, boundary_value, boundary_values, one_sided, &
-       &  label) result(this)
+       &  adjoint, label) result(this)
 
+    integer         , intent(in)           :: landing
     integer         , intent(in)           :: order
     real(dp)        , intent(in), optional :: coefficient
     real(dp)        , intent(in), optional :: coefficients(:)
@@ -171,12 +176,14 @@ contains
     real(dp)        , intent(in), optional :: boundary_value
     real(dp)        , intent(in), optional :: boundary_values(:)
     logical         , intent(in), optional :: one_sided
+    logical         , intent(in), optional :: adjoint
     character(len=*), intent(in), optional :: label
 
-    this % landing = SIDE_EDGE
+    this % landing = landing
     this % order   = max(order, 0)
 
-    if (present(one_sided)) this % one_sided = one_sided
+    if (present(one_sided))       this % one_sided      = one_sided
+    if (present(adjoint))         this % adjoint        = adjoint
 
     if (present(coefficient))     this % coefficient    = coefficient
     if (present(coefficients))    allocate(this % coefficients, source=coefficients)
@@ -190,45 +197,7 @@ contains
     ! one argument: the field differentiated, of any component count
     call this % declare_arguments(1, [contract(FIELD_REAL)], label=operator_label(this % order, label))
 
-  end function edge_derivative
-
-  !===================================================================!
-  ! The same constructor, for the vertex landing, plus the adjoint
-  ! flag: when true, the operator applies its transpose.
-  !===================================================================!
-
-  type(differential_operator) function vertex_derivative &
-       & (order, coefficient, coefficients, spacing, spacings, &
-       &  measure, measures, boundary_value, boundary_values, adjoint, label) result(this)
-
-    integer         , intent(in)           :: order
-    real(dp)        , intent(in), optional :: coefficient
-    real(dp)        , intent(in), optional :: coefficients(:)
-    real(dp)        , intent(in), optional :: spacing
-    real(dp)        , intent(in), optional :: spacings(:)
-    real(dp)        , intent(in), optional :: measure
-    real(dp)        , intent(in), optional :: measures(:)
-    real(dp)        , intent(in), optional :: boundary_value
-    real(dp)        , intent(in), optional :: boundary_values(:)
-    logical         , intent(in), optional :: adjoint
-    character(len=*), intent(in), optional :: label
-
-    this % landing = SIDE_VERTEX
-    this % order   = max(order, 0)
-
-    if (present(coefficient))     this % coefficient    = coefficient
-    if (present(coefficients))    allocate(this % coefficients, source=coefficients)
-    if (present(spacing))         this % spacing        = spacing
-    if (present(spacings))        allocate(this % spacings, source=spacings)
-    if (present(measure))         this % measure        = measure
-    if (present(measures))        allocate(this % measures, source=measures)
-    if (present(boundary_value))  this % boundary_value = boundary_value
-    if (present(boundary_values)) allocate(this % boundary_values, source=boundary_values)
-    if (present(adjoint))         this % adjoint        = adjoint
-
-    call this % declare_arguments(1, [contract(FIELD_REAL)], label=operator_label(this % order, label))
-
-  end function vertex_derivative
+  end function create
 
   !===================================================================!
   ! The named operators. Four operators used by every equation, as
@@ -247,7 +216,7 @@ contains
     real(dp), intent(in), optional :: spacing, spacings(:)
     real(dp), intent(in), optional :: boundary_value, boundary_values(:)
 
-    this = edge_derivative(order=1, coefficient=coefficient, &
+    this = differential_operator(SIDE_EDGE, 1, coefficient=coefficient, &
          & coefficients=coefficients, spacing=spacing, spacings=spacings, &
          & boundary_value=boundary_value, boundary_values=boundary_values, &
          & label='gradient')
@@ -260,7 +229,7 @@ contains
     real(dp), intent(in), optional :: coefficient, coefficients(:)
     real(dp), intent(in), optional :: boundary_value, boundary_values(:)
 
-    this = edge_derivative(order=0, coefficient=coefficient, &
+    this = differential_operator(SIDE_EDGE, 0, coefficient=coefficient, &
          & coefficients=coefficients, boundary_value=boundary_value, &
          & boundary_values=boundary_values, label='interpolation')
 
@@ -272,7 +241,7 @@ contains
     real(dp), intent(in), optional :: coefficient, coefficients(:)
     real(dp), intent(in), optional :: measure, measures(:)
 
-    this = vertex_derivative(order=1, coefficient=coefficient, &
+    this = differential_operator(SIDE_VERTEX, 1, coefficient=coefficient, &
          & coefficients=coefficients, measure=measure, measures=measures, &
          & label='divergence')
 
@@ -286,7 +255,7 @@ contains
     real(dp), intent(in), optional :: measure, measures(:)
     real(dp), intent(in), optional :: boundary_value, boundary_values(:)
 
-    this = vertex_derivative(order=2, coefficient=coefficient, &
+    this = differential_operator(SIDE_VERTEX, 2, coefficient=coefficient, &
          & coefficients=coefficients, spacing=spacing, spacings=spacings, &
          & measure=measure, measures=measures, boundary_value=boundary_value, &
          & boundary_values=boundary_values, label='laplacian')

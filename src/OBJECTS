@@ -39,7 +39,6 @@ operation_coupling.o \
 view_mesh.o \
 operation_robin_condition.o \
 operation_conduction.o \
-operation_advection.o \
 operation_stencil.o \
 operation_scheme_stencil.o \
 operation_grid.o \

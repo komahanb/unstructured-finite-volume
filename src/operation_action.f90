@@ -66,6 +66,7 @@ module operation_action
   public :: is_bound, bound_value, bound_real_vector, bound_integer_vector
   public :: applied, varied
   public :: design_partial, jacobian_of
+  public :: dense_of_triples
 
   !===================================================================!
   ! One argument of one operation: the operation's argument space
@@ -797,17 +798,15 @@ contains
     real(dp), allocatable :: v(:), column(:), w(:)
     integer , allocatable :: r(:), c(:)
     logical :: available
-    integer :: j, e
+    integer :: j
 
-    allocate(a(num_unknowns, num_unknowns), source=0.0_dp)
     call rows % compiled_tangent(unknowns, rows % bind(inputs), 1, r, c, w, available)
     if (available) then
-       do e = 1, size(r)
-          a(r(e), c(e)) = a(r(e), c(e)) + w(e)
-       end do
+       call dense_of_triples(num_unknowns, r, c, w, a)
        return
     end if
 
+    allocate(a(num_unknowns, num_unknowns), source=0.0_dp)
     allocate(v(num_unknowns), source=0.0_dp)
     do j = 1, num_unknowns
        v    = 0.0_dp
@@ -817,6 +816,26 @@ contains
     end do
 
   end subroutine jacobian_of
+
+  !===================================================================!
+  ! The dense n by n matrix of (row, column, weight) triples: equal
+  ! pairs sum, in the order given.
+  !===================================================================!
+
+  pure subroutine dense_of_triples(n, rows, columns, weights, a)
+
+    integer , intent(in) :: n, rows(:), columns(:)
+    real(dp), intent(in) :: weights(:)
+    real(dp), allocatable, intent(out) :: a(:,:)
+
+    integer :: e
+
+    allocate(a(n, n), source=0.0_dp)
+    do e = 1, size(rows)
+       a(rows(e), columns(e)) = a(rows(e), columns(e)) + weights(e)
+    end do
+
+  end subroutine dense_of_triples
 
   !===================================================================!
   ! Bindings.

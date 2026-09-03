@@ -72,6 +72,8 @@ module operation_family
      procedure :: step_quadrature  => family_step_quadrature
      procedure :: primary_degree   => family_primary_degree
      procedure :: row_pattern      => family_row_pattern
+     procedure :: block_reach      => family_block_reach
+     procedure :: stage_reach      => family_stage_reach
      procedure :: edge_coefficient => family_edge_coefficient
 
   end type family
@@ -254,6 +256,92 @@ contains
     end select
 
   end subroutine family_row_pattern
+
+  !===================================================================!
+  ! The reach of the family over a block of n instants at nd degrees:
+  ! the row pattern placed at every instant it fits behind, instant
+  ! outer, degree inner, the primary degree omitted. The edge order
+  ! is the order the coupling's relation is formed in.
+  !===================================================================!
+
+  pure subroutine family_block_reach(this, nd, n, tails, heads, source_degree, determines)
+
+    class(family), intent(in) :: this
+    integer      , intent(in) :: nd, n
+    integer, allocatable, intent(out) :: tails(:), heads(:)
+    integer, allocatable, intent(out) :: source_degree(:), determines(:)
+
+    integer, allocatable :: offset(:), degrees_of(:)
+    integer :: primary, kk, d, e, counted, pass
+
+    primary = this % primary_degree(nd - 1)
+    do pass = 1, 2
+       counted = 0
+       do kk = 1, n
+          do d = 0, nd - 1
+             if (d == primary) cycle
+             call this % row_pattern(d, nd - 1, offset, degrees_of)
+             if (size(offset) == 0) cycle
+             if (kk - maxval(offset) < 1) cycle
+             do e = 1, size(offset)
+                counted = counted + 1
+                if (pass == 2) then
+                   tails(counted)         = kk - offset(e)
+                   heads(counted)         = kk
+                   source_degree(counted) = degrees_of(e)
+                   determines(counted)    = d
+                end if
+             end do
+          end do
+       end do
+       if (pass == 1) allocate(tails(counted), heads(counted), &
+            & source_degree(counted), determines(counted))
+    end do
+
+  end subroutine family_block_reach
+
+  !===================================================================!
+  ! The reach of the tableau over one step at nd degrees, on the
+  ! vertices 1 (the instant behind), 2..s+1 (the stages) and s+2 (the
+  ! instant ahead): stage i reads the degree above at stages 1..i,
+  ! and the instant ahead reads the degree above (the top degree
+  ! itself) at every stage. Degree outer, stage inner.
+  !===================================================================!
+
+  pure subroutine family_stage_reach(this, nd, tails, heads, source_degree, determines)
+
+    class(family), intent(in) :: this
+    integer      , intent(in) :: nd
+    integer, allocatable, intent(out) :: tails(:), heads(:)
+    integer, allocatable, intent(out) :: source_degree(:), determines(:)
+
+    integer :: s, d, i, j, at
+
+    s  = size(this % b)
+    at = (nd - 1) * (s * (s + 1) / 2 + s) + s
+    allocate(tails(at), heads(at), source_degree(at), determines(at))
+    at = 0
+    do d = 0, nd - 1
+       do i = 1, s
+          if (d == nd - 1) cycle
+          do j = 1, i
+             at = at + 1
+             tails(at) = 1 + j
+             heads(at) = 1 + i
+             source_degree(at) = d + 1
+             determines(at) = d
+          end do
+       end do
+       do j = 1, s
+          at = at + 1
+          tails(at) = 1 + j
+          heads(at) = 2 + s
+          source_degree(at) = min(d + 1, nd - 1)
+          determines(at) = d
+       end do
+    end do
+
+  end subroutine family_stage_reach
 
   !===================================================================!
   ! The dimensionless coefficient on one edge. An edge from an earlier

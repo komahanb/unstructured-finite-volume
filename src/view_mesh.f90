@@ -25,6 +25,9 @@
 !      face_centre()    three per face
 !      face_weights()   the interpolation weight, one per face
 !
+! values_of(field, values) reads any of them as a real array in one
+! statement.
+!
 ! No string names any of these. The dictionary in
 ! geometry-to-operator-mapping.md specifies which operator argument
 ! each one supplies; an operator receives those numbers at
@@ -50,7 +53,7 @@ module view_mesh
   implicit none
 
   private
-  public :: mesh, require
+  public :: mesh, require, values_of
 
   !===================================================================!
   ! One mesh: the inherited structure, plus seven measurements.
@@ -238,5 +241,19 @@ contains
     face_weights = this % weights
 
   end function face_weights
+
+  !===================================================================!
+  ! The real values of one measurement as an array, so that a caller
+  ! reads them in one statement: call values_of(m % face_area(), a).
+  !===================================================================!
+
+  pure subroutine values_of(f, values)
+
+    type(stored_field)   , intent(in)  :: f
+    real(dp), allocatable, intent(out) :: values(:)
+
+    call f % real_vector(values)
+
+  end subroutine values_of
 
 end module view_mesh

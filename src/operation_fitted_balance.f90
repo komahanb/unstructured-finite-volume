@@ -51,7 +51,7 @@ module operation_fitted_balance
   use view_directed_stored        , only : stored_directed_graph
   use field_forms        , only : form
   use field_stored  , only : stored_field
-  use view_mesh   , only : mesh
+  use view_mesh   , only : mesh, values_of
   use operation_stencil, only : stencil, triple_list
   use operation_fitting      , only : fit
 
@@ -92,7 +92,6 @@ contains
 
     type(stencil) :: op
 
-    type(stored_field) :: fa, fn, fc, fcc
     type(fit) :: fitting
     type(stored_directed_graph) :: constellation
     type(stored_field)   :: positions
@@ -121,14 +120,10 @@ contains
 
     allocate(xf(d))
 
-    fa = m % face_area()
-    call fa % real_vector(areas)
-    fn = m % face_normal()
-    call fn % real_vector(normals)
-    fc = m % face_centre()
-    call fc % real_vector(fcentres)
-    fcc = m % cell_centre()
-    call fcc % real_vector(centres)
+    call values_of(m % face_area()  , areas)
+    call values_of(m % face_normal(), normals)
+    call values_of(m % face_centre(), fcentres)
+    call values_of(m % cell_centre(), centres)
 
     ! capacity for the triples grows by doubling: an assembly that
     ! appends one entry at a time to an array copies the array each

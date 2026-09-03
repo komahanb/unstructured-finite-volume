@@ -41,6 +41,7 @@ view_mesh.o \
 operation_robin_condition.o \
 operation_conduction.o \
 operation_stencil.o \
+operation_residual.o \
 operation_scheme_stencil.o \
 operation_grid.o \
 operation_linearization.o \

@@ -1561,6 +1561,7 @@ module gti_block
   use gti_expansion        , only : expansion
   use view_level           , only : level_member, level_num_members, level_is_leaf
   use operation_stencil    , only : combine_triples, stencil
+  use operation_residual   , only : residual_operator
   use operation_family     , only : family
   use operation_weight     , only : scheme_weight
   use operation_coupling   , only : weights_terms
@@ -1579,31 +1580,11 @@ module gti_block
      integer, allocatable :: step_of(:)
      integer, allocatable :: row(:), column(:)
   end type coupling_reach
-  type, extends(operation) :: block_residual
-     type(stencil)                       , private :: time_discretization_stencil
-     type(expression)     , private :: physics
-     type(stencil), allocatable, private :: spatial_discretization_stencil
-     type(stored_directed_graph)         , private :: points
-     integer , allocatable               , private :: at(:)
-     integer , allocatable               , private :: fixed_rows(:)
-     real(dp), allocatable               , private :: fixed(:)
-     ! degrees is the EQUATION'S degree count; spatial_degrees counts
-     ! the components the spatial law determines; the stride is their
-     ! sum. Requesting by name keeps a scheme query from reading a
-     ! layout count.
-     integer                             , private :: degrees  = 0
-     integer                             , private :: spatial_degrees = 0
-     integer                             , private :: unknowns = 0
-     integer                             , private :: primary  = 0
+  type, extends(residual_operator) :: block_residual
      type(block_layout)      , private :: layout
      integer, allocatable    , private :: kept(:)
      type(coupling_reach), allocatable, private :: reach(:)
    contains
-     procedure :: name           => block_name
-     procedure :: apply          => block_apply
-     procedure :: max_degree     => block_max_degree
-     procedure :: partial_action => block_partial_action
-     procedure :: compiled_tangent => block_compiled_tangent
      procedure :: restricted => block_restricted
      procedure :: placed_on
      procedure :: slice_of
@@ -1618,16 +1599,6 @@ module gti_block
      procedure :: linear_block
      procedure :: member_order
      procedure :: sweep_labels
-     procedure :: num_unknowns
-     procedure :: num_degrees
-     procedure :: block_stride
-     procedure :: num_points
-     procedure :: points_at
-     procedure :: num_fixed
-     procedure :: fixed_unknowns
-     procedure :: fixed_mask
-     procedure :: fixed_values
-     procedure :: first_fixed
   end type block_residual
   interface block_residual
      module procedure create
@@ -1642,247 +1613,16 @@ contains
     real(dp)              , intent(in) :: fixed(:)
     type(stencil)         , intent(in), optional :: spatial_discretization_stencil
     type(block_residual) :: this
-    if (size(fixed_rows) /= size(fixed)) then
-       error stop 'gti_block: one value per fixed component'
-    end if
-    if (any(fixed_rows < 1) .or. any(fixed_rows > unknowns)) then
-       error stop 'gti_block: every fixed row names an unknown'
-    end if
-    if (any(at < 0) .or. any(at + degrees > unknowns)) then
-       error stop 'gti_block: an evaluation point''s degree components lie within the unknowns'
-    end if
-    this % time_discretization_stencil  = derived
-    if (present(spatial_discretization_stencil)) this % spatial_discretization_stencil = spatial_discretization_stencil
-    this % physics = physics
-    this % at       = at
-    this % unknowns = unknowns
-    this % degrees       = degrees
-    ! the rule states how many components a point stores; the degrees
-    ! given are the marching coordinate's portion of them
-    this % spatial_degrees = physics % num_components() - degrees
-    this % primary  = primary
-    this % fixed_rows  = fixed_rows
-    this % fixed     = fixed
-    this % points = stored_directed_graph(size(at), tails=[integer ::], heads=[integer ::])
-    call this % declare_arguments(2, [contract(FIELD_REAL, 1), contract(FIELD_REAL, 1)])
+    this % residual_operator = residual_operator(derived, physics, at, unknowns, degrees, primary, &
+         & fixed_rows, fixed, spatial_discretization_stencil)
   end function create
-  pure integer function num_unknowns(this)
-    class(block_residual), intent(in) :: this
-    num_unknowns = this % unknowns
-  end function num_unknowns
-  pure function fixed_unknowns(this) result(c)
-    class(block_residual), intent(in) :: this
-    integer, allocatable :: c(:)
-    c = this % fixed_rows
-  end function fixed_unknowns
-  pure function fixed_mask(this) result(is_fixed)
-    class(block_residual), intent(in) :: this
-    logical, allocatable :: is_fixed(:)
-    allocate(is_fixed(this % unknowns), source=.false.)
-    is_fixed(this % fixed_rows) = .true.
-  end function fixed_mask
-  pure function fixed_values(this) result(h)
-    class(block_residual), intent(in) :: this
-    real(dp), allocatable :: h(:)
-    h = this % fixed
-  end function fixed_values
-  pure integer function block_stride(this)
-    class(block_residual), intent(in) :: this
-    block_stride = this % degrees + this % spatial_degrees
-  end function block_stride
-  pure integer function num_degrees(this)
-    class(block_residual), intent(in) :: this
-    num_degrees = this % degrees
-  end function num_degrees
-  pure integer function num_points(this)
-    class(block_residual), intent(in) :: this
-    num_points = size(this % at)
-  end function num_points
-  pure function points_at(this) result(at)
-    class(block_residual), intent(in) :: this
-    integer, allocatable :: at(:)
-    at = this % at
-  end function points_at
-  pure function first_fixed(this) result(x)
-    class(block_residual), intent(in) :: this
-    real(dp), allocatable :: x(:)
-    allocate(x(this % degrees), source=0.0_dp)
-    if (size(this % fixed) >= this % degrees) x = this % fixed(1:this % degrees)
-  end function first_fixed
-  pure integer function num_fixed(this)
-    class(block_residual), intent(in) :: this
-    num_fixed = size(this % fixed_rows)
-  end function num_fixed
-  pure function block_name(this) result(name)
-    class(block_residual), intent(in) :: this
-    character(len=:), allocatable :: name
-    associate (u1 => this); end associate
-    name = 'block residual'
-  end function block_name
-  pure integer function block_max_degree(this)
-    class(block_residual), intent(in) :: this
-    ! the discretization stencils are linear in the state, so every
-    ! partial above the first is the physics expression's alone
-    block_max_degree = this % physics % max_degree()
-  end function block_max_degree
-  pure function gathered(this, x) result(y)
-    class(block_residual), intent(in) :: this
-    real(dp)             , intent(in) :: x(:)
-    real(dp), allocatable :: y(:)
-    integer :: p
-    allocate(y(size(this % at) * this % block_stride()))
-    do p = 1, size(this % at)
-       y((p - 1) * this % block_stride() + 1:p * this % block_stride()) = &
-            & x(this % at(p) + 1:this % at(p) + this % block_stride())
-    end do
-  end function gathered
-  subroutine point_inputs(this, inputs, x, point_data)
-    class(block_residual), intent(in) :: this
-    type(binding)         , intent(in) :: inputs(:)
-    real(dp)             , intent(in) :: x(:)
-    type(stored_field), allocatable, intent(out) :: point_data(:)
-    type(stored_field) :: state, design
-    real(dp), allocatable :: design_values(:)
-    call bound_real_vector(inputs, this % argument(2), design_values)
-    state = stored_field('state', this % points % vertex_set(), size(this % at), &
-         & num_components=this % block_stride())
-    call state % set_real_vector(gathered(this, x))
-    design = stored_field('design', this % points % vertex_set(), size(design_values))
-    call design % set_real_vector(design_values)
-    point_data = [state, design]
-  end subroutine point_inputs
-  pure subroutine placed(this, governing, r)
-    class(block_residual), intent(in)    :: this
-    real(dp)             , intent(in)    :: governing(:)
-    real(dp)             , intent(inout) :: r(:)
-    integer :: p
-    do p = 1, size(this % at)
-       r(this % at(p) + this % primary + 1) = &
-            & r(this % at(p) + this % primary + 1) + governing(p)
-    end do
-  end subroutine placed
-  pure subroutine accumulate_state(this, x, r)
-    class(block_residual), intent(in)    :: this
-    real(dp)             , intent(in)    :: x(:)
-    real(dp)             , intent(inout) :: r(:)
-    integer :: i
-    do i = 1, size(this % fixed_rows)
-       r(this % fixed_rows(i)) = x(this % fixed_rows(i)) - this % fixed(i)
-    end do
-  end subroutine accumulate_state
-  pure subroutine accumulate_direction(this, v, r)
-    class(block_residual), intent(in)    :: this
-    real(dp)             , intent(in)    :: v(:)
-    real(dp)             , intent(inout) :: r(:)
-    integer :: i
-    do i = 1, size(this % fixed_rows)
-       r(this % fixed_rows(i)) = v(this % fixed_rows(i))
-    end do
-  end subroutine accumulate_direction
-  pure subroutine zero_fixed_rows(this, r)
-    class(block_residual), intent(in)    :: this
-    real(dp)             , intent(inout) :: r(:)
-    integer :: i
-    do i = 1, size(this % fixed_rows)
-       r(this % fixed_rows(i)) = 0.0_dp
-    end do
-  end subroutine zero_fixed_rows
-  subroutine state_of(this, inputs, input_graph, x, state)
-    class(block_residual), intent(in)  :: this
-    type(binding)         , intent(in)  :: inputs(:)
-    class(directed_graph), intent(in)  :: input_graph
-    real(dp), allocatable, intent(out) :: x(:)
-    type(stored_field)   , intent(out) :: state
-    call bound_real_vector(inputs, this % argument(1), x)
-    if (size(x) /= this % num_unknowns()) then
-       error stop 'gti_block: the state contains one component per degree per unknown point'
-    end if
-    state = stored_field('state', input_graph % vertex_set(), size(x))
-    call state % set_real_vector(x)
-  end subroutine state_of
-  subroutine placed_output(this, input_graph, r, output)
-    class(block_residual), intent(in) :: this
-    class(directed_graph), intent(in) :: input_graph
-    real(dp)             , intent(in) :: r(:)
-    class(field), allocatable, intent(inout) :: output
-    type(stored_field) :: out
-    out = stored_field(this % name(), input_graph % vertex_set(), size(r))
-    call out % set_real_vector(r)
-    if (allocated(output)) deallocate(output)
-    allocate(output, source=out)
-  end subroutine placed_output
-  subroutine block_apply(this, input_graph, inputs, output)
-    class(block_residual), intent(in)        :: this
-    class(directed_graph), intent(in)        :: input_graph
-    type(binding), intent(in), optional       :: inputs(:)
-    class(field), allocatable, intent(inout) :: output
-    type(stored_field) :: state
-    real(dp), allocatable :: r(:), governing(:), x(:)
-    if (.not. present(inputs)) then
-       error stop 'gti_block: the state and the design are given'
-    end if
-    call state_of(this, inputs, input_graph, x, state)
-    call discretized(this, input_graph, inputs, state, x, r, governing)
-    call placed(this, governing, r)
-    call accumulate_state(this, x, r)
-    call placed_output(this, input_graph, r, output)
-  end subroutine block_apply
-  !===================================================================!
-  ! THE THREE TERMS OF THE RESIDUAL: the time discretization stencil
-  ! and the spatial one applied to the state, summed into r, and the
-  ! physics at the points in governing; or, along a direction v in
-  ! the state, the partial action of each in place of its value.
-  !===================================================================!
-  subroutine discretized(this, input_graph, inputs, state, x, r, governing, v)
-    class(block_residual), intent(in) :: this
-    class(directed_graph), intent(in) :: input_graph
-    type(binding)        , intent(in) :: inputs(:)
-    type(stored_field)   , intent(in) :: state
-    real(dp)             , intent(in) :: x(:)
-    real(dp), allocatable, intent(out) :: r(:), governing(:)
-    real(dp), intent(in), optional    :: v(:)
-    type(stored_field) :: direction
-    type(stored_field), allocatable :: point_data(:)
-    class(field), allocatable :: half
-    real(dp), allocatable :: coupled(:)
-    call point_inputs(this, inputs, x, point_data)
-    call stencil_term(this % time_discretization_stencil, r)
-    if (allocated(this % spatial_discretization_stencil)) then
-       call stencil_term(this % spatial_discretization_stencil, coupled)
-       r = r + coupled
-    end if
-    if (present(v)) then
-       direction = stored_field('direction', this % points % vertex_set(), &
-            & size(this % at) * this % block_stride())
-       call direction % set_real_vector(gathered(this, v))
-       call this % physics % partial_action(this % points, this % physics % bind(point_data), &
-            & [variation(this % physics % argument(1), direction)], half)
-    else
-       call this % physics % apply(this % points, this % physics % bind(point_data), half)
-    end if
-    call half % real_vector(governing)
-  contains
-    subroutine stencil_term(op, y)
-      type(stencil), intent(in) :: op
-      real(dp), allocatable, intent(out) :: y(:)
-      type(stored_field) :: along
-      if (present(v)) then
-         along = stored_field('direction', input_graph % vertex_set(), size(v))
-         call along % set_real_vector(v)
-         call op % partial_action(input_graph, op % bind([state]), &
-              & [variation(op % argument(1), along)], half)
-      else
-         call op % apply(input_graph, op % bind([state]), half)
-      end if
-      call half % real_vector(y)
-    end subroutine stencil_term
-  end subroutine discretized
   subroutine placed_on(this, tower, node)
     class(block_residual), intent(inout)     :: this
     type(expansion)      , intent(in)        :: tower
     type(graph)          , intent(in), target :: node
     type(graph), pointer :: one_slice, first
-    integer :: n, k, j, members, moments, g, m, count, u, i, d
+    integer :: n, k, j, members, moments, g, m, count, u, i, d, degrees
+    degrees = this % num_degrees()
     n = level_num_members(node)
     moments = 0
     do k = 1, n
@@ -1891,7 +1631,7 @@ contains
     first => level_member(node, 1)
     if (.not. level_is_leaf(level_member(first, 1))) first => level_member(first, 1)
     m     = tower % extent_of(level_member(first, 1))
-    count = moments * m * this % degrees
+    count = moments * m * degrees
     allocate(this % layout % slice(count), this % layout % node(count), this % layout % moment(count))
     g = 0
     do k = 1, n
@@ -1900,8 +1640,8 @@ contains
        do j = 1, members
           g = g + 1
           do i = 1, m
-             do d = 0, this % degrees - 1
-                u = ((g - 1) * m + (i - 1)) * this % degrees + d + 1
+             do d = 0, degrees - 1
+                u = ((g - 1) * m + (i - 1)) * degrees + d + 1
                 this % layout % slice(u)  = k
                 this % layout % node(u)   = i
                 this % layout % moment(u) = g
@@ -1964,10 +1704,11 @@ contains
   subroutine spatial_discretization_laid(this, spatial_discretization_stencil)
     class(block_residual), intent(inout) :: this
     type(stencil)        , intent(in)    :: spatial_discretization_stencil
-    integer , allocatable :: base(:,:), r(:), c(:), slice(:), node(:), moment(:)
+    integer , allocatable :: base(:,:), r(:), c(:), slice(:), node(:), moment(:), at(:)
     real(dp), allocatable :: lw(:), fixed(:), w(:)
     integer :: nodes, moments, p, u, e, g, ne, n, rc, cc
     call this % labels_of(slice, node, moment)
+    at = this % points_at()
     nodes   = maxval(node)
     moments = maxval(moment)
     if (spatial_discretization_stencil % pattern % num_vertices() /= nodes) then
@@ -1979,9 +1720,9 @@ contains
     end if
     call spatial_discretization_stencil % weights % real_vector(lw)
     allocate(base(nodes, moments), source=-1)
-    do p = 1, size(this % at)
-       u = this % at(p) + 1
-       base(node(u), moment(u)) = this % at(p)
+    do p = 1, size(at)
+       u = at(p) + 1
+       base(node(u), moment(u)) = at(p)
     end do
     ne = spatial_discretization_stencil % pattern % num_edges()
     allocate(r(ne * moments), c(ne * moments), w(ne * moments))
@@ -1995,13 +1736,13 @@ contains
              error stop 'gti_block: a moment contains every node or none'
           end if
           n    = n + 1
-          r(n) = base(rc, g) + this % primary + 1
+          r(n) = base(rc, g) + this % primary_degree() + 1
           c(n) = base(cc, g) + 1
           w(n) = lw(e)
        end do
     end do
-    this % spatial_discretization_stencil = stencil(r(1:n), c(1:n), w(1:n), spread(0.0_dp, 1, this % unknowns), &
-         & 'spatial discretization stencil')
+    call this % attach_connected_stencil(stencil(r(1:n), c(1:n), w(1:n), spread(0.0_dp, 1, this % num_unknowns()), &
+         & 'spatial discretization stencil'))
   end subroutine spatial_discretization_laid
   subroutine with_reach(this, reach)
     class(block_residual), intent(inout) :: this
@@ -2017,7 +1758,7 @@ contains
     if (.not. allocated(this % reach)) then
        error stop 'gti_block: the block was built without its reach'
     end if
-    call reach_terms(scheme, this % reach, this % num_nodes(), this % degrees, dt, seeds, r, c, w)
+    call reach_terms(scheme, this % reach, this % num_nodes(), this % num_degrees(), dt, seeds, r, c, w)
   end subroutine rows_terms
   !===================================================================!
   ! THE TIME DISCRETIZATION STENCIL'S TRIPLES over a reach, repeated
@@ -2062,18 +1803,20 @@ contains
     integer              , intent(in) :: cell(:)
     integer, allocatable :: aggregate(:)
     integer, allocatable :: numbered(:), slice(:), node(:), moment(:)
-    integer :: u, coarse, key, count
+    integer :: u, coarse, key, count, unknowns, degrees
+    unknowns = this % num_unknowns()
+    degrees  = this % num_degrees()
     call this % labels_of(slice, node, moment)
     if (size(cell) < maxval(node)) then
        error stop 'gti_block: a coarse cell for every node'
     end if
     coarse = maxval(cell)
-    allocate(aggregate(this % unknowns))
-    allocate(numbered(maxval(moment) * coarse * this % degrees), source=0)
+    allocate(aggregate(unknowns))
+    allocate(numbered(maxval(moment) * coarse * degrees), source=0)
     count = 0
-    do u = 1, this % unknowns
-       key = ((moment(u) - 1) * coarse + cell(node(u)) - 1) * this % degrees &
-            & + mod(u - 1, this % degrees) + 1
+    do u = 1, unknowns
+       key = ((moment(u) - 1) * coarse + cell(node(u)) - 1) * degrees &
+            & + mod(u - 1, degrees) + 1
        if (numbered(key) == 0) then
           count         = count + 1
           numbered(key) = count
@@ -2093,18 +1836,21 @@ contains
     integer , allocatable :: r(:), c(:)
     real(dp), allocatable :: w(:)
     logical :: available
-    if (size(rhs) /= this % unknowns) then
+    integer :: unknowns, degrees
+    unknowns = this % num_unknowns()
+    degrees  = this % num_degrees()
+    if (size(rhs) /= unknowns) then
        error stop 'gti_block: one right side per unknown'
     end if
     call this % compiled_tangent(input_graph, inputs, 1, r, c, w, available)
     if (.not. available) then
        error stop 'gti_block: the tangent in the state compiles'
     end if
-    a = stencil(r, c, w, spread(0.0_dp, 1, this % unknowns), 'frozen tangent')
+    a = stencil(r, c, w, spread(0.0_dp, 1, unknowns), 'frozen tangent')
     if (transposed) a = a % transpose()
     call a % constants % set_real_vector(-rhs)
-    lin = block_residual(a, stated(constant(0.0_dp), this % degrees - 1, 'zero'), this % at, this % unknowns, &
-         & this % degrees, this % primary, [integer ::], [real(dp) ::])
+    lin = block_residual(a, stated(constant(0.0_dp), degrees - 1, 'zero'), this % points_at(), unknowns, &
+         & degrees, this % primary_degree(), [integer ::], [real(dp) ::])
     call lin % versioned(version, transposed=a % pattern % transposed())
     lin % layout = this % layout
     if (allocated(this % kept)) lin % kept = this % kept
@@ -2114,44 +1860,53 @@ contains
     integer              , intent(in) :: kept(:)
     real(dp)             , intent(in) :: values(:)
     type(block_residual) :: sub
-    type(stencil) :: derived, spatial_discretization_stencil
-    integer , allocatable :: sub_of(:), at(:), fixed_rows(:)
-    real(dp), allocatable :: fixed(:)
-    integer :: e, p, d, inside, npts, ncar
-    allocate(sub_of(this % unknowns), source=0)
+    type(stencil) :: derived, primary_law
+    type(stencil), allocatable :: secondary, restricted_secondary
+    integer , allocatable :: sub_of(:), at(:), fixed_rows(:), source_at(:), source_fixed_rows(:)
+    real(dp), allocatable :: fixed(:), source_fixed(:)
+    integer :: e, p, d, inside, npts, ncar, unknowns, degrees, primary
+    unknowns = this % num_unknowns()
+    degrees  = this % num_degrees()
+    primary  = this % primary_degree()
+    source_at   = this % points_at()
+    source_fixed_rows = this % fixed_unknowns()
+    source_fixed      = this % fixed_values()
+    allocate(sub_of(unknowns), source=0)
     do e = 1, size(kept)
        sub_of(kept(e)) = e
     end do
     npts = 0
-    allocate(at(size(this % at)))
-    do p = 1, size(this % at)
+    allocate(at(size(source_at)))
+    do p = 1, size(source_at)
        inside = 0
-       do d = 1, this % degrees
-          if (sub_of(this % at(p) + d) > 0) inside = inside + 1
+       do d = 1, degrees
+          if (sub_of(source_at(p) + d) > 0) inside = inside + 1
        end do
        if (inside == 0) cycle
-       if (inside /= this % degrees) then
+       if (inside /= degrees) then
           error stop 'gti_block: a member contains whole points'
        end if
        npts     = npts + 1
-       at(npts) = sub_of(this % at(p) + 1) - 1
+       at(npts) = sub_of(source_at(p) + 1) - 1
     end do
     ncar = 0
-    allocate(fixed_rows(size(this % fixed_rows)), fixed(size(this % fixed_rows)))
-    do e = 1, size(this % fixed_rows)
-       if (sub_of(this % fixed_rows(e)) == 0) cycle
+    allocate(fixed_rows(size(source_fixed_rows)), fixed(size(source_fixed_rows)))
+    do e = 1, size(source_fixed_rows)
+       if (sub_of(source_fixed_rows(e)) == 0) cycle
        ncar          = ncar + 1
-       fixed_rows(ncar) = sub_of(this % fixed_rows(e))
-       fixed(ncar)    = this % fixed(e)
+       fixed_rows(ncar) = sub_of(source_fixed_rows(e))
+       fixed(ncar)    = source_fixed(e)
     end do
-    derived = this % time_discretization_stencil % restricted(kept, values)
-    if (allocated(this % spatial_discretization_stencil)) then
-       spatial_discretization_stencil = this % spatial_discretization_stencil % restricted(kept, values)
-       sub = block_residual(derived, this % physics, at(1:npts), size(kept), &
-            & this % degrees, this % primary, fixed_rows(1:ncar), fixed(1:ncar), spatial_discretization_stencil=spatial_discretization_stencil)
+    primary_law = this % primary_stencil()
+    derived     = primary_law % restricted(kept, values)
+    if (this % has_connected_stencil()) then
+       secondary = this % connected_stencil()
+       restricted_secondary = secondary % restricted(kept, values)
+       sub = block_residual(derived, this % rule(), at(1:npts), size(kept), &
+            & degrees, primary, fixed_rows(1:ncar), fixed(1:ncar), spatial_discretization_stencil=restricted_secondary)
     else
-       sub = block_residual(derived, this % physics, at(1:npts), size(kept), &
-            & this % degrees, this % primary, fixed_rows(1:ncar), fixed(1:ncar))
+       sub = block_residual(derived, this % rule(), at(1:npts), size(kept), &
+            & degrees, primary, fixed_rows(1:ncar), fixed(1:ncar))
     end if
     sub % layout = this % layout
     if (allocated(this % kept)) then
@@ -2160,165 +1915,6 @@ contains
        sub % kept = kept
     end if
   end function block_restricted
-  subroutine block_compiled_tangent(this, input_graph, inputs, which, &
-       & rows, columns, weights, available)
-    class(block_residual), intent(in)  :: this
-    class(directed_graph), intent(in)  :: input_graph
-    type(binding)         , intent(in)  :: inputs(:)
-    integer              , intent(in)  :: which
-    integer , allocatable, intent(out) :: rows(:), columns(:)
-    real(dp), allocatable, intent(out) :: weights(:)
-    logical              , intent(out) :: available
-    type(stored_field) :: state, direction
-    type(stored_field), allocatable :: point_data(:)
-    class(field), allocatable :: out
-    real(dp), allocatable :: x(:), w(:), governing(:), v(:)
-    integer , allocatable :: r(:), c(:)
-    logical , allocatable :: is_fixed(:)
-    integer :: e, d, p, npts, n, kept, count
-    available = which == 1
-    if (.not. available) return
-    n    = this % unknowns
-    npts = size(this % at)
-    is_fixed = this % fixed_mask()
-    call state_of(this, inputs, input_graph, x, state)
-    call point_inputs(this, inputs, x, point_data)
-    count = this % time_discretization_stencil % pattern % num_edges() + npts * this % degrees + size(this % fixed_rows)
-    if (allocated(this % spatial_discretization_stencil)) count = count + this % spatial_discretization_stencil % pattern % num_edges()
-    allocate(r(count), c(count), w(count))
-    kept = 0
-    call stencil_triples(this % time_discretization_stencil, is_fixed, r, c, w, kept)
-    if (allocated(this % spatial_discretization_stencil)) call stencil_triples(this % spatial_discretization_stencil, is_fixed, r, c, w, kept)
-    allocate(v(npts * this % degrees))
-    do d = 0, this % degrees - 1
-       v = 0.0_dp
-       do p = 1, npts
-          v((p - 1) * this % degrees + d + 1) = 1.0_dp
-       end do
-       direction = stored_field('direction', this % points % vertex_set(), size(v))
-       call direction % set_real_vector(v)
-       call this % physics % partial_action(this % points, this % physics % bind(point_data), &
-            & [variation(this % physics % argument(1), direction)], out)
-       call out % real_vector(governing)
-       do p = 1, npts
-          if (is_fixed(this % at(p) + this % primary + 1)) cycle
-          kept    = kept + 1
-          r(kept) = this % at(p) + this % primary + 1
-          c(kept) = this % at(p) + d + 1
-          w(kept) = governing(p)
-       end do
-    end do
-    do e = 1, size(this % fixed_rows)
-       kept    = kept + 1
-       r(kept) = this % fixed_rows(e)
-       c(kept) = this % fixed_rows(e)
-       w(kept) = 1.0_dp
-    end do
-    call combine_triples(n, n, r(1:kept), c(1:kept), w(1:kept), rows, columns, weights)
-  end subroutine block_compiled_tangent
-  subroutine stencil_triples(op, is_fixed, r, c, w, kept)
-    type(stencil), intent(in)    :: op
-    logical      , intent(in)    :: is_fixed(:)
-    integer      , intent(inout) :: r(:), c(:)
-    real(dp)     , intent(inout) :: w(:)
-    integer      , intent(inout) :: kept
-    real(dp), allocatable :: weights(:)
-    integer :: e, row
-    call op % weights % real_vector(weights)
-    do e = 1, op % pattern % num_edges()
-       row = op % pattern % edge_head(e)
-       if (is_fixed(row)) cycle
-       kept    = kept + 1
-       r(kept) = row
-       c(kept) = op % pattern % edge_tail(e)
-       w(kept) = weights(e)
-    end do
-  end subroutine stencil_triples
-  subroutine block_partial_action(this, input_graph, inputs, variations, output)
-    class(block_residual), intent(in)        :: this
-    class(directed_graph), intent(in)        :: input_graph
-    type(binding)         , intent(in)        :: inputs(:)
-    type(variation)      , intent(in)        :: variations(:)
-    class(field), allocatable, intent(inout) :: output
-    type(stored_field) :: state
-    real(dp), allocatable :: r(:), governing(:), v(:), x(:)
-    call this % require_owned(variations)
-    if (size(variations) < 1 .or. size(variations) > this % max_degree()) then
-       error stop 'gti_block: the requested order is within max_degree'
-    end if
-    call state_of(this, inputs, input_graph, x, state)
-    if (size(variations) >= 2) then
-       call second_tangent(this, inputs, variations, x, governing)
-       allocate(r(this % num_unknowns()), source=0.0_dp)
-       call placed(this, governing, r)
-       call zero_fixed_rows(this, r)
-       call placed_output(this, input_graph, r, output)
-       return
-    end if
-    call variations(1) % direction(v)
-    if (variations(1) % argument_is(this % argument(1))) then
-       call discretized(this, input_graph, inputs, state, x, r, governing, v)
-       call placed(this, governing, r)
-       call accumulate_direction(this, v, r)
-    else if (variations(1) % argument_is(this % argument(2))) then
-       call design_tangent(this, inputs, variations, x, r, governing)
-       call placed(this, governing, r)
-       call zero_fixed_rows(this, r)
-    else
-       error stop 'gti_block: a variation names the state or the design'
-    end if
-    call placed_output(this, input_graph, r, output)
-  end subroutine block_partial_action
-  subroutine second_tangent(this, inputs, variations, x, governing)
-    class(block_residual), intent(in) :: this
-    type(binding)         , intent(in) :: inputs(:)
-    type(variation)      , intent(in) :: variations(:)
-    real(dp)             , intent(in) :: x(:)
-    real(dp), allocatable, intent(out) :: governing(:)
-    type(stored_field), allocatable :: point_data(:)
-    type(variation), allocatable :: at_points(:)
-    class(field), allocatable :: half
-    integer :: i
-    call point_inputs(this, inputs, x, point_data)
-    allocate(at_points(size(variations)))
-    do i = 1, size(variations)
-       at_points(i) = physics_variation(this, variations(i))
-    end do
-    call this % physics % partial_action(this % points, this % physics % bind(point_data), at_points, half)
-    call half % real_vector(governing)
-  end subroutine second_tangent
-  function physics_variation(this, given) result(at_points)
-    class(block_residual), intent(in) :: this
-    type(variation)      , intent(in) :: given
-    type(variation) :: at_points
-    type(stored_field) :: direction
-    real(dp), allocatable :: v(:)
-    call given % direction(v)
-    if (given % argument_is(this % argument(1))) then
-       direction = stored_field('direction', this % points % vertex_set(), &
-            & size(this % at) * this % block_stride())
-       call direction % set_real_vector(gathered(this, v))
-       at_points = variation(this % physics % argument(1), direction)
-    else if (given % argument_is(this % argument(2))) then
-       at_points = given % with_argument(this % physics % argument(2))
-    else
-       error stop 'gti_block: a variation names the state or the design'
-    end if
-  end function physics_variation
-  subroutine design_tangent(this, inputs, variations, x, r, governing)
-    class(block_residual), intent(in) :: this
-    type(binding)         , intent(in) :: inputs(:)
-    type(variation)      , intent(in) :: variations(:)
-    real(dp)             , intent(in) :: x(:)
-    real(dp), allocatable, intent(out) :: r(:), governing(:)
-    type(stored_field), allocatable :: point_data(:)
-    class(field), allocatable :: half
-    allocate(r(this % num_unknowns()), source=0.0_dp)
-    call point_inputs(this, inputs, x, point_data)
-    call this % physics % partial_action(this % points, this % physics % bind(point_data), &
-         & [variations(1) % with_argument(this % physics % argument(2))], half)
-    call half % real_vector(governing)
-  end subroutine design_tangent
   !===================================================================!
   ! THE LABELLING A SWEEP ITERATES OVER, and the order of traversal.
   ! Space and time are chosen separately: a dimension left coupled places
@@ -2369,15 +1965,17 @@ contains
     integer              , intent(in)  :: label(:)
     integer, allocatable , intent(out) :: order(:)
     integer, allocatable :: table(:,:)
+    type(stencil) :: primary_law
     type(stored_directed_graph) :: coupling
     integer :: ne, e, n, t, h, members
+    primary_law = this % primary_stencil()
     members = maxval(label)
-    ne      = this % time_discretization_stencil % pattern % num_edges()
+    ne      = primary_law % pattern % num_edges()
     allocate(table(2, ne))
     n = 0
     do e = 1, ne
-       t = label(this % time_discretization_stencil % pattern % edge_tail(e))
-       h = label(this % time_discretization_stencil % pattern % edge_head(e))
+       t = label(primary_law % pattern % edge_tail(e))
+       h = label(primary_law % pattern % edge_head(e))
        if (t == h) cycle
        n = n + 1
        table(:, n) = [t, h]

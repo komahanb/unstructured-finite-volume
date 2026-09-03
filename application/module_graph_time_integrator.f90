@@ -1551,7 +1551,7 @@ end module gti_expansion
 module gti_block
   use util_precision  , only : dp
   use operation_action     , only : operation, variation, contract
-  use operation_action     , only : binding, bound_real_vector
+  use operation_action     , only : binding
   use view_directed        , only : directed_graph
   use view_directed_stored , only : stored_directed_graph
   use view_directed_connectivity, only : connectivity_graph
@@ -1565,7 +1565,7 @@ module gti_block
   use operation_family     , only : family
   use operation_weight     , only : scheme_weight
   use operation_coupling   , only : weights_terms
-  use operation_expression    , only : expression, constant, stated
+  use operation_expression    , only : expression
   use view_directed        , only : forward
   implicit none
   private
@@ -1582,10 +1582,11 @@ module gti_block
   end type coupling_reach
   type, extends(residual_operator) :: block_residual
      type(block_layout)      , private :: layout
-     integer, allocatable    , private :: kept(:)
+     integer, allocatable    , private :: free(:)
      type(coupling_reach), allocatable, private :: reach(:)
    contains
-     procedure :: restricted => block_restricted
+     procedure :: constrained_block => block_constrained
+     procedure :: linear_block => block_linear_block
      procedure :: placed_on
      procedure :: slice_of
      procedure :: node_of
@@ -1596,7 +1597,6 @@ module gti_block
      procedure :: aggregates
      procedure :: with_reach
      procedure :: rows_terms
-     procedure :: linear_block
      procedure :: member_order
      procedure :: sweep_labels
   end type block_residual
@@ -1665,10 +1665,10 @@ contains
     if (.not. allocated(this % layout % moment)) then
        error stop 'gti_block: the block has not been placed in the graph'
     end if
-    if (allocated(this % kept)) then
-       slice  = this % layout % slice(this % kept)
-       node   = this % layout % node(this % kept)
-       moment = this % layout % moment(this % kept)
+    if (allocated(this % free)) then
+       slice  = this % layout % slice(this % free)
+       node   = this % layout % node(this % free)
+       moment = this % layout % moment(this % free)
     else
        slice  = this % layout % slice
        node   = this % layout % node
@@ -1824,97 +1824,49 @@ contains
        aggregate(u) = numbered(key)
     end do
   end function aggregates
-  function linear_block(this, input_graph, inputs, rhs, transposed, version) result(lin)
+  !===================================================================!
+  ! THE COMPILED TANGENT, FROZEN INTO A BLOCK RESIDUAL. this %
+  ! residual_operator % linearized (src/operation_residual.f90) is
+  ! Element's own operation (Ch. 4.6.3 of the dissertation); a block
+  ! residual's own layout and free pass across unchanged, since
+  ! freezing the tangent changes no point and drops no unknown.
+  !===================================================================!
+  function block_linear_block(this, input_graph, inputs, rhs, transposed, mark) result(lin)
     class(block_residual), intent(in) :: this
     class(directed_graph), intent(in) :: input_graph
     type(binding)         , intent(in) :: inputs(:)
     real(dp)             , intent(in) :: rhs(:)
     logical              , intent(in) :: transposed
-    integer              , intent(in) :: version
+    integer              , intent(in) :: mark
     type(block_residual) :: lin
-    type(stencil) :: a
-    integer , allocatable :: r(:), c(:)
-    real(dp), allocatable :: w(:)
-    logical :: available
-    integer :: unknowns, degrees
-    unknowns = this % num_unknowns()
-    degrees  = this % num_degrees()
-    if (size(rhs) /= unknowns) then
-       error stop 'gti_block: one right side per unknown'
-    end if
-    call this % compiled_tangent(input_graph, inputs, 1, r, c, w, available)
-    if (.not. available) then
-       error stop 'gti_block: the tangent in the state compiles'
-    end if
-    a = stencil(r, c, w, spread(0.0_dp, 1, unknowns), 'frozen tangent')
-    if (transposed) a = a % transpose()
-    call a % constants % set_real_vector(-rhs)
-    lin = block_residual(a, stated(constant(0.0_dp), degrees - 1, 'zero'), this % points_at(), unknowns, &
-         & degrees, this % primary_degree(), [integer ::], [real(dp) ::])
-    call lin % versioned(version, transposed=a % pattern % transposed())
+    lin % residual_operator = this % residual_operator % linearized(input_graph, inputs, rhs, transposed, mark)
     lin % layout = this % layout
-    if (allocated(this % kept)) lin % kept = this % kept
-  end function linear_block
-  function block_restricted(this, kept, values) result(sub)
+    if (allocated(this % free)) lin % free = this % free
+  end function block_linear_block
+  !===================================================================!
+  ! THE BLOCK CONSTRAINED TO A SUBSET OF ITS OWN UNKNOWNS. this %
+  ! residual_operator % constrained (src/operation_residual.f90) is
+  ! Element's own operation (Ch. 4.6.3 of the dissertation) - it
+  ! eliminates unknowns from stencils, points and fixed rows alone.
+  ! A block residual's own operation additionally passes its layout
+  ! across unchanged and composes its own free with the constraint
+  ! just applied, so the two are named separately (constrained_block
+  ! here, constrained on residual_operator) rather than sharing one
+  ! name for two different operations.
+  !===================================================================!
+  function block_constrained(this, free, values) result(sub)
     class(block_residual), intent(in) :: this
-    integer              , intent(in) :: kept(:)
+    integer              , intent(in) :: free(:)
     real(dp)             , intent(in) :: values(:)
     type(block_residual) :: sub
-    type(stencil) :: derived, primary_law
-    type(stencil), allocatable :: secondary, restricted_secondary
-    integer , allocatable :: sub_of(:), at(:), fixed_rows(:), source_at(:), source_fixed_rows(:)
-    real(dp), allocatable :: fixed(:), source_fixed(:)
-    integer :: e, p, d, inside, npts, ncar, unknowns, degrees, primary
-    unknowns = this % num_unknowns()
-    degrees  = this % num_degrees()
-    primary  = this % primary_degree()
-    source_at   = this % points_at()
-    source_fixed_rows = this % fixed_unknowns()
-    source_fixed      = this % fixed_values()
-    allocate(sub_of(unknowns), source=0)
-    do e = 1, size(kept)
-       sub_of(kept(e)) = e
-    end do
-    npts = 0
-    allocate(at(size(source_at)))
-    do p = 1, size(source_at)
-       inside = 0
-       do d = 1, degrees
-          if (sub_of(source_at(p) + d) > 0) inside = inside + 1
-       end do
-       if (inside == 0) cycle
-       if (inside /= degrees) then
-          error stop 'gti_block: a member contains whole points'
-       end if
-       npts     = npts + 1
-       at(npts) = sub_of(source_at(p) + 1) - 1
-    end do
-    ncar = 0
-    allocate(fixed_rows(size(source_fixed_rows)), fixed(size(source_fixed_rows)))
-    do e = 1, size(source_fixed_rows)
-       if (sub_of(source_fixed_rows(e)) == 0) cycle
-       ncar          = ncar + 1
-       fixed_rows(ncar) = sub_of(source_fixed_rows(e))
-       fixed(ncar)    = source_fixed(e)
-    end do
-    primary_law = this % primary_stencil()
-    derived     = primary_law % restricted(kept, values)
-    if (this % has_connected_stencil()) then
-       secondary = this % connected_stencil()
-       restricted_secondary = secondary % restricted(kept, values)
-       sub = block_residual(derived, this % rule(), at(1:npts), size(kept), &
-            & degrees, primary, fixed_rows(1:ncar), fixed(1:ncar), spatial_discretization_stencil=restricted_secondary)
-    else
-       sub = block_residual(derived, this % rule(), at(1:npts), size(kept), &
-            & degrees, primary, fixed_rows(1:ncar), fixed(1:ncar))
-    end if
+    sub % residual_operator = this % residual_operator % constrained(free, values)
     sub % layout = this % layout
-    if (allocated(this % kept)) then
-       sub % kept = this % kept(kept)
+    if (allocated(this % free)) then
+       sub % free = this % free(free)
     else
-       sub % kept = kept
+       sub % free = free
     end if
-  end function block_restricted
+  end function block_constrained
   !===================================================================!
   ! THE LABELLING A SWEEP ITERATES OVER, and the order of traversal.
   ! Space and time are chosen separately: a dimension left coupled places
@@ -2616,7 +2568,7 @@ contains
           if (pass == 1 .and. sequential_time .and. mm > 1) then
              call continued(q, member, pack([(k, k = 1, count)], label == order(mm - 1)))
           end if
-          sub = rows % restricted(member, q)
+          sub = rows % constrained_block(member, q)
           if (rows % version() /= 0) then
              call sub % versioned(abs(rows % version()) * members + m, rows % version_transposed())
           end if

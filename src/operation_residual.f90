@@ -33,7 +33,7 @@ module operation_residual
   use field_calculus    , only : field, FIELD_REAL
   use field_stored      , only : stored_field
   use operation_stencil  , only : stencil, combine_triples
-  use operation_expression , only : expression
+  use operation_expression , only : expression, constant, stated
 
   implicit none
 
@@ -79,6 +79,8 @@ module operation_residual
      procedure :: connected_stencil
      procedure :: attach_connected_stencil
      procedure :: point_domain
+     procedure :: constrained
+     procedure :: linearized
 
   end type residual_operator
 
@@ -580,5 +582,116 @@ contains
          & [variations(1) % with_argument(this % physics % argument(2))], half)
     call half % real_vector(governing)
   end subroutine design_tangent
+
+  !===================================================================!
+  ! THE RESIDUAL CONSTRAINED TO free UNKNOWNS OF ITS OWN NUMBERING,
+  ! the rest set to values. Ch. 4.6.3 of the dissertation names this
+  ! and linearized below the transpose-Jacobian-vector-product
+  ! routines. The primary and, if present, connected stencil each
+  ! restrict themselves the way a stencil already restricts for
+  ! multigrid; a residual adds only what a stencil does not state -
+  ! its own evaluation points and fixed rows, renumbered onto free. A
+  ! point split across the boundary (some but not all of its degrees
+  ! in free) is an invalid constraint.
+  !===================================================================!
+
+  function constrained(this, free, values) result(sub)
+
+    class(residual_operator), intent(in) :: this
+    integer                 , intent(in) :: free(:)
+    real(dp)                , intent(in) :: values(:)
+    type(residual_operator) :: sub
+
+    type(stencil), allocatable :: secondary
+    type(stencil) :: derived
+    integer , allocatable :: sub_of(:), at(:), fixed_rows(:)
+    real(dp), allocatable :: fixed(:)
+    integer :: e, p, d, inside, npts, ncar
+
+    allocate(sub_of(this % unknowns), source=0)
+    do e = 1, size(free)
+       sub_of(free(e)) = e
+    end do
+
+    npts = 0
+    allocate(at(size(this % at)))
+    do p = 1, size(this % at)
+       inside = 0
+       do d = 1, this % degrees
+          if (sub_of(this % at(p) + d) > 0) inside = inside + 1
+       end do
+       if (inside == 0) cycle
+       if (inside /= this % degrees) then
+          error stop 'operation_residual: a member contains whole points'
+       end if
+       npts     = npts + 1
+       at(npts) = sub_of(this % at(p) + 1) - 1
+    end do
+
+    ncar = 0
+    allocate(fixed_rows(size(this % fixed_rows)), fixed(size(this % fixed_rows)))
+    do e = 1, size(this % fixed_rows)
+       if (sub_of(this % fixed_rows(e)) == 0) cycle
+       ncar             = ncar + 1
+       fixed_rows(ncar) = sub_of(this % fixed_rows(e))
+       fixed(ncar)      = this % fixed(e)
+    end do
+
+    derived = this % primary_law % restricted(free, values)
+    if (allocated(this % connected_law)) then
+       secondary = this % connected_law % restricted(free, values)
+       sub = residual_operator(derived, this % physics, at(1:npts), size(free), &
+            & this % degrees, this % primary, fixed_rows(1:ncar), fixed(1:ncar), connected_law=secondary)
+    else
+       sub = residual_operator(derived, this % physics, at(1:npts), size(free), &
+            & this % degrees, this % primary, fixed_rows(1:ncar), fixed(1:ncar))
+    end if
+
+  end function constrained
+
+  !===================================================================!
+  ! THE COMPILED TANGENT, FROZEN INTO A LINEAR RESIDUAL. Ch. 4.6.3 of
+  ! the dissertation names this and constrained above the transpose-
+  ! Jacobian-vector-product routines. The frozen matrix states the
+  ! whole linear map, so the returned residual has no physics of its
+  ! own (a zero rule) and no fixed rows. transposed states which of
+  ! Jw = rhs or J^Tw = rhs the returned residual's own apply computes;
+  ! mark is the tag the returned residual is recorded under (versioned,
+  ! this module's own procedure inherited from operation_action).
+  !===================================================================!
+
+  function linearized(this, input_graph, inputs, rhs, transposed, mark) result(lin)
+
+    class(residual_operator), intent(in) :: this
+    class(directed_graph)   , intent(in) :: input_graph
+    type(binding)           , intent(in) :: inputs(:)
+    real(dp)                , intent(in) :: rhs(:)
+    logical                 , intent(in) :: transposed
+    integer                 , intent(in) :: mark
+    type(residual_operator) :: lin
+
+    type(stencil) :: a
+    integer , allocatable :: r(:), c(:)
+    real(dp), allocatable :: w(:)
+    logical :: available
+
+    if (size(rhs) /= this % unknowns) then
+       error stop 'operation_residual: one right side per unknown'
+    end if
+
+    call this % compiled_tangent(input_graph, inputs, 1, r, c, w, available)
+    if (.not. available) then
+       error stop 'operation_residual: the tangent in the state compiles'
+    end if
+
+    a = stencil(r, c, w, spread(0.0_dp, 1, this % unknowns), 'frozen tangent')
+    if (transposed) a = a % transpose()
+    call a % constants % set_real_vector(-rhs)
+
+    lin = residual_operator(a, stated(constant(0.0_dp), this % degrees - 1, 'zero'), this % at, &
+         & this % unknowns, this % degrees, this % primary, [integer ::], [real(dp) ::])
+    call lin % versioned(mark, transposed=transposed)
+
+  end function linearized
 
 end module operation_residual

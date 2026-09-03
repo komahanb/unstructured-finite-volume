@@ -33,6 +33,7 @@ module operation_family
 
   use util_precision  , only : dp
   use operation_edge_function , only : edge_function
+  use view_directed_connectivity, only : connectivity_graph
   use util_derivative_terms   , only : derivative_terms, value, &
        & operator(+), operator(-), operator(*), operator(/)
 
@@ -264,13 +265,13 @@ contains
   ! is the order the coupling's relation is formed in.
   !===================================================================!
 
-  pure subroutine family_block_reach(this, nd, n, tails, heads, tail_degree, head_degree)
+  function family_block_reach(this, nd, n) result(reach)
 
     class(family), intent(in) :: this
     integer      , intent(in) :: nd, n
-    integer, allocatable, intent(out) :: tails(:), heads(:)
-    integer, allocatable, intent(out) :: tail_degree(:), head_degree(:)
+    type(connectivity_graph) :: reach
 
+    integer, allocatable :: tails(:), heads(:), tail_degree(:), head_degree(:)
     integer, allocatable :: offset(:), degrees_of(:)
     integer :: primary, kk, d, e, counted, pass
 
@@ -298,7 +299,9 @@ contains
             & tail_degree(counted), head_degree(counted))
     end do
 
-  end subroutine family_block_reach
+    reach = connectivity_graph(n, tails, heads, tail_degree, head_degree)
+
+  end function family_block_reach
 
   !===================================================================!
   ! The reach of the tableau over one step at nd degrees, on the
@@ -308,13 +311,13 @@ contains
   ! itself) at every stage. Degree outer, stage inner.
   !===================================================================!
 
-  pure subroutine family_stage_reach(this, nd, tails, heads, tail_degree, head_degree)
+  function family_stage_reach(this, nd) result(reach)
 
     class(family), intent(in) :: this
     integer      , intent(in) :: nd
-    integer, allocatable, intent(out) :: tails(:), heads(:)
-    integer, allocatable, intent(out) :: tail_degree(:), head_degree(:)
+    type(connectivity_graph) :: reach
 
+    integer, allocatable :: tails(:), heads(:), tail_degree(:), head_degree(:)
     integer :: s, d, i, j, at
 
     s  = size(this % b)
@@ -341,7 +344,9 @@ contains
        end do
     end do
 
-  end subroutine family_stage_reach
+    reach = connectivity_graph(s + 2, tails, heads, tail_degree, head_degree)
+
+  end function family_stage_reach
 
   !===================================================================!
   ! The dimensionless coefficient on one edge. An edge from an earlier

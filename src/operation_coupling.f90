@@ -1,11 +1,10 @@
 !=====================================================================!
-! The coupling a weight action reads: the instants as a directed
-! graph, and on it the three fields every such action takes, in this
-! order - the step at each instant, and on each edge the degree of
-! the source and the degree the edge's condition head_degree. A
-! family, a scheme weight and a step scaling all read exactly this
-! tuple, so it is built here and nowhere else; weights_of applies
-! any of them to it and reads the result out as a vector.
+! The coupling a weight action reads: a connectivity_graph, and on it
+! the two fields every such action takes - the step at each vertex,
+! read off the graph's own edge degree labels. A family, a scheme
+! weight and a step scaling all read exactly this tuple, so it is
+! built here and nowhere else; weights_of applies any of them to it
+! and reads the result out as a vector.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -14,7 +13,7 @@ module operation_coupling
 
   use util_precision      , only : dp
   use field_stored        , only : stored_field
-  use view_directed_stored, only : stored_directed_graph
+  use view_directed_connectivity, only : connectivity_graph
   use operation_action    , only : operation, applied
   use operation_edge_function, only : edge_function
   use util_derivative_terms, only : derivative_terms, coefficient
@@ -27,29 +26,28 @@ module operation_coupling
 contains
 
   !===================================================================!
-  ! The graph and the three fields, filled. One step per vertex, one
-  ! source degree and one determined degree per edge.
+  ! The step at every vertex and the two degree labels every edge
+  ! already stores, read out as the tuple an edge_function's
+  ! contract expects.
   !===================================================================!
 
-  subroutine coupling_inputs(num_vertices, tails, heads, steps, tail_degree, &
-       & head_degree, edges, inputs)
+  subroutine coupling_inputs(reach, steps, inputs)
 
-    integer , intent(in) :: num_vertices
-    integer , intent(in) :: tails(:), heads(:)
-    real(dp), intent(in) :: steps(:)
-    integer , intent(in) :: tail_degree(:), head_degree(:)
-    type(stored_directed_graph)    , intent(out) :: edges
+    type(connectivity_graph)       , intent(in)  :: reach
+    real(dp)                       , intent(in)  :: steps(:)
     type(stored_field), allocatable, intent(out) :: inputs(:)
 
-    edges = stored_directed_graph(num_vertices, tails=tails, heads=heads)
+    integer :: e, ne
+
+    ne = reach % num_edges()
 
     allocate(inputs(3))
-    inputs(1) = stored_field('dt'           , edges % vertex_set(), num_vertices)
-    inputs(2) = stored_field('source degree', edges % edge_set()  , size(tails))
-    inputs(3) = stored_field('head_degree'   , edges % edge_set()  , size(tails))
+    inputs(1) = stored_field('dt'          , reach % vertex_set(), reach % num_vertices())
+    inputs(2) = stored_field('tail degree' , reach % edge_set()  , ne)
+    inputs(3) = stored_field('head degree' , reach % edge_set()  , ne)
     call inputs(1) % set_real_vector(steps)
-    call inputs(2) % set_integer_vector(tail_degree)
-    call inputs(3) % set_integer_vector(head_degree)
+    call inputs(2) % set_integer_vector([(reach % tail_degree(e), e = 1, ne)])
+    call inputs(3) % set_integer_vector([(reach % head_degree(e), e = 1, ne)])
 
   end subroutine coupling_inputs
 
@@ -57,22 +55,17 @@ contains
   ! An action applied to that coupling, its result read out.
   !===================================================================!
 
-  subroutine weights_of(action, num_vertices, tails, heads, steps, tail_degree, &
-       & head_degree, w)
+  subroutine weights_of(action, reach, steps, w)
 
-    class(operation), intent(in) :: action
-    integer         , intent(in) :: num_vertices
-    integer         , intent(in) :: tails(:), heads(:)
-    real(dp)        , intent(in) :: steps(:)
-    integer         , intent(in) :: tail_degree(:), head_degree(:)
-    real(dp), allocatable, intent(out) :: w(:)
+    class(operation)         , intent(in)  :: action
+    type(connectivity_graph) , intent(in)  :: reach
+    real(dp)                 , intent(in)  :: steps(:)
+    real(dp), allocatable    , intent(out) :: w(:)
 
-    type(stored_directed_graph)     :: edges
     type(stored_field), allocatable :: inputs(:)
 
-    call coupling_inputs(num_vertices, tails, heads, steps, tail_degree, head_degree, &
-         & edges, inputs)
-    call applied(action, edges, inputs, w)
+    call coupling_inputs(reach, steps, inputs)
+    call applied(action, reach, inputs, w)
 
   end subroutine weights_of
 
@@ -91,41 +84,42 @@ contains
   ! function.
   !===================================================================!
 
-  subroutine weights_terms(action, num_vertices, tails, heads, steps, seeds, &
-       & tail_degree, head_degree, table)
+  subroutine weights_terms(action, reach, steps, seeds, table)
 
-    class(operation), intent(in) :: action
-    integer         , intent(in) :: num_vertices
-    integer         , intent(in) :: tails(:), heads(:)
-    real(dp)        , intent(in) :: steps(:), seeds(:,:)
-    integer         , intent(in) :: tail_degree(:), head_degree(:)
-    real(dp), allocatable, intent(out) :: table(:,:)
+    class(operation)         , intent(in)  :: action
+    type(connectivity_graph) , intent(in)  :: reach
+    real(dp)                 , intent(in)  :: steps(:), seeds(:,:)
+    real(dp), allocatable    , intent(out) :: table(:,:)
 
     type(derivative_terms), allocatable :: dt(:)
     type(derivative_terms) :: c
-    integer :: n, k, m, e
+    integer :: n, k, m, e, ne, nv
+
+    nv = reach % num_vertices()
+    ne = reach % num_edges()
 
     n = 0
     do while (2**n - 1 < size(seeds, 2))
        n = n + 1
     end do
-    if (size(seeds, 1) /= num_vertices .or. size(seeds, 2) /= 2**n - 1) then
+    if (size(seeds, 1) /= nv .or. size(seeds, 2) /= 2**n - 1) then
        error stop 'operation_coupling: one seed row per vertex, one column per nonempty subset'
     end if
 
-    allocate(dt(num_vertices))
-    do k = 1, num_vertices
+    allocate(dt(nv))
+    do k = 1, nv
        dt(k) = derivative_terms(steps(k), n)
        do m = 1, 2**n - 1
           call dt(k) % set_coefficient(m, seeds(k, m))
        end do
     end do
 
-    allocate(table(size(tails), 0:2**n - 1))
+    allocate(table(ne, 0:2**n - 1))
     select type (action)
     class is (edge_function)
-       do e = 1, size(tails)
-          c = action % edge_coefficient(dt, tails(e), heads(e), tail_degree(e), head_degree(e))
+       do e = 1, ne
+          c = action % edge_coefficient(dt, reach % edge_tail(e), reach % edge_head(e), &
+               & reach % tail_degree(e), reach % head_degree(e))
           do m = 0, 2**n - 1
              table(e, m) = coefficient(c, m)
           end do

@@ -53,7 +53,7 @@ The terms $\lambda^{(k)} \cdot \partial_\nu R^{(n-1-k)}$ for $k \geq 1$ are the 
 Each pairs a higher costate with a lower residual derivative, weighed by $\binom{n-1}{k}$.
 The term $\partial_\nu F^{(n-1)}$ is the functional's own explicit dependence.
 
-The reverse pass of `gti_chain` (`lagrangian_term`) forms $L = F - \langle \lambda, R \rangle$ as `inner_product(costate, residual, active=.not. fixed_rows)` (`src/util_derivative_terms.f90`), the same reduction `dot_product` performs on real arrays, taken here over `derivative_terms`.
+The reverse pass of `gti_chain` (`lagrangian_term`) forms $L = F + \langle \lambda, R \rangle$ as `f - inner_product(costate, residual, active=.not. fixed_rows)` (`src/util_derivative_terms.f90`) — the minus is `solve_linear`'s own right-hand side sign carried into `costate`, not a second definition of $L$; see Provenance above. `inner_product` is the same reduction `dot_product` performs on real arrays, taken here over `derivative_terms`.
 $\lambda_{\text{row}}$ and $R_{\text{row}}$ are `derivative_terms` over $n$ directions: $n-1$ store the state's derivatives, one stores $\nu$ alone, and $\lambda$ is constant along that one.
 The product rule on subsets (`terms_times` in `src/util_derivative_terms.f90`) is the binomial expansion: a subset of size $k$ of the $n-1$ implicit directions represents $\binom{n-1}{k}$ once.
 `leibniz_parts` reads the product by the order of the costate's factor.
@@ -175,6 +175,29 @@ $$\frac{d^n\mathcal{L}}{d\nu^n} = \frac{d^nF}{d\nu^n}$$
 The main program, `graph_time_integrator`, is built from a single
 source, `module_graph_time_integrator.f90`, over the library in
 `../src`.
+
+## Provenance
+
+This codebase's time-integration mathematics is a migration and generalization of:
+
+Komahan Boopathy, *Adjoint Based Design Optimization of Systems with Time Dependent Physics and Probabilistically Modeled Uncertainties*, PhD dissertation, Georgia Institute of Technology, 2020.
+
+Checked against the dissertation directly, not by resemblance:
+
+- The Lagrangian is $L = F + \langle \lambda, R \rangle$ (Eq. 3.4, 4.35), additive. A negative seen elsewhere is a linear solve's own right-hand side, not a redefinition of $L$ — the dissertation's own adjoint condition $\lambda = -(\partial F/\partial q)/(\partial R/\partial q)$ (Eq. 3.11) carries its negative the same way.
+- "the following inner product ought to vanish" (Sec. 3.2) names the adjoint condition directly; `field % inner_product` (`src/field_calculus.f90`) is that object, not an analogy to it. The dissertation's acknowledgments credit inner products by name as the concept that shaped its author's mathematical intuition.
+- `alpha` in `weight = alpha * dt_head**(source_degree - determines)` (`src/operation_weight.f90`) is the dissertation's $\alpha$ from $\chi \leftarrow \chi + (\gamma\,\partial R/\partial\ddot q + \beta\,\partial R/\partial\dot q + \alpha\,\partial R/\partial q)^T\chi$ (Eq. 4.67), generalized from the fixed three-coefficient $(\alpha,\beta,\gamma)$ case to arbitrary derivative order.
+- `lambda(unknown, block, functional, multiset, degree)` in `chain_derivative` holds, at each `degree`, the result of one `solve_linear` call on `chain(b) % rows`, transposed. The dissertation's $\lambda$, $\psi$, $\phi$ (Eq. 4.35 — separate adjoint variables for the physics residual $R$ and the state-approximation residuals $S$, $T$) are three instances of exactly this: the unknown of a linear solve, one per auxiliary equation. One array suffices because "the unknown of a linear solve" was already the single concept under all three; `degree` selects which solve, not which named variable.
+
+What does not trace to the dissertation, and should not be read as if it did:
+
+- `tail_degree` and `head_degree` (`src/operation_family.f90`, `src/view_directed_connectivity.f90`; named `source_degree`/`determines` until this codebase's own naming pass) are this codebase's own machinery for the arbitrary-order generalization above. The dissertation treats state degree two only and has no term for them.
+- Newmark (Ch. 4.2) is a fourth scheme in the dissertation, with its own full adjoint derivation. It is not implemented here.
+
+What is not yet a parallel architecture, despite four matching roles (Ch. 4.6, Element/Function/Assembler/Integrator):
+
+- Element (per-row residual and Jacobian, Ch. 4.6.1) and Function (functional integrand, Ch. 4.6.2) are genuinely abstracted in `src/` — `operation`/`family`/`stencil` and `expression`, reusable by any application. The reach itself (which edge exists, at which two degrees) is now abstracted too — `connectivity_graph` (`src/view_directed_connectivity.f90`) replaces `coupling_reach`, a bare struct that used to live entirely in this file.
+- Assembler (Ch. 4.6.3, the transpose-Jacobian-vector-product routines) and Integrator (Ch. 4.6.4, the forward/backward time loop) still exist only as concretions inside this file — `block_residual` in `gti_block`, `march_chain`/`chain_derivative` in `gti_march`/`gti_chain` — with no abstract type in `src/` that a second application could extend the way `jacobi`/`gauss_seidel`/`newton` extend `minimizer`. Two of the dissertation's four interfaces have reached their abstract home; the other two are still waiting for one.
 
 # Mathematics and Architecture
 

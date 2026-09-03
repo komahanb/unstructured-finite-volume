@@ -24,6 +24,8 @@ relation_algorithms.o \
 field_calculus.o \
 view_directed.o \
 relation_partition.o \
+view_directed_stored.o \
+view_directed_connectivity.o \
 field_stored.o \
 operation_action.o \
 operation_expression.o \
@@ -34,7 +36,6 @@ transform_structure.o \
 map_value.o \
 map_value_change.o \
 field_functional.o \
-view_directed_stored.o \
 operation_coupling.o \
 view_mesh.o \
 operation_robin_condition.o \

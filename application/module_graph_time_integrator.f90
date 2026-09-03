@@ -842,6 +842,7 @@ module gti_expansion
   use map_set               , only : set_map
   use map_set_representation, only : counted_set_representation
   use view_directed_stored  , only : stored_directed_graph
+  use view_directed_connectivity, only : connectivity_graph
   use field_calculus        , only : field
   use field_stored          , only : stored_field
   use operation_family      , only : family
@@ -1371,26 +1372,27 @@ contains
     class(family)         , intent(in)    :: scheme
     integer               , intent(in)    :: slices(:), first, last
     real(dp)              , intent(in)    :: dt(:)
-    integer, allocatable :: tails(:), heads(:), tail_degree(:), head_degree(:)
+    type(connectivity_graph) :: reach
     real(dp), allocatable :: w(:)
     integer :: n, nd
     associate (u1 => physics); end associate
     n  = last - first + 1
     nd = this % degrees
-    call scheme % block_reach(nd, n, tails, heads, tail_degree, head_degree)
-    call weights_of(scheme_weight(scheme), n, tails, heads, dt(first:last), tail_degree, &
-         & head_degree, w)
+    reach = scheme % block_reach(nd, n)
+    call weights_of(scheme_weight(scheme), reach, dt(first:last), w)
     at = coupled(this, slices, n * nd, 'the components of this block', &
          & 'the constraint instances of this block', 'the scheme reach', &
-         & scheme % name() // ' coupling', tuples(nd, tails, heads, tail_degree, head_degree), w)
+         & scheme % name() // ' coupling', tuples(nd, reach), w)
   end function block_coupling
-  pure function tuples(nd, tails, heads, tail_degree, head_degree) result(table)
-    integer, intent(in) :: nd, tails(:), heads(:), tail_degree(:), head_degree(:)
+  pure function tuples(nd, reach) result(table)
+    integer                  , intent(in) :: nd
+    type(connectivity_graph) , intent(in) :: reach
     integer, allocatable :: table(:,:)
-    integer :: e
-    allocate(table(2, size(tails)))
-    table(1,:) = [((tails(e) - 1) * nd + tail_degree(e) + 1, e = 1, size(tails))]
-    table(2,:) = [((heads(e) - 1) * nd + head_degree(e) + 1, e = 1, size(heads))]
+    integer :: e, ne
+    ne = reach % num_edges()
+    allocate(table(2, ne))
+    table(1,:) = [((reach % edge_tail(e) - 1) * nd + reach % tail_degree(e) + 1, e = 1, ne)]
+    table(2,:) = [((reach % edge_head(e) - 1) * nd + reach % head_degree(e) + 1, e = 1, ne)]
   end function tuples
   integer function named_set(this, n, text) result(at)
     class(expansion), intent(inout) :: this
@@ -1455,17 +1457,17 @@ contains
     class(family)   , intent(in)    :: scheme
     integer         , intent(in)    :: members(:), s
     real(dp)        , intent(in)    :: step
-    integer, allocatable :: tails(:), heads(:), tail_degree(:), head_degree(:)
+    type(connectivity_graph) :: reach
     integer, allocatable :: table(:,:)
     real(dp), allocatable :: w(:)
-    integer :: nd, e
+    integer :: nd, e, ne
     nd = this % degrees
-    call scheme % stage_reach(nd, tails, heads, tail_degree, head_degree)
-    call weights_of(scheme_weight(scheme), s + 2, tails, heads, spread(step, 1, s + 2), &
-         & tail_degree, head_degree, w)
-    allocate(table(2, size(tails)))
-    table(1,:) = [(stage_unknown(tails(e), tail_degree(e), s, nd), e = 1, size(tails))]
-    table(2,:) = [(stage_unknown(heads(e), head_degree(e), s, nd), e = 1, size(heads))]
+    reach = scheme % stage_reach(nd)
+    ne = reach % num_edges()
+    call weights_of(scheme_weight(scheme), reach, spread(step, 1, s + 2), w)
+    allocate(table(2, ne))
+    table(1,:) = [(stage_unknown(reach % edge_tail(e), reach % tail_degree(e), s, nd), e = 1, ne)]
+    table(2,:) = [(stage_unknown(reach % edge_head(e), reach % head_degree(e), s, nd), e = 1, ne)]
     at = coupled(this, members, (s + 1) * nd, 'the components of this step', &
          & 'the constraint instances of this step', 'the butcher reach', &
          & scheme % name() // ' stage coupling', table, w)
@@ -1530,15 +1532,17 @@ contains
     integer         , intent(in)    :: slices(:), first, last
     real(dp)        , intent(in)    :: dt(:)
     integer, allocatable :: table(:,:), sources(:)
+    type(connectivity_graph) :: reach
     real(dp), allocatable :: w(:)
     integer :: n, nd, s, e
     n  = last - first + 1
     nd = this % degrees
     s  = scheme % num_stages()
     call reach_table(this, s, n, table, sources)
-    call weights_of(scheme_weight(scheme), s + 2, [(1, e = 1, size(sources))], sources, &
-         & spread(dt(first), 1, s + 2), [((mod(table(1, e) - 1, nd)), e = 1, size(sources))], &
-         & [((mod(table(2, e) - 1, nd)), e = 1, size(sources))], w)
+    reach = connectivity_graph(s + 2, [(1, e = 1, size(sources))], sources, &
+         & [((mod(table(1, e) - 1, nd)), e = 1, size(sources))], &
+         & [((mod(table(2, e) - 1, nd)), e = 1, size(sources))])
+    call weights_of(scheme_weight(scheme), reach, spread(dt(first), 1, s + 2), w)
     at = coupled(this, slices, (1 + (n - 1) * (s + 1)) * nd, 'the components of this block', &
          & 'the constraint instances of this block', 'the transfer between steps', &
          & scheme % name() // ' transfer coupling', table, w)
@@ -1550,6 +1554,7 @@ module gti_block
   use operation_action     , only : binding, bound_real_vector
   use view_directed        , only : directed_graph
   use view_directed_stored , only : stored_directed_graph
+  use view_directed_connectivity, only : connectivity_graph
   use field_calculus       , only : field, FIELD_REAL
   use field_stored         , only : stored_field
   use graph_fractal        , only : graph
@@ -1570,9 +1575,8 @@ module gti_block
      integer, allocatable :: slice(:), node(:), moment(:)
   end type block_layout
   type :: coupling_reach
-     integer :: vertices = 0
+     type(connectivity_graph) :: reach
      integer, allocatable :: step_of(:)
-     integer, allocatable :: tails(:), heads(:), tail_degree(:), head_degree(:)
      integer, allocatable :: row(:), column(:)
   end type coupling_reach
   type, extends(operation) :: block_residual
@@ -2030,20 +2034,20 @@ contains
     integer , allocatable, intent(out) :: r(:), c(:)
     real(dp), allocatable, intent(out) :: w(:,:)
     real(dp), allocatable :: table(:,:)
-    integer :: k, e, i, count, n
+    integer :: k, e, i, count, n, ne
     count = 0
     do k = 1, size(reach)
-       count = count + size(reach(k) % tails) * nodes
+       count = count + reach(k) % reach % num_edges() * nodes
     end do
     allocate(r(count), c(count), w(count, 0:size(seeds, 2)))
     n = 0
     do k = 1, size(reach)
        associate (one => reach(k))
-         call weights_terms(scheme_weight(scheme), one % vertices, one % tails, &
-              & one % heads, dt(one % step_of), seeds(one % step_of, :), &
-              & one % tail_degree, one % head_degree, table)
+         ne = one % reach % num_edges()
+         call weights_terms(scheme_weight(scheme), one % reach, dt(one % step_of), &
+              & seeds(one % step_of, :), table)
          do i = 1, nodes
-            do e = 1, size(one % tails)
+            do e = 1, ne
                n       = n + 1
                r(n)    = one % row(e)    + (i - 1) * degrees
                c(n)    = one % column(e) + (i - 1) * degrees
@@ -2389,6 +2393,7 @@ module gti_march
   use gti_configuration       , only : refuse_unknown
   use operation_weight        , only : scheme_weight
   use view_directed_stored    , only : stored_directed_graph
+  use view_directed_connectivity, only : connectivity_graph
   use view_directed           , only : directed_graph
   use field_calculus          , only : field
   use field_stored            , only : stored_field
@@ -2424,6 +2429,13 @@ module gti_march
      integer  :: steepest_slot = 0, steepest_degree = 0
      real(dp) :: steepest = 0.0_dp
   end type imbalance
+  ! One step's edges, filled incrementally by stage_reach_of before
+  ! the connectivity_graph they describe can be built - a graph is
+  ! built whole, not edge by edge, so the raw lists are stored here
+  ! until every edge of the step is placed.
+  type :: raw_reach
+     integer, allocatable :: tails(:), heads(:), tail_degree(:), head_degree(:)
+  end type raw_reach
   ! Space and time are configured independently. A coupled dimension
   ! places all of its members in one system; a sequential one solves them one after another.
   character(len=16), save :: space_coupling = 'coupled'
@@ -2450,6 +2462,7 @@ contains
     integer      , intent(in) :: degrees
     real(dp)     , intent(in) :: step
     integer, allocatable :: offset(:), tail_degree(:)
+    type(connectivity_graph) :: edges
     real(dp), allocatable :: c(:)
     integer :: d, reach, s, i, k
     logical :: any_pattern
@@ -2460,23 +2473,24 @@ contains
        if (size(offset) == 0) cycle
        any_pattern = .true.
        reach = maxval(offset)
-       call weights_of(scheme_weight(scheme), reach + 1, &
+       edges = connectivity_graph(reach + 1, &
             & [(reach + 1 - offset(k), k = 1, size(offset))], [(reach + 1, k = 1, size(offset))], &
-            & [(step, k = 1, reach + 1)], tail_degree, [(d, k = 1, size(offset))], c)
+            & tail_degree, [(d, k = 1, size(offset))])
+       call weights_of(scheme_weight(scheme), edges, [(step, k = 1, reach + 1)], c)
        w = max(w, 1.0_dp + sum(abs(c)))
     end do
     if (any_pattern) return
     s = scheme % num_stages()
     do d = 0, degrees - 2
        do i = 1, s
-          call weights_of(scheme_weight(scheme), s + 2, [1, (1 + k, k = 1, i)], &
-               & [(1 + i, k = 0, i)], [(step, k = 1, s + 2)], [d, (d + 1, k = 1, i)], &
-               & [(d, k = 0, i)], c)
+          edges = connectivity_graph(s + 2, [1, (1 + k, k = 1, i)], &
+               & [(1 + i, k = 0, i)], [d, (d + 1, k = 1, i)], [(d, k = 0, i)])
+          call weights_of(scheme_weight(scheme), edges, [(step, k = 1, s + 2)], c)
           w = max(w, 1.0_dp + sum(abs(c)))
        end do
-       call weights_of(scheme_weight(scheme), s + 2, [1, (1 + k, k = 1, s)], &
-            & [(s + 2, k = 0, s)], [(step, k = 1, s + 2)], [d, (d + 1, k = 1, s)], &
-            & [(d, k = 0, s)], c)
+       edges = connectivity_graph(s + 2, [1, (1 + k, k = 1, s)], &
+            & [(s + 2, k = 0, s)], [d, (d + 1, k = 1, s)], [(d, k = 0, s)])
+       call weights_of(scheme_weight(scheme), edges, [(step, k = 1, s + 2)], c)
        w = max(w, 1.0_dp + sum(abs(c)))
     end do
   end function weight_of
@@ -2762,22 +2776,23 @@ contains
     integer        , intent(in) :: n, nd, width
     type(coupling_reach), allocatable, intent(out) :: reach(:)
     integer, allocatable :: table(:,:)
+    integer, allocatable :: tails(:), heads(:), tail_degree(:), head_degree(:)
     integer :: e, ne
     call tower % tuples_of(level_coupling(block), table)
     ne = size(table, 2)
     allocate(reach(1))
-    reach(1) % vertices = n
     reach(1) % step_of  = [(e, e = 1, n)]
-    allocate(reach(1) % tails(ne), reach(1) % heads(ne), reach(1) % tail_degree(ne), &
-         &   reach(1) % head_degree(ne), reach(1) % row(ne), reach(1) % column(ne))
+    allocate(tails(ne), heads(ne), tail_degree(ne), head_degree(ne))
+    allocate(reach(1) % row(ne), reach(1) % column(ne))
     do e = 1, ne
-       reach(1) % tails(e)         = (table(1, e) - 1) / nd + 1
-       reach(1) % tail_degree(e) = mod(table(1, e) - 1, nd)
-       reach(1) % heads(e)         = (table(2, e) - 1) / nd + 1
-       reach(1) % head_degree(e)    = mod(table(2, e) - 1, nd)
-       reach(1) % column(e) = (reach(1) % tails(e) - 1) * width + reach(1) % tail_degree(e) + 1
-       reach(1) % row(e)    = (reach(1) % heads(e) - 1) * width + reach(1) % head_degree(e) + 1
+       tails(e)       = (table(1, e) - 1) / nd + 1
+       tail_degree(e) = mod(table(1, e) - 1, nd)
+       heads(e)       = (table(2, e) - 1) / nd + 1
+       head_degree(e) = mod(table(2, e) - 1, nd)
+       reach(1) % column(e) = (tails(e) - 1) * width + tail_degree(e) + 1
+       reach(1) % row(e)    = (heads(e) - 1) * width + head_degree(e) + 1
     end do
+    reach(1) % reach = connectivity_graph(n, tails, heads, tail_degree, head_degree)
   end subroutine block_reach_of
   subroutine stage_reach_of(tower, block, n, s, nd, width, slice_of, &
        & member_of, reach)
@@ -2785,9 +2800,10 @@ contains
     type(graph)    , intent(in) :: block
     integer        , intent(in) :: n, s, nd, width, slice_of(:), member_of(:)
     type(coupling_reach), allocatable, intent(out) :: reach(:)
+    type(raw_reach), allocatable :: raw(:)
     integer, allocatable :: table(:,:), accumulate_state(:,:), first_moment(:), counted(:), filled(:)
     integer :: kk, e, tail_moment, head_moment, vertex_tail, vertex_head
-    allocate(reach(n - 1), first_moment(n), counted(n), filled(n))
+    allocate(reach(n - 1), raw(n - 1), first_moment(n), counted(n), filled(n))
     first_moment(1) = 1
     do kk = 2, n
        first_moment(kk) = first_moment(kk - 1) + merge(1, s + 1, kk - 1 == 1)
@@ -2804,10 +2820,9 @@ contains
        counted(kk) = counted(kk) + 1
     end do
     do kk = 2, n
-       reach(kk - 1) % vertices = s + 2
        reach(kk - 1) % step_of  = spread(kk, 1, s + 2)
-       allocate(reach(kk - 1) % tails(counted(kk)), reach(kk - 1) % heads(counted(kk)), &
-            &   reach(kk - 1) % tail_degree(counted(kk)), reach(kk - 1) % head_degree(counted(kk)), &
+       allocate(raw(kk - 1) % tails(counted(kk)), raw(kk - 1) % heads(counted(kk)), &
+            &   raw(kk - 1) % tail_degree(counted(kk)), raw(kk - 1) % head_degree(counted(kk)), &
             &   reach(kk - 1) % row(counted(kk)), reach(kk - 1) % column(counted(kk)))
     end do
     filled = 0
@@ -2817,7 +2832,7 @@ contains
           filled(kk) = filled(kk) + 1
           vertex_tail = (table(1, e) - 1) / nd + 2
           vertex_head = (table(2, e) - 1) / nd + 2
-          call put(reach(kk - 1), filled(kk), vertex_tail, vertex_head, &
+          call put(raw(kk - 1), reach(kk - 1), filled(kk), vertex_tail, vertex_head, &
                & mod(table(1, e) - 1, nd), mod(table(2, e) - 1, nd), &
                & (first_moment(kk) + vertex_tail - 2 - 1) * width, &
                & (first_moment(kk) + vertex_head - 2 - 1) * width)
@@ -2828,24 +2843,29 @@ contains
        head_moment = (accumulate_state(2, e) - 1) / nd + 1
        kk          = slice_of(head_moment)
        filled(kk)  = filled(kk) + 1
-       call put(reach(kk - 1), filled(kk), 1, member_of(head_moment) + 1, &
+       call put(raw(kk - 1), reach(kk - 1), filled(kk), 1, member_of(head_moment) + 1, &
             & mod(accumulate_state(1, e) - 1, nd), mod(accumulate_state(2, e) - 1, nd), &
             & (tail_moment - 1) * width, (head_moment - 1) * width)
     end do
     if (any(filled /= counted)) then
        error stop 'gti_march: every edge of a step is placed once'
     end if
+    do kk = 2, n
+       reach(kk - 1) % reach = connectivity_graph(s + 2, raw(kk - 1) % tails, raw(kk - 1) % heads, &
+            & raw(kk - 1) % tail_degree, raw(kk - 1) % head_degree)
+    end do
   contains
-    subroutine put(one, e, tail, head, tail_degree, head_degree, column_base, row_base)
-      type(coupling_reach), intent(inout) :: one
+    subroutine put(one, placed, e, tail, head, tail_degree, head_degree, column_base, row_base)
+      type(raw_reach)     , intent(inout) :: one
+      type(coupling_reach), intent(inout) :: placed
       integer             , intent(in)    :: e, tail, head, tail_degree, head_degree
       integer             , intent(in)    :: column_base, row_base
       one % tails(e)         = tail
       one % heads(e)         = head
       one % tail_degree(e) = tail_degree
       one % head_degree(e)    = head_degree
-      one % column(e)        = column_base + tail_degree + 1
-      one % row(e)           = row_base + head_degree + 1
+      placed % column(e)     = column_base + tail_degree + 1
+      placed % row(e)        = row_base + head_degree + 1
     end subroutine put
   end subroutine stage_reach_of
   subroutine solved(rows, design_value, q, achieved, final_imbalance, seed)
@@ -5772,6 +5792,7 @@ module gti_demos
   use map_value             , only : value_map, VALUE_UNATTACHED, VALUE_UNKNOWN, &
        & VALUE_KNOWN
   use view_directed_stored  , only : stored_directed_graph
+  use view_directed_connectivity, only : connectivity_graph
   use field_calculus        , only : field
   use field_stored          , only : stored_field
   use operation_action      , only : variation, sweep_design_partial => design_partial
@@ -6707,10 +6728,11 @@ contains
       real(dp), allocatable :: weight(:), residual(:), acted(:), governing(:)
       real(dp) :: q(num_unknowns), t(num_instants)
       integer , allocatable :: tails(:), heads(:), head_degree(:), tail_degree(:)
+      type(connectivity_graph) :: edges
       integer :: j, k
       call scheme_reach(tails, heads, tail_degree, head_degree)
-      call weights_of(scheme_weight(bdf_family(order)), num_instants, tails, heads, dt, &
-           & tail_degree, head_degree, weight)
+      edges = connectivity_graph(num_instants, tails, heads, tail_degree, head_degree)
+      call weights_of(scheme_weight(bdf_family(order)), edges, dt, weight)
       rows = derived_constraints( &
            & [(unknown(heads(j), head_degree(j)), j = 1, size(heads))], &
            & [(unknown(tails(j), tail_degree(j)), j = 1, size(tails))], &
@@ -7010,11 +7032,12 @@ contains
     end subroutine bind_reach
     subroutine show_tuples()
       class(relation), pointer :: r
+      type(connectivity_graph) :: edges
       integer, allocatable :: fixed(:,:)
       integer :: i, e, target_index
       dt = [0.0_dp, 0.30_dp, 0.20_dp, 0.40_dp, 0.25_dp]
-      call weights_of(scheme_weight(bdf_family(order)), num_instants, tails, heads, dt, &
-           & tail_degree, head_degree, weight)
+      edges = connectivity_graph(num_instants, tails, heads, tail_degree, head_degree)
+      call weights_of(scheme_weight(bdf_family(order)), edges, dt, weight)
       r => relation_at(store % node(coupling), binding, 1)
       write(*,'(a)')    ' '
       write(*,'(a,i3)') ' tuples the relation contains  ', r % num_tuples()
@@ -7101,15 +7124,17 @@ contains
       character(len=*), intent(in) :: label
       real(dp)        , intent(in) :: dt(:)
       integer, parameter :: last = 2 * order + 1
+      type(connectivity_graph) :: edges
       real(dp), allocatable :: c(:)
       real(dp) :: h0, h1
       ! both rows are the same difference operator, the velocity's on
       ! the value and the acceleration's on the velocity, so both
       ! reach over order instants and read the degree below their own
-      call weights_of(bdf_family(order), last, &
-           & [(last - k, k = 0, order), (last - k, k = 0, order)], [(last, k = 0, 2 * order + 1)], dt, &
+      edges = connectivity_graph(last, &
+           & [(last - k, k = 0, order), (last - k, k = 0, order)], [(last, k = 0, 2 * order + 1)], &
            & [(0, k = 0, order), (1, k = 0, order)], &
-           & [(1, k = 0, order), (2, k = 0, order)], c)
+           & [(1, k = 0, order), (2, k = 0, order)])
+      call weights_of(bdf_family(order), edges, dt, c)
       write(*,'(a)') ' '
       write(*,'(a)') ' bdf 2 on a ' // label // ' grid'
       write(*,'(a,3f10.5)') '   velocity     alpha_0..2      ', c(1:order + 1)
@@ -7128,9 +7153,11 @@ contains
       character(len=*), intent(in) :: label
       integer         , intent(in) :: p
       real(dp)        , intent(in) :: dt(:)
+      type(connectivity_graph) :: edges
       real(dp), allocatable :: c(:)
-      call weights_of(adams_family(p), p, [(p - k, k = 0, p - 1)], [(p, k = 0, p - 1)], dt, &
-           & [(2, k = 0, p - 1)], [(1, k = 0, p - 1)], c)
+      edges = connectivity_graph(p, [(p - k, k = 0, p - 1)], [(p, k = 0, p - 1)], &
+           & [(2, k = 0, p - 1)], [(1, k = 0, p - 1)])
+      call weights_of(adams_family(p), edges, dt, c)
       write(*,'(a)') ' '
       write(*,'(a)') ' adams-moulton 3 on a ' // label // ' grid'
       write(*,'(a,3f10.5)') '   quadrature   alpha_0..2      ', c
@@ -7140,16 +7167,17 @@ contains
     end subroutine adams_on
     subroutine dirk_on(scheme)
       type(family), intent(in) :: scheme
+      type(connectivity_graph) :: edges
       real(dp), allocatable :: c(:)
       integer :: s
       s = scheme % num_stages()
-      call weights_of(scheme, 2 + s, [2, 2, 3], [3, 3, 3], [(0.5_dp, k = 1, 2 + s)], [2, 2, 2], &
-           & [1, 1, 1], c)
+      edges = connectivity_graph(2 + s, [2, 2, 3], [3, 3, 3], [2, 2, 2], [1, 1, 1])
+      call weights_of(scheme, edges, [(0.5_dp, k = 1, 2 + s)], c)
       write(*,'(a)') ' '
       write(*,'(a)') ' crouzeix two-stage, stage 2 from stages 1, 1, 2'
       write(*,'(a,3f10.5)') '   a_21, a_21, a_22                ', c
-      call weights_of(scheme, 2 + s, [2, 3], [2 + s, 2 + s], [(0.5_dp, k = 1, 2 + s)], [2, 2], &
-           & [2, 2], c)
+      edges = connectivity_graph(2 + s, [2, 3], [2 + s, 2 + s], [2, 2], [2, 2])
+      call weights_of(scheme, edges, [(0.5_dp, k = 1, 2 + s)], c)
       write(*,'(a,2f10.5)') '   b_1, b_2 into the end instant   ', c
       write(*,'(a,3f10.5)') '   tableau gamma, 1 - 2 gamma, b   ', &
            & (3.0_dp + sqrt(3.0_dp)) / 6.0_dp, 1.0_dp - (3.0_dp + sqrt(3.0_dp)) / 3.0_dp, 0.5_dp
@@ -7159,14 +7187,17 @@ contains
       integer , parameter :: last = 2 * order + 1
       real(dp), parameter :: delta = 1.0e-6_dp
       type(stored_directed_graph) :: coupling
+      type(connectivity_graph) :: edges
       type(stored_field), allocatable :: inputs(:)
       type(stored_field) :: direction
       type(family) :: scheme
       class(field), allocatable :: out
       real(dp), allocatable :: exact(:), plus(:), minus(:), v(:)
       scheme = bdf_family(order)
-      call coupling_inputs(last, [(last - k, k = 0, order)], [(last, k = 0, order)], dt, &
-           & [(0, k = 0, order)], [(1, k = 0, order)], coupling, inputs)
+      edges = connectivity_graph(last, [(last - k, k = 0, order)], [(last, k = 0, order)], &
+           & [(0, k = 0, order)], [(1, k = 0, order)])
+      call coupling_inputs(edges, dt, inputs)
+      coupling = edges % stored_directed_graph
       direction = stored_field('v', coupling % vertex_set(), last)
       allocate(v(last), source=0.0_dp)
       v(last) = 1.0_dp
@@ -8856,12 +8887,14 @@ contains
       real(dp)     , intent(in) :: dt(:)
       real(dp), allocatable, intent(out) :: tau(:), alpha(:), w(:)
       type(stored_directed_graph) :: coupling
+      type(connectivity_graph) :: edges
       type(stored_field), allocatable :: inputs(:)
       class(field), allocatable :: out
       type(scheme_weight) :: weights
       integer :: e
-      call coupling_inputs(nv, tails, [(head, e = 1, size(tails))], dt, tail_degree, head_degree, &
-           & coupling, inputs)
+      edges = connectivity_graph(nv, tails, [(head, e = 1, size(tails))], tail_degree, head_degree)
+      call coupling_inputs(edges, dt, inputs)
+      coupling = edges % stored_directed_graph
       tau = [(step_power(dt(head), tail_degree(e) - head_degree(e)), e = 1, size(tails))]
       call scheme % apply(coupling, scheme % bind(inputs), out)
       call out % real_vector(alpha)
@@ -8939,6 +8972,7 @@ contains
       real(dp), intent(in) :: dt(:)
       real(dp), parameter :: delta = 1.0e-6_dp
       type(stored_directed_graph) :: coupling
+      type(connectivity_graph) :: edges
       type(stored_field), allocatable :: inputs(:)
       type(stored_field) :: direction
       type(scheme_weight) :: weights
@@ -8948,8 +8982,10 @@ contains
       integer :: last, e, j
       last  = 2 * p + 1
       tails = [(last - j, j = 0, p)]
-      call coupling_inputs(last, tails, [(last, e = 1, size(tails))], dt, &
-           & [(0, e = 1, size(tails))], [(1, e = 1, size(tails))], coupling, inputs)
+      edges = connectivity_graph(last, tails, [(last, e = 1, size(tails))], &
+           & [(0, e = 1, size(tails))], [(1, e = 1, size(tails))])
+      call coupling_inputs(edges, dt, inputs)
+      coupling = edges % stored_directed_graph
       direction = stored_field('v', coupling % vertex_set(), last)
       allocate(v(last), source=0.0_dp)
       v(last) = 1.0_dp
@@ -9148,13 +9184,14 @@ contains
     real(dp) function row_sum(scheme, order, head_degree) result(total)
       class(family), intent(in) :: scheme
       integer      , intent(in) :: order, head_degree
+      type(connectivity_graph) :: edges
       real(dp), allocatable :: c(:)
       integer :: reach, last, k
       reach = order
       last  = reach + 1
-      call weights_of(scheme, last, [(last - k, k = 0, reach)], [(last, k = 0, reach)], &
-           & [(1.0_dp, k = 1, last)], [(head_degree - 1, k = 0, reach)], &
-           & [(head_degree, k = 0, reach)], c)
+      edges = connectivity_graph(last, [(last - k, k = 0, reach)], [(last, k = 0, reach)], &
+           & [(head_degree - 1, k = 0, reach)], [(head_degree, k = 0, reach)])
+      call weights_of(scheme, edges, [(1.0_dp, k = 1, last)], c)
       total = sum(abs(c))
     end function row_sum
     subroutine composed(order, head_degree)

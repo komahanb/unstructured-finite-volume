@@ -222,37 +222,37 @@ contains
 
   !===================================================================!
   ! The row pattern: the offsets an edge reads and the degree at each,
-  ! for the row that determines a degree. Adams reads the value at
+  ! for the row that head_degree a degree. Adams reads the value at
   ! offset one and the derivative at the p previous instants; BDF
   ! reads the degree below at offsets 0..p; DIRK has no derived rows.
   !===================================================================!
 
-  pure subroutine family_row_pattern(this, determines, equation_degree, &
-       & offset, source_degree)
+  pure subroutine family_row_pattern(this, head_degree, equation_degree, &
+       & offset, tail_degree)
 
     class(family), intent(in) :: this
-    integer      , intent(in) :: determines, equation_degree
-    integer, allocatable, intent(out) :: offset(:), source_degree(:)
+    integer      , intent(in) :: head_degree, equation_degree
+    integer, allocatable, intent(out) :: offset(:), tail_degree(:)
 
     integer :: i
 
     select case (this % geometry)
     case (FAMILY_ADAMS)
-       if (determines < 0 .or. determines >= equation_degree) then
-          allocate(offset(0), source_degree(0))
+       if (head_degree < 0 .or. head_degree >= equation_degree) then
+          allocate(offset(0), tail_degree(0))
           return
        end if
        offset        = [1, (i, i = 0, this % order - 1)]
-       source_degree = [determines, (determines + 1, i = 0, this % order - 1)]
+       tail_degree = [head_degree, (head_degree + 1, i = 0, this % order - 1)]
     case (FAMILY_BDF)
-       if (determines < 1 .or. determines > equation_degree) then
-          allocate(offset(0), source_degree(0))
+       if (head_degree < 1 .or. head_degree > equation_degree) then
+          allocate(offset(0), tail_degree(0))
           return
        end if
        offset = [(i, i = 0, this % order)]
-       allocate(source_degree(this % order + 1), source=determines - 1)
+       allocate(tail_degree(this % order + 1), source=head_degree - 1)
     case default
-       allocate(offset(0), source_degree(0))
+       allocate(offset(0), tail_degree(0))
     end select
 
   end subroutine family_row_pattern
@@ -264,12 +264,12 @@ contains
   ! is the order the coupling's relation is formed in.
   !===================================================================!
 
-  pure subroutine family_block_reach(this, nd, n, tails, heads, source_degree, determines)
+  pure subroutine family_block_reach(this, nd, n, tails, heads, tail_degree, head_degree)
 
     class(family), intent(in) :: this
     integer      , intent(in) :: nd, n
     integer, allocatable, intent(out) :: tails(:), heads(:)
-    integer, allocatable, intent(out) :: source_degree(:), determines(:)
+    integer, allocatable, intent(out) :: tail_degree(:), head_degree(:)
 
     integer, allocatable :: offset(:), degrees_of(:)
     integer :: primary, kk, d, e, counted, pass
@@ -288,14 +288,14 @@ contains
                 if (pass == 2) then
                    tails(counted)         = kk - offset(e)
                    heads(counted)         = kk
-                   source_degree(counted) = degrees_of(e)
-                   determines(counted)    = d
+                   tail_degree(counted) = degrees_of(e)
+                   head_degree(counted)    = d
                 end if
              end do
           end do
        end do
        if (pass == 1) allocate(tails(counted), heads(counted), &
-            & source_degree(counted), determines(counted))
+            & tail_degree(counted), head_degree(counted))
     end do
 
   end subroutine family_block_reach
@@ -308,18 +308,18 @@ contains
   ! itself) at every stage. Degree outer, stage inner.
   !===================================================================!
 
-  pure subroutine family_stage_reach(this, nd, tails, heads, source_degree, determines)
+  pure subroutine family_stage_reach(this, nd, tails, heads, tail_degree, head_degree)
 
     class(family), intent(in) :: this
     integer      , intent(in) :: nd
     integer, allocatable, intent(out) :: tails(:), heads(:)
-    integer, allocatable, intent(out) :: source_degree(:), determines(:)
+    integer, allocatable, intent(out) :: tail_degree(:), head_degree(:)
 
     integer :: s, d, i, j, at
 
     s  = size(this % b)
     at = (nd - 1) * (s * (s + 1) / 2 + s) + s
-    allocate(tails(at), heads(at), source_degree(at), determines(at))
+    allocate(tails(at), heads(at), tail_degree(at), head_degree(at))
     at = 0
     do d = 0, nd - 1
        do i = 1, s
@@ -328,16 +328,16 @@ contains
              at = at + 1
              tails(at) = 1 + j
              heads(at) = 1 + i
-             source_degree(at) = d + 1
-             determines(at) = d
+             tail_degree(at) = d + 1
+             head_degree(at) = d
           end do
        end do
        do j = 1, s
           at = at + 1
           tails(at) = 1 + j
           heads(at) = 2 + s
-          source_degree(at) = min(d + 1, nd - 1)
-          determines(at) = d
+          tail_degree(at) = min(d + 1, nd - 1)
+          head_degree(at) = d
        end do
     end do
 
@@ -350,11 +350,11 @@ contains
   !===================================================================!
 
   pure function family_edge_coefficient(this, dt, tail, head, &
-       & source_degree, determines) result(c)
+       & tail_degree, head_degree) result(c)
 
     class(family)         , intent(in) :: this
     type(derivative_terms), intent(in) :: dt(:)
-    integer               , intent(in) :: tail, head, source_degree, determines
+    integer               , intent(in) :: tail, head, tail_degree, head_degree
     type(derivative_terms) :: c
 
     integer :: i, j, s
@@ -364,13 +364,13 @@ contains
     case (FAMILY_ADAMS)
        i = head - tail
        if (i < 0) error stop 'operation_family: an edge runs from an earlier instant'
-       if (determines < 0) then
-          error stop 'operation_family: a constraint determines a degree at or above the value'
+       if (head_degree < 0) then
+          error stop 'operation_family: a constraint head_degree a degree at or above the value'
        end if
-       if (source_degree == determines) then
+       if (tail_degree == head_degree) then
           if (i /= 1) error stop 'operation_family: the same degree is read at offset one'
           c = derivative_terms(1.0_dp, dt(head))
-       else if (source_degree == determines + 1) then
+       else if (tail_degree == head_degree + 1) then
           if (i >= this % order) error stop 'operation_family: the quadrature spans p instants'
           c = integral_over_step(nodes(dt, head, this % order), i)
        else
@@ -380,8 +380,8 @@ contains
     case (FAMILY_BDF)
        j = head - tail
        if (j < 0) error stop 'operation_family: an edge runs from an earlier instant'
-       if (determines < 1) error stop 'operation_family: a derived row determines a derivative'
-       if (source_degree /= determines - 1) then
+       if (head_degree < 1) error stop 'operation_family: a derived row head_degree a derivative'
+       if (tail_degree /= head_degree - 1) then
           error stop 'operation_family: every source is the degree below the one determined'
        end if
        if (j > this % order) error stop 'operation_family: a row reaches p instants'
@@ -392,7 +392,7 @@ contains
        if (head == 1 .or. tail == 2 + s) then
           error stop 'operation_family: an edge runs from the initial instant or a stage into a later vertex'
        end if
-       if (source_degree /= determines .and. source_degree /= determines + 1) then
+       if (tail_degree /= head_degree .and. tail_degree /= head_degree + 1) then
           error stop 'operation_family: a source is the constraint''s degree or one above'
        end if
        if (tail == 1) then

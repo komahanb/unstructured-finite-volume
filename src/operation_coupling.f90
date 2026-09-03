@@ -2,7 +2,7 @@
 ! The coupling a weight action reads: the instants as a directed
 ! graph, and on it the three fields every such action takes, in this
 ! order - the step at each instant, and on each edge the degree of
-! the source and the degree the edge's condition determines. A
+! the source and the degree the edge's condition head_degree. A
 ! family, a scheme weight and a step scaling all read exactly this
 ! tuple, so it is built here and nowhere else; weights_of applies
 ! any of them to it and reads the result out as a vector.
@@ -31,13 +31,13 @@ contains
   ! source degree and one determined degree per edge.
   !===================================================================!
 
-  subroutine coupling_inputs(num_vertices, tails, heads, steps, source_degree, &
-       & determines, edges, inputs)
+  subroutine coupling_inputs(num_vertices, tails, heads, steps, tail_degree, &
+       & head_degree, edges, inputs)
 
     integer , intent(in) :: num_vertices
     integer , intent(in) :: tails(:), heads(:)
     real(dp), intent(in) :: steps(:)
-    integer , intent(in) :: source_degree(:), determines(:)
+    integer , intent(in) :: tail_degree(:), head_degree(:)
     type(stored_directed_graph)    , intent(out) :: edges
     type(stored_field), allocatable, intent(out) :: inputs(:)
 
@@ -46,10 +46,10 @@ contains
     allocate(inputs(3))
     inputs(1) = stored_field('dt'           , edges % vertex_set(), num_vertices)
     inputs(2) = stored_field('source degree', edges % edge_set()  , size(tails))
-    inputs(3) = stored_field('determines'   , edges % edge_set()  , size(tails))
+    inputs(3) = stored_field('head_degree'   , edges % edge_set()  , size(tails))
     call inputs(1) % set_real_vector(steps)
-    call inputs(2) % set_integer_vector(source_degree)
-    call inputs(3) % set_integer_vector(determines)
+    call inputs(2) % set_integer_vector(tail_degree)
+    call inputs(3) % set_integer_vector(head_degree)
 
   end subroutine coupling_inputs
 
@@ -57,20 +57,20 @@ contains
   ! An action applied to that coupling, its result read out.
   !===================================================================!
 
-  subroutine weights_of(action, num_vertices, tails, heads, steps, source_degree, &
-       & determines, w)
+  subroutine weights_of(action, num_vertices, tails, heads, steps, tail_degree, &
+       & head_degree, w)
 
     class(operation), intent(in) :: action
     integer         , intent(in) :: num_vertices
     integer         , intent(in) :: tails(:), heads(:)
     real(dp)        , intent(in) :: steps(:)
-    integer         , intent(in) :: source_degree(:), determines(:)
+    integer         , intent(in) :: tail_degree(:), head_degree(:)
     real(dp), allocatable, intent(out) :: w(:)
 
     type(stored_directed_graph)     :: edges
     type(stored_field), allocatable :: inputs(:)
 
-    call coupling_inputs(num_vertices, tails, heads, steps, source_degree, determines, &
+    call coupling_inputs(num_vertices, tails, heads, steps, tail_degree, head_degree, &
          & edges, inputs)
     call applied(action, edges, inputs, w)
 
@@ -92,13 +92,13 @@ contains
   !===================================================================!
 
   subroutine weights_terms(action, num_vertices, tails, heads, steps, seeds, &
-       & source_degree, determines, table)
+       & tail_degree, head_degree, table)
 
     class(operation), intent(in) :: action
     integer         , intent(in) :: num_vertices
     integer         , intent(in) :: tails(:), heads(:)
     real(dp)        , intent(in) :: steps(:), seeds(:,:)
-    integer         , intent(in) :: source_degree(:), determines(:)
+    integer         , intent(in) :: tail_degree(:), head_degree(:)
     real(dp), allocatable, intent(out) :: table(:,:)
 
     type(derivative_terms), allocatable :: dt(:)
@@ -125,7 +125,7 @@ contains
     select type (action)
     class is (edge_function)
        do e = 1, size(tails)
-          c = action % edge_coefficient(dt, tails(e), heads(e), source_degree(e), determines(e))
+          c = action % edge_coefficient(dt, tails(e), heads(e), tail_degree(e), head_degree(e))
           do m = 0, 2**n - 1
              table(e, m) = coefficient(c, m)
           end do

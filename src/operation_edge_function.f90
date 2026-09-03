@@ -8,7 +8,7 @@
 !      input 1        dt, a real field on the vertices: the step that
 !                     ends at each vertex, read at an edge's head
 !      input 2        the derivative degree of each edge's source
-!      input 3        the degree each edge's constraint determines
+!      input 3        the degree each edge's constraint head_degree
 !      output         one real per edge
 !
 ! A concretion supplies the rule for one edge and nothing else. The
@@ -71,15 +71,15 @@ module operation_edge_function
      !----------------------------------------------------------------!
      ! The value on one edge, from the step terms, the two vertices
      ! the edge joins, the derivative degree of its source and the
-     ! degree its constraint determines.
+     ! degree its constraint head_degree.
      !----------------------------------------------------------------!
 
      pure function edge_coefficient_interface(this, dt, tail, head, &
-          & source_degree, determines) result(c)
+          & tail_degree, head_degree) result(c)
        import :: edge_function, derivative_terms
        class(edge_function)  , intent(in) :: this
        type(derivative_terms), intent(in) :: dt(:)
-       integer               , intent(in) :: tail, head, source_degree, determines
+       integer               , intent(in) :: tail, head, tail_degree, head_degree
        type(derivative_terms) :: c
      end function edge_coefficient_interface
 
@@ -127,12 +127,12 @@ contains
   ! otherwise.
   !===================================================================!
 
-  subroutine full_terms(this, input_graph, dt, source_degree, determines, output)
+  subroutine full_terms(this, input_graph, dt, tail_degree, head_degree, output)
 
     class(edge_function), intent(in)  :: this
     class(directed_graph) , intent(in) :: input_graph
     type(derivative_terms), intent(in) :: dt(:)
-    integer               , intent(in) :: source_degree(:), determines(:)
+    integer               , intent(in) :: tail_degree(:), head_degree(:)
     class(field), allocatable, intent(inout) :: output
 
     type(derivative_terms) :: c
@@ -143,7 +143,7 @@ contains
 
     do e = 1, input_graph % num_edges()
        c = this % edge_coefficient(dt, input_graph % edge_tail(e), &
-            & input_graph % edge_head(e), source_degree(e), determines(e))
+            & input_graph % edge_head(e), tail_degree(e), head_degree(e))
        values(e) = mixed_partial(c)
     end do
 
@@ -178,7 +178,7 @@ contains
     class(field), allocatable, intent(inout) :: output
 
     type(derivative_terms), allocatable :: dt(:)
-    integer , allocatable :: source_degree(:), determines(:)
+    integer , allocatable :: tail_degree(:), head_degree(:)
     integer :: consumed
 
     call this % require_variations(variations)
@@ -186,9 +186,9 @@ contains
     if (consumed < size(variations)) then
        error stop 'operation_edge_function: the coefficients vary with the steps alone'
     end if
-    call bound_integer_vector(inputs, this % argument(2), source_degree)
-    call bound_integer_vector(inputs, this % argument(3), determines)
-    call full_terms(this, input_graph, dt, source_degree, determines, output)
+    call bound_integer_vector(inputs, this % argument(2), tail_degree)
+    call bound_integer_vector(inputs, this % argument(3), head_degree)
+    call full_terms(this, input_graph, dt, tail_degree, head_degree, output)
 
   end subroutine edge_partial_action
 

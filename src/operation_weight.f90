@@ -3,14 +3,14 @@
 ! coefficient with the step scaling that converts the source's units
 ! into its constraint's.
 !
-!      weight  =  alpha  *  dt_head ** (source_degree - determines)
+!      weight  =  alpha  *  dt_head ** (tail_degree - head_degree)
 !
 ! This is the product of the two fields the coupling stores - the
 ! tau field of step powers and the alpha field of coefficients - and
 ! it is the entry the constraint row stores for that source. The row
 ! itself reads
 !
-!      (the component this constraint determines)
+!      (the component this constraint head_degree)
 !          -  sum over the edges into it of weight * (its source)   =  0
 !
 ! so the determined component enters with one and every source enters
@@ -85,16 +85,16 @@ contains
   !===================================================================!
 
   pure function weight_edge_coefficient(this, dt, tail, head, &
-       & source_degree, determines) result(c)
+       & tail_degree, head_degree) result(c)
 
     class(scheme_weight)  , intent(in) :: this
     type(derivative_terms), intent(in) :: dt(:)
-    integer               , intent(in) :: tail, head, source_degree, determines
+    integer               , intent(in) :: tail, head, tail_degree, head_degree
     type(derivative_terms) :: c
 
     c = this % coefficients % edge_coefficient(dt, tail, head, &
-         & source_degree, determines) &
-         & * integer_power(dt(head), source_degree - determines)
+         & tail_degree, head_degree) &
+         & * integer_power(dt(head), tail_degree - head_degree)
 
   end function weight_edge_coefficient
 

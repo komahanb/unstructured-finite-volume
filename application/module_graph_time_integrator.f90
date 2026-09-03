@@ -1371,26 +1371,26 @@ contains
     class(family)         , intent(in)    :: scheme
     integer               , intent(in)    :: slices(:), first, last
     real(dp)              , intent(in)    :: dt(:)
-    integer, allocatable :: tails(:), heads(:), source_degree(:), determines(:)
+    integer, allocatable :: tails(:), heads(:), tail_degree(:), head_degree(:)
     real(dp), allocatable :: w(:)
     integer :: n, nd
     associate (u1 => physics); end associate
     n  = last - first + 1
     nd = this % degrees
-    call scheme % block_reach(nd, n, tails, heads, source_degree, determines)
-    call weights_of(scheme_weight(scheme), n, tails, heads, dt(first:last), source_degree, &
-         & determines, w)
+    call scheme % block_reach(nd, n, tails, heads, tail_degree, head_degree)
+    call weights_of(scheme_weight(scheme), n, tails, heads, dt(first:last), tail_degree, &
+         & head_degree, w)
     at = coupled(this, slices, n * nd, 'the components of this block', &
          & 'the constraint instances of this block', 'the scheme reach', &
-         & scheme % name() // ' coupling', tuples(nd, tails, heads, source_degree, determines), w)
+         & scheme % name() // ' coupling', tuples(nd, tails, heads, tail_degree, head_degree), w)
   end function block_coupling
-  pure function tuples(nd, tails, heads, source_degree, determines) result(table)
-    integer, intent(in) :: nd, tails(:), heads(:), source_degree(:), determines(:)
+  pure function tuples(nd, tails, heads, tail_degree, head_degree) result(table)
+    integer, intent(in) :: nd, tails(:), heads(:), tail_degree(:), head_degree(:)
     integer, allocatable :: table(:,:)
     integer :: e
     allocate(table(2, size(tails)))
-    table(1,:) = [((tails(e) - 1) * nd + source_degree(e) + 1, e = 1, size(tails))]
-    table(2,:) = [((heads(e) - 1) * nd + determines(e) + 1, e = 1, size(heads))]
+    table(1,:) = [((tails(e) - 1) * nd + tail_degree(e) + 1, e = 1, size(tails))]
+    table(2,:) = [((heads(e) - 1) * nd + head_degree(e) + 1, e = 1, size(heads))]
   end function tuples
   integer function named_set(this, n, text) result(at)
     class(expansion), intent(inout) :: this
@@ -1455,17 +1455,17 @@ contains
     class(family)   , intent(in)    :: scheme
     integer         , intent(in)    :: members(:), s
     real(dp)        , intent(in)    :: step
-    integer, allocatable :: tails(:), heads(:), source_degree(:), determines(:)
+    integer, allocatable :: tails(:), heads(:), tail_degree(:), head_degree(:)
     integer, allocatable :: table(:,:)
     real(dp), allocatable :: w(:)
     integer :: nd, e
     nd = this % degrees
-    call scheme % stage_reach(nd, tails, heads, source_degree, determines)
+    call scheme % stage_reach(nd, tails, heads, tail_degree, head_degree)
     call weights_of(scheme_weight(scheme), s + 2, tails, heads, spread(step, 1, s + 2), &
-         & source_degree, determines, w)
+         & tail_degree, head_degree, w)
     allocate(table(2, size(tails)))
-    table(1,:) = [(stage_unknown(tails(e), source_degree(e), s, nd), e = 1, size(tails))]
-    table(2,:) = [(stage_unknown(heads(e), determines(e), s, nd), e = 1, size(heads))]
+    table(1,:) = [(stage_unknown(tails(e), tail_degree(e), s, nd), e = 1, size(tails))]
+    table(2,:) = [(stage_unknown(heads(e), head_degree(e), s, nd), e = 1, size(heads))]
     at = coupled(this, members, (s + 1) * nd, 'the components of this step', &
          & 'the constraint instances of this step', 'the butcher reach', &
          & scheme % name() // ' stage coupling', table, w)
@@ -1572,7 +1572,7 @@ module gti_block
   type :: coupling_reach
      integer :: vertices = 0
      integer, allocatable :: step_of(:)
-     integer, allocatable :: tails(:), heads(:), source_degree(:), determines(:)
+     integer, allocatable :: tails(:), heads(:), tail_degree(:), head_degree(:)
      integer, allocatable :: row(:), column(:)
   end type coupling_reach
   type, extends(operation) :: block_residual
@@ -2041,7 +2041,7 @@ contains
        associate (one => reach(k))
          call weights_terms(scheme_weight(scheme), one % vertices, one % tails, &
               & one % heads, dt(one % step_of), seeds(one % step_of, :), &
-              & one % source_degree, one % determines, table)
+              & one % tail_degree, one % head_degree, table)
          do i = 1, nodes
             do e = 1, size(one % tails)
                n       = n + 1
@@ -2449,20 +2449,20 @@ contains
     class(family), intent(in) :: scheme
     integer      , intent(in) :: degrees
     real(dp)     , intent(in) :: step
-    integer, allocatable :: offset(:), source_degree(:)
+    integer, allocatable :: offset(:), tail_degree(:)
     real(dp), allocatable :: c(:)
     integer :: d, reach, s, i, k
     logical :: any_pattern
     w = 1.0_dp
     any_pattern = .false.
     do d = 0, degrees - 1
-       call scheme % row_pattern(d, degrees - 1, offset, source_degree)
+       call scheme % row_pattern(d, degrees - 1, offset, tail_degree)
        if (size(offset) == 0) cycle
        any_pattern = .true.
        reach = maxval(offset)
        call weights_of(scheme_weight(scheme), reach + 1, &
             & [(reach + 1 - offset(k), k = 1, size(offset))], [(reach + 1, k = 1, size(offset))], &
-            & [(step, k = 1, reach + 1)], source_degree, [(d, k = 1, size(offset))], c)
+            & [(step, k = 1, reach + 1)], tail_degree, [(d, k = 1, size(offset))], c)
        w = max(w, 1.0_dp + sum(abs(c)))
     end do
     if (any_pattern) return
@@ -2768,15 +2768,15 @@ contains
     allocate(reach(1))
     reach(1) % vertices = n
     reach(1) % step_of  = [(e, e = 1, n)]
-    allocate(reach(1) % tails(ne), reach(1) % heads(ne), reach(1) % source_degree(ne), &
-         &   reach(1) % determines(ne), reach(1) % row(ne), reach(1) % column(ne))
+    allocate(reach(1) % tails(ne), reach(1) % heads(ne), reach(1) % tail_degree(ne), &
+         &   reach(1) % head_degree(ne), reach(1) % row(ne), reach(1) % column(ne))
     do e = 1, ne
        reach(1) % tails(e)         = (table(1, e) - 1) / nd + 1
-       reach(1) % source_degree(e) = mod(table(1, e) - 1, nd)
+       reach(1) % tail_degree(e) = mod(table(1, e) - 1, nd)
        reach(1) % heads(e)         = (table(2, e) - 1) / nd + 1
-       reach(1) % determines(e)    = mod(table(2, e) - 1, nd)
-       reach(1) % column(e) = (reach(1) % tails(e) - 1) * width + reach(1) % source_degree(e) + 1
-       reach(1) % row(e)    = (reach(1) % heads(e) - 1) * width + reach(1) % determines(e) + 1
+       reach(1) % head_degree(e)    = mod(table(2, e) - 1, nd)
+       reach(1) % column(e) = (reach(1) % tails(e) - 1) * width + reach(1) % tail_degree(e) + 1
+       reach(1) % row(e)    = (reach(1) % heads(e) - 1) * width + reach(1) % head_degree(e) + 1
     end do
   end subroutine block_reach_of
   subroutine stage_reach_of(tower, block, n, s, nd, width, slice_of, &
@@ -2807,7 +2807,7 @@ contains
        reach(kk - 1) % vertices = s + 2
        reach(kk - 1) % step_of  = spread(kk, 1, s + 2)
        allocate(reach(kk - 1) % tails(counted(kk)), reach(kk - 1) % heads(counted(kk)), &
-            &   reach(kk - 1) % source_degree(counted(kk)), reach(kk - 1) % determines(counted(kk)), &
+            &   reach(kk - 1) % tail_degree(counted(kk)), reach(kk - 1) % head_degree(counted(kk)), &
             &   reach(kk - 1) % row(counted(kk)), reach(kk - 1) % column(counted(kk)))
     end do
     filled = 0
@@ -2836,16 +2836,16 @@ contains
        error stop 'gti_march: every edge of a step is placed once'
     end if
   contains
-    subroutine put(one, e, tail, head, source_degree, determines, column_base, row_base)
+    subroutine put(one, e, tail, head, tail_degree, head_degree, column_base, row_base)
       type(coupling_reach), intent(inout) :: one
-      integer             , intent(in)    :: e, tail, head, source_degree, determines
+      integer             , intent(in)    :: e, tail, head, tail_degree, head_degree
       integer             , intent(in)    :: column_base, row_base
       one % tails(e)         = tail
       one % heads(e)         = head
-      one % source_degree(e) = source_degree
-      one % determines(e)    = determines
-      one % column(e)        = column_base + source_degree + 1
-      one % row(e)           = row_base + determines + 1
+      one % tail_degree(e) = tail_degree
+      one % head_degree(e)    = head_degree
+      one % column(e)        = column_base + tail_degree + 1
+      one % row(e)           = row_base + head_degree + 1
     end subroutine put
   end subroutine stage_reach_of
   subroutine solved(rows, design_value, q, achieved, final_imbalance, seed)
@@ -6706,14 +6706,14 @@ contains
       type(expression) :: physics
       real(dp), allocatable :: weight(:), residual(:), acted(:), governing(:)
       real(dp) :: q(num_unknowns), t(num_instants)
-      integer , allocatable :: tails(:), heads(:), determines(:), source_degree(:)
+      integer , allocatable :: tails(:), heads(:), head_degree(:), tail_degree(:)
       integer :: j, k
-      call scheme_reach(tails, heads, source_degree, determines)
+      call scheme_reach(tails, heads, tail_degree, head_degree)
       call weights_of(scheme_weight(bdf_family(order)), num_instants, tails, heads, dt, &
-           & source_degree, determines, weight)
+           & tail_degree, head_degree, weight)
       rows = derived_constraints( &
-           & [(unknown(heads(j), determines(j)), j = 1, size(heads))], &
-           & [(unknown(tails(j), source_degree(j)), j = 1, size(tails))], &
+           & [(unknown(heads(j), head_degree(j)), j = 1, size(heads))], &
+           & [(unknown(tails(j), tail_degree(j)), j = 1, size(tails))], &
            & weight, num_unknowns, 'derived constraints')
       t(1) = 0.0_dp
       do k = 2, num_instants
@@ -6744,9 +6744,9 @@ contains
     ! depth, are declared by the family and not by this demonstration.
     !--------------------------------------------------------------!
 
-    subroutine scheme_reach(tails, heads, source_degree, determines)
+    subroutine scheme_reach(tails, heads, tail_degree, head_degree)
       integer, allocatable, intent(out) :: tails(:), heads(:)
-      integer, allocatable, intent(out) :: source_degree(:), determines(:)
+      integer, allocatable, intent(out) :: tail_degree(:), head_degree(:)
       type(family) :: scheme
       integer, allocatable :: offset(:), degrees_of(:)
       integer :: d, k, e, counted, pass
@@ -6762,14 +6762,14 @@ contains
                   if (pass == 2) then
                      tails(counted)         = k - offset(e)
                      heads(counted)         = k
-                     source_degree(counted) = degrees_of(e)
-                     determines(counted)    = d
+                     tail_degree(counted) = degrees_of(e)
+                     head_degree(counted)    = d
                   end if
                end do
             end do
          end do
          if (pass == 1) allocate(tails(counted), heads(counted), &
-              & source_degree(counted), determines(counted))
+              & tail_degree(counted), head_degree(counted))
       end do
     end subroutine scheme_reach
     subroutine show_block(governing, residual, jacobian_gap)
@@ -6937,7 +6937,7 @@ contains
     type(relational_binding) :: binding
     type(set_map)            :: sets
     type(csr_relation)       :: reach
-    integer, allocatable :: tails(:), heads(:), source_degree(:), determines(:)
+    integer, allocatable :: tails(:), heads(:), tail_degree(:), head_degree(:)
     integer, allocatable :: table(:,:)
     real(dp), allocatable :: weight(:), dt(:)
     integer :: slices(num_instants), source_carrier, target_carrier
@@ -6949,9 +6949,9 @@ contains
          &   ((k - j, j = 0, order), k = order + 1, num_instants)]
     heads = [((k, j = 0, order), k = order + 1, num_instants), &
          &   ((k, j = 0, order), k = order + 1, num_instants)]
-    determines = [((1, j = 0, order), k = order + 1, num_instants), &
+    head_degree = [((1, j = 0, order), k = order + 1, num_instants), &
          &        ((2, j = 0, order), k = order + 1, num_instants)]
-    source_degree = [((0, j = 0, order), k = order + 1, num_instants), &
+    tail_degree = [((0, j = 0, order), k = order + 1, num_instants), &
          &           ((1, j = 0, order), k = order + 1, num_instants)]
     do k = 1, num_instants
        slices(k) = store % assemble([integer ::], 0)
@@ -6966,7 +6966,7 @@ contains
     call describe(target_carrier, num_instants * num_conditions)
     allocate(table(2, size(tails)))
     table(1,:) = tails
-    table(2,:) = (heads - 1) * num_conditions + determines
+    table(2,:) = (heads - 1) * num_conditions + head_degree
     reach = built_reach(table)
     do k = 1, num_instants
        call bind_carrier(slices(k))
@@ -7014,18 +7014,18 @@ contains
       integer :: i, e, target_index
       dt = [0.0_dp, 0.30_dp, 0.20_dp, 0.40_dp, 0.25_dp]
       call weights_of(scheme_weight(bdf_family(order)), num_instants, tails, heads, dt, &
-           & source_degree, determines, weight)
+           & tail_degree, head_degree, weight)
       r => relation_at(store % node(coupling), binding, 1)
       write(*,'(a)')    ' '
       write(*,'(a,i3)') ' tuples the relation contains  ', r % num_tuples()
-      write(*,'(a)')    '   component   constraint   instant  determines      weight'
+      write(*,'(a)')    '   component   constraint   instant  head_degree      weight'
       call r % tuples(fixed)
       do i = 1, size(fixed, 2)
          do e = 1, size(tails)
-            target_index = (heads(e) - 1) * num_conditions + determines(e)
+            target_index = (heads(e) - 1) * num_conditions + head_degree(e)
             if (tails(e) == fixed(1, i) .and. target_index == fixed(2, i)) then
                write(*,'(i12,i13,i10,i12,f12.5)') fixed(1, i), fixed(2, i), &
-                    & heads(e), determines(e), weight(e)
+                    & heads(e), head_degree(e), weight(e)
                exit
             end if
          end do
@@ -8849,10 +8849,10 @@ contains
       end do
       q = q * t**(m - d)
     end function power_derivative
-    subroutine row_fields(scheme, nv, tails, head, source_degree, determines, dt, &
+    subroutine row_fields(scheme, nv, tails, head, tail_degree, head_degree, dt, &
          & tau, alpha, w)
       class(family), intent(in) :: scheme
-      integer      , intent(in) :: nv, tails(:), head, source_degree(:), determines(:)
+      integer      , intent(in) :: nv, tails(:), head, tail_degree(:), head_degree(:)
       real(dp)     , intent(in) :: dt(:)
       real(dp), allocatable, intent(out) :: tau(:), alpha(:), w(:)
       type(stored_directed_graph) :: coupling
@@ -8860,9 +8860,9 @@ contains
       class(field), allocatable :: out
       type(scheme_weight) :: weights
       integer :: e
-      call coupling_inputs(nv, tails, [(head, e = 1, size(tails))], dt, source_degree, determines, &
+      call coupling_inputs(nv, tails, [(head, e = 1, size(tails))], dt, tail_degree, head_degree, &
            & coupling, inputs)
-      tau = [(step_power(dt(head), source_degree(e) - determines(e)), e = 1, size(tails))]
+      tau = [(step_power(dt(head), tail_degree(e) - head_degree(e)), e = 1, size(tails))]
       call scheme % apply(coupling, scheme % bind(inputs), out)
       call out % real_vector(alpha)
       weights = scheme_weight(scheme)
@@ -8879,25 +8879,25 @@ contains
       end do
       if (n < 0) p = 1.0_dp / p
     end function step_power
-    pure real(dp) function row_residual(w, tails, head, source_degree, determines, t, m) &
+    pure real(dp) function row_residual(w, tails, head, tail_degree, head_degree, t, m) &
          & result(r)
       real(dp), intent(in) :: w(:), t(:)
-      integer , intent(in) :: tails(:), head, source_degree(:), determines(:), m
+      integer , intent(in) :: tails(:), head, tail_degree(:), head_degree(:), m
       integer :: e
-      r = -power_derivative(m, determines(1), t(head))
+      r = -power_derivative(m, head_degree(1), t(head))
       do e = 1, size(w)
-         r = r + w(e) * power_derivative(m, source_degree(e), t(tails(e)))
+         r = r + w(e) * power_derivative(m, tail_degree(e), t(tails(e)))
       end do
     end function row_residual
-    subroutine one_row(title, scheme, nv, tails, head, source_degree, determines, dt, top)
+    subroutine one_row(title, scheme, nv, tails, head, tail_degree, head_degree, dt, top)
       character(len=*), intent(in) :: title
       class(family)   , intent(in) :: scheme
-      integer         , intent(in) :: nv, tails(:), head, source_degree(:), determines(:), top
+      integer         , intent(in) :: nv, tails(:), head, tail_degree(:), head_degree(:), top
       real(dp)        , intent(in) :: dt(:)
       real(dp), allocatable :: tau(:), alpha(:), w(:)
       real(dp) :: t(nv), residual(0:top)
       integer :: m
-      call row_fields(scheme, nv, tails, head, source_degree, determines, dt, tau, alpha, w)
+      call row_fields(scheme, nv, tails, head, tail_degree, head_degree, dt, tau, alpha, w)
       t = instants(dt)
       write(*,'(a)') ' '
       write(*,'(a)')        ' ' // title
@@ -8905,7 +8905,7 @@ contains
       write(*,'(a,9f11.5)') '   alpha                      ', alpha
       write(*,'(a,9f11.5)') '   weight                     ', w
       do m = 0, top
-         residual(m) = row_residual(w, tails, head, source_degree, determines, t, m)
+         residual(m) = row_residual(w, tails, head, tail_degree, head_degree, t, m)
       end do
       write(*,'(a,9i11)')     '   on t**m, m =              ', [(m, m = 0, top)]
       write(*,'(a,9es11.2)')  '   residual                  ', residual
@@ -9145,20 +9145,20 @@ contains
     call conditioned(3, 3, 41)
     call conditioned(2, 4, 41)
   contains
-    real(dp) function row_sum(scheme, order, determines) result(total)
+    real(dp) function row_sum(scheme, order, head_degree) result(total)
       class(family), intent(in) :: scheme
-      integer      , intent(in) :: order, determines
+      integer      , intent(in) :: order, head_degree
       real(dp), allocatable :: c(:)
       integer :: reach, last, k
       reach = order
       last  = reach + 1
       call weights_of(scheme, last, [(last - k, k = 0, reach)], [(last, k = 0, reach)], &
-           & [(1.0_dp, k = 1, last)], [(determines - 1, k = 0, reach)], &
-           & [(determines, k = 0, reach)], c)
+           & [(1.0_dp, k = 1, last)], [(head_degree - 1, k = 0, reach)], &
+           & [(head_degree, k = 0, reach)], c)
       total = sum(abs(c))
     end function row_sum
-    subroutine composed(order, determines)
-      integer, intent(in) :: order, determines
+    subroutine composed(order, head_degree)
+      integer, intent(in) :: order, head_degree
       real(dp) :: velocity, derived, powered
       character(len=8) :: named
       ! EVERY DERIVED ROW IS THE SAME OPERATOR, the velocity's on the
@@ -9167,10 +9167,10 @@ contains
       ! operator on the value instead would raise that total to the
       ! power of the degree, and double the stencil's history depth.
       velocity = row_sum(bdf_family(order), order, 1)
-      derived  = row_sum(bdf_family(order), order, determines)
+      derived  = row_sum(bdf_family(order), order, head_degree)
       powered  = velocity
       write(named,'(a,i0)') 'bdf ', order
-      write(*,'(a,a,i5,3f12.4,a)') '  ', named, determines, velocity, derived, powered, &
+      write(*,'(a,a,i5,3f12.4,a)') '  ', named, head_degree, velocity, derived, powered, &
            & merge('   yes', '    no', abs(derived - powered) <= 1.0e-10_dp * powered)
     end subroutine composed
     subroutine against(order, degrees, instants)

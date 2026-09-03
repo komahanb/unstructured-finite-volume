@@ -856,7 +856,6 @@ module gti_expansion
   public :: expansion, family_container
   public :: design_of_physics, design_of_steps
   public :: marches_by_stages
-  public :: block_reach
   integer, parameter :: design_of_physics = 1
   integer, parameter :: design_of_steps   = 2
   type :: family_container
@@ -1366,38 +1365,6 @@ contains
     end select
     text = trim(buffer)
   end function written
-  subroutine block_reach(scheme, nd, n, tails, heads, source_degree, determines)
-    class(family), intent(in) :: scheme
-    integer      , intent(in) :: nd, n
-    integer, allocatable, intent(out) :: tails(:), heads(:)
-    integer, allocatable, intent(out) :: source_degree(:), determines(:)
-    integer, allocatable :: offset(:), degrees_of(:)
-    integer :: primary, kk, d, e, counted, at, pass
-    primary = scheme % primary_degree(nd - 1)
-    do pass = 1, 2
-       counted = 0
-       do kk = 1, n
-          do d = 0, nd - 1
-             if (d == primary) cycle
-             call scheme % row_pattern(d, nd - 1, offset, degrees_of)
-             if (size(offset) == 0) cycle
-             if (kk - maxval(offset) < 1) cycle
-             do e = 1, size(offset)
-                counted = counted + 1
-                if (pass == 2) then
-                   at = counted
-                   tails(at)         = kk - offset(e)
-                   heads(at)         = kk
-                   source_degree(at) = degrees_of(e)
-                   determines(at)    = d
-                end if
-             end do
-          end do
-       end do
-       if (pass == 1) allocate(tails(counted), heads(counted), &
-            & source_degree(counted), determines(counted))
-    end do
-  end subroutine block_reach
   integer function block_coupling(this, physics, scheme, slices, first, last, dt) result(at)
     class(expansion)      , intent(inout) :: this
     type(expression)      , intent(in)    :: physics
@@ -1410,7 +1377,7 @@ contains
     associate (u1 => physics); end associate
     n  = last - first + 1
     nd = this % degrees
-    call block_reach(scheme, nd, n, tails, heads, source_degree, determines)
+    call scheme % block_reach(nd, n, tails, heads, source_degree, determines)
     call weights_of(scheme_weight(scheme), n, tails, heads, dt(first:last), source_degree, &
          & determines, w)
     at = coupled(this, slices, n * nd, 'the components of this block', &
@@ -1473,34 +1440,6 @@ contains
        if (.not. passes_check) return
     end do
   end function consistent
-  subroutine stage_reach(nd, s, tails, heads, source_degree, determines)
-    integer, intent(in) :: nd, s
-    integer, allocatable, intent(out) :: tails(:), heads(:)
-    integer, allocatable, intent(out) :: source_degree(:), determines(:)
-    integer :: d, i, j, at
-    at = (nd - 1) * (s * (s + 1) / 2 + s) + s
-    allocate(tails(at), heads(at), source_degree(at), determines(at))
-    at = 0
-    do d = 0, nd - 1
-       do i = 1, s
-          if (d == nd - 1) cycle
-          do j = 1, i
-             at = at + 1
-             tails(at) = 1 + j
-             heads(at) = 1 + i
-             source_degree(at) = d + 1
-             determines(at) = d
-          end do
-       end do
-       do j = 1, s
-          at = at + 1
-          tails(at) = 1 + j
-          heads(at) = 2 + s
-          source_degree(at) = min(d + 1, nd - 1)
-          determines(at) = d
-       end do
-    end do
-  end subroutine stage_reach
   pure integer function stage_unknown(vertex, degree, s, nd) result(at)
     integer, intent(in) :: vertex, degree, s, nd
     integer :: member
@@ -1521,7 +1460,7 @@ contains
     real(dp), allocatable :: w(:)
     integer :: nd, e
     nd = this % degrees
-    call stage_reach(nd, s, tails, heads, source_degree, determines)
+    call scheme % stage_reach(nd, tails, heads, source_degree, determines)
     call weights_of(scheme_weight(scheme), s + 2, tails, heads, spread(step, 1, s + 2), &
          & source_degree, determines, w)
     allocate(table(2, size(tails)))

@@ -53,7 +53,7 @@ The terms $\lambda^{(k)} \cdot \partial_\nu R^{(n-1-k)}$ for $k \geq 1$ are the 
 Each pairs a higher costate with a lower residual derivative, weighed by $\binom{n-1}{k}$.
 The term $\partial_\nu F^{(n-1)}$ is the functional's own explicit dependence.
 
-The reverse pass of `gti_chain` (`entry_of`) forms this as one product per residual row.
+The reverse pass of `gti_chain` (`lagrangian_term`) forms $L = F - \langle \lambda, R \rangle$ as `inner_product(costate, residual, active=.not. fixed_rows)` (`src/util_derivative_terms.f90`), the same reduction `dot_product` performs on real arrays, taken here over `derivative_terms`.
 $\lambda_{\text{row}}$ and $R_{\text{row}}$ are `derivative_terms` over $n$ directions: $n-1$ store the state's derivatives, one stores $\nu$ alone, and $\lambda$ is constant along that one.
 The product rule on subsets (`terms_times` in `src/util_derivative_terms.f90`) is the binomial expansion: a subset of size $k$ of the $n-1$ implicit directions represents $\binom{n-1}{k}$ once.
 `leibniz_parts` reads the product by the order of the costate's factor.

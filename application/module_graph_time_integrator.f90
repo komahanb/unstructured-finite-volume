@@ -2138,13 +2138,13 @@ contains
        aggregate(u) = numbered(key)
     end do
   end function aggregates
-  function linear_block(this, input_graph, inputs, rhs, transposed, mark) result(lin)
+  function linear_block(this, input_graph, inputs, rhs, transposed, version) result(lin)
     class(block_residual), intent(in) :: this
     class(directed_graph), intent(in) :: input_graph
     type(binding)         , intent(in) :: inputs(:)
     real(dp)             , intent(in) :: rhs(:)
     logical              , intent(in) :: transposed
-    integer              , intent(in) :: mark
+    integer              , intent(in) :: version
     type(block_residual) :: lin
     type(stencil) :: a
     integer , allocatable :: r(:), c(:)
@@ -2162,7 +2162,7 @@ contains
     call a % constants % set_real_vector(-rhs)
     lin = block_residual(a, stated(constant(0.0_dp), this % degrees - 1, 'zero'), this % at, this % unknowns, &
          & this % degrees, this % primary, [integer ::], [real(dp) ::])
-    call lin % versioned(mark, transposed=a % pattern % transposed())
+    call lin % versioned(version, transposed=a % pattern % transposed())
     lin % layout = this % layout
     if (allocated(this % kept)) lin % kept = this % kept
   end function linear_block
@@ -2502,7 +2502,7 @@ module gti_march
   public :: consistent_state
   public :: imbalance
   public :: swept, set_space_coupling, set_time_coupling, coupling_named
-  public :: solved_linear, by_tangent, by_adjoint, next_version
+  public :: solve_linear, by_tangent, by_adjoint, next_version
   public :: weight_of, precision_needed
   public :: horizon_bounds
 contains
@@ -2958,17 +2958,17 @@ contains
     final_imbalance % began     = solver % began()
     if (.not. final_imbalance % converged) call by_aspect(rows, unknowns, q, design, final_imbalance)
   end subroutine imbalance_of
-  integer function next_version() result(mark)
+  integer function next_version() result(version)
     versions_given = versions_given + 1
-    mark = versions_given
+    version = versions_given
   end function next_version
-  subroutine solved_linear(rows, unknowns, inputs, rhs, transposed, mark, w)
+  subroutine solve_linear(rows, unknowns, inputs, rhs, transposed, version, w)
     type(block_residual)       , intent(in)  :: rows
     class(directed_graph)      , intent(in)  :: unknowns
     type(stored_field)         , intent(in)  :: inputs(:)
     real(dp)                   , intent(in)  :: rhs(:)
     logical                    , intent(in)  :: transposed
-    integer                    , intent(in)  :: mark
+    integer                    , intent(in)  :: version
     real(dp), allocatable      , intent(out) :: w(:)
     type(block_residual) :: lin
     real(dp) :: achieved
@@ -2977,29 +2977,29 @@ contains
     else
        call tally_record(tangent_loops)
     end if
-    lin = rows % linear_block(unknowns, rows % bind(inputs), rhs, transposed, mark)
+    lin = rows % linear_block(unknowns, rows % bind(inputs), rhs, transposed, version)
     call swept(lin, 0.0_dp, w, achieved)
-  end subroutine solved_linear
-  real(dp) function by_tangent(rows, unknowns, inputs, g, design_rate, explicit, mark) &
+  end subroutine solve_linear
+  real(dp) function by_tangent(rows, unknowns, inputs, g, design_rate, explicit, version) &
        & result(df)
     type(block_residual) , intent(in) :: rows
     class(directed_graph), intent(in) :: unknowns
     type(stored_field)   , intent(in) :: inputs(:)
     real(dp)             , intent(in) :: g(:), design_rate(:), explicit
-    integer              , intent(in) :: mark
+    integer              , intent(in) :: version
     real(dp), allocatable :: w(:)
-    call solved_linear(rows, unknowns, inputs, -design_rate, .false., mark, w)
+    call solve_linear(rows, unknowns, inputs, -design_rate, .false., version, w)
     df = explicit + dot_product(g, w)
   end function by_tangent
-  real(dp) function by_adjoint(rows, unknowns, inputs, g, design_rate, explicit, mark) &
+  real(dp) function by_adjoint(rows, unknowns, inputs, g, design_rate, explicit, version) &
        & result(df)
     type(block_residual) , intent(in) :: rows
     class(directed_graph), intent(in) :: unknowns
     type(stored_field)   , intent(in) :: inputs(:)
     real(dp)             , intent(in) :: g(:), design_rate(:), explicit
-    integer              , intent(in) :: mark
+    integer              , intent(in) :: version
     real(dp), allocatable :: lambda(:)
-    call solved_linear(rows, unknowns, inputs, g, .true., mark, lambda)
+    call solve_linear(rows, unknowns, inputs, g, .true., version, lambda)
     df = explicit - dot_product(lambda, design_rate)
   end function by_adjoint
   subroutine set_space_coupling(name)
@@ -3743,12 +3743,12 @@ module gti_chain
   use gti_expansion    , only : family_container, marches_by_stages, expansion, &
        & design_of_physics, design_of_steps
   use gti_block        , only : block_residual
-  use gti_march        , only : imbalance, swept, solved_linear, next_version, horizon_bounds, &
+  use gti_march        , only : imbalance, swept, solve_linear, next_version, horizon_bounds, &
        & frozen_inputs
   use gti_march        , only : block_from, consistent_state
   use gti_sweeps       , only : choose
   use util_derivative_terms, only : derivative_terms, coefficient, mixed_partial, leibniz_parts, &
-       & operator(+), operator(-), operator(*)
+       & inner_product, operator(+), operator(-), operator(*)
   use operation_stencil, only : stencil
   use operation_family , only : crouzeix_three_stage
   use view_directed_stored, only : stored_directed_graph
@@ -3835,7 +3835,7 @@ module gti_chain
      type(expression), allocatable :: functionals(:)
      real(dp)        , allocatable :: u(:,:,:)
      type(tangent_tower), allocatable :: w(:)
-     integer , allocatable :: last_reader(:), marks(:)
+     integer , allocatable :: last_reader(:), versions(:)
      real(dp), allocatable :: table(:,:), by_order(:,:,:)
      integer :: tower_live = 0, tower_high = 0, tower_total = 0
      integer :: state_live = 0, state_high = 0, state_total = 0
@@ -4121,7 +4121,7 @@ contains
     context % functionals = functionals
     call steps_along(tower, 1, max(order, 1), context % u)
     nbb = size(added) + before
-    allocate(context % w(nbb), context % marks(nbb), context % last_reader(nbb))
+    allocate(context % w(nbb), context % versions(nbb), context % last_reader(nbb))
     allocate(context % table(context % nf, 1), context % by_order(context % nf, 1, 0:order), source=0.0_dp)
     allocate(bfirst(nbb), blast(nbb), bstride(nbb), bgiven(nbb))
     if (before == 1) then
@@ -4165,12 +4165,12 @@ contains
     type(chain_block)   , intent(inout) :: chain(:)
     integer             , intent(in)    :: at
     integer :: h
-    context % marks(at)   = next_version()
+    context % versions(at)   = next_version()
     context % state_live  = context % state_live + size(chain(at) % state)
     context % state_total = context % state_total + size(chain(at) % state)
     context % state_high  = max(context % state_high, context % state_live)
     call forward_block(chain, at, context % physics, context % functionals, context % degrees, &
-         & context % design, 1, context % order, context % order, 0, context % order, context % marks, &
+         & context % design, 1, context % order, context % order, 0, context % order, context % versions, &
          & context % u, context % w, context % tower_live, context % tower_total, context % tower_high, &
          & context % table, context % by_order, last_reader=context % last_reader)
     call tally_order(0)
@@ -4193,10 +4193,10 @@ contains
   ! count the tower numbers stored.
   !===================================================================!
   subroutine forward_block(chain, b, physics, functionals, degrees, design, nd, top, order, &
-       & from_size, to_size, marks, u, w, live, total, peak_storage, table, by_order, node_measure, &
+       & from_size, to_size, versions, u, w, live, total, peak_storage, table, by_order, node_measure, &
        & last_reader)
     type(chain_block)  , intent(in)    :: chain(:)
-    integer            , intent(in)    :: b, degrees, nd, top, order, from_size, to_size, marks(:)
+    integer            , intent(in)    :: b, degrees, nd, top, order, from_size, to_size, versions(:)
     type(expression)   , intent(in)    :: physics, functionals(:)
     real(dp)           , intent(in)    :: design, u(:,:,:)
     type(tangent_tower), intent(inout) :: w(:)
@@ -4221,7 +4221,7 @@ contains
        do rank = 1, multiset_count(nd, k)
           s = multiset_of(rank, k, nd)
           call tally_enter(at_block)
-          call rows_along(chain, b, physics, degrees, design, s, w, u, nd, r)
+          call forcing_of(chain, b, physics, degrees, design, s, w, u, nd, r)
           r = -r
           do i = 1, size(chain(b) % source_at)
              if (chain(b) % source_block(i) > 0) then
@@ -4229,7 +4229,7 @@ contains
              end if
           end do
           call frozen_at(chain(b), design, unknowns, inputs)
-          call solved_linear(chain(b) % rows, unknowns, inputs, r, .false., marks(b), one)
+          call solve_linear(chain(b) % rows, unknowns, inputs, r, .false., versions(b), one)
           w(b) % w(1:count, rank, k) = one
           call tally_leave()
        end do
@@ -4715,11 +4715,11 @@ contains
     integer                , intent(in) :: degrees, max_order
     real(dp), allocatable  , intent(out) :: f(:,:)
     real(dp), intent(in), optional      :: node_measure(:)
-    integer , allocatable :: marks(:)
+    integer , allocatable :: versions(:)
     real(dp), allocatable :: by_order(:,:,:), table(:,:)
     integer :: m
-    call chain_versions(chain, tower, functionals, degrees, marks)
-    call chain_derivative(chain, tower, marks, functionals, degrees, max_order, forward_pass, &
+    call chain_versions(chain, tower, functionals, degrees, versions)
+    call chain_derivative(chain, tower, versions, functionals, degrees, max_order, forward_pass, &
          & table, node_measure, designs=1, by_order=by_order)
     allocate(f(0:max_order, size(functionals)))
     do m = 0, max_order
@@ -4733,18 +4733,18 @@ contains
     type(stored_field), allocatable, intent(out) :: inputs(:)
     call frozen_inputs(b % state, design, b % rows % num_points(), unknowns, inputs)
   end subroutine frozen_at
-  subroutine chain_versions(chain, tower, functionals, degrees, marks, node_measure)
+  subroutine chain_versions(chain, tower, functionals, degrees, versions, node_measure)
     type(chain_block), intent(in) :: chain(:)
     type(expansion)  , intent(in) :: tower
     type(expression) , intent(in) :: functionals(:)
     integer          , intent(in) :: degrees
-    integer, allocatable, intent(out) :: marks(:)
+    integer, allocatable, intent(out) :: versions(:)
     real(dp), intent(in), optional :: node_measure(:)
     integer :: b
     associate (u1 => tower, u2 => functionals, u3 => degrees, u4 => node_measure); end associate
-    allocate(marks(size(chain)))
+    allocate(versions(size(chain)))
     do b = 1, size(chain)
-       marks(b) = next_version()
+       versions(b) = next_version()
     end do
   end subroutine chain_versions
   integer function num_designs_of(tower)
@@ -4804,11 +4804,11 @@ contains
        end if
     end do
   end subroutine transfer_layout
-  subroutine chain_derivative(chain, tower, marks, functionals, degrees, order, pass_kind, &
+  subroutine chain_derivative(chain, tower, versions, functionals, degrees, order, pass_kind, &
        & table, node_measure, entries, designs, by_order, sinks, leibniz, tower_storage)
     type(chain_block), intent(in) :: chain(:)
     type(expansion)  , intent(in) :: tower
-    integer          , intent(in) :: marks(:)
+    integer          , intent(in) :: versions(:)
     type(expression) , intent(in) :: functionals(:)
     integer                , intent(in) :: degrees, order, pass_kind
     real(dp), allocatable  , intent(out) :: table(:,:)
@@ -4898,7 +4898,7 @@ contains
     total        = 0
     do b = 1, nb
        call forward_block(chain, b, physics, functionals, degrees, design, nd, top, order, &
-            & from_size, to_size, marks, u, w, live, total, peak_storage, table, by_order, &
+            & from_size, to_size, versions, u, w, live, total, peak_storage, table, by_order, &
             & node_measure, last_reader)
     end do
     call tally_order(0)
@@ -4938,8 +4938,8 @@ contains
                 call tally_enter(at_block)
                 count = chain(b) % rows % num_unknowns()
                 call frozen_at(chain(b), design, unknowns, inputs)
-                call solved_linear(chain(b) % rows, unknowns, inputs, rhs(1:count, b), .true., &
-                     & marks(b), one)
+                call solve_linear(chain(b) % rows, unknowns, inputs, rhs(1:count, b), .true., &
+                     & versions(b), one)
                 lambda(1:count, b, i, rank, k) = one
                 if (present(sinks)) then
                    call sink_residual(is_sink(1:count, b), diagonal(1:count, b), &
@@ -4969,7 +4969,7 @@ contains
              l     = derivative_terms(0.0_dp, top + 1)
              split = 0.0_dp
              do b = 1, nb
-                l = l + entry_of(chain, b, physics, functionals(i), degrees, design, s, j, &
+                l = l + lagrangian_term(chain, b, physics, functionals(i), degrees, design, s, j, &
                      & w, lambda, u, nd, i, node_measure, split)
              end do
              every(i, j, rank) = mixed_partial(l)
@@ -5192,7 +5192,7 @@ contains
     end do
     t = measure * t
   end function measure_terms
-  subroutine rows_along(chain, b, physics, degrees, design, s, w, u, nd, r)
+  subroutine forcing_of(chain, b, physics, degrees, design, s, w, u, nd, r)
     type(chain_block)   , intent(in) :: chain(:)
     integer             , intent(in) :: b
     type(expression)    , intent(in) :: physics
@@ -5224,7 +5224,7 @@ contains
        r(row) = r(row) + coefficient(point_terms(physics, degrees, design, at(p), n, 0, &
             & state_seed, nu_seed), full)
     end do
-  end subroutine rows_along
+  end subroutine forcing_of
   subroutine costates_at(chain, b, s, lambda, nd, i, lam)
     type(chain_block)   , intent(in) :: chain(:)
     integer             , intent(in) :: b, s(:), nd, i
@@ -5378,7 +5378,7 @@ contains
   ! functional's own term at n + 1. A parts of any other length stops
   ! the program.
   !===================================================================!
-  function entry_of(chain, b, physics, rule, degrees, design, s, j, w, lambda, u, nd, i, &
+  function lagrangian_term(chain, b, physics, rule, degrees, design, s, j, w, lambda, u, nd, i, &
        & node_measure, parts) result(l)
     type(chain_block)   , intent(in) :: chain(:)
     integer             , intent(in) :: b, degrees, s(:), j, nd, i
@@ -5389,8 +5389,8 @@ contains
     real(dp), intent(in), optional   :: node_measure(:)
     real(dp), intent(inout)          :: parts(0:)
     type(derivative_terms) :: l
-    type(derivative_terms) :: f, costate
-    type(derivative_terms), allocatable :: residual(:), beta(:), steps(:)
+    type(derivative_terms) :: f
+    type(derivative_terms), allocatable :: residual(:), costate(:), beta(:), steps(:)
     real(dp), allocatable :: state_seed(:,:), step_seed(:,:), nu_seed(:), tw(:,:), lam(:,:)
     real(dp) :: along(0:2**(size(s) + 1) - 1), split(0:size(s) + 1)
     integer , allocatable :: tr(:), tc(:), at(:)
@@ -5432,18 +5432,20 @@ contains
        residual(row) = residual(row) + point_terms(physics, degrees, design, at(p), n + 1, 0, state_seed, nu_seed)
     end do
     call costates_at(chain, b, s, lambda, nd, i, lam)
-    l            = f
+    allocate(costate(count))
+    do row = 1, count
+       along          = 0.0_dp
+       along(0:fulln) = lam(row, :)
+       costate(row)   = derivative_terms(along)
+    end do
+    l            = f - inner_product(costate, residual, active=.not. fixed_rows)
     parts(n + 1) = parts(n + 1) + mixed_partial(f)
     do row = 1, count
        if (fixed_rows(row)) cycle
-       along          = 0.0_dp
-       along(0:fulln) = lam(row, :)
-       costate        = derivative_terms(along)
-       l              = l - costate * residual(row)
-       split          = leibniz_parts(costate, residual(row))
-       parts(0:n)     = parts(0:n) - split(0:n)
+       split      = leibniz_parts(costate(row), residual(row))
+       parts(0:n) = parts(0:n) - split(0:n)
     end do
-  end function entry_of
+  end function lagrangian_term
   real(dp) function functional_along(chain, b, rule, degrees, design, s, open, w, u, nd, &
        & node_measure) result(part)
     type(chain_block)   , intent(in) :: chain(:)
@@ -5624,7 +5626,7 @@ contains
     type(expression)     :: functionals(1)
     type(chain_block), allocatable :: chain(:)
     type(expansion)  , allocatable :: tower
-    integer , allocatable :: marks(:)
+    integer , allocatable :: versions(:)
     real(dp), allocatable :: state(:), resolved(:), t(:), fvals(:,:), table(:,:), eta(:)
     logical , allocatable :: split(:)
     real(dp) :: achieved, f, e, threshold
@@ -5647,8 +5649,8 @@ contains
        call chain_expansion(chain, tower, functionals, degrees, 0, fvals)
        f = fvals(0, 1)
 
-       call chain_versions(chain, tower, functionals, degrees, marks)
-       call chain_derivative(chain, tower, marks, functionals, degrees, 1, reverse_pass, table)
+       call chain_versions(chain, tower, functionals, degrees, versions)
+       call chain_derivative(chain, tower, versions, functionals, degrees, 1, reverse_pass, table)
 
        ! the scale direction, projected away: see the banner of this function.
        eta = table(1, 2:size(table, 2))
@@ -6041,10 +6043,10 @@ contains
     type(expression) , intent(in) :: functionals(:)
     integer          , intent(in) :: degrees
     real(dp), allocatable, intent(out) :: tangent(:,:), adjoint(:,:)
-    integer, allocatable :: marks(:)
-    call chain_versions(chain, tower, functionals, degrees, marks)
-    call chain_derivative(chain, tower, marks, functionals, degrees, 1, forward_pass, tangent)
-    call chain_derivative(chain, tower, marks, functionals, degrees, 1, reverse_pass, adjoint)
+    integer, allocatable :: versions(:)
+    call chain_versions(chain, tower, functionals, degrees, versions)
+    call chain_derivative(chain, tower, versions, functionals, degrees, 1, forward_pass, tangent)
+    call chain_derivative(chain, tower, versions, functionals, degrees, 1, reverse_pass, adjoint)
   end subroutine directions
   ! the named family at the given order; a family with no scheme at
   ! that order stops the program
@@ -7391,7 +7393,7 @@ contains
     type(expression)       :: functionals(2)
     type(chain_block) , allocatable :: chain(:)
     type(expansion), allocatable, target :: tower
-    integer, allocatable :: marks(:)
+    integer, allocatable :: versions(:)
     real(dp), allocatable :: p(:), dt(:), t(:), v(:,:), f(:,:), tangent(:,:), adjoint(:,:)
     real(dp), allocatable :: plus(:,:), minus(:,:), q0(:), table(:,:), entries(:,:,:)
     real(dp), allocatable :: below(:,:), above(:,:), by_class(:)
@@ -7443,8 +7445,8 @@ contains
     nd = size(tangent, 2)
     do order = 2, max_order
        call marched(p, design, f, order)
-       call chain_versions(chain, tower, functionals, degrees, marks)
-       call chain_derivative(chain, tower, marks, functionals, degrees, order, reverse_pass, &
+       call chain_versions(chain, tower, functionals, degrees, versions)
+       call chain_derivative(chain, tower, versions, functionals, degrees, order, reverse_pass, &
             & table, entries=entries)
        write(*,'(a)') ' '
        write(*,'(a,i0,a,i0,a,i0,a,i0)') ' derivatives of order ', order, ' by the reverse pass: ', &
@@ -7492,8 +7494,8 @@ contains
       real(dp), allocatable, intent(out) :: t(:,:)
       real(dp), allocatable :: f(:,:)
       call marched(weights, nu, f)
-      call chain_versions(chain, tower, functionals, degrees, marks)
-      call chain_derivative(chain, tower, marks, functionals, degrees, order, reverse_pass, t)
+      call chain_versions(chain, tower, functionals, degrees, versions)
+      call chain_derivative(chain, tower, versions, functionals, degrees, order, reverse_pass, t)
     end subroutine differenced_table
     subroutine classed(e, l)
       real(dp), intent(in) :: e(:,:)
@@ -7549,7 +7551,7 @@ contains
     type(chain_block), allocatable :: chain(:)
     type(expansion)  , allocatable, target :: tower
     type(imbalance)  :: final_imbalance
-    integer , allocatable :: marks(:)
+    integer , allocatable :: versions(:)
     real(dp), allocatable :: q0(:), dt(:), t(:), f(:,:), table(:,:), by_order(:,:,:), terms(:,:,:,:)
     real(dp) :: tau, achieved, agreement, departure, scale, rounding_bound
     integer :: max_order, order, n, k, i, b, rows, failures
@@ -7570,8 +7572,8 @@ contains
        rows = rows + chain(b) % rows % num_unknowns()
     end do
     call chain_expansion(chain, tower, functionals, degrees, max_order, f)
-    call chain_versions(chain, tower, functionals, degrees, marks)
-    call chain_derivative(chain, tower, marks, functionals, degrees, max_order, reverse_pass, table, &
+    call chain_versions(chain, tower, functionals, degrees, versions)
+    call chain_derivative(chain, tower, versions, functionals, degrees, max_order, reverse_pass, table, &
          & by_order=by_order)
     write(*,'(a)') ' bdf 3 over a crouzeix start, van der pol, the physics'' parameter the one design'
     write(*,'(a,es9.2,a,es9.2)') ' relative tolerance', tau, &
@@ -7587,7 +7589,7 @@ contains
        end do
     end do
     do order = 1, max_order
-       call chain_derivative(chain, tower, marks, functionals, degrees, order, reverse_pass, table, &
+       call chain_derivative(chain, tower, versions, functionals, degrees, order, reverse_pass, table, &
             & leibniz=terms)
        n = order - 1
        write(*,'(a)') ' '
@@ -7644,7 +7646,7 @@ contains
     type(chain_block), allocatable :: chain(:)
     type(expansion)  , allocatable, target :: tower
     type(imbalance)  :: final_imbalance
-    integer , allocatable :: marks(:), added(:), sizes(:)
+    integer , allocatable :: versions(:), added(:), sizes(:)
     real(dp), allocatable :: q0(:), dt(:), t(:), table(:,:), whole(:,:), by_order(:,:,:)
     real(dp) :: tau, achieved, agreement, departure
     integer :: max_order, storage(2), expected, nb, b, k, failures
@@ -7673,8 +7675,8 @@ contains
        call march_chain(schemes, added, van_der_pol(state_degree), degrees, uniform_grid(duration), &
             & design, q0, chain, tower, dt, t, achieved, final_imbalance=final_imbalance, startup=4)
        if (.not. final_imbalance % converged) error stop 'taylor_state: the march converged'
-       call chain_versions(chain, tower, functionals, degrees, marks)
-       call chain_derivative(chain, tower, marks, functionals, degrees, max_order, forward_pass, &
+       call chain_versions(chain, tower, functionals, degrees, versions)
+       call chain_derivative(chain, tower, versions, functionals, degrees, max_order, forward_pass, &
             & table, designs=1, by_order=by_order, tower_storage=storage)
        allocate(sizes(size(chain)))
        do b = 1, size(chain)
@@ -7691,7 +7693,7 @@ contains
        if (departure > agreement) failures = failures + 1
        deallocate(schemes, added, sizes)
     end do
-    call chain_derivative(chain, tower, marks, functionals, degrees, max_order, reverse_pass, &
+    call chain_derivative(chain, tower, versions, functionals, degrees, max_order, reverse_pass, &
          & table, designs=1, tower_storage=storage)
     write(*,'(a)') ' '
     write(*,'(a,i0,a,i0)') ' the reverse pass over the last chain retains every tower: live at most ', &
@@ -7829,7 +7831,7 @@ contains
       type(family_container), allocatable :: schemes(:)
       type(chain_block) , allocatable :: chain(:)
       type(expansion), allocatable, target :: tower
-      integer, allocatable :: marks(:)
+      integer, allocatable :: versions(:)
       real(dp), allocatable :: a(:,:)
       real(dp) :: achieved, duration, design
       duration = 3.0_dp
@@ -7837,7 +7839,7 @@ contains
       allocate(schemes(1))
       call set_family(schemes(1), scheme)
       call marched_cosine(schemes, [instants], degrees, duration, design, chain, tower, achieved)
-      call chain_versions(chain, tower, [van_der_pol_energy(degrees - 1)], degrees, marks)
+      call chain_versions(chain, tower, [van_der_pol_energy(degrees - 1)], degrees, versions)
       call dense_jacobian(chain, design, a)
       call reported(label, a)
     end subroutine shape_of
@@ -9096,7 +9098,7 @@ contains
       real(dp)     , intent(in) :: q(:)
       real(dp)     , intent(out) :: tangent, adjoint
       real(dp), allocatable :: g(:), rate(:)
-      integer :: mark
+      integer :: version
       type(block_residual) :: rows
       type(expansion) :: tower
       type(family_container) :: owner(1)
@@ -9125,9 +9127,9 @@ contains
            & [energy_state, design_field], dt, num_instants, degrees, unknowns % vertex_set(), g)
       call sweep_design_partial(rows, unknowns, [state, design_field], num_instants, &
            & unknowns % vertex_set(), rate)
-      mark    = next_version()
-      tangent = by_tangent(rows, unknowns, [state, design_field], g, rate, 0.0_dp, mark)
-      adjoint = by_adjoint(rows, unknowns, [state, design_field], g, rate, 0.0_dp, mark)
+      version    = next_version()
+      tangent = by_tangent(rows, unknowns, [state, design_field], g, rate, 0.0_dp, version)
+      adjoint = by_adjoint(rows, unknowns, [state, design_field], g, rate, 0.0_dp, version)
     end subroutine three_objects
   end subroutine demo_sensitivity
   subroutine demo_solve_cost()
@@ -9146,7 +9148,7 @@ contains
       type(family_container), allocatable :: schemes(:)
       type(chain_block) , allocatable :: chain(:)
       type(expansion), allocatable, target :: tower
-      integer, allocatable :: marks(:)
+      integer, allocatable :: versions(:)
       type(expression)       :: energy(1)
       real(dp), allocatable :: table(:,:)
       real(dp) :: achieved, duration, design, marched, formed, solved_in, tangent
@@ -9160,11 +9162,11 @@ contains
       marched = clock() - marched
       energy(1) = van_der_pol_energy(degrees - 1)
       formed = clock()
-      call chain_versions(chain, tower, energy, degrees, marks)
+      call chain_versions(chain, tower, energy, degrees, versions)
       formed = clock() - formed
       n = chain(1) % rows % num_unknowns()
       solved_in = clock()
-      call chain_derivative(chain, tower, marks, energy, degrees, 1, forward_pass, table)
+      call chain_derivative(chain, tower, versions, energy, degrees, 1, forward_pass, table)
       tangent   = first_of(table)
       solved_in = clock() - solved_in
       write(*,'(i10,3f11.3,2es15.3)') n, marched, formed, solved_in, &
@@ -9237,7 +9239,7 @@ contains
       type(family_container), allocatable :: schemes(:)
       type(chain_block) , allocatable :: chain(:)
       type(expansion), allocatable, target :: tower
-      integer, allocatable :: marks(:)
+      integer, allocatable :: versions(:)
       type(family) :: scheme
       integer , allocatable :: added(:)
       real(dp), allocatable :: fixed(:), dt(:), t(:), a(:,:)
@@ -9256,7 +9258,7 @@ contains
            &   scheme % history_depth(degrees - 1))]
       call march_chain(schemes, added, van_der_pol(degrees - 1), degrees, &
            & uniform_grid(duration), design, fixed, chain, tower, dt, t, achieved)
-      call chain_versions(chain, tower, [van_der_pol_energy(degrees - 1)], degrees, marks)
+      call chain_versions(chain, tower, [van_der_pol_energy(degrees - 1)], degrees, versions)
       predicted = 1.0_dp + row_sum(scheme, order, top) / dt(size(dt))
       call dense_jacobian(chain, design, a)
       assembled = largest_row(a)
@@ -9270,7 +9272,7 @@ contains
       type(family_container), allocatable :: schemes(:)
       type(chain_block) , allocatable :: chain(:)
       type(expansion), allocatable, target :: tower
-      integer, allocatable :: marks(:)
+      integer, allocatable :: versions(:)
       type(family) :: scheme
       integer , allocatable :: added(:)
       real(dp), allocatable :: fixed(:), dt(:), t(:), b(:,:), a(:,:)
@@ -9288,7 +9290,7 @@ contains
            &   scheme % history_depth(degrees - 1))]
       call march_chain(schemes, added, van_der_pol(degrees - 1), degrees, &
            & uniform_grid(duration), design, fixed, chain, tower, dt, t, achieved)
-      call chain_versions(chain, tower, [van_der_pol_energy(degrees - 1)], degrees, marks)
+      call chain_versions(chain, tower, [van_der_pol_energy(degrees - 1)], degrees, versions)
       step = dt(size(dt))
       call dense_jacobian(chain, design, a)
       bare = kappa(a)
@@ -9669,16 +9671,16 @@ contains
     type(expansion)    , intent(in) :: tower
     integer            , intent(in) :: nd
     real(dp)           , intent(in) :: dt(:), f(0:, :)
-    integer, allocatable :: marks(:)
+    integer, allocatable :: versions(:)
     real(dp), allocatable :: p(:), df(:,:), other(:,:), table(:,:), entries(:,:,:)
     type(sink_costates) :: sinks
     real(dp) :: euler
     integer  :: num_designs, num_functionals, pass_kind, i, order
     num_functionals = size(functionals)
-    call chain_versions(chain, tower, functionals, nd, marks, node_measure=volume)
+    call chain_versions(chain, tower, functionals, nd, versions, node_measure=volume)
     num_designs = num_designs_of(tower)
     pass_kind = pass_of(num_designs, num_functionals, 1)
-    call chain_derivative(chain, tower, marks, functionals, nd, 1, pass_kind, df, node_measure=volume)
+    call chain_derivative(chain, tower, versions, functionals, nd, 1, pass_kind, df, node_measure=volume)
     write(*,'(a,a,a,i0,a,i0,a,es10.2)') '      first derivatives by the ', &
          & trim(merge('forward', 'reverse', pass_kind == forward_pass)), ' pass, designs ', &
          & num_designs, ' functionals ', num_functionals, &
@@ -9693,20 +9695,20 @@ contains
        end do
     end if
     if (lists(cfg % check, 'passes')) then
-       call chain_derivative(chain, tower, marks, functionals, nd, 1, &
+       call chain_derivative(chain, tower, versions, functionals, nd, 1, &
             & merge(reverse_pass, forward_pass, pass_kind == forward_pass), other, node_measure=volume)
        write(*,'(a,es10.2)') '      tangent against adjoint over the table, relative ', &
             & maxval(abs(df - other)) / max(1.0_dp, maxval(abs(df)))
     end if
     if (lists(cfg % check, 'sinks')) then
-       call chain_derivative(chain, tower, marks, functionals, nd, 1, reverse_pass, other, &
+       call chain_derivative(chain, tower, versions, functionals, nd, 1, reverse_pass, other, &
             & node_measure=volume, sinks=sinks)
        call shown_sinks(sinks, nd)
     end if
     if (grid_designed) then
        do order = 2, ubound(f, 1)
           pass_kind = pass_of(num_designs, num_functionals, order)
-          call chain_derivative(chain, tower, marks, functionals, nd, order, pass_kind, table, &
+          call chain_derivative(chain, tower, versions, functionals, nd, order, pass_kind, table, &
                & node_measure=volume, entries=entries)
           do i = 1, num_functionals
              if (pass_kind == reverse_pass) then

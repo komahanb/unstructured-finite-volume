@@ -101,7 +101,7 @@ module util_derivative_terms
 
   private
   public :: derivative_terms, value, mixed_partial, coefficient, max_subset_width
-  public :: integer_power, composed, leibniz_parts
+  public :: integer_power, composed, leibniz_parts, inner_product
   public :: operator(+), operator(-), operator(*), operator(/), operator(**)
   public :: sin, cos, exp, log, sqrt
 
@@ -464,6 +464,41 @@ contains
     end do
 
   end function leibniz_parts
+
+  !===================================================================!
+  ! THE INNER PRODUCT sum_i a(i) b(i), the entries an active mask
+  ! excludes taken as zero. The same reduction real arrays take under
+  ! dot_product, over the terms this module's own product rule
+  ! multiplies. An active mask shorter than the factors stops the
+  ! program.
+  !===================================================================!
+
+  pure function inner_product(a, b, active) result(c)
+
+    type(derivative_terms), intent(in)           :: a(:), b(:)
+    logical                , intent(in), optional :: active(:)
+    type(derivative_terms) :: c
+
+    integer :: i
+
+    if (size(a) /= size(b)) then
+       error stop 'util_derivative_terms: an inner product pairs factors of the same extent'
+    end if
+    if (present(active)) then
+       if (size(active) < size(a)) then
+          error stop 'util_derivative_terms: the active mask covers every entry'
+       end if
+    end if
+
+    c = create_like(0.0_dp, a(1))
+    do i = 1, size(a)
+       if (present(active)) then
+          if (.not. active(i)) cycle
+       end if
+       c = c + a(i) * b(i)
+    end do
+
+  end function inner_product
 
   !===================================================================!
   ! x raised to an integer exponent, of either sign. A zero exponent

@@ -187,11 +187,11 @@ contains
   ! matrix. The label defaults to the operation's name.
   !===================================================================!
 
-  type(stencil) function create_compiled(action, on, width, label) &
+  type(stencil) function create_compiled(action, context, width, label) &
        & result(this)
 
     class(operation)     , intent(in) :: action
-    class(directed_graph), intent(in) :: on
+    class(directed_graph), intent(in) :: context
     integer              , intent(in) :: width
     character(len=*), intent(in), optional :: label
 
@@ -199,7 +199,7 @@ contains
     real(dp), allocatable :: a(:,:), constant(:)
     integer :: n_dom, num_components
 
-    call action % domain(on, dom, n_dom)
+    call action % domain(context, dom, n_dom)
 
     if (n_dom <= 0) then
        error stop 'stencil: the operation''s domain is nonempty'
@@ -210,7 +210,7 @@ contains
 
     num_components = width / n_dom
 
-    call compile_matrix_from_action(action, on, dom, n_dom, width, &
+    call compile_matrix_from_action(action, context, dom, n_dom, width, &
          & num_components, a, constant)
 
     if (present(label)) then
@@ -229,11 +229,11 @@ contains
   ! stencil and the direct solver both read their matrix here.
   !===================================================================!
 
-  subroutine compile_matrix_from_action(action, on, dom, n_dom, width, &
+  subroutine compile_matrix_from_action(action, context, dom, n_dom, width, &
        & num_components, a, constant, stored)
 
     class(operation)     , intent(in) :: action
-    class(directed_graph), intent(in) :: on
+    class(directed_graph), intent(in) :: context
     type(graph)          , intent(in) :: dom
     integer              , intent(in) :: n_dom, width, num_components
 
@@ -270,9 +270,9 @@ contains
        state = stored_field('basis', dom, n_dom, num_components=num_components)
        call state % set_real_vector(e)
        if (present(stored)) then
-          call action % apply(on, action % bind([state, stored]), output)
+          call action % apply(context, action % bind([state, stored]), output)
        else
-          call action % apply(on, action % bind([state]), output)
+          call action % apply(context, action % bind([state]), output)
        end if
        call output % real_vector(y)
        if (size(y) /= width) then

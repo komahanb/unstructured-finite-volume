@@ -725,24 +725,24 @@ contains
 
   end subroutine value_by_partial_action
 
-  subroutine applied(action, on, inputs, y)
+  subroutine applied(action, context, inputs, y)
 
     class(operation)     , intent(in) :: action
-    class(directed_graph), intent(in) :: on
+    class(directed_graph), intent(in) :: context
     type(stored_field)   , intent(in) :: inputs(:)
     real(dp), allocatable, intent(out) :: y(:)
 
     class(field), allocatable :: out
 
-    call action % apply(on, action % bind(inputs), out)
+    call action % apply(context, action % bind(inputs), out)
     call out % real_vector(y)
 
   end subroutine applied
 
-  subroutine varied(action, on, inputs, which, domain, v, y, which2, domain2, v2)
+  subroutine varied(action, context, inputs, which, domain, v, y, which2, domain2, v2)
 
     class(operation)     , intent(in) :: action
-    class(directed_graph), intent(in) :: on
+    class(directed_graph), intent(in) :: context
     type(stored_field)   , intent(in) :: inputs(:)
     integer              , intent(in) :: which
     type(graph)          , intent(in) :: domain
@@ -761,11 +761,11 @@ contains
     if (present(which2)) then
        second = stored_field('direction', domain2, size(v2))
        call second % set_real_vector(v2)
-       call action % partial_action(on, action % bind(inputs), &
+       call action % partial_action(context, action % bind(inputs), &
             & [variation(action % argument(which), direction), &
             &  variation(action % argument(which2), second)], out)
     else
-       call action % partial_action(on, action % bind(inputs), &
+       call action % partial_action(context, action % bind(inputs), &
             & [variation(action % argument(which), direction)], out)
     end if
 
@@ -1098,14 +1098,14 @@ contains
   end subroutine emit
 
   !===================================================================!
-  ! Real values emitted as a stored field named name on the domain
-  ! on, with n entries of num_components components each.
+  ! Real values emitted as a stored field named name on the domain,
+  ! with n entries of num_components components each.
   !===================================================================!
 
-  subroutine emit_real(name, on, n, values, output, num_components)
+  subroutine emit_real(name, domain, n, values, output, num_components)
 
     character(len=*), intent(in) :: name
-    type(graph)     , intent(in) :: on
+    type(graph)     , intent(in) :: domain
     integer         , intent(in) :: n
     real(dp)        , intent(in) :: values(:)
     class(field), allocatable, intent(inout) :: output
@@ -1113,7 +1113,7 @@ contains
 
     type(stored_field) :: out
 
-    out = stored_field(name, on, n, num_components)
+    out = stored_field(name, domain, n, num_components)
     call out % set_real_vector(values)
     call emit(out, output)
 

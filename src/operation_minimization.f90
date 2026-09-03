@@ -83,7 +83,7 @@ module operation_minimization
      ! action needs to compute with - a mesh, a compatibility host, an
      ! interface - and the graph determines nothing of the solver's
      ! own structure.
-     class(directed_graph)          , allocatable :: on
+     class(directed_graph)          , allocatable :: graph
 
      ! THE DEPENDENT-VARIABLE COUPLING. Which unknowns depend on which:
      ! the stencil the structural algorithms need, and the ONLY graph
@@ -96,7 +96,7 @@ module operation_minimization
      ! caller that records which object owns the dependent axis, and
      ! stops the program if the coupling was not supplied.
      !
-     ! `coupling := on` is the error this component exists to prevent:
+     ! `coupling := graph` is the error this component exists to prevent:
      ! the graph an action executes over does not determine which
      ! unknowns are coupled. Where the two are the same graph, the
      ! CALLER states so, at its own call site.
@@ -441,12 +441,12 @@ contains
   ! the contribution of its boundary values and sources alone.
   !===================================================================!
 
-  subroutine attach(this, action, on, unknown_domain, num_unknowns, &
+  subroutine attach(this, action, context, unknown_domain, num_unknowns, &
        & num_components, coupling, stored_inputs)
 
     class(minimizer)  , intent(inout) :: this
     class(operation), intent(in)    :: action
-    class(directed_graph)          , intent(in)    :: on
+    class(directed_graph)          , intent(in)    :: context
     type(graph)       , intent(in)    :: unknown_domain
     integer               , intent(in)    :: num_unknowns
     integer, intent(in), optional         :: num_components
@@ -458,8 +458,8 @@ contains
 
     if (allocated(this % action)) deallocate(this % action)
     allocate(this % action, source=action)
-    if (allocated(this % on)) deallocate(this % on)
-    allocate(this % on, source=on)
+    if (allocated(this % graph)) deallocate(this % graph)
+    allocate(this % graph, source=context)
 
     ! the inputs fixed during this solve follow the unknown in
     ! every evaluation, the affine part's included
@@ -486,7 +486,7 @@ contains
     this % num_unknowns = num_unknowns
 
     ! The residual domain is the action's own codomain.
-    call action % domain(on, this % residual_domain, this % num_residuals)
+    call action % domain(context, this % residual_domain, this % num_residuals)
 
     n = this % num_unknowns
 
@@ -514,9 +514,9 @@ contains
   ! it are built on this one tuple, so they linearize the same function.
   !===================================================================!
 
-  function state_tuple(on, n, components, x, stored) result(inputs)
+  function state_tuple(domain, n, components, x, stored) result(inputs)
 
-    type(graph)       , intent(in)           :: on
+    type(graph)       , intent(in)           :: domain
     integer           , intent(in)           :: n, components
     real(dp)          , intent(in)           :: x(:)
     type(stored_field), intent(in), optional :: stored(:)
@@ -524,7 +524,7 @@ contains
 
     type(stored_field) :: state
 
-    state = stored_field('state', on, n, num_components=components)
+    state = stored_field('state', domain, n, num_components=components)
     call state % set_real_vector(x)
 
     if (present(stored)) then
@@ -553,7 +553,7 @@ contains
     class(field), allocatable :: image
 
     tuple = state_tuple(this % unknown_domain, this % num_unknowns, this % num_components, x, this % stored)
-    call this % action % apply(this % on, this % action % bind(tuple), image)
+    call this % action % apply(this % graph, this % action % bind(tuple), image)
 
     if (.not. image % defined_on(this % residual_domain)) then
        error stop 'minimization: the action must return a field on its stated residual domain'

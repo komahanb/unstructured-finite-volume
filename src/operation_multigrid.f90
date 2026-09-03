@@ -100,12 +100,12 @@ contains
   ! minimizer at every iteration need not reference the coarse level.
   !===================================================================!
 
-  subroutine multigrid_attach(this, action, on, unknown_domain, num_unknowns, &
+  subroutine multigrid_attach(this, action, context, unknown_domain, num_unknowns, &
        & num_components, coupling, stored_inputs)
 
     class(multigrid)     , intent(inout)        :: this
     class(operation)     , intent(in)           :: action
-    class(directed_graph), intent(in)           :: on
+    class(directed_graph), intent(in)           :: context
     type(graph)          , intent(in)           :: unknown_domain
     integer              , intent(in)           :: num_unknowns
     integer              , intent(in), optional :: num_components
@@ -114,7 +114,7 @@ contains
 
     integer, allocatable :: kept(:)
 
-    call attach(this, action, on, unknown_domain, num_unknowns, &
+    call attach(this, action, context, unknown_domain, num_unknowns, &
          & num_components, coupling, stored_inputs)
 
     if (allocated(this % aggregates)) then
@@ -159,12 +159,12 @@ contains
     ! pattern read through the blocks, one vertex each
     this % smoother % block_width = this % block_width
     if (this % block_width > 1) then
-       call this % smoother % attach(this % action, this % on, &
+       call this % smoother % attach(this % action, this % graph, &
             & this % unknown_domain, this % num_unknowns, &
             & coupling = read_through(this % action, size(this % affine), this % block_width))
     else
-       call this % smoother % attach(this % action, this % on, &
-            & this % unknown_domain, this % num_unknowns, coupling = this % on)
+       call this % smoother % attach(this % action, this % graph, &
+            & this % unknown_domain, this % num_unknowns, coupling = this % graph)
     end if
 
     ! The coarse statement stores its own stencil, and that stencil

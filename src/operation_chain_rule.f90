@@ -628,10 +628,10 @@ contains
     class(field), allocatable, intent(inout) :: output
 
     class(field), allocatable :: value
-    type(graph) :: on
-    integer         :: n_on, width
+    type(graph) :: domain
+    integer         :: n_domain, width
 
-    call statement % domain(input_graph, on, n_on)
+    call statement % domain(input_graph, domain, n_domain)
 
     width = num_components
     if (.not. started) then
@@ -641,7 +641,7 @@ contains
        width   = value % num_components()
     end if
 
-    call emit_real('total derivative', on, size(running) / width, running, output, width)
+    call emit_real('total derivative', domain, size(running) / width, running, output, width)
 
   end subroutine write_output
 

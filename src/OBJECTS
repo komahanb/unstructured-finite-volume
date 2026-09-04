@@ -29,6 +29,7 @@ view_directed_connectivity.o \
 field_stored.o \
 operation_action.o \
 operation_expression.o \
+operation_domain.o \
 operation_edge_function.o \
 operation_family.o \
 operation_weight.o \

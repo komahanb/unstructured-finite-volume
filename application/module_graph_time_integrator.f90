@@ -852,6 +852,7 @@ module gti_expansion
   use operation_action      , only : variation
   use operation_weight      , only : scheme_weight
   use operation_expression     , only : expression
+  use operation_domain      , only : continuous_domain
   implicit none
   private
   public :: expansion, family_container
@@ -1000,6 +1001,7 @@ contains
     type(stencil), intent(in), optional   :: spatial_discretization_stencil
     real(dp)     , intent(in), optional   :: weights(:), block_steps(:)
     real(dp), allocatable :: dt(:)
+    type(continuous_domain) :: continuous
     integer , allocatable :: sweeps(:)
     integer :: s
     if (this % root_at /= 0) then
@@ -1008,11 +1010,12 @@ contains
     if (size(schemes) /= size(instants)) then
        error stop 'gti_expansion: one family and one instant count per block'
     end if
+    continuous = continuous_domain(physics)
     ! degrees is the marching coordinate's own count, which is what
     ! every scheme query reads; the rest of the point's components
     ! belong to the other coordinates
-    this % degrees         = physics % equation_degree() + 1
-    this % spatial_degrees = physics % num_components() - this % degrees
+    this % degrees         = continuous % equation_degree() + 1
+    this % spatial_degrees = continuous % num_components() - this % degrees
     this % node_extent = 1
     if (present(nodes)) this % node_extent = nodes
     if (present(spatial_discretization_stencil)) this % spatial_coupling_at = spatial_discretization_coupling(this, spatial_discretization_stencil)
@@ -1914,6 +1917,7 @@ module gti_march
   use operation_weight        , only : scheme_weight
   use operation_scheme_stencil, only : derived_constraints
   use operation_expression       , only : expression
+  use operation_domain        , only : continuous_domain, discrete_domain
   use gti_expansion           , only : family_container, expansion, marches_by_stages
   use gti_block               , only : block_residual
   use view_level              , only : level_member, level_num_members, level_coupling, &
@@ -2050,6 +2054,8 @@ contains
     type(stored_directed_graph) :: points
     type(stored_field) :: state, design_field, direction
     type(typed_field_domain) :: point_scalars, point_states
+    type(continuous_domain) :: continuous
+    type(discrete_domain) :: point_domain
     class(field), allocatable :: out
     real(dp), allocatable :: below(:), r(:), slope(:), weights(:), e(:)
     real(dp) :: began, target
@@ -2079,8 +2085,10 @@ contains
     do i = 1, nodes
        e(i * degrees) = 1.0_dp
     end do
-    point_scalars = typed_field_domain(points % vertex_set(), nodes)
-    point_states  = typed_field_domain(points % vertex_set(), nodes, physics % num_components())
+    continuous    = continuous_domain(physics)
+    point_domain  = continuous % discrete(points)
+    point_scalars = point_domain % design_fields()
+    point_states  = point_domain % state_fields()
     design_field  = point_scalars % design(spread(design_value, 1, nodes))
     direction     = point_states % direction(e)
     began = -1.0_dp
@@ -2164,11 +2172,13 @@ contains
     integer, allocatable :: instants_at(:)
 
     type(graph), pointer :: horizon, block
+    type(continuous_domain) :: continuous
     integer :: n, k, g, m, width, nd, stride
     logical :: staged
 
-    nd     = physics % equation_degree() + 1
-    stride = physics % num_components()
+    continuous = continuous_domain(physics)
+    nd     = continuous % equation_degree() + 1
+    stride = continuous % num_components()
     horizon => level_member(level_member(tower % node(tower % root()), 1), 1)
     block   => level_member(horizon, b)
     n       = level_num_members(block)
@@ -2196,6 +2206,7 @@ contains
     type(graph), pointer :: horizon, block, slice, moment_node, component, below
     type(matrix_scheme_connectivity), allocatable :: connectivity(:)
     type(block_embedding) :: embedding
+    type(continuous_domain) :: continuous
     integer , allocatable :: slice_of(:), member_of(:), members(:), at(:), fixed_rows(:)
     integer , allocatable :: r(:), c(:), table(:,:)
     real(dp), allocatable :: dt(:), w(:,:), seeds(:,:), spatial_weights(:)
@@ -2206,8 +2217,9 @@ contains
     ! reads; stride is the point's whole component count, which the
     ! layout reads. The two differ once a rule names a second
     ! coordinate, so they are kept as distinct names.
-    nd     = physics % equation_degree() + 1
-    stride = physics % num_components()
+    continuous = continuous_domain(physics)
+    nd     = continuous % equation_degree() + 1
+    stride = continuous % num_components()
     horizon => level_member(level_member(tower % node(tower % root()), 1), 1)
     block   => level_member(horizon, b)
     n       = level_num_members(block)
@@ -5331,6 +5343,7 @@ module gti_demos
   use operation_coupling    , only : weights_of, coupling_inputs
   use operation_weight      , only : scheme_weight
   use operation_expression  , only : expression
+  use operation_domain      , only : continuous_domain, discrete_domain
   use operation_temporal_minimization, only : temporal_minimizer
   use gti_physics           , only : van_der_pol, van_der_pol_energy, van_der_pol_dissipation
   use operation_minimization, only : relative, by_rate
@@ -6339,11 +6352,14 @@ contains
       type(stored_directed_graph) :: instants
       type(stored_field) :: state, design
       type(typed_field_domain) :: instant_states, instant_scalars
+      type(continuous_domain) :: continuous
+      type(discrete_domain) :: domain
       class(field), allocatable :: out
       instants = stored_directed_graph(num_instants, tails=[integer ::], heads=[integer ::])
-      instant_states  = typed_field_domain(instants % vertex_set(), num_instants, &
-           & physics % num_components())
-      instant_scalars = typed_field_domain(instants % vertex_set(), num_instants)
+      continuous      = continuous_domain(physics)
+      domain          = continuous % discrete(instants)
+      instant_states  = domain % state_fields()
+      instant_scalars = domain % design_fields()
       state           = instant_states % state(q)
       design          = instant_scalars % design(spread(nu, 1, num_instants))
       call physics % apply(instants, physics % bind([state, design]), out)
@@ -6358,6 +6374,8 @@ contains
       type(stored_directed_graph) :: graph_of
       type(stored_field) :: state, nu_field, direction
       type(typed_field_domain) :: point_states, point_scalars
+      type(continuous_domain) :: continuous
+      type(discrete_domain) :: domain
       class(field), allocatable :: out
       real(dp), allocatable :: exact(:)
       real(dp) :: q(instants * (degree + 1)), v(instants * (degree + 1))
@@ -6367,9 +6385,10 @@ contains
       physics = van_der_pol(degree)
       call sample(degree, q0, q_top, design, instants, q)
       graph_of = stored_directed_graph(instants, tails=[integer ::], heads=[integer ::])
-      point_states  = typed_field_domain(graph_of % vertex_set(), instants, &
-           & physics % num_components())
-      point_scalars = typed_field_domain(graph_of % vertex_set(), instants)
+      continuous    = continuous_domain(physics)
+      domain        = continuous % discrete(graph_of)
+      point_states  = domain % state_fields()
+      point_scalars = domain % design_fields()
       state         = point_states % state(q)
       nu_field      = point_scalars % design(spread(nu, 1, instants))
       do d = 0, degree
@@ -8620,6 +8639,8 @@ contains
       type(stored_directed_graph) :: unknowns, instants
       type(stored_field) :: state, design_field
       type(typed_field_domain) :: energy_states, instant_scalars
+      type(continuous_domain) :: energy_domain
+      type(discrete_domain) :: energy_points
       real(dp), allocatable :: dt(:), t(:), fixed(:)
       real(dp) :: achieved
       type(expression) :: energy
@@ -8632,9 +8653,10 @@ contains
       unknowns = unknowns_graph(num_instants, degrees)
       instants = stored_directed_graph(num_instants, tails=[integer ::], heads=[integer ::])
       energy   = van_der_pol_energy(state_degree)
-      energy_states  = typed_field_domain(instants % vertex_set(), num_instants, &
-           & energy % num_components())
-      instant_scalars = typed_field_domain(instants % vertex_set(), num_instants)
+      energy_domain  = continuous_domain(energy)
+      energy_points  = energy_domain % discrete(instants)
+      energy_states  = energy_points % functional_state_fields()
+      instant_scalars = energy_points % design_fields()
       state           = energy_states % functional_state(q)
       design_field    = instant_scalars % design(spread(design_value, 1, num_instants))
       f = functional_of(energy, instants, [state, design_field], dt)
@@ -8671,6 +8693,8 @@ contains
       type(stored_directed_graph) :: unknowns, instants
       type(stored_field) :: state, design_field, energy_state, energy_design
       type(typed_field_domain) :: unknown_fields, unknown_designs, energy_states, instant_scalars
+      type(continuous_domain) :: energy_domain
+      type(discrete_domain) :: energy_points
       type(expression) :: energy
       real(dp), allocatable :: dt(:), t(:), fixed(:)
       call cosine_partition(scheme, degrees, duration, num_instants, fixed, dt, t)
@@ -8685,9 +8709,10 @@ contains
       state        = unknown_fields % state(q)
       design_field = unknown_designs % design(spread(design, 1, num_instants))
       energy       = van_der_pol_energy(state_degree)
-      energy_states  = typed_field_domain(instants % vertex_set(), num_instants, &
-           & energy % num_components())
-      instant_scalars = typed_field_domain(instants % vertex_set(), num_instants)
+      energy_domain  = continuous_domain(energy)
+      energy_points  = energy_domain % discrete(instants)
+      energy_states  = energy_points % functional_state_fields()
+      instant_scalars = energy_points % design_fields()
       energy_state    = energy_states % functional_state(q)
       energy_design   = instant_scalars % design(spread(design, 1, num_instants))
       call functional_gradient(energy, instants, &
@@ -8930,6 +8955,7 @@ program graph_time_integrator
   use gti_adaptive          , only : adaptive_partition
   use operation_family      , only : crouzeix_three_stage
   use operation_stencil     , only : stencil
+  use operation_domain      , only : continuous_domain
   use gti_space             , only : spatial_domain, spatial_mesh, geometry_of, coarse_cells
   use gti_field             , only : spatial_discretization_stencil_of, initial_field, against_the_laplacian, &
        & against_the_mode, export_instant
@@ -9150,13 +9176,15 @@ contains
     type(configuration), intent(in) :: cfg
     integer, allocatable :: degrees(:)
     type(expression) :: law
+    type(continuous_domain) :: continuous
     integer :: beside
-    law    = physics_of(cfg)
-    beside = law % num_components() - (law % equation_degree() + 1)
+    law        = physics_of(cfg)
+    continuous = continuous_domain(law)
+    beside     = continuous % num_components() - (continuous % equation_degree() + 1)
     if (beside > 0) then
-       degrees = [law % equation_degree(), beside]
+       degrees = [continuous % equation_degree(), beside]
     else
-       degrees = [law % equation_degree()]
+       degrees = [continuous % equation_degree()]
     end if
   end function state_degrees_of
   subroutine one_row(cfg, names, orders, printed)
@@ -9382,6 +9410,7 @@ contains
   subroutine field_context(cfg)
     type(configuration), intent(in) :: cfg
     type(expression) :: law
+    type(continuous_domain) :: continuous
     real(dp) :: x, y, began
     integer  :: n1, n2
     call refuse_unknown(cfg % initial_field, ['constant', 'mode    ', 'bump    '], 'initial_field')
@@ -9423,7 +9452,8 @@ contains
     ! the initial state stores one value per component the rule reads,
     ! a count the rule itself declares
     law = physics_of(cfg)
-    q0 = initial_field(law, law % num_components(), &
+    continuous = continuous_domain(law)
+    q0 = initial_field(law, continuous % num_components(), &
          & cfg % initial_field, cfg % initial_state, cfg % design, &
          & spatial_discretization_stencil=spatial_discretization_stencil, space=space, a=extent_a, b=extent_b)
   end subroutine field_context

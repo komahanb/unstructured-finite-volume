@@ -1,15 +1,19 @@
 !=====================================================================!
-! A rule stated at one instant of a time hierarchy, stored as data: a
-! graph whose vertices are typed operators and whose edges are the
-! reads between them.
+! A continuous law in named coordinates, stored as data: a graph
+! whose vertices are typed operators and whose edges are the reads
+! between them.
 !
-!      input graph    the instants
-!      state argument the state, one field over the instants with
-!                     num_components() components: the component of
-!                     degree d at instant k is stored at (k-1)(N+1)+d+1
-!      design argument the design, one value per instant, so a design
-!                     that varies in time needs no other shape
-!      output         one value per instant
+! The law itself has no point graph. A caller first states the
+! highest derivative degree for each coordinate, then a discrete
+! domain places that law on a directed graph when values are
+! evaluated.
+!
+!      input graph     the points where the law is evaluated
+!      state argument  the state, one field over those points with
+!                      num_components() components per point
+!      design argument the design, one value per point, so a design
+!                      that varies over the points needs no other shape
+!      output          one value per point
 !
 ! A leaf reads a component of an argument - the state's component of
 ! degree d, or the design - or stores a constant. Every other vertex
@@ -119,7 +123,9 @@ module operation_expression
      procedure :: apply          => expression_apply
      procedure :: partial_action => expression_partial_action
      procedure :: at_instant     => expression_at_instant
+     procedure :: declared        => expression_declared
      procedure :: equation_degree
+     procedure :: num_coordinates
      procedure :: num_components
      procedure :: component_at
      procedure :: declare_degree
@@ -652,6 +658,19 @@ contains
 
     integer :: c
 
+    if (.not. this % declared()) then
+       error stop 'operation_expression: the law is stated before its components are read'
+    end if
+    if (coordinate < FIRST_COORDINATE .or. coordinate > this % num_coordinates()) then
+       error stop 'operation_expression: a component names a declared coordinate'
+    end if
+    if (coordinate > FIRST_COORDINATE .and. order < 1) then
+       error stop 'operation_expression: a component away from the first coordinate names a positive order'
+    end if
+    if (order < 0 .or. order > this % degrees(coordinate)) then
+       error stop 'operation_expression: a component names an order declared on the coordinate'
+    end if
+
     at = order
     if (coordinate == FIRST_COORDINATE) return
     at = this % degrees(FIRST_COORDINATE) + 1
@@ -672,15 +691,41 @@ contains
 
     class(expression), intent(in) :: this
 
+    if (.not. this % declared()) then
+       error stop 'operation_expression: the law is stated before its component count is read'
+    end if
+
     num_components = this % degrees(FIRST_COORDINATE) + 1
     if (size(this % degrees) > 1) num_components = num_components + sum(this % degrees(2:))
 
   end function num_components
 
+  pure logical function expression_declared(this) result(yes)
+
+    class(expression), intent(in) :: this
+
+    yes = allocated(this % degrees)
+
+  end function expression_declared
+
+  pure integer function num_coordinates(this)
+
+    class(expression), intent(in) :: this
+
+    if (.not. this % declared()) then
+       error stop 'operation_expression: the law is stated before its coordinate count is read'
+    end if
+    num_coordinates = size(this % degrees)
+
+  end function num_coordinates
+
   pure integer function equation_degree(this)
 
     class(expression)     , intent(in) :: this
 
+    if (.not. this % declared()) then
+       error stop 'operation_expression: the law is stated before its equation degree is read'
+    end if
     equation_degree = this % degrees(FIRST_COORDINATE)
 
   end function equation_degree
@@ -703,10 +748,10 @@ contains
     nd = this % num_components()
 
     if (size(q) /= input_graph % num_vertices() * nd) then
-       error stop 'operation_expression: the state stores one component per degree per instant'
+       error stop 'operation_expression: the state stores one component per law component per point'
     end if
     if (size(nu) /= input_graph % num_vertices()) then
-       error stop 'operation_expression: the design stores one value per instant'
+       error stop 'operation_expression: the design stores one value per point'
     end if
 
     allocate(values(input_graph % num_vertices()))

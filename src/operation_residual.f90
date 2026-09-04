@@ -34,6 +34,7 @@ module operation_residual
   use field_stored      , only : stored_field, typed_field_domain
   use operation_stencil  , only : stencil, combine_triples
   use operation_expression , only : expression, constant, stated
+  use operation_domain     , only : continuous_domain, discrete_domain
 
   implicit none
 
@@ -109,6 +110,7 @@ contains
     real(dp)              , intent(in) :: fixed(:)
     type(stencil)         , intent(in), optional :: connected_law
     type(residual_operator) :: this
+    type(continuous_domain) :: domain
 
     if (size(fixed_rows) /= size(fixed)) then
        error stop 'operation_residual: one value per fixed component'
@@ -119,6 +121,10 @@ contains
     if (any(at < 0) .or. any(at + degrees > unknowns)) then
        error stop 'operation_residual: an evaluation point''s degree components lie within the unknowns'
     end if
+    domain = continuous_domain(rule)
+    if (degrees < 1 .or. degrees > domain % num_components()) then
+       error stop 'operation_residual: primary degree count is within the law''s component count'
+    end if
 
     this % primary_law = primary_law
     if (present(connected_law)) this % connected_law = connected_law
@@ -128,7 +134,7 @@ contains
     this % degrees  = degrees
     ! the rule states how many components a point stores; the degrees
     ! given are the primary law's portion of them
-    this % connected_degrees = rule % num_components() - degrees
+    this % connected_degrees = domain % num_components() - degrees
     this % primary   = primary
     this % fixed_rows = fixed_rows
     this % fixed      = fixed
@@ -274,10 +280,14 @@ contains
     type(stored_field), allocatable, intent(out) :: point_data(:)
     type(stored_field) :: state, design
     type(typed_field_domain) :: points, designs
+    type(continuous_domain) :: continuous
+    type(discrete_domain) :: domain
     real(dp), allocatable :: design_values(:)
     call bound_real_vector(inputs, this % argument(2), design_values)
-    points = typed_field_domain(this % points % vertex_set(), size(this % at), this % stride())
-    designs = typed_field_domain(this % points % vertex_set(), size(design_values))
+    continuous = continuous_domain(this % physics)
+    domain     = continuous % discrete(this % points)
+    points  = domain % state_fields()
+    designs = domain % design_fields()
     state  = points % state(gathered(this, x))
     design = designs % design(design_values)
     point_data = [state, design]

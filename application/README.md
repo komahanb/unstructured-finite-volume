@@ -196,6 +196,11 @@ What does not trace to the dissertation, and should not be read as if it did:
 
 How the dissertation roles now map onto the code:
 
+- A continuous law is explicit in `src/operation_domain.f90`:
+  `continuous_domain` stores a stated `expression` before any point
+  graph is chosen, and `discrete_domain` places that law on a directed
+  graph's vertex set before constructing the typed fields used for
+  state, design, directions, residuals, and functionals.
 - Element (per-row residual and Jacobian, Ch. 4.6.1) and Function (functional integrand, Ch. 4.6.2) are genuinely abstracted in `src/` — `operation`/`family`/`stencil` and `expression`, reusable by any application. The reach itself (which edge exists, at which two degrees) is abstracted too — `connectivity_graph` (`src/view_directed_connectivity.f90`). The embedding of a scheme's connectivity graph into assembled matrix triples is now `matrix_scheme_connectivity` and `connectivity_terms` (`src/operation_coupling.f90`); the application keeps only the tower-reading functions that build those embeddings.
 - Assembler (Ch. 4.6.3, the transpose-Jacobian-vector-product routines) is not a separate type: both of its operations read a residual through Element's own accessors alone, so they are `constrained` and `linearized` (`src/operation_residual.f90`), functions on Element rather than a fourth interface beside it. `block_residual` (`gti_block`) states only what is genuinely its own — building the concrete block from the data these functions return, and composing its own layout and free unknowns with the constraint just applied.
 - Integrator (Ch. 4.6.4, the forward/backward time loop) now has a reusable solver surface in `src/operation_temporal_minimization.f90`: `temporal_minimizer` extends `minimizer`, owns either a stated dependency schedule or a partitioned residual solve, and delegates each local solve to its named inner minimizer. The application still builds `march_chain`, `chain_derivative`, the block labels and the derivative right-hand sides, because those objects read GTI's tower and functionals; the traversal of a stated schedule or partition no longer belongs to the application.

@@ -577,20 +577,27 @@ operator is discretised by the scheme or stencil that binds it to that
 grid's arithmetic.
 
 **The equation.** `physics = vanderpol`, `state_degree = N`,
-`design = nu`. The residual is one expression, stated once in the
-module `gti_physics`:
+`design = nu`. The Lagrangian is one expression, stated once in the
+module `gti_physics`, over the state `q = unknown()` and the costate
+`unknown(2)`:
 
-    r = stated( derivative(q, N)
+    l = stated( F + unknown(2) * ( derivative(q, N)
               - nu * (1 - derivative(q, 0)**2) * derivative(q, N-1)
-              + derivative(q, 0),  N, 'van der pol residual' )
+              + derivative(q, 0) ),  N, 'van der pol lagrangian' )
 
-`derivative(q, d)` is the state's component of degree d - along the
+The residual is its stationarity in the costate,
+`euler_lagrange(l, 2)`, and the functional is the Lagrangian at zero
+costate, `at_zero(l, 2)`. Neither rewrites the expression: the
+stationarity is the coefficient of one more direction, seeded on the
+costate, in the same evaluation over `derivative_terms`. The
+`lagrangian_expansion` demonstration reads its physics this way and
+reproduces every printed digit of the residual stated directly.
+`derivative(q, d)` is a field's component of degree d - along the
 instants the derivatives are unknowns the scheme relates, so the
 symbol selects and does not differentiate. A new equation is a new
-function beside this one, built from the components, the design,
+Lagrangian beside this one, built from the fields, the design,
 constants, the four arithmetic operations, integer and real powers,
-and sin, cos, exp, log, sqrt. The functionals F are expressions of the
-same kind.
+and sin, cos, exp, log, sqrt.
 
 **The initial state.** `initial_state` lists q(0), q'(0), ...,
 q^(N-1)(0) as blank-separated words, short lists padded with zeros.

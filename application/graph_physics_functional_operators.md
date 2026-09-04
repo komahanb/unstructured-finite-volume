@@ -471,10 +471,16 @@ codebases are read as one construction.
    as a third input to the rule, seeded through the stencil's linear
    map. That is one more argument on `nodal_integrand` and one more
    gather in `gti_block`; it is not in the first slice.
-2. **Several unknowns and several designs.** `unknown(i)`, `design(j)`;
-   the state layout becomes (instant, unknown, degree) and the design
-   (instant, design). `gti_block`'s gather and the tangent assembly
-   index one more dimension. The expression does not change.
+2. **Several unknowns and several designs.** `unknown(i)` is built:
+   a rule is stated over the fields it reads, every field stores the
+   same jet, and a point's tuple lists the fields in order, so the
+   state layout is (instant, field, degree). A Lagrangian linear in a
+   multiplier field yields its rules as partials, `euler_lagrange(l, m)`
+   and `at_zero(l, m)`, with the multiplier absent from the tuple;
+   the van der Pol residual and functionals are read this way. Not
+   built: `design(j)`, a second field in the marched state (the
+   gather in `gti_block` and the tangent assembly still index one
+   field), and a rule at degree zero along the instants.
 3. **Configured physics.** A rule chosen by name in `gti_configuration`,
    which deletes `physics_vanderpol.f90`.
 

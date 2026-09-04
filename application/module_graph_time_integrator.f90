@@ -463,38 +463,68 @@ end module gti_configuration
 module gti_physics
   use util_precision      , only : dp
   use operation_expression, only : expression, unknown, design, derivative, stated, stated_over, &
+       & euler_lagrange, at_zero, &
        & FIRST_COORDINATE, &
        & operator(+), operator(-), operator(*), operator(**)
   implicit none
   private
   public :: van_der_pol, van_der_pol_energy, van_der_pol_dissipation
+  ! the multiplier field of the van der pol Lagrangian: the costate
+  integer, parameter :: COSTATE = 2
 contains
-  function van_der_pol(degree) result(r)
+  !===================================================================!
+  ! The van der pol residual in the state alone, unstated.
+  !===================================================================!
+  function residual_rule(degree) result(r)
     integer, intent(in) :: degree
     type(expression) :: r
     type(expression) :: q, nu
     q  = unknown()
     nu = design()
-    r = stated(derivative(q, degree) - nu * (1.0_dp - derivative(q, 0)**2) * derivative(q, degree - 1) &
-         & + derivative(q, 0), degree, 'van der pol residual')
-  end function van_der_pol
-
-  function van_der_pol_energy(degree) result(f)
-    integer, intent(in) :: degree
+    r = derivative(q, degree) - nu * (1.0_dp - derivative(q, 0)**2) * derivative(q, degree - 1) &
+         & + derivative(q, 0)
+  end function residual_rule
+  !===================================================================!
+  ! The Lagrangian L = F + lambda R over the state and the costate,
+  ! for a functional F in the state. The residual is its stationarity
+  ! in the costate and F is the Lagrangian at zero costate.
+  !===================================================================!
+  function lagrangian(functional, degree, label) result(l)
+    type(expression), intent(in) :: functional
+    integer         , intent(in) :: degree
+    character(len=*), intent(in) :: label
+    type(expression) :: l
+    l = stated(functional + unknown(COSTATE) * residual_rule(degree), degree, label)
+  end function lagrangian
+  function energy_rule() result(f)
     type(expression) :: f
     type(expression) :: q
     q = unknown()
-    f = stated(0.5_dp * (derivative(q, 0)**2 + derivative(q, 1)**2), degree, 'van der pol energy')
-  end function van_der_pol_energy
-
-  function van_der_pol_dissipation(degree) result(f)
-    integer, intent(in) :: degree
+    f = 0.5_dp * (derivative(q, 0)**2 + derivative(q, 1)**2)
+  end function energy_rule
+  function dissipation_rule() result(f)
     type(expression) :: f
     type(expression) :: q, nu
     q  = unknown()
     nu = design()
-    f = stated(nu * (1.0_dp - derivative(q, 0)**2) * derivative(q, 1) * derivative(q, 1), &
-         & degree, 'van der pol dissipation')
+    f = nu * (1.0_dp - derivative(q, 0)**2) * derivative(q, 1) * derivative(q, 1)
+  end function dissipation_rule
+  function van_der_pol(degree) result(r)
+    integer, intent(in) :: degree
+    type(expression) :: r
+    r = euler_lagrange(lagrangian(energy_rule(), degree, 'van der pol lagrangian'), COSTATE, &
+         & 'van der pol residual')
+  end function van_der_pol
+  function van_der_pol_energy(degree) result(f)
+    integer, intent(in) :: degree
+    type(expression) :: f
+    f = at_zero(lagrangian(energy_rule(), degree, 'van der pol lagrangian'), COSTATE, 'van der pol energy')
+  end function van_der_pol_energy
+  function van_der_pol_dissipation(degree) result(f)
+    integer, intent(in) :: degree
+    type(expression) :: f
+    f = at_zero(lagrangian(dissipation_rule(), degree, 'van der pol lagrangian'), COSTATE, &
+         & 'van der pol dissipation')
   end function van_der_pol_dissipation
 end module gti_physics
 module gti_sweeps

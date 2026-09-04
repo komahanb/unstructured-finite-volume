@@ -101,6 +101,7 @@ module util_derivative_terms
 
   private
   public :: derivative_terms, value, mixed_partial, coefficient, max_subset_width
+  public :: widened, partial
   public :: integer_power, composed, leibniz_parts, inner_product
   public :: operator(+), operator(-), operator(*), operator(/), operator(**)
   public :: sin, cos, exp, log, sqrt
@@ -236,6 +237,57 @@ contains
     this % terms(:) = c
 
   end function create_from_coefficients
+
+  !===================================================================!
+  ! The same quantity over more directions, the added ones being the
+  ! highest: a subset of the old directions has the same mask, so the
+  ! coefficients are copied in place and every subset that contains
+  ! an added direction stores zero. A count below the present one
+  ! stops the program: a direction is not discarded.
+  !===================================================================!
+
+  pure function widened(x, num_directions) result(this)
+
+    type(derivative_terms), intent(in) :: x
+    integer               , intent(in) :: num_directions
+    type(derivative_terms) :: this
+
+    if (num_directions < x % directions) then
+       error stop 'util_derivative_terms: widening adds directions'
+    end if
+    this = create_constant(0.0_dp, num_directions)
+    this % terms(1:size(x % terms)) = x % terms
+
+  end function widened
+
+  !===================================================================!
+  ! The derivative along direction i, as a quantity over the other
+  ! directions: the coefficient of a subset m of those is the
+  ! coefficient of m with i added. A direction outside those declared
+  ! stops the program.
+  !===================================================================!
+
+  pure function partial(x, i) result(this)
+
+    type(derivative_terms), intent(in) :: x
+    integer               , intent(in) :: i
+    type(derivative_terms) :: this
+
+    integer :: m, low, high, bit
+
+    if (i < 1 .or. i > x % directions) then
+       error stop 'util_derivative_terms: the direction is one of those declared'
+    end if
+    this = create_constant(0.0_dp, x % directions - 1)
+    bit = 2**(i - 1)
+    do m = 0, size(this % terms) - 1
+       ! the mask over the remaining directions, with i's bit inserted
+       low  = iand(m, bit - 1)
+       high = m - low
+       this % terms(m + 1) = x % terms(low + 2 * high + bit + 1)
+    end do
+
+  end function partial
 
   pure integer function num_directions(this)
 

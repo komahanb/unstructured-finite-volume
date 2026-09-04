@@ -68,6 +68,9 @@ module operation_fitting
      real(dp), allocatable :: at(:)
      real(dp) :: direction(3) = [1.0_dp, 0.0_dp, 0.0_dp]
      real(dp) :: scale        = 1.0_dp
+     ! the derivative multi-index the fit reads, in place of the
+     ! slope along the direction, when given
+     integer, allocatable :: orders(:)
 
    contains
 
@@ -130,17 +133,24 @@ module operation_fitting
 
 contains
 
-  type(fit) function create_fit(shape, at, direction, scale) result(this)
+  type(fit) function create_fit(shape, at, direction, scale, orders) result(this)
 
     class(form), intent(in)        :: shape
     real(dp), intent(in)           :: at(:)
     real(dp), intent(in)           :: direction(3)
     real(dp), intent(in), optional :: scale
+    integer , intent(in), optional :: orders(:)
 
     allocate(this % shape, source=shape)
     this % at        = at
     this % direction = direction
     if (present(scale)) this % scale = scale
+    if (present(orders)) then
+       if (size(orders) /= shape % dimension() .or. any(orders < 0)) then
+          error stop 'fitting: one order per coordinate of the form, none negative'
+       end if
+       this % orders = orders
+    end if
 
     ! ONE ARGUMENT: THE FIELD THE FORM IS FITTED TO. Its entries are
     ! the points of the point set and its components are their
@@ -215,8 +225,12 @@ contains
           point_weight(j) = 1.0_dp / max(point_weight(j), nearest)
        end do
 
-       call this % shape % slopes(this % at, this % at, &
-            & this % direction, r)
+       if (allocated(this % orders)) then
+          call this % shape % derivatives(this % at, this % at, this % orders, r)
+       else
+          call this % shape % slopes(this % at, this % at, &
+               & this % direction, r)
+       end if
        r = this % scale * r
 
        ! Membership is the member set: a table entry outside the form's

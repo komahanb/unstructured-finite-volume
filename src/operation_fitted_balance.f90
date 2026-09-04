@@ -59,6 +59,7 @@ module operation_fitted_balance
 
   private
   public :: fitted_balance_stencil
+  public :: fitted_derivative_stencil
 
 contains
 
@@ -195,6 +196,104 @@ contains
          & label='fitted balance')
 
   end function fitted_balance_stencil
+
+  !===================================================================!
+  ! The derivative of a multi-index at every cell centre, fitted on
+  ! the cell's neighbourhood over the passed form: one row per cell,
+  ! its weights on the neighbourhood, no constant. The neighbourhood
+  ! grows ring by ring until the fit has as many points as the form
+  ! has members, or as many rings as given.
+  !===================================================================!
+
+  function fitted_derivative_stencil(m, shape, orders, rings) result(op)
+
+    type(mesh) , intent(in) :: m
+    class(form), intent(in) :: shape
+    integer    , intent(in) :: orders(:)
+    integer    , intent(in), optional :: rings
+
+    type(stencil) :: op
+    type(fit) :: fitting
+    type(stored_directed_graph) :: constellation
+    type(stored_field)   :: positions
+    class(field), allocatable :: fitted
+    real(dp), allocatable :: centres(:), pts(:), w(:), weights(:)
+    integer , allocatable :: rows(:), columns(:), cell_neighbourhood(:)
+    type(triple_list) :: triples
+    integer :: nv, c, j, npts, width, d
+
+    width = 0
+    if (present(rings)) width = rings
+    if (present(rings) .and. width < 1) then
+       error stop 'fitted_derivative: a neighbourhood is at least one ring'
+    end if
+    nv = m % num_vertices()
+    d  = m % dimension
+    if (size(orders) /= d) then
+       error stop 'fitted_derivative: one order per coordinate of the mesh'
+    end if
+    call values_of(m % cell_centre(), centres)
+    do c = 1, nv
+       call cell_neighbourhood_of(m, c, cell_neighbourhood, width, shape % num_members())
+       npts = size(cell_neighbourhood)
+       allocate(pts(d * npts))
+       do j = 1, npts
+          pts(d * j - d + 1 : d * j) = centres(d * cell_neighbourhood(j) - d + 1 : d * cell_neighbourhood(j))
+       end do
+       constellation = stored_directed_graph(npts, tails=[integer ::], heads=[integer ::])
+       positions = stored_field('positions', constellation % vertex_set(), &
+            & constellation % num_vertices(), num_components=d)
+       call positions % set_real_vector(pts)
+       fitting = fit(shape, at=centres(d * c - d + 1 : d * c), &
+            & direction=[1.0_dp, 0.0_dp, 0.0_dp], orders=orders)
+       call fitting % apply(constellation, fitting % bind([positions]), fitted)
+       call fitted % real_vector(w)
+       do j = 1, npts
+          call triples % assign(c, cell_neighbourhood(j), w(j))
+       end do
+       deallocate(pts)
+    end do
+    call triples % entries(rows, columns, weights)
+    op = stencil(rows, columns, weights, spread(0.0_dp, 1, nv), label='fitted derivative')
+
+  end function fitted_derivative_stencil
+
+  !===================================================================!
+  ! A cell's neighbourhood: itself and its neighbours ring by ring,
+  ! each once, as many rings as given or until at least the count
+  ! required is reached.
+  !===================================================================!
+
+  subroutine cell_neighbourhood_of(m, c, cell_neighbourhood, rings, at_least)
+
+    type(mesh), intent(in) :: m
+    integer   , intent(in) :: c, rings, at_least
+    integer, allocatable, intent(out) :: cell_neighbourhood(:)
+
+    integer, allocatable :: near(:), frontier(:)
+    integer :: j, r, k, before
+
+    cell_neighbourhood = [c]
+    r = 0
+    do
+       if (rings > 0) then
+          if (r >= rings) exit
+       else
+          if (r >= 1 .and. size(cell_neighbourhood) >= at_least) exit
+       end if
+       before   = size(cell_neighbourhood)
+       frontier = cell_neighbourhood
+       do k = 1, size(frontier)
+          call m % adjacent_vertices(frontier(k), near)
+          do j = 1, size(near)
+             call extend(cell_neighbourhood, near(j))
+          end do
+       end do
+       r = r + 1
+       if (size(cell_neighbourhood) == before) exit
+    end do
+
+  end subroutine cell_neighbourhood_of
 
   !===================================================================!
   ! The face's neighbourhood: its two cells and their neighbours,

@@ -81,6 +81,7 @@ module field_forms
      procedure :: num_members
      procedure(form_values_interface), deferred :: values
      procedure(form_slopes_interface), deferred :: slopes
+     procedure(form_derivatives_interface), deferred :: derivatives
      procedure(form_count_interface) , deferred :: dimension
 
      procedure :: declare_basis
@@ -105,6 +106,15 @@ module field_forms
        real(dp), intent(in)  :: x(:), at(:), direction(:)
        real(dp), intent(out) :: dphi(:)
      end subroutine form_slopes_interface
+     ! the derivative of each entry of the multi-index orders, one
+     ! order per coordinate, at x reckoned about at
+     pure subroutine form_derivatives_interface(this, x, at, orders, dphi)
+       import :: form, dp
+       class(form), intent(in) :: this
+       real(dp), intent(in)  :: x(:), at(:)
+       integer , intent(in)  :: orders(:)
+       real(dp), intent(out) :: dphi(:)
+     end subroutine form_derivatives_interface
 
      ! how many coordinates the form reads
      pure integer function form_count_interface(this)
@@ -136,6 +146,7 @@ module field_forms
 
      procedure :: values    => polynomial_values
      procedure :: slopes    => polynomial_slopes
+     procedure :: derivatives => polynomial_derivatives
      procedure :: dimension => polynomial_dimension
 
   end type polynomial_form
@@ -164,6 +175,7 @@ module field_forms
 
      procedure :: values    => harmonic_values
      procedure :: slopes    => harmonic_slopes
+     procedure :: derivatives => harmonic_derivatives
      procedure :: dimension => harmonic_dimension
 
   end type harmonic_form
@@ -379,6 +391,40 @@ contains
 
   end subroutine polynomial_slopes
 
+  !-------------------------------------------------------------------!
+  ! The derivative of each monomial of the multi-index orders: for
+  ! each coordinate the falling factorial of the power times the
+  ! monomial of the power less the order, zero where the order
+  ! exceeds the power.
+  !-------------------------------------------------------------------!
+
+  pure subroutine polynomial_derivatives(this, x, at, orders, dphi)
+
+    class(polynomial_form), intent(in) :: this
+    real(dp), intent(in)  :: x(:), at(:)
+    integer , intent(in)  :: orders(:)
+    real(dp), intent(out) :: dphi(:)
+
+    real(dp) :: r(size(this % power, 1))
+    integer :: m, c, k
+
+    r = x(1:size(r)) - at(1:size(r))
+    do m = 1, size(dphi)
+       dphi(m) = 1.0_dp
+       do c = 1, size(r)
+          if (orders(c) > this % power(c, m)) then
+             dphi(m) = 0.0_dp
+             exit
+          end if
+          do k = 0, orders(c) - 1
+             dphi(m) = dphi(m) * real(this % power(c, m) - k, dp)
+          end do
+          dphi(m) = dphi(m) * monomial(r(c), this % power(c, m) - orders(c))
+       end do
+    end do
+
+  end subroutine polynomial_derivatives
+
   pure real(dp) function monomial(r, power) result(v)
 
     real(dp), intent(in) :: r
@@ -443,6 +489,41 @@ contains
 
   end subroutine harmonic_slopes
 
+
+  !===================================================================!
+  ! The derivative of the multi-index orders of a wave: each order
+  ! along a coordinate multiplies by that wavenumber and advances the
+  ! phase by a quarter turn, so the total order n turns sin into
+  ! sin, cos, -sin, -cos as n runs mod 4.
+  !===================================================================!
+
+  pure subroutine harmonic_derivatives(this, x, at, orders, dphi)
+
+    class(harmonic_form), intent(in) :: this
+    real(dp), intent(in)  :: x(:), at(:)
+    integer , intent(in)  :: orders(:)
+    real(dp), intent(out) :: dphi(:)
+
+    real(dp) :: phase, factor, s, c
+    integer :: n, i
+
+    phase  = dot_product(this % wavenumber, x - at)
+    factor = 1.0_dp
+    do i = 1, size(orders)
+       factor = factor * this % wavenumber(i) ** orders(i)
+    end do
+    n = sum(orders)
+    select case (mod(n, 4))
+    case (0); s =  sin(phase); c =  cos(phase)
+    case (1); s =  cos(phase); c = -sin(phase)
+    case (2); s = -sin(phase); c = -cos(phase)
+    case default; s = -cos(phase); c =  sin(phase)
+    end select
+    dphi(1) = merge(1.0_dp, 0.0_dp, n == 0)
+    dphi(2) = factor * s
+    dphi(3) = factor * c
+
+  end subroutine harmonic_derivatives
 
   pure integer function harmonic_dimension(this)
 

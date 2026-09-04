@@ -460,17 +460,18 @@ codebases are read as one construction.
 
 ## Extensions, in order
 
-1. **Space.** `derivative(q, [a, b])`: a vertex kind `SPATIAL(alpha)`, a derivative
-   multi-index over the spatial axes of the coordinate system the
-   statement is laid on (positions in the axis sequence; labels come
-   from the coordinates, not from a fixed list of names). Compile: every `SPATIAL` vertex
-   that enters the root linearly is moved into the stencil `gti_space`
-   builds today, and the rest of the tree is the nodal rule. A
-   `SPATIAL` vertex inside a product with the state (Burgers,
-   advection) is not nodal; it needs the stencil's image at the point
-   as a third input to the rule, seeded through the stencil's linear
-   map. That is one more argument on `nodal_integrand` and one more
-   gather in `gti_block`; it is not in the first slice.
+1. **Space.** Built as jet components rather than a vertex kind:
+   `derivative_along(q, c, k)` reads the k-th derivative along the
+   coordinate c, a component of the state's tuple, and with
+   `rows = ... state-spatial-derivatives` each component is tied to
+   the values by the fit's row (`fitted_derivative_stencil`, the
+   derivative multi-index of the polynomial form at the cell centre),
+   assembled beside the family's rows and read by the same tangent,
+   adjoint and Lagrangian terms. A spatial derivative inside a product
+   with the state is then a product of leaves, nodal, with exact
+   partials from the jet arithmetic. Without the spatial rows the
+   linear spatial law is substituted as the balance stencil, as
+   before (`config/mode.cfg` against `config/mode_jet.cfg`).
 2. **Several unknowns and several designs.** `unknown(i)` is built:
    a rule is stated over the fields it reads, each field with its own
    degree along the instants, and a point's tuple lists the fields in

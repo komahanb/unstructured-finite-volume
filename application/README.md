@@ -708,9 +708,22 @@ xi and eta, discretised by the same grid procedures — extended
 domains get grids, points pass through — and mapped into the plane by
 `spatial_geometry` (`cartesian | circular | elliptical`), whose
 mapping pushes the parametric measure forward into cell volumes. The
-operator side follows its own arrow: the diffusion operator
-is a fitted polynomial balance of degree `spatial_order` with
-conductivity `diffusion`, bound to that mesh.
+operator side follows its own arrow, in one of two forms chosen by
+`rows`. With `rows = states state-time-derivatives` the diffusion
+operator is a fitted polynomial balance of degree `spatial_order` with
+conductivity `diffusion`, substituted into the state row. With
+`state-spatial-derivatives` listed as well, the state stores the jet
+along space, the first and second derivative along each coordinate,
+each component tied to the values at every instant by the fit's own
+row, the derivative of the polynomial form at the cell centre over the
+cell's neighbourhood, and the law reads the components, so a term
+nonlinear in a spatial derivative is a product of leaves. The two
+forms are the same physics at two discretisations: on the rectangle
+at `nu = 0` against the exact separated mode (`config/mode.cfg`,
+`config/mode_jet.cfg`), over 10 x 5, 20 x 10 and 40 x 20 cells the
+bdf2 error at the last instant reads 6.4e-3, 1.9e-3, 7.6e-4 for the
+balance and 2.3e-2, 4.9e-3, 1.2e-3 for the jet, both of second order.
+The tangent and adjoint over the jet rows agree to 4.4e-16.
 `space = coupled | sequential` and `time = coupled | sequential` state
 the two dimensions apart. A coupled dimension keeps every member in
 one system; a sequential one solves the members in turn, time in the

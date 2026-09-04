@@ -462,8 +462,8 @@ end module gti_configuration
 
 module gti_physics
   use util_precision      , only : dp
-  use operation_expression, only : expression, unknown, design, derivative, stated, stated_over, &
-       & euler_lagrange, at_zero, &
+  use operation_expression, only : expression, unknown, design, derivative, derivative_along, &
+       & stated, stated_over, euler_lagrange, at_zero, &
        & FIRST_COORDINATE, &
        & operator(+), operator(-), operator(*), operator(**)
   implicit none
@@ -480,11 +480,14 @@ contains
   ! The van der pol residual in the state alone, unstated; in the
   ! algebraic form q**2 is read from the field y.
   !===================================================================!
-  function residual_rule(degree, algebraic) result(r)
-    integer, intent(in) :: degree
-    logical, intent(in) :: algebraic
+  function residual_rule(degree, algebraic, diffusion, dimension) result(r)
+    integer , intent(in) :: degree
+    logical , intent(in) :: algebraic
+    real(dp), intent(in), optional :: diffusion
+    integer , intent(in), optional :: dimension
     type(expression) :: r
     type(expression) :: q, nu, q_square
+    integer :: j
     q  = unknown(STATE)
     nu = design()
     if (algebraic) then
@@ -493,6 +496,14 @@ contains
        q_square = derivative(q, 0)**2
     end if
     r = derivative(q, degree) - nu * (1.0_dp - q_square) * derivative(q, degree - 1) + derivative(q, 0)
+    ! the spatial law read from the jet: minus the diffusion times the
+    ! second derivative along each spatial coordinate, the coordinates
+    ! declared after the instants
+    if (present(dimension)) then
+       do j = 1, dimension
+          r = r - diffusion * derivative_along(q, FIRST_COORDINATE + j, 2)
+       end do
+    end if
   end function residual_rule
   !===================================================================!
   ! The Lagrangian L = F + lambda R over the state and the costate,
@@ -501,20 +512,29 @@ contains
   ! stationarities in the multipliers and F is the Lagrangian at zero
   ! multipliers.
   !===================================================================!
-  function lagrangian(functional, degree, label, algebraic) result(l)
+  function lagrangian(functional, degree, label, algebraic, diffusion, dimension) result(l)
     type(expression), intent(in) :: functional
     integer         , intent(in) :: degree
     character(len=*), intent(in) :: label
     logical         , intent(in) :: algebraic
+    real(dp)        , intent(in), optional :: diffusion
+    integer         , intent(in), optional :: dimension
     type(expression) :: l
-    type(expression) :: q
+    type(expression) :: q, rule
+    integer, allocatable :: degrees(:)
+    integer :: j
     q = unknown(STATE)
+    ! the state's degrees: the equation's along the instants, two
+    ! along each spatial coordinate the law reads
+    degrees = [degree]
+    if (present(dimension)) degrees = [degree, (2, j = 1, dimension)]
     if (algebraic) then
-       l = stated(functional + unknown(LAMBDA) * residual_rule(degree, algebraic) &
-            & + unknown(MU) * (unknown(SQUARE) - derivative(q, 0)**2), &
-            & degree, label, field_degrees=[degree, 0, 0, 0], multipliers=2)
+       rule = functional + unknown(LAMBDA) * residual_rule(degree, algebraic, diffusion, dimension) &
+            & + unknown(MU) * (unknown(SQUARE) - derivative(q, 0)**2)
+       l = stated_over(rule, degrees, label, field_degrees=[degree, 0, 0, 0], multipliers=2)
     else
-       l = stated(functional + unknown(COSTATE) * residual_rule(degree, algebraic), degree, label, multipliers=1)
+       rule = functional + unknown(COSTATE) * residual_rule(degree, algebraic, diffusion, dimension)
+       l = stated_over(rule, degrees, label, multipliers=1)
     end if
   end function lagrangian
   function energy_rule() result(f)
@@ -535,12 +555,14 @@ contains
   ! stationarity in the first multiplier. An unknown name is refused
   ! by the caller.
   !===================================================================!
-  function physics_named(name, degree) result(r)
+  function physics_named(name, degree, diffusion, dimension) result(r)
     character(len=*), intent(in) :: name
     integer         , intent(in) :: degree
+    real(dp)        , intent(in), optional :: diffusion
+    integer         , intent(in), optional :: dimension
     type(expression) :: r
-    r = euler_lagrange(lagrangian(energy_rule(), degree, 'van der pol lagrangian', algebraic_named(name)), 1, &
-         & 'van der pol residual')
+    r = euler_lagrange(lagrangian(energy_rule(), degree, 'van der pol lagrangian', algebraic_named(name), &
+         & diffusion, dimension), 1, 'van der pol residual')
   end function physics_named
   !===================================================================!
   ! A functional by name over the named physics: the Lagrangian at
@@ -608,6 +630,7 @@ module gti_layout
      procedure :: row
      procedure :: field_of
      procedure :: degree_of
+     procedure :: offset_after
      procedure :: primary_row
      procedure :: primary_rows
   end type tuple_layout
@@ -657,6 +680,19 @@ contains
     degree_of = index - this % offset(this % field_of(index))
   end function degree_of
   !===================================================================!
+  ! The first tuple index past a field: the next field's offset, or
+  ! the stride for the last.
+  !===================================================================!
+  pure integer function offset_after(this, field)
+    class(tuple_layout), intent(in) :: this
+    integer            , intent(in) :: field
+    if (field < this % fields) then
+       offset_after = this % offset(field + 1)
+    else
+       offset_after = this % stride
+    end if
+  end function offset_after
+  !===================================================================!
   ! The row a field's rule governs under a family, as a tuple index,
   ! and the rows of every field.
   !===================================================================!
@@ -692,7 +728,7 @@ module gti_sweeps
   integer, parameter :: forward_pass = 1
   integer, parameter :: reverse_pass = 2
   public :: set_linear_solver, set_jacobian, set_storage, set_multigrid
-  public :: set_rows, set_elimination
+  public :: set_rows, set_elimination, spatial_rows
   public :: set_newton_order, newton_order
   public :: set_aggregates, set_coarse_nodes, coarse_nodes, jacobian_present, multigrid_on
   public :: read_inner, store_inner, clear_inner, set_linear_stopping, set_linear_budget
@@ -701,6 +737,7 @@ module gti_sweeps
   character(len=16), save :: chosen_solver   = 'direct'
   character(len=16), save :: chosen_jacobian = 'matrix'
   character(len=64), save :: chosen_rows        = 'states state-time-derivatives'
+  logical, save :: rows_in_space = .false.
   character(len=16), save :: chosen_elimination = 'symbolic'
   integer          , save :: chosen_newton_order = 1
   character(len=16), save :: chosen_storage  = 'dense'
@@ -772,6 +809,9 @@ contains
     chosen_solver = name
     call clear_inner()
   end subroutine set_linear_solver
+  logical function spatial_rows()
+    spatial_rows = rows_in_space
+  end function spatial_rows
   subroutine set_rows(name)
     character(len=*), intent(in) :: name
     logical :: states, in_time, in_space
@@ -792,10 +832,10 @@ contains
        error stop 'gti_sweeps: leaving the time derivatives out of rows is not implemented; &
             &the scheme assembles one row for each of them'
     end if
-    if (in_space) then
-       error stop 'gti_sweeps: assembling rows for the spatial derivatives is not implemented; &
-            &the spatial law is stored in the state row'
-    end if
+    ! with the spatial derivatives as rows the state stores the jet
+    ! along space and the law reads it; without them the spatial law
+    ! is substituted into the state row
+    rows_in_space = in_space
     chosen_rows = name
     call clear_inner()
   end subroutine set_rows
@@ -1058,6 +1098,10 @@ module gti_expansion
      type(tuple_layout)      , private :: layout
      integer                 , private :: node_extent = 1
      integer                 , private :: spatial_coupling_at = 0
+     ! the coupling of each component of the tuple, when the spatial
+     ! derivatives are components tied by the fit's rows; zero for
+     ! a component without one
+     integer, allocatable    , private :: component_coupling_at(:)
      integer, allocatable    , private :: design_at(:), design_kind(:)
      type(expression)        , private :: rule_kept
      class(grid), allocatable, private :: steps_kept
@@ -1169,7 +1213,8 @@ contains
     end do
   end function in_relation_order
   subroutine build(this, physics, schemes, instants, steps, &
-       & max_derivative_degree, parameter, nodes, spatial_discretization_stencil, weights, block_steps)
+       & max_derivative_degree, parameter, nodes, spatial_discretization_stencil, weights, block_steps, &
+       & spatial_derivative_stencils)
     class(expansion)      , intent(inout) :: this
     type(expression)      , intent(in)    :: physics
     type(family_container)   , intent(in)    :: schemes(:)
@@ -1180,10 +1225,11 @@ contains
     integer      , intent(in), optional   :: nodes
     type(stencil), intent(in), optional   :: spatial_discretization_stencil
     real(dp)     , intent(in), optional   :: weights(:), block_steps(:)
+    type(stencil), intent(in), optional   :: spatial_derivative_stencils(:)
     real(dp), allocatable :: dt(:)
     type(continuous_domain) :: continuous
     integer , allocatable :: sweeps(:)
-    integer :: s
+    integer :: s, i
     if (this % root_at /= 0) then
        error stop 'gti_expansion: an expansion is built once'
     end if
@@ -1200,6 +1246,18 @@ contains
     this % node_extent = 1
     if (present(nodes)) this % node_extent = nodes
     if (present(spatial_discretization_stencil)) this % spatial_coupling_at = spatial_discretization_coupling(this, spatial_discretization_stencil)
+    ! the first field's spatial components follow its jet along the
+    ! instants; each is tied to the field's values by its own stencil
+    if (present(spatial_derivative_stencils)) then
+       allocate(this % component_coupling_at(this % width), source=0)
+       if (this % layout % count(1) + size(spatial_derivative_stencils) > this % layout % offset_after(1)) then
+          error stop 'gti_expansion: one derivative stencil per spatial component of the first field'
+       end if
+       do i = 1, size(spatial_derivative_stencils)
+          this % component_coupling_at(this % layout % count(1) + i) = &
+               & spatial_discretization_coupling(this, spatial_derivative_stencils(i))
+       end do
+    end if
     this % rule_kept = physics
     allocate(this % steps_kept, source=steps)
     if (present(block_steps)) then
@@ -1525,6 +1583,8 @@ contains
     if (evaluated .and. degree == scheme % primary_degree(this % degrees - 1) &
          & .and. this % spatial_coupling_at > 0) then
        at = this % nodes % assemble([integer ::], this % spatial_coupling_at)
+    else if (component_coupled(this, degree)) then
+       at = this % nodes % assemble([integer ::], this % component_coupling_at(degree + 1))
     else
        at = this % nodes % assemble([integer ::], 0)
     end if
@@ -1536,6 +1596,13 @@ contains
        call this % values % attach_unknown(this % node(at))
     end if
   end function one_component
+  pure logical function component_coupled(this, degree)
+    class(expansion), intent(in) :: this
+    integer         , intent(in) :: degree
+    component_coupled = .false.
+    if (.not. allocated(this % component_coupling_at)) return
+    component_coupled = this % component_coupling_at(degree + 1) > 0
+  end function component_coupled
   function written(n) result(name)
     class(*), intent(in) :: n
     character(len=:), allocatable :: name
@@ -1798,6 +1865,10 @@ module gti_block
      type(block_layout)      , private :: layout
      integer, allocatable    , private :: free(:)
      type(matrix_scheme_connectivity), allocatable, private :: connectivity(:)
+     ! the rows tying the spatial derivative components to the values,
+     ! as the derived rows read them: row, column, minus the weight
+     integer , allocatable, private :: spatial_r(:), spatial_c(:)
+     real(dp), allocatable, private :: spatial_w(:)
    contains
      procedure :: constrained_block => block_constrained
      procedure :: linear_block => block_linear_block
@@ -1810,6 +1881,7 @@ module gti_block
      procedure :: spatial_discretization_laid
      procedure :: aggregates
      procedure :: with_connectivity
+     procedure :: with_spatial_rows
      procedure :: rows_terms
      procedure :: member_order
      procedure :: sweep_labels
@@ -1959,6 +2031,14 @@ contains
     call this % attach_connected_stencil(stencil(r(1:n), c(1:n), w(1:n), spread(0.0_dp, 1, this % num_unknowns()), &
          & 'spatial discretization stencil'))
   end subroutine spatial_discretization_laid
+  subroutine with_spatial_rows(this, r, c, w)
+    class(block_residual), intent(inout) :: this
+    integer              , intent(in)    :: r(:), c(:)
+    real(dp)             , intent(in)    :: w(:)
+    this % spatial_r = r
+    this % spatial_c = c
+    this % spatial_w = w
+  end subroutine with_spatial_rows
   subroutine with_connectivity(this, connectivity)
     class(block_residual), intent(inout) :: this
     type(matrix_scheme_connectivity) , intent(in)    :: connectivity(:)
@@ -1970,10 +2050,24 @@ contains
     real(dp)             , intent(in) :: dt(:), seeds(:,:)
     integer , allocatable, intent(out) :: r(:), c(:)
     real(dp), allocatable, intent(out) :: w(:,:)
+    real(dp), allocatable :: appended(:,:)
+    integer :: n, ns
     if (.not. allocated(this % connectivity)) then
        error stop 'gti_block: the block was built without its connectivity'
     end if
     call connectivity_terms(scheme, this % connectivity, this % num_nodes(), this % num_degrees(), dt, seeds, r, c, w)
+    ! the spatial rows read no step, so their derivatives in the
+    ! steps are zero
+    if (allocated(this % spatial_r)) then
+       n  = size(r)
+       ns = size(this % spatial_r)
+       allocate(appended(n + ns, 0:size(seeds, 2)), source=0.0_dp)
+       appended(1:n, :) = w
+       appended(n + 1:, 0) = this % spatial_w
+       r = [r, this % spatial_r]
+       c = [c, this % spatial_c]
+       call move_alloc(appended, w)
+    end if
   end subroutine rows_terms
   function aggregates(this, cell) result(aggregate)
     class(block_residual), intent(in) :: this
@@ -2019,6 +2113,7 @@ contains
     lin % residual_operator = this % residual_operator % linearize(input_graph, inputs, rhs, transposed, mark)
     lin % layout = this % layout
     if (allocated(this % free)) lin % free = this % free
+    if (allocated(this % spatial_r)) call lin % with_spatial_rows(this % spatial_r, this % spatial_c, this % spatial_w)
   end function block_linear_block
   !===================================================================!
   ! THE BLOCK CONSTRAINED TO A SUBSET OF ITS OWN UNKNOWNS. this %
@@ -2043,7 +2138,34 @@ contains
     else
        sub % free = free
     end if
+    if (allocated(this % spatial_r)) call spatial_rows_constrained(this, free, sub)
   end function block_constrained
+  !===================================================================!
+  ! The spatial rows of a constrained block: those whose row and
+  ! column are both free, renumbered onto the free unknowns.
+  !===================================================================!
+  subroutine spatial_rows_constrained(this, free, sub)
+    class(block_residual), intent(in)    :: this
+    integer              , intent(in)    :: free(:)
+    type(block_residual) , intent(inout) :: sub
+    integer, allocatable :: sub_of(:), r(:), c(:)
+    real(dp), allocatable :: w(:)
+    integer :: e, n
+    allocate(sub_of(this % num_unknowns()), source=0)
+    do e = 1, size(free)
+       sub_of(free(e)) = e
+    end do
+    allocate(r(size(this % spatial_r)), c(size(this % spatial_r)), w(size(this % spatial_r)))
+    n = 0
+    do e = 1, size(this % spatial_r)
+       if (sub_of(this % spatial_r(e)) == 0 .or. sub_of(this % spatial_c(e)) == 0) cycle
+       n    = n + 1
+       r(n) = sub_of(this % spatial_r(e))
+       c(n) = sub_of(this % spatial_c(e))
+       w(n) = this % spatial_w(e)
+    end do
+    call sub % with_spatial_rows(r(1:n), c(1:n), w(1:n))
+  end subroutine spatial_rows_constrained
   !===================================================================!
   ! THE LABELLING A SWEEP ITERATES OVER, and the order of traversal.
   ! Space and time are chosen separately: a dimension left coupled places
@@ -2270,11 +2392,13 @@ contains
     end if
     q = consistent_states(physics, degrees, reshape(lower, [degrees - 1, 1]), design_value)
   end function consistent_state
-  function consistent_states(physics, degrees, lower, design_value, spatial_discretization_stencil) result(q)
+  function consistent_states(physics, degrees, lower, design_value, spatial_discretization_stencil, &
+       & spatial_derivative_stencils) result(q)
     type(expression)      , intent(in)           :: physics
     integer               , intent(in)           :: degrees
     real(dp)              , intent(in)           :: lower(:,:), design_value
     type(stencil)         , intent(in), optional :: spatial_discretization_stencil
+    type(stencil)         , intent(in), optional :: spatial_derivative_stencils(:)
     real(dp), allocatable :: q(:)
     type(stored_directed_graph) :: points
     type(stored_field) :: state, design_field, direction
@@ -2332,6 +2456,18 @@ contains
           given = given + count(f) - 1
        end do
     end do
+    ! the first field's spatial components are its stencils applied
+    ! to its values, given below its highest
+    if (present(spatial_derivative_stencils)) then
+       do k = 1, size(spatial_derivative_stencils)
+          call spatial_derivative_stencils(k) % weights % real_vector(weights)
+          do j = 1, spatial_derivative_stencils(k) % pattern % num_edges()
+             i = spatial_derivative_stencils(k) % pattern % edge_head(j)
+             q((i - 1) * degrees + count(1) + k) = q((i - 1) * degrees + count(1) + k) &
+                  & + weights(j) * lower(1, spatial_derivative_stencils(k) % pattern % edge_tail(j))
+          end do
+       end do
+    end if
     continuous    = continuous_domain(physics)
     point_domain  = continuous % discrete(points)
     point_scalars = point_domain % design_fields()
@@ -2370,7 +2506,7 @@ contains
        end do
        if (fields == 1) then
           do i = 1, nodes
-             q(i * degrees) = q(i * degrees) - r(i, 1) / slope(i, 1, 1)
+             q((i - 1) * degrees + top(1) + 1) = q((i - 1) * degrees + top(1) + 1) - r(i, 1) / slope(i, 1, 1)
           end do
        else
           do i = 1, nodes
@@ -2482,8 +2618,9 @@ contains
     type(continuous_domain) :: continuous
     type(tuple_layout) :: layout
     integer , allocatable :: slice_of(:), member_of(:), members(:), at(:), fixed_rows(:)
-    integer , allocatable :: r(:), c(:), table(:,:)
-    real(dp), allocatable :: dt(:), w(:,:), seeds(:,:), spatial_weights(:)
+    integer , allocatable :: r(:), c(:), table(:,:), rs(:), cs(:)
+    real(dp), allocatable :: dt(:), w(:,:), seeds(:,:), spatial_weights(:), ws(:), appended(:,:)
+    integer :: ns
     logical , allocatable :: point(:), arriving(:), governs(:,:)
     integer :: m, nd, stride, width, n, s, k, j, g, moments, i, d, count, npts, ncar, f
     logical :: staged
@@ -2575,11 +2712,25 @@ contains
     end if
     allocate(seeds(size(dt), 0))
     call connectivity_terms(scheme, connectivity, m, stride, dt, seeds, r, c, w)
+    ! the spatial derivative components of the first field, each tied
+    ! at every moment and node to the field's values by its stencil:
+    ! rows beside the family's, read no step
+    call spatial_derivative_rows(tower, moment_node, layout, moments, width, stride, rs, cs, ws)
+    ns = size(rs)
+    if (ns > 0) then
+       allocate(appended(size(r) + ns, 0:0), source=0.0_dp)
+       appended(1:size(r), 0) = w(:, 0)
+       appended(size(r) + 1:, 0) = ws
+       r = [r, rs]
+       c = [c, cs]
+       call move_alloc(appended, w)
+    end if
     rows = block_residual(derived_constraints(r, c, -w(:, 0), moments * width, 'time discretization stencil'), &
          & physics, at(1:npts), moments * width, stride, layout % primary_rows(scheme), &
          & fixed_rows(1:ncar), fixed, governs=governs(1:npts, :))
     call rows % placed_on(tower, block)
     call rows % with_connectivity(connectivity)
+    if (ns > 0) call rows % with_spatial_rows(rs, cs, ws)
     if (associated(below)) then
        call tower % tuples_of(below, table)
        call tower % value_of(below, spatial_weights)
@@ -2588,6 +2739,46 @@ contains
     end if
     instants_at = instants_at_of(tower, b, scheme, physics)
   end subroutine block_from
+  !===================================================================!
+  ! The rows tying the first field's spatial components to its values
+  ! over one block: for each component with a coupling, the coupling's
+  ! table repeated at every moment and shifted to the node, the weight
+  ! negated as the derived rows read it. Nothing when no component is
+  ! coupled.
+  !===================================================================!
+  subroutine spatial_derivative_rows(tower, moment_node, layout, moments, width, stride, rs, cs, ws)
+    type(expansion)   , intent(in), target :: tower
+    type(graph)       , intent(in), target :: moment_node
+    type(tuple_layout), intent(in) :: layout
+    integer           , intent(in) :: moments, width, stride
+    integer , allocatable, intent(out) :: rs(:), cs(:)
+    real(dp), allocatable, intent(out) :: ws(:)
+    type(graph), pointer :: component, coupling
+    integer , allocatable :: table(:,:)
+    real(dp), allocatable :: weights(:)
+    integer :: d, e, g, count, pass
+    do pass = 1, 2
+       count = 0
+       do d = layout % count(1), layout % offset_after(1) - 1
+          component => level_member(moment_node, d + 1)
+          if (.not. level_couples(component)) cycle
+          coupling => level_coupling(component)
+          call tower % tuples_of(coupling, table)
+          call tower % value_of(coupling, weights)
+          do g = 1, moments
+             do e = 1, size(table, 2)
+                count = count + 1
+                if (pass == 2) then
+                   rs(count) = (g - 1) * width + (table(2, e) - 1) * stride + d + 1
+                   cs(count) = (g - 1) * width + (table(1, e) - 1) * stride + 1
+                   ws(count) = -weights(e)
+                end if
+             end do
+          end do
+       end do
+       if (pass == 1) allocate(rs(count), cs(count), ws(count))
+    end do
+  end subroutine spatial_derivative_rows
   function first_moment(block, staged) result(moment)
     type(graph), intent(in) :: block
     logical    , intent(in) :: staged
@@ -3044,6 +3235,7 @@ module gti_space
   use field_stored              , only : stored_field
   use operation_stencil         , only : stencil
   use operation_diffusion       , only : diffusion_stencil
+  use operation_fitted_balance  , only : fitted_derivative_stencil
   use operation_conduction      , only : conduction
   use operation_robin_condition , only : robin_condition, neumann
   use field_forms               , only : polynomial_form
@@ -3055,6 +3247,7 @@ module gti_space
   implicit none
   private
   public :: spatial_domain, spatial_mesh, spatial_operator, written_paraview, coarse_cells
+  public :: spatial_derivative_stencils
   public :: cartesian, circular, elliptical, geometry_of
   integer, parameter :: cartesian  = 1
   integer, parameter :: circular   = 2
@@ -3268,6 +3461,34 @@ contains
     boundary_condition(1) = neumann('edge', 0.0_dp)
     op = diffusion_stencil(this % m, conduction(kappa), boundary_condition, polynomial_form(degree, this % m % dimension))
   end function spatial_operator
+  !===================================================================!
+  ! The derivative operators the jet along space reads, one stencil
+  ! per component in the order the state stores them: for each
+  ! coordinate the first then the second derivative, fitted at every
+  ! cell centre over the polynomial form of the given degree. A degree
+  ! below two fits no second derivative.
+  !===================================================================!
+  function spatial_derivative_stencils(this, degree) result(ops)
+    type(spatial_domain), intent(in) :: this
+    integer             , intent(in) :: degree
+    type(stencil), allocatable :: ops(:)
+    integer, allocatable :: orders(:)
+    integer :: j, k, i, dim
+    if (degree < 2) then
+       error stop 'gti_space: a form of degree below two fits no second derivative'
+    end if
+    dim = this % m % dimension
+    allocate(ops(2 * dim), orders(dim))
+    i = 0
+    do j = 1, dim
+       do k = 1, 2
+          orders    = 0
+          orders(j) = k
+          i = i + 1
+          ops(i) = fitted_derivative_stencil(this % m, polynomial_form(degree, dim), orders)
+       end do
+    end do
+  end function spatial_derivative_stencils
   function coarse_cells(this) result(aggregate)
     type(spatial_domain), intent(in) :: this
     integer, allocatable :: aggregate(:)
@@ -3334,26 +3555,32 @@ contains
     end do
     op = stencil(r, c, w, fixed, 'spatial discretization stencil')
   end function spatial_discretization_stencil_of
-  function initial_field(physics, degrees, kind, initial_state, design, spatial_discretization_stencil, space, a, b) &
-       & result(q)
+  function initial_field(physics, degrees, kind, initial_state, design, spatial_discretization_stencil, space, a, b, &
+       & spatial_derivative_stencils) result(q)
     type(expression)      , intent(in)           :: physics
     integer               , intent(in)           :: degrees
     character(len=*)      , intent(in)           :: kind, initial_state
     real(dp)              , intent(in)           :: design
     type(stencil)         , intent(in), optional :: spatial_discretization_stencil
+    type(stencil)         , intent(in), optional :: spatial_derivative_stencils(:)
     type(spatial_domain)            , intent(in), optional :: space
     real(dp)              , intent(in), optional :: a, b
     real(dp), allocatable :: q(:)
     character(len=32), allocatable :: given(:)
     real(dp), allocatable :: lower(:,:)
-    integer  :: nodes, i, d, fields, first_below
+    integer  :: nodes, i, d, fields, first_below, below
     nodes = 1
     if (present(space)) nodes = space % num_cells
-    ! each field's components below its highest, field after field;
-    ! the first field's are given, the others' are zero
+    ! each field's components below its highest along the instants,
+    ! field after field; the first field's are given, the others' are
+    ! zero, and the spatial components are derived from the values
     fields      = physics % num_fields() - physics % num_multipliers()
     first_below = physics % degree_of_field(1)
-    allocate(lower(degrees - fields, nodes), source=0.0_dp)
+    below = 0
+    do d = 1, fields
+       below = below + physics % degree_of_field(d)
+    end do
+    allocate(lower(below, nodes), source=0.0_dp)
     select case (trim(kind))
     case ('constant')
        given = words_of(initial_state)
@@ -3378,7 +3605,7 @@ contains
     case default
        error stop 'gti_field: an initial field is constant, the mode, or the bump'
     end select
-    q = consistent_states(physics, degrees, lower, design, spatial_discretization_stencil)
+    q = consistent_states(physics, degrees, lower, design, spatial_discretization_stencil, spatial_derivative_stencils)
   end function initial_field
   pure function mode_shape(space, a, b) result(shape)
     type(spatial_domain), intent(in) :: space
@@ -3740,7 +3967,7 @@ contains
   end subroutine built
   subroutine march_chain(schemes, added, physics, degrees, steps, &
        & design, initial, chain, tower, dt, t, achieved, grid_design, final_imbalance, nodes, spatial_discretization_stencil, &
-       & startup, functionals, derivative_order, f, tower_storage, state_storage)
+       & startup, functionals, derivative_order, f, tower_storage, state_storage, spatial_derivative_stencils)
     type(family_container)   , intent(in) :: schemes(:)
     integer               , intent(in) :: added(:), degrees
     type(expression)      , intent(in) :: physics
@@ -3754,6 +3981,7 @@ contains
     type(imbalance), intent(out), optional :: final_imbalance
     integer        , intent(in) , optional :: nodes
     type(stencil)  , intent(in) , optional :: spatial_discretization_stencil
+    type(stencil)  , intent(in) , optional :: spatial_derivative_stencils(:)
     integer        , intent(in) , optional :: startup
     ! THE PIPELINED DERIVATIVE. With functionals and an order given,
     ! every block's tangent tower is solved immediately after the block,
@@ -3812,7 +4040,7 @@ contains
     if (allocated(tower)) deallocate(tower)
     allocate(tower)
     call tower % build(physics, every, spans, steps, 0, design, nodes, spatial_discretization_stencil, &
-         & weights=grid_design, block_steps=design_field)
+         & weights=grid_design, block_steps=design_field, spatial_derivative_stencils=spatial_derivative_stencils)
     fused = present(functionals) .and. present(derivative_order)
     if (fused) then
        if (allocated(pipelined)) deallocate(pipelined)
@@ -5634,7 +5862,7 @@ module gti_demos
   use field_calculus        , only : field
   use field_stored          , only : stored_field, typed_field_domain
   use operation_action      , only : variation, sweep_design_partial => design_partial
-  use gti_sweeps            , only : functional_of, functional_gradient
+  use gti_sweeps            , only : spatial_rows, functional_of, functional_gradient
   use operation_stencil     , only : stencil
   use operation_scheme_stencil, only : derived_constraints
   use operation_family      , only : family
@@ -9260,7 +9488,7 @@ program graph_time_integrator
   use operation_family      , only : crouzeix_three_stage
   use operation_stencil     , only : stencil
   use operation_domain      , only : continuous_domain
-  use gti_space             , only : spatial_domain, spatial_mesh, geometry_of, coarse_cells
+  use gti_space             , only : spatial_domain, spatial_mesh, geometry_of, coarse_cells, spatial_derivative_stencils
   use gti_field             , only : spatial_discretization_stencil_of, initial_field, against_the_laplacian, &
        & against_the_mode, export_instant
   use util_precision        , only : precision_named
@@ -9270,7 +9498,7 @@ program graph_time_integrator
        & expansion_substitutions, chain_versions, num_designs_of, &
        & instant_components, chain_derivative, asymmetry, sink_costates, &
        & goal_oriented_partition
-  use gti_sweeps            , only : set_linear_solver, set_jacobian, set_storage, set_multigrid, &
+  use gti_sweeps            , only : spatial_rows, set_linear_solver, set_jacobian, set_storage, set_multigrid, &
        & set_rows, set_elimination, &
        & set_coarse_nodes, set_linear_budget, set_newton_order
   use gti_sweeps            , only : pass_of, forward_pass, reverse_pass
@@ -9288,6 +9516,7 @@ program graph_time_integrator
   type(configuration) :: cfg
   type(spatial_domain)   , allocatable :: space
   type(stencil), allocatable :: spatial_discretization_stencil
+  type(stencil), allocatable :: derivative_stencils(:)
   real(dp)     , allocatable :: volume(:), q0(:)
   real(dp) :: extent_a = 0.0_dp, extent_b = 0.0_dp
   integer  :: nodes = 1
@@ -9468,8 +9697,23 @@ contains
   function physics_of(cfg) result(r)
     type(configuration), intent(in) :: cfg
     type(expression) :: r
-    r = physics_named(trim(cfg % physics), cfg % state_degree)
+    ! over a mesh with the spatial derivatives as rows the law reads
+    ! the jet along space; otherwise the spatial law is substituted
+    if (over_field .and. spatial_rows()) then
+       r = physics_named(trim(cfg % physics), cfg % state_degree, cfg % diffusion, 2)
+    else
+       r = physics_named(trim(cfg % physics), cfg % state_degree)
+    end if
   end function physics_of
+  !===================================================================!
+  ! The components one node stores at one instant, read from the law.
+  !===================================================================!
+  integer function state_width(cfg) result(width)
+    type(configuration), intent(in) :: cfg
+    type(expression) :: law
+    law   = physics_of(cfg)
+    width = law % num_components()
+  end function state_width
   function energy_of(cfg) result(f)
     type(configuration), intent(in) :: cfg
     type(expression) :: f
@@ -9520,16 +9764,19 @@ contains
        call march_chain(schemes, added, physics_of(cfg), nd, &
             & designed_grid(cfg % time_duration), cfg % design, q0, chain, tower, dt, t, &
             & achieved, grid_design=weights, final_imbalance=final_imbalance, nodes=nodes, spatial_discretization_stencil=spatial_discretization_stencil, &
+            & spatial_derivative_stencils=derivative_stencils, &
             & startup=cfg % startup_refinement)
     else if (grid_adaptive) then
        call march_chain(schemes, added, physics_of(cfg), nd, &
             & fixed_grid(adaptive_weights), cfg % design, q0, chain, tower, dt, t, achieved, &
             & final_imbalance=final_imbalance, nodes=nodes, spatial_discretization_stencil=spatial_discretization_stencil, &
+            & spatial_derivative_stencils=derivative_stencils, &
             & startup=cfg % startup_refinement)
     else
        call march_chain(schemes, added, physics_of(cfg), nd, &
             & chosen_grid(cfg), cfg % design, q0, chain, tower, dt, t, achieved, final_imbalance=final_imbalance, &
-            & nodes=nodes, spatial_discretization_stencil=spatial_discretization_stencil, startup=cfg % startup_refinement)
+            & nodes=nodes, spatial_discretization_stencil=spatial_discretization_stencil, startup=cfg % startup_refinement, &
+            & spatial_derivative_stencils=derivative_stencils)
     end if
     if (.not. final_imbalance % converged) then
        reported = 0
@@ -9555,10 +9802,15 @@ contains
        call first_derivatives(cfg, chain, tower, nd, dt, f)
     end if
     if (over_field) then
-       if (lists(cfg % check, 'ode')) call against_the_ode(cfg, schemes, added, f(:, 1))
+       if (lists(cfg % check, 'ode')) then
+          if (spatial_rows()) then
+             error stop 'graph_time_integrator: the ode check reads the law without its spatial jet'
+          end if
+          call against_the_ode(cfg, schemes, added, f(:, 1))
+       end if
        if (lists(cfg % check, 'mode')) then
           call against_the_mode(space, extent_a, extent_b, cfg % diffusion, cfg % spatial_order, &
-               & cfg % design, t(cfg % instants), instant_components(chain, cfg % instants), nd)
+               & cfg % design, t(cfg % instants), instant_components(chain, cfg % instants), state_width(cfg))
        end if
        if (trim(cfg % export) == 'paraview') call exported(cfg, chain, labelled(names, orders), nd)
     end if
@@ -9741,7 +9993,11 @@ contains
        write(*,'(a,i0,a,i0,a,f12.6,a,i0,a,f9.3,a)') '   spatial mesh: cells ', &
             & space % num_cells, '   faces ', space % num_faces, '   area ', sum(space % volume), &
             & '   form degree ', cfg % spatial_order, '   built in ', clock() - began, ' s'
-       spatial_discretization_stencil = spatial_discretization_stencil_of(space, cfg % diffusion, cfg % spatial_order)
+       if (spatial_rows()) then
+          derivative_stencils = spatial_derivative_stencils(space, cfg % spatial_order)
+       else
+          spatial_discretization_stencil = spatial_discretization_stencil_of(space, cfg % diffusion, cfg % spatial_order)
+       end if
        call set_coarse_nodes(coarse_cells(space))
        nodes  = space % num_cells
        volume = space % volume
@@ -9758,7 +10014,8 @@ contains
     continuous = continuous_domain(law)
     q0 = initial_field(law, continuous % num_components(), &
          & cfg % initial_field, cfg % initial_state, cfg % design, &
-         & spatial_discretization_stencil=spatial_discretization_stencil, space=space, a=extent_a, b=extent_b)
+         & spatial_discretization_stencil=spatial_discretization_stencil, space=space, a=extent_a, b=extent_b, &
+         & spatial_derivative_stencils=derivative_stencils)
   end subroutine field_context
   subroutine pair_of(pair, x, y, subject)
     character(len=*), intent(in)  :: pair, subject

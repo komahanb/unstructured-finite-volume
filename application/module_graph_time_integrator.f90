@@ -844,7 +844,7 @@ module gti_expansion
   use view_directed_stored  , only : stored_directed_graph
   use view_directed_connectivity, only : connectivity_graph
   use field_calculus        , only : field
-  use field_stored          , only : stored_field
+  use field_stored          , only : stored_field, typed_field_domain
   use operation_family      , only : family
   use operation_grid        , only : grid, partition
   use operation_coupling    , only : weights_of
@@ -1090,6 +1090,7 @@ contains
     type(stored_directed_graph) :: instants
     type(stored_field) :: designs
     type(stored_field), allocatable :: direction(:)
+    type(typed_field_domain) :: instant_scalars
     type(variation)   , allocatable :: variations(:)
     class(field), allocatable :: out
     real(dp), allocatable :: weights(:), e(:)
@@ -1100,14 +1101,13 @@ contains
     end if
     n = size(weights) + 1
     instants = stored_directed_graph(n, tails=[integer ::], heads=[integer ::])
-    designs  = stored_field('design', instants % vertex_set(), size(weights))
-    call designs % set_real_vector(weights)
+    instant_scalars = typed_field_domain(instants % vertex_set(), size(weights))
+    designs  = instant_scalars % design(weights)
     allocate(e(size(weights)), direction(size(weights_varied)), variations(size(weights_varied)))
     do i = 1, size(weights_varied)
        e = 0.0_dp
        e(weights_varied(i)) = 1.0_dp
-       direction(i) = stored_field('direction', instants % vertex_set(), size(weights))
-       call direction(i) % set_real_vector(e)
+       direction(i) = instant_scalars % direction(e)
        variations(i) = variation(this % steps_kept % argument(1), direction(i))
     end do
     call this % steps_kept % partial_action(instants, this % steps_kept % bind([designs]), variations, out)
@@ -1901,7 +1901,7 @@ module gti_march
   use view_directed_connectivity, only : connectivity_graph
   use view_directed           , only : directed_graph
   use field_calculus          , only : field
-  use field_stored            , only : stored_field
+  use field_stored            , only : stored_field, typed_field_domain
   use operation_action      , only : variation, jacobian_of
   use operation_stencil       , only : stencil
   use operation_newton        , only : newton
@@ -2049,6 +2049,7 @@ contains
     real(dp), allocatable :: q(:)
     type(stored_directed_graph) :: points
     type(stored_field) :: state, design_field, direction
+    type(typed_field_domain) :: point_scalars, point_states
     class(field), allocatable :: out
     real(dp), allocatable :: below(:), r(:), slope(:), weights(:), e(:)
     real(dp) :: began, target
@@ -2078,15 +2079,13 @@ contains
     do i = 1, nodes
        e(i * degrees) = 1.0_dp
     end do
-    design_field = stored_field('design', points % vertex_set(), nodes)
-    call design_field % set_real_vector(spread(design_value, 1, nodes))
-    direction = stored_field('direction', points % vertex_set(), nodes * degrees)
-    call direction % set_real_vector(e)
+    point_scalars = typed_field_domain(points % vertex_set(), nodes)
+    point_states  = typed_field_domain(points % vertex_set(), nodes, physics % num_components())
+    design_field  = point_scalars % design(spread(design_value, 1, nodes))
+    direction     = point_states % direction(e)
     began = -1.0_dp
     do iteration = 1, stopping_iterations
-       state = stored_field('state', points % vertex_set(), nodes, &
-            & num_components=physics % num_components())
-       call state % set_real_vector(q)
+       state = point_states % state(q)
        call physics % apply(points, physics % bind([state, design_field]), out)
        call out % real_vector(r)
        r = r + below
@@ -2112,12 +2111,13 @@ contains
     integer , intent(in) :: num_points
     type(stored_directed_graph)    , intent(out) :: unknowns
     type(stored_field), allocatable, intent(out) :: inputs(:)
+    type(typed_field_domain) :: states, designs
     unknowns = stored_directed_graph(size(q), tails=[integer ::], heads=[integer ::])
     allocate(inputs(2))
-    inputs(1) = stored_field('state' , unknowns % vertex_set(), size(q))
-    inputs(2) = stored_field('design', unknowns % vertex_set(), num_points)
-    call inputs(1) % set_real_vector(q)
-    call inputs(2) % set_real_vector(spread(design, 1, num_points))
+    states    = typed_field_domain(unknowns % vertex_set(), size(q))
+    designs   = typed_field_domain(unknowns % vertex_set(), num_points)
+    inputs(1) = states % state(q)
+    inputs(2) = designs % design(spread(design, 1, num_points))
   end subroutine frozen_inputs
   subroutine set_stopping(tolerance, criterion, limit_kind, iterations)
     real(dp), intent(in) :: tolerance
@@ -2481,8 +2481,13 @@ contains
     real(dp)             , intent(in) :: g(:), design_rate(:), explicit
     integer              , intent(in) :: version
     real(dp), allocatable :: w(:)
+    type(typed_field_domain) :: unknown_fields
+    type(stored_field) :: gradient, tangent
     call solve_linear(rows, unknowns, inputs, -design_rate, .false., version, w)
-    df = explicit + dot_product(g, w)
+    unknown_fields = typed_field_domain(unknowns % vertex_set(), size(g))
+    gradient       = unknown_fields % real_field('functional gradient', g)
+    tangent        = unknown_fields % tangent(w)
+    df = explicit + gradient % inner_product(tangent)
   end function by_tangent
   real(dp) function by_adjoint(rows, unknowns, inputs, g, design_rate, explicit, version) &
        & result(df)
@@ -2492,8 +2497,13 @@ contains
     real(dp)             , intent(in) :: g(:), design_rate(:), explicit
     integer              , intent(in) :: version
     real(dp), allocatable :: lambda(:)
+    type(typed_field_domain) :: unknown_fields
+    type(stored_field) :: costate, forcing
     call solve_linear(rows, unknowns, inputs, g, .true., version, lambda)
-    df = explicit - dot_product(lambda, design_rate)
+    unknown_fields = typed_field_domain(unknowns % vertex_set(), size(g))
+    costate        = unknown_fields % costate(lambda)
+    forcing        = unknown_fields % forcing(design_rate)
+    df = explicit - costate % inner_product(forcing)
   end function by_adjoint
   subroutine set_space_coupling(name)
     character(len=*), intent(in) :: name
@@ -2562,13 +2572,14 @@ contains
     type(stored_field)         , intent(in)    :: design
     type(imbalance)            , intent(inout) :: final_imbalance
     type(stored_field) :: state
+    type(typed_field_domain) :: states
     class(field), allocatable :: out
     real(dp), allocatable :: r(:), a(:,:), slope(:)
     integer :: i, d, nd, n
     n  = size(q)
     nd = rows % num_degrees()
-    state = stored_field('state', unknowns % vertex_set(), n)
-    call state % set_real_vector(q)
+    states = typed_field_domain(unknowns % vertex_set(), n)
+    state  = states % state(q)
     call rows % apply(unknowns, rows % bind([state, design]), out)
     call out % real_vector(r)
     allocate(final_imbalance % by_degree(0:nd - 1), source=0.0_dp)
@@ -3207,8 +3218,7 @@ module gti_chain
   use view_read_write  , only : bipartite_digraph, FIRST_PART, SECOND_PART
   use view_directed    , only : forward
   use view_directed    , only : directed_graph
-  use field_stored     , only : stored_field
-  use field_stored     , only : stored_field
+  use field_stored     , only : stored_field, typed_field_domain
   use gti_sweeps       , only : pass_of, pass_substitutions, forward_pass, reverse_pass
   use util_tally            , only : tally_order, tally_enter, tally_leave
   use gti_configuration     , only : at_horizon, at_block, at_stage
@@ -4018,6 +4028,7 @@ contains
     class(field), allocatable :: value
     type(block_state) :: state
     type(stored_directed_graph) :: state_domain
+    type(typed_field_domain) :: states
     real(dp), allocatable :: transferred_values(:), one_datum(:)
     real(dp) :: achieved
     type(imbalance) :: final_imbalance
@@ -4078,9 +4089,9 @@ contains
     ! give a field a domain it does not have.
     state_domain = stored_directed_graph(this % chain(this % at) % rows % num_points(), &
          & tails=[integer ::], heads=[integer ::])
-    state % stored_field = stored_field('state', state_domain % vertex_set(), &
+    states = typed_field_domain(state_domain % vertex_set(), &
          & size(this % chain(this % at) % state))
-    call state % set_real_vector(this % chain(this % at) % state)
+    state % stored_field = states % state(this % chain(this % at) % state)
     state % at     = this % at
     state % layout = this % chain(this % at) % block_layout
     call emit(state, output)
@@ -5305,7 +5316,7 @@ module gti_demos
   use view_directed_stored  , only : stored_directed_graph
   use view_directed_connectivity, only : connectivity_graph
   use field_calculus        , only : field
-  use field_stored          , only : stored_field
+  use field_stored          , only : stored_field, typed_field_domain
   use operation_action      , only : variation, sweep_design_partial => design_partial
   use gti_sweeps            , only : functional_of, functional_gradient
   use operation_stencil     , only : stencil
@@ -5669,6 +5680,7 @@ contains
       type(grid) :: steps
       type(stored_directed_graph) :: instants
       type(stored_field) :: design_field, direction
+      type(typed_field_domain) :: instant_scalars
       class(field), allocatable :: out
       real(dp) :: design(num_instants - 1), v(num_instants - 1)
       real(dp), allocatable :: dt(:), exact(:), plus(:), minus(:)
@@ -5677,10 +5689,9 @@ contains
       v(2)   = 1.0_dp
       steps    = designed_grid(duration)
       instants = stored_directed_graph(num_instants, tails=[integer ::], heads=[integer ::])
-      design_field     = stored_field('design', instants % vertex_set(), size(design))
-      direction = stored_field('v', instants % vertex_set(), size(design))
-      call design_field     % set_real_vector(design)
-      call direction % set_real_vector(v)
+      instant_scalars = typed_field_domain(instants % vertex_set(), size(design))
+      design_field    = instant_scalars % design(design)
+      direction       = instant_scalars % direction(v)
       call steps % apply(instants, steps % bind([design_field]), out)
       call out % real_vector(dt)
       call steps % partial_action(instants, steps % bind([design_field]), &
@@ -6236,6 +6247,7 @@ contains
       type(stencil) :: rows
       type(stored_directed_graph) :: unknowns
       type(stored_field) :: state, direction
+      type(typed_field_domain) :: unknown_fields
       class(field), allocatable :: out
       type(expression) :: physics
       real(dp), allocatable :: weight(:), residual(:), acted(:), governing(:)
@@ -6260,12 +6272,11 @@ contains
          q(unknown(k, 2)) = 2.0_dp
       end do
       unknowns = stored_directed_graph(num_unknowns, tails=[integer ::], heads=[integer ::])
-      state    = stored_field('state', unknowns % vertex_set(), num_unknowns)
-      call state % set_real_vector(q)
+      unknown_fields = typed_field_domain(unknowns % vertex_set(), num_unknowns)
+      state          = unknown_fields % state(q)
       call rows % apply(unknowns, rows % bind([state]), out)
       call out % real_vector(residual)
-      direction = stored_field('v', unknowns % vertex_set(), num_unknowns)
-      call direction % set_real_vector(q)
+      direction = unknown_fields % direction(q)
       call rows % partial_action(unknowns, rows % bind([state]), &
            & [variation(rows % argument(1), direction)], out)
       call out % real_vector(acted)
@@ -6327,13 +6338,14 @@ contains
       real(dp), allocatable, intent(out) :: r(:)
       type(stored_directed_graph) :: instants
       type(stored_field) :: state, design
+      type(typed_field_domain) :: instant_states, instant_scalars
       class(field), allocatable :: out
       instants = stored_directed_graph(num_instants, tails=[integer ::], heads=[integer ::])
-      state    = stored_field('state', instants % vertex_set(), num_instants, &
-           & num_components=physics % num_components())
-      design   = stored_field('nu', instants % vertex_set(), num_instants)
-      call state  % set_real_vector(q)
-      call design % set_real_vector(spread(nu, 1, num_instants))
+      instant_states  = typed_field_domain(instants % vertex_set(), num_instants, &
+           & physics % num_components())
+      instant_scalars = typed_field_domain(instants % vertex_set(), num_instants)
+      state           = instant_states % state(q)
+      design          = instant_scalars % design(spread(nu, 1, num_instants))
       call physics % apply(instants, physics % bind([state, design]), out)
       call out % real_vector(r)
     end subroutine governing_rows
@@ -6345,6 +6357,7 @@ contains
       type(expression) :: physics
       type(stored_directed_graph) :: graph_of
       type(stored_field) :: state, nu_field, direction
+      type(typed_field_domain) :: point_states, point_scalars
       class(field), allocatable :: out
       real(dp), allocatable :: exact(:)
       real(dp) :: q(instants * (degree + 1)), v(instants * (degree + 1))
@@ -6354,18 +6367,17 @@ contains
       physics = van_der_pol(degree)
       call sample(degree, q0, q_top, design, instants, q)
       graph_of = stored_directed_graph(instants, tails=[integer ::], heads=[integer ::])
-      state    = stored_field('state', graph_of % vertex_set(), instants, &
-           & num_components=physics % num_components())
-      nu_field = stored_field('nu', graph_of % vertex_set(), instants)
-      direction = stored_field('v', graph_of % vertex_set(), size(q))
-      call state    % set_real_vector(q)
-      call nu_field % set_real_vector(spread(nu, 1, instants))
+      point_states  = typed_field_domain(graph_of % vertex_set(), instants, &
+           & physics % num_components())
+      point_scalars = typed_field_domain(graph_of % vertex_set(), instants)
+      state         = point_states % state(q)
+      nu_field      = point_scalars % design(spread(nu, 1, instants))
       do d = 0, degree
          v = 0.0_dp
          do k = 1, instants
             v((k - 1) * nd + d + 1) = 1.0_dp
          end do
-         call direction % set_real_vector(v)
+         direction = point_states % direction(v)
          call physics % partial_action(graph_of, physics % bind([state, nu_field]), &
               & [variation(physics % argument(1), direction)], out)
          call out % real_vector(exact)
@@ -6427,14 +6439,15 @@ contains
       integer                    , intent(in)    :: instants, nd
       real(dp), parameter :: delta = 1.0e-6_dp
       type(stored_field) :: direction
+      type(typed_field_domain) :: design_fields
       class(field), allocatable :: out
       real(dp), allocatable :: exact(:), plus(:), minus(:)
       real(dp) :: w(instants), q0, q_below
       w    = 1.0_dp
       q0      = q(1)
       q_below = q(nd - 1)
-      direction = stored_field('w', graph_of % vertex_set(), instants)
-      call direction % set_real_vector(w)
+      design_fields = typed_field_domain(graph_of % vertex_set(), instants)
+      direction     = design_fields % direction(w)
       call physics % partial_action(graph_of, physics % bind([state, nu_field]), &
            & [variation(physics % argument(2), direction)], out)
       call out % real_vector(exact)
@@ -6721,6 +6734,7 @@ contains
       type(connectivity_graph) :: edges
       type(stored_field), allocatable :: inputs(:)
       type(stored_field) :: direction
+      type(typed_field_domain) :: coupling_fields
       type(family) :: scheme
       class(field), allocatable :: out
       real(dp), allocatable :: exact(:), plus(:), minus(:), v(:)
@@ -6729,10 +6743,10 @@ contains
            & [(0, k = 0, order)], [(1, k = 0, order)])
       call coupling_inputs(edges, dt, inputs)
       coupling = edges % stored_directed_graph
-      direction = stored_field('v', coupling % vertex_set(), last)
       allocate(v(last), source=0.0_dp)
       v(last) = 1.0_dp
-      call direction % set_real_vector(v)
+      coupling_fields = typed_field_domain(coupling % vertex_set(), last)
+      direction       = coupling_fields % direction(v)
       call scheme % partial_action(coupling, scheme % bind(inputs), [variation(scheme % argument(1), direction)], out)
       call out % real_vector(exact)
       call inputs(1) % set_real_vector(dt + delta * v)
@@ -6755,15 +6769,15 @@ contains
       real(dp)                   , intent(in)    :: dt(:), v(:)
       real(dp), parameter :: delta = 1.0e-4_dp
       type(stored_field) :: along_v, along_w
+      type(typed_field_domain) :: coupling_fields
       class(field), allocatable :: out
       real(dp), allocatable :: plus(:), at(:), minus(:), w(:)
       real(dp), allocatable :: second(:), mixed_partial(:)
-      along_v = stored_field('v', coupling % vertex_set(), size(dt))
-      along_w = stored_field('w', coupling % vertex_set(), size(dt))
-      call along_v % set_real_vector(v)
       w = 0.0_dp * v
       w(size(dt) - 1) = 1.0_dp
-      call along_w % set_real_vector(w)
+      coupling_fields = typed_field_domain(coupling % vertex_set(), size(dt))
+      along_v = coupling_fields % direction(v)
+      along_w = coupling_fields % direction(w)
       call steps % set_real_vector(dt)
       call scheme % partial_action(coupling, scheme % bind([steps, degrees, conditions]), &
            & [variation(scheme % argument(1), along_v), variation(scheme % argument(1), along_v)], out)
@@ -8322,6 +8336,7 @@ contains
       type(pairing)    :: pairs
       type(stored_directed_graph) :: one_point, bare
       type(stored_field) :: datum
+      type(typed_field_domain) :: point_fields
       integer, allocatable :: first(:), last(:), order(:), releasable(:)
       real(dp), allocatable :: no_rhs(:), no_solution(:)
       real(dp) :: driver_achieved
@@ -8365,7 +8380,8 @@ contains
       ! the traversal's only effect is to apply the lifetimes.
       allocate(rules % at(2 * nb), values % at(2 * nb))
       one_point = stored_directed_graph(1, tails=[integer ::], heads=[integer ::])
-      datum     = stored_field('state', one_point % vertex_set(), 1)
+      point_fields = typed_field_domain(one_point % vertex_set(), 1)
+      datum        = point_fields % state([0.0_dp])
       do b = 1, nb
          allocate(values % at(b) % datum, source=datum)
       end do
@@ -8547,6 +8563,7 @@ contains
       type(connectivity_graph) :: edges
       type(stored_field), allocatable :: inputs(:)
       type(stored_field) :: direction
+      type(typed_field_domain) :: coupling_fields
       type(scheme_weight) :: weights
       class(field), allocatable :: out
       real(dp), allocatable :: exact(:), plus(:), minus(:), v(:)
@@ -8558,10 +8575,10 @@ contains
            & [(0, e = 1, size(tails))], [(1, e = 1, size(tails))])
       call coupling_inputs(edges, dt, inputs)
       coupling = edges % stored_directed_graph
-      direction = stored_field('v', coupling % vertex_set(), last)
       allocate(v(last), source=0.0_dp)
       v(last) = 1.0_dp
-      call direction % set_real_vector(v)
+      coupling_fields = typed_field_domain(coupling % vertex_set(), last)
+      direction       = coupling_fields % direction(v)
       weights = scheme_weight(bdf_family(p))
       call weights % partial_action(coupling, weights % bind(inputs), [variation(weights % argument(1), direction)], out)
       call out % real_vector(exact)
@@ -8602,6 +8619,7 @@ contains
       integer, allocatable :: at(:)
       type(stored_directed_graph) :: unknowns, instants
       type(stored_field) :: state, design_field
+      type(typed_field_domain) :: energy_states, instant_scalars
       real(dp), allocatable :: dt(:), t(:), fixed(:)
       real(dp) :: achieved
       type(expression) :: energy
@@ -8614,11 +8632,11 @@ contains
       unknowns = unknowns_graph(num_instants, degrees)
       instants = stored_directed_graph(num_instants, tails=[integer ::], heads=[integer ::])
       energy   = van_der_pol_energy(state_degree)
-      state    = stored_field('state', instants % vertex_set(), num_instants, &
-           & num_components=energy % num_components())
-      design_field    = stored_field('nu', instants % vertex_set(), num_instants)
-      call state % set_real_vector(q)
-      call design_field % set_real_vector(spread(design_value, 1, num_instants))
+      energy_states  = typed_field_domain(instants % vertex_set(), num_instants, &
+           & energy % num_components())
+      instant_scalars = typed_field_domain(instants % vertex_set(), num_instants)
+      state           = energy_states % functional_state(q)
+      design_field    = instant_scalars % design(spread(design_value, 1, num_instants))
       f = functional_of(energy, instants, [state, design_field], dt)
     end function marched
     subroutine sensitivity_of(title, scheme)
@@ -8651,7 +8669,8 @@ contains
       type(family_container) :: owner(1)
       integer, allocatable :: at(:)
       type(stored_directed_graph) :: unknowns, instants
-      type(stored_field) :: state, design_field, energy_state
+      type(stored_field) :: state, design_field, energy_state, energy_design
+      type(typed_field_domain) :: unknown_fields, unknown_designs, energy_states, instant_scalars
       type(expression) :: energy
       real(dp), allocatable :: dt(:), t(:), fixed(:)
       call cosine_partition(scheme, degrees, duration, num_instants, fixed, dt, t)
@@ -8661,17 +8680,18 @@ contains
       call block_from(tower, 1, scheme, van_der_pol(state_degree), fixed, rows, at)
       unknowns = unknowns_graph(num_instants, degrees)
       instants = stored_directed_graph(num_instants, tails=[integer ::], heads=[integer ::])
-      state    = stored_field('state', unknowns % vertex_set(), size(q))
-      design_field    = stored_field('nu', unknowns % vertex_set(), num_instants)
-      call state % set_real_vector(q)
-      call design_field % set_real_vector(spread(design, 1, num_instants))
-      ! the energy reads the same values as one field over the instants
+      unknown_fields = typed_field_domain(unknowns % vertex_set(), size(q))
+      unknown_designs = typed_field_domain(unknowns % vertex_set(), num_instants)
+      state        = unknown_fields % state(q)
+      design_field = unknown_designs % design(spread(design, 1, num_instants))
       energy       = van_der_pol_energy(state_degree)
-      energy_state = stored_field('state', instants % vertex_set(), num_instants, &
-           & num_components=energy % num_components())
-      call energy_state % set_real_vector(q)
+      energy_states  = typed_field_domain(instants % vertex_set(), num_instants, &
+           & energy % num_components())
+      instant_scalars = typed_field_domain(instants % vertex_set(), num_instants)
+      energy_state    = energy_states % functional_state(q)
+      energy_design   = instant_scalars % design(spread(design, 1, num_instants))
       call functional_gradient(energy, instants, &
-           & [energy_state, design_field], dt, num_instants, degrees, unknowns % vertex_set(), g)
+           & [energy_state, energy_design], dt, num_instants, degrees, unknowns % vertex_set(), g)
       call sweep_design_partial(rows, unknowns, [state, design_field], num_instants, &
            & unknowns % vertex_set(), rate)
       version    = next_version()

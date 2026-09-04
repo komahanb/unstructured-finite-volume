@@ -45,7 +45,7 @@ module operation_stencil
   use operation_action, only : binding, bound_real_vector
   use operation_action, only : emit, dense_of_triples
   use relation_binary, only : group_by_key
-  use field_stored  , only : stored_field
+  use field_stored  , only : stored_field, typed_field_domain
   use view_directed_stored        , only : stored_directed_graph
   use graph_fractal      , only : graph
 
@@ -379,6 +379,7 @@ contains
     class(field), allocatable, intent(inout) :: output
 
     type(stored_field)   :: out
+    type(typed_field_domain)   :: image
     real(dp), allocatable :: q(:), y(:)
 
     call this % constants % real_vector(y)
@@ -388,8 +389,8 @@ contains
        call accumulate_edges(this, q, y)
     end if
 
-    out = stored_field(this % name(), input_graph % vertex_set(), input_graph % num_vertices())
-    call out % set_real_vector(y)
+    image = typed_field_domain(input_graph % vertex_set(), input_graph % num_vertices())
+    out   = image % real_field(this % name(), y)
 
     call emit(out, output)
 
@@ -463,6 +464,7 @@ contains
     class(field), allocatable, intent(inout) :: output
 
     type(stored_field)   :: out
+    type(typed_field_domain)   :: image
     real(dp), allocatable :: v(:), y(:)
 
     associate (u1 => inputs); end associate
@@ -481,8 +483,8 @@ contains
     y = 0.0_dp
     call accumulate_edges(this, v, y)
 
-    out = stored_field(this % name(), input_graph % vertex_set(), input_graph % num_vertices())
-    call out % set_real_vector(y)
+    image = typed_field_domain(input_graph % vertex_set(), input_graph % num_vertices())
+    out   = image % real_field(this % name(), y)
 
     call emit(out, output)
 

@@ -48,7 +48,7 @@ module operation_action
   use view_directed , only : directed_graph
   use graph_fractal       , only : graph
   use field_calculus, only : field, FIELD_NONE
-  use field_stored  , only : stored_field
+  use field_stored  , only : stored_field, typed_field_domain
   use token_identity, only : token, next_token
   use util_derivative_terms, only : derivative_terms
 
@@ -753,14 +753,15 @@ contains
     real(dp)   , intent(in), optional :: v2(:)
 
     type(stored_field) :: direction, second
+    type(typed_field_domain) :: first_domain, second_domain
     class(field), allocatable :: out
 
-    direction = stored_field('direction', domain, size(v))
-    call direction % set_real_vector(v)
+    first_domain = typed_field_domain(domain, size(v))
+    direction    = first_domain % direction(v)
 
     if (present(which2)) then
-       second = stored_field('direction', domain2, size(v2))
-       call second % set_real_vector(v2)
+       second_domain = typed_field_domain(domain2, size(v2))
+       second        = second_domain % direction(v2)
        call action % partial_action(context, action % bind(inputs), &
             & [variation(action % argument(which), direction), &
             &  variation(action % argument(which2), second)], out)

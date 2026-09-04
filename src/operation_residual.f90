@@ -31,7 +31,7 @@ module operation_residual
   use view_directed     , only : directed_graph
   use view_directed_stored, only : stored_directed_graph
   use field_calculus    , only : field, FIELD_REAL
-  use field_stored      , only : stored_field
+  use field_stored      , only : stored_field, typed_field_domain
   use operation_stencil  , only : stencil, combine_triples
   use operation_expression , only : expression, constant, stated
 
@@ -273,13 +273,13 @@ contains
     real(dp)                 , intent(in) :: x(:)
     type(stored_field), allocatable, intent(out) :: point_data(:)
     type(stored_field) :: state, design
+    type(typed_field_domain) :: points, designs
     real(dp), allocatable :: design_values(:)
     call bound_real_vector(inputs, this % argument(2), design_values)
-    state = stored_field('state', this % points % vertex_set(), size(this % at), &
-         & num_components=this % stride())
-    call state % set_real_vector(gathered(this, x))
-    design = stored_field('design', this % points % vertex_set(), size(design_values))
-    call design % set_real_vector(design_values)
+    points = typed_field_domain(this % points % vertex_set(), size(this % at), this % stride())
+    designs = typed_field_domain(this % points % vertex_set(), size(design_values))
+    state  = points % state(gathered(this, x))
+    design = designs % design(design_values)
     point_data = [state, design]
   end subroutine point_inputs
 
@@ -329,12 +329,13 @@ contains
     class(directed_graph)    , intent(in)  :: input_graph
     real(dp), allocatable, intent(out) :: x(:)
     type(stored_field)   , intent(out) :: state
+    type(typed_field_domain) :: states
     call bound_real_vector(inputs, this % argument(1), x)
     if (size(x) /= this % num_unknowns()) then
        error stop 'operation_residual: the state contains one component per degree per unknown point'
     end if
-    state = stored_field('state', input_graph % vertex_set(), size(x))
-    call state % set_real_vector(x)
+    states = typed_field_domain(input_graph % vertex_set(), size(x))
+    state  = states % state(x)
   end subroutine state_of
 
   subroutine placed_output(this, input_graph, r, output)
@@ -343,8 +344,9 @@ contains
     real(dp)                 , intent(in) :: r(:)
     class(field), allocatable, intent(inout) :: output
     type(stored_field) :: out
-    out = stored_field(this % name(), input_graph % vertex_set(), size(r))
-    call out % set_real_vector(r)
+    type(typed_field_domain) :: residuals
+    residuals = typed_field_domain(input_graph % vertex_set(), size(r))
+    out       = residuals % residual(r, this % name())
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
   end subroutine placed_output
@@ -383,6 +385,7 @@ contains
     real(dp), intent(in), optional    :: v(:)
     type(stored_field) :: direction
     type(stored_field), allocatable :: point_data(:)
+    type(typed_field_domain) :: points
     class(field), allocatable :: half
     real(dp), allocatable :: coupled(:)
     call point_inputs(this, inputs, x, point_data)
@@ -392,9 +395,8 @@ contains
        r = r + coupled
     end if
     if (present(v)) then
-       direction = stored_field('direction', this % points % vertex_set(), &
-            & size(this % at) * this % stride())
-       call direction % set_real_vector(gathered(this, v))
+       points    = typed_field_domain(this % points % vertex_set(), size(this % at), this % stride())
+       direction = points % direction(gathered(this, v))
        call this % physics % partial_action(this % points, this % physics % bind(point_data), &
             & [variation(this % physics % argument(1), direction)], half)
     else
@@ -406,9 +408,10 @@ contains
       type(stencil), intent(in) :: op
       real(dp), allocatable, intent(out) :: y(:)
       type(stored_field) :: along
+      type(typed_field_domain) :: domain
       if (present(v)) then
-         along = stored_field('direction', input_graph % vertex_set(), size(v))
-         call along % set_real_vector(v)
+         domain = typed_field_domain(input_graph % vertex_set(), size(v))
+         along  = domain % direction(v)
          call op % partial_action(input_graph, op % bind([state]), &
               & [variation(op % argument(1), along)], half)
       else
@@ -429,6 +432,7 @@ contains
     logical              , intent(out) :: available
     type(stored_field) :: state, direction
     type(stored_field), allocatable :: point_data(:)
+    type(typed_field_domain) :: points
     class(field), allocatable :: out
     real(dp), allocatable :: x(:), w(:), governing(:), v(:)
     integer , allocatable :: r(:), c(:)
@@ -453,8 +457,8 @@ contains
        do p = 1, npts
           v((p - 1) * this % degrees + d + 1) = 1.0_dp
        end do
-       direction = stored_field('direction', this % points % vertex_set(), size(v))
-       call direction % set_real_vector(v)
+       points    = typed_field_domain(this % points % vertex_set(), npts, this % degrees)
+       direction = points % direction(v)
        call this % physics % partial_action(this % points, this % physics % bind(point_data), &
             & [variation(this % physics % argument(1), direction)], out)
        call out % real_vector(governing)
@@ -554,12 +558,12 @@ contains
     type(variation)          , intent(in) :: given
     type(variation) :: at_points
     type(stored_field) :: direction
+    type(typed_field_domain) :: points
     real(dp), allocatable :: v(:)
     call given % direction(v)
     if (given % argument_is(this % argument(1))) then
-       direction = stored_field('direction', this % points % vertex_set(), &
-            & size(this % at) * this % stride())
-       call direction % set_real_vector(gathered(this, v))
+       points    = typed_field_domain(this % points % vertex_set(), size(this % at), this % stride())
+       direction = points % direction(gathered(this, v))
        at_points = variation(this % physics % argument(1), direction)
     else if (given % argument_is(this % argument(2))) then
        at_points = given % with_argument(this % physics % argument(2))

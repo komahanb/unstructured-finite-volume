@@ -27,7 +27,7 @@ module operation_linearization
   use view_directed, only : directed_graph
   use field_calculus, only : field, FIELD_REAL
   use graph_fractal      , only : graph
-  use field_stored  , only : stored_field
+  use field_stored  , only : stored_field, typed_field_domain
 
   implicit none
 
@@ -200,6 +200,7 @@ contains
 
     type(stored_field), allocatable :: tuple(:)
     type(stored_field)   :: direction, out
+    type(typed_field_domain)   :: tangent_domain, image_domain
     class(field), allocatable :: pushed, bound_direction
     type(graph) :: on, along
     real(dp), allocatable :: v(:), y(:), base(:), x(:)
@@ -231,9 +232,9 @@ contains
        v = 0.0_dp
     end if
 
-    direction = stored_field('direction', along, tuple(p) % num_entries(), &
-         & num_components=tuple(p) % num_components())
-    call direction % set_real_vector(v)
+    tangent_domain = typed_field_domain(along, tuple(p) % num_entries(), &
+         & tuple(p) % num_components())
+    direction      = tangent_domain % direction(v)
 
     if (this % exact()) then
 
@@ -263,8 +264,8 @@ contains
 
     end if
 
-    out = stored_field('J v', on, n_on, num_components=max(size(y) / n_on, 1))
-    call out % set_real_vector(y)
+    image_domain = typed_field_domain(on, n_on, max(size(y) / n_on, 1))
+    out          = image_domain % real_field('J v', y)
     call emit(out, output)
 
   end subroutine linearization_apply

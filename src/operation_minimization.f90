@@ -42,7 +42,7 @@ module operation_minimization
   use field_calculus  , only : field, FIELD_REAL
   use graph_fractal      , only : graph
   use field_calculus        , only : functional
-  use field_stored     , only : stored_field
+  use field_stored     , only : stored_field, typed_field_domain
   use operation_reduction , only : reduction, REDUCE_SUM, REDUCE_NORM
   use operation_traversal      , only : traversal, TRAVERSAL_COLOURING
 
@@ -523,9 +523,10 @@ contains
     type(stored_field), allocatable          :: inputs(:)
 
     type(stored_field) :: state
+    type(typed_field_domain) :: unknowns
 
-    state = stored_field('state', domain, n, num_components=components)
-    call state % set_real_vector(x)
+    unknowns = typed_field_domain(domain, n, components)
+    state    = unknowns % state(x)
 
     if (present(stored)) then
        inputs = [state, stored]
@@ -725,6 +726,7 @@ contains
     class(minimizer), allocatable :: copy
     class(field), allocatable :: right_hand_side
     type(stored_field) :: out
+    type(typed_field_domain) :: unknowns
     real(dp), allocatable :: rhs(:), x(:)
     real(dp) :: achieved
 
@@ -744,8 +746,8 @@ contains
        call copy % solve(rhs, x, achieved)
     end if
 
-    out = stored_field('solution', this % unknown_domain, this % num_unknowns, num_components=this % num_components)
-    call out % set_real_vector(x)
+    unknowns = typed_field_domain(this % unknown_domain, this % num_unknowns, this % num_components)
+    out      = unknowns % solution(x)
 
     call emit(out, output)
 

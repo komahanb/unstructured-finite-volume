@@ -73,8 +73,8 @@ module operation_family
      procedure :: step_quadrature  => family_step_quadrature
      procedure :: primary_degree   => family_primary_degree
      procedure :: row_pattern      => family_row_pattern
-     procedure :: block_reach      => family_block_reach
-     procedure :: stage_reach      => family_stage_reach
+     procedure :: block_connectivity => family_block_connectivity
+     procedure :: stage_connectivity => family_stage_connectivity
      procedure :: edge_coefficient => family_edge_coefficient
 
   end type family
@@ -259,17 +259,17 @@ contains
   end subroutine family_row_pattern
 
   !===================================================================!
-  ! The reach of the family over a block of n instants at nd degrees:
-  ! the row pattern placed at every instant it fits behind, instant
-  ! outer, degree inner, the primary degree omitted. The edge order
-  ! is the order the coupling's relation is formed in.
+  ! The connectivity of the family over a block of n instants at nd
+  ! degrees: the row pattern placed at every instant it fits behind,
+  ! instant outer, degree inner, the primary degree omitted. The edge
+  ! order is the order the coupling's relation is formed in.
   !===================================================================!
 
-  function family_block_reach(this, nd, n) result(reach)
+  function family_block_connectivity(this, nd, n) result(connectivity)
 
     class(family), intent(in) :: this
     integer      , intent(in) :: nd, n
-    type(connectivity_graph) :: reach
+    type(connectivity_graph) :: connectivity
 
     integer, allocatable :: tails(:), heads(:), tail_degree(:), head_degree(:)
     integer, allocatable :: offset(:), degrees_of(:)
@@ -299,23 +299,23 @@ contains
             & tail_degree(counted), head_degree(counted))
     end do
 
-    reach = connectivity_graph(n, tails, heads, tail_degree, head_degree)
+    connectivity = connectivity_graph(n, tails, heads, tail_degree, head_degree)
 
-  end function family_block_reach
+  end function family_block_connectivity
 
   !===================================================================!
-  ! The reach of the tableau over one step at nd degrees, on the
-  ! vertices 1 (the instant behind), 2..s+1 (the stages) and s+2 (the
-  ! instant ahead): stage i reads the degree above at stages 1..i,
-  ! and the instant ahead reads the degree above (the top degree
-  ! itself) at every stage. Degree outer, stage inner.
+  ! The connectivity of the tableau over one step at nd degrees, on
+  ! the vertices 1 (the instant behind), 2..s+1 (the stages) and s+2
+  ! (the instant ahead): stage i reads the degree above at stages
+  ! 1..i, and the instant ahead reads the degree above (the top
+  ! degree itself) at every stage. Degree outer, stage inner.
   !===================================================================!
 
-  function family_stage_reach(this, nd) result(reach)
+  function family_stage_connectivity(this, nd) result(connectivity)
 
     class(family), intent(in) :: this
     integer      , intent(in) :: nd
-    type(connectivity_graph) :: reach
+    type(connectivity_graph) :: connectivity
 
     integer, allocatable :: tails(:), heads(:), tail_degree(:), head_degree(:)
     integer :: s, d, i, j, at
@@ -344,9 +344,9 @@ contains
        end do
     end do
 
-    reach = connectivity_graph(s + 2, tails, heads, tail_degree, head_degree)
+    connectivity = connectivity_graph(s + 2, tails, heads, tail_degree, head_degree)
 
-  end function family_stage_reach
+  end function family_stage_connectivity
 
   !===================================================================!
   ! The dimensionless coefficient on one edge. An edge from an earlier

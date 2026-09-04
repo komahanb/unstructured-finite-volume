@@ -189,12 +189,12 @@ module operation_action
      procedure :: max_degree       => operation_max_degree
      procedure :: partial_action   => operation_partial_action
      procedure :: value_by_partial_action
-     procedure :: compiled_tangent => operation_compiled_tangent
+     procedure :: explicit_tangent => operation_explicit_tangent
 
      procedure :: declare_arguments
      procedure :: versioned
      procedure :: version
-     procedure :: version_transposed
+     procedure :: transpose_version
      procedure :: num_arguments
      procedure :: argument => operation_argument
      procedure :: contracts
@@ -642,13 +642,13 @@ contains
   ! factors of the one substitutes them transposed for the other.
   !===================================================================!
 
-  pure logical function version_transposed(this)
+  pure logical function transpose_version(this)
 
     class(operation), intent(in) :: this
 
-    version_transposed = this % is_transposed
+    transpose_version = this % is_transposed
 
-  end function version_transposed
+  end function transpose_version
 
   pure integer function version(this) result(mark)
 
@@ -659,16 +659,16 @@ contains
   end function version
 
   !===================================================================!
-  ! THE COMPILED TANGENT. A statement that can express its own
+  ! THE EXPLICIT TANGENT. A statement that can express its own
   ! tangent in one argument as triples - row, column, weight -
-  ! reports so here, and a minimizer governing it may then attach the
-  ! compiled operator instead of forming the tangent by matvecs. The
+  ! reports so here, and a minimizer governing it may then state the
+  ! explicit operator instead of forming the tangent by matvecs. The
   ! default is that it cannot, and available reports so; the arrays
   ! are then not assigned. Nothing here is a matvec: a statement that
-  ! compiles its tangent stores its own structure.
+  ! reports its tangent explicitly stores its own structure.
   !===================================================================!
 
-  subroutine operation_compiled_tangent(this, input_graph, inputs, which, &
+  subroutine operation_explicit_tangent(this, input_graph, inputs, which, &
        & rows, columns, weights, available)
 
     class(operation)     , intent(in)  :: this
@@ -683,7 +683,7 @@ contains
     allocate(rows(0), columns(0), weights(0))
     available = .false.
 
-  end subroutine operation_compiled_tangent
+  end subroutine operation_explicit_tangent
 
   subroutine operation_partial_action(this, input_graph, inputs, &
        & variations, output)
@@ -800,7 +800,7 @@ contains
     logical :: available
     integer :: j
 
-    call rows % compiled_tangent(unknowns, rows % bind(inputs), 1, r, c, w, available)
+    call rows % explicit_tangent(unknowns, rows % bind(inputs), 1, r, c, w, available)
     if (available) then
        call dense_of_triples(num_unknowns, r, c, w, a)
        return

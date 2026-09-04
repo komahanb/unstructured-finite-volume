@@ -427,9 +427,9 @@ requested operations in the order the memory is laid out.
 multiplies the unknowns by the cell count, so the dense elimination
 binds at a few thousand unknowns - 8x8 cells by 11 instants is 2112,
 16x16 by 41 is 31,000, and the latter's factorisation is an hour. The
-block now records its own tangent as triples (`compiled_tangent`),
+block now records its own tangent as triples (`explicit_tangent`),
 so the matrix is formed at the cost of its nonzeros and not by n
-applies, and newton attaches it as a stencil; that is what a banded
+applies, and newton states it as a stencil; that is what a banded
 or a multigrid solve needs, and the dense one already gains from it.
 
 **Multigrid over the space-time block does not converge with a point

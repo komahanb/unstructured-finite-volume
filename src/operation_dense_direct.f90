@@ -1,17 +1,17 @@
 !=====================================================================!
 ! Dense direct solve: Gaussian elimination with partial pivoting
 ! as a concrete minimizer. The matrix is not passed in; it is
-! assembled by applying the attached operation's matvec to each
+! assembled by applying the stated operation's matvec to each
 ! basis vector,
 !
 !      A(:,j) = matvec(e_j),
 !
 ! and A x = rhs is then eliminated. matvec and the norm come from
-! the attached operation, and the achieved residual is measured
+! the stated operation, and the achieved residual is measured
 ! through them; no matrix representation is owned here, since
-! operation_stencil already provides one - a stencil compiled from
-! an operation, or the transpose of one, is attached like any other
-! operation.
+! operation_stencil already provides one - a stencil built explicitly
+! from an operation, or the transpose of one, is stated like any
+! other operation.
 !
 ! A direct solve is a single pass, so the tolerance and iteration
 ! limit inherited from the minimizer family are unused. The one
@@ -132,7 +132,7 @@ contains
             & this % num_unknowns, n, this % num_components, a, constant, stored=this % stored)
        call this % factor % factorise(a, this % singular_tolerance * maxval(abs(a)))
        this % retained_version  = this % action % version()
-       this % retained_transposed = this % action % version_transposed()
+       this % retained_transposed = this % action % transpose_version()
     end if
 
     !----------------------------------------------------------------!
@@ -150,12 +150,12 @@ contains
     end if
 
     call this % factor % substitute(rhs, solution, &
-         & transposed = this % action % version_transposed() .neqv. this % retained_transposed)
+         & transposed = this % action % transpose_version() .neqv. this % retained_transposed)
     x = solution
 
     !----------------------------------------------------------------!
     ! Measure the residual of the computed solution through the
-    ! attached operation's matvec and norm.
+    ! stated operation's matvec and norm.
     !----------------------------------------------------------------!
 
     call this % imbalance(rhs, x, r)

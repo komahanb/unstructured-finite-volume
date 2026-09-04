@@ -30,7 +30,7 @@
 !                                           would, on any vector the
 !                                           blocks can express
 !
-! The compiled path is required: attach a stencil operator. The
+! The explicit path is required: state a stencil operator. The
 ! interpreted path would re-derive per level; that is a different
 ! member, not implemented.
 !
@@ -43,7 +43,7 @@ module operation_multigrid
   use view_directed, only : directed_graph
   use view_directed_stored, only : stored_directed_graph
   use operation_stencil, only : stencil, combine_triples
-  use operation_minimization , only : minimizer, attach
+  use operation_minimization , only : minimizer, state
   use operation_action       , only : operation
   use graph_fractal          , only : graph
   use field_stored           , only : stored_field
@@ -70,7 +70,7 @@ module operation_multigrid
 
      procedure :: name  => multigrid_name
      procedure :: setup
-     procedure :: attach => multigrid_attach
+     procedure :: state => multigrid_state
      procedure :: solve
 
   end type multigrid
@@ -89,18 +89,18 @@ contains
   end function multigrid_name
 
   !===================================================================!
-  ! After attach: read the fine stencil through the aggregates and
+  ! After state: read the fine stencil through the aggregates and
   ! pass the governed pair their statements. The smoother sweeps the
   ! fine one; the coarse minimizer solves the block one.
   !===================================================================!
 
   !===================================================================!
-  ! Attach, and where aggregates are already stored, set the two levels
-  ! up at once: a governing minimizer that re-attaches its inner
+  ! State, and where aggregates are already stored, set the two levels
+  ! up at once: a governing minimizer that re-states its inner
   ! minimizer at every iteration need not reference the coarse level.
   !===================================================================!
 
-  subroutine multigrid_attach(this, action, context, unknown_domain, num_unknowns, &
+  subroutine multigrid_state(this, action, context, unknown_domain, num_unknowns, &
        & num_components, coupling, stored_inputs)
 
     class(multigrid)     , intent(inout)        :: this
@@ -114,7 +114,7 @@ contains
 
     integer, allocatable :: kept(:)
 
-    call attach(this, action, context, unknown_domain, num_unknowns, &
+    call state(this, action, context, unknown_domain, num_unknowns, &
          & num_components, coupling, stored_inputs)
 
     if (allocated(this % aggregates)) then
@@ -122,7 +122,7 @@ contains
        call this % setup(kept)
     end if
 
-  end subroutine multigrid_attach
+  end subroutine multigrid_state
 
   subroutine setup(this, aggregates)
 
@@ -159,17 +159,17 @@ contains
     ! pattern read through the blocks, one vertex each
     this % smoother % block_width = this % block_width
     if (this % block_width > 1) then
-       call this % smoother % attach(this % action, this % graph, &
+       call this % smoother % state(this % action, this % graph, &
             & this % unknown_domain, this % num_unknowns, &
             & coupling = read_through(this % action, size(this % affine), this % block_width))
     else
-       call this % smoother % attach(this % action, this % graph, &
+       call this % smoother % state(this % action, this % graph, &
             & this % unknown_domain, this % num_unknowns, coupling = this % graph)
     end if
 
     ! The coarse statement stores its own stencil, and that stencil
     ! is exactly the coupling of the coarse unknowns.
-    call this % coarse % attach(block_statement, block_statement % pattern, &
+    call this % coarse % state(block_statement, block_statement % pattern, &
          & block_statement % pattern % vertex_set(), &
          & block_statement % pattern % num_vertices(), &
          & coupling = block_statement % pattern)
@@ -211,7 +211,7 @@ contains
        end do
        call combine_triples(nb, nb, r, c, w, rows, columns, weights)
     class default
-       error stop 'multigrid: attach a compiled (stencil) operator'
+       error stop 'multigrid: state an explicit (stencil) operator'
     end select
 
   end subroutine through_map
@@ -221,7 +221,8 @@ contains
   ! the graph over the blocks with an edge where any unknown of one
   ! reads any unknown of the other, self-edges removed. The coupling
   ! a block smoother colours. num_vertices is the stencil's vertex
-  ! count: the extent of the affine part attach evaluated from it.
+  ! count: the extent of the affine part evaluated from it when the
+  ! minimizer was stated.
   !===================================================================!
 
   function read_through(action, num_vertices, width) result(coupling)

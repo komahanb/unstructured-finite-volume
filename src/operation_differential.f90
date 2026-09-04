@@ -50,8 +50,8 @@
 !
 ! THE STENCIL INTERFACE. The composed map on the vertex landing is
 ! square, and stencil_of returns it as a stencil - the
-! same triples, the same constant - so a minimizer can attach the
-! compiled matrix directly. The edge landing is a rectangular
+! same triples, the same constant - so a minimizer can state the
+! explicit matrix directly. The edge landing is a rectangular
 ! relation (edges x vertices) and is rejected there, because a
 ! stencil's input and output share one vertex set. apply traverses
 ! the composed triples the same way the stencil traverses its edges.

@@ -10,8 +10,8 @@
 ! is added into the summed stencils there. A row named fixed instead
 ! reads x(row) - fixed(row): the identity, not the physics.
 !
-! apply, compiled_tangent and partial_action are composed once here
-! from the two stencils' own apply/compiled_tangent/partial_action
+! apply, explicit_tangent and partial_action are composed once here
+! from the two stencils' own apply/explicit_tangent/partial_action
 ! and the physics expression's - a residual never differentiates
 ! anything itself, it only assembles what the two composed objects
 ! already differentiate.
@@ -60,7 +60,7 @@ module operation_residual
      procedure :: apply          => residual_apply
      procedure :: max_degree     => residual_max_degree
      procedure :: partial_action => residual_partial_action
-     procedure :: compiled_tangent => residual_compiled_tangent
+     procedure :: explicit_tangent => residual_explicit_tangent
 
      procedure :: num_unknowns
      procedure :: fixed_unknowns
@@ -79,8 +79,8 @@ module operation_residual
      procedure :: connected_stencil
      procedure :: attach_connected_stencil
      procedure :: point_domain
-     procedure :: constrained
-     procedure :: linearized
+     procedure :: constrain
+     procedure :: linearize
 
   end type residual_operator
 
@@ -418,7 +418,7 @@ contains
     end subroutine stencil_term
   end subroutine discretized
 
-  subroutine residual_compiled_tangent(this, input_graph, inputs, which, &
+  subroutine residual_explicit_tangent(this, input_graph, inputs, which, &
        & rows, columns, weights, available)
     class(residual_operator), intent(in)  :: this
     class(directed_graph)    , intent(in)  :: input_graph
@@ -473,7 +473,7 @@ contains
        w(kept) = 1.0_dp
     end do
     call combine_triples(n, n, r(1:kept), c(1:kept), w(1:kept), rows, columns, weights)
-  end subroutine residual_compiled_tangent
+  end subroutine residual_explicit_tangent
 
   subroutine stencil_triples(op, is_fixed, r, c, w, kept)
     type(stencil), intent(in)    :: op
@@ -586,7 +586,7 @@ contains
   !===================================================================!
   ! THE RESIDUAL CONSTRAINED TO free UNKNOWNS OF ITS OWN NUMBERING,
   ! the rest set to values. Ch. 4.6.3 of the dissertation names this
-  ! and linearized below the transpose-Jacobian-vector-product
+  ! and linearize below the transpose-Jacobian-vector-product
   ! routines. The primary and, if present, connected stencil each
   ! restrict themselves the way a stencil already restricts for
   ! multigrid; a residual adds only what a stencil does not state -
@@ -595,7 +595,7 @@ contains
   ! in free) is an invalid constraint.
   !===================================================================!
 
-  function constrained(this, free, values) result(sub)
+  function constrain(this, free, values) result(sub)
 
     class(residual_operator), intent(in) :: this
     integer                 , intent(in) :: free(:)
@@ -647,11 +647,11 @@ contains
             & this % degrees, this % primary, fixed_rows(1:ncar), fixed(1:ncar))
     end if
 
-  end function constrained
+  end function constrain
 
   !===================================================================!
-  ! THE COMPILED TANGENT, FROZEN INTO A LINEAR RESIDUAL. Ch. 4.6.3 of
-  ! the dissertation names this and constrained above the transpose-
+  ! THE EXPLICIT TANGENT, FROZEN INTO A LINEAR RESIDUAL. Ch. 4.6.3 of
+  ! the dissertation names this and constrain above the transpose-
   ! Jacobian-vector-product routines. The frozen matrix states the
   ! whole linear map, so the returned residual has no physics of its
   ! own (a zero rule) and no fixed rows. transposed states which of
@@ -660,7 +660,7 @@ contains
   ! this module's own procedure inherited from operation_action).
   !===================================================================!
 
-  function linearized(this, input_graph, inputs, rhs, transposed, mark) result(lin)
+  function linearize(this, input_graph, inputs, rhs, transposed, mark) result(lin)
 
     class(residual_operator), intent(in) :: this
     class(directed_graph)   , intent(in) :: input_graph
@@ -679,12 +679,12 @@ contains
        error stop 'operation_residual: one right side per unknown'
     end if
 
-    call this % compiled_tangent(input_graph, inputs, 1, r, c, w, available)
+    call this % explicit_tangent(input_graph, inputs, 1, r, c, w, available)
     if (.not. available) then
-       error stop 'operation_residual: the tangent in the state compiles'
+       error stop 'operation_residual: the tangent in the state is explicit'
     end if
 
-    a = stencil(r, c, w, spread(0.0_dp, 1, this % unknowns), 'frozen tangent')
+    a = stencil(r, c, w, spread(0.0_dp, 1, this % unknowns), 'explicit tangent')
     if (transposed) a = a % transpose()
     call a % constants % set_real_vector(-rhs)
 
@@ -692,6 +692,6 @@ contains
          & this % unknowns, this % degrees, this % primary, [integer ::], [real(dp) ::])
     call lin % versioned(mark, transposed=transposed)
 
-  end function linearized
+  end function linearize
 
 end module operation_residual

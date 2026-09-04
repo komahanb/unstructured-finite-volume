@@ -2,7 +2,7 @@
 ! The connectivity graph: a directed graph whose edges also store the
 ! two differential orders a discretization reads across.
 !
-! A family's block_reach and stage_reach each return one of these:
+! A family's block_connectivity and stage_connectivity each return one of these:
 ! vertices are instants or stages, and an edge from tail to head
 ! states that the row at head, of degree head_degree(edge), reads a
 ! value at tail, of degree tail_degree(edge). No arithmetic is

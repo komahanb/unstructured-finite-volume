@@ -8,7 +8,7 @@
 ! graph; the graph argument remains only as the legacy
 ! operation host the compatibility apply() signature still requires. This
 ! module stores the minimizer base - ONE family for one purpose:
-! attach a statement, drive its residual to zero. Linear solvers,
+! state a statement, drive its residual to zero. Linear solvers,
 ! newton, and every other operation that minimizes a residual are its
 ! concretions; their differences are governance inside the family,
 ! never a second taxonomy. The solver vocabulary is defined here as
@@ -66,11 +66,11 @@ module operation_minimization
   ! the smallest window that gives the slope a usable standard error.
   integer, parameter :: window = 5
   public :: minimizer
-  public :: attach
+  public :: state
   public :: state_tuple
 
   !===================================================================!
-  ! The base: an attached operation, the graph it reads, and the
+  ! The base: a stated operation, the graph it reads, and the
   ! tolerances every iteration honours.
   !===================================================================!
 
@@ -89,7 +89,7 @@ module operation_minimization
      ! the stencil the structural algorithms need, and the ONLY graph
      ! sweep_order is permitted to colour.
      !
-     ! The coupling is OPTIONAL AT ATTACH AND HAS NO FALLBACK. A
+     ! The coupling is OPTIONAL WHEN STATED AND HAS NO FALLBACK. A
      ! structure-free minimizer - gmres, conjugate gradient, newton -
      ! never reads the coupling and need never supply one. A structured
      ! minimizer - jacobi, gauss-seidel - receives the coupling from a
@@ -102,20 +102,20 @@ module operation_minimization
      ! CALLER states so, at its own call site.
      class(directed_graph)          , allocatable :: coupling
 
-     ! The unknown domain U: the domain of the solution, explicit at
-     ! attach, identity preserved - never inferred from the host.
+     ! The unknown domain U: the domain of the solution, explicit
+     ! when stated, identity preserved - never inferred from the host.
      type(graph) :: unknown_domain
      integer         :: num_unknowns = 0
 
      ! The residual domain Y: the codomain of the action, read from
-     ! the action itself at attach.
+     ! the action itself when stated.
      type(graph) :: residual_domain
      integer         :: num_residuals = 0
 
      ! How wide an entry is. One number per cell is the common case
      ! and the default; a state with several numbers per cell - a
      ! complex plane point, a species vector, a whole spatial field
-     ! at one instant - declares the width at attach, and every
+     ! at one instant - declares the width when stated, and every
      ! procedure below then measures the entire vector instead of its
      ! first component.
      integer :: num_components = 1
@@ -123,7 +123,7 @@ module operation_minimization
      ! THE BLOCK WIDTH. Unknowns that come in consecutive blocks of
      ! this width - a point's components, for example - and are coupled
      ! within the block far more strongly than across it, are smoothed
-     ! one block at a time: the coupling attached is then over blocks,
+     ! one block at a time: the coupling stated is then over blocks,
      ! one vertex each, and the indicator reads a block's square
      ! submatrix. One is the default case, each unknown its own block.
      integer :: block_width = 1
@@ -165,7 +165,7 @@ module operation_minimization
      ! either, whatever the slope over a window of its early iterations.
      logical , private :: descended = .false.
 
-     ! false whenever the operator is attached: a cached block diagonal
+     ! false whenever the operator is stated: a cached block diagonal
      ! is valid only for the operator it was evaluated from
      logical :: diagonal_valid = .false.
 
@@ -181,8 +181,8 @@ module operation_minimization
      procedure :: exhausted
      procedure :: halted
 
-     procedure :: attach
-     procedure :: raw_apply
+     procedure :: state
+     procedure :: evaluate
      procedure :: matvec
      procedure :: imbalance
      procedure :: inner_product
@@ -191,7 +191,7 @@ module operation_minimization
      procedure :: block_diagonal
 
      ! The operation interface: a solver IS an operation - the one
-     ! that solves the attached statement. apply solves from zero, so a
+     ! that solves its own stated action. apply solves from zero, so a
      ! solver composes wherever operations compose; a preconditioner is
      ! exactly this interface of an inner solver.
      procedure :: domain => solver_domain
@@ -441,7 +441,7 @@ contains
   ! the contribution of its boundary values and sources alone.
   !===================================================================!
 
-  subroutine attach(this, action, context, unknown_domain, num_unknowns, &
+  subroutine state(this, action, context, unknown_domain, num_unknowns, &
        & num_components, coupling, stored_inputs)
 
     class(minimizer)  , intent(inout) :: this
@@ -492,7 +492,7 @@ contains
 
     allocate(zero(n * this % num_components))
     zero = 0.0_dp
-    call raw_apply(this, zero, this % affine)
+    call evaluate(this, zero, this % affine)
 
     ! Classification is not admissibility: U and Y stay distinct
     ! identities, but THIS solver family is square - the scalar
@@ -505,7 +505,7 @@ contains
 
     this % diagonal_valid = .false.
 
-  end subroutine attach
+  end subroutine state
 
   !===================================================================!
   ! The inputs a statement is evaluated on at the state x: x stored
@@ -542,7 +542,7 @@ contains
   ! function that was evaluated.
   !===================================================================!
 
-  subroutine raw_apply(this, x, y, inputs)
+  subroutine evaluate(this, x, y, inputs)
 
     class(minimizer), intent(in)   :: this
     real(dp), intent(in)               :: x(:)
@@ -562,7 +562,7 @@ contains
     call image % real_vector(y)
     if (present(inputs)) call move_alloc(tuple, inputs)
 
-  end subroutine raw_apply
+  end subroutine evaluate
 
   !===================================================================!
   ! The solver's operations, each a delegation.
@@ -574,7 +574,7 @@ contains
     real(dp), intent(in)               :: x(:)
     real(dp), allocatable, intent(out) :: y(:)
 
-    call raw_apply(this, x, y)
+    call evaluate(this, x, y)
     y = y - this % affine
 
   end subroutine matvec
@@ -632,7 +632,7 @@ contains
     ! not record that.
     if (.not. allocated(this % coupling)) then
        error stop 'minimization: a sweep needs the dependent-variable &
-            &coupling - attach it with coupling='
+            &coupling - state it with coupling='
     end if
 
     colouring = traversal(TRAVERSAL_COLOURING)
@@ -642,7 +642,7 @@ contains
   end subroutine sweep_order
 
   !===================================================================!
-  ! THE BLOCK DIAGONAL by coloured indicators. The coupling attached is over
+  ! THE BLOCK DIAGONAL by coloured indicators. The coupling stated is over
   ! the blocks; blocks of one colour do not couple, so an indicator of
   ! one on the k-th component of every block of a colour, applied
   ! through the matvec, returns the k-th column of every one of those
@@ -675,7 +675,7 @@ contains
 
     call this % sweep_order(colours)
     if (size(colours) /= nb) then
-       error stop 'diagonal: the coupling attached is over the blocks, one colour each'
+       error stop 'diagonal: the coupling stated is over the blocks, one colour each'
     end if
 
     do col = 1, maxval(colours)

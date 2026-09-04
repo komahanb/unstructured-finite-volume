@@ -247,7 +247,7 @@ contains
 
        dual = stencil(g, label='fitting dual')
 
-       call solver % attach(dual, dual % pattern, dual % pattern % vertex_set(), &
+       call solver % state(dual, dual % pattern, dual % pattern % vertex_set(), &
             & dual % pattern % num_vertices())
        solver % tolerance      = spacing_at_one
        solver % max_iterations = 50

@@ -1,7 +1,7 @@
 !=====================================================================!
 ! Newton's iteration: a minimizer like every other.
 !
-! One family, one protocol: attach a statement, drive its residual to
+! One family, one protocol: state a statement, drive its residual to
 ! zero. The linear members reach the solution in the statement's own
 ! space; newton reaches it by linearising at the current iterate,
 !
@@ -100,11 +100,11 @@ module operation_newton
 
   type, extends(minimizer) :: newton
 
-     ! Whether the tangent is taken compiled where the statement
-     ! provides it. When false, the linearization is attached - a
+     ! Whether the tangent is taken explicit where the statement
+     ! provides it. When false, the linearization is stated - a
      ! matrix-vector product, no stored matrix - and the inner
      ! minimizer must iterate.
-     logical :: compiled = .true.
+     logical :: explicit = .true.
 
      ! The order of the Halley-Chebyshev family taken: one is Newton
      ! unchanged, and the statement's own max_degree is the upper
@@ -145,7 +145,7 @@ contains
     real(dp), intent(out)   :: achieved
 
     type(linearization) :: jacobian
-    type(stencil) :: compiled
+    type(stencil) :: tangent
     type(stored_field), allocatable :: inputs(:)
     integer , allocatable :: rows(:), columns(:)
     real(dp), allocatable :: weights(:)
@@ -170,7 +170,7 @@ contains
 
        ! The current iterate: the full statement, of any linearity,
        ! evaluated on the input tuple every tangent below is frozen on.
-       call this % raw_apply(x, y, inputs)
+       call this % evaluate(x, y, inputs)
        residual = y - rhs
 
        achieved = this % norm(residual)
@@ -187,25 +187,25 @@ contains
        ! residual was evaluated on, stored inputs included.
        call jacobian % freeze(inputs, base=y)
 
-       ! A statement that compiles its tangent passes the inner
+       ! A statement whose tangent is explicit passes the inner
        ! minimizer a stencil, whose pattern is then the coupling a
        ! structured minimizer sweeps by; any other is passed the
        ! linearization, a matrix-vector product.
        available = .false.
-       if (this % compiled) then
-          call this % action % compiled_tangent(this % graph, this % action % bind(inputs), &
+       if (this % explicit) then
+          call this % action % explicit_tangent(this % graph, this % action % bind(inputs), &
                & 1, rows, columns, &
                & weights, available)
        end if
        if (available) then
-          compiled = stencil(rows, columns, weights, &
-               & spread(0.0_dp, 1, this % num_unknowns), 'compiled tangent')
-          call compiled % versioned(this % action % version(), this % action % version_transposed())
-          call this % inner % attach(compiled, compiled % pattern, this % unknown_domain, &
+          tangent = stencil(rows, columns, weights, &
+               & spread(0.0_dp, 1, this % num_unknowns), 'explicit tangent')
+          call tangent % versioned(this % action % version(), this % action % transpose_version())
+          call this % inner % state(tangent, tangent % pattern, this % unknown_domain, &
                & this % num_unknowns, num_components = this % num_components, &
-               & coupling = compiled % pattern)
+               & coupling = tangent % pattern)
        else
-          call this % inner % attach(jacobian, this % graph, this % unknown_domain, &
+          call this % inner % state(jacobian, this % graph, this % unknown_domain, &
                & this % num_unknowns, num_components = this % num_components)
        end if
        dq = 0.0_dp
@@ -228,7 +228,7 @@ contains
 
     end do
 
-    call this % raw_apply(x, y)
+    call this % evaluate(x, y)
     achieved = this % norm(y - rhs)
 
   end subroutine solve
@@ -236,7 +236,7 @@ contains
   !===================================================================!
   ! Add delta_2, ..., delta_p to the Newton step delta already
   ! solved, each against the same frozen jacobian this % inner is
-  ! already attached to. achieved is the maximum over the additional
+  ! already stated with. achieved is the maximum over the additional
   ! solves, checked by the same guard condition the caller applies to
   ! the Newton solve.
   !===================================================================!

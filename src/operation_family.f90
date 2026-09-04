@@ -4,8 +4,9 @@
 !
 ! One type stores every family as data. A multistep family (Adams,
 ! BDF) is an order p and the functional its coefficients are read
-! from; a Runge-Kutta family (DIRK) is a tableau. The three
-! constructors below fix the data, and every query is one procedure
+! from; a Runge-Kutta family (DIRK) is a tableau; Newmark is the
+! coefficient pair beta and gamma. The constructors below fix the
+! data, and every query is one procedure
 ! that reads it. The coefficients produced are dimensionless: the
 ! weight an edge finally stores is the coefficient times a power of
 ! the step, and that power is fixed by the two degrees the edge
@@ -42,20 +43,23 @@ module operation_family
   private
   public :: family
   public :: adams_family, bdf_family, dirk_family
+  public :: newmark_family, taylor_newmark_family
   public :: implicit_midpoint, crouzeix_two_stage, crouzeix_three_stage, &
        & hairer_wanner_five_stage
   public :: slope_at_zero, integral_over_step
 
-  ! The three coupling geometries a family reads its edges by.
+  ! The coupling geometries a family reads its edges by.
 
-  integer, parameter :: FAMILY_ADAMS = 1
-  integer, parameter :: FAMILY_BDF   = 2
-  integer, parameter :: FAMILY_DIRK  = 3
+  integer, parameter :: FAMILY_ADAMS   = 1
+  integer, parameter :: FAMILY_BDF     = 2
+  integer, parameter :: FAMILY_DIRK    = 3
+  integer, parameter :: FAMILY_NEWMARK = 4
 
   !===================================================================!
   ! A family is its label, its geometry and its data: the order of a
-  ! multistep family, or the tableau (a, b) of a DIRK family. A
-  ! multistep family has one stage with weight one, so b = [1].
+  ! multistep family, the tableau (a, b) of a DIRK family, or beta and
+  ! gamma of a Newmark family. Every unstaged family has one stage
+  ! with weight one, so b = [1].
   !===================================================================!
 
   type, extends(edge_function) :: family
@@ -64,6 +68,8 @@ module operation_family
      integer , private :: order    = 1
      real(dp), private, allocatable :: a(:,:)
      real(dp), private, allocatable :: b(:)
+     real(dp), private :: beta  = 0.0_dp
+     real(dp), private :: gamma = 0.0_dp
 
    contains
 
@@ -86,17 +92,20 @@ contains
   ! tableau entry above the diagonal stops the program.
   !===================================================================!
 
-  function create(label, geometry, order, a, b) result(this)
+  function create(label, geometry, order, a, b, beta, gamma) result(this)
 
     character(len=*), intent(in) :: label
     integer         , intent(in) :: geometry, order
     real(dp)        , intent(in) :: a(:,:), b(:)
+    real(dp), optional, intent(in) :: beta, gamma
     type(family) :: this
 
     this % geometry = geometry
     this % order    = order
     this % a        = a
     this % b        = b
+    if (present(beta))  this % beta  = beta
+    if (present(gamma)) this % gamma = gamma
     call this % declare_edge_arguments(label)
 
   end function create
@@ -144,16 +153,48 @@ contains
 
   end function dirk_family
 
+  function newmark_family(beta, gamma, order) result(this)
+
+    real(dp), intent(in) :: beta, gamma
+    integer , intent(in) :: order
+    type(family) :: this
+
+    if (order < 1) error stop 'operation_family: the order is positive'
+    this = create('newmark', FAMILY_NEWMARK, order, reshape([1.0_dp], [1, 1]), &
+         & [1.0_dp], beta=beta, gamma=gamma)
+
+  end function newmark_family
+
+  function taylor_newmark_family() result(this)
+
+    type(family) :: this
+
+    this = create('taylor-newmark', FAMILY_NEWMARK, 1, reshape([1.0_dp], [1, 1]), &
+         & [1.0_dp], beta=0.0_dp, gamma=0.0_dp)
+
+  end function taylor_newmark_family
+
   !===================================================================!
   ! The queries, each one read from the data.
   !===================================================================!
+
+  pure subroutine require_newmark_equation(this, equation_degree)
+
+    class(family), intent(in) :: this
+    integer      , intent(in) :: equation_degree
+
+    if (this % geometry == FAMILY_NEWMARK .and. equation_degree /= 2) then
+       error stop 'operation_family: Newmark advances a second-order state'
+    end if
+
+  end subroutine require_newmark_equation
 
   pure integer function family_history_depth(this, equation_degree)
 
     class(family), intent(in) :: this
     integer      , intent(in) :: equation_degree
 
-    associate (u1 => equation_degree); end associate
+    call require_newmark_equation(this, equation_degree)
     select case (this % geometry)
     case (FAMILY_ADAMS)
        family_history_depth = max(this % order - 1, 1)
@@ -170,6 +211,7 @@ contains
     class(family), intent(in) :: this
     integer      , intent(in) :: equation_degree
 
+    call require_newmark_equation(this, equation_degree)
     family_primary_degree = merge(0, equation_degree, this % geometry == FAMILY_BDF)
 
   end function family_primary_degree
@@ -213,7 +255,12 @@ contains
     if (k < 1 .or. k > size(dt)) then
        error stop 'operation_family: a quadrature is evaluated at an instant of the block'
     end if
-    num_nodes = merge(1, min(this % order, k), this % geometry == FAMILY_DIRK)
+    select case (this % geometry)
+    case (FAMILY_ADAMS, FAMILY_BDF)
+       num_nodes = min(this % order, k)
+    case default
+       num_nodes = 1
+    end select
     allocate(weight(num_nodes))
     do j = 1, num_nodes
        weight(j) = integral_over_step(nodes(dt, k, num_nodes), j - 1)
@@ -225,7 +272,9 @@ contains
   ! The row pattern: the offsets an edge reads and the degree at each,
   ! for the row that head_degree a degree. Adams reads the value at
   ! offset one and the derivative at the p previous instants; BDF
-  ! reads the degree below at offsets 0..p; DIRK has no derived rows.
+  ! reads the degree below at offsets 0..p; Newmark reads q and q'
+  ! from the previous instant and q'' from the previous and current
+  ! instants; DIRK has no derived rows.
   !===================================================================!
 
   pure subroutine family_row_pattern(this, head_degree, equation_degree, &
@@ -237,6 +286,7 @@ contains
 
     integer :: i
 
+    call require_newmark_equation(this, equation_degree)
     select case (this % geometry)
     case (FAMILY_ADAMS)
        if (head_degree < 0 .or. head_degree >= equation_degree) then
@@ -252,6 +302,17 @@ contains
        end if
        offset = [(i, i = 0, this % order)]
        allocate(tail_degree(this % order + 1), source=head_degree - 1)
+    case (FAMILY_NEWMARK)
+       select case (head_degree)
+       case (0)
+          offset      = [1, 1, 1, 0]
+          tail_degree = [0, 1, 2, 2]
+       case (1)
+          offset      = [1, 1, 0]
+          tail_degree = [1, 2, 2]
+       case default
+          allocate(offset(0), tail_degree(0))
+       end select
     case default
        allocate(offset(0), tail_degree(0))
     end select
@@ -391,6 +452,45 @@ contains
        end if
        if (j > this % order) error stop 'operation_family: a row reaches p instants'
        c = slope_at_zero(nodes(dt, head, this % order + 1), j)
+
+    case (FAMILY_NEWMARK)
+       if (head_degree < 0 .or. head_degree > 1) then
+          error stop 'operation_family: a Newmark row determines q or qdot'
+       end if
+       if (tail /= head .and. tail /= head - 1) then
+          error stop 'operation_family: a Newmark row reads the current or previous instant'
+       end if
+       if (tail == head) then
+          if (tail_degree /= 2) then
+             error stop 'operation_family: Newmark reads the current acceleration'
+          end if
+          if (head_degree == 0) then
+             c = derivative_terms(this % beta, dt(head))
+          else
+             c = derivative_terms(this % gamma, dt(head))
+          end if
+       else
+          select case (head_degree)
+          case (0)
+             select case (tail_degree)
+             case (0, 1)
+                c = derivative_terms(1.0_dp, dt(head))
+             case (2)
+                c = derivative_terms(0.5_dp - this % beta, dt(head))
+             case default
+                error stop 'operation_family: a Newmark value row reads q, qdot and qddot'
+             end select
+          case (1)
+             select case (tail_degree)
+             case (1)
+                c = derivative_terms(1.0_dp, dt(head))
+             case (2)
+                c = derivative_terms(1.0_dp - this % gamma, dt(head))
+             case default
+                error stop 'operation_family: a Newmark velocity row reads qdot and qddot'
+             end select
+          end select
+       end if
 
     case default
        s = size(this % b)

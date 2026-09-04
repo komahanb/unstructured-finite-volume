@@ -192,7 +192,7 @@ Checked against the dissertation directly, not by resemblance:
 What does not trace to the dissertation, and should not be read as if it did:
 
 - `tail_degree` and `head_degree` (`src/operation_family.f90`, `src/view_directed_connectivity.f90`; named `source_degree`/`determines` until this codebase's own naming pass) are this codebase's own machinery for the arbitrary-order generalization above. The dissertation treats state degree two only and has no term for them.
-- Newmark (Ch. 4.2) is a fourth scheme in the dissertation, with its own full adjoint derivation. It is not implemented here.
+- Newmark (Ch. 4.2) is the fourth scheme: its beta and gamma coefficients are now data of the same `family` type as BDF, Adams and DIRK, and Taylor-Newmark is the explicit Taylor-series member of that family.
 
 How the dissertation roles now map onto the code:
 
@@ -622,11 +622,11 @@ the square: R bound to the grid's arithmetic. Its exactness class is
 what the order p names — the square commutes identically on the
 polynomials the scheme reproduces (`constraint_rows` shows the derived
 rows vanish there) and to order h^p off them (`marched_block` shows
-the defect fall as 2^p under halving). `families = bdf adams dirk`,
-orders up to
-`max_discretization_order`: backward differences and Adams-Moulton at
-any order, diagonally implicit Runge-Kutta at orders two to four (the
-implicit midpoint rule and the two Crouzeix tableaux).
+the defect fall as 2^p under halving). `families = bdf adams dirk` is
+the default survey. The accepted family names are `bdf` and `adams`
+at any order, `dirk` at orders two to four (the implicit midpoint rule
+and the two Crouzeix tableaux), `newmark` at orders one to three, and
+`taylor-newmark` at order one.
 `combinations = 1 2 3` builds chains of that many windows, joined at
 their shared instants: one window is a single family over the whole
 horizon, and more than one changes family along it. Any count may be
@@ -719,7 +719,7 @@ name pass through to it.
 | `constraint_rows` | one block's rows; the physics partials against their closed form and a central difference | `./graph_time_integrator --demo=constraint_rows` |
 | `coupling_relation` | the relations a scheme's coupling carries, and the weights on them | `./graph_time_integrator --demo=coupling_relation` |
 | `expansion_check` | the expansion's derivatives to fourth order, each against a difference of the one below | `./graph_time_integrator --demo=expansion_check` |
-| `family_coefficients` | multistep coefficients on non-uniform steps against the Lagrange functionals | `./graph_time_integrator --demo=family_coefficients` |
+| `family_coefficients` | scheme coefficients on non-uniform steps and Newmark beta-gamma rows | `./graph_time_integrator --demo=family_coefficients` |
 | `function_identities` | the exact arithmetic's elementary functions: fifty-five identities to five directions | `./graph_time_integrator --demo=function_identities` |
 | `grid_design_check` | derivative tables in the step weights, checked three ways at every order | `./graph_time_integrator --demo=grid_design_check` |
 | `transfer_offsets` | where one block's values are placed inside another's state, determined before building against the layout built | `./graph_time_integrator --demo=transfer_offsets` |

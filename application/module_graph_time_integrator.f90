@@ -5155,7 +5155,8 @@ module gti_driver
   use operation_family , only : family
   use operation_family      , only : bdf_family
   use operation_family      , only : adams_family
-  use operation_family      , only : implicit_midpoint, crouzeix_two_stage, crouzeix_three_stage
+  use operation_family      , only : implicit_midpoint, crouzeix_two_stage, crouzeix_three_stage, &
+       & newmark_family, taylor_newmark_family
   use operation_expression  , only : expression
   use gti_physics           , only : van_der_pol_energy, van_der_pol_dissipation
   use gti_chain             , only : chain_block
@@ -5247,6 +5248,23 @@ contains
        case default
           passes_check = .false.
        end select
+    case ('newmark')
+       select case (order)
+       case (1)
+          allocate(scheme, source=newmark_family(0.0_dp, 0.0_dp, 1))
+       case (2)
+          allocate(scheme, source=newmark_family(0.25_dp, 0.5_dp, 2))
+       case (3)
+          allocate(scheme, source=newmark_family(1.0_dp / 12.0_dp, 0.5_dp, 3))
+       case default
+          passes_check = .false.
+       end select
+    case ('taylor-newmark')
+       if (order == 1) then
+          allocate(scheme, source=taylor_newmark_family())
+       else
+          passes_check = .false.
+       end if
     case default
        passes_check = .false.
     end select
@@ -5296,7 +5314,8 @@ module gti_demos
   use operation_family      , only : bdf_family
   use operation_family      , only : adams_family
   use operation_family      , only : dirk_family, implicit_midpoint, &
-       & crouzeix_two_stage, crouzeix_three_stage, hairer_wanner_five_stage
+       & crouzeix_two_stage, crouzeix_three_stage, hairer_wanner_five_stage, &
+       & newmark_family, taylor_newmark_family
   use operation_grid        , only : grid, uniform_grid, random_grid, designed_grid, partition
   use operation_coupling    , only : weights_of, coupling_inputs
   use operation_weight      , only : scheme_weight
@@ -6612,6 +6631,8 @@ contains
     call adams_on('uniform',     3, [(0.5_dp, k = 1, 3)])
     call adams_on('non-uniform', 3, [0.0_dp, 0.3_dp, 0.2_dp])
     call dirk_on(crouzeix_two_stage())
+    call newmark_on('newmark average acceleration', newmark_family(0.25_dp, 0.5_dp, 2))
+    call newmark_on('taylor-newmark', taylor_newmark_family())
     call bdf_step_sensitivity([0.0_dp, 0.3_dp, 0.2_dp, 0.4_dp, 0.25_dp])
   contains
     subroutine bdf_on(label, dt)
@@ -6676,6 +6697,22 @@ contains
       write(*,'(a,3f10.5)') '   tableau gamma, 1 - 2 gamma, b   ', &
            & (3.0_dp + sqrt(3.0_dp)) / 6.0_dp, 1.0_dp - (3.0_dp + sqrt(3.0_dp)) / 3.0_dp, 0.5_dp
     end subroutine dirk_on
+    subroutine newmark_on(label, scheme)
+      character(len=*), intent(in) :: label
+      type(family)    , intent(in) :: scheme
+      type(connectivity_graph) :: edges
+      real(dp), allocatable :: c(:)
+      edges = connectivity_graph(3, [2, 2, 2, 3], [3, 3, 3, 3], &
+           & [0, 1, 2, 2], [0, 0, 0, 0])
+      call weights_of(scheme, edges, [0.0_dp, 0.5_dp, 0.5_dp], c)
+      write(*,'(a)') ' '
+      write(*,'(a)') ' ' // label // ', value row'
+      write(*,'(a,4f10.5)') '   q, qdot, qddot behind/ahead  ', c
+      edges = connectivity_graph(3, [2, 2, 3], [3, 3, 3], [1, 2, 2], [1, 1, 1])
+      call weights_of(scheme, edges, [0.0_dp, 0.5_dp, 0.5_dp], c)
+      write(*,'(a)') ' ' // label // ', velocity row'
+      write(*,'(a,3f10.5)') '   qdot, qddot behind/ahead     ', c
+    end subroutine newmark_on
     subroutine bdf_step_sensitivity(dt)
       real(dp), intent(in) :: dt(:)
       integer , parameter :: last = 2 * order + 1
@@ -8356,6 +8393,9 @@ contains
     call bdf_rows(2, 'non-uniform', [0.0_dp, 0.30_dp, 0.20_dp, 0.40_dp, 0.25_dp])
     call adams_row(3, 'uniform',     [0.0_dp, 0.5_dp, 0.5_dp])
     call adams_row(3, 'non-uniform', [0.0_dp, 0.30_dp, 0.20_dp])
+    call newmark_rows('newmark average acceleration', newmark_family(0.25_dp, 0.5_dp, 2), 2)
+    call newmark_rows('newmark Fox-Goodwin', newmark_family(1.0_dp / 12.0_dp, 0.5_dp, 3), 2)
+    call newmark_rows('taylor-newmark', taylor_newmark_family(), 2)
     call weight_partials(2, [0.0_dp, 0.30_dp, 0.20_dp, 0.40_dp, 0.25_dp])
   contains
     pure function instants(dt) result(t)
@@ -8423,11 +8463,12 @@ contains
          r = r + w(e) * power_derivative(m, tail_degree(e), t(tails(e)))
       end do
     end function row_residual
-    subroutine one_row(title, scheme, nv, tails, head, tail_degree, head_degree, dt, top)
+    subroutine one_row(title, scheme, nv, tails, head, tail_degree, head_degree, dt, top, exact_top)
       character(len=*), intent(in) :: title
       class(family)   , intent(in) :: scheme
       integer         , intent(in) :: nv, tails(:), head, tail_degree(:), head_degree(:), top
       real(dp)        , intent(in) :: dt(:)
+      integer         , intent(in), optional :: exact_top
       real(dp), allocatable :: tau(:), alpha(:), w(:)
       real(dp) :: t(nv), residual(0:top)
       integer :: m
@@ -8443,7 +8484,25 @@ contains
       end do
       write(*,'(a,9i11)')     '   on t**m, m =              ', [(m, m = 0, top)]
       write(*,'(a,9es11.2)')  '   residual                  ', residual
+      if (present(exact_top)) call require_exact(title, residual, exact_top)
     end subroutine one_row
+    subroutine require_exact(title, residual, exact_top)
+      character(len=*), intent(in) :: title
+      real(dp)        , intent(in) :: residual(0:)
+      integer         , intent(in) :: exact_top
+      real(dp) :: floor
+      if (exact_top > ubound(residual, 1)) then
+         error stop 'gti_demos: an exactness check lies inside the reported degree range'
+      end if
+      floor = real(128 * max(1, exact_top + 1), dp) * epsilon(1.0_dp)
+      if (maxval(abs(residual(0:exact_top))) > floor) then
+         write(*,'(a)') ' '
+         write(*,'(a)') ' row failed: ' // title
+         write(*,'(a,es12.4)') '   floor       ', floor
+         write(*,'(a,9es12.4)') '   residual    ', residual(0:exact_top)
+         error stop 'gti_demos: a scheme row reproduces its polynomial class'
+      end if
+    end subroutine require_exact
     subroutine bdf_rows(p, label, dt)
       integer         , intent(in) :: p
       character(len=*), intent(in) :: label
@@ -8468,6 +8527,18 @@ contains
            & adams_family(p), p, [p - 1, (p - k, k = 0, p - 1)], p, &
            & [1, (2, k = 0, p - 1)], [(1, k = 0, p)], dt, p + 2)
     end subroutine adams_row
+    subroutine newmark_rows(label, scheme, exact_top)
+      character(len=*), intent(in) :: label
+      type(family)    , intent(in) :: scheme
+      integer         , intent(in) :: exact_top
+      real(dp), parameter :: dt(3) = [0.0_dp, 0.5_dp, 0.5_dp]
+      call one_row(label // ' value row, uniform grid', &
+           & scheme, 3, [2, 2, 2, 3], 3, [0, 1, 2, 2], &
+           & [0, 0, 0, 0], dt, exact_top, exact_top=exact_top)
+      call one_row(label // ' velocity row, uniform grid', &
+           & scheme, 3, [2, 2, 3], 3, [1, 2, 2], &
+           & [1, 1, 1], dt, exact_top, exact_top=exact_top)
+    end subroutine newmark_rows
     subroutine weight_partials(p, dt)
       integer , intent(in) :: p
       real(dp), intent(in) :: dt(:)
@@ -8896,14 +8967,14 @@ program graph_time_integrator
 contains
   integer function widest_depth(cfg) result(widest)
     type(configuration), intent(in) :: cfg
-    character(len=8) :: every(3)
+    character(len=16) :: every(5)
     class(family), allocatable :: scheme
     logical :: staged, passes_check
     integer :: i, order, depth
-    every  = ['bdf     ', 'adams   ', 'dirk    ']
+    every  = [character(len=16) :: 'bdf', 'adams', 'dirk', 'newmark', 'taylor-newmark']
     widest = 0
-    do i = 1, 3
-       if (index(cfg % families, trim(every(i))) == 0) cycle
+    do i = 1, size(every)
+       if (.not. lists(cfg % families, trim(every(i)))) cycle
        do order = 1, cfg % max_discretization_order
           call chosen(trim(every(i)), order, scheme, staged, passes_check)
           if (.not. passes_check) cycle
@@ -9435,7 +9506,8 @@ contains
             &  'adjoint_loops ', 'newton_solves ', 'linear_solves ', &
             &  'factorisations'], 'measurements')
     end if
-    call refuse_unknown(cfg % families, ['bdf     ', 'adams   ', 'dirk    '], 'families')
+    call refuse_unknown(cfg % families, &
+         & [character(len=16) :: 'bdf', 'adams', 'dirk', 'newmark', 'taylor-newmark'], 'families')
     call refuse_unwindowed(cfg % combinations)
     widest = widest_depth(cfg)
     if (.not. cfg % automatic_order_conservation) then
@@ -9503,7 +9575,7 @@ contains
   subroutine the_named_chain(cfg, printed)
     type(configuration), intent(in)    :: cfg
     integer            , intent(inout) :: printed
-    character(len=8), allocatable :: names(:)
+    character(len=16), allocatable :: names(:)
     integer         , allocatable :: orders(:)
     integer :: windows, before
     if (len_trim(cfg % chain) < 1) return
@@ -9534,7 +9606,7 @@ contains
 
   subroutine windows_of(specification, names, orders)
     character(len=*), intent(in) :: specification
-    character(len=8), allocatable, intent(out) :: names(:)
+    character(len=16), allocatable, intent(out) :: names(:)
     integer         , allocatable, intent(out) :: orders(:)
     character(len=32), allocatable :: words(:)
     integer :: i, mark, failed
@@ -9560,7 +9632,8 @@ contains
           error stop 'gti_configuration: a setting names something unknown'
        end if
     end do
-    call refuse_unknown(names_phrase(names), ['bdf  ', 'adams', 'dirk '], 'chain')
+    call refuse_unknown(names_phrase(names), &
+         & [character(len=16) :: 'bdf', 'adams', 'dirk', 'newmark', 'taylor-newmark'], 'chain')
   end subroutine windows_of
 
   pure function names_phrase(names) result(phrase)
@@ -9598,17 +9671,17 @@ contains
   end subroutine refuse_unwindowed
   function listed(cfg) result(list)
     type(configuration), intent(in) :: cfg
-    character(len=8), allocatable :: list(:)
-    character(len=8) :: every(3)
+    character(len=16), allocatable :: list(:)
+    character(len=16) :: every(5)
     integer :: i, n
-    every = ['bdf     ', 'adams   ', 'dirk    ']
+    every = [character(len=16) :: 'bdf', 'adams', 'dirk', 'newmark', 'taylor-newmark']
     n = 0
-    do i = 1, 3
+    do i = 1, size(every)
        if (lists(cfg % families, trim(every(i)))) n = n + 1
     end do
     allocate(list(n))
     n = 0
-    do i = 1, 3
+    do i = 1, size(every)
        if (lists(cfg % families, trim(every(i)))) then
           n = n + 1
           list(n) = every(i)
@@ -9619,7 +9692,7 @@ contains
     type(configuration), intent(in)    :: cfg
     integer            , intent(in)    :: arity
     integer            , intent(inout) :: printed
-    character(len=8), allocatable :: names(:)
+    character(len=16), allocatable :: names(:)
     integer :: which(arity), orders(arity)
     integer :: m, code, k, r, order
     names = listed(cfg)

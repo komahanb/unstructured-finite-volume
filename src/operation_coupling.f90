@@ -16,12 +16,21 @@ module operation_coupling
   use view_directed_connectivity, only : connectivity_graph
   use operation_action    , only : operation, applied
   use operation_edge_function, only : edge_function
+  use operation_family    , only : family
+  use operation_weight    , only : scheme_weight
   use util_derivative_terms, only : derivative_terms, coefficient
 
   implicit none
 
   private
   public :: coupling_inputs, weights_of, weights_terms
+  public :: matrix_scheme_connectivity, connectivity_terms
+
+  type :: matrix_scheme_connectivity
+     type(connectivity_graph) :: graph
+     integer, allocatable :: step_of(:)
+     integer, allocatable :: row(:), column(:)
+  end type matrix_scheme_connectivity
 
 contains
 
@@ -31,23 +40,23 @@ contains
   ! contract expects.
   !===================================================================!
 
-  subroutine coupling_inputs(reach, steps, inputs)
+  subroutine coupling_inputs(connectivity, steps, inputs)
 
-    type(connectivity_graph)       , intent(in)  :: reach
+    type(connectivity_graph)       , intent(in)  :: connectivity
     real(dp)                       , intent(in)  :: steps(:)
     type(stored_field), allocatable, intent(out) :: inputs(:)
 
     integer :: e, ne
 
-    ne = reach % num_edges()
+    ne = connectivity % num_edges()
 
     allocate(inputs(3))
-    inputs(1) = stored_field('dt'          , reach % vertex_set(), reach % num_vertices())
-    inputs(2) = stored_field('tail degree' , reach % edge_set()  , ne)
-    inputs(3) = stored_field('head degree' , reach % edge_set()  , ne)
+    inputs(1) = stored_field('dt'          , connectivity % vertex_set(), connectivity % num_vertices())
+    inputs(2) = stored_field('tail degree' , connectivity % edge_set()  , ne)
+    inputs(3) = stored_field('head degree' , connectivity % edge_set()  , ne)
     call inputs(1) % set_real_vector(steps)
-    call inputs(2) % set_integer_vector([(reach % tail_degree(e), e = 1, ne)])
-    call inputs(3) % set_integer_vector([(reach % head_degree(e), e = 1, ne)])
+    call inputs(2) % set_integer_vector([(connectivity % tail_degree(e), e = 1, ne)])
+    call inputs(3) % set_integer_vector([(connectivity % head_degree(e), e = 1, ne)])
 
   end subroutine coupling_inputs
 
@@ -55,17 +64,17 @@ contains
   ! An action applied to that coupling, its result read out.
   !===================================================================!
 
-  subroutine weights_of(action, reach, steps, w)
+  subroutine weights_of(action, connectivity, steps, w)
 
     class(operation)         , intent(in)  :: action
-    type(connectivity_graph) , intent(in)  :: reach
+    type(connectivity_graph) , intent(in)  :: connectivity
     real(dp)                 , intent(in)  :: steps(:)
     real(dp), allocatable    , intent(out) :: w(:)
 
     type(stored_field), allocatable :: inputs(:)
 
-    call coupling_inputs(reach, steps, inputs)
-    call applied(action, reach, inputs, w)
+    call coupling_inputs(connectivity, steps, inputs)
+    call applied(action, connectivity, inputs, w)
 
   end subroutine weights_of
 
@@ -84,10 +93,10 @@ contains
   ! function.
   !===================================================================!
 
-  subroutine weights_terms(action, reach, steps, seeds, table)
+  subroutine weights_terms(action, connectivity, steps, seeds, table)
 
     class(operation)         , intent(in)  :: action
-    type(connectivity_graph) , intent(in)  :: reach
+    type(connectivity_graph) , intent(in)  :: connectivity
     real(dp)                 , intent(in)  :: steps(:), seeds(:,:)
     real(dp), allocatable    , intent(out) :: table(:,:)
 
@@ -95,8 +104,8 @@ contains
     type(derivative_terms) :: c
     integer :: n, k, m, e, ne, nv
 
-    nv = reach % num_vertices()
-    ne = reach % num_edges()
+    nv = connectivity % num_vertices()
+    ne = connectivity % num_edges()
 
     n = 0
     do while (2**n - 1 < size(seeds, 2))
@@ -118,8 +127,8 @@ contains
     select type (action)
     class is (edge_function)
        do e = 1, ne
-          c = action % edge_coefficient(dt, reach % edge_tail(e), reach % edge_head(e), &
-               & reach % tail_degree(e), reach % head_degree(e))
+          c = action % edge_coefficient(dt, connectivity % edge_tail(e), connectivity % edge_head(e), &
+               & connectivity % tail_degree(e), connectivity % head_degree(e))
           do m = 0, 2**n - 1
              table(e, m) = coefficient(c, m)
           end do
@@ -129,5 +138,51 @@ contains
     end select
 
   end subroutine weights_terms
+
+  !===================================================================!
+  ! THE TIME DISCRETIZATION STENCIL'S TRIPLES over a connectivity,
+  ! repeated at every node: the row, the column and, at column m of
+  ! w, minus the total derivative of the weight along the subset of
+  ! designs with mask m, the steps seeded by seeds; column 0 is minus
+  ! the weight itself.
+  !===================================================================!
+
+  subroutine connectivity_terms(scheme, connectivity, nodes, degrees, dt, seeds, r, c, w)
+
+    class(family)       , intent(in) :: scheme
+    type(matrix_scheme_connectivity), intent(in) :: connectivity(:)
+    integer             , intent(in) :: nodes, degrees
+    real(dp)            , intent(in) :: dt(:), seeds(:,:)
+    integer , allocatable, intent(out) :: r(:), c(:)
+    real(dp), allocatable, intent(out) :: w(:,:)
+
+    real(dp), allocatable :: table(:,:)
+    integer :: k, e, i, count, n, ne
+
+    count = 0
+    do k = 1, size(connectivity)
+       count = count + connectivity(k) % graph % num_edges() * nodes
+    end do
+
+    allocate(r(count), c(count), w(count, 0:size(seeds, 2)))
+
+    n = 0
+    do k = 1, size(connectivity)
+       associate (one => connectivity(k))
+         ne = one % graph % num_edges()
+         call weights_terms(scheme_weight(scheme), one % graph, dt(one % step_of), &
+              & seeds(one % step_of, :), table)
+         do i = 1, nodes
+            do e = 1, ne
+               n       = n + 1
+               r(n)    = one % row(e)    + (i - 1) * degrees
+               c(n)    = one % column(e) + (i - 1) * degrees
+               w(n, :) = -table(e, :)
+            end do
+         end do
+       end associate
+    end do
+
+  end subroutine connectivity_terms
 
 end module operation_coupling

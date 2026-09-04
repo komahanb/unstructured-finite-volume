@@ -57,13 +57,13 @@ module map_set_store
 
 contains
 
-  subroutine name(this, element, text)
+  subroutine name(this, element, label)
 
     class(set_store), intent(inout) :: this
     type(graph)     , intent(in)    :: element
-    character(len=*), intent(in)    :: text
+    character(len=*), intent(in)    :: label
 
-    call this % labels % bind(element, text)
+    call this % labels % bind(element, label)
 
   end subroutine name
 
@@ -77,17 +77,17 @@ contains
 
   end subroutine include_in
 
-  subroutine declare_subobject(this, members, listed_members, text, ambient)
+  subroutine declare_subobject(this, members, listed_members, label, ambient)
 
     class(set_store), intent(inout) :: this
     type(graph)     , intent(out)   :: members
     integer         , intent(in)    :: listed_members(:)
-    character(len=*), intent(in)    :: text
+    character(len=*), intent(in)    :: label
     type(graph)     , intent(in)    :: ambient
 
     call members % declare()
     call this % bind(members, listed_set_representation(listed_members))
-    call this % name(members, text)
+    call this % name(members, label)
     call this % include_in(members, ambient)
 
   end subroutine declare_subobject
@@ -101,13 +101,13 @@ contains
 
   end function labelled
 
-  function label_of(this, element) result(text)
+  function label_of(this, element) result(label)
 
     class(set_store), intent(in) :: this
     type(graph)     , intent(in) :: element
-    character(len=:), allocatable :: text
+    character(len=:), allocatable :: label
 
-    text = this % labels % label_of(element)
+    label = this % labels % label_of(element)
 
   end function label_of
 

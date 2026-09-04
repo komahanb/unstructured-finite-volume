@@ -196,7 +196,7 @@ What does not trace to the dissertation, and should not be read as if it did:
 
 What is not yet a parallel architecture, despite four matching roles (Ch. 4.6, Element/Function/Assembler/Integrator):
 
-- Element (per-row residual and Jacobian, Ch. 4.6.1) and Function (functional integrand, Ch. 4.6.2) are genuinely abstracted in `src/` — `operation`/`family`/`stencil` and `expression`, reusable by any application. The reach itself (which edge exists, at which two degrees) is now abstracted too — `connectivity_graph` (`src/view_directed_connectivity.f90`) replaces `coupling_reach`, a bare struct that used to live entirely in this file.
+- Element (per-row residual and Jacobian, Ch. 4.6.1) and Function (functional integrand, Ch. 4.6.2) are genuinely abstracted in `src/` — `operation`/`family`/`stencil` and `expression`, reusable by any application. The reach itself (which edge exists, at which two degrees) is abstracted too — `connectivity_graph` (`src/view_directed_connectivity.f90`). The embedding of a scheme's connectivity graph into assembled matrix triples is now `matrix_scheme_connectivity` and `connectivity_terms` (`src/operation_coupling.f90`); the application keeps only the tower-reading functions that build those embeddings.
 - Assembler (Ch. 4.6.3, the transpose-Jacobian-vector-product routines) is not a separate type: both of its operations read a residual through Element's own accessors alone, so they are `constrained` and `linearized` (`src/operation_residual.f90`), functions on Element rather than a fourth interface beside it. `block_residual` (`gti_block`) states only what is genuinely its own — building the concrete block from the data these functions return, and composing its own layout and free unknowns with the constraint just applied.
 - Integrator (Ch. 4.6.4, the forward/backward time loop) still exists only as a concretion inside this file — `march_chain`/`chain_derivative` in `gti_march`/`gti_chain` — with no abstract type in `src/` that a second application could extend the way `jacobi`/`gauss_seidel`/`newton` extend `minimizer`. Three of the dissertation's four roles have reached their abstract home; the fourth is still waiting for one.
 
@@ -250,14 +250,14 @@ a relation between control parameter and state:
 
 Which vertex is the input is not a convention but an accounting: the
 input is whatever the constraints leave free; everything else is
-determined, and the determined vertices split into the state - read
-again downstream - and the outputs, read by nothing. R is square
-against Q and consumes exactly its freedom; no constraint determines nu;
-so nu is the source, Q interior, f a sink. Where no model connects two
-vertices, the identity relation Q = I(nu) is the default operator
-between them. An edge is a read and represents the relation, never a
-rate: the partials are not edges but the weights the linearised
-traversal assigns to these same edges.
+determined, and the determined vertices split into the state - needed
+again downstream - and the outputs, with no dependent vertex. R is
+square against Q and consumes exactly its freedom; no constraint
+determines nu; so nu is the source, Q interior, f a sink. Where no
+model connects two vertices, the identity relation Q = I(nu) is the
+default operator between them. An edge is a dependency and represents
+the relation, never a rate: the partials are not edges but the weights
+the linearised traversal assigns to these same edges.
 
 **The derivative tower.** The rates of change are not a chain appended
 to f; they are a second layer of vertices over the same topology,
@@ -722,7 +722,7 @@ name pass through to it.
 | `family_coefficients` | multistep coefficients on non-uniform steps against the Lagrange functionals | `./graph_time_integrator --demo=family_coefficients` |
 | `function_identities` | the exact arithmetic's elementary functions: fifty-five identities to five directions | `./graph_time_integrator --demo=function_identities` |
 | `grid_design_check` | derivative tables in the step weights, checked three ways at every order | `./graph_time_integrator --demo=grid_design_check` |
-| `transfer_offsets` | where one block's values are placed inside another's state, determined before building against the layout built | `./graph_time_integrator --demo=handover_offsets` |
+| `transfer_offsets` | where one block's values are placed inside another's state, determined before building against the layout built | `./graph_time_integrator --demo=transfer_offsets` |
 | `jacobian_shape` | how far a block's rows reach, and how much of the square is empty | `./graph_time_integrator --demo=jacobian_shape` |
 | `level_maps` | what each level of the tower stores, read back by one traversal | `./graph_time_integrator --demo=level_maps` |
 | `level_shape` | two blocks built through the level storage and read back through the level view | `./graph_time_integrator --demo=level_shape` |
@@ -736,6 +736,7 @@ name pass through to it.
 | `sensitivity` | df/dnu by tangent, by adjoint, and by difference | `./graph_time_integrator --demo=sensitivity` |
 | `solve_cost` | what one formation and one solve cost | `./graph_time_integrator --demo=solve_cost` |
 | `tolerance_form` | where a march's tolerance floor lies: eps times the norms the solve uses | `./graph_time_integrator --demo=tolerance_form` |
+| `transposed_dependencies` | reverse-pass dependency arcs and the state release point each one implies | `./graph_time_integrator --demo=transposed_dependencies` |
 
 `memory_shape` takes a part and an instant count, `block` and 41 unless
 given; `randomized_checks` takes a seed and a case count, 7 and 2 unless

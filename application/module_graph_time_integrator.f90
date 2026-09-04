@@ -110,11 +110,11 @@ module gti_configuration
           & 'newton_solves linear_solves factorisations'
   end type configuration
 contains
-  pure function levelled(text) result(name)
-    character(len=*), intent(in) :: text
+  pure function levelled(given) result(name)
+    character(len=*), intent(in) :: given
     character(len=:), allocatable :: name
     integer :: i, c
-    name = trim(adjustl(text))
+    name = trim(adjustl(given))
     do i = 1, len(name)
        if (name(i:i) == '-') name(i:i) = '_'
        c = iachar(name(i:i))
@@ -147,46 +147,46 @@ contains
     end do
     values = found(1:n)
   end function argument_values
-  pure function words_of(text) result(list)
-    character(len=*), intent(in) :: text
+  pure function words_of(phrase) result(list)
+    character(len=*), intent(in) :: phrase
     character(len=32), allocatable :: list(:)
     character(len=32) :: words(32)
     integer :: i, first, n, last
     n    = 0
     i    = 1
-    last = len_trim(text)
+    last = len_trim(phrase)
     do while (i <= last)
-       if (text(i:i) == ' ') then
+       if (phrase(i:i) == ' ') then
           i = i + 1
           cycle
        end if
        first = i
        do while (i <= last)
-          if (text(i:i) == ' ') exit
+          if (phrase(i:i) == ' ') exit
           i = i + 1
        end do
        if (n == size(words)) exit
        n = n + 1
-       words(n) = text(first:i-1)
+       words(n) = phrase(first:i-1)
     end do
     list = words(1:n)
   end function words_of
-  pure logical function lists(text, what) result(yes)
-    character(len=*), intent(in) :: text, what
+  pure logical function lists(phrase, what) result(yes)
+    character(len=*), intent(in) :: phrase, what
     character(len=32), allocatable :: list(:)
     integer :: i
-    list = words_of(text)
+    list = words_of(phrase)
     yes  = .false.
     do i = 1, size(list)
        if (trim(list(i)) == what) yes = .true.
     end do
   end function lists
-  subroutine refuse_unknown(text, every, subject, which)
-    character(len=*), intent(in) :: text, every(:), subject
+  subroutine refuse_unknown(given, every, subject, which)
+    character(len=*), intent(in) :: given, every(:), subject
     integer, intent(out), optional :: which
     character(len=32), allocatable :: list(:)
     integer :: i, j, at
-    list = words_of(text)
+    list = words_of(given)
     at   = 0
     do i = 1, size(list)
        at = 0
@@ -339,18 +339,18 @@ contains
   subroutine read_line(cfg, line)
     type(configuration), intent(inout) :: cfg
     character(len=*)   , intent(in)    :: line
-    character(len=:), allocatable :: text
+    character(len=:), allocatable :: setting
     integer :: at
-    text = trim(adjustl(line))
-    at   = index(text, '#')
-    if (at > 0) text = trim(text(:at - 1))
-    if (len(text) == 0) return
-    at = index(text, '=')
+    setting = trim(adjustl(line))
+    at   = index(setting, '#')
+    if (at > 0) setting = trim(setting(:at - 1))
+    if (len(setting) == 0) return
+    at = index(setting, '=')
     if (at == 0) then
-       write(*,'(a)') ' this line names no setting: ' // text
+       write(*,'(a)') ' this line names no setting: ' // setting
        error stop 'gti_configuration: a setting is named, then given its value'
     end if
-    call assign(cfg, text(:at - 1), trim(adjustl(text(at + 1:))))
+    call assign(cfg, setting(:at - 1), trim(adjustl(setting(at + 1:))))
   end subroutine read_line
   subroutine read_configuration(name, cfg)
     character(len=*)   , intent(in)  :: name
@@ -373,18 +373,18 @@ contains
   subroutine override(cfg, argument)
     type(configuration), intent(inout) :: cfg
     character(len=*)   , intent(in)    :: argument
-    character(len=:), allocatable :: text
+    character(len=:), allocatable :: setting
     integer :: at
-    text = trim(adjustl(argument))
-    if (len(text) > 2) then
-       if (text(1:2) == '--') text = text(3:)
+    setting = trim(adjustl(argument))
+    if (len(setting) > 2) then
+       if (setting(1:2) == '--') setting = setting(3:)
     end if
-    at = index(text, '=')
+    at = index(setting, '=')
     if (at == 0) then
-       write(*,'(a)') ' this argument names no setting: ' // text
+       write(*,'(a)') ' this argument names no setting: ' // setting
        error stop 'gti_configuration: an argument is a setting and its value'
     end if
-    call assign(cfg, text(:at - 1), trim(adjustl(text(at + 1:))))
+    call assign(cfg, setting(:at - 1), trim(adjustl(setting(at + 1:))))
   end subroutine override
   subroutine show(cfg)
     type(configuration), intent(in) :: cfg
@@ -447,9 +447,9 @@ contains
        write(*,'(a,a)')    '   measurements             ', trim(cfg % measurements)
     end if
   end subroutine show
-  integer function chosen_from(text, every, subject) result(which)
-    character(len=*), intent(in) :: text, every(:), subject
-    call refuse_unknown(text, every, subject, which)
+  integer function chosen_from(name, every, subject) result(which)
+    character(len=*), intent(in) :: name, every(:), subject
+    call refuse_unknown(name, every, subject, which)
   end function chosen_from
 end module gti_configuration
 
@@ -925,12 +925,12 @@ contains
     class(expansion), intent(in) :: this
     num_nodes = this % nodes % num_nodes()
   end function num_nodes
-  function label_of(this, g) result(text)
+  function label_of(this, g) result(label)
     class(expansion), intent(in) :: this
     type(graph)     , intent(in) :: g
-    character(len=:), allocatable :: text
-    text = ''
-    if (this % labels % labelled(g)) text = this % labels % label_of(g)
+    character(len=:), allocatable :: label
+    label = ''
+    if (this % labels % labelled(g)) label = this % labels % label_of(g)
   end function label_of
   pure integer function status_of(this, g)
     class(expansion), intent(in) :: this
@@ -1039,14 +1039,14 @@ contains
     call this % labels % bind(this % node(this % root_at), &
          & 'expansion of ' // physics % name() // ' in the design')
   end subroutine build
-  subroutine one_design(this, text, x, kind)
+  subroutine one_design(this, label, x, kind)
     class(expansion), intent(inout) :: this
-    character(len=*), intent(in)    :: text
+    character(len=*), intent(in)    :: label
     real(dp)        , intent(in)    :: x(:)
     integer         , intent(in)    :: kind
     integer :: at
     at = this % nodes % assemble([integer ::], 0)
-    call this % labels % bind(this % node(at), text)
+    call this % labels % bind(this % node(at), label)
     call this % extents % bind(this % node(at), counted_set_representation(size(x)))
     call attach_known(this, at, x)
     this % design_at   = [this % design_at, at]
@@ -1158,30 +1158,30 @@ contains
     at = coupled(this, [integer ::], this % node_extent, &
          & 'the nodes the spatial discretization stencil reads', &
          & 'the nodes whose rows the spatial discretization stencil enters', &
-         & 'the spatial discretization stencil''s reach', 'the spatial discretization stencil', table, w)
+         & 'the spatial discretization stencil''s connectivity', 'the spatial discretization stencil', table, w)
   end function spatial_discretization_coupling
   !===================================================================!
-  ! A COUPLING OVER A REACH: the set the reach reads and the set whose
-  ! rows it enters, each of extent n and labelled; the reach, labelled
-  ! reach_text, bound as a csr relation over the table; the coupling
-  ! of the members with both sets, labelled text, storing the weights
-  ! in the relation's tuple order.
+  ! A COUPLING OVER A CONNECTIVITY: the set the connectivity reads and
+  ! the set whose rows it enters, each of extent n and labelled; the
+  ! connectivity, labelled connectivity_label, bound as a csr relation
+  ! over the table; the coupling of the members with both sets,
+  ! labelled coupling_label, storing the weights in the relation's tuple order.
   !===================================================================!
-  integer function coupled(this, members, n, read_text, entered_text, reach_text, text, table, w) &
+  integer function coupled(this, members, n, read_label, entered_label, connectivity_label, coupling_label, table, w) &
        & result(at)
     class(expansion), intent(inout) :: this
     integer         , intent(in)    :: members(:), n, table(:,:)
-    character(len=*), intent(in)    :: read_text, entered_text, reach_text, text
+    character(len=*), intent(in)    :: read_label, entered_label, connectivity_label, coupling_label
     real(dp)        , intent(in)    :: w(:)
     integer :: from, into, owner
-    from  = named_set(this, n, read_text)
-    into  = named_set(this, n, entered_text)
+    from  = named_set(this, n, read_label)
+    into  = named_set(this, n, entered_label)
     owner = this % nodes % assemble([integer ::], 0)
-    call this % labels % bind(this % node(owner), reach_text)
+    call this % labels % bind(this % node(owner), connectivity_label)
     at = this % nodes % couple([members, from, into], [owner])
     call bind_carriers(this, [members, from, into])
-    call bind_reach(this, owner, from, into, table)
-    call this % labels % bind(this % node(at), text)
+    call bind_coupling(this, owner, from, into, table)
+    call this % labels % bind(this % node(at), coupling_label)
     call attach_known(this, at, in_relation_order(this, this % node(at), table, w))
   end function coupled
   subroutine attach_known(this, at, x)
@@ -1352,9 +1352,9 @@ contains
        call this % values % attach_unknown(this % node(at))
     end if
   end function one_component
-  function written(n) result(text)
+  function written(n) result(name)
     class(*), intent(in) :: n
-    character(len=:), allocatable :: text
+    character(len=:), allocatable :: name
     character(len=24) :: buffer
     select type (n)
     type is (integer)
@@ -1364,7 +1364,7 @@ contains
     class default
        error stop 'gti_expansion: a label is written from a number'
     end select
-    text = trim(buffer)
+    name = trim(buffer)
   end function written
   integer function block_coupling(this, physics, scheme, slices, first, last, dt) result(at)
     class(expansion)      , intent(inout) :: this
@@ -1372,34 +1372,34 @@ contains
     class(family)         , intent(in)    :: scheme
     integer               , intent(in)    :: slices(:), first, last
     real(dp)              , intent(in)    :: dt(:)
-    type(connectivity_graph) :: reach
+    type(connectivity_graph) :: connectivity
     real(dp), allocatable :: w(:)
     integer :: n, nd
     associate (u1 => physics); end associate
     n  = last - first + 1
     nd = this % degrees
-    reach = scheme % block_reach(nd, n)
-    call weights_of(scheme_weight(scheme), reach, dt(first:last), w)
+    connectivity = scheme % block_connectivity(nd, n)
+    call weights_of(scheme_weight(scheme), connectivity, dt(first:last), w)
     at = coupled(this, slices, n * nd, 'the components of this block', &
-         & 'the constraint instances of this block', 'the scheme reach', &
-         & scheme % name() // ' coupling', tuples(nd, reach), w)
+         & 'the constraint instances of this block', 'the scheme connectivity', &
+         & scheme % name() // ' coupling', tuples(nd, connectivity), w)
   end function block_coupling
-  pure function tuples(nd, reach) result(table)
+  pure function tuples(nd, connectivity) result(table)
     integer                  , intent(in) :: nd
-    type(connectivity_graph) , intent(in) :: reach
+    type(connectivity_graph) , intent(in) :: connectivity
     integer, allocatable :: table(:,:)
     integer :: e, ne
-    ne = reach % num_edges()
+    ne = connectivity % num_edges()
     allocate(table(2, ne))
-    table(1,:) = [((reach % edge_tail(e) - 1) * nd + reach % tail_degree(e) + 1, e = 1, ne)]
-    table(2,:) = [((reach % edge_head(e) - 1) * nd + reach % head_degree(e) + 1, e = 1, ne)]
+    table(1,:) = [((connectivity % edge_tail(e) - 1) * nd + connectivity % tail_degree(e) + 1, e = 1, ne)]
+    table(2,:) = [((connectivity % edge_head(e) - 1) * nd + connectivity % head_degree(e) + 1, e = 1, ne)]
   end function tuples
-  integer function named_set(this, n, text) result(at)
+  integer function named_set(this, n, label) result(at)
     class(expansion), intent(inout) :: this
     integer         , intent(in)    :: n
-    character(len=*), intent(in)    :: text
+    character(len=*), intent(in)    :: label
     at = this % nodes % assemble([integer ::], 0)
-    call this % labels % bind(this % node(at), text)
+    call this % labels % bind(this % node(at), label)
     call this % extents % bind(this % node(at), counted_set_representation(n))
   end function named_set
   subroutine bind_carriers(this, carriers)
@@ -1412,7 +1412,7 @@ contains
        call this % bindings % bind_set(g, g)
     end do
   end subroutine bind_carriers
-  subroutine bind_reach(this, owner, components, constraints, table)
+  subroutine bind_coupling(this, owner, components, constraints, table)
     class(expansion), intent(inout) :: this
     integer         , intent(in)    :: owner, components, constraints, table(:,:)
     type(graph), pointer :: g, from, into
@@ -1420,8 +1420,8 @@ contains
     into => this % nodes % node(constraints)
     g    => this % nodes % node(owner)
     call this % bindings % bind_relation(g, &
-         & csr_relation('scheme reach', from, into, table, this % extents))
-  end subroutine bind_reach
+         & csr_relation('scheme coupling', from, into, table, this % extents))
+  end subroutine bind_coupling
   recursive logical function consistent(this, g) result(passes_check)
     class(expansion), intent(in) :: this
     type(graph)     , intent(in) :: g
@@ -1457,19 +1457,19 @@ contains
     class(family)   , intent(in)    :: scheme
     integer         , intent(in)    :: members(:), s
     real(dp)        , intent(in)    :: step
-    type(connectivity_graph) :: reach
+    type(connectivity_graph) :: connectivity
     integer, allocatable :: table(:,:)
     real(dp), allocatable :: w(:)
     integer :: nd, e, ne
     nd = this % degrees
-    reach = scheme % stage_reach(nd)
-    ne = reach % num_edges()
-    call weights_of(scheme_weight(scheme), reach, spread(step, 1, s + 2), w)
+    connectivity = scheme % stage_connectivity(nd)
+    ne = connectivity % num_edges()
+    call weights_of(scheme_weight(scheme), connectivity, spread(step, 1, s + 2), w)
     allocate(table(2, ne))
-    table(1,:) = [(stage_unknown(reach % edge_tail(e), reach % tail_degree(e), s, nd), e = 1, ne)]
-    table(2,:) = [(stage_unknown(reach % edge_head(e), reach % head_degree(e), s, nd), e = 1, ne)]
+    table(1,:) = [(stage_unknown(connectivity % edge_tail(e), connectivity % tail_degree(e), s, nd), e = 1, ne)]
+    table(2,:) = [(stage_unknown(connectivity % edge_head(e), connectivity % head_degree(e), s, nd), e = 1, ne)]
     at = coupled(this, members, (s + 1) * nd, 'the components of this step', &
-         & 'the constraint instances of this step', 'the butcher reach', &
+         & 'the constraint instances of this step', 'the butcher connectivity', &
          & scheme % name() // ' stage coupling', table, w)
   end function slice_coupling
   pure integer function slice_base(kk, s, nd) result(at)
@@ -1488,7 +1488,7 @@ contains
        at = slice_base(kk, s, nd) + s * nd
     end if
   end function closing_instant
-  subroutine reach_table(this, s, n, table, sources)
+  subroutine transfer_table(this, s, n, table, sources)
     class(expansion), intent(in) :: this
     integer         , intent(in) :: s, n
     integer, allocatable, intent(out) :: table(:,:)
@@ -1515,7 +1515,7 @@ contains
           allocate(table(2, counted), sources(counted))
        end if
     end do
-  end subroutine reach_table
+  end subroutine transfer_table
   !===================================================================!
   ! THE LAYOUT STRIDE: how many components one node stores at one
   ! moment. The equation's degrees come first and the spatial law's
@@ -1532,17 +1532,17 @@ contains
     integer         , intent(in)    :: slices(:), first, last
     real(dp)        , intent(in)    :: dt(:)
     integer, allocatable :: table(:,:), sources(:)
-    type(connectivity_graph) :: reach
+    type(connectivity_graph) :: connectivity
     real(dp), allocatable :: w(:)
     integer :: n, nd, s, e
     n  = last - first + 1
     nd = this % degrees
     s  = scheme % num_stages()
-    call reach_table(this, s, n, table, sources)
-    reach = connectivity_graph(s + 2, [(1, e = 1, size(sources))], sources, &
+    call transfer_table(this, s, n, table, sources)
+    connectivity = connectivity_graph(s + 2, [(1, e = 1, size(sources))], sources, &
          & [((mod(table(1, e) - 1, nd)), e = 1, size(sources))], &
          & [((mod(table(2, e) - 1, nd)), e = 1, size(sources))])
-    call weights_of(scheme_weight(scheme), reach, spread(dt(first), 1, s + 2), w)
+    call weights_of(scheme_weight(scheme), connectivity, spread(dt(first), 1, s + 2), w)
     at = coupled(this, slices, (1 + (n - 1) * (s + 1)) * nd, 'the components of this block', &
          & 'the constraint instances of this block', 'the transfer between steps', &
          & scheme % name() // ' transfer coupling', table, w)
@@ -1554,7 +1554,6 @@ module gti_block
   use operation_action     , only : binding
   use view_directed        , only : directed_graph
   use view_directed_stored , only : stored_directed_graph
-  use view_directed_connectivity, only : connectivity_graph
   use field_calculus       , only : field, FIELD_REAL
   use field_stored         , only : stored_field
   use graph_fractal        , only : graph
@@ -1563,27 +1562,21 @@ module gti_block
   use operation_stencil    , only : combine_triples, stencil
   use operation_residual   , only : residual_operator
   use operation_family     , only : family
-  use operation_weight     , only : scheme_weight
-  use operation_coupling   , only : weights_terms
+  use operation_coupling   , only : matrix_scheme_connectivity, connectivity_terms
   use operation_expression    , only : expression
   use view_directed        , only : forward
   implicit none
   private
-  public :: block_residual, coupling_reach, reach_terms
+  public :: block_residual
   ! the slice, node and moment of every unknown of a block, read from
   ! the tower once when the block is placed
   type :: block_layout
      integer, allocatable :: slice(:), node(:), moment(:)
   end type block_layout
-  type :: coupling_reach
-     type(connectivity_graph) :: reach
-     integer, allocatable :: step_of(:)
-     integer, allocatable :: row(:), column(:)
-  end type coupling_reach
   type, extends(residual_operator) :: block_residual
      type(block_layout)      , private :: layout
      integer, allocatable    , private :: free(:)
-     type(coupling_reach), allocatable, private :: reach(:)
+     type(matrix_scheme_connectivity), allocatable, private :: connectivity(:)
    contains
      procedure :: constrained_block => block_constrained
      procedure :: linear_block => block_linear_block
@@ -1595,7 +1588,7 @@ module gti_block
      procedure :: num_nodes
      procedure :: spatial_discretization_laid
      procedure :: aggregates
-     procedure :: with_reach
+     procedure :: with_connectivity
      procedure :: rows_terms
      procedure :: member_order
      procedure :: sweep_labels
@@ -1744,60 +1737,22 @@ contains
     call this % attach_connected_stencil(stencil(r(1:n), c(1:n), w(1:n), spread(0.0_dp, 1, this % num_unknowns()), &
          & 'spatial discretization stencil'))
   end subroutine spatial_discretization_laid
-  subroutine with_reach(this, reach)
+  subroutine with_connectivity(this, connectivity)
     class(block_residual), intent(inout) :: this
-    type(coupling_reach) , intent(in)    :: reach(:)
-    this % reach = reach
-  end subroutine with_reach
+    type(matrix_scheme_connectivity) , intent(in)    :: connectivity(:)
+    this % connectivity = connectivity
+  end subroutine with_connectivity
   subroutine rows_terms(this, scheme, dt, seeds, r, c, w)
     class(block_residual), intent(in) :: this
     class(family)        , intent(in) :: scheme
     real(dp)             , intent(in) :: dt(:), seeds(:,:)
     integer , allocatable, intent(out) :: r(:), c(:)
     real(dp), allocatable, intent(out) :: w(:,:)
-    if (.not. allocated(this % reach)) then
-       error stop 'gti_block: the block was built without its reach'
+    if (.not. allocated(this % connectivity)) then
+       error stop 'gti_block: the block was built without its connectivity'
     end if
-    call reach_terms(scheme, this % reach, this % num_nodes(), this % num_degrees(), dt, seeds, r, c, w)
+    call connectivity_terms(scheme, this % connectivity, this % num_nodes(), this % num_degrees(), dt, seeds, r, c, w)
   end subroutine rows_terms
-  !===================================================================!
-  ! THE TIME DISCRETIZATION STENCIL'S TRIPLES over a reach, repeated
-  ! at every node: the row, the column and, at column m of w, minus
-  ! the total derivative of the weight along the subset of designs
-  ! with mask m, the steps seeded by seeds; column 0 is minus the
-  ! weight itself.
-  !===================================================================!
-  subroutine reach_terms(scheme, reach, nodes, degrees, dt, seeds, r, c, w)
-    class(family)       , intent(in) :: scheme
-    type(coupling_reach), intent(in) :: reach(:)
-    integer             , intent(in) :: nodes, degrees
-    real(dp)            , intent(in) :: dt(:), seeds(:,:)
-    integer , allocatable, intent(out) :: r(:), c(:)
-    real(dp), allocatable, intent(out) :: w(:,:)
-    real(dp), allocatable :: table(:,:)
-    integer :: k, e, i, count, n, ne
-    count = 0
-    do k = 1, size(reach)
-       count = count + reach(k) % reach % num_edges() * nodes
-    end do
-    allocate(r(count), c(count), w(count, 0:size(seeds, 2)))
-    n = 0
-    do k = 1, size(reach)
-       associate (one => reach(k))
-         ne = one % reach % num_edges()
-         call weights_terms(scheme_weight(scheme), one % reach, dt(one % step_of), &
-              & seeds(one % step_of, :), table)
-         do i = 1, nodes
-            do e = 1, ne
-               n       = n + 1
-               r(n)    = one % row(e)    + (i - 1) * degrees
-               c(n)    = one % column(e) + (i - 1) * degrees
-               w(n, :) = -table(e, :)
-            end do
-         end do
-       end associate
-    end do
-  end subroutine reach_terms
   function aggregates(this, cell) result(aggregate)
     class(block_residual), intent(in) :: this
     integer              , intent(in) :: cell(:)
@@ -1825,8 +1780,8 @@ contains
     end do
   end function aggregates
   !===================================================================!
-  ! THE COMPILED TANGENT, FROZEN INTO A BLOCK RESIDUAL. this %
-  ! residual_operator % linearized (src/operation_residual.f90) is
+  ! THE EXPLICIT TANGENT, FROZEN INTO A BLOCK RESIDUAL. this %
+  ! residual_operator % linearize (src/operation_residual.f90) is
   ! Element's own operation (Ch. 4.6.3 of the dissertation); a block
   ! residual's own layout and free pass across unchanged, since
   ! freezing the tangent changes no point and drops no unknown.
@@ -1839,19 +1794,19 @@ contains
     logical              , intent(in) :: transposed
     integer              , intent(in) :: mark
     type(block_residual) :: lin
-    lin % residual_operator = this % residual_operator % linearized(input_graph, inputs, rhs, transposed, mark)
+    lin % residual_operator = this % residual_operator % linearize(input_graph, inputs, rhs, transposed, mark)
     lin % layout = this % layout
     if (allocated(this % free)) lin % free = this % free
   end function block_linear_block
   !===================================================================!
   ! THE BLOCK CONSTRAINED TO A SUBSET OF ITS OWN UNKNOWNS. this %
-  ! residual_operator % constrained (src/operation_residual.f90) is
+  ! residual_operator % constrain (src/operation_residual.f90) is
   ! Element's own operation (Ch. 4.6.3 of the dissertation) - it
   ! eliminates unknowns from stencils, points and fixed rows alone.
   ! A block residual's own operation additionally passes its layout
   ! across unchanged and composes its own free with the constraint
   ! just applied, so the two are named separately (constrained_block
-  ! here, constrained on residual_operator) rather than sharing one
+  ! here, constrain on residual_operator) rather than sharing one
   ! name for two different operations.
   !===================================================================!
   function block_constrained(this, free, values) result(sub)
@@ -1859,7 +1814,7 @@ contains
     integer              , intent(in) :: free(:)
     real(dp)             , intent(in) :: values(:)
     type(block_residual) :: sub
-    sub % residual_operator = this % residual_operator % constrained(free, values)
+    sub % residual_operator = this % residual_operator % constrain(free, values)
     sub % layout = this % layout
     if (allocated(this % free)) then
        sub % free = this % free(free)
@@ -1939,7 +1894,7 @@ end module gti_block
 module gti_march
   use util_precision  , only : dp, least_kind_for
   use iso_fortran_env , only : real128
-  use operation_coupling      , only : weights_of
+  use operation_coupling      , only : weights_of, matrix_scheme_connectivity, connectivity_terms
   use gti_configuration       , only : refuse_unknown
   use operation_weight        , only : scheme_weight
   use view_directed_stored    , only : stored_directed_graph
@@ -1959,7 +1914,7 @@ module gti_march
   use operation_scheme_stencil, only : derived_constraints
   use operation_expression       , only : expression
   use gti_expansion           , only : family_container, expansion, marches_by_stages
-  use gti_block               , only : block_residual, coupling_reach, reach_terms
+  use gti_block               , only : block_residual
   use view_level              , only : level_member, level_num_members, level_coupling, &
        & level_couples
   use graph_fractal           , only : graph
@@ -1979,13 +1934,30 @@ module gti_march
      integer  :: steepest_slot = 0, steepest_degree = 0
      real(dp) :: steepest = 0.0_dp
   end type imbalance
-  ! One step's edges, filled incrementally by stage_reach_of before
-  ! the connectivity_graph they describe can be built - a graph is
-  ! built whole, not edge by edge, so the raw lists are stored here
-  ! until every edge of the step is placed.
-  type :: raw_reach
+  ! One step's edges, filled incrementally by stage_connectivity
+  ! before the connectivity_graph they describe can be built - a
+  ! graph is built whole, not edge by edge, so the raw lists are
+  ! stored here until every edge of the step is placed.
+  type :: raw_connectivity
      integer, allocatable :: tails(:), heads(:), tail_degree(:), head_degree(:)
-  end type raw_reach
+   contains
+     procedure :: place => raw_connectivity_place
+  end type raw_connectivity
+  type :: embedded_edge
+     integer :: tail = 0, head = 0
+     integer :: tail_degree = 0, head_degree = 0
+     integer :: column_base = 0, row_base = 0
+  end type embedded_edge
+  type :: block_embedding
+     type(expansion), pointer :: tower => null()
+     type(graph)    , pointer :: block => null()
+     integer :: num_slices = 0, num_stages = 0, num_degrees = 0
+     integer :: moment_width = 0
+     integer, allocatable :: slice_of(:), member_of(:)
+   contains
+     procedure :: block_connectivity => block_embedding_connectivity
+     procedure :: stage_connectivity => stage_embedding_connectivity
+  end type block_embedding
   ! Space and time are configured independently. A coupled dimension
   ! places all of its members in one system; a sequential one solves them one after another.
   character(len=16), save :: space_coupling = 'coupled'
@@ -2014,7 +1986,7 @@ contains
     integer, allocatable :: offset(:), tail_degree(:)
     type(connectivity_graph) :: edges
     real(dp), allocatable :: c(:)
-    integer :: d, reach, s, i, k
+    integer :: d, depth, s, i, k
     logical :: any_pattern
     w = 1.0_dp
     any_pattern = .false.
@@ -2022,11 +1994,11 @@ contains
        call scheme % row_pattern(d, degrees - 1, offset, tail_degree)
        if (size(offset) == 0) cycle
        any_pattern = .true.
-       reach = maxval(offset)
-       edges = connectivity_graph(reach + 1, &
-            & [(reach + 1 - offset(k), k = 1, size(offset))], [(reach + 1, k = 1, size(offset))], &
+       depth = maxval(offset)
+       edges = connectivity_graph(depth + 1, &
+            & [(depth + 1 - offset(k), k = 1, size(offset))], [(depth + 1, k = 1, size(offset))], &
             & tail_degree, [(d, k = 1, size(offset))])
-       call weights_of(scheme_weight(scheme), edges, [(step, k = 1, reach + 1)], c)
+       call weights_of(scheme_weight(scheme), edges, [(step, k = 1, depth + 1)], c)
        w = max(w, 1.0_dp + sum(abs(c)))
     end do
     if (any_pattern) return
@@ -2221,7 +2193,8 @@ contains
     type(block_residual)  , intent(out) :: rows
     integer, allocatable  , intent(out) :: instants_at(:)
     type(graph), pointer :: horizon, block, slice, moment_node, component, below
-    type(coupling_reach), allocatable :: reach(:)
+    type(matrix_scheme_connectivity), allocatable :: connectivity(:)
+    type(block_embedding) :: embedding
     integer , allocatable :: slice_of(:), member_of(:), members(:), at(:), fixed_rows(:)
     integer , allocatable :: r(:), c(:), table(:,:)
     real(dp), allocatable :: dt(:), w(:,:), seeds(:,:), spatial_weights(:)
@@ -2292,19 +2265,26 @@ contains
     if (size(fixed) /= ncar) then
        error stop 'gti_march: one fixed value per known component'
     end if
+    embedding % tower => tower
+    embedding % block => block
+    embedding % num_slices = n
+    embedding % num_stages = s
+    embedding % num_degrees = nd
+    embedding % moment_width = width
+    embedding % slice_of = slice_of
+    embedding % member_of = member_of
     if (staged) then
-       call stage_reach_of(tower, block, n, s, nd, width, slice_of, &
-            & member_of, reach)
+       call embedding % stage_connectivity(connectivity)
     else
-       call block_reach_of(tower, block, n, nd, width, reach)
+       call embedding % block_connectivity(connectivity)
     end if
     allocate(seeds(size(dt), 0))
-    call reach_terms(scheme, reach, m, nd, dt, seeds, r, c, w)
+    call connectivity_terms(scheme, connectivity, m, nd, dt, seeds, r, c, w)
     rows = block_residual(derived_constraints(r, c, -w(:, 0), moments * width, 'time discretization stencil'), &
          & physics, at(1:npts), moments * width, nd, scheme % primary_degree(nd - 1), &
          & fixed_rows(1:ncar), fixed)
     call rows % placed_on(tower, block)
-    call rows % with_reach(reach)
+    call rows % with_connectivity(connectivity)
     if (associated(below)) then
        call tower % tuples_of(below, table)
        call tower % value_of(below, spatial_weights)
@@ -2320,104 +2300,107 @@ contains
     moment => level_member(block, 1)
     if (staged) moment => level_member(moment, 1)
   end function first_moment
-  subroutine block_reach_of(tower, block, n, nd, width, reach)
-    type(expansion), intent(in) :: tower
-    type(graph)    , intent(in) :: block
-    integer        , intent(in) :: n, nd, width
-    type(coupling_reach), allocatable, intent(out) :: reach(:)
+  subroutine block_embedding_connectivity(this, connectivity)
+    class(block_embedding), intent(in) :: this
+    type(matrix_scheme_connectivity), allocatable, intent(out) :: connectivity(:)
     integer, allocatable :: table(:,:)
     integer, allocatable :: tails(:), heads(:), tail_degree(:), head_degree(:)
     integer :: e, ne
-    call tower % tuples_of(level_coupling(block), table)
+    call this % tower % tuples_of(level_coupling(this % block), table)
     ne = size(table, 2)
-    allocate(reach(1))
-    reach(1) % step_of  = [(e, e = 1, n)]
+    allocate(connectivity(1))
+    connectivity(1) % step_of  = [(e, e = 1, this % num_slices)]
     allocate(tails(ne), heads(ne), tail_degree(ne), head_degree(ne))
-    allocate(reach(1) % row(ne), reach(1) % column(ne))
+    allocate(connectivity(1) % row(ne), connectivity(1) % column(ne))
     do e = 1, ne
-       tails(e)       = (table(1, e) - 1) / nd + 1
-       tail_degree(e) = mod(table(1, e) - 1, nd)
-       heads(e)       = (table(2, e) - 1) / nd + 1
-       head_degree(e) = mod(table(2, e) - 1, nd)
-       reach(1) % column(e) = (tails(e) - 1) * width + tail_degree(e) + 1
-       reach(1) % row(e)    = (heads(e) - 1) * width + head_degree(e) + 1
+       tails(e)       = (table(1, e) - 1) / this % num_degrees + 1
+       tail_degree(e) = mod(table(1, e) - 1, this % num_degrees)
+       heads(e)       = (table(2, e) - 1) / this % num_degrees + 1
+       head_degree(e) = mod(table(2, e) - 1, this % num_degrees)
+       connectivity(1) % column(e) = (tails(e) - 1) * this % moment_width + tail_degree(e) + 1
+       connectivity(1) % row(e)    = (heads(e) - 1) * this % moment_width + head_degree(e) + 1
     end do
-    reach(1) % reach = connectivity_graph(n, tails, heads, tail_degree, head_degree)
-  end subroutine block_reach_of
-  subroutine stage_reach_of(tower, block, n, s, nd, width, slice_of, &
-       & member_of, reach)
-    type(expansion), intent(in) :: tower
-    type(graph)    , intent(in) :: block
-    integer        , intent(in) :: n, s, nd, width, slice_of(:), member_of(:)
-    type(coupling_reach), allocatable, intent(out) :: reach(:)
-    type(raw_reach), allocatable :: raw(:)
+    connectivity(1) % graph = connectivity_graph(this % num_slices, tails, heads, tail_degree, head_degree)
+  end subroutine block_embedding_connectivity
+  subroutine stage_embedding_connectivity(this, connectivity)
+    class(block_embedding), intent(in) :: this
+    type(matrix_scheme_connectivity), allocatable, intent(out) :: connectivity(:)
+    type(raw_connectivity), allocatable :: raw(:)
     integer, allocatable :: table(:,:), accumulate_state(:,:), first_moment(:), counted(:), filled(:)
+    type(embedded_edge) :: edge
     integer :: kk, e, tail_moment, head_moment, vertex_tail, vertex_head
-    allocate(reach(n - 1), raw(n - 1), first_moment(n), counted(n), filled(n))
+    allocate(connectivity(this % num_slices - 1), raw(this % num_slices - 1), &
+         & first_moment(this % num_slices), counted(this % num_slices), filled(this % num_slices))
     first_moment(1) = 1
-    do kk = 2, n
-       first_moment(kk) = first_moment(kk - 1) + merge(1, s + 1, kk - 1 == 1)
+    do kk = 2, this % num_slices
+       first_moment(kk) = first_moment(kk - 1) + merge(1, this % num_stages + 1, kk - 1 == 1)
     end do
     counted = 0
-    do kk = 2, n
-       call tower % tuples_of(level_coupling(level_member(block, kk)), table)
+    do kk = 2, this % num_slices
+       call this % tower % tuples_of(level_coupling(level_member(this % block, kk)), table)
        counted(kk) = size(table, 2)
     end do
-    call tower % tuples_of(level_coupling(block), accumulate_state)
+    call this % tower % tuples_of(level_coupling(this % block), accumulate_state)
     do e = 1, size(accumulate_state, 2)
-       head_moment = (accumulate_state(2, e) - 1) / nd + 1
-       kk          = slice_of(head_moment)
+       head_moment = (accumulate_state(2, e) - 1) / this % num_degrees + 1
+       kk          = this % slice_of(head_moment)
        counted(kk) = counted(kk) + 1
     end do
-    do kk = 2, n
-       reach(kk - 1) % step_of  = spread(kk, 1, s + 2)
+    do kk = 2, this % num_slices
+       connectivity(kk - 1) % step_of  = spread(kk, 1, this % num_stages + 2)
        allocate(raw(kk - 1) % tails(counted(kk)), raw(kk - 1) % heads(counted(kk)), &
             &   raw(kk - 1) % tail_degree(counted(kk)), raw(kk - 1) % head_degree(counted(kk)), &
-            &   reach(kk - 1) % row(counted(kk)), reach(kk - 1) % column(counted(kk)))
+            &   connectivity(kk - 1) % row(counted(kk)), connectivity(kk - 1) % column(counted(kk)))
     end do
     filled = 0
-    do kk = 2, n
-       call tower % tuples_of(level_coupling(level_member(block, kk)), table)
+    do kk = 2, this % num_slices
+       call this % tower % tuples_of(level_coupling(level_member(this % block, kk)), table)
        do e = 1, size(table, 2)
           filled(kk) = filled(kk) + 1
-          vertex_tail = (table(1, e) - 1) / nd + 2
-          vertex_head = (table(2, e) - 1) / nd + 2
-          call put(raw(kk - 1), reach(kk - 1), filled(kk), vertex_tail, vertex_head, &
-               & mod(table(1, e) - 1, nd), mod(table(2, e) - 1, nd), &
-               & (first_moment(kk) + vertex_tail - 2 - 1) * width, &
-               & (first_moment(kk) + vertex_head - 2 - 1) * width)
+          vertex_tail = (table(1, e) - 1) / this % num_degrees + 2
+          vertex_head = (table(2, e) - 1) / this % num_degrees + 2
+          edge % tail        = vertex_tail
+          edge % head        = vertex_head
+          edge % tail_degree = mod(table(1, e) - 1, this % num_degrees)
+          edge % head_degree = mod(table(2, e) - 1, this % num_degrees)
+          edge % column_base = (first_moment(kk) + vertex_tail - 3) * this % moment_width
+          edge % row_base    = (first_moment(kk) + vertex_head - 3) * this % moment_width
+          call raw(kk - 1) % place(connectivity(kk - 1), filled(kk), edge)
        end do
     end do
     do e = 1, size(accumulate_state, 2)
-       tail_moment = (accumulate_state(1, e) - 1) / nd + 1
-       head_moment = (accumulate_state(2, e) - 1) / nd + 1
-       kk          = slice_of(head_moment)
+       tail_moment = (accumulate_state(1, e) - 1) / this % num_degrees + 1
+       head_moment = (accumulate_state(2, e) - 1) / this % num_degrees + 1
+       kk          = this % slice_of(head_moment)
        filled(kk)  = filled(kk) + 1
-       call put(raw(kk - 1), reach(kk - 1), filled(kk), 1, member_of(head_moment) + 1, &
-            & mod(accumulate_state(1, e) - 1, nd), mod(accumulate_state(2, e) - 1, nd), &
-            & (tail_moment - 1) * width, (head_moment - 1) * width)
+       edge % tail        = 1
+       edge % head        = this % member_of(head_moment) + 1
+       edge % tail_degree = mod(accumulate_state(1, e) - 1, this % num_degrees)
+       edge % head_degree = mod(accumulate_state(2, e) - 1, this % num_degrees)
+       edge % column_base = (tail_moment - 1) * this % moment_width
+       edge % row_base    = (head_moment - 1) * this % moment_width
+       call raw(kk - 1) % place(connectivity(kk - 1), filled(kk), edge)
     end do
     if (any(filled /= counted)) then
        error stop 'gti_march: every edge of a step is placed once'
     end if
-    do kk = 2, n
-       reach(kk - 1) % reach = connectivity_graph(s + 2, raw(kk - 1) % tails, raw(kk - 1) % heads, &
+    do kk = 2, this % num_slices
+       connectivity(kk - 1) % graph = connectivity_graph(this % num_stages + 2, raw(kk - 1) % tails, raw(kk - 1) % heads, &
             & raw(kk - 1) % tail_degree, raw(kk - 1) % head_degree)
     end do
-  contains
-    subroutine put(one, placed, e, tail, head, tail_degree, head_degree, column_base, row_base)
-      type(raw_reach)     , intent(inout) :: one
-      type(coupling_reach), intent(inout) :: placed
-      integer             , intent(in)    :: e, tail, head, tail_degree, head_degree
-      integer             , intent(in)    :: column_base, row_base
-      one % tails(e)         = tail
-      one % heads(e)         = head
-      one % tail_degree(e) = tail_degree
-      one % head_degree(e)    = head_degree
-      placed % column(e)     = column_base + tail_degree + 1
-      placed % row(e)        = row_base + head_degree + 1
-    end subroutine put
-  end subroutine stage_reach_of
+  end subroutine stage_embedding_connectivity
+  subroutine raw_connectivity_place(this, placed, e, edge)
+    class(raw_connectivity), intent(inout) :: this
+    type(matrix_scheme_connectivity), intent(inout) :: placed
+    integer            , intent(in) :: e
+    type(embedded_edge), intent(in) :: edge
+    this % tails(e)       = edge % tail
+    this % heads(e)       = edge % head
+    this % tail_degree(e) = edge % tail_degree
+    this % head_degree(e) = edge % head_degree
+    placed % column(e)    = edge % column_base + edge % tail_degree + 1
+    placed % row(e)       = edge % row_base    + edge % head_degree + 1
+  end subroutine raw_connectivity_place
   subroutine solved(rows, design_value, q, achieved, final_imbalance, seed)
     type(block_residual), intent(in)  :: rows
     real(dp)            , intent(in)  :: design_value
@@ -2439,9 +2422,9 @@ contains
     width = rows % num_degrees()
     if (multigrid_on()) call set_aggregates(rows % aggregates(coarse_nodes(rows % num_nodes())))
     call read_inner(solver % inner, count, width)
-    call solver % attach(rows, unknowns, unknowns % vertex_set(), count, &
+    call solver % state(rows, unknowns, unknowns % vertex_set(), count, &
          & stored_inputs = [inputs(2)])
-    solver % compiled       = jacobian_present()
+    solver % explicit       = jacobian_present()
     solver % higher_order_jacobian_product = newton_order()
     call stopping_applied(solver, stopping_tolerance, stopping_criterion, stopping_budget, &
          & stopping_iterations)
@@ -2570,7 +2553,7 @@ contains
           end if
           sub = rows % constrained_block(member, q)
           if (rows % version() /= 0) then
-             call sub % versioned(abs(rows % version()) * members + m, rows % version_transposed())
+             call sub % versioned(abs(rows % version()) * members + m, rows % transpose_version())
           end if
           call solved(sub, design_value, piece, sub_achieved, seed=q(member))
           q(member) = piece
@@ -4765,9 +4748,9 @@ contains
     logical :: available
     integer :: n, e, p, d
     call frozen_at(b, design, unknowns, inputs)
-    call b % rows % compiled_tangent(unknowns, b % rows % bind(inputs), 1, r, c, w, available)
+    call b % rows % explicit_tangent(unknowns, b % rows % bind(inputs), 1, r, c, w, available)
     if (.not. available) then
-       error stop 'gti_chain: the block compiles its tangent in the state'
+       error stop 'gti_chain: the block tangent in the state is explicit'
     end if
     n = b % rows % num_unknowns()
     allocate(reads(n), source=0)
@@ -5393,7 +5376,7 @@ module gti_demos
        & 'marched_horizon', 'marched_stages', 'memory_shape', &
        & 'transfer_offsets', 'randomized_checks', 'read_write_graph', &
        & 'order_of_accuracy', 'scheme_weights', 'sensitivity', 'solve_cost', 'taylor_state', &
-       & 'tolerance_form', 'transposed_reads']
+       & 'tolerance_form', 'transposed_dependencies']
 contains
   logical function demo_requested() result(yes)
     yes = size(argument_values([names_demo])) > 0
@@ -5446,8 +5429,8 @@ contains
        call demo_order_of_accuracy()
     case ('read_write_graph')
        call demo_read_write_graph()
-    case ('transposed_reads')
-       call demo_transposed_reads()
+    case ('transposed_dependencies')
+       call demo_transposed_dependencies()
     case ('scheme_weights')
        call demo_scheme_weights()
     case ('sensitivity')
@@ -5669,36 +5652,36 @@ contains
          call show(tower, sequence_element(members, k), depth + 1)
       end do
     end subroutine show
-    function status(tower, g) result(text)
+    function status(tower, g) result(label)
       type(expansion), intent(in) :: tower
       type(graph)    , intent(in) :: g
-      character(len=:), allocatable :: text
+      character(len=:), allocatable :: label
       real(dp), allocatable :: x(:)
       select case (tower % status_of(g))
       case (VALUE_KNOWN)
          call tower % value_of(g, x)
-         text = '   stores ' // count_of(size(x))
+         label = '   stores ' // count_of(size(x))
       case (VALUE_UNKNOWN)
-         text = '   not yet known'
+         label = '   not yet known'
       case (VALUE_UNATTACHED)
-         text = ''
+         label = ''
       case default
          error stop 'assembled_tower: a value status is one of the three'
       end select
     end function status
-    function extent(tower, g) result(text)
+    function extent(tower, g) result(label)
       type(expansion), intent(in) :: tower
       type(graph)    , intent(in) :: g
-      character(len=:), allocatable :: text
-      text = ''
-      if (tower % extent_of(g) > 0) text = '   extent ' // count_of(tower % extent_of(g))
+      character(len=:), allocatable :: label
+      label = ''
+      if (tower % extent_of(g) > 0) label = '   extent ' // count_of(tower % extent_of(g))
     end function extent
-    function count_of(n) result(text)
+    function count_of(n) result(name)
       integer, intent(in) :: n
-      character(len=:), allocatable :: text
+      character(len=:), allocatable :: name
       character(len=12) :: buffer
       write(buffer,'(i0)') n
-      text = trim(buffer)
+      name = trim(buffer)
     end function count_of
     subroutine grid_partials()
       integer , parameter :: num_instants = 6
@@ -6280,7 +6263,7 @@ contains
       integer , allocatable :: tails(:), heads(:), head_degree(:), tail_degree(:)
       type(connectivity_graph) :: edges
       integer :: j, k
-      call scheme_reach(tails, heads, tail_degree, head_degree)
+      call scheme_edges(tails, heads, tail_degree, head_degree)
       edges = connectivity_graph(num_instants, tails, heads, tail_degree, head_degree)
       call weights_of(scheme_weight(bdf_family(order)), edges, dt, weight)
       rows = derived_constraints( &
@@ -6316,7 +6299,7 @@ contains
     ! depth, are declared by the family and not by this demonstration.
     !--------------------------------------------------------------!
 
-    subroutine scheme_reach(tails, heads, tail_degree, head_degree)
+    subroutine scheme_edges(tails, heads, tail_degree, head_degree)
       integer, allocatable, intent(out) :: tails(:), heads(:)
       integer, allocatable, intent(out) :: tail_degree(:), head_degree(:)
       type(family) :: scheme
@@ -6343,7 +6326,7 @@ contains
          if (pass == 1) allocate(tails(counted), heads(counted), &
               & tail_degree(counted), head_degree(counted))
       end do
-    end subroutine scheme_reach
+    end subroutine scheme_edges
     subroutine show_block(governing, residual, jacobian_gap)
       real(dp), intent(in) :: governing(:), residual(:), jacobian_gap
       integer :: k
@@ -6508,7 +6491,7 @@ contains
     type(level_storage)      :: store
     type(relational_binding) :: binding
     type(set_map)            :: sets
-    type(csr_relation)       :: reach
+    type(csr_relation)       :: coupling_relation
     integer, allocatable :: tails(:), heads(:), tail_degree(:), head_degree(:)
     integer, allocatable :: table(:,:)
     real(dp), allocatable :: weight(:), dt(:)
@@ -6539,13 +6522,13 @@ contains
     allocate(table(2, size(tails)))
     table(1,:) = tails
     table(2,:) = (heads - 1) * num_conditions + head_degree
-    reach = built_reach(table)
+    coupling_relation = built_coupling_relation(table)
     do k = 1, num_instants
        call bind_carrier(slices(k))
     end do
     call bind_carrier(source_carrier)
     call bind_carrier(target_carrier)
-    call bind_reach()
+    call bind_coupling_relation()
     write(*,'(a)')      ' the block and its coupling'
     write(*,'(a,i3)')   '   members of the block        ', level_num_members(store % node(block))
     write(*,'(a,l3)')   '   block is consistent         ', level_consistent(store % node(block))
@@ -6561,25 +6544,25 @@ contains
       g => store % node(at)
       call sets % bind(g, counted_set_representation(n))
     end subroutine describe
-    function built_reach(tuples) result(r)
+    function built_coupling_relation(tuples) result(r)
       integer, intent(in) :: tuples(:,:)
       type(csr_relation) :: r
       type(graph), pointer :: from, into
       from => store % node(source_carrier)
       into => store % node(target_carrier)
-      r = csr_relation('scheme reach', from, into, tuples, sets)
-    end function built_reach
+      r = csr_relation('scheme coupling', from, into, tuples, sets)
+    end function built_coupling_relation
     subroutine bind_carrier(at)
       integer, intent(in) :: at
       type(graph), pointer :: g
       g => store % node(at)
       call binding % bind_set(g, g)
     end subroutine bind_carrier
-    subroutine bind_reach()
+    subroutine bind_coupling_relation()
       type(graph), pointer :: g
       g => store % node(relation_element)
-      call binding % bind_relation(g, reach)
-    end subroutine bind_reach
+      call binding % bind_relation(g, coupling_relation)
+    end subroutine bind_coupling_relation
     subroutine show_tuples()
       class(relation), pointer :: r
       type(connectivity_graph) :: edges
@@ -7505,14 +7488,14 @@ contains
          error stop 'level_maps: a value status is one of the three'
       end select
     end function status_name
-    function extent_of(g) result(text)
+    function extent_of(g) result(label)
       type(graph), intent(in) :: g
-      character(len=:), allocatable :: text
+      character(len=:), allocatable :: label
       character(len=3) :: n
-      text = ''
+      label = ''
       if (.not. sets % describes(g)) return
       write(n,'(i3)') sets % num_members_of(g)
-      text = '   extent' // n
+      label = '   extent' // n
     end function extent_of
     recursive subroutine determine(g)
       type(graph), intent(in) :: g
@@ -8143,11 +8126,11 @@ contains
       integer      , intent(in)    :: degrees
       integer      , intent(inout) :: instants
       integer      , intent(out)   :: half
-      integer :: reach
-      reach = scheme % history_depth(degrees - 1)
-      half  = max(instants / 2, reach + 1)
-      if (instants - half <= reach) then
-         instants = 2 * (reach + 1)
+      integer :: depth
+      depth = scheme % history_depth(degrees - 1)
+      half  = max(instants / 2, depth + 1)
+      if (instants - half <= depth) then
+         instants = 2 * (depth + 1)
          half     = instants / 2
       end if
     end subroutine halved
@@ -8157,13 +8140,13 @@ contains
       integer            , intent(in)  :: kind, order
       fixed = container_named(trim(family_names(kind)), merge(order, 3, kind < 3))
     end subroutine fill
-    function named(kind, order) result(text)
+    function named(kind, order) result(name)
       integer, intent(in) :: kind, order
-      character(len=16) :: text
+      character(len=16) :: name
       character(len=1) :: digit
       write(digit,'(i1)') order
-      text = trim(family_names(kind)) // digit
-      if (kind == 3) text = 'crouzeix2'
+      name = trim(family_names(kind)) // digit
+      if (kind == 3) name = 'crouzeix2'
     end function named
     subroutine expanded(schemes, added, degrees, duration, design, f, achieved)
       type(family_container), intent(in) :: schemes(:)
@@ -8277,8 +8260,8 @@ contains
   end subroutine demo_read_write_graph
 
   !===================================================================!
-  ! THE STATES ARE READ TWICE, AND THE SECOND READ IS AN ARC. A chain
-  ! of three blocks, and the transpose the derivative is taken over.
+  ! STATE DEPENDENCE IN THE TRANSPOSE. A chain of three blocks, and
+  ! the transpose the derivative is taken over.
   !
   !   forward   (1) --> [1] --> (2) --> [2] --> (3) --> [3]
   !                      |               |               |
@@ -8286,37 +8269,39 @@ contains
   !                     (4) <-- [5] <-- (5) <-- [6] <-- (6)
   !   the transpose, releasing the states in decreasing b
   !
-  ! The three downward arcs are the reverse pass reading each block's
-  ! state. Without them the sweep would end at block 3: state 1 would
-  ! be last read at step 2 and state 3 read by nothing at all, so a
-  ! driver would release both while the derivative still required them.
+  ! The three downward arcs state that the reverse pass depends on
+  ! each block's state. Without them the sweep would end at block 3:
+  ! state 1 would have its final dependence at step 2 and state 3
+  ! would have no dependent vertex at all, so a driver would release
+  ! both while the derivative still required them.
   !
   ! Three departures are counted, and each has bound zero. A STATE
-  ! READ BY NOTHING is one the graph would let a driver release
-  ! immediately after it was written. A STATE RELEASED ELSEWHERE is one whose last
-  ! reader is not its own transpose block, or which is never released
-  ! at all: block nb + b is the last reader of state b exactly because
-  ! every forward block that reads state b sends a transposed arc into
-  ! it. A STEP OUT OF REVERSE is one where the transpose does not
-  ! retrace the forward sweep backwards - which is the purpose of
-  ! exchanging the ends of every forward arc, and which a transpose that
-  ! retained its ends would not satisfy while still reading every state.
+  ! WITHOUT A DEPENDENT is one the graph would let a driver release
+  ! immediately after it was written. A STATE RELEASED ELSEWHERE is
+  ! one whose final dependent is not its own transpose block, or which
+  ! is never released at all: block nb + b is the final dependent of
+  ! state b exactly because every forward dependence on state b sends
+  ! a transposed arc into it. A STEP OUT OF REVERSE is one where the
+  ! transpose does not retrace the forward sweep backwards - which is
+  ! the purpose of exchanging the ends of every forward arc, and which
+  ! a transpose that retained its ends would not satisfy while still
+  ! depending on every state.
   !
   ! The fourth count is the driver's result. No rule is bound at a
   ! transposed vertex, and a step that computes nothing still
-  ! releases whatever was last read there - so a traversal that
+  ! releases whatever has final dependence there - so a traversal that
   ! placed a value at every state must leave none of them stored. STATES
   ! STILL STORED counts the ones a traversal did not release.
   !===================================================================!
 
-  subroutine demo_transposed_reads()
+  subroutine demo_transposed_dependencies()
 
     implicit none
     integer, parameter :: state_degree = 2
     integer, parameter :: degrees = state_degree + 1
 
     write(*,'(a)') ' '
-    write(*,'(a)') ' the states a reverse pass reads, and the step each is released at'
+    write(*,'(a)') ' the state dependencies of a reverse pass, and the release step of each'
     write(*,'(a)') ' '
     call checked('bdf 1 alone       ', [container_named('bdf', 1)], [8])
     call checked('bdf 2 then bdf 1  ', [container_named('bdf', 2), container_named('bdf', 1)], [8, 8])
@@ -8339,7 +8324,7 @@ contains
       type(stored_directed_graph) :: one_point, bare
       type(stored_field) :: datum
       integer, allocatable :: first(:), last(:), order(:), releasable(:)
-      integer :: nb, b, k, unread, elsewhere, released, out_of_reverse, still_stored
+      integer :: nb, b, k, no_dependent, elsewhere, released, out_of_reverse, still_stored
 
       nb = size(added)
       call horizon_bounds(schemes, added, degrees - 1, first, last)
@@ -8351,11 +8336,11 @@ contains
       executor = driver(immaterial, incidence, forward)
       order    = executor % visits()
 
-      unread    = 0
+      no_dependent = 0
       elsewhere = 0
       do b = 1, nb
          if (executor % last_reader_of(b) < 1) then
-            unread = unread + 1
+            no_dependent = no_dependent + 1
             cycle
          end if
          if (order(executor % last_reader_of(b)) /= nb + b) elsewhere = elsewhere + 1
@@ -8390,13 +8375,13 @@ contains
 
       write(*,'(a,a,a,i0,a,i0,a,i0,a,i0,a,i0,a,i0,a,i0,a,i0,a,i0,a,i0)') '   ', title, &
            & '  blocks ', nb, '  steps ', size(order), &
-           & '   read by nothing ', unread, ', bound ', 0, &
+           & '   no dependent ', no_dependent, ', bound ', 0, &
            & ';  released elsewhere ', elsewhere + (nb - released), ', bound ', 0, &
            & ';  steps out of reverse ', out_of_reverse, ', bound ', 0, &
            & ';  still stored ', still_stored, ', bound ', 0
     end subroutine checked
 
-  end subroutine demo_transposed_reads
+  end subroutine demo_transposed_dependencies
 
   subroutine demo_scheme_weights()
     implicit none
@@ -8736,11 +8721,11 @@ contains
       integer      , intent(in) :: order, head_degree
       type(connectivity_graph) :: edges
       real(dp), allocatable :: c(:)
-      integer :: reach, last, k
-      reach = order
-      last  = reach + 1
-      edges = connectivity_graph(last, [(last - k, k = 0, reach)], [(last, k = 0, reach)], &
-           & [(head_degree - 1, k = 0, reach)], [(head_degree, k = 0, reach)])
+      integer :: depth, last, k
+      depth = order
+      last  = depth + 1
+      edges = connectivity_graph(last, [(last - k, k = 0, depth)], [(last, k = 0, depth)], &
+           & [(head_degree - 1, k = 0, depth)], [(head_degree, k = 0, depth)])
       call weights_of(scheme, edges, [(1.0_dp, k = 1, last)], c)
       total = sum(abs(c))
     end function row_sum
@@ -8943,12 +8928,12 @@ program graph_time_integrator
   call chosen_functionals(cfg)
   call table(cfg)
 contains
-  integer function widest_reach(cfg) result(widest)
+  integer function widest_depth(cfg) result(widest)
     type(configuration), intent(in) :: cfg
     character(len=8) :: every(3)
     class(family), allocatable :: scheme
     logical :: staged, passes_check
-    integer :: i, order, reach
+    integer :: i, order, depth
     every  = ['bdf     ', 'adams   ', 'dirk    ']
     widest = 0
     do i = 1, 3
@@ -8956,11 +8941,11 @@ contains
        do order = 1, cfg % max_discretization_order
           call chosen(trim(every(i)), order, scheme, staged, passes_check)
           if (.not. passes_check) cycle
-          reach = scheme % history_depth(cfg % state_degree)
-          if (reach < cfg % instants) widest = max(widest, reach)
+          depth = scheme % history_depth(cfg % state_degree)
+          if (depth < cfg % instants) widest = max(widest, depth)
        end do
     end do
-  end function widest_reach
+  end function widest_depth
   subroutine chosen(name, order, scheme, staged, passes_check)
     character(len=*), intent(in)  :: name
     integer         , intent(in)  :: order
@@ -8970,17 +8955,17 @@ contains
     staged = .false.
     if (passes_check) staged = scheme % num_stages() > 1
   end subroutine chosen
-  function labelled(names, orders) result(text)
+  function labelled(names, orders) result(label)
     character(len=*), intent(in) :: names(:)
     integer         , intent(in) :: orders(:)
-    character(len=:), allocatable :: text
+    character(len=:), allocatable :: label
     character(len=2) :: digit
     integer :: b
-    text = ''
+    label = ''
     do b = 1, size(names)
        write(digit,'(i0)') orders(b)
-       if (b > 1) text = text // '-'
-       text = text // trim(names(b)) // trim(digit)
+       if (b > 1) label = label // '-'
+       label = label // trim(names(b)) // trim(digit)
     end do
   end function labelled
   subroutine shown_initial(cfg)
@@ -9385,11 +9370,11 @@ contains
          & cfg % initial_field, cfg % initial_state, cfg % design, &
          & spatial_discretization_stencil=spatial_discretization_stencil, space=space, a=extent_a, b=extent_b)
   end subroutine field_context
-  subroutine pair_of(text, x, y, subject)
-    character(len=*), intent(in)  :: text, subject
+  subroutine pair_of(pair, x, y, subject)
+    character(len=*), intent(in)  :: pair, subject
     real(dp)        , intent(out) :: x, y
     character(len=32), allocatable :: w(:)
-    w = words_of(text)
+    w = words_of(pair)
     if (size(w) /= 2) error stop 'graph_time_integrator: two ' // subject // ', one per coordinate'
     read(w(1), *) x
     read(w(2), *) y
@@ -9486,7 +9471,7 @@ contains
     end if
     call refuse_unknown(cfg % families, ['bdf     ', 'adams   ', 'dirk    '], 'families')
     call refuse_unwindowed(cfg % combinations)
-    widest = widest_reach(cfg)
+    widest = widest_depth(cfg)
     if (.not. cfg % automatic_order_conservation) then
        write(*,'(a)')    ' '
        write(*,'(a,i0)') ' the widest row here has history depth in instants: ', widest
@@ -9581,13 +9566,13 @@ contains
   ! refused where it is written.
   !===================================================================!
 
-  subroutine windows_of(text, names, orders)
-    character(len=*), intent(in) :: text
+  subroutine windows_of(specification, names, orders)
+    character(len=*), intent(in) :: specification
     character(len=8), allocatable, intent(out) :: names(:)
     integer         , allocatable, intent(out) :: orders(:)
     character(len=32), allocatable :: words(:)
     integer :: i, mark, failed
-    words = words_of(text)
+    words = words_of(specification)
     if (size(words) < 1) then
        error stop 'gti_configuration: a chain names a window at least'
     end if
@@ -9609,29 +9594,29 @@ contains
           error stop 'gti_configuration: a setting names something unknown'
        end if
     end do
-    call refuse_unknown(text_of(names), ['bdf  ', 'adams', 'dirk '], 'chain')
+    call refuse_unknown(names_phrase(names), ['bdf  ', 'adams', 'dirk '], 'chain')
   end subroutine windows_of
 
-  pure function text_of(names) result(text)
+  pure function names_phrase(names) result(phrase)
     character(len=*), intent(in) :: names(:)
-    character(len=:), allocatable :: text
+    character(len=:), allocatable :: phrase
     integer :: i
-    text = ''
+    phrase = ''
     do i = 1, size(names)
-       text = text // ' ' // trim(names(i))
+       phrase = phrase // ' ' // trim(names(i))
     end do
-  end function text_of
+  end function names_phrase
 
   !===================================================================!
   ! A window count is a whole number of one or more. Anything else is
   ! refused where it is written rather than where it would be used.
   !===================================================================!
 
-  subroutine refuse_unwindowed(text)
-    character(len=*), intent(in) :: text
+  subroutine refuse_unwindowed(combinations)
+    character(len=*), intent(in) :: combinations
     character(len=32), allocatable :: counts(:)
     integer :: i, windows, failed
-    counts = words_of(text)
+    counts = words_of(combinations)
     if (size(counts) < 1) then
        error stop 'gti_configuration: the combinations name a window count'
     end if
@@ -9767,7 +9752,7 @@ contains
        line = '   ' // tally_level_name(level) // &
             & repeat(' ', max(1, 18 - len(tally_level_name(level))))
        do m = 0, top
-          line = line // right(amount_text(tally_amount(level, m, event), event))
+          line = line // right(amount_cell(tally_amount(level, m, event), event))
        end do
        write(*,'(a)') line
     end do
@@ -9777,7 +9762,7 @@ contains
        line = '   whole run        '
     end if
     do m = 0, top
-       line = line // right(amount_text(whole(m), event))
+       line = line // right(amount_cell(whole(m), event))
     end do
     write(*,'(a)') line
     call ratio_matrix(whole, top)
@@ -9825,18 +9810,18 @@ contains
        write(*,'(a)') '   these ratios report the limit and not the derivative order.'
     end if
   end subroutine iteration_limit_note
-  function amount_text(elapsed, event) result(text)
+  function amount_cell(elapsed, event) result(entry)
     real(dp), intent(in) :: elapsed
     integer , intent(in) :: event
-    character(len=:), allocatable :: text
+    character(len=:), allocatable :: entry
     character(len=14) :: cell
     if (event == elapsed_time) then
        write(cell,'(f14.4)') elapsed
     else
        write(cell,'(i14)') nint(elapsed)
     end if
-    text = trim(adjustl(cell))
-  end function amount_text
+    entry = trim(adjustl(cell))
+  end function amount_cell
   real(dp) function over_levels(m, event) result(total)
     integer, intent(in) :: m, event
     integer :: level
@@ -9858,9 +9843,9 @@ contains
        named = 'd' // trim(digit) // 'fdx' // trim(digit)
     end if
   end function order_named
-  function right(text) result(cell)
-    character(len=*), intent(in) :: text
+  function right(entry) result(cell)
+    character(len=*), intent(in) :: entry
     character(len=14) :: cell
-    write(cell,'(a14)') text
+    write(cell,'(a14)') entry
   end function right
 end program graph_time_integrator

@@ -1906,6 +1906,7 @@ module gti_march
   use operation_stencil       , only : stencil
   use operation_newton        , only : newton
   use operation_minimization  , only : minimizer, relative, by_rate
+  use operation_temporal_minimization, only : temporal_minimizer
   use operation_dense_direct  , only : dense_direct
   use operation_gmres         , only : gmres
   use operation_family        , only : family
@@ -2438,7 +2439,7 @@ contains
   ! did not converge.
   !===================================================================!
   subroutine imbalance_of(solver, achieved, rows, unknowns, q, design, final_imbalance)
-    type(newton)               , intent(in)  :: solver
+    class(minimizer)           , intent(in)  :: solver
     real(dp)                   , intent(in)  :: achieved, q(:)
     type(block_residual)       , intent(in)  :: rows
     type(stored_directed_graph), intent(in)  :: unknowns
@@ -2514,15 +2515,13 @@ contains
     real(dp), allocatable, intent(out) :: q(:)
     real(dp)            , intent(out) :: achieved
     type(imbalance), intent(out), optional :: final_imbalance
-    type(block_residual) :: sub
+    type(temporal_minimizer) :: solver
     type(newton) :: newton_solver
     type(stored_directed_graph) :: unknowns
     type(stored_field), allocatable :: inputs(:)
-    integer , allocatable :: member(:), order(:), label(:)
-    real(dp), allocatable :: piece(:)
-    logical , allocatable :: is_fixed(:)
-    real(dp) :: sub_achieved, before
-    integer :: count, members, m, mm, pass, k
+    integer , allocatable :: order(:), label(:)
+    real(dp), allocatable :: rhs(:)
+    integer :: count, width
     logical :: sequential_space, sequential_time
     sequential_space = trim(space_coupling) == 'sequential'
     sequential_time  = trim(time_coupling)  == 'sequential'
@@ -2530,76 +2529,32 @@ contains
        call solved(rows, design_value, q, achieved, final_imbalance)
        return
     end if
-    count   = rows % num_unknowns()
+    count = rows % num_unknowns()
     call rows % sweep_labels(sequential_space, sequential_time, label, order)
-    members = maxval(label)
-    is_fixed = rows % fixed_mask()
     q = at_first_instant(rows, count)
     q(rows % fixed_unknowns()) = rows % fixed_values()
     call frozen_inputs(q, design_value, rows % num_points(), unknowns, inputs)
+    width = rows % num_degrees()
+    if (multigrid_on()) call set_aggregates(rows % aggregates(coarse_nodes(rows % num_nodes())))
+    call read_inner(newton_solver % inner, count, width)
+    call newton_solver % state(rows, unknowns, unknowns % vertex_set(), count, &
+         & stored_inputs = [inputs(2)])
+    newton_solver % explicit       = jacobian_present()
+    newton_solver % higher_order_jacobian_product = newton_order()
     call stopping_applied(newton_solver, stopping_tolerance, stopping_criterion, stopping_budget, &
          & stopping_iterations)
-    call newton_solver % begin_imbalance()
-    achieved = whole_residual(rows, unknowns, inputs(2), q)
-    call newton_solver % note_imbalance(achieved)
-    do pass = 1, stopping_iterations
-       before = achieved
-       do mm = 1, members
-          m = order(mm)
-          member = pack([(k, k = 1, count)], label == m)
-          if (all(is_fixed(member))) cycle
-          if (pass == 1 .and. sequential_time .and. mm > 1) then
-             call continued(q, member, pack([(k, k = 1, count)], label == order(mm - 1)))
-          end if
-          sub = rows % constrained_block(member, q)
-          if (rows % version() /= 0) then
-             call sub % versioned(abs(rows % version()) * members + m, rows % transpose_version())
-          end if
-          call solved(sub, design_value, piece, sub_achieved, seed=q(member))
-          q(member) = piece
-       end do
-       achieved = whole_residual(rows, unknowns, inputs(2), q)
-       call newton_solver % note_imbalance(achieved)
-       if (newton_solver % converged(achieved)) exit
-       if (newton_solver % exhausted(pass)) exit
-       if (achieved == before) exit
-    end do
-    if (present(final_imbalance)) call imbalance_of(newton_solver, achieved, rows, unknowns, q, &
+    allocate(solver % inner, source=newton_solver)
+    call solver % state(rows, unknowns, unknowns % vertex_set(), count, &
+         & stored_inputs = [inputs(2)])
+    call stopping_applied(solver, stopping_tolerance, stopping_criterion, stopping_budget, &
+         & stopping_iterations)
+    call solver % partition(label, order, seed_from_previous=sequential_time)
+    allocate(rhs(count), source=0.0_dp)
+    call solver % solve(rhs, q, achieved)
+    call clear_inner()
+    if (present(final_imbalance)) call imbalance_of(solver, achieved, rows, unknowns, q, &
          & inputs(2), final_imbalance)
   end subroutine swept
-  real(dp) function whole_residual(rows, unknowns, design, q) result(norm)
-    type(block_residual)       , intent(in) :: rows
-    type(stored_directed_graph), intent(in) :: unknowns
-    type(stored_field)         , intent(in) :: design
-    real(dp)                   , intent(in) :: q(:)
-    type(stored_field) :: state
-    class(field), allocatable :: out
-    real(dp), allocatable :: r(:)
-    state = stored_field('state', unknowns % vertex_set(), size(q))
-    call state % set_real_vector(q)
-    call rows % apply(unknowns, rows % bind([state, design]), out)
-    call out % real_vector(r)
-    norm = norm2(r)
-  end function whole_residual
-  subroutine continued(q, member, earlier)
-    real(dp), intent(inout) :: q(:)
-    integer , intent(in)    :: member(:), earlier(:)
-    integer :: pieces, i, width
-    if (size(member) == size(earlier)) then
-       q(member) = q(earlier)
-    else if (mod(size(member), size(earlier)) == 0) then
-       width  = size(earlier)
-       pieces = size(member) / width
-       do i = 1, pieces
-          q(member((i - 1) * width + 1:i * width)) = q(earlier)
-       end do
-    else if (mod(size(earlier), size(member)) == 0) then
-       width = size(member)
-       q(member) = q(earlier(size(earlier) - width + 1:))
-    else
-       error stop 'gti_march: a member is seeded from one of its extent, a multiple of it, or a divisor'
-    end if
-  end subroutine continued
   subroutine by_aspect(rows, unknowns, q, design, final_imbalance)
     type(block_residual)       , intent(in)    :: rows
     type(stored_directed_graph), intent(in)    :: unknowns
@@ -3248,6 +3203,7 @@ module gti_chain
   use operation_action , only : operation, emit, contract
   use operation_action , only : binding, is_bound, bound_value
   use operation_driver , only : driver, rule_graph, data_graph, pairing
+  use operation_temporal_minimization, only : temporal_minimizer
   use view_read_write  , only : bipartite_digraph, FIRST_PART, SECOND_PART
   use view_directed    , only : forward
   use view_directed    , only : directed_graph
@@ -3907,11 +3863,14 @@ contains
     type(pairing)               :: pairs
     type(rule_graph)       :: rules
     type(bipartite_digraph)     :: incidence
-    type(driver)                :: executor
+    type(driver)                :: schedule
+    type(temporal_minimizer)    :: executor
     type(block_rule)            :: one
     type(contract), allocatable :: contracts(:)
     type(stored_directed_graph) :: bare
     integer, allocatable :: reads(:)
+    real(dp), allocatable :: no_rhs(:), no_solution(:)
+    real(dp) :: driver_achieved
     integer :: nb, b, k
 
     nb = size(added)
@@ -3946,11 +3905,12 @@ contains
        deallocate(one % scheme, one % physics)
     end do
 
-    executor = driver(rules % at(1) % rule, incidence, forward)
-    call executor % pair_with(rules % pair(values))
-
     bare = stored_directed_graph(nb, tails=[integer ::], heads=[integer ::])
-    call executor % evaluate(bare)
+    schedule = driver(rules % at(1) % rule, incidence, forward)
+    call executor % state(schedule, bare, bare % vertex_set(), 0)
+    call executor % pair_with(rules % pair(values))
+    allocate(no_rhs(0), no_solution(0))
+    call executor % solve(no_rhs, no_solution, driver_achieved)
 
     ! WHERE THE STATES ARE STORED. The driver placed each block's
     ! state at its data vertex; a caller that requires them requests
@@ -5341,6 +5301,7 @@ module gti_demos
   use operation_coupling    , only : weights_of, coupling_inputs
   use operation_weight      , only : scheme_weight
   use operation_expression  , only : expression
+  use operation_temporal_minimization, only : temporal_minimizer
   use gti_physics           , only : van_der_pol, van_der_pol_energy, van_der_pol_dissipation
   use operation_minimization, only : relative, by_rate
   use gti_expansion         , only : expansion, family_container
@@ -8316,7 +8277,8 @@ contains
       type(family_container), intent(in) :: schemes(:)
       integer            , intent(in) :: added(:)
       type(bipartite_digraph) :: incidence
-      type(driver)     :: executor
+      type(driver)     :: schedule
+      type(temporal_minimizer) :: executor
       type(expression) :: immaterial
       type(rule_graph) :: rules
       type(data_graph) :: values, remaining
@@ -8324,6 +8286,8 @@ contains
       type(stored_directed_graph) :: one_point, bare
       type(stored_field) :: datum
       integer, allocatable :: first(:), last(:), order(:), releasable(:)
+      real(dp), allocatable :: no_rhs(:), no_solution(:)
+      real(dp) :: driver_achieved
       integer :: nb, b, k, no_dependent, elsewhere, released, out_of_reverse, still_stored
 
       nb = size(added)
@@ -8333,17 +8297,19 @@ contains
       ! THE LIFETIMES ARE THE GRAPH'S AND THE ORDER'S, and no rule
       ! enters either result, so the rule passed here is never
       ! applied and nothing is marched.
-      executor = driver(immaterial, incidence, forward)
+      bare = stored_directed_graph(nb, tails=[integer ::], heads=[integer ::])
+      schedule = driver(immaterial, incidence, forward)
+      call executor % state(schedule, bare, bare % vertex_set(), 0)
       order    = executor % visits()
 
       no_dependent = 0
       elsewhere = 0
       do b = 1, nb
-         if (executor % last_reader_of(b) < 1) then
+         if (executor % last_dependent_of(b) < 1) then
             no_dependent = no_dependent + 1
             cycle
          end if
-         if (order(executor % last_reader_of(b)) /= nb + b) elsewhere = elsewhere + 1
+         if (order(executor % last_dependent_of(b)) /= nb + b) elsewhere = elsewhere + 1
       end do
 
       ! the transpose retraces the forward sweep backwards, step for
@@ -8367,8 +8333,8 @@ contains
          allocate(values % at(b) % datum, source=datum)
       end do
       call executor % pair_with(rules % pair(values))
-      bare = stored_directed_graph(nb, tails=[integer ::], heads=[integer ::])
-      call executor % evaluate(bare)
+      allocate(no_rhs(0), no_solution(0))
+      call executor % solve(no_rhs, no_solution, driver_achieved)
       pairs     = executor % pairing_of()
       remaining  = pairs % stored_data()
       still_stored = count([(remaining % at(b) % written(), b = 1, nb)])

@@ -469,64 +469,211 @@ module gti_physics
   implicit none
   private
   public :: van_der_pol, van_der_pol_energy, van_der_pol_dissipation
-  ! the multiplier field of the van der pol Lagrangian: the costate
-  integer, parameter :: COSTATE = 2
+  public :: physics_named, functional_of_physics
+  ! the van der pol Lagrangian over the state q and its costate; the
+  ! algebraic form adds y = q**2 as a second state field with its own
+  ! multiplier, so the fields are q, y, lambda, mu
+  integer, parameter :: STATE = 1, COSTATE = 2
+  integer, parameter :: SQUARE = 2, LAMBDA = 3, MU = 4
 contains
   !===================================================================!
-  ! The van der pol residual in the state alone, unstated.
+  ! The van der pol residual in the state alone, unstated; in the
+  ! algebraic form q**2 is read from the field y.
   !===================================================================!
-  function residual_rule(degree) result(r)
+  function residual_rule(degree, algebraic) result(r)
     integer, intent(in) :: degree
+    logical, intent(in) :: algebraic
     type(expression) :: r
-    type(expression) :: q, nu
-    q  = unknown()
+    type(expression) :: q, nu, q_square
+    q  = unknown(STATE)
     nu = design()
-    r = derivative(q, degree) - nu * (1.0_dp - derivative(q, 0)**2) * derivative(q, degree - 1) &
-         & + derivative(q, 0)
+    if (algebraic) then
+       q_square = unknown(SQUARE)
+    else
+       q_square = derivative(q, 0)**2
+    end if
+    r = derivative(q, degree) - nu * (1.0_dp - q_square) * derivative(q, degree - 1) + derivative(q, 0)
   end function residual_rule
   !===================================================================!
   ! The Lagrangian L = F + lambda R over the state and the costate,
-  ! for a functional F in the state. The residual is its stationarity
-  ! in the costate and F is the Lagrangian at zero costate.
+  ! for a functional F in the state; in the algebraic form
+  ! L = F + lambda R + mu (y - q**2). The residual rows are its
+  ! stationarities in the multipliers and F is the Lagrangian at zero
+  ! multipliers.
   !===================================================================!
-  function lagrangian(functional, degree, label) result(l)
+  function lagrangian(functional, degree, label, algebraic) result(l)
     type(expression), intent(in) :: functional
     integer         , intent(in) :: degree
     character(len=*), intent(in) :: label
+    logical         , intent(in) :: algebraic
     type(expression) :: l
-    l = stated(functional + unknown(COSTATE) * residual_rule(degree), degree, label)
+    type(expression) :: q
+    q = unknown(STATE)
+    if (algebraic) then
+       l = stated(functional + unknown(LAMBDA) * residual_rule(degree, algebraic) &
+            & + unknown(MU) * (unknown(SQUARE) - derivative(q, 0)**2), &
+            & degree, label, field_degrees=[degree, 0, 0, 0], multipliers=2)
+    else
+       l = stated(functional + unknown(COSTATE) * residual_rule(degree, algebraic), degree, label, multipliers=1)
+    end if
   end function lagrangian
   function energy_rule() result(f)
     type(expression) :: f
     type(expression) :: q
-    q = unknown()
+    q = unknown(STATE)
     f = 0.5_dp * (derivative(q, 0)**2 + derivative(q, 1)**2)
   end function energy_rule
   function dissipation_rule() result(f)
     type(expression) :: f
     type(expression) :: q, nu
-    q  = unknown()
+    q  = unknown(STATE)
     nu = design()
     f = nu * (1.0_dp - derivative(q, 0)**2) * derivative(q, 1) * derivative(q, 1)
   end function dissipation_rule
+  !===================================================================!
+  ! The physics by name: the residual of the named Lagrangian, its
+  ! stationarity in the first multiplier. An unknown name is refused
+  ! by the caller.
+  !===================================================================!
+  function physics_named(name, degree) result(r)
+    character(len=*), intent(in) :: name
+    integer         , intent(in) :: degree
+    type(expression) :: r
+    r = euler_lagrange(lagrangian(energy_rule(), degree, 'van der pol lagrangian', algebraic_named(name)), 1, &
+         & 'van der pol residual')
+  end function physics_named
+  !===================================================================!
+  ! A functional by name over the named physics: the Lagrangian at
+  ! zero multipliers, so it reads the same tuple as the physics.
+  !===================================================================!
+  function functional_of_physics(physics_name, name, degree, passes_check) result(f)
+    character(len=*), intent(in)  :: physics_name, name
+    integer         , intent(in)  :: degree
+    logical         , intent(out) :: passes_check
+    type(expression) :: f
+    passes_check = .true.
+    select case (name)
+    case ('energy')
+       f = at_zero(lagrangian(energy_rule(), degree, 'van der pol lagrangian', algebraic_named(physics_name)), &
+            & 'van der pol energy')
+    case ('dissipation')
+       f = at_zero(lagrangian(dissipation_rule(), degree, 'van der pol lagrangian', algebraic_named(physics_name)), &
+            & 'van der pol dissipation')
+    case default
+       passes_check = .false.
+    end select
+  end function functional_of_physics
+  pure logical function algebraic_named(name) result(algebraic)
+    character(len=*), intent(in) :: name
+    algebraic = trim(name) == 'vanderpol_algebraic'
+  end function algebraic_named
   function van_der_pol(degree) result(r)
     integer, intent(in) :: degree
     type(expression) :: r
-    r = euler_lagrange(lagrangian(energy_rule(), degree, 'van der pol lagrangian'), COSTATE, &
-         & 'van der pol residual')
+    r = physics_named('vanderpol', degree)
   end function van_der_pol
   function van_der_pol_energy(degree) result(f)
     integer, intent(in) :: degree
     type(expression) :: f
-    f = at_zero(lagrangian(energy_rule(), degree, 'van der pol lagrangian'), COSTATE, 'van der pol energy')
+    logical :: passes_check
+    f = functional_of_physics('vanderpol', 'energy', degree, passes_check)
   end function van_der_pol_energy
   function van_der_pol_dissipation(degree) result(f)
     integer, intent(in) :: degree
     type(expression) :: f
-    f = at_zero(lagrangian(dissipation_rule(), degree, 'van der pol lagrangian'), COSTATE, &
-         & 'van der pol dissipation')
+    logical :: passes_check
+    f = functional_of_physics('vanderpol', 'dissipation', degree, passes_check)
   end function van_der_pol_dissipation
 end module gti_physics
+!=====================================================================!
+! THE TUPLE ONE NODE STORES AT ONE MOMENT: the state fields in order,
+! each with its jet along the instants, count(f) components from
+! offset(f), and the whole width, stride, which includes the
+! components the spatial law determines. The row within the tuple
+! each field's rule governs is named by a family from the field's
+! degree, so it is read with the family. A rule per state field: a
+! Lagrangian's multipliers pair with its state fields in order, and a
+! rule without multipliers governs one field.
+!=====================================================================!
+module gti_layout
+  use operation_expression, only : expression
+  use operation_family    , only : family
+  implicit none
+  private
+  public :: tuple_layout
+  type :: tuple_layout
+     integer :: fields = 1, stride = 0
+     integer, allocatable :: count(:), offset(:)
+   contains
+     procedure :: row
+     procedure :: field_of
+     procedure :: degree_of
+     procedure :: primary_row
+     procedure :: primary_rows
+  end type tuple_layout
+  interface tuple_layout
+     module procedure layout_of
+  end interface tuple_layout
+contains
+  function layout_of(physics) result(this)
+    type(expression), intent(in) :: physics
+    type(tuple_layout) :: this
+    integer :: f
+    this % fields = physics % num_fields() - physics % num_multipliers()
+    if (max(1, physics % num_multipliers()) /= this % fields) then
+       error stop 'gti_layout: one rule per state field'
+    end if
+    this % stride = physics % num_components()
+    allocate(this % count(this % fields), this % offset(this % fields))
+    do f = 1, this % fields
+       this % count(f)  = physics % degree_of_field(f) + 1
+       this % offset(f) = physics % offset_of_field(f)
+    end do
+  end function layout_of
+  !===================================================================!
+  ! The tuple index, from zero, of a field's component of a degree.
+  !===================================================================!
+  pure integer function row(this, field, degree)
+    class(tuple_layout), intent(in) :: this
+    integer            , intent(in) :: field, degree
+    row = this % offset(field) + degree
+  end function row
+  !===================================================================!
+  ! The field a tuple index, from zero, belongs to: the last whose
+  ! offset is at most the index.
+  !===================================================================!
+  pure integer function field_of(this, index)
+    class(tuple_layout), intent(in) :: this
+    integer            , intent(in) :: index
+    integer :: f
+    field_of = 1
+    do f = 2, this % fields
+       if (this % offset(f) <= index) field_of = f
+    end do
+  end function field_of
+  pure integer function degree_of(this, index)
+    class(tuple_layout), intent(in) :: this
+    integer            , intent(in) :: index
+    degree_of = index - this % offset(this % field_of(index))
+  end function degree_of
+  !===================================================================!
+  ! The row a field's rule governs under a family, as a tuple index,
+  ! and the rows of every field.
+  !===================================================================!
+  pure integer function primary_row(this, scheme, field)
+    class(tuple_layout), intent(in) :: this
+    class(family)      , intent(in) :: scheme
+    integer            , intent(in) :: field
+    primary_row = this % row(field, scheme % primary_degree(this % count(field) - 1))
+  end function primary_row
+  pure function primary_rows(this, scheme) result(rows)
+    class(tuple_layout), intent(in) :: this
+    class(family)      , intent(in) :: scheme
+    integer, allocatable :: rows(:)
+    integer :: f
+    rows = [(this % primary_row(scheme, f), f = 1, this % fields)]
+  end function primary_rows
+end module gti_layout
 module gti_sweeps
   use gti_configuration, only : refuse_unknown, lists
   use util_precision  , only : dp, half_digits
@@ -878,6 +1025,7 @@ module gti_expansion
   use operation_family      , only : family
   use operation_grid        , only : grid, partition
   use operation_coupling    , only : weights_of
+  use gti_layout            , only : tuple_layout
   use operation_stencil     , only : stencil, combine_triples
   use operation_action      , only : variation
   use operation_weight      , only : scheme_weight
@@ -900,12 +1048,14 @@ module gti_expansion
      type(set_map)           , private :: extents
      type(relational_binding), private :: bindings
      integer                 , private :: root_at = 0
-     ! degrees is the EQUATION'S degree count, which is what every
-     ! scheme query reads. spatial_degrees counts the components the
-     ! spatial law determines. The layout stride is their sum, and is
-     ! requested by name so the two are never confused.
+     ! degrees is the EQUATION'S degree count, the first field's,
+     ! which is what every scheme query reads. width is the whole
+     ! tuple: every field's jet and the components the spatial law
+     ! determines. The layout stride is requested by name so the two
+     ! are never confused.
      integer                 , private :: degrees = 0
-     integer                 , private :: spatial_degrees = 0
+     integer                 , private :: width   = 0
+     type(tuple_layout)      , private :: layout
      integer                 , private :: node_extent = 1
      integer                 , private :: spatial_coupling_at = 0
      integer, allocatable    , private :: design_at(:), design_kind(:)
@@ -1044,8 +1194,9 @@ contains
     ! degrees is the marching coordinate's own count, which is what
     ! every scheme query reads; the rest of the point's components
     ! belong to the other coordinates
-    this % degrees         = continuous % equation_degree() + 1
-    this % spatial_degrees = continuous % num_components() - this % degrees
+    this % degrees = continuous % equation_degree() + 1
+    this % width   = continuous % num_components()
+    this % layout  = tuple_layout(physics)
     this % node_extent = 1
     if (present(nodes)) this % node_extent = nodes
     if (present(spatial_discretization_stencil)) this % spatial_coupling_at = spatial_discretization_coupling(this, spatial_discretization_stencil)
@@ -1406,26 +1557,45 @@ contains
     integer               , intent(in)    :: slices(:), first, last
     real(dp)              , intent(in)    :: dt(:)
     type(connectivity_graph) :: connectivity
-    real(dp), allocatable :: w(:)
-    integer :: n, nd
+    integer , allocatable :: table(:,:), field_table(:,:)
+    real(dp), allocatable :: w(:), field_w(:)
+    integer :: n, f
     associate (u1 => physics); end associate
-    n  = last - first + 1
-    nd = this % degrees
-    connectivity = scheme % block_connectivity(nd, n)
-    call weights_of(scheme_weight(scheme), connectivity, dt(first:last), w)
-    at = coupled(this, slices, n * nd, 'the components of this block', &
+    n = last - first + 1
+    associate (layout => this % layout)
+    ! every field's jet is tied by the family at the field's own
+    ! degree; the tables are listed field after field, and a field
+    ! without a derivative has no row to tie
+    allocate(table(2, 0), w(0))
+    do f = 1, layout % fields
+       if (layout % count(f) < 2) cycle
+       connectivity = scheme % block_connectivity(layout % count(f), n)
+       call weights_of(scheme_weight(scheme), connectivity, dt(first:last), field_w)
+       field_table = tuples(layout, f, connectivity)
+       table = reshape([table, field_table], [2, size(table, 2) + size(field_table, 2)])
+       w     = [w, field_w]
+    end do
+    at = coupled(this, slices, n * layout % stride, 'the components of this block', &
          & 'the constraint instances of this block', 'the scheme connectivity', &
-         & scheme % name() // ' coupling', tuples(nd, connectivity), w)
+         & scheme % name() // ' coupling', table, w)
+    end associate
   end function block_coupling
-  pure function tuples(nd, connectivity) result(table)
-    integer                  , intent(in) :: nd
+  !===================================================================!
+  ! A connectivity's edges as tuple indices of one field: a vertex is
+  ! a moment of the whole tuple, a degree a component of the field.
+  !===================================================================!
+  pure function tuples(layout, field, connectivity) result(table)
+    type(tuple_layout)       , intent(in) :: layout
+    integer                  , intent(in) :: field
     type(connectivity_graph) , intent(in) :: connectivity
     integer, allocatable :: table(:,:)
     integer :: e, ne
     ne = connectivity % num_edges()
     allocate(table(2, ne))
-    table(1,:) = [((connectivity % edge_tail(e) - 1) * nd + connectivity % tail_degree(e) + 1, e = 1, ne)]
-    table(2,:) = [((connectivity % edge_head(e) - 1) * nd + connectivity % head_degree(e) + 1, e = 1, ne)]
+    table(1,:) = [((connectivity % edge_tail(e) - 1) * layout % stride &
+         & + layout % row(field, connectivity % tail_degree(e)) + 1, e = 1, ne)]
+    table(2,:) = [((connectivity % edge_head(e) - 1) * layout % stride &
+         & + layout % row(field, connectivity % head_degree(e)) + 1, e = 1, ne)]
   end function tuples
   integer function named_set(this, n, label) result(at)
     class(expansion), intent(inout) :: this
@@ -1475,15 +1645,16 @@ contains
        if (.not. passes_check) return
     end do
   end function consistent
-  pure integer function stage_unknown(vertex, degree, s, nd) result(at)
-    integer, intent(in) :: vertex, degree, s, nd
+  pure integer function stage_unknown(vertex, degree, s, layout, field) result(at)
+    integer           , intent(in) :: vertex, degree, s, field
+    type(tuple_layout), intent(in) :: layout
     integer :: member
     if (vertex == 2 + s) then
        member = s + 1
     else
        member = vertex - 1
     end if
-    at = (member - 1) * nd + degree + 1
+    at = (member - 1) * layout % stride + layout % row(field, degree) + 1
   end function stage_unknown
   integer function slice_coupling(this, scheme, members, s, step) result(at)
     class(expansion), intent(inout) :: this
@@ -1491,56 +1662,73 @@ contains
     integer         , intent(in)    :: members(:), s
     real(dp)        , intent(in)    :: step
     type(connectivity_graph) :: connectivity
-    integer, allocatable :: table(:,:)
-    real(dp), allocatable :: w(:)
-    integer :: nd, e, ne
-    nd = this % degrees
-    connectivity = scheme % stage_connectivity(nd)
-    ne = connectivity % num_edges()
-    call weights_of(scheme_weight(scheme), connectivity, spread(step, 1, s + 2), w)
-    allocate(table(2, ne))
-    table(1,:) = [(stage_unknown(connectivity % edge_tail(e), connectivity % tail_degree(e), s, nd), e = 1, ne)]
-    table(2,:) = [(stage_unknown(connectivity % edge_head(e), connectivity % head_degree(e), s, nd), e = 1, ne)]
-    at = coupled(this, members, (s + 1) * nd, 'the components of this step', &
+    integer , allocatable :: table(:,:), field_table(:,:)
+    real(dp), allocatable :: w(:), field_w(:)
+    integer :: e, ne, f
+    associate (layout => this % layout)
+    allocate(table(2, 0), w(0))
+    do f = 1, layout % fields
+       if (layout % count(f) < 2) cycle
+       connectivity = scheme % stage_connectivity(layout % count(f))
+       ne = connectivity % num_edges()
+       call weights_of(scheme_weight(scheme), connectivity, spread(step, 1, s + 2), field_w)
+       allocate(field_table(2, ne))
+       field_table(1,:) = [(stage_unknown(connectivity % edge_tail(e), connectivity % tail_degree(e), s, &
+            & layout, f), e = 1, ne)]
+       field_table(2,:) = [(stage_unknown(connectivity % edge_head(e), connectivity % head_degree(e), s, &
+            & layout, f), e = 1, ne)]
+       table = reshape([table, field_table], [2, size(table, 2) + ne])
+       w     = [w, field_w]
+       deallocate(field_table)
+    end do
+    at = coupled(this, members, (s + 1) * layout % stride, 'the components of this step', &
          & 'the constraint instances of this step', 'the butcher connectivity', &
          & scheme % name() // ' stage coupling', table, w)
+    end associate
   end function slice_coupling
-  pure integer function slice_base(kk, s, nd) result(at)
-    integer, intent(in) :: kk, s, nd
+  pure integer function slice_base(kk, s, stride) result(at)
+    integer, intent(in) :: kk, s, stride
     if (kk == 1) then
        at = 0
     else
-       at = (1 + (kk - 2) * (s + 1)) * nd
+       at = (1 + (kk - 2) * (s + 1)) * stride
     end if
   end function slice_base
-  pure integer function closing_instant(kk, s, nd) result(at)
-    integer, intent(in) :: kk, s, nd
+  pure integer function closing_instant(kk, s, stride) result(at)
+    integer, intent(in) :: kk, s, stride
     if (kk == 1) then
-       at = slice_base(kk, s, nd)
+       at = slice_base(kk, s, stride)
     else
-       at = slice_base(kk, s, nd) + s * nd
+       at = slice_base(kk, s, stride) + s * stride
     end if
   end function closing_instant
-  subroutine transfer_table(this, s, n, table, sources)
-    class(expansion), intent(in) :: this
-    integer         , intent(in) :: s, n
+  !===================================================================!
+  ! The components transferred from the closing instant of one step
+  ! to every member of the next: for each field, every degree but
+  ! its highest.
+  !===================================================================!
+  subroutine transfer_table(layout, s, n, table, sources)
+    type(tuple_layout), intent(in) :: layout
+    integer           , intent(in) :: s, n
     integer, allocatable, intent(out) :: table(:,:)
     integer, allocatable, intent(out) :: sources(:)
-    integer :: nd, kk, d, m, counted, pass, from, into
-    nd = this % degrees
+    integer :: kk, d, m, f, counted, pass, from, into, stride
+    stride = layout % stride
     do pass = 1, 2
        counted = 0
        do kk = 2, n
-          from = closing_instant(kk - 1, s, nd)
-          do d = 0, nd - 2
-             do m = 1, s + 1
-                counted = counted + 1
-                into = slice_base(kk, s, nd) + (m - 1) * nd + d + 1
-                if (pass == 2) then
-                   table(1, counted) = from + d + 1
-                   table(2, counted) = into
-                   sources(counted)  = merge(2 + s, 1 + m, m == s + 1)
-                end if
+          from = closing_instant(kk - 1, s, stride)
+          do f = 1, layout % fields
+             do d = 0, layout % count(f) - 2
+                do m = 1, s + 1
+                   counted = counted + 1
+                   into = slice_base(kk, s, stride) + (m - 1) * stride + layout % row(f, d) + 1
+                   if (pass == 2) then
+                      table(1, counted) = from + layout % row(f, d) + 1
+                      table(2, counted) = into
+                      sources(counted)  = merge(2 + s, 1 + m, m == s + 1)
+                   end if
+                end do
              end do
           end do
        end do
@@ -1557,7 +1745,7 @@ contains
   !===================================================================!
   pure integer function stride(this)
     class(expansion), intent(in) :: this
-    stride = this % degrees + this % spatial_degrees
+    stride = this % width
   end function stride
   integer function add_coupling(this, scheme, slices, first, last, dt) result(at)
     class(expansion), intent(inout) :: this
@@ -1567,16 +1755,16 @@ contains
     integer, allocatable :: table(:,:), sources(:)
     type(connectivity_graph) :: connectivity
     real(dp), allocatable :: w(:)
-    integer :: n, nd, s, e
-    n  = last - first + 1
-    nd = this % degrees
-    s  = scheme % num_stages()
-    call transfer_table(this, s, n, table, sources)
+    integer :: n, s, e, stride
+    n      = last - first + 1
+    stride = this % layout % stride
+    s      = scheme % num_stages()
+    call transfer_table(this % layout, s, n, table, sources)
     connectivity = connectivity_graph(s + 2, [(1, e = 1, size(sources))], sources, &
-         & [((mod(table(1, e) - 1, nd)), e = 1, size(sources))], &
-         & [((mod(table(2, e) - 1, nd)), e = 1, size(sources))])
+         & [(this % layout % degree_of(mod(table(1, e) - 1, stride)), e = 1, size(sources))], &
+         & [(this % layout % degree_of(mod(table(2, e) - 1, stride)), e = 1, size(sources))])
     call weights_of(scheme_weight(scheme), connectivity, spread(dt(first), 1, s + 2), w)
-    at = coupled(this, slices, (1 + (n - 1) * (s + 1)) * nd, 'the components of this block', &
+    at = coupled(this, slices, (1 + (n - 1) * (s + 1)) * stride, 'the components of this block', &
          & 'the constraint instances of this block', 'the transfer between steps', &
          & scheme % name() // ' transfer coupling', table, w)
   end function add_coupling
@@ -1631,16 +1819,17 @@ module gti_block
   end interface block_residual
 contains
   function create(derived, physics, at, unknowns, degrees, primary, fixed_rows, fixed, &
-       & spatial_discretization_stencil) result(this)
+       & spatial_discretization_stencil, governs) result(this)
     type(stencil)         , intent(in) :: derived
     type(expression)      , intent(in) :: physics
-    integer               , intent(in) :: at(:), unknowns, degrees, primary
+    integer               , intent(in) :: at(:), unknowns, degrees, primary(:)
     integer               , intent(in) :: fixed_rows(:)
     real(dp)              , intent(in) :: fixed(:)
     type(stencil)         , intent(in), optional :: spatial_discretization_stencil
+    logical               , intent(in), optional :: governs(:,:)
     type(block_residual) :: this
     this % residual_operator = residual_operator(derived, physics, at, unknowns, degrees, primary, &
-         & fixed_rows, fixed, spatial_discretization_stencil)
+         & fixed_rows, fixed, spatial_discretization_stencil, governs)
   end function create
   subroutine placed_on(this, tower, node)
     class(block_residual), intent(inout)     :: this
@@ -1946,10 +2135,12 @@ module gti_march
   use operation_grid          , only : grid, partition, partitioned
   use operation_weight        , only : scheme_weight
   use operation_scheme_stencil, only : derived_constraints
-  use operation_expression       , only : expression
+  use operation_expression       , only : expression, euler_lagrange
+  use util_factorisation      , only : dense_factorisation
   use operation_domain        , only : continuous_domain, discrete_domain
   use gti_expansion           , only : family_container, expansion, marches_by_stages
   use gti_block               , only : block_residual
+  use gti_layout              , only : tuple_layout
   use view_level              , only : level_member, level_num_members, level_coupling, &
        & level_couples
   use graph_fractal           , only : graph
@@ -1978,16 +2169,20 @@ module gti_march
    contains
      procedure :: place => raw_connectivity_place
   end type raw_connectivity
+  ! a degree is the component's order within its field, which the
+  ! family's weights read; a within is its index in the tuple
   type :: embedded_edge
      integer :: tail = 0, head = 0
      integer :: tail_degree = 0, head_degree = 0
+     integer :: tail_within = 0, head_within = 0
      integer :: column_base = 0, row_base = 0
   end type embedded_edge
   type :: block_embedding
      type(expansion), pointer :: tower => null()
      type(graph)    , pointer :: block => null()
-     integer :: num_slices = 0, num_stages = 0, num_degrees = 0
+     integer :: num_slices = 0, num_stages = 0
      integer :: moment_width = 0
+     type(tuple_layout) :: layout
      integer, allocatable :: slice_of(:), member_of(:)
    contains
      procedure :: block_connectivity => block_embedding_connectivity
@@ -2086,14 +2281,36 @@ contains
     type(typed_field_domain) :: point_scalars, point_states
     type(continuous_domain) :: continuous
     type(discrete_domain) :: point_domain
+    type(expression), allocatable :: rules(:)
+    type(dense_factorisation) :: block_factor
     class(field), allocatable :: out
-    real(dp), allocatable :: below(:), r(:), slope(:), weights(:), e(:)
+    real(dp), allocatable :: below(:), r(:,:), slope(:,:,:), weights(:), e(:), a(:,:), rhs(:), dq(:), column(:)
+    integer , allocatable :: top(:), count(:), offset(:)
     real(dp) :: began, target
-    integer  :: nodes, i, k, top, iteration
-    nodes = size(lower, 2)
-    top   = degrees - 1
-    if (size(lower, 1) /= top) then
+    integer  :: nodes, i, k, iteration, fields, f, j, given
+    nodes  = size(lower, 2)
+    fields = physics % num_fields() - physics % num_multipliers()
+    if (degrees /= physics % num_components()) then
+       error stop 'gti_march: the degrees given are the components a point stores'
+    end if
+    ! each field's components below its highest are given, field after
+    ! field; the highest of each is solved from that field's rule
+    allocate(count(fields), offset(fields), top(fields))
+    do f = 1, fields
+       count(f)  = physics % degree_of_field(f) + 1
+       offset(f) = physics % offset_of_field(f)
+       top(f)    = offset(f) + count(f) - 1
+    end do
+    if (size(lower, 1) /= sum(count) - fields) then
        error stop 'gti_march: the components below the highest are given at every node'
+    end if
+    allocate(rules(fields))
+    if (physics % num_multipliers() > 0) then
+       do f = 1, fields
+          rules(f) = euler_lagrange(physics, f)
+       end do
+    else
+       rules(1) = physics
     end if
     allocate(below(nodes), source=0.0_dp)
     if (present(spatial_discretization_stencil)) then
@@ -2109,24 +2326,27 @@ contains
     points = stored_directed_graph(nodes, tails=[integer ::], heads=[integer ::])
     allocate(q(nodes * degrees), source=0.0_dp)
     do i = 1, nodes
-       q((i - 1) * degrees + 1:(i - 1) * degrees + top) = lower(:, i)
-    end do
-    allocate(e(nodes * degrees), source=0.0_dp)
-    do i = 1, nodes
-       e(i * degrees) = 1.0_dp
+       given = 0
+       do f = 1, fields
+          q((i - 1) * degrees + offset(f) + 1:(i - 1) * degrees + top(f)) = lower(given + 1:given + count(f) - 1, i)
+          given = given + count(f) - 1
+       end do
     end do
     continuous    = continuous_domain(physics)
     point_domain  = continuous % discrete(points)
     point_scalars = point_domain % design_fields()
     point_states  = point_domain % state_fields()
     design_field  = point_scalars % design(spread(design_value, 1, nodes))
-    direction     = point_states % direction(e)
+    allocate(r(nodes, fields), slope(nodes, fields, fields), e(nodes * degrees))
     began = -1.0_dp
     do iteration = 1, stopping_iterations
        state = point_states % state(q)
-       call physics % apply(points, physics % bind([state, design_field]), out)
-       call out % real_vector(r)
-       r = r + below
+       do j = 1, fields
+          call rules(j) % apply(points, rules(j) % bind([state, design_field]), out)
+          call out % real_vector(column)
+          r(:, j) = column
+       end do
+       r(:, 1) = r(:, 1) + below
        if (began < 0.0_dp) began = norm2(r)
        if (stopping_criterion == relative) then
           target = stopping_tolerance * max(began, tiny(1.0_dp))
@@ -2134,12 +2354,35 @@ contains
           target = stopping_tolerance
        end if
        if (norm2(r) <= target) return
-       call physics % partial_action(points, physics % bind([state, design_field]), &
-            & [variation(physics % argument(1), direction)], out)
-       call out % real_vector(slope)
-       do i = 1, nodes
-          q(i * degrees) = q(i * degrees) - r(i) / slope(i)
+       ! slope(i, j, f) is rule j's partial in field f's highest component at node i
+       do f = 1, fields
+          e = 0.0_dp
+          do i = 1, nodes
+             e((i - 1) * degrees + top(f) + 1) = 1.0_dp
+          end do
+          direction = point_states % direction(e)
+          do j = 1, fields
+             call rules(j) % partial_action(points, rules(j) % bind([state, design_field]), &
+                  & [variation(rules(j) % argument(1), direction)], out)
+             call out % real_vector(column)
+             slope(:, j, f) = column
+          end do
        end do
+       if (fields == 1) then
+          do i = 1, nodes
+             q(i * degrees) = q(i * degrees) - r(i, 1) / slope(i, 1, 1)
+          end do
+       else
+          do i = 1, nodes
+             a   = slope(i, :, :)
+             rhs = r(i, :)
+             call block_factor % factorise(a, 0.0_dp)
+             call block_factor % substitute(rhs, dq, .false.)
+             do f = 1, fields
+                q((i - 1) * degrees + top(f) + 1) = q((i - 1) * degrees + top(f) + 1) - dq(f)
+             end do
+          end do
+       end if
     end do
     write(*,'(a,es12.3)') ' the residual of the physics at the initial instant is ', norm2(r)
     error stop 'gti_march: the initial state is consistent with the physics'
@@ -2237,11 +2480,12 @@ contains
     type(matrix_scheme_connectivity), allocatable :: connectivity(:)
     type(block_embedding) :: embedding
     type(continuous_domain) :: continuous
+    type(tuple_layout) :: layout
     integer , allocatable :: slice_of(:), member_of(:), members(:), at(:), fixed_rows(:)
     integer , allocatable :: r(:), c(:), table(:,:)
     real(dp), allocatable :: dt(:), w(:,:), seeds(:,:), spatial_weights(:)
-    logical , allocatable :: point(:)
-    integer :: m, nd, stride, width, n, s, k, j, g, moments, i, d, count, npts, ncar
+    logical , allocatable :: point(:), arriving(:), governs(:,:)
+    integer :: m, nd, stride, width, n, s, k, j, g, moments, i, d, count, npts, ncar, f
     logical :: staged
     ! nd is the marching coordinate's degree count, which the scheme
     ! reads; stride is the point's whole component count, which the
@@ -2250,6 +2494,7 @@ contains
     continuous = continuous_domain(physics)
     nd     = continuous % equation_degree() + 1
     stride = continuous % num_components()
+    layout = tuple_layout(physics)
     horizon => level_member(level_member(tower % node(tower % root()), 1), 1)
     block   => level_member(horizon, b)
     n       = level_num_members(block)
@@ -2263,19 +2508,23 @@ contains
        members(k) = merge(level_num_members(level_member(block, k)), 1, staged)
     end do
     moments = sum(members)
-    allocate(slice_of(moments), member_of(moments), point(moments))
+    allocate(slice_of(moments), member_of(moments), point(moments), arriving(moments))
+    ! a staged family evaluates a differential rule at the stages
+    ! alone; an algebraic rule, one of a field without a derivative,
+    ! is evaluated at the arriving instant as well
     g = 0
     do k = 1, n
        do j = 1, members(k)
           g = g + 1
           slice_of(g)  = k
           member_of(g) = j
-          point(g)     = .not. staged .or. (k > 1 .and. j <= s)
+          point(g)     = .not. staged .or. k > 1
+          arriving(g)  = staged .and. k > 1 .and. j > s
        end do
     end do
     count = moments * width
     below => null()
-    allocate(fixed_rows(count), at(moments * m))
+    allocate(fixed_rows(count), at(moments * m), governs(moments * m, layout % fields))
     ncar = 0
     npts = 0
     do g = 1, moments
@@ -2298,8 +2547,11 @@ contains
           do i = 1, m
              npts = npts + 1
              at(npts) = (g - 1) * width + (i - 1) * stride
+             do f = 1, layout % fields
+                governs(npts, f) = layout % count(f) < 2 .or. .not. arriving(g)
+             end do
           end do
-          component => level_member(moment_node, scheme % primary_degree(nd - 1) + 1)
+          component => level_member(moment_node, layout % primary_row(scheme, 1) + 1)
           if (level_couples(component) .and. .not. associated(below)) then
              below => level_coupling(component)
           end if
@@ -2312,7 +2564,7 @@ contains
     embedding % block => block
     embedding % num_slices = n
     embedding % num_stages = s
-    embedding % num_degrees = nd
+    embedding % layout = layout
     embedding % moment_width = width
     embedding % slice_of = slice_of
     embedding % member_of = member_of
@@ -2322,10 +2574,10 @@ contains
        call embedding % block_connectivity(connectivity)
     end if
     allocate(seeds(size(dt), 0))
-    call connectivity_terms(scheme, connectivity, m, nd, dt, seeds, r, c, w)
+    call connectivity_terms(scheme, connectivity, m, stride, dt, seeds, r, c, w)
     rows = block_residual(derived_constraints(r, c, -w(:, 0), moments * width, 'time discretization stencil'), &
-         & physics, at(1:npts), moments * width, nd, scheme % primary_degree(nd - 1), &
-         & fixed_rows(1:ncar), fixed)
+         & physics, at(1:npts), moments * width, stride, layout % primary_rows(scheme), &
+         & fixed_rows(1:ncar), fixed, governs=governs(1:npts, :))
     call rows % placed_on(tower, block)
     call rows % with_connectivity(connectivity)
     if (associated(below)) then
@@ -2355,14 +2607,16 @@ contains
     connectivity(1) % step_of  = [(e, e = 1, this % num_slices)]
     allocate(tails(ne), heads(ne), tail_degree(ne), head_degree(ne))
     allocate(connectivity(1) % row(ne), connectivity(1) % column(ne))
-    do e = 1, ne
-       tails(e)       = (table(1, e) - 1) / this % num_degrees + 1
-       tail_degree(e) = mod(table(1, e) - 1, this % num_degrees)
-       heads(e)       = (table(2, e) - 1) / this % num_degrees + 1
-       head_degree(e) = mod(table(2, e) - 1, this % num_degrees)
-       connectivity(1) % column(e) = (tails(e) - 1) * this % moment_width + tail_degree(e) + 1
-       connectivity(1) % row(e)    = (heads(e) - 1) * this % moment_width + head_degree(e) + 1
-    end do
+    associate (stride => this % layout % stride)
+      do e = 1, ne
+         tails(e)       = (table(1, e) - 1) / stride + 1
+         tail_degree(e) = this % layout % degree_of(mod(table(1, e) - 1, stride))
+         heads(e)       = (table(2, e) - 1) / stride + 1
+         head_degree(e) = this % layout % degree_of(mod(table(2, e) - 1, stride))
+         connectivity(1) % column(e) = (tails(e) - 1) * this % moment_width + mod(table(1, e) - 1, stride) + 1
+         connectivity(1) % row(e)    = (heads(e) - 1) * this % moment_width + mod(table(2, e) - 1, stride) + 1
+      end do
+    end associate
     connectivity(1) % graph = connectivity_graph(this % num_slices, tails, heads, tail_degree, head_degree)
   end subroutine block_embedding_connectivity
   subroutine stage_embedding_connectivity(this, connectivity)
@@ -2385,7 +2639,7 @@ contains
     end do
     call this % tower % tuples_of(level_coupling(this % block), accumulate_state)
     do e = 1, size(accumulate_state, 2)
-       head_moment = (accumulate_state(2, e) - 1) / this % num_degrees + 1
+       head_moment = (accumulate_state(2, e) - 1) / this % layout % stride + 1
        kk          = this % slice_of(head_moment)
        counted(kk) = counted(kk) + 1
     end do
@@ -2400,26 +2654,30 @@ contains
        call this % tower % tuples_of(level_coupling(level_member(this % block, kk)), table)
        do e = 1, size(table, 2)
           filled(kk) = filled(kk) + 1
-          vertex_tail = (table(1, e) - 1) / this % num_degrees + 2
-          vertex_head = (table(2, e) - 1) / this % num_degrees + 2
+          vertex_tail = (table(1, e) - 1) / this % layout % stride + 2
+          vertex_head = (table(2, e) - 1) / this % layout % stride + 2
           edge % tail        = vertex_tail
           edge % head        = vertex_head
-          edge % tail_degree = mod(table(1, e) - 1, this % num_degrees)
-          edge % head_degree = mod(table(2, e) - 1, this % num_degrees)
+          edge % tail_within = mod(table(1, e) - 1, this % layout % stride)
+          edge % head_within = mod(table(2, e) - 1, this % layout % stride)
+          edge % tail_degree = this % layout % degree_of(edge % tail_within)
+          edge % head_degree = this % layout % degree_of(edge % head_within)
           edge % column_base = (first_moment(kk) + vertex_tail - 3) * this % moment_width
           edge % row_base    = (first_moment(kk) + vertex_head - 3) * this % moment_width
           call raw(kk - 1) % place(connectivity(kk - 1), filled(kk), edge)
        end do
     end do
     do e = 1, size(accumulate_state, 2)
-       tail_moment = (accumulate_state(1, e) - 1) / this % num_degrees + 1
-       head_moment = (accumulate_state(2, e) - 1) / this % num_degrees + 1
+       tail_moment = (accumulate_state(1, e) - 1) / this % layout % stride + 1
+       head_moment = (accumulate_state(2, e) - 1) / this % layout % stride + 1
        kk          = this % slice_of(head_moment)
        filled(kk)  = filled(kk) + 1
        edge % tail        = 1
        edge % head        = this % member_of(head_moment) + 1
-       edge % tail_degree = mod(accumulate_state(1, e) - 1, this % num_degrees)
-       edge % head_degree = mod(accumulate_state(2, e) - 1, this % num_degrees)
+       edge % tail_within = mod(accumulate_state(1, e) - 1, this % layout % stride)
+       edge % head_within = mod(accumulate_state(2, e) - 1, this % layout % stride)
+       edge % tail_degree = this % layout % degree_of(edge % tail_within)
+       edge % head_degree = this % layout % degree_of(edge % head_within)
        edge % column_base = (tail_moment - 1) * this % moment_width
        edge % row_base    = (head_moment - 1) * this % moment_width
        call raw(kk - 1) % place(connectivity(kk - 1), filled(kk), edge)
@@ -2441,8 +2699,8 @@ contains
     this % heads(e)       = edge % head
     this % tail_degree(e) = edge % tail_degree
     this % head_degree(e) = edge % head_degree
-    placed % column(e)    = edge % column_base + edge % tail_degree + 1
-    placed % row(e)       = edge % row_base    + edge % head_degree + 1
+    placed % column(e)    = edge % column_base + edge % tail_within + 1
+    placed % row(e)       = edge % row_base    + edge % head_within + 1
   end subroutine raw_connectivity_place
   subroutine solved(rows, design_value, q, achieved, final_imbalance, seed)
     type(block_residual), intent(in)  :: rows
@@ -3088,15 +3346,19 @@ contains
     real(dp), allocatable :: q(:)
     character(len=32), allocatable :: given(:)
     real(dp), allocatable :: lower(:,:)
-    integer  :: nodes, i, d
+    integer  :: nodes, i, d, fields, first_below
     nodes = 1
     if (present(space)) nodes = space % num_cells
-    allocate(lower(degrees - 1, nodes), source=0.0_dp)
+    ! each field's components below its highest, field after field;
+    ! the first field's are given, the others' are zero
+    fields      = physics % num_fields() - physics % num_multipliers()
+    first_below = physics % degree_of_field(1)
+    allocate(lower(degrees - fields, nodes), source=0.0_dp)
     select case (trim(kind))
     case ('constant')
        given = words_of(initial_state)
-       if (size(given) > degrees - 1) then
-          write(*,'(a,i0,a)') ' the initial state contains the ', degrees - 1, &
+       if (size(given) > first_below) then
+          write(*,'(a,i0,a)') ' the initial state contains the ', first_below, &
                & ' components below the highest; the physics determines the highest.'
           error stop 'gti_field: the initial state is given below the highest derivative'
        end if
@@ -4090,7 +4352,7 @@ contains
        if (size(inputs) > 0) given = this % scheme % history_depth(this % degrees - 1)
     end if
     if (given > 0) then
-       width = this % degrees * this % layout % nodes
+       width = this % physics % num_components() * this % layout % nodes
        allocate(transferred_values(given * width))
        do i = 1, given
           instant = this % layout % first + (i - 1) * this % layout % stride
@@ -4164,7 +4426,7 @@ contains
     chain(b) % block_layout = layout
     chain(b) % given        = scheme % history_depth(degrees - 1)
     chain(b) % primary      = scheme % primary_degree(degrees - 1)
-    chain(b) % width        = degrees * layout % nodes
+    chain(b) % width        = physics % num_components() * layout % nodes
     allocate(chain(b) % scheme, source=scheme)
     chain(b) % staged      = marches_by_stages(scheme, degrees)
     chain(b) % dt          = dt
@@ -4416,9 +4678,9 @@ contains
        return
     end if
     if (present(sinks)) then
-       allocate(sinks % fixed_rows(0:degrees - 1), source=0)
-       allocate(sinks % last(0:degrees - 1), source=0)
-       allocate(sinks % interior(0:degrees - 1), source=0)
+       allocate(sinks % fixed_rows(0:chain(1) % rows % num_degrees() - 1), source=0)
+       allocate(sinks % last(0:chain(1) % rows % num_degrees() - 1), source=0)
+       allocate(sinks % interior(0:chain(1) % rows % num_degrees() - 1), source=0)
        allocate(is_sink(widest, nb), source=.false.)
        allocate(diagonal(widest, nb), source=0.0_dp)
        do b = 1, nb
@@ -4709,9 +4971,11 @@ contains
     real(dp), allocatable :: state_seed(:,:), step_seed(:,:), nu_seed(:), tw(:,:)
     integer , allocatable :: tr(:), tc(:), at(:)
     logical , allocatable :: fixed_rows(:)
-    integer :: n, full, e, mask, p, row
-    n    = size(s)
-    full = 2**n - 1
+    integer :: n, full, e, mask, p, row, j, stride
+    n      = size(s)
+    full   = 2**n - 1
+    stride = chain(b) % rows % num_degrees()
+    associate (u1 => physics, u2 => degrees); end associate
     call seeds_of(chain, b, s, 0, .false., w, u, nd, state_seed, step_seed, nu_seed)
     call chain(b) % rows % rows_terms(chain(b) % scheme, chain(b) % dt, step_seed, tr, tc, tw)
     fixed_rows = chain(b) % rows % fixed_mask()
@@ -4723,11 +4987,14 @@ contains
           r(tr(e)) = r(tr(e)) + tw(e, ieor(full, mask)) * state_seed(tc(e), mask)
        end do
     end do
-    do p = 1, size(at)
-       row = at(p) + chain(b) % primary + 1
-       if (fixed_rows(row)) cycle
-       r(row) = r(row) + coefficient(point_terms(physics, degrees, design, at(p), n, 0, &
-            & state_seed, nu_seed), full)
+    do j = 1, chain(b) % rows % num_rules()
+       do p = 1, size(at)
+          if (.not. chain(b) % rows % governs_at(p, j)) cycle
+          row = at(p) + chain(b) % rows % primary_row(j) + 1
+          if (fixed_rows(row)) cycle
+          r(row) = r(row) + coefficient(point_terms(chain(b) % rows % rule_of(j), stride, design, at(p), n, 0, &
+               & state_seed, nu_seed), full)
+       end do
     end do
   end subroutine forcing_of
   subroutine costates_at(chain, b, s, lambda, nd, i, lam)
@@ -4759,7 +5026,7 @@ contains
     real(dp), allocatable :: w(:)
     logical , allocatable :: has_diagonal(:), fixed_rows(:)
     logical :: available
-    integer :: n, e, p, d
+    integer :: n, e, p, d, stride
     call frozen_at(b, design, unknowns, inputs)
     call b % rows % explicit_tangent(unknowns, b % rows % bind(inputs), 1, r, c, w, available)
     if (.not. available) then
@@ -4778,13 +5045,15 @@ contains
        end if
     end do
     is_sink(1:n) = reads == 1 .and. has_diagonal
+    stride = b % rows % num_degrees()
+    associate (u1 => degrees); end associate
     fixed_rows = b % rows % fixed_mask()
     do p = 1, n
        if (.not. is_sink(p)) cycle
-       d = mod(p - 1, degrees)
+       d = mod(p - 1, stride)
        if (fixed_rows(p)) then
           sinks % fixed_rows(d) = sinks % fixed_rows(d) + 1
-       else if (p > n - degrees) then
+       else if (p > n - stride) then
           sinks % last(d) = sinks % last(d) + 1
        else
           sinks % interior(d) = sinks % interior(d) + 1
@@ -4820,22 +5089,24 @@ contains
     logical , allocatable :: fixed_rows(:)
     integer , allocatable :: offset(:)
     type(derivative_terms), allocatable :: beta(:), steps(:)
-    integer :: n, full, e, mask, p, d, row, k, node, from, to, point, count, pt
-    n     = size(s)
-    full  = 2**n - 1
-    count = chain(b) % rows % num_unknowns()
+    integer :: n, full, e, mask, p, d, row, k, node, from, to, point, count, pt, stride, j
+    n      = size(s)
+    full   = 2**n - 1
+    count  = chain(b) % rows % num_unknowns()
+    stride = chain(b) % rows % num_degrees()
+    associate (u1 => physics, u2 => degrees); end associate
     call seeds_of(chain, b, s, 0, .true., w, u, nd, state_seed, step_seed, nu_seed)
     allocate(g(count), source=0.0_dp)
     call owned(chain, b, from, to)
-    steps = stepped_terms(chain(b), step_seed, n, degrees)
+    steps = stepped_terms(chain(b), step_seed, n, stride)
     do k = from, to
        call quadrature_points(chain(b), k, steps, offset, beta)
        do pt = 1, size(offset)
           do node = 1, chain(b) % nodes
-             point = offset(pt) + (node - 1) * degrees
-             t = beta(pt) * measure_terms(chain(b), k, node, n, degrees, step_seed, node_measure) &
-                  & * point_terms(rule, degrees, design, point, n, degrees, state_seed, nu_seed)
-             do d = 0, degrees - 1
+             point = offset(pt) + (node - 1) * stride
+             t = beta(pt) * measure_terms(chain(b), k, node, n, stride, step_seed, node_measure) &
+                  & * point_terms(rule, stride, design, point, n, stride, state_seed, nu_seed)
+             do d = 0, stride - 1
                 g(point + d + 1) = g(point + d + 1) + coefficient(t, ior(full, shiftl(1, n + d)))
              end do
           end do
@@ -4852,14 +5123,17 @@ contains
           g(tc(e)) = g(tc(e)) - tw(e, mask) * lam(tr(e), ieor(full, mask))
        end do
     end do
-    do p = 1, size(at)
-       row = at(p) + chain(b) % primary + 1
-       if (fixed_rows(row)) cycle
-       t = point_terms(physics, degrees, design, at(p), n, degrees, state_seed, nu_seed)
-       do mask = 1, full
-          do d = 0, degrees - 1
-             g(at(p) + d + 1) = g(at(p) + d + 1) &
-                  & - coefficient(t, ior(mask, shiftl(1, n + d))) * lam(row, ieor(full, mask))
+    do j = 1, chain(b) % rows % num_rules()
+       do p = 1, size(at)
+          if (.not. chain(b) % rows % governs_at(p, j)) cycle
+          row = at(p) + chain(b) % rows % primary_row(j) + 1
+          if (fixed_rows(row)) cycle
+          t = point_terms(chain(b) % rows % rule_of(j), stride, design, at(p), n, stride, state_seed, nu_seed)
+          do mask = 1, full
+             do d = 0, stride - 1
+                g(at(p) + d + 1) = g(at(p) + d + 1) &
+                     & - coefficient(t, ior(mask, shiftl(1, n + d))) * lam(row, ieor(full, mask))
+             end do
           end do
        end do
     end do
@@ -4901,10 +5175,12 @@ contains
     integer , allocatable :: tr(:), tc(:), at(:)
     logical , allocatable :: fixed_rows(:)
     integer , allocatable :: offset(:)
-    integer :: n, fulln, e, p, row, k, node, from, to, point, pt, count
-    n     = size(s)
-    fulln = 2**n - 1
-    count = chain(b) % rows % num_unknowns()
+    integer :: n, fulln, e, p, row, k, node, from, to, point, pt, count, stride, jj
+    n      = size(s)
+    fulln  = 2**n - 1
+    count  = chain(b) % rows % num_unknowns()
+    stride = chain(b) % rows % num_degrees()
+    associate (u1 => physics, u2 => degrees); end associate
     if (size(parts) /= n + 2) then
        error stop 'gti_chain: the parts number the costate orders and the functional''s own term'
     end if
@@ -4916,9 +5192,9 @@ contains
        call quadrature_points(chain(b), k, steps, offset, beta)
        do pt = 1, size(offset)
           do node = 1, chain(b) % nodes
-             point = offset(pt) + (node - 1) * degrees
+             point = offset(pt) + (node - 1) * stride
              f = f + beta(pt) * measure_terms(chain(b), k, node, n + 1, 0, step_seed, node_measure) &
-                  & * point_terms(rule, degrees, design, point, n + 1, 0, state_seed, nu_seed)
+                  & * point_terms(rule, stride, design, point, n + 1, 0, state_seed, nu_seed)
           end do
        end do
     end do
@@ -4931,10 +5207,14 @@ contains
        if (fixed_rows(tr(e))) cycle
        residual(tr(e)) = residual(tr(e)) + derivative_terms(tw(e, :)) * derivative_terms(state_seed(tc(e), :))
     end do
-    do p = 1, size(at)
-       row = at(p) + chain(b) % primary + 1
-       if (fixed_rows(row)) cycle
-       residual(row) = residual(row) + point_terms(physics, degrees, design, at(p), n + 1, 0, state_seed, nu_seed)
+    do jj = 1, chain(b) % rows % num_rules()
+       do p = 1, size(at)
+          if (.not. chain(b) % rows % governs_at(p, jj)) cycle
+          row = at(p) + chain(b) % rows % primary_row(jj) + 1
+          if (fixed_rows(row)) cycle
+          residual(row) = residual(row) &
+               & + point_terms(chain(b) % rows % rule_of(jj), stride, design, at(p), n + 1, 0, state_seed, nu_seed)
+       end do
     end do
     call costates_at(chain, b, s, lambda, nd, i, lam)
     allocate(costate(count))
@@ -4964,9 +5244,11 @@ contains
     real(dp), allocatable :: state_seed(:,:), step_seed(:,:), nu_seed(:)
     integer , allocatable :: offset(:)
     type(derivative_terms), allocatable :: beta(:), steps(:)
-    integer :: n, full, k, node, from, to, point, pt
-    n    = size(s) + merge(1, 0, open > 0)
-    full = 2**n - 1
+    integer :: n, full, k, node, from, to, point, pt, stride
+    n      = size(s) + merge(1, 0, open > 0)
+    full   = 2**n - 1
+    stride = chain(b) % rows % num_degrees()
+    associate (u1 => degrees); end associate
     call seeds_of(chain, b, s, open, .true., w, u, nd, state_seed, step_seed, nu_seed)
     part = 0.0_dp
     call owned(chain, b, from, to)
@@ -4975,9 +5257,9 @@ contains
        call quadrature_points(chain(b), k, steps, offset, beta)
        do pt = 1, size(offset)
           do node = 1, chain(b) % nodes
-             point = offset(pt) + (node - 1) * degrees
+             point = offset(pt) + (node - 1) * stride
              t = beta(pt) * measure_terms(chain(b), k, node, n, 0, step_seed, node_measure) &
-                  & * point_terms(rule, degrees, design, point, n, 0, state_seed, nu_seed)
+                  & * point_terms(rule, stride, design, point, n, 0, state_seed, nu_seed)
              part = part + coefficient(t, full)
           end do
        end do
@@ -5211,7 +5493,7 @@ module gti_driver
   use operation_family      , only : implicit_midpoint, crouzeix_two_stage, crouzeix_three_stage, &
        & newmark_family, taylor_newmark_family
   use operation_expression  , only : expression
-  use gti_physics           , only : van_der_pol_energy, van_der_pol_dissipation
+  use gti_physics           , only : van_der_pol_energy, van_der_pol_dissipation, functional_of_physics
   use gti_chain             , only : chain_block
   implicit none
   private
@@ -5322,20 +5604,12 @@ contains
        passes_check = .false.
     end select
   end subroutine family_named
-  subroutine functional_named(name, degree, rule, passes_check)
-    character(len=*), intent(in)  :: name
+  subroutine functional_named(physics_name, name, degree, rule, passes_check)
+    character(len=*), intent(in)  :: physics_name, name
     integer         , intent(in)  :: degree
     type(expression), intent(out) :: rule
     logical         , intent(out) :: passes_check
-    passes_check = .true.
-    select case (name)
-    case ('energy')
-       rule = van_der_pol_energy(degree)
-    case ('dissipation')
-       rule = van_der_pol_dissipation(degree)
-    case default
-       passes_check = .false.
-    end select
+    rule = functional_of_physics(physics_name, name, degree, passes_check)
   end subroutine functional_named
 end module gti_driver
 module gti_demos
@@ -8979,7 +9253,7 @@ program graph_time_integrator
   use operation_family      , only : adams_family
   use operation_grid        , only : uniform_grid, random_grid, designed_grid, fixed_grid
   use operation_expression  , only : expression, stated_over
-  use gti_physics           , only : van_der_pol, van_der_pol_energy
+  use gti_physics           , only : van_der_pol, van_der_pol_energy, physics_named, functional_of_physics
   use operation_grid        , only : grid
   use gti_march             , only : set_stopping, imbalance, set_space_coupling, set_time_coupling, weight_of, precision_needed
   use gti_adaptive          , only : adaptive_partition
@@ -9194,8 +9468,14 @@ contains
   function physics_of(cfg) result(r)
     type(configuration), intent(in) :: cfg
     type(expression) :: r
-    r = van_der_pol(cfg % state_degree)
+    r = physics_named(trim(cfg % physics), cfg % state_degree)
   end function physics_of
+  function energy_of(cfg) result(f)
+    type(configuration), intent(in) :: cfg
+    type(expression) :: f
+    logical :: passes_check
+    f = functional_of_physics(trim(cfg % physics), 'energy', cfg % state_degree, passes_check)
+  end function energy_of
   !===================================================================!
   ! The coordinates the run's state is declared over, read from the
   ! law it marches. Every other rule the run evaluates - a functional,
@@ -9206,16 +9486,9 @@ contains
     type(configuration), intent(in) :: cfg
     integer, allocatable :: degrees(:)
     type(expression) :: law
-    type(continuous_domain) :: continuous
-    integer :: beside
-    law        = physics_of(cfg)
-    continuous = continuous_domain(law)
-    beside     = continuous % num_components() - (continuous % equation_degree() + 1)
-    if (beside > 0) then
-       degrees = [continuous % equation_degree(), beside]
-    else
-       degrees = [continuous % equation_degree()]
-    end if
+    integer :: c
+    law     = physics_of(cfg)
+    degrees = [(law % degree_along(c), c = 1, law % num_coordinates())]
   end function state_degrees_of
   subroutine one_row(cfg, names, orders, printed)
     type(configuration), intent(in)    :: cfg
@@ -9390,7 +9663,7 @@ contains
     names = words_of(cfg % functionals)
     allocate(functionals(size(names)))
     do i = 1, size(names)
-       call functional_named(trim(names(i)), cfg % state_degree, functionals(i), passes_check)
+       call functional_named(trim(cfg % physics), trim(names(i)), cfg % state_degree, functionals(i), passes_check)
        if (passes_check) functionals(i) = stated_over(functionals(i), state_degrees_of(cfg), functionals(i) % name())
     end do
   end subroutine chosen_functionals
@@ -9532,7 +9805,7 @@ contains
     nd = cfg % state_degree + 1
     if (trim(cfg % adaptive_check) == 'goal_oriented') then
        adaptive_weights = goal_oriented_partition(crouzeix_three_stage(), &
-            & physics_of(cfg), van_der_pol_energy(cfg % state_degree), nd, &
+            & physics_of(cfg), energy_of(cfg), nd, &
             & cfg % time_duration, q0(1:cfg % state_degree), cfg % design, cfg % tolerance, &
             & trim(cfg % tolerance_criterion) == 'relative', rejects)
     else
@@ -9566,7 +9839,7 @@ contains
     type(configuration), intent(inout) :: cfg
     real(dp), allocatable :: dt(:), t(:)
     integer :: widest, printed
-    call refuse_unknown(cfg % physics, ['vanderpol'], 'physics')
+    call refuse_unknown(cfg % physics, ['vanderpol          ', 'vanderpol_algebraic'], 'physics')
     call refuse_unknown(cfg % tolerance_criterion, ['relative', 'absolute'], &
          & 'tolerance_criterion')
     call refuse_unknown(cfg % iteration_criterion, ['by_rate ', 'by_count'], &

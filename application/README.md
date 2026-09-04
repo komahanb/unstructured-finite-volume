@@ -576,10 +576,10 @@ unchanged, an extended domain is discretised by a grid, and an
 operator is discretised by the scheme or stencil that binds it to that
 grid's arithmetic.
 
-**The equation.** `physics = vanderpol`, `state_degree = N`,
-`design = nu`. The Lagrangian is one expression, stated once in the
-module `gti_physics`, over the state `q = unknown()` and the costate
-`unknown(2)`:
+**The equation.** `physics = vanderpol | vanderpol_algebraic`,
+`state_degree = N`, `design = nu`. The Lagrangian is one expression,
+stated once in the module `gti_physics`, over the state
+`q = unknown()` and the costate `unknown(2)`:
 
     l = stated( F + unknown(2) * ( derivative(q, N)
               - nu * (1 - derivative(q, 0)**2) * derivative(q, N-1)
@@ -598,6 +598,22 @@ symbol selects and does not differentiate. A new equation is a new
 Lagrangian beside this one, built from the fields, the design,
 constants, the four arithmetic operations, integer and real powers,
 and sin, cos, exp, log, sqrt.
+
+**Several fields.** A Lagrangian with k multipliers, its last k
+fields, governs k state fields, its first k, one rule each: the
+stationarity in the j-th multiplier occupies the j-th field's primary
+row. Each field stores its own jet along the instants, to the degree
+listed for it, and a field of degree zero is algebraic: its rule reads
+no time derivative, the family ties nothing to it, and a staged family
+evaluates it at the arriving instant as well as at the stages. The
+initial state lists the first field's components below its highest;
+the highest of every field is solved together, one small Newton per
+node. `physics = vanderpol_algebraic` states the same equation with
+`y = q**2` as a second field tied by `mu (y - q**2)`: two fields, two
+rules, the second at degree zero. `config/algebraic.cfg` is
+`config/uniform.cfg` under that name; over 11 schemes and 44 printed
+entries the two runs agree to a relative difference of at most
+3.7e-12, at a solver tolerance of 1e-12.
 
 **The initial state.** `initial_state` lists q(0), q'(0), ...,
 q^(N-1)(0) as blank-separated words, short lists padded with zeros.

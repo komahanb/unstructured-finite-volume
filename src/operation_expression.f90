@@ -36,21 +36,25 @@
 !             SEVERAL FIELDS
 !
 ! unknown(i) is the i-th zeroth-order field; unknown() is the first.
-! Every field stores the same jet, the components to the declared
-! degree along each coordinate, and a point's tuple lists the fields
-! in order, each field's components together. A rule that reads
-! fields 1..m is stated over m fields, the highest index read.
+! A rule that reads fields 1..m is stated over m fields, the highest
+! index read. Along the first coordinate each field stores its own
+! jet, to the degree given for it when the rule is stated (the
+! equation's degree for the first field, zero for a multiplier,
+! unless listed); along every later coordinate the fields share the
+! declared degrees. A point's tuple lists the fields in order, each
+! field's components together.
 !
 !             THE LAGRANGIAN
 !
-! A rule may be a Lagrangian, linear in a multiplier field, and the
-! rules it generates are its partials: euler_lagrange(l, m) is the
-! stationarity of l in field m, the coefficient of one direction
-! seeded on that field's component of order zero, and at_zero(l, m)
-! is l with field m at zero. In either the multiplier is not part of
-! the tuple the rule reads, so the state contract excludes it; the
-! field is supplied inside the evaluation, zero in value, with its
-! own direction when the stationarity is read. Nothing is rewritten:
+! A rule stated with k multipliers is a Lagrangian: its last k fields
+! are the multipliers, paired in order with its first k fields, and
+! the rules it generates are its partials. euler_lagrange(l, j) is
+! the stationarity of l in its j-th multiplier, the coefficient of
+! one direction seeded on that field's component of order zero, and
+! at_zero(l) is l with every multiplier at zero. A multiplier is not
+! part of the tuple a rule reads, so the state contract excludes
+! it; it is supplied inside the evaluation, zero in value, with its
+! own direction when its stationarity is read. Nothing is rewritten:
 ! the same vertices are evaluated with one more direction.
 !
 !             THE PARTIALS
@@ -133,12 +137,14 @@ module operation_expression
      ! from one.
      integer, allocatable, private :: degrees(:)
 
-     ! the fields the rule is stated over, and the one read as the
-     ! multiplier of a Lagrangian: absent from the tuple, zero in
-     ! value, with its own direction when varied
-     integer, private :: fields     = 0
-     integer, private :: multiplier = 0
-     logical, private :: varied     = .false.
+     ! the fields the rule is stated over, each with its degree along
+     ! the first coordinate; the last `multipliers` of them are absent
+     ! from the tuple and zero in value, and `varied` names the one
+     ! whose stationarity the rule is, or is zero
+     integer, private :: fields      = 0
+     integer, private :: multipliers = 0
+     integer, private :: varied      = 0
+     integer, allocatable, private :: field_degree(:)
 
      integer , allocatable, private :: kind(:)
      integer , allocatable, private :: first(:), second(:)    ! the vertices read; 0 if none
@@ -162,10 +168,15 @@ module operation_expression
      procedure :: highest_degree_along
      procedure :: num_vertices
      procedure :: num_fields
+     procedure :: num_multipliers
+     procedure :: degree_along
+     procedure :: degree_of_field
+     procedure :: offset_of_field
      procedure, private :: components_per_field
      procedure, private :: stored_at
      procedure, private :: order_at
      procedure, private :: evaluated_over
+     procedure, private :: restated
 
   end type expression
 
@@ -329,14 +340,15 @@ contains
   ! such component.
   !===================================================================!
 
-  function stated(rule, degree, label) result(this)
+  function stated(rule, degree, label, field_degrees, multipliers) result(this)
 
     type(expression), intent(in) :: rule
     integer         , intent(in) :: degree
     character(len=*), intent(in) :: label
+    integer         , intent(in), optional :: field_degrees(:), multipliers
     type(expression) :: this
 
-    this = stated_over(rule, [degree], label)
+    this = stated_over(rule, [degree], label, field_degrees, multipliers)
 
   end function stated
 
@@ -346,18 +358,54 @@ contains
   ! one, so a rule over time alone reads no differently than before.
   !===================================================================!
 
-  function stated_over(rule, degrees, label) result(this)
+  function stated_over(rule, degrees, label, field_degrees, multipliers) result(this)
 
     type(expression), intent(in) :: rule
     integer         , intent(in) :: degrees(:)
     character(len=*), intent(in) :: label
+    integer         , intent(in), optional :: field_degrees(:), multipliers
     type(expression) :: this
 
-    integer :: c
+    integer :: c, f
 
+    ! a rule stated again keeps its fields' degrees, its multipliers
+    ! and the stationarity it is, unless these are given again
     this = rule
+    this % fields = max(1, maxval(this % field))
+    if (present(multipliers)) then
+       this % multipliers = multipliers
+       this % varied      = 0
+    end if
+    if (this % multipliers < 0 .or. 2 * this % multipliers > this % fields) then
+       error stop 'operation_expression: the multipliers are the last fields, each paired with a state field'
+    end if
 
-    do c = 1, size(degrees)
+    if (size(degrees) < 1) then
+       error stop 'operation_expression: a state is declared over one coordinate at least'
+    end if
+    if (.not. allocated(this % field_degree)) then
+       allocate(this % field_degree(this % fields))
+       this % field_degree = degrees(FIRST_COORDINATE)
+       if (this % multipliers > 0) this % field_degree(this % fields - this % multipliers + 1:) = 0
+    else if (size(this % field_degree) /= this % fields) then
+       error stop 'operation_expression: a rule stated again reads the fields it was stated over'
+    end if
+    if (present(field_degrees)) then
+       if (size(field_degrees) /= this % fields) then
+          error stop 'operation_expression: one degree per field the rule is stated over'
+       end if
+       this % field_degree = field_degrees
+    end if
+    if (this % field_degree(1) /= degrees(FIRST_COORDINATE)) then
+       error stop 'operation_expression: the first field stores the equation''s degree'
+    end if
+
+    do f = 1, this % fields
+       if (this % highest_degree_along(FIRST_COORDINATE, f) > this % field_degree(f)) then
+          error stop 'operation_expression: the rule reads a component the state stores'
+       end if
+    end do
+    do c = FIRST_COORDINATE + 1, size(degrees)
        if (this % highest_degree_along(c) > degrees(c)) then
           error stop 'operation_expression: the rule reads a component the state stores'
        end if
@@ -366,79 +414,74 @@ contains
        error stop 'operation_expression: the rule reads a coordinate the state is not declared over'
     end if
 
-    this % fields = max(1, maxval(this % field))
     call this % declare_degree(degrees, label)
 
   end function stated_over
 
   !===================================================================!
-  ! The stationarity of a Lagrangian in one of its fields: the
+  ! The stationarity of a Lagrangian in its j-th multiplier: the
   ! partial of the rule along that field's component of order zero,
-  ! at zero. The field leaves the tuple the rule reads. A rule not
-  ! stated, a field it is not stated over, or a rule over one field
-  ! alone stops the program: the multiplier is one field beside the
-  ! state.
+  ! at zero. A rule not stated, or a multiplier it does not declare,
+  ! stops the program.
   !===================================================================!
 
-  function euler_lagrange(lagrangian, field, label) result(this)
+  function euler_lagrange(lagrangian, multiplier, label) result(this)
 
     type(expression), intent(in) :: lagrangian
-    integer         , intent(in) :: field
+    integer         , intent(in) :: multiplier
     character(len=*), intent(in), optional :: label
     type(expression) :: this
 
-    this = with_multiplier(lagrangian, field, .true., label)
+    if (.not. lagrangian % declared()) then
+       error stop 'operation_expression: a Lagrangian is stated before its stationarity is read'
+    end if
+    if (multiplier < 1 .or. multiplier > lagrangian % multipliers) then
+       error stop 'operation_expression: the stationarity is in a multiplier the Lagrangian declares'
+    end if
+
+    this = lagrangian
+    this % varied = lagrangian % fields - lagrangian % multipliers + multiplier
+    call this % restated(label)
 
   end function euler_lagrange
 
   !===================================================================!
-  ! The Lagrangian with one field at zero, which for a Lagrangian
-  ! linear in that field is the functional beside the constraint. The same
-  ! refusals as the stationarity.
+  ! The Lagrangian with every multiplier at zero, which for a
+  ! Lagrangian linear in them is the functional beside the
+  ! constraints. A rule not stated stops the program.
   !===================================================================!
 
-  function at_zero(lagrangian, field, label) result(this)
+  function at_zero(lagrangian, label) result(this)
 
     type(expression), intent(in) :: lagrangian
-    integer         , intent(in) :: field
     character(len=*), intent(in), optional :: label
     type(expression) :: this
-
-    this = with_multiplier(lagrangian, field, .false., label)
-
-  end function at_zero
-
-  function with_multiplier(lagrangian, field, varied, label) result(this)
-
-    type(expression), intent(in) :: lagrangian
-    integer         , intent(in) :: field
-    logical         , intent(in) :: varied
-    character(len=*), intent(in), optional :: label
-    type(expression) :: this
-
-    integer, allocatable :: degrees(:)
 
     if (.not. lagrangian % declared()) then
-       error stop 'operation_expression: a Lagrangian is stated before a field is read as its multiplier'
-    end if
-    if (lagrangian % fields < 2) then
-       error stop 'operation_expression: a multiplier is one field beside the state'
-    end if
-    if (field < 1 .or. field > lagrangian % fields) then
-       error stop 'operation_expression: the multiplier is a field the Lagrangian is stated over'
+       error stop 'operation_expression: a Lagrangian is stated before its value at zero is read'
     end if
 
     this = lagrangian
-    this % multiplier = field
-    this % varied     = varied
-    degrees = lagrangian % degrees
+    this % varied = 0
+    call this % restated(label)
+
+  end function at_zero
+
+  subroutine restated(this, label)
+
+    class(expression), intent(inout) :: this
+    character(len=*) , intent(in), optional :: label
+
+    integer, allocatable :: degrees(:)
+
+    degrees = this % degrees
     if (present(label)) then
        call this % declare_degree(degrees, label)
     else
-       call this % declare_degree(degrees, lagrangian % name())
+       call this % declare_degree(degrees, this % name())
     end if
 
-  end function with_multiplier
+  end subroutine restated
 
   !===================================================================!
   ! COMPOSITION. A binary vertex reads two roots: the right operand's
@@ -648,39 +691,45 @@ contains
 
     type(derivative_terms), allocatable :: stored(:)
     type(derivative_terms) :: design
-    integer :: per, f, slot, n, j
+    integer :: per, f, n, j, at, given, total
 
     if (size(q) /= this % num_components()) then
        error stop 'operation_expression: a point stores one component per law component'
     end if
-    if (this % multiplier == 0) then
+    if (this % multipliers == 0) then
        r = this % evaluated_over(q, nu)
        return
     end if
 
-    ! the tuple evaluated stores every field; the multiplier, read from
-    ! no input, is zero, and when varied has one more direction,
+    ! the tuple evaluated stores every field; a multiplier, read from
+    ! no input, is zero, and the varied one has one more direction,
     ! the highest, whose partial is returned over the caller's
-    per = this % components_per_field()
-    n   = nu % num_directions()
-    if (this % varied) n = n + 1
+    n = nu % num_directions()
+    if (this % varied > 0) n = n + 1
     design = widened(nu, n)
-    allocate(stored(0:this % fields * per - 1))
-    slot = 0
+    total = 0
     do f = 1, this % fields
-       if (f == this % multiplier) then
-          stored((f - 1) * per:f * per - 1) = derivative_terms(0.0_dp, design)
-          if (this % varied) call stored((f - 1) * per) % set_direction(n, 1.0_dp)
+       total = total + this % components_per_field(f)
+    end do
+    allocate(stored(0:total - 1))
+    at    = 0
+    given = 0
+    do f = 1, this % fields
+       per = this % components_per_field(f)
+       if (f > this % fields - this % multipliers) then
+          stored(at:at + per - 1) = derivative_terms(0.0_dp, design)
+          if (f == this % varied) call stored(at) % set_direction(n, 1.0_dp)
        else
           do j = 0, per - 1
-             stored((f - 1) * per + j) = widened(q(slot * per + j), n)
+             stored(at + j) = widened(q(given + j), n)
           end do
-          slot = slot + 1
+          given = given + per
        end if
+       at = at + per
     end do
 
     r = this % evaluated_over(stored, design)
-    if (this % varied) r = partial(r, n)
+    if (this % varied > 0) r = partial(r, n)
 
   end function expression_at_instant
 
@@ -762,10 +811,11 @@ contains
   ! coordinate, so adding a coordinate requires no new procedure.
   !===================================================================!
 
-  pure integer function highest_degree_along(this, coordinate)
+  pure integer function highest_degree_along(this, coordinate, field)
 
     class(expression), intent(in) :: this
     integer          , intent(in) :: coordinate
+    integer          , intent(in), optional :: field
 
     integer :: i
 
@@ -773,6 +823,9 @@ contains
     do i = 1, size(this % kind)
        if (this % kind(i) == VERTEX_LEAF .and. this % position(i) == ARGUMENT_STATE &
             & .and. this % along(i) == coordinate) then
+          if (present(field)) then
+             if (this % field(i) /= field) cycle
+          end if
           highest_degree_along = max(highest_degree_along, this % order(i))
        end if
     end do
@@ -811,11 +864,14 @@ contains
     end if
 
     this % degrees = degrees
-    if (this % fields < 1) this % fields = 1
+    if (this % fields < 1) then
+       this % fields = 1
+       this % field_degree = [degrees(FIRST_COORDINATE)]
+    end if
     call this % declare_arguments(2, [ &
          & contract(FIELD_REAL, this % num_components()), &
          & contract(FIELD_REAL, 1) ], label=label, &
-         & max_degree=max_subset_width() - merge(1, 0, this % varied))
+         & max_degree=max_subset_width() - merge(1, 0, this % varied > 0))
 
   end subroutine declare_degree
 
@@ -831,25 +887,42 @@ contains
     integer          , intent(in) :: coordinate, order
     integer          , intent(in), optional :: field
 
-    integer :: f, slot
+    integer :: f
 
     f = 1
     if (present(field)) f = field
-    if (f < 1 .or. f > this % fields) then
-       error stop 'operation_expression: a component names a field the rule is stated over'
-    end if
-    if (f == this % multiplier) then
-       error stop 'operation_expression: the multiplier is not stored in the tuple'
-    end if
-    slot = f
-    if (this % multiplier > 0 .and. f > this % multiplier) slot = f - 1
-    at = (slot - 1) * this % components_per_field() + this % order_at(coordinate, order)
+    at = this % offset_of_field(f) + this % order_at(f, coordinate, order)
 
   end function component_at
 
   !===================================================================!
+  ! The first component of a field in the tuple the rule reads, which
+  ! stores the state fields alone. A multiplier stops the program.
+  !===================================================================!
+
+  pure integer function offset_of_field(this, field) result(at)
+
+    class(expression), intent(in) :: this
+    integer          , intent(in) :: field
+
+    integer :: f
+
+    if (field < 1 .or. field > this % fields) then
+       error stop 'operation_expression: a component names a field the rule is stated over'
+    end if
+    if (field > this % fields - this % multipliers) then
+       error stop 'operation_expression: a multiplier is not stored in the tuple'
+    end if
+    at = 0
+    do f = 1, field - 1
+       at = at + this % components_per_field(f)
+    end do
+
+  end function offset_of_field
+
+  !===================================================================!
   ! The same component in the tuple the rule evaluates, which stores
-  ! every field including the multiplier.
+  ! every field including the multipliers.
   !===================================================================!
 
   pure integer function stored_at(this, field, coordinate, order) result(at)
@@ -857,14 +930,20 @@ contains
     class(expression), intent(in) :: this
     integer          , intent(in) :: field, coordinate, order
 
-    at = (field - 1) * this % components_per_field() + this % order_at(coordinate, order)
+    integer :: f
+
+    at = 0
+    do f = 1, field - 1
+       at = at + this % components_per_field(f)
+    end do
+    at = at + this % order_at(field, coordinate, order)
 
   end function stored_at
 
-  pure integer function order_at(this, coordinate, order) result(at)
+  pure integer function order_at(this, field, coordinate, order) result(at)
 
     class(expression), intent(in) :: this
-    integer          , intent(in) :: coordinate, order
+    integer          , intent(in) :: field, coordinate, order
 
     integer :: c
 
@@ -877,13 +956,14 @@ contains
     if (coordinate > FIRST_COORDINATE .and. order < 1) then
        error stop 'operation_expression: a component away from the first coordinate names a positive order'
     end if
-    if (order < 0 .or. order > this % degrees(coordinate)) then
+    if (order < 0 .or. order > merge(this % field_degree(field), this % degrees(coordinate), &
+         & coordinate == FIRST_COORDINATE)) then
        error stop 'operation_expression: a component names an order declared on the coordinate'
     end if
 
     at = order
     if (coordinate == FIRST_COORDINATE) return
-    at = this % degrees(FIRST_COORDINATE) + 1
+    at = this % field_degree(field) + 1
     do c = FIRST_COORDINATE + 1, coordinate - 1
        at = at + this % degrees(c)
     end do
@@ -892,34 +972,40 @@ contains
   end function order_at
 
   !===================================================================!
-  ! How many components one field stores at a point: the first
-  ! coordinate's orders including zero, and each later coordinate's
-  ! orders from one.
+  ! How many components one field stores at a point: its own orders
+  ! along the first coordinate including zero, and each later
+  ! coordinate's orders from one.
   !===================================================================!
 
-  pure integer function components_per_field(this)
+  pure integer function components_per_field(this, field)
 
     class(expression), intent(in) :: this
+    integer          , intent(in) :: field
 
     if (.not. this % declared()) then
        error stop 'operation_expression: the law is stated before its component count is read'
     end if
 
-    components_per_field = this % degrees(FIRST_COORDINATE) + 1
+    components_per_field = this % field_degree(field) + 1
     if (size(this % degrees) > 1) components_per_field = components_per_field + sum(this % degrees(2:))
 
   end function components_per_field
 
   !===================================================================!
-  ! How many components one point of the state stores: every field
-  ! the rule reads from the tuple, the multiplier excluded.
+  ! How many components one point of the state stores: every state
+  ! field, the multipliers excluded.
   !===================================================================!
 
   pure integer function num_components(this)
 
     class(expression), intent(in) :: this
 
-    num_components = (this % fields - merge(1, 0, this % multiplier > 0)) * this % components_per_field()
+    integer :: f
+
+    num_components = 0
+    do f = 1, this % fields - this % multipliers
+       num_components = num_components + this % components_per_field(f)
+    end do
 
   end function num_components
 
@@ -930,6 +1016,53 @@ contains
     num_fields = this % fields
 
   end function num_fields
+
+  !===================================================================!
+  ! The declared degree along a coordinate: the first field's along
+  ! the first coordinate, every field's along a later one.
+  !===================================================================!
+
+  pure integer function degree_along(this, coordinate) result(degree)
+
+    class(expression), intent(in) :: this
+    integer          , intent(in) :: coordinate
+
+    if (.not. this % declared()) then
+       error stop 'operation_expression: the law is stated before its degrees are read'
+    end if
+    if (coordinate < FIRST_COORDINATE .or. coordinate > size(this % degrees)) then
+       error stop 'operation_expression: a degree names a declared coordinate'
+    end if
+    degree = this % degrees(coordinate)
+
+  end function degree_along
+
+  pure integer function num_multipliers(this)
+
+    class(expression), intent(in) :: this
+
+    num_multipliers = this % multipliers
+
+  end function num_multipliers
+
+  !===================================================================!
+  ! A field's degree along the first coordinate.
+  !===================================================================!
+
+  pure integer function degree_of_field(this, field) result(degree)
+
+    class(expression), intent(in) :: this
+    integer          , intent(in) :: field
+
+    if (.not. this % declared()) then
+       error stop 'operation_expression: the law is stated before a field''s degree is read'
+    end if
+    if (field < 1 .or. field > this % fields) then
+       error stop 'operation_expression: a degree names a field the rule is stated over'
+    end if
+    degree = this % field_degree(field)
+
+  end function degree_of_field
 
   pure logical function expression_declared(this) result(yes)
 

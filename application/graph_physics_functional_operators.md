@@ -472,15 +472,19 @@ codebases are read as one construction.
    map. That is one more argument on `nodal_integrand` and one more
    gather in `gti_block`; it is not in the first slice.
 2. **Several unknowns and several designs.** `unknown(i)` is built:
-   a rule is stated over the fields it reads, every field stores the
-   same jet, and a point's tuple lists the fields in order, so the
-   state layout is (instant, field, degree). A Lagrangian linear in a
-   multiplier field yields its rules as partials, `euler_lagrange(l, m)`
-   and `at_zero(l, m)`, with the multiplier absent from the tuple;
-   the van der Pol residual and functionals are read this way. Not
-   built: `design(j)`, a second field in the marched state (the
-   gather in `gti_block` and the tangent assembly still index one
-   field), and a rule at degree zero along the instants.
+   a rule is stated over the fields it reads, each field with its own
+   degree along the instants, and a point's tuple lists the fields in
+   order, so the state layout is (instant, field, degree), read
+   through `gti_layout`. A Lagrangian with k multipliers yields its k
+   rules as partials, `euler_lagrange(l, j)` and `at_zero(l)`, the
+   multipliers absent from the tuple; the residual places rule j on
+   field j's primary row, the family ties every field's jet at the
+   field's own degree, and a field of degree zero is algebraic. The
+   van der Pol residual and functionals are read this way, and
+   `vanderpol_algebraic` marches q and y = q**2 as two fields
+   (`config/algebraic.cfg`, agreeing with `uniform.cfg` to 3.7e-12).
+   Not built: `design(j)`, and a second field in the spatial export
+   and the initial field's lower components beyond the first field.
 3. **Configured physics.** A rule chosen by name in `gti_configuration`,
    which deletes `physics_vanderpol.f90`.
 

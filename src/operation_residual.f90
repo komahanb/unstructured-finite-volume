@@ -6,9 +6,14 @@
 !
 ! LEVEL 3 OF THE STRATIFICATION. Two stencils apply to the whole
 ! state and are summed; the physics applies only at the points
-! (`at`), one component read at a time (`primary`), and its result
-! is added into the summed stencils there. A row named fixed instead
-! reads x(row) - fixed(row): the identity, not the physics.
+! (`at`), one rule per row it governs (`primary`), and each rule's
+! result is added into the summed stencils on its row. A Lagrangian
+! with k multipliers governs k rows, its stationarity in the j-th
+! multiplier on primary(j); a plain rule governs one. A rule may
+! govern a subset of the points (`governs`): a staged march places a
+! differential rule at the stages alone and an algebraic rule at the
+! arriving instant too. A row named fixed instead reads
+! x(row) - fixed(row): the identity, not the physics.
 !
 ! apply, explicit_tangent and partial_action are composed once here
 ! from the two stencils' own apply/explicit_tangent/partial_action
@@ -33,7 +38,7 @@ module operation_residual
   use field_calculus    , only : field, FIELD_REAL
   use field_stored      , only : stored_field, typed_field_domain
   use operation_stencil  , only : stencil, combine_triples
-  use operation_expression , only : expression, constant, stated
+  use operation_expression , only : expression, constant, stated, euler_lagrange
   use operation_domain     , only : continuous_domain, discrete_domain
 
   implicit none
@@ -46,6 +51,7 @@ module operation_residual
      type(stencil)              , private :: primary_law
      type(stencil), allocatable , private :: connected_law
      type(expression)           , private :: physics
+     type(expression), allocatable, private :: rules(:)
      type(stored_directed_graph), private :: points
      integer , allocatable, private :: at(:)
      integer , allocatable, private :: fixed_rows(:)
@@ -53,7 +59,8 @@ module operation_residual
      integer                , private :: degrees  = 0
      integer                , private :: connected_degrees = 0
      integer                , private :: unknowns = 0
-     integer                , private :: primary  = 0
+     integer , allocatable, private :: primary(:)
+     logical , allocatable, private :: governs(:,:)
 
    contains
 
@@ -72,6 +79,10 @@ module operation_residual
      procedure :: stride
      procedure :: num_degrees
      procedure :: primary_degree
+     procedure :: primary_row
+     procedure :: num_rules
+     procedure :: rule_of
+     procedure :: governs_at
      procedure :: num_points
      procedure :: points_at
      procedure :: rule
@@ -93,24 +104,27 @@ contains
 
   !===================================================================!
   ! Build from the two stencils, the physics, and the points the
-  ! physics reads: at(p) is the offset of point p's primary
-  ! component, always followed by the rest of that point's
-  ! components in order. Invalid input: a fixed row without a value
-  ! to match, an evaluation point whose components run past the
-  ! unknowns, or a fixed row outside the unknowns.
+  ! physics reads: at(p) is the offset of point p's tuple, whose
+  ! components follow in order, and primary(j) the row within it the
+  ! j-th rule governs. Invalid input: a fixed row without a value to
+  ! match, an evaluation point whose components run past the
+  ! unknowns, a fixed row outside the unknowns, or a row count that
+  ! is not the rule count.
   !===================================================================!
 
   function create(primary_law, rule, at, unknowns, degrees, primary, fixed_rows, fixed, &
-       & connected_law) result(this)
+       & connected_law, governs) result(this)
 
     type(stencil)         , intent(in) :: primary_law
     type(expression)      , intent(in) :: rule
-    integer               , intent(in) :: at(:), unknowns, degrees, primary
+    integer               , intent(in) :: at(:), unknowns, degrees, primary(:)
     integer               , intent(in) :: fixed_rows(:)
     real(dp)              , intent(in) :: fixed(:)
     type(stencil)         , intent(in), optional :: connected_law
+    logical               , intent(in), optional :: governs(:,:)
     type(residual_operator) :: this
     type(continuous_domain) :: domain
+    integer :: j
 
     if (size(fixed_rows) /= size(fixed)) then
        error stop 'operation_residual: one value per fixed component'
@@ -125,10 +139,32 @@ contains
     if (degrees < 1 .or. degrees > domain % num_components()) then
        error stop 'operation_residual: primary degree count is within the law''s component count'
     end if
+    if (size(primary) /= max(1, rule % num_multipliers())) then
+       error stop 'operation_residual: one governed row per rule'
+    end if
+    if (any(primary < 0) .or. any(primary >= degrees)) then
+       error stop 'operation_residual: a governed row is one of the point''s degree components'
+    end if
 
     this % primary_law = primary_law
     if (present(connected_law)) this % connected_law = connected_law
     this % physics    = rule
+    ! a Lagrangian's rules are its stationarities, one per multiplier
+    if (rule % num_multipliers() > 0) then
+       allocate(this % rules(rule % num_multipliers()))
+       do j = 1, rule % num_multipliers()
+          this % rules(j) = euler_lagrange(rule, j)
+       end do
+    else
+       this % rules = [rule]
+    end if
+    allocate(this % governs(size(at), size(this % rules)), source=.true.)
+    if (present(governs)) then
+       if (any(shape(governs) /= shape(this % governs))) then
+          error stop 'operation_residual: one governing flag per point and rule'
+       end if
+       this % governs = governs
+    end if
     this % at      = at
     this % unknowns = unknowns
     this % degrees  = degrees
@@ -179,8 +215,32 @@ contains
 
   pure integer function primary_degree(this)
     class(residual_operator), intent(in) :: this
-    primary_degree = this % primary
+    primary_degree = this % primary(1)
   end function primary_degree
+
+  pure integer function primary_row(this, j)
+    class(residual_operator), intent(in) :: this
+    integer                 , intent(in) :: j
+    primary_row = this % primary(j)
+  end function primary_row
+
+  pure integer function num_rules(this)
+    class(residual_operator), intent(in) :: this
+    num_rules = size(this % rules)
+  end function num_rules
+
+  function rule_of(this, j) result(law)
+    class(residual_operator), intent(in) :: this
+    integer                 , intent(in) :: j
+    type(expression) :: law
+    law = this % rules(j)
+  end function rule_of
+
+  pure logical function governs_at(this, p, j)
+    class(residual_operator), intent(in) :: this
+    integer                 , intent(in) :: p, j
+    governs_at = this % governs(p, j)
+  end function governs_at
 
   pure integer function num_points(this)
     class(residual_operator), intent(in) :: this
@@ -295,14 +355,43 @@ contains
 
   pure subroutine placed(this, governing, r)
     class(residual_operator), intent(in)    :: this
-    real(dp)                 , intent(in)    :: governing(:)
+    real(dp)                 , intent(in)    :: governing(:,:)
     real(dp)                 , intent(inout) :: r(:)
-    integer :: p
-    do p = 1, size(this % at)
-       r(this % at(p) + this % primary + 1) = &
-            & r(this % at(p) + this % primary + 1) + governing(p)
+    integer :: p, j
+    do j = 1, size(this % rules)
+       do p = 1, size(this % at)
+          if (.not. this % governs(p, j)) cycle
+          r(this % at(p) + this % primary(j) + 1) = &
+               & r(this % at(p) + this % primary(j) + 1) + governing(p, j)
+       end do
     end do
   end subroutine placed
+
+  !===================================================================!
+  ! Every rule evaluated at the points, one column per rule: the
+  ! value, or the partial along the variations given.
+  !===================================================================!
+
+  subroutine governed(this, point_data, governing, variations)
+    class(residual_operator), intent(in) :: this
+    type(stored_field)      , intent(in) :: point_data(:)
+    real(dp), allocatable   , intent(out) :: governing(:,:)
+    type(variation)         , intent(in), optional :: variations(:)
+    class(field), allocatable :: half
+    real(dp), allocatable :: column(:)
+    integer :: j
+    allocate(governing(size(this % at), size(this % rules)))
+    do j = 1, size(this % rules)
+       if (present(variations)) then
+          call this % rules(j) % partial_action(this % points, this % rules(j) % bind(point_data), &
+               & variations, half)
+       else
+          call this % rules(j) % apply(this % points, this % rules(j) % bind(point_data), half)
+       end if
+       call half % real_vector(column)
+       governing(:, j) = column
+    end do
+  end subroutine governed
 
   pure subroutine accumulate_state(this, x, r)
     class(residual_operator), intent(in)    :: this
@@ -367,7 +456,7 @@ contains
     type(binding), intent(in), optional       :: inputs(:)
     class(field), allocatable, intent(inout) :: output
     type(stored_field) :: state
-    real(dp), allocatable :: r(:), governing(:), x(:)
+    real(dp), allocatable :: r(:), governing(:,:), x(:)
     if (.not. present(inputs)) then
        error stop 'operation_residual: the state and the design are given'
     end if
@@ -391,7 +480,7 @@ contains
     type(binding)            , intent(in) :: inputs(:)
     type(stored_field)       , intent(in) :: state
     real(dp)                 , intent(in) :: x(:)
-    real(dp), allocatable, intent(out) :: r(:), governing(:)
+    real(dp), allocatable, intent(out) :: r(:), governing(:,:)
     real(dp), intent(in), optional    :: v(:)
     type(stored_field) :: direction
     type(stored_field), allocatable :: point_data(:)
@@ -407,12 +496,10 @@ contains
     if (present(v)) then
        points    = typed_field_domain(this % points % vertex_set(), size(this % at), this % stride())
        direction = points % direction(gathered(this, v))
-       call this % physics % partial_action(this % points, this % physics % bind(point_data), &
-            & [variation(this % physics % argument(1), direction)], half)
+       call governed(this, point_data, governing, [variation(this % physics % argument(1), direction)])
     else
-       call this % physics % apply(this % points, this % physics % bind(point_data), half)
+       call governed(this, point_data, governing)
     end if
-    call half % real_vector(governing)
   contains
     subroutine stencil_term(op, y)
       type(stencil), intent(in) :: op
@@ -444,10 +531,10 @@ contains
     type(stored_field), allocatable :: point_data(:)
     type(typed_field_domain) :: points
     class(field), allocatable :: out
-    real(dp), allocatable :: x(:), w(:), governing(:), v(:)
+    real(dp), allocatable :: x(:), w(:), governing(:,:), v(:)
     integer , allocatable :: r(:), c(:)
     logical , allocatable :: is_fixed(:)
-    integer :: e, d, p, npts, n, kept, count
+    integer :: e, d, p, npts, n, kept, count, j
     available = which == 1
     if (.not. available) return
     n    = this % unknowns
@@ -455,7 +542,8 @@ contains
     is_fixed = this % fixed_mask()
     call state_of(this, inputs, input_graph, x, state)
     call point_inputs(this, inputs, x, point_data)
-    count = this % primary_law % pattern % num_edges() + npts * this % degrees + size(this % fixed_rows)
+    count = this % primary_law % pattern % num_edges() + npts * this % degrees * size(this % rules) &
+         & + size(this % fixed_rows)
     if (allocated(this % connected_law)) count = count + this % connected_law % pattern % num_edges()
     allocate(r(count), c(count), w(count))
     kept = 0
@@ -469,15 +557,16 @@ contains
        end do
        points    = typed_field_domain(this % points % vertex_set(), npts, this % degrees)
        direction = points % direction(v)
-       call this % physics % partial_action(this % points, this % physics % bind(point_data), &
-            & [variation(this % physics % argument(1), direction)], out)
-       call out % real_vector(governing)
-       do p = 1, npts
-          if (is_fixed(this % at(p) + this % primary + 1)) cycle
-          kept    = kept + 1
-          r(kept) = this % at(p) + this % primary + 1
-          c(kept) = this % at(p) + d + 1
-          w(kept) = governing(p)
+       call governed(this, point_data, governing, [variation(this % physics % argument(1), direction)])
+       do j = 1, size(this % rules)
+          do p = 1, npts
+             if (.not. this % governs(p, j)) cycle
+             if (is_fixed(this % at(p) + this % primary(j) + 1)) cycle
+             kept    = kept + 1
+             r(kept) = this % at(p) + this % primary(j) + 1
+             c(kept) = this % at(p) + d + 1
+             w(kept) = governing(p, j)
+          end do
        end do
     end do
     do e = 1, size(this % fixed_rows)
@@ -515,7 +604,7 @@ contains
     type(variation)          , intent(in)      :: variations(:)
     class(field), allocatable, intent(inout) :: output
     type(stored_field) :: state
-    real(dp), allocatable :: r(:), governing(:), v(:), x(:)
+    real(dp), allocatable :: r(:), governing(:,:), v(:), x(:)
     call this % require_owned(variations)
     if (size(variations) < 1 .or. size(variations) > this % max_degree()) then
        error stop 'operation_residual: the requested order is within max_degree'
@@ -549,18 +638,16 @@ contains
     type(binding)             , intent(in) :: inputs(:)
     type(variation)          , intent(in) :: variations(:)
     real(dp)                 , intent(in) :: x(:)
-    real(dp), allocatable, intent(out) :: governing(:)
+    real(dp), allocatable, intent(out) :: governing(:,:)
     type(stored_field), allocatable :: point_data(:)
     type(variation), allocatable :: at_points(:)
-    class(field), allocatable :: half
     integer :: i
     call point_inputs(this, inputs, x, point_data)
     allocate(at_points(size(variations)))
     do i = 1, size(variations)
        at_points(i) = physics_variation(this, variations(i))
     end do
-    call this % physics % partial_action(this % points, this % physics % bind(point_data), at_points, half)
-    call half % real_vector(governing)
+    call governed(this, point_data, governing, at_points)
   end subroutine second_tangent
 
   function physics_variation(this, given) result(at_points)
@@ -587,14 +674,11 @@ contains
     type(binding)             , intent(in) :: inputs(:)
     type(variation)          , intent(in) :: variations(:)
     real(dp)                 , intent(in) :: x(:)
-    real(dp), allocatable, intent(out) :: r(:), governing(:)
+    real(dp), allocatable, intent(out) :: r(:), governing(:,:)
     type(stored_field), allocatable :: point_data(:)
-    class(field), allocatable :: half
     allocate(r(this % num_unknowns()), source=0.0_dp)
     call point_inputs(this, inputs, x, point_data)
-    call this % physics % partial_action(this % points, this % physics % bind(point_data), &
-         & [variations(1) % with_argument(this % physics % argument(2))], half)
-    call half % real_vector(governing)
+    call governed(this, point_data, governing, [variations(1) % with_argument(this % physics % argument(2))])
   end subroutine design_tangent
 
   !===================================================================!
@@ -620,6 +704,7 @@ contains
     type(stencil) :: derived
     integer , allocatable :: sub_of(:), at(:), fixed_rows(:)
     real(dp), allocatable :: fixed(:)
+    logical , allocatable :: governs(:,:)
     integer :: e, p, d, inside, npts, ncar
 
     allocate(sub_of(this % unknowns), source=0)
@@ -628,7 +713,7 @@ contains
     end do
 
     npts = 0
-    allocate(at(size(this % at)))
+    allocate(at(size(this % at)), governs(size(this % at), size(this % rules)))
     do p = 1, size(this % at)
        inside = 0
        do d = 1, this % degrees
@@ -640,6 +725,7 @@ contains
        end if
        npts     = npts + 1
        at(npts) = sub_of(this % at(p) + 1) - 1
+       governs(npts, :) = this % governs(p, :)
     end do
 
     ncar = 0
@@ -655,10 +741,11 @@ contains
     if (allocated(this % connected_law)) then
        secondary = this % connected_law % restricted(free, values)
        sub = residual_operator(derived, this % physics, at(1:npts), size(free), &
-            & this % degrees, this % primary, fixed_rows(1:ncar), fixed(1:ncar), connected_law=secondary)
+            & this % degrees, this % primary, fixed_rows(1:ncar), fixed(1:ncar), connected_law=secondary, &
+            & governs=governs(1:npts, :))
     else
        sub = residual_operator(derived, this % physics, at(1:npts), size(free), &
-            & this % degrees, this % primary, fixed_rows(1:ncar), fixed(1:ncar))
+            & this % degrees, this % primary, fixed_rows(1:ncar), fixed(1:ncar), governs=governs(1:npts, :))
     end if
 
   end function constrain
@@ -703,7 +790,7 @@ contains
     call a % constants % set_real_vector(-rhs)
 
     lin = residual_operator(a, stated(constant(0.0_dp), this % degrees - 1, 'zero'), this % at, &
-         & this % unknowns, this % degrees, this % primary, [integer ::], [real(dp) ::])
+         & this % unknowns, this % degrees, this % primary(1:1), [integer ::], [real(dp) ::])
     call lin % versioned(mark, transposed=transposed)
 
   end function linearize

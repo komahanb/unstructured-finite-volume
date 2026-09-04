@@ -35,11 +35,10 @@ module operation_domain
 
   type :: continuous_domain
 
-     type(expression), private :: law_kept
+     type(expression), private :: law
 
    contains
 
-     procedure :: law                  => continuous_domain_law
      procedure :: declared             => continuous_domain_declared
      procedure :: equation_degree      => continuous_domain_equation_degree
      procedure :: num_coordinates      => continuous_domain_num_coordinates
@@ -56,15 +55,13 @@ module operation_domain
 
   type :: discrete_domain
 
-     type(continuous_domain), private :: continuous_kept
-     type(graph)            , private :: point_set_kept
+     type(continuous_domain), private :: continuous
+     type(graph)            , private :: point_set
      integer                , private :: points = 0
 
    contains
 
-     procedure :: continuous     => discrete_domain_continuous
      procedure :: law            => discrete_domain_law
-     procedure :: point_set      => discrete_domain_point_set
      procedure :: num_points     => discrete_domain_num_points
      procedure :: equation_degree => discrete_domain_equation_degree
      procedure :: num_coordinates => discrete_domain_num_coordinates
@@ -95,23 +92,15 @@ contains
     if (.not. law % declared()) then
        error stop 'operation_domain: a continuous domain requires a stated law'
     end if
-    this % law_kept = law
+    this % law = law
 
   end function create_continuous_domain
-
-  type(expression) function continuous_domain_law(this) result(law)
-
-    class(continuous_domain), intent(in) :: this
-
-    law = this % law_kept
-
-  end function continuous_domain_law
 
   pure logical function continuous_domain_declared(this) result(yes)
 
     class(continuous_domain), intent(in) :: this
 
-    yes = this % law_kept % declared()
+    yes = this % law % declared()
 
   end function continuous_domain_declared
 
@@ -119,7 +108,7 @@ contains
 
     class(continuous_domain), intent(in) :: this
 
-    degree = this % law_kept % equation_degree()
+    degree = this % law % equation_degree()
 
   end function continuous_domain_equation_degree
 
@@ -127,7 +116,7 @@ contains
 
     class(continuous_domain), intent(in) :: this
 
-    n = this % law_kept % num_coordinates()
+    n = this % law % num_coordinates()
 
   end function continuous_domain_num_coordinates
 
@@ -135,7 +124,7 @@ contains
 
     class(continuous_domain), intent(in) :: this
 
-    n = this % law_kept % num_components()
+    n = this % law % num_components()
 
   end function continuous_domain_num_components
 
@@ -144,7 +133,7 @@ contains
     class(continuous_domain), intent(in) :: this
     integer                 , intent(in) :: coordinate, order
 
-    at = this % law_kept % component_at(coordinate, order)
+    at = this % law % component_at(coordinate, order)
 
   end function continuous_domain_component_at
 
@@ -153,7 +142,7 @@ contains
     class(continuous_domain), intent(in) :: this
     integer                 , intent(in) :: coordinate
 
-    degree = this % law_kept % highest_degree_along(coordinate)
+    degree = this % law % highest_degree_along(coordinate)
 
   end function continuous_domain_highest_degree_along
 
@@ -162,35 +151,19 @@ contains
     class(continuous_domain), intent(in) :: this
     class(directed_graph)   , intent(in) :: points
 
-    domain % continuous_kept = this
-    domain % point_set_kept  = points % vertex_set()
-    domain % points          = points % num_vertices()
+    domain % continuous = this
+    domain % point_set  = points % vertex_set()
+    domain % points     = points % num_vertices()
 
   end function continuous_domain_discrete
-
-  type(continuous_domain) function discrete_domain_continuous(this) result(continuous)
-
-    class(discrete_domain), intent(in) :: this
-
-    continuous = this % continuous_kept
-
-  end function discrete_domain_continuous
 
   type(expression) function discrete_domain_law(this) result(law)
 
     class(discrete_domain), intent(in) :: this
 
-    law = this % continuous_kept % law()
+    law = this % continuous % law
 
   end function discrete_domain_law
-
-  type(graph) function discrete_domain_point_set(this) result(point_set)
-
-    class(discrete_domain), intent(in) :: this
-
-    point_set = this % point_set_kept
-
-  end function discrete_domain_point_set
 
   pure integer function discrete_domain_num_points(this) result(n)
 
@@ -204,7 +177,7 @@ contains
 
     class(discrete_domain), intent(in) :: this
 
-    degree = this % continuous_kept % equation_degree()
+    degree = this % continuous % equation_degree()
 
   end function discrete_domain_equation_degree
 
@@ -212,7 +185,7 @@ contains
 
     class(discrete_domain), intent(in) :: this
 
-    n = this % continuous_kept % num_coordinates()
+    n = this % continuous % num_coordinates()
 
   end function discrete_domain_num_coordinates
 
@@ -220,7 +193,7 @@ contains
 
     class(discrete_domain), intent(in) :: this
 
-    n = this % continuous_kept % num_components()
+    n = this % continuous % num_components()
 
   end function discrete_domain_num_components
 
@@ -228,7 +201,7 @@ contains
 
     class(discrete_domain), intent(in) :: this
 
-    fields = typed_field_domain(this % point_set_kept, this % points, this % num_components())
+    fields = typed_field_domain(this % point_set, this % points, this % num_components())
 
   end function discrete_domain_state_fields
 
@@ -236,7 +209,7 @@ contains
 
     class(discrete_domain), intent(in) :: this
 
-    fields = typed_field_domain(this % point_set_kept, this % points)
+    fields = typed_field_domain(this % point_set, this % points)
 
   end function discrete_domain_design_fields
 
@@ -244,7 +217,7 @@ contains
 
     class(discrete_domain), intent(in) :: this
 
-    fields = typed_field_domain(this % point_set_kept, this % points)
+    fields = typed_field_domain(this % point_set, this % points)
 
   end function discrete_domain_residual_fields
 

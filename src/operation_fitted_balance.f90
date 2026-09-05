@@ -54,6 +54,8 @@ module operation_fitted_balance
   use view_mesh   , only : mesh, values_of
   use operation_stencil, only : stencil, triple_list
   use operation_fitting      , only : fit
+  use util_factorisation     , only : dense_factorisation
+  use util_precision         , only : spacing_at_one
 
   implicit none
 
@@ -225,7 +227,7 @@ contains
     real(dp), allocatable :: centres(:), pts(:), w(:), weights(:), offsets(:,:)
     integer , allocatable :: rows(:), columns(:), cell_neighbourhood(:), active(:)
     type(triple_list) :: triples
-    integer :: nv, c, j, npts, width, d
+    integer :: nv, c, j, npts, width, d, needed
 
     width = 0
     if (present(rings)) width = rings
@@ -239,15 +241,27 @@ contains
     end if
     call values_of(m % cell_centre(), centres)
     ! the neighbourhood grows until it has as many points as the
-    ! form has active members
+    ! form has active members, and then until the members are
+    ! independent on its points: a cubic's x y^2 and x^2 y coincide
+    ! with x y on the two-ring diamond of a cartesian grid
     call shape % members(active)
     do c = 1, nv
-       call m % neighbourhood([c], width, size(active), cell_neighbourhood, offsets)
-       npts = size(cell_neighbourhood)
-       allocate(pts(d * npts))
-       do j = 1, npts
-          pts(d * j - d + 1 : d * j) = centres(d * cell_neighbourhood(j) - d + 1 : d * cell_neighbourhood(j)) &
-               & + offsets(:, j)
+       needed = size(active)
+       do
+          call m % neighbourhood([c], width, needed, cell_neighbourhood, offsets)
+          npts = size(cell_neighbourhood)
+          if (allocated(pts)) deallocate(pts)
+          allocate(pts(d * npts))
+          do j = 1, npts
+             pts(d * j - d + 1 : d * j) = centres(d * cell_neighbourhood(j) - d + 1 : d * cell_neighbourhood(j)) &
+                  & + offsets(:, j)
+          end do
+          if (independent_on(shape, centres(d * c - d + 1 : d * c), pts, active)) exit
+          if (present(rings) .or. npts < needed) then
+             error stop 'fitted_derivative: the form members are dependent on the neighbourhood, &
+                  &and it cannot grow'
+          end if
+          needed = npts + 1
        end do
        constellation = stored_directed_graph(npts, tails=[integer ::], heads=[integer ::])
        positions = stored_field('positions', constellation % vertex_set(), &
@@ -266,5 +280,47 @@ contains
     op = stencil(rows, columns, weights, spread(0.0_dp, 1, nv), label='fitted derivative')
 
   end function fitted_derivative_stencil
+
+  !===================================================================!
+  ! Whether the active members of the form are independent on the
+  ! points: the Gram matrix of their values, the inactive members
+  ! replaced by the identity, has no pivot below the arithmetic's
+  ! spacing at one times its largest entry.
+  !===================================================================!
+
+  logical function independent_on(shape, at, pts, active)
+
+    class(form), intent(in) :: shape
+    real(dp)   , intent(in) :: at(:), pts(:)
+    integer    , intent(in) :: active(:)
+
+    type(dense_factorisation) :: factor
+    real(dp), allocatable :: b(:,:), g(:,:), phi(:)
+    logical , allocatable :: is_active(:)
+    integer :: nc, npts, d, j, i
+
+    d    = size(at)
+    npts = size(pts) / d
+    nc   = shape % num_members()
+    allocate(b(nc, npts), phi(nc), is_active(nc))
+    is_active = .false.
+    do i = 1, size(active)
+       if (active(i) >= 1 .and. active(i) <= nc) is_active(active(i)) = .true.
+    end do
+    do j = 1, npts
+       call shape % values(pts(d * j - d + 1 : d * j), at, phi)
+       b(:, j) = phi
+    end do
+    do i = 1, nc
+       if (.not. is_active(i)) b(i, :) = 0.0_dp
+    end do
+    g = matmul(b, transpose(b))
+    do i = 1, nc
+       if (.not. is_active(i)) g(i, i) = 1.0_dp
+    end do
+    call factor % factorise(g, spacing_at_one * maxval(abs(g)))
+    independent_on = .not. factor % singular()
+
+  end function independent_on
 
 end module operation_fitted_balance

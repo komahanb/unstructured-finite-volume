@@ -4080,6 +4080,17 @@ contains
     if (degree < 2) then
        error stop 'gti_space: a form of degree below two fits no second derivative'
     end if
+    ! an odd degree's members of the top degree are odd about the
+    ! centre, so on a neighbourhood symmetric about it the second
+    ! derivatives at the centre are those of the even degree below over
+    ! the same points, the full form over two rings and more, whose
+    ! laplacian has a grid mode in its kernel: at degree 3 the pressure
+    ! grew to 1e13 in one step, on two rings and on three
+    if (mod(degree, 2) == 1) then
+       error stop 'gti_space: an odd form degree fits the second derivatives of the even degree &
+            &below it over a neighbourhood whose laplacian has a grid mode in its kernel; &
+            &take an even degree'
+    end if
     dim = this % m % dimension
     allocate(ops(2 * dim), orders(dim))
     shape = polynomial_form(degree, dim)

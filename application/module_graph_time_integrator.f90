@@ -76,6 +76,7 @@ module gti_configuration
      character(len=16) :: elimination     = 'symbolic'
      character(len=16) :: storage         = 'dense'
      logical           :: multigrid       = .false.
+     character(len=32) :: preconditioner  = 'none'
      character(len=16) :: space           = 'coupled'
      character(len=16) :: time            = 'sequential'
      character(len=64) :: designs         = 'physics'
@@ -260,6 +261,8 @@ contains
        cfg % storage = value
     case ('multigrid')
        read(value, *) cfg % multigrid
+    case ('preconditioner')
+       cfg % preconditioner = value
     case ('time_duration')
        read(value, *) cfg % time_duration
     case ('design')
@@ -406,6 +409,7 @@ contains
     write(*,'(a,a)')       '   elimination              ', trim(cfg % elimination)
     write(*,'(a,a)')       '   storage                  ', trim(cfg % storage)
     write(*,'(a,l1)')      '   multigrid                ', cfg % multigrid
+    write(*,'(a,a)')       '   preconditioner           ', trim(cfg % preconditioner)
     write(*,'(a,f0.4)')    '   design                   ', cfg % design
     write(*,'(a,i0)')      '   max derivative degree    ', cfg % max_derivative_degree
     write(*,'(a,i0)')      '   max discretization order ', cfg % max_discretization_order
@@ -838,7 +842,7 @@ module gti_sweeps
   public :: forward_pass, reverse_pass, pass_of, pass_substitutions, choose
   integer, parameter :: forward_pass = 1
   integer, parameter :: reverse_pass = 2
-  public :: set_linear_solver, set_jacobian, set_storage, set_multigrid
+  public :: set_linear_solver, set_jacobian, set_storage, set_multigrid, set_preconditioner
   public :: set_rows, set_elimination, spatial_rows
   public :: set_newton_order, newton_order
   public :: set_aggregates, set_coarse_nodes, coarse_nodes, jacobian_present, multigrid_on
@@ -853,6 +857,7 @@ module gti_sweeps
   integer          , save :: chosen_newton_order = 1
   character(len=16), save :: chosen_storage  = 'dense'
   logical          , save :: chosen_multigrid = .false.
+  character(len=16), save :: chosen_preconditioner = 'none'
   integer, allocatable, save :: chosen_aggregates(:)
   real(dp), save :: linear_tolerance  = half_digits
   integer , save :: linear_criterion  = relative
@@ -978,6 +983,16 @@ contains
     chosen_storage = name
     call clear_inner()
   end subroutine set_storage
+  !===================================================================!
+  ! The preconditioner of the iterative solve: none, or the block
+  ! Gauss-Seidel sweeps over the tuples, as many as smoothing_sweeps.
+  !===================================================================!
+  subroutine set_preconditioner(name)
+    character(len=*), intent(in) :: name
+    call refuse_unknown(name, ['none        ', 'gauss_seidel'], 'preconditioner')
+    chosen_preconditioner = name
+    call clear_inner()
+  end subroutine set_preconditioner
   subroutine set_multigrid(on)
     logical, intent(in) :: on
     chosen_multigrid = on
@@ -1074,6 +1089,11 @@ contains
        krylov % restart = min(count, linear_restart)
        call stopping_applied(krylov, linear_tolerance, linear_criterion, linear_limit_kind, &
             & linear_iterations)
+       if (trim(chosen_preconditioner) == 'gauss_seidel') then
+          sweeps % max_iterations = linear_sweeps
+          sweeps % block_width    = width
+          allocate(krylov % preconditioner, source=sweeps)
+       end if
        allocate(named, source=krylov)
     end select
     if (.not. chosen_multigrid) then
@@ -9964,7 +9984,7 @@ program graph_time_integrator
        & expansion_substitutions, chain_versions, num_designs_of, &
        & instant_components, chain_derivative, asymmetry, sink_costates, &
        & goal_oriented_partition
-  use gti_sweeps            , only : spatial_rows, set_linear_solver, set_jacobian, set_storage, set_multigrid, &
+  use gti_sweeps            , only : spatial_rows, set_linear_solver, set_jacobian, set_storage, set_multigrid, set_preconditioner, &
        & set_rows, set_elimination, &
        & set_coarse_nodes, set_linear_budget, set_newton_order
   use gti_sweeps            , only : pass_of, forward_pass, reverse_pass
@@ -10005,6 +10025,7 @@ program graph_time_integrator
   call set_elimination(cfg % elimination)
   call set_storage(cfg % storage)
   call set_multigrid(cfg % multigrid)
+  call set_preconditioner(trim(cfg % preconditioner))
   call set_space_coupling(cfg % space)
   call set_time_coupling(cfg % time)
   call field_context(cfg)

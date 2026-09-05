@@ -493,9 +493,10 @@ codebases are read as one construction.
    `gti_physics`; the Taylor-Green vortex is the first flow, velocity
    components and pressure as state fields with their spatial jets,
    the pressure relation in place of continuity, the gauge as fixed
-   rows. Not built: the derivative of a rule along a coordinate as a
-   rule (mixed jet components), and a reverse pass whose cost does not
-   grow as two to the tuple's width.
+   rows; GMRES preconditioned by block Gauss-Seidel over the tuples
+   (`preconditioner = gauss_seidel`). Not built: the derivative of a
+   rule along a coordinate as a rule (mixed jet components), and a
+   reverse pass whose cost does not grow as two to the tuple's width.
 
 ## What is not built
 

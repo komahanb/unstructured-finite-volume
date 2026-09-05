@@ -613,12 +613,13 @@ sets every component from the exact vortex u = (sin x cos y,
 -cos x sin y) e^(-2 nu t), p = (cos 2x + cos 2y) e^(-4 nu t) / 4, and
 `check = exact` reports the velocity and pressure errors and the
 divergence at the last instant (`config/taylor_green.cfg`). At nu =
-0.01 over [0, 1], bdf2, 8 x 8 and 16 x 16 cells: velocity error 2.2e-1,
-5.7e-2; pressure error with its mean removed 3.3e-1, 6.4e-2; divergence
-1.7e-1, 6.6e-2. The functionals `energy` and `dissipation` integrate
+0.01 over [0, 1], bdf2, 8 x 8, 16 x 16 and 32 x 32 cells: velocity
+error 2.2e-1, 5.7e-2, 1.4e-2; pressure error with its mean removed
+3.3e-1, 6.4e-2, 1.3e-2; divergence 1.7e-1, 6.6e-2, 1.8e-2, second order
+throughout. The functionals `energy` and `dissipation` integrate
 against their exact values pi^2 (1 - e^(-4 nu)) / (4 nu) = 9.675 and
-pi^2 (1 - e^(-4 nu)) = 0.3870: at 16 x 16, bdf1, 9.532 and 0.3624, and
-their derivatives in nu -20.10 and 35.48 against -19.22 and 37.93.
+pi^2 (1 - e^(-4 nu)) = 0.3870: at 32 x 32, bdf2, 9.647 and 0.3810, and
+their derivatives in nu -19.01 and 37.35 against -19.22 and 37.93.
 
 The derivative rows use the compact form at degree two, the powers of
 one coordinate on the cell and its face neighbours, whose second
@@ -628,12 +629,19 @@ which the momentum's gradient annihilates as well, and the pressure
 grows along it without bound. The reverse pass seeds one direction
 per component of the tuple, so its cost grows as two to the tuple's
 width; at the vortex's seventeen components `check = passes` does not
-finish, while the forward derivative in nu does. `multigrid = T` with
-the Gauss-Seidel smoother coarsens the velocity-pressure block by the
-member's aggregates but does not accelerate it: at 16 x 16 the
-iterative solve takes 350 s and the multigrid one had not finished at
-1500 s. A smoother for the indefinite pressure block is the missing
-piece.
+finish, while the forward derivative in nu does.
+
+**The linear solve.** `preconditioner = gauss_seidel` states the
+iterative solve as GMRES on M^-1 A with M the block Gauss-Seidel
+sweeps over the tuples, `smoothing_sweeps` of them, the smoother
+stated on the same operator with the coupling of the blocks. Without
+it GMRES on the velocity-pressure block ran to its cap of restarts:
+at 12 x 12, 86 s, 80 percent of it in the Krylov inner products and
+matvecs, against 28 s for the dense factorisation and 12 s
+preconditioned; at 16 x 16, 350 s against 24 s, every printed digit
+the same. `multigrid = T` with the same smoother coarsens by the
+member's aggregates but is slower than GMRES here, over 1500 s at
+16 x 16.
 
 **Several fields.** A Lagrangian with k multipliers, its last k
 fields, governs k state fields, its first k, one rule each: the

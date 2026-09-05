@@ -17,14 +17,24 @@
 ! Everything the solver needs is inherited: matvec, inner_product,
 ! norm. This file states the iteration and nothing else.
 !
+! A preconditioner, when stored, is a minimizer stated on the same
+! operator and applied to every direction the operator produces, so
+! the basis spans the Krylov directions of M^-1 A; the residual the
+! restarts measure is the operator's own.
+!
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module operation_gmres
 
   use util_precision  , only : dp
-  use operation_minimization, only : minimizer
+  use operation_minimization, only : minimizer, state
   use util_tally, only : tally_record, linear_solves
+  use view_directed, only : directed_graph
+  use view_directed_stored, only : stored_directed_graph
+  use graph_fractal, only : graph
+  use operation_action, only : operation
+  use field_stored, only : stored_field
 
   implicit none
 
@@ -34,10 +44,12 @@ module operation_gmres
   type, extends(minimizer) :: gmres
 
      integer :: restart = 30
+     class(minimizer), allocatable :: preconditioner
 
    contains
 
      procedure :: name => gmres_name
+     procedure :: state => gmres_state
      procedure :: solve
 
   end type gmres
@@ -56,6 +68,96 @@ contains
   end function gmres_name
 
 
+  !===================================================================!
+  ! The operator stated on this solver and on its preconditioner.
+  !===================================================================!
+
+  subroutine gmres_state(this, action, context, unknown_domain, num_unknowns, &
+       & num_components, coupling, stored_inputs)
+
+    class(gmres)         , intent(inout) :: this
+    class(operation)     , intent(in)    :: action
+    class(directed_graph), intent(in)    :: context
+    type(graph)          , intent(in)    :: unknown_domain
+    integer              , intent(in)    :: num_unknowns
+    integer              , intent(in), optional :: num_components
+    class(directed_graph), intent(in), optional :: coupling
+    type(stored_field)   , intent(in), optional :: stored_inputs(:)
+
+    call state(this, action, context, unknown_domain, num_unknowns, &
+         & num_components, coupling, stored_inputs)
+    ! a blocked preconditioner is stated with the coupling of the
+    ! blocks, the unknowns' coupling read through them
+    if (allocated(this % preconditioner)) then
+       if (this % preconditioner % block_width > 1) then
+          if (present(coupling)) then
+             call this % preconditioner % state(action, context, unknown_domain, num_unknowns, &
+                  & num_components, blocked(coupling, this % preconditioner % block_width), stored_inputs)
+          else
+             call this % preconditioner % state(action, context, unknown_domain, num_unknowns, &
+                  & num_components, blocked(context, this % preconditioner % block_width), stored_inputs)
+          end if
+       else
+          call this % preconditioner % state(action, context, unknown_domain, num_unknowns, &
+               & num_components, coupling, stored_inputs)
+       end if
+    end if
+
+  end subroutine gmres_state
+
+  !===================================================================!
+  ! The coupling of the blocks of `width` consecutive unknowns: an
+  ! edge between two blocks for every edge of the unknowns' coupling
+  ! between them, none within a block.
+  !===================================================================!
+
+  function blocked(coupling, width) result(blocks)
+
+    class(directed_graph), intent(in) :: coupling
+    integer              , intent(in) :: width
+    type(stored_directed_graph) :: blocks
+
+    integer, allocatable :: tails(:), heads(:)
+    integer :: e, ne, t, h, n
+
+    ne = coupling % num_edges()
+    allocate(tails(ne), heads(ne))
+    n = 0
+    do e = 1, ne
+       if (.not. coupling % edge_has_head(e)) cycle
+       t = (coupling % edge_tail(e) - 1) / width + 1
+       h = (coupling % edge_head(e) - 1) / width + 1
+       if (t == h) cycle
+       n = n + 1
+       tails(n) = t
+       heads(n) = h
+    end do
+    blocks = stored_directed_graph(coupling % num_vertices() / width, tails=tails(1:n), heads=heads(1:n))
+
+  end function blocked
+
+  !===================================================================!
+  ! The direction through the preconditioner: M^-1 v, or v itself
+  ! when none is stored.
+  !===================================================================!
+
+  subroutine preconditioned(this, v, z)
+
+    class(gmres), intent(inout) :: this
+    real(dp)    , intent(in)    :: v(:)
+    real(dp), allocatable, intent(out) :: z(:)
+
+    real(dp) :: reduced
+
+    if (.not. allocated(this % preconditioner)) then
+       z = v
+       return
+    end if
+    allocate(z(size(v)), source=0.0_dp)
+    call this % preconditioner % solve(v, z, reduced)
+
+  end subroutine preconditioned
+
   subroutine solve(this, rhs, x, achieved)
 
     class(gmres), intent(inout) :: this
@@ -64,7 +166,7 @@ contains
     real(dp), intent(out)   :: achieved
 
     real(dp), allocatable :: basis(:,:), h(:,:), cs(:), sn(:), s(:)
-    real(dp), allocatable :: r(:), w(:), y(:)
+    real(dp), allocatable :: r(:), w(:), y(:), z(:)
     real(dp) :: beta, hik, radius, subdiag
     integer :: n, m, outer, i, j, k
 
@@ -85,11 +187,14 @@ contains
        achieved = beta
        if (this % halted(achieved, outer)) return
 
+       ! the basis begins from the preconditioned residual
+       call preconditioned(this, r, z)
+       beta = this % norm(z)
        basis = 0.0_dp
        h  = 0.0_dp
        s  = 0.0_dp
        s(1) = beta
-       basis(:, 1) = r / beta
+       basis(:, 1) = z / beta
 
        do j = 1, m
 
@@ -97,7 +202,8 @@ contains
           ! The unrotated subdiagonal is retained separately: the
           ! rotations overwrite its entry, and both the next basis
           ! vector and the breakdown test need the unrotated value.
-          call this % matvec(basis(:, j), w)
+          call this % matvec(basis(:, j), z)
+          call preconditioned(this, z, w)
           do i = 1, j
              h(i, j) = this % inner_product(w, basis(:, i))
              w = w - h(i, j) * basis(:, i)

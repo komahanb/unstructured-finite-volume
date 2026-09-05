@@ -702,13 +702,18 @@ edges. `check` names a comparison against a known quantity:
 criterion: each tolerance is relative or declared absolute, each iteration limit
 by rate or by count, and no threshold is a chosen number.
 
-**A spatial field.** `spatial_counts = n1 n2` above zero widen the
-state's domain a second time: beside t's line, two parametric lines
-xi and eta, discretised by the same grid procedures — extended
-domains get grids, points pass through — and mapped into the plane by
-`spatial_geometry` (`cartesian | circular | elliptical`), whose
-mapping pushes the parametric measure forward into cell volumes. The
-operator side follows its own arrow, in one of two forms chosen by
+**A spatial field.** `spatial_counts = n1 n2 [n3]` above zero widen
+the state's domain a second time: beside t's line, two or three
+parametric lines, discretised by the same grid procedures — extended
+domains get grids, points pass through — and mapped into space by
+`spatial_geometry` (`cartesian | circular | elliptical | periodic`),
+whose mapping pushes the parametric measure forward into cell
+volumes; `spatial_extent` lists one extent per coordinate. The
+periodic box identifies its opposite sides: the face across the
+period stores the period as the shift of its head cell into the
+face's frame, and the mesh's measurements and the fits' neighbourhoods
+read it, so the box has no boundary. The operator side follows its own
+arrow, in one of two forms chosen by
 `rows`. With `rows = states state-time-derivatives` the diffusion
 operator is a fitted polynomial balance of degree `spatial_order` with
 conductivity `diffusion`, substituted into the state row. With
@@ -723,7 +728,21 @@ at `nu = 0` against the exact separated mode (`config/mode.cfg`,
 `config/mode_jet.cfg`), over 10 x 5, 20 x 10 and 40 x 20 cells the
 bdf2 error at the last instant reads 6.4e-3, 1.9e-3, 7.6e-4 for the
 balance and 2.3e-2, 4.9e-3, 1.2e-3 for the jet, both of second order.
-The tangent and adjoint over the jet rows agree to 4.4e-16.
+The tangent and adjoint over the jet rows agree to 4.4e-16. On the
+periodic box (`config/torus2.cfg`, `config/torus2_jet.cfg`) over
+20 x 10, 40 x 20 and 80 x 40 cells the balance operator's error
+against the exact laplacian of the whole wave reads 8.4e-2, 2.2e-2,
+5.5e-3, second order, and the bdf2 error at the last instant 2.2e-2,
+7.4e-3, 3.6e-3 for the balance and 2.9e-2, 9.2e-3, 4.0e-3 for the jet,
+down to the bdf2 time error of 2.3e-3 at this step. In three
+coordinates (`config/box3.cfg`, `config/torus3.cfg`) the same checks
+run at 12 x 6 x 6 and 16 x 8 x 8 cells; at 16 x 8 x 8 on the box the
+balance's boundary fits at form degree 2 are ill conditioned, an
+operator error of 8.6e+1 on the cells with one boundary face, while
+the jet rows converge, 4.7e-2 to 9.9e-3 from 8 x 4 x 4 to 16 x 8 x 8.
+`export = paraview` names every component: q, qt, qtt along the
+instants, qx, qxx, qy, qyy, qz, qzz along space, a second field with
+its index after q.
 `space = coupled | sequential` and `time = coupled | sequential` state
 the two dimensions apart. A coupled dimension keeps every member in
 one system; a sequential one solves the members in turn, time in the

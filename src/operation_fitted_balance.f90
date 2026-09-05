@@ -97,7 +97,7 @@ contains
     type(stored_directed_graph) :: constellation
     type(stored_field)   :: positions
     class(field), allocatable :: fitted
-    real(dp), allocatable :: areas(:), normals(:), fcentres(:), centres(:)
+    real(dp), allocatable :: areas(:), normals(:), fcentres(:), centres(:), offsets(:,:)
     integer , allocatable :: rows(:), columns(:), cell_neighbourhood(:)
     real(dp), allocatable :: weights(:), pts(:), w(:), constant(:)
     real(dp), allocatable :: xf(:)
@@ -150,14 +150,19 @@ contains
           end if
        end if
 
-       call neighbourhood_of(m, e, cell_neighbourhood, width, shape % num_members())
+       if (h > 0) then
+          call m % neighbourhood([t, h], width, shape % num_members(), cell_neighbourhood, offsets)
+       else
+          call m % neighbourhood([t], width, shape % num_members(), cell_neighbourhood, offsets)
+       end if
        npts = size(cell_neighbourhood)
        if (h == 0) npts = npts + 1
 
-       ! Data: the positions on it.
+       ! Data: the positions on it, each in the tail's frame.
        allocate(pts(d * npts))
        do j = 1, size(cell_neighbourhood)
-          pts(d * j - d + 1 : d * j) = centres(d * cell_neighbourhood(j) - d + 1 : d * cell_neighbourhood(j))
+          pts(d * j - d + 1 : d * j) = centres(d * cell_neighbourhood(j) - d + 1 : d * cell_neighbourhood(j)) &
+               & + offsets(:, j)
        end do
        xf = fcentres(d * e - d + 1 : d * e)
        if (h == 0) pts(d * npts - d + 1 : d * npts) = xf
@@ -217,7 +222,7 @@ contains
     type(stored_directed_graph) :: constellation
     type(stored_field)   :: positions
     class(field), allocatable :: fitted
-    real(dp), allocatable :: centres(:), pts(:), w(:), weights(:)
+    real(dp), allocatable :: centres(:), pts(:), w(:), weights(:), offsets(:,:)
     integer , allocatable :: rows(:), columns(:), cell_neighbourhood(:)
     type(triple_list) :: triples
     integer :: nv, c, j, npts, width, d
@@ -234,11 +239,12 @@ contains
     end if
     call values_of(m % cell_centre(), centres)
     do c = 1, nv
-       call cell_neighbourhood_of(m, c, cell_neighbourhood, width, shape % num_members())
+       call m % neighbourhood([c], width, shape % num_members(), cell_neighbourhood, offsets)
        npts = size(cell_neighbourhood)
        allocate(pts(d * npts))
        do j = 1, npts
-          pts(d * j - d + 1 : d * j) = centres(d * cell_neighbourhood(j) - d + 1 : d * cell_neighbourhood(j))
+          pts(d * j - d + 1 : d * j) = centres(d * cell_neighbourhood(j) - d + 1 : d * cell_neighbourhood(j)) &
+               & + offsets(:, j)
        end do
        constellation = stored_directed_graph(npts, tails=[integer ::], heads=[integer ::])
        positions = stored_field('positions', constellation % vertex_set(), &
@@ -257,98 +263,5 @@ contains
     op = stencil(rows, columns, weights, spread(0.0_dp, 1, nv), label='fitted derivative')
 
   end function fitted_derivative_stencil
-
-  !===================================================================!
-  ! A cell's neighbourhood: itself and its neighbours ring by ring,
-  ! each once, as many rings as given or until at least the count
-  ! required is reached.
-  !===================================================================!
-
-  subroutine cell_neighbourhood_of(m, c, cell_neighbourhood, rings, at_least)
-
-    type(mesh), intent(in) :: m
-    integer   , intent(in) :: c, rings, at_least
-    integer, allocatable, intent(out) :: cell_neighbourhood(:)
-
-    integer, allocatable :: near(:), frontier(:)
-    integer :: j, r, k, before
-
-    cell_neighbourhood = [c]
-    r = 0
-    do
-       if (rings > 0) then
-          if (r >= rings) exit
-       else
-          if (r >= 1 .and. size(cell_neighbourhood) >= at_least) exit
-       end if
-       before   = size(cell_neighbourhood)
-       frontier = cell_neighbourhood
-       do k = 1, size(frontier)
-          call m % adjacent_vertices(frontier(k), near)
-          do j = 1, size(near)
-             call extend(cell_neighbourhood, near(j))
-          end do
-       end do
-       r = r + 1
-       if (size(cell_neighbourhood) == before) exit
-    end do
-
-  end subroutine cell_neighbourhood_of
-
-  !===================================================================!
-  ! The face's neighbourhood: its two cells and their neighbours,
-  ! each once.
-  !===================================================================!
-
-  subroutine neighbourhood_of(m, e, cell_neighbourhood, rings, at_least)
-
-    type(mesh), intent(in) :: m
-    integer   , intent(in) :: e, rings, at_least
-    integer, allocatable, intent(out) :: cell_neighbourhood(:)
-
-    integer, allocatable :: near(:), frontier(:)
-    integer :: t, h, j, r, k, before
-
-    t = m % edge_tail(e)
-    h = 0
-    if (m % edge_has_head(e)) h = m % edge_head(e)
-
-    cell_neighbourhood = [t]
-    if (h > 0) call extend(cell_neighbourhood, h)
-
-    ! each ring adds the neighbours of every member of the previous
-    ! ring: as many rings as given, or until the neighbourhood
-    ! contains at least the count required, or until no new member
-    ! is found
-    r = 0
-    do
-       if (rings > 0) then
-          if (r >= rings) exit
-       else
-          if (r >= 1 .and. size(cell_neighbourhood) >= at_least) exit
-       end if
-       before   = size(cell_neighbourhood)
-       frontier = cell_neighbourhood
-       do k = 1, size(frontier)
-          call m % adjacent_vertices(frontier(k), near)
-          do j = 1, size(near)
-             call extend(cell_neighbourhood, near(j))
-          end do
-       end do
-       r = r + 1
-       if (size(cell_neighbourhood) == before) exit
-    end do
-
-  end subroutine neighbourhood_of
-
-  pure subroutine extend(cell_neighbourhood, member)
-
-    integer, allocatable, intent(inout) :: cell_neighbourhood(:)
-    integer, intent(in) :: member
-
-    if (any(cell_neighbourhood == member)) return
-    cell_neighbourhood = [cell_neighbourhood, member]
-
-  end subroutine extend
 
 end module operation_fitted_balance

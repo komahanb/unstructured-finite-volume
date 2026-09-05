@@ -70,6 +70,10 @@ module view_mesh
      type(stored_field) :: normals
      type(stored_field) :: face_centers_
      type(stored_field) :: weights
+     ! the translation of a face's head cell into the face's frame: a
+     ! face identifying two sides of a periodic box stores the
+     ! period, every other face zero
+     type(stored_field) :: shifts
 
    contains
 
@@ -80,6 +84,8 @@ module view_mesh
      procedure :: face_normal
      procedure :: face_centre
      procedure :: face_weights
+     procedure :: face_shift
+     procedure :: neighbourhood
 
   end type mesh
 
@@ -99,7 +105,7 @@ contains
 
   impure type(mesh) function create(nv, tails, heads, volumes, &
        & cell_centres, areas, deltas, normals, face_centres, weights, &
-       & vtags, etags, number, dimension) result(this)
+       & vtags, etags, number, dimension, shifts) result(this)
 
     integer         , intent(in)           :: nv
     integer         , intent(in)           :: tails(:)
@@ -115,6 +121,7 @@ contains
     character(len=*), intent(in), optional :: etags(:)
     integer         , intent(in), optional :: number
     integer         , intent(in), optional :: dimension
+    real(dp)        , intent(in), optional :: shifts(:)
 
     type(graph) :: cells, faces
     integer :: ne, d
@@ -137,6 +144,7 @@ contains
     call require(size(normals)      == d * ne, 'd normal parts per face')
     call require(size(face_centres) == d * ne, 'd centre parts per face')
     call require(size(weights)      == ne    , 'one weight per face')
+    if (present(shifts)) call require(size(shifts) == d * ne, 'd shift parts per face')
 
     ! Geometry is defined on the graph's OWN carriers, so a field's
     ! domain returns the mesh identity every consumer compares against.
@@ -150,6 +158,7 @@ contains
     this % normals       = stored_field('face_normal' , faces, ne, num_components=d, unit_name='-')
     this % face_centers_ = stored_field('face_centre' , faces, ne, num_components=d, unit_name='m')
     this % weights       = stored_field('face_weights', faces, ne, unit_name='-')
+    this % shifts        = stored_field('face_shift'  , faces, ne, num_components=d, unit_name='m')
 
     call this % volumes       % set_real_vector(volumes)
     call this % cell_centres  % set_real_vector(cell_centres)
@@ -158,6 +167,11 @@ contains
     call this % normals       % set_real_vector(normals)
     call this % face_centers_ % set_real_vector(face_centres)
     call this % weights       % set_real_vector(weights)
+    if (present(shifts)) then
+       call this % shifts % set_real_vector(shifts)
+    else
+       call this % shifts % set_real_vector(spread(0.0_dp, 1, d * ne))
+    end if
 
   end function create
 
@@ -233,6 +247,92 @@ contains
     face_centre = this % face_centers_
 
   end function face_centre
+
+  type(stored_field) function face_shift(this)
+
+    class(mesh), intent(in) :: this
+
+    face_shift = this % shifts
+
+  end function face_shift
+
+  !===================================================================!
+  ! The cells around the seeds, ring by ring, each once, with the
+  ! translation that places each in the first seed's frame: crossing
+  ! a face from its tail to its head adds the face's shift, the other
+  ! way subtracts it. As many rings as given, or until at least the
+  ! count required is reached, or until no new cell is found. A cell
+  ! reached again with another translation stops the program: the
+  ! periodic box has too few cells for the reach.
+  !===================================================================!
+
+  subroutine neighbourhood(this, seeds, rings, at_least, members, offsets)
+
+    class(mesh), intent(in) :: this
+    integer    , intent(in) :: seeds(:), rings, at_least
+    integer , allocatable, intent(out) :: members(:)
+    real(dp), allocatable, intent(out) :: offsets(:,:)
+
+    real(dp), allocatable :: shift(:), translation(:)
+    integer , allocatable :: edges(:)
+    integer :: d, r, k, e, f, other, before, at
+    real(dp) :: sign
+
+    d = this % dimension
+    call values_of(this % shifts, shift)
+    members = seeds
+    allocate(offsets(d, size(seeds)), source=0.0_dp)
+    ! the seeds share one frame: a second seed is the head or the
+    ! tail of a face the first seed is on
+    do k = 2, size(seeds)
+       call this % incident_edges(seeds(1), edges)
+       do e = 1, size(edges)
+          f = edges(e)
+          if (.not. this % edge_has_head(f)) cycle
+          if (this % edge_tail(f) == seeds(1) .and. this % edge_head(f) == seeds(k)) then
+             offsets(:, k) = shift(d * f - d + 1:d * f)
+          else if (this % edge_head(f) == seeds(1) .and. this % edge_tail(f) == seeds(k)) then
+             offsets(:, k) = -shift(d * f - d + 1:d * f)
+          end if
+       end do
+    end do
+    r = 0
+    do
+       if (rings > 0) then
+          if (r >= rings) exit
+       else
+          if (r >= 1 .and. size(members) >= at_least) exit
+       end if
+       before = size(members)
+       do k = 1, before
+          call this % incident_edges(members(k), edges)
+          do e = 1, size(edges)
+             f = edges(e)
+             if (.not. this % edge_has_head(f)) cycle
+             if (this % edge_tail(f) == members(k)) then
+                other = this % edge_head(f)
+                sign  = 1.0_dp
+             else
+                other = this % edge_tail(f)
+                sign  = -1.0_dp
+             end if
+             translation = offsets(:, k) + sign * shift(d * f - d + 1:d * f)
+             at = findloc(members, other, dim=1)
+             if (at > 0) then
+                if (any(abs(offsets(:, at) - translation) > 0.0_dp)) then
+                   error stop 'mesh: a periodic box stores more cells than the neighbourhood reaches around it'
+                end if
+                cycle
+             end if
+             members = [members, other]
+             offsets = reshape([offsets, translation], [d, size(members)])
+          end do
+       end do
+       r = r + 1
+       if (size(members) == before) exit
+    end do
+
+  end subroutine neighbourhood
 
   type(stored_field) function face_weights(this)
 

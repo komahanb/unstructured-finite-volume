@@ -409,7 +409,7 @@ contains
   !===================================================================!
 
   pure subroutine derive_cell_moments(spatial_dim, face_centres, face_vectors, &
-       & interior, cell_faces, num_cell_faces, cell_volumes, cell_centres)
+       & interior, cell_faces, num_cell_faces, cell_volumes, cell_centres, face_cells, shift)
 
     integer , intent(in)  :: spatial_dim
     real(dp), intent(in)  :: face_centres(:,:)
@@ -419,9 +419,12 @@ contains
     integer , intent(in)  :: num_cell_faces(:)
     real(dp), allocatable, intent(out) :: cell_volumes(:)
     real(dp), allocatable, intent(out) :: cell_centres(:,:)
+    integer , intent(in), optional :: face_cells(:,:)
+    real(dp), intent(in), optional :: shift(:,:)
 
     integer  :: lcell, lface, gface
     real(dp) :: flux
+    real(dp), allocatable :: centre(:)
 
     allocate(cell_volumes(size(num_cell_faces)))
     allocate(cell_centres(size(face_centres, 1), size(num_cell_faces)))
@@ -430,11 +433,16 @@ contains
 
     do lcell = 1, size(num_cell_faces)
        do lface = 1, num_cell_faces(lcell)
-          gface = cell_faces(lface, lcell)
-          flux  = outward_sign(face_vectors(:, gface), face_centres(:, gface), interior(:, lcell)) &
-               & * dot_product(face_vectors(:, gface), face_centres(:, gface))
+          gface  = cell_faces(lface, lcell)
+          centre = face_centres(:, gface)
+          ! the head of a shifted face reads it in its own frame
+          if (present(shift) .and. present(face_cells)) then
+             if (face_cells(2, gface) == lcell) centre = centre - shift(:, gface)
+          end if
+          flux  = outward_sign(face_vectors(:, gface), centre, interior(:, lcell)) &
+               & * dot_product(face_vectors(:, gface), centre)
           cell_volumes(lcell)    = cell_volumes(lcell) + flux / real(spatial_dim, dp)
-          cell_centres(:, lcell) = cell_centres(:, lcell) + flux * face_centres(:, gface)
+          cell_centres(:, lcell) = cell_centres(:, lcell) + flux * centre
        end do
        if (cell_volumes(lcell) .lt. 0.0_dp) then
           error stop 'view_mesh_geometry: a cell volume is nonnegative'
@@ -453,13 +461,14 @@ contains
   !===================================================================!
 
   pure subroutine derive_centroidal_vectors(face_cells, num_face_cells, &
-       & cell_centres, face_centres, lvec)
+       & cell_centres, face_centres, lvec, shift)
 
     integer , intent(in)  :: face_cells(:,:)
     integer , intent(in)  :: num_face_cells(:)
     real(dp), intent(in)  :: cell_centres(:,:)
     real(dp), intent(in)  :: face_centres(:,:)
     real(dp), allocatable, intent(out) :: lvec(:,:)
+    real(dp), intent(in), optional :: shift(:,:)
 
     integer :: iface
 
@@ -473,6 +482,7 @@ contains
        else
           lvec(:, iface) = cell_centres(:, face_cells(2, iface)) &
                & - cell_centres(:, face_cells(1, iface))
+          if (present(shift)) lvec(:, iface) = lvec(:, iface) + shift(:, iface)
        end if
     end do
 
@@ -511,16 +521,18 @@ contains
   !===================================================================!
 
   pure subroutine derive_face_weights(face_cells, num_face_cells, &
-       & cell_centres, face_centres, face_cell_weights)
+       & cell_centres, face_centres, face_cell_weights, shift)
 
     integer , intent(in)  :: face_cells(:,:)
     integer , intent(in)  :: num_face_cells(:)
     real(dp), intent(in)  :: cell_centres(:,:)
     real(dp), intent(in)  :: face_centres(:,:)
     real(dp), allocatable, intent(out) :: face_cell_weights(:,:)
+    real(dp), intent(in), optional :: shift(:,:)
 
     integer  :: iface
     real(dp) :: d1, d2, dinv1, dinv2, weight
+    real(dp), allocatable :: head(:)
 
     allocate(face_cell_weights(2, size(num_face_cells)))
 
@@ -530,7 +542,9 @@ contains
        dinv1 = 1.0_dp/d1
 
        if (num_face_cells(iface) .ne. 1) then
-          d2    = sqrt(sum((cell_centres(:, face_cells(2, iface)) - face_centres(:, iface))**2))
+          head = cell_centres(:, face_cells(2, iface))
+          if (present(shift)) head = head + shift(:, iface)
+          d2    = sqrt(sum((head - face_centres(:, iface))**2))
           dinv2 = 1.0_dp/d2
        else
           dinv2 = 0.0_dp
@@ -633,7 +647,7 @@ contains
 
   impure type(mesh) function mesh_from_incidence(spatial_dim, coordinates, &
        & cell_vertices, num_cell_vertices, face_vertices, num_face_vertices, &
-       & face_cells, num_face_cells, etags) result(m)
+       & face_cells, num_face_cells, etags, face_shift) result(m)
 
     integer         , intent(in) :: spatial_dim
     real(dp)        , intent(in) :: coordinates(:,:)
@@ -644,8 +658,10 @@ contains
     integer         , intent(in) :: face_cells(:,:)
     integer         , intent(in) :: num_face_cells(:)
     character(len=*), intent(in), optional :: etags(:)
+    real(dp)        , intent(in), optional :: face_shift(:,:)
 
     integer , allocatable :: cell_faces(:,:), num_cell_faces(:), tails(:), heads(:)
+    real(dp), allocatable :: shift(:,:)
     real(dp), allocatable :: interior(:,:), cell_centres(:,:), face_centres(:,:)
     real(dp), allocatable :: face_vectors(:,:), face_areas(:), cell_volumes(:), lvec(:,:)
     real(dp), allocatable :: face_deltas(:), face_cell_weights(:,:), normals(:), weights(:)
@@ -672,12 +688,22 @@ contains
             & / real(num_cell_vertices(c), dp)
     end do
 
+    ! a face's geometry is stated on its tail's side; its head is at
+    ! its own centre plus the shift, and reads the face at the face's
+    ! centre less the shift
+    allocate(shift(size(coordinates, 1), num_faces), source=0.0_dp)
+    if (present(face_shift)) then
+       if (size(face_shift, 1) /= d .or. size(face_shift, 2) /= num_faces) then
+          error stop 'view_mesh_geometry: one shift of d parts per face'
+       end if
+       shift(1:d, :) = face_shift
+    end if
     call derive_cell_moments(d, face_centres, face_vectors, interior, cell_faces, &
-         & num_cell_faces, cell_volumes, cell_centres)
-    call derive_centroidal_vectors(face_cells, num_face_cells, cell_centres, face_centres, lvec)
+         & num_cell_faces, cell_volumes, cell_centres, face_cells, shift)
+    call derive_centroidal_vectors(face_cells, num_face_cells, cell_centres, face_centres, lvec, shift)
     call derive_face_deltas(lvec, face_vectors, face_deltas)
     call derive_face_weights(face_cells, num_face_cells, cell_centres, face_centres, &
-         & face_cell_weights)
+         & face_cell_weights, shift)
 
     allocate(tails(num_faces), heads(num_faces), normals(d * num_faces), weights(num_faces))
     do f = 1, num_faces
@@ -699,7 +725,8 @@ contains
          & face_centres = reshape(face_centres(1:d, :), [d * num_faces]), &
          & weights      = weights, &
          & etags        = etags, &
-         & dimension    = d)
+         & dimension    = d, &
+         & shifts       = reshape(shift(1:d, :), [d * num_faces]))
 
   end function mesh_from_incidence
 

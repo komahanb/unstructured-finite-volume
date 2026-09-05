@@ -3239,7 +3239,7 @@ module gti_space
   use operation_conduction      , only : conduction
   use operation_robin_condition , only : robin_condition, neumann
   use field_forms               , only : polynomial_form
-  use view_paraview_writer      , only : paraview_writer, polygon_cell
+  use view_paraview_writer      , only : paraview_writer, polygon_cell, hypercube_cell
   use relation_binary           , only : ragged
   use util_string               , only : string
   use operation_grid            , only : uniform_grid, random_grid, partitioned
@@ -3248,12 +3248,23 @@ module gti_space
   private
   public :: spatial_domain, spatial_mesh, spatial_operator, written_paraview, coarse_cells
   public :: spatial_derivative_stencils
-  public :: cartesian, circular, elliptical, geometry_of
+  public :: cartesian, circular, elliptical, periodic, geometry_of
+  ! the geometries: a box, a disc and an ellipse mapped from the unit
+  ! square, and a periodic box, the box with its opposite sides
+  ! identified across the period
   integer, parameter :: cartesian  = 1
   integer, parameter :: circular   = 2
   integer, parameter :: elliptical = 3
+  integer, parameter :: periodic   = 4
+  !===================================================================!
+  ! THE SPATIAL DOMAIN: a structured parametric grid of counts n along
+  ! its coordinates, mapped by the geometry, measured by the framework
+  ! as a mesh of cells and faces. cell_multi is a cell's index along
+  ! each coordinate; the corners are listed per cell for the writer.
+  !===================================================================!
   type :: spatial_domain
      integer :: geometry  = cartesian
+     integer :: dimension = 2
      integer :: num_cells = 0
      integer :: num_faces = 0
      type(mesh) :: m
@@ -3262,190 +3273,342 @@ module gti_space
      integer , allocatable :: cell_corner(:)
      real(dp), allocatable :: centre(:,:)
      real(dp), allocatable :: volume(:)
-     integer , allocatable :: cell_ij(:,:)
-     integer :: n1 = 0, n2 = 0
+     integer , allocatable :: cell_multi(:,:)
+     integer , allocatable :: n(:)
+     real(dp), allocatable :: extents(:)
   end type spatial_domain
+  ! a face: its tail cell, its head cell or zero at the boundary, its
+  ! corners in cyclic order, and the translation of the head into the
+  ! face's frame, the period across an identified side
   type :: face_record
-     integer :: tail = 0, head = 0, corner_a = 0, corner_b = 0
+     integer :: tail = 0, head = 0
+     integer , allocatable :: corners(:)
+     real(dp), allocatable :: shift(:)
   end type face_record
 contains
   integer function geometry_of(name) result(geometry)
     character(len=*), intent(in) :: name
-    geometry = chosen_from(name, ['cartesian ', 'circular  ', 'elliptical'], 'spatial_geometry')
+    geometry = chosen_from(name, ['cartesian ', 'circular  ', 'elliptical', 'periodic  '], 'spatial_geometry')
   end function geometry_of
+  !===================================================================!
+  ! The map of the unit square onto the disc or the ellipse: xi the
+  ! radius, eta the angle around.
+  !===================================================================!
   pure function mapped(geometry, a, b, xi, eta) result(x)
     integer , intent(in) :: geometry
     real(dp), intent(in) :: a, b, xi, eta
     real(dp) :: x(2)
     real(dp) :: theta
+    theta = 2.0_dp * acos(-1.0_dp) * eta
     select case (geometry)
-    case (cartesian)
-       x = [a * xi, b * eta]
     case (circular)
-       theta = 2.0_dp * acos(-1.0_dp) * eta
        x = [a * xi * cos(theta), a * xi * sin(theta)]
     case default
-       theta = 2.0_dp * acos(-1.0_dp) * eta
        x = [a * xi * cos(theta), b * xi * sin(theta)]
     end select
   end function mapped
-  function spatial_mesh(geometry, a, b, n1, n2, drawn, seed) result(this)
-    integer , intent(in) :: geometry, n1, n2, seed
-    real(dp), intent(in) :: a, b
+  !===================================================================!
+  ! The parametric lines along each coordinate: n + 1 points on the
+  ! unit interval, uniform or drawn.
+  !===================================================================!
+  subroutine parameter_lines(counts, drawn, seed, xi)
+    integer , intent(in) :: counts(:), seed
+    logical , intent(in) :: drawn
+    real(dp), allocatable, intent(out) :: xi(:,:)
+    real(dp), allocatable :: dxi(:), line(:)
+    integer :: k, offset
+    allocate(xi(0:maxval(counts), size(counts)), source=0.0_dp)
+    offset = 0
+    do k = 1, size(counts)
+       if (drawn) then
+          call partitioned(random_grid(1.0_dp, seed + offset), counts(k) + 1, dxi, line)
+       else
+          call partitioned(uniform_grid(1.0_dp), counts(k) + 1, dxi, line)
+       end if
+       xi(0:counts(k), k) = line
+       offset = offset + counts(k)
+    end do
+  end subroutine parameter_lines
+  function spatial_mesh(geometry, extents, counts, drawn, seed) result(this)
+    integer , intent(in) :: geometry, counts(:), seed
+    real(dp), intent(in) :: extents(:)
     logical , intent(in) :: drawn
     type(spatial_domain) :: this
-    real(dp), allocatable :: xi(:), eta(:), dxi(:), deta(:)
-    type(face_record), allocatable :: faces(:)
-    integer :: i, j, c, f, polar, cells, ring
-    if (n1 < 2 .or. n2 < 2) then
+    if (size(counts) < 2 .or. size(counts) > 3) then
+       error stop 'gti_space: a mesh has two or three coordinates'
+    end if
+    if (size(extents) /= size(counts)) then
+       error stop 'gti_space: one extent per coordinate'
+    end if
+    if (any(counts < 2)) then
        error stop 'gti_space: at least two cells along each coordinate'
     end if
-    if (a <= 0.0_dp .or. b <= 0.0_dp) then
+    if (any(extents <= 0.0_dp)) then
        error stop 'gti_space: an extent is positive'
     end if
-    this % geometry = geometry
-    polar = merge(1, 0, geometry /= cartesian)
-    if (drawn) then
-       call partitioned(random_grid(1.0_dp, seed),      n1 + 1, dxi,  xi)
-       call partitioned(random_grid(1.0_dp, seed + n1), n2 + 1, deta, eta)
+    this % geometry  = geometry
+    this % dimension = size(counts)
+    this % n         = counts
+    this % extents   = extents
+    if (geometry == circular .or. geometry == elliptical) then
+       if (size(counts) /= 2) then
+          error stop 'gti_space: the disc and the ellipse are plane'
+       end if
+       call polar_mesh(this, drawn, seed)
     else
-       call partitioned(uniform_grid(1.0_dp), n1 + 1, dxi,  xi)
-       call partitioned(uniform_grid(1.0_dp), n2 + 1, deta, eta)
+       call box_mesh(this, drawn, seed)
     end if
-    allocate(this % corner(2, (n1 + 1 - polar) * (n2 + 1)))
-    do j = polar, n1
-       do i = 0, n2
-          this % corner(:, corner_index(i, j, n2, polar)) = mapped(geometry, a, b, xi(j + 1), eta(i + 1))
+  end function spatial_mesh
+  !===================================================================!
+  ! THE BOX in d coordinates, periodic or not: corners at every
+  ! parameter point, cells as hypercubes of 2**d corners, and a face
+  ! on the positive side of every cell along every coordinate, its
+  ! head the next cell, or across the period the first cell with the
+  ! period as its shift, or none at a boundary. Corners are listed in
+  ! tensor order, a face's corners in cyclic order.
+  !===================================================================!
+  subroutine box_mesh(this, drawn, seed)
+    type(spatial_domain), intent(inout) :: this
+    logical             , intent(in)    :: drawn
+    integer             , intent(in)    :: seed
+    real(dp), allocatable :: xi(:,:)
+    type(face_record), allocatable :: faces(:)
+    integer, allocatable :: c(:), i(:), corners(:), cstride(:), stride(:)
+    integer :: d, k, cells, cell, b, at, f, nf, other, lin
+    logical :: wrapped
+    d = this % dimension
+    wrapped = this % geometry == periodic
+    call parameter_lines(this % n, drawn, seed, xi)
+    allocate(c(d), i(d), cstride(d), stride(d))
+    cstride(1) = 1
+    stride(1)  = 1
+    do k = 2, d
+       cstride(k) = cstride(k - 1) * (this % n(k - 1) + 1)
+       stride(k)  = stride(k - 1) * this % n(k - 1)
+    end do
+    cells = product(this % n)
+    this % num_cells = cells
+    ! the corners
+    allocate(this % corner(d, product(this % n + 1)))
+    do lin = 1, size(this % corner, 2)
+       do k = 1, d
+          i(k) = mod((lin - 1) / cstride(k), this % n(k) + 1)
+          this % corner(k, lin) = this % extents(k) * xi(i(k), k)
        end do
     end do
-    if (polar == 1) then
-       cells = 1 + (n1 - 1) * n2
-    else
-       cells = n1 * n2
-    end if
+    ! the cells, each with its corners
+    allocate(this % first_corner(cells + 1), this % cell_corner(cells * 2 ** d))
+    allocate(this % cell_multi(d, cells), this % centre(d, cells), this % volume(cells))
+    allocate(corners(2 ** d))
+    this % first_corner(1) = 1
+    do cell = 1, cells
+       do k = 1, d
+          c(k) = mod((cell - 1) / stride(k), this % n(k)) + 1
+       end do
+       this % cell_multi(:, cell) = c
+       do b = 0, 2 ** d - 1
+          do k = 1, d
+             i(k) = c(k) - 1 + ibits(b, k - 1, 1)
+          end do
+          corners(b + 1) = 1 + sum(i * cstride)
+       end do
+       if (d == 2) corners = corners([1, 2, 4, 3])
+       at = this % first_corner(cell)
+       this % cell_corner(at:at + 2 ** d - 1) = corners
+       this % first_corner(cell + 1) = at + 2 ** d
+    end do
+    ! the faces: one on the positive side of every cell along every
+    ! coordinate, and one on the negative side of the first cells
+    ! when the box is not periodic
+    nf = d * cells
+    if (.not. wrapped) nf = nf + sum([(cells / this % n(k), k = 1, d)])
+    allocate(faces(nf))
+    f = 0
+    do k = 1, d
+       do cell = 1, cells
+          c = this % cell_multi(:, cell)
+          f = f + 1
+          faces(f) % tail    = cell
+          faces(f) % corners = face_corners(c, k, 1)
+          allocate(faces(f) % shift(d), source=0.0_dp)
+          if (c(k) < this % n(k)) then
+             faces(f) % head = cell + stride(k)
+          else if (wrapped) then
+             other = cell - (this % n(k) - 1) * stride(k)
+             faces(f) % head = other
+             faces(f) % shift(k) = this % extents(k)
+          else
+             faces(f) % head = 0
+          end if
+          if (c(k) == 1 .and. .not. wrapped) then
+             f = f + 1
+             faces(f) % tail    = cell
+             faces(f) % head    = 0
+             faces(f) % corners = face_corners(c, k, 0)
+             allocate(faces(f) % shift(d), source=0.0_dp)
+          end if
+       end do
+    end do
+    this % num_faces = f
+    call measured(this, faces(1:f))
+  contains
+    ! the corners of the cell c on the side of coordinate k where the
+    ! bit is `side`, in cyclic order for a plane face
+    function face_corners(c, k, side) result(list)
+      integer, intent(in) :: c(:), k, side
+      integer, allocatable :: list(:)
+      integer :: bb, kk, m, count
+      allocate(list(2 ** (d - 1)))
+      count = 0
+      do bb = 0, 2 ** d - 1
+         if (ibits(bb, k - 1, 1) /= side) cycle
+         do kk = 1, d
+            i(kk) = c(kk) - 1 + ibits(bb, kk - 1, 1)
+         end do
+         count = count + 1
+         list(count) = 1 + sum(i * cstride)
+      end do
+      m = size(list)
+      if (m == 4) list = list([1, 2, 4, 3])
+    end function face_corners
+  end subroutine box_mesh
+  !===================================================================!
+  ! THE DISC AND THE ELLIPSE: the unit square in (xi, eta) with xi the
+  ! radius and eta the angle, the ring closed on itself, and the
+  ! centre one cell of n(2) corners. cell_multi(1, :) is the index
+  ! around, cell_multi(2, :) the index outward.
+  !===================================================================!
+  subroutine polar_mesh(this, drawn, seed)
+    type(spatial_domain), intent(inout) :: this
+    logical             , intent(in)    :: drawn
+    integer             , intent(in)    :: seed
+    real(dp), allocatable :: xi(:,:)
+    type(face_record), allocatable :: faces(:)
+    integer :: i, j, c, f, cells, ring, n1, n2
+    real(dp) :: a, b
+    n1 = this % n(1)
+    n2 = this % n(2)
+    a  = this % extents(1)
+    b  = this % extents(2)
+    call parameter_lines(this % n, drawn, seed, xi)
+    allocate(this % corner(2, n1 * (n2 + 1)))
+    do j = 1, n1
+       do i = 0, n2
+          this % corner(:, corner_index(i, j, n2)) = mapped(this % geometry, a, b, xi(j, 1), xi(i, 2))
+       end do
+    end do
+    cells = 1 + (n1 - 1) * n2
     this % num_cells = cells
     allocate(this % first_corner(cells + 1))
-    allocate(this % cell_corner(merge(n2 + 4 * (n1 - 1) * n2, 4 * n1 * n2, polar == 1)))
-    allocate(this % centre(2, cells), this % volume(cells), this % cell_ij(2, cells))
-    this % n1 = n1
-    this % n2 = n2
-    c = 0
+    allocate(this % cell_corner(n2 + 4 * (n1 - 1) * n2))
+    allocate(this % centre(2, cells), this % volume(cells), this % cell_multi(2, cells))
     this % first_corner(1) = 1
-    if (polar == 1) then
-       c = 1
-       do i = 0, n2 - 1
-          this % cell_corner(i + 1) = corner_index(i, 1, n2, polar)
-       end do
-       this % first_corner(2) = n2 + 1
-       this % cell_ij(:, 1) = [0, 1]
-    end if
-    do j = 1 + polar, n1
+    do i = 0, n2 - 1
+       this % cell_corner(i + 1) = corner_index(i, 1, n2)
+    end do
+    this % first_corner(2) = n2 + 1
+    this % cell_multi(:, 1) = [0, 1]
+    c = 1
+    do j = 2, n1
        do i = 1, n2
           c = c + 1
           call quad(this, c, i, j, n2)
-          this % cell_ij(:, c) = [i, j]
+          this % cell_multi(:, c) = [i, j]
        end do
     end do
     allocate(faces(2 * n1 * n2 + 2 * (n1 + n2) + n2))
     f = 0
-    do j = 1 + polar, n1 - 1
+    do j = 2, n1 - 1
        do i = 1, n2
-          call face_between(faces, f, cell_index(i, j, n2, polar), &
-               & cell_index(i, j + 1, n2, polar), corner_index(i - 1, j, n2, polar), &
-               & corner_index(i, j, n2, polar))
-       end do
-    end do
-    if (polar == 1) then
-       do i = 1, n2
-          call face_between(faces, f, 1, cell_index(i, 2, n2, polar), &
-               & corner_index(i - 1, 1, n2, polar), corner_index(i, 1, n2, polar))
-       end do
-    end if
-    do j = 1 + polar, n1
-       do i = 1, n2 - 1 + polar
-          ring = i + 1
-          if (ring > n2) ring = 1
-          call face_between(faces, f, cell_index(i, j, n2, polar), &
-               & cell_index(ring, j, n2, polar), corner_index(i, j - 1, n2, polar), &
-               & corner_index(i, j, n2, polar))
+          call face_between(faces, f, cell_index(i, j, n2), cell_index(i, j + 1, n2), &
+               & [corner_index(i - 1, j, n2), corner_index(i, j, n2)])
        end do
     end do
     do i = 1, n2
-       call face_between(faces, f, cell_index(i, n1, n2, polar), 0, &
-            & corner_index(i - 1, n1, n2, polar), corner_index(i, n1, n2, polar))
+       call face_between(faces, f, 1, cell_index(i, 2, n2), &
+            & [corner_index(i - 1, 1, n2), corner_index(i, 1, n2)])
     end do
-    if (polar == 0) then
+    do j = 2, n1
        do i = 1, n2
-          call face_between(faces, f, cell_index(i, 1, n2, polar), 0, &
-               & corner_index(i - 1, 0, n2, polar), corner_index(i, 0, n2, polar))
+          ring = i + 1
+          if (ring > n2) ring = 1
+          call face_between(faces, f, cell_index(i, j, n2), cell_index(ring, j, n2), &
+               & [corner_index(i, j - 1, n2), corner_index(i, j, n2)])
        end do
-       do j = 1, n1
-          call face_between(faces, f, cell_index(1, j, n2, polar), 0, &
-               & corner_index(0, j - 1, n2, polar), corner_index(0, j, n2, polar))
-          call face_between(faces, f, cell_index(n2, j, n2, polar), 0, &
-               & corner_index(n2, j - 1, n2, polar), corner_index(n2, j, n2, polar))
-       end do
-    end if
+    end do
+    do i = 1, n2
+       call face_between(faces, f, cell_index(i, n1, n2), 0, &
+            & [corner_index(i - 1, n1, n2), corner_index(i, n1, n2)])
+    end do
     this % num_faces = f
     call measured(this, faces(1:f))
-  end function spatial_mesh
-  pure integer function corner_index(i, j, n2, polar) result(c)
-    integer, intent(in) :: i, j, n2, polar
-    c = (j - polar) * (n2 + 1) + i + 1
+  end subroutine polar_mesh
+  pure integer function corner_index(i, j, n2) result(c)
+    integer, intent(in) :: i, j, n2
+    c = (j - 1) * (n2 + 1) + i + 1
   end function corner_index
-  pure integer function cell_index(i, j, n2, polar) result(c)
-    integer, intent(in) :: i, j, n2, polar
-    if (polar == 1) then
-       c = 1 + (j - 2) * n2 + i
-    else
-       c = (j - 1) * n2 + i
-    end if
+  pure integer function cell_index(i, j, n2) result(c)
+    integer, intent(in) :: i, j, n2
+    c = 1 + (j - 2) * n2 + i
   end function cell_index
   subroutine quad(this, c, i, j, n2)
     type(spatial_domain), intent(inout) :: this
     integer   , intent(in)    :: c, i, j, n2
-    integer :: at, polar
-    polar = merge(1, 0, this % geometry /= cartesian)
+    integer :: at
     at = this % first_corner(c)
-    this % cell_corner(at)     = corner_index(i - 1, j - 1, n2, polar)
-    this % cell_corner(at + 1) = corner_index(i,     j - 1, n2, polar)
-    this % cell_corner(at + 2) = corner_index(i,     j,     n2, polar)
-    this % cell_corner(at + 3) = corner_index(i - 1, j,     n2, polar)
+    this % cell_corner(at)     = corner_index(i - 1, j - 1, n2)
+    this % cell_corner(at + 1) = corner_index(i,     j - 1, n2)
+    this % cell_corner(at + 2) = corner_index(i,     j,     n2)
+    this % cell_corner(at + 3) = corner_index(i - 1, j,     n2)
     this % first_corner(c + 1) = at + 4
   end subroutine quad
-  subroutine face_between(faces, f, tail, head, corner_a, corner_b)
+  subroutine face_between(faces, f, tail, head, corners)
     type(face_record), intent(inout) :: faces(:)
     integer          , intent(inout) :: f
-    integer          , intent(in)    :: tail, head, corner_a, corner_b
+    integer          , intent(in)    :: tail, head, corners(:)
     f = f + 1
-    faces(f) = face_record(tail, head, corner_a, corner_b)
+    faces(f) % tail    = tail
+    faces(f) % head    = head
+    faces(f) % corners = corners
+    allocate(faces(f) % shift(2), source=0.0_dp)
   end subroutine face_between
+  !===================================================================!
+  ! The mesh measured by the framework from the corners and the three
+  ! incidences; a face at the boundary is tagged edge, and a face
+  ! across the period stores its shift.
+  !===================================================================!
   subroutine measured(this, faces)
-    type(spatial_domain)       , intent(inout) :: this
-    type(face_record), intent(in)    :: faces(:)
+    type(spatial_domain), intent(inout) :: this
+    type(face_record)   , intent(in)    :: faces(:)
     integer , allocatable :: cell_vertices(:,:), num_cell_vertices(:)
     integer , allocatable :: face_vertices(:,:), num_face_vertices(:), face_cells(:,:), num_face_cells(:)
+    real(dp), allocatable :: face_shift(:,:)
     character(len=4), allocatable :: tags(:)
     type(ragged) :: corners
     type(stored_field) :: measure
     real(dp), allocatable :: values(:)
-    integer :: f, nf
+    integer :: f, nf, d, width
     nf = size(faces)
+    d  = this % dimension
     corners = ragged(this % first_corner, this % cell_corner)
     call corners % padded(cell_vertices, num_cell_vertices)
-    allocate(face_vertices(2, nf), num_face_vertices(nf), face_cells(2, nf), num_face_cells(nf), tags(nf))
+    width = maxval([(size(faces(f) % corners), f = 1, nf)])
+    allocate(face_vertices(width, nf), num_face_vertices(nf), face_cells(2, nf), num_face_cells(nf), tags(nf))
+    allocate(face_shift(d, nf))
+    face_vertices = 0
     do f = 1, nf
-       face_vertices(:, f)  = [faces(f) % corner_a, faces(f) % corner_b]
-       num_face_vertices(f) = 2
+       num_face_vertices(f) = size(faces(f) % corners)
+       face_vertices(1:num_face_vertices(f), f) = faces(f) % corners
        face_cells(:, f)     = [faces(f) % tail, faces(f) % head]
        num_face_cells(f)    = merge(2, 1, faces(f) % head > 0)
        tags(f)              = merge('    ', 'edge', faces(f) % head > 0)
+       face_shift(:, f)     = faces(f) % shift
     end do
-    this % m = mesh_from_incidence(2, this % corner, cell_vertices, num_cell_vertices, &
-         & face_vertices, num_face_vertices, face_cells, num_face_cells, tags)
+    this % m = mesh_from_incidence(d, this % corner, cell_vertices, num_cell_vertices, &
+         & face_vertices, num_face_vertices, face_cells, num_face_cells, tags, face_shift)
     measure = this % m % cell_centre()
     call measure % real_vector(values)
-    this % centre = reshape(values, [2, this % num_cells])
+    this % centre = reshape(values, [d, this % num_cells])
     measure = this % m % cell_volume()
     call measure % real_vector(this % volume)
   end subroutine measured
@@ -3489,21 +3652,34 @@ contains
        end do
     end do
   end function spatial_derivative_stencils
+  !===================================================================!
+  ! The coarse cell of every cell for multigrid: pairs along each
+  ! coordinate; on the disc the centre is its own.
+  !===================================================================!
   function coarse_cells(this) result(aggregate)
     type(spatial_domain), intent(in) :: this
     integer, allocatable :: aggregate(:)
-    integer :: c, i, j, n2c, polar
-    polar = merge(1, 0, this % geometry /= cartesian)
-    n2c   = (this % n2 + 1) / 2
-    allocate(aggregate(this % num_cells))
+    integer, allocatable :: coarse_stride(:)
+    integer :: c, k, d
+    d = this % dimension
+    allocate(aggregate(this % num_cells), coarse_stride(d))
+    if (this % geometry == circular .or. this % geometry == elliptical) then
+       do c = 1, this % num_cells
+          if (c == 1) then
+             aggregate(c) = 1
+          else
+             aggregate(c) = 1 + ((this % cell_multi(2, c) - 2) / 2) * ((this % n(2) + 1) / 2) &
+                  & + (this % cell_multi(1, c) - 1) / 2 + 1
+          end if
+       end do
+       return
+    end if
+    coarse_stride(1) = 1
+    do k = 2, d
+       coarse_stride(k) = coarse_stride(k - 1) * ((this % n(k - 1) + 1) / 2)
+    end do
     do c = 1, this % num_cells
-       i = this % cell_ij(1, c)
-       j = this % cell_ij(2, c)
-       if (polar == 1 .and. c == 1) then
-          aggregate(c) = 1
-       else
-          aggregate(c) = polar + ((j - 1 - polar) / 2) * n2c + (i - 1) / 2 + 1
-       end if
+       aggregate(c) = 1 + sum(((this % cell_multi(:, c) - 1) / 2) * coarse_stride)
     end do
   end function coarse_cells
   subroutine written_paraview(this, path, names, values)
@@ -3516,7 +3692,7 @@ contains
     end if
     writer = paraview_writer(this % m, this % corner, &
          & ragged(this % first_corner, this % cell_corner), &
-         & spread(polygon_cell, 1, this % num_cells))
+         & spread(merge(polygon_cell, hypercube_cell, this % dimension == 2), 1, this % num_cells))
     call writer % write(path, values, string(names))
   end subroutine written_paraview
 end module gti_space
@@ -3525,10 +3701,10 @@ module gti_field
   use operation_stencil, only : stencil
   use field_calculus   , only : field
   use field_stored     , only : stored_field
-  use operation_expression, only : expression
+  use operation_expression, only : expression, FIRST_COORDINATE
   use gti_configuration, only : words_of
   use gti_march        , only : consistent_states
-  use gti_space        , only : spatial_domain, spatial_operator, cartesian, written_paraview
+  use gti_space        , only : spatial_domain, spatial_operator, cartesian, periodic, written_paraview
   implicit none
   private
   public :: spatial_discretization_stencil_of, initial_field
@@ -3555,7 +3731,7 @@ contains
     end do
     op = stencil(r, c, w, fixed, 'spatial discretization stencil')
   end function spatial_discretization_stencil_of
-  function initial_field(physics, degrees, kind, initial_state, design, spatial_discretization_stencil, space, a, b, &
+  function initial_field(physics, degrees, kind, initial_state, design, spatial_discretization_stencil, space, &
        & spatial_derivative_stencils) result(q)
     type(expression)      , intent(in)           :: physics
     integer               , intent(in)           :: degrees
@@ -3564,7 +3740,6 @@ contains
     type(stencil)         , intent(in), optional :: spatial_discretization_stencil
     type(stencil)         , intent(in), optional :: spatial_derivative_stencils(:)
     type(spatial_domain)            , intent(in), optional :: space
-    real(dp)              , intent(in), optional :: a, b
     real(dp), allocatable :: q(:)
     character(len=32), allocatable :: given(:)
     real(dp), allocatable :: lower(:,:)
@@ -3597,25 +3772,37 @@ contains
        end do
     case ('mode')
        if (.not. present(space)) error stop 'gti_field: the mode is a field over a mesh'
-       if (space % geometry /= cartesian) error stop 'gti_field: the mode is defined on the rectangle'
-       lower(1, :) = mode_shape(space, a, b)
+       if (.not. box_shaped(space)) error stop 'gti_field: the mode is defined on the box'
+       lower(1, :) = mode_shape(space)
     case ('bump')
        if (.not. present(space)) error stop 'gti_field: the bump is a field over a mesh'
-       lower(1, :) = 1.0_dp + 0.5_dp * mode_shape(space, a, b)
+       lower(1, :) = 1.0_dp + 0.5_dp * mode_shape(space)
     case default
        error stop 'gti_field: an initial field is constant, the mode, or the bump'
     end select
     q = consistent_states(physics, degrees, lower, design, spatial_discretization_stencil, spatial_derivative_stencils)
   end function initial_field
-  pure function mode_shape(space, a, b) result(shape)
+  !===================================================================!
+  ! The separated mode of the box: the product over the coordinates
+  ! of cos(m pi x / a), one half wave on a box with insulated sides,
+  ! one whole wave on a periodic box.
+  !===================================================================!
+  pure logical function box_shaped(space)
     type(spatial_domain), intent(in) :: space
-    real(dp)  , intent(in) :: a, b
+    box_shaped = space % geometry == cartesian .or. space % geometry == periodic
+  end function box_shaped
+  pure function wavenumbers(space) result(k)
+    type(spatial_domain), intent(in) :: space
+    real(dp), allocatable :: k(:)
+    k = merge(2.0_dp, 1.0_dp, space % geometry == periodic) * acos(-1.0_dp) / space % extents
+  end function wavenumbers
+  pure function mode_shape(space) result(shape)
+    type(spatial_domain), intent(in) :: space
     real(dp), allocatable :: shape(:)
-    real(dp) :: pi
+    real(dp), allocatable :: k(:)
     integer  :: i
-    pi = acos(-1.0_dp)
-    shape = [(cos(pi * space % centre(1, i) / a) * cos(pi * space % centre(2, i) / b), &
-         &    i = 1, space % num_cells)]
+    k = wavenumbers(space)
+    shape = [(product(cos(k * space % centre(:, i))), i = 1, space % num_cells)]
   end function mode_shape
   subroutine balance_of(space, kappa, degree, values, balanced)
     type(spatial_domain), intent(in) :: space
@@ -3631,30 +3818,30 @@ contains
     call op % apply(op % pattern, op % bind([given]), out)
     call out % real_vector(balanced)
   end subroutine balance_of
-  subroutine against_the_laplacian(space, a, b, kappa, degree)
+  subroutine against_the_laplacian(space, kappa, degree)
     type(spatial_domain), intent(in) :: space
-    real(dp)  , intent(in) :: a, b, kappa
+    real(dp)  , intent(in) :: kappa
     integer   , intent(in) :: degree
     real(dp), allocatable :: shape(:), balanced(:), exact(:)
-    real(dp) :: pi, err(0:2), norm(0:2)
-    integer  :: i, boundary_count, count(0:2)
-    if (space % geometry /= cartesian) then
-       error stop 'gti_field: the laplacian check is defined on the rectangle'
+    real(dp) :: err(0:3), norm(0:3)
+    integer  :: i, boundary_count, counted(0:3)
+    if (.not. box_shaped(space)) then
+       error stop 'gti_field: the laplacian check is defined on the box'
     end if
-    pi    = acos(-1.0_dp)
-    shape = mode_shape(space, a, b)
-    exact = -kappa * pi ** 2 * (1.0_dp / a ** 2 + 1.0_dp / b ** 2) * shape
+    shape = mode_shape(space)
+    exact = -kappa * sum(wavenumbers(space) ** 2) * shape
     call balance_of(space, kappa, degree, shape, balanced)
     err   = 0.0_dp
     norm  = 0.0_dp
-    count = 0
+    counted = 0
     do i = 1, space % num_cells
        boundary_count = 0
-       if (space % cell_ij(1, i) == 1 .or. space % cell_ij(1, i) == space % n2) boundary_count = boundary_count + 1
-       if (space % cell_ij(2, i) == 1 .or. space % cell_ij(2, i) == space % n1) boundary_count = boundary_count + 1
+       if (space % geometry /= periodic) then
+          boundary_count = count(space % cell_multi(:, i) == 1 .or. space % cell_multi(:, i) == space % n)
+       end if
        err(boundary_count)   = err(boundary_count)   + (balanced(i) / space % volume(i) - exact(i)) ** 2
        norm(boundary_count)  = norm(boundary_count)  + exact(i) ** 2
-       count(boundary_count) = count(boundary_count) + 1
+       counted(boundary_count) = counted(boundary_count) + 1
     end do
     write(*,'(a,i0,a,i0,a)') '   the operator compared with kappa times the laplacian of the mode, ', &
          & space % num_cells, ' cells, form degree ', degree, ':'
@@ -3663,17 +3850,16 @@ contains
          & '   one boundary ', sqrt(err(1) / max(norm(1), tiny(1.0_dp))), &
          & '   corner ',   sqrt(err(2) / max(norm(2), tiny(1.0_dp)))
   end subroutine against_the_laplacian
-  subroutine against_the_mode(space, a, b, kappa, degree, design, t_last, x, degrees)
+  subroutine against_the_mode(space, kappa, degree, design, t_last, x, degrees)
     type(spatial_domain), intent(in) :: space
-    real(dp)  , intent(in) :: a, b, kappa, design, t_last, x(:)
+    real(dp)  , intent(in) :: kappa, design, t_last, x(:)
     integer   , intent(in) :: degree, degrees
-    real(dp) :: pi, omega, omega_h, exact, semi, e_exact, e_semi, area, mode
+    real(dp) :: omega, omega_h, exact, semi, e_exact, e_semi, area, mode
     real(dp), allocatable :: shape(:), balanced(:)
     integer  :: i
-    if (space % geometry /= cartesian .or. design /= 0.0_dp) return
-    pi    = acos(-1.0_dp)
-    omega = sqrt(1.0_dp + kappa * pi ** 2 * (1.0_dp / a ** 2 + 1.0_dp / b ** 2))
-    shape = mode_shape(space, a, b)
+    if (.not. box_shaped(space) .or. design /= 0.0_dp) return
+    omega = sqrt(1.0_dp + kappa * sum(wavenumbers(space) ** 2))
+    shape = mode_shape(space)
     call balance_of(space, kappa, degree, shape, balanced)
     omega_h = sqrt(1.0_dp - dot_product(shape, balanced) / &
          & dot_product(shape, space % volume * shape))
@@ -3692,33 +3878,39 @@ contains
          & '   semi-discrete ', sqrt(e_semi / area), '   omega ', omega, '   omega_h ', omega_h
   end subroutine against_the_mode
   !===================================================================!
-  ! The name of a derivative of the state: the state itself is q,
-  ! and each order appends the letter of the coordinate it is taken
-  ! along, so a time derivative is named qt, qtt and a spatial one qx,
-  ! qxx. The order is read from the name rather than counted from it.
+  ! One instant written: every component of every state field at
+  ! every cell, named by its field, its coordinate and its order:
+  ! q, qt, qtt along the instants, qx, qxx along the first spatial
+  ! coordinate, and a later field with its index after q.
   !===================================================================!
-  pure function derivative_named(along, order) result(name)
-    character(len=*), intent(in) :: along
-    integer         , intent(in) :: order
-    character(len=:), allocatable :: name
-    name = 'q'
-    if (order > 0) name = name // repeat(along, order)
-  end function derivative_named
-  subroutine export_instant(space, path, degrees, x)
-    type(spatial_domain)      , intent(in) :: space
-    character(len=*), intent(in) :: path
-    integer         , intent(in) :: degrees
-    real(dp)        , intent(in) :: x(:)
+  subroutine export_instant(space, path, law, x)
+    type(spatial_domain), intent(in) :: space
+    character(len=*)    , intent(in) :: path
+    type(expression)    , intent(in) :: law
+    real(dp)            , intent(in) :: x(:)
     character(len=8), allocatable :: names(:)
+    character(len=1), parameter :: axis(3) = ['x', 'y', 'z']
+    character(len=8) :: prefix
     real(dp), allocatable :: values(:,:)
-    integer :: i, d
-    allocate(names(degrees), values(space % num_cells, degrees))
-    do d = 0, degrees - 1
-       names(d + 1) = derivative_named('t', d)
+    integer :: i, d, f, c, k, at, stride, fields
+    stride = law % num_components()
+    fields = law % num_fields() - law % num_multipliers()
+    allocate(names(stride), values(space % num_cells, stride))
+    do f = 1, fields
+       prefix = 'q'
+       if (f > 1) write(prefix, '(a,i0)') 'q', f
+       do d = 0, law % degree_of_field(f)
+          names(law % component_at(FIRST_COORDINATE, d, f) + 1) = trim(prefix) // repeat('t', d)
+       end do
+       do c = FIRST_COORDINATE + 1, law % num_coordinates()
+          do k = 1, law % degree_along(c)
+             names(law % component_at(c, k, f) + 1) = trim(prefix) // repeat(axis(c - FIRST_COORDINATE), k)
+          end do
+       end do
     end do
     do i = 1, space % num_cells
-       do d = 0, degrees - 1
-          values(i, d + 1) = x((i - 1) * degrees + d + 1)
+       do at = 1, stride
+          values(i, at) = x((i - 1) * stride + at)
        end do
     end do
     call written_paraview(space, path, names, values)
@@ -9518,7 +9710,8 @@ program graph_time_integrator
   type(stencil), allocatable :: spatial_discretization_stencil
   type(stencil), allocatable :: derivative_stencils(:)
   real(dp)     , allocatable :: volume(:), q0(:)
-  real(dp) :: extent_a = 0.0_dp, extent_b = 0.0_dp
+  real(dp), allocatable :: extents(:)
+  integer , allocatable :: counts(:)
   integer  :: nodes = 1
   logical  :: over_field = .false.
   type(expression)      , allocatable :: functionals(:)
@@ -9700,7 +9893,7 @@ contains
     ! over a mesh with the spatial derivatives as rows the law reads
     ! the jet along space; otherwise the spatial law is substituted
     if (over_field .and. spatial_rows()) then
-       r = physics_named(trim(cfg % physics), cfg % state_degree, cfg % diffusion, 2)
+       r = physics_named(trim(cfg % physics), cfg % state_degree, cfg % diffusion, size(counts))
     else
        r = physics_named(trim(cfg % physics), cfg % state_degree)
     end if
@@ -9809,10 +10002,10 @@ contains
           call against_the_ode(cfg, schemes, added, f(:, 1))
        end if
        if (lists(cfg % check, 'mode')) then
-          call against_the_mode(space, extent_a, extent_b, cfg % diffusion, cfg % spatial_order, &
+          call against_the_mode(space, cfg % diffusion, cfg % spatial_order, &
                & cfg % design, t(cfg % instants), instant_components(chain, cfg % instants), state_width(cfg))
        end if
-       if (trim(cfg % export) == 'paraview') call exported(cfg, chain, labelled(names, orders), nd)
+       if (trim(cfg % export) == 'paraview') call exported(cfg, chain, labelled(names, orders))
     end if
     printed = printed + 1
   end subroutine one_row
@@ -9943,11 +10136,10 @@ contains
     end do
     write(*,'(a)') line
   end subroutine against_the_ode
-  subroutine exported(cfg, chain, label, nd)
+  subroutine exported(cfg, chain, label)
     type(configuration), intent(in) :: cfg
     type(chain_block)  , intent(in) :: chain(:)
     character(len=*)   , intent(in) :: label
-    integer            , intent(in) :: nd
     character(len=len(label)) :: name
     character(len=256) :: path
     integer :: k, i
@@ -9957,7 +10149,7 @@ contains
     end do
     do k = 1, cfg % instants
        write(path,'(a,a,a,a,i4.4,a)') trim(cfg % export_path), '_', trim(name), '_', k, '.vtu'
-       call export_instant(space, trim(path), nd, instant_components(chain, k))
+       call export_instant(space, trim(path), physics_of(cfg), instant_components(chain, k))
     end do
     write(*,'(a,i0,a,a,a)') '      written ', cfg % instants, ' files ', &
          & trim(cfg % export_path) // '_' // trim(name), '_*.vtu'
@@ -9966,29 +10158,33 @@ contains
     type(configuration), intent(in) :: cfg
     type(expression) :: law
     type(continuous_domain) :: continuous
-    real(dp) :: x, y, began
-    integer  :: n1, n2
+    real(dp) :: began
+    real(dp), allocatable :: reals(:)
     call refuse_unknown(cfg % initial_field, ['constant', 'mode    ', 'bump    '], 'initial_field')
     call refuse_unknown(cfg % export, ['none    ', 'paraview'], 'export')
     call refuse_unknown(cfg % check, ['none    ', 'ode     ', 'mode    ', 'operator', 'passes  ', &
          & 'sinks   '], &
          & 'check')
-    call pair_of(cfg % spatial_counts, x, y, 'counts')
-    n1 = nint(x)
-    n2 = nint(y)
-    if (real(n1, dp) /= x .or. real(n2, dp) /= y) then
+    ! the counts of cells along the spatial coordinates, two or three
+    ! words; every count zero is a run over time alone
+    reals  = reals_of(cfg % spatial_counts, 'counts')
+    counts = nint(reals)
+    if (any(real(counts, dp) /= reals)) then
        error stop 'graph_time_integrator: a count of cells is whole'
     end if
-    over_field = n1 > 0 .or. n2 > 0
-    if (over_field .and. (n1 <= 0 .or. n2 <= 0)) then
-       error stop 'graph_time_integrator: a mesh has cells along both coordinates'
+    over_field = any(counts > 0)
+    if (over_field .and. any(counts <= 0)) then
+       error stop 'graph_time_integrator: a mesh has cells along every coordinate'
     end if
     if (over_field) then
        call refuse_unknown(cfg % spatial_grid, ['uniform', 'random '], 'spatial_grid')
-       call pair_of(cfg % spatial_extent, extent_a, extent_b, 'extents')
+       extents = reals_of(cfg % spatial_extent, 'extents')
+       if (size(extents) /= size(counts)) then
+          error stop 'graph_time_integrator: one extent per count of cells'
+       end if
        began = clock()
        allocate(space)
-       space = spatial_mesh(geometry_of(cfg % spatial_geometry), extent_a, extent_b, n1, n2, &
+       space = spatial_mesh(geometry_of(cfg % spatial_geometry), extents, counts, &
             & trim(cfg % spatial_grid) == 'random', cfg % seed)
        write(*,'(a,i0,a,i0,a,f12.6,a,i0,a,f9.3,a)') '   spatial mesh: cells ', &
             & space % num_cells, '   faces ', space % num_faces, '   area ', sum(space % volume), &
@@ -10002,7 +10198,7 @@ contains
        nodes  = space % num_cells
        volume = space % volume
        if (lists(cfg % check, 'operator')) then
-          call against_the_laplacian(space, extent_a, extent_b, cfg % diffusion, cfg % spatial_order)
+          call against_the_laplacian(space, cfg % diffusion, cfg % spatial_order)
        end if
     else
        nodes  = 1
@@ -10014,18 +10210,24 @@ contains
     continuous = continuous_domain(law)
     q0 = initial_field(law, continuous % num_components(), &
          & cfg % initial_field, cfg % initial_state, cfg % design, &
-         & spatial_discretization_stencil=spatial_discretization_stencil, space=space, a=extent_a, b=extent_b, &
+         & spatial_discretization_stencil=spatial_discretization_stencil, space=space, &
          & spatial_derivative_stencils=derivative_stencils)
   end subroutine field_context
-  subroutine pair_of(pair, x, y, subject)
-    character(len=*), intent(in)  :: pair, subject
-    real(dp)        , intent(out) :: x, y
+  !===================================================================!
+  ! The numbers a setting lists, one per spatial coordinate.
+  !===================================================================!
+  function reals_of(listed, subject) result(x)
+    character(len=*), intent(in) :: listed, subject
+    real(dp), allocatable :: x(:)
     character(len=32), allocatable :: w(:)
-    w = words_of(pair)
-    if (size(w) /= 2) error stop 'graph_time_integrator: two ' // subject // ', one per coordinate'
-    read(w(1), *) x
-    read(w(2), *) y
-  end subroutine pair_of
+    integer :: i
+    w = words_of(listed)
+    if (size(w) < 1) error stop 'graph_time_integrator: ' // subject // ' lists one number per coordinate'
+    allocate(x(size(w)))
+    do i = 1, size(w)
+       read(w(i), *) x(i)
+    end do
+  end function reals_of
   subroutine assembled(cfg, names, orders, schemes, added, passes_check)
     type(configuration), intent(in)  :: cfg
     character(len=*)   , intent(in)  :: names(:)

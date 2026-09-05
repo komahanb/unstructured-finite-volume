@@ -639,9 +639,16 @@ it GMRES on the velocity-pressure block ran to its cap of restarts:
 at 12 x 12, 86 s, 80 percent of it in the Krylov inner products and
 matvecs, against 28 s for the dense factorisation and 12 s
 preconditioned; at 16 x 16, 350 s against 24 s, every printed digit
-the same. `multigrid = T` with the same smoother coarsens by the
-member's aggregates but is slower than GMRES here, over 1500 s at
-16 x 16.
+the same. `preconditioner = multigrid` puts one cycle of the two-level
+object in the same place, the block sweeps around a GMRES solve over
+the aggregates: 26 s at 16 x 16 and 190 s at 32 x 32 against 24 s and
+170 s for the sweeps alone, identical digits, since with the sweeps
+the Krylov iterations are no longer the cost. The profile of the
+preconditioned run puts 24 percent in the stencil matvec, 13 percent
+in the expression evaluated for the residual and the Jacobian, and 3
+percent in the Krylov inner product; the assembly is the next cost.
+`multigrid = T`, the same object as the solver, is slower than GMRES
+here, over 1500 s at 16 x 16.
 
 **Several fields.** A Lagrangian with k multipliers, its last k
 fields, governs k state fields, its first k, one rule each: the

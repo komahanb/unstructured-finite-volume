@@ -23,6 +23,7 @@ module operation_temporal_minimization
   use operation_residual    , only : residual_operator
   use operation_multigrid   , only : multigrid
   use operation_newton      , only : newton
+  use operation_gmres       , only : gmres
   use view_directed_stored  , only : stored_directed_graph
   use field_calculus        , only : FIELD_REAL
   use field_stored          , only : stored_field
@@ -362,6 +363,16 @@ contains
           type is (multigrid)
              if (allocated(inner % aggregates)) then
                 inner % aggregates = compact_labels(inner % aggregates(member))
+             end if
+          type is (gmres)
+             ! and so does a multigrid preconditioner under its Krylov solve
+             if (allocated(inner % preconditioner)) then
+                select type (levels => inner % preconditioner)
+                type is (multigrid)
+                   if (allocated(levels % aggregates)) then
+                      levels % aggregates = compact_labels(levels % aggregates(member))
+                   end if
+                end select
              end if
           end select
        end if

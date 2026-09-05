@@ -845,7 +845,7 @@ module gti_sweeps
   public :: set_linear_solver, set_jacobian, set_storage, set_multigrid, set_preconditioner
   public :: set_rows, set_elimination, spatial_rows
   public :: set_newton_order, newton_order
-  public :: set_aggregates, set_coarse_nodes, coarse_nodes, jacobian_present, multigrid_on
+  public :: set_aggregates, set_coarse_nodes, coarse_nodes, jacobian_present, multigrid_on, coarsens
   public :: read_inner, store_inner, clear_inner, set_linear_stopping, set_linear_budget
   public :: stopping_applied
   public :: functional_of, functional_gradient
@@ -989,7 +989,7 @@ contains
   !===================================================================!
   subroutine set_preconditioner(name)
     character(len=*), intent(in) :: name
-    call refuse_unknown(name, ['none        ', 'gauss_seidel'], 'preconditioner')
+    call refuse_unknown(name, ['none        ', 'gauss_seidel', 'multigrid   '], 'preconditioner')
     chosen_preconditioner = name
     call clear_inner()
   end subroutine set_preconditioner
@@ -1009,6 +1009,13 @@ contains
   pure logical function jacobian_present() result(yes)
     yes = trim(chosen_jacobian) == 'matrix'
   end function jacobian_present
+  !===================================================================!
+  ! Whether a solve coarsens by aggregates: multigrid as the solver,
+  ! or as the preconditioner of the iterative one.
+  !===================================================================!
+  pure logical function coarsens() result(yes)
+    yes = chosen_multigrid .or. trim(chosen_preconditioner) == 'multigrid'
+  end function coarsens
   pure logical function multigrid_on() result(yes)
     yes = chosen_multigrid
   end function multigrid_on
@@ -1062,7 +1069,7 @@ contains
     integer, intent(in) :: count, width
     class(minimizer), allocatable :: inner
     class(minimizer), allocatable :: named
-    type(gmres)        :: krylov
+    type(gmres)        :: krylov, coarse
     type(dense_direct) :: factorisation
     type(multigrid)    :: levels
     type(gauss_seidel) :: sweeps
@@ -1089,11 +1096,33 @@ contains
        krylov % restart = min(count, linear_restart)
        call stopping_applied(krylov, linear_tolerance, linear_criterion, linear_limit_kind, &
             & linear_iterations)
-       if (trim(chosen_preconditioner) == 'gauss_seidel') then
+       select case (trim(chosen_preconditioner))
+       case ('gauss_seidel')
           sweeps % max_iterations = linear_sweeps
           sweeps % block_width    = width
           allocate(krylov % preconditioner, source=sweeps)
-       end if
+       case ('multigrid')
+          ! one cycle: block Gauss-Seidel sweeps, the coarse correction
+          ! by an unpreconditioned solve over the aggregates, sweeps again
+          if (.not. allocated(chosen_aggregates)) then
+             error stop 'gti_sweeps: multigrid coarsens by aggregates, and none were given'
+          end if
+          if (size(chosen_aggregates) /= count) then
+             error stop 'gti_sweeps: one aggregate per unknown'
+          end if
+          sweeps % max_iterations = linear_sweeps
+          sweeps % block_width    = width
+          allocate(levels % smoother, source=sweeps)
+          coarse = gmres()
+          coarse % restart = min(count, linear_restart)
+          call stopping_applied(coarse, linear_tolerance, linear_criterion, linear_limit_kind, &
+               & linear_iterations)
+          allocate(levels % coarse, source=coarse)
+          levels % block_width = width
+          levels % aggregates  = chosen_aggregates
+          call stopping_applied(levels, linear_tolerance, linear_criterion, linear_limit_kind, 1)
+          allocate(krylov % preconditioner, source=levels)
+       end select
        allocate(named, source=krylov)
     end select
     if (.not. chosen_multigrid) then
@@ -2415,7 +2444,7 @@ module gti_march
        & level_couples
   use graph_fractal           , only : graph
   use map_value               , only : VALUE_KNOWN
-  use gti_sweeps              , only : jacobian_present, multigrid_on, newton_order, &
+  use gti_sweeps              , only : jacobian_present, multigrid_on, coarsens, newton_order, &
        & set_aggregates, coarse_nodes, read_inner, store_inner, clear_inner, set_linear_stopping, &
        & stopping_applied
   use util_tally              , only : tally_record, tangent_loops, adjoint_loops
@@ -3090,7 +3119,7 @@ contains
     end if
     call frozen_inputs(q, design_value, rows % num_points(), unknowns, inputs)
     width = rows % num_degrees()
-    if (multigrid_on()) call set_aggregates(rows % aggregates(coarse_nodes(rows % num_nodes())))
+    if (coarsens()) call set_aggregates(rows % aggregates(coarse_nodes(rows % num_nodes())))
     call read_inner(solver % inner, count, width)
     call solver % state(rows, unknowns, unknowns % vertex_set(), count, &
          & stored_inputs = [inputs(2)])
@@ -3214,7 +3243,7 @@ contains
     q(rows % fixed_unknowns()) = rows % fixed_values()
     call frozen_inputs(q, design_value, rows % num_points(), unknowns, inputs)
     width = rows % num_degrees()
-    if (multigrid_on()) call set_aggregates(rows % aggregates(coarse_nodes(rows % num_nodes())))
+    if (coarsens()) call set_aggregates(rows % aggregates(coarse_nodes(rows % num_nodes())))
     call read_inner(newton_solver % inner, count, width)
     call newton_solver % state(rows, unknowns, unknowns % vertex_set(), count, &
          & stored_inputs = [inputs(2)])

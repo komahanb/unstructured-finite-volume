@@ -494,7 +494,13 @@ codebases are read as one construction.
    components and pressure as state fields with their spatial jets,
    the pressure relation in place of continuity, the gauge as fixed
    rows; GMRES preconditioned by block Gauss-Seidel over the tuples
-   (`preconditioner = gauss_seidel`). Not built: the derivative of a
+   (`preconditioner = gauss_seidel`); the tying rows eliminated before
+   each linear solve as the Schur complement over the retained
+   unknowns (`rows = states`, `elimination = numerical`, identical
+   digits, 104 s against 176 at 32 x 32); Halley's step
+   (`higher_order_jacobian_product = 2`) and the Taylor seed of each
+   instant from the jet before it (`predictor_order`). Not built:
+   multigrid over the retained unknowns, the derivative of a
    rule along a coordinate as a rule (mixed jet components), and a
    reverse pass whose cost does not grow as two to the tuple's width.
 

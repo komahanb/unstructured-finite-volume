@@ -24,6 +24,7 @@ module operation_temporal_minimization
   use operation_multigrid   , only : multigrid
   use operation_newton      , only : newton
   use operation_gmres       , only : gmres
+  use operation_elimination , only : elimination
   use view_directed_stored  , only : stored_directed_graph
   use field_calculus        , only : FIELD_REAL
   use field_stored          , only : stored_field
@@ -40,6 +41,10 @@ module operation_temporal_minimization
      integer, allocatable :: member_of(:)
      integer, allocatable :: member_order(:)
      logical :: seed_from_previous = .false.
+     ! the seed of a member from its predecessor as a linear transfer
+     ! of every tuple, one matrix per member: the Taylor shift of the
+     ! stored jet over the step between them; a plain copy when absent
+     real(dp), allocatable :: seed_transfer(:,:,:)
 
      type(driver), private :: runner
      logical     , private :: scheduled = .false.
@@ -139,11 +144,12 @@ contains
 
   end function pairing_of
 
-  subroutine partition(this, member_of, member_order, seed_from_previous)
+  subroutine partition(this, member_of, member_order, seed_from_previous, seed_transfer)
 
     class(temporal_minimizer), intent(inout)        :: this
     integer                  , intent(in)           :: member_of(:), member_order(:)
     logical                  , intent(in), optional :: seed_from_previous
+    real(dp)                 , intent(in), optional :: seed_transfer(:,:,:)
 
     integer :: last_member
 
@@ -166,6 +172,16 @@ contains
     this % member_order = member_order
     this % seed_from_previous = .false.
     if (present(seed_from_previous)) this % seed_from_previous = seed_from_previous
+    if (allocated(this % seed_transfer)) deallocate(this % seed_transfer)
+    if (present(seed_transfer)) then
+       if (size(seed_transfer, 1) /= size(seed_transfer, 2)) then
+          error stop 'temporal_minimizer: a seed transfer is square over the tuple'
+       end if
+       if (size(seed_transfer, 3) /= last_member) then
+          error stop 'temporal_minimizer: one seed transfer per member'
+       end if
+       this % seed_transfer = seed_transfer
+    end if
 
   end subroutine partition
 
@@ -308,7 +324,11 @@ contains
              if (all(fixed(member))) cycle
              if (this % seed_from_previous .and. pass == 1 .and. mm > 1) then
                 previous = pack(all_unknowns, this % member_of == this % member_order(mm - 1))
-                call seed_from_member(x, member, previous)
+                if (allocated(this % seed_transfer)) then
+                   call seed_from_member(x, member, previous, this % seed_transfer(:, :, m))
+                else
+                   call seed_from_member(x, member, previous)
+                end if
              end if
              sub = residual % constrain(member, x)
              if (residual % version() /= 0) then
@@ -373,6 +393,11 @@ contains
                       levels % aggregates = compact_labels(levels % aggregates(member))
                    end if
                 end select
+             end if
+          type is (elimination)
+             ! the rows eliminated over the member are the member's
+             if (allocated(inner % eliminated)) then
+                inner % eliminated = inner % eliminated(member)
              end if
           end select
        end if
@@ -443,14 +468,30 @@ contains
 
   end subroutine local_stored
 
-  subroutine seed_from_member(x, member, previous)
+  subroutine seed_from_member(x, member, previous, transfer)
 
     real(dp), intent(inout) :: x(:)
     integer , intent(in)    :: member(:), previous(:)
+    real(dp), intent(in), optional :: transfer(:,:)
 
     integer :: pieces, i, width
 
     if (size(previous) < 1) return
+
+    ! every tuple of the member is the transfer of the tuple at the
+    ! same position of its predecessor
+    if (present(transfer)) then
+       width = size(transfer, 1)
+       if (size(member) /= size(previous) .or. mod(size(member), width) /= 0) then
+          error stop 'temporal_minimizer: a seed transfer maps a predecessor of the same tuples'
+       end if
+       pieces = size(member) / width
+       do i = 1, pieces
+          x(member((i - 1) * width + 1:i * width)) = &
+               & matmul(transfer, x(previous((i - 1) * width + 1:i * width)))
+       end do
+       return
+    end if
 
     if (size(member) == size(previous)) then
        x(member) = x(previous)

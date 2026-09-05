@@ -660,6 +660,53 @@ dissipation history at Reynolds 1600 needs the vortex with its cos z
 factor at 64 x 64 x 64 cells, 8 million unknowns with the tuple of 31
 components, three orders beyond the 8 x 8 x 8 run at 160 s; it is not
 within reach of this build.
+
+**The rows eliminated before the linear solve.** `rows` names the
+kinds of unknowns the linear solve iterates over, and `elimination`
+states how a kind left out was removed. `symbolic` substitutes the
+equation as the system is formed, which exists for the spatial law
+as the fitted balance and not for the family's rows. `numerical`
+assembles every row and eliminates the kinds left out before each
+linear solve: the tying rows of the time derivatives, every component
+of a field's time range but the one its rule governs, and the fit's
+rows of the spatial derivatives, each linear with a diagonal and
+reading retained unknowns and eliminated rows before it, so the
+eliminated block is unit triangular in some order. The solve is the
+Schur complement (J_KK - J_KE (I + N)^-1 J_EK) x_K = b_K - J_KE
+(I + N)^-1 b_E over the retained unknowns K, the eliminated ones read
+back by one substitution, and the Newton iteration over the whole
+system takes the same steps either way: only the linear solve changes
+shape, the Krylov vectors, the Gauss-Seidel blocks and the restart
+basis over K alone, three components per cell for the vortex in place
+of seventeen. Every printed digit is the same with `rows = states` as
+with all three kinds, for the vortex and for van der Pol under bdf,
+adams and dirk together; the vortex run reads 4.3 s against 5.0 s at
+8 x 8, 18.1 against 23.9 at 16 x 16, 104 against 176 at 32 x 32. The
+complement is read from the explicit tangent's triples, so a
+matrix-free Jacobian is refused under it, as is multigrid over the
+retained unknowns, which is not built; an eliminated row without a
+diagonal, or rows reading one another in a cycle, stop the solve
+naming the kind to state as rows. Under a staged family the states at
+the stages are the tied components, so its time derivatives stay as
+rows.
+
+**The Newton iteration.** `higher_order_jacobian_product = 2` takes
+Halley's step, the second-order term of the Chebyshev family solved
+against the same frozen Jacobian: the vortex at 8 x 8 goes from 106
+to 79 residual evaluations over the same 27 Newton solves, 4.7 to
+4.1 s, van der Pol from 885 to 703, every printed digit the same.
+`predictor_order = k` seeds each instant of a sequential sweep from
+the one before by its stored jet shifted over the step to order k,
+the Taylor polynomial of the state in time in place of the copy: van
+der Pol under bdf at 21 and 81 instants goes from 368 to 326 and 1256
+to 1158 evaluations, adams2 from 201 to 176, adams3 at 81 instants
+from 957 to 870; at 21 instants adams3 and adams4 go from 295 and 382
+to over a thousand, the derivative components of the multistep rows
+at a step of 0.35 being parasitic and the extrapolation from them
+worse than the copy, so the order stays a choice of the run. On the
+vortex at nu = 0.01 the state moves by e^(-0.002) between instants and
+the seed changes nothing. With rows eliminated and Halley's step
+together the 16 x 16 vortex reads 16.1 s against 23.9.
 `multigrid = T`, the same object as the solver, is slower than GMRES
 here, over 1500 s at 16 x 16.
 
@@ -778,10 +825,12 @@ period stores the period as the shift of its head cell into the
 face's frame, and the mesh's measurements and the fits' neighbourhoods
 read it, so the box has no boundary. The operator side follows its own
 arrow, in one of two forms chosen by
-`rows`. With `rows = states state-time-derivatives` the diffusion
+`rows`. With `rows = states state-time-derivatives` and
+`elimination = symbolic` the diffusion
 operator is a fitted polynomial balance of degree `spatial_order` with
 conductivity `diffusion`, substituted into the state row. With
-`state-spatial-derivatives` listed as well, the state stores the jet
+`state-spatial-derivatives` listed as well, or under
+`elimination = numerical`, the state stores the jet
 along space, the first and second derivative along each coordinate,
 each component tied to the values at every instant by the fit's own
 row, the derivative of the polynomial form at the cell centre over the

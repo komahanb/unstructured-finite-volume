@@ -65,6 +65,7 @@ operation_diffusion.o \
 operation_gauss_seidel.o \
 operation_jacobi.o \
 operation_gmres.o \
+operation_elimination.o \
 operation_newton.o \
 operation_multigrid.o \
 view_read_write.o \

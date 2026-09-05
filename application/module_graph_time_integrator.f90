@@ -69,11 +69,18 @@ module gti_configuration
      ! states how. The states are always assembled.
      character(len=64) :: rows            = 'states state-time-derivatives'
 
-     ! How a kind left out of rows was removed. symbolic substitutes the
-     ! equation out as the system is formed; numerical assembles its rows
-     ! and eliminates them before the solve. Both solve the same
-     ! equations.
+     ! How a kind left out of rows is eliminated. symbolic substitutes
+     ! the equation out as the system is formed: the spatial law as the
+     ! fitted balance. numerical assembles the rows and eliminates them
+     ! before each linear solve, the Schur complement over the retained
+     ! unknowns: any kind, the Newton steps the same as with the rows.
      character(len=16) :: elimination     = 'symbolic'
+
+     ! The seed of each instant's Newton solve in a sequential sweep:
+     ! the instant before, its stored jet along time shifted over the
+     ! step to this order, the Taylor polynomial of the state in time
+     ! as the predictor; zero copies the instant before.
+     integer           :: predictor_order = 0
      character(len=16) :: storage         = 'dense'
      logical           :: multigrid       = .false.
      character(len=32) :: preconditioner  = 'none'
@@ -257,6 +264,8 @@ contains
        cfg % rows = value
     case ('elimination')
        cfg % elimination = value
+    case ('predictor_order')
+       read(value, *) cfg % predictor_order
     case ('storage')
        cfg % storage = value
     case ('multigrid')
@@ -407,6 +416,7 @@ contains
     write(*,'(a,a)')       '   jacobian                 ', trim(cfg % jacobian)
     write(*,'(a,a)')       '   rows                     ', trim(cfg % rows)
     write(*,'(a,a)')       '   elimination              ', trim(cfg % elimination)
+    write(*,'(a,i0)')      '   predictor order          ', cfg % predictor_order
     write(*,'(a,a)')       '   storage                  ', trim(cfg % storage)
     write(*,'(a,l1)')      '   multigrid                ', cfg % multigrid
     write(*,'(a,a)')       '   preconditioner           ', trim(cfg % preconditioner)
@@ -836,14 +846,17 @@ module gti_sweeps
   use operation_multigrid   , only : multigrid
   use operation_gauss_seidel, only : gauss_seidel
   use operation_gmres       , only : gmres
+  use operation_elimination , only : elimination
   use operation_minimization, only : minimizer, relative, absolute, by_rate, by_count
+  use gti_layout            , only : tuple_layout
   implicit none
   private
   public :: forward_pass, reverse_pass, pass_of, pass_substitutions, choose
   integer, parameter :: forward_pass = 1
   integer, parameter :: reverse_pass = 2
   public :: set_linear_solver, set_jacobian, set_storage, set_multigrid, set_preconditioner
-  public :: set_rows, set_elimination, spatial_rows
+  public :: set_rows, set_elimination, spatial_rows, eliminated_components
+  public :: set_predictor_order, predictor_order
   public :: set_newton_order, newton_order
   public :: set_aggregates, set_coarse_nodes, coarse_nodes, jacobian_present, multigrid_on, coarsens
   public :: read_inner, store_inner, clear_inner, set_linear_stopping, set_linear_budget
@@ -853,7 +866,9 @@ module gti_sweeps
   character(len=16), save :: chosen_jacobian = 'matrix'
   character(len=64), save :: chosen_rows        = 'states state-time-derivatives'
   logical, save :: rows_in_space = .false.
+  logical, save :: rows_in_time  = .true.
   character(len=16), save :: chosen_elimination = 'symbolic'
+  integer          , save :: chosen_predictor_order = 0
   integer          , save :: chosen_newton_order = 1
   character(len=16), save :: chosen_storage  = 'dense'
   logical          , save :: chosen_multigrid = .false.
@@ -925,9 +940,50 @@ contains
     chosen_solver = name
     call clear_inner()
   end subroutine set_linear_solver
+  !===================================================================!
+  ! Whether the state stores the jet along space and the law reads it:
+  ! the spatial derivatives are rows of the solve, or rows assembled
+  ! and eliminated numerically. Otherwise the spatial law is
+  ! substituted as the fitted balance.
+  !===================================================================!
   logical function spatial_rows()
-    spatial_rows = rows_in_space
+    spatial_rows = rows_in_space .or. trim(chosen_elimination) == 'numerical'
   end function spatial_rows
+  !===================================================================!
+  ! The components of the tuple eliminated before the linear solve,
+  ! one flag per component: the kinds left out of rows, under a
+  ! numerical elimination. The time derivatives' rows are the family's
+  ! tying rows, every component of a field's time range but the one
+  ! its rule governs, the primary row; the spatial derivatives' rows
+  ! are the fit's. The rules' own rows are never eliminated.
+  !===================================================================!
+  function eliminated_components(layout, primary) result(eliminated)
+    type(tuple_layout), intent(in) :: layout
+    integer           , intent(in) :: primary(:)
+    logical, allocatable :: eliminated(:)
+    integer :: c, f, d
+    if (size(primary) /= layout % fields) then
+       error stop 'gti_sweeps: one primary row per field'
+    end if
+    allocate(eliminated(layout % stride), source=.false.)
+    if (trim(chosen_elimination) /= 'numerical') then
+       if (.not. rows_in_time) then
+          error stop 'gti_sweeps: the family substituted into the rule is not implemented; &
+               &elimination = numerical eliminates the assembled time derivative rows'
+       end if
+       return
+    end if
+    do c = 0, layout % stride - 1
+       f = layout % field_of(c)
+       d = layout % degree_of(c)
+       if (c == primary(f)) cycle
+       if (d < layout % count(f)) then
+          eliminated(c + 1) = .not. rows_in_time
+       else
+          eliminated(c + 1) = .not. rows_in_space
+       end if
+    end do
+  end function eliminated_components
   subroutine set_rows(name)
     character(len=*), intent(in) :: name
     logical :: states, in_time, in_space
@@ -940,17 +996,11 @@ contains
     if (.not. states) then
        error stop 'gti_sweeps: the states are always assembled; rows names them'
     end if
-    ! The scheme states one row per derived degree, so the time
-    ! derivatives are assembled in the current implementation and cannot yet be left out. The
-    ! spatial law is substituted into the residual, so its derivatives have
-    ! no rows to assemble yet.
-    if (.not. in_time) then
-       error stop 'gti_sweeps: leaving the time derivatives out of rows is not implemented; &
-            &the scheme assembles one row for each of them'
-    end if
-    ! with the spatial derivatives as rows the state stores the jet
-    ! along space and the law reads it; without them the spatial law
-    ! is substituted into the state row
+    ! a kind left out of rows is eliminated: the time derivatives only
+    ! numerically, their family rows assembled then eliminated; the
+    ! spatial derivatives numerically the same way, or symbolically as
+    ! the fitted balance substituted into the state row
+    rows_in_time  = in_time
     rows_in_space = in_space
     chosen_rows = name
     call clear_inner()
@@ -958,15 +1008,19 @@ contains
   subroutine set_elimination(name)
     character(len=*), intent(in) :: name
     call refuse_unknown(name, ['symbolic ', 'numerical'], 'elimination')
-    ! A numerical elimination assembles the rows it then removes, and
-    ! no kind left out of rows has rows to assemble yet.
-    if (trim(name) == 'numerical') then
-       error stop 'gti_sweeps: a numerical elimination assembles the rows it removes, &
-            &and no kind final_imbalance out of rows is assembled yet'
-    end if
     chosen_elimination = name
     call clear_inner()
   end subroutine set_elimination
+  subroutine set_predictor_order(order)
+    integer, intent(in) :: order
+    if (order < 0) then
+       error stop 'gti_sweeps: the predictor order is zero, the copy, or the order of the Taylor seed'
+    end if
+    chosen_predictor_order = order
+  end subroutine set_predictor_order
+  pure integer function predictor_order()
+    predictor_order = chosen_predictor_order
+  end function predictor_order
   pure function rows_named() result(name)
     character(len=:), allocatable :: name
     name = trim(chosen_rows) // ', eliminated ' // trim(chosen_elimination)
@@ -1065,7 +1119,51 @@ contains
     linear_sweeps     = sweeps
     linear_iterations = iterations
   end subroutine set_linear_budget
-  function inner_minimizer(count, width) result(inner)
+  !===================================================================!
+  ! The inner minimizer of a Newton solve over count unknowns in
+  ! tuples of width. With rows eliminated, the minimizer is stated on
+  ! the whole system and solves the Schur complement over the retained
+  ! unknowns, whose tuples are narrower by the eliminated components.
+  !===================================================================!
+  function inner_minimizer(count, width, eliminated) result(inner)
+    integer, intent(in) :: count, width
+    logical, intent(in) :: eliminated(:)
+    class(minimizer), allocatable :: inner
+    type(elimination) :: complement
+    integer :: i
+    if (size(eliminated) /= count) then
+       error stop 'gti_sweeps: one elimination flag per unknown'
+    end if
+    if (.not. any(eliminated)) then
+       inner = solve_minimizer(count, width)
+       return
+    end if
+    if (mod(count, width) /= 0) then
+       error stop 'gti_sweeps: the unknowns come in whole tuples'
+    end if
+    do i = 1, count
+       if (eliminated(i) .neqv. eliminated(mod(i - 1, width) + 1)) then
+          error stop 'gti_sweeps: the components eliminated are the same in every tuple'
+       end if
+    end do
+    if (trim(chosen_jacobian) == 'free') then
+       error stop 'gti_sweeps: the rows eliminated are read from the explicit tangent, &
+            &which a matrix-free jacobian does not store'
+    end if
+    if (chosen_multigrid .or. trim(chosen_preconditioner) == 'multigrid') then
+       error stop 'gti_sweeps: multigrid over the retained unknowns is not implemented; &
+            &eliminate rows with preconditioner = none or gauss_seidel'
+    end if
+    complement % eliminated = eliminated
+    allocate(complement % inner, source=solve_minimizer(count - count_of(eliminated), &
+         & width - count_of(eliminated(1:width))))
+    allocate(inner, source=complement)
+  end function inner_minimizer
+  pure integer function count_of(flags)
+    logical, intent(in) :: flags(:)
+    count_of = count(flags)
+  end function count_of
+  function solve_minimizer(count, width) result(inner)
     integer, intent(in) :: count, width
     class(minimizer), allocatable :: inner
     class(minimizer), allocatable :: named
@@ -1144,7 +1242,7 @@ contains
     call stopping_applied(levels, linear_tolerance, linear_criterion, linear_limit_kind, &
          & linear_iterations)
     allocate(inner, source=levels)
-  end function inner_minimizer
+  end function solve_minimizer
   subroutine stopping_applied(m, tolerance, criterion, limit_kind, iterations)
     class(minimizer), intent(inout) :: m
     real(dp)        , intent(in)    :: tolerance
@@ -1154,14 +1252,28 @@ contains
     m % limit_kind     = limit_kind
     m % max_iterations = iterations
   end subroutine stopping_applied
-  subroutine read_inner(inner, count, width)
+  subroutine read_inner(inner, count, width, eliminated)
     class(minimizer), allocatable, intent(out) :: inner
     integer                      , intent(in)  :: count, width
-    if (allocated(kept_inner) .and. .not. chosen_multigrid) then
+    logical                      , intent(in)  :: eliminated(:)
+    logical :: reusable
+    reusable = allocated(kept_inner) .and. .not. chosen_multigrid
+    ! a stored minimizer is read again over the same unknowns: with
+    ! rows eliminated, the same flags
+    if (reusable) then
+       select type (kept_inner)
+       type is (elimination)
+          reusable = size(kept_inner % eliminated) == size(eliminated)
+          if (reusable) reusable = all(kept_inner % eliminated .eqv. eliminated)
+       class default
+          reusable = .not. any(eliminated)
+       end select
+    end if
+    if (reusable) then
        call move_alloc(kept_inner, inner)
     else
        call clear_inner()
-       allocate(inner, source=inner_minimizer(count, width))
+       allocate(inner, source=inner_minimizer(count, width, eliminated))
     end if
   end subroutine read_inner
   subroutine store_inner(inner)
@@ -2030,6 +2142,7 @@ module gti_block
   use operation_coupling   , only : matrix_scheme_connectivity, connectivity_terms
   use operation_expression    , only : expression
   use view_directed        , only : forward
+  use gti_layout           , only : tuple_layout
   implicit none
   private
   public :: block_residual
@@ -2041,6 +2154,11 @@ module gti_block
   type, extends(residual_operator) :: block_residual
      type(block_layout)      , private :: layout
      integer, allocatable    , private :: free(:)
+     ! one flag per unknown: eliminated before the linear solves
+     logical, allocatable    , private :: eliminated(:)
+     ! the time of every moment from the block's first, where every
+     ! slice is one instant
+     real(dp), allocatable   , private :: moment_time(:)
      type(matrix_scheme_connectivity), allocatable, private :: connectivity(:)
      ! the rows tying the spatial derivative components to the values,
      ! as the derived rows read them: row, column, minus the weight
@@ -2059,6 +2177,12 @@ module gti_block
      procedure :: aggregates
      procedure :: with_connectivity
      procedure :: with_spatial_rows
+     procedure :: with_elimination
+     procedure :: eliminated_unknowns
+     procedure :: with_moment_times
+     procedure :: moment_times
+     procedure :: has_moment_times
+     procedure :: taylor_transfers
      procedure :: rows_terms
      procedure :: member_order
      procedure :: sweep_labels
@@ -2208,6 +2332,88 @@ contains
     call this % attach_connected_stencil(stencil(r(1:n), c(1:n), w(1:n), spread(0.0_dp, 1, this % num_unknowns()), &
          & 'spatial discretization stencil'))
   end subroutine spatial_discretization_laid
+  !===================================================================!
+  ! The tuple components eliminated before the linear solves, one flag
+  ! per component, the same at every point of the block.
+  !===================================================================!
+  subroutine with_elimination(this, components)
+    class(block_residual), intent(inout) :: this
+    logical              , intent(in)    :: components(:)
+    integer :: u, width
+    width = this % num_degrees()
+    if (size(components) /= width) then
+       error stop 'gti_block: one elimination flag per tuple component'
+    end if
+    this % eliminated = [(components(mod(u - 1, width) + 1), u = 1, this % num_unknowns())]
+  end subroutine with_elimination
+  subroutine with_moment_times(this, t)
+    class(block_residual), intent(inout) :: this
+    real(dp)             , intent(in)    :: t(:)
+    this % moment_time = t
+  end subroutine with_moment_times
+  pure logical function has_moment_times(this)
+    class(block_residual), intent(in) :: this
+    has_moment_times = allocated(this % moment_time)
+  end function has_moment_times
+  function moment_times(this) result(t)
+    class(block_residual), intent(in) :: this
+    real(dp), allocatable :: t(:)
+    if (.not. allocated(this % moment_time)) then
+       error stop 'gti_block: the moments of a staged block are not at one instant each; &
+            &the Taylor seed over stages is not implemented'
+    end if
+    t = this % moment_time
+  end function moment_times
+  !===================================================================!
+  ! The Taylor shift of the tuple from one member to the next in the
+  ! sweep order, one matrix per member: each time degree of a field
+  ! shifted over the step h by the degrees above it up to the given
+  ! order, x_d(t + h) = sum_k h^k / k! x_(d+k); the spatial components
+  ! pass unchanged. The members are the moments, and the first in the
+  ! order is not seeded, its matrix the identity.
+  !===================================================================!
+  function taylor_transfers(this, layout, order, taylor_order) result(transfer)
+    class(block_residual), intent(in) :: this
+    type(tuple_layout)   , intent(in) :: layout
+    integer              , intent(in) :: order(:), taylor_order
+    real(dp), allocatable :: transfer(:,:,:)
+    real(dp), allocatable :: t(:)
+    real(dp) :: h, term
+    integer :: m, mm, width, f, d, k, i
+    t     = this % moment_times()
+    width = this % num_degrees()
+    if (layout % stride /= width) then
+       error stop 'gti_block: the layout and the block agree on the tuple width'
+    end if
+    allocate(transfer(width, width, size(t)), source=0.0_dp)
+    do m = 1, size(t)
+       do i = 1, width
+          transfer(i, i, m) = 1.0_dp
+       end do
+    end do
+    do mm = 2, size(order)
+       m = order(mm)
+       h = t(m) - t(order(mm - 1))
+       do f = 1, layout % fields
+          do d = 0, layout % count(f) - 1
+             term = 1.0_dp
+             do k = 1, min(taylor_order, layout % count(f) - 1 - d)
+                term = term * h / real(k, dp)
+                transfer(layout % row(f, d) + 1, layout % row(f, d + k) + 1, m) = term
+             end do
+          end do
+       end do
+    end do
+  end function taylor_transfers
+  function eliminated_unknowns(this) result(eliminated)
+    class(block_residual), intent(in) :: this
+    logical, allocatable :: eliminated(:)
+    if (allocated(this % eliminated)) then
+       eliminated = this % eliminated
+    else
+       allocate(eliminated(this % num_unknowns()), source=.false.)
+    end if
+  end function eliminated_unknowns
   subroutine with_spatial_rows(this, r, c, w)
     class(block_residual), intent(inout) :: this
     integer              , intent(in)    :: r(:), c(:)
@@ -2290,6 +2496,8 @@ contains
     lin % residual_operator = this % residual_operator % linearize(input_graph, inputs, rhs, transposed, mark)
     lin % layout = this % layout
     if (allocated(this % free)) lin % free = this % free
+    if (allocated(this % eliminated)) lin % eliminated = this % eliminated
+    if (allocated(this % moment_time)) lin % moment_time = this % moment_time
     if (allocated(this % spatial_r)) call lin % with_spatial_rows(this % spatial_r, this % spatial_c, this % spatial_w)
   end function block_linear_block
   !===================================================================!
@@ -2315,6 +2523,8 @@ contains
     else
        sub % free = free
     end if
+    if (allocated(this % eliminated)) sub % eliminated = this % eliminated(free)
+    if (allocated(this % moment_time)) sub % moment_time = this % moment_time
     if (allocated(this % spatial_r)) call spatial_rows_constrained(this, free, sub)
   end function block_constrained
   !===================================================================!
@@ -2446,7 +2656,7 @@ module gti_march
   use map_value               , only : VALUE_KNOWN
   use gti_sweeps              , only : jacobian_present, multigrid_on, coarsens, newton_order, &
        & set_aggregates, coarse_nodes, read_inner, store_inner, clear_inner, set_linear_stopping, &
-       & stopping_applied
+       & stopping_applied, eliminated_components, predictor_order
   use util_tally              , only : tally_record, tangent_loops, adjoint_loops
   implicit none
   type :: imbalance
@@ -2936,6 +3146,20 @@ contains
     call rows % placed_on(tower, block)
     call rows % with_connectivity(connectivity)
     if (ns > 0) call rows % with_spatial_rows(rs, cs, ws)
+    call rows % with_elimination(eliminated_components(layout, layout % primary_rows(scheme)))
+    ! every slice one instant: the time of each from the first, the
+    ! slices' steps summed
+    if (.not. staged) then
+       block
+          real(dp), allocatable :: t(:)
+          allocate(t(n))
+          t(1) = 0.0_dp
+          do k = 2, n
+             t(k) = t(k - 1) + dt(k)
+          end do
+          call rows % with_moment_times(t)
+       end block
+    end if
     if (associated(below)) then
        call tower % tuples_of(below, table)
        call tower % value_of(below, spatial_weights)
@@ -3120,7 +3344,7 @@ contains
     call frozen_inputs(q, design_value, rows % num_points(), unknowns, inputs)
     width = rows % num_degrees()
     if (coarsens()) call set_aggregates(rows % aggregates(coarse_nodes(rows % num_nodes())))
-    call read_inner(solver % inner, count, width)
+    call read_inner(solver % inner, count, width, rows % eliminated_unknowns())
     call solver % state(rows, unknowns, unknowns % vertex_set(), count, &
          & stored_inputs = [inputs(2)])
     solver % explicit       = jacobian_present()
@@ -3244,7 +3468,7 @@ contains
     call frozen_inputs(q, design_value, rows % num_points(), unknowns, inputs)
     width = rows % num_degrees()
     if (coarsens()) call set_aggregates(rows % aggregates(coarse_nodes(rows % num_nodes())))
-    call read_inner(newton_solver % inner, count, width)
+    call read_inner(newton_solver % inner, count, width, rows % eliminated_unknowns())
     call newton_solver % state(rows, unknowns, unknowns % vertex_set(), count, &
          & stored_inputs = [inputs(2)])
     newton_solver % explicit       = jacobian_present()
@@ -3256,7 +3480,15 @@ contains
          & stored_inputs = [inputs(2)])
     call stopping_applied(solver, stopping_tolerance, stopping_criterion, stopping_budget, &
          & stopping_iterations)
-    call solver % partition(label, order, seed_from_previous=sequential_time)
+    ! the Taylor seed where every member is one instant of known time;
+    ! the stages of a staged block are seeded by the copy
+    if (predictor_order() > 0 .and. sequential_time .and. .not. sequential_space &
+         & .and. rows % has_moment_times()) then
+       call solver % partition(label, order, seed_from_previous=.true., &
+            & seed_transfer=rows % taylor_transfers(tuple_layout(rows % rule()), order, predictor_order()))
+    else
+       call solver % partition(label, order, seed_from_previous=sequential_time)
+    end if
     allocate(rhs(count), source=0.0_dp)
     call solver % solve(rhs, q, achieved)
     call clear_inner()
@@ -10014,7 +10246,7 @@ program graph_time_integrator
        & instant_components, chain_derivative, asymmetry, sink_costates, &
        & goal_oriented_partition
   use gti_sweeps            , only : spatial_rows, set_linear_solver, set_jacobian, set_storage, set_multigrid, set_preconditioner, &
-       & set_rows, set_elimination, &
+       & set_rows, set_elimination, set_predictor_order, &
        & set_coarse_nodes, set_linear_budget, set_newton_order
   use gti_sweeps            , only : pass_of, forward_pass, reverse_pass
   use operation_minimization, only : relative, absolute, by_count, by_rate
@@ -10052,6 +10284,7 @@ program graph_time_integrator
   call set_jacobian(cfg % jacobian)
   call set_rows(cfg % rows)
   call set_elimination(cfg % elimination)
+  call set_predictor_order(cfg % predictor_order)
   call set_storage(cfg % storage)
   call set_multigrid(cfg % multigrid)
   call set_preconditioner(trim(cfg % preconditioner))

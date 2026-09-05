@@ -707,6 +707,33 @@ worse than the copy, so the order stays a choice of the run. On the
 vortex at nu = 0.01 the state moves by e^(-0.002) between instants and
 the seed changes nothing. With rows eliminated and Halley's step
 together the 16 x 16 vortex reads 16.1 s against 23.9.
+
+**The spatial order.** `spatial_order` is the degree of the
+polynomial form whose derivatives at the cell centre tie the jet to
+the values over the cell's neighbourhood, and the stencils are the
+same procedure at every degree: the neighbourhood grows until it has
+as many points as the form has members, then until the members are
+independent on its points. Degree 2 is the compact form, the powers
+of one coordinate on the cell and its face neighbours; degree 4 is
+the full quartic on the 25 points of three rings; degree 6 the full
+sextic on 41 points, which the 8 x 8 periodic box cannot store. At
+16 x 16, bdf2 over 11 instants, the vortex at the last instant reads
+
+    degree   velocity   pressure   divergence   energy   dissipation   time
+    2        5.7e-2     6.4e-2     6.6e-2       9.582    0.3643        18 s
+    4        9.5e-3     1.9e-2     1.2e-2       9.656    0.3835        67 s
+    6        2.2e-3     2.7e-3     2.8e-3       9.670    0.3867       145 s
+
+against the exact 9.675 and 0.3870, with the rows eliminated and
+Halley's step; degree 4 from 8 x 8 to 16 x 16 divides the velocity
+error by 10.7, the pressure error by 17 and the divergence by 6.9.
+The pure-member quartic, the powers of one coordinate on two rings,
+reads 4.1e-2 for the velocity at 16 x 16 and is slower; it is not
+taken. An odd degree is refused: its top members are odd about the
+centre, so the second derivatives at the centre are the even degree
+below over the same points, the full quadratic over two rings and
+more, whose laplacian has a grid mode in its kernel; at degree 3 the
+pressure grew to 1e13 in one step, on two rings and on three.
 `multigrid = T`, the same object as the solver, is slower than GMRES
 here, over 1500 s at 16 x 16.
 

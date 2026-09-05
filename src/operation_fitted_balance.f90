@@ -223,7 +223,7 @@ contains
     type(stored_field)   :: positions
     class(field), allocatable :: fitted
     real(dp), allocatable :: centres(:), pts(:), w(:), weights(:), offsets(:,:)
-    integer , allocatable :: rows(:), columns(:), cell_neighbourhood(:)
+    integer , allocatable :: rows(:), columns(:), cell_neighbourhood(:), active(:)
     type(triple_list) :: triples
     integer :: nv, c, j, npts, width, d
 
@@ -238,8 +238,11 @@ contains
        error stop 'fitted_derivative: one order per coordinate of the mesh'
     end if
     call values_of(m % cell_centre(), centres)
+    ! the neighbourhood grows until it has as many points as the
+    ! form has active members
+    call shape % members(active)
     do c = 1, nv
-       call m % neighbourhood([c], width, shape % num_members(), cell_neighbourhood, offsets)
+       call m % neighbourhood([c], width, size(active), cell_neighbourhood, offsets)
        npts = size(cell_neighbourhood)
        allocate(pts(d * npts))
        do j = 1, npts

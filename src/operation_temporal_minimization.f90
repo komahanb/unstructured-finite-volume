@@ -22,6 +22,7 @@ module operation_temporal_minimization
   use operation_driver      , only : driver, pairing
   use operation_residual    , only : residual_operator
   use operation_multigrid   , only : multigrid
+  use operation_newton      , only : newton
   use view_directed_stored  , only : stored_directed_graph
   use field_calculus        , only : FIELD_REAL
   use field_stored          , only : stored_field
@@ -352,6 +353,17 @@ contains
     type is (multigrid)
        if (allocated(local % aggregates)) then
           local % aggregates = compact_labels(local % aggregates(member))
+       end if
+    type is (newton)
+       ! a Newton solve over the member coarsens by the member's
+       ! aggregates as well
+       if (allocated(local % inner)) then
+          select type (inner => local % inner)
+          type is (multigrid)
+             if (allocated(inner % aggregates)) then
+                inner % aggregates = compact_labels(inner % aggregates(member))
+             end if
+          end select
        end if
     end select
 

@@ -148,6 +148,7 @@ module field_forms
      procedure :: slopes    => polynomial_slopes
      procedure :: derivatives => polynomial_derivatives
      procedure :: dimension => polynomial_dimension
+     procedure :: pure_members
 
   end type polynomial_form
 
@@ -424,6 +425,27 @@ contains
     end do
 
   end subroutine polynomial_derivatives
+
+  !-------------------------------------------------------------------!
+  ! The members that are powers of one coordinate, the constant among
+  ! them: the form restricted to these is the compact one, whose
+  ! derivatives on a cell and its face neighbours are the central
+  ! differences.
+  !-------------------------------------------------------------------!
+
+  pure subroutine pure_members(this, list)
+
+    class(polynomial_form), intent(in)  :: this
+    integer, allocatable  , intent(out) :: list(:)
+
+    integer :: m
+
+    list = [integer ::]
+    do m = 1, size(this % power, 2)
+       if (count(this % power(:, m) > 0) <= 1) list = [list, m]
+    end do
+
+  end subroutine pure_members
 
   pure real(dp) function monomial(r, power) result(v)
 

@@ -465,7 +465,9 @@ codebases are read as one construction.
    coordinate c, a component of the state's tuple, and with
    `rows = ... state-spatial-derivatives` each component is tied to
    the values by the fit's row (`fitted_derivative_stencil`, the
-   derivative multi-index of the polynomial form at the cell centre),
+   derivative multi-index of the compact polynomial form at the cell
+   centre, the powers of one coordinate on the cell and its face
+   neighbours),
    assembled beside the family's rows and read by the same tangent,
    adjoint and Lagrangian terms. A spatial derivative inside a product
    with the state is then a product of leaves, nodal, with exact
@@ -486,8 +488,14 @@ codebases are read as one construction.
    (`config/algebraic.cfg`, agreeing with `uniform.cfg` to 3.7e-12).
    Not built: `design(j)`, and a second field in the spatial export
    and the initial field's lower components beyond the first field.
-3. **Configured physics.** A rule chosen by name in `gti_configuration`,
-   which deletes `physics_vanderpol.f90`.
+3. **Configured physics.** Built: `physics = vanderpol |
+   vanderpol_algebraic | taylor_green` selects the Lagrangian in
+   `gti_physics`; the Taylor-Green vortex is the first flow, velocity
+   components and pressure as state fields with their spatial jets,
+   the pressure relation in place of continuity, the gauge as fixed
+   rows. Not built: the derivative of a rule along a coordinate as a
+   rule (mixed jet components), and a reverse pass whose cost does not
+   grow as two to the tuple's width.
 
 ## What is not built
 

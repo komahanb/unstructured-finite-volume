@@ -469,7 +469,7 @@ module gti_physics
   implicit none
   private
   public :: van_der_pol, van_der_pol_energy, van_der_pol_dissipation
-  public :: physics_named, functional_of_physics
+  public :: physics_named, functional_of_physics, gauge_field_of
   ! the van der pol Lagrangian over the state q and its costate; the
   ! algebraic form adds y = q**2 as a second state field with its own
   ! multiplier, so the fields are q, y, lambda, mu
@@ -561,19 +561,130 @@ contains
     real(dp)        , intent(in), optional :: diffusion
     integer         , intent(in), optional :: dimension
     type(expression) :: r
-    r = euler_lagrange(lagrangian(energy_rule(), degree, 'van der pol lagrangian', algebraic_named(name), &
-         & diffusion, dimension), 1, 'van der pol residual')
+    if (trim(name) == 'taylor_green') then
+       if (.not. present(dimension)) then
+          error stop 'gti_physics: the Taylor-Green vortex is a flow over a mesh'
+       end if
+       if (degree /= 1) then
+          error stop 'gti_physics: the Taylor-Green vortex is of first order in time'
+       end if
+       r = euler_lagrange(taylor_green(kinetic_energy_rule(dimension), dimension, 'taylor-green lagrangian'), 1, &
+            & 'taylor-green momentum')
+    else
+       r = euler_lagrange(lagrangian(energy_rule(), degree, 'van der pol lagrangian', algebraic_named(name), &
+            & diffusion, dimension), 1, 'van der pol residual')
+    end if
   end function physics_named
+  !===================================================================!
+  ! THE TAYLOR-GREEN VORTEX: incompressible flow on the periodic box,
+  ! the velocity components u_i and the pressure p as state fields,
+  ! one multiplier each. Momentum in each direction,
+  !
+  !      u_i,t + sum_j u_j u_i,j + p,i - nu sum_j u_i,jj = 0,
+  !
+  ! and the pressure relation, the divergence of momentum with the
+  ! flow divergence-free,
+  !
+  !      sum_j p,jj + sum_jk u_j,k u_k,j = 0,
+  !
+  ! every derivative a component of the jet. nu is the design. The
+  ! pressure is determined up to a constant: its gauge is the last
+  ! state field, fixed at one node.
+  !===================================================================!
+  function taylor_green(functional, dimension, label) result(l)
+    type(expression), intent(in) :: functional
+    integer         , intent(in) :: dimension
+    character(len=*), intent(in) :: label
+    type(expression) :: l
+    type(expression) :: rule, momentum, relation, nu
+    integer :: i, j, k, d
+    integer, allocatable :: field_degrees(:)
+    d  = dimension
+    nu = design()
+    rule = functional
+    do i = 1, d
+       momentum = derivative(unknown(i), 1) + derivative_along(unknown(d + 1), FIRST_COORDINATE + i, 1)
+       do j = 1, d
+          momentum = momentum + unknown(j) * derivative_along(unknown(i), FIRST_COORDINATE + j, 1) &
+               & - nu * derivative_along(unknown(i), FIRST_COORDINATE + j, 2)
+       end do
+       rule = rule + unknown(d + 1 + i) * momentum
+    end do
+    relation = derivative_along(unknown(d + 1), FIRST_COORDINATE + 1, 2)
+    do j = 2, d
+       relation = relation + derivative_along(unknown(d + 1), FIRST_COORDINATE + j, 2)
+    end do
+    do j = 1, d
+       do k = 1, d
+          relation = relation + derivative_along(unknown(j), FIRST_COORDINATE + k, 1) &
+               & * derivative_along(unknown(k), FIRST_COORDINATE + j, 1)
+       end do
+    end do
+    rule = rule + unknown(2 * d + 2) * relation
+    allocate(field_degrees(2 * d + 2), source=0)
+    field_degrees(1:d) = 1
+    l = stated_over(rule, [1, (2, j = 1, d)], label, field_degrees=field_degrees, multipliers=d + 1)
+  end function taylor_green
+  function kinetic_energy_rule(dimension) result(f)
+    integer, intent(in) :: dimension
+    type(expression) :: f
+    integer :: i
+    f = 0.5_dp * derivative(unknown(1), 0)**2
+    do i = 2, dimension
+       f = f + 0.5_dp * derivative(unknown(i), 0)**2
+    end do
+  end function kinetic_energy_rule
+  function viscous_dissipation_rule(dimension) result(f)
+    integer, intent(in) :: dimension
+    type(expression) :: f
+    type(expression) :: sum_of_squares
+    integer :: i, j
+    sum_of_squares = derivative_along(unknown(1), FIRST_COORDINATE + 1, 1)**2
+    do i = 1, dimension
+       do j = 1, dimension
+          if (i == 1 .and. j == 1) cycle
+          sum_of_squares = sum_of_squares + derivative_along(unknown(i), FIRST_COORDINATE + j, 1)**2
+       end do
+    end do
+    f = design() * sum_of_squares
+  end function viscous_dissipation_rule
+  !===================================================================!
+  ! The field fixed at one node at every instant: the pressure of the
+  ! Taylor-Green vortex; none for van der Pol.
+  !===================================================================!
+  pure integer function gauge_field_of(name, dimension) result(field)
+    character(len=*), intent(in) :: name
+    integer         , intent(in) :: dimension
+    field = 0
+    if (trim(name) == 'taylor_green') field = dimension + 1
+  end function gauge_field_of
   !===================================================================!
   ! A functional by name over the named physics: the Lagrangian at
   ! zero multipliers, so it reads the same tuple as the physics.
   !===================================================================!
-  function functional_of_physics(physics_name, name, degree, passes_check) result(f)
+  function functional_of_physics(physics_name, name, degree, passes_check, dimension) result(f)
     character(len=*), intent(in)  :: physics_name, name
     integer         , intent(in)  :: degree
     logical         , intent(out) :: passes_check
+    integer         , intent(in), optional :: dimension
     type(expression) :: f
     passes_check = .true.
+    if (trim(physics_name) == 'taylor_green') then
+       if (.not. present(dimension)) then
+          error stop 'gti_physics: the Taylor-Green vortex is a flow over a mesh'
+       end if
+       select case (name)
+       case ('energy')
+          f = at_zero(taylor_green(kinetic_energy_rule(dimension), dimension, 'taylor-green lagrangian'), &
+               & 'kinetic energy')
+       case ('dissipation')
+          f = at_zero(taylor_green(viscous_dissipation_rule(dimension), dimension, 'taylor-green lagrangian'), &
+               & 'viscous dissipation')
+       case default
+          passes_check = .false.
+       end select
+       return
+    end if
     select case (name)
     case ('energy')
        f = at_zero(lagrangian(energy_rule(), degree, 'van der pol lagrangian', algebraic_named(physics_name)), &
@@ -1102,6 +1213,9 @@ module gti_expansion
      ! derivatives are components tied by the fit's rows; zero for
      ! a component without one
      integer, allocatable    , private :: component_coupling_at(:)
+     ! the field fixed to zero at the first node at every instant, the
+     ! gauge of a field determined up to a constant; zero for none
+     integer                 , private :: gauge = 0
      integer, allocatable    , private :: design_at(:), design_kind(:)
      type(expression)        , private :: rule_kept
      class(grid), allocatable, private :: steps_kept
@@ -1111,6 +1225,7 @@ module gti_expansion
      procedure :: node
      procedure :: num_nodes
      procedure :: stride
+     procedure :: gauged_field
      procedure :: label_of
      procedure :: status_of
      procedure :: value_of
@@ -1214,7 +1329,7 @@ contains
   end function in_relation_order
   subroutine build(this, physics, schemes, instants, steps, &
        & max_derivative_degree, parameter, nodes, spatial_discretization_stencil, weights, block_steps, &
-       & spatial_derivative_stencils)
+       & spatial_derivative_stencils, gauge_field)
     class(expansion)      , intent(inout) :: this
     type(expression)      , intent(in)    :: physics
     type(family_container)   , intent(in)    :: schemes(:)
@@ -1226,10 +1341,11 @@ contains
     type(stencil), intent(in), optional   :: spatial_discretization_stencil
     real(dp)     , intent(in), optional   :: weights(:), block_steps(:)
     type(stencil), intent(in), optional   :: spatial_derivative_stencils(:)
+    integer      , intent(in), optional   :: gauge_field
     real(dp), allocatable :: dt(:)
     type(continuous_domain) :: continuous
-    integer , allocatable :: sweeps(:)
-    integer :: s, i
+    integer , allocatable :: sweeps(:), couplings(:)
+    integer :: s, i, f
     if (this % root_at /= 0) then
        error stop 'gti_expansion: an expansion is built once'
     end if
@@ -1246,18 +1362,26 @@ contains
     this % node_extent = 1
     if (present(nodes)) this % node_extent = nodes
     if (present(spatial_discretization_stencil)) this % spatial_coupling_at = spatial_discretization_coupling(this, spatial_discretization_stencil)
-    ! the first field's spatial components follow its jet along the
-    ! instants; each is tied to the field's values by its own stencil
+    ! every field's spatial components follow its jet along the
+    ! instants; each is tied to the field's values by its own stencil,
+    ! one coupling per stencil shared by the fields
     if (present(spatial_derivative_stencils)) then
        allocate(this % component_coupling_at(this % width), source=0)
-       if (this % layout % count(1) + size(spatial_derivative_stencils) > this % layout % offset_after(1)) then
-          error stop 'gti_expansion: one derivative stencil per spatial component of the first field'
-       end if
+       allocate(couplings(size(spatial_derivative_stencils)))
        do i = 1, size(spatial_derivative_stencils)
-          this % component_coupling_at(this % layout % count(1) + i) = &
-               & spatial_discretization_coupling(this, spatial_derivative_stencils(i))
+          couplings(i) = spatial_discretization_coupling(this, spatial_derivative_stencils(i))
+       end do
+       do f = 1, this % layout % fields
+          if (this % layout % count(f) + size(spatial_derivative_stencils) > &
+               & this % layout % offset_after(f) - this % layout % offset(f)) then
+             error stop 'gti_expansion: one derivative stencil per spatial component of every field'
+          end if
+          do i = 1, size(spatial_derivative_stencils)
+             this % component_coupling_at(this % layout % offset(f) + this % layout % count(f) + i) = couplings(i)
+          end do
        end do
     end if
+    if (present(gauge_field)) this % gauge = gauge_field
     this % rule_kept = physics
     allocate(this % steps_kept, source=steps)
     if (present(block_steps)) then
@@ -1814,6 +1938,10 @@ contains
     class(expansion), intent(in) :: this
     stride = this % width
   end function stride
+  pure integer function gauged_field(this)
+    class(expansion), intent(in) :: this
+    gauged_field = this % gauge
+  end function gauged_field
   integer function add_coupling(this, scheme, slices, first, last, dt) result(at)
     class(expansion), intent(inout) :: this
     class(family)   , intent(in)    :: scheme
@@ -2322,7 +2450,7 @@ module gti_march
   private
   public :: solved, unknowns_graph
   public :: block_from, instants_at_of
-  public :: unknown, consistent_states, frozen_inputs
+  public :: unknown, consistent_states, frozen_inputs, spatial_components_of
   public :: set_stopping
   public :: consistent_state
   public :: imbalance
@@ -2456,17 +2584,10 @@ contains
           given = given + count(f) - 1
        end do
     end do
-    ! the first field's spatial components are its stencils applied
-    ! to its values, given below its highest
+    ! every field's spatial components are its stencils applied to
+    ! its values, given below its highest
     if (present(spatial_derivative_stencils)) then
-       do k = 1, size(spatial_derivative_stencils)
-          call spatial_derivative_stencils(k) % weights % real_vector(weights)
-          do j = 1, spatial_derivative_stencils(k) % pattern % num_edges()
-             i = spatial_derivative_stencils(k) % pattern % edge_head(j)
-             q((i - 1) * degrees + count(1) + k) = q((i - 1) * degrees + count(1) + k) &
-                  & + weights(j) * lower(1, spatial_derivative_stencils(k) % pattern % edge_tail(j))
-          end do
-       end do
+       call spatial_components_of(q, degrees, offset, count, spatial_derivative_stencils)
     end if
     continuous    = continuous_domain(physics)
     point_domain  = continuous % discrete(points)
@@ -2523,6 +2644,29 @@ contains
     write(*,'(a,es12.3)') ' the residual of the physics at the initial instant is ', norm2(r)
     error stop 'gti_march: the initial state is consistent with the physics'
   end function consistent_states
+  !===================================================================!
+  ! The spatial components of every field at every node: the k-th
+  ! stencil applied to the field's values, degree zero along the
+  ! instants, placed after the field's jet along the instants.
+  !===================================================================!
+  subroutine spatial_components_of(q, stride, offset, count, stencils)
+    real(dp)     , intent(inout) :: q(:)
+    integer      , intent(in)    :: stride, offset(:), count(:)
+    type(stencil), intent(in)    :: stencils(:)
+    real(dp), allocatable :: weights(:)
+    integer :: f, k, j, i, tail
+    do f = 1, size(offset)
+       do k = 1, size(stencils)
+          call stencils(k) % weights % real_vector(weights)
+          do j = 1, stencils(k) % pattern % num_edges()
+             i    = stencils(k) % pattern % edge_head(j)
+             tail = stencils(k) % pattern % edge_tail(j)
+             q((i - 1) * stride + offset(f) + count(f) + k) = q((i - 1) * stride + offset(f) + count(f) + k) &
+                  & + weights(j) * q((tail - 1) * stride + offset(f) + 1)
+          end do
+       end do
+    end do
+  end subroutine spatial_components_of
   subroutine frozen_inputs(q, design, num_points, unknowns, inputs)
     real(dp), intent(in) :: q(:), design
     integer , intent(in) :: num_points
@@ -2619,8 +2763,8 @@ contains
     type(tuple_layout) :: layout
     integer , allocatable :: slice_of(:), member_of(:), members(:), at(:), fixed_rows(:)
     integer , allocatable :: r(:), c(:), table(:,:), rs(:), cs(:)
-    real(dp), allocatable :: dt(:), w(:,:), seeds(:,:), spatial_weights(:), ws(:), appended(:,:)
-    integer :: ns
+    real(dp), allocatable :: dt(:), w(:,:), seeds(:,:), spatial_weights(:), ws(:), appended(:,:), values(:)
+    integer :: ns, gauge_row
     logical , allocatable :: point(:), arriving(:), governs(:,:)
     integer :: m, nd, stride, width, n, s, k, j, g, moments, i, d, count, npts, ncar, f
     logical :: staged
@@ -2697,6 +2841,18 @@ contains
     if (size(fixed) /= ncar) then
        error stop 'gti_march: one fixed value per known component'
     end if
+    values = fixed
+    ! the gauge: the gauged field's value at the first node fixed to
+    ! zero at every moment where it is not known already
+    if (tower % gauged_field() > 0) then
+       do g = 1, moments
+          gauge_row = (g - 1) * width + layout % offset(tower % gauged_field()) + 1
+          if (any(fixed_rows(1:ncar) == gauge_row)) cycle
+          ncar = ncar + 1
+          fixed_rows(ncar) = gauge_row
+          values = [values, 0.0_dp]
+       end do
+    end if
     embedding % tower => tower
     embedding % block => block
     embedding % num_slices = n
@@ -2727,7 +2883,7 @@ contains
     end if
     rows = block_residual(derived_constraints(r, c, -w(:, 0), moments * width, 'time discretization stencil'), &
          & physics, at(1:npts), moments * width, stride, layout % primary_rows(scheme), &
-         & fixed_rows(1:ncar), fixed, governs=governs(1:npts, :))
+         & fixed_rows(1:ncar), values, governs=governs(1:npts, :))
     call rows % placed_on(tower, block)
     call rows % with_connectivity(connectivity)
     if (ns > 0) call rows % with_spatial_rows(rs, cs, ws)
@@ -2756,23 +2912,25 @@ contains
     type(graph), pointer :: component, coupling
     integer , allocatable :: table(:,:)
     real(dp), allocatable :: weights(:)
-    integer :: d, e, g, count, pass
+    integer :: d, e, g, f, count, pass
     do pass = 1, 2
        count = 0
-       do d = layout % count(1), layout % offset_after(1) - 1
-          component => level_member(moment_node, d + 1)
-          if (.not. level_couples(component)) cycle
-          coupling => level_coupling(component)
-          call tower % tuples_of(coupling, table)
-          call tower % value_of(coupling, weights)
-          do g = 1, moments
-             do e = 1, size(table, 2)
-                count = count + 1
-                if (pass == 2) then
-                   rs(count) = (g - 1) * width + (table(2, e) - 1) * stride + d + 1
-                   cs(count) = (g - 1) * width + (table(1, e) - 1) * stride + 1
-                   ws(count) = -weights(e)
-                end if
+       do f = 1, layout % fields
+          do d = layout % offset(f) + layout % count(f), layout % offset_after(f) - 1
+             component => level_member(moment_node, d + 1)
+             if (.not. level_couples(component)) cycle
+             coupling => level_coupling(component)
+             call tower % tuples_of(coupling, table)
+             call tower % value_of(coupling, weights)
+             do g = 1, moments
+                do e = 1, size(table, 2)
+                   count = count + 1
+                   if (pass == 2) then
+                      rs(count) = (g - 1) * width + (table(2, e) - 1) * stride + d + 1
+                      cs(count) = (g - 1) * width + (table(1, e) - 1) * stride + layout % offset(f) + 1
+                      ws(count) = -weights(e)
+                   end if
+                end do
              end do
           end do
        end do
@@ -3635,20 +3793,31 @@ contains
     type(spatial_domain), intent(in) :: this
     integer             , intent(in) :: degree
     type(stencil), allocatable :: ops(:)
-    integer, allocatable :: orders(:)
+    type(polynomial_form) :: shape
+    integer, allocatable :: orders(:), pure(:)
     integer :: j, k, i, dim
     if (degree < 2) then
        error stop 'gti_space: a form of degree below two fits no second derivative'
     end if
     dim = this % m % dimension
     allocate(ops(2 * dim), orders(dim))
+    shape = polynomial_form(degree, dim)
+    ! at degree two the compact form: the powers of one coordinate on
+    ! the cell and its face neighbours, whose second derivatives are
+    ! the central differences and whose laplacian has the constants
+    ! alone in its kernel; the form with the mixed members over two
+    ! rings has a grid mode in its kernel
+    if (degree == 2) then
+       call shape % pure_members(pure)
+       call shape % restrict(pure)
+    end if
     i = 0
     do j = 1, dim
        do k = 1, 2
           orders    = 0
           orders(j) = k
           i = i + 1
-          ops(i) = fitted_derivative_stencil(this % m, polynomial_form(degree, dim), orders)
+          ops(i) = fitted_derivative_stencil(this % m, shape, orders)
        end do
     end do
   end function spatial_derivative_stencils
@@ -3703,11 +3872,11 @@ module gti_field
   use field_stored     , only : stored_field
   use operation_expression, only : expression, FIRST_COORDINATE
   use gti_configuration, only : words_of
-  use gti_march        , only : consistent_states
+  use gti_march        , only : consistent_states, spatial_components_of
   use gti_space        , only : spatial_domain, spatial_operator, cartesian, periodic, written_paraview
   implicit none
   private
-  public :: spatial_discretization_stencil_of, initial_field
+  public :: against_the_exact_flow, spatial_discretization_stencil_of, initial_field
   public :: against_the_laplacian, against_the_mode, export_instant
 contains
   function spatial_discretization_stencil_of(space, kappa, degree) result(op)
@@ -3757,6 +3926,13 @@ contains
     end do
     allocate(lower(below, nodes), source=0.0_dp)
     select case (trim(kind))
+    case ('exact')
+       if (.not. present(space)) error stop 'gti_field: the exact field is a field over a mesh'
+       if (.not. present(spatial_derivative_stencils)) then
+          error stop 'gti_field: the exact field stores the spatial derivatives as rows of the jet'
+       end if
+       call taylor_green_state(space, physics, 0.0_dp, design, q, spatial_derivative_stencils)
+       return
     case ('constant')
        given = words_of(initial_state)
        if (size(given) > first_below) then
@@ -3782,6 +3958,100 @@ contains
     end select
     q = consistent_states(physics, degrees, lower, design, spatial_discretization_stencil, spatial_derivative_stencils)
   end function initial_field
+  !===================================================================!
+  ! THE TAYLOR-GREEN VORTEX AT AN INSTANT, on the periodic box of side
+  ! 2 pi: u = (sin x cos y, -cos x sin y, 0) e^(-2 nu t), its time
+  ! derivative -2 nu u, and p = (cos 2x + cos 2y) e^(-4 nu t) / 4,
+  ! every field's tuple at every cell, the spatial components from the
+  ! stencils when given. A box of another side, or not periodic, stops
+  ! the program.
+  !===================================================================!
+  subroutine taylor_green_state(space, law, t, nu, q, stencils)
+    type(spatial_domain), intent(in) :: space
+    type(expression)    , intent(in) :: law
+    real(dp)            , intent(in) :: t, nu
+    real(dp), allocatable, intent(out) :: q(:)
+    type(stencil), intent(in), optional :: stencils(:)
+    integer, allocatable :: offset(:), count(:)
+    real(dp) :: two_pi, amplitude, x(3), u(3), pressure
+    integer :: d, stride, fields, i, f, at
+    two_pi = 2.0_dp * acos(-1.0_dp)
+    d      = space % dimension
+    if (space % geometry /= periodic .or. any(abs(space % extents - two_pi) > spacing(two_pi))) then
+       error stop 'gti_field: the Taylor-Green vortex is on the periodic box of side 2 pi'
+    end if
+    stride = law % num_components()
+    fields = law % num_fields() - law % num_multipliers()
+    if (fields /= d + 1) then
+       error stop 'gti_field: the Taylor-Green vortex stores the velocity components and the pressure'
+    end if
+    allocate(offset(fields), count(fields))
+    do f = 1, fields
+       offset(f) = law % offset_of_field(f)
+       count(f)  = law % degree_of_field(f) + 1
+    end do
+    amplitude = exp(-2.0_dp * nu * t)
+    allocate(q(space % num_cells * stride), source=0.0_dp)
+    x = 0.0_dp
+    do i = 1, space % num_cells
+       x(1:d)   = space % centre(:, i)
+       u(1)     =  sin(x(1)) * cos(x(2)) * amplitude
+       u(2)     = -cos(x(1)) * sin(x(2)) * amplitude
+       u(3)     = 0.0_dp
+       pressure = 0.25_dp * (cos(2.0_dp * x(1)) + cos(2.0_dp * x(2))) * amplitude ** 2
+       at = (i - 1) * stride
+       do f = 1, d
+          q(at + offset(f) + 1) = u(f)
+          q(at + offset(f) + 2) = -2.0_dp * nu * u(f)
+       end do
+       q(at + offset(d + 1) + 1) = pressure
+    end do
+    if (present(stencils)) call spatial_components_of(q, stride, offset, count, stencils)
+  end subroutine taylor_green_state
+  !===================================================================!
+  ! The marched flow against the exact vortex at the last instant:
+  ! the rms error of the velocity relative to the rms of the exact
+  ! velocity, the rms error of the pressure with its mean difference
+  ! removed, and the rms of the divergence read from the jet, each
+  ! weighted by the cell volumes.
+  !===================================================================!
+  subroutine against_the_exact_flow(space, law, t_last, nu, x)
+    type(spatial_domain), intent(in) :: space
+    type(expression)    , intent(in) :: law
+    real(dp)            , intent(in) :: t_last, nu, x(:)
+    real(dp), allocatable :: exact(:)
+    real(dp) :: e_u, n_u, e_p, n_p, divergence, mean_shift, volume, div
+    integer :: d, stride, i, f, j, at, at_p
+    call taylor_green_state(space, law, t_last, nu, exact)
+    d      = space % dimension
+    stride = law % num_components()
+    at_p   = law % offset_of_field(d + 1)
+    volume = sum(space % volume)
+    mean_shift = 0.0_dp
+    do i = 1, space % num_cells
+       at = (i - 1) * stride
+       mean_shift = mean_shift + space % volume(i) * (x(at + at_p + 1) - exact(at + at_p + 1))
+    end do
+    mean_shift = mean_shift / volume
+    e_u = 0.0_dp; n_u = 0.0_dp; e_p = 0.0_dp; n_p = 0.0_dp; divergence = 0.0_dp
+    do i = 1, space % num_cells
+       at = (i - 1) * stride
+       do f = 1, d
+          e_u = e_u + space % volume(i) * (x(at + law % offset_of_field(f) + 1) - exact(at + law % offset_of_field(f) + 1)) ** 2
+          n_u = n_u + space % volume(i) * exact(at + law % offset_of_field(f) + 1) ** 2
+       end do
+       e_p = e_p + space % volume(i) * (x(at + at_p + 1) - exact(at + at_p + 1) - mean_shift) ** 2
+       n_p = n_p + space % volume(i) * exact(at + at_p + 1) ** 2
+       div = 0.0_dp
+       do j = 1, d
+          div = div + x(at + law % component_at(FIRST_COORDINATE + j, 1, j) + 1)
+       end do
+       divergence = divergence + space % volume(i) * div ** 2
+    end do
+    write(*,'(a,es12.3,a,es12.3,a,es12.3)') &
+         & '      taylor-green at the last instant: velocity error, relative rms ', sqrt(e_u / n_u), &
+         & '   pressure error, mean removed ', sqrt(e_p / n_p), '   divergence rms ', sqrt(divergence / volume)
+  end subroutine against_the_exact_flow
   !===================================================================!
   ! The separated mode of the box: the product over the coordinates
   ! of cos(m pi x / a), one half wave on a box with insulated sides,
@@ -4159,7 +4429,8 @@ contains
   end subroutine built
   subroutine march_chain(schemes, added, physics, degrees, steps, &
        & design, initial, chain, tower, dt, t, achieved, grid_design, final_imbalance, nodes, spatial_discretization_stencil, &
-       & startup, functionals, derivative_order, f, tower_storage, state_storage, spatial_derivative_stencils)
+       & startup, functionals, derivative_order, f, tower_storage, state_storage, spatial_derivative_stencils, &
+       & gauge_field)
     type(family_container)   , intent(in) :: schemes(:)
     integer               , intent(in) :: added(:), degrees
     type(expression)      , intent(in) :: physics
@@ -4174,6 +4445,7 @@ contains
     integer        , intent(in) , optional :: nodes
     type(stencil)  , intent(in) , optional :: spatial_discretization_stencil
     type(stencil)  , intent(in) , optional :: spatial_derivative_stencils(:)
+    integer        , intent(in) , optional :: gauge_field
     integer        , intent(in) , optional :: startup
     ! THE PIPELINED DERIVATIVE. With functionals and an order given,
     ! every block's tangent tower is solved immediately after the block,
@@ -4232,7 +4504,8 @@ contains
     if (allocated(tower)) deallocate(tower)
     allocate(tower)
     call tower % build(physics, every, spans, steps, 0, design, nodes, spatial_discretization_stencil, &
-         & weights=grid_design, block_steps=design_field, spatial_derivative_stencils=spatial_derivative_stencils)
+         & weights=grid_design, block_steps=design_field, spatial_derivative_stencils=spatial_derivative_stencils, &
+         & gauge_field=gauge_field)
     fused = present(functionals) .and. present(derivative_order)
     if (fused) then
        if (allocated(pipelined)) deallocate(pipelined)
@@ -6024,12 +6297,13 @@ contains
        passes_check = .false.
     end select
   end subroutine family_named
-  subroutine functional_named(physics_name, name, degree, rule, passes_check)
+  subroutine functional_named(physics_name, name, degree, rule, passes_check, dimension)
     character(len=*), intent(in)  :: physics_name, name
     integer         , intent(in)  :: degree
     type(expression), intent(out) :: rule
     logical         , intent(out) :: passes_check
-    rule = functional_of_physics(physics_name, name, degree, passes_check)
+    integer         , intent(in), optional :: dimension
+    rule = functional_of_physics(physics_name, name, degree, passes_check, dimension)
   end subroutine functional_named
 end module gti_driver
 module gti_demos
@@ -9673,7 +9947,7 @@ program graph_time_integrator
   use operation_family      , only : adams_family
   use operation_grid        , only : uniform_grid, random_grid, designed_grid, fixed_grid
   use operation_expression  , only : expression, stated_over
-  use gti_physics           , only : van_der_pol, van_der_pol_energy, physics_named, functional_of_physics
+  use gti_physics           , only : van_der_pol, van_der_pol_energy, physics_named, functional_of_physics, gauge_field_of
   use operation_grid        , only : grid
   use gti_march             , only : set_stopping, imbalance, set_space_coupling, set_time_coupling, weight_of, precision_needed
   use gti_adaptive          , only : adaptive_partition
@@ -9681,7 +9955,7 @@ program graph_time_integrator
   use operation_stencil     , only : stencil
   use operation_domain      , only : continuous_domain
   use gti_space             , only : spatial_domain, spatial_mesh, geometry_of, coarse_cells, spatial_derivative_stencils
-  use gti_field             , only : spatial_discretization_stencil_of, initial_field, against_the_laplacian, &
+  use gti_field             , only : spatial_discretization_stencil_of, initial_field, against_the_laplacian, against_the_exact_flow, &
        & against_the_mode, export_instant
   use util_precision        , only : precision_named
   use iso_fortran_env       , only : real128
@@ -9895,12 +10169,24 @@ contains
     if (over_field .and. spatial_rows()) then
        r = physics_named(trim(cfg % physics), cfg % state_degree, cfg % diffusion, size(counts))
     else
+       if (trim(cfg % physics) == 'taylor_green') then
+          error stop 'graph_time_integrator: the Taylor-Green vortex is a flow over a mesh with the spatial &
+               &derivatives as rows'
+       end if
        r = physics_named(trim(cfg % physics), cfg % state_degree)
     end if
   end function physics_of
   !===================================================================!
   ! The components one node stores at one instant, read from the law.
   !===================================================================!
+  !===================================================================!
+  ! The field fixed at one node at every instant, zero for none.
+  !===================================================================!
+  integer function gauge_of(cfg) result(field)
+    type(configuration), intent(in) :: cfg
+    field = 0
+    if (over_field) field = gauge_field_of(trim(cfg % physics), size(counts))
+  end function gauge_of
   integer function state_width(cfg) result(width)
     type(configuration), intent(in) :: cfg
     type(expression) :: law
@@ -9911,7 +10197,11 @@ contains
     type(configuration), intent(in) :: cfg
     type(expression) :: f
     logical :: passes_check
-    f = functional_of_physics(trim(cfg % physics), 'energy', cfg % state_degree, passes_check)
+    if (over_field) then
+       f = functional_of_physics(trim(cfg % physics), 'energy', cfg % state_degree, passes_check, size(counts))
+    else
+       f = functional_of_physics(trim(cfg % physics), 'energy', cfg % state_degree, passes_check)
+    end if
   end function energy_of
   !===================================================================!
   ! The coordinates the run's state is declared over, read from the
@@ -9957,19 +10247,19 @@ contains
        call march_chain(schemes, added, physics_of(cfg), nd, &
             & designed_grid(cfg % time_duration), cfg % design, q0, chain, tower, dt, t, &
             & achieved, grid_design=weights, final_imbalance=final_imbalance, nodes=nodes, spatial_discretization_stencil=spatial_discretization_stencil, &
-            & spatial_derivative_stencils=derivative_stencils, &
+            & spatial_derivative_stencils=derivative_stencils, gauge_field=gauge_of(cfg), &
             & startup=cfg % startup_refinement)
     else if (grid_adaptive) then
        call march_chain(schemes, added, physics_of(cfg), nd, &
             & fixed_grid(adaptive_weights), cfg % design, q0, chain, tower, dt, t, achieved, &
             & final_imbalance=final_imbalance, nodes=nodes, spatial_discretization_stencil=spatial_discretization_stencil, &
-            & spatial_derivative_stencils=derivative_stencils, &
+            & spatial_derivative_stencils=derivative_stencils, gauge_field=gauge_of(cfg), &
             & startup=cfg % startup_refinement)
     else
        call march_chain(schemes, added, physics_of(cfg), nd, &
             & chosen_grid(cfg), cfg % design, q0, chain, tower, dt, t, achieved, final_imbalance=final_imbalance, &
             & nodes=nodes, spatial_discretization_stencil=spatial_discretization_stencil, startup=cfg % startup_refinement, &
-            & spatial_derivative_stencils=derivative_stencils)
+            & spatial_derivative_stencils=derivative_stencils, gauge_field=gauge_of(cfg))
     end if
     if (.not. final_imbalance % converged) then
        reported = 0
@@ -10004,6 +10294,10 @@ contains
        if (lists(cfg % check, 'mode')) then
           call against_the_mode(space, cfg % diffusion, cfg % spatial_order, &
                & cfg % design, t(cfg % instants), instant_components(chain, cfg % instants), state_width(cfg))
+       end if
+       if (lists(cfg % check, 'exact')) then
+          call against_the_exact_flow(space, physics_of(cfg), t(cfg % instants), cfg % design, &
+               & instant_components(chain, cfg % instants))
        end if
        if (trim(cfg % export) == 'paraview') call exported(cfg, chain, labelled(names, orders))
     end if
@@ -10108,7 +10402,12 @@ contains
     names = words_of(cfg % functionals)
     allocate(functionals(size(names)))
     do i = 1, size(names)
-       call functional_named(trim(cfg % physics), trim(names(i)), cfg % state_degree, functionals(i), passes_check)
+       if (over_field) then
+          call functional_named(trim(cfg % physics), trim(names(i)), cfg % state_degree, functionals(i), passes_check, &
+               & size(counts))
+       else
+          call functional_named(trim(cfg % physics), trim(names(i)), cfg % state_degree, functionals(i), passes_check)
+       end if
        if (passes_check) functionals(i) = stated_over(functionals(i), state_degrees_of(cfg), functionals(i) % name())
     end do
   end subroutine chosen_functionals
@@ -10160,9 +10459,9 @@ contains
     type(continuous_domain) :: continuous
     real(dp) :: began
     real(dp), allocatable :: reals(:)
-    call refuse_unknown(cfg % initial_field, ['constant', 'mode    ', 'bump    '], 'initial_field')
+    call refuse_unknown(cfg % initial_field, ['constant', 'mode    ', 'bump    ', 'exact   '], 'initial_field')
     call refuse_unknown(cfg % export, ['none    ', 'paraview'], 'export')
-    call refuse_unknown(cfg % check, ['none    ', 'ode     ', 'mode    ', 'operator', 'passes  ', &
+    call refuse_unknown(cfg % check, ['none    ', 'ode     ', 'mode    ', 'operator', 'passes  ', 'exact   ', &
          & 'sinks   '], &
          & 'check')
     ! the counts of cells along the spatial coordinates, two or three
@@ -10298,7 +10597,7 @@ contains
     type(configuration), intent(inout) :: cfg
     real(dp), allocatable :: dt(:), t(:)
     integer :: widest, printed
-    call refuse_unknown(cfg % physics, ['vanderpol          ', 'vanderpol_algebraic'], 'physics')
+    call refuse_unknown(cfg % physics, ['vanderpol          ', 'vanderpol_algebraic', 'taylor_green       '], 'physics')
     call refuse_unknown(cfg % tolerance_criterion, ['relative', 'absolute'], &
          & 'tolerance_criterion')
     call refuse_unknown(cfg % iteration_criterion, ['by_rate ', 'by_count'], &

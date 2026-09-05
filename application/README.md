@@ -599,6 +599,42 @@ Lagrangian beside this one, built from the fields, the design,
 constants, the four arithmetic operations, integer and real powers,
 and sin, cos, exp, log, sqrt.
 
+**The Taylor-Green vortex.** `physics = taylor_green` states
+incompressible flow on the periodic box of side 2 pi as a Lagrangian
+over the velocity components and the pressure, one multiplier each:
+momentum in each direction, u_i,t + sum_j u_j u_i,j + p,i - nu sum_j
+u_i,jj = 0, of first order in time, and the pressure relation, the
+divergence of momentum with the flow divergence-free, sum_j p,jj +
+sum_jk u_j,k u_k,j = 0, of degree zero in time. Every derivative is a
+component of the jet, so `rows` must list the spatial derivatives;
+nu is the design; the pressure, determined up to a constant, is fixed
+at the first node at every instant (the gauge). `initial_field = exact`
+sets every component from the exact vortex u = (sin x cos y,
+-cos x sin y) e^(-2 nu t), p = (cos 2x + cos 2y) e^(-4 nu t) / 4, and
+`check = exact` reports the velocity and pressure errors and the
+divergence at the last instant (`config/taylor_green.cfg`). At nu =
+0.01 over [0, 1], bdf2, 8 x 8 and 16 x 16 cells: velocity error 2.2e-1,
+5.7e-2; pressure error with its mean removed 3.3e-1, 6.4e-2; divergence
+1.7e-1, 6.6e-2. The functionals `energy` and `dissipation` integrate
+against their exact values pi^2 (1 - e^(-4 nu)) / (4 nu) = 9.675 and
+pi^2 (1 - e^(-4 nu)) = 0.3870: at 16 x 16, bdf1, 9.532 and 0.3624, and
+their derivatives in nu -20.10 and 35.48 against -19.22 and 37.93.
+
+The derivative rows use the compact form at degree two, the powers of
+one coordinate on the cell and its face neighbours, whose second
+derivatives are the central differences: the form with the mixed
+members over two rings has a grid mode in the kernel of its laplacian,
+which the momentum's gradient annihilates as well, and the pressure
+grows along it without bound. The reverse pass seeds one direction
+per component of the tuple, so its cost grows as two to the tuple's
+width; at the vortex's seventeen components `check = passes` does not
+finish, while the forward derivative in nu does. `multigrid = T` with
+the Gauss-Seidel smoother coarsens the velocity-pressure block by the
+member's aggregates but does not accelerate it: at 16 x 16 the
+iterative solve takes 350 s and the multigrid one had not finished at
+1500 s. A smoother for the indefinite pressure block is the missing
+piece.
+
 **Several fields.** A Lagrangian with k multipliers, its last k
 fields, governs k state fields, its first k, one rule each: the
 stationarity in the j-th multiplier occupies the j-th field's primary
@@ -727,14 +763,14 @@ forms are the same physics at two discretisations: on the rectangle
 at `nu = 0` against the exact separated mode (`config/mode.cfg`,
 `config/mode_jet.cfg`), over 10 x 5, 20 x 10 and 40 x 20 cells the
 bdf2 error at the last instant reads 6.4e-3, 1.9e-3, 7.6e-4 for the
-balance and 2.3e-2, 4.9e-3, 1.2e-3 for the jet, both of second order.
+balance and 1.9e-2, 4.5e-3, 1.4e-3 for the jet, both of second order.
 The tangent and adjoint over the jet rows agree to 4.4e-16. On the
 periodic box (`config/torus2.cfg`, `config/torus2_jet.cfg`) over
 20 x 10, 40 x 20 and 80 x 40 cells the balance operator's error
 against the exact laplacian of the whole wave reads 8.4e-2, 2.2e-2,
 5.5e-3, second order, and the bdf2 error at the last instant 2.2e-2,
-7.4e-3, 3.6e-3 for the balance and 2.9e-2, 9.2e-3, 4.0e-3 for the jet,
-down to the bdf2 time error of 2.3e-3 at this step. In three
+7.4e-3, 3.6e-3 for the balance, and 8.8e-3, 3.9e-3 for the jet over the
+first two, down to the bdf2 time error of 2.3e-3 at this step. In three
 coordinates (`config/box3.cfg`, `config/torus3.cfg`) the same checks
 run at 12 x 6 x 6 and 16 x 8 x 8 cells; at 16 x 8 x 8 on the box the
 balance's boundary fits at form degree 2 are ill conditioned, an

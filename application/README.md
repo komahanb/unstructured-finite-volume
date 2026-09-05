@@ -619,7 +619,12 @@ error 2.2e-1, 5.7e-2, 1.4e-2; pressure error with its mean removed
 throughout. The functionals `energy` and `dissipation` integrate
 against their exact values pi^2 (1 - e^(-4 nu)) / (4 nu) = 9.675 and
 pi^2 (1 - e^(-4 nu)) = 0.3870: at 32 x 32, bdf2, 9.647 and 0.3810, and
-their derivatives in nu -19.01 and 37.35 against -19.22 and 37.93.
+their derivatives in nu -19.01 and 37.35 against -19.22 and 37.93. In
+three coordinates (`config/taylor_green_3d.cfg`) the same vortex with
+u_3 = 0 has the same exact solution: at 8 x 8 x 8 cells the velocity
+error is 2.3e-1 against 2.2e-1 on the plane at the same spacing, and
+the energy integral 60.07 against 2 pi x 9.675 = 60.79. Both configs
+write every instant for paraview, every component of every field.
 
 The derivative rows use the compact form at degree two, the powers of
 one coordinate on the cell and its face neighbours, whose second

@@ -531,10 +531,10 @@ contains
     type(stored_field), allocatable :: point_data(:)
     type(typed_field_domain) :: points
     class(field), allocatable :: out
-    real(dp), allocatable :: x(:), w(:), governing(:,:), v(:)
-    integer , allocatable :: r(:), c(:)
+    real(dp), allocatable :: x(:), w(:), v(:), column(:)
+    integer , allocatable :: r(:), c(:), reads(:)
     logical , allocatable :: is_fixed(:)
-    integer :: e, d, p, npts, n, kept, count, j
+    integer :: e, d, p, npts, n, kept, count, j, k
     available = which == 1
     if (.not. available) return
     n    = this % unknowns
@@ -549,23 +549,29 @@ contains
     kept = 0
     call stencil_triples(this % primary_law, is_fixed, r, c, w, kept)
     if (allocated(this % connected_law)) call stencil_triples(this % connected_law, is_fixed, r, c, w, kept)
+    ! each rule's partials in the components it reads alone: a
+    ! component no leaf of the rule names has a zero column
     allocate(v(npts * this % degrees))
-    do d = 0, this % degrees - 1
-       v = 0.0_dp
-       do p = 1, npts
-          v((p - 1) * this % degrees + d + 1) = 1.0_dp
-       end do
-       points    = typed_field_domain(this % points % vertex_set(), npts, this % degrees)
-       direction = points % direction(v)
-       call governed(this, point_data, governing, [variation(this % physics % argument(1), direction)])
-       do j = 1, size(this % rules)
+    points = typed_field_domain(this % points % vertex_set(), npts, this % degrees)
+    do j = 1, size(this % rules)
+       call this % rules(j) % read_components(reads)
+       do k = 1, size(reads)
+          d = reads(k)
+          v = 0.0_dp
+          do p = 1, npts
+             v((p - 1) * this % degrees + d + 1) = 1.0_dp
+          end do
+          direction = points % direction(v)
+          call this % rules(j) % partial_action(this % points, this % rules(j) % bind(point_data), &
+               & [variation(this % physics % argument(1), direction)], out)
+          call out % real_vector(column)
           do p = 1, npts
              if (.not. this % governs(p, j)) cycle
              if (is_fixed(this % at(p) + this % primary(j) + 1)) cycle
              kept    = kept + 1
              r(kept) = this % at(p) + this % primary(j) + 1
              c(kept) = this % at(p) + d + 1
-             w(kept) = governing(p, j)
+             w(kept) = column(p)
           end do
        end do
     end do

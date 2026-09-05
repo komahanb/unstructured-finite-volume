@@ -166,6 +166,7 @@ module operation_expression
      procedure :: component_at
      procedure :: declare_degree
      procedure :: highest_degree_along
+     procedure :: read_components
      procedure :: num_vertices
      procedure :: num_fields
      procedure :: num_multipliers
@@ -831,6 +832,31 @@ contains
     end do
 
   end function highest_degree_along
+
+  !===================================================================!
+  ! The components of the tuple the rule reads, each once, in
+  ! increasing order: the state leaves' components, a multiplier's
+  ! excluded since the tuple does not store it.
+  !===================================================================!
+
+  subroutine read_components(this, components)
+
+    class(expression)   , intent(in)  :: this
+    integer, allocatable, intent(out) :: components(:)
+
+    logical, allocatable :: read(:)
+    integer :: i, at
+
+    allocate(read(0:this % num_components() - 1), source=.false.)
+    do i = 1, size(this % kind)
+       if (this % kind(i) /= VERTEX_LEAF .or. this % position(i) /= ARGUMENT_STATE) cycle
+       if (this % field(i) > this % fields - this % multipliers) cycle
+       at = this % component_at(this % along(i), this % order(i), this % field(i))
+       read(at) = .true.
+    end do
+    components = pack([(at, at = 0, size(read) - 1)], read)
+
+  end subroutine read_components
 
   pure integer function num_vertices(this)
 

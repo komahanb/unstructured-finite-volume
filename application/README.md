@@ -651,7 +651,15 @@ the aggregates: 26 s at 16 x 16 and 190 s at 32 x 32 against 24 s and
 the Krylov iterations are no longer the cost. The profile of the
 preconditioned run puts 24 percent in the stencil matvec, 13 percent
 in the expression evaluated for the residual and the Jacobian, and 3
-percent in the Krylov inner product; the assembly is the next cost.
+percent in the Krylov inner product. Each rule's tangent is now
+assembled in the components its leaves read alone, 22 evaluations
+per Newton iteration in place of 51 for the vortex, which left the
+time at 23 s: the remaining cost is the smoother's matvecs and the
+jet arithmetic's allocations per vertex, spread evenly. The reference
+dissipation history at Reynolds 1600 needs the vortex with its cos z
+factor at 64 x 64 x 64 cells, 8 million unknowns with the tuple of 31
+components, three orders beyond the 8 x 8 x 8 run at 160 s; it is not
+within reach of this build.
 `multigrid = T`, the same object as the solver, is slower than GMRES
 here, over 1500 s at 16 x 16.
 

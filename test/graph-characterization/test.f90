@@ -1,0 +1,456 @@
+!=====================================================================!
+! The characterization suite: the present, photographed before the
+! relational refactor moves in (AGENTS.md, Phase 0).
+!
+! Nothing here states how the code OUGHT to behave. Every claim below
+! was measured against the current stack, and the suite exists so
+! that the migration to member sets and relations can prove, at every
+! step, that these corners did not shift:
+!
+!      parallel edges         two edges, same endpoints, two identities
+!      boundary half-edges    a wall needs no imaginary neighbour
+!      directed traversal     out and in, edges and vertices
+!      supports               membership, side, emptiness  (TRANSITIONAL)
+!      partition round trip   vertex AND edge fields rebuild exactly
+!      differential adjoints  the pairing holds on awkward topology
+!
+! One block is marked TRANSITIONAL: it records vocabulary the tower
+! has already retired (the support as an edgeless graph). Such checks
+! guard the migration while it runs and are REWRITTEN, not obeyed,
+! when their phase arrives - they must never veto the redesign they
+! guard.
+!
+! Author: Komahan Boopathy (komahan@gatech.edu)
+!=====================================================================!
+
+program test_graph_characterization
+
+  use iso_fortran_env        , only : dp => REAL64
+  use view_directed    , only : SIDE_VERTEX
+  use view_directed    , only : directed_graph
+  use field_calculus   , only : field
+  use graph_fractal           , only : graph
+  use map_set_representation, only : counted_set_representation, &
+       & listed_set_representation
+  use map_set_store     , only : set_store
+  use view_directed_stored            , only : stored_directed_graph
+  use field_stored      , only : stored_field
+  use transform_partitioner, only : partitioner, PARTITION_LINEAR
+  use transform_assembler  , only : assembler
+  use operation_differential, only : divergence, &
+       &                                        differential_operator
+
+  use relation_partition, only : partition_relation
+  implicit none
+  type(partition_relation) :: rel
+
+  integer :: nfail
+
+  nfail = 0
+
+  write(*,'(1x,a)') "============================================="
+  write(*,'(1x,a)') "graph characterization suite (AGENTS phase 0)"
+  write(*,'(1x,a)') "============================================="
+
+  call check_parallel_edges(nfail)
+  call check_boundary_half_edges(nfail)
+  call check_directed_traversal(nfail)
+  call check_supports(nfail)
+  call check_partition_round_trip(nfail)
+  call check_adjoints_on_awkward_topology(nfail)
+
+  write(*,'(1x,a)') "============================================="
+  if (nfail .eq. 0) then
+     write(*,'(1x,a)') "all characterization checks passed"
+  else
+     write(*,'(1x,a,i0,a)') "FAILED: ", nfail, " characterization check(s)"
+     error stop
+  end if
+
+contains
+
+  subroutine report(ok, label, nfail)
+
+    logical         , intent(in)    :: ok
+    character(len=*), intent(in)    :: label
+    integer         , intent(inout) :: nfail
+
+    if (ok) then
+       write(*,'(1x,a,a)') "PASS : ", label
+    else
+       write(*,'(1x,a,a)') "FAIL : ", label
+       nfail = nfail + 1
+    end if
+
+  end subroutine report
+
+  !===================================================================!
+  ! Two edges joining the same pair of vertices are two edges. The
+  ! multigraph identity: traversal reports both, the divergence
+  ! counts both, and only the derived adjacency collapses them.
+  !===================================================================!
+
+  subroutine check_parallel_edges(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(stored_directed_graph)              :: g
+    type(differential_operator)     :: div
+    class(field), allocatable :: yf
+    type(graph)                   :: eon
+    type(stored_field)                     :: zf
+    integer, allocatable            :: idx(:)
+    real(dp), allocatable           :: y(:)
+
+    g = stored_directed_graph(2, tails=[1, 1], heads=[2, 2])
+
+    call report(g % num_edges() .eq. 2, &
+         & "parallel edges keep two identities", nfail)
+
+    call g % incident_edges(1, idx)
+    call report(size(idx) .eq. 2 .and. all(idx .eq. [1, 2]), &
+         & "the shared tail is incident to both", nfail)
+
+    call g % outgoing_edges(1, idx)
+    call report(size(idx) .eq. 2 .and. all(idx .eq. [1, 2]), &
+         & "both leave the tail", nfail)
+
+    call g % incoming_edges(2, idx)
+    call report(size(idx) .eq. 2 .and. all(idx .eq. [1, 2]), &
+         & "both arrive at the head", nfail)
+
+    ! The derived adjacency reports the neighbour once, however many
+    ! edges join the pair.
+    call g % adjacent_vertices(1, idx)
+    call report(size(idx) .eq. 1 .and. idx(1) .eq. 2, &
+         & "derived adjacency names the neighbour once", nfail)
+
+    ! The divergence spends each edge separately: out minus in.
+    eon = g % edge_set()
+    zf  = stored_field('z', eon, g % num_edges())
+    call zf % set_real_vector([3.0_dp, 5.0_dp])
+    div = divergence()
+    call div % apply(g, div % bind([zf]), yf)
+    call yf % real_vector(y)
+    call report(abs(y(1) - 8.0_dp) < 1.0d-12 .and. &
+         &      abs(y(2) + 8.0_dp) < 1.0d-12, &
+         & "the divergence counts each parallel edge once", nfail)
+
+  end subroutine check_parallel_edges
+
+  !===================================================================!
+  ! A boundary face is an edge with a tail and no head. It needs no
+  ! imaginary member on the far side, it traverses like any edge from
+  ! its one vertex, and its value leaves the graph exactly once.
+  !===================================================================!
+
+  subroutine check_boundary_half_edges(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(stored_directed_graph)              :: g
+    type(differential_operator)     :: div
+    class(field), allocatable :: yf
+    type(graph)                   :: eon
+    type(stored_field)                     :: zf
+    type(graph)                 :: sset
+    type(set_store)                 :: sets
+    integer, allocatable            :: idx(:)
+    integer                         :: k
+    real(dp), allocatable           :: y(:)
+
+    ! 1 --> 2 --> 3 --> wall; the edges are tagged by their kind, and
+    ! a tagged set is declared into the store as a subobject of the
+    ! edge set.
+    g = stored_directed_graph(3, tails=[1, 2, 3], heads=[2, 3, 0], &
+         & etags=[character(len=8) :: 'interior', 'interior', 'wall'])
+
+    call report(g % edge_has_head(1) .and. .not. g % edge_has_head(3), &
+         & "the wall edge has a tail and no head", nfail)
+
+    call g % tagged_edges('interior', sets, sset)
+    call members(sets, sset, idx)
+    call report(size(idx) .eq. 2 .and. all(idx .eq. [1, 2]) .and. &
+         &      all([(g % edge_has_head(idx(k)), k = 1, size(idx))]) .and. &
+         &      sets % subobject_of(sset, g % edge_set()), &
+         & "interior edges are the two with heads", nfail)
+
+    call g % tagged_edges('wall', sets, sset)
+    call members(sets, sset, idx)
+    call report(size(idx) .eq. 1 .and. idx(1) .eq. 3 .and. &
+         &      .not. g % edge_has_head(idx(1)) .and. &
+         &      sets % subobject_of(sset, g % edge_set()), &
+         & "the boundary set is exactly the headless edge", nfail)
+
+    call g % adjacent_vertices(3, idx)
+    call report(size(idx) .eq. 1 .and. idx(1) .eq. 2, &
+         & "no imaginary neighbour is across the wall", nfail)
+
+    call g % incident_edges(3, idx)
+    call report(size(idx) .eq. 2 .and. all(idx .eq. [2, 3]), &
+         & "the wall edge is incident to its one vertex", nfail)
+
+    call g % outgoing_edges(3, idx)
+    call report(size(idx) .eq. 1 .and. idx(1) .eq. 3, &
+         & "and leaves it, as every edge leaves its tail", nfail)
+
+    ! Divergence with samples 2, 4, 7: out minus in at each vertex
+    ! gives 2, 2, 3 - and the total, 7, is the wall edge's sample:
+    ! the half-edge contributes exactly once, to its tail alone.
+    eon = g % edge_set()
+    zf  = stored_field('z', eon, g % num_edges())
+    call zf % set_real_vector([2.0_dp, 4.0_dp, 7.0_dp])
+    div = divergence()
+    call div % apply(g, div % bind([zf]), yf)
+    call yf % real_vector(y)
+    call report(all(abs(y - [2.0_dp, 2.0_dp, 3.0_dp]) < 1.0d-12), &
+         & "the half-edge contributes once, to its tail alone", nfail)
+    call report(abs(sum(y) - 7.0_dp) < 1.0d-12, &
+         & "what does not cancel is the flux through the wall", nfail)
+
+  end subroutine check_boundary_half_edges
+
+  !===================================================================!
+  ! Directed traversal on a diamond: 1 --> 2 --> 4 and 1 --> 3 --> 4.
+  ! Out and in, edges and vertices, sources and sinks - the queries
+  ! the directed view must continue to evaluate.
+  !===================================================================!
+
+  subroutine check_directed_traversal(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(stored_directed_graph)   :: g
+    integer, allocatable :: idx(:)
+
+    g = stored_directed_graph(4, tails=[1, 1, 2, 3], heads=[2, 3, 4, 4])
+
+    call g % outgoing_edges(1, idx)
+    call report(size(idx) .eq. 2 .and. all(idx .eq. [1, 2]), &
+         & "the source's outgoing edges", nfail)
+
+    call g % incoming_edges(1, idx)
+    call report(size(idx) .eq. 0, &
+         & "a source has no incoming edge", nfail)
+
+    call g % outgoing_vertices(1, idx)
+    call report(size(idx) .eq. 2 .and. all(idx .eq. [2, 3]), &
+         & "the source's downstream vertices", nfail)
+
+    call g % incoming_edges(4, idx)
+    call report(size(idx) .eq. 2 .and. all(idx .eq. [3, 4]), &
+         & "the sink's incoming edges", nfail)
+
+    call g % incoming_vertices(4, idx)
+    call report(size(idx) .eq. 2 .and. all(idx .eq. [2, 3]), &
+         & "the sink's upstream vertices", nfail)
+
+    call g % outgoing_edges(4, idx)
+    call report(size(idx) .eq. 0, &
+         & "a sink has no outgoing edge", nfail)
+
+  end subroutine check_directed_traversal
+
+  !===================================================================!
+  ! TRANSITIONAL - LEGACY COMPATIBILITY, NOT DESTINATION.
+  !
+  ! A support is a chosen set of members on one side of its host.
+  ! Once it was expressed through the graph vocabulary - side
+  ! constants, num_vertices, even num_edges == 0 - and these checks
+  ! recorded that, so nothing shifted unseen while the ground moved. The
+  ! destination is different on purpose: support becomes a SUBOBJECT
+  ! S c--> A (AGENTS.md sections 6 and 37, refined by review) - and
+  ! THE DESTINATION NOW STANDS: a listed representation bound to a
+  ! declared identity, with its provenance in the inclusion map, and
+  ! its laws in test/graph-set-view and test/graph-inclusion. The
+  ! checks below guarded the OLD support until the old fields retired
+  ! onto the new sets; then they were rewritten, not obeyed - what
+  ! survives is membership, the host domain, order, and emptiness;
+  ! the graph-flavoured spelling does not.
+  !===================================================================!
+
+  subroutine check_supports(nfail)
+
+    ! REWRITTEN at phase 5B, as the transitional note stated: the
+    ! destination is in place, and these checks now guard the
+    ! subobject law itself - membership, the host domain, order, and
+    ! emptiness.
+
+    integer, intent(inout) :: nfail
+
+    type(graph)    :: faces
+    type(graph)     :: es, none
+    integer, allocatable :: idx(:)
+    type(set_store)     :: sets
+
+    call faces % declare()
+    call sets % bind(faces, counted_set_representation(20))
+    call sets % name(faces, 'faces')
+    call es % declare()
+    call sets % bind(es, listed_set_representation([11, 14, 19]))
+    call sets % name(es, 'walls')
+    call sets % include_in(es, faces)
+
+    call report(sets % subobject_of(es, faces), &
+         & "a support is a subobject of its host domain", nfail)
+    call report(sets % num_members_of(es) .eq. 3, &
+         & "and reports how many members it has", nfail)
+
+    call sets % members_of(es, idx)
+    call report(all(idx .eq. [11, 14, 19]), &
+         & "members return exactly as given, in order", nfail)
+
+    call report(sets % has(es, 14) .and. .not. sets % has(es, 12), &
+         & "membership is the chosen family alone", nfail)
+
+    call none % declare()
+    call sets % bind(none, listed_set_representation([integer ::]))
+    call sets % name(none, 'nothing')
+    call sets % include_in(none, faces)
+    call report(sets % num_members_of(none) .eq. 0, &
+         & "the empty support is a support", nfail)
+
+  end subroutine check_supports
+
+  !===================================================================!
+  ! Partition then assemble rebuilds the whole - for a field on
+  ! either side, through the same two calls. The transport symmetry
+  ! the relational migration must keep while it collapses the
+  ! vertex/edge branches into one domain-parametric act.
+  !===================================================================!
+
+  subroutine check_partition_round_trip(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(stored_directed_graph)              :: g
+    type(partitioner)               :: p
+    type(assembler)                 :: a
+    class(directed_graph), allocatable       :: part
+    class(field), allocatable :: pd, fd
+    type(graph)                   :: von, eon
+    type(stored_field)                     :: q, w
+    real(dp), allocatable           :: v(:)
+    real(dp)                        :: vtotal(6), etotal(5)
+    integer                         :: k
+    type(set_store)     :: sets
+
+    g = stored_directed_graph(6, tails=[1, 2, 3, 4, 5], heads=[2, 3, 4, 5, 6])
+    a = assembler()
+
+    von = g % vertex_set()
+    call sets % bind(von, counted_set_representation(g % num_vertices()))
+    q   = stored_field('q', von, g % num_vertices())
+    call q % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp, 5.0_dp, 6.0_dp])
+
+    eon = g % edge_set()
+    call sets % bind(eon, counted_set_representation(g % num_edges()))
+    w   = stored_field('w', eon, g % num_edges())
+    call w % set_real_vector([10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, 50.0_dp])
+
+    vtotal = 0.0_dp
+    etotal = 0.0_dp
+
+    do k = 1, 2
+       p = partitioner(PARTITION_LINEAR, num_parts=2, part=k)
+       call p % partition_graph(g, part, rel)
+       call sets % bind(part % vertex_set(), &
+            & counted_set_representation(part % num_vertices()))
+       call sets % bind(part % edge_set(), &
+            & counted_set_representation(part % num_edges()))
+
+       call p % partition_data(rel, g, q, part, sets, pd)
+       call a % assemble_data(rel, part, pd, g, sets, fd)
+       select type (fd)
+       class is (stored_field)
+          call fd % real_vector(v)
+          vtotal = vtotal + v(1:6)
+       end select
+
+       call p % partition_data(rel, g, w, part, sets, pd)
+       call a % assemble_data(rel, part, pd, g, sets, fd)
+       select type (fd)
+       class is (stored_field)
+          call fd % real_vector(v)
+          etotal = etotal + v(1:5)
+       end select
+    end do
+
+    call report(all(abs(vtotal - [1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp, &
+         &                        5.0_dp, 6.0_dp]) < 1.0d-13), &
+         & "a vertex field survives the round trip exactly", nfail)
+    call report(all(abs(etotal - [10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, &
+         &                        50.0_dp]) < 1.0d-13), &
+         & "and so does an edge field, through the same two calls", nfail)
+
+  end subroutine check_partition_round_trip
+
+  !===================================================================!
+  ! The adjoint pairing on the topology this suite exists for: a
+  ! graph with a parallel pair AND a boundary half-edge at once.
+  ! For every order, <A q, p> = <q, A* p> to machine precision.
+  !===================================================================!
+
+  subroutine check_adjoints_on_awkward_topology(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(stored_directed_graph)              :: g
+    type(differential_operator)     :: fwd, rev
+    class(field), allocatable :: yf
+    type(graph)                   :: on
+    type(stored_field)                     :: qf, pf
+    real(dp), allocatable           :: aq(:), ap(:)
+    real(dp)                        :: q(4), p(4), cs(5)
+    integer                         :: v, order
+    logical                         :: ok
+
+    ! 1 ==> 2 (twice, in parallel), 2 --> 3 --> 4 --> wall.
+    g  = stored_directed_graph(4, tails=[1, 1, 2, 3, 4], heads=[2, 2, 3, 4, 0])
+    on = g % vertex_set()
+    qf = stored_field('q', on, g % num_vertices())
+    pf = stored_field('p', on, g % num_vertices())
+
+    do v = 1, 4
+       q(v) = real(v, dp)**2 - 3.0_dp * v
+       p(v) = 2.0_dp * v + real(4 - v, dp)**2
+    end do
+    call qf % set_real_vector(q)
+    call pf % set_real_vector(p)
+
+    cs = [2.0_dp, 0.5_dp, 3.0_dp, 1.5_dp, 4.0_dp]
+
+    ok = .true.
+    do order = 1, 2
+       fwd = differential_operator(SIDE_VERTEX, order, coefficients=cs)
+       rev = differential_operator(SIDE_VERTEX, order, coefficients=cs, &
+            &                      adjoint=.true.)
+
+       call fwd % apply(g, fwd % bind([qf]), yf)
+       call yf % real_vector(aq)
+       call rev % apply(g, rev % bind([pf]), yf)
+       call yf % real_vector(ap)
+
+       ok = ok .and. abs(sum(aq * p) - sum(q * ap)) < 1.0d-11
+    end do
+
+    call report(ok, &
+         & "the pairing holds beside parallel edges and a wall", nfail)
+
+  end subroutine check_adjoints_on_awkward_topology
+
+  !===================================================================!
+  ! members reads a named set back as plain indices.
+  !===================================================================!
+
+  subroutine members(sets, g, indices)
+
+    type(set_store)     , intent(in)  :: sets
+    type(graph)     , intent(in)  :: g
+    integer, allocatable, intent(out) :: indices(:)
+
+    call sets % members_of(g, indices)
+
+  end subroutine members
+
+end program test_graph_characterization

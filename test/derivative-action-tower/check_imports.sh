@@ -1,0 +1,88 @@
+#!/bin/bash
+# The derivative action tower's import gate: the dependency-
+# stratification law, made mechanical - the third client of the
+# calculator gate's philosophy, with its own allowlists. Every
+# derivative source may `use` only the framework modules its level
+# has been explicitly granted; a directory with sources but no
+# allowlist fails closed. Gate A especially forbids everywhere:
+# operation_minimization, operation_gmres, any legacy tangent/adjoint
+# or linearization machinery - structure first, numbers never, at
+# this gate. This gate audits the DERIVATIVE TESTS' imports only.
+
+here="$(cd "$(dirname "$0")" && pwd)"
+
+intrinsics="iso_fortran_env iso_c_binding ieee_arithmetic ieee_exceptions ieee_features"
+
+allowed_for() {
+    case "$1" in
+        # 2026-08-16: the relational container is retired. A level reading
+        # (S, P) is granted graph_fractal and view_relational,
+        # and builds the representation itself. Granted per level, in
+        # review; the list is an assertion, not a history.
+        common)                   echo "" ;;
+        level-0-carrier)          echo "derivative_assert graph_fractal map_set_representation map_set" ;;
+        level-1-relation)         echo "derivative_assert graph_fractal map_set_representation map_set relation_finitary" ;;
+        level-2-relation-algebra) echo "derivative_assert graph_fractal map_set_representation map_set map_inclusion relation_finitary relation_algebra" ;;
+        level-3-graph)            echo "derivative_assert graph_fractal map_set_representation map_set map_inclusion relation_finitary relation_algebra graph_fractal view_relational" ;;
+        level-4-graph-calculus)   echo "derivative_assert graph_fractal map_set_representation map_set map_set_store map_inclusion relation_finitary relation_algebra relation_algorithms graph_fractal view_relational relation_binary" ;;
+        # level 5: primal values need domains, not graphs - and no
+        # tangent/cotangent/seed type exists to be imported.
+        level-5-field-calculus)   echo "derivative_assert graph_fractal map_set_representation map_set map_inclusion field_stored" ;;
+        # level 6: the structural rung - the algebra derives value
+        # dependency, the profile walks it, and the binary citizen
+        # materializes J_ZX and answers its reverse as a view.
+        # Fields stay forbidden: the pattern needs no numbers.
+        level-6-derivative-structure) echo "derivative_assert graph_fractal map_set_representation map_set map_inclusion relation_finitary relation_algebra relation_binary relation_algorithms graph_fractal view_relational" ;;
+        # level 8 (Gate B): the numerical action rung. Structure
+        # derives the order, the test-local constitution supplies
+        # primal laws and ONE local linearization per operation,
+        # fields carry seeds and results. NO binary storage - the
+        # J-pattern is support metadata, never the propagation
+        # itinerary - and no solver, ever, at this gate.
+        level-8-derivative-constitution) echo "derivative_assert graph_fractal map_set_representation map_set map_inclusion relation_finitary relation_algebra relation_algorithms field_stored derivative_constitution_fixture graph_fractal view_relational" ;;
+        # level 9 (Gate C): the statement - the composition rung.
+        # The REUSED level-8 constitution is the only fixture; no
+        # adapter exists because nothing here must satisfy a legacy
+        # operation face. No new mathematics, and still no solver.
+        level-9-statement)        echo "derivative_assert graph_fractal map_set_representation map_set map_inclusion relation_finitary relation_algebra relation_algorithms field_stored derivative_constitution_fixture graph_fractal view_relational" ;;
+        *)                        echo "__no_allowlist__" ;;
+    esac
+}
+
+violation=0
+
+for dir in "$here"/common "$here"/level-*; do
+    [ -d "$dir" ] || continue
+    name="$(basename "$dir")"
+    sources=$(ls "$dir"/*.f90 2>/dev/null)
+    [ -n "$sources" ] || continue
+
+    allow="$(allowed_for "$name")"
+    if [ "$allow" = "__no_allowlist__" ]; then
+        echo "IMPORT GATE: $name has sources but no declared allowlist"
+        violation=1
+        continue
+    fi
+
+    for src in $sources; do
+        uses=$(grep -ihE '^[[:space:]]*use[[:space:]]' "$src" \
+               | sed -E 's/^[[:space:]]*[uU][sS][eE][[:space:]]*(,[[:space:]]*[iI][nN][tT][rR][iI][nN][sS][iI][cC][[:space:]]*::)?[[:space:]]*([a-zA-Z][a-zA-Z0-9_]*).*/\2/' \
+               | tr 'A-Z' 'a-z' | sort -u)
+        for mod in $uses; do
+            ok=0
+            for a in $allow $intrinsics; do
+                [ "$mod" = "$a" ] && ok=1 && break
+            done
+            if [ "$ok" -eq 0 ]; then
+                echo "IMPORT GATE: $(basename "$src") in $name uses '$mod' - not on the level's allowlist"
+                violation=1
+            fi
+        done
+    done
+done
+
+if [ "$violation" -ne 0 ]; then
+    echo "IMPORT GATE: the tower layering is violated"
+    exit 1
+fi
+echo "import gate: every derivative source imports only its level and below"

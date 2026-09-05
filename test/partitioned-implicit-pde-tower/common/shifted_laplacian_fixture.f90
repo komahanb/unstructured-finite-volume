@@ -1,0 +1,145 @@
+!=====================================================================!
+! THE SHIFTED-LAPLACIAN FIXTURE - test-local, deliberately outside
+! src/: one chain has not earned a production shifted operator. It
+! represents
+!
+!      A(q) = 2 q - L(q)
+!
+! where L is the PRODUCTION vertex Laplacian, and it is the whole
+! point of this tower that the second term is not written here.
+!
+! This adapter OWNS NO GRAPH. Its graph arrives through domain()
+! and apply(), and it hands that graph straight to the production
+! differential operator. It does not inspect edge_tail, does not
+! inspect edge_head, implements no incidence and reproduces no
+! Laplacian loop: topology belongs entirely to the operator it
+! delegates to.
+!
+! The call chain IS the experiment:
+!
+!      caller / minimizer
+!          |  supplies a graph
+!          v
+!      shifted_laplacian          (this file - no topology)
+!          |
+!          v
+!      production laplacian       (traverses the graph)
+!          |
+!          v
+!      input_graph incidence
+!
+! Because the adapter stores no graph, applying it on a different
+! host yields a different mathematical action - which is how this
+! tower proves behaviourally that the graph a minimizer carries is
+! load-bearing rather than scenery.
+!
+! Author: Komahan Boopathy (komahan@gatech.edu)
+!=====================================================================!
+
+module shifted_laplacian_fixture
+
+  use iso_fortran_env  , only : dp => REAL64
+  use graph_fractal    , only : graph
+  use operation_action, only : operation, binding, bound_value
+  use view_directed, only : directed_graph
+  use field_calculus, only : field
+  use field_stored, only : stored_field
+  use operation_differential, only : differential_operator, &
+       &                                        laplacian
+
+  implicit none
+
+  private
+  public :: shifted_laplacian
+
+  type, extends(operation) :: shifted_laplacian
+   contains
+     procedure :: name   => shifted_name
+     procedure :: domain => shifted_domain
+     procedure :: apply  => shifted_apply
+  end type shifted_laplacian
+
+  interface shifted_laplacian
+     module procedure create_shifted
+  end interface shifted_laplacian
+
+contains
+
+  ! The constructor declares the one argument, the state.
+  function create_shifted() result(this)
+    type(shifted_laplacian) :: this
+    call this % declare_arguments(1)
+  end function create_shifted
+
+  pure function shifted_name(this) result(name)
+    class(shifted_laplacian), intent(in) :: this
+    character(len=:), allocatable :: name
+    name = 'shifted laplacian'
+  end function shifted_name
+
+  !===================================================================!
+  ! The operation answers on whatever graph it is handed - it holds
+  ! no domain of its own.
+  !===================================================================!
+
+  subroutine shifted_domain(this, input_graph, domain, num_entries)
+
+    class(shifted_laplacian), intent(in) :: this
+    class(directed_graph), intent(in) :: input_graph
+    type(graph), intent(out) :: domain
+    integer        , intent(out) :: num_entries
+
+    domain   = input_graph % vertex_set()
+    num_entries = input_graph % num_vertices()
+
+  end subroutine shifted_domain
+
+  !===================================================================!
+  ! A(q) = 2q - L(q). The state is checked against THIS graph's
+  ! vertex carrier by identity - a field of the right size on a
+  ! foreign carrier is refused - and the Laplacian is the production
+  ! one, applied to the same graph.
+  !===================================================================!
+
+  subroutine shifted_apply(this, input_graph, inputs, output)
+
+    class(shifted_laplacian), intent(in)           :: this
+    class(directed_graph), intent(in)                       :: input_graph
+    type(binding), intent(in), optional       :: inputs(:)
+    class(field), allocatable, intent(inout) :: output
+
+    type(differential_operator)     :: lap
+    type(stored_field)                     :: out
+    class(field), allocatable :: state, lq
+    type(graph) :: dom
+    real(dp), allocatable           :: q(:), l(:)
+
+    if (.not. present(inputs)) then
+       error stop 'shifted laplacian: the action needs a state to read'
+    end if
+    if (size(inputs) /= 1) then
+       error stop 'shifted laplacian: the action reads exactly one state'
+    end if
+
+    call bound_value(inputs, this % argument(1), state)
+    dom = state % domain()
+    if (.not. dom % same_as(input_graph % vertex_set())) then
+       error stop 'shifted laplacian: the state must live on this graph''s vertex carrier'
+    end if
+
+    ! The topology is consumed HERE, by production, on THIS graph.
+    lap = laplacian(coefficient=1.0_dp, spacing=1.0_dp, measure=1.0_dp)
+    call lap % apply(input_graph, lap % bind(inputs), lq)
+
+    call state % real_vector(q)
+    call lq % real_vector(l)
+
+    out = stored_field('shifted laplacian', input_graph % vertex_set(), input_graph % num_vertices())
+    call out % set_real_vector(2.0_dp * q - l)
+
+    if (allocated(output)) deallocate(output)
+    allocate(output, source=out)
+
+  end subroutine shifted_apply
+
+end module shifted_laplacian_fixture

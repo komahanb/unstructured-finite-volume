@@ -1,0 +1,5 @@
+objects= \
+mandelbrot_law.o \
+vdp_law.o \
+march_rules.o \
+test.o

@@ -395,15 +395,70 @@ contains
                 end select
              end if
           type is (elimination)
-             ! the rows eliminated over the member are the member's
+             ! the rows eliminated over the member are the member's,
+             ! and a multigrid under the elimination coarsens by the
+             ! aggregates of the member's retained unknowns
              if (allocated(inner % eliminated)) then
-                inner % eliminated = inner % eliminated(member)
+                call restricted_elimination(inner, member)
              end if
           end select
        end if
     end select
 
   end subroutine minimizer_over_member
+
+  !===================================================================!
+  ! The elimination restricted to a member: its flags are the member's,
+  ! and the aggregates of a multigrid solving its complement, stated
+  ! over the retained unknowns of the whole system, are those of the
+  ! member's retained unknowns, relabelled compactly.
+  !===================================================================!
+
+  subroutine restricted_elimination(schur, member)
+
+    class(elimination), intent(inout) :: schur
+    integer          , intent(in)    :: member(:)
+
+    integer, allocatable :: retained_position(:), retained_of_member(:), of_member(:)
+    logical, allocatable :: flags(:), member_flags(:)
+    class(minimizer), allocatable :: solve
+    integer :: i, n
+
+    flags = schur % eliminated
+    n = size(flags)
+    allocate(retained_position(n))
+    retained_position = 0
+    do i = 1, n
+       if (i > 1) retained_position(i) = retained_position(i - 1)
+       if (.not. flags(i)) retained_position(i) = retained_position(i) + 1
+    end do
+    allocate(of_member(size(member)), member_flags(size(member)))
+    do i = 1, size(member)
+       of_member(i)    = retained_position(member(i))
+       member_flags(i) = flags(member(i))
+    end do
+    retained_of_member = pack(of_member, .not. member_flags)
+    schur % eliminated = member_flags
+    if (.not. allocated(schur % inner)) return
+    call move_alloc(schur % inner, solve)
+    select type (solve)
+    type is (multigrid)
+       if (allocated(solve % aggregates)) then
+          solve % aggregates = compact_labels(solve % aggregates(retained_of_member))
+       end if
+    type is (gmres)
+       if (allocated(solve % preconditioner)) then
+          select type (levels => solve % preconditioner)
+          type is (multigrid)
+             if (allocated(levels % aggregates)) then
+                levels % aggregates = compact_labels(levels % aggregates(retained_of_member))
+             end if
+          end select
+       end if
+    end select
+    call move_alloc(solve, schur % inner)
+
+  end subroutine restricted_elimination
 
   function compact_labels(label) result(mapped)
 

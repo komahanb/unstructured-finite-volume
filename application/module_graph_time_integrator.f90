@@ -1150,27 +1150,42 @@ contains
        error stop 'gti_sweeps: the rows eliminated are read from the explicit tangent, &
             &which a matrix-free jacobian does not store'
     end if
-    if (chosen_multigrid .or. trim(chosen_preconditioner) == 'multigrid') then
-       error stop 'gti_sweeps: multigrid over the retained unknowns is not implemented; &
-            &eliminate rows with preconditioner = none or gauss_seidel'
-    end if
     complement % eliminated = eliminated
-    allocate(complement % inner, source=solve_minimizer(count - count_of(eliminated), &
-         & width - count_of(eliminated(1:width))))
+    ! multigrid over the retained unknowns coarsens by their aggregates
+    if (allocated(chosen_aggregates)) then
+       if (size(chosen_aggregates) /= count) then
+          error stop 'gti_sweeps: one aggregate per unknown'
+       end if
+       allocate(complement % inner, source=solve_minimizer(count - count_of(eliminated), &
+            & width - count_of(eliminated(1:width)), &
+            & aggregates=pack(chosen_aggregates, .not. eliminated)))
+    else
+       allocate(complement % inner, source=solve_minimizer(count - count_of(eliminated), &
+            & width - count_of(eliminated(1:width))))
+    end if
     allocate(inner, source=complement)
   end function inner_minimizer
   pure integer function count_of(flags)
     logical, intent(in) :: flags(:)
     count_of = count(flags)
   end function count_of
-  function solve_minimizer(count, width) result(inner)
+  function solve_minimizer(count, width, aggregates) result(inner)
     integer, intent(in) :: count, width
+    integer, intent(in), optional :: aggregates(:)
     class(minimizer), allocatable :: inner
     class(minimizer), allocatable :: named
     type(gmres)        :: krylov, coarse
     type(dense_direct) :: factorisation
     type(multigrid)    :: levels
     type(gauss_seidel) :: sweeps
+    integer, allocatable :: coarsening(:)
+    ! the aggregates given are over the retained unknowns of an
+    ! elimination; otherwise the stated ones over every unknown
+    if (present(aggregates)) then
+       coarsening = aggregates
+    else if (allocated(chosen_aggregates)) then
+       coarsening = chosen_aggregates
+    end if
     if (trim(chosen_jacobian) == 'free' .and. trim(chosen_solver) == 'direct') then
        error stop 'gti_sweeps: a matrix-free jacobian has no matrix to factorise; its solver iterates'
     end if
@@ -1202,10 +1217,10 @@ contains
        case ('multigrid')
           ! one cycle: block Gauss-Seidel sweeps, the coarse correction
           ! by an unpreconditioned solve over the aggregates, sweeps again
-          if (.not. allocated(chosen_aggregates)) then
+          if (.not. allocated(coarsening)) then
              error stop 'gti_sweeps: multigrid coarsens by aggregates, and none were given'
           end if
-          if (size(chosen_aggregates) /= count) then
+          if (size(coarsening) /= count) then
              error stop 'gti_sweeps: one aggregate per unknown'
           end if
           sweeps % max_iterations = linear_sweeps
@@ -1217,7 +1232,7 @@ contains
                & linear_iterations)
           allocate(levels % coarse, source=coarse)
           levels % block_width = width
-          levels % aggregates  = chosen_aggregates
+          levels % aggregates  = coarsening
           call stopping_applied(levels, linear_tolerance, linear_criterion, linear_limit_kind, 1)
           allocate(krylov % preconditioner, source=levels)
        end select
@@ -1227,10 +1242,10 @@ contains
        call move_alloc(named, inner)
        return
     end if
-    if (.not. allocated(chosen_aggregates)) then
+    if (.not. allocated(coarsening)) then
        error stop 'gti_sweeps: multigrid coarsens by aggregates, and none were given'
     end if
-    if (size(chosen_aggregates) /= count) then
+    if (size(coarsening) /= count) then
        error stop 'gti_sweeps: one aggregate per unknown'
     end if
     sweeps % max_iterations = linear_sweeps
@@ -1238,7 +1253,7 @@ contains
     allocate(levels % smoother, source=sweeps)
     call move_alloc(named, levels % coarse)
     levels % block_width    = width
-    levels % aggregates     = chosen_aggregates
+    levels % aggregates     = coarsening
     call stopping_applied(levels, linear_tolerance, linear_criterion, linear_limit_kind, &
          & linear_iterations)
     allocate(inner, source=levels)

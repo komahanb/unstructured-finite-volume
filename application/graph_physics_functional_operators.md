@@ -499,8 +499,8 @@ codebases are read as one construction.
    unknowns (`rows = states`, `elimination = numerical`, identical
    digits, 104 s against 176 at 32 x 32); Halley's step
    (`higher_order_jacobian_product = 2`) and the Taylor seed of each
-   instant from the jet before it (`predictor_order`). Not built:
-   multigrid over the retained unknowns, the derivative of a
+   instant from the jet before it (`predictor_order`); multigrid over
+   the retained unknowns (no gain measured). Not built: the derivative of a
    rule along a coordinate as a rule (mixed jet components), and a
    reverse pass whose cost does not grow as two to the tuple's width.
 

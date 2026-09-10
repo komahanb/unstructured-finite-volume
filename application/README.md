@@ -683,10 +683,15 @@ with all three kinds, for the vortex and for van der Pol under bdf,
 adams and dirk together; the vortex run reads 4.3 s against 5.0 s at
 8 x 8, 18.1 against 23.9 at 16 x 16, 104 against 176 at 32 x 32. The
 complement is read from the explicit tangent's triples, so a
-matrix-free Jacobian is refused under it, as is multigrid over the
-retained unknowns, which is not built; an eliminated row without a
+matrix-free Jacobian is refused under it; an eliminated row without a
 diagonal, or rows reading one another in a cycle, stop the solve
-naming the kind to state as rows. Under a staged family the states at
+naming the kind to state as rows. Multigrid under the elimination
+coarsens by the aggregates of the retained unknowns, restricted with
+the flags to each member of a sweep: identical digits, 17.0 s
+against 16.1 for the sweeps at 16 x 16, and on the degree-4 step at
+32 x 32 96370 iterations and 711 s at `krylov_restart = 60` against
+1492 and 16.5 s at 300, the same as the sweeps in both, so the
+restart is the lever there and the preconditioner is not. Under a staged family the states at
 the stages are the tied components, so its time derivatives stay as
 rows.
 

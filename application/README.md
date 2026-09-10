@@ -733,7 +733,20 @@ taken. An odd degree is refused: its top members are odd about the
 centre, so the second derivatives at the centre are the even degree
 below over the same points, the full quadratic over two rings and
 more, whose laplacian has a grid mode in its kernel; at degree 3 the
-pressure grew to 1e13 in one step, on two rings and on three.
+pressure grew to 1e13 in one step, on two rings and on three. The
+wider stencil is the linear solve's cost as the mesh refines: at
+32 x 32 one step of degree 4 took 48187 Krylov iterations and 757 s
+with `krylov_restart = 60`, GMRES stagnating between restarts under
+the block sweeps, against 440 iterations at degree 2; with
+`krylov_restart = 300` the same step takes 748 iterations and 16 s,
+so the restart is stated with the order. With it the degree-4 vortex
+at 32 x 32 reads velocity error 6.8e-4, pressure 1.3e-3, divergence
+8.6e-4, energy 9.6734 and dissipation 0.38676, in 475 s: from 16 x 16
+the errors divide by 14, 15 and 14, fourth order. In three
+coordinates the full quartic needs 35 members and the neighbourhood
+of 63 cells; at 8 x 8 x 8 the run did not finish in five days at
+either restart, and the order above two in three coordinates is not
+within reach of this build.
 `multigrid = T`, the same object as the solver, is slower than GMRES
 here, over 1500 s at 16 x 16.
 

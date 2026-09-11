@@ -46,14 +46,20 @@ program assembly_refusal
   case ('smaller-whole')
      destination = stored_directed_graph(3, tails=[1, 2], heads=[2, 3])
   case ('whole-vertex-count')
-     destination % nv = 3
+     rel = partition_relation(part % vertex_set(), 6, part % edge_set(), 5, &
+          & whole % vertex_set(), 3, whole % edge_set(), 5, 1, 1, &
+          & [1, 2, 3, 4, 5, 6], [1, 1, 1, 1, 1, 1], &
+          & [1, 2, 3, 4, 5], [1, 1, 1, 1, 1])
   case ('whole-edge-count')
-     destination % ne = 4
+     rel = partition_relation(part % vertex_set(), 6, part % edge_set(), 5, &
+          & whole % vertex_set(), 6, whole % edge_set(), 4, 1, 1, &
+          & [1, 2, 3, 4, 5, 6], [1, 1, 1, 1, 1, 1], &
+          & [1, 2, 3, 4, 5], [1, 1, 1, 1, 1])
   case ('part-count')
-     select type (part)
-     type is (stored_directed_graph)
-        part % nv = 5
-     end select
+     rel = partition_relation(part % vertex_set(), 5, part % edge_set(), 5, &
+          & whole % vertex_set(), 6, whole % edge_set(), 5, 1, 1, &
+          & [1, 2, 3, 4, 5], [1, 1, 1, 1, 1], &
+          & [1, 2, 3, 4, 5], [1, 1, 1, 1, 1])
   case ('out-of-range-full', 'out-of-range-subset')
      rel = partition_relation(part % vertex_set(), 6, part % edge_set(), 5, &
           & whole % vertex_set(), 6, whole % edge_set(), 5, 1, 1, &

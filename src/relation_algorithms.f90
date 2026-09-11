@@ -63,7 +63,7 @@ module relation_algorithms
 
   use graph_fractal           , only : graph
   use relation_finitary          , only : relation
-  use relation_binary   , only : binary_relation, transposed_relation, transpose_of
+  use relation_binary   , only : integer_fibre, binary_relation, transposed_relation, transpose_of
   use map_set           , only : set_map
   use map_set_store     , only : set_store
 
@@ -71,6 +71,24 @@ module relation_algorithms
 
   private
   public :: sources, sinks, reachable, topological_order
+
+  ! Per-call traversal state. References remain valid only during the
+  ! enclosing algorithm; module readers require no captured procedure.
+  type :: reachability_context
+     type(set_map), pointer :: sets => null()
+     type(graph) :: domain
+     logical, pointer :: visited(:) => null()
+     integer, pointer :: queue(:) => null()
+     integer :: tail = 0
+     integer :: target_member = 0
+     logical :: is_reachable = .false.
+  end type reachability_context
+
+  type :: topological_order_context
+     type(set_map), pointer :: sets => null()
+     type(graph) :: domain
+     integer, pointer :: indegree(:) => null()
+  end type topological_order_context
 
 contains
 
@@ -128,7 +146,7 @@ contains
     type(graph)                   , intent(out)   :: unpointed_set
 
     integer, allocatable :: retained(:)
-    integer, pointer     :: fibre(:)
+    type(integer_fibre) :: fibre
     integer              :: i, n, m, size_of_dom
 
     size_of_dom = sets % num_members_of(dom)
@@ -137,8 +155,8 @@ contains
     n = 0
     do i = 1, size_of_dom
        m = sets % member_of(dom, i)
-       fibre => a % preimage_view(m)
-       if (size(fibre) == 0) then
+       fibre = a % preimage_view(m)
+       if (fibre % num_members() == 0) then
           n = n + 1
           retained(n) = m
        end if
@@ -158,55 +176,79 @@ contains
   logical function reachable(adjacency, sets, from, to)
 
     class(relation), target      , intent(in) :: adjacency
-    type(set_map)                , intent(in) :: sets
+    type(set_map), target        , intent(in) :: sets
     integer                      , intent(in) :: from
     integer                      , intent(in) :: to
 
     class(binary_relation), pointer :: a
-    type(graph)      :: dom
-    logical, allocatable :: visited(:)
-    integer, allocatable :: queue(:)
-    integer, pointer     :: fibre(:)
-    integer              :: head, tail, v, j, s, n
+    type(reachability_context) :: context
+    logical, allocatable, target :: visited(:)
+    integer, allocatable, target :: queue(:)
+    type(integer_fibre) :: fibre
+    integer              :: head, v, n
 
     reachable = .false.
 
-    call require_adjacency(adjacency, a, dom)
-    if (.not. (sets % has(dom, from) .and. sets % has(dom, to))) return
+    call require_adjacency(adjacency, a, context % domain)
+    if (.not. (sets % has(context % domain, from) .and. sets % has(context % domain, to))) return
 
     if (from == to) then
        reachable = .true.
        return
     end if
 
-    n = sets % num_members_of(dom)
+    n = sets % num_members_of(context % domain)
     allocate(visited(n), queue(n))
     visited = .false.
+    context % sets => sets
+    context % visited => visited
+    context % queue => queue
+    context % target_member = to
 
     head = 1
-    tail = 1
+    context % tail = 1
     queue(1) = from
-    visited(sets % index_in(dom, from)) = .true.
+    visited(sets % index_in(context % domain, from)) = .true.
 
-    do while (head <= tail)
+    do while (head <= context % tail)
        v = queue(head)
        head = head + 1
-       fibre => a % image_view(v)
-       do j = 1, size(fibre)
-          s = fibre(j)
-          if (s == to) then
-             reachable = .true.
-             return
-          end if
-          if (.not. visited(sets % index_in(dom, s))) then
-             visited(sets % index_in(dom, s)) = .true.
-             tail = tail + 1
-             queue(tail) = s
-          end if
-       end do
+       fibre = a % image_view(v)
+       call fibre % read(visit_successors, context)
+       if (context % is_reachable) then
+          reachable = .true.
+          return
+       end if
     end do
 
   end function reachable
+
+  subroutine visit_successors(members, context)
+
+    integer, intent(in) :: members(:)
+    class(*), intent(inout) :: context
+    integer :: j, s, member_index
+
+    select type (context)
+    type is (reachability_context)
+      do j = 1, size(members)
+         s = members(j)
+         if (s == context % target_member) then
+            context % is_reachable = .true.
+            return
+         end if
+         member_index = context % sets % index_in(context % domain, s)
+         if (.not. context % visited(member_index)) then
+            context % visited(member_index) = .true.
+            context % tail = context % tail + 1
+            context % queue(context % tail) = s
+         end if
+      end do
+    class default
+       error stop 'relation_algorithms: the successor reader requires a reachability context'
+    end select
+
+  end subroutine visit_successors
 
   !===================================================================!
   ! The deterministic Kahn algorithm: n rounds, each taking the FIRST
@@ -220,26 +262,28 @@ contains
   subroutine topological_order(adjacency, sets, order, acyclic)
 
     class(relation), target      , intent(in)  :: adjacency
-    type(set_map)                , intent(in)  :: sets
+    type(set_map), target        , intent(in)  :: sets
     integer, allocatable         , intent(out) :: order(:)
     logical, optional            , intent(out) :: acyclic
 
     class(binary_relation), pointer :: a
-    type(graph)      :: dom
-    integer, allocatable :: indegree(:)
+    type(topological_order_context) :: context
+    integer, allocatable, target :: indegree(:)
     logical, allocatable :: enumerated(:)
-    integer, pointer     :: fibre(:)
-    integer              :: n, i, j, order_index, selected
+    type(integer_fibre) :: fibre
+    integer              :: n, i, order_index, selected
 
-    call require_adjacency(adjacency, a, dom)
-    n   = sets % num_members_of(dom)
+    call require_adjacency(adjacency, a, context % domain)
+    n   = sets % num_members_of(context % domain)
 
     allocate(indegree(n), enumerated(n), order(n))
     enumerated = .false.
+    context % sets => sets
+    context % indegree => indegree
     if (present(acyclic)) acyclic = .true.
     do i = 1, n
-       fibre => a % preimage_view(sets % member_of(dom, i))
-       indegree(i) = size(fibre)
+       fibre = a % preimage_view(sets % member_of(context % domain, i))
+       indegree(i) = fibre % num_members()
     end do
 
     do order_index = 1, n
@@ -260,16 +304,31 @@ contains
        end if
 
        enumerated(selected) = .true.
-       order(order_index) = sets % member_of(dom, selected)
+       order(order_index) = sets % member_of(context % domain, selected)
 
-       fibre => a % image_view(sets % member_of(dom, selected))
-       do j = 1, size(fibre)
-          i = sets % index_in(dom, fibre(j))
-          indegree(i) = indegree(i) - 1
-       end do
+       fibre = a % image_view(sets % member_of(context % domain, selected))
+       call fibre % read(decrease_indegrees, context)
     end do
 
   end subroutine topological_order
+
+  subroutine decrease_indegrees(members, context)
+
+    integer, intent(in) :: members(:)
+    class(*), intent(inout) :: context
+    integer :: j, member_index
+
+    select type (context)
+    type is (topological_order_context)
+      do j = 1, size(members)
+         member_index = context % sets % index_in(context % domain, members(j))
+         context % indegree(member_index) = context % indegree(member_index) - 1
+      end do
+    class default
+       error stop 'relation_algorithms: the indegree reader requires a topological order context'
+    end select
+
+  end subroutine decrease_indegrees
 
   !===================================================================!
   ! The precondition every algorithm checks: the adjacency must be a

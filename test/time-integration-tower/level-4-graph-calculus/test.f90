@@ -62,7 +62,7 @@ program time_level_4
   use graph_fractal        , only : graph
   use map_set_store  , only : set_store
   use relation_finitary        , only : relation
-  use relation_binary , only : csr_relation
+  use relation_binary , only : integer_fibre, csr_relation
   use relation_algorithms      , only : sources, sinks, reachable, &
        &                             topological_order
   use time_carriers_fixture , only : time_carriers
@@ -264,18 +264,18 @@ contains
 
     integer, intent(inout) :: nfail
 
-    integer, pointer :: fibre(:)
+    type(integer_fibre) :: fibre
     logical          :: satisfied
 
-    fibre => a2 % image_view(T0)
-    satisfied = size(fibre) .eq. 1
-    if (satisfied) satisfied = fibre(1) .eq. T2
-    fibre => a2 % image_view(T1)
-    satisfied = satisfied .and. size(fibre) .eq. 1
-    if (satisfied) satisfied = satisfied .and. fibre(1) .eq. T3
-    fibre => a2 % image_view(T2)
-    satisfied = satisfied .and. size(fibre) .eq. 1
-    if (satisfied) satisfied = satisfied .and. fibre(1) .eq. T4
+    fibre = a2 % image_view(T0)
+    satisfied = fibre % num_members() .eq. 1
+    if (satisfied) satisfied = fibre % member(1) .eq. T2
+    fibre = a2 % image_view(T1)
+    satisfied = satisfied .and. fibre % num_members() .eq. 1
+    if (satisfied) satisfied = satisfied .and. fibre % member(1) .eq. T3
+    fibre = a2 % image_view(T2)
+    satisfied = satisfied .and. fibre % num_members() .eq. 1
+    if (satisfied) satisfied = satisfied .and. fibre % member(1) .eq. T4
     call report(satisfied, &
          & "successors under A2: t0->{t2}, t1->{t3}, t2->{t4}", nfail)
 

@@ -408,41 +408,35 @@ contains
     real(dp)      , intent(inout) :: y(:)
 
     real(dp), pointer :: w(:)
-    real(dp) :: acc
-    integer :: e, p, v, nv
 
     ! the weights are read in place: an earlier apply copied the
     ! whole edge vector before reading it
     w => this % weights % real_values()
     if (.not. associated(w)) return
 
-    ! a row at a time, through the lists the pattern already groups by
-    ! endpoint: the row's sum accumulates in a local and each row is
-    ! written once, where an edge at a time wrote to a scattered
-    ! subscript. Which list stores the rows depends on the reversal
-    ! flag, evaluated once
-    associate (g => this % pattern)
-      nv = g % num_vertices()
-      if (g % reversed) then
-         do v = 1, nv
-            acc = 0.0_dp
-            do p = g % xout(v), g % xout(v + 1) - 1
-               e   = g % eout(p)
-               acc = acc + w(e) * q(g % head(e))
-            end do
-            y(v) = y(v) + acc
+    ! The graph selects its orientation once and supplies its grouped
+    ! incidence to one read. Each row is accumulated locally and written
+    ! once, with no copy of the topology and no per-edge procedure call.
+    call this % pattern % read_incoming(accumulate_rows)
+
+  contains
+
+    subroutine accumulate_rows(offsets, indices, sources)
+
+      integer, intent(in) :: offsets(:), indices(:), sources(:)
+      real(dp) :: acc
+      integer :: e, p, v
+
+      do v = 1, size(offsets) - 1
+         acc = 0.0_dp
+         do p = offsets(v), offsets(v + 1) - 1
+            e = indices(p)
+            acc = acc + w(e) * q(sources(e))
          end do
-      else
-         do v = 1, nv
-            acc = 0.0_dp
-            do p = g % xin(v), g % xin(v + 1) - 1
-               e   = g % ein(p)
-               acc = acc + w(e) * q(g % tail(e))
-            end do
-            y(v) = y(v) + acc
-         end do
-      end if
-    end associate
+         y(v) = y(v) + acc
+      end do
+
+    end subroutine accumulate_rows
 
   end subroutine accumulate_edges
 

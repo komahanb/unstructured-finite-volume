@@ -18,6 +18,7 @@ test/*/run_serial
 *.res
 test/*/refusal
 test/*/mutation
+test/graph-topology-ownership/traversal
 test/fractal-map/set
 test/fractal-map/relation
 test/fractal-map/scale

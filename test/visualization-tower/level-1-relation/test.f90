@@ -50,7 +50,7 @@ program visualization_level_1
   use graph_fractal        , only : graph
   use map_set        , only : set_map
   use map_label      , only : label_map
-  use relation_binary, only : csr_relation, binary_relation
+  use relation_binary, only : integer_fibre, csr_relation, binary_relation
   use visualization_carriers_fixture, only : structural_carriers, label_for
   use visualization_relations_fixture, only : occurrences_of_a1
   use visualization_relations_fixture, only : occurrences_of_a2
@@ -280,16 +280,16 @@ contains
     class(binary_relation), target, intent(in) :: tail, head
     type(graph)             , intent(in) :: occurrences
 
-    integer, pointer :: fibre(:)
+    type(integer_fibre) :: fibre
     integer          :: k, e
 
     exactly_one_end_each = .true.
     do k = 1, sets % num_members_of(occurrences)
        e = sets % member_of(occurrences, k)
-       fibre => tail % image_view(e)
-       exactly_one_end_each = exactly_one_end_each .and. (size(fibre) .eq. 1)
-       fibre => head % image_view(e)
-       exactly_one_end_each = exactly_one_end_each .and. (size(fibre) .eq. 1)
+       fibre = tail % image_view(e)
+       exactly_one_end_each = exactly_one_end_each .and. (fibre % num_members() .eq. 1)
+       fibre = head % image_view(e)
+       exactly_one_end_each = exactly_one_end_each .and. (fibre % num_members() .eq. 1)
     end do
 
   end function exactly_one_end_each

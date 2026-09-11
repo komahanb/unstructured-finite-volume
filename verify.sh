@@ -13,7 +13,7 @@ for suite in graph-contract graph-robustness graph-minimization graph-multigrid 
     graph-dense-direct graph-partition graph-field-transport graph-set-view \
     graph-marching graph-elimination gti-contract time-integration-tower \
     adjoint-tower derivative-action-tower fractal-graph fractal-map \
-    graph-algebra graph-algorithms graph-binary graph-change graph-characterization \
+    graph-algebra graph-algorithms graph-binary graph-topology-ownership graph-change graph-characterization \
     graph-constitution graph-differentiation graph-field graph-identity-map \
     graph-inclusion graph-mesh graph-ordinary graph-relation graph-relational \
     graph-sequence graph-state calculator-tower learning-tower visualization-tower \

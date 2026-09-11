@@ -29,7 +29,7 @@ program bench_graph_traversal
   use map_set_representation, only : counted_set_representation
   use map_set_store    , only : set_store
   use relation_partition, only : partition_relation
-  use relation_binary  , only : csr_relation
+  use relation_binary  , only : integer_fibre, csr_relation
   use view_directed_stored            , only : stored_directed_graph
   use field_stored      , only : stored_field
   use transform_partitioner, only : partitioner, PARTITION_LINEAR
@@ -50,7 +50,7 @@ program bench_graph_traversal
   type(set_store)                 :: sets
   type(partition_relation)        :: rp
   type(csr_relation), target      :: rel
-  integer, pointer                :: fp(:)
+  type(integer_fibre) :: fp
   integer, allocatable            :: tab(:,:)
   type(differential_operator)     :: op
   type(stencil)          :: compiled
@@ -175,12 +175,12 @@ program bench_graph_traversal
   call system_clock(t1)
   call line("csr preimage sweep (x3)", t0, t1, rate, int(3, int64) * ne)
 
-  ! -- the pointer views: the same fibres with no allocation anywhere.
+  ! -- the read-only views: the same fibres with no allocation anywhere.
   call system_clock(t0)
   do rep = 1, 3
      do v = 1, nv
-        fp => rel % image_view(v)
-        touched = touched + size(fp)
+        fp = rel % image_view(v)
+        touched = touched + fp % num_members()
      end do
   end do
   call system_clock(t1)
@@ -189,8 +189,8 @@ program bench_graph_traversal
   call system_clock(t0)
   do rep = 1, 3
      do e = 1, ne
-        fp => rel % preimage_view(e)
-        touched = touched + size(fp)
+        fp = rel % preimage_view(e)
+        touched = touched + fp % num_members()
      end do
   end do
   call system_clock(t1)

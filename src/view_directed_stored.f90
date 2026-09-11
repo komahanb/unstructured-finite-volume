@@ -56,9 +56,10 @@ module view_directed_stored
   use view_directed, only : directed_graph, forward, reverse
   use relation_algorithms, only : topological_order
   use graph_fractal      , only : graph
+  use token_identity, only : token
   use relation_binary, only : group_by_key, csr_relation
   use relation_partition, only : partition_relation
-  use map_set_representation, only : counted_set_representation
+  use map_set_representation, only : counted_set_representation, listed_set_representation
   use map_set      , only : set_map
   use map_set_store, only : set_store
 
@@ -74,17 +75,19 @@ module view_directed_stored
 
   type, extends(directed_graph) :: stored_directed_graph
 
+     private
+
      integer :: number = 1
      integer :: nv     = 0
      integer :: ne     = 0
 
      !----------------------------------------------------------------!
      ! THE ORIENTATION. D = (V, E, tail, head) and its transpose
-     ! D^T = (V, E, head, tail) are one stored object read two ways:
+     ! D^T = (V, E, head, tail) have the same carrier identities:
      ! both endpoint lists and both compressed directions are stored,
      ! and reversed records which is which. The transpose of the
-     ! transpose is the object itself, exactly, and the identity is
-     ! the same relation's.
+     ! transpose restores the original orientation. Each graph value
+     ! owns its arrays; transpose copies this storage before reversal.
      !----------------------------------------------------------------!
      logical :: reversed = .false.
 
@@ -187,6 +190,7 @@ module view_directed_stored
      procedure :: incoming_edges
      procedure :: outgoing_vertices
      procedure :: incoming_vertices
+     procedure :: read_incoming
 
      !----------------------------------------------------------------!
      ! How a part relates to the whole: ONE accessor, returning the
@@ -210,6 +214,12 @@ module view_directed_stored
   interface stored_directed_graph
      module procedure create
   end interface stored_directed_graph
+
+  abstract interface
+     subroutine incoming_reader(offsets, indices, sources)
+       integer, intent(in) :: offsets(:), indices(:), sources(:)
+     end subroutine incoming_reader
+  end interface
 
 contains
 
@@ -259,7 +269,88 @@ contains
     type(graph)   , intent(in), optional :: whole_vertices, whole_edges
     integer           , intent(in), optional :: num_whole_vertices, num_whole_edges
 
-    integer :: e
+    integer :: e, np, part_number, nwv, nwe
+    type(token) :: whole_identity
+
+    ! Validate the input arrays before reading endpoints or constructing
+    ! any compressed index. Every edge has a tail in the vertex set;
+    ! the documented boundary convention applies only to its head.
+    if (nv < 0) error stop 'stored_directed_graph: the vertex count is nonnegative'
+    if (size(heads) /= size(tails)) then
+       error stop 'stored_directed_graph: head and tail arrays have equal extent'
+    end if
+    if (any(tails < 1) .or. any(tails > nv)) then
+       error stop 'stored_directed_graph: every tail belongs to the vertex set'
+    end if
+    if (present(vtags)) then
+       if (size(vtags) /= nv) error stop 'stored_directed_graph: one tag per vertex'
+    end if
+    if (present(etags)) then
+       if (size(etags) /= size(tails)) error stop 'stored_directed_graph: one tag per edge'
+    end if
+
+    if (present(vglobal)) then
+       if (size(vglobal) /= nv) error stop 'stored_directed_graph: one global index per vertex'
+       np = merge_count(num_parts, 1)
+       part_number = merge_count(number, 1)
+       nwv = merge_count(num_whole_vertices, nv)
+       nwe = merge_count(num_whole_edges, size(tails))
+       if (present(whole_vertices)) then
+          whole_identity = whole_vertices % id()
+          if (.not. whole_identity % declared()) then
+             error stop 'stored_directed_graph: the whole vertex carrier is declared'
+          end if
+       else if (nwv /= nv) then
+          error stop 'stored_directed_graph: one vertex carrier has one extent'
+       end if
+       if (present(whole_edges)) then
+          whole_identity = whole_edges % id()
+          if (.not. whole_identity % declared()) then
+             error stop 'stored_directed_graph: the whole edge carrier is declared'
+          end if
+       else if (nwe /= size(tails)) then
+          error stop 'stored_directed_graph: one edge carrier has one extent'
+       end if
+       if (np < 1 .or. part_number < 1 .or. part_number > np) then
+          error stop 'stored_directed_graph: the part number belongs to the set of parts'
+       end if
+       if (nwv < 0 .or. nwe < 0) then
+          error stop 'stored_directed_graph: whole carrier counts are nonnegative'
+       end if
+       if (any(vglobal < 1) .or. any(vglobal > nwv)) then
+          error stop 'stored_directed_graph: global vertices belong to the whole carrier'
+       end if
+       if (.not. injective(vglobal)) then
+          error stop 'stored_directed_graph: global vertex indices are injective'
+       end if
+       if (present(vowner)) then
+          if (size(vowner) /= nv) error stop 'stored_directed_graph: one owner per vertex'
+          if (any(vowner < 1) .or. any(vowner > np)) then
+             error stop 'stored_directed_graph: vertex owners belong to the set of parts'
+          end if
+       end if
+       if (present(eglobal)) then
+          if (size(eglobal) /= size(tails)) error stop 'stored_directed_graph: one global index per edge'
+          if (any(eglobal < 1) .or. any(eglobal > nwe)) then
+             error stop 'stored_directed_graph: global edges belong to the whole carrier'
+          end if
+          if (.not. injective(eglobal)) then
+             error stop 'stored_directed_graph: global edge indices are injective'
+          end if
+       else if (size(tails) > nwe) then
+          error stop 'stored_directed_graph: global edges belong to the whole carrier'
+       end if
+       if (present(eowner)) then
+          if (size(eowner) /= size(tails)) error stop 'stored_directed_graph: one owner per edge'
+          if (any(eowner < 1) .or. any(eowner > np)) then
+             error stop 'stored_directed_graph: edge owners belong to the set of parts'
+          end if
+       end if
+    else if (present(vowner) .or. present(eglobal) .or. present(eowner) .or. &
+         & present(num_parts) .or. present(whole_vertices) .or. present(whole_edges) .or. &
+         & present(num_whole_vertices) .or. present(num_whole_edges)) then
+       error stop 'stored_directed_graph: a partition relation requires global vertex indices'
+    end if
 
     this % nv = nv
     this % ne = size(tails)
@@ -325,6 +416,19 @@ contains
     call build_directed(this % nv, this % head, this % xin , this % ein )
 
   end function create
+
+  ! Injectivity is a cardinality equality. The listed representation
+  ! removes repetitions through its O(n log n) inverse construction,
+  ! using storage proportional to this part, not the whole carrier.
+  pure logical function injective(values)
+
+    integer, intent(in) :: values(:)
+    type(listed_set_representation) :: members
+
+    members = listed_set_representation(values)
+    injective = members % num_members() == size(values)
+
+  end function injective
 
   !===================================================================!
   ! Every edge touches its tail, and its head when it has one. Count
@@ -550,11 +654,12 @@ contains
   end function loop
 
   !===================================================================!
-  ! The transpose: the same object read in the reverse orientation,
+  ! The transpose: an owning copy read in the reverse orientation,
   ! every edge's tail its head and head its tail, so that transposing
   ! twice returns the original. An edge without a head would become an
   ! edge without a tail, which is not an edge; such a graph has no
-  ! transpose and the request stops the program.
+  ! transpose and the request stops the program. Intrinsic assignment
+  ! copies the allocatable storage; this is not a constant-cost view.
   !===================================================================!
 
   type(stored_directed_graph) function transpose(this) result(transposed_graph)
@@ -764,6 +869,34 @@ contains
     end if
 
   end subroutine incoming_edges
+
+  !===================================================================!
+  ! Read the incoming compressed incidence once for a whole traversal.
+  ! For vertex v, indices(offsets(v):offsets(v+1)-1) lists its edges,
+  ! and sources(e) is edge e's tail in the current orientation.
+  !
+  ! The reader receives INTENT(IN) arrays, without TARGET or POINTER.
+  ! It can neither alter the topology nor retain a conforming pointer
+  ! alias. Storage remains owned by this graph throughout the call;
+  ! no neighbourhood allocation or per-edge dispatch is introduced.
+  !===================================================================!
+
+  subroutine read_incoming(this, reader)
+
+    class(stored_directed_graph), intent(in) :: this
+    procedure(incoming_reader) :: reader
+
+    ! A default value has empty carriers and no allocated indices.
+    ! Its incidence has the same empty read as a constructed empty graph.
+    if (.not. allocated(this % xin)) then
+       call reader([1], [integer ::], [integer ::])
+    else if (this % reversed) then
+       call reader(this % xout, this % eout, this % head)
+    else
+       call reader(this % xin, this % ein, this % tail)
+    end if
+
+  end subroutine read_incoming
 
   !===================================================================!
   ! The heads of the outgoing edges, and the tails of the incoming

@@ -21,7 +21,7 @@ program test_graph_binary
   use map_set        , only : set_map
   use map_label      , only : label_map
   use map_inclusion  , only : inclusion_map, declared_subobject
-  use relation_binary , only : csr_relation, transpose_of, &
+  use relation_binary , only : integer_fibre, csr_relation, transpose_of, &
        &                             transposed_relation
 
   implicit none
@@ -156,10 +156,10 @@ contains
   end subroutine check_csr_contract
 
   !===================================================================!
-  ! The hot-loop path: fibre views are pointers into the stored
+  ! The hot-loop path: fibre views reference the stored
   ! index - no allocation, no copy - and they equal exactly what
   ! the owning conveniences return. The empty view is a zero-size
-  ! fibre, so size() reads absence without a second question.
+  ! fibre, so num_members() reads absence without a second question.
   !===================================================================!
 
   subroutine check_fibre_views(nfail)
@@ -168,7 +168,7 @@ contains
 
     type(graph)          :: cells, faces
     type(csr_relation), target :: r
-    integer, pointer           :: f(:)
+    type(integer_fibre) :: f
     integer, allocatable       :: owned(:)
     type(set_map)     :: sets
 
@@ -180,22 +180,22 @@ contains
     r = csr_relation('touches', cells, faces, &
          & reshape([1,1,  1,2,  2,2,  3,4], [2, 4]), sets)
 
-    f => r % image_view(1)
+    f = r % image_view(1)
     call r % image(1, owned)
-    call report(size(f) .eq. size(owned) .and. all(f .eq. owned), &
+    call report(f % num_members() .eq. size(owned) .and. all(f % values() .eq. owned), &
          & "the view references what the convenience copies", nfail)
 
-    f => r % preimage_view(2)
+    f = r % preimage_view(2)
     call r % preimage(2, owned)
-    call report(size(f) .eq. size(owned) .and. all(f .eq. owned), &
+    call report(f % num_members() .eq. size(owned) .and. all(f % values() .eq. owned), &
          & "and the mirrored view references the mirrored row", nfail)
 
-    f => r % image_view(4)
-    call report(size(f) .eq. 0, &
+    f = r % image_view(4)
+    call report(f % num_members() .eq. 0, &
          & "a member relating to nothing references the empty fibre", nfail)
 
-    f => r % image_view(9)
-    call report(size(f) .eq. 0, &
+    f = r % image_view(9)
+    call report(f % num_members() .eq. 0, &
          & "and so does an outsider", nfail)
 
   end subroutine check_fibre_views
@@ -267,7 +267,7 @@ contains
     type(graph)               :: boundary
     type(csr_relation), target     :: inc
     type(graph) :: d
-    integer, pointer               :: f(:)
+    type(integer_fibre) :: f
     integer                        :: k
     logical                        :: passes
     type(set_map)     :: sets
@@ -300,14 +300,14 @@ contains
 
     passes = .true.
     do k = 1, sets % num_members_of(boundary)
-       f => inc % image_view(sets % member_of(boundary, k))
-       passes = passes .and. (size(f) .eq. 1) .and. (f(1) .eq. sets % member_of(boundary, k))
+       f = inc % image_view(sets % member_of(boundary, k))
+       passes = passes .and. (f % num_members() .eq. 1) .and. (f % member(1) .eq. sets % member_of(boundary, k))
     end do
     call report(passes, &
          & "total, functional, injective - by construction", nfail)
 
-    f => inc % preimage_view(3)
-    call report(size(f) .eq. 0, &
+    f = inc % preimage_view(3)
+    call report(f % num_members() .eq. 0, &
          & "an ambient member outside the subset has no preimage", nfail)
 
   end subroutine check_inclusion

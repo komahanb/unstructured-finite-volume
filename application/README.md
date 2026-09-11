@@ -548,13 +548,18 @@ real128 into `lib_quad/` and places the binary in `quad/`; the two
 builds coexist.
 
 From the repository root, `./verify.sh` builds the library and application
-once, then runs 36 solver, domain, scheduling, elimination, GTI failure,
+once, then runs 37 solver, domain, scheduling, elimination, GTI failure,
 analytic order and graph suites, including all seven application towers,
 and five derivative demonstrations. `UFVM_SKIP_LIBRARY_BUILD=1 ./verify.sh`
 uses an already rebuilt library and application. Naming checks and their
 refusal regressions run first. `./check_naming.sh` checks the vocabulary
 independently; [the coding standards](../doc/coding-standards.md) define
 mathematical role names and the staged commit check.
+
+[Topology ownership](../doc/topology-ownership.md) defines the private
+storage boundary, allocation-free readers and the lifetime of relation
+fibres. Its verification suite includes compiler refusals for writable
+topology access and allocation counts during traversal.
 
 Every library minimizer exposes `result()`: the true residual, initial
 residual, completed iteration count, and stopping reason. A completed

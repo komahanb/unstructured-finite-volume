@@ -28,12 +28,14 @@
 !                    TWO TIERS OF TRAVERSAL
 !
 ! The deferred primitives are the VIEWS: image_view and
-! preimage_view return a fibre as a pointer into the stored index -
+! preimage_view return a fibre with a private reference to the stored index -
 ! no allocation, no copy, the hot-loop path (AGENTS.md 33). The
 ! allocating image and preimage are defined above them as
 ! conveniences, written once for the whole family as copies of the
-! views. A caller storing a view stores a non-owning reference: the
-! view is valid while the relation is allocated, and no longer.
+! views. Scalar reads and read callbacks cannot modify the stored index.
+! A caller storing a view stores a non-owning reference: the relation
+! must have TARGET and must not be reassigned or deallocated while the
+! view is used. An owned copy is obtained through values instead.
 !
 !                        THE CSR REPRESENTATION
 !
@@ -110,6 +112,37 @@ module relation_binary
   public :: group_by_key
   public :: ragged
   public :: transpose_padded
+  public :: integer_fibre
+
+  ! A finite ordered fibre in compiled integer coordinates. Its private
+  ! reference grants read access only: neither a member nor a callback
+  ! argument is a writable alias. Construction and assignment copy only
+  ! the reference. The target array must outlive every use of the fibre.
+  type :: integer_fibre
+     private
+     integer, pointer :: entries(:) => null()
+   contains
+     procedure, non_overridable :: num_members => fibre_num_members
+     procedure, non_overridable :: member => fibre_member
+     procedure, non_overridable :: values => fibre_values
+     procedure, private, non_overridable :: read_members => fibre_read
+     procedure, private, non_overridable :: read_context => fibre_read_context
+     generic :: read => read_members, read_context
+  end type integer_fibre
+
+  interface integer_fibre
+     module procedure create_fibre
+  end interface integer_fibre
+
+  abstract interface
+     subroutine integer_reader_interface(members)
+       integer, intent(in) :: members(:)
+     end subroutine integer_reader_interface
+     subroutine integer_context_reader_interface(members, context)
+       integer, intent(in) :: members(:)
+       class(*), intent(inout) :: context
+     end subroutine integer_context_reader_interface
+  end interface
 
   !===================================================================!
   ! The abstract binary relation: the general contract, plus the
@@ -145,10 +178,10 @@ module relation_binary
   abstract interface
 
      function binary_fibre_view_interface(this, member) result(fibre)
-       import binary_relation
+       import binary_relation, integer_fibre
        class(binary_relation), target, intent(in) :: this
        integer               , intent(in)         :: member
-       integer, pointer                           :: fibre(:)
+       type(integer_fibre)                         :: fibre
      end function binary_fibre_view_interface
 
   end interface
@@ -259,6 +292,90 @@ module relation_binary
 
 contains
 
+  function create_fibre(members) result(fibre)
+
+    integer, target, intent(in) :: members(:)
+    type(integer_fibre) :: fibre
+
+    fibre % entries => members
+
+  end function create_fibre
+
+  pure integer function fibre_num_members(this) result(n)
+
+    class(integer_fibre), intent(in) :: this
+
+    n = 0
+    if (associated(this % entries)) n = size(this % entries)
+
+  end function fibre_num_members
+
+  pure integer function fibre_member(this, index) result(member)
+
+    class(integer_fibre), intent(in) :: this
+    integer, intent(in) :: index
+
+    if (.not. associated(this % entries)) then
+       error stop 'relation_binary: fibre index is outside its extent'
+    end if
+    if (index < 1 .or. index > size(this % entries)) then
+       error stop 'relation_binary: fibre index is outside its extent'
+    end if
+    member = this % entries(index)
+
+  end function fibre_member
+
+  function fibre_values(this) result(members)
+
+    class(integer_fibre), intent(in) :: this
+    integer, allocatable :: members(:)
+
+    call copy_fibre(this, members)
+
+  end function fibre_values
+
+  subroutine copy_fibre(this, members)
+
+    class(integer_fibre), intent(in) :: this
+    integer, allocatable, intent(out) :: members(:)
+
+    if (associated(this % entries)) then
+       members = this % entries
+    else
+       allocate(members(0))
+    end if
+
+  end subroutine copy_fibre
+
+  subroutine fibre_read(this, reader)
+
+    class(integer_fibre), intent(in) :: this
+    procedure(integer_reader_interface) :: reader
+
+    if (associated(this % entries)) then
+       call reader(this % entries)
+    else
+       call reader([integer ::])
+    end if
+
+  end subroutine fibre_read
+
+  ! Explicit per-call state allows a module procedure to read a fibre
+  ! without a compiler-generated closure or module-global mutable state.
+  subroutine fibre_read_context(this, reader, context)
+
+    class(integer_fibre), intent(in) :: this
+    procedure(integer_context_reader_interface) :: reader
+    class(*), intent(inout) :: context
+
+    if (associated(this % entries)) then
+       call reader(this % entries, context)
+    else
+       call reader([integer ::], context)
+    end if
+
+  end subroutine fibre_read_context
+
   !===================================================================!
   ! The two ends of the signature, named as arity two names them.
   !===================================================================!
@@ -289,8 +406,10 @@ contains
     class(binary_relation), target, intent(in)  :: this
     integer                       , intent(in)  :: member
     integer, allocatable          , intent(out) :: indices(:)
+    type(integer_fibre) :: fibre
 
-    indices = this % image_view(member)
+    fibre = this % image_view(member)
+    call copy_fibre(fibre, indices)
 
   end subroutine image
 
@@ -299,8 +418,10 @@ contains
     class(binary_relation), target, intent(in)  :: this
     integer                       , intent(in)  :: member
     integer, allocatable          , intent(out) :: indices(:)
+    type(integer_fibre) :: fibre
 
-    indices = this % preimage_view(member)
+    fibre = this % preimage_view(member)
+    call copy_fibre(fibre, indices)
 
   end subroutine preimage
 
@@ -412,17 +533,17 @@ contains
 
     class(csr_relation), target, intent(in) :: this
     integer                    , intent(in) :: member
-    integer, pointer                        :: fibre(:)
+    type(integer_fibre)                      :: fibre
 
     integer :: row
 
     row = this % source_coords % local_index(member)
     if (row == 0) then
-       fibre => this % tgt(1:0)
+       fibre % entries => this % tgt(1:0)
        return
     end if
 
-    fibre => this % tgt(this % xfwd(row) : this % xfwd(row + 1) - 1)
+    fibre % entries => this % tgt(this % xfwd(row) : this % xfwd(row + 1) - 1)
 
   end function csr_image_view
 
@@ -430,17 +551,17 @@ contains
 
     class(csr_relation), target, intent(in) :: this
     integer                    , intent(in) :: member
-    integer, pointer                        :: fibre(:)
+    type(integer_fibre)                      :: fibre
 
     integer :: row
 
     row = this % target_coords % local_index(member)
     if (row == 0) then
-       fibre => this % src(1:0)
+       fibre % entries => this % src(1:0)
        return
     end if
 
-    fibre => this % src(this % xbwd(row) : this % xbwd(row + 1) - 1)
+    fibre % entries => this % src(this % xbwd(row) : this % xbwd(row + 1) - 1)
 
   end function csr_preimage_view
 
@@ -559,9 +680,9 @@ contains
 
     class(transposed_relation), target, intent(in) :: this
     integer                       , intent(in) :: member
-    integer, pointer                           :: fibre(:)
+    type(integer_fibre)                         :: fibre
 
-    fibre => this % base % preimage_view(member)
+    fibre = this % base % preimage_view(member)
 
   end function view_image_view
 
@@ -569,9 +690,9 @@ contains
 
     class(transposed_relation), target, intent(in) :: this
     integer                       , intent(in) :: member
-    integer, pointer                           :: fibre(:)
+    type(integer_fibre)                         :: fibre
 
-    fibre => this % base % image_view(member)
+    fibre = this % base % image_view(member)
 
   end function view_preimage_view
 

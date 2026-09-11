@@ -37,7 +37,7 @@
 program derivative_level_8
 
   use iso_fortran_env  , only : dp => REAL64
-  use derivative_assert, only : report, verdict
+  use derivative_assert, only : report, assert_all
   use derivative_assert, only : SLOT_X, SLOT_Y, SLOT_U, SLOT_Z
   use derivative_assert, only : OP_PRODUCT, OP_SUM
   use derivative_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
@@ -182,7 +182,7 @@ program derivative_level_8
   call check_secondary_base(nfail)
   call check_order_invariance(nfail)
 
-  call verdict(nfail, "level 8")
+  call assert_all(nfail, "level 8")
 
 contains
 
@@ -438,7 +438,7 @@ contains
     integer, intent(inout) :: nfail
 
     integer :: i, m
-    logical :: ok
+    logical :: satisfied
 
     av = compose_binary( &
          & project_slots(restrict_slot(flow, 3, p_in , sets, inclusions), [2, 1], sets), &
@@ -471,13 +471,13 @@ contains
     g_av % branch(1) = known_branch(scell2(1))
     g_av % branch(2) = known_branch(rcell2(1))
 
-    ok = .true.
+    satisfied = .true.
     do i = 1, sets % num_members_of(x_dom)
        m = sets % member_of(x_dom, i)
-       ok = ok .and. (reachable(av, sets, m, SLOT_Z) .eqv. &
+       satisfied = satisfied .and. (reachable(av, sets, m, SLOT_Z) .eqv. &
             &         (hits(sets % index_in(v, m)) .gt. 0))
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "the structural support agrees with the action's " // &
          & "incidence - and was never fed to it", nfail)
 

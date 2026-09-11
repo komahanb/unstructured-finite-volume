@@ -258,7 +258,7 @@ program test_graph_contract
   call check_functional_round_trips(nfail)
   call check_graph_structure(nfail)
   call check_graph_named_sets(nfail)
-  call check_graph_walking(nfail)
+  call check_incidence_queries(nfail)
   call check_graph_uncut(nfail)
   call check_reductions(nfail)
   call check_average_across_parts(nfail)
@@ -268,8 +268,8 @@ program test_graph_contract
   call check_operation_consistency(nfail)
   call check_coarsen_and_refine(nfail)
   call check_balance_conserves(nfail)
-  call check_walks(nfail)
-  call check_doing_nothing_is_an_answer(nfail)
+  call check_traversals(nfail)
+  call check_identity_transforms(nfail)
   call check_differential_operators(nfail)
   call check_adjoints(nfail)
   call check_curl_on_border_graph(nfail)
@@ -295,13 +295,13 @@ contains
   ! failures.
   !===================================================================!
 
-  subroutine report(ok, label, nfail)
+  subroutine report(satisfied, label, nfail)
 
-    logical         , intent(in)    :: ok
+    logical         , intent(in)    :: satisfied
     character(len=*), intent(in)    :: label
     integer         , intent(inout) :: nfail
 
-    if (ok) then
+    if (satisfied) then
        write(*,'(1x,a,a)') "PASS : ", label
     else
        write(*,'(1x,a,a)') "FAIL : ", label
@@ -397,7 +397,7 @@ contains
 
     type(graph)    :: host
     type(graph)     :: vs, empty
-    integer, allocatable :: got(:)
+    integer, allocatable :: subset_members(:)
     type(set_store)   :: sets
     type(inclusion_map)     :: inclusions
 
@@ -407,9 +407,9 @@ contains
     call sets       % bind(vs, listed_set_representation([7, 3, 11]))
     call inclusions % include_in(vs, host)
 
-    call sets % members_of(vs, got)
-    call report(size(got) .eq. 3, "a subset keeps its count", nfail)
-    call report(all(got .eq. [7, 3, 11]), &
+    call sets % members_of(vs, subset_members)
+    call report(size(subset_members) .eq. 3, "a subset keeps its count", nfail)
+    call report(all(subset_members .eq. [7, 3, 11]), &
          & "and its members, in declaration order", nfail)
     call report(declared_subobject(vs, host, inclusions), &
          & "and stands embedded in its ambient", nfail)
@@ -453,9 +453,9 @@ contains
 
     type(graph)  :: on
     type(stored_field)    :: f
-    real(dp), allocatable :: got(:)
+    real(dp), allocatable :: field_values(:)
     integer               :: entry_position, component, position
-    logical               :: ok
+    logical               :: satisfied
     type(set_store)   :: sets
 
     call on % declare()
@@ -469,34 +469,34 @@ contains
     call report(f % num_components() .eq. 2, &
          & "components counts values per cell", nfail)
 
-    call f % real_vector(got)
-    call report(size(got) .eq. f % num_entries() * f % num_components(), &
+    call f % real_vector(field_values)
+    call report(size(field_values) .eq. f % num_entries() * f % num_components(), &
          & "the flat vector is entries times components long", nfail)
 
     ! Walk the law itself. Entry 1 is index 7, entry 2 is index 3, entry 3
     ! is index 11; the tens digit records the cell and the units digit
     ! the component, so a scrambled layout cannot pass by accident.
-    ok = .true.
+    satisfied = .true.
     do entry_position = 1, 3
        do component = 1, 2
           position = (entry_position - 1) * f % num_components() + component
           select case (entry_position)
           case (1)
-             ok = ok .and. abs(got(position) - (70.0_dp + component)) < 1.0d-13
+             satisfied = satisfied .and. abs(field_values(position) - (70.0_dp + component)) < 1.0d-13
           case (2)
-             ok = ok .and. abs(got(position) - (30.0_dp + component)) < 1.0d-13
+             satisfied = satisfied .and. abs(field_values(position) - (30.0_dp + component)) < 1.0d-13
           case (3)
-             ok = ok .and. abs(got(position) - (110.0_dp + component)) < 1.0d-13
+             satisfied = satisfied .and. abs(field_values(position) - (110.0_dp + component)) < 1.0d-13
           end select
        end do
     end do
-    call report(ok, "values sit at (entry-1)*num_components + component", nfail)
+    call report(satisfied, "values sit at (entry-1)*num_components + component", nfail)
 
     ! Said the other way round: the two values of one cell are
     ! neighbours in the array. Component-slowest storage would put
     ! them three apart.
-    call report(abs(got(1) - 71.0_dp) < 1.0d-13 .and. &
-         &      abs(got(2) - 72.0_dp) < 1.0d-13, &
+    call report(abs(field_values(1) - 71.0_dp) < 1.0d-13 .and. &
+         &      abs(field_values(2) - 72.0_dp) < 1.0d-13, &
          & "one cell's components are adjacent, not strided", nfail)
 
   end subroutine check_ordering_law
@@ -743,7 +743,7 @@ contains
   ! Walking the graph, with and without regard to direction.
   !===================================================================!
 
-  subroutine check_graph_walking(nfail)
+  subroutine check_incidence_queries(nfail)
 
     integer, intent(inout) :: nfail
 
@@ -794,7 +794,7 @@ contains
     call report(size(indices) .eq. 0, &
          & "the wall goes out but arrives nowhere", nfail)
 
-  end subroutine check_graph_walking
+  end subroutine check_incidence_queries
 
   !===================================================================!
   ! A graph straight off a mesh file holds no partition record, and
@@ -1204,7 +1204,7 @@ contains
   ! cell comes out owned. The answer must be once, always.
   !===================================================================!
 
-  logical function covers_once(g, rule, num_parts) result(ok)
+  logical function covers_once(g, rule, num_parts) result(satisfied)
 
     type(stored_directed_graph), intent(in) :: g
     integer           , intent(in) :: rule
@@ -1228,7 +1228,7 @@ contains
        end do
     end do
 
-    ok = all(times .eq. 1)
+    satisfied = all(times .eq. 1)
 
   end function covers_once
 
@@ -1482,7 +1482,7 @@ contains
   ! hierarchy, and a serial run of code written for parts.
   !===================================================================!
 
-  subroutine check_doing_nothing_is_an_answer(nfail)
+  subroutine check_identity_transforms(nfail)
 
     integer, intent(inout) :: nfail
 
@@ -1532,7 +1532,7 @@ contains
     call report(part % num_vertices() .eq. 6, &
          & "cutting into one piece returns the whole graph", nfail)
 
-  end subroutine check_doing_nothing_is_an_answer
+  end subroutine check_identity_transforms
 
   !===================================================================!
   ! EDGE CONTRIBUTIONS REDUCED THROUGH INCIDENCE EXACTLY ONCE.
@@ -1571,7 +1571,7 @@ contains
     type(stored_field)                       :: q
     real(dp), allocatable                    :: v(:)
     real(dp)                                 :: total
-    logical                                  :: ok
+    logical                                  :: satisfied
     type(set_store)   :: sets
 
     ! A closed ring: four cells, four faces, not a wall in sight.
@@ -1584,28 +1584,28 @@ contains
     on = ring % vertex_set()
     q  = stored_field('q', on, sets % num_members_of(on))
 
-    ok = .true.
+    satisfied = .true.
 
     call q % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp])
     call bal % apply(ring, bal % bind([q]), y)
     call y % real_vector(v)
     total = sum(v)
-    ok = ok .and. abs(total) < 1.0d-12
+    satisfied = satisfied .and. abs(total) < 1.0d-12
     call report(size(v) .eq. 4, "a balance answers one value per cell", nfail)
 
     ! A lopsided state, so nothing cancels by symmetry.
     call q % set_real_vector([0.0_dp, 7.0_dp, -3.0_dp, 11.5_dp])
     call bal % apply(ring, bal % bind([q]), y)
     call y % real_vector(v)
-    ok = ok .and. abs(sum(v)) < 1.0d-12
+    satisfied = satisfied .and. abs(sum(v)) < 1.0d-12
 
     ! And one more, with the values in a different order again.
     call q % set_real_vector([100.0_dp, -0.25_dp, 4.0_dp, 0.0_dp])
     call bal % apply(ring, bal % bind([q]), y)
     call y % real_vector(v)
-    ok = ok .and. abs(sum(v)) < 1.0d-12
+    satisfied = satisfied .and. abs(sum(v)) < 1.0d-12
 
-    call report(ok, &
+    call report(satisfied, &
          & "on a closed ring the balance sums to zero - every edge once", nfail)
 
     ! Two edge terms, not one. Each is reduced through incidence in
@@ -1651,7 +1651,7 @@ contains
   ! procedure of one.
   !===================================================================!
 
-  subroutine check_walks(nfail)
+  subroutine check_traversals(nfail)
 
     integer, intent(inout) :: nfail
 
@@ -1660,7 +1660,7 @@ contains
     class(field), allocatable :: f
     integer, allocatable                   :: c(:)
     integer                                :: e, t, h
-    logical                                :: ok
+    logical                                :: satisfied
     type(set_store)   :: sets
 
     g = chain_of_six()
@@ -1676,14 +1676,14 @@ contains
     call report(size(c) .eq. 6, "a colouring gives one colour per cell", nfail)
     call report(all(c >= 1), "and every cell gets one", nfail)
 
-    ok = .true.
+    satisfied = .true.
     do e = 1, g % num_edges()
        t = g % edge_tail(e)
        if (.not. g % edge_has_head(e)) cycle
        h = g % edge_head(e)
-       ok = ok .and. c(t) /= c(h)
+       satisfied = satisfied .and. c(t) /= c(h)
     end do
-    call report(ok, "no face has the same colour at both ends", nfail)
+    call report(satisfied, "no face has the same colour at both ends", nfail)
 
     ! The same must hold on a ring, where a naive alternating colouring
     ! would fail at the join if the count is odd.
@@ -1691,13 +1691,13 @@ contains
     call describe(sets, split_mesh)
     call w % apply(split_mesh, output=f)
     call f % integer_vector(c)
-    ok = .true.
+    satisfied = .true.
     do e = 1, split_mesh % num_edges()
        t = split_mesh % edge_tail(e)
        h = split_mesh % edge_head(e)
-       ok = ok .and. c(t) /= c(h)
+       satisfied = satisfied .and. c(t) /= c(h)
     end do
-    call report(ok, "and still not on an odd ring, where two colours cannot do", nfail)
+    call report(satisfied, "and still not on an odd ring, where two colours cannot do", nfail)
 
     ! DEPTH. On a row of six starting at one, the distances are simply
     ! how far along each cell is.
@@ -1735,7 +1735,7 @@ contains
     call report(c(3) .eq. -1 .and. c(4) .eq. -1, &
          & "and what the seed cannot reach is marked unreachable, not zero", nfail)
 
-  end subroutine check_walks
+  end subroutine check_traversals
 
   !===================================================================!
   ! The differential operators, checked against the numbers the
@@ -1758,7 +1758,7 @@ contains
     real(dp), allocatable                  :: y(:)
     real(dp)                               :: qv(7)
     integer                                :: v
-    logical                                :: ok
+    logical                                :: satisfied
     type(set_store)   :: sets
 
     g7 = stored_directed_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
@@ -1782,31 +1782,31 @@ contains
     op = differential_operator(SIDE_VERTEX, 1, coefficient=1.0_dp)
     call op % apply(g7, op % bind([q]), yf)
     call yf % real_vector(y)
-    ok = .true.
+    satisfied = .true.
     do v = 2, 6
-       ok = ok .and. abs(y(v) - 10.0_dp) < 1.0d-12
+       satisfied = satisfied .and. abs(y(v) - 10.0_dp) < 1.0d-12
     end do
-    call report(ok, "order 1 of a straight line is the slope, inside", nfail)
+    call report(satisfied, "order 1 of a straight line is the slope, inside", nfail)
 
     op = differential_operator(SIDE_VERTEX, 1, coefficient=-1.0_dp)
     call op % apply(g7, op % bind([q]), yf)
     call yf % real_vector(y)
-    ok = .true.
+    satisfied = .true.
     do v = 2, 6
-       ok = ok .and. abs(y(v) + 10.0_dp) < 1.0d-12
+       satisfied = satisfied .and. abs(y(v) + 10.0_dp) < 1.0d-12
     end do
-    call report(ok, "and with c negative, minus the slope - the other end", nfail)
+    call report(satisfied, "and with c negative, minus the slope - the other end", nfail)
 
     ! Order 2: zero on the line, two on the parabola. The guide's
     ! first claim, with its numbers.
     op = laplacian()
     call op % apply(g7, op % bind([q]), yf)
     call yf % real_vector(y)
-    ok = .true.
+    satisfied = .true.
     do v = 2, 6
-       ok = ok .and. abs(y(v)) < 1.0d-12
+       satisfied = satisfied .and. abs(y(v)) < 1.0d-12
     end do
-    call report(ok, "the second derivative of a straight line is zero", nfail)
+    call report(satisfied, "the second derivative of a straight line is zero", nfail)
 
     do v = 1, 7
        qv(v) = real(v, dp)**2
@@ -1814,11 +1814,11 @@ contains
     call q % set_real_vector(qv)
     call op % apply(g7, op % bind([q]), yf)
     call yf % real_vector(y)
-    ok = .true.
+    satisfied = .true.
     do v = 2, 6
-       ok = ok .and. abs(y(v) - 2.0_dp) < 1.0d-12
+       satisfied = satisfied .and. abs(y(v) - 2.0_dp) < 1.0d-12
     end do
-    call report(ok, "and of a parabola, exactly two", nfail)
+    call report(satisfied, "and of a parabola, exactly two", nfail)
 
     ! The first vertex has one edge only, so its value is one-sided:
     ! the slope of the first edge, q(2) - q(1) = 3.
@@ -1830,11 +1830,11 @@ contains
     op = differential_operator(SIDE_VERTEX, 4)
     call op % apply(g7, op % bind([q]), yf)
     call yf % real_vector(y)
-    ok = .true.
+    satisfied = .true.
     do v = 3, 5
-       ok = ok .and. abs(y(v)) < 1.0d-12
+       satisfied = satisfied .and. abs(y(v)) < 1.0d-12
     end do
-    call report(ok, "the fourth derivative of a parabola is zero", nfail)
+    call report(satisfied, "the fourth derivative of a parabola is zero", nfail)
 
     do v = 1, 7
        qv(v) = real(v, dp)**4
@@ -1842,11 +1842,11 @@ contains
     call q % set_real_vector(qv)
     call op % apply(g7, op % bind([q]), yf)
     call yf % real_vector(y)
-    ok = .true.
+    satisfied = .true.
     do v = 3, 5
-       ok = ok .and. abs(y(v) - 24.0_dp) < 1.0d-12
+       satisfied = satisfied .and. abs(y(v) - 24.0_dp) < 1.0d-12
     end do
-    call report(ok, "and of the fourth power, exactly twenty-four", nfail)
+    call report(satisfied, "and of the fourth power, exactly twenty-four", nfail)
 
     ! Per-edge coefficients: three cells, weights 2 and 5, values
     ! 1, 2, 4. At the middle: 5*(4-2) - 2*(2-1) = 10 - 2 = 8.
@@ -2050,7 +2050,7 @@ contains
     real(dp), allocatable                  :: y(:), aq(:), ap(:)
     real(dp)                               :: q(14), p(14)
     integer                                :: v
-    logical                                :: ok
+    logical                                :: satisfied
     type(set_store)   :: sets
 
     g7 = stored_directed_graph(7, tails=[1,2,3,4,5,6], heads=[2,3,4,5,6,7])
@@ -2071,12 +2071,12 @@ contains
          & "the answer carries as many components as the question", nfail)
 
     call yf % real_vector(y)
-    ok = .true.
+    satisfied = .true.
     do v = 2, 6
-       ok = ok .and. abs(y(2*v - 1)) < 1.0d-12          ! the line: zero
-       ok = ok .and. abs(y(2*v) - 2.0_dp) < 1.0d-12     ! the parabola: two
+       satisfied = satisfied .and. abs(y(2*v - 1)) < 1.0d-12          ! the line: zero
+       satisfied = satisfied .and. abs(y(2*v) - 2.0_dp) < 1.0d-12     ! the parabola: two
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "one walk answers both components, each in its own slot", nfail)
 
     ! The adjoint pairing on the whole interleaved vector: with two
@@ -2185,7 +2185,7 @@ contains
     real(dp)                               :: a(5,5), at(5,5), e(5)
     real(dp)                               :: cs(5)
     integer                                :: order, i, j
-    logical                                :: ok
+    logical                                :: satisfied
     type(set_store)   :: sets
 
     ! Five vertices, four interior edges, and one boundary edge
@@ -2199,7 +2199,7 @@ contains
     ! aboard, not just with ones.
     cs = [2.0_dp, 0.5_dp, 3.0_dp, 1.5_dp, 4.0_dp]
 
-    ok = .true.
+    satisfied = .true.
 
     do order = 1, 4
 
@@ -2223,13 +2223,13 @@ contains
 
        do i = 1, 5
           do j = 1, 5
-             ok = ok .and. abs(at(i, j) - a(j, i)) < 1.0d-11
+             satisfied = satisfied .and. abs(at(i, j) - a(j, i)) < 1.0d-11
           end do
        end do
 
     end do
 
-    call report(ok, &
+    call report(satisfied, &
          & "the flag is the matrix transpose, orders one to four", nfail)
 
   end subroutine check_adjoint_is_the_transpose
@@ -2343,7 +2343,7 @@ contains
     type(differential_operator)     :: opposite
     type(differential_operator)       :: slope
     type(reduction)                        :: total
-    class(functional), allocatable   :: answer
+    class(functional), allocatable   :: reduced_functional
     class(field), allocatable :: work_v
     class(field), allocatable   :: work_e
     real(dp), allocatable                  :: values(:)
@@ -2363,8 +2363,8 @@ contains
 
     ! By hand: 1*2 + 2*1 + 3*0 + 4*3 = 16.
     total = reduction(REDUCE_SUM)
-    call total % reduce(uf, answer, measure=vf)
-    call value_real(answer, x)
+    call total % reduce(uf, reduced_functional, measure=vf)
+    call value_real(reduced_functional, x)
     call report(abs(x - 16.0_dp) < 1.0d-12, &
          & "a sum with a measure is the inner product", nfail)
 
@@ -2380,8 +2380,8 @@ contains
     guf = stored_field('Gu', eon, sets % num_members_of(eon))
     call guf % set_real_vector(values)
 
-    call total % reduce(zf, answer, measure=guf)
-    call value_real(answer, left)
+    call total % reduce(zf, reduced_functional, measure=guf)
+    call value_real(reduced_functional, left)
 
     opposite = divergence()
     call opposite % apply(chain, opposite % bind([zf]), work_v)
@@ -2389,8 +2389,8 @@ contains
     wf = stored_field('Dz', on, sets % num_members_of(on))
     call wf % set_real_vector(values)
 
-    call total % reduce(wf, answer, measure=uf)
-    call value_real(answer, right)
+    call total % reduce(wf, reduced_functional, measure=uf)
+    call value_real(reduced_functional, right)
 
     call report(abs(left + right) < 1.0d-12, &
          & "<z,Gu> + <Dz,u> = 0: integration by parts on the chain", nfail)
@@ -2403,8 +2403,8 @@ contains
     call work_e % real_vector(values)
     guf = stored_field('Gu', eon, sets % num_members_of(eon))
     call guf % set_real_vector(values)
-    call total % reduce(guf, answer, measure=guf)
-    call value_real(answer, x)
+    call total % reduce(guf, reduced_functional, measure=guf)
+    call value_real(reduced_functional, x)
     call report(abs(x - 14.0_dp) < 1.0d-12, &
          & "the product of the gradient with itself is u^T L u", nfail)
 
@@ -2412,8 +2412,8 @@ contains
     ! imaginary part of the answer is h times the sum of v.
     call uf % set_complex_vector([(1.0_dp, 0.001_dp), (2.0_dp, 0.001_dp), &
          &                        (3.0_dp, 0.001_dp), (4.0_dp, 0.001_dp)])
-    call total % reduce(uf, answer, measure=vf)
-    call value_complex(answer, cx)
+    call total % reduce(uf, reduced_functional, measure=vf)
+    call value_complex(reduced_functional, cx)
     call report(abs(real(cx, dp) - 16.0_dp) < 1.0d-12 .and. &
          &      abs(aimag(cx) - 0.006_dp) < 1.0d-12, &
          & "a complex field carries its derivative through the product", nfail)
@@ -2437,7 +2437,7 @@ contains
     type(stored_functional)                     :: seed
     type(broadcast)                      :: copy_rule, share_rule
     type(reduction)                      :: total
-    class(functional), allocatable :: answer
+    class(functional), allocatable :: reduced_functional
     real(dp)                             :: x
     type(set_store)   :: sets
     complex(dp)                          :: cx
@@ -2454,16 +2454,16 @@ contains
     ! The average of four copies of 6 is 6.
     call copy_rule % broadcast(seed, f)
     total = reduction(REDUCE_AVERAGE)
-    call total % reduce(f, answer)
-    call value_real(answer, x)
+    call total % reduce(f, reduced_functional)
+    call value_real(reduced_functional, x)
     call report(abs(x - 6.0_dp) < 1.0d-12, &
          & "reduce(broadcast(J)) = J: the average undoes the copy", nfail)
 
     ! The sum of four shares of 6 is 6.
     call share_rule % broadcast(seed, f)
     total = reduction(REDUCE_SUM)
-    call total % reduce(f, answer)
-    call value_real(answer, x)
+    call total % reduce(f, reduced_functional)
+    call value_real(reduced_functional, x)
     call report(abs(x - 6.0_dp) < 1.0d-12, &
          & "reduce(broadcast(J)) = J: the sum undoes the share", nfail)
 
@@ -2471,8 +2471,8 @@ contains
     ! computed with the inner-product reading of the measure.
     call uf % set_real_vector([1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp])
     call copy_rule % broadcast(seed, f)
-    call total % reduce(uf, answer, measure=f)
-    call value_real(answer, x)
+    call total % reduce(uf, reduced_functional, measure=f)
+    call value_real(reduced_functional, x)
     call report(abs(x - 60.0_dp) < 1.0d-12, &
          & "<broadcast(J), u> = J sum(u): the transpose pairing", nfail)
 
@@ -2480,8 +2480,8 @@ contains
     ! 24 + 0.004i.
     call seed % set_complex_value((6.0_dp, 0.001_dp))
     call copy_rule % broadcast(seed, f)
-    call total % reduce(f, answer)
-    call value_complex(answer, cx)
+    call total % reduce(f, reduced_functional)
+    call value_complex(reduced_functional, cx)
     call report(abs(real(cx, dp) - 24.0_dp) < 1.0d-12 .and. &
          &      abs(aimag(cx) - 0.004_dp) < 1.0d-12, &
          & "a complex seed is copied and returns intact", nfail)

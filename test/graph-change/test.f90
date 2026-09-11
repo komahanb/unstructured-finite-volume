@@ -25,7 +25,7 @@ program test_graph_change
   use map_value      , only : value_map, &
        & VALUE_UNATTACHED, VALUE_UNKNOWN, VALUE_KNOWN
   use map_value_change   , only : value_change
-  use toy_changes          , only : counting_change, mixed_change
+  use change_fixtures          , only : counting_change, mixed_change
 
   implicit none
   type(change_record)     :: result
@@ -37,10 +37,10 @@ program test_graph_change
   write(*,'(1x,a)') "graph reversible change suite"
   write(*,'(1x,a)') "============================================="
 
-  call check_the_lifecycle(nfail)
-  call check_the_map_ontology(nfail)
-  call check_the_storage_laws(nfail)
-  call check_the_value_change(nfail)
+  call check_lifecycle(nfail)
+  call check_value_states(nfail)
+  call check_storage_laws(nfail)
+  call check_value_change(nfail)
 
   write(*,'(1x,a)') "============================================="
   if (nfail .eq. 0) then
@@ -52,14 +52,14 @@ program test_graph_change
 contains
 
   !===================================================================!
-  ! Run the counting toy through run_change four ways -
+  ! Run the counting fixture through run_change four ways -
   ! accepted, rejected, vetoed by check, and failing in apply -
   ! and verify the counter and the change_record flags after each
-  ! run. Then run the mixed toy accepted and rejected, and check
+  ! run. Then run the mixed fixture accepted and rejected, and check
   ! that reset clears every flag.
   !===================================================================!
 
-  subroutine check_the_lifecycle(nfail)
+  subroutine check_lifecycle(nfail)
 
     integer, intent(inout) :: nfail
 
@@ -67,43 +67,43 @@ contains
     type(mixed_change)    :: both
 
     call run_change(change, .true., result)
-    call report(change % rooms == 1 .and. &
+    call report(change % counter == 1 .and. &
          & result % attempted .and. result % applied .and. &
          & result % checked .and. result % check_passed .and. &
          & result % accepted .and. result % committed .and. &
          & .not. result % reverted .and. .not. result % failed .and. &
          & result % touches_structure .and. .not. result % touches_value, &
-         & "an accepted change is committed, and the record says so", nfail)
+         & "an accepted change is committed, and the record identifies the outcome", nfail)
 
     call run_change(change, .false., result)
-    call report(change % rooms == 1 .and. &
+    call report(change % counter == 1 .and. &
          & result % reverted .and. .not. result % committed .and. &
          & .not. result % accepted, &
          & "a rejected change is reverted: the counter is restored", nfail)
 
     change % check_passes = .false.
     call run_change(change, .true., result)
-    call report(change % rooms == 1 .and. &
+    call report(change % counter == 1 .and. &
          & result % checked .and. .not. result % check_passed .and. &
          & result % reverted .and. .not. result % accepted, &
-         & "a vetoed change is reverted before acceptance is asked", nfail)
+         & "a vetoed change is reverted before acceptance is evaluated", nfail)
 
     change % check_passes = .true.
     change % fail_apply   = .true.
     call run_change(change, .true., result)
-    call report(change % rooms == 1 .and. &
+    call report(change % counter == 1 .and. &
          & result % failed .and. result % reverted .and. &
          & .not. result % applied .and. .not. result % committed, &
          & "a failed apply is reverted and never committed", nfail)
 
     call run_change(both, .true., result)
-    call report(both % rooms == 1 .and. both % value == 2.0_dp .and. &
+    call report(both % counter == 1 .and. both % value == 2.0_dp .and. &
          & result % touches_structure .and. result % touches_value .and. &
          & result % committed, &
          & "an accepted mixed change commits both mutations", nfail)
 
     call run_change(both, .false., result)
-    call report(both % rooms == 1 .and. both % value == 2.0_dp .and. &
+    call report(both % counter == 1 .and. both % value == 2.0_dp .and. &
          & result % reverted, &
          & "a rejected mixed change restores structure and value", nfail)
 
@@ -115,7 +115,7 @@ contains
          & result % touches_value), &
          & "reset returns the whole record to false", nfail)
 
-  end subroutine check_the_lifecycle
+  end subroutine check_lifecycle
 
   !===================================================================!
   ! Take one map entry through every status transition and verify
@@ -125,7 +125,7 @@ contains
   ! UNATTACHED.
   !===================================================================!
 
-  subroutine check_the_map_ontology(nfail)
+  subroutine check_value_states(nfail)
 
     integer, intent(inout) :: nfail
 
@@ -137,7 +137,7 @@ contains
 
     call report(.not. map % attached(a) .and. &
          & map % status_of(a) == VALUE_UNATTACHED, &
-         & "a fresh map reports UNATTACHED for an unmapped graph", nfail)
+         & "an empty map reports UNATTACHED for an unmapped graph", nfail)
 
     call map % attach_unknown(a)
     call report(map % attached(a) .and. &
@@ -166,7 +166,7 @@ contains
          & map % status_of(a) == VALUE_UNATTACHED, &
          & "detach removes the entry: UNATTACHED again", nfail)
 
-  end subroutine check_the_map_ontology
+  end subroutine check_value_states
 
   !===================================================================!
   ! Storage checks: (1) detach the middle of three rows and verify
@@ -179,15 +179,15 @@ contains
   ! that variable is gone.
   !===================================================================!
 
-  subroutine check_the_storage_laws(nfail)
+  subroutine check_storage_laws(nfail)
 
     integer, intent(inout) :: nfail
 
     type(value_map) :: map
-    type(graph)     :: a, b, c, keeper
+    type(graph)     :: a, b, c, copied_identity
     type(graph)     :: b_copy
     real(dp), allocatable :: rv(:)
-    real(dp) :: mine(2)
+    real(dp) :: source_values(2)
 
     call a % declare()
     call b % declare()
@@ -210,21 +210,21 @@ contains
     call report(.not. map % attached(b_copy), &
          & "an assignment copy of a graph finds the same row", nfail)
 
-    mine = [5.0_dp, 6.0_dp]
-    call map % mark_known(a, mine)
-    mine = [-9.0_dp, -9.0_dp]
+    source_values = [5.0_dp, 6.0_dp]
+    call map % mark_known(a, source_values)
+    source_values = [-9.0_dp, -9.0_dp]
     call map % value_of(a, rv)
     call report(rv(1) == 5.0_dp .and. rv(2) == 6.0_dp, &
          & "mark_known copies values: mutating the source array changes &
          &nothing", nfail)
 
-    call attach_from_a_life(map, keeper)
-    call map % value_of(keeper, rv)
-    call report(map % status_of(keeper) == VALUE_KNOWN .and. &
+    call attach_local_graph(map, copied_identity)
+    call map % value_of(copied_identity, rv)
+    call report(map % status_of(copied_identity) == VALUE_KNOWN .and. &
          & rv(1) == 7.0_dp, &
          & "the map outlives the variable that built its row", nfail)
 
-  end subroutine check_the_storage_laws
+  end subroutine check_storage_laws
 
   !-------------------------------------------------------------------!
   ! Creates a map row keyed on a subroutine-local graph and
@@ -232,20 +232,20 @@ contains
   ! the local variable no longer exists.
   !-------------------------------------------------------------------!
 
-  subroutine attach_from_a_life(map, keeper)
+  subroutine attach_local_graph(map, copied_identity)
 
     type(value_map), intent(inout) :: map
-    type(graph)    , intent(out)   :: keeper
+    type(graph)    , intent(out)   :: copied_identity
 
-    type(graph) :: temporary
+    type(graph) :: local_graph
 
-    call temporary % declare()
-    call map % attach_unknown(temporary)
-    call map % mark_known(temporary, [7.0_dp])
+    call local_graph % declare()
+    call map % attach_unknown(local_graph)
+    call map % mark_known(local_graph, [7.0_dp])
 
-    keeper = temporary
+    copied_identity = local_graph
 
-  end subroutine attach_from_a_life
+  end subroutine attach_local_graph
 
   !===================================================================!
   ! value_change through run_change, one case per prior
@@ -256,7 +256,7 @@ contains
   ! remove the entry its apply created.
   !===================================================================!
 
-  subroutine check_the_value_change(nfail)
+  subroutine check_value_change(nfail)
 
     integer, intent(inout) :: nfail
 
@@ -298,13 +298,13 @@ contains
          & map % status_of(f) == VALUE_UNATTACHED, &
          & "a rejected update on an unattached graph removes its entry", nfail)
 
-  end subroutine check_the_value_change
+  end subroutine check_value_change
 
-  subroutine report(ok, label, nfail)
-    logical, intent(in) :: ok
+  subroutine report(satisfied, label, nfail)
+    logical, intent(in) :: satisfied
     character(len=*), intent(in) :: label
     integer, intent(inout) :: nfail
-    if (ok) then
+    if (satisfied) then
        write(*,'(1x,a,a)') "PASS : ", label
     else
        write(*,'(1x,a,a)') "FAIL : ", label

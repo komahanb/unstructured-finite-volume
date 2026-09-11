@@ -34,7 +34,7 @@ program test_graph_algorithms
   implicit none
 
 
-  type(graph)              :: ground
+  type(graph)              :: ambient
   type(graph)               :: v
   type(set_store)                  :: sets
   type(csr_relation)             :: after
@@ -51,13 +51,13 @@ program test_graph_algorithms
   write(*,'(1x,a)') "graph algorithms suite (level 4)"
   write(*,'(1x,a)') "============================================="
 
-  call ground % declare()
-  call sets % bind(ground, counted_set_representation(5))
-  call sets % name(ground, 'ground')
+  call ambient % declare()
+  call sets % bind(ambient, counted_set_representation(5))
+  call sets % name(ambient, 'ground')
   call v % declare()
   call sets % bind(v, listed_set_representation([3, 1, 5, 4, 2]))
   call sets % name(v, 'ordered-domain')
-  call sets % include_in(v, ground)
+  call sets % include_in(v, ambient)
 
   after = csr_relation('after', v, v, &
        & reshape([3,4,  1,4,  4,2], [2, 3]), sets % set_map)
@@ -105,13 +105,13 @@ program test_graph_algorithms
 
 contains
 
-  subroutine report(ok, label, nfail)
+  subroutine report(satisfied, label, nfail)
 
-    logical         , intent(in)    :: ok
+    logical         , intent(in)    :: satisfied
     character(len=*), intent(in)    :: label
     integer         , intent(inout) :: nfail
 
-    if (ok) then
+    if (satisfied) then
        write(*,'(1x,a,a)') "PASS : ", label
     else
        write(*,'(1x,a,a)') "FAIL : ", label
@@ -134,7 +134,7 @@ contains
     type(graph)          :: src, snk
     integer, allocatable :: idx(:)
 
-    ! sources and sinks each declare a fresh subobject into the
+    ! sources and sinks each declare a new subobject into the
     ! caller's store.
     call sources(after, sets, src)
     call sinks(after, sets, snk)
@@ -218,7 +218,7 @@ contains
     integer                          :: kcell2
     type(graph)               :: src, snk
     integer, allocatable           :: idx(:), order(:)
-    logical                        :: ok
+    logical                        :: satisfied
 
     backwards = csr_relation('after backwards', v, v, &
          & reshape([4,2,  1,4,  3,4], [2, 3]), sets % set_map)
@@ -254,10 +254,10 @@ contains
     call sources(backwards, sets, src)
     call sinks(backwards, sets, snk)
     call sets % members_of(src, idx)
-    ok = all(idx .eq. [3, 1, 5])
+    satisfied = all(idx .eq. [3, 1, 5])
     call sets % members_of(snk, idx)
-    ok = ok .and. all(idx .eq. [5, 2])
-    call report(ok, &
+    satisfied = satisfied .and. all(idx .eq. [5, 2])
+    call report(satisfied, &
          & "sources and sinks stand, tuples shuffled", nfail)
 
     call report(reachable(backwards, sets % set_map, 3, 2) .and. &

@@ -25,7 +25,7 @@
 
 program calculator_level_6
 
-  use calculator_assert, only : report, verdict
+  use calculator_assert, only : report, assert_all
   use calculator_assert, only : SLOT_A, SLOT_B, SLOT_C, SLOT_D, SLOT_E
   use calculator_assert, only : OP_PLUS, OP_TIMES
   use calculator_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
@@ -94,7 +94,7 @@ program calculator_level_6
   call check_order_invariance(nfail)
   call check_reverse_is_the_view(nfail)
 
-  call verdict(nfail, "level 6")
+  call assert_all(nfail, "level 6")
 
 contains
 
@@ -213,7 +213,7 @@ contains
 
     integer              :: rev(3, 6), k
     integer, allocatable :: jt_(:,:)
-    logical              :: ok
+    logical              :: satisfied
 
     do k = 1, 6
        rev(:, k) = table(:, 7 - k)
@@ -225,11 +225,11 @@ contains
     call report(j2 % num_tuples() .eq. j % num_tuples(), &
          & "|J1| = |J2|", nfail)
     call j % tuples(jt_)
-    ok = .true.
+    satisfied = .true.
     do k = 1, size(jt_, 2)
-       ok = ok .and. j2 % has(jt_(:, k))
+       satisfied = satisfied .and. j2 % has(jt_(:, k))
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "every pair of J1 stands in J2: equal as sets", nfail)
 
   end subroutine check_order_invariance

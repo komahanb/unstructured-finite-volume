@@ -103,7 +103,7 @@ program visualization_level_7
   use map_set        , only : set_map
   use map_label      , only : label_map
   use iso_fortran_env      , only : dp => REAL64
-  use visualization_assert , only : report, verdict
+  use visualization_assert , only : report, assert_all
   use graph_fractal        , only : graph
   use view_directed  , only : directed_graph
   use view_directed_stored          , only : stored_directed_graph
@@ -128,7 +128,7 @@ program visualization_level_7
   integer , parameter :: N        = 3
   real(dp), parameter :: TOL      = 1.0e-12_dp
 
-  real(dp), parameter :: X_PROBE(N)  = [1.0_dp, 2.0_dp, 3.0_dp]
+  real(dp), parameter :: X_DIRECTION(N)  = [1.0_dp, 2.0_dp, 3.0_dp]
   real(dp), parameter :: A_TIMES_X(N) = [6.0_dp, 14.0_dp, 20.0_dp]
   real(dp), parameter :: TRUE_DIAG(N) = [4.0_dp, 5.0_dp, 6.0_dp]
 
@@ -197,8 +197,8 @@ program visualization_level_7
   call state_over(on_match, pa)
   call state_over(on_empty, h_empty)
 
-  call on_match % matvec(X_PROBE, mv_match)
-  call on_empty % matvec(X_PROBE, mv_empty)
+  call on_match % matvec(X_DIRECTION, mv_match)
+  call on_empty % matvec(X_DIRECTION, mv_empty)
 
   call on_match % sweep_order(col_match)
   call on_empty % sweep_order(col_empty)
@@ -214,7 +214,7 @@ program visualization_level_7
   call check_the_colouring_is_host_dependent(nfail)
   call check_the_diagonal(nfail)
 
-  call verdict(nfail, "level 7")
+  call assert_all(nfail, "level 7")
 
 contains
 
@@ -549,12 +549,12 @@ contains
   ! Helpers.
   !===================================================================!
 
-  logical function alike(got, want)
+  logical function alike(actual, expected)
 
-    real(dp), intent(in) :: got(:), want(:)
+    real(dp), intent(in) :: actual(:), expected(:)
 
-    alike = (size(got) .eq. size(want))
-    if (alike) alike = all(abs(got - want) .lt. TOL)
+    alike = (size(actual) .eq. size(expected))
+    if (alike) alike = all(abs(actual - expected) .lt. TOL)
 
   end function alike
 

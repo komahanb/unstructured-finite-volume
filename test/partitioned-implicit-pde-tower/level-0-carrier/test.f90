@@ -30,7 +30,7 @@
 
 program partitioned_pde_level_0
 
-  use partitioned_pde_assert , only : report, verdict
+  use partitioned_pde_assert , only : report, assert_all
   use graph_fractal        , only : graph
   use map_set        , only : set_map
   use chain_carriers_fixture , only : chain_carriers
@@ -54,7 +54,7 @@ program partitioned_pde_level_0
   call check_enumeration(nfail)
   call check_boundaries(nfail)
 
-  call verdict(nfail, "level 0")
+  call assert_all(nfail, "level 0")
 
 contains
 

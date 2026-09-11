@@ -23,7 +23,7 @@
 
 program partitioned_pde_level_3
 
-  use partitioned_pde_assert , only : report, verdict
+  use partitioned_pde_assert , only : report, assert_all
   use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation
   use map_set        , only : set_map
@@ -63,7 +63,7 @@ program partitioned_pde_level_3
   call check_incidence_against_the_oracle(nfail)
   call check_it_is_not_a_part(nfail)
 
-  call verdict(nfail, "level 3")
+  call assert_all(nfail, "level 3")
 
 contains
 
@@ -88,23 +88,23 @@ contains
 
     type(graph) :: gv, ge
     integer           :: i
-    logical           :: ok
+    logical           :: satisfied
 
     gv = g % vertex_set()
     ge = g % edge_set()
 
-    ok = sets % num_members_of(gv) .eq. sets % num_members_of(v)
+    satisfied = sets % num_members_of(gv) .eq. sets % num_members_of(v)
     do i = 1, sets % num_members_of(v)
-       ok = ok .and. sets % has(gv, sets % member_of(v, i))
+       satisfied = satisfied .and. sets % has(gv, sets % member_of(v, i))
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "G's vertex carrier holds exactly V's members", nfail)
 
-    ok = sets % num_members_of(ge) .eq. sets % num_members_of(e)
+    satisfied = sets % num_members_of(ge) .eq. sets % num_members_of(e)
     do i = 1, sets % num_members_of(e)
-       ok = ok .and. sets % has(ge, sets % member_of(e, i))
+       satisfied = satisfied .and. sets % has(ge, sets % member_of(e, i))
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "and its edge carrier exactly E's", nfail)
 
     call report(.not. gv % same_as(v), &
@@ -124,24 +124,24 @@ contains
     integer, intent(inout) :: nfail
 
     integer :: ge
-    logical :: ok
+    logical :: satisfied
 
-    ok = .true.
+    satisfied = .true.
     do ge = 1, g % num_edges()
-       ok = ok .and. tail % has([ge, g % edge_tail(ge)])
-       ok = ok .and. g % edge_has_head(ge)
-       ok = ok .and. head % has([ge, g % edge_head(ge)])
+       satisfied = satisfied .and. tail % has([ge, g % edge_tail(ge)])
+       satisfied = satisfied .and. g % edge_has_head(ge)
+       satisfied = satisfied .and. head % has([ge, g % edge_head(ge)])
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "every edge G reports leaves and enters where Tail and " // &
          & "Head say it should", nfail)
 
     ! ...and nothing the oracle forbids is present.
-    ok = .true.
+    satisfied = .true.
     do ge = 1, g % num_edges()
-       ok = ok .and. .not. tail % has([ge, g % edge_head(ge)])
+       satisfied = satisfied .and. .not. tail % has([ge, g % edge_head(ge)])
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "and no edge leaves the vertex it enters: the realization " // &
          & "adds nothing the relations did not license", nfail)
 

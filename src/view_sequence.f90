@@ -20,11 +20,11 @@
 ! So [a,b,c] is (a, (b, (c, NULL))), and the empty sequence has no cell
 ! and needs no graph. A containing graph writes
 !
-!     holder % branch(i) = null_branch()
+!     container % branch(i) = null_branch()
 !
 ! for the empty sequence, which is why these procedures take a branch.
 !
-! TWO KINDS OF FAILURE, KEPT APART.
+! TWO DISTINCT FAILURE CONDITIONS.
 !
 !     malformed     a cell whose branch(1) is NULL or UNKNOWN. The
 !                   representation is wrong. Refused, always.

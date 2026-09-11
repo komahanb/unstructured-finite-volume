@@ -36,7 +36,7 @@
 program partitioned_pde_level_6
 
   use iso_fortran_env  , only : dp => REAL64
-  use partitioned_pde_assert, only : report, verdict
+  use partitioned_pde_assert, only : report, assert_all
   use partitioned_pde_assert, only : NV, Q_EXACT, B_EXACT, L_EXACT
   use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation
@@ -81,9 +81,9 @@ program partitioned_pde_level_6
   call check_transported_state(nfail)
   call check_local_actions(nfail)
   call check_assembled_equivalence(nfail)
-  call check_borrowed_input_matters(nfail)
+  call check_halo_dependence(nfail)
 
-  call verdict(nfail, "level 6")
+  call assert_all(nfail, "level 6")
 
 contains
   subroutine cut(part, k)
@@ -219,12 +219,12 @@ contains
 
   end subroutine check_local_actions
   subroutine one_local_action(part, k, globals, expect_l, expect_a, &
-       & borrowed_global, borrowed_says, global_says, nfail)
+       & halo_global_index, halo_action_value, global_action_value, nfail)
 
     class(directed_graph), intent(in)    :: part
-    integer     , intent(in)    :: k, globals(:), borrowed_global
+    integer     , intent(in)    :: k, globals(:), halo_global_index
     real(dp)    , intent(in)    :: expect_l(:), expect_a(:)
-    real(dp)    , intent(in)    :: borrowed_says, global_says
+    real(dp)    , intent(in)    :: halo_action_value, global_action_value
     integer     , intent(inout) :: nfail
 
     type(differential_operator)     :: lap
@@ -233,7 +233,7 @@ contains
     real(dp), allocatable           :: v(:)
     character(len=1)                :: tag
     integer                         :: i, position
-    logical                         :: ok
+    logical                         :: satisfied
 
     write(tag,'(i1)') k
 
@@ -245,38 +245,38 @@ contains
     lap = laplacian(coefficient=1.0_dp, spacing=1.0_dp, measure=1.0_dp)
     call lap % apply(part, lap % bind([qp]), lq)
     call lq % real_vector(v)
-    ok = .true.
+    satisfied = .true.
     do i = 1, size(globals)
        position = position_of_global(part, globals(i))
-       ok = ok .and. (position .gt. 0)
+       satisfied = satisfied .and. (position .gt. 0)
        if (position .gt. 0) then
-          ok = ok .and. (abs(v(position) - expect_l(i)) < 1.0d-12)
+          satisfied = satisfied .and. (abs(v(position) - expect_l(i)) < 1.0d-12)
        end if
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "L on G" // tag // " traverses the PART's topology, read " // &
          & "by global member", nfail)
 
     shifted = shifted_laplacian()
     call shifted % apply(part, shifted % bind([qp]), aq)
     call aq % real_vector(v)
-    ok = .true.
+    satisfied = .true.
     do i = 1, size(globals)
        position = position_of_global(part, globals(i))
-       ok = ok .and. (position .gt. 0)
+       satisfied = satisfied .and. (position .gt. 0)
        if (position .gt. 0) then
-          ok = ok .and. (abs(v(position) - expect_a(i)) < 1.0d-12)
+          satisfied = satisfied .and. (abs(v(position) - expect_a(i)) < 1.0d-12)
        end if
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "and A on G" // tag // " answers on all four local " // &
          & "members, borrowed one included", nfail)
 
     ! The borrowed position, located through the global map.
-    position = position_of_global(part, borrowed_global)
+    position = position_of_global(part, halo_global_index)
     call report(position .gt. 0 .and. &
-         &      abs(v(position) - borrowed_says) < 1.0d-12 .and. &
-         &      abs(borrowed_says - global_says) > 1.0_dp, &
+         &      abs(v(position) - halo_action_value) < 1.0d-12 .and. &
+         &      abs(halo_action_value - global_action_value) > 1.0_dp, &
          & "G" // tag // "'s BORROWED output disagrees with the " // &
          & "global action - it is a copy, not an answer", nfail)
 
@@ -310,19 +310,19 @@ contains
   ! Perturb only the borrowed copy and an OWNED result must move.
   !===================================================================!
 
-  subroutine check_borrowed_input_matters(nfail)
+  subroutine check_halo_dependence(nfail)
 
     integer, intent(inout) :: nfail
 
-    call perturb_and_watch(g1, 1, 4, 3, 7.0_dp, -3.0_dp, nfail)
-    call perturb_and_watch(g2, 2, 3, 4, 13.0_dp, 3.0_dp, nfail)
+    call check_perturbed_halo_action(g1, 1, 4, 3, 7.0_dp, -3.0_dp, nfail)
+    call check_perturbed_halo_action(g2, 2, 3, 4, 13.0_dp, 3.0_dp, nfail)
 
-  end subroutine check_borrowed_input_matters
-  subroutine perturb_and_watch(part, k, borrowed_global, watched_global, &
+  end subroutine check_halo_dependence
+  subroutine check_perturbed_halo_action(part, k, halo_global_index, owned_global_index, &
        & before, after, nfail)
 
     class(directed_graph), intent(in)    :: part
-    integer     , intent(in)    :: k, borrowed_global, watched_global
+    integer     , intent(in)    :: k, halo_global_index, owned_global_index
     real(dp)    , intent(in)    :: before, after
     integer     , intent(inout) :: nfail
 
@@ -331,43 +331,43 @@ contains
     real(dp), allocatable           :: v(:)
     real(dp), allocatable           :: state(:)
     character(len=1)                :: tag
-    integer                         :: bseat, wseat
+    integer                         :: halo_position, owned_position
 
     write(tag,'(i1)') k
 
-    bseat = position_of_global(part, borrowed_global)
-    wseat = position_of_global(part, watched_global)
+    halo_position = position_of_global(part, halo_global_index)
+    owned_position = position_of_global(part, owned_global_index)
 
     ! Unperturbed: the owned answer stands where it should.
     qp = local_state(part, k, sets)
     call shifted % apply(part, shifted % bind([qp]), aq)
     call aq % real_vector(v)
-    call report(abs(v(wseat) - before) < 1.0d-12, &
+    call report(abs(v(owned_position) - before) < 1.0d-12, &
          & "G" // tag // ": the owned result at global " // &
-         & achar(48 + watched_global) // " starts correct", nfail)
+         & achar(48 + owned_global_index) // " starts correct", nfail)
 
     ! Perturb ONLY the borrowed copy, by its global identity.
     call qp % real_vector(state)
-    state(bseat) = state(bseat) + 10.0_dp
+    state(halo_position) = state(halo_position) + 10.0_dp
     call qp % set_real_vector(state)
 
     call shifted % apply(part, shifted % bind([qp]), aq)
     call aq % real_vector(v)
-    call report(abs(v(wseat) - after) < 1.0d-12, &
+    call report(abs(v(owned_position) - after) < 1.0d-12, &
          & "G" // tag // ": +10 on the BORROWED copy of global " // &
-         & achar(48 + borrowed_global) // " moves the OWNED result " // &
-         & "at global " // achar(48 + watched_global) // " by -10", &
+         & achar(48 + halo_global_index) // " moves the OWNED result " // &
+         & "at global " // achar(48 + owned_global_index) // " by -10", &
          & nfail)
 
     ! Restore, and the correct answer returns.
     qp = local_state(part, k, sets)
     call shifted % apply(part, shifted % bind([qp]), aq)
     call aq % real_vector(v)
-    call report(abs(v(wseat) - before) < 1.0d-12, &
+    call report(abs(v(owned_position) - before) < 1.0d-12, &
          & "G" // tag // ": restore the halo and equivalence returns", &
          & nfail)
 
-  end subroutine perturb_and_watch
+  end subroutine check_perturbed_halo_action
   !===================================================================!
   ! Helpers.
   !===================================================================!

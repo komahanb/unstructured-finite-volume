@@ -39,12 +39,14 @@
 
 module operation_elimination
 
+  use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
   use util_precision        , only : dp
   use graph_fractal         , only : graph
   use view_directed         , only : directed_graph
   use view_directed_stored  , only : stored_directed_graph
   use operation_action      , only : operation
   use operation_minimization, only : minimizer, state
+  use operation_minimization, only : solve_result, SOLVE_INNER_FAILED, SOLVE_EXHAUSTED, SOLVE_CONTINUE
   use operation_stencil     , only : stencil, combine_triples
   use field_stored          , only : stored_field
 
@@ -119,14 +121,15 @@ contains
     integer , allocatable :: rows(:), columns(:), position(:), kk_row(:), kk_column(:)
     integer , allocatable :: first_ek(:), by_row(:), rk(:), ck(:)
     integer , allocatable :: n_row(:), first_m(:), count_m(:), m_column(:)
-    real(dp), allocatable :: weights(:), kk_weight(:), wk(:), m_weight(:)
+    integer , allocatable :: column_row(:), active_columns(:)
+    real(dp), allocatable :: weights(:), kk_weight(:), wk(:), m_weight(:), row_weight(:)
     type(stencil) :: complement
     type(stored_directed_graph) :: retained
-    integer :: n, nk, ne, e, r, c, i, j, nkk, nke, nek, nn, m, total
+    integer :: n, nk, ne, e, r, c, i, j, k, nkk, nke, nek, nn, m, total, num_active_columns
 
     call state(this, action, context, unknown_domain, num_unknowns, &
          & num_components, coupling, stored_inputs)
-    call cleared(this)
+    call clear_partition(this)
 
     if (present(num_components)) then
        if (num_components > 1) then
@@ -240,35 +243,35 @@ contains
     ! the substitution order: a row after every eliminated row it reads
     call ordered(ne, this % first_n, this % n_column, this % order)
 
-    ! M = (I + N)^-1 J_EK row by row in that order: the row of J_EK
-    ! less each read row of M, weighted
+    ! M = (I + N)^-1 J_EK row by row in that order. Sum equal
+    ! retained columns before another row reads this one: storage
+    ! then counts the nonzero coefficients of M, not dependency paths.
     allocate(first_m(ne), count_m(ne))
+    allocate(column_row(nk), source=0)
+    allocate(active_columns(nk), row_weight(nk), m_column(0), m_weight(0))
     total = 0
     do i = 1, ne
        e = this % order(i)
-       count_m(e) = first_ek(e + 1) - first_ek(e)
-       do j = this % first_n(e), this % first_n(e + 1) - 1
-          count_m(e) = count_m(e) + count_m(this % n_column(j))
-       end do
-       first_m(e) = total + 1
-       total = total + count_m(e)
-    end do
-    allocate(m_column(total), m_weight(total))
-    do i = 1, ne
-       e = this % order(i)
-       m = first_m(e) - 1
+       num_active_columns = 0
        do j = first_ek(e), first_ek(e + 1) - 1
-          m = m + 1
-          m_column(m) = this % ek_column(by_row(j))
-          m_weight(m) = this % ek_weight(by_row(j))
+          call accumulated(this % ek_column(by_row(j)), this % ek_weight(by_row(j)))
        end do
        do j = this % first_n(e), this % first_n(e + 1) - 1
           c = this % n_column(j)
-          m_column(m + 1:m + count_m(c)) = m_column(first_m(c):first_m(c) + count_m(c) - 1)
-          m_weight(m + 1:m + count_m(c)) = -this % n_weight(j) &
-               & * m_weight(first_m(c):first_m(c) + count_m(c) - 1)
-          m = m + count_m(c)
+          do k = first_m(c), first_m(c) + count_m(c) - 1
+             call accumulated(m_column(k), -this % n_weight(j) * m_weight(k))
+          end do
        end do
+       first_m(e) = total + 1
+       call reserve_coefficients(total + num_active_columns, total, m_column, m_weight)
+       do j = 1, num_active_columns
+          c = active_columns(j)
+          if (row_weight(c) == 0.0_dp) cycle
+          total = total + 1
+          m_column(total) = c
+          m_weight(total) = row_weight(c)
+       end do
+       count_m(e) = total - first_m(e) + 1
     end do
 
     ! the complement's triples: J_KK, then minus J_KE M
@@ -296,13 +299,46 @@ contains
     call this % inner % state(complement, complement % pattern, retained % vertex_set(), nk, &
          & num_components = 1, coupling = complement % pattern)
 
+  contains
+
+    subroutine accumulated(column, weight)
+      integer , intent(in) :: column
+      real(dp), intent(in) :: weight
+      if (column_row(column) /= e) then
+         column_row(column) = e
+         num_active_columns = num_active_columns + 1
+         active_columns(num_active_columns) = column
+         row_weight(column) = 0.0_dp
+      end if
+      row_weight(column) = row_weight(column) + weight
+    end subroutine accumulated
+
   end subroutine elimination_state
+
+  subroutine reserve_coefficients(required, used, columns, weights)
+    integer, intent(in) :: required, used
+    integer, allocatable, intent(inout) :: columns(:)
+    real(dp), allocatable, intent(inout) :: weights(:)
+    integer, allocatable :: larger_columns(:)
+    real(dp), allocatable :: larger_weights(:)
+    integer :: capacity
+
+    capacity = size(columns)
+    if (required <= capacity) return
+    if (capacity <= huge(capacity) / 2) capacity = 2 * capacity
+    capacity = max(required, capacity)
+    allocate(larger_columns(capacity), larger_weights(capacity))
+    larger_columns(1:used) = columns(1:used)
+    larger_weights(1:used) = weights(1:used)
+    call move_alloc(larger_columns, columns)
+    call move_alloc(larger_weights, weights)
+  end subroutine reserve_coefficients
 
   !===================================================================!
   ! The stored partition released before a statement is read again.
   !===================================================================!
 
-  subroutine cleared(this)
+  subroutine clear_partition(this)
 
     class(elimination), intent(inout) :: this
 
@@ -315,7 +351,7 @@ contains
     if (allocated(this % order))     deallocate(this % order)
     if (allocated(this % diagonal))  deallocate(this % diagonal)
 
-  end subroutine cleared
+  end subroutine clear_partition
 
   !===================================================================!
   ! The permutation gathering triples by row, and the first triple of
@@ -433,6 +469,7 @@ contains
     real(dp), allocatable :: rhs_retained(:), x_retained(:), x_eliminated(:), r(:)
     real(dp) :: inner_achieved
     integer :: e
+    type(solve_result) :: outcome
 
     if (size(x) /= size(rhs)) then
        error stop 'elimination: solution size matches rhs'
@@ -440,6 +477,11 @@ contains
     if (size(rhs) /= size(this % eliminated)) then
        error stop 'elimination: the right-hand side is over the stated unknowns'
     end if
+
+    call this % initialize_residual_history()
+    call this % imbalance(rhs, x, r)
+    achieved = this % norm(r)
+    call this % record_residual_norm(achieved)
 
     ! b_K - J_KE (I + N)^-1 b_E, the eliminated rows divided by their diagonals
     x_eliminated = rhs(this % eliminated_at) / this % diagonal
@@ -452,11 +494,16 @@ contains
 
     x_retained = x(this % retained_at)
     call this % inner % solve(rhs_retained, x_retained, inner_achieved)
+    outcome = this % inner % result()
 
     ! a singular or overflowing inner solve yields no step; its report
     ! is passed on as the residual
-    if (inner_achieved /= inner_achieved .or. inner_achieved > huge(1.0_dp) / 2.0_dp) then
-       achieved = inner_achieved
+    if (.not. ieee_is_finite(inner_achieved) .or. outcome % failed()) then
+       call this % record_result(achieved, outcome % iterations, SOLVE_INNER_FAILED)
+       return
+    end if
+    if (inner_achieved > huge(1.0_dp) / 2.0_dp) then
+       call this % record_result(achieved, outcome % iterations, SOLVE_INNER_FAILED)
        return
     end if
 
@@ -473,6 +520,11 @@ contains
 
     call this % imbalance(rhs, x, r)
     achieved = this % norm(r)
+    call this % record_result(achieved, outcome % iterations)
+    outcome = this % result()
+    if (outcome % reason == SOLVE_CONTINUE) then
+       call this % record_result(achieved, outcome % iterations, SOLVE_EXHAUSTED)
+    end if
 
   end subroutine elimination_solve
 

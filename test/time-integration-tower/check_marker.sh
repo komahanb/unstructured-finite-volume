@@ -29,8 +29,8 @@
 # steps and not any graph's vertex set. A five-token marker would
 # quietly undo that at the last line of output.
 
-# marker_ok <marker-count> <expected-width> <tokens>
-marker_ok() {
+# marker_valid <marker-count> <expected-width> <tokens>
+marker_valid() {
     local marks="$1" width="$2" values="$3"
     local real='^[+-]?([0-9]+(\.[0-9]*)?|\.[0-9]+)([eEdDqQ][+-]?[0-9]+)?$'
     local count tok
@@ -48,13 +48,13 @@ if [ "$1" = "--selftest" ]; then
     fail=0
 
     accept() {
-        if marker_ok "${2:-1}" 2 "$1"; then :; else
+        if marker_valid "${2:-1}" 2 "$1"; then :; else
             echo " FAIL : the result contract refused '$1'"
             fail=1
         fi
     }
     refuse() {
-        if marker_ok "${2:-1}" 2 "$1"; then
+        if marker_valid "${2:-1}" 2 "$1"; then
             echo " FAIL : the result contract accepted '$1'"
             fail=1
         fi

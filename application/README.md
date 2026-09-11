@@ -547,6 +547,26 @@ key `design`, written nu in the code.
 real128 into `lib_quad/` and places the binary in `quad/`; the two
 builds coexist.
 
+From the repository root, `./verify.sh` builds the library and application
+once, then runs 36 solver, domain, scheduling, elimination, GTI failure,
+analytic order and graph suites, including all seven application towers,
+and five derivative demonstrations. `UFVM_SKIP_LIBRARY_BUILD=1 ./verify.sh`
+uses an already rebuilt library and application. Naming checks and their
+refusal regressions run first. `./check_naming.sh` checks the vocabulary
+independently; [the coding standards](../doc/coding-standards.md) define
+mathematical role names and the staged commit check.
+
+Every library minimizer exposes `result()`: the true residual, initial
+residual, completed iteration count, and stopping reason. A completed
+iteration is a Newton update, Krylov restart, relaxation sweep, or complete
+multigrid cycle. Exhaustion or stagnation may supply an approximate inner
+correction; neither certifies convergence. GTI rejects unsuccessful linear
+derivative solves and derivatives of an unsuccessful primal march.
+Adaptive step doubling rejects a nonconverged step solve and reports
+failure if its minimum step cannot meet the error tolerance. The
+goal-oriented grid tolerance measures grid stationarity, not a bound on
+the functional's discretization error.
+
 ## Running
 
     ./graph_time_integrator                          # config/homogeneous.cfg, the default
@@ -644,11 +664,29 @@ it GMRES on the velocity-pressure block ran to its cap of restarts:
 at 12 x 12, 86 s, 80 percent of it in the Krylov inner products and
 matvecs, against 28 s for the dense factorisation and 12 s
 preconditioned; at 16 x 16, 350 s against 24 s, every printed digit
-the same. `preconditioner = multigrid` puts one cycle of the two-level
-object in the same place, the block sweeps around a GMRES solve over
-the aggregates: 26 s at 16 x 16 and 190 s at 32 x 32 against 24 s and
-170 s for the sweeps alone, identical digits, since with the sweeps
-the Krylov iterations are no longer the cost. The profile of the
+the same. These timings predate the correction to completed-iteration
+counts and must be measured again for the current implementation.
+`preconditioner = multigrid` now performs one complete cycle: block
+sweeps, a coarse correction, then block sweeps again. The earlier
+26 s and 190 s measurements did not include the coarse correction,
+because the iteration-limit check returned after pre-smoothing; they
+do not establish the cost or effectiveness of a multigrid cycle.
+On 11 September 2026, a fresh 8 x 8 comparison over five instants to
+t = 0.25, with derivatives and export disabled, took median wall times
+of 1.341 s for Gauss-Seidel and 1.523 s for multigrid across three
+alternating runs of each. Both BDF orders converged and all printed
+functionals and exact-solution diagnostics agreed. This small case
+does not establish performance on larger meshes. Reproduce it from the
+application directory with the following command, changing
+`preconditioner` between `gauss_seidel` and `multigrid`:
+
+```bash
+./graph_time_integrator --config=taylor_green "spatial_counts=8 8" \
+  instants=5 time_duration=0.25 max_derivative_degree=0 export=none \
+  preconditioner=multigrid
+```
+
+The historical profile of the
 preconditioned run puts 24 percent in the stencil matvec, 13 percent
 in the expression evaluated for the residual and the Jacobian, and 3
 percent in the Krylov inner product. Each rule's tangent is now
@@ -687,11 +725,9 @@ matrix-free Jacobian is refused under it; an eliminated row without a
 diagonal, or rows reading one another in a cycle, stop the solve
 naming the kind to state as rows. Multigrid under the elimination
 coarsens by the aggregates of the retained unknowns, restricted with
-the flags to each member of a sweep: identical digits, 17.0 s
-against 16.1 for the sweeps at 16 x 16, and on the degree-4 step at
-32 x 32 96370 iterations and 711 s at `krylov_restart = 60` against
-1492 and 16.5 s at 300, the same as the sweeps in both, so the
-restart is the lever there and the preconditioner is not. Under a staged family the states at
+the flags to each member of a sweep. The earlier timing and restart
+comparisons also predate the cycle correction and cannot establish the
+effect of its coarse solve. Under a staged family the states at
 the stages are the tied components, so its time derivatives stay as
 rows.
 

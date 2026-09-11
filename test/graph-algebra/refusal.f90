@@ -27,16 +27,16 @@ program algebra_refusal
   implicit none
 
   type(graph)     :: a, b, c, other
-  type(graph)      :: foreign
-  type(stored_relation) :: r, r_ab, r_bc, fat
+  type(graph)      :: unrelated_subset
+  type(stored_relation) :: r, r_ab, r_bc, incompatible_relation
   type(stored_relation) :: out1
   type(csr_relation)    :: out2
-  character(len=32)     :: which
+  character(len=32)     :: case_name
   type(set_map)     :: sets
   type(inclusion_map)     :: inclusions
 
-  which = ''
-  call get_command_argument(1, which)
+  case_name = ''
+  call get_command_argument(1, case_name)
 
   call a % declare()
   call sets % bind(a, counted_set_representation(3))
@@ -48,7 +48,7 @@ program algebra_refusal
   r = stored_relation('r', [a, b, c], &
        & reshape([1,1,1,  2,2,2], [3, 2]), sets)
 
-  select case (trim(which))
+  select case (trim(case_name))
 
   case ('slot')
      out1 = restrict_slot(r, 4, b, sets, inclusions)
@@ -56,10 +56,10 @@ program algebra_refusal
   case ('embed')
      call other % declare()
      call sets % bind(other, counted_set_representation(4))
-     call foreign % declare()
-     call sets       % bind(foreign, listed_set_representation([2]))
-     call inclusions % include_in(foreign, other)
-     out1 = restrict_slot(r, 2, foreign, sets, inclusions)
+     call unrelated_subset % declare()
+     call sets       % bind(unrelated_subset, listed_set_representation([2]))
+     call inclusions % include_in(unrelated_subset, other)
+     out1 = restrict_slot(r, 2, unrelated_subset, sets, inclusions)
 
   case ('none')
      out1 = project_slots(r, [integer ::], sets)
@@ -76,8 +76,8 @@ program algebra_refusal
 
   case ('middle')
      r_ab = stored_relation('ab', [a, b], reshape([1, 1], [2, 1]), sets)
-     fat  = stored_relation('cb', [c, b], reshape([1, 1], [2, 1]), sets)
-     out2 = compose_binary(r_ab, fat, sets)
+     incompatible_relation  = stored_relation('cb', [c, b], reshape([1, 1], [2, 1]), sets)
+     out2 = compose_binary(r_ab, incompatible_relation, sets)
 
   case default
      write(*,'(1x,a)') &
@@ -87,6 +87,6 @@ program algebra_refusal
   end select
 
   ! Reaching this line is the failure.
-  write(*,'(1x,a,a)') "REACHED PAST THE REFUSAL: ", trim(which)
+  write(*,'(1x,a,a)') "REACHED PAST THE REFUSAL: ", trim(case_name)
 
 end program algebra_refusal

@@ -56,7 +56,7 @@
 
 program time_level_4
 
-  use time_assert           , only : report, verdict
+  use time_assert           , only : report, assert_all
   use time_assert           , only : NT
   use time_assert           , only : T0, T1, T2, T3, T4
   use graph_fractal        , only : graph
@@ -148,7 +148,7 @@ program time_level_4
   call check_two_step_view(nfail)
   call check_two_views_one_carrier(nfail)
 
-  call verdict(nfail, "level 4")
+  call assert_all(nfail, "level 4")
 
 contains
 
@@ -218,38 +218,38 @@ contains
 
     integer, allocatable :: order(:)
     integer              :: i
-    logical              :: ok
+    logical              :: satisfied
 
     call topological_order(a1, sets % set_map, order)
 
-    ok = size(order) .eq. NT
+    satisfied = size(order) .eq. NT
     do i = 1, min(size(order), sets % num_members_of(t))
-       ok = ok .and. (order(i) .eq. sets % member_of(t, i))
+       satisfied = satisfied .and. (order(i) .eq. sets % member_of(t, i))
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "topological_order(A1) = [t0 t1 t2 t3 t4], read from the " // &
          & "carrier's own declaration order - THE FORWARD CAUSAL " // &
          & "ORDER", nfail)
 
     ! The order is causal, not merely a permutation: every edge of
     ! A1 runs forwards in it.
-    ok = .true.
+    satisfied = .true.
     do i = 1, size(order) - 1
-       ok = ok .and. .not. reachable(a1, sets % set_map, order(i + 1), order(i))
+       satisfied = satisfied .and. .not. reachable(a1, sets % set_map, order(i + 1), order(i))
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "and no later instant reaches an earlier one: the order " // &
          & "respects every dependency, which is what makes it causal", &
          & nfail)
 
     ! REVERSE CAUSAL ORDER, stated as the opposite traversal of the
     ! order just established. No new algorithm; no adjoint.
-    ok = .true.
+    satisfied = .true.
     do i = 1, size(order)
-       ok = ok .and. (order(size(order) - i + 1) .eq. &
+       satisfied = satisfied .and. (order(size(order) - i + 1) .eq. &
             &         sets % member_of(t, sets % num_members_of(t) - i + 1))
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "and read backwards it is [t4 t3 t2 t1 t0]: REVERSE " // &
          & "CAUSAL ORDER EXISTS STRUCTURALLY BEFORE ANY ADJOINT " // &
          & "DOES - no algorithm was written for it here", nfail)
@@ -265,18 +265,18 @@ contains
     integer, intent(inout) :: nfail
 
     integer, pointer :: fibre(:)
-    logical          :: ok
+    logical          :: satisfied
 
     fibre => a2 % image_view(T0)
-    ok = size(fibre) .eq. 1
-    if (ok) ok = fibre(1) .eq. T2
+    satisfied = size(fibre) .eq. 1
+    if (satisfied) satisfied = fibre(1) .eq. T2
     fibre => a2 % image_view(T1)
-    ok = ok .and. size(fibre) .eq. 1
-    if (ok) ok = ok .and. fibre(1) .eq. T3
+    satisfied = satisfied .and. size(fibre) .eq. 1
+    if (satisfied) satisfied = satisfied .and. fibre(1) .eq. T3
     fibre => a2 % image_view(T2)
-    ok = ok .and. size(fibre) .eq. 1
-    if (ok) ok = ok .and. fibre(1) .eq. T4
-    call report(ok, &
+    satisfied = satisfied .and. size(fibre) .eq. 1
+    if (satisfied) satisfied = satisfied .and. fibre(1) .eq. T4
+    call report(satisfied, &
          & "successors under A2: t0->{t2}, t1->{t3}, t2->{t4}", nfail)
 
     call report(reachable(a2, sets % set_map, T0, T4), &

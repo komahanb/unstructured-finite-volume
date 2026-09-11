@@ -1,4 +1,4 @@
-! NAVIGATION PROBE. A function reference in the middle of a traversal.
+! NAVIGATION CHECK. A function reference in the middle of a traversal.
 ! EXPECTED: rejected - 'Unclassifiable statement'; the same rule as
 ! function_result_base, reported by the parser.
 !

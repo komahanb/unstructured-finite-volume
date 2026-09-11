@@ -43,7 +43,7 @@
 
 program visualization_level_3
 
-  use visualization_assert , only : report, verdict
+  use visualization_assert , only : report, assert_all
   use visualization_assert , only : ND1, ND2, ND3, ND21, ND31
   use visualization_assert , only : NX0, NX1, NX2, NX3, NE1, NE2, NE3
   use visualization_assert , only : X0_A, X0_B, X0_C, X0_D
@@ -143,7 +143,7 @@ program visualization_level_3
   call check_nothing_derived_is_stored(nfail)
   call check_the_chain_is_recoverable(nfail)
 
-  call verdict(nfail, "level 3")
+  call assert_all(nfail, "level 3")
 
 contains
 
@@ -167,7 +167,7 @@ contains
          & "and each of X0 X1 X2 X3 E1 E2 E3 answers same_as against " // &
          & "one of them: OWNERSHIP IS IDENTITY", nfail)
 
-    call report(sizes_kept(), &
+    call report(cardinalities_preserved(), &
          & "each owned carrier still holds what it declared: " // &
          & "4 3 3 2 5 4 3", nfail)
 
@@ -175,7 +175,7 @@ contains
 
   !===================================================================!
   ! Six primitive relations, each found by identity rather than by
-  ! the seat it happens to occupy.
+  ! the position it occupies.
   !===================================================================!
 
   subroutine check_the_six_primitives_are_owned(nfail)
@@ -186,9 +186,9 @@ contains
          & "the graph holds SIX relations - the two ends of each of " // &
          & "the three operators' occurrences", nfail)
 
-    call report(seat_of(t1) .gt. 0 .and. seat_of(h1) .gt. 0 .and. &
-         &      seat_of(t2) .gt. 0 .and. seat_of(h2) .gt. 0 .and. &
-         &      seat_of(t3) .gt. 0 .and. seat_of(h3) .gt. 0, &
+    call report(relation_index(t1) .gt. 0 .and. relation_index(h1) .gt. 0 .and. &
+         &      relation_index(t2) .gt. 0 .and. relation_index(h2) .gt. 0 .and. &
+         &      relation_index(t3) .gt. 0 .and. relation_index(h3) .gt. 0, &
          & "T1 H1 T2 H2 T3 H3 are all found by identity - a selector " // &
          & "is an address, never a shape", nfail)
 
@@ -395,23 +395,23 @@ contains
   ! Helpers - all of them asking the graph, never the local copies.
   !===================================================================!
 
-  integer function seat_of(selector)
+  integer function relation_index(selector)
 
     class(relation), intent(in) :: selector
 
     class(relation), pointer :: r
     integer                  :: k
 
-    seat_of = 0
+    relation_index = 0
     do k = 1, num_relations(g)
        r => relation_at(g, bnd, k)
        if (r % same_as(selector)) then
-          seat_of = k
+          relation_index = k
           return
        end if
     end do
 
-  end function seat_of
+  end function relation_index
 
   function owned_binary(selector) result(rp)
 
@@ -421,7 +421,7 @@ contains
     class(relation), pointer :: r
 
     rp => null()
-    r  => relation_at(g, bnd, seat_of(selector))
+    r  => relation_at(g, bnd, relation_index(selector))
     select type (r)
     class is (binary_relation)
        rp => r
@@ -431,19 +431,19 @@ contains
 
   end function owned_binary
 
-  logical function sizes_kept()
+  logical function cardinalities_preserved()
 
     type(graph), pointer :: c
-    integer                    :: want(7), k
+    integer                    :: expected_sizes(7), k
 
-    want = [NX0, NX1, NX2, NX3, NE1, NE2, NE3]
-    sizes_kept = .true.
+    expected_sizes = [NX0, NX1, NX2, NX3, NE1, NE2, NE3]
+    cardinalities_preserved = .true.
     do k = 1, 7
        c => member_set_at(g, bnd, k)
-       sizes_kept = sizes_kept .and. (sets % num_members_of(c) .eq. want(k))
+       cardinalities_preserved = cardinalities_preserved .and. (sets % num_members_of(c) .eq. expected_sizes(k))
     end do
 
-  end function sizes_kept
+  end function cardinalities_preserved
 
   logical function all_binary()
 
@@ -476,7 +476,7 @@ contains
 
   !-------------------------------------------------------------------!
   ! Does this relation run from one state carrier to the next - which
-  ! is to say, is it a stored dependency wearing a primitive's seat.
+  ! is to say, is it a stored dependency in a primitive relation position.
   !-------------------------------------------------------------------!
 
   logical function runs_between_states(r)

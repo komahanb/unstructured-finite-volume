@@ -165,7 +165,7 @@ contains
   !===================================================================!
   ! How many occurrences join x to y. One, for every tuple of a direct
   ! dependency in this specimen - and the level above proves it,
-  ! because a coefficient picture is only well defined where the seat
+  ! because a coefficient picture is only well defined where the occurrence
   ! is unique.
   !===================================================================!
 
@@ -204,16 +204,16 @@ contains
     type(set_map)  , intent(in) :: sets
 
     real(dp), allocatable :: values(:)
-    integer               :: seat
+    integer               :: occurrence_index
 
     call w % real_vector(values)
 
-    seat = sets % index_in(occurrences, member)
-    if (seat .lt. 1 .or. seat .gt. size(values)) then
-       error stop 'valued_renderer_fixture: that member has no seat in this field'
+    occurrence_index = sets % index_in(occurrences, member)
+    if (occurrence_index .lt. 1 .or. occurrence_index .gt. size(values)) then
+       error stop 'valued_renderer_fixture: that member has no index in this field'
     end if
 
-    value_at = values(seat)
+    value_at = values(occurrence_index)
 
   end function value_at
 
@@ -271,7 +271,7 @@ contains
     type(graph) :: cols, rows
     character(len=:) , allocatable :: cell
     real(dp)         , allocatable :: values(:)
-    integer :: stub, wide, i, j, at, e, seat, width
+    integer :: first_column, wide, i, j, at, e, occurrence_index, width
 
     if (d % arity() .ne. 2) then
        error stop 'valued_renderer_fixture: a coefficient picture reads a binary relation'
@@ -288,7 +288,7 @@ contains
     ! measurement copied out of Level 4.
     page  = sparsity_picture(d, sets, labels)
     width = len(page % line)
-    stub  = first_nonblank(page % line(2))
+    first_column  = first_nonblank(page % line(2))
 
     call w % real_vector(values)
 
@@ -300,7 +300,7 @@ contains
     call put(pic % line(1), 1, d % name() // ' VALUES')
 
     do j = 1, sets % num_members_of(cols)
-       at = stub + (j - 1) * wide
+       at = first_column + (j - 1) * wide
        call put(pic % line(2), at, &
             &   right(label_for(cols, sets % member_of(cols, j), labels), wide - 1))
     end do
@@ -308,7 +308,7 @@ contains
     do i = 1, sets % num_members_of(rows)
        call put(pic % line(2 + i), 1, label_for(rows, sets % member_of(rows, i), labels))
        do j = 1, sets % num_members_of(cols)
-          at = stub + (j - 1) * wide
+          at = first_column + (j - 1) * wide
 
           ! FIRST the structural question, asked of the relation.
           if (glyph_at(d, sets % member_of(cols, j), sets % member_of(rows, i)) .eq. '#') then
@@ -317,10 +317,10 @@ contains
              e = occurrence_joining(tail, head, occurrences, &
                   &                 sets % member_of(cols, j), sets % member_of(rows, i), sets)
              if (e .eq. 0) then
-                error stop 'valued_renderer_fixture: a present dependency with no occurrence to seat it'
+                error stop 'valued_renderer_fixture: a present dependency with no corresponding occurrence'
              end if
-             seat = sets % index_in(occurrences, e)
-             cell = value_token(values(seat))
+             occurrence_index = sets % index_in(occurrences, e)
+             cell = value_token(values(occurrence_index))
           else
              cell = ABSENT
           end if

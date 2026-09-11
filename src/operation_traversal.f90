@@ -130,7 +130,7 @@ contains
     class(field), allocatable, intent(inout) :: output
 
     type(stored_field)           :: out
-    integer , allocatable :: mark(:)
+    integer , allocatable :: labels(:)
     integer :: nv
 
     associate (u1 => present(inputs)); end associate
@@ -141,16 +141,16 @@ contains
 
     select case (this % rule)
     case (TRAVERSAL_VISIT_ORDER)
-       call breadth_first(input_graph, this % seed, mark, depth_mode=.false.)
+       call breadth_first(input_graph, this % seed, labels, depth_mode=.false.)
     case (TRAVERSAL_DEPTH)
-       call breadth_first(input_graph, this % seed, mark, depth_mode=.true.)
+       call breadth_first(input_graph, this % seed, labels, depth_mode=.true.)
     case (TRAVERSAL_COMPONENT)
-       call components(input_graph, mark)
+       call components(input_graph, labels)
     case default
-       call colour(input_graph, mark)
+       call colour(input_graph, labels)
     end select
 
-    call out % set_integer_vector(mark)
+    call out % set_integer_vector(labels)
 
     call emit(out, output)
 
@@ -164,35 +164,35 @@ contains
   ! colour safe to sweep in parallel.
   !===================================================================!
 
-  subroutine colour(input_graph, mark)
+  subroutine colour(input_graph, labels)
 
     class(directed_graph)        , intent(in)  :: input_graph
-    integer, allocatable, intent(out) :: mark(:)
+    integer, allocatable, intent(out) :: labels(:)
 
     integer, allocatable :: nbrs(:)
-    logical, allocatable :: taken(:)
+    logical, allocatable :: adjacent_colours(:)
     integer :: nv, v, i, c
 
     nv = input_graph % num_vertices()
-    allocate(mark(nv))
-    mark = 0
+    allocate(labels(nv))
+    labels = 0
 
-    allocate(taken(nv + 1))
+    allocate(adjacent_colours(nv + 1))
 
     do v = 1, nv
 
-       taken = .false.
+       adjacent_colours = .false.
        call input_graph % adjacent_vertices(v, nbrs)
        do i = 1, size(nbrs)
-          if (mark(nbrs(i)) >= 1) taken(mark(nbrs(i))) = .true.
+          if (labels(nbrs(i)) >= 1) adjacent_colours(labels(nbrs(i))) = .true.
        end do
 
        ! The lowest colour not assigned to any neighbour.
        c = 1
-       do while (c <= nv .and. taken(c))
+       do while (c <= nv .and. adjacent_colours(c))
           c = c + 1
        end do
-       mark(v) = c
+       labels(v) = c
 
     end do
 
@@ -208,19 +208,19 @@ contains
   ! would be indistinguishable from the seed.
   !===================================================================!
 
-  subroutine breadth_first(input_graph, seed, mark, depth_mode)
+  subroutine breadth_first(input_graph, seed, labels, depth_mode)
 
     class(directed_graph)        , intent(in)  :: input_graph
     integer             , intent(in)  :: seed
-    integer, allocatable, intent(out) :: mark(:)
+    integer, allocatable, intent(out) :: labels(:)
     logical             , intent(in)  :: depth_mode
 
     integer, allocatable :: queue(:), depth(:), nbrs(:)
     integer :: nv, head_of_queue, tail_of_queue, v, i, rank
 
     nv = input_graph % num_vertices()
-    allocate(mark(nv), queue(nv), depth(nv))
-    mark  = -1
+    allocate(labels(nv), queue(nv), depth(nv))
+    labels  = -1
     depth = -1
 
     if (seed < 1 .or. seed > nv) return
@@ -231,9 +231,9 @@ contains
     depth(seed)   = 0
     rank          = 1
     if (depth_mode) then
-       mark(seed) = 0
+       labels(seed) = 0
     else
-       mark(seed) = rank
+       labels(seed) = rank
     end if
 
     do while (head_of_queue <= tail_of_queue)
@@ -249,9 +249,9 @@ contains
           tail_of_queue        = tail_of_queue + 1
           queue(tail_of_queue) = nbrs(i)
           if (depth_mode) then
-             mark(nbrs(i)) = depth(nbrs(i))
+             labels(nbrs(i)) = depth(nbrs(i))
           else
-             mark(nbrs(i)) = rank
+             labels(nbrs(i)) = rank
           end if
        end do
 
@@ -267,25 +267,25 @@ contains
   ! joins them.
   !===================================================================!
 
-  subroutine components(input_graph, mark)
+  subroutine components(input_graph, labels)
 
     class(directed_graph)        , intent(in)  :: input_graph
-    integer, allocatable, intent(out) :: mark(:)
+    integer, allocatable, intent(out) :: labels(:)
 
     integer, allocatable :: queue(:), nbrs(:)
-    integer :: nv, v, i, which, head_of_queue, tail_of_queue, u
+    integer :: nv, v, i, component_index, head_of_queue, tail_of_queue, u
 
     nv = input_graph % num_vertices()
-    allocate(mark(nv), queue(nv))
-    mark  = 0
-    which = 0
+    allocate(labels(nv), queue(nv))
+    labels  = 0
+    component_index = 0
 
     do v = 1, nv
 
-       if (mark(v) /= 0) cycle
+       if (labels(v) /= 0) cycle
 
-       which         = which + 1
-       mark(v)       = which
+       component_index         = component_index + 1
+       labels(v)       = component_index
        queue(1)      = v
        head_of_queue = 1
        tail_of_queue = 1
@@ -295,8 +295,8 @@ contains
           head_of_queue = head_of_queue + 1
           call input_graph % adjacent_vertices(u, nbrs)
           do i = 1, size(nbrs)
-             if (mark(nbrs(i)) /= 0) cycle
-             mark(nbrs(i))        = which
+             if (labels(nbrs(i)) /= 0) cycle
+             labels(nbrs(i))        = component_index
              tail_of_queue        = tail_of_queue + 1
              queue(tail_of_queue) = nbrs(i)
           end do

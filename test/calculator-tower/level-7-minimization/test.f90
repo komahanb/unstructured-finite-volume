@@ -151,7 +151,7 @@ end module affine_residual_fixture
 program calculator_level_7
 
   use iso_fortran_env  , only : dp => REAL64
-  use calculator_assert, only : report, verdict, SLOT_C, SLOT_E
+  use calculator_assert, only : report, assert_all, SLOT_C, SLOT_E
   use view_directed_stored      , only : stored_directed_graph
   use operation_gmres, only : gmres
   use graph_fractal        , only : graph
@@ -230,6 +230,6 @@ program calculator_level_7
   call report(abs(q(sets % index_in(u, SLOT_E)) - 20.0_dp) < 1.0d-9, &
        & "q(e) = 20 - and the host never mattered", nfail)
 
-  call verdict(nfail, "level 7")
+  call assert_all(nfail, "level 7")
 
 end program calculator_level_7

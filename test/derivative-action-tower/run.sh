@@ -19,12 +19,14 @@ set -e
 
 here="$(cd "$(dirname "$0")" && pwd)"
 
-"$here/check_imports.sh" || { echo "└── the import gate refused the tower"; exit 1; }
+"$here/check_imports.sh" || { echo "└── the import group refused the tower"; exit 1; }
 
 . "$here/check_marker.sh"
 "$here/check_marker.sh" --selftest || { echo "└── the result contract refused itself"; exit 1; }
 
-( cd "$here/../.." && ./build.sh >/dev/null 2>&1 )
+if [ "${UFVM_SKIP_LIBRARY_BUILD:-0}" != 1 ]; then
+    ( cd "$here/../.." && ./build.sh >/dev/null 2>&1 )
+fi
 
 levels=(
   "level-0-carrier              level 0  carriers"
@@ -73,17 +75,17 @@ for entry in "${levels[@]}"; do
         continue
     fi
 
-    ok=1
-    ( cd "$here/$dir" && ./run >run.out 2>&1 ) || ok=0
+    valid=1
+    ( cd "$here/$dir" && ./run >run.out 2>&1 ) || valid=0
     if [ -x "$here/$dir/check_refusals.sh" ]; then
-        ( cd "$here/$dir" && ./check_refusals.sh >>run.out 2>&1 ) || ok=0
+        ( cd "$here/$dir" && ./check_refusals.sh >>run.out 2>&1 ) || valid=0
     elif [ -x "$here/$dir/refusal" ]; then
         if ( cd "$here/$dir" && ./refusal >>run.out 2>&1 ); then
-            ok=0
+            valid=0
         fi
     fi
 
-    if [ "$ok" -eq 1 ]; then
+    if [ "$valid" -eq 1 ]; then
         echo "├── $label $dots PASS"
     else
         echo "├── $label $dots FAIL"
@@ -113,7 +115,7 @@ echo "├── Gate C  statement ................ PASS"
 out="$here/level-9-statement/run.out"
 marks=$(grep -c 'DERIVATIVE_RESULT =' "$out")
 values=$(grep -o 'DERIVATIVE_RESULT =.*' "$out" | sed 's/.*DERIVATIVE_RESULT =//')
-if ! marker_ok "$marks" 2 "$values"; then
+if ! marker_valid "$marks" 2 "$values"; then
     echo "└── RUNNER FAILURE: the statement did not report one derivative on X"
     exit 1
 fi

@@ -25,7 +25,7 @@
 
 program derivative_level_4
 
-  use derivative_assert, only : report, verdict
+  use derivative_assert, only : report, assert_all
   use derivative_assert, only : SLOT_X, SLOT_Y, SLOT_U, SLOT_Z
   use derivative_assert, only : OP_PRODUCT, OP_SUM
   use derivative_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
@@ -132,7 +132,7 @@ program derivative_level_4
   call check_reachability(nfail)
   call check_execution_order(nfail)
 
-  call verdict(nfail, "level 4")
+  call assert_all(nfail, "level 4")
 
 contains
 

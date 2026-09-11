@@ -37,7 +37,7 @@ module operation_dense_direct
 
   use util_precision  , only : dp, spacing_at_one
   use operation_stencil, only : compile_matrix_from_action
-  use operation_minimization , only : minimizer
+  use operation_minimization , only : minimizer, solve_result, SOLVE_SINGULAR, SOLVE_CONTINUE, SOLVE_EXHAUSTED
   use util_factorisation, only : dense_factorisation
   use util_tally        , only : tally_record, linear_solves
 
@@ -103,7 +103,8 @@ contains
 
     real(dp), allocatable :: a(:,:), constant(:), r(:), solution(:)
     integer :: n
-    logical :: kept
+    logical :: factors_current
+    type(solve_result) :: outcome
 
     if (this % singular_tolerance <= 0.0_dp) then
        error stop 'dense_direct: singular tolerance is positive'
@@ -115,9 +116,18 @@ contains
 
     call tally_record(linear_solves)
 
+    call this % initialize_residual_history()
+    call this % imbalance(rhs, x, r)
+    achieved = this % norm(r)
+    call this % record_residual_norm(achieved)
+    if (achieved == 0.0_dp) then
+       call this % record_result(achieved, 0)
+       return
+    end if
+
     n = size(rhs)
 
-    kept = this % action % version() /= 0 .and. &
+    factors_current = this % action % version() /= 0 .and. &
          & this % action % version() == this % retained_version .and. &
          & this % factor % order() == n
 
@@ -127,7 +137,7 @@ contains
     ! this statement's.
     !----------------------------------------------------------------!
 
-    if (.not. kept) then
+    if (.not. factors_current) then
        call compile_matrix_from_action(this % action, this % graph, this % unknown_domain, &
             & this % num_unknowns, n, this % num_components, a, constant, stored=this % stored)
        call this % factor % factorise(a, this % singular_tolerance * maxval(abs(a)))
@@ -144,6 +154,7 @@ contains
     if (this % factor % singular()) then
        if (this % singular_reported) then
           achieved = huge(1.0_dp)
+          call this % record_result(this % norm(r), 0, SOLVE_SINGULAR)
           return
        end if
        error stop 'dense_direct: the pivot is singular'
@@ -160,6 +171,9 @@ contains
 
     call this % imbalance(rhs, x, r)
     achieved = this % norm(r)
+    call this % record_result(achieved, 1)
+    outcome = this % result()
+    if (outcome % reason == SOLVE_CONTINUE) call this % record_result(achieved, 1, SOLVE_EXHAUSTED)
 
   end subroutine dense_direct_solve
 

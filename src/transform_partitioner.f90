@@ -224,7 +224,7 @@ contains
 
     integer, allocatable :: owner(:), own_part(:), part_index(:)
     integer, allocatable :: ltail(:), lhead(:), eglobal(:), eowner(:), vowner(:)
-    integer :: nv, ne, e, t, h, k, nkeep
+    integer :: nv, ne, e, t, h, k, num_part_edges
 
     nv = global_graph % num_vertices()
     ne = global_graph % num_edges()
@@ -237,7 +237,7 @@ contains
     ! entirely to another part; retaining it here would add its flux to
     ! the balance twice.
     allocate(ltail(ne), lhead(ne), eglobal(ne), eowner(ne))
-    nkeep = 0
+    num_part_edges = 0
     do e = 1, ne
        t = global_graph % edge_tail(e)
        h = global_graph % edge_head(e)
@@ -251,14 +251,14 @@ contains
           if (owner(h) /= this % part) cycle
        end if
 
-       nkeep = nkeep + 1
-       ltail(nkeep) = part_index(t)
+       num_part_edges = num_part_edges + 1
+       ltail(num_part_edges) = part_index(t)
        if (h >= 1) then
-          lhead(nkeep) = part_index(h)
+          lhead(num_part_edges) = part_index(h)
        else
-          lhead(nkeep) = 0
+          lhead(num_part_edges) = 0
        end if
-       eglobal(nkeep) = e
+       eglobal(num_part_edges) = e
 
        ! An edge is owned by the part that owns its TAIL - always,
        ! whether this part owns that tail or reads it as a halo copy. One global
@@ -269,9 +269,9 @@ contains
        ! owner own the edge for a halo tail; that rule was never
        ! implemented, and the uniqueness property does not need it.)
        if (owner(t) == this % part) then
-          eowner(nkeep) = owner(t)
+          eowner(num_part_edges) = owner(t)
        else
-          eowner(nkeep) = owner(t)
+          eowner(num_part_edges) = owner(t)
        end if
     end do
 
@@ -285,13 +285,13 @@ contains
     ! construction could return two different relations in one
     ! lifetime.
     allocate(part_graph, source = &
-         & stored_directed_graph(size(own_part), tails=ltail(1:nkeep), heads=lhead(1:nkeep), &
+         & stored_directed_graph(size(own_part), tails=ltail(1:num_part_edges), heads=lhead(1:num_part_edges), &
          &              number  = this % part,   &
          &              num_parts  = this % num_parts, &
          &              vglobal = own_part,          &
          &              vowner  = vowner,        &
-         &              eglobal = eglobal(1:nkeep), &
-         &              eowner  = eowner(1:nkeep),  &
+         &              eglobal = eglobal(1:num_part_edges), &
+         &              eowner  = eowner(1:num_part_edges),  &
          &              whole_vertices   = global_graph % vertex_set(), &
          &              whole_edges   = global_graph % edge_set(),   &
          &              num_whole_vertices = nv,                          &
@@ -362,7 +362,7 @@ contains
   end subroutine assign_owners_linear
 
   !===================================================================!
-  ! Grow every part outward from a seed, one ring at a time, so each
+  ! Extend every part from a seed by successive neighbourhoods, so each
   ! part is connected and few edges cross.
   !===================================================================!
 
@@ -372,29 +372,29 @@ contains
     integer     , intent(in)    :: num_parts
     integer     , intent(inout) :: owner(:)
 
-    type(stored_directed_graph) :: untaken
+    type(stored_directed_graph) :: unassigned_graph
     type(traversal)         :: visit
-    class(field), allocatable :: reached
-    integer, allocatable :: locals(:), part_index(:), tails(:), heads(:), order(:)
-    integer :: nv, ne, share, k, v, e, t, h, n, m
+    class(field), allocatable :: traversal_order
+    integer, allocatable :: global_vertices(:), part_index(:), tails(:), heads(:), order(:)
+    integer :: nv, ne, max_part_size, k, v, e, t, h, n, m
 
     nv    = global_graph % num_vertices()
     ne    = global_graph % num_edges()
     owner = 0
-    share = (nv + num_parts - 1) / num_parts
+    max_part_size = (nv + num_parts - 1) / num_parts
 
-    allocate(locals(nv), part_index(nv), tails(ne), heads(ne))
+    allocate(global_vertices(nv), part_index(nv), tails(ne), heads(ne))
 
     do k = 1, num_parts
 
-       ! The unclaimed remainder, as a graph. The traversal implements
+       ! The induced graph on the unassigned vertices. The traversal implements
        ! breadth-first; this routine only calls it and reads the result.
        n = 0
        part_index = 0
        do v = 1, nv
           if (owner(v) == 0) then
              n = n + 1
-             locals(n)  = v
+             global_vertices(n)  = v
              part_index(v) = n
           end if
        end do
@@ -412,16 +412,16 @@ contains
           end if
        end do
 
-       untaken = stored_directed_graph(n, tails=tails(1:m), heads=heads(1:m))
+       unassigned_graph = stored_directed_graph(n, tails=tails(1:m), heads=heads(1:m))
 
-       ! The first unclaimed cell seeds the part; the visit order
-       ! determines which cells form its share.
+       ! The first unassigned cell seeds the part; the visit order
+       ! determines its members, up to max_part_size.
        visit = traversal(TRAVERSAL_VISIT_ORDER, seed=1)
-       call visit % apply(untaken, output=reached)
-       call reached % integer_vector(order)
+       call visit % apply(unassigned_graph, output=traversal_order)
+       call traversal_order % integer_vector(order)
 
        do v = 1, n
-          if (order(v) >= 1 .and. order(v) <= share) owner(locals(v)) = k
+          if (order(v) >= 1 .and. order(v) <= max_part_size) owner(global_vertices(v)) = k
        end do
 
     end do
@@ -571,7 +571,7 @@ contains
     type(graph)       :: part_carrier
     type(graph)       :: sp
     real(dp), allocatable :: fv(:), lv(:)
-    integer , allocatable :: kept(:)
+    integer , allocatable :: part_members(:)
     integer :: nlocal, num_components, l, c, g, n, at
 
     if (on_vertices) then
@@ -606,13 +606,13 @@ contains
     else
 
        ! Proper subset: gather the part members the subset names.
-       allocate(kept(nlocal))
+       allocate(part_members(nlocal))
        n = 0
        do l = 1, nlocal
           g = rel % global_index(l, on_vertices)
           if (sets % has(dom, g)) then
              n = n + 1
-             kept(n) = l
+             part_members(n) = l
           end if
        end do
        !-------------------------------------------------------------!
@@ -622,11 +622,11 @@ contains
        ! label - restriction renames nothing.
        !-------------------------------------------------------------!
 
-       call sets % declare_subobject(sp, kept(1:n), sets % label_of(dom), part_carrier)
+       call sets % declare_subobject(sp, part_members(1:n), sets % label_of(dom), part_carrier)
 
        allocate(lv(n * num_components))
        do l = 1, n
-          g  = rel % global_index(kept(l), on_vertices)
+          g  = rel % global_index(part_members(l), on_vertices)
           at = sets % index_in(dom, g)
           do c = 1, num_components
              lv((l - 1) * num_components + c) = fv((at - 1) * num_components + c)

@@ -39,7 +39,7 @@ program test
     call a % declare()
     call b % declare()
 
-    call check('A  (NULL,NULL) holds by default initialization', &
+    call check('A  default initialization gives (NULL,NULL)', &
          & a % branch(1) % status() .eq. BRANCH_NULL .and. &
          & a % branch(2) % status() .eq. BRANCH_NULL)
     call check('A  a same_as a', a % same_as(a))
@@ -216,7 +216,7 @@ program test
     integer , allocatable :: left(:), right(:)
     real(dp), allocatable :: res(:)
     integer               :: i
-    logical               :: faithful
+    logical               :: tuples_preserved
 
     do i = 1, 3
        call c(i) % declare()
@@ -271,16 +271,16 @@ program test
     call check('11 rowptr = [1,2,4,5]', all(k % rowptr .eq. [1, 2, 4, 5]))
     call check('11 colidx = [2,1,3,2]', all(k % colidx .eq. [2, 1, 3, 2]))
 
-    faithful = .true.
+    tuples_preserved = .true.
     do i = 1, size(left)
        if (left(i) .eq. 0 .or. right(i) .eq. 0) cycle
-       faithful = faithful .and. &
+       tuples_preserved = tuples_preserved .and. &
             & any(k % colidx(k % rowptr(left(i)):k % rowptr(left(i)+1)-1) .eq. right(i))
-       faithful = faithful .and. &
+       tuples_preserved = tuples_preserved .and. &
             & any(k % colidx(k % rowptr(right(i)):k % rowptr(right(i)+1)-1) .eq. left(i))
     end do
     call check('11 every tuple of the relation view appears in the compiled rows', &
-         & faithful)
+         & tuples_preserved)
 
   end block connectivity_block
 
@@ -409,12 +409,12 @@ program test
 
 contains
 
-  subroutine check(label, ok)
+  subroutine check(label, satisfied)
 
     character(len=*), intent(in) :: label
-    logical         , intent(in) :: ok
+    logical         , intent(in) :: satisfied
 
-    if (ok) then
+    if (satisfied) then
        print *, ' PASS : ', label
     else
        print *, ' FAIL : ', label
@@ -429,12 +429,12 @@ contains
     type(graph)     , intent(in) :: g
     integer         , intent(in) :: s1, s2
 
-    logical :: ok
+    logical :: satisfied
 
-    ok = g % branch(1) % status() .eq. s1 .and. g % branch(2) % status() .eq. s2
-    ok = ok .and. (associated(g % branch(1) % known()) .eqv. (s1 .eq. BRANCH_KNOWN))
-    ok = ok .and. (associated(g % branch(2) % known()) .eqv. (s2 .eq. BRANCH_KNOWN))
-    call check(label, ok)
+    satisfied = g % branch(1) % status() .eq. s1 .and. g % branch(2) % status() .eq. s2
+    satisfied = satisfied .and. (associated(g % branch(1) % known()) .eqv. (s1 .eq. BRANCH_KNOWN))
+    satisfied = satisfied .and. (associated(g % branch(2) % known()) .eqv. (s2 .eq. BRANCH_KNOWN))
+    call check(label, satisfied)
 
   end subroutine state
 

@@ -39,7 +39,7 @@
 
 program time_level_1
 
-  use time_assert           , only : report, verdict
+  use time_assert           , only : report, assert_all
   use time_assert           , only : NT, NE
   use time_assert           , only : T0, T1, T2, T3, T4
   use time_assert           , only : E1, E2, E3, E4
@@ -71,7 +71,7 @@ program time_level_1
   call check_direction_is_structure(nfail)
   call check_state_axis_is_untouched(nfail)
 
-  call verdict(nfail, "level 1")
+  call assert_all(nfail, "level 1")
 
 contains
 
@@ -107,14 +107,14 @@ contains
 
     integer, intent(inout) :: nfail
 
-    logical :: ok
+    logical :: satisfied
 
-    ok = tail % num_tuples() .eq. NE .and. head % num_tuples() .eq. NE
-    ok = ok .and. tail % has([E1, T0]) .and. head % has([E1, T1])
-    ok = ok .and. tail % has([E2, T1]) .and. head % has([E2, T2])
-    ok = ok .and. tail % has([E3, T2]) .and. head % has([E3, T3])
-    ok = ok .and. tail % has([E4, T3]) .and. head % has([E4, T4])
-    call report(ok, &
+    satisfied = tail % num_tuples() .eq. NE .and. head % num_tuples() .eq. NE
+    satisfied = satisfied .and. tail % has([E1, T0]) .and. head % has([E1, T1])
+    satisfied = satisfied .and. tail % has([E2, T1]) .and. head % has([E2, T2])
+    satisfied = satisfied .and. tail % has([E3, T2]) .and. head % has([E3, T3])
+    satisfied = satisfied .and. tail % has([E4, T3]) .and. head % has([E4, T4])
+    call report(satisfied, &
          & "Tail and Head hold four facts each: e_i leaves t_(i-1) " // &
          & "and enters t_i", nfail)
 
@@ -138,9 +138,9 @@ contains
     integer, intent(inout) :: nfail
 
     integer :: i, m, j, tails, heads
-    logical :: ok, disagree
+    logical :: satisfied, disagree
 
-    ok       = .true.
+    satisfied       = .true.
     disagree = .true.
     do i = 1, sets % num_members_of(e)
        m = sets % member_of(e, i)
@@ -150,7 +150,7 @@ contains
           if (tail % has([m, sets % member_of(t, j)])) tails = tails + 1
           if (head % has([m, sets % member_of(t, j)])) heads = heads + 1
        end do
-       ok = ok .and. (tails .eq. 1) .and. (heads .eq. 1)
+       satisfied = satisfied .and. (tails .eq. 1) .and. (heads .eq. 1)
 
        do j = 1, sets % num_members_of(t)
           if (tail % has([m, sets % member_of(t, j)]) .and. &
@@ -158,7 +158,7 @@ contains
        end do
     end do
 
-    call report(ok, &
+    call report(satisfied, &
          & "every step has exactly ONE tail and exactly ONE head", &
          & nfail)
     call report(disagree, &

@@ -27,7 +27,7 @@ print-std:
 clean:
 	@rm -f *.o *.mod *.so run lifetime refusal
 	@rm -f fortran-assignment/*.o fortran-assignment/*.mod \
-	       fortran-assignment/candidate fortran-assignment/probe.out
+	       fortran-assignment/candidate fortran-assignment/compiler.out
 
 .SUFFIXES: .f90 .o
 .PHONY: all clean print-f90 print-std

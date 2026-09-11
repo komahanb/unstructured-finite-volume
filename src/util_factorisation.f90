@@ -36,7 +36,7 @@ module util_factorisation
   type :: dense_factorisation
 
      real(dp), allocatable, private :: lu(:,:)
-     integer , allocatable, private :: exchanged(:)
+     integer , allocatable, private :: pivot_rows(:)
      integer , private :: n = 0
      logical , private :: is_singular = .false.
 
@@ -77,8 +77,8 @@ contains
     this % n           = n
     this % lu          = a
     this % is_singular = .false.
-    if (allocated(this % exchanged)) deallocate(this % exchanged)
-    allocate(this % exchanged(n), source=0)
+    if (allocated(this % pivot_rows)) deallocate(this % pivot_rows)
+    allocate(this % pivot_rows(n), source=0)
     allocate(row(n))
 
     ! Right-looking elimination, column by column: the multipliers of
@@ -88,7 +88,7 @@ contains
     do k = 1, n
 
        p = k - 1 + maxloc(abs(this % lu(k:n, k)), dim=1)
-       this % exchanged(k) = p
+       this % pivot_rows(k) = p
 
        if (p /= k) then
           row              = this % lu(k, :)
@@ -145,10 +145,10 @@ contains
     if (.not. transposed) then
 
        do k = 1, n
-          if (this % exchanged(k) /= k) then
+          if (this % pivot_rows(k) /= k) then
              stored                    = x(k)
-             x(k)                    = x(this % exchanged(k))
-             x(this % exchanged(k))  = stored
+             x(k)                    = x(this % pivot_rows(k))
+             x(this % pivot_rows(k))  = stored
           end if
        end do
 
@@ -176,10 +176,10 @@ contains
        end do
 
        do k = n, 1, -1
-          if (this % exchanged(k) /= k) then
+          if (this % pivot_rows(k) /= k) then
              stored                    = x(k)
-             x(k)                    = x(this % exchanged(k))
-             x(this % exchanged(k))  = stored
+             x(k)                    = x(this % pivot_rows(k))
+             x(this % pivot_rows(k))  = stored
           end if
        end do
 
@@ -195,11 +195,11 @@ contains
 
   end function order
 
-  pure logical function singular(this) result(yes)
+  pure logical function singular(this) result(is_rank_deficient)
 
     class(dense_factorisation), intent(in) :: this
 
-    yes = this % is_singular
+    is_rank_deficient = this % is_singular
 
   end function singular
 

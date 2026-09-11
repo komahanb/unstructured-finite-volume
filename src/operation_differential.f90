@@ -765,30 +765,30 @@ contains
   ! its own operator instance.
   !===================================================================!
 
-  pure subroutine gather_component(flat, num_components, c, comp)
+  pure subroutine gather_component(field_values, num_components, c, component_values)
 
-    real(dp), intent(in)  :: flat(:)
+    real(dp), intent(in)  :: field_values(:)
     integer , intent(in)  :: num_components, c
-    real(dp), intent(out) :: comp(:)
+    real(dp), intent(out) :: component_values(:)
 
     integer :: i
 
-    do i = 1, size(comp)
-       comp(i) = flat((i - 1) * num_components + c)
+    do i = 1, size(component_values)
+       component_values(i) = field_values((i - 1) * num_components + c)
     end do
 
   end subroutine gather_component
 
-  pure subroutine scatter_component(comp, num_components, c, flat)
+  pure subroutine scatter_component(component_values, num_components, c, field_values)
 
-    real(dp), intent(in)    :: comp(:)
+    real(dp), intent(in)    :: component_values(:)
     integer , intent(in)    :: num_components, c
-    real(dp), intent(inout) :: flat(:)
+    real(dp), intent(inout) :: field_values(:)
 
     integer :: i
 
-    do i = 1, size(comp)
-       flat((i - 1) * num_components + c) = comp(i)
+    do i = 1, size(component_values)
+       field_values((i - 1) * num_components + c) = component_values(i)
     end do
 
   end subroutine scatter_component

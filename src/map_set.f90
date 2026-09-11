@@ -134,7 +134,7 @@ contains
     type(graph)              , intent(in)    :: element
     class(set_representation), intent(in)    :: representation
 
-    type(extent), allocatable :: grown(:)
+    type(extent), allocatable :: extended_extents(:)
     integer :: n, at
 
     at = this % rows % append(element % id(), &
@@ -143,10 +143,10 @@ contains
 
     if (.not. allocated(this % extents)) allocate(this % extents(0))
     n = size(this % extents)
-    allocate(grown(n + 1))
-    grown(1:n) = this % extents
-    allocate(grown(n + 1) % representation, source=representation)
-    call move_alloc(grown, this % extents)
+    allocate(extended_extents(n + 1))
+    extended_extents(1:n) = this % extents
+    allocate(extended_extents(n + 1) % representation, source=representation)
+    call move_alloc(extended_extents, this % extents)
 
   end subroutine bind
 

@@ -127,11 +127,15 @@ module map_set_representation
   ! The listed representation: an explicit array of member values, in
   ! declaration order. The representation describes a set with or
   ! without any declared ambient - the embedding is not stored here.
+  ! A sorted permutation indexes that same array: construction takes
+  ! O(n log n), membership O(log n), and enumeration retains the first
+  ! occurrence of every value. Storage is two integers per member.
   !===================================================================!
 
   type, extends(set_representation) :: listed_set_representation
 
      integer, allocatable, private :: listed(:)
+     integer, allocatable, private :: inverse(:)
 
    contains
 
@@ -223,20 +227,70 @@ contains
 
     integer, intent(in) :: values(:)
 
-    integer :: retained(size(values))
-    integer :: j, num_retained
+    integer, allocatable :: order(:), work(:)
+    integer :: j, num_retained, last_value, at
+
+    allocate(order(size(values)), work(size(values)))
+    order = [(j, j = 1, size(values))]
+    call order_by_member(values, order, work, 1, size(values))
 
     num_retained = 0
     do j = 1, size(values)
-       if (.not. any(retained(1:num_retained) == values(j))) then
-          num_retained           = num_retained + 1
-          retained(num_retained) = values(j)
+       if (num_retained > 0) then
+          if (values(order(j)) == last_value) cycle
        end if
+       last_value = values(order(j))
+       num_retained = num_retained + 1
+       order(num_retained) = order(j)
     end do
 
-    this % listed = retained(1:num_retained)
+    ! The sort is stable, so each retained index is the member's first
+    ! occurrence. Number those indices in declaration order, then read
+    ! the resulting positions in sorted member order for inverse lookup.
+    work = 0
+    work(order(1:num_retained)) = 1
+    at = 0
+    allocate(this % listed(num_retained))
+    do j = 1, size(values)
+       if (work(j) == 0) cycle
+       at = at + 1
+       work(j) = at
+       this % listed(at) = values(j)
+    end do
+    this % inverse = work(order(1:num_retained))
 
   end function create_listed
+
+  recursive pure subroutine order_by_member(values, order, work, first, last)
+
+    integer, intent(in) :: values(:), first, last
+    integer, intent(inout) :: order(:), work(:)
+    integer :: middle, left, right, k
+
+    if (last <= first) return
+    middle = first + (last - first) / 2
+    call order_by_member(values, order, work, first, middle)
+    call order_by_member(values, order, work, middle + 1, last)
+    left = first
+    right = middle + 1
+    do k = first, last
+       if (left > middle) then
+          work(k) = order(right)
+          right = right + 1
+       else if (right > last) then
+          work(k) = order(left)
+          left = left + 1
+       else if (values(order(left)) <= values(order(right))) then
+          work(k) = order(left)
+          left = left + 1
+       else
+          work(k) = order(right)
+          right = right + 1
+       end if
+    end do
+    order(first:last) = work(first:last)
+
+  end subroutine order_by_member
 
   pure integer function listed_num_members(this)
 
@@ -264,14 +318,22 @@ contains
     class(listed_set_representation), intent(in) :: this
     integer                         , intent(in) :: value
 
-    integer :: k
+    integer :: first, last, middle, at
 
     listed_local_index = 0
     if (.not. allocated(this % listed)) return
 
-    do k = 1, size(this % listed)
-       if (this % listed(k) == value) then
-          listed_local_index = k
+    first = 1
+    last = size(this % listed)
+    do while (first <= last)
+       middle = first + (last - first) / 2
+       at = this % inverse(middle)
+       if (this % listed(at) < value) then
+          first = middle + 1
+       else if (this % listed(at) > value) then
+          last = middle - 1
+       else
+          listed_local_index = at
           return
        end if
     end do

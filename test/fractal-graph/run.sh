@@ -4,42 +4,44 @@
 # experiments and every refusal; measure the kernel.
 set -e
 
-here="$(cd "$(dirname "$0")" && pwd)"
+suite_dir="$(cd "$(dirname "$0")" && pwd)"
 
-( cd "$here/../.." && ./build.sh >/dev/null )
+if [ "${UFVM_SKIP_LIBRARY_BUILD:-0}" != 1 ]; then
+    ( cd "$suite_dir/../.." && ./build.sh >/dev/null )
+fi
 
-F90="$(make -C "$here" -s print-f90)"
-FSTD="$(make -C "$here" -s print-std)"
-KERNEL="-fcoarray=single -I$here -I$here/../../lib"
-LINK="$here/../../lib/libufvm.a"
+F90="$(make -C "$suite_dir" -s print-f90)"
+FSTD="$(make -C "$suite_dir" -s print-std)"
+KERNEL="-fcoarray=single -I$suite_dir -I$suite_dir/../../lib"
+LINK="$suite_dir/../../lib/libufvm.a"
 
-make -C "$here" clean >/dev/null 2>&1 || true
-make -C "$here" >/dev/null
+make -C "$suite_dir" clean >/dev/null 2>&1 || true
+make -C "$suite_dir" >/dev/null
 
 admit () {
-    if $F90 -std=$FSTD -I"$here" -I"$here/../../lib" -fsyntax-only "$1.f90" 2>probe.out; then
+    if $F90 -std=$FSTD -I"$suite_dir" -I"$suite_dir/../../lib" -fsyntax-only "$1.f90" 2>compiler.out; then
         echo " PASS : $1 compiles"
     else
-        echo " FAIL : $1 does not compile"; cat probe.out; exit 1
+        echo " FAIL : $1 does not compile"; cat compiler.out; exit 1
     fi
 }
 
 reject () {
-    if $F90 -std=$FSTD -I"$here" -I"$here/../../lib" -fsyntax-only "$1.f90" 2>probe.out; then
+    if $F90 -std=$FSTD -I"$suite_dir" -I"$suite_dir/../../lib" -fsyntax-only "$1.f90" 2>compiler.out; then
         echo " FAIL : $1 compiled; the reported constraint does not hold"
         exit 1
     fi
-    if grep -q "$2" probe.out; then
+    if grep -q "$2" compiler.out; then
         echo " PASS : $1 is rejected, for the reported reason"
     else
         echo " FAIL : $1 is rejected for a different reason"
-        cat probe.out; exit 1
+        cat compiler.out; exit 1
     fi
 }
 
 execute () {
-    if ! $F90 -std=$FSTD $KERNEL "$1.f90" "${@:2}" $LINK -o candidate 2>probe.out; then
-        echo " FAIL : $1 does not build"; cat probe.out; exit 1
+    if ! $F90 -std=$FSTD $KERNEL "$1.f90" "${@:2}" $LINK -o candidate 2>compiler.out; then
+        echo " FAIL : $1 does not build"; cat compiler.out; exit 1
     fi
     ./candidate
     echo " PASS : $1 builds and runs"
@@ -51,7 +53,7 @@ execute () {
 #---------------------------------------------------------------------
 
 echo " FIXTURES ($F90 -std=$FSTD)"
-cd "$here/fortran-recursion"
+cd "$suite_dir/fortran-recursion"
 rm -f ./*.mod
 
 admit branch_before_graph
@@ -64,7 +66,7 @@ reject private_status_write         "status_.* is a PRIVATE component"
 reject private_reference_write      "known_.* is a PRIVATE component"
 reject private_structure_constructor "status_.* is a PRIVATE component"
 
-rm -f probe.out ./*.mod
+rm -f compiler.out ./*.mod
 echo ''
 
 #---------------------------------------------------------------------
@@ -74,7 +76,7 @@ echo ''
 #---------------------------------------------------------------------
 
 echo " IMMUTABILITY CANDIDATES ($F90 -std=$FSTD)"
-cd "$here/fortran-mutation"
+cd "$suite_dir/fortran-mutation"
 rm -f ./*.mod ./*.o candidate
 
 $F90 -std=$FSTD -c accessor_candidates.f90 -o accessor_candidates.o
@@ -86,8 +88,8 @@ execute transitive_mutation
 reject  value_accessor_assignment "must have the pointer attribute"
 reject  accessor_navigation       "Invalid character in name"
 
-rm -f probe.out ./*.mod ./*.o candidate
-cd "$here"
+rm -f compiler.out ./*.mod ./*.o candidate
+cd "$suite_dir"
 echo ''
 
 #---------------------------------------------------------------------

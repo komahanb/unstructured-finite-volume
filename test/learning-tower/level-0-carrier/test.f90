@@ -18,7 +18,7 @@
 
 program learning_level_0
 
-  use learning_assert, only : report, verdict
+  use learning_assert, only : report, assert_all
   use learning_assert, only : SLOT_W, SLOT_E, OP_PREDICT, PORT_OUT
   use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
@@ -50,7 +50,7 @@ program learning_level_0
   call check_enumeration_round_trips(nfail)
   call check_membership_boundary(nfail)
 
-  call verdict(nfail, "level 0")
+  call assert_all(nfail, "level 0")
 
 contains
 
@@ -89,32 +89,32 @@ contains
 
     integer, intent(inout) :: nfail
 
-    logical :: ok
+    logical :: satisfied
     integer :: i
 
-    ok = .true.
+    satisfied = .true.
     do i = 1, sets % num_members_of(v)
-       ok = ok .and. (sets % member_of(v, sets % index_in(v, sets % member_of(v, i))) &
+       satisfied = satisfied .and. (sets % member_of(v, sets % index_in(v, sets % member_of(v, i))) &
             &         .eq. sets % member_of(v, i))
-       ok = ok .and. (sets % index_in(v, sets % member_of(v, i)) .eq. i)
+       satisfied = satisfied .and. (sets % index_in(v, sets % member_of(v, i)) .eq. i)
     end do
-    call report(ok, "member and local_index invert on V", nfail)
+    call report(satisfied, "member and local_index invert on V", nfail)
 
-    ok = .true.
+    satisfied = .true.
     do i = 1, sets % num_members_of(o)
-       ok = ok .and. (sets % member_of(o, sets % index_in(o, sets % member_of(o, i))) &
+       satisfied = satisfied .and. (sets % member_of(o, sets % index_in(o, sets % member_of(o, i))) &
             &         .eq. sets % member_of(o, i))
-       ok = ok .and. (sets % index_in(o, sets % member_of(o, i)) .eq. i)
+       satisfied = satisfied .and. (sets % index_in(o, sets % member_of(o, i)) .eq. i)
     end do
-    call report(ok, "member and local_index invert on O", nfail)
+    call report(satisfied, "member and local_index invert on O", nfail)
 
-    ok = .true.
+    satisfied = .true.
     do i = 1, sets % num_members_of(p)
-       ok = ok .and. (sets % member_of(p, sets % index_in(p, sets % member_of(p, i))) &
+       satisfied = satisfied .and. (sets % member_of(p, sets % index_in(p, sets % member_of(p, i))) &
             &         .eq. sets % member_of(p, i))
-       ok = ok .and. (sets % index_in(p, sets % member_of(p, i)) .eq. i)
+       satisfied = satisfied .and. (sets % index_in(p, sets % member_of(p, i)) .eq. i)
     end do
-    call report(ok, "member and local_index invert on P", nfail)
+    call report(satisfied, "member and local_index invert on P", nfail)
 
   end subroutine check_enumeration_round_trips
 

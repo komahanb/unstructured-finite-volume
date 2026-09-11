@@ -44,7 +44,7 @@
 
 program time_level_3
 
-  use time_assert           , only : report, verdict
+  use time_assert           , only : report, assert_all
   use time_assert           , only : T0, T1, T2, E1
   use graph_fractal        , only : graph
   use map_set        , only : set_map
@@ -122,7 +122,7 @@ program time_level_3
   call check_signatures_survive_ownership(nfail)
   call check_state_axis_is_owned_and_unrelated(nfail)
 
-  call verdict(nfail, "level 3")
+  call assert_all(nfail, "level 3")
 
 contains
 
@@ -167,9 +167,9 @@ contains
     class(relation)  , pointer     :: r
     type(graph) :: d
     integer                        :: k, slot, s
-    logical                        :: ok, found
+    logical                        :: satisfied, found
 
-    ok = .true.
+    satisfied = .true.
     do k = 1, num_relations(g)
        r => relation_at(g, bnd, k)
        do slot = 1, r % arity()
@@ -178,11 +178,11 @@ contains
           do s = 1, num_member_sets(g)
              found = found .or. d % same_as(member_set_at(g, bnd, s))
           end do
-          ok = ok .and. found
+          satisfied = satisfied .and. found
        end do
     end do
 
-    call report(ok, &
+    call report(satisfied, &
          & "every slot of every owned relation answers a carrier " // &
          & "G_time owns: the signature validity law holds", nfail)
 
@@ -204,9 +204,9 @@ contains
     call report(owned_runs(a1, t, t) .and. owned_runs(a2, t, t), &
          & "and A1 and A2 are still T x T", nfail)
 
-    call report(holds_fact(tail, [E1, T0]) .and. &
-         &      holds_fact(a1, [T0, T1]) .and. &
-         &      holds_fact(a2, [T0, T2]), &
+    call report(relation_has_tuple(tail, [E1, T0]) .and. &
+         &      relation_has_tuple(a1, [T0, T1]) .and. &
+         &      relation_has_tuple(a2, [T0, T2]), &
          & "and their extensions came through whole - read back " // &
          & "from graph-owned storage, not from the originals", nfail)
 
@@ -260,13 +260,13 @@ contains
 
     class(relation), intent(in) :: r
 
-    class(relation), pointer :: held
+    class(relation), pointer :: bound_relation
     integer                  :: k
 
     owns_relation = .false.
     do k = 1, num_relations(g)
-       held => relation_at(g, bnd, k)
-       owns_relation = owns_relation .or. held % same_as(r)
+       bound_relation => relation_at(g, bnd, k)
+       owns_relation = owns_relation .or. bound_relation % same_as(r)
     end do
 
   end function owns_relation
@@ -276,38 +276,38 @@ contains
     class(relation)  , intent(in) :: selector
     type(graph), intent(in) :: from, into
 
-    class(relation)  , pointer     :: held
+    class(relation)  , pointer     :: bound_relation
     type(graph) :: d
     integer                        :: k
 
     owned_runs = .false.
     do k = 1, num_relations(g)
-       held => relation_at(g, bnd, k)
-       if (held % same_as(selector)) then
-          d = held % domain(1)
+       bound_relation => relation_at(g, bnd, k)
+       if (bound_relation % same_as(selector)) then
+          d = bound_relation % domain(1)
           owned_runs = d % same_as(from)
-          d = held % domain(2)
+          d = bound_relation % domain(2)
           owned_runs = owned_runs .and. d % same_as(into)
-          owned_runs = owned_runs .and. (held % arity() .eq. 2)
+          owned_runs = owned_runs .and. (bound_relation % arity() .eq. 2)
        end if
     end do
 
   end function owned_runs
 
-  logical function holds_fact(selector, tuple)
+  logical function relation_has_tuple(selector, tuple)
 
     class(relation), intent(in) :: selector
     integer        , intent(in) :: tuple(:)
 
-    class(relation), pointer :: held
+    class(relation), pointer :: bound_relation
     integer                  :: k
 
-    holds_fact = .false.
+    relation_has_tuple = .false.
     do k = 1, num_relations(g)
-       held => relation_at(g, bnd, k)
-       if (held % same_as(selector)) holds_fact = held % has(tuple)
+       bound_relation => relation_at(g, bnd, k)
+       if (bound_relation % same_as(selector)) relation_has_tuple = bound_relation % has(tuple)
     end do
 
-  end function holds_fact
+  end function relation_has_tuple
 
 end program time_level_3

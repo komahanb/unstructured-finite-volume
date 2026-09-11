@@ -1,4 +1,4 @@
-! DECLARATION ORDER PROBE. branch declared before graph, with a
+! DECLARATION ORDER CHECK. branch declared before graph, with a
 ! forward reference by pointer. EXPECTED: compiles. This is the
 ! representation the kernel uses.
 module branch_before_graph

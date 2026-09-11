@@ -79,17 +79,17 @@ contains
   ! the domain's own order.
   !===================================================================!
 
-  subroutine sources(adjacency, sets, chosen)
+  subroutine sources(adjacency, sets, source_set)
 
     class(relation), target      , intent(in)    :: adjacency
     type(set_store)              , intent(inout) :: sets
-    type(graph)              , intent(out)   :: chosen
+    type(graph)              , intent(out)   :: source_set
 
     class(binary_relation), pointer :: a
     type(graph)      :: dom
 
     call require_adjacency(adjacency, a, dom)
-    call declare_unpointed(a, 'sources', dom, sets, chosen)
+    call declare_unpointed(a, 'sources', dom, sets, source_set)
 
   end subroutine sources
 
@@ -98,11 +98,11 @@ contains
   ! read through the transposed view, so the search is written once.
   !===================================================================!
 
-  subroutine sinks(adjacency, sets, chosen)
+  subroutine sinks(adjacency, sets, sink_set)
 
     class(relation), target      , intent(in)    :: adjacency
     type(set_store)              , intent(inout) :: sets
-    type(graph)              , intent(out)   :: chosen
+    type(graph)              , intent(out)   :: sink_set
 
     class(binary_relation), pointer :: a
     type(transposed_relation), target :: converse
@@ -110,7 +110,7 @@ contains
 
     call require_adjacency(adjacency, a, dom)
     converse = transpose_of(a)
-    call declare_unpointed(converse, 'sinks', dom, sets, chosen)
+    call declare_unpointed(converse, 'sinks', dom, sets, sink_set)
 
   end subroutine sinks
 
@@ -119,13 +119,13 @@ contains
   ! domain in the domain's own order.
   !===================================================================!
 
-  subroutine declare_unpointed(a, label, dom, sets, chosen)
+  subroutine declare_unpointed(a, label, dom, sets, unpointed_set)
 
     class(binary_relation), target, intent(in)    :: a
     character(len=*)              , intent(in)    :: label
     type(graph)                   , intent(in)    :: dom
     type(set_store)               , intent(inout) :: sets
-    type(graph)                   , intent(out)   :: chosen
+    type(graph)                   , intent(out)   :: unpointed_set
 
     integer, allocatable :: retained(:)
     integer, pointer     :: fibre(:)
@@ -144,7 +144,7 @@ contains
        end if
     end do
 
-    call sets % declare_subobject(chosen, retained(1:n), label, dom)
+    call sets % declare_subobject(unpointed_set, retained(1:n), label, dom)
 
   end subroutine declare_unpointed
 
@@ -227,25 +227,25 @@ contains
     class(binary_relation), pointer :: a
     type(graph)      :: dom
     integer, allocatable :: indegree(:)
-    logical, allocatable :: placed(:)
+    logical, allocatable :: enumerated(:)
     integer, pointer     :: fibre(:)
-    integer              :: n, i, j, round, selected
+    integer              :: n, i, j, order_index, selected
 
     call require_adjacency(adjacency, a, dom)
     n   = sets % num_members_of(dom)
 
-    allocate(indegree(n), placed(n), order(n))
-    placed = .false.
+    allocate(indegree(n), enumerated(n), order(n))
+    enumerated = .false.
     if (present(acyclic)) acyclic = .true.
     do i = 1, n
        fibre => a % preimage_view(sets % member_of(dom, i))
        indegree(i) = size(fibre)
     end do
 
-    do round = 1, n
+    do order_index = 1, n
        selected = 0
        do i = 1, n
-          if (.not. placed(i) .and. indegree(i) == 0) then
+          if (.not. enumerated(i) .and. indegree(i) == 0) then
              selected = i
              exit
           end if
@@ -253,14 +253,14 @@ contains
        if (selected == 0) then
           if (present(acyclic)) then
              acyclic = .false.
-             order   = order(1:round - 1)
+             order   = order(1:order_index - 1)
              return
           end if
           error stop 'relation_algorithms: a topological order needs an acyclic graph'
        end if
 
-       placed(selected) = .true.
-       order(round) = sets % member_of(dom, selected)
+       enumerated(selected) = .true.
+       order(order_index) = sets % member_of(dom, selected)
 
        fibre => a % image_view(sets % member_of(dom, selected))
        do j = 1, size(fibre)

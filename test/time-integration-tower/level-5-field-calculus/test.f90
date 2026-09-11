@@ -49,7 +49,7 @@
 program time_level_5
 
   use iso_fortran_env       , only : dp => REAL64
-  use time_assert           , only : report, verdict
+  use time_assert           , only : report, assert_all
   use time_assert           , only : NQ, NT, NE, TOL
   use time_assert           , only : C_X, C_Y, T0, T2, T4, E1
   use time_assert           , only : H_STEP, TIME_COORD, Q0
@@ -89,7 +89,7 @@ program time_level_5
   call check_values_by_local_position(nfail)
   call check_coordinates_agree_with_structure(nfail)
 
-  call verdict(nfail, "level 5")
+  call assert_all(nfail, "level 5")
 
 contains
 
@@ -165,7 +165,7 @@ contains
     integer, intent(inout) :: nfail
 
     real(dp), allocatable :: v(:)
-    logical               :: ok
+    logical               :: satisfied
     integer               :: i
 
     ! Read against the ORACLES in time_assert, never against a
@@ -184,12 +184,12 @@ contains
          & "time(t0) = 0, time(t2) = 1, time(t4) = 2", nfail)
 
     call hf % real_vector(v)
-    ok = .true.
+    satisfied = .true.
     do i = 1, sets % num_members_of(e)
-       ok = ok .and. (abs(v(sets % index_in(e, sets % member_of(e, i))) - H_STEP) &
+       satisfied = satisfied .and. (abs(v(sets % index_in(e, sets % member_of(e, i))) - H_STEP) &
             & .lt. TOL)
     end do
-    call report(ok .and. abs(v(sets % index_in(e, E1)) - 0.5_dp) .lt. TOL, &
+    call report(satisfied .and. abs(v(sets % index_in(e, E1)) - 0.5_dp) .lt. TOL, &
          & "h(e) = 1/2 at every step - and the uniformity is a " // &
          & "property of the VALUES, not of the type holding them", &
          & nfail)
@@ -213,26 +213,26 @@ contains
 
     real(dp), allocatable :: tv(:), hv(:)
     integer               :: i, m, from, into
-    logical               :: ok
+    logical               :: satisfied
 
     call tf % real_vector(tv)
     call hf % real_vector(hv)
 
-    ok = .true.
+    satisfied = .true.
     do i = 1, sets % num_members_of(e)
        m    = sets % member_of(e, i)
        from = instant_of(tail, m)
        into = instant_of(head, m)
-       ok = ok .and. (from .ne. 0) .and. (into .ne. 0)
+       satisfied = satisfied .and. (from .ne. 0) .and. (into .ne. 0)
        if (from .ne. 0 .and. into .ne. 0) then
-          ok = ok .and. &
+          satisfied = satisfied .and. &
                & (abs((tv(sets % index_in(t, into)) - &
                &       tv(sets % index_in(t, from))) - &
                &      hv(sets % index_in(e, m))) .lt. TOL)
        end if
     end do
 
-    call report(ok, &
+    call report(satisfied, &
          & "time(head(e)) - time(tail(e)) = h(e) for EVERY step: " // &
          & "the coordinates agree with the structure, and neither " // &
          & "was told about the other", nfail)

@@ -81,11 +81,11 @@ for dir in "$here"/common "$here"/level-*; do
                | sed -E 's/^[[:space:]]*[uU][sS][eE][[:space:]]*(,[[:space:]]*[iI][nN][tT][rR][iI][nN][sS][iI][cC][[:space:]]*::)?[[:space:]]*([a-zA-Z][a-zA-Z0-9_]*).*/\2/' \
                | tr 'A-Z' 'a-z' | sort -u)
         for mod in $uses; do
-            ok=0
+            import_allowed=0
             for a in $allow $intrinsics; do
-                [ "$mod" = "$a" ] && ok=1 && break
+                [ "$mod" = "$a" ] && import_allowed=1 && break
             done
-            if [ "$ok" -eq 0 ]; then
+            if [ "$import_allowed" -eq 0 ]; then
                 echo "IMPORT GATE: $(basename "$src") in $name uses '$mod' - not on the level's allowlist"
                 violation=1
             fi

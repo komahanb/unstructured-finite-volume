@@ -1,4 +1,4 @@
-! DECLARATION ORDER PROBE. graph declared before branch.
+! DECLARATION ORDER CHECK. graph declared before branch.
 ! EXPECTED: rejected - 'Derived type at (1) has not been previously
 ! defined and so cannot appear in a derived type definition'. The
 ! constraint is on declaration order only; the two-type ontology is

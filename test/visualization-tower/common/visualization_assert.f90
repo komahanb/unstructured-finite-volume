@@ -62,7 +62,7 @@ module visualization_assert
   implicit none
 
   private
-  public :: report, verdict
+  public :: report, assert_all
   public :: NX0, NX1, NX2, NX3
   public :: NE1, NE2, NE3
   public :: X0_A, X0_B, X0_C, X0_D
@@ -128,13 +128,13 @@ module visualization_assert
 
 contains
 
-  subroutine report(ok, label, nfail)
+  subroutine report(satisfied, label, nfail)
 
-    logical         , intent(in)    :: ok
+    logical         , intent(in)    :: satisfied
     character(len=*), intent(in)    :: label
     integer         , intent(inout) :: nfail
 
-    if (ok) then
+    if (satisfied) then
        write(*,'(1x,a,a)') "PASS : ", label
     else
        write(*,'(1x,a,a)') "FAIL : ", label
@@ -143,7 +143,7 @@ contains
 
   end subroutine report
 
-  subroutine verdict(nfail, level)
+  subroutine assert_all(nfail, level)
 
     integer         , intent(in) :: nfail
     character(len=*), intent(in) :: level
@@ -156,6 +156,6 @@ contains
        error stop 1
     end if
 
-  end subroutine verdict
+  end subroutine assert_all
 
 end module visualization_assert

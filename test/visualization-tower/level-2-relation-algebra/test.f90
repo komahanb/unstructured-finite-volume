@@ -23,7 +23,7 @@
 !
 !                        THE WITNESS COLLAPSE
 !
-! Seven walks run from X0 to X2 through X1, and D_2:1 holds six
+! Seven paths run from X0 to X2 through X1, and D_2:1 contains six
 ! tuples. Both b->p->u and b->q->u witness the dependency b->u, and
 ! a relation is a SET: two witnesses of one fact are one fact.
 !
@@ -52,7 +52,7 @@
 
 program visualization_level_2
 
-  use visualization_assert , only : report, verdict
+  use visualization_assert , only : report, assert_all
   use visualization_assert , only : ND1, ND2, ND3, ND21, ND31
   use visualization_assert , only : X0_A, X0_B, X0_C, X0_D
   use visualization_assert , only : X1_P, X1_Q, X1_R
@@ -122,7 +122,7 @@ program visualization_level_2
   call check_the_transpose_composition_law(nfail)
   call check_naming_changes_nothing(nfail)
 
-  call verdict(nfail, "level 2")
+  call assert_all(nfail, "level 2")
 
 contains
 
@@ -137,20 +137,20 @@ contains
     integer, intent(inout) :: nfail
 
     call report(runs_from_to(d1, x0, x1) .and. &
-         &      holds_exactly(d1, reshape([X0_A, X1_P, X0_B, X1_P, &
+         &      has_exact_tuples(d1, reshape([X0_A, X1_P, X0_B, X1_P, &
          &                                 X0_B, X1_Q, X0_C, X1_Q, &
          &                                 X0_D, X1_R], [2, ND1])), &
          & "D1 : X0 -> X1 = { a->p, b->p, b->q, c->q, d->r } - " // &
          & "DERIVED from E1's occurrences, not stored", nfail)
 
     call report(runs_from_to(d2, x1, x2) .and. &
-         &      holds_exactly(d2, reshape([X1_P, X2_U, X1_Q, X2_U, &
+         &      has_exact_tuples(d2, reshape([X1_P, X2_U, X1_Q, X2_U, &
          &                                 X1_Q, X2_V, X1_R, X2_W], &
          &                                [2, ND2])), &
          & "D2 : X1 -> X2 = { p->u, q->u, q->v, r->w }", nfail)
 
     call report(runs_from_to(d3, x2, x3) .and. &
-         &      holds_exactly(d3, reshape([X2_U, X3_M, X2_V, X3_N, &
+         &      has_exact_tuples(d3, reshape([X2_U, X3_M, X2_V, X3_N, &
          &                                 X2_W, X3_N], [2, ND3])), &
          & "D3 : X2 -> X3 = { u->m, v->n, w->n }", nfail)
 
@@ -163,7 +163,7 @@ contains
   end subroutine check_the_three_dependencies
 
   !===================================================================!
-  ! D_2:1 = D_2 o D_1, and the seven walks that make its six tuples.
+  ! D_2:1 = D_2 o D_1, and the seven paths that determine its six tuples.
   !===================================================================!
 
   subroutine check_the_intermediate_composition(nfail)
@@ -171,14 +171,14 @@ contains
     integer, intent(inout) :: nfail
 
     call report(runs_from_to(d21, x0, x2) .and. &
-         &      holds_exactly(d21, reshape([X0_A, X2_U, X0_B, X2_U, &
+         &      has_exact_tuples(d21, reshape([X0_A, X2_U, X0_B, X2_U, &
          &                                  X0_B, X2_V, X0_C, X2_U, &
          &                                  X0_C, X2_V, X0_D, X2_W], &
          &                                 [2, ND21])), &
          & "D2:1 : X0 -> X2 = { a->u, b->u, b->v, c->u, c->v, d->w }", &
          & nfail)
 
-    call report(d21 % num_tuples() .eq. ND21 .and. walks(d1, d2) .eq. 7, &
+    call report(d21 % num_tuples() .eq. ND21 .and. num_paths(d1, d2) .eq. 7, &
          & "SEVEN WALKS, SIX TUPLES - the composed structure is not " // &
          & "an accounting of paths", nfail)
 
@@ -232,7 +232,7 @@ contains
     type(csr_relation) :: other_way
 
     call report(runs_from_to(d31, x0, x3) .and. &
-         &      holds_exactly(d31, reshape([X0_A, X3_M, X0_B, X3_M, &
+         &      has_exact_tuples(d31, reshape([X0_A, X3_M, X0_B, X3_M, &
          &                                  X0_B, X3_N, X0_C, X3_M, &
          &                                  X0_C, X3_N, X0_D, X3_N], &
          &                                 [2, ND31])), &
@@ -416,22 +416,22 @@ contains
   ! Exactness: every listed tuple is held, and nothing else is.
   !-------------------------------------------------------------------!
 
-  logical function holds_exactly(r, table)
+  logical function has_exact_tuples(r, table)
 
     class(relation), intent(in) :: r
     integer        , intent(in) :: table(:,:)
 
     integer :: j
 
-    holds_exactly = (r % num_tuples() .eq. size(table, 2))
+    has_exact_tuples = (r % num_tuples() .eq. size(table, 2))
     do j = 1, size(table, 2)
-       holds_exactly = holds_exactly .and. r % has(table(:, j))
+       has_exact_tuples = has_exact_tuples .and. r % has(table(:, j))
     end do
 
-  end function holds_exactly
+  end function has_exact_tuples
 
   !-------------------------------------------------------------------!
-  ! How many intermediates carry x to z, and how many walks there are
+  ! How many intermediates connect x to z, and how many paths there are
   ! in all. Computed from the two dependencies directly, so the
   ! composition never gets to answer a question about itself.
   !-------------------------------------------------------------------!
@@ -455,7 +455,7 @@ contains
 
   end function witnesses
 
-  integer function walks(first, second)
+  integer function num_paths(first, second)
 
     class(binary_relation), intent(in) :: first, second
 
@@ -464,15 +464,15 @@ contains
 
     start  = first % source()
     finish = second % target()
-    walks  = 0
+    num_paths  = 0
     do i = 1, sets % num_members_of(start)
        do j = 1, sets % num_members_of(finish)
-          walks = walks + witnesses(first, second, &
+          num_paths = num_paths + witnesses(first, second, &
                &                    sets % member_of(start, i), sets % member_of(finish, j))
        end do
     end do
 
-  end function walks
+  end function num_paths
 
   !-------------------------------------------------------------------!
   ! How many times a relation's own tuple table lists one pair. One,

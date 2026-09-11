@@ -44,7 +44,7 @@
 
 program partitioned_pde_level_2
 
-  use partitioned_pde_assert , only : report, verdict
+  use partitioned_pde_assert , only : report, assert_all
   use graph_fractal        , only : graph
   use map_set        , only : set_map
   use relation_binary  , only : csr_relation
@@ -83,7 +83,7 @@ program partitioned_pde_level_2
   call check_both_are_functions(nfail)
   call check_where_the_policies_part(nfail)
 
-  call verdict(nfail, "level 2")
+  call assert_all(nfail, "level 2")
 
 contains
 
@@ -98,18 +98,18 @@ contains
 
     type(graph) :: d
     integer                        :: i
-    logical                        :: ok
+    logical                        :: satisfied
 
     d = adj % domain(1)
     call report(d % same_as(v), "A runs from the vertices", nfail)
     d = adj % domain(2)
     call report(d % same_as(v), "back into the vertices", nfail)
 
-    ok = adj % num_tuples() .eq. 5
+    satisfied = adj % num_tuples() .eq. 5
     do i = 1, 5
-       ok = ok .and. adj % has([i, i + 1])
+       satisfied = satisfied .and. adj % has([i, i + 1])
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "A = { 1->2, 2->3, 3->4, 4->5, 5->6 } - derived through " // &
          & "the edges, never written", nfail)
 
@@ -207,14 +207,14 @@ contains
     integer, intent(inout) :: nfail
 
     integer :: ge
-    logical :: ok
+    logical :: satisfied
 
-    ok = .true.
+    satisfied = .true.
     do ge = 1, 5
        if (ge .eq. 3) cycle
-       ok = ok .and. same_owner(ge)
+       satisfied = satisfied .and. same_owner(ge)
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "TailOwner and HeadOwner AGREE on e1, e2, e4 and e5 - " // &
          & "away from the cut the anchor does not matter", nfail)
 

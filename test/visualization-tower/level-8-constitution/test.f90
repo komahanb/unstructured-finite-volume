@@ -41,7 +41,7 @@ program visualization_level_8
   use map_set        , only : set_map
   use map_label      , only : label_map
   use iso_fortran_env      , only : dp => REAL64
-  use visualization_assert , only : report, verdict
+  use visualization_assert , only : report, assert_all
   use graph_fractal        , only : graph
   use view_directed  , only : directed_graph
   use view_directed_stored          , only : stored_directed_graph
@@ -58,7 +58,7 @@ program visualization_level_8
   integer , parameter :: N = 3
   real(dp), parameter :: TOL = 1.0e-12_dp
 
-  real(dp), parameter :: X_PROBE(N)   = [1.0_dp, 2.0_dp, 3.0_dp]
+  real(dp), parameter :: X_DIRECTION(N)   = [1.0_dp, 2.0_dp, 3.0_dp]
   real(dp), parameter :: A_TIMES_X(N) = [6.0_dp, 14.0_dp, 20.0_dp]
   real(dp), parameter :: TRUE_DIAG(N) = [4.0_dp, 5.0_dp, 6.0_dp]
 
@@ -147,7 +147,7 @@ program visualization_level_8
   call solver % state(a, context, context % vertex_set(), &
        &              context % num_vertices(), coupling = dependent)
 
-  call solver % matvec(X_PROBE, mv)
+  call solver % matvec(X_DIRECTION, mv)
   call solver % sweep_order(colours)
   call diagonal_of(solver, d)
 
@@ -155,10 +155,10 @@ program visualization_level_8
 
   call check_the_two_axes_are_distinct(nfail)
   call check_the_independent_axis(nfail)
-  call check_the_context_is_a_third_thing(nfail)
+  call check_distinct_context(nfail)
   call check_the_solver_took_the_dependent_axis(nfail)
 
-  call verdict(nfail, "level 8")
+  call assert_all(nfail, "level 8")
 
 contains
 
@@ -295,7 +295,7 @@ contains
   ! And the context is a third object, matching neither.
   !===================================================================!
 
-  subroutine check_the_context_is_a_third_thing(nfail)
+  subroutine check_distinct_context(nfail)
 
     integer, intent(inout) :: nfail
 
@@ -309,7 +309,7 @@ contains
          & "THREE DISTINCT STRUCTURES ALIVE AT ONCE: context, " // &
          & "dependent stencil, independent stencil", nfail)
 
-  end subroutine check_the_context_is_a_third_thing
+  end subroutine check_distinct_context
 
   !===================================================================!
   ! THE CONSTITUTION. The solver took the dependent axis, was not
@@ -359,12 +359,12 @@ contains
 
   end subroutine diagonal_of
 
-  logical function alike(got, want)
+  logical function alike(actual, expected)
 
-    real(dp), intent(in) :: got(:), want(:)
+    real(dp), intent(in) :: actual(:), expected(:)
 
-    alike = (size(got) .eq. size(want))
-    if (alike) alike = all(abs(got - want) .lt. TOL)
+    alike = (size(actual) .eq. size(expected))
+    if (alike) alike = all(abs(actual - expected) .lt. TOL)
 
   end function alike
 

@@ -302,7 +302,7 @@ contains
     type(linearization) :: tangent
     type(stencil) :: compiled, transposed
     type(stored_field) :: costate
-    class(field), allocatable :: pushed
+    class(field), allocatable :: tangent_value
     real(dp), allocatable :: lambda(:), q(:), jt_lambda(:)
 
     if (allocated(output)) deallocate(output)
@@ -318,8 +318,8 @@ contains
 
     costate = stored_field('costate', transposed % pattern % vertex_set(), size(lambda))
     call costate % set_real_vector(lambda)
-    call transposed % apply(transposed % pattern, transposed % bind([costate]), pushed)
-    call pushed % real_vector(jt_lambda)
+    call transposed % apply(transposed % pattern, transposed % bind([costate]), tangent_value)
+    call tangent_value % real_vector(jt_lambda)
 
     call emit_state(input_graph, lambda - this % h * jt_lambda, output)
 

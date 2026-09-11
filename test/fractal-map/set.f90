@@ -6,7 +6,7 @@
 !   A  EXTENSIONAL GRAPH        the set graph references every member
 !                               through a sequence
 !   B  SEMANTIC GRAPH + EXTENT  one graph denotes the set; an external
-!                               representation answers how its members
+!                               representation specifies how its members
 !                               are stored and enumerated
 !
 ! Design A is built here at small n so its cost is not hypothetical:
@@ -33,8 +33,8 @@ module set_prototype
   ! The counted representation: how many members, and the convention
   ! that they enumerate 1..n. O(1) storage, whatever n is.
   !
-  ! It carries NO identity. Which set this describes is the question
-  ! the graph answers.
+  ! It stores NO identity. Which set this describes is the question
+  ! the graph identifies.
   !===================================================================!
 
   type :: counted_extent
@@ -55,14 +55,14 @@ module set_prototype
   end interface counted_extent
 
   !===================================================================!
-  ! The listed representation: an explicit roll of member values. It
-  ! answers the same four questions, and it is where the second
-  ! coordinate system lives - position within THIS representation.
+  ! The listed representation: an explicit list of member values. It
+  ! evaluates the same four queries, and it is where the second
+  ! coordinate system is defined - position within THIS representation.
   !===================================================================!
 
   type, public :: listed_extent
 
-     integer, allocatable, private :: roll(:)
+     integer, allocatable, private :: members(:)
 
    contains
 
@@ -138,11 +138,11 @@ contains
 
   end function local_index
 
-  type(listed_extent) function create_listed_extent(roll) result(this)
+  type(listed_extent) function create_listed_extent(members) result(this)
 
-    integer, intent(in) :: roll(:)
+    integer, intent(in) :: members(:)
 
-    this % roll = roll
+    this % members = members
 
   end function create_listed_extent
 
@@ -150,7 +150,7 @@ contains
 
     class(listed_extent), intent(in) :: this
 
-    listed_size = size(this % roll)
+    listed_size = size(this % members)
 
   end function listed_size
 
@@ -159,7 +159,7 @@ contains
     class(listed_extent), intent(in) :: this
     integer             , intent(in) :: position
 
-    listed_member = this % roll(position)
+    listed_member = this % members(position)
 
   end function listed_member
 
@@ -168,7 +168,7 @@ contains
     class(listed_extent), intent(in) :: this
     integer             , intent(in) :: value
 
-    listed_has = any(this % roll == value)
+    listed_has = any(this % members == value)
 
   end function listed_has
 
@@ -180,8 +180,8 @@ contains
     integer :: k
 
     listed_local_index = 0
-    do k = 1, size(this % roll)
-       if (this % roll(k) == value) then
+    do k = 1, size(this % members)
+       if (this % members(k) == value) then
           listed_local_index = k
           return
        end if
@@ -198,16 +198,16 @@ contains
     type(graph)         , intent(in), target :: s
     type(counted_extent), intent(in)         :: value
 
-    type(extent_row), allocatable :: grown(:)
+    type(extent_row), allocatable :: extended_rows(:)
     integer                       :: n
 
     if (.not. allocated(rows)) allocate(rows(0))
     n = size(rows)
-    allocate(grown(n + 1))
-    grown(1:n) = rows
-    grown(n + 1) % element => s
-    grown(n + 1) % value   =  value
-    call move_alloc(grown, rows)
+    allocate(extended_rows(n + 1))
+    extended_rows(1:n) = rows
+    extended_rows(n + 1) % element => s
+    extended_rows(n + 1) % value   =  value
+    call move_alloc(extended_rows, rows)
 
   end subroutine bind_extent
 
@@ -311,7 +311,7 @@ program set_map
     type(graph), target  :: s, cell(4), elem(4)
     type(graph), pointer :: e
     integer              :: k
-    logical              :: ok
+    logical              :: satisfied
 
     call s % declare()
     do k = 1, 4
@@ -326,15 +326,15 @@ program set_map
     s % branch(1) = known_branch(cell(1))
     s % branch(2) = null_branch()
 
-    call check('2  design A: the set graph answers |S| = 4', &
+    call check('2  design A: the set graph reports |S| = 4', &
          & sequence_num_elements(s % branch(1)) .eq. 4)
 
-    ok = .true.
+    satisfied = .true.
     do k = 1, 4
        e => sequence_element(s % branch(1), k)
-       ok = ok .and. e % same_as(elem(k))
+       satisfied = satisfied .and. e % same_as(elem(k))
     end do
-    call check('2  and every member is reachable by identity', ok)
+    call check('2  and every member is reachable by identity', satisfied)
     call check('2  the cost is 2n graph objects, here 8', &
          & size(cell) + size(elem) .eq. 8)
 
@@ -365,7 +365,7 @@ program set_map
          & e % has(999999999) .and. .not. e % has(1000000001))
     call check('3  and position is the representation''s numbering', &
          & e % local_index(7) .eq. 7 .and. e % member(7) .eq. 7)
-    call check('3  the graph carries no extension: both branches NULL', &
+    call check('3  the graph stores no extension: both branches NULL', &
          & cells % branch(1) % status() .eq. BRANCH_NULL .and. &
          &  cells % branch(2) % status() .eq. BRANCH_NULL)
 
@@ -378,12 +378,12 @@ program set_map
   ! decided from the two extents - no third type, no inheritance, no
   ! ambient component.
   !
-  ! Two coordinate systems must be kept apart:
+  ! Two coordinate systems are distinct:
   !
   !     the member VALUE     shared with the ambient
   !     the local POSITION   private to each set's representation
   !
-  ! This is the split the current subset_set makes with roll: roll(k)
+  ! This is the split the current subset_set defines through members: members(k)
   ! is the ambient value, k is the local position.
   !===================================================================!
 
@@ -392,14 +392,14 @@ program set_map
     type(graph), target  :: ambient, part
     type(counted_extent) :: ea
     type(listed_extent)  :: ep
-    integer              :: roll(3) = [2, 5, 6]
+    integer              :: members(3) = [2, 5, 6]
     integer              :: k
     logical              :: included, both_ways, positions_differ
 
     call ambient % declare(); call part % declare()
     call bind_extent(ambient, counted_extent(8))
     ea = extent_of(ambient)
-    ep = listed_extent(roll)             ! the part's own representation
+    ep = listed_extent(members)             ! the part's own representation
 
     included = .true.
     do k = 1, ep % extent_size()
@@ -410,9 +410,9 @@ program set_map
     call check('4  and needs no subtype and no ambient component', &
          & .not. part % same_as(ambient))
 
-    ! The enumeration law holds INSIDE each representation, and the two
+    ! The enumeration law is satisfied INSIDE each representation, and the two
     ! numberings disagree while the member values agree. This is the
-    ! whole of what subset_set's roll does, without a subtype.
+    ! whole of what subset_set's member list does, without a subtype.
     both_ways = .true.
     do k = 1, ep % extent_size()
        both_ways = both_ways .and. ep % local_index(ep % member(k)) .eq. k
@@ -427,7 +427,7 @@ program set_map
        if (ea % local_index(ep % member(k)) .ne. ep % local_index(ep % member(k))) &
             & positions_differ = .true.
     end do
-    call check('4  the same member stands at different positions: 5 is 2nd in S, 5th in A', &
+    call check('4  the same member has different positions: 5 is 2nd in S, 5th in A', &
          & positions_differ .and. ep % local_index(5) .eq. 2 &
          &                  .and. ea % local_index(5) .eq. 5)
     call check('4  only the VALUE travels, which is why inclusion is (s,s)', &
@@ -448,12 +448,12 @@ program set_map
 
 contains
 
-  subroutine check(label, ok)
+  subroutine check(label, satisfied)
 
     character(len=*), intent(in) :: label
-    logical         , intent(in) :: ok
+    logical         , intent(in) :: satisfied
 
-    if (ok) then
+    if (satisfied) then
        print *, ' PASS : ', label
     else
        print *, ' FAIL : ', label

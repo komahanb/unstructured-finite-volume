@@ -16,12 +16,12 @@ program refusal
 
   implicit none
 
-  character(len=32)    :: which
+  character(len=32)    :: case_name
   type(graph), pointer :: p
 
-  call get_command_argument(1, which)
+  call get_command_argument(1, case_name)
 
-  select case (trim(which))
+  select case (trim(case_name))
 
      !================================================================!
      ! Neither NULL nor UNKNOWN is a value; no accessor manufactures
@@ -52,11 +52,11 @@ program refusal
   case ('nullname')
      block
        type(graph), target :: g, q
-       character(len=:), allocatable :: said
+       character(len=:), allocatable :: state_name
        call g % declare(); call q % declare()
        g % branch = [known_branch(q), null_branch()]
-       said = epistemic_name(g)
-       print *, said
+       state_name = epistemic_name(g)
+       print *, state_name
      end block
 
   case default

@@ -25,7 +25,7 @@
 program calculator_level_8
 
   use iso_fortran_env  , only : dp => REAL64
-  use calculator_assert, only : report, verdict
+  use calculator_assert, only : report, assert_all
   use calculator_assert, only : SLOT_A, SLOT_B, SLOT_C, SLOT_D, SLOT_E
   use calculator_assert, only : OP_PLUS, OP_TIMES
   use calculator_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
@@ -101,7 +101,7 @@ program calculator_level_8
   call check_topology_preserved(flow, nfail)
   call check_order_invariance(nfail)
 
-  call verdict(nfail, "level 8")
+  call assert_all(nfail, "level 8")
 
 contains
 
@@ -114,14 +114,14 @@ contains
     integer, intent(inout) :: nfail
 
     integer :: i, m
-    logical :: ok
+    logical :: satisfied
 
-    ok = .true.
+    satisfied = .true.
     do i = 1, sets % num_members_of(x)
        m = sets % member_of(x, i)
-       ok = ok .and. (count([sets % has(k, m), sets % has(u, m)]) .eq. 1)
+       satisfied = satisfied .and. (count([sets % has(k, m), sets % has(u, m)]) .eq. 1)
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "K and U are disjoint and cover X together", nfail)
 
   end subroutine check_coverage
@@ -203,9 +203,9 @@ contains
 
     type(stored_relation)        :: q_, a_
     class(relation), allocatable :: b_, jac
-    integer, allocatable :: mine(:)
+    integer, allocatable :: equation_support(:)
     integer :: i, row, j
-    logical :: ok
+    logical :: satisfied
 
     ! The Level-6 road, walked again: J = A o (Q o L).
     q_  = project_slots(restrict_slot(t_flow, 3, p_out, sets, inclusions), [2, 1], sets)
@@ -213,16 +213,16 @@ contains
     a_  = project_slots(t_flow, [1, 2], sets)
     jac = compose_binary(b_, a_, sets)
 
-    ok = .true.
+    satisfied = .true.
     do i = 1, sets % num_members_of(y)
        row = sets % member_of(y, i)
-       call constitution_support(t_flow, located, x, o, sets, row, mine)
+       call constitution_support(t_flow, located, x, o, sets, row, equation_support)
        do j = 1, sets % num_members_of(x)
-          ok = ok .and. ( jac % has([row, sets % member_of(x, j)]) .eqv. &
-               &          any(mine == sets % member_of(x, j)) )
+          satisfied = satisfied .and. ( jac % has([row, sets % member_of(x, j)]) .eqv. &
+               &          any(equation_support == sets % member_of(x, j)) )
        end do
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "the constitution's dependency equals the level-6 supports", &
          & nfail)
 
@@ -254,17 +254,17 @@ contains
     block
       integer, allocatable :: s1(:), s2(:)
       integer :: i, jj
-      logical :: ok
-      ok = .true.
+      logical :: satisfied
+      satisfied = .true.
       do i = 1, sets % num_members_of(y)
          call constitution_support(flow     , located, x, o, sets, sets % member_of(y, i), s1)
          call constitution_support(backwards, located, x, o, sets, sets % member_of(y, i), s2)
-         ok = ok .and. (size(s1) .eq. size(s2))
+         satisfied = satisfied .and. (size(s1) .eq. size(s2))
          do jj = 1, size(s1)
-            ok = ok .and. any(s2 == s1(jj))
+            satisfied = satisfied .and. any(s2 == s1(jj))
          end do
       end do
-      call report(ok, &
+      call report(satisfied, &
            & "and neither does it to the generated supports", nfail)
     end block
 

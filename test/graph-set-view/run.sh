@@ -3,14 +3,16 @@
 # run every refusal and assert each stops for its stated reason.
 set -e
 
-here="$(cd "$(dirname "$0")" && pwd)"
+suite_dir="$(cd "$(dirname "$0")" && pwd)"
 
-( cd "$here/../.." && ./build.sh >/dev/null )
+if [ "${UFVM_SKIP_LIBRARY_BUILD:-0}" != 1 ]; then
+    ( cd "$suite_dir/../.." && ./build.sh >/dev/null )
+fi
 
-make -C "$here" clean >/dev/null 2>&1 || true
-make -C "$here" >/dev/null
+make -C "$suite_dir" clean >/dev/null 2>&1 || true
+make -C "$suite_dir" >/dev/null
 
-cd "$here" && ./run
+cd "$suite_dir" && ./run
 
 declare -A reason=(
   [unsigned]="keyed on assigned identity"

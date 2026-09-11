@@ -54,7 +54,7 @@
 program time_level_7
 
   use iso_fortran_env       , only : dp => REAL64
-  use time_assert           , only : report, verdict
+  use time_assert           , only : report, assert_all
   use time_assert           , only : NQ, NT, TOL
   use time_assert           , only : H_STEP, Q0, Q_BE1, Q_BDF2
   use graph_fractal        , only : graph
@@ -94,7 +94,7 @@ program time_level_7
   call check_bdf2_solve(nfail)
   call check_unknown_domain_is_the_caller_s_word(nfail)
 
-  call verdict(nfail, "level 7")
+  call assert_all(nfail, "level 7")
 
 contains
 
@@ -129,7 +129,7 @@ contains
     type(temporal_step)             :: step
     type(gmres)                     :: solver
     type(stored_field)                     :: rhs, hist
-    class(field), allocatable :: answer
+    class(field), allocatable :: solution_field
     type(graph)  :: d
     integer         :: n_d
     real(dp), allocatable           :: c(:), v(:)
@@ -156,14 +156,14 @@ contains
     rhs = stored_field('rhs', q, NQ, num_components=1)
     call rhs % set_real_vector(Q0)
 
-    call solver % apply(ht, solver % bind([rhs]), answer)
+    call solver % apply(ht, solver % bind([rhs]), solution_field)
 
-    d = answer % domain()
+    d = solution_field % domain()
     call report(d % same_as(q), &
          & "and the SOLUTION lands on Q, through the operation " // &
          & "face, with the host present and unread", nfail)
 
-    call answer % real_vector(v)
+    call solution_field % real_vector(v)
     call report(size(v) .eq. NQ .and. maxval(abs(v - Q_BE1)) .lt. TOL, &
          & "q1 = [4/3, 4/9] - THE FIRST COMPLETE IMPLICIT TEMPORAL " // &
          & "STEP, solved on the state domain", nfail)
@@ -182,7 +182,7 @@ contains
     type(temporal_step)             :: step
     type(gmres)                     :: solver
     type(stored_field)                     :: rhs, hist1, hist2
-    class(field), allocatable :: answer
+    class(field), allocatable :: solution_field
     type(graph)  :: d
     real(dp), allocatable           :: c(:), v(:)
     real(dp)                        :: expected_rhs(NQ)
@@ -212,13 +212,13 @@ contains
     rhs = stored_field('rhs', q, NQ, num_components=1)
     call rhs % set_real_vector(expected_rhs)
 
-    call solver % apply(ht, solver % bind([rhs]), answer)
+    call solver % apply(ht, solver % bind([rhs]), solution_field)
 
-    d = answer % domain()
+    d = solution_field % domain()
     call report(d % same_as(q), &
          & "the bdf-2 solution lands on Q as well", nfail)
 
-    call answer % real_vector(v)
+    call solution_field % real_vector(v)
     call report(size(v) .eq. NQ .and. maxval(abs(v - Q_BDF2)) .lt. TOL, &
          & "q2 = [5/6, 47/72] - structural reach at Level 2, scheme " // &
          & "coefficients at Level 6, implicit solve here", nfail)

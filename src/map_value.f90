@@ -139,12 +139,12 @@ contains
     class(value_map), intent(inout) :: this
     type(graph)     , intent(in)    :: element
 
-    type(stored_field) :: nothing
+    type(stored_field) :: empty_field
     integer :: at
 
     at = this % rows % row(element % id(), 'map_value: an update requires an attached row')
 
-    this % states(at) % value  = nothing
+    this % states(at) % value  = empty_field
     this % states(at) % status = VALUE_UNKNOWN
 
   end subroutine mark_unknown

@@ -1,6 +1,6 @@
 #!/bin/bash
-# The adjoint tower's import gate: the dependency-stratification
-# law, made mechanical - the fourth client of the calculator gate's
+# The adjoint tower's import group: the dependency-stratification
+# law, made mechanical - the fourth client of the calculator group's
 # philosophy, with its own allowlists. Every adjoint source may
 # `use` only the framework modules its LEVEL has been granted; a
 # directory with sources but no allowlist fails closed.
@@ -8,7 +8,7 @@
 # Gate grouping does not weaken level checking. In particular Gate
 # A (levels 0-6) may not touch minimization or a solver at all, and
 # levels 0-4 may not touch the field: structure precedes numbers,
-# and no gate boundary excuses a rung from its own stratum.
+# and no group boundary excuses a rung from its own stratum.
 
 here="$(cd "$(dirname "$0")" && pwd)"
 
@@ -79,11 +79,11 @@ for dir in "$here"/common "$here"/level-*; do
                | sed -E 's/^[[:space:]]*[uU][sS][eE][[:space:]]*(,[[:space:]]*[iI][nN][tT][rR][iI][nN][sS][iI][cC][[:space:]]*::)?[[:space:]]*([a-zA-Z][a-zA-Z0-9_]*).*/\2/' \
                | tr 'A-Z' 'a-z' | sort -u)
         for mod in $uses; do
-            ok=0
+            valid=0
             for a in $allow $intrinsics; do
-                [ "$mod" = "$a" ] && ok=1 && break
+                [ "$mod" = "$a" ] && valid=1 && break
             done
-            if [ "$ok" -eq 0 ]; then
+            if [ "$valid" -eq 0 ]; then
                 echo "IMPORT GATE: $(basename "$src") in $name uses '$mod' - not on the level's allowlist"
                 violation=1
             fi
@@ -95,4 +95,4 @@ if [ "$violation" -ne 0 ]; then
     echo "IMPORT GATE: the tower layering is violated"
     exit 1
 fi
-echo "import gate: every adjoint source imports only its level and below"
+echo "import group: every adjoint source imports only its level and below"

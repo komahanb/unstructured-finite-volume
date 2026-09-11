@@ -38,7 +38,7 @@
 
 program adjoint_level_4
 
-  use adjoint_assert, only : report, verdict
+  use adjoint_assert, only : report, assert_all
   use adjoint_assert, only : VAR_P, VAR_U, VAR_V
   use adjoint_assert, only : TGT_R1, TGT_R2, TGT_F
   use graph_fractal        , only : graph
@@ -156,7 +156,7 @@ program adjoint_level_4
   ! the program. Its refusal is the rung's truth, and it is proved
   ! in refusal.f90 where dying loudly is the expected outcome.
 
-  call verdict(nfail, "level 4")
+  call assert_all(nfail, "level 4")
 
 contains
 

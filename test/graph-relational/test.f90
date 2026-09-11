@@ -108,7 +108,7 @@ program test
     s => member_set_at(g, b, 2)
     call check('member_set_at(2) is V', s % same_as(v))
 
-    call check('has_set answers for both, and refuses none', &
+    call check('has_set is defined for both graphs', &
          & has_set(g, b, e) .and. has_set(g, b, v))
     call check('sets only is vacuously valid', relational_valid(g, b))
 
@@ -197,7 +197,7 @@ program test
     t = stored_relation('T', [e, foreign], &
          & reshape([1, 1, 2, 2], [2, 2]), sets)
 
-    call b % bind_set(selem, e)                  ! only E is held
+    call b % bind_set(selem, e)                  ! only E is bound
     call b % bind_relation(relem, t)
 
     scell % branch(1) = known_branch(selem)
@@ -213,7 +213,7 @@ program test
     call check('the graph does not hold W', .not. has_set(g, b, foreign))
     call check('so it is relationally INVALID, and reported, not refused', &
          & .not. relational_valid(g, b))
-    call check('E is still held, and V was never bound', &
+    call check('E is still bound, and V was never bound', &
          & has_set(g, b, e) .and. .not. has_set(g, b, v))
 
   end block foreign_block
@@ -254,7 +254,7 @@ program test
 
   !===================================================================!
   ! S and P are sets. A sequence may repeat what a set cannot, so
-  ! repetition is representable and invalid - answered, not refused.
+  ! repetition is representable and invalid - evaluated as false.
   ! One member set, denoted by two distinct element graphs.
   !===================================================================!
 
@@ -331,7 +331,7 @@ program test
   !===================================================================!
   ! Identity is the address, never the signature: two relations over
   ! the same slots coexist, each keeping its own tuples. A ternary
-  ! relation sits beside a binary one, untroubled.
+  ! relation coexists with a binary relation.
   !===================================================================!
 
   signature_block: block
@@ -389,9 +389,9 @@ program test
          & .not. r1 % same_as(r2))
     call check('and each keeps its own tuples', &
          & r1 % has([1, 2]) .and. .not. r2 % has([1, 2]))
-    call check('a ternary relation sits beside two binary ones', &
+    call check('a ternary relation coexists with two binary relations', &
          & r3 % arity() .eq. 3 .and. r1 % arity() .eq. 2)
-    call check('and the whole is valid: every domain is held', &
+    call check('and the whole is valid: every domain is bound', &
          & relational_valid(g, b))
 
   end block signature_block
@@ -427,12 +427,12 @@ program test
 
 contains
 
-  subroutine check(label, ok)
+  subroutine check(label, satisfied)
 
     character(len=*), intent(in) :: label
-    logical         , intent(in) :: ok
+    logical         , intent(in) :: satisfied
 
-    if (ok) then
+    if (satisfied) then
        print *, ' PASS : ', label
     else
        print *, ' FAIL : ', label

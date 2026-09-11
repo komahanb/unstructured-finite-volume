@@ -4,7 +4,7 @@
 # LEVELS are the implementation architecture; GATES are only review
 # checkpoints, and appear here as horizontal separators - never as
 # directories, and never in place of a level's own result. Every
-# level reports its own status, in order, and a gate line may only
+# level reports its own status, in order, and a group line may only
 # follow the levels it reviews.
 #
 # The frontier law still holds level by level: a failed level stops
@@ -16,13 +16,15 @@ set -e
 
 here="$(cd "$(dirname "$0")" && pwd)"
 
-"$here/check_imports.sh" --selftest || { echo "└── the import gate refused itself"; exit 1; }
-"$here/check_imports.sh" || { echo "└── the import gate refused the tower"; exit 1; }
+"$here/check_imports.sh" --selftest || { echo "└── the import group refused itself"; exit 1; }
+"$here/check_imports.sh" || { echo "└── the import group refused the tower"; exit 1; }
 
 . "$here/check_marker.sh"
 "$here/check_marker.sh" --selftest || { echo "└── the result contract refused itself"; exit 1; }
 
-( cd "$here/../.." && ./build.sh >/dev/null 2>&1 )
+if [ "${UFVM_SKIP_LIBRARY_BUILD:-0}" != 1 ]; then
+    ( cd "$here/../.." && ./build.sh >/dev/null 2>&1 )
+fi
 
 levels=(
   "level-0-carrier            0 carrier"
@@ -77,13 +79,13 @@ for entry in "${levels[@]}"; do
         continue
     fi
 
-    ok=1
-    ( cd "$here/$dir" && ./run >run.out 2>&1 ) || ok=0
+    valid=1
+    ( cd "$here/$dir" && ./run >run.out 2>&1 ) || valid=0
     if [ -x "$here/$dir/check_refusals.sh" ]; then
-        ( cd "$here/$dir" && ./check_refusals.sh >>run.out 2>&1 ) || ok=0
+        ( cd "$here/$dir" && ./check_refusals.sh >>run.out 2>&1 ) || valid=0
     fi
 
-    if [ "$ok" -eq 1 ]; then
+    if [ "$valid" -eq 1 ]; then
         echo "    $label $dots PASS"
     else
         echo "    $label $dots FAIL"
@@ -104,7 +106,7 @@ fi
 out="$here/level-9-statement/run.out"
 marks=$(grep -c 'PARTITIONED_PDE_RESULT =' "$out")
 values=$(grep -o 'PARTITIONED_PDE_RESULT =.*' "$out" | sed 's/.*PARTITIONED_PDE_RESULT =//')
-if ! marker_ok "$marks" 6 "$values"; then
+if ! marker_valid "$marks" 6 "$values"; then
     echo "    RUNNER FAILURE: the statement did not report one solution field"
     exit 1
 fi

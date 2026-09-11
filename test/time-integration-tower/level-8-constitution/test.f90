@@ -60,7 +60,7 @@
 program time_level_8
 
   use iso_fortran_env       , only : dp => REAL64
-  use time_assert           , only : report, verdict
+  use time_assert           , only : report, assert_all
   use time_assert           , only : NQ, NT, NE, NSTEPS, TOL, TOL_MARCH
   use time_assert           , only : T0, T4, H_STEP, Q0
   use time_assert           , only : FE_TRAJECTORY, BE_TRAJECTORY, &
@@ -120,7 +120,7 @@ program time_level_8
   call check_backward_march(nfail)
   call check_bdf2_march(nfail)
 
-  call verdict(nfail, "level 8")
+  call assert_all(nfail, "level 8")
 
 contains
 
@@ -137,7 +137,7 @@ contains
     type(bipartite_digraph)     :: incidence
     type(stored_directed_graph) :: chain
     integer            :: i
-    logical            :: ok
+    logical            :: satisfied
 
     incidence = march_incidence(NSTEPS, 1)
     chain     = incidence % projection(SECOND_PART)
@@ -150,13 +150,13 @@ contains
     ! Each control step joins the instants A1 joins, read through the
     ! TIME carrier's own members rather than through the integers the
     ! chain happens to use.
-    ok = .true.
+    satisfied = .true.
     do i = 1, chain % num_edges()
-       ok = ok .and. (chain % edge_tail(i) .eq. i)
-       ok = ok .and. (chain % edge_head(i) .eq. i + 1)
-       ok = ok .and. a1 % has([sets % member_of(t, i), sets % member_of(t, i + 1)])
+       satisfied = satisfied .and. (chain % edge_tail(i) .eq. i)
+       satisfied = satisfied .and. (chain % edge_head(i) .eq. i + 1)
+       satisfied = satisfied .and. a1 % has([sets % member_of(t, i), sets % member_of(t, i + 1)])
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "and step i joins instant i to instant i+1 - exactly the " // &
          & "pairs A1 holds: THE DRIVER'S CONTROL CHAIN REALIZES THE " // &
          & "RELATIONAL TIME STRUCTURE, extensionally", nfail)
@@ -219,19 +219,19 @@ contains
     type(stored_field)           :: h
     real(dp), allocatable :: hv(:)
     integer               :: i
-    logical               :: ok
+    logical               :: satisfied
 
     one = backward_euler(decay, H_STEP)
     h   = step_sizes(e)
     call h % real_vector(hv)
 
-    ok = .true.
+    satisfied = .true.
     do i = 1, sets % num_members_of(e)
-       ok = ok .and. &
+       satisfied = satisfied .and. &
             & (abs(hv(sets % index_in(e, sets % member_of(e, i))) - one % h) &
             &  .lt. TOL)
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "h(e) = the step's scalar h at every step: the scalar is an " // &
          & "EXACT SPECIALIZATION of the uniform step field", nfail)
 
@@ -259,16 +259,16 @@ contains
     real(dp), allocatable :: state(:)
     type(graph)           :: d
     integer               :: n
-    logical               :: ok
+    logical               :: satisfied
 
     ! Every prefix from q0, so the whole trajectory is pinned rather
     ! than only its end.
-    ok = .true.
+    satisfied = .true.
     do n = 1, NSTEPS
        call march(MARCH_FORWARD, n, state, d)
-       ok = ok .and. (maxval(abs(state - FE_TRAJECTORY(:, n))) .lt. TOL)
+       satisfied = satisfied .and. (maxval(abs(state - FE_TRAJECTORY(:, n))) .lt. TOL)
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "forward euler marches [2,0] -> [1,1] -> [1/2,1] -> " // &
          & "[1/4,3/4] -> [1/8,1/2], every prefix pinned", nfail)
 
@@ -297,25 +297,25 @@ contains
 
     real(dp), allocatable :: state(:)
     type(graph)   :: d
-    real(dp)      :: worst
+    real(dp)      :: maximum_error
     integer       :: n
-    logical       :: ok
+    logical       :: satisfied
 
-    ok = .true.
-    worst = 0.0_dp
+    satisfied = .true.
+    maximum_error = 0.0_dp
     do n = 1, NSTEPS
        call march(MARCH_BACKWARD, n, state, d)
-       ok = ok .and. d % same_as(q)
-       worst = max(worst, maxval(abs(state - BE_TRAJECTORY(:, n))))
-       ok = ok .and. &
+       satisfied = satisfied .and. d % same_as(q)
+       maximum_error = max(maximum_error, maxval(abs(state - BE_TRAJECTORY(:, n))))
+       satisfied = satisfied .and. &
             & (maxval(abs(state - BE_TRAJECTORY(:, n))) .lt. TOL_MARCH)
     end do
 
-    call report(ok, &
+    call report(satisfied, &
          & "backward euler marches [2,0] -> [4/3,4/9] -> [8/9,16/27] " // &
          & "-> [16/27,16/27] -> [32/81,128/243]", nfail)
 
-    write(*,'(1x,a,es12.5)') "       worst backward-euler error : ", worst
+    write(*,'(1x,a,es12.5)') "       worst backward-euler error : ", maximum_error
 
   end subroutine check_backward_march
 
@@ -332,26 +332,26 @@ contains
 
     real(dp), allocatable :: state(:)
     type(graph)   :: d
-    real(dp)      :: worst
+    real(dp)      :: maximum_error
     integer       :: n
-    logical       :: ok
+    logical       :: satisfied
 
-    ok = .true.
-    worst = 0.0_dp
+    satisfied = .true.
+    maximum_error = 0.0_dp
     do n = 1, NSTEPS
        call march(MARCH_BDF2, n, state, d)
-       ok = ok .and. d % same_as(q)
-       worst = max(worst, maxval(abs(state - BDF2_TRAJECTORY(:, n))))
-       ok = ok .and. &
+       satisfied = satisfied .and. d % same_as(q)
+       maximum_error = max(maximum_error, maxval(abs(state - BDF2_TRAJECTORY(:, n))))
+       satisfied = satisfied .and. &
             & (maxval(abs(state - BDF2_TRAJECTORY(:, n))) .lt. TOL_MARCH)
     end do
 
-    call report(ok, &
+    call report(satisfied, &
          & "bdf-2 marches [2,0] -> [4/3,4/9] -> [5/6,47/72] -> " // &
          & "[1/2,2/3] -> [7/24,83/144], the first step backward as " // &
          & "the scheme requires", nfail)
 
-    write(*,'(1x,a,es12.5)') "       worst bdf-2 error          : ", worst
+    write(*,'(1x,a,es12.5)') "       worst bdf-2 error          : ", maximum_error
 
     call report(maxval(abs(BDF2_TRAJECTORY(:, 1) - &
          &                 BE_TRAJECTORY(:, 1))) .lt. TOL, &

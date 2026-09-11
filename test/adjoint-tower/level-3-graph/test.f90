@@ -31,7 +31,7 @@
 
 program adjoint_level_3
 
-  use adjoint_assert, only : report, verdict
+  use adjoint_assert, only : report, assert_all
   use adjoint_assert, only : VAR_P, VAR_U, VAR_V
   use adjoint_assert, only : TGT_R1, TGT_R2, TGT_F
   use graph_fractal        , only : graph
@@ -152,12 +152,12 @@ program adjoint_level_3
   g % branch(2) = known_branch(rcell(1))
 
   call check_ownership(nfail)
-  call check_roles_are_citizens(nfail)
+  call check_role_subobjects(nfail)
   call check_blocks_survive(nfail)
   call check_signature_closure(nfail)
   call check_graph_identity(nfail)
 
-  call verdict(nfail, "level 3")
+  call assert_all(nfail, "level 3")
 
 contains
 
@@ -176,12 +176,12 @@ contains
     call report(has_set(g, bnd, v) .and. has_set(g, bnd, t), &
          & "the two parents are its own, by identity", nfail)
 
-    call report(graph_holds_relation(g, bnd, dep), &
+    call report(graph_has_relation(g, bnd, dep), &
          & "the dependency source is owned", nfail)
-    call report(graph_holds_relation(g, bnd, jq) .and. &
-         &      graph_holds_relation(g, bnd, jp) .and. &
-         &      graph_holds_relation(g, bnd, fq) .and. &
-         &      graph_holds_relation(g, bnd, fp), &
+    call report(graph_has_relation(g, bnd, jq) .and. &
+         &      graph_has_relation(g, bnd, jp) .and. &
+         &      graph_has_relation(g, bnd, fq) .and. &
+         &      graph_has_relation(g, bnd, fp), &
          & "and so are all four derived blocks", nfail)
 
   end subroutine check_ownership
@@ -191,7 +191,7 @@ contains
   ! beside their parents, each by its own identity.
   !===================================================================!
 
-  subroutine check_roles_are_citizens(nfail)
+  subroutine check_role_subobjects(nfail)
 
     integer, intent(inout) :: nfail
 
@@ -203,7 +203,7 @@ contains
          &      .not. q_dom % same_as(y_dom), &
          & "Q and Y sit side by side, still not one another", nfail)
 
-  end subroutine check_roles_are_citizens
+  end subroutine check_role_subobjects
 
   !===================================================================!
   ! The blocks survive ownership unchanged: J_Q keeps its four
@@ -254,17 +254,17 @@ contains
     class(relation), pointer       :: rp
     type(graph) :: dom
     integer                        :: k, s
-    logical                        :: ok
+    logical                        :: satisfied
 
-    ok = .true.
+    satisfied = .true.
     do k = 1, num_relations(g)
        rp => relation_at(g, bnd, k)
        do s = 1, rp % arity()
           dom = rp % domain(s)
-          ok = ok .and. has_set(g, bnd, dom)
+          satisfied = satisfied .and. has_set(g, bnd, dom)
        end do
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "every slot of every owned relation resolves to an owned " // &
          & "carrier - parents and subobjects alike", nfail)
 
@@ -315,7 +315,7 @@ contains
   ! num_relations and relation_at, no convenience API.
   !===================================================================!
 
-  logical function graph_holds_relation(g, b, r)
+  logical function graph_has_relation(g, b, r)
 
     type(graph)             , intent(in) :: g
     type(relational_binding), intent(in) :: b
@@ -324,13 +324,13 @@ contains
     class(relation), pointer :: rp
     integer                  :: k
 
-    graph_holds_relation = .false.
+    graph_has_relation = .false.
     do k = 1, num_relations(g)
        rp => relation_at(g, b, k)
-       if (rp % same_as(r)) graph_holds_relation = .true.
+       if (rp % same_as(r)) graph_has_relation = .true.
     end do
 
-  end function graph_holds_relation
+  end function graph_has_relation
 
   !===================================================================!
   ! The inclusion I_S <= S x A: (s, s) for every member s of S, and

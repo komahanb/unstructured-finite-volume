@@ -4,15 +4,17 @@
 # and every refusal.
 set -e
 
-here="$(cd "$(dirname "$0")" && pwd)"
+suite_dir="$(cd "$(dirname "$0")" && pwd)"
 
-( cd "$here/../.." && ./build.sh >/dev/null )
+if [ "${UFVM_SKIP_LIBRARY_BUILD:-0}" != 1 ]; then
+    ( cd "$suite_dir/../.." && ./build.sh >/dev/null )
+fi
 
-F90="$(make -C "$here" -s print-f90)"
-FSTD="$(make -C "$here" -s print-std)"
+F90="$(make -C "$suite_dir" -s print-f90)"
+FSTD="$(make -C "$suite_dir" -s print-std)"
 
-make -C "$here" clean >/dev/null 2>&1 || true
-make -C "$here" >/dev/null
+make -C "$suite_dir" clean >/dev/null 2>&1 || true
+make -C "$suite_dir" >/dev/null
 
 #---------------------------------------------------------------------
 # Can Fortran prohibit assignment of a derived type from client code?
@@ -21,28 +23,28 @@ make -C "$here" >/dev/null
 #---------------------------------------------------------------------
 
 reject () {
-    if $F90 -std=$FSTD -fcoarray=single -Wall -pedantic -fsyntax-only "$1.f90" 2>probe.out; then
+    if $F90 -std=$FSTD -fcoarray=single -Wall -pedantic -fsyntax-only "$1.f90" 2>compiler.out; then
         echo " FAIL : $1 compiled; the reported constraint does not hold"
         exit 1
     fi
-    if grep -q "$2" probe.out; then
+    if grep -q "$2" compiler.out; then
         echo " PASS : $1 is rejected, for the reported reason"
     else
         echo " FAIL : $1 is rejected for a different reason"
-        cat probe.out; exit 1
+        cat compiler.out; exit 1
     fi
 }
 
 execute () {
-    if ! $F90 -std=$FSTD -fcoarray=single -Wall -pedantic "$1.f90" -o candidate 2>probe.out; then
-        echo " FAIL : $1 does not build"; cat probe.out; exit 1
+    if ! $F90 -std=$FSTD -fcoarray=single -Wall -pedantic "$1.f90" -o candidate 2>compiler.out; then
+        echo " FAIL : $1 does not build"; cat compiler.out; exit 1
     fi
     ./candidate
     echo " PASS : $1 admits the assignment it meant to prohibit"
 }
 
 echo " ASSIGNMENT-PROHIBITION CANDIDATES ($F90 -std=$FSTD)"
-cd "$here/fortran-assignment"
+cd "$suite_dir/fortran-assignment"
 rm -f ./*.mod ./*.o candidate
 
 execute coarray_component
@@ -53,14 +55,14 @@ reject  lock_component   "must have a codimension or be a subcomponent of a coar
 
 # The rule the refusal itself rests on: an INTENT(OUT) dummy of a
 # finalizable type is finalized before the body runs.
-if ! $F90 -std=$FSTD -fcoarray=single "intent_out_finalizes.f90" -o candidate 2>probe.out; then
-    echo " FAIL : intent_out_finalizes does not build"; cat probe.out; exit 1
+if ! $F90 -std=$FSTD -fcoarray=single "intent_out_finalizes.f90" -o candidate 2>compiler.out; then
+    echo " FAIL : intent_out_finalizes does not build"; cat compiler.out; exit 1
 fi
 ./candidate
 echo " PASS : intent_out_finalizes shows why the refusal takes INTENT(INOUT)"
 
-rm -f probe.out ./*.mod ./*.o candidate
-cd "$here"
+rm -f compiler.out ./*.mod ./*.o candidate
+cd "$suite_dir"
 echo ''
 
 #---------------------------------------------------------------------

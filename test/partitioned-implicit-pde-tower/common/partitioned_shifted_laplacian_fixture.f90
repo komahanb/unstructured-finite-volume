@@ -247,12 +247,12 @@ contains
   ! the values are unchanged.
   !===================================================================!
 
-  subroutine act_locally(local, part, q_part, answer)
+  subroutine act_locally(local, part, q_part, local_image)
 
     type(shifted_laplacian), intent(in)  :: local
     class(directed_graph)           , intent(in)  :: part
     class(field)     , intent(in)  :: q_part
-    class(field), allocatable, intent(out) :: answer
+    class(field), allocatable, intent(out) :: local_image
 
     type(stored_field)                     :: qf
     class(field), allocatable :: out
@@ -263,7 +263,7 @@ contains
     call qf % set_real_vector(v)
 
     call local % apply(part, local % bind([qf]), out)
-    allocate(answer, source=out)
+    allocate(local_image, source=out)
 
   end subroutine act_locally
 
@@ -274,7 +274,7 @@ contains
   ! value is placed by MEMBER.
   !===================================================================!
 
-  subroutine add_owned(asm, rel, part, answer, whole, sets, total)
+  subroutine add_owned(asm, rel, part, local_image, whole, sets, total)
 
     type(assembler)   , intent(in)    :: asm
 
@@ -283,20 +283,20 @@ contains
     type(partition_relation), intent(in) :: rel
 
     class(directed_graph)      , intent(in)    :: part
-    class(field), intent(in)    :: answer
+    class(field), intent(in)    :: local_image
     type(stored_directed_graph), intent(in)    :: whole
     type(set_store)   , intent(inout) :: sets
     real(dp)          , intent(inout) :: total(:)
 
-    class(field), allocatable :: home
+    class(field), allocatable :: assembled_image
     type(graph)                 :: dom
     real(dp), allocatable           :: v(:)
     integer , allocatable           :: mem(:)
     integer                         :: i
 
-    call asm % assemble_data(rel, part, answer, whole, sets, home)
-    dom = home % domain()
-    call home % real_vector(v)
+    call asm % assemble_data(rel, part, local_image, whole, sets, assembled_image)
+    dom = assembled_image % domain()
+    call assembled_image % real_vector(v)
 
     !----------------------------------------------------------------!
     ! The select type asked whether the assembled domain was a subset

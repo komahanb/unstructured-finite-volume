@@ -34,7 +34,9 @@
 
 module operation_minimization
 
+  use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
   use util_precision  , only : dp, half_digits
+  use util_norm, only : euclidean_norm
   use operation_action  , only : operation, contract
   use operation_action, only : binding, bound_value
   use operation_action, only : emit
@@ -60,6 +62,22 @@ module operation_minimization
 
   integer, parameter, public :: by_count = 1
   integer, parameter, public :: by_rate  = 2
+
+  integer, parameter, public :: SOLVE_NOT_STARTED = -1, SOLVE_CONTINUE = 0
+  integer, parameter, public :: SOLVE_CONVERGED = 1, SOLVE_EXHAUSTED = 2
+  integer, parameter, public :: SOLVE_STAGNATED = 3, SOLVE_NONFINITE = 4
+  integer, parameter, public :: SOLVE_DIVERGED = 5, SOLVE_SINGULAR = 6
+  integer, parameter, public :: SOLVE_BREAKDOWN = 7, SOLVE_INNER_FAILED = 8
+  integer, parameter, public :: SOLVE_EVALUATED = 9
+
+  type, public :: solve_result
+     real(dp) :: residual = 0.0_dp, initial_residual = 0.0_dp
+     integer :: iterations = 0, reason = SOLVE_NOT_STARTED
+   contains
+     procedure :: converged => result_converged
+     procedure :: failed => result_failed
+     procedure :: description => result_description
+  end type solve_result
 
   ! How many of the last imbalances a rate is fitted over. Three would
   ! leave one degree of freedom for the scatter and no more, so five is
@@ -155,31 +173,35 @@ module operation_minimization
      integer :: limit_kind = by_count
 
      ! The imbalance the iteration began at, and the last few
-     ! recorded. Written by note_imbalance and by nothing else.
-     real(dp), private :: began_at = 0.0_dp
-     real(dp), private :: recent(window) = 0.0_dp
-     integer , private :: noted = 0
+     ! recorded. Updated only by the residual-history procedures.
+     real(dp), private :: initial_residual = 0.0_dp
+     real(dp), private :: residual_history(window) = 0.0_dp
+     integer , private :: num_residual_samples = 0
 
      ! Whether any window has yet had a slope significantly below
      ! zero. An iteration that has never descended has not flattened
      ! either, whatever the slope over a window of its early iterations.
-     logical , private :: descended = .false.
+     logical , private :: residual_decreased = .false.
 
      ! false whenever the operator is stated: a cached block diagonal
      ! is valid only for the operator it was evaluated from
      logical :: diagonal_valid = .false.
 
+     type(solve_result), private :: final_result
+
    contains
 
-     procedure :: begin_imbalance
-     procedure :: note_imbalance
+     procedure :: initialize_residual_history
+     procedure :: record_residual_norm
      procedure :: converged
-     procedure :: flattened
+     procedure :: stagnated
      procedure :: diverging
-     procedure :: began
-     procedure, private :: fitted
+     procedure :: initial_residual_norm
+     procedure, private :: fit_log_residual
      procedure :: exhausted
-     procedure :: halted
+     procedure :: terminated
+     procedure :: record_result
+     procedure :: result => minimizer_result
 
      procedure :: state
      procedure :: evaluate
@@ -224,45 +246,47 @@ contains
   !===================================================================!
   ! The imbalance an iteration begins at, against which a relative
   ! tolerance is measured, and the last few recorded, from which a
-  ! rate is fitted. Written here and nowhere else: begin clears them,
-  ! and the first imbalance noted is the one the iteration began at.
+  ! rate is fitted. Initialization clears the history,
+  ! and the first recorded residual defines the relative tolerance.
   !===================================================================!
 
-  subroutine begin_imbalance(this)
+  subroutine initialize_residual_history(this)
 
     class(minimizer), intent(inout) :: this
 
-    this % began_at  = 0.0_dp
-    this % recent    = 0.0_dp
-    this % noted     = 0
-    this % descended = .false.
+    this % initial_residual     = 0.0_dp
+    this % residual_history     = 0.0_dp
+    this % num_residual_samples     = 0
+    this % residual_decreased   = .false.
+    this % final_result = solve_result()
 
-  end subroutine begin_imbalance
+  end subroutine initialize_residual_history
 
-  subroutine note_imbalance(this, imbalance)
+  subroutine record_residual_norm(this, imbalance)
 
     class(minimizer), intent(inout) :: this
     real(dp)        , intent(in)    :: imbalance
 
     real(dp) :: slope, error
-    logical  :: usable
+    logical  :: regression_defined
     integer  :: i
 
-    if (this % noted == 0 .and. this % began_at <= 0.0_dp) then
-       this % began_at = imbalance
+    if (this % num_residual_samples == 0) then
+       this % initial_residual = imbalance
     end if
 
     do i = 1, window - 1
-       this % recent(i) = this % recent(i + 1)
+       this % residual_history(i) = this % residual_history(i + 1)
     end do
-    this % recent(window) = imbalance
+    this % residual_history(window) = imbalance
 
-    this % noted = this % noted + 1
+    this % num_residual_samples = this % num_residual_samples + 1
 
-    call this % fitted(slope, error, usable)
-    if (usable .and. slope < -error) this % descended = .true.
+    if (.not. all(ieee_is_finite(this % residual_history))) return
+    call this % fit_log_residual(slope, error, regression_defined)
+    if (regression_defined .and. slope < -error) this % residual_decreased   = .true.
 
-  end subroutine note_imbalance
+  end subroutine record_residual_norm
 
   !===================================================================!
   ! Whether the imbalance meets the tolerance. Relative divides
@@ -270,16 +294,35 @@ contains
   ! at all. A criterion that is neither stops the program.
   !===================================================================!
 
-  logical function converged(this, imbalance) result(done)
+  logical function converged(this, imbalance) result(criterion_met)
 
     class(minimizer), intent(in) :: this
     real(dp)        , intent(in) :: imbalance
+    integer :: relative_exponent
 
+    criterion_met = .false.
+    if (.not. ieee_is_finite(imbalance) .or. .not. ieee_is_finite(this % initial_residual)) return
+    if (imbalance < 0.0_dp) return
+    if (.not. ieee_is_finite(this % tolerance)) return
+    if (this % tolerance < 0.0_dp) return
     select case (this % criterion)
     case (relative)
-       done = imbalance <= this % tolerance * max(this % began_at, tiny(1.0_dp))
+       if (imbalance == 0.0_dp) then
+          criterion_met = .true.
+          return
+       end if
+       if (this % initial_residual <= 0.0_dp .or. this % tolerance == 0.0_dp) return
+       ! Compare r <= tolerance*r0 without an underflowing product
+       ! or an overflowing ratio. The fractions lie in [1/2, 1).
+       relative_exponent = exponent(imbalance) - exponent(this % tolerance) - exponent(this % initial_residual)
+       if (relative_exponent <= -2) then
+          criterion_met = .true.
+       else if (relative_exponent <= 0) then
+          criterion_met = scale(fraction(imbalance), relative_exponent) <= &
+               & fraction(this % tolerance) * fraction(this % initial_residual)
+       end if
     case (absolute)
-       done = imbalance <= this % tolerance
+       criterion_met = imbalance <= this % tolerance
     case default
        error stop 'minimizer: a tolerance is measured relative or absolute'
     end select
@@ -295,17 +338,17 @@ contains
   ! the slope of a logarithm being dimensionless.
   !===================================================================!
 
-  logical function flattened(this) result(flat)
+  logical function stagnated(this) result(is_stagnating)
 
     class(minimizer), intent(in) :: this
 
     real(dp) :: slope, error
-    logical  :: usable
+    logical  :: regression_defined
 
-    call this % fitted(slope, error, usable)
-    flat = usable .and. this % descended .and. abs(slope) < error
+    call this % fit_log_residual(slope, error, regression_defined)
+    is_stagnating = regression_defined .and. this % residual_decreased .and. abs(slope) < error
 
-  end function flattened
+  end function stagnated
 
   !===================================================================!
   ! The slope of the logarithm of the last window of imbalances, and
@@ -314,25 +357,26 @@ contains
   ! being no logarithm of it.
   !===================================================================!
 
-  subroutine fitted(this, slope, error, usable)
+  subroutine fit_log_residual(this, slope, error, regression_defined)
 
     class(minimizer), intent(in)  :: this
     real(dp)        , intent(out) :: slope, error
-    logical         , intent(out) :: usable
+    logical         , intent(out) :: regression_defined
 
     real(dp) :: x(window), y(window), mx, my, sxx, sxy, scatter
     integer  :: i
 
     slope  = 0.0_dp
     error  = 0.0_dp
-    usable = .false.
+    regression_defined = .false.
 
-    if (this % noted < window) return
+    if (this % num_residual_samples < window) return
+    if (.not. all(ieee_is_finite(this % residual_history))) return
 
     do i = 1, window
-       if (this % recent(i) <= 0.0_dp) return
+       if (this % residual_history(i) <= 0.0_dp) return
        x(i) = real(i, dp)
-       y(i) = log(this % recent(i))
+       y(i) = log(this % residual_history(i))
     end do
 
     mx  = sum(x) / real(window, dp)
@@ -344,9 +388,9 @@ contains
     scatter = sum((y - (my + slope * (x - mx))) ** 2)
     error   = sqrt(scatter / real(window - 2, dp) / sxx)
 
-    usable = .true.
+    regression_defined = .true.
 
-  end subroutine fitted
+  end subroutine fit_log_residual
 
   !===================================================================!
   ! Whether the imbalance is diverging: above the imbalance the
@@ -358,50 +402,51 @@ contains
   ! limit named is the arithmetic's own.
   !===================================================================!
 
-  logical function diverging(this, imbalance) result(yes)
+  logical function diverging(this, imbalance) result(satisfied)
 
     class(minimizer), intent(in) :: this
     real(dp)        , intent(in) :: imbalance
 
     real(dp) :: slope, error, remaining
-    logical  :: usable
+    logical  :: regression_defined
 
-    yes = .false.
-    if (imbalance <= this % began_at .or. imbalance <= 0.0_dp) return
+    satisfied = .false.
+    if (.not. ieee_is_finite(imbalance) .or. .not. ieee_is_finite(this % initial_residual)) return
+    if (imbalance <= this % initial_residual .or. imbalance <= 0.0_dp) return
 
-    call this % fitted(slope, error, usable)
-    if (.not. usable .or. slope <= error) return
+    call this % fit_log_residual(slope, error, regression_defined)
+    if (.not. regression_defined .or. slope <= error) return
 
-    remaining = real(max(this % max_iterations - this % noted, 0), dp)
-    yes = log(imbalance) + (slope - error) * remaining > log(huge(1.0_dp))
+    remaining = real(max(this % max_iterations - this % num_residual_samples, 0), dp)
+    satisfied = log(imbalance) + (slope - error) * remaining > log(huge(1.0_dp))
 
   end function diverging
 
-  pure real(dp) function began(this) result(imbalance)
+  pure real(dp) function initial_residual_norm(this) result(imbalance)
 
     class(minimizer), intent(in) :: this
 
-    imbalance = this % began_at
+    imbalance = this % initial_residual
 
-  end function began
+  end function initial_residual_norm
 
   !===================================================================!
   ! Whether the iteration has reached its limit. A limit setting
   ! that is neither by_count nor by_rate stops the program.
   !===================================================================!
 
-  logical function exhausted(this, iteration) result(done)
+  logical function exhausted(this, iteration) result(criterion_met)
 
     class(minimizer), intent(in) :: this
     integer         , intent(in) :: iteration
 
-    done = iteration >= this % max_iterations
+    criterion_met = iteration >= this % max_iterations
 
     select case (this % limit_kind)
     case (by_count)
        continue
     case (by_rate)
-       done = done .or. this % flattened()
+       criterion_met = criterion_met .or. this % stagnated()
     case default
        error stop 'minimizer: an iteration limit is counted or taken from the rate'
     end select
@@ -417,23 +462,86 @@ contains
   ! belongs to the member.
   !===================================================================!
 
-  logical function halted(this, imbalance, iteration) result(stop_here)
+  logical function terminated(this, imbalance, iteration) result(is_terminated)
 
     class(minimizer), intent(inout) :: this
     real(dp)        , intent(in)    :: imbalance
     integer         , intent(in)    :: iteration
 
-    call this % note_imbalance(imbalance)
+    call this % record_residual_norm(imbalance)
+    call this % record_result(imbalance, iteration)
+    is_terminated = this % final_result % reason /= SOLVE_CONTINUE
 
-    stop_here = .true.
-    if (this % converged(imbalance)) return
-    if (imbalance /= imbalance) return
-    if (imbalance > huge(1.0_dp) / 2.0_dp) return
-    if (this % diverging(imbalance)) return
-    if (this % exhausted(iteration)) return
-    stop_here = .false.
+  end function terminated
 
-  end function halted
+  ! A result records the true residual and the number of completed
+  ! iterations. Recording it does not add a second convergence sample.
+  subroutine record_result(this, imbalance, iteration, reason)
+    class(minimizer), intent(inout) :: this
+    real(dp), intent(in) :: imbalance
+    integer, intent(in) :: iteration
+    integer, intent(in), optional :: reason
+    this % final_result % residual = imbalance
+    this % final_result % initial_residual = this % initial_residual
+    this % final_result % iterations = iteration
+    if (present(reason)) then
+       this % final_result % reason = reason
+    else if (.not. ieee_is_finite(imbalance)) then
+       this % final_result % reason = SOLVE_NONFINITE
+    else if (this % converged(imbalance)) then
+       this % final_result % reason = SOLVE_CONVERGED
+    else if (imbalance > huge(1.0_dp) / 2.0_dp) then
+       this % final_result % reason = SOLVE_DIVERGED
+    else if (this % diverging(imbalance)) then
+       this % final_result % reason = SOLVE_DIVERGED
+    else if (iteration >= this % max_iterations) then
+       this % final_result % reason = SOLVE_EXHAUSTED
+    else if (this % limit_kind == by_rate .and. this % stagnated()) then
+       this % final_result % reason = SOLVE_STAGNATED
+    else
+       this % final_result % reason = SOLVE_CONTINUE
+    end if
+    if (this % limit_kind /= by_count .and. this % limit_kind /= by_rate) then
+       error stop 'minimizer: an iteration limit is counted or taken from the rate'
+    end if
+  end subroutine record_result
+
+  pure function minimizer_result(this) result(outcome)
+    class(minimizer), intent(in) :: this
+    type(solve_result) :: outcome
+    outcome = this % final_result
+  end function minimizer_result
+
+  pure logical function result_converged(this) result(satisfied)
+    class(solve_result), intent(in) :: this
+    satisfied = this % reason == SOLVE_CONVERGED
+  end function result_converged
+
+  ! Exhaustion and stagnation can supply an approximate correction.
+  ! These reasons instead report a numerical failure of that correction.
+  pure logical function result_failed(this) result(satisfied)
+    class(solve_result), intent(in) :: this
+    satisfied = this % reason >= SOLVE_NONFINITE .and. this % reason <= SOLVE_INNER_FAILED
+  end function result_failed
+
+  pure function result_description(this) result(description)
+    class(solve_result), intent(in) :: this
+    character(len=:), allocatable :: description
+    select case (this % reason)
+    case (SOLVE_NOT_STARTED); description = 'not started'
+    case (SOLVE_CONTINUE); description = 'iteration in progress'
+    case (SOLVE_CONVERGED); description = 'converged'
+    case (SOLVE_EXHAUSTED); description = 'iteration limit reached'
+    case (SOLVE_STAGNATED); description = 'residual stagnated'
+    case (SOLVE_NONFINITE); description = 'nonfinite residual'
+    case (SOLVE_DIVERGED); description = 'residual diverged'
+    case (SOLVE_SINGULAR); description = 'singular matrix'
+    case (SOLVE_BREAKDOWN); description = 'linear iteration breakdown'
+    case (SOLVE_INNER_FAILED); description = 'inner solve failed'
+    case (SOLVE_EVALUATED); description = 'schedule evaluated'
+    case default; description = 'invalid solve result'
+    end select
+  end function result_description
 
   !===================================================================!
   ! Store the operation and the graph it reads. The affine part is
@@ -456,6 +564,7 @@ contains
     real(dp), allocatable :: zero(:)
     integer :: n
 
+    call this % initialize_residual_history()
     if (allocated(this % action)) deallocate(this % action)
     allocate(this % action, source=action)
     if (allocated(this % graph)) deallocate(this % graph)
@@ -613,9 +722,7 @@ contains
     class(minimizer), intent(in) :: this
     real(dp), intent(in) :: u(:)
 
-    ! the reduction's power is two by default, so the norm is the
-    ! euclidean length
-    length = sqrt(sum(u * u))
+    length = euclidean_norm(u)
 
   end function norm
 

@@ -89,7 +89,7 @@ module operation_expression
   use view_directed        , only : directed_graph
   use field_calculus       , only : field
   use util_derivative_terms, only : derivative_terms, mixed_partial, max_subset_width, integer_power
-  use util_derivative_terms, only : widened, partial
+  use util_derivative_terms, only : extend_directions, partial
 
   implicit none
 
@@ -707,7 +707,7 @@ contains
     ! the highest, whose partial is returned over the caller's
     n = nu % num_directions()
     if (this % varied > 0) n = n + 1
-    design = widened(nu, n)
+    design = extend_directions(nu, n)
     total = 0
     do f = 1, this % fields
        total = total + this % components_per_field(f)
@@ -722,7 +722,7 @@ contains
           if (f == this % varied) call stored(at) % set_direction(n, 1.0_dp)
        else
           do j = 0, per - 1
-             stored(at + j) = widened(q(given + j), n)
+             stored(at + j) = extend_directions(q(given + j), n)
           end do
           given = given + per
        end if
@@ -1090,11 +1090,11 @@ contains
 
   end function degree_of_field
 
-  pure logical function expression_declared(this) result(yes)
+  pure logical function expression_declared(this) result(is_declared)
 
     class(expression), intent(in) :: this
 
-    yes = allocated(this % degrees)
+    is_declared = allocated(this % degrees)
 
   end function expression_declared
 

@@ -10,7 +10,7 @@
 !     cell      branch(1) = KNOWN -> element
 !               branch(2) = the rest, again a sequence branch
 !
-! The kernel is unchanged and knows none of these words.
+! The kernel is unchanged and defines none of these sequence operations.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -34,16 +34,16 @@ program test
 
   empty_block: block
 
-    type(graph), target :: holder, stranger
+    type(graph), target :: container, nonmember
 
-    call holder % declare(); call stranger % declare()
-    holder % branch(1) = null_branch()
+    call container % declare(); call nonmember % declare()
+    container % branch(1) = null_branch()
 
     call check('empty: NULL is the empty sequence, not a missing one', &
-         & sequence_defined(holder % branch(1)))
-    call check('empty: size = 0', sequence_num_elements(holder % branch(1)) .eq. 0)
+         & sequence_defined(container % branch(1)))
+    call check('empty: size = 0', sequence_num_elements(container % branch(1)) .eq. 0)
     call check('empty: contains nothing', &
-         & .not. sequence_has(holder % branch(1), stranger))
+         & .not. sequence_has(container % branch(1), nonmember))
 
   end block empty_block
 
@@ -53,44 +53,44 @@ program test
 
   lengths_block: block
 
-    type(graph), target  :: holder
+    type(graph), target  :: container
     type(graph), target  :: cell(5), elem(5)
     type(graph), pointer :: e
     integer              :: i
-    logical              :: ok
+    logical              :: satisfied
 
-    call holder % declare()
+    call container % declare()
     do i = 1, 5
        call cell(i) % declare(); call elem(i) % declare()
     end do
 
-    call wire(cell, elem, 1, .true.)
-    holder % branch(1) = known_branch(cell(1))
-    e => sequence_element(holder % branch(1), 1)
+    call construct_sequence(cell, elem, 1, .true.)
+    container % branch(1) = known_branch(cell(1))
+    e => sequence_element(container % branch(1), 1)
     call check('singleton: size = 1, element(1) is the element', &
-         & sequence_num_elements(holder % branch(1)) .eq. 1 .and. e % same_as(elem(1)))
+         & sequence_num_elements(container % branch(1)) .eq. 1 .and. e % same_as(elem(1)))
 
-    call wire(cell, elem, 2, .true.)
-    holder % branch(1) = known_branch(cell(1))
-    e => sequence_element(holder % branch(1), 2)
+    call construct_sequence(cell, elem, 2, .true.)
+    container % branch(1) = known_branch(cell(1))
+    e => sequence_element(container % branch(1), 2)
     call check('length 2: size = 2, element(2) is the second element', &
-         & sequence_num_elements(holder % branch(1)) .eq. 2 .and. e % same_as(elem(2)))
+         & sequence_num_elements(container % branch(1)) .eq. 2 .and. e % same_as(elem(2)))
 
-    call wire(cell, elem, 5, .true.)
-    holder % branch(1) = known_branch(cell(1))
-    call check('length n: size = 5', sequence_num_elements(holder % branch(1)) .eq. 5)
+    call construct_sequence(cell, elem, 5, .true.)
+    container % branch(1) = known_branch(cell(1))
+    call check('length n: size = 5', sequence_num_elements(container % branch(1)) .eq. 5)
 
-    ok = .true.
+    satisfied = .true.
     do i = 1, 5
-       e => sequence_element(holder % branch(1), i)
-       ok = ok .and. e % same_as(elem(i))
+       e => sequence_element(container % branch(1), i)
+       satisfied = satisfied .and. e % same_as(elem(i))
     end do
-    call check('length n: element(k) is the k-th element, k = 1..5', ok)
+    call check('length n: element(k) is the k-th element, k = 1..5', satisfied)
 
-    call check('length n: membership holds for a member', &
-         & sequence_has(holder % branch(1), elem(3)))
+    call check('length n: membership is true for a member', &
+         & sequence_has(container % branch(1), elem(3)))
     call check('length n: and fails for a non-member', &
-         & .not. sequence_has(holder % branch(1), holder))
+         & .not. sequence_has(container % branch(1), container))
 
   end block lengths_block
 
@@ -101,50 +101,50 @@ program test
 
   unknown_holder_block: block
 
-    type(graph), target :: holder
+    type(graph), target :: container
 
-    call holder % declare()
-    holder % branch(1) = unknown_branch()
+    call container % declare()
+    container % branch(1) = unknown_branch()
 
     call check('unknown holder: the extent is not defined', &
-         & .not. sequence_defined(holder % branch(1)))
+         & .not. sequence_defined(container % branch(1)))
     call check('unknown holder: UNKNOWN is not NULL', &
-         & holder % branch(1) % status() .ne. BRANCH_NULL .and. &
-         & holder % branch(1) % status() .eq. BRANCH_UNKNOWN)
+         & container % branch(1) % status() .ne. BRANCH_NULL .and. &
+         & container % branch(1) % status() .eq. BRANCH_UNKNOWN)
 
   end block unknown_holder_block
 
   !===================================================================!
   ! An UNKNOWN tail. The known prefix is still readable: only an
-  ! answer that depends on the unknown part is refused.
+  ! result that depends on the unknown part is refused.
   !===================================================================!
 
   unknown_tail_block: block
 
-    type(graph), target  :: holder
+    type(graph), target  :: container
     type(graph), target  :: cell(3), elem(3)
     type(graph), pointer :: e
     integer              :: i
 
-    call holder % declare()
+    call container % declare()
     do i = 1, 3
        call cell(i) % declare(); call elem(i) % declare()
     end do
 
-    call wire(cell, elem, 3, .false.)          ! last tail is UNKNOWN
-    holder % branch(1) = known_branch(cell(1))
+    call construct_sequence(cell, elem, 3, .false.)          ! last tail is UNKNOWN
+    container % branch(1) = known_branch(cell(1))
 
     call check('unknown tail: the extent is not defined', &
-         & .not. sequence_defined(holder % branch(1)))
+         & .not. sequence_defined(container % branch(1)))
 
-    e => sequence_element(holder % branch(1), 1)
-    call check('unknown tail: element(1) is still answered', e % same_as(elem(1)))
-    e => sequence_element(holder % branch(1), 3)
+    e => sequence_element(container % branch(1), 1)
+    call check('unknown tail: element(1) is still defined', e % same_as(elem(1)))
+    e => sequence_element(container % branch(1), 3)
     call check('unknown tail: so is element(3), the last known one', &
          & e % same_as(elem(3)))
 
-    call check('unknown tail: membership holds for a member of the prefix', &
-         & sequence_has(holder % branch(1), elem(2)))
+    call check('unknown tail: membership is true for a member of the prefix', &
+         & sequence_has(container % branch(1), elem(2)))
 
   end block unknown_tail_block
 
@@ -166,7 +166,7 @@ contains
   ! end in NULL; open ones end in UNKNOWN.
   !===================================================================!
 
-  subroutine wire(cell, elem, n, closed)
+  subroutine construct_sequence(cell, elem, n, closed)
 
     type(graph), target, intent(inout) :: cell(:)
     type(graph), target, intent(inout) :: elem(:)
@@ -186,14 +186,14 @@ contains
        end if
     end do
 
-  end subroutine wire
+  end subroutine construct_sequence
 
-  subroutine check(label, ok)
+  subroutine check(label, satisfied)
 
     character(len=*), intent(in) :: label
-    logical         , intent(in) :: ok
+    logical         , intent(in) :: satisfied
 
-    if (ok) then
+    if (satisfied) then
        print *, ' PASS : ', label
     else
        print *, ' FAIL : ', label

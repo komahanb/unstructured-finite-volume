@@ -42,7 +42,7 @@ program derivative_level_8_refusal
   type(stored_relation) :: flow, lame
   integer               :: table(3, 6), short(3, 5)
   real(dp)              :: vals(4), dots(4), zz
-  logical               :: got(4), dgot(4)
+  logical               :: value_defined(4), derivative_defined(4)
   integer               :: found
   character(len=32)     :: which
   type(set_map)     :: sets
@@ -92,16 +92,16 @@ program derivative_level_8_refusal
      flow = stored_relation('flow', [o, v, p], table, sets)
      ! The wrong order, on purpose: sum before product.
      call primal_execution(flow, v, sets, x_dom, [3.0_dp, 2.0_dp], c, &
-          & [OP_SUM, OP_PRODUCT], vals, got)
+          & [OP_SUM, OP_PRODUCT], vals, value_defined)
      write(*,*) 'a starved operation computed', vals
 
   case ('tangent-starvation')
      flow = stored_relation('flow', [o, v, p], table, sets)
      call primal_execution(flow, v, sets, x_dom, [3.0_dp, 2.0_dp], c, &
-          & [OP_PRODUCT, OP_SUM], vals, got)
+          & [OP_PRODUCT, OP_SUM], vals, value_defined)
      ! Primal is honest; the tangent order is not.
      call tangent_action(flow, v, sets, x_dom, [1.0_dp, 0.0_dp], c, &
-          & [OP_SUM, OP_PRODUCT], vals, dots, dgot)
+          & [OP_SUM, OP_PRODUCT], vals, dots, derivative_defined)
      write(*,*) 'a starved tangent computed', dots
 
   case default

@@ -81,3 +81,7 @@ application/.build/
 application/.build_quad/
 application/quad/
 application/spatio_temporal
+
+# Python source checks
+__pycache__/
+*.py[cod]

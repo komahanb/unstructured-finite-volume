@@ -40,7 +40,7 @@
 
 program time_level_2
 
-  use time_assert           , only : report, verdict
+  use time_assert           , only : report, assert_all
   use time_assert           , only : NT
   use time_assert           , only : T0, T1, T2, T3, T4
   use graph_fractal        , only : graph
@@ -77,7 +77,7 @@ program time_level_2
   call check_the_two_differ(nfail)
   call check_reach_is_not_a_scheme(nfail)
 
-  call verdict(nfail, "level 2")
+  call assert_all(nfail, "level 2")
 
 contains
 
@@ -91,17 +91,17 @@ contains
     integer, intent(inout) :: nfail
 
     type(graph) :: d
-    logical                        :: ok
+    logical                        :: satisfied
 
     d = a1 % domain(1)
     call report(d % same_as(t), "A1 runs from the instants", nfail)
     d = a1 % domain(2)
     call report(d % same_as(t), "back into the instants", nfail)
 
-    ok = a1 % num_tuples() .eq. 4
-    ok = ok .and. a1 % has([T0, T1]) .and. a1 % has([T1, T2])
-    ok = ok .and. a1 % has([T2, T3]) .and. a1 % has([T3, T4])
-    call report(ok, &
+    satisfied = a1 % num_tuples() .eq. 4
+    satisfied = satisfied .and. a1 % has([T0, T1]) .and. a1 % has([T1, T2])
+    satisfied = satisfied .and. a1 % has([T2, T3]) .and. a1 % has([T3, T4])
+    call report(satisfied, &
          & "A1 = { t0->t1, t1->t2, t2->t3, t3->t4 } - derived " // &
          & "through the steps, never written", nfail)
 
@@ -121,17 +121,17 @@ contains
     integer, intent(inout) :: nfail
 
     type(graph) :: d
-    logical                        :: ok
+    logical                        :: satisfied
 
     d = a2 % domain(1)
     call report(d % same_as(t), "A2 runs from the instants too", nfail)
     d = a2 % domain(2)
     call report(d % same_as(t), "and back into the same instants", nfail)
 
-    ok = a2 % num_tuples() .eq. 3
-    ok = ok .and. a2 % has([T0, T2]) .and. a2 % has([T1, T3])
-    ok = ok .and. a2 % has([T2, T4])
-    call report(ok, &
+    satisfied = a2 % num_tuples() .eq. 3
+    satisfied = satisfied .and. a2 % has([T0, T2]) .and. a2 % has([T1, T3])
+    satisfied = satisfied .and. a2 % has([T2, T4])
+    call report(satisfied, &
          & "A2 = { t0->t2, t1->t3, t2->t4 } - three facts, not " // &
          & "four: two steps do not fit from t3", nfail)
 
@@ -175,7 +175,7 @@ contains
     integer, intent(inout) :: nfail
 
     integer :: i, m, reached
-    logical :: ok
+    logical :: satisfied
 
     call report(.not. a2 % has([T0, T3]), &
          & "A2 does NOT relate t0 to t3: two-step reach lands on " // &
@@ -188,13 +188,13 @@ contains
     ! Every instant reaches at most one instant under either
     ! relation: these are chains, and reach along a chain is a
     ! partial function.
-    ok = .true.
+    satisfied = .true.
     do i = 1, sets % num_members_of(t)
        m = sets % member_of(t, i)
        reached = count_images(a2, m)
-       ok = ok .and. (reached .le. 1)
+       satisfied = satisfied .and. (reached .le. 1)
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "and each instant reaches at most one other under A2 - " // &
          & "structure, with no coefficient anywhere in it", nfail)
 

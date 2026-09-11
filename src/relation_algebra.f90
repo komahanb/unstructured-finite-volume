@@ -91,7 +91,7 @@ contains
   !===================================================================!
 
   type(stored_relation) function restrict_slot(r, slot_index, allowed, &
-       & sets, inclusions) result(narrowed)
+       & sets, inclusions) result(restricted)
 
     class(relation)    , intent(in) :: r
     integer            , intent(in) :: slot_index
@@ -101,7 +101,7 @@ contains
 
     type(graph), allocatable :: domains(:)
     type(graph)              :: d
-    integer, allocatable         :: table(:,:), kept(:,:)
+    integer, allocatable         :: table(:,:), restricted_tuples(:,:)
     integer                      :: k, j, n
 
     if (slot_index < 1 .or. slot_index > r % arity()) then
@@ -126,17 +126,17 @@ contains
     end do
 
     call r % tuples(table)
-    allocate(kept(size(table, 1), size(table, 2)))
+    allocate(restricted_tuples(size(table, 1), size(table, 2)))
     n = 0
     do j = 1, size(table, 2)
        if (sets % has(allowed, table(slot_index, j))) then
           n = n + 1
-          kept(:, n) = table(:, j)
+          restricted_tuples(:, n) = table(:, j)
        end if
     end do
 
-    narrowed = stored_relation(r % name() // ' restricted', &
-         &                     domains, kept(:, 1:n), sets)
+    restricted = stored_relation(r % name() // ' restricted', &
+         &                     domains, restricted_tuples(:, 1:n), sets)
 
   end function restrict_slot
 

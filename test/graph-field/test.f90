@@ -1,7 +1,7 @@
 !=====================================================================!
 ! The field suite: the laws of the one field on the one domain kind
-! (level 5). A field lives on a set graph - ambient, carved,
-! nested, or empty - stores by domain enumeration, and carries its
+! (level 5). A field is defined on a set graph - ambient, restricted,
+! nested, or empty - stores by domain enumeration, and stores its
 ! domain's identity wherever it is copied.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
@@ -19,7 +19,7 @@ program test_graph_field
 
   implicit none
 
-  type(graph)         :: cells, walls, hot, none
+  type(graph)         :: cells, subset, nested_subset, none
   type(set_map)       :: sets
   type(inclusion_map) :: inclusions
   type(stored_field)         :: q, w, h, z, copy
@@ -36,13 +36,13 @@ program test_graph_field
   call cells % declare()
   call sets % bind(cells, counted_set_representation(6))
 
-  call walls % declare()
-  call sets       % bind(walls, listed_set_representation([5, 2, 6]))
-  call inclusions % include_in(walls, cells)
+  call subset % declare()
+  call sets       % bind(subset, listed_set_representation([5, 2, 6]))
+  call inclusions % include_in(subset, cells)
 
-  call hot % declare()
-  call sets       % bind(hot, listed_set_representation([6, 2]))
-  call inclusions % include_in(hot, walls)
+  call nested_subset % declare()
+  call sets       % bind(nested_subset, listed_set_representation([6, 2]))
+  call inclusions % include_in(nested_subset, subset)
 
   call none % declare()
   call sets       % bind(none, listed_set_representation([integer ::]))
@@ -59,14 +59,14 @@ program test_graph_field
   call report(abs(v((4 - 1) * 2 + 2) - 8.0_dp) < 1.0d-14, &
        & "values interleave at (entry-1)*num_components + component", nfail)
 
-  w = stored_field('w', walls, 3)
+  w = stored_field('w', subset, 3)
   call w % set_real_vector([50.0_dp, 20.0_dp, 60.0_dp])
   call w % real_vector(v)
-  call report(abs(v(sets % index_in(walls, 2)) - 20.0_dp) < 1.0d-14 .and. &
+  call report(abs(v(sets % index_in(subset, 2)) - 20.0_dp) < 1.0d-14 .and. &
        &      abs(v(1) - 50.0_dp) < 1.0d-14, &
        & "a subset field stores by declaration, not by member value", nfail)
 
-  h = stored_field('h', hot, 2)
+  h = stored_field('h', nested_subset, 2)
   call h % set_real_vector([600.0_dp, 200.0_dp])
   dom = h % domain()
   call report(declared_subobject(dom, cells, inclusions), &
@@ -79,8 +79,8 @@ program test_graph_field
 
   copy = w
   dom = copy % domain()
-  call report(dom % same_as(walls), &
-       & "a copy carries its domain's identity along", nfail)
+  call report(dom % same_as(subset), &
+       & "a copy preserves its domain's identity", nfail)
 
   write(*,'(1x,a)') "============================================="
   if (nfail .eq. 0) then
@@ -91,11 +91,11 @@ program test_graph_field
 
 contains
 
-  subroutine report(ok, label, nfail)
-    logical, intent(in) :: ok
+  subroutine report(satisfied, label, nfail)
+    logical, intent(in) :: satisfied
     character(len=*), intent(in) :: label
     integer, intent(inout) :: nfail
-    if (ok) then
+    if (satisfied) then
        write(*,'(1x,a,a)') "PASS : ", label
     else
        write(*,'(1x,a,a)') "FAIL : ", label

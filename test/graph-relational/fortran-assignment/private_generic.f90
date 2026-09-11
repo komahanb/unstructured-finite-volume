@@ -4,7 +4,7 @@
 ! Outside the module the binding is inaccessible, so intrinsic
 ! assignment substitutes for it - silently, with no diagnostic. For a
 ! type whose rows hold pointers that is a shallow copy and a double
-! free: worse than no mechanism at all.
+! free: the mechanism does not protect the target lifetime.
 !=====================================================================!
 
 module private_generic_m

@@ -46,7 +46,7 @@ program adjoint_level_7_refusal
   type(opaque_adjoint)            :: adjoint_eq
   type(gmres)                     :: solver
   type(stored_field)                     :: wrong, state
-  class(field), allocatable :: answer
+  class(field), allocatable :: image
   character(len=32)               :: which
   type(set_map)     :: sets
   type(inclusion_map)     :: inclusions
@@ -78,7 +78,7 @@ program adjoint_level_7_refusal
      call solver % state(primal_eq, host, q_dom, sets % num_members_of(q_dom))
      wrong = stored_field('rhs on the wrong domain', q_dom, sets % num_members_of(q_dom))
      call wrong % set_real_vector([8.0_dp, 22.0_dp])
-     call solver % apply(host, solver % bind([wrong]), answer)
+     call solver % apply(host, solver % bind([wrong]), image)
      write(*,*) 'a right-hand side on Q was accepted by a Y-residual solver'
 
   case ('adjoint-rhs-on-Y')
@@ -86,19 +86,19 @@ program adjoint_level_7_refusal
      call solver % state(adjoint_eq, host, y_dom, sets % num_members_of(y_dom))
      wrong = stored_field('rhs on the wrong domain', y_dom, sets % num_members_of(y_dom))
      call wrong % set_real_vector([1.0_dp, 2.0_dp])
-     call solver % apply(host, solver % bind([wrong]), answer)
+     call solver % apply(host, solver % bind([wrong]), image)
      write(*,*) 'a right-hand side on Y was accepted by a Q-residual solver'
 
   case ('primal-state-on-Y')
      state = stored_field('state on the wrong domain', y_dom, sets % num_members_of(y_dom))
      call state % set_real_vector([2.0_dp, 4.0_dp])
-     call primal_eq % apply(host, primal_eq % bind([state]), answer)
+     call primal_eq % apply(host, primal_eq % bind([state]), image)
      write(*,*) 'the primal equation read a state on Y'
 
   case ('adjoint-covector-on-Q')
      state = stored_field('covector on the wrong domain', q_dom, sets % num_members_of(q_dom))
      call state % set_real_vector([-0.4_dp, 0.6_dp])
-     call adjoint_eq % apply(host, adjoint_eq % bind([state]), answer)
+     call adjoint_eq % apply(host, adjoint_eq % bind([state]), image)
      write(*,*) 'the adjoint equation read a covector on Q'
 
   case default

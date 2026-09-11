@@ -28,7 +28,8 @@
 module operation_gmres
 
   use util_precision  , only : dp
-  use operation_minimization, only : minimizer, state
+  use operation_minimization, only : minimizer, state, solve_result, SOLVE_BREAKDOWN, SOLVE_INNER_FAILED, SOLVE_STAGNATED
+  use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
   use util_tally, only : tally_record, linear_solves
   use view_directed, only : directed_graph
   use view_directed_stored, only : stored_directed_graph
@@ -141,20 +142,26 @@ contains
   ! when none is stored.
   !===================================================================!
 
-  subroutine preconditioned(this, v, z)
+  subroutine preconditioned(this, v, z, direction_admissible)
 
     class(gmres), intent(inout) :: this
     real(dp)    , intent(in)    :: v(:)
     real(dp), allocatable, intent(out) :: z(:)
+    logical, intent(out) :: direction_admissible
 
     real(dp) :: reduced
+    type(solve_result) :: outcome
 
+    direction_admissible = .true.
     if (.not. allocated(this % preconditioner)) then
        z = v
+       direction_admissible = all(ieee_is_finite(z))
        return
     end if
     allocate(z(size(v)), source=0.0_dp)
     call this % preconditioner % solve(v, z, reduced)
+    outcome = this % preconditioner % result()
+    direction_admissible = .not. outcome % failed() .and. ieee_is_finite(reduced) .and. all(ieee_is_finite(z))
 
   end subroutine preconditioned
 
@@ -167,34 +174,48 @@ contains
 
     real(dp), allocatable :: basis(:,:), h(:,:), cs(:), sn(:), s(:)
     real(dp), allocatable :: r(:), w(:), y(:), z(:)
-    real(dp) :: beta, hik, radius, subdiag
+    real(dp) :: beta, hik, radius, subdiag, unpreconditioned
     integer :: n, m, outer, i, j, k
+    logical :: direction_admissible, breakdown, invariant
 
     call tally_record(linear_solves)
 
     n = size(x)
-    m = max(this % restart, 1)
+    m = min(max(this % restart, 1), n)
 
     allocate(basis(n, m + 1), h(m + 1, m), cs(m), sn(m), s(m + 1))
 
-    call this % begin_imbalance()
+    call this % initialize_residual_history()
+    call this % imbalance(rhs, x, r)
+    achieved = this % norm(r)
+    if (this % terminated(achieved, 0)) return
 
     do outer = 1, this % max_iterations
 
-       call this % imbalance(rhs, x, r)
-       beta = this % norm(r)
-
-       achieved = beta
-       if (this % halted(achieved, outer)) return
-
        ! the basis begins from the preconditioned residual
-       call preconditioned(this, r, z)
+       unpreconditioned = achieved
+       call preconditioned(this, r, z, direction_admissible)
+       if (.not. direction_admissible) then
+          call this % record_result(achieved, outer - 1, SOLVE_INNER_FAILED)
+          return
+       end if
        beta = this % norm(z)
+       if (.not. ieee_is_finite(beta)) then
+          call this % record_result(achieved, outer - 1, SOLVE_INNER_FAILED)
+          return
+       end if
+       if (beta <= tiny(1.0_dp)) then
+          call this % record_result(achieved, outer - 1, SOLVE_BREAKDOWN)
+          return
+       end if
        basis = 0.0_dp
        h  = 0.0_dp
        s  = 0.0_dp
        s(1) = beta
        basis(:, 1) = z / beta
+       breakdown = .false.
+       invariant = .false.
+       k = 0
 
        do j = 1, m
 
@@ -203,13 +224,19 @@ contains
           ! rotations overwrite its entry, and both the next basis
           ! vector and the breakdown test need the unrotated value.
           call this % matvec(basis(:, j), z)
-          call preconditioned(this, z, w)
+          call preconditioned(this, z, w, direction_admissible)
+          if (.not. direction_admissible) then
+             call this % record_result(unpreconditioned, outer - 1, SOLVE_INNER_FAILED)
+             achieved = unpreconditioned
+             return
+          end if
           do i = 1, j
              h(i, j) = this % inner_product(w, basis(:, i))
              w = w - h(i, j) * basis(:, i)
           end do
           subdiag     = this % norm(w)
           h(j + 1, j) = subdiag
+          invariant = subdiag <= tiny(1.0_dp) .or. j == n
 
           if (j < m .and. subdiag > tiny(1.0_dp)) then
              basis(:, j + 1) = w / subdiag
@@ -222,9 +249,10 @@ contains
              h(i, j)     = hik
           end do
 
-          radius = sqrt(h(j, j)**2 + h(j + 1, j)**2)
-          if (radius < tiny(1.0_dp)) then
-             k = j
+          radius = hypot(h(j, j), h(j + 1, j))
+          if (radius <= tiny(1.0_dp)) then
+             k = j - 1
+             breakdown = .true.
              exit
           end if
           cs(j) = h(j, j) / radius
@@ -236,9 +264,12 @@ contains
           s(j)     =  cs(j) * s(j)
 
           k = j
-          achieved = abs(s(j + 1))
+          ! This estimate selects when to form a candidate. Scale its
+          ! reduction by the true residual at the start of this restart;
+          ! its acceptance below always measures rhs - A x directly.
+          achieved = (abs(s(j + 1)) / beta) * unpreconditioned
           if (this % converged(achieved)) exit
-          if (subdiag < tiny(1.0_dp)) exit
+          if (subdiag <= tiny(1.0_dp)) exit
 
        end do
 
@@ -256,9 +287,20 @@ contains
        end do
        deallocate(y)
 
-       if (this % converged(achieved)) then
-          call this % imbalance(rhs, x, r)
-          achieved = this % norm(r)
+       call this % imbalance(rhs, x, r)
+       achieved = this % norm(r)
+       if (breakdown .and. .not. this % converged(achieved)) then
+          call this % record_residual_norm(achieved)
+          call this % record_result(achieved, outer, SOLVE_BREAKDOWN)
+          return
+       end if
+       if (this % terminated(achieved, outer)) return
+       ! An invariant Krylov space has no further direction to add.
+       ! A discrepancy in its true residual (for example, a numerical
+       ! directional difference) is reported as stagnation, not as a
+       ! converged solve. An outer minimizer may use the finite step.
+       if (invariant) then
+          call this % record_result(achieved, outer, SOLVE_STAGNATED)
           return
        end if
 

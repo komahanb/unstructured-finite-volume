@@ -43,7 +43,8 @@ module operation_multigrid
   use view_directed, only : directed_graph
   use view_directed_stored, only : stored_directed_graph
   use operation_stencil, only : stencil, combine_triples
-  use operation_minimization , only : minimizer, state
+  use operation_minimization , only : minimizer, state, solve_result, SOLVE_INNER_FAILED
+  use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
   use operation_action       , only : operation
   use graph_fractal          , only : graph
   use field_stored           , only : stored_field
@@ -112,14 +113,14 @@ contains
     class(directed_graph), intent(in), optional :: coupling
     type(stored_field)   , intent(in), optional :: stored_inputs(:)
 
-    integer, allocatable :: kept(:)
+    integer, allocatable :: aggregate_labels(:)
 
     call state(this, action, context, unknown_domain, num_unknowns, &
          & num_components, coupling, stored_inputs)
 
     if (allocated(this % aggregates)) then
-       kept = this % aggregates
-       call this % setup(kept)
+       aggregate_labels = this % aggregates
+       call this % setup(aggregate_labels)
     end if
 
   end subroutine multigrid_state
@@ -233,14 +234,14 @@ contains
 
     integer , allocatable :: crows(:), ccolumns(:)
     real(dp), allocatable :: cweights(:)
-    logical , allocatable :: kept(:)
+    logical , allocatable :: off_diagonal(:)
     integer :: v, nb
 
     nb = num_vertices / width
     call through_map(action, [((v - 1) / width + 1, v = 1, num_vertices)], nb, &
          & crows, ccolumns, cweights)
-    kept = crows /= ccolumns
-    coupling = stored_directed_graph(nb, tails=pack(ccolumns, kept), heads=pack(crows, kept))
+    off_diagonal = crows /= ccolumns
+    coupling = stored_directed_graph(nb, tails=pack(ccolumns, off_diagonal), heads=pack(crows, off_diagonal))
 
   end function read_through
 
@@ -254,21 +255,28 @@ contains
     real(dp), allocatable :: r(:), rc(:), ec(:), e(:)
     real(dp) :: smoothed, coarse_residual
     integer :: it
+    type(solve_result) :: outcome
 
     call tally_record(linear_solves)
 
     allocate(ec(this % nblocks))
 
-    call this % begin_imbalance()
+    call this % initialize_residual_history()
+    call this % imbalance(rhs, x, r)
+    achieved = this % norm(r)
+    if (this % terminated(achieved, 0)) return
 
     do it = 1, this % max_iterations
 
        call this % smoother % solve(rhs, x, smoothed)
 
        call this % imbalance(rhs, x, r)
-
-       achieved = this % norm(r)
-       if (this % halted(achieved, it)) return
+       outcome = this % smoother % result()
+       if (outcome % failed() .or. .not. ieee_is_finite(smoothed)) then
+          achieved = this % norm(r)
+          call this % record_result(achieved, it - 1, SOLVE_INNER_FAILED)
+          return
+       end if
 
        ! Restriction: the residual restricted onto the blocks;
        ! prolongation: the correction computed there, prolonged by the
@@ -276,15 +284,27 @@ contains
        call through_blocks(this % aggregates, this % nblocks, 1, r, rc, transposed=.false.)
        ec = 0.0_dp
        call this % coarse % solve(rc, ec, coarse_residual)
+       outcome = this % coarse % result()
+       if (outcome % failed() .or. .not. ieee_is_finite(coarse_residual)) then
+          achieved = this % norm(r)
+          call this % record_result(achieved, it - 1, SOLVE_INNER_FAILED)
+          return
+       end if
        call through_blocks(this % aggregates, this % nblocks, 1, e, ec, transposed=.true.)
        x = x + e
 
        call this % smoother % solve(rhs, x, smoothed)
 
-    end do
+       call this % imbalance(rhs, x, r)
+       achieved = this % norm(r)
+       outcome = this % smoother % result()
+       if (outcome % failed() .or. .not. ieee_is_finite(smoothed)) then
+          call this % record_result(achieved, it - 1, SOLVE_INNER_FAILED)
+          return
+       end if
+       if (this % terminated(achieved, it)) return
 
-    call this % imbalance(rhs, x, r)
-    achieved = this % norm(r)
+    end do
 
   end subroutine solve
 

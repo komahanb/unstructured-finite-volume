@@ -1,21 +1,23 @@
 #!/bin/bash
 set -e
 here="$(cd "$(dirname "$0")" && pwd)"
-( cd "$here/../.." && ./build.sh >/dev/null 2>&1 )
+if [ "${UFVM_SKIP_LIBRARY_BUILD:-0}" != 1 ]; then
+    ( cd "$here/../.." && ./build.sh >/dev/null 2>&1 )
+fi
 make -C "$here" clean >/dev/null 2>&1 || true
 make -C "$here" >/dev/null
 cd "$here" && ./run
 declare -A reason=(
-  [tolzero]="dense_direct: singular tolerance is positive"
-  [sizemismatch]="dense_direct: solution size matches rhs"
+  [zero_tolerance]="dense_direct: singular tolerance is positive"
+  [size_mismatch]="dense_direct: solution size matches rhs"
   [singular]="dense_direct: the pivot is singular"
   [nonsquare]="stencil: a dense matrix is square"
-  [badwidth]="stencil: the width is a whole number of values per member"
-  [badresult]="operation: a bound field satisfies its argument contract"
+  [nonintegral_width]="stencil: the width is a whole number of values per member"
+  [incompatible_components]="operation: a bound field satisfies its argument contract"
 )
-for case in tolzero sizemismatch singular nonsquare badwidth badresult; do
+for case in zero_tolerance size_mismatch singular nonsquare nonintegral_width incompatible_components; do
     if ./refusal "$case" >refusal.out 2>&1; then echo " FAIL : '$case' accepted"; exit 1; fi
-    grep -q "${reason[$case]}" refusal.out && echo " PASS : '$case' is refused, loudly" || { cat refusal.out; exit 1; }
+    grep -q "${reason[$case]}" refusal.out && echo " PASS : '$case' is refused with the expected diagnostic" || { cat refusal.out; exit 1; }
 done
 rm -f refusal.out
 

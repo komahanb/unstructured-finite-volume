@@ -139,10 +139,10 @@ contains
   ! member reconstructs the source, values through index_in.
   !===================================================================!
 
-  subroutine check_proper(verts, chosen, nfail)
+  subroutine check_proper(verts, subset_members, nfail)
 
     logical, intent(in)    :: verts
-    integer, intent(in)    :: chosen(:)
+    integer, intent(in)    :: subset_members(:)
     integer, intent(inout) :: nfail
 
     type(graph)                 :: carrier, s
@@ -154,7 +154,7 @@ contains
     type(graph)                 :: dp_, dg
     real(dp), allocatable           :: sv(:), v(:)
     integer, allocatable            :: mem(:)
-    integer                         :: k, i, c, m, counted(size(chosen))
+    integer                         :: k, i, c, m, counted(size(subset_members))
     logical                         :: passed, passed_part
 
     if (verts) then
@@ -167,14 +167,14 @@ contains
 
     ! The chosen members are a new declared set, a subobject of the
     ! carrier: identity, extension and embedding together.
-    call sets % declare_subobject(s, chosen, 'chosen', carrier)
+    call sets % declare_subobject(s, subset_members, 'chosen', carrier)
 
-    d = stored_field('q', s, size(chosen), num_components=2)
+    d = stored_field('q', s, size(subset_members), num_components=2)
 
-    allocate(sv(2 * size(chosen)))
-    do i = 1, size(chosen)
-       sv(2 * i - 1) = 10.0_dp * chosen(i) + 1.0_dp
-       sv(2 * i)     = 10.0_dp * chosen(i) + 2.0_dp
+    allocate(sv(2 * size(subset_members)))
+    do i = 1, size(subset_members)
+       sv(2 * i - 1) = 10.0_dp * subset_members(i) + 1.0_dp
+       sv(2 * i)     = 10.0_dp * subset_members(i) + 2.0_dp
     end do
     call d % set_real_vector(sv)
 
@@ -213,8 +213,8 @@ contains
        do i = 1, size(mem)
           m = mem(i)
           ! member identity: find m in the source declaration
-          do c = 1, size(chosen)
-             if (chosen(c) == m) counted(c) = counted(c) + 1
+          do c = 1, size(subset_members)
+             if (subset_members(c) == m) counted(c) = counted(c) + 1
           end do
           passed = passed .and. &
                & abs(v((sets % index_in(dg, m) - 1) * 2 + 1) &

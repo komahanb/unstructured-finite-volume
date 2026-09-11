@@ -151,13 +151,13 @@ program set_foundation
 
     ! A listed representation describes a set with no ambient at all.
     block
-      type(graph), target :: loose
-      call loose % declare()
-      call m % bind(loose, listed_set_representation([30, 10, 20]))
+      type(graph), target :: independent_set
+      call independent_set % declare()
+      call m % bind(independent_set, listed_set_representation([30, 10, 20]))
       call check('3  and a listed set needs no ambient to exist', &
-           & m % num_members_of(loose) .eq. 3 .and. &
-           &  m % member_of(loose, 1) .eq. 30 .and. &
-           &  m % index_in(loose, 20) .eq. 3)
+           & m % num_members_of(independent_set) .eq. 3 .and. &
+           &  m % member_of(independent_set, 1) .eq. 30 .and. &
+           &  m % index_in(independent_set, 20) .eq. 3)
     end block
 
     ! Repetition collapses: a representation lists each member once.
@@ -171,6 +171,56 @@ program set_foundation
     end block
 
   end block listed_block
+
+  indexed_block: block
+
+    type(listed_set_representation) :: listed, copy
+    integer, parameter :: largest = huge(0)
+    integer, parameter :: n = 32768
+    integer, allocatable :: values(:), actual(:)
+    integer :: k, smallest
+    logical :: invertible
+
+    smallest = -largest
+    smallest = smallest - 1
+
+    call check('3  an unconstructed listed set has no members', &
+         & listed % num_members() == 0 .and. listed % local_index(0) == 0)
+    listed = listed_set_representation([integer ::])
+    call check('3  an empty listed set has no inverse positions', &
+         & listed % num_members() == 0 .and. listed % local_index(0) == 0)
+
+    values = [largest, smallest, 0, -19, largest, smallest, 2000000001, -19, 5]
+    listed = listed_set_representation(values)
+    call listed % members(actual)
+    call check('3  signed sparse values retain their first declaration order', &
+         & size(actual) == 6 .and. all(actual == [largest, smallest, 0, -19, 2000000001, 5]))
+    invertible = .true.
+    do k = 1, size(actual)
+       invertible = invertible .and. listed % local_index(actual(k)) == k
+    end do
+    call check('3  inverse lookup includes both integer limits and zero', invertible)
+    call check('3  a missing signed sparse value has no position', &
+         & listed % local_index(smallest + 1) == 0 .and. listed % local_index(17) == 0)
+    copy = listed
+    listed = listed_set_representation([17])
+    call check('3  inverse storage is owned by each copy', &
+         & copy % local_index(-19) == 4 .and. listed % local_index(-19) == 0)
+
+    ! The odd multiplier permutes all residues modulo this power of
+    ! two. Member order is deliberately unrelated to numerical order.
+    values = [(7 * modulo(8191 * k, n) - 100000, k = 1, n)]
+    listed = listed_set_representation([values, values(n:1:-1)])
+    call listed % members(actual)
+    call check('3  a large sparse set collapses repeats without reordering', &
+         & size(actual) == n .and. all(actual == values))
+    invertible = .true.
+    do k = 1, n
+       invertible = invertible .and. listed % local_index(values(k)) == k
+    end do
+    call check('3  every large-set member has its original inverse position', invertible)
+
+  end block indexed_block
 
   !===================================================================!
   ! 4 . THE MAP RETURNS NO REFERENCE.

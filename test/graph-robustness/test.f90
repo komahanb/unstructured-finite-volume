@@ -40,37 +40,37 @@ program test_graph_robustness
 
   implicit none
 
-  integer :: nfail
+  integer :: num_failures
 
-  nfail = 0
+  num_failures = 0
 
-  call check_derived_stencils(nfail)
-  call check_the_form_is_free(nfail)
-  call check_two_point_misses(nfail)
-  call check_exactness_lands(nfail)
-  call check_solver_owes_nothing(nfail)
+  call check_derived_stencils(num_failures)
+  call check_approximation_forms(num_failures)
+  call check_two_point_consistency_error(num_failures)
+  call check_harmonic_balance(num_failures)
+  call check_skewed_mesh_solution(num_failures)
 
   write(*, '(a)') ' ============================================='
-  if (nfail == 0) then
+  if (num_failures == 0) then
      write(*, '(a)') ' all robustness checks passed'
   else
-     write(*, '(a, i0, a)') ' ', nfail, ' robustness checks FAILED'
+     write(*, '(a, i0, a)') ' ', num_failures, ' robustness checks FAILED'
      error stop 1
   end if
 
 contains
 
-  subroutine report(passed, message, nfail)
+  subroutine report(passed, message, num_failures)
 
     logical         , intent(in)    :: passed
     character(len=*), intent(in)    :: message
-    integer         , intent(inout) :: nfail
+    integer         , intent(inout) :: num_failures
 
     if (passed) then
        write(*, '(a)') ' PASS : ' // message
     else
        write(*, '(a)') ' FAIL : ' // message
-       nfail = nfail + 1
+       num_failures = num_failures + 1
     end if
 
   end subroutine report
@@ -147,36 +147,36 @@ contains
   ! the two-point stencil -+1/delta, derived rather than assumed.
   !===================================================================!
 
-  subroutine check_derived_stencils(nfail)
+  subroutine check_derived_stencils(num_failures)
 
-    integer, intent(inout) :: nfail
+    integer, intent(inout) :: num_failures
 
     type(fit) :: fitting
-    type(stored_directed_graph) :: pair
+    type(stored_directed_graph) :: two_vertices
     type(stored_field)   :: positions
     class(field), allocatable :: fitted
     real(dp), allocatable :: w(:)
 
-    pair = stored_directed_graph(2, tails=[integer ::], heads=[integer ::])
-    positions = stored_field('positions', pair % vertex_set(), pair % num_vertices(), num_components=3)
+    two_vertices = stored_directed_graph(2, tails=[integer ::], heads=[integer ::])
+    positions = stored_field('positions', two_vertices % vertex_set(), two_vertices % num_vertices(), num_components=3)
     call positions % set_real_vector([0.0_dp, 0.0_dp, 0.0_dp, &
          &                            0.5_dp, 0.0_dp, 0.0_dp])
 
     fitting = fit(polynomial_form(), at=[0.25_dp, 0.0_dp, 0.0_dp], &
          & direction=[1.0_dp, 0.0_dp, 0.0_dp])
-    call fitting % apply(pair, fitting % bind([positions]), fitted)
+    call fitting % apply(two_vertices, fitting % bind([positions]), fitted)
     call fitted % real_vector(w)
 
     call report(all(abs(w - [-2.0_dp, 2.0_dp]) < 1.0d-12), &
-         & 'two collinear points force the two-point stencil: a theorem', nfail)
+         & 'two collinear points force the two-point stencil: a theorem', num_failures)
 
     fitting = fit(polynomial_form(), at=[0.25_dp, 0.0_dp, 0.0_dp], &
          & direction=[1.0_dp, 0.0_dp, 0.0_dp], scale=3.0_dp)
-    call fitting % apply(pair, fitting % bind([positions]), fitted)
+    call fitting % apply(two_vertices, fitting % bind([positions]), fitted)
     call fitted % real_vector(w)
 
     call report(all(abs(w - [-6.0_dp, 6.0_dp]) < 1.0d-12), &
-         & 'and the conductivity multiplies the scale, as the dictionary states', nfail)
+         & 'and the conductivity multiplies the scale, as the dictionary states', num_failures)
 
   end subroutine check_derived_stencils
 
@@ -189,14 +189,14 @@ contains
   ! its theorem.
   !===================================================================!
 
-  subroutine check_the_form_is_free(nfail)
+  subroutine check_approximation_forms(num_failures)
 
-    integer, intent(inout) :: nfail
+    integer, intent(inout) :: num_failures
 
-    type(fit)    :: wave
-    type(fit)    :: poly
+    type(fit)    :: harmonic_fit
+    type(fit)    :: polynomial_fit
     type(pruner) :: restriction
-    type(stored_directed_graph) :: trio, pair
+    type(stored_directed_graph) :: three_vertices, two_vertices
     type(stored_field)   :: positions
     class(field), allocatable :: fitted
     real(dp), allocatable :: w(:)
@@ -209,14 +209,14 @@ contains
          & 0.4_dp, 0.0_dp, 0.0_dp, &
          & 0.8_dp, 0.0_dp, 0.0_dp]
 
-    trio = stored_directed_graph(3, tails=[integer ::], heads=[integer ::])
-    positions = stored_field('positions', trio % vertex_set(), trio % num_vertices(), num_components=3)
+    three_vertices = stored_directed_graph(3, tails=[integer ::], heads=[integer ::])
+    positions = stored_field('positions', three_vertices % vertex_set(), three_vertices % num_vertices(), num_components=3)
     call positions % set_real_vector(pts)
 
-    wave = fit(harmonic_form([2.5_dp, 0.0_dp, 0.0_dp]), &
+    harmonic_fit = fit(harmonic_form([2.5_dp, 0.0_dp, 0.0_dp]), &
          & at=[0.4_dp, 0.0_dp, 0.0_dp], &
          & direction=[1.0_dp, 0.0_dp, 0.0_dp])
-    call wave % apply(trio, wave % bind([positions]), fitted)
+    call harmonic_fit % apply(three_vertices, harmonic_fit % bind([positions]), fitted)
     call fitted % real_vector(w)
 
     do j = 1, 3
@@ -227,39 +227,39 @@ contains
     expected = 2.5_dp * cos(2.5_dp * 0.4_dp)
 
     call report(abs(computed - expected) < 1.0d-10, &
-         & 'the harmonic fit differentiates its own wave exactly', nfail)
+         & 'the harmonic fit differentiates its own wave exactly', num_failures)
 
     ! Two collinear points: the pruner removes what they cannot
     ! determine, and the fit still reproduces the two-point theorem.
-    pair = stored_directed_graph(2, tails=[integer ::], heads=[integer ::])
-    positions = stored_field('positions', pair % vertex_set(), pair % num_vertices(), num_components=3)
+    two_vertices = stored_directed_graph(2, tails=[integer ::], heads=[integer ::])
+    positions = stored_field('positions', two_vertices % vertex_set(), two_vertices % num_vertices(), num_components=3)
     call positions % set_real_vector([0.0_dp, 0.0_dp, 0.0_dp, &
          &                            0.5_dp, 0.0_dp, 0.0_dp])
 
-    poly = fit(polynomial_form(), at=[0.25_dp, 0.0_dp, 0.0_dp], &
+    polynomial_fit = fit(polynomial_form(), at=[0.25_dp, 0.0_dp, 0.0_dp], &
          & direction=[1.0_dp, 0.0_dp, 0.0_dp])
-    call restriction % adapt(poly % shape, [0.0_dp, 0.0_dp, 0.0_dp, &
+    call restriction % adapt(polynomial_fit % shape, [0.0_dp, 0.0_dp, 0.0_dp, &
          &                              0.5_dp, 0.0_dp, 0.0_dp])
 
-    call poly % shape % members(retained)
+    call polynomial_fit % shape % members(retained)
     call report(size(retained) == 2 .and. all(retained == [1, 2]), &
-         & 'the pruner removes the members the points cannot determine', nfail)
+         & 'the pruner removes the members the points cannot determine', num_failures)
 
-    call poly % apply(pair, poly % bind([positions]), fitted)
+    call polynomial_fit % apply(two_vertices, polynomial_fit % bind([positions]), fitted)
     call fitted % real_vector(w)
     call report(all(abs(w - [-2.0_dp, 2.0_dp]) < 1.0d-12), &
-         & 'and the restricted fit still reproduces the theorem', nfail)
+         & 'and the restricted fit still reproduces the theorem', num_failures)
 
-  end subroutine check_the_form_is_free
+  end subroutine check_approximation_forms
 
   !===================================================================!
   ! CHECK ONE. The two-point flux on the skewed mesh, measured
   ! against the exact normal derivative it claims to be.
   !===================================================================!
 
-  subroutine check_two_point_misses(nfail)
+  subroutine check_two_point_consistency_error(num_failures)
 
-    integer, intent(inout) :: nfail
+    integer, intent(inout) :: num_failures
 
     type(mesh) :: m
     type(differential_operator) :: slope
@@ -298,9 +298,9 @@ contains
          & 100.0_dp * largest_error, ' percent on this mesh'
 
     call report(largest_error > 0.25_dp, &
-         & 'the two-point flux is in error on the skewed mesh, and the error is measured', nfail)
+         & 'the two-point flux is in error on the skewed mesh, and the error is measured', num_failures)
 
-  end subroutine check_two_point_misses
+  end subroutine check_two_point_consistency_error
 
   !===================================================================!
   ! CHECK TWO. The exactness weights on the same mesh, same field:
@@ -308,9 +308,9 @@ contains
   ! exact for linears by construction and the scatter conserves.
   !===================================================================!
 
-  subroutine check_exactness_lands(nfail)
+  subroutine check_harmonic_balance(num_failures)
 
-    integer, intent(inout) :: nfail
+    integer, intent(inout) :: num_failures
 
     type(mesh) :: m
     type(stencil) :: op
@@ -323,7 +323,7 @@ contains
 
     m = skewed_mesh()
 
-    ! The wall values: the exact field, read at each wall's centre.
+    ! Boundary values: the exact field evaluated at each boundary-face centre.
     fc = m % face_centre()
     call fc % real_vector(centres)
 
@@ -352,9 +352,9 @@ contains
     call y % real_vector(computed)
 
     call report(maxval(abs(computed)) < 1.0d-10, &
-         & 'the exactness weights balance the same field to machine zero', nfail)
+         & 'the exactness weights balance the same field to machine zero', num_failures)
 
-  end subroutine check_exactness_lands
+  end subroutine check_harmonic_balance
 
   !===================================================================!
   ! CHECK THREE. Solve on the skewed mesh with the exact stencil:
@@ -362,9 +362,9 @@ contains
   ! depend on the mesh.
   !===================================================================!
 
-  subroutine check_solver_owes_nothing(nfail)
+  subroutine check_skewed_mesh_solution(num_failures)
 
-    integer, intent(inout) :: nfail
+    integer, intent(inout) :: num_failures
 
     type(mesh) :: m
     type(stencil) :: op
@@ -409,10 +409,10 @@ contains
          & exact_at(0.15_dp, 1.1_dp), exact_at(1.3_dp, 1.6_dp)]
 
     call report(achieved < 1.0d-10, &
-         & 'the solve converges on the skewed mesh', nfail)
+         & 'the solve converges on the skewed mesh', num_failures)
     call report(all(abs(x - q_exact) < 1.0d-8), &
-         & 'and recovers the exact field: the numerics do not depend on the mesh', nfail)
+         & 'and recovers the exact field: the numerics do not depend on the mesh', num_failures)
 
-  end subroutine check_solver_owes_nothing
+  end subroutine check_skewed_mesh_solution
 
 end program test_graph_robustness

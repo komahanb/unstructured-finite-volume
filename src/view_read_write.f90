@@ -149,7 +149,7 @@ module view_read_write
      ! the predicate an independent set requires of them
      procedure :: share_a_neighbour
 
-     ! the numbering, kept private to this module
+     ! the private numbering in this module
      procedure, private :: require_position
      procedure, private :: offset
 
@@ -350,27 +350,27 @@ contains
   ! against them.
   !===================================================================!
 
-  function two_paths(this, part, vertex, backwards) result(ends)
+  function two_step_endpoints(this, part, vertex, backwards) result(ends)
 
     class(bipartite_digraph), intent(in) :: this
     integer                 , intent(in) :: part, vertex
     logical                 , intent(in) :: backwards
     integer, allocatable :: ends(:)
 
-    integer, allocatable :: across(:), back(:)
+    integer, allocatable :: first_neighbours(:), second_neighbours(:)
     integer :: y, u
 
     call this % require_position(part, vertex)
     u = this % offset(part) + vertex
-    call step(this, u, backwards, across)
+    call step(this, u, backwards, first_neighbours)
     ends = [integer ::]
-    do y = 1, size(across)
-       call step(this, across(y), backwards, back)
-       ends = [ends, pack(back, back /= u)]
+    do y = 1, size(first_neighbours)
+       call step(this, first_neighbours(y), backwards, second_neighbours)
+       ends = [ends, pack(second_neighbours, second_neighbours /= u)]
     end do
     ends = ends - this % offset(part)
 
-  end function two_paths
+  end function two_step_endpoints
 
   !===================================================================!
   ! PREVIOUS: the vertices of u's own part that reach it by a
@@ -383,21 +383,21 @@ contains
     class(bipartite_digraph), intent(in)  :: this
     integer                 , intent(in)  :: part, vertex
     integer, allocatable    , intent(out) :: vertices(:)
-    vertices = distinct(two_paths(this, part, vertex, .true.))
+    vertices = distinct(two_step_endpoints(this, part, vertex, .true.))
   end subroutine previous
 
   subroutine next(this, part, vertex, vertices)
     class(bipartite_digraph), intent(in)  :: this
     integer                 , intent(in)  :: part, vertex
     integer, allocatable    , intent(out) :: vertices(:)
-    vertices = distinct(two_paths(this, part, vertex, .false.))
+    vertices = distinct(two_step_endpoints(this, part, vertex, .false.))
   end subroutine next
 
-  pure function distinct(list) result(kept)
+  pure function distinct(list) result(distinct_members)
     integer, intent(in)  :: list(:)
-    integer, allocatable :: kept(:)
+    integer, allocatable :: distinct_members(:)
     integer :: i
-    kept = pack(list, [(all(list(1:i-1) /= list(i)), i = 1, size(list))])
+    distinct_members = pack(list, [(all(list(1:i-1) /= list(i)), i = 1, size(list))])
   end function distinct
 
   !===================================================================!
@@ -423,7 +423,7 @@ contains
     tails = [integer ::]
     heads = [integer ::]
     do u = 1, this % order_of_part(part)
-       ends  = two_paths(this, part, u, .false.)
+       ends  = two_step_endpoints(this, part, u, .false.)
        tails = [tails, spread(u, 1, size(ends))]
        heads = [heads, ends]
     end do

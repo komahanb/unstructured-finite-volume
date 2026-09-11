@@ -259,6 +259,10 @@ contains
        error stop 'assemble: this relation was not written for this part'
     end if
 
+    if (.not. rel % describes_whole(global_graph)) then
+       error stop 'assemble: this relation was not written for this whole'
+    end if
+
     select type (part_data)
 
     class is (stored_field)
@@ -314,7 +318,7 @@ contains
     type(graph)       :: global_carrier
     type(graph)       :: sg
     real(dp), allocatable :: lv(:), fv(:)
-    integer , allocatable :: kept(:), origin(:)
+    integer , allocatable :: global_members(:), origin(:)
     integer :: nglobal, nlocal, num_components, l, c, f, own_part, n, at
 
     if (on_vertices) then
@@ -330,8 +334,15 @@ contains
     own_part = rel % part_id()
 
     call part_data % real_vector(lv)
+    if (size(lv) /= n_dom * num_components) then
+       error stop 'assemble: the field values must fill its stated domain'
+    end if
 
     if (dom % same_as(part_carrier)) then
+
+       if (n_dom /= n_part_carrier) then
+          error stop 'assemble: a full field must fill the part carrier'
+       end if
 
        ! Full coverage: the established dense assembly, owned only.
        out = stored_field(part_data % name(), global_carrier, nglobal, num_components=num_components, &
@@ -344,9 +355,12 @@ contains
              if (rel % owner_part(l, on_vertices) /= own_part) cycle
           end if
           f = rel % global_index(l, on_vertices)
+          if (f < 1 .or. f > nglobal) then
+             error stop 'assemble: a relation must map into the whole carrier'
+          end if
           do c = 1, num_components
              associate (to => (f - 1) * num_components + c, from => (l - 1) * num_components + c)
-               if (to >= 1 .and. to <= size(fv) .and. from <= size(lv)) fv(to) = lv(from)
+               fv(to) = lv(from)
              end associate
           end do
        end do
@@ -357,15 +371,25 @@ contains
 
        ! Proper subset: map the members to the global set and retain
        ! only the owned ones.
-       allocate(kept(n_dom), origin(n_dom))
+       if (sets % num_members_of(dom) /= n_dom) then
+          error stop 'assemble: a subset field must fill its stated domain'
+       end if
+       allocate(global_members(n_dom), origin(n_dom))
        n = 0
        do l = 1, n_dom
           at = sets % member_of(dom, l)      ! part-local member
+          if (at < 1 .or. at > n_part_carrier) then
+             error stop 'assemble: a subset must belong to the part carrier'
+          end if
           if (rel % has_part_relation()) then
              if (rel % owner_part(at, on_vertices) /= own_part) cycle
           end if
+          f = rel % global_index(at, on_vertices)
+          if (f < 1 .or. f > nglobal) then
+             error stop 'assemble: a relation must map into the whole carrier'
+          end if
           n = n + 1
-          kept(n) = rel % global_index(at, on_vertices)
+          global_members(n) = f
           origin(n) = l
        end do
        !-------------------------------------------------------------!
@@ -375,7 +399,7 @@ contains
        ! mapped to the global set; tokens are not, and the label is.
        !-------------------------------------------------------------!
 
-       call sets % declare_subobject(sg, kept(1:n), sets % label_of(dom), global_carrier)
+       call sets % declare_subobject(sg, global_members(1:n), sets % label_of(dom), global_carrier)
 
        allocate(fv(n * num_components))
        do l = 1, n

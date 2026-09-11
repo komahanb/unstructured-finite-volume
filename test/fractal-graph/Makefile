@@ -10,7 +10,7 @@ LDFLAGS  += -L../../lib/ ../../lib/libufvm.a
 
 all: run refusal mutation
 
-# graph_fractal now lives in src and arrives through libufvm.a; this
+# graph_fractal is defined in src and linked through libufvm.a; this
 # directory builds only the views and the programs over them.
 
 run: graph_views.o test.o
@@ -30,7 +30,7 @@ clean:
 	@rm -f *.o *.mod *.so run refusal mutation
 	@rm -f fortran-recursion/*.mod fortran-mutation/*.mod
 
-# run.sh compiles the declaration-order probes with this compiler and
+# run.sh compiles the declaration-order checks with this compiler and
 # this standard.
 print-f90:
 	@echo $(F90)

@@ -36,7 +36,7 @@
 program partitioned_pde_level_9
 
   use iso_fortran_env  , only : dp => REAL64
-  use partitioned_pde_assert, only : report, verdict
+  use partitioned_pde_assert, only : report, assert_all
   use partitioned_pde_assert, only : NV, Q_EXACT, B_EXACT
   use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation
@@ -87,7 +87,7 @@ program partitioned_pde_level_9
   write(*,'(1x,a)', advance='no') "PARTITIONED_PDE_RESULT ="
   call write_field(q_part)
 
-  call verdict(nfail, "level 9")
+  call assert_all(nfail, "level 9")
 
 contains
 

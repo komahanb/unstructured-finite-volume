@@ -101,7 +101,7 @@ module util_derivative_terms
 
   private
   public :: derivative_terms, value, mixed_partial, coefficient, max_subset_width
-  public :: widened, partial
+  public :: extend_directions, partial
   public :: integer_power, composed, leibniz_parts, inner_product
   public :: operator(+), operator(-), operator(*), operator(/), operator(**)
   public :: sin, cos, exp, log, sqrt
@@ -246,7 +246,7 @@ contains
   ! stops the program: a direction is not discarded.
   !===================================================================!
 
-  pure function widened(x, num_directions) result(this)
+  pure function extend_directions(x, num_directions) result(this)
 
     type(derivative_terms), intent(in) :: x
     integer               , intent(in) :: num_directions
@@ -258,7 +258,7 @@ contains
     this = create_constant(0.0_dp, num_directions)
     this % terms(1:size(x % terms)) = x % terms
 
-  end function widened
+  end function extend_directions
 
   !===================================================================!
   ! The derivative along direction i, as a quantity over the other
@@ -600,7 +600,7 @@ contains
 
     real(dp), allocatable :: table(:,:)
     real(dp) :: accumulated
-    integer  :: n, m, k, i, rest, s
+    integer  :: n, m, k, i, remaining_subset, s
 
     n = a % directions
 
@@ -613,14 +613,14 @@ contains
 
     do m = 1, 2**n - 1
        i    = ibset(0, trailz(m))
-       rest = ieor(m, i)
+       remaining_subset = ieor(m, i)
        do k = 0, n - popcnt(m)
           accumulated = 0.0_dp
-          s = rest
+          s = remaining_subset
           do
-             accumulated = accumulated + a % terms(ior(s, i) + 1) * table(k + 1, ieor(rest, s))
+             accumulated = accumulated + a % terms(ior(s, i) + 1) * table(k + 1, ieor(remaining_subset, s))
              if (s == 0) exit
-             s = iand(s - 1, rest)
+             s = iand(s - 1, remaining_subset)
           end do
           table(k, m) = accumulated
        end do

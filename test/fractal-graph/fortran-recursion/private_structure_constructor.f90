@@ -1,4 +1,4 @@
-! INVARIANT PROBE. The structure constructor, which would set status
+! INVARIANT CHECK. The structure constructor, which would set status
 ! and reference independently. EXPECTED: rejected - 'status_' is a
 ! PRIVATE component. The three branch constructors are therefore the
 ! only introductions of a branch value.

@@ -28,7 +28,7 @@
 
 program derivative_level_1
 
-  use derivative_assert, only : report, verdict
+  use derivative_assert, only : report, assert_all
   use derivative_assert, only : SLOT_X, SLOT_Y, SLOT_U, SLOT_Z
   use derivative_assert, only : OP_PRODUCT, OP_SUM
   use derivative_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
@@ -75,7 +75,7 @@ program derivative_level_1
   call check_fan_out(nfail)
   call check_meaningful_absences(nfail)
 
-  call verdict(nfail, "level 1")
+  call assert_all(nfail, "level 1")
 
 contains
 

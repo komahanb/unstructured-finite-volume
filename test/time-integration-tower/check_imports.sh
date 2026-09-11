@@ -1,8 +1,8 @@
 #!/bin/bash
-# The time integration tower's import gate, keyed PER LEVEL.
+# The time integration tower's import group, keyed PER LEVEL.
 #
 # Levels are the implementation architecture, so the dependency
-# ceiling rises level by level - never gate by gate. A level source
+# ceiling rises level by level - never group by group. A level source
 # may `use` only the framework modules its own rung has been
 # granted, and a directory with sources but no allowlist fails
 # closed.
@@ -26,7 +26,7 @@
 #
 #     use time_relations_fixture
 #
-# is a layering violation and this gate must refuse it. That exact
+# is a layering violation and this group must refuse it. That exact
 # leak was found and closed in the partitioned tower; --selftest
 # asserts it here from the first commit rather than after a review.
 #
@@ -73,7 +73,7 @@
 # exactly as the reverse review's Class-2 seam predicted. Because
 # no level of this tower may name that module, the failure cannot
 # have been manufactured: it was reached by the production call
-# chain an implicit march requires, and by nothing else. The gate
+# chain an implicit march requires, and by nothing else. The group
 # is what makes that claim checkable instead of promised.
 #
 # The derivative and adjoint fixtures stay refused for the older
@@ -202,7 +202,7 @@ allows() {
 }
 
 #---------------------------------------------------------------------
-# The gate's own test: the decision function, exercised on the two
+# The group's own test: the decision function, exercised on the two
 # questions this tower must never get wrong - the fixture ladder,
 # and the frontier. This proves the ALLOWLISTS say what they must;
 # the bare scan below proves the scanner acts on them.
@@ -217,13 +217,13 @@ if [ "$1" = "--selftest" ]; then
 
     permits() {
         if allows "$1" "$2"; then :; else
-            echo " FAIL : the import gate refused '$2' at $1"
+            echo " FAIL : the import group refused '$2' at $1"
             fail=1
         fi
     }
     refuses() {
         if allows "$1" "$2"; then
-            echo " FAIL : the import gate permitted '$2' at $1"
+            echo " FAIL : the import group permitted '$2' at $1"
             fail=1
         fi
     }
@@ -361,7 +361,7 @@ if [ "$1" = "--selftest" ]; then
         echo "IMPORT GATE: the layering decision is wrong"
         exit 1
     fi
-    echo "import gate: the ladder rises one rung at a time, and the linearization is refused at every level"
+    echo "import group: the ladder rises one rung at a time, and the linearization is refused at every level"
     exit 0
 fi
 
@@ -397,4 +397,4 @@ if [ "$violation" -ne 0 ]; then
     echo "IMPORT GATE: the tower layering is violated"
     exit 1
 fi
-echo "import gate: every source imports only its level and below"
+echo "import group: every source imports only its level and below"

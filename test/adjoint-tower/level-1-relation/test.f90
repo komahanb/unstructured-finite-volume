@@ -27,7 +27,7 @@
 
 program adjoint_level_1
 
-  use adjoint_assert, only : report, verdict
+  use adjoint_assert, only : report, assert_all
   use adjoint_assert, only : VAR_P, VAR_U, VAR_V
   use adjoint_assert, only : TGT_R1, TGT_R2, TGT_F
   use graph_fractal        , only : graph
@@ -73,7 +73,7 @@ program adjoint_level_1
   call check_complete_extension(nfail)
   call check_absences(nfail)
 
-  call verdict(nfail, "level 1")
+  call assert_all(nfail, "level 1")
 
 contains
 
@@ -113,18 +113,18 @@ contains
     integer, intent(inout) :: nfail
 
     integer :: i, j
-    logical :: ok
+    logical :: satisfied
 
     call report(dep % num_tuples() .eq. 9, &
          & "ten handed, nine held: a relation is a set", nfail)
 
-    ok = .true.
+    satisfied = .true.
     do i = 1, sets % num_members_of(t)
        do j = 1, sets % num_members_of(v)
-          ok = ok .and. dep % has([sets % member_of(t, i), sets % member_of(v, j)])
+          satisfied = satisfied .and. dep % has([sets % member_of(t, i), sets % member_of(v, j)])
        end do
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "every target may draw on every variable: the specimen " // &
          & "is structurally dense", nfail)
 

@@ -19,6 +19,7 @@ module operation_temporal_minimization
   use view_directed         , only : directed_graph
   use operation_action      , only : operation
   use operation_minimization, only : minimizer, state
+  use operation_minimization, only : solve_result, SOLVE_EVALUATED, SOLVE_STAGNATED, SOLVE_INNER_FAILED
   use operation_driver      , only : driver, pairing
   use operation_residual    , only : residual_operator
   use operation_multigrid   , only : multigrid
@@ -46,7 +47,7 @@ module operation_temporal_minimization
      ! stored jet over the step between them; a plain copy when absent
      real(dp), allocatable :: seed_transfer(:,:,:)
 
-     type(driver), private :: runner
+     type(driver), private :: schedule
      logical     , private :: scheduled = .false.
 
    contains
@@ -94,6 +95,7 @@ contains
     class(directed_graph)     , intent(in), optional :: coupling
     type(stored_field)        , intent(in), optional :: stored_inputs(:)
 
+    call this % initialize_residual_history()
     select type (scheduled_action => action)
     type is (driver)
        if (allocated(this % action)) deallocate(this % action)
@@ -113,7 +115,7 @@ contains
        call this % declare_arguments(0)
        if (allocated(this % affine)) deallocate(this % affine)
        allocate(this % affine(0))
-       this % runner = scheduled_action
+       this % schedule = scheduled_action
        this % scheduled = .true.
        this % diagonal_valid = .false.
     class default
@@ -130,7 +132,7 @@ contains
     type(pairing)             , intent(in)    :: connection
 
     call require_schedule(this)
-    call this % runner % pair_with(connection)
+    call this % schedule % pair_with(connection)
 
   end subroutine pair_with
 
@@ -140,7 +142,7 @@ contains
     type(pairing) :: connection
 
     call require_schedule(this)
-    connection = this % runner % pairing_of()
+    connection = this % schedule % pairing_of()
 
   end function pairing_of
 
@@ -191,7 +193,7 @@ contains
     integer, allocatable :: order(:)
 
     call require_schedule(this)
-    order = this % runner % visits()
+    order = this % schedule % visits()
 
   end function visits
 
@@ -201,7 +203,7 @@ contains
     integer                  , intent(in) :: datum
 
     call require_schedule(this)
-    last_dependent_of = this % runner % last_reader_of(datum)
+    last_dependent_of = this % schedule % last_reader_of(datum)
 
   end function last_dependent_of
 
@@ -212,7 +214,7 @@ contains
     integer, allocatable :: vertices(:)
 
     call require_schedule(this)
-    vertices = this % runner % released_after(step)
+    vertices = this % schedule % released_after(step)
 
   end function released_after
 
@@ -227,14 +229,17 @@ contains
     real(dp)                  , intent(in)    :: rhs(:)
     real(dp)                  , intent(inout) :: x(:)
     real(dp)                  , intent(out)   :: achieved
+    type(solve_result) :: outcome
 
     if (this % scheduled) then
        if (size(rhs) /= 0 .or. size(x) /= 0) then
           error stop 'temporal_minimizer: a scheduled solve has no flat right side'
        end if
        call require_schedule(this)
-       call this % runner % evaluate(this % graph)
+       call this % schedule % evaluate(this % graph)
        achieved = 0.0_dp
+       call this % initialize_residual_history()
+       call this % record_result(achieved, size(this % schedule % visits()), SOLVE_EVALUATED)
        return
     end if
 
@@ -267,7 +272,11 @@ contains
                & this % num_unknowns, num_components=this % num_components)
        end if
     end if
+    call this % initialize_residual_history()
     call this % inner % solve(rhs, x, achieved)
+    outcome = this % inner % result()
+    call this % record_residual_norm(this % inner % initial_residual_norm())
+    call this % record_result(outcome % residual, outcome % iterations, outcome % reason)
 
   end subroutine solve
 
@@ -282,10 +291,11 @@ contains
     type(stored_directed_graph) :: unknowns
     type(stored_field), allocatable :: inputs(:)
     class(minimizer), allocatable :: local
-    real(dp), allocatable :: y(:), zeros(:), piece(:), before(:)
+    real(dp), allocatable :: y(:), zeros(:), member_solution(:), previous_residual(:)
     integer, allocatable :: member(:), previous(:), all_unknowns(:)
     logical, allocatable :: fixed(:)
     integer :: pass, mm, m, count
+    type(solve_result) :: outcome
 
     if (.not. allocated(this % inner)) then
        error stop 'temporal_minimizer: an inner minimizer is stated'
@@ -305,18 +315,18 @@ contains
 
     select type (residual => this % action)
     class is (residual_operator)
-       fixed = residual % fixed_mask()
+       fixed = residual % fixed_indicator()
        x(residual % fixed_unknowns()) = residual % fixed_values()
        allocate(all_unknowns(this % num_unknowns))
        all_unknowns = [(count, count = 1, this % num_unknowns)]
 
-       call this % begin_imbalance()
+       call this % initialize_residual_history()
        call this % evaluate(x, y)
        achieved = this % norm(y - rhs)
-       if (this % halted(achieved, 0)) return
+       if (this % terminated(achieved, 0)) return
 
        do pass = 1, this % max_iterations
-          before = y
+          previous_residual = y
           do mm = 1, size(this % member_order)
              m = this % member_order(mm)
              member = pack(all_unknowns, this % member_of == m)
@@ -345,17 +355,27 @@ contains
                 call local % state(sub, unknowns, unknowns % vertex_set(), sub % num_unknowns())
              end if
              allocate(zeros(sub % num_unknowns()), source=0.0_dp)
-             piece = x(member)
-             call local % solve(zeros, piece, achieved)
-             x(member) = piece
+             member_solution = x(member)
+             call local % solve(zeros, member_solution, achieved)
+             outcome = local % result()
+             if (outcome % failed()) then
+                call this % evaluate(x, y)
+                achieved = this % norm(y - rhs)
+                call this % record_result(achieved, pass - 1, SOLVE_INNER_FAILED)
+                return
+             end if
+             x(member) = member_solution
              deallocate(local)
              if (allocated(zeros)) deallocate(zeros)
              if (allocated(inputs)) deallocate(inputs)
           end do
           call this % evaluate(x, y)
           achieved = this % norm(y - rhs)
-          if (this % halted(achieved, pass)) exit
-          if (all(y == before)) exit
+          if (this % terminated(achieved, pass)) exit
+          if (all(y == previous_residual)) then
+             call this % record_result(achieved, pass, SOLVE_STAGNATED)
+             exit
+          end if
        end do
     class default
        error stop 'temporal_minimizer: a partitioned solve states a residual operator'

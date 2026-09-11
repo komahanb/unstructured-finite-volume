@@ -26,7 +26,7 @@
 
 program learning_level_1
 
-  use learning_assert, only : report, verdict
+  use learning_assert, only : report, assert_all
   use learning_assert, only : SLOT_W, SLOT_X, SLOT_YHAT, SLOT_Y, SLOT_E
   use learning_assert, only : OP_PREDICT, OP_ERROR
   use learning_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
@@ -72,7 +72,7 @@ program learning_level_1
   call check_complete_extension(nfail)
   call check_meaningful_absences(nfail)
 
-  call verdict(nfail, "level 1")
+  call assert_all(nfail, "level 1")
 
 contains
 

@@ -5,7 +5,9 @@ set -e
 
 here="$(cd "$(dirname "$0")" && pwd)"
 
-( cd "$here/../.." && ./build.sh >/dev/null )
+if [ "${UFVM_SKIP_LIBRARY_BUILD:-0}" != 1 ]; then
+    ( cd "$here/../.." && ./build.sh >/dev/null )
+fi
 
 make -C "$here" clean >/dev/null 2>&1 || true
 make -C "$here" >/dev/null
@@ -13,7 +15,7 @@ make -C "$here" >/dev/null
 cd "$here" && ./run
 
 declare -A reason=(
-  [member]="a tuple names a member its domain does not hold"
+  [member]="a tuple names a member its domain does not contain"
   [arity]="each tuple has exactly one part per domain"
   [undeclared]="a signature refers to declared domains only"
   [empty]="a relation relates at least one domain"

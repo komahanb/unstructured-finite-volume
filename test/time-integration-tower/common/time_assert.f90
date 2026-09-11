@@ -52,7 +52,7 @@ module time_assert
   implicit none
 
   private
-  public :: report, verdict
+  public :: report, assert_all
   public :: NQ, NT, NE
   public :: C_X, C_Y
   public :: T0, T1, T2, T3, T4
@@ -225,13 +225,13 @@ contains
 
   end function action_of
 
-  subroutine report(ok, label, nfail)
+  subroutine report(satisfied, label, nfail)
 
-    logical         , intent(in)    :: ok
+    logical         , intent(in)    :: satisfied
     character(len=*), intent(in)    :: label
     integer         , intent(inout) :: nfail
 
-    if (ok) then
+    if (satisfied) then
        write(*,'(1x,a,a)') "PASS : ", label
     else
        write(*,'(1x,a,a)') "FAIL : ", label
@@ -240,7 +240,7 @@ contains
 
   end subroutine report
 
-  subroutine verdict(nfail, level)
+  subroutine assert_all(nfail, level)
 
     integer         , intent(in) :: nfail
     character(len=*), intent(in) :: level
@@ -253,6 +253,6 @@ contains
        error stop 1
     end if
 
-  end subroutine verdict
+  end subroutine assert_all
 
 end module time_assert

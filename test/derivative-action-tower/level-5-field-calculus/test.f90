@@ -28,7 +28,7 @@
 program derivative_level_5
 
   use iso_fortran_env  , only : dp => REAL64
-  use derivative_assert, only : report, verdict
+  use derivative_assert, only : report, assert_all
   use derivative_assert, only : SLOT_X, SLOT_Y, SLOT_U, SLOT_Z
   use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
@@ -70,7 +70,7 @@ program derivative_level_5
   ! sentinels. And no tangent, cotangent, or seed exists anywhere:
   ! Gate A has primal base data and no derivative arithmetic.
 
-  call verdict(nfail, "level 5")
+  call assert_all(nfail, "level 5")
 
 contains
 
@@ -84,8 +84,8 @@ contains
 
     integer, intent(inout) :: nfail
 
-    integer :: i, m, homes
-    logical :: ok
+    integer :: i, m, domain_multiplicity
+    logical :: satisfied
 
     call report(sets % num_members_of(x_dom) .eq. 2 .and. sets % has(x_dom, SLOT_Y) .and. &
          &      sets % has(x_dom, SLOT_X) .and. .not. sets % has(x_dom, SLOT_U), &
@@ -98,13 +98,13 @@ contains
          &      declared_subobject(c, v, inclusions), &
          & "both stand embedded in the value slots", nfail)
 
-    ok = .true.
+    satisfied = .true.
     do i = 1, sets % num_members_of(v)
        m = sets % member_of(v, i)
-       homes = count([sets % has(x_dom, m), sets % has(c, m)])
-       ok = ok .and. (homes .eq. 1)
+       domain_multiplicity = count([sets % has(x_dom, m), sets % has(c, m)])
+       satisfied = satisfied .and. (domain_multiplicity .eq. 1)
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "every slot has exactly one home: disjoint, and covering", &
          & nfail)
 

@@ -21,6 +21,7 @@ program test_graph_dense_direct
   use field_stored  , only : stored_field
   use operation_stencil , only : stencil
   use operation_dense_direct, only : dense_direct
+  use operation_minimization, only : solve_result, SOLVE_SINGULAR
 
   implicit none
 
@@ -29,14 +30,15 @@ program test_graph_dense_direct
   type(stored_field) :: basis
   class(field), allocatable :: image
   type(dense_direct)     :: solver
+  type(solve_result) :: outcome
 
   real(dp), allocatable :: x(:), w_before(:), w_after(:)
   real(dp), allocatable :: col1(:), col2(:), c(:)
   real(dp) :: achieved
   real(dp) :: amat(2,2), umat(2,2)
-  integer  :: nfail
+  integer  :: num_failures
 
-  nfail = 0
+  num_failures = 0
   write(*,'(1x,a)') "============================================="
   write(*,'(1x,a)') "graph dense direct minimizer suite"
   write(*,'(1x,a)') "============================================="
@@ -55,7 +57,15 @@ program test_graph_dense_direct
   call solver % solve([6.0_dp], x, achieved)
 
   call report(matches(x, [3.0_dp], 1.0e-12_dp) .and. achieved <= 1.0e-12_dp, &
-       & "1x1 stencil: [2] x = [6] gives x = [3]", nfail)
+       & "1x1 stencil: [2] x = [6] gives x = [3]", num_failures)
+  outcome = solver % result()
+  call report(outcome % converged() .and. outcome % iterations == 1 .and. &
+       & outcome % initial_residual == 6.0_dp .and. outcome % residual == achieved, &
+       & 'a direct solve records its true residual and completed pass', num_failures)
+  call solver % solve([6.0_dp], x, achieved)
+  outcome = solver % result()
+  call report(outcome % converged() .and. outcome % iterations == 0 .and. achieved == 0.0_dp, &
+       & 'an initially solved direct system takes no pass', num_failures)
   deallocate(x)
 
   !-------------------------------------------------------------------!
@@ -74,11 +84,11 @@ program test_graph_dense_direct
   call solver % solve([4.0_dp, 7.0_dp], x, achieved)
 
   call report(matches(x, [1.0_dp, 2.0_dp], 1.0e-12_dp), &
-       & "2x2 stencil: A x = b recovers x = [1, 2] exactly", nfail)
+       & "2x2 stencil: A x = b recovers x = [1, 2] exactly", num_failures)
 
   call report(achieved <= 1.0e-12_dp, &
        & "achieved equals the attached operation's norm of rhs - matvec(x)", &
-       & nfail)
+       & num_failures)
 
   !-------------------------------------------------------------------!
   ! Repeated solves on one attached operation: the second solve
@@ -88,7 +98,7 @@ program test_graph_dense_direct
   x = 0.0_dp
   call solver % solve([2.0_dp, 1.0_dp], x, achieved)
   call report(matches(x, [1.0_dp, 0.0_dp], 1.0e-12_dp), &
-       & "a second solve on one attached dense_direct is exact", nfail)
+       & "a second solve on one attached dense_direct is exact", num_failures)
   deallocate(x)
 
   !-------------------------------------------------------------------!
@@ -100,7 +110,7 @@ program test_graph_dense_direct
   call solver % solve([4.0_dp, 7.0_dp], x, achieved)
   call two_by_two % weights % real_vector(w_after)
   call report(matches(w_after, w_before, 0.0_dp + tiny(1.0_dp)), &
-       & "the solve leaves the stencil's weights unmodified", nfail)
+       & "the solve leaves the stencil's weights unmodified", num_failures)
   deallocate(x)
 
   !-------------------------------------------------------------------!
@@ -119,7 +129,7 @@ program test_graph_dense_direct
   call solver % solve([5.0_dp, 8.0_dp], x, achieved)
 
   call report(matches(x, [3.0_dp, 5.0_dp], 1.0e-12_dp), &
-       & "a zero leading pivot still solves exactly, by partial pivoting", nfail)
+       & "a zero leading pivot still solves exactly, by partial pivoting", num_failures)
   deallocate(x)
 
   !-------------------------------------------------------------------!
@@ -137,7 +147,7 @@ program test_graph_dense_direct
   call report(matches([col1, col2], [amat(:, 1), amat(:, 2)], &
        &         0.0_dp + tiny(1.0_dp)) .and. all(c == 0.0_dp) .and. &
        & compiled % name() == 'two by two', &
-       & "a stencil compiled from an operation carries its matrix exactly", nfail)
+       & "a compiled stencil represents the operation matrix exactly", num_failures)
 
   affine = stencil([1, 1, 2, 2], [1, 2, 1, 2], &
        & [2.0_dp, 1.0_dp, 1.0_dp, 3.0_dp], [5.0_dp, -1.0_dp], 'affine')
@@ -149,7 +159,7 @@ program test_graph_dense_direct
        & matches([col1, col2], [7.0_dp, 0.0_dp, 6.0_dp, 2.0_dp], &
        &         0.0_dp + tiny(1.0_dp)), &
        & "compiling an affine operation splits the constant from the weights", &
-       & nfail)
+       & num_failures)
 
   !-------------------------------------------------------------------!
   ! The transpose of a stencil: for U = [2 1; 0 3] the transposed
@@ -167,14 +177,14 @@ program test_graph_dense_direct
   call report(matches([col1, col2], [umat(1, :), umat(2, :)], &
        &         0.0_dp + tiny(1.0_dp)) .and. all(c == 0.0_dp) .and. &
        & transposed % name() == 'transpose of upper', &
-       & "the transpose applied to e_j returns row j, constants dropped", nfail)
+       & "the transpose applied to e_j returns row j, constants dropped", num_failures)
 
   twice = transposed % transpose()
   call column_of(twice, 1, col1)
   call column_of(twice, 2, col2)
   call report(matches([col1, col2], [umat(:, 1), umat(:, 2)], &
        &         0.0_dp + tiny(1.0_dp)), &
-       & "transposing twice returns the stencil", nfail)
+       & "transposing twice returns the stencil", num_failures)
 
   call solver % state(transposed, transposed % pattern, &
        & transposed % pattern % vertex_set(), &
@@ -183,11 +193,26 @@ program test_graph_dense_direct
   call solver % solve([2.0_dp, 7.0_dp], x, achieved)
   call report(matches(x, [1.0_dp, 2.0_dp], 1.0e-12_dp) .and. &
        & achieved <= 1.0e-12_dp, &
-       & "U^T x = [2, 7] through dense_direct gives x = [1, 2]", nfail)
+       & "U^T x = [2, 7] through dense_direct gives x = [1, 2]", num_failures)
   deallocate(x)
 
+  singular_result: block
+    type(stencil) :: zero
+    type(dense_direct) :: singular
+    real(dp) :: value(1)
+    zero = stencil([1], [1], [0.0_dp], [0.0_dp], 'singular result')
+    singular % singular_reported = .true.
+    call singular % state(zero, zero % pattern, zero % pattern % vertex_set(), 1)
+    value = 0.0_dp
+    call singular % solve([1.0_dp], value, achieved)
+    outcome = singular % result()
+    call report(outcome % reason == SOLVE_SINGULAR .and. outcome % residual == 1.0_dp .and. &
+         & outcome % iterations == 0 .and. all(value == 0.0_dp), &
+         & 'a singular direct solve records its actual unchanged residual', num_failures)
+  end block singular_result
+
   write(*,'(1x,a)') "============================================="
-  if (nfail .eq. 0) then
+  if (num_failures .eq. 0) then
      write(*,'(1x,a)') "all dense direct minimizer checks passed"
   else
      error stop
@@ -217,26 +242,26 @@ contains
 
   end subroutine column_of
 
-  pure function matches(values, expected, tolerance) result(ok)
+  pure function matches(values, expected, tolerance) result(satisfied)
 
     real(dp), intent(in) :: values(:), expected(:)
     real(dp), intent(in) :: tolerance
-    logical :: ok
+    logical :: satisfied
 
-    ok = size(values) == size(expected)
-    if (ok) ok = all(abs(values - expected) <= tolerance)
+    satisfied = size(values) == size(expected)
+    if (satisfied) satisfied = all(abs(values - expected) <= tolerance)
 
   end function matches
 
-  subroutine report(ok, label, nfail)
-    logical, intent(in) :: ok
+  subroutine report(satisfied, label, num_failures)
+    logical, intent(in) :: satisfied
     character(len=*), intent(in) :: label
-    integer, intent(inout) :: nfail
-    if (ok) then
+    integer, intent(inout) :: num_failures
+    if (satisfied) then
        write(*,'(1x,a,a)') "PASS : ", label
     else
        write(*,'(1x,a,a)') "FAIL : ", label
-       nfail = nfail + 1
+       num_failures = num_failures + 1
     end if
   end subroutine report
 

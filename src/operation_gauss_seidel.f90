@@ -94,12 +94,17 @@ contains
     real(dp), intent(inout) :: x(:)
     real(dp), intent(out)   :: achieved
 
-    real(dp), allocatable :: d(:,:,:), r(:), piece(:)
+    real(dp), allocatable :: d(:,:,:), r(:), block_solution(:)
     type(dense_factorisation), allocatable :: block(:)
     integer , allocatable :: colours(:)
     integer :: it, col, b, w, nb, i
 
     call tally_record(linear_solves)
+
+    call this % initialize_residual_history()
+    call this % imbalance(rhs, x, r)
+    achieved = this % norm(r)
+    if (this % terminated(achieved, 0)) return
 
     ! the diagonal, a block at a time: a block of width one is the
     ! number itself, and a wider one is factorised once for the operator
@@ -141,13 +146,7 @@ contains
        if (allocated(this % stored_block)) allocate(block, source=this % stored_block)
 
     end if
-    call this % begin_imbalance()
-
     do it = 1, this % max_iterations
-
-       call this % imbalance(rhs, x, r)
-       achieved = this % norm(r)
-       if (this % halted(achieved, it)) return
 
        do col = 1, maxval(colours)
           if (col > 1) then
@@ -158,18 +157,19 @@ contains
              if (w == 1) then
                 x(b) = x(b) + this % omega * r(b) / d(1, 1, b)
              else
-                call block(b) % substitute(r((b - 1) * w + 1:b * w), piece, transposed=.false.)
+                call block(b) % substitute(r((b - 1) * w + 1:b * w), block_solution, transposed=.false.)
                 do i = 1, w
-                   x((b - 1) * w + i) = x((b - 1) * w + i) + this % omega * piece(i)
+                   x((b - 1) * w + i) = x((b - 1) * w + i) + this % omega * block_solution(i)
                 end do
              end if
           end do
        end do
 
-    end do
+       call this % imbalance(rhs, x, r)
+       achieved = this % norm(r)
+       if (this % terminated(achieved, it)) return
 
-    call this % imbalance(rhs, x, r)
-    achieved = this % norm(r)
+    end do
 
   end subroutine solve
 

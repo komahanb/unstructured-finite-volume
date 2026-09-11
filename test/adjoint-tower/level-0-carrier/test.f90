@@ -28,7 +28,7 @@
 
 program adjoint_level_0
 
-  use adjoint_assert, only : report, verdict
+  use adjoint_assert, only : report, assert_all
   use adjoint_assert, only : VAR_P, VAR_U, VAR_V
   use adjoint_assert, only : TGT_R1, TGT_R2, TGT_F
   use graph_fractal        , only : graph
@@ -76,7 +76,7 @@ program adjoint_level_0
   call check_embeddings(nfail)
   call check_role_identities(nfail)
 
-  call verdict(nfail, "level 0")
+  call assert_all(nfail, "level 0")
 
 contains
 

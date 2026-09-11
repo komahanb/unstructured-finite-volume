@@ -198,7 +198,7 @@ contains
     class(field), allocatable :: output
     real(dp), allocatable :: rv(:)
     real(dp) :: expected(0:4)
-    logical  :: degrees_ok
+    logical  :: degrees_valid
     integer  :: n
 
     call scalar_pair(1.0_dp, 2.0_dp, cells, inputs)
@@ -212,14 +212,14 @@ contains
     expected = [31.0_dp, 271.0_dp, 2207.0_dp, 16688.0_dp, 118251.0_dp]
 
     composer = total_derivative(4)
-    degrees_ok = .true.
+    degrees_valid = .true.
     do n = 0, 4
        call composer % assemble(quartic, lone, quartic % bind(inputs), n, full, output)
        call output % real_vector(rv)
-       degrees_ok = degrees_ok .and. size(rv) == 1 .and. &
+       degrees_valid = degrees_valid .and. size(rv) == 1 .and. &
             & near(rv(1), expected(n), 1.0e-10_dp)
     end do
-    call report(degrees_ok, &
+    call report(degrees_valid, &
          & "quartic degrees 0..4: 31, 271, 2207, 16688, 118251", nfail)
 
     composed = derivative_of(quartic, 3, sparse)
@@ -261,7 +261,7 @@ contains
     real(dp) :: qpath(8), xipath(8)   ! the path derivatives of q and xi
     real(dp) :: acoef(0:8), upow(0:8), convolved(0:8)
     real(dp) :: fact, expected
-    logical  :: degrees_ok
+    logical  :: degrees_valid
     integer  :: i, j, k, n
 
     call scalar_pair(1.0_dp, 2.0_dp, cells, inputs)
@@ -292,18 +292,18 @@ contains
     end do
 
     composer = total_derivative(8)
-    degrees_ok = .true.
+    degrees_valid = .true.
     fact = 1.0_dp
     do n = 1, 8
        fact     = fact * real(n, dp)
        expected = fact * upow(n)
        call composer % assemble(p8, lone, p8 % bind(inputs), n, paths, output)
        call output % real_vector(rv)
-       degrees_ok = degrees_ok .and. size(rv) == 1 .and. &
+       degrees_valid = degrees_valid .and. size(rv) == 1 .and. &
             & abs(rv(1) - expected) <= 1.0e-12_dp * abs(expected)
     end do
 
-    call report(degrees_ok, &
+    call report(degrees_valid, &
          & "every degree 1..8 of (q+xi)^8 matches the convolution oracle", &
          & nfail)
 

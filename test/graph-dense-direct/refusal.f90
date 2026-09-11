@@ -5,14 +5,14 @@
 ! run.sh expects, and a case that returns normally is reported as
 ! a failure by run.sh.
 !
-!      tolzero       a zero singular tolerance
-!      sizemismatch  a solution array whose length disagrees with
+!      zero_tolerance       a zero singular tolerance
+!      size_mismatch  a solution array whose length disagrees with
 !                    the right-hand side
 !      singular      dependent rows - no pivot survives elimination
 !      nonsquare     a rectangular array laid on a stencil
-!      badwidth      a compiled-stencil width carrying a fractional
+!      nonintegral_width      a compiled-stencil width representing a fractional
 !                    number per member of the operation's domain
-!      badresult     compiling a stencil at a width whose values per
+!      incompatible_components     compiling a stencil at a width whose values per
 !                    member violate the operation's argument contract
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
@@ -30,15 +30,15 @@ program refusal
   type(dense_direct)     :: solver
 
   real(dp) :: x2(2), x3(3), achieved
-  real(dp) :: rect(2,3)
+  real(dp) :: rectangular_matrix(2,3)
 
-  character(len=32) :: which
+  character(len=32) :: case_name
 
-  call get_command_argument(1, which)
+  call get_command_argument(1, case_name)
 
-  select case (trim(which))
+  select case (trim(case_name))
 
-  case ('tolzero')
+  case ('zero_tolerance')
 
      statement = stencil([1], [1], [2.0_dp], [0.0_dp], 'one')
      call solver % state(statement, statement % pattern, &
@@ -48,7 +48,7 @@ program refusal
      x2(1:1) = 0.0_dp
      call solver % solve([6.0_dp], x2(1:1), achieved)
 
-  case ('sizemismatch')
+  case ('size_mismatch')
 
      statement = stencil([1, 1, 2, 2], [1, 2, 1, 2], &
           & [2.0_dp, 1.0_dp, 1.0_dp, 3.0_dp], [0.0_dp, 0.0_dp], 'two')
@@ -62,7 +62,7 @@ program refusal
 
      ! row 2 = 2 * row 1, so elimination produces no usable pivot
      statement = stencil([1, 1, 2, 2], [1, 2, 1, 2], &
-          & [1.0_dp, 2.0_dp, 2.0_dp, 4.0_dp], [0.0_dp, 0.0_dp], 'flat')
+          & [1.0_dp, 2.0_dp, 2.0_dp, 4.0_dp], [0.0_dp, 0.0_dp], 'singular')
      call solver % state(statement, statement % pattern, &
           & statement % pattern % vertex_set(), &
           & statement % pattern % num_vertices())
@@ -71,10 +71,10 @@ program refusal
 
   case ('nonsquare')
 
-     rect = 1.0_dp
-     statement = stencil(rect, 'rect')
+     rectangular_matrix = 1.0_dp
+     statement = stencil(rectangular_matrix, 'rect')
 
-  case ('badwidth')
+  case ('nonintegral_width')
 
      ! three numbers over a two-member domain is not a whole
      ! number per member
@@ -82,7 +82,7 @@ program refusal
           & [2.0_dp, 1.0_dp, 1.0_dp, 3.0_dp], [0.0_dp, 0.0_dp], 'two')
      compiled = stencil(statement, statement % pattern, 3)
 
-  case ('badresult')
+  case ('incompatible_components')
 
      ! four numbers over a two-member domain is two per member, and
      ! the stencil's argument contract admits one
@@ -96,6 +96,6 @@ program refusal
 
   end select
 
-  write(*,*) 'refusal case survived: ', trim(which)
+  write(*,*) 'refusal case returned normally: ', trim(case_name)
 
 end program refusal

@@ -117,7 +117,7 @@ contains
     real(dp), intent(in) :: constant(:)
     character(len=*), intent(in), optional :: label
 
-    character(len=:), allocatable :: named
+    character(len=:), allocatable :: stencil_label
     integer :: nv
 
     nv = size(constant)
@@ -129,12 +129,12 @@ contains
     this % constants = stored_field('stencil constants', this % pattern % vertex_set(), this % pattern % num_vertices())
     call this % constants % set_real_vector(constant)
 
-    named = 'stencil'
-    if (present(label)) named = label
+    stencil_label = 'stencil'
+    if (present(label)) stencil_label = label
 
     ! one argument: the state the matrix multiplies; linear, so its
     ! one exact partial action is of degree one
-    call this % declare_arguments(1, [contract(FIELD_REAL, 1)], label=named, max_degree=1)
+    call this % declare_arguments(1, [contract(FIELD_REAL, 1)], label=stencil_label, max_degree=1)
 
   end function create
 

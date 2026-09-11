@@ -35,7 +35,7 @@
 
 program time_level_0
 
-  use time_assert          , only : report, verdict
+  use time_assert          , only : report, assert_all
   use time_assert          , only : NQ, NT, NE
   use time_assert          , only : C_X, T0, T4, E1, E4
   use graph_fractal        , only : graph
@@ -61,7 +61,7 @@ program time_level_0
   call check_enumeration(nfail)
   call check_boundaries(nfail)
 
-  call verdict(nfail, "level 0")
+  call assert_all(nfail, "level 0")
 
 contains
 

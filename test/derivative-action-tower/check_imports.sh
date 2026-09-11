@@ -1,13 +1,13 @@
 #!/bin/bash
-# The derivative action tower's import gate: the dependency-
+# The derivative action tower's import group: the dependency-
 # stratification law, made mechanical - the third client of the
-# calculator gate's philosophy, with its own allowlists. Every
+# calculator group's philosophy, with its own allowlists. Every
 # derivative source may `use` only the framework modules its level
 # has been explicitly granted; a directory with sources but no
 # allowlist fails closed. Gate A especially forbids everywhere:
 # operation_minimization, operation_gmres, any legacy tangent/adjoint
 # or linearization machinery - structure first, numbers never, at
-# this gate. This gate audits the DERIVATIVE TESTS' imports only.
+# this group. This group audits the DERIVATIVE TESTS' imports only.
 
 here="$(cd "$(dirname "$0")" && pwd)"
 
@@ -38,7 +38,7 @@ allowed_for() {
         # primal laws and ONE local linearization per operation,
         # fields carry seeds and results. NO binary storage - the
         # J-pattern is support metadata, never the propagation
-        # itinerary - and no solver, ever, at this gate.
+        # itinerary - and no solver, ever, at this group.
         level-8-derivative-constitution) echo "derivative_assert graph_fractal map_set_representation map_set map_inclusion relation_finitary relation_algebra relation_algorithms field_stored derivative_constitution_fixture graph_fractal view_relational" ;;
         # level 9 (Gate C): the statement - the composition rung.
         # The REUSED level-8 constitution is the only fixture; no
@@ -69,11 +69,11 @@ for dir in "$here"/common "$here"/level-*; do
                | sed -E 's/^[[:space:]]*[uU][sS][eE][[:space:]]*(,[[:space:]]*[iI][nN][tT][rR][iI][nN][sS][iI][cC][[:space:]]*::)?[[:space:]]*([a-zA-Z][a-zA-Z0-9_]*).*/\2/' \
                | tr 'A-Z' 'a-z' | sort -u)
         for mod in $uses; do
-            ok=0
+            valid=0
             for a in $allow $intrinsics; do
-                [ "$mod" = "$a" ] && ok=1 && break
+                [ "$mod" = "$a" ] && valid=1 && break
             done
-            if [ "$ok" -eq 0 ]; then
+            if [ "$valid" -eq 0 ]; then
                 echo "IMPORT GATE: $(basename "$src") in $name uses '$mod' - not on the level's allowlist"
                 violation=1
             fi
@@ -85,4 +85,4 @@ if [ "$violation" -ne 0 ]; then
     echo "IMPORT GATE: the tower layering is violated"
     exit 1
 fi
-echo "import gate: every derivative source imports only its level and below"
+echo "import group: every derivative source imports only its level and below"

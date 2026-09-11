@@ -43,8 +43,8 @@
 !      xbwd, src      row b-local  ->  its A members     preimage
 !
 ! so each fibre is one row slice, has([a,b]) is one row scan, and
-! construction - validation, duplicate collapse, both index builds -
-! is linear in members plus tuples. Set semantics hold here exactly
+! after member-to-row lookup, duplicate collapse and both index builds
+! are linear in members plus tuples. Set semantics hold here exactly
 ! as in the stored relation: a tuple passed in twice is in the
 ! relation once, first appearance retaining its position.
 !
@@ -55,9 +55,8 @@
 !
 ! and the slice alone is O(deg). A counted carrier computes
 ! local_index in O(1), so the bound reduces to O(deg) there -
-! the mesh path's case. A carrier whose local_index scans (the
-! listed fixture does) performs its scan on every query; if such a
-! carrier is used at scale, it requires an index.
+! the mesh path's case. A listed carrier uses a sorted inverse index,
+! so its lookup adds O(log n) for arbitrary sparse member values.
 !
 !                     THE VIEW, AND ITS LIFETIME REQUIREMENT
 !
@@ -310,7 +309,7 @@ contains
   ! concretions, each validated by its own checks - and the tuple
   ! table, one column per tuple, members throughout. Input checks
   ! first, as at every constructor of the level; then the duplicate
-  ! collapse and both index builds, all linear:
+  ! collapse and both index builds, linear apart from carrier lookup:
   !
   !      count rows        one pass with local_index
   !      place tuples      counting sort by source row
@@ -328,9 +327,9 @@ contains
     type(set_map)   , intent(in) :: sets
 
     integer, allocatable :: aloc(:), bloc(:), order(:), marker(:)
-    integer, allocatable :: keepa(:), keepb(:)
+    integer, allocatable :: source_members(:), target_rows(:)
     integer              :: na, nb, nt
-    integer              :: j, p, q, row, col, kept
+    integer              :: j, p, q, row, col, num_retained
 
     call this % declare(name, [source, target])
 
@@ -374,30 +373,30 @@ contains
 
       allocate(this % xfwd(na + 1))
       allocate(this % tgt(nt), marker(max(nb, 1)))
-      allocate(keepa(nt), keepb(nt))
+      allocate(source_members(nt), target_rows(nt))
       marker = 0
-      kept  = 0
+      num_retained  = 0
       do row = 1, na
          p = ptr(row)
          q = ptr(row + 1) - 1
-         this % xfwd(row) = kept + 1
+         this % xfwd(row) = num_retained + 1
          do j = p, q
             col = bloc(order(j))
             if (marker(col) /= row) then
                marker(col)       = row
-               kept             = kept + 1
-               this % tgt(kept) = table(2, order(j))
-               keepa(kept)      = table(1, order(j))
-               keepb(kept)      = col
+               num_retained             = num_retained + 1
+               this % tgt(num_retained) = table(2, order(j))
+               source_members(num_retained)      = table(1, order(j))
+               target_rows(num_retained)      = col
             end if
          end do
       end do
-      this % xfwd(na + 1) = kept + 1
-      this % nnz          = kept
+      this % xfwd(na + 1) = num_retained + 1
+      this % nnz          = num_retained
     end block
 
     ! Backward: the retained tuples grouped by target row.
-    call group_by_key(nb, keepb(1:kept), keepa(1:kept), &
+    call group_by_key(nb, target_rows(1:num_retained), source_members(1:num_retained), &
          & this % xbwd, this % src)
 
   end function create_csr

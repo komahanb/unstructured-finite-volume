@@ -805,30 +805,30 @@ Comprehensive catalog of all Fortran derived types and their type-bound procedur
 ---
 
 ## minimizer
-**Location:** `src/operation_minimization.f90:79`  
-**Description:** Base minimizer attached operation graph tolerances every iteration control.
+**Location:** `src/operation_minimization.f90:95`
+**Description:** Abstract residual minimizer with explicit unknown and residual domains, stopping criteria, residual history and solve outcomes.
 
-- `begin_imbalance` - Begin imbalance measurement
-- `note_imbalance` - Record imbalance value
-- `converged` - Test if converged
-- `flattened` - Test if flattened
-- `diverging` - Test if diverging
-- `began` - Test if begun
-- `fitted` - Test if fitted
-- `exhausted` - Test if exhausted
-- `halted` - Test if halted
-- `attach` - Attach operation
-- `evaluation_inputs` - Get input fields
-- `matvec` - Matrix-vector product
-- `inner_product` - Inner product operation
-- `norm` - Compute norm
-- `sweep_order` - Get sweep ordering
-- `diagonal` - Get diagonal
-- `block_diagonal` - Get block diagonal
-- `constant` - Get constant vector
-- `domain` - Query domain
-- `apply` - Apply operation
-- `solve` - Solve minimization
+- `initialize_residual_history` - Reset the residual history and solve outcome
+- `record_residual_norm` - Record one measured residual norm
+- `converged` - Test the declared absolute or relative tolerance
+- `stagnated` - Test the fitted residual decrease
+- `diverging` - Test projected residual growth
+- `initial_residual_norm` - Initial residual norm
+- `exhausted` - Test the iteration limit
+- `terminated` - Record the residual and test all stopping criteria
+- `record_result` - Record the residual, completed iterations and stopping reason
+- `result` - Recorded solve outcome
+- `state` - State the operator, domains and fixed inputs
+- `evaluate` - Evaluate the stated operator
+- `matvec` - Apply the linear part of the stated operator
+- `imbalance` - Evaluate the linear residual
+- `inner_product` - Euclidean inner product
+- `norm` - Scaled Euclidean norm
+- `sweep_order` - Ordering induced by the unknown coupling
+- `block_diagonal` - Block diagonal of the linear operator
+- `domain` - Solution domain
+- `apply` - Solve from a zero initial vector
+- `solve` - Deferred residual minimization
 
 ---
 

@@ -249,7 +249,7 @@ contains
   end subroutine members
 
   !===================================================================!
-  ! Activate only these table entries. The kept indices name entries
+  ! Activate only these table entries. The active indices name entries
   ! of the concretion's own table, and the active set is the whole
   ! record of membership.
   !
@@ -258,12 +258,12 @@ contains
   ! is not included in a type change.
   !===================================================================!
 
-  subroutine restrict(this, kept)
+  subroutine restrict(this, active_members)
 
     class(form), intent(inout) :: this
-    integer    , intent(in)    :: kept(:)
+    integer    , intent(in)    :: active_members(:)
 
-    this % active = listed_set_representation(kept)
+    this % active = listed_set_representation(active_members)
 
   end subroutine restrict
 

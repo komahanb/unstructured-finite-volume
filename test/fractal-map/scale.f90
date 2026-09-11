@@ -4,7 +4,7 @@
 ! Measures the size of one kernel graph object and extrapolates the
 ! two candidate designs to the scales the architecture must reach.
 ! The numbers are printed, not asserted: the assertion is only that
-! design A crosses a stated ceiling and design B does not.
+! design A crosses a stated memory limit and design B does not.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -16,7 +16,7 @@ program scale
   implicit none
 
   real, parameter :: GB = 1.0e9
-  real, parameter :: CEILING_GB = 64.0        ! one fat node's memory
+  real, parameter :: MEMORY_LIMIT_GB = 64.0        ! one compute node's memory capacity
 
   integer :: gbytes, bbytes, ibytes
   real    :: a_set_1e9, b_set_1e9, a_nnz_1e10, b_nnz_1e10
@@ -58,12 +58,12 @@ program scale
   print '(1x,a,f12.1,a)', '   B  semantic graph + CSR   : ', b_nnz_1e10, ' GB of flat integer arrays'
   print *, ''
 
-  call check('design A exceeds the stated ceiling for a 10^9 set', &
-       & a_set_1e9 .gt. CEILING_GB)
+  call check('design A exceeds the stated memory limit for a 10^9 set', &
+       & a_set_1e9 .gt. MEMORY_LIMIT_GB)
   call check('design B does not, by nine orders of magnitude', &
-       & b_set_1e9 .lt. 1.0e-6 * CEILING_GB)
+       & b_set_1e9 .lt. 1.0e-6 * MEMORY_LIMIT_GB)
   call check('design A exceeds it for 10^10 tuples', &
-       & a_nnz_1e10 .gt. CEILING_GB)
+       & a_nnz_1e10 .gt. MEMORY_LIMIT_GB)
   call check('design B stores tuples as flat arrays, no pointer per nonzero', &
        & b_nnz_1e10 .lt. a_nnz_1e10 / 10.0)
 
@@ -78,12 +78,12 @@ program scale
 
 contains
 
-  subroutine check(label, ok)
+  subroutine check(label, satisfied)
 
     character(len=*), intent(in) :: label
-    logical         , intent(in) :: ok
+    logical         , intent(in) :: satisfied
 
-    if (ok) then
+    if (satisfied) then
        print *, ' PASS : ', label
     else
        print *, ' FAIL : ', label

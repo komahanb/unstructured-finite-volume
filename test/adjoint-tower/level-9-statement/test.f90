@@ -44,7 +44,7 @@
 program adjoint_level_9
 
   use iso_fortran_env  , only : dp => REAL64
-  use adjoint_assert   , only : report, verdict
+  use adjoint_assert   , only : report, assert_all
   use adjoint_assert   , only : VAR_P, VAR_U, VAR_V
   use adjoint_assert   , only : TGT_R1, TGT_R2, TGT_F
   use graph_fractal        , only : graph
@@ -227,7 +227,7 @@ program adjoint_level_9
   write(*,'(1x,a)', advance='no') "ADJOINT_RESULT ="
   write(*,'(es24.16)') sensitivity
 
-  call verdict(nfail, "level 9")
+  call assert_all(nfail, "level 9")
 
 contains
 

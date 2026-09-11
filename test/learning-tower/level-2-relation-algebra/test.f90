@@ -22,7 +22,7 @@
 
 program learning_level_2
 
-  use learning_assert, only : report, verdict
+  use learning_assert, only : report, assert_all
   use learning_assert, only : SLOT_W, SLOT_X, SLOT_YHAT, SLOT_Y, SLOT_E
   use learning_assert, only : OP_PREDICT, OP_ERROR
   use learning_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
@@ -81,7 +81,7 @@ program learning_level_2
   call check_dependency(nfail)
   call check_order_invariance(nfail)
 
-  call verdict(nfail, "level 2")
+  call assert_all(nfail, "level 2")
 
 contains
 
@@ -205,7 +205,7 @@ contains
     type(graph) :: da, db
     integer                        :: rev(3, 6), j
     integer, allocatable           :: dt(:,:), dt2(:,:)
-    logical                        :: ok
+    logical                        :: satisfied
 
     do j = 1, 6
        rev(:, j) = table(:, 7 - j)
@@ -223,14 +223,14 @@ contains
 
     call d % tuples(dt)
     call d2 % tuples(dt2)
-    ok = .true.
+    satisfied = .true.
     do j = 1, size(dt, 2)
-       ok = ok .and. d2 % has(dt(:, j))
+       satisfied = satisfied .and. d2 % has(dt(:, j))
     end do
     do j = 1, size(dt2, 2)
-       ok = ok .and. d % has(dt2(:, j))
+       satisfied = satisfied .and. d % has(dt2(:, j))
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "each holds every tuple of the other: equal as sets", nfail)
 
     da = d % domain(1)

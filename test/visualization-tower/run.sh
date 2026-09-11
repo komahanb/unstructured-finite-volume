@@ -26,7 +26,9 @@ here="$(cd "$(dirname "$0")" && pwd)"
 "$here/check_imports.sh" --selftest || { echo "└── the import gate refused itself"; exit 1; }
 "$here/check_imports.sh" || { echo "└── the import gate refused the tower"; exit 1; }
 
-( cd "$here/../.." && ./build.sh >/dev/null 2>&1 )
+if [ "${UFVM_SKIP_LIBRARY_BUILD:-0}" != 1 ]; then
+    ( cd "$here/../.." && ./build.sh >/dev/null 2>&1 )
+fi
 
 levels=(
   "level-0-carrier            0 carrier"

@@ -34,7 +34,7 @@
 program partitioned_pde_level_8
 
   use iso_fortran_env  , only : dp => REAL64
-  use partitioned_pde_assert, only : report, verdict
+  use partitioned_pde_assert, only : report, assert_all
   use partitioned_pde_assert, only : NV, Q_EXACT
   use graph_fractal        , only : graph
   use view_directed, only : directed_graph
@@ -70,10 +70,10 @@ program partitioned_pde_level_8
   composite = partitioned_shifted_laplacian(g)
 
   call check_composite_context(nfail)
-  call check_action_probes(nfail)
+  call check_action_values(nfail)
   call check_no_stale_overlap(nfail)
 
-  call verdict(nfail, "level 8")
+  call assert_all(nfail, "level 8")
 
 contains
   !===================================================================!
@@ -101,32 +101,32 @@ contains
   ! is owned by part 1 and borrowed by part 2, e4 the reverse.
   !===================================================================!
 
-  subroutine check_action_probes(nfail)
+  subroutine check_action_values(nfail)
 
     integer, intent(inout) :: nfail
 
-    call one_probe(Q_EXACT, "q*", nfail)
-    call one_probe(MIXED  , "the mixed-sign probe", nfail)
-    call one_probe(E3     , "the interface basis e3", nfail)
-    call one_probe(E4     , "the interface basis e4", nfail)
+    call compare_actions(Q_EXACT, "q*", nfail)
+    call compare_actions(MIXED  , "the mixed-sign probe", nfail)
+    call compare_actions(E3     , "the interface basis e3", nfail)
+    call compare_actions(E4     , "the interface basis e4", nfail)
 
-  end subroutine check_action_probes
-  subroutine one_probe(v, tag, nfail)
+  end subroutine check_action_values
+  subroutine compare_actions(v, tag, nfail)
 
     real(dp)        , intent(in)    :: v(:)
     character(len=*), intent(in)    :: tag
     integer         , intent(inout) :: nfail
 
-    real(dp) :: direct_answer(NV), part_answer(NV)
+    real(dp) :: direct_image(NV), partitioned_image(NV)
 
-    direct_answer = act(direct_on(v))
-    part_answer   = act(part_on(v))
+    direct_image = act(direct_on(v))
+    partitioned_image   = act(part_on(v))
 
-    call report(maxval(abs(direct_answer - part_answer)) < 1.0d-12, &
+    call report(maxval(abs(direct_image - partitioned_image)) < 1.0d-12, &
          & "A_partitioned = A_global on " // tag // ", by member", &
          & nfail)
 
-  end subroutine one_probe
+  end subroutine compare_actions
   !===================================================================!
   ! Five applications of ONE composite instance, ending where they
   ! began. A halo cached from a previous matvec would survive into
@@ -139,7 +139,7 @@ contains
     integer, intent(inout) :: nfail
 
     real(dp) :: y1(NV), y2(NV), y3(NV), y4(NV), y5(NV)
-    logical  :: ok
+    logical  :: satisfied
 
     y1 = act(part_on(Q_EXACT))
     y2 = act(part_on(MIXED))
@@ -151,11 +151,11 @@ contains
          & "the same composite, applied five times, returns to its " // &
          & "first answer: no overlap survives a call", nfail)
 
-    ok = maxval(abs(y1 - act(direct_on(Q_EXACT)))) < 1.0d-12 .and. &
+    satisfied = maxval(abs(y1 - act(direct_on(Q_EXACT)))) < 1.0d-12 .and. &
        & maxval(abs(y2 - act(direct_on(MIXED  )))) < 1.0d-12 .and. &
        & maxval(abs(y3 - act(direct_on(E3     )))) < 1.0d-12 .and. &
        & maxval(abs(y4 - act(direct_on(E4     )))) < 1.0d-12
-    call report(ok, &
+    call report(satisfied, &
          & "and every one of the five agreed with the global action " // &
          & "at the time it was asked", nfail)
 
@@ -169,40 +169,40 @@ contains
   ! two *_on builders make the state field each road wants.
   !===================================================================!
 
-  function direct_on(v) result(answer)
+  function direct_on(v) result(image)
 
     real(dp), intent(in)            :: v(:)
-    class(field), allocatable :: answer
+    class(field), allocatable :: image
 
     type(stored_field) :: q
 
     q = stored_field('probe', g % vertex_set(), g % num_vertices())
     call q % set_real_vector(v)
     direct = shifted_laplacian()
-    call direct % apply(g, direct % bind([q]), answer)
+    call direct % apply(g, direct % bind([q]), image)
 
   end function direct_on
-  function part_on(v) result(answer)
+  function part_on(v) result(image)
 
     real(dp), intent(in)            :: v(:)
-    class(field), allocatable :: answer
+    class(field), allocatable :: image
 
     type(stored_field) :: q
 
     q = stored_field('probe', g % vertex_set(), g % num_vertices())
     call q % set_real_vector(v)
-    call composite % apply(g, composite % bind([q]), answer)
+    call composite % apply(g, composite % bind([q]), image)
 
   end function part_on
-  function act(answer) result(v)
+  function act(image) result(v)
 
-    class(field), intent(in) :: answer
+    class(field), intent(in) :: image
     real(dp)                       :: v(NV)
 
-    real(dp), allocatable :: got(:)
+    real(dp), allocatable :: field_values(:)
 
-    call answer % real_vector(got)
-    v = got(1:NV)
+    call image % real_vector(field_values)
+    v = field_values(1:NV)
 
   end function act
 end program partitioned_pde_level_8

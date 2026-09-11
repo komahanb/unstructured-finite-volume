@@ -95,11 +95,11 @@ contains
   end function slot_for_port
 
   !===================================================================!
-  ! The unique home of a residual row, read FROM the location
+  ! The unique location of a residual row, read FROM the location
   ! relation by scanning the value slots - exactly one, or refusal.
   !===================================================================!
 
-  integer function located_slot(located, slots, sets, row) result(home)
+  integer function located_slot(located, slots, sets, row) result(located_member)
 
     class(relation)  , intent(in) :: located
     type(graph), intent(in) :: slots
@@ -109,11 +109,11 @@ contains
     integer :: j, hits
 
     hits = 0
-    home = 0
+    located_member = 0
     do j = 1, sets % num_members_of(slots)
        if (located % has([row, sets % member_of(slots, j)])) then
           hits = hits + 1
-          home = sets % member_of(slots, j)
+          located_member = sets % member_of(slots, j)
        end if
     end do
     if (hits .ne. 1) then
@@ -128,7 +128,7 @@ contains
   ! each operation's slots discovered from T_flow, each input
   ! demanded available, each output required to land in the
   ! computed domain - then read every row's residual as the VALUE
-  ! at the home L locates. The caller may ask for the final
+  ! at the member L locates. The caller may ask for the final
   ! workspace (trace) and for the trainable members actually read
   ! as inputs (touched) - the constituted support, to be held
   ! against Level 6's structural one.
@@ -216,11 +216,11 @@ contains
        available(sets % index_in(slots, out)) = .true.
     end do
 
-    ! The learning residual rule, complete: the value at the home.
+    ! The learning residual rule, complete: the value at the located member.
     do i = 1, sets % num_members_of(rows)
        m = located_slot(located, slots, sets, sets % member_of(rows, i))
        if (.not. available(sets % index_in(slots, m))) then
-          error stop 'constitution: a residual home was never computed'
+          error stop 'constitution: a residual value was never computed'
        end if
        residual(sets % index_in(rows, sets % member_of(rows, i))) = &
             & values(sets % index_in(slots, m))

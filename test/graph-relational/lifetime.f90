@@ -3,7 +3,7 @@
 !
 ! relational_binding lends pointers into the objects it owns, and
 ! a long-lived reader keeps such a pointer across growth. This
-! suite holds the storage law that makes that safe:
+! suite verifies the storage law that makes that safe:
 !
 !     relational_binding is not assignable; bind_* preserves every
 !     outstanding object pointer until the binding is destroyed.
@@ -16,8 +16,8 @@
 !
 ! WHAT WAS MEASURED AND REJECTED, twice.
 !
-! First, the object held in the row as an allocatable component. Growth
-! relocates the row array, and a borrowed pointer then reads freed
+! First, the object stored in the row as an allocatable component. Growth
+! relocates the row array, and an associated pointer then reads freed
 ! storage:
 !
 !     A before growth : same_as = T, name = R1
@@ -27,11 +27,11 @@
 ! Second, a deep copy on assignment. It finalizes its left-hand side
 ! first, so overwriting a lender freed what the lender had lent:
 !
-!     b = d, then read p borrowed from b
-!       native   : associated, and answers R2    <- silently wrong
-!       valgrind : invalid read of a freed block, and answers R1
+!     b = d, then read p associated through b
+!       native   : associated, and returns R2    <- silently wrong
+!       valgrind : invalid read of a freed block, and returns R1
 !
-! Two allocators, two different wrong answers, and the first is one no
+! Two allocators, two different incorrect results, and the first is one no
 ! tool reports. No caller assigned a binding, so the copy that made
 ! this reachable is gone and assignment refuses.
 !
@@ -58,7 +58,7 @@ program lifetime
   write(*,'(1x,a)') "binding lifetime suite"
 
   !===================================================================!
-  ! A . A pointer borrowed after all binding is complete.
+  ! A . A pointer associated after all binding is complete.
   ! B . then bind_relation grows the relation storage.
   ! C . then bind_set grows the independent set storage.
   !===================================================================!
@@ -81,14 +81,14 @@ program lifetime
     call b % bind_relation(e1, r1)
     p => b % relation_for(e1)
 
-    call check('A  a borrowed pointer denotes the bound object', &
+    call check('A  an associated pointer denotes the bound object', &
          & p % same_as(r1) .and. p % name() .eq. 'R1')
 
     call b % bind_relation(e2, r2)                  ! relation storage grows
     call check('B  it still denotes it after the relation storage grows', &
          & p % same_as(r1) .and. p % name() .eq. 'R1')
     q => b % relation_for(e1)
-    call check('B  and a fresh borrow is the same storage', associated(p, q))
+    call check('B  and a new pointer association denotes the same storage', associated(p, q))
 
     call b % bind_set(e3, s)                        ! set storage grows
     call check('C  and after the independent set storage grows', &
@@ -99,7 +99,7 @@ program lifetime
   !===================================================================!
   ! D . Two bindings coexist, each lending. Each owns its own objects,
   ! so growth in one is invisible to the other's borrowers. This is the
-  ! whole of what replacement was ever wanted for.
+  ! whole of what replacement was required to provide.
   !===================================================================!
 
   independent_block: block
@@ -134,7 +134,7 @@ program lifetime
   end block independent_block
 
   !===================================================================!
-  ! E . The long-lived reader pattern: borrow, narrow the dynamic type,
+  ! E . The long-lived reader pattern: associate, select the dynamic type,
   ! keep the narrowed pointer, then grow the binding.
   !===================================================================!
 
@@ -179,7 +179,7 @@ program lifetime
        call check('E  the bound relation is binary', .false.)
     end select
 
-    call check('E  the narrowed pointer answers before growth', &
+    call check('E  the narrowed pointer reads the value before growth', &
          & tails % same_as(t) .and. tails % arity() .eq. 2)
 
     call b % bind_relation(relem(2), extra)          ! growth after narrowing
@@ -189,7 +189,7 @@ program lifetime
   end block profile_pattern_block
 
   !===================================================================!
-  ! F . TARGET. A row holds a pointer to the object, so the pointer
+  ! F . TARGET. A row stores a pointer to the object, so the pointer
   ! returned does not point into the binding: it survives the return
   ! whether or not the actual argument has TARGET. Both are exercised;
   ! neither declares the binding TARGET.
@@ -244,12 +244,12 @@ program lifetime
 
 contains
 
-  subroutine check(label, ok)
+  subroutine check(label, satisfied)
 
     character(len=*), intent(in) :: label
-    logical         , intent(in) :: ok
+    logical         , intent(in) :: satisfied
 
-    if (ok) then
+    if (satisfied) then
        print *, ' PASS : ', label
     else
        print *, ' FAIL : ', label

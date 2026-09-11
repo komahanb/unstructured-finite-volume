@@ -48,7 +48,7 @@
 
 program visualization_level_4
 
-  use visualization_assert , only : report, verdict
+  use visualization_assert , only : report, assert_all
   use visualization_assert , only : ND31
   use visualization_assert , only : X0_A, X0_B, X0_C, X0_D
   use visualization_assert , only : X1_P, X1_Q, X1_R
@@ -171,7 +171,7 @@ program visualization_level_4
   call check_declaration_order_rules(nfail)
   call check_the_directed_incidence_question(nfail)
 
-  call verdict(nfail, "level 4")
+  call assert_all(nfail, "level 4")
 
 contains
 
@@ -440,7 +440,7 @@ contains
 
     type(graph)  :: ambient
     type(graph)   :: shuffled
-    type(csr_relation) :: probe
+    type(csr_relation) :: permuted_relation
     type(picture)      :: pic
     type(inclusion_map)     :: inclusions
 
@@ -450,10 +450,10 @@ contains
     call sets       % bind(shuffled, listed_set_representation([30, 10, 20]))
     call inclusions % include_in(shuffled, ambient)
 
-    probe = csr_relation('P', shuffled, x3, &
+    permuted_relation = csr_relation('P', shuffled, x3, &
          &               reshape([30, X3_M, 20, X3_N], [2, 2]), sets)
 
-    pic = sparsity_picture(probe, sets, labels)
+    pic = sparsity_picture(permuted_relation, sets, labels)
 
     call report(pic % at(2) .eq. '        30 10 20', &
          & "a carrier declaring { 30, 10, 20 } is drawn 30 10 20 - " // &
@@ -642,7 +642,7 @@ contains
 
     type(graph) :: cols, rows
     type(picture)                  :: listing
-    character(len=:), allocatable  :: said, wanted
+    character(len=:), allocatable  :: rendered_row, expected_row
     integer                        :: i, j
 
     cols    = r % domain(1)
@@ -651,15 +651,15 @@ contains
 
     grid_agrees_with_listing = .true.
     do j = 1, sets % num_members_of(cols)
-       wanted = label_for(cols, sets % member_of(cols, j), labels) // ' ->'
+       expected_row = label_for(cols, sets % member_of(cols, j), labels) // ' ->'
        do i = 1, sets % num_members_of(rows)
           if (glyph_at(r, sets % member_of(cols, j), sets % member_of(rows, i)) .eq. '#') then
-             wanted = wanted // ' ' // label_for(rows, sets % member_of(rows, i), labels)
+             expected_row = expected_row // ' ' // label_for(rows, sets % member_of(rows, i), labels)
           end if
        end do
-       said = listing % at(1 + j)
+       rendered_row = listing % at(1 + j)
        grid_agrees_with_listing = grid_agrees_with_listing .and. &
-            & (said .eq. wanted)
+            & (rendered_row .eq. expected_row)
     end do
 
   end function grid_agrees_with_listing

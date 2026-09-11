@@ -22,7 +22,7 @@
 
 program calculator_level_4
 
-  use calculator_assert, only : report, verdict
+  use calculator_assert, only : report, assert_all
   use calculator_assert, only : SLOT_A, SLOT_B, SLOT_C, SLOT_D, SLOT_E
   use calculator_assert, only : OP_PLUS, OP_TIMES
   use calculator_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
@@ -129,9 +129,9 @@ program calculator_level_4
 
   call check_sources_and_sinks(nfail)
   call check_reachability(nfail)
-  call check_walk(nfail)
+  call check_traversal(nfail)
 
-  call verdict(nfail, "level 4")
+  call assert_all(nfail, "level 4")
 
 contains
 
@@ -184,7 +184,7 @@ contains
   ! One walk, one order: [+, x], and nothing else.
   !===================================================================!
 
-  subroutine check_walk(nfail)
+  subroutine check_traversal(nfail)
 
     integer, intent(inout) :: nfail
 
@@ -196,6 +196,6 @@ contains
          &      order(1) .eq. OP_PLUS .and. order(2) .eq. OP_TIMES, &
          & "the topological walk is [+, x], exactly", nfail)
 
-  end subroutine check_walk
+  end subroutine check_traversal
 
 end program calculator_level_4

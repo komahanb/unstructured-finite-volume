@@ -53,7 +53,7 @@ contains
 
     type(stencil) :: op
 
-    class(form), allocatable :: chosen
+    class(form), allocatable :: approximation_form
     !----------------------------------------------------------------!
     ! Each condition's faces are declared, read and discarded inside
     ! this call, so their interpretation is local too. A new identity
@@ -113,12 +113,12 @@ contains
 
     ! The form, chosen or defaulted; then the assembly is called.
     if (present(shape)) then
-       allocate(chosen, source=shape)
+       allocate(approximation_form, source=shape)
     else
-       allocate(chosen, source=polynomial_form(dimension=m % dimension))
+       allocate(approximation_form, source=polynomial_form(dimension=m % dimension))
     end if
 
-    op = fitted_balance_stencil(m, chosen, scales, &
+    op = fitted_balance_stencil(m, approximation_form, scales, &
          & boundary_values=vb, boundary_weights=wb, rings=rings, &
          & flux_known=known, boundary_flux=flux)
 

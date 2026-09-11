@@ -28,7 +28,7 @@
 program learning_level_5
 
   use iso_fortran_env  , only : dp => REAL64
-  use learning_assert  , only : report, verdict
+  use learning_assert  , only : report, assert_all
   use learning_assert  , only : SLOT_W, SLOT_X, SLOT_YHAT, SLOT_Y, SLOT_E
   use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
@@ -75,12 +75,12 @@ program learning_level_5
   ! sentinels. The subdomain alone says "computed later", and that
   ! absence is the rung's strongest statement.
 
-  call verdict(nfail, "level 5")
+  call assert_all(nfail, "level 5")
 
 contains
 
   !===================================================================!
-  ! Extensions, embeddings, and the one-home law: every member of V
+  ! Extensions, embeddings, and the unique-membership law: every member of V
   ! belongs to exactly one of K, Theta, U - disjointness and
   ! coverage proved together, composed locally from membership.
   !===================================================================!
@@ -89,8 +89,8 @@ contains
 
     integer, intent(inout) :: nfail
 
-    integer :: i, m, homes
-    logical :: ok
+    integer :: i, m, membership_count
+    logical :: satisfied
 
     call report(sets % num_members_of(k) .eq. 2 .and. sets % has(k, SLOT_Y) .and. &
          &      sets % has(k, SLOT_X) .and. .not. sets % has(k, SLOT_W), &
@@ -107,14 +107,14 @@ contains
          &      declared_subobject(u, v, inclusions), &
          & "all three stand embedded in the value slots", nfail)
 
-    ok = .true.
+    satisfied = .true.
     do i = 1, sets % num_members_of(v)
        m = sets % member_of(v, i)
-       homes = count([sets % has(k, m), sets % has(theta, m), sets % has(u, m)])
-       ok = ok .and. (homes .eq. 1)
+       membership_count = count([sets % has(k, m), sets % has(theta, m), sets % has(u, m)])
+       satisfied = satisfied .and. (membership_count .eq. 1)
     end do
-    call report(ok, &
-         & "every slot has exactly one home: disjoint, and covering", &
+    call report(satisfied, &
+         & "every slot belongs to exactly one partition member", &
          & nfail)
 
   end subroutine check_partition

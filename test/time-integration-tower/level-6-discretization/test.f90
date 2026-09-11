@@ -64,7 +64,7 @@
 program time_level_6
 
   use iso_fortran_env       , only : dp => REAL64
-  use time_assert           , only : report, verdict
+  use time_assert           , only : report, assert_all
   use time_assert           , only : NQ, NT, TOL
   use time_assert           , only : T0, T1, T2
   use time_assert           , only : H_STEP, Q0, Q_FE1, Q_BE1, Q_BDF2
@@ -124,7 +124,7 @@ program time_level_6
   call check_reach_supplies_the_history_roles(nfail)
   call check_bdf2_residual(nfail)
 
-  call verdict(nfail, "level 6")
+  call assert_all(nfail, "level 6")
 
 contains
 
@@ -189,7 +189,7 @@ contains
 
     integer, intent(inout) :: nfail
 
-    class(field), allocatable :: answer
+    class(field), allocatable :: residual_field
     type(graph)  :: d
     integer         :: n_d
     real(dp), allocatable           :: s(:)
@@ -199,13 +199,13 @@ contains
          & "the ACTION answers Q when asked its domain, though it " // &
          & "was handed a five-vertex host", nfail)
 
-    call decay % apply(ht, decay % bind([qf]), answer)
-    d = answer % domain()
+    call decay % apply(ht, decay % bind([qf]), residual_field)
+    d = residual_field % domain()
     call report(d % same_as(q), &
          & "and it ANSWERS on Q: graph host and state domain are " // &
          & "independent concepts in this specimen", nfail)
 
-    call answer % real_vector(s)
+    call residual_field % real_vector(s)
     call report(size(s) .eq. NQ .and. &
          &      abs(s(1) - 2.0_dp) .lt. TOL .and. &
          &      abs(s(2) + 2.0_dp) .lt. TOL, &

@@ -22,7 +22,7 @@
 program calculator_level_5
 
   use iso_fortran_env  , only : dp => REAL64
-  use calculator_assert, only : report, verdict
+  use calculator_assert, only : report, assert_all
   use calculator_assert, only : SLOT_A, SLOT_B, SLOT_C, SLOT_D, SLOT_E
   use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
@@ -62,7 +62,7 @@ program calculator_level_5
   call check_known_field(nfail)
   call check_empty_field(nfail)
 
-  call verdict(nfail, "level 5")
+  call assert_all(nfail, "level 5")
 
 contains
 
@@ -76,7 +76,7 @@ contains
     integer, intent(inout) :: nfail
 
     integer :: i
-    logical :: ok
+    logical :: satisfied
 
     call report(sets % num_members_of(k) .eq. 3 .and. sets % num_members_of(u) .eq. 2, &
          & "|K| = 3 and |U| = 2", nfail)
@@ -88,16 +88,16 @@ contains
     call report(sets % has(u, SLOT_C) .and. sets % has(u, SLOT_E), &
          & "U holds c and e, where answers will one day live", nfail)
 
-    ok = .true.
+    satisfied = .true.
     do i = 1, sets % num_members_of(k)
-       ok = ok .and. (sets % member_of(k, sets % index_in(k, sets % member_of(k, i))) &
+       satisfied = satisfied .and. (sets % member_of(k, sets % index_in(k, sets % member_of(k, i))) &
             &         .eq. sets % member_of(k, i))
     end do
     do i = 1, sets % num_members_of(u)
-       ok = ok .and. (sets % member_of(u, sets % index_in(u, sets % member_of(u, i))) &
+       satisfied = satisfied .and. (sets % member_of(u, sets % index_in(u, sets % member_of(u, i))) &
             &         .eq. sets % member_of(u, i))
     end do
-    call report(ok, "member and local_index invert on both supports", nfail)
+    call report(satisfied, "member and local_index invert on both supports", nfail)
 
     call report(declared_subobject(k, x, inclusions) .and. declared_subobject(u, x, inclusions), &
          & "both stand embedded in the value slots", nfail)

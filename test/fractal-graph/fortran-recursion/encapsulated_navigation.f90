@@ -1,4 +1,4 @@
-! NAVIGATION PROBE. The admitted public forms, against the shipped
+! NAVIGATION CHECK. The admitted public forms, against the shipped
 ! kernel. EXPECTED: compiles.
 !
 !     g % branch(i)                      public component

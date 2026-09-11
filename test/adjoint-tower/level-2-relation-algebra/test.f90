@@ -33,7 +33,7 @@
 
 program adjoint_level_2
 
-  use adjoint_assert, only : report, verdict
+  use adjoint_assert, only : report, assert_all
   use adjoint_assert, only : VAR_P, VAR_U, VAR_V
   use adjoint_assert, only : TGT_R1, TGT_R2, TGT_F
   use graph_fractal        , only : graph
@@ -121,7 +121,7 @@ program adjoint_level_2
   call check_response_blocks(nfail)
   call check_blocks_are_distinct(nfail)
 
-  call verdict(nfail, "level 2")
+  call assert_all(nfail, "level 2")
 
 contains
 

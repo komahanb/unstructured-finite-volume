@@ -31,7 +31,7 @@
 program visualization_level_9
 
   use iso_fortran_env      , only : dp => REAL64
-  use visualization_assert , only : report, verdict
+  use visualization_assert , only : report, assert_all
   use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation
   use map_set        , only : set_map
@@ -60,7 +60,7 @@ program visualization_level_9
   integer , parameter :: N = 3
   real(dp), parameter :: TOL = 1.0e-12_dp
 
-  real(dp), parameter :: X_PROBE(N)   = [1.0_dp, 2.0_dp, 3.0_dp]
+  real(dp), parameter :: X_DIRECTION(N)   = [1.0_dp, 2.0_dp, 3.0_dp]
   real(dp), parameter :: A_TIMES_X(N) = [6.0_dp, 14.0_dp, 20.0_dp]
   real(dp), parameter :: TRUE_DIAG(N) = [4.0_dp, 5.0_dp, 6.0_dp]
   real(dp), parameter :: A_TIMES_ONE(N) = [5.0_dp, 7.0_dp, 7.0_dp]
@@ -142,7 +142,7 @@ program visualization_level_9
 
   call solver % state(a, context, context % vertex_set(), &
        &              context % num_vertices(), coupling = dependent)
-  call solver % matvec(X_PROBE, mv)
+  call solver % matvec(X_DIRECTION, mv)
   call solver % sweep_order(colours)
   call diagonal_of(solver, d)
 
@@ -150,7 +150,7 @@ program visualization_level_9
 
   call check_the_statement(nfail)
 
-  call verdict(nfail, "level 9")
+  call assert_all(nfail, "level 9")
 
 contains
 
@@ -300,12 +300,12 @@ contains
 
   end subroutine diagonal_of
 
-  logical function alike(got, want)
+  logical function alike(actual, expected)
 
-    real(dp), intent(in) :: got(:), want(:)
+    real(dp), intent(in) :: actual(:), expected(:)
 
-    alike = (size(got) .eq. size(want))
-    if (alike) alike = all(abs(got - want) .lt. TOL)
+    alike = (size(actual) .eq. size(expected))
+    if (alike) alike = all(abs(actual - expected) .lt. TOL)
 
   end function alike
 

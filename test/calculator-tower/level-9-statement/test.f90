@@ -162,7 +162,7 @@ contains
     type(binding), intent(in), optional      :: inputs(:)
     class(field), allocatable, intent(inout) :: output
 
-    type(set_map) :: mine
+    type(set_map) :: domain_sets
 
     type(stored_field)                    :: out
     class(field), allocatable             :: state
@@ -189,15 +189,15 @@ contains
     ! is a temporary that never leaves this scope.
     !----------------------------------------------------------------!
 
-    call mine % bind(this % xs,      this % c_xs)
-    call mine % bind(this % os,      this % c_os)
-    call mine % bind(this % ys,      this % c_ys)
-    call mine % bind(this % known,   this % c_known)
-    call mine % bind(this % unknown, this % c_unknown)
+    call domain_sets % bind(this % xs,      this % c_xs)
+    call domain_sets % bind(this % os,      this % c_os)
+    call domain_sets % bind(this % ys,      this % c_ys)
+    call domain_sets % bind(this % known,   this % c_known)
+    call domain_sets % bind(this % unknown, this % c_unknown)
 
     call generated_residual(this % flow, this % located, &
          & this % xs, this % os, this % ys, &
-         & mine, this % known, this % known_values, &
+         & domain_sets, this % known, this % known_values, &
          & this % unknown, ustate, r)
 
     out = stored_field('residual', this % ys, this % n_ys)
@@ -211,7 +211,7 @@ end module constituted_residual_fixture
 program calculator_level_9
 
   use iso_fortran_env  , only : dp => REAL64
-  use calculator_assert, only : report, verdict
+  use calculator_assert, only : report, assert_all
   use calculator_assert, only : SLOT_A, SLOT_B, SLOT_C, SLOT_D, SLOT_E
   use calculator_assert, only : OP_PLUS, OP_TIMES
   use calculator_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
@@ -255,7 +255,7 @@ program calculator_level_9
   type(graph)  :: dom
   class(field), allocatable :: sol, rf
   real(dp), allocatable :: gv(:), solval(:), rv(:)
-  real(dp)              :: answer
+  real(dp)              :: expression_value
   integer               :: table(3, 6)
   integer               :: nfail
   type(set_map)     :: sets
@@ -381,13 +381,13 @@ program calculator_level_9
 
   ! -- the statement's one question
   call sol % real_vector(solval)
-  answer = solval(sets % index_in(u, SLOT_E))
+  expression_value = solval(sets % index_in(u, SLOT_E))
 
-  call report(abs(answer - 20.0_dp) < 1.0d-9, &
+  call report(abs(expression_value - 20.0_dp) < 1.0d-9, &
        & "evaluate (2 + 3) x 4: the tower answers 20", nfail)
 
-  write(*,'(1x,a,i0)') "CALCULATOR_RESULT = ", nint(answer)
+  write(*,'(1x,a,i0)') "CALCULATOR_RESULT = ", nint(expression_value)
 
-  call verdict(nfail, "level 9")
+  call assert_all(nfail, "level 9")
 
 end program calculator_level_9

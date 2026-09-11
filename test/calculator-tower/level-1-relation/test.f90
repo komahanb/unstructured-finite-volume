@@ -24,7 +24,7 @@
 
 program calculator_level_1
 
-  use calculator_assert, only : report, verdict
+  use calculator_assert, only : report, assert_all
   use calculator_assert, only : SLOT_A, SLOT_B, SLOT_C, SLOT_D, SLOT_E
   use calculator_assert, only : OP_PLUS, OP_TIMES
   use calculator_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
@@ -70,7 +70,7 @@ program calculator_level_1
   call check_complete_extension(nfail)
   call check_representative_membership(nfail)
 
-  call verdict(nfail, "level 1")
+  call assert_all(nfail, "level 1")
 
 contains
 

@@ -16,11 +16,11 @@ program refusal
 
   implicit none
 
-  character(len=32) :: which
+  character(len=32) :: case_name
 
-  call get_command_argument(1, which)
+  call get_command_argument(1, case_name)
 
-  select case (trim(which))
+  select case (trim(case_name))
 
      !================================================================!
      ! The map is keyed on identity, so an undeclared set cannot be a

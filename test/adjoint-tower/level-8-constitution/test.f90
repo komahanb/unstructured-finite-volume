@@ -43,7 +43,7 @@
 program adjoint_level_8
 
   use iso_fortran_env  , only : dp => REAL64
-  use adjoint_assert   , only : report, verdict
+  use adjoint_assert   , only : report, assert_all
   use adjoint_assert   , only : VAR_P, VAR_U, VAR_V
   use adjoint_assert   , only : TGT_R1, TGT_R2, TGT_F
   use graph_fractal        , only : graph
@@ -129,7 +129,7 @@ program adjoint_level_8
   call run_battery(q_can , y_can , sets, "canonical", 1, 1, nfail)
   call run_battery(q_perm, y_perm, sets, "permuted" , 2, 2, nfail)
 
-  call verdict(nfail, "level 8")
+  call assert_all(nfail, "level 8")
 
 contains
 

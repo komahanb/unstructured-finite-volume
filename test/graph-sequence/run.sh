@@ -3,29 +3,31 @@
 # candidate API forms; run the laws and every refusal.
 set -e
 
-here="$(cd "$(dirname "$0")" && pwd)"
+suite_dir="$(cd "$(dirname "$0")" && pwd)"
 
-( cd "$here/../.." && ./build.sh >/dev/null )
+if [ "${UFVM_SKIP_LIBRARY_BUILD:-0}" != 1 ]; then
+    ( cd "$suite_dir/../.." && ./build.sh >/dev/null )
+fi
 
-F90="$(make -C "$here" -s print-f90)"
-FSTD="$(make -C "$here" -s print-std)"
+F90="$(make -C "$suite_dir" -s print-f90)"
+FSTD="$(make -C "$suite_dir" -s print-std)"
 
-make -C "$here" clean >/dev/null 2>&1 || true
-make -C "$here" >/dev/null
+make -C "$suite_dir" clean >/dev/null 2>&1 || true
+make -C "$suite_dir" >/dev/null
 
 #---------------------------------------------------------------------
 # Section 3. Two candidate representations of a sequence: as a branch,
 # and as the first cell. Both compile and agree; the branch form is
-# smaller and needs no artificial empty graph. Kept so the rejected
+# smaller and needs no artificial empty graph. Retained so the rejected
 # form stays measurable rather than remembered.
 #---------------------------------------------------------------------
 
 echo " CANDIDATE API FORMS"
-cd "$here/candidates"
+cd "$suite_dir/candidates"
 rm -f ./*.mod ./*.o compare
-$F90 -std=$FSTD -fcoarray=single -I"$here/../../lib" \
+$F90 -std=$FSTD -fcoarray=single -I"$suite_dir/../../lib" \
      branch_form.f90 graph_form.f90 compare.f90 \
-     "$here/../../lib/libufvm.a" -o compare
+     "$suite_dir/../../lib/libufvm.a" -o compare
 ./compare
 printf '   branch form : %s module code lines, 1 line per call site\n' \
        "$($F90 --version >/dev/null; grep -c -v -E '^[[:space:]]*(!|$)' branch_form.f90)"
@@ -33,7 +35,7 @@ printf '   graph  form : %s module code lines, 5 lines per call site\n' \
        "$(grep -c -v -E '^[[:space:]]*(!|$)' graph_form.f90)"
 echo " PASS : the branch form is the smaller exact one; it is what src ships"
 rm -f ./*.mod ./*.o compare
-cd "$here"
+cd "$suite_dir"
 echo ''
 
 #---------------------------------------------------------------------

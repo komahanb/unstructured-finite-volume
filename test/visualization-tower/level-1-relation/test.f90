@@ -41,7 +41,7 @@
 
 program visualization_level_1
 
-  use visualization_assert , only : report, verdict
+  use visualization_assert , only : report, assert_all
   use visualization_assert , only : NE1, NE2, NE3
   use visualization_assert , only : X0_A, X0_B, X0_C, X0_D
   use visualization_assert , only : X1_P, X1_Q, X1_R
@@ -81,7 +81,7 @@ program visualization_level_1
   call check_the_twelve_occurrences(nfail)
   call check_no_dependency_is_stored(nfail)
 
-  call verdict(nfail, "level 1")
+  call assert_all(nfail, "level 1")
 
 contains
 

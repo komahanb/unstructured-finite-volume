@@ -31,7 +31,7 @@
 program adjoint_level_5
 
   use iso_fortran_env  , only : dp => REAL64
-  use adjoint_assert   , only : report, verdict
+  use adjoint_assert   , only : report, assert_all
   use adjoint_assert   , only : VAR_P, VAR_U, VAR_V
   use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
@@ -71,7 +71,7 @@ program adjoint_level_5
   ! No residual field, no response field, no adjoint field is built
   ! here - and no zero stands in for any of them.
 
-  call verdict(nfail, "level 5")
+  call assert_all(nfail, "level 5")
 
 contains
 

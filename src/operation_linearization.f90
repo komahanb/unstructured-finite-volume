@@ -7,7 +7,7 @@
 !
 !      exact       D_a S(x) [v]                          max_degree >= 1,
 !                  one partial action, one variation (a, v)
-!      difference  ( S(x + eps v e_a) - S(x) ) / eps     otherwise,
+!      difference  |v| ( S(x + eps v e_a/|v|) - S(x) ) / eps otherwise,
 !                  two residuals, about eight digits
 !
 ! The argument a is any argument S owns; it defaults to S's first.
@@ -21,6 +21,7 @@
 module operation_linearization
 
   use util_precision  , only : dp, half_digits
+  use util_norm, only : euclidean_norm
   use operation_action, only : operation, argument, variation, contract
   use operation_action, only : binding, bound_value
   use operation_action, only : emit
@@ -201,9 +202,10 @@ contains
     type(stored_field), allocatable :: tuple(:)
     type(stored_field)   :: direction, out
     type(typed_field_domain)   :: tangent_domain, image_domain
-    class(field), allocatable :: pushed, bound_direction
+    class(field), allocatable :: tangent_value, bound_direction
     type(graph) :: on, along
     real(dp), allocatable :: v(:), y(:), base(:), x(:)
+    real(dp) :: magnitude
     integer :: n_on, p, width
 
     call this % of % domain(input_graph, on, n_on)
@@ -239,9 +241,9 @@ contains
     if (this % exact()) then
 
        call this % of % partial_action(input_graph, this % of % bind(tuple), &
-            & [variation(this % wrt, direction)], pushed)
-       call require_domain(pushed, on)
-       call pushed % real_vector(y)
+            & [variation(this % wrt, direction)], tangent_value)
+       call require_domain(tangent_value, on)
+       call tangent_value % real_vector(y)
 
     else
 
@@ -250,17 +252,24 @@ contains
        if (allocated(this % base)) then
           base = this % base
        else
-          call this % of % apply(input_graph, this % of % bind(tuple), pushed)
-          call require_domain(pushed, on)
-          call pushed % real_vector(base)
+          call this % of % apply(input_graph, this % of % bind(tuple), tangent_value)
+          call require_domain(tangent_value, on)
+          call tangent_value % real_vector(base)
        end if
 
-       call tuple(p) % set_real_vector(x + this % step * v)
-       call this % of % apply(input_graph, this % of % bind(tuple), pushed)
-       call require_domain(pushed, on)
-       call pushed % real_vector(y)
-
-       y = (y - base) / this % step
+       ! The perturbation has the stated step length independently of
+       ! the direction's magnitude. A small correction must not vanish
+       ! when added to the frozen state before its derivative is read.
+       magnitude = euclidean_norm(v)
+       if (magnitude == 0.0_dp) then
+          y = spread(0.0_dp, 1, size(base))
+       else
+          call tuple(p) % set_real_vector(x + this % step * (v / magnitude))
+          call this % of % apply(input_graph, this % of % bind(tuple), tangent_value)
+          call require_domain(tangent_value, on)
+          call tangent_value % real_vector(y)
+          y = ((y - base) / this % step) * magnitude
+       end if
 
     end if
 

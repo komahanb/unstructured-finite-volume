@@ -12,7 +12,7 @@
 !      directed traversal     out and in, edges and vertices
 !      supports               membership, side, emptiness  (TRANSITIONAL)
 !      partition round trip   vertex AND edge fields rebuild exactly
-!      differential adjoints  the pairing holds on awkward topology
+!      differential adjoints  the adjoint identity includes parallel edges and boundary faces
 !
 ! One block is marked TRANSITIONAL: it records vocabulary the tower
 ! has already retired (the support as an edgeless graph). Such checks
@@ -57,7 +57,7 @@ program test_graph_characterization
   call check_directed_traversal(nfail)
   call check_supports(nfail)
   call check_partition_round_trip(nfail)
-  call check_adjoints_on_awkward_topology(nfail)
+  call check_adjoints_with_boundary_and_parallel_edges(nfail)
 
   write(*,'(1x,a)') "============================================="
   if (nfail .eq. 0) then
@@ -69,13 +69,13 @@ program test_graph_characterization
 
 contains
 
-  subroutine report(ok, label, nfail)
+  subroutine report(satisfied, label, nfail)
 
-    logical         , intent(in)    :: ok
+    logical         , intent(in)    :: satisfied
     character(len=*), intent(in)    :: label
     integer         , intent(inout) :: nfail
 
-    if (ok) then
+    if (satisfied) then
        write(*,'(1x,a,a)') "PASS : ", label
     else
        write(*,'(1x,a,a)') "FAIL : ", label
@@ -260,13 +260,13 @@ contains
   ! recorded that, so nothing shifted unseen while the ground moved. The
   ! destination is different on purpose: support becomes a SUBOBJECT
   ! S c--> A (AGENTS.md sections 6 and 37, refined by review) - and
-  ! THE DESTINATION NOW STANDS: a listed representation bound to a
+  ! THE DESTINATION REPRESENTATION: a listed representation bound to a
   ! declared identity, with its provenance in the inclusion map, and
   ! its laws in test/graph-set-view and test/graph-inclusion. The
   ! checks below guarded the OLD support until the old fields retired
   ! onto the new sets; then they were rewritten, not obeyed - what
   ! survives is membership, the host domain, order, and emptiness;
-  ! the graph-flavoured spelling does not.
+  ! the graph-specific syntax does not.
   !===================================================================!
 
   subroutine check_supports(nfail)
@@ -391,7 +391,7 @@ contains
   ! For every order, <A q, p> = <q, A* p> to machine precision.
   !===================================================================!
 
-  subroutine check_adjoints_on_awkward_topology(nfail)
+  subroutine check_adjoints_with_boundary_and_parallel_edges(nfail)
 
     integer, intent(inout) :: nfail
 
@@ -403,7 +403,7 @@ contains
     real(dp), allocatable           :: aq(:), ap(:)
     real(dp)                        :: q(4), p(4), cs(5)
     integer                         :: v, order
-    logical                         :: ok
+    logical                         :: satisfied
 
     ! 1 ==> 2 (twice, in parallel), 2 --> 3 --> 4 --> wall.
     g  = stored_directed_graph(4, tails=[1, 1, 2, 3, 4], heads=[2, 2, 3, 4, 0])
@@ -420,7 +420,7 @@ contains
 
     cs = [2.0_dp, 0.5_dp, 3.0_dp, 1.5_dp, 4.0_dp]
 
-    ok = .true.
+    satisfied = .true.
     do order = 1, 2
        fwd = differential_operator(SIDE_VERTEX, order, coefficients=cs)
        rev = differential_operator(SIDE_VERTEX, order, coefficients=cs, &
@@ -431,13 +431,13 @@ contains
        call rev % apply(g, rev % bind([pf]), yf)
        call yf % real_vector(ap)
 
-       ok = ok .and. abs(sum(aq * p) - sum(q * ap)) < 1.0d-11
+       satisfied = satisfied .and. abs(sum(aq * p) - sum(q * ap)) < 1.0d-11
     end do
 
-    call report(ok, &
-         & "the pairing holds beside parallel edges and a wall", nfail)
+    call report(satisfied, &
+         & "the adjoint identity includes parallel edges and a boundary", nfail)
 
-  end subroutine check_adjoints_on_awkward_topology
+  end subroutine check_adjoints_with_boundary_and_parallel_edges
 
   !===================================================================!
   ! members reads a named set back as plain indices.

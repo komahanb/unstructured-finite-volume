@@ -315,7 +315,7 @@ contains
     real(dp), allocatable, intent(out) :: face_areas(:)
 
     integer  :: iface, num_faces, i, k, rows
-    real(dp) :: s(size(coordinates, 1)), piece(size(coordinates, 1))
+    real(dp) :: s(size(coordinates, 1)), simplex_vector(size(coordinates, 1))
     real(dp) :: fan(size(coordinates, 1), spatial_dim - 1), mean(size(coordinates, 1))
     real(dp) :: measure, whole
 
@@ -341,9 +341,9 @@ contains
             do k = 1, spatial_dim - 1
                fan(:, k) = coordinates(:, facenodes(i + k - 1)) - coordinates(:, facenodes(1))
             end do
-            piece   = dual(spatial_dim, fan)
-            measure = norm2(piece)
-            s       = s + piece
+            simplex_vector   = dual(spatial_dim, fan)
+            measure = norm2(simplex_vector)
+            s       = s + simplex_vector
             mean    = mean + measure * (coordinates(:, facenodes(1)) &
                  & + sum(fan, dim=2) / real(spatial_dim, dp))
             whole   = whole + measure

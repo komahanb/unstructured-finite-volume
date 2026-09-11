@@ -37,7 +37,7 @@
 program adjoint_level_7
 
   use iso_fortran_env  , only : dp => REAL64
-  use adjoint_assert   , only : report, verdict
+  use adjoint_assert   , only : report, assert_all
   use adjoint_assert   , only : VAR_P, VAR_U, VAR_V
   use adjoint_assert   , only : TGT_R1, TGT_R2, TGT_F
   use graph_fractal        , only : graph
@@ -96,7 +96,7 @@ program adjoint_level_7
   call check_orientation_convicted(nfail)
   call check_one_solver_family(nfail)
 
-  call verdict(nfail, "level 7")
+  call assert_all(nfail, "level 7")
 
 contains
 

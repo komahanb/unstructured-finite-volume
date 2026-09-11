@@ -14,7 +14,7 @@
 ! The adapter's residual lives on Y; the minimizer's solution on Theta. The
 ! trainable state arrives as a field on Theta, is judged by the
 ! complete constituted model - laws INTO the computed slots, the
-! residual read at L's home - and leaves as a field on Y.
+! residual read at the member located by L - and leaves as a field on Y.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -164,15 +164,15 @@ contains
     ! the map is a temporary and never leaves this scope.
     !----------------------------------------------------------------!
 
-    type(set_map) :: mine
+    type(set_map) :: local_sets
 
     associate (u1 => input_graph); end associate
 
-    call mine % bind(this % slots,     this % c_slots)
-    call mine % bind(this % rows,      this % c_rows)
-    call mine % bind(this % observed,  this % c_observed)
-    call mine % bind(this % trainable, this % c_trainable)
-    call mine % bind(this % computed,  this % c_computed)
+    call local_sets % bind(this % slots,     this % c_slots)
+    call local_sets % bind(this % rows,      this % c_rows)
+    call local_sets % bind(this % observed,  this % c_observed)
+    call local_sets % bind(this % trainable, this % c_trainable)
+    call local_sets % bind(this % computed,  this % c_computed)
 
     if (.not. present(inputs)) then
        error stop 'statement: the residual is evaluated at a state'
@@ -186,7 +186,7 @@ contains
 
     allocate(r(this % n_rows))
     call generated_residual(this % flow, this % located, &
-         & this % slots, mine, this % rows, &
+         & this % slots, local_sets, this % rows, &
          & this % observed, this % observed_values, &
          & this % trainable, tstate, &
          & this % computed, this % order, r)

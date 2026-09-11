@@ -13,11 +13,11 @@ program field_refusal
   type(graph)       :: cells, raw
   type(set_map)     :: sets
   type(stored_field)       :: q
-  character(len=32) :: which
-  which=''; call get_command_argument(1, which)
+  character(len=32) :: case_name
+  case_name=''; call get_command_argument(1, case_name)
   call cells % declare()
   call sets % bind(cells, counted_set_representation(4))
-  select case (trim(which))
+  select case (trim(case_name))
   case ('ishape')
      q = stored_field('q', cells, 4)
      call q % set_integer_vector([1, 2])
@@ -38,5 +38,5 @@ program field_refusal
   case default
      error stop 'no case chosen'
   end select
-  write(*,'(1x,a,a)') "REACHED PAST THE REFUSAL: ", trim(which)
+  write(*,'(1x,a,a)') "REACHED PAST THE REFUSAL: ", trim(case_name)
 end program field_refusal

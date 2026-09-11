@@ -92,15 +92,15 @@ contains
     character(len=*), intent(in), optional :: unit_name
 
     type(graph) :: domain
-    character(len=:), allocatable :: called, measured
+    character(len=:), allocatable :: field_label, field_units
 
-    called = ''
-    if (present(label)) called = label
-    measured = '-'
-    if (present(unit_name)) measured = unit_name
+    field_label = ''
+    if (present(label)) field_label = label
+    field_units = '-'
+    if (present(unit_name)) field_units = unit_name
 
     call domain % declare()
-    call this % describe(called, domain, 1, 1, measured)
+    call this % describe(field_label, domain, 1, 1, field_units)
 
   end function create
 

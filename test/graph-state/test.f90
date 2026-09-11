@@ -6,8 +6,8 @@
 !     branch(1) = Q     branch(2) = R
 !
 ! The type under test is graph_fractal's graph. graph_state and its
-! computational_graph are retired: the seats were the branches all
-! along, the four states were four of nine, and the borrowed host was
+! computational_graph are retired: the positions were the branches all
+! along, the four states were four of nine, and the associated graph was
 ! a privilege no kernel should hold.
 !
 ! What the retired suite proved, and this one still proves:
@@ -37,7 +37,7 @@ program test
   write(*,'(1x,a)') "epistemic view suite (AGENTS.md, The graph ontology)"
 
   !===================================================================!
-  ! The four named readings, each built from branch values.
+  ! The four named states, each built from branch values.
   !===================================================================!
 
   named_block: block
@@ -60,7 +60,7 @@ program test
     call check('operator = (UNKNOWN, KNOWN  )', epistemic_name(op)       .eq. 'operator')
     call check('realized = (KNOWN  , KNOWN  )', epistemic_name(realized) .eq. 'realized')
 
-    call check('exactly one name holds: has_data and has_operator decide it', &
+    call check('exactly one name applies: has_data and has_operator decide it', &
          & (.not. has_data(void))     .and. (.not. has_operator(void))     .and. &
          & (      has_data(dat))      .and. (.not. has_operator(dat))      .and. &
          & (.not. has_data(op))       .and. (      has_operator(op))       .and. &
@@ -74,7 +74,7 @@ program test
   end block named_block
 
   !===================================================================!
-  ! REALIZED IS NOT SOLVED. Occupancy of both branches says nothing
+  ! REALIZED IS NOT SOLVED. Occupancy of both branches implies nothing
   ! about R(Q) = 0. Two realized graphs, one consistent pair and one
   ! deliberately inconsistent, are indistinguishable to this reading.
   !===================================================================!
@@ -104,19 +104,19 @@ program test
 
   bottom_block: block
 
-    type(graph), target :: empty_q, holds_empty, holds_nothing
+    type(graph), target :: empty_q, known_empty_data, unknown_data
 
     call empty_q % declare()                     ! (NULL, NULL): an atom
-    call holds_empty % declare(); call holds_nothing % declare()
+    call known_empty_data % declare(); call unknown_data % declare()
 
-    holds_empty   % branch = [known_branch(empty_q), unknown_branch()]
-    holds_nothing % branch = [unknown_branch()     , unknown_branch()]
+    known_empty_data   % branch = [known_branch(empty_q), unknown_branch()]
+    unknown_data % branch = [unknown_branch()     , unknown_branch()]
 
-    call check('a Q with no members is still KNOWN', has_data(holds_empty))
+    call check('a Q with no members is still KNOWN', has_data(known_empty_data))
     call check('an unrealized Q is UNKNOWN, and that is a different absence', &
-         & .not. has_data(holds_nothing))
-    call check('the two readings differ: data /= void', &
-         & epistemic_name(holds_empty) .ne. epistemic_name(holds_nothing))
+         & .not. has_data(unknown_data))
+    call check('the two states differ: data /= void', &
+         & epistemic_name(known_empty_data) .ne. epistemic_name(unknown_data))
 
   end block bottom_block
 
@@ -179,7 +179,7 @@ program test
     call state('(K,U)', ku, BRANCH_KNOWN  , BRANCH_UNKNOWN, .true. )
     call state('(K,K)', kk, BRANCH_KNOWN  , BRANCH_KNOWN  , .true. )
 
-    call check('four of nine combinations carry an epistemic name', &
+    call check('four of nine combinations have an epistemic name', &
          & count([epistemic_defined(nn), epistemic_defined(nu), epistemic_defined(nk), &
          &        epistemic_defined(un), epistemic_defined(uu), epistemic_defined(uk), &
          &        epistemic_defined(kn), epistemic_defined(ku), epistemic_defined(kk)]) .eq. 4)
@@ -199,12 +199,12 @@ program test
 
 contains
 
-  subroutine check(label, ok)
+  subroutine check(label, satisfied)
 
     character(len=*), intent(in) :: label
-    logical         , intent(in) :: ok
+    logical         , intent(in) :: satisfied
 
-    if (ok) then
+    if (satisfied) then
        print *, ' PASS : ', label
     else
        print *, ' FAIL : ', label
@@ -220,11 +220,11 @@ contains
     integer         , intent(in) :: s1, s2
     logical         , intent(in) :: defined
 
-    logical :: ok
+    logical :: satisfied
 
-    ok = g % branch(1) % status() .eq. s1 .and. g % branch(2) % status() .eq. s2
-    ok = ok .and. (epistemic_defined(g) .eqv. defined)
-    call check(label, ok)
+    satisfied = g % branch(1) % status() .eq. s1 .and. g % branch(2) % status() .eq. s2
+    satisfied = satisfied .and. (epistemic_defined(g) .eqv. defined)
+    call check(label, satisfied)
 
   end subroutine state
 

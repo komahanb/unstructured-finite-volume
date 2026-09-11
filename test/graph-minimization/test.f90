@@ -120,7 +120,10 @@ program test_graph_minimization
   use iso_fortran_env, only : dp => REAL64
   use graph_fractal  , only : graph
   use map_set_store, only : set_store
-  use view_directed, only : SIDE_EDGE
+  use view_directed, only : SIDE_EDGE, SIDE_VERTEX
+  use view_directed_stored, only : stored_directed_graph
+  use field_calculus, only : field
+  use field_stored, only : stored_field
   use view_mesh   , only : mesh, values_of
   use view_mesh_builder , only : mesh_from_gmsh
   use operation_robin_condition, only : robin_condition, dirichlet, COEFFICIENT_OPERATOR
@@ -132,43 +135,274 @@ program test_graph_minimization
   use operation_gauss_seidel, only : gauss_seidel
   use operation_gmres    , only : gmres
   use operation_newton   , only : newton
+  use operation_minimization, only : minimizer, solve_result, absolute, SOLVE_EXHAUSTED, SOLVE_BREAKDOWN, &
+       & SOLVE_INNER_FAILED, SOLVE_NOT_STARTED, SOLVE_STAGNATED
+  use operation_linearization, only : linearization, tangent_of
+  use, intrinsic :: ieee_arithmetic, only : ieee_value, ieee_positive_inf, ieee_is_finite, ieee_is_nan
+  use operation_dense_direct, only : dense_direct
+  use operation_stencil, only : stencil
   use operation_balance  , only : balance
   use cubic_statement_fixture, only : cubic_statement
 
   implicit none
 
-  integer :: nfail
+  integer :: num_failures
 
-  nfail = 0
+  num_failures = 0
 
-  call check_solver_words(nfail)
-  call check_hand_problem(nfail)
-  call check_real_mesh(nfail)
-  call check_sweeping_family(nfail)
-  call check_gmres_family(nfail)
-  call check_newton(nfail)
+  call check_minimizer_operations(num_failures)
+  call check_residual_arithmetic(num_failures)
+  call check_three_cell_solution(num_failures)
+  call check_real_mesh(num_failures)
+  call check_sweeping_family(num_failures)
+  call check_gmres_family(num_failures)
+  call check_newton(num_failures)
+  call check_iteration_limits(num_failures)
+  call check_scaled_gmres(num_failures)
+  call check_gmres_exit(num_failures)
+  call check_direction_scale(num_failures)
 
   write(*, '(a)') ' ============================================='
-  if (nfail == 0) then
+  if (num_failures == 0) then
      write(*, '(a)') ' all minimization checks passed'
   else
-     write(*, '(a, i0, a)') ' ', nfail, ' minimization checks FAILED'
+     write(*, '(a, i0, a)') ' ', num_failures, ' minimization checks FAILED'
      error stop 1
   end if
 
 contains
 
-  subroutine report(passed, message, nfail)
+  subroutine check_residual_arithmetic(num_failures)
+    integer, intent(inout) :: num_failures
+    type(jacobi) :: solver
+    real(dp) :: least, overflowing
+    call report(abs(solver % norm([3.0e200_dp, 4.0e200_dp]) / 5.0e200_dp - 1.0_dp) < 1.0e-14_dp, &
+         & 'the residual norm avoids overflow in its sum of squares', num_failures)
+    call report(abs(solver % norm([3.0e-200_dp, 4.0e-200_dp]) / 5.0e-200_dp - 1.0_dp) < 1.0e-14_dp, &
+         & 'the residual norm avoids underflow in its sum of squares', num_failures)
+    call report(abs(solver % norm([3.0e200_dp, 4.0e200_dp, tiny(1.0_dp), -1.0e-200_dp]) / &
+         & 5.0e200_dp - 1.0_dp) < 1.0e-14_dp, &
+         & 'mixed huge and tiny components do not underflow while scaling the residual norm', num_failures)
+    call report(abs(solver % norm([huge(1.0_dp) / 2.0_dp, huge(1.0_dp) / 2.0_dp, tiny(1.0_dp)]) / &
+         & (huge(1.0_dp) / 2.0_dp) - sqrt(2.0_dp)) < 1.0e-14_dp, &
+         & 'a representable residual norm near the largest number stays finite', num_failures)
+    overflowing = solver % norm([huge(1.0_dp), huge(1.0_dp)])
+    call report(.not. ieee_is_finite(overflowing) .and. .not. ieee_is_nan(overflowing), &
+         & 'a genuinely overflowing residual norm is reported as positive infinity', num_failures)
+    least = scale(1.0_dp, minexponent(1.0_dp) - digits(1.0_dp))
+    call report(solver % norm([least, least]) == least, &
+         & 'a subnormal residual norm rounds without trapping underflow', num_failures)
+    call solver % initialize_residual_history()
+    call solver % record_residual_norm(1.0_dp)
+    solver % tolerance = 0.25_dp
+    call report(solver % converged(0.25_dp) .and. .not. solver % converged(nearest(0.25_dp, 1.0_dp)), &
+         & 'relative convergence includes its exact boundary and excludes the next number', num_failures)
+    call report(.not. solver % converged(ieee_value(0.0_dp, ieee_positive_inf)), &
+         & 'an infinite residual is never converged', num_failures)
+    call solver % initialize_residual_history()
+    call solver % record_residual_norm(scale(1.0_dp, -1000))
+    solver % tolerance = scale(1.0_dp, -1000)
+    call report(solver % converged(0.0_dp) .and. .not. solver % converged(tiny(1.0_dp)), &
+         & 'a relative threshold below the arithmetic range is compared without multiplying it', num_failures)
+  end subroutine check_residual_arithmetic
+
+  subroutine check_iteration_limits(num_failures)
+    integer, intent(inout) :: num_failures
+    class(minimizer), allocatable :: solver
+    type(newton) :: nonlinear
+    type(stencil) :: identity
+    type(solve_result) :: outcome
+    real(dp) :: x(2), rhs(2), achieved
+    integer :: member
+
+    identity = stencil([1, 2], [1, 2], [1.0_dp, 1.0_dp], [0.0_dp, 0.0_dp], 'identity')
+    rhs = [1.0_dp, 2.0_dp]
+    allocate(nonlinear % inner, source=dense_direct())
+    do member = 1, 5
+       select case (member)
+       case (1)
+          allocate(solver, source=jacobi())
+       case (2)
+          allocate(solver, source=gauss_seidel())
+       case (3)
+          allocate(solver, source=conjugate_gradient())
+       case (4)
+          allocate(solver, source=gmres())
+       case (5)
+          allocate(solver, source=nonlinear)
+       end select
+       solver % max_iterations = 1
+       solver % tolerance = 1.0e-12_dp
+       call solver % state(identity, identity % pattern, identity % pattern % vertex_set(), 2, &
+            & coupling=identity % pattern)
+       x = 0.0_dp
+       call solver % solve(rhs, x, achieved)
+       outcome = solver % result()
+       call report(maxval(abs(x - rhs)) < 1.0e-12_dp .and. outcome % converged() .and. &
+            & outcome % iterations == 1, solver % name() // ': one permitted step is completed', num_failures)
+       x = rhs
+       call solver % solve(rhs, x, achieved)
+       outcome = solver % result()
+       call report(achieved == 0.0_dp .and. outcome % converged() .and. outcome % iterations == 0, &
+            & solver % name() // ': an initially solved system takes no step', num_failures)
+       call solver % state(identity, identity % pattern, identity % pattern % vertex_set(), 2, &
+            & coupling=identity % pattern)
+       outcome = solver % result()
+       call report(outcome % reason == SOLVE_NOT_STARTED, &
+            & solver % name() // ': stating another system clears the previous outcome', num_failures)
+       solver % max_iterations = 0
+       x = 0.0_dp
+       call solver % solve(rhs, x, achieved)
+       outcome = solver % result()
+       call report(all(x == 0.0_dp) .and. outcome % reason == SOLVE_EXHAUSTED .and. &
+            & outcome % iterations == 0, solver % name() // ': a zero iteration limit performs no update', num_failures)
+       deallocate(solver)
+    end do
+  end subroutine check_iteration_limits
+
+  subroutine check_scaled_gmres(num_failures)
+    integer, intent(inout) :: num_failures
+    type(stencil) :: a
+    type(gmres) :: solver
+    type(jacobi) :: preconditioner
+    type(solve_result) :: outcome
+    real(dp) :: x(2), rhs(2), achieved, scale
+    integer :: exponent
+
+    preconditioner % max_iterations = 1
+    allocate(solver % preconditioner, source=preconditioner)
+    solver % restart = 2
+    solver % max_iterations = 20
+    solver % tolerance = 1.0e-8_dp
+    rhs = [1.0_dp, 0.0_dp]
+    do exponent = -12, 12, 12
+       scale = 10.0_dp ** exponent
+       a = stencil([1, 1, 2, 2], [1, 2, 1, 2], scale * [2.0_dp, 1.0_dp, 1.0_dp, 2.0_dp], &
+            & [0.0_dp, 0.0_dp], 'scaled system')
+       call solver % state(a, a % pattern, a % pattern % vertex_set(), 2, coupling=a % pattern)
+       x = 0.0_dp
+       call solver % solve(rhs, x, achieved)
+       outcome = solver % result()
+       call report(achieved <= solver % tolerance .and. outcome % converged(), &
+            & 'GMRES verifies the true residual under scalar preconditioning', num_failures)
+    end do
+  end subroutine check_scaled_gmres
+
+  subroutine check_gmres_exit(num_failures)
+    integer, intent(inout) :: num_failures
+    type(stencil) :: a
+    type(gmres) :: solver
+    type(dense_direct) :: singular
+    type(jacobi) :: stopped
+    type(solve_result) :: outcome
+    real(dp) :: x(2), rhs(2), achieved, true_residual_norm
+
+    a = stencil([1, 1, 2, 2], [1, 2, 1, 2], [2.0_dp, 1.0_dp, 1.0_dp, 2.0_dp], &
+         & [0.0_dp, 0.0_dp], 'one restart')
+    solver % restart = 1
+    solver % max_iterations = 1
+    solver % tolerance = 1.0e-12_dp
+    call solver % state(a, a % pattern, a % pattern % vertex_set(), 2, coupling=a % pattern)
+    rhs = [1.0_dp, 0.0_dp]
+    x = 0.0_dp
+    call solver % solve(rhs, x, achieved)
+    outcome = solver % result()
+    true_residual_norm = norm2(rhs - [2.0_dp * x(1) + x(2), x(1) + 2.0_dp * x(2)])
+    call report(any(x /= 0.0_dp) .and. abs(achieved - true_residual_norm) < 1.0e-14_dp .and. &
+         & outcome % reason == SOLVE_EXHAUSTED .and. outcome % iterations == 1, &
+         & 'exhausted GMRES reports the residual after its permitted restart', num_failures)
+
+    a = stencil([1, 2], [1, 2], [0.0_dp, 0.0_dp], [0.0_dp, 0.0_dp], 'zero operator')
+    call solver % state(a, a % pattern, a % pattern % vertex_set(), 2, coupling=a % pattern)
+    x = 0.0_dp
+    call solver % solve(rhs, x, achieved)
+    outcome = solver % result()
+    call report(all(x == 0.0_dp) .and. achieved == 1.0_dp .and. &
+         & outcome % reason == SOLVE_BREAKDOWN, 'GMRES reports a zero Arnoldi column without dividing by zero', num_failures)
+
+    stopped % max_iterations = 0
+    allocate(solver % preconditioner, source=stopped)
+    call solver % state(a, a % pattern, a % pattern % vertex_set(), 2, coupling=a % pattern)
+    call solver % solve(rhs, x, achieved)
+    outcome = solver % result()
+    call report(all(x == 0.0_dp) .and. achieved == 1.0_dp .and. &
+         & outcome % reason == SOLVE_BREAKDOWN, 'GMRES reports an annihilated residual without dividing by zero', num_failures)
+    deallocate(solver % preconditioner)
+
+    singular % singular_reported = .true.
+    allocate(solver % preconditioner, source=singular)
+    call solver % state(a, a % pattern, a % pattern % vertex_set(), 2, coupling=a % pattern)
+    call solver % solve(rhs, x, achieved)
+    outcome = solver % result()
+    call report(all(x == 0.0_dp) .and. achieved == 1.0_dp .and. &
+         & outcome % reason == SOLVE_INNER_FAILED, 'GMRES propagates a singular preconditioner', num_failures)
+  end subroutine check_gmres_exit
+
+  subroutine check_direction_scale(num_failures)
+    integer, intent(inout) :: num_failures
+    type(stored_directed_graph) :: single_vertex
+    type(cubic_statement) :: action
+    type(linearization) :: tangent
+    type(stored_field) :: state, direction
+    class(field), allocatable :: image
+    type(gmres) :: solver
+    type(solve_result) :: outcome
+    real(dp), allocatable :: value(:)
+    real(dp) :: unit, factor, x(1), achieved
+    integer :: exponent
+
+    single_vertex = stored_directed_graph(1, tails=[integer ::], heads=[integer ::])
+    action = cubic_statement()
+    action % linear_part = differential_operator(SIDE_VERTEX, 0, coefficient=2.0_dp)
+    state = stored_field('state', single_vertex % vertex_set(), 1)
+    call state % set_real_vector([1.0_dp])
+    tangent = tangent_of(action, action % argument(1))
+    call tangent % freeze([state])
+    direction = stored_field('direction', single_vertex % vertex_set(), 1)
+    call direction % set_real_vector([1.0_dp])
+    call tangent % apply(single_vertex, tangent % bind([direction]), image)
+    call image % real_vector(value)
+    unit = value(1)
+    do exponent = -200, 200, 100
+       factor = 10.0_dp ** exponent
+       call direction % set_real_vector([factor])
+       call tangent % apply(single_vertex, tangent % bind([direction]), image)
+       call image % real_vector(value)
+       call report(abs(value(1) / factor - unit) < 1.0e-14_dp, &
+            & 'a scalar directional difference is homogeneous across direction scales', num_failures)
+    end do
+    call direction % set_real_vector([0.0_dp])
+    call tangent % apply(single_vertex, tangent % bind([direction]), image)
+    call image % real_vector(value)
+    call report(value(1) == 0.0_dp, 'a zero direction has an exact zero numerical derivative', num_failures)
+
+    ! Opposite directions can disagree at a numerical difference's
+    ! truncation scale. Exhausting the one-dimensional Krylov space
+    ! reports that mismatch without accepting its estimated residual.
+    action % strength = 1.0_dp
+    tangent = tangent_of(action, action % argument(1))
+    call tangent % freeze([state])
+    call solver % state(tangent, single_vertex, single_vertex % vertex_set(), 1)
+    solver % tolerance = 1.0e-14_dp
+    x = 0.0_dp
+    call solver % solve([1.0_dp], x, achieved)
+    outcome = solver % result()
+    call report(outcome % reason == SOLVE_STAGNATED .and. .not. outcome % converged() .and. &
+         & achieved > solver % tolerance .and. outcome % iterations == 1, &
+         & 'an invariant Krylov space reports a numerical derivative mismatch as stagnation', num_failures)
+  end subroutine check_direction_scale
+
+  subroutine report(passed, message, num_failures)
 
     logical         , intent(in)    :: passed
     character(len=*), intent(in)    :: message
-    integer         , intent(inout) :: nfail
+    integer         , intent(inout) :: num_failures
 
     if (passed) then
        write(*, '(a)') ' PASS : ' // message
     else
        write(*, '(a)') ' FAIL : ' // message
-       nfail = nfail + 1
+       num_failures = num_failures + 1
     end if
 
   end subroutine report
@@ -260,9 +494,9 @@ contains
   ! never gives neighbours one colour.
   !===================================================================!
 
-  subroutine check_solver_words(nfail)
+  subroutine check_minimizer_operations(num_failures)
 
-    integer, intent(inout) :: nfail
+    integer, intent(inout) :: num_failures
 
     type(mesh) :: m
     type(jacobi) :: js
@@ -276,7 +510,7 @@ contains
 
     call js % block_diagonal(d)
     call report(all(abs(d(1, 1, :) - [-3.0_dp, -2.0_dp, -3.0_dp]) < 1.0d-12), &
-         & 'the diagonal by coloured indicators is the stencil diagonal, by hand', nfail)
+         & 'the diagonal by coloured indicators is the stencil diagonal, by hand', num_failures)
 
     call js % sweep_order(colours)
     proper = .true.
@@ -286,24 +520,24 @@ contains
           if (colours(nbrs(i)) == colours(v)) proper = .false.
        end do
     end do
-    call report(proper, 'the sweep order never gives neighbours one colour', nfail)
+    call report(proper, 'the sweep order never gives neighbours one colour', num_failures)
 
     call report(abs(js % inner_product([1.0_dp, 2.0_dp, 3.0_dp], &
          &                             [2.0_dp, 1.0_dp, 0.0_dp]) - 4.0_dp) &
-         & < 1.0d-14, 'the inner product is the measured sum', nfail)
+         & < 1.0d-14, 'the inner product is the measured sum', num_failures)
 
     call report(abs(js % norm([3.0_dp, 4.0_dp, 0.0_dp]) - 5.0_dp) < 1.0d-14, &
-         & 'the norm is the norm', nfail)
+         & 'the Euclidean norm of (3,4,0) equals five', num_failures)
 
-  end subroutine check_solver_words
+  end subroutine check_minimizer_operations
 
   !===================================================================!
-  ! The hand problem, driven to its exact solution.
+  ! The three-cell diffusion equation with an exact discrete solution.
   !===================================================================!
 
-  subroutine check_hand_problem(nfail)
+  subroutine check_three_cell_solution(num_failures)
 
-    integer, intent(inout) :: nfail
+    integer, intent(inout) :: num_failures
 
     type(mesh) :: m
     type(jacobi) :: js
@@ -324,15 +558,15 @@ contains
     x = 0.0_dp
     call js % solve(rhs, x, achieved)
 
-    call report(achieved < 1.0d-10, 'jacobi drives the residual down', nfail)
+    call report(achieved < 1.0d-10, 'jacobi drives the residual down', num_failures)
     call report(all(abs(x - exact) < 1.0d-8), &
-         & 'and lands on the exact solution: 5/3, 5, 25/3', nfail)
+         & 'the discrete solution equals 5/3, 5, 25/3', num_failures)
 
     call js % matvec(x, y)
     call report(js % norm(rhs - y) < 1.0d-10, &
-         & 'the solution satisfies the assembled equation', nfail)
+         & 'the solution satisfies the assembled equation', num_failures)
 
-  end subroutine check_hand_problem
+  end subroutine check_three_cell_solution
 
   !===================================================================!
   ! The real mesh. A symmetric positive operator - the conduction
@@ -341,9 +575,9 @@ contains
   ! a state the operator cannot tell apart from it.
   !===================================================================!
 
-  subroutine check_real_mesh(nfail)
+  subroutine check_real_mesh(num_failures)
 
-    integer, intent(inout) :: nfail
+    integer, intent(inout) :: num_failures
 
     type(mesh) :: m
     type(conjugate_gradient) :: cg
@@ -379,7 +613,7 @@ contains
     call cg % matvec(x, y)
     call report(cg % norm(b - y) < 1.0d-7 * (1.0_dp + cg % norm(b)), &
          & 'conjugate gradient closes the manufactured equation on a real mesh', &
-         & nfail)
+         & num_failures)
 
   end subroutine check_real_mesh
 
@@ -389,9 +623,9 @@ contains
   ! it is this one at omega away from one.
   !===================================================================!
 
-  subroutine check_sweeping_family(nfail)
+  subroutine check_sweeping_family(num_failures)
 
-    integer, intent(inout) :: nfail
+    integer, intent(inout) :: num_failures
 
     type(mesh) :: m
     type(gauss_seidel) :: gs
@@ -411,13 +645,13 @@ contains
     x = 0.0_dp
     call gs % solve(rhs, x, achieved)
     call report(all(abs(x - exact) < 1.0d-8), &
-         & 'gauss-seidel sweeps by colour to the exact solution', nfail)
+         & 'gauss-seidel sweeps by colour to the exact solution', num_failures)
 
     gs % omega = 1.2_dp
     x = 0.0_dp
     call gs % solve(rhs, x, achieved)
     call report(all(abs(x - exact) < 1.0d-8), &
-         & 'and over-relaxed it is sor, a parameter, not a type', nfail)
+         & 'and over-relaxed it is sor, a parameter, not a type', num_failures)
 
   end subroutine check_sweeping_family
 
@@ -427,9 +661,9 @@ contains
   ! different solvers must meet on one solution.
   !===================================================================!
 
-  subroutine check_gmres_family(nfail)
+  subroutine check_gmres_family(num_failures)
 
-    integer, intent(inout) :: nfail
+    integer, intent(inout) :: num_failures
 
     type(mesh) :: m
     type(gmres)  :: gm
@@ -449,7 +683,7 @@ contains
     x = 0.0_dp
     call gm % solve(rhs, x, achieved)
     call report(all(abs(x - exact) < 1.0d-8), &
-         & 'gmres lands on the exact solution', nfail)
+         & 'gmres lands on the exact solution', num_failures)
 
     ! Diffusion and upwind advection in one balance: unsymmetric.
     statement = balance(edge_terms=[ &
@@ -466,7 +700,7 @@ contains
     x = 0.0_dp
     call gm % solve(rhs, x, achieved)
     call report(achieved < 1.0d-10, &
-         & 'gmres closes the unsymmetric statement', nfail)
+         & 'gmres closes the unsymmetric statement', num_failures)
 
     call js % state(statement, m, m % vertex_set(), m % num_vertices(), coupling = m)
     js % max_iterations = 5000
@@ -475,7 +709,7 @@ contains
     xj = 0.0_dp
     call js % solve(rhs, xj, achieved)
     call report(all(abs(x - xj) < 1.0d-7), &
-         & 'and two different solvers meet on one solution', nfail)
+         & 'and two different solvers meet on one solution', num_failures)
 
   end subroutine check_gmres_family
 
@@ -486,9 +720,9 @@ contains
   ! nonlinear residual to zero.
   !===================================================================!
 
-  subroutine check_newton(nfail)
+  subroutine check_newton(num_failures)
 
-    integer, intent(inout) :: nfail
+    integer, intent(inout) :: num_failures
 
     type(mesh) :: m
     type(newton) :: ns
@@ -505,6 +739,7 @@ contains
     allocate(ns % inner, source=gmres())
     ns % inner % tolerance = 1.0d-12
     ns % tolerance = 1.0d-7
+    ns % criterion = absolute
 
     call ns % state(action, m, m % vertex_set(), m % num_vertices())
 
@@ -513,9 +748,9 @@ contains
     call ns % solve([0.0_dp, 0.0_dp, 0.0_dp], q, achieved)
 
     call report(achieved < 1.0d-7, &
-         & 'newton drives the nonlinear residual to the difference floor', nfail)
+         & 'newton drives the nonlinear residual to the difference floor', num_failures)
     call report(q(1) > 0.0_dp .and. q(1) < q(2) .and. q(2) < q(3), &
-         & 'and the heated chain still rises monotonically', nfail)
+         & 'and the heated chain still rises monotonically', num_failures)
 
   end subroutine check_newton
 

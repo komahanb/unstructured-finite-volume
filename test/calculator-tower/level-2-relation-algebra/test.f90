@@ -27,7 +27,7 @@
 
 program calculator_level_2
 
-  use calculator_assert, only : report, verdict
+  use calculator_assert, only : report, assert_all
   use calculator_assert, only : SLOT_A, SLOT_B, SLOT_C, SLOT_D, SLOT_E
   use calculator_assert, only : OP_PLUS, OP_TIMES
   use calculator_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
@@ -89,7 +89,7 @@ program calculator_level_2
   call check_dependency(nfail)
   call check_order_invariance(nfail)
 
-  call verdict(nfail, "level 2")
+  call assert_all(nfail, "level 2")
 
 contains
 
@@ -223,7 +223,7 @@ contains
     integer                        :: rev(3, 6)
     integer, allocatable           :: dt(:,:)
     integer                        :: j
-    logical                        :: ok
+    logical                        :: satisfied
 
     do j = 1, 6
        rev(:, j) = table(:, 7 - j)
@@ -240,11 +240,11 @@ contains
          & "|D1| = |D2|", nfail)
 
     call d % tuples(dt)
-    ok = .true.
+    satisfied = .true.
     do j = 1, size(dt, 2)
-       ok = ok .and. d2 % has(dt(:, j))
+       satisfied = satisfied .and. d2 % has(dt(:, j))
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "every tuple of D1 stands in D2: equal as sets", nfail)
 
     da = d % domain(1)

@@ -182,14 +182,14 @@ contains
   ! this procedure too.
   !===================================================================!
 
-  subroutine require(fits, what)
+  subroutine require(satisfied, condition_description)
 
-    logical         , intent(in) :: fits
-    character(len=*), intent(in) :: what
+    logical         , intent(in) :: satisfied
+    character(len=*), intent(in) :: condition_description
 
-    if (fits) return
+    if (satisfied) return
 
-    write(error_unit, *) 'mesh check: expected ', what
+    write(error_unit, *) 'mesh check: expected ', condition_description
     error stop 'mesh: a precondition on the structure or its measurements failed'
 
   end subroutine require

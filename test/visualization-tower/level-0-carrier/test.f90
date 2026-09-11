@@ -48,7 +48,7 @@
 
 program visualization_level_0
 
-  use visualization_assert , only : report, verdict
+  use visualization_assert , only : report, assert_all
   use visualization_assert , only : NX0, NX1, NX2, NX3, NE1, NE2, NE3
   use visualization_assert , only : X0_A, X0_B, X0_C, X0_D
   use visualization_assert , only : X1_P, X1_Q, X1_R
@@ -65,7 +65,7 @@ program visualization_level_0
   implicit none
 
   type(graph) :: x0, x1, x2, x3, e1, e2, e3
-  type(graph) :: roll(7)
+  type(graph) :: carriers(7)
   type(set_map)     :: sets
   type(label_map)     :: labels
   integer           :: nfail
@@ -77,7 +77,7 @@ program visualization_level_0
   write(*,'(1x,a)') "============================================="
 
   call structural_carriers(x0, x1, x2, x3, e1, e2, e3, sets, labels)
-  roll = [x0, x1, x2, x3, e1, e2, e3]
+  carriers = [x0, x1, x2, x3, e1, e2, e3]
 
   call check_the_seven_exist(nfail)
   call check_the_seven_are_distinct(nfail)
@@ -86,7 +86,7 @@ program visualization_level_0
   call check_enumeration_laws(nfail)
   call check_the_reader_s_names(nfail)
 
-  call verdict(nfail, "level 0")
+  call assert_all(nfail, "level 0")
 
 contains
 
@@ -132,10 +132,10 @@ contains
     self  = .true.
     apart = .true.
     do i = 1, 7
-       self = self .and. roll(i) % same_as(roll(i))
+       self = self .and. carriers(i) % same_as(carriers(i))
        do j = 1, 7
           if (i .eq. j) cycle
-          apart = apart .and. (.not. roll(i) % same_as(roll(j)))
+          apart = apart .and. (.not. carriers(i) % same_as(carriers(j)))
        end do
     end do
 
@@ -184,7 +184,7 @@ contains
 
     everywhere = .true.
     do i = 1, 7
-       everywhere = everywhere .and. sets % has(roll(i), 1)
+       everywhere = everywhere .and. sets % has(carriers(i), 1)
     end do
 
     call report(everywhere, &
@@ -225,11 +225,11 @@ contains
     forward  = .true.
     backward = .true.
     do i = 1, 7
-       do k = 1, sets % num_members_of(roll(i))
+       do k = 1, sets % num_members_of(carriers(i))
           forward  = forward .and. &
-               &     (sets % index_in(roll(i), sets % member_of(roll(i), k)) .eq. k)
+               &     (sets % index_in(carriers(i), sets % member_of(carriers(i), k)) .eq. k)
           backward = backward .and. &
-               &     (sets % member_of(roll(i), sets % index_in(roll(i), k)) .eq. k)
+               &     (sets % member_of(carriers(i), sets % index_in(carriers(i), k)) .eq. k)
        end do
     end do
 

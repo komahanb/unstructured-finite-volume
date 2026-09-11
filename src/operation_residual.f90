@@ -72,7 +72,7 @@ module operation_residual
 
      procedure :: num_unknowns
      procedure :: fixed_unknowns
-     procedure :: fixed_mask
+     procedure :: fixed_indicator
      procedure :: fixed_values
      procedure :: num_fixed
      procedure :: first_fixed
@@ -190,12 +190,12 @@ contains
     c = this % fixed_rows
   end function fixed_unknowns
 
-  pure function fixed_mask(this) result(is_fixed)
+  pure function fixed_indicator(this) result(is_fixed)
     class(residual_operator), intent(in) :: this
     logical, allocatable :: is_fixed(:)
     allocate(is_fixed(this % unknowns), source=.false.)
     is_fixed(this % fixed_rows) = .true.
-  end function fixed_mask
+  end function fixed_indicator
 
   pure function fixed_values(this) result(h)
     class(residual_operator), intent(in) :: this
@@ -519,14 +519,14 @@ contains
   end subroutine discretized
 
   subroutine residual_explicit_tangent(this, input_graph, inputs, which, &
-       & rows, columns, weights, available)
+       & rows, columns, weights, tangent_defined)
     class(residual_operator), intent(in)  :: this
     class(directed_graph)    , intent(in)  :: input_graph
     type(binding)             , intent(in)  :: inputs(:)
     integer              , intent(in)  :: which
     integer , allocatable, intent(out) :: rows(:), columns(:)
     real(dp), allocatable, intent(out) :: weights(:)
-    logical              , intent(out) :: available
+    logical              , intent(out) :: tangent_defined
     type(stored_field) :: state, direction
     type(stored_field), allocatable :: point_data(:)
     type(typed_field_domain) :: points
@@ -534,21 +534,21 @@ contains
     real(dp), allocatable :: x(:), w(:), v(:), column(:)
     integer , allocatable :: r(:), c(:), reads(:)
     logical , allocatable :: is_fixed(:)
-    integer :: e, d, p, npts, n, kept, count, j, k
-    available = which == 1
-    if (.not. available) return
+    integer :: e, d, p, npts, n, num_triples, count, j, k
+    tangent_defined = which == 1
+    if (.not. tangent_defined) return
     n    = this % unknowns
     npts = size(this % at)
-    is_fixed = this % fixed_mask()
+    is_fixed = this % fixed_indicator()
     call state_of(this, inputs, input_graph, x, state)
     call point_inputs(this, inputs, x, point_data)
     count = this % primary_law % pattern % num_edges() + npts * this % degrees * size(this % rules) &
          & + size(this % fixed_rows)
     if (allocated(this % connected_law)) count = count + this % connected_law % pattern % num_edges()
     allocate(r(count), c(count), w(count))
-    kept = 0
-    call stencil_triples(this % primary_law, is_fixed, r, c, w, kept)
-    if (allocated(this % connected_law)) call stencil_triples(this % connected_law, is_fixed, r, c, w, kept)
+    num_triples = 0
+    call stencil_triples(this % primary_law, is_fixed, r, c, w, num_triples)
+    if (allocated(this % connected_law)) call stencil_triples(this % connected_law, is_fixed, r, c, w, num_triples)
     ! each rule's partials in the components it reads alone: a
     ! component no leaf of the rule names has a zero column
     allocate(v(npts * this % degrees))
@@ -568,38 +568,38 @@ contains
           do p = 1, npts
              if (.not. this % governs(p, j)) cycle
              if (is_fixed(this % at(p) + this % primary(j) + 1)) cycle
-             kept    = kept + 1
-             r(kept) = this % at(p) + this % primary(j) + 1
-             c(kept) = this % at(p) + d + 1
-             w(kept) = column(p)
+             num_triples    = num_triples + 1
+             r(num_triples) = this % at(p) + this % primary(j) + 1
+             c(num_triples) = this % at(p) + d + 1
+             w(num_triples) = column(p)
           end do
        end do
     end do
     do e = 1, size(this % fixed_rows)
-       kept    = kept + 1
-       r(kept) = this % fixed_rows(e)
-       c(kept) = this % fixed_rows(e)
-       w(kept) = 1.0_dp
+       num_triples    = num_triples + 1
+       r(num_triples) = this % fixed_rows(e)
+       c(num_triples) = this % fixed_rows(e)
+       w(num_triples) = 1.0_dp
     end do
-    call combine_triples(n, n, r(1:kept), c(1:kept), w(1:kept), rows, columns, weights)
+    call combine_triples(n, n, r(1:num_triples), c(1:num_triples), w(1:num_triples), rows, columns, weights)
   end subroutine residual_explicit_tangent
 
-  subroutine stencil_triples(op, is_fixed, r, c, w, kept)
+  subroutine stencil_triples(op, is_fixed, r, c, w, num_triples)
     type(stencil), intent(in)    :: op
     logical      , intent(in)    :: is_fixed(:)
     integer      , intent(inout) :: r(:), c(:)
     real(dp)     , intent(inout) :: w(:)
-    integer      , intent(inout) :: kept
+    integer      , intent(inout) :: num_triples
     real(dp), allocatable :: weights(:)
     integer :: e, row
     call op % weights % real_vector(weights)
     do e = 1, op % pattern % num_edges()
        row = op % pattern % edge_head(e)
        if (is_fixed(row)) cycle
-       kept    = kept + 1
-       r(kept) = row
-       c(kept) = op % pattern % edge_tail(e)
-       w(kept) = weights(e)
+       num_triples    = num_triples + 1
+       r(num_triples) = row
+       c(num_triples) = op % pattern % edge_tail(e)
+       w(num_triples) = weights(e)
     end do
   end subroutine stencil_triples
 
@@ -763,31 +763,31 @@ contains
   ! whole linear map, so the returned residual has no physics of its
   ! own (a zero rule) and no fixed rows. transposed states which of
   ! Jw = rhs or J^Tw = rhs the returned residual's own apply computes;
-  ! mark is the tag the returned residual is recorded under (versioned,
+  ! version_number identifies the returned residual (versioned,
   ! this module's own procedure inherited from operation_action).
   !===================================================================!
 
-  function linearize(this, input_graph, inputs, rhs, transposed, mark) result(lin)
+  function linearize(this, input_graph, inputs, rhs, transposed, version_number) result(lin)
 
     class(residual_operator), intent(in) :: this
     class(directed_graph)   , intent(in) :: input_graph
     type(binding)           , intent(in) :: inputs(:)
     real(dp)                , intent(in) :: rhs(:)
     logical                 , intent(in) :: transposed
-    integer                 , intent(in) :: mark
+    integer                 , intent(in) :: version_number
     type(residual_operator) :: lin
 
     type(stencil) :: a
     integer , allocatable :: r(:), c(:)
     real(dp), allocatable :: w(:)
-    logical :: available
+    logical :: tangent_defined
 
     if (size(rhs) /= this % unknowns) then
        error stop 'operation_residual: one right side per unknown'
     end if
 
-    call this % explicit_tangent(input_graph, inputs, 1, r, c, w, available)
-    if (.not. available) then
+    call this % explicit_tangent(input_graph, inputs, 1, r, c, w, tangent_defined)
+    if (.not. tangent_defined) then
        error stop 'operation_residual: the tangent in the state is explicit'
     end if
 
@@ -797,7 +797,7 @@ contains
 
     lin = residual_operator(a, stated(constant(0.0_dp), this % degrees - 1, 'zero'), this % at, &
          & this % unknowns, this % degrees, this % primary(1:1), [integer ::], [real(dp) ::])
-    call lin % versioned(mark, transposed=transposed)
+    call lin % versioned(version_number, transposed=transposed)
 
   end function linearize
 

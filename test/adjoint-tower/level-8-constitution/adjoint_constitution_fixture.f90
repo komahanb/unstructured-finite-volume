@@ -543,13 +543,13 @@ contains
     ! Every constituted domain here enumerates 1..n.
     !--------------------------------------------------------------!
 
-    type(set_map) :: mine
+    type(set_map) :: domain_sets
 
     associate (u1 => input_graph); end associate
 
-    call mine % bind(this % q_dom, this % c_q)
-    call mine % bind(this % y_dom, this % c_y)
-    call mine % bind(this % p_dom, this % c_p)
+    call domain_sets % bind(this % q_dom, this % c_q)
+    call domain_sets % bind(this % y_dom, this % c_y)
+    call domain_sets % bind(this % p_dom, this % c_p)
 
     if (.not. present(inputs)) then
        error stop 'constitution: the residual needs a state to judge'
@@ -563,7 +563,7 @@ contains
 
     allocate(r(this % n_y_dom))
     call residual_of(this % jq, this % jp, this % y_dom, this % q_dom, &
-         & this % p_dom, mine, q, this % p_val, r)
+         & this % p_dom, domain_sets, q, this % p_val, r)
 
     out = stored_field('residual', this % y_dom, this % n_y_dom)
     call out % set_real_vector(r)
@@ -596,13 +596,13 @@ contains
     ! Every constituted domain here enumerates 1..n.
     !--------------------------------------------------------------!
 
-    type(set_map) :: mine
+    type(set_map) :: domain_sets
 
     associate (u1 => input_graph); end associate
 
-    call mine % bind(this % q_dom, this % c_q)
-    call mine % bind(this % y_dom, this % c_y)
-    call mine % bind(this % z_dom, this % c_z)
+    call domain_sets % bind(this % q_dom, this % c_q)
+    call domain_sets % bind(this % y_dom, this % c_y)
+    call domain_sets % bind(this % z_dom, this % c_z)
 
     if (.not. present(inputs)) then
        error stop 'constitution: the adjoint equation needs a covector to judge'
@@ -617,10 +617,10 @@ contains
     allocate(r(this % n_q_dom), rhs(this % n_q_dom))
     allocate(seed(this % n_z_dom))
 
-    call rq_reverse(this % jq, this % y_dom, this % q_dom, mine, lam, r)
+    call rq_reverse(this % jq, this % y_dom, this % q_dom, domain_sets, lam, r)
 
     seed = 1.0_dp
-    call fq_reverse(this % fq, this % z_dom, this % q_dom, mine, seed, rhs)
+    call fq_reverse(this % fq, this % z_dom, this % q_dom, domain_sets, seed, rhs)
 
     out = stored_field('adjoint residual', this % q_dom, this % n_q_dom)
     call out % set_real_vector(r - rhs)
@@ -651,13 +651,13 @@ contains
     ! Every constituted domain here enumerates 1..n.
     !--------------------------------------------------------------!
 
-    type(set_map) :: mine
+    type(set_map) :: domain_sets
 
     associate (u1 => input_graph); end associate
 
-    call mine % bind(this % q_dom, this % c_q)
-    call mine % bind(this % y_dom, this % c_y)
-    call mine % bind(this % p_dom, this % c_p)
+    call domain_sets % bind(this % q_dom, this % c_q)
+    call domain_sets % bind(this % y_dom, this % c_y)
+    call domain_sets % bind(this % p_dom, this % c_p)
 
     if (.not. present(inputs)) then
        error stop 'constitution: the tangent equation needs a direction to judge'
@@ -671,8 +671,8 @@ contains
 
     allocate(r(this % n_y_dom), from_param(this % n_y_dom))
 
-    call rq_forward(this % jq, this % y_dom, this % q_dom, mine, qp, r)
-    call rp_forward(this % jp, this % y_dom, this % p_dom, mine, &
+    call rq_forward(this % jq, this % y_dom, this % q_dom, domain_sets, qp, r)
+    call rp_forward(this % jp, this % y_dom, this % p_dom, domain_sets, &
          & this % dp_val, from_param)
 
     out = stored_field('tangent residual', this % y_dom, this % n_y_dom)

@@ -4,7 +4,7 @@
 # LEVELS are the implementation architecture; GATES are only review
 # checkpoints, and appear here as horizontal separators - never as
 # directories, and never in place of a level's own result. Every
-# level reports its own status, in order, and a gate line may only
+# level reports its own status, in order, and a group line may only
 # follow the levels it reviews.
 #
 # All ten levels are built, and after a full ladder the answer is
@@ -15,13 +15,15 @@ set -e
 
 here="$(cd "$(dirname "$0")" && pwd)"
 
-"$here/check_imports.sh" --selftest || { echo "└── the import gate refused itself"; exit 1; }
-"$here/check_imports.sh" || { echo "└── the import gate refused the tower"; exit 1; }
+"$here/check_imports.sh" --selftest || { echo "└── the import group refused itself"; exit 1; }
+"$here/check_imports.sh" || { echo "└── the import group refused the tower"; exit 1; }
 
 . "$here/check_marker.sh"
 "$here/check_marker.sh" --selftest || { echo "└── the result contract refused itself"; exit 1; }
 
-( cd "$here/../.." && ./build.sh >/dev/null 2>&1 )
+if [ "${UFVM_SKIP_LIBRARY_BUILD:-0}" != 1 ]; then
+    ( cd "$here/../.." && ./build.sh >/dev/null 2>&1 )
+fi
 
 levels=(
   "level-0-carrier            0 carrier"
@@ -92,7 +94,7 @@ fi
 out="$here/level-9-statement/run.out"
 marks=$(grep -c 'TIME_INTEGRATION_RESULT =' "$out")
 values=$(grep -o 'TIME_INTEGRATION_RESULT =.*' "$out" | sed 's/.*TIME_INTEGRATION_RESULT =//')
-if ! marker_ok "$marks" 2 "$values"; then
+if ! marker_valid "$marks" 2 "$values"; then
     echo "    RUNNER FAILURE: the statement did not report one state on Q"
     exit 1
 fi

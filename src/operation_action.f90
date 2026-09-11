@@ -177,7 +177,7 @@ module operation_action
      ! has the same version, and a direct solver retains its factors
      ! while the version it last factorised is unchanged. Zero is no
      ! version: the default, and always factorised again.
-     integer    , private :: mark = 0
+     integer    , private :: version_number = 0
      logical    , private :: is_transposed = .false.
 
    contains
@@ -305,11 +305,11 @@ contains
 
   end function argument_matches
 
-  pure logical function argument_is_named(this) result(named)
+  pure logical function argument_is_named(this) result(is_defined)
 
     class(argument), intent(in) :: this
 
-    named = this % space % declared() .and. this % ordinal > 0
+    is_defined = this % space % declared() .and. this % ordinal > 0
 
   end function argument_is_named
 
@@ -332,7 +332,7 @@ contains
   ! changes the count only, so arguments returned earlier still
   ! belong to the same space. A negative count stops the program.
   ! The label and the highest exact degree are recorded when given
-  ! and kept otherwise.
+  ! and retained otherwise.
   !===================================================================!
 
   subroutine declare_arguments(this, n, contracts, label, max_degree)
@@ -623,13 +623,13 @@ contains
   ! bindings; the order requested must not exceed its max_degree.
   !===================================================================!
 
-  subroutine versioned(this, mark, transposed)
+  subroutine versioned(this, version_number, transposed)
 
     class(operation), intent(inout) :: this
-    integer         , intent(in)    :: mark
+    integer         , intent(in)    :: version_number
     logical         , intent(in), optional :: transposed
 
-    this % mark   = mark
+    this % version_number   = version_number
     this % is_transposed = .false.
     if (present(transposed)) this % is_transposed = transposed
 
@@ -650,11 +650,11 @@ contains
 
   end function transpose_version
 
-  pure integer function version(this) result(mark)
+  pure integer function version(this) result(version_number)
 
     class(operation), intent(in) :: this
 
-    mark = this % mark
+    version_number = this % version_number
 
   end function version
 
@@ -663,13 +663,13 @@ contains
   ! tangent in one argument as triples - row, column, weight -
   ! reports so here, and a minimizer governing it may then state the
   ! explicit operator instead of forming the tangent by matvecs. The
-  ! default is that it cannot, and available reports so; the arrays
+  ! default tangent_defined is false; the arrays
   ! are then not assigned. Nothing here is a matvec: a statement that
   ! reports its tangent explicitly stores its own structure.
   !===================================================================!
 
   subroutine operation_explicit_tangent(this, input_graph, inputs, which, &
-       & rows, columns, weights, available)
+       & rows, columns, weights, tangent_defined)
 
     class(operation)     , intent(in)  :: this
     class(directed_graph), intent(in)  :: input_graph
@@ -677,11 +677,11 @@ contains
     integer              , intent(in)  :: which
     integer , allocatable, intent(out) :: rows(:), columns(:)
     real(dp), allocatable, intent(out) :: weights(:)
-    logical              , intent(out) :: available
+    logical              , intent(out) :: tangent_defined
 
     associate (u1 => this, u2 => input_graph, u3 => inputs, u4 => which); end associate
     allocate(rows(0), columns(0), weights(0))
-    available = .false.
+    tangent_defined = .false.
 
   end subroutine operation_explicit_tangent
 
@@ -798,11 +798,11 @@ contains
 
     real(dp), allocatable :: v(:), column(:), w(:)
     integer , allocatable :: r(:), c(:)
-    logical :: available
+    logical :: tangent_defined
     integer :: j
 
-    call rows % explicit_tangent(unknowns, rows % bind(inputs), 1, r, c, w, available)
-    if (available) then
+    call rows % explicit_tangent(unknowns, rows % bind(inputs), 1, r, c, w, tangent_defined)
+    if (tangent_defined) then
        call dense_of_triples(num_unknowns, r, c, w, a)
        return
     end if

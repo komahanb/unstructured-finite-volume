@@ -676,13 +676,13 @@ contains
   ! A functional by name over the named physics: the Lagrangian at
   ! zero multipliers, so it reads the same tuple as the physics.
   !===================================================================!
-  function functional_of_physics(physics_name, name, degree, passes_check, dimension) result(f)
+  function functional_of_physics(physics_name, name, degree, admissible, dimension) result(f)
     character(len=*), intent(in)  :: physics_name, name
     integer         , intent(in)  :: degree
-    logical         , intent(out) :: passes_check
+    logical         , intent(out) :: admissible
     integer         , intent(in), optional :: dimension
     type(expression) :: f
-    passes_check = .true.
+    admissible = .true.
     if (trim(physics_name) == 'taylor_green') then
        if (.not. present(dimension)) then
           error stop 'gti_physics: the Taylor-Green vortex is a flow over a mesh'
@@ -695,7 +695,7 @@ contains
           f = at_zero(taylor_green(viscous_dissipation_rule(dimension), dimension, 'taylor-green lagrangian'), &
                & 'viscous dissipation')
        case default
-          passes_check = .false.
+          admissible = .false.
        end select
        return
     end if
@@ -707,7 +707,7 @@ contains
        f = at_zero(lagrangian(dissipation_rule(), degree, 'van der pol lagrangian', algebraic_named(physics_name)), &
             & 'van der pol dissipation')
     case default
-       passes_check = .false.
+       admissible = .false.
     end select
   end function functional_of_physics
   pure logical function algebraic_named(name) result(algebraic)
@@ -722,14 +722,14 @@ contains
   function van_der_pol_energy(degree) result(f)
     integer, intent(in) :: degree
     type(expression) :: f
-    logical :: passes_check
-    f = functional_of_physics('vanderpol', 'energy', degree, passes_check)
+    logical :: admissible
+    f = functional_of_physics('vanderpol', 'energy', degree, admissible)
   end function van_der_pol_energy
   function van_der_pol_dissipation(degree) result(f)
     integer, intent(in) :: degree
     type(expression) :: f
-    logical :: passes_check
-    f = functional_of_physics('vanderpol', 'dissipation', degree, passes_check)
+    logical :: admissible
+    f = functional_of_physics('vanderpol', 'dissipation', degree, admissible)
   end function van_der_pol_dissipation
 end module gti_physics
 !=====================================================================!
@@ -859,7 +859,7 @@ module gti_sweeps
   public :: set_predictor_order, predictor_order
   public :: set_newton_order, newton_order
   public :: set_aggregates, set_coarse_nodes, coarse_nodes, jacobian_present, multigrid_on, coarsens
-  public :: read_inner, store_inner, clear_inner, set_linear_stopping, set_linear_budget
+  public :: read_inner, store_inner, clear_inner, set_linear_stopping, set_linear_limits
   public :: stopping_applied
   public :: functional_of, functional_gradient
   character(len=16), save :: chosen_solver   = 'direct'
@@ -881,7 +881,7 @@ module gti_sweeps
   integer , save :: linear_sweeps     = 2
   integer , save :: linear_iterations = 200
   integer, allocatable, save :: chosen_coarse(:)
-  class(minimizer), allocatable, save :: kept_inner
+  class(minimizer), allocatable, save :: stored_inner
 contains
   real(dp) function functional_of(integrand, instants, inputs, dt) result(f)
 
@@ -1110,7 +1110,7 @@ contains
     linear_criterion = criterion
     linear_limit_kind    = limit_kind
   end subroutine set_linear_stopping
-  subroutine set_linear_budget(restart, sweeps, iterations)
+  subroutine set_linear_limits(restart, sweeps, iterations)
     integer, intent(in) :: restart, sweeps, iterations
     if (restart < 1 .or. sweeps < 1 .or. iterations < 1) then
        error stop 'gti_sweeps: a restart, a sweep count and an iteration limit are positive'
@@ -1118,7 +1118,7 @@ contains
     linear_restart    = restart
     linear_sweeps     = sweeps
     linear_iterations = iterations
-  end subroutine set_linear_budget
+  end subroutine set_linear_limits
   !===================================================================!
   ! The inner minimizer of a Newton solve over count unknowns in
   ! tuples of width. With rows eliminated, the minimizer is stated on
@@ -1272,20 +1272,20 @@ contains
     integer                      , intent(in)  :: count, width
     logical                      , intent(in)  :: eliminated(:)
     logical :: reusable
-    reusable = allocated(kept_inner) .and. .not. chosen_multigrid
+    reusable = allocated(stored_inner) .and. .not. chosen_multigrid
     ! a stored minimizer is read again over the same unknowns: with
     ! rows eliminated, the same flags
     if (reusable) then
-       select type (kept_inner)
+       select type (stored_inner)
        type is (elimination)
-          reusable = size(kept_inner % eliminated) == size(eliminated)
-          if (reusable) reusable = all(kept_inner % eliminated .eqv. eliminated)
+          reusable = size(stored_inner % eliminated) == size(eliminated)
+          if (reusable) reusable = all(stored_inner % eliminated .eqv. eliminated)
        class default
           reusable = .not. any(eliminated)
        end select
     end if
     if (reusable) then
-       call move_alloc(kept_inner, inner)
+       call move_alloc(stored_inner, inner)
     else
        call clear_inner()
        allocate(inner, source=inner_minimizer(count, width, eliminated))
@@ -1293,11 +1293,11 @@ contains
   end subroutine read_inner
   subroutine store_inner(inner)
     class(minimizer), allocatable, intent(inout) :: inner
-    if (allocated(kept_inner)) deallocate(kept_inner)
-    call move_alloc(inner, kept_inner)
+    if (allocated(stored_inner)) deallocate(stored_inner)
+    call move_alloc(inner, stored_inner)
   end subroutine store_inner
   subroutine clear_inner()
-    if (allocated(kept_inner)) deallocate(kept_inner)
+    if (allocated(stored_inner)) deallocate(stored_inner)
   end subroutine clear_inner
   pure integer function pass_of(num_designs, num_functionals, order) result(pass_kind)
     integer, intent(in) :: num_designs, num_functionals, order
@@ -1393,8 +1393,8 @@ module gti_expansion
      ! gauge of a field determined up to a constant; zero for none
      integer                 , private :: gauge = 0
      integer, allocatable    , private :: design_at(:), design_kind(:)
-     type(expression)        , private :: rule_kept
-     class(grid), allocatable, private :: steps_kept
+     type(expression)        , private :: stored_rule
+     class(grid), allocatable, private :: stored_grid
    contains
      procedure :: build
      procedure :: root
@@ -1487,10 +1487,10 @@ contains
     integer         , intent(in) :: table(:,:)
     real(dp)        , intent(in) :: w(:)
     real(dp), allocatable :: placed(:)
-    integer, allocatable :: kept(:,:), at(:,:)
+    integer, allocatable :: relation_tuples(:,:), at(:,:)
     integer :: e, n
-    call this % tuples_of(coupling, kept)
-    if (size(kept, 2) /= size(table, 2)) then
+    call this % tuples_of(coupling, relation_tuples)
+    if (size(relation_tuples, 2) /= size(table, 2)) then
        error stop 'gti_expansion: a coupling names each tuple once'
     end if
     n = max(maxval(table(1, :)), maxval(table(2, :)))
@@ -1498,9 +1498,9 @@ contains
     do e = 1, size(table, 2)
        at(table(1, e), table(2, e)) = e
     end do
-    allocate(placed(size(kept, 2)))
-    do e = 1, size(kept, 2)
-       placed(e) = w(at(kept(1, e), kept(2, e)))
+    allocate(placed(size(relation_tuples, 2)))
+    do e = 1, size(relation_tuples, 2)
+       placed(e) = w(at(relation_tuples(1, e), relation_tuples(2, e)))
     end do
   end function in_relation_order
   subroutine build(this, physics, schemes, instants, steps, &
@@ -1558,8 +1558,8 @@ contains
        end do
     end if
     if (present(gauge_field)) this % gauge = gauge_field
-    this % rule_kept = physics
-    allocate(this % steps_kept, source=steps)
+    this % stored_rule = physics
+    allocate(this % stored_grid, source=steps)
     if (present(block_steps)) then
        if (size(block_steps) /= sum(instants) - 1) then
           error stop 'gti_expansion: one step per instant after the first'
@@ -1623,7 +1623,7 @@ contains
   function rule(this) result(r)
     class(expansion), intent(in) :: this
     type(expression) :: r
-    r = this % rule_kept
+    r = this % stored_rule
   end function rule
   subroutine step_partial_along(this, weights_varied, u)
     class(expansion)     , intent(in)  :: this
@@ -1650,9 +1650,9 @@ contains
        e = 0.0_dp
        e(weights_varied(i)) = 1.0_dp
        direction(i) = instant_scalars % direction(e)
-       variations(i) = variation(this % steps_kept % argument(1), direction(i))
+       variations(i) = variation(this % stored_grid % argument(1), direction(i))
     end do
-    call this % steps_kept % partial_action(instants, this % steps_kept % bind([designs]), variations, out)
+    call this % stored_grid % partial_action(instants, this % stored_grid % bind([designs]), variations, out)
     call out % real_vector(u)
   end subroutine step_partial_along
   subroutine step_partials(this, v)
@@ -1992,24 +1992,24 @@ contains
     call this % bindings % bind_relation(g, &
          & csr_relation('scheme coupling', from, into, table, this % extents))
   end subroutine bind_coupling
-  recursive logical function consistent(this, g) result(passes_check)
+  recursive logical function consistent(this, g) result(admissible)
     class(expansion), intent(in) :: this
     type(graph)     , intent(in) :: g
     type(graph), pointer :: coupling
     type(branch) :: members
     integer :: k
-    passes_check = level_consistent(g)
-    if (.not. passes_check) return
+    admissible = level_consistent(g)
+    if (.not. admissible) return
     if (level_couples(g)) then
        coupling => level_coupling(g)
-       passes_check = relational_valid(coupling, this % bindings)
-       if (.not. passes_check) return
+       admissible = relational_valid(coupling, this % bindings)
+       if (.not. admissible) return
     end if
     if (level_is_leaf(g)) return
     members = level_members(g)
     do k = 1, sequence_num_elements(members)
-       passes_check = this % consistent(sequence_element(members, k))
-       if (.not. passes_check) return
+       admissible = this % consistent(sequence_element(members, k))
+       if (.not. admissible) return
     end do
   end function consistent
   pure integer function stage_unknown(vertex, degree, s, layout, field) result(at)
@@ -2500,15 +2500,15 @@ contains
   ! residual's own layout and free pass across unchanged, since
   ! freezing the tangent changes no point and drops no unknown.
   !===================================================================!
-  function block_linear_block(this, input_graph, inputs, rhs, transposed, mark) result(lin)
+  function block_linear_block(this, input_graph, inputs, rhs, transposed, version_number) result(lin)
     class(block_residual), intent(in) :: this
     class(directed_graph), intent(in) :: input_graph
     type(binding)         , intent(in) :: inputs(:)
     real(dp)             , intent(in) :: rhs(:)
     logical              , intent(in) :: transposed
-    integer              , intent(in) :: mark
+    integer              , intent(in) :: version_number
     type(block_residual) :: lin
-    lin % residual_operator = this % residual_operator % linearize(input_graph, inputs, rhs, transposed, mark)
+    lin % residual_operator = this % residual_operator % linearize(input_graph, inputs, rhs, transposed, version_number)
     lin % layout = this % layout
     if (allocated(this % free)) lin % free = this % free
     if (allocated(this % eliminated)) lin % eliminated = this % eliminated
@@ -2652,6 +2652,7 @@ module gti_march
   use operation_stencil       , only : stencil
   use operation_newton        , only : newton
   use operation_minimization  , only : minimizer, relative, by_rate
+  use operation_minimization  , only : solve_result
   use operation_temporal_minimization, only : temporal_minimizer
   use operation_dense_direct  , only : dense_direct
   use operation_gmres         , only : gmres
@@ -2675,14 +2676,15 @@ module gti_march
   use util_tally              , only : tally_record, tangent_loops, adjoint_loops
   implicit none
   type :: imbalance
-     logical  :: converged = .true.
+     logical  :: converged = .false.
      logical  :: diverging = .false.
      real(dp) :: norm      = 0.0_dp
-     real(dp) :: began     = 0.0_dp
+     real(dp) :: initial_residual_norm     = 0.0_dp
      real(dp), allocatable :: by_degree(:)
      integer  :: largest_slot = 0, largest_degree = 0
      integer  :: steepest_slot = 0, steepest_degree = 0
      real(dp) :: steepest = 0.0_dp
+     type(solve_result) :: outcome
   end type imbalance
   ! One step's edges, filled incrementally by stage_connectivity
   ! before the connectivity_graph they describe can be built - a
@@ -2719,7 +2721,7 @@ module gti_march
   integer, save :: versions_given = 0
   real(dp), save :: stopping_tolerance  = 1.0e-12_dp
   integer , save :: stopping_criterion  = relative
-  integer , save :: stopping_budget     = by_rate
+  integer , save :: stopping_limit_kind     = by_rate
   integer , save :: stopping_iterations = 100
   private
   public :: solved, unknowns_graph
@@ -2770,14 +2772,14 @@ contains
        w = max(w, 1.0_dp + sum(abs(c)))
     end do
   end function weight_of
-  subroutine precision_needed(weight, state_size, began, spacing_needed, least_kind)
-    real(dp)        , intent(in)  :: weight, state_size, began
+  subroutine precision_needed(weight, state_size, initial_residual_norm, spacing_needed, least_kind)
+    real(dp)        , intent(in)  :: weight, state_size, initial_residual_norm
     real(real128)   , intent(out) :: spacing_needed
     character(len=:), allocatable, intent(out) :: least_kind
     real(dp) :: target
     select case (stopping_criterion)
     case (relative)
-       target = stopping_tolerance * began
+       target = stopping_tolerance * initial_residual_norm
     case default
        target = stopping_tolerance
     end select
@@ -2812,7 +2814,7 @@ contains
     class(field), allocatable :: out
     real(dp), allocatable :: below(:), r(:,:), slope(:,:,:), weights(:), e(:), a(:,:), rhs(:), dq(:), column(:)
     integer , allocatable :: top(:), count(:), offset(:)
-    real(dp) :: began, target
+    real(dp) :: initial_residual_norm, target
     integer  :: nodes, i, k, iteration, fields, f, j, given
     nodes  = size(lower, 2)
     fields = physics % num_fields() - physics % num_multipliers()
@@ -2869,8 +2871,8 @@ contains
     point_states  = point_domain % state_fields()
     design_field  = point_scalars % design(spread(design_value, 1, nodes))
     allocate(r(nodes, fields), slope(nodes, fields, fields), e(nodes * degrees))
-    began = -1.0_dp
-    do iteration = 1, stopping_iterations
+    initial_residual_norm = -1.0_dp
+    do iteration = 0, stopping_iterations
        state = point_states % state(q)
        do j = 1, fields
           call rules(j) % apply(points, rules(j) % bind([state, design_field]), out)
@@ -2878,13 +2880,15 @@ contains
           r(:, j) = column
        end do
        r(:, 1) = r(:, 1) + below
-       if (began < 0.0_dp) began = norm2(r)
+       if (initial_residual_norm < 0.0_dp) initial_residual_norm = norm2(r)
+       if (norm2(r) == 0.0_dp) return
        if (stopping_criterion == relative) then
-          target = stopping_tolerance * max(began, tiny(1.0_dp))
+          target = stopping_tolerance * max(initial_residual_norm, tiny(1.0_dp))
        else
           target = stopping_tolerance
        end if
        if (norm2(r) <= target) return
+       if (iteration == stopping_iterations) exit
        ! slope(i, j, f) is rule j's partial in field f's highest component at node i
        do f = 1, fields
           e = 0.0_dp
@@ -2963,7 +2967,7 @@ contains
     end if
     stopping_tolerance  = tolerance
     stopping_criterion  = criterion
-    stopping_budget     = limit_kind
+    stopping_limit_kind     = limit_kind
     stopping_iterations = iterations
   end subroutine set_stopping
   pure integer function unknown(instant, degree, degrees, node, nodes) result(at)
@@ -3045,7 +3049,7 @@ contains
     ! nd is the marching coordinate's degree count, which the scheme
     ! reads; stride is the point's whole component count, which the
     ! layout reads. The two differ once a rule names a second
-    ! coordinate, so they are kept as distinct names.
+    ! coordinate, so they are specified as distinct names.
     continuous = continuous_domain(physics)
     nd     = continuous % equation_degree() + 1
     stride = continuous % num_components()
@@ -3339,13 +3343,14 @@ contains
     placed % column(e)    = edge % column_base + edge % tail_within + 1
     placed % row(e)       = edge % row_base    + edge % head_within + 1
   end subroutine raw_connectivity_place
-  subroutine solved(rows, design_value, q, achieved, final_imbalance, seed)
+  subroutine solved(rows, design_value, q, achieved, final_imbalance, seed, outcome)
     type(block_residual), intent(in)  :: rows
     real(dp)            , intent(in)  :: design_value
     real(dp), allocatable, intent(out) :: q(:)
     real(dp)            , intent(out) :: achieved
     type(imbalance), intent(out), optional :: final_imbalance
     real(dp)       , intent(in) , optional :: seed(:)
+    type(solve_result), intent(out), optional :: outcome
     type(newton) :: solver
     type(stored_directed_graph) :: unknowns
     type(stored_field), allocatable :: inputs(:)
@@ -3364,9 +3369,10 @@ contains
          & stored_inputs = [inputs(2)])
     solver % explicit       = jacobian_present()
     solver % higher_order_jacobian_product = newton_order()
-    call stopping_applied(solver, stopping_tolerance, stopping_criterion, stopping_budget, &
+    call stopping_applied(solver, stopping_tolerance, stopping_criterion, stopping_limit_kind, &
          & stopping_iterations)
     call solver % solve(spread(0.0_dp, 1, count), q, achieved)
+    if (present(outcome)) outcome = solver % result()
     call store_inner(solver % inner)
     if (present(final_imbalance)) call imbalance_of(solver, achieved, rows, unknowns, q, inputs(2), &
          & final_imbalance)
@@ -3382,17 +3388,18 @@ contains
     type(stored_directed_graph), intent(in)  :: unknowns
     type(stored_field)         , intent(in)  :: design
     type(imbalance)            , intent(out) :: final_imbalance
-    final_imbalance % converged = solver % converged(achieved)
+    final_imbalance % outcome = solver % result()
+    final_imbalance % converged = final_imbalance % outcome % converged()
     final_imbalance % diverging = solver % diverging(achieved)
     final_imbalance % norm      = achieved
-    final_imbalance % began     = solver % began()
+    final_imbalance % initial_residual_norm     = solver % initial_residual_norm()
     if (.not. final_imbalance % converged) call by_aspect(rows, unknowns, q, design, final_imbalance)
   end subroutine imbalance_of
   integer function next_version() result(version)
     versions_given = versions_given + 1
     version = versions_given
   end function next_version
-  subroutine solve_linear(rows, unknowns, inputs, rhs, transposed, version, w)
+  subroutine solve_linear(rows, unknowns, inputs, rhs, transposed, version, w, outcome)
     type(block_residual)       , intent(in)  :: rows
     class(directed_graph)      , intent(in)  :: unknowns
     type(stored_field)         , intent(in)  :: inputs(:)
@@ -3400,7 +3407,9 @@ contains
     logical                    , intent(in)  :: transposed
     integer                    , intent(in)  :: version
     real(dp), allocatable      , intent(out) :: w(:)
+    type(solve_result), intent(out), optional :: outcome
     type(block_residual) :: lin
+    type(solve_result) :: completed
     real(dp) :: achieved
     if (transposed) then
        call tally_record(adjoint_loops)
@@ -3408,7 +3417,12 @@ contains
        call tally_record(tangent_loops)
     end if
     lin = rows % linear_block(unknowns, rows % bind(inputs), rhs, transposed, version)
-    call swept(lin, 0.0_dp, w, achieved)
+    call swept(lin, 0.0_dp, w, achieved, outcome=completed)
+    if (present(outcome)) then
+       outcome = completed
+    else if (.not. completed % converged()) then
+       error stop 'gti_march: derivative solve did not converge: ' // completed % description()
+    end if
   end subroutine solve_linear
   real(dp) function by_tangent(rows, unknowns, inputs, g, design_rate, explicit, version) &
        & result(df)
@@ -3456,12 +3470,13 @@ contains
     character(len=:), allocatable :: name
     name = 'space ' // trim(space_coupling) // ', time ' // trim(time_coupling)
   end function coupling_named
-  subroutine swept(rows, design_value, q, achieved, final_imbalance)
+  subroutine swept(rows, design_value, q, achieved, final_imbalance, outcome)
     type(block_residual), intent(in)  :: rows
     real(dp)            , intent(in)  :: design_value
     real(dp), allocatable, intent(out) :: q(:)
     real(dp)            , intent(out) :: achieved
     type(imbalance), intent(out), optional :: final_imbalance
+    type(solve_result), intent(out), optional :: outcome
     type(temporal_minimizer) :: solver
     type(newton) :: newton_solver
     type(stored_directed_graph) :: unknowns
@@ -3473,7 +3488,7 @@ contains
     sequential_space = trim(space_coupling) == 'sequential'
     sequential_time  = trim(time_coupling)  == 'sequential'
     if (.not. sequential_space .and. .not. sequential_time) then
-       call solved(rows, design_value, q, achieved, final_imbalance)
+       call solved(rows, design_value, q, achieved, final_imbalance, outcome=outcome)
        return
     end if
     count = rows % num_unknowns()
@@ -3488,12 +3503,12 @@ contains
          & stored_inputs = [inputs(2)])
     newton_solver % explicit       = jacobian_present()
     newton_solver % higher_order_jacobian_product = newton_order()
-    call stopping_applied(newton_solver, stopping_tolerance, stopping_criterion, stopping_budget, &
+    call stopping_applied(newton_solver, stopping_tolerance, stopping_criterion, stopping_limit_kind, &
          & stopping_iterations)
     allocate(solver % inner, source=newton_solver)
     call solver % state(rows, unknowns, unknowns % vertex_set(), count, &
          & stored_inputs = [inputs(2)])
-    call stopping_applied(solver, stopping_tolerance, stopping_criterion, stopping_budget, &
+    call stopping_applied(solver, stopping_tolerance, stopping_criterion, stopping_limit_kind, &
          & stopping_iterations)
     ! the Taylor seed where every member is one instant of known time;
     ! the stages of a staged block are seeded by the copy
@@ -3506,6 +3521,7 @@ contains
     end if
     allocate(rhs(count), source=0.0_dp)
     call solver % solve(rhs, q, achieved)
+    if (present(outcome)) outcome = solver % result()
     call clear_inner()
     if (present(final_imbalance)) call imbalance_of(solver, achieved, rows, unknowns, q, &
          & inputs(2), final_imbalance)
@@ -3595,7 +3611,9 @@ contains
   end subroutine horizon_bounds
 end module gti_march
 module gti_adaptive
+  use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
   use util_precision   , only : dp
+  use operation_minimization, only : solve_result
   use operation_family , only : family
   use operation_grid   , only : uniform_grid
   use operation_expression, only : expression
@@ -3619,10 +3637,14 @@ contains
     real(dp), allocatable :: q(:)
     real(dp) :: achieved
     integer  :: last
+    type(solve_result) :: outcome
     allocate(owner(1) % scheme, source=scheme)
     call tower % build(physics, owner, [n], uniform_grid(h), 0, design)
     call block_from(tower, 1, scheme, physics, state, rows, at)
-    call solved(rows, design, q, achieved)
+    call solved(rows, design, q, achieved, outcome=outcome)
+    if (.not. outcome % converged()) then
+       error stop 'gti_adaptive: step solve did not converge: ' // outcome % description()
+    end if
     last    = at(size(at))
     arrived = q(last + 1:last + degrees)
   end subroutine stepped
@@ -3634,28 +3656,39 @@ contains
     if (relative) e = e / max(norm2(fine(1:degrees - 1)), tiny(1.0_dp))
   end function estimate
   function adaptive_partition(scheme, p, physics, degrees, duration, lower, design, &
-       & tolerance, relative, rejects) result(dt)
+       & tolerance, relative, rejects, minimum_step) result(dt)
     class(family)   , intent(in)  :: scheme
     integer         , intent(in)  :: p, degrees
     type(expression), intent(in)  :: physics
     real(dp)        , intent(in)  :: duration, lower(:), design, tolerance
     logical         , intent(in)  :: relative
     integer         , intent(out), optional :: rejects
+    real(dp)        , intent(in), optional :: minimum_step
     real(dp), allocatable :: dt(:)
     real(dp), parameter :: safety = 0.9_dp, growth = 5.0_dp, shrinkage = 0.2_dp
     real(dp), allocatable :: state(:), coarse(:), fine(:)
-    real(dp) :: t, h, e, factor
+    real(dp) :: t, h, e, factor, smallest
     integer  :: attempt, rejected
     if (scheme % history_depth(degrees - 1) > 1) then
        error stop 'gti_adaptive: an adaptive march is a self-starting scheme'
     end if
+    if (.not. ieee_is_finite(duration) .or. .not. ieee_is_finite(tolerance)) then
+       error stop 'gti_adaptive: the duration and the tolerance are finite'
+    end if
     if (duration <= 0.0_dp .or. tolerance <= 0.0_dp) then
        error stop 'gti_adaptive: the duration and the tolerance are positive'
     end if
+    smallest = duration * 1.0e-10_dp
+    if (present(minimum_step)) smallest = minimum_step
+    if (.not. ieee_is_finite(smallest)) error stop 'gti_adaptive: the minimum step is finite'
+    if (smallest <= 0.0_dp .or. smallest > duration) then
+       error stop 'gti_adaptive: the minimum step is positive and no greater than the duration'
+    end if
+    if (p < 1) error stop 'gti_adaptive: the scheme order is positive'
     state    = consistent_state(physics, degrees, lower, design)
     dt       = [real(dp) ::]
     t        = 0.0_dp
-    h        = duration / 8.0_dp
+    h        = max(smallest, duration / 8.0_dp)
     rejected = 0
     do while (t < duration * (1.0_dp - 1.0e-12_dp))
        h = min(h, duration - t)
@@ -3665,11 +3698,15 @@ contains
           call stepped(scheme, physics, degrees, state, h, 2, design, coarse)
           call stepped(scheme, physics, degrees, state, h, 3, design, fine)
           e      = estimate(coarse, fine, degrees, relative)
+          if (.not. ieee_is_finite(e)) error stop 'gti_adaptive: the error estimate is finite'
+          if (e <= tolerance) exit
+          if (h <= smallest .or. t + h <= t) then
+             error stop 'gti_adaptive: the minimum step cannot meet the tolerance'
+          end if
           factor = safety * (tolerance / max(e, tiny(1.0_dp))) ** (1.0_dp / real(p + 1, dp))
           factor = min(growth, max(shrinkage, factor))
-          if (e <= tolerance .or. h <= duration * 1.0e-10_dp) exit
           rejected = rejected + 1
-          h = h * factor
+          h = max(smallest, h * factor)
           if (attempt > 50) then
              error stop 'gti_adaptive: a step remains above the tolerance after fifty attempts'
           end if
@@ -3677,7 +3714,9 @@ contains
        dt    = [dt, h]
        t     = t + h
        state = fine
-       h     = h * factor
+       factor = min(growth, max(shrinkage, &
+            & safety * (tolerance / max(e, tiny(1.0_dp))) ** (1.0_dp / real(p + 1, dp))))
+       h     = max(smallest, h * factor)
     end do
     if (present(rejects)) rejects = rejected
   end function adaptive_partition
@@ -3763,18 +3802,18 @@ contains
   end function mapped
   !===================================================================!
   ! The parametric lines along each coordinate: n + 1 points on the
-  ! unit interval, uniform or drawn.
+  ! unit interval, uniform or randomly sampled.
   !===================================================================!
-  subroutine parameter_lines(counts, drawn, seed, xi)
+  subroutine parameter_lines(counts, randomized, seed, xi)
     integer , intent(in) :: counts(:), seed
-    logical , intent(in) :: drawn
+    logical , intent(in) :: randomized
     real(dp), allocatable, intent(out) :: xi(:,:)
     real(dp), allocatable :: dxi(:), line(:)
     integer :: k, offset
     allocate(xi(0:maxval(counts), size(counts)), source=0.0_dp)
     offset = 0
     do k = 1, size(counts)
-       if (drawn) then
+       if (randomized) then
           call partitioned(random_grid(1.0_dp, seed + offset), counts(k) + 1, dxi, line)
        else
           call partitioned(uniform_grid(1.0_dp), counts(k) + 1, dxi, line)
@@ -3783,10 +3822,10 @@ contains
        offset = offset + counts(k)
     end do
   end subroutine parameter_lines
-  function spatial_mesh(geometry, extents, counts, drawn, seed) result(this)
+  function spatial_mesh(geometry, extents, counts, randomized, seed) result(this)
     integer , intent(in) :: geometry, counts(:), seed
     real(dp), intent(in) :: extents(:)
-    logical , intent(in) :: drawn
+    logical , intent(in) :: randomized
     type(spatial_domain) :: this
     if (size(counts) < 2 .or. size(counts) > 3) then
        error stop 'gti_space: a mesh has two or three coordinates'
@@ -3808,9 +3847,9 @@ contains
        if (size(counts) /= 2) then
           error stop 'gti_space: the disc and the ellipse are plane'
        end if
-       call polar_mesh(this, drawn, seed)
+       call polar_mesh(this, randomized, seed)
     else
-       call box_mesh(this, drawn, seed)
+       call box_mesh(this, randomized, seed)
     end if
   end function spatial_mesh
   !===================================================================!
@@ -3821,18 +3860,18 @@ contains
   ! period as its shift, or none at a boundary. Corners are listed in
   ! tensor order, a face's corners in cyclic order.
   !===================================================================!
-  subroutine box_mesh(this, drawn, seed)
+  subroutine box_mesh(this, randomized, seed)
     type(spatial_domain), intent(inout) :: this
-    logical             , intent(in)    :: drawn
+    logical             , intent(in)    :: randomized
     integer             , intent(in)    :: seed
     real(dp), allocatable :: xi(:,:)
     type(face_record), allocatable :: faces(:)
     integer, allocatable :: c(:), i(:), corners(:), cstride(:), stride(:)
     integer :: d, k, cells, cell, b, at, f, nf, other, lin
-    logical :: wrapped
+    logical :: periodic_geometry
     d = this % dimension
-    wrapped = this % geometry == periodic
-    call parameter_lines(this % n, drawn, seed, xi)
+    periodic_geometry = this % geometry == periodic
+    call parameter_lines(this % n, randomized, seed, xi)
     allocate(c(d), i(d), cstride(d), stride(d))
     cstride(1) = 1
     stride(1)  = 1
@@ -3875,7 +3914,7 @@ contains
     ! coordinate, and one on the negative side of the first cells
     ! when the box is not periodic
     nf = d * cells
-    if (.not. wrapped) nf = nf + sum([(cells / this % n(k), k = 1, d)])
+    if (.not. periodic_geometry) nf = nf + sum([(cells / this % n(k), k = 1, d)])
     allocate(faces(nf))
     f = 0
     do k = 1, d
@@ -3887,14 +3926,14 @@ contains
           allocate(faces(f) % shift(d), source=0.0_dp)
           if (c(k) < this % n(k)) then
              faces(f) % head = cell + stride(k)
-          else if (wrapped) then
+          else if (periodic_geometry) then
              other = cell - (this % n(k) - 1) * stride(k)
              faces(f) % head = other
              faces(f) % shift(k) = this % extents(k)
           else
              faces(f) % head = 0
           end if
-          if (c(k) == 1 .and. .not. wrapped) then
+          if (c(k) == 1 .and. .not. periodic_geometry) then
              f = f + 1
              faces(f) % tail    = cell
              faces(f) % head    = 0
@@ -3932,9 +3971,9 @@ contains
   ! centre one cell of n(2) corners. cell_multi(1, :) is the index
   ! around, cell_multi(2, :) the index outward.
   !===================================================================!
-  subroutine polar_mesh(this, drawn, seed)
+  subroutine polar_mesh(this, randomized, seed)
     type(spatial_domain), intent(inout) :: this
-    logical             , intent(in)    :: drawn
+    logical             , intent(in)    :: randomized
     integer             , intent(in)    :: seed
     real(dp), allocatable :: xi(:,:)
     type(face_record), allocatable :: faces(:)
@@ -3944,7 +3983,7 @@ contains
     n2 = this % n(2)
     a  = this % extents(1)
     b  = this % extents(2)
-    call parameter_lines(this % n, drawn, seed, xi)
+    call parameter_lines(this % n, randomized, seed, xi)
     allocate(this % corner(2, n1 * (n2 + 1)))
     do j = 1, n1
        do i = 0, n2
@@ -4562,7 +4601,7 @@ module gti_chain
      real(dp)     , allocatable :: dt(:)
      real(dp)              :: fraction = 1.0_dp
      logical               :: counted = .true.
-     real(dp) :: began = 0.0_dp
+     type(imbalance) :: final_imbalance
   end type chain_block
   type :: sink_costates
      integer , allocatable :: fixed_rows(:), last(:), interior(:)
@@ -4670,10 +4709,6 @@ module gti_chain
      ! the pipelined derivative, when one is requested of the march
      logical :: taylor = .false.
 
-     ! the result the solve recorded, read after the graph is evaluated
-     real(dp)        :: achieved = 0.0_dp
-     type(imbalance) :: final_imbalance
-
    contains
 
      procedure :: name  => block_rule_name
@@ -4764,12 +4799,12 @@ contains
     integer         , intent(in), optional :: derivative_order
     real(dp), allocatable, intent(out), optional :: f(:,:)
     integer, intent(out), optional :: tower_storage(2), state_storage(2)
-    logical :: fused
+    logical :: pipelined_pass
     type(family_container), allocatable :: every(:)
-    type(imbalance) :: one_imbalance
+    type(imbalance) :: block_imbalance
     integer , allocatable :: first(:), last(:), spans(:)
     real(dp), allocatable :: fine(:), design_field(:)
-    real(dp) :: one_achieved
+    real(dp) :: block_residual_norm
     integer :: b, k, r, given, before, m
     logical :: with_startup
     if (size(added) < 1) then
@@ -4813,8 +4848,8 @@ contains
     call tower % build(physics, every, spans, steps, 0, design, nodes, spatial_discretization_stencil, &
          & weights=grid_design, block_steps=design_field, spatial_derivative_stencils=spatial_derivative_stencils, &
          & gauge_field=gauge_field)
-    fused = present(functionals) .and. present(derivative_order)
-    if (fused) then
+    pipelined_pass = present(functionals) .and. present(derivative_order)
+    if (pipelined_pass) then
        if (allocated(pipelined)) deallocate(pipelined)
        allocate(pipelined)
        call taylor_prepare(pipelined, tower, functionals, derivative_order, degrees, &
@@ -4828,18 +4863,18 @@ contains
        call one_block(chain, 1, tower, 1, every(1) % scheme, physics, degrees, &
             & block_layout(1, (given - 1) * r + 1, 1, nodes=m), fine, &
             & [0, (1 + (k - 1) / r + 1, k = 1, (given - 1) * r)], &
-            & 1.0_dp / real(r, dp), .false., design, initial, one_achieved, one_imbalance)
-       achieved = one_achieved
-       if (present(final_imbalance)) final_imbalance = one_imbalance
-       if (fused) call taylor_block(pipelined, chain, 1)
+            & 1.0_dp / real(r, dp), .false., design, initial, block_residual_norm, block_imbalance)
+       achieved = block_residual_norm
+       if (present(final_imbalance)) final_imbalance = block_imbalance
+       if (pipelined_pass) call taylor_block(pipelined, chain, 1)
     end if
     ! THE BLOCKS ARE A GRAPH, AND THE DRIVER EVALUATES IT. Block b
     ! reads block b - 1 in its one slot, so the arcs are the chain's
     ! own order and no loop here specifies which block is next.
     call marched_by_driver(chain, tower, schemes, added, physics, degrees, r, &
-         & first, last, dt, design, initial, before, achieved, final_imbalance, nodes, taylor=fused)
+         & first, last, dt, design, initial, before, achieved, final_imbalance, nodes, taylor=pipelined_pass)
     call tally_leave()
-    if (fused) then
+    if (pipelined_pass) then
        pipelined % by_order(:, :, derivative_order) = pipelined % table
        if (present(f)) then
           allocate(f(0:derivative_order, size(functionals)))
@@ -4927,6 +4962,9 @@ contains
     type(chain_block)   , intent(inout) :: chain(:)
     integer             , intent(in)    :: at
     integer :: h
+    if (.not. chain(at) % final_imbalance % converged) then
+       error stop 'gti_chain: the primal block must converge before its derivatives are solved'
+    end if
     context % versions(at)   = next_version()
     context % state_live  = context % state_live + size(chain(at) % state)
     context % state_total = context % state_total + size(chain(at) % state)
@@ -5181,7 +5219,7 @@ contains
     type(temporal_minimizer)    :: executor
     type(block_rule)            :: one
     type(contract), allocatable :: contracts(:)
-    type(stored_directed_graph) :: bare
+    type(stored_directed_graph) :: uncoupled_domain
     integer, allocatable :: reads(:)
     real(dp), allocatable :: no_rhs(:), no_solution(:)
     real(dp) :: driver_achieved
@@ -5219,9 +5257,9 @@ contains
        deallocate(one % scheme, one % physics)
     end do
 
-    bare = stored_directed_graph(nb, tails=[integer ::], heads=[integer ::])
+    uncoupled_domain = stored_directed_graph(nb, tails=[integer ::], heads=[integer ::])
     schedule = driver(rules % at(1) % rule, incidence, forward)
-    call executor % state(schedule, bare, bare % vertex_set(), 0)
+    call executor % state(schedule, uncoupled_domain, uncoupled_domain % vertex_set(), 0)
     call executor % pair_with(rules % pair(values))
     allocate(no_rhs(0), no_solution(0))
     call executor % solve(no_rhs, no_solution, driver_achieved)
@@ -5233,16 +5271,15 @@ contains
     if (present(data_stored)) data_stored = pairs % stored_data()
 
 
-    ! the result each block recorded, read from the rules
+    ! The result belongs to the solved block. Rules are copied by the
+    ! driver and cannot store a result in the original rule object.
     do b = 1, nb
-       select type (solved_rule => rules % at(b) % rule)
-       type is (block_rule)
-          achieved = max(achieved, solved_rule % achieved)
-          if (present(final_imbalance)) then
-             if (before + b == 1) final_imbalance = solved_rule % final_imbalance
-             if (final_imbalance % converged .and. .not. solved_rule % final_imbalance % converged) final_imbalance = solved_rule % final_imbalance
-          end if
-       end select
+       achieved = max(achieved, chain(before + b) % final_imbalance % norm)
+       if (present(final_imbalance)) then
+          if (before + b == 1) final_imbalance = chain(before + b) % final_imbalance
+          if (final_imbalance % converged .and. .not. chain(before + b) % final_imbalance % converged) &
+               & final_imbalance = chain(before + b) % final_imbalance
+       end if
     end do
 
   end subroutine marched_by_driver
@@ -5458,7 +5495,7 @@ contains
     call built(tower, in_tower, scheme, physics, fixed, chain(b) % rows, &
          & chain(b) % instants_at)
     call swept(chain(b) % rows, design, chain(b) % state, achieved, final_imbalance)
-    chain(b) % began = final_imbalance % began
+    chain(b) % final_imbalance = final_imbalance
     call tally_leave()
   end subroutine one_block
   pure subroutine owned(chain, b, from, to)
@@ -5610,6 +5647,13 @@ contains
     end if
     if (pass_kind /= forward_pass .and. pass_kind /= reverse_pass) then
        error stop 'gti_chain: a pass is forward or reverse'
+    end if
+    if (order > 0) then
+       do b = 1, size(chain)
+          if (.not. chain(b) % final_imbalance % converged) then
+             error stop 'gti_chain: the primal march must converge before its derivatives are solved'
+          end if
+       end do
     end if
     call designs_of(tower, design, step_partials)
     nd = 1
@@ -5978,7 +6022,7 @@ contains
     associate (u1 => physics, u2 => degrees); end associate
     call seeds_of(chain, b, s, 0, .false., w, u, nd, state_seed, step_seed, nu_seed)
     call chain(b) % rows % rows_terms(chain(b) % scheme, chain(b) % dt, step_seed, tr, tc, tw)
-    fixed_rows = chain(b) % rows % fixed_mask()
+    fixed_rows = chain(b) % rows % fixed_indicator()
     at      = chain(b) % rows % points_at()
     allocate(r(size(state_seed, 1)), source=0.0_dp)
     do e = 1, size(tr)
@@ -6025,11 +6069,11 @@ contains
     integer , allocatable :: r(:), c(:), reads(:)
     real(dp), allocatable :: w(:)
     logical , allocatable :: has_diagonal(:), fixed_rows(:)
-    logical :: available
+    logical :: tangent_defined
     integer :: n, e, p, d, stride
     call frozen_at(b, design, unknowns, inputs)
-    call b % rows % explicit_tangent(unknowns, b % rows % bind(inputs), 1, r, c, w, available)
-    if (.not. available) then
+    call b % rows % explicit_tangent(unknowns, b % rows % bind(inputs), 1, r, c, w, tangent_defined)
+    if (.not. tangent_defined) then
        error stop 'gti_chain: the block tangent in the state is explicit'
     end if
     n = b % rows % num_unknowns()
@@ -6047,7 +6091,7 @@ contains
     is_sink(1:n) = reads == 1 .and. has_diagonal
     stride = b % rows % num_degrees()
     associate (u1 => degrees); end associate
-    fixed_rows = b % rows % fixed_mask()
+    fixed_rows = b % rows % fixed_indicator()
     do p = 1, n
        if (.not. is_sink(p)) cycle
        d = mod(p - 1, stride)
@@ -6115,7 +6159,7 @@ contains
     if (n == 0) return
     call costates_at(chain, b, s, lambda, nd, i, lam)
     call chain(b) % rows % rows_terms(chain(b) % scheme, chain(b) % dt, step_seed, tr, tc, tw)
-    fixed_rows = chain(b) % rows % fixed_mask()
+    fixed_rows = chain(b) % rows % fixed_indicator()
     at      = chain(b) % rows % points_at()
     do e = 1, size(tr)
        if (fixed_rows(tr(e))) cycle
@@ -6199,7 +6243,7 @@ contains
        end do
     end do
     call chain(b) % rows % rows_terms(chain(b) % scheme, chain(b) % dt, step_seed, tr, tc, tw)
-    fixed_rows = chain(b) % rows % fixed_mask()
+    fixed_rows = chain(b) % rows % fixed_indicator()
     at      = chain(b) % rows % points_at()
     allocate(residual(count))
     residual = derivative_terms(0.0_dp, n + 1)
@@ -6561,12 +6605,12 @@ contains
     call jacobian_of(chain(1) % rows, unknowns, inputs, chain(1) % rows % num_unknowns(), &
          & unknowns % vertex_set(), a)
   end subroutine dense_jacobian
-  subroutine family_named(name, order, scheme, passes_check)
+  subroutine family_named(name, order, scheme, admissible)
     character(len=*), intent(in)  :: name
     integer         , intent(in)  :: order
     class(family), allocatable, intent(out) :: scheme
-    logical         , intent(out) :: passes_check
-    passes_check = .true.
+    logical         , intent(out) :: admissible
+    admissible = .true.
     select case (name)
     case ('bdf')
        allocate(scheme, source=bdf_family(order))
@@ -6581,7 +6625,7 @@ contains
        case (4)
           allocate(scheme, source=crouzeix_three_stage())
        case default
-          passes_check = .false.
+          admissible = .false.
        end select
     case ('newmark')
        select case (order)
@@ -6592,25 +6636,25 @@ contains
        case (3)
           allocate(scheme, source=newmark_family(1.0_dp / 12.0_dp, 0.5_dp, 3))
        case default
-          passes_check = .false.
+          admissible = .false.
        end select
     case ('taylor-newmark')
        if (order == 1) then
           allocate(scheme, source=taylor_newmark_family())
        else
-          passes_check = .false.
+          admissible = .false.
        end if
     case default
-       passes_check = .false.
+       admissible = .false.
     end select
   end subroutine family_named
-  subroutine functional_named(physics_name, name, degree, rule, passes_check, dimension)
+  subroutine functional_named(physics_name, name, degree, rule, admissible, dimension)
     character(len=*), intent(in)  :: physics_name, name
     integer         , intent(in)  :: degree
     type(expression), intent(out) :: rule
-    logical         , intent(out) :: passes_check
+    logical         , intent(out) :: admissible
     integer         , intent(in), optional :: dimension
-    rule = functional_of_physics(physics_name, name, degree, passes_check, dimension)
+    rule = functional_of_physics(physics_name, name, degree, admissible, dimension)
   end subroutine functional_named
 end module gti_driver
 module gti_demos
@@ -6856,9 +6900,9 @@ contains
     character(len=*), intent(in) :: family_of
     integer         , intent(in) :: order
     type(family_container) :: h
-    logical :: passes_check
-    call family_named(family_of, order, h % scheme, passes_check)
-    if (.not. passes_check) error stop 'gti_demos: the named family has a scheme at that order'
+    logical :: admissible
+    call family_named(family_of, order, h % scheme, admissible)
+    if (.not. admissible) error stop 'gti_demos: the named family has a scheme at that order'
   end function container_named
   subroutine demo_adaptive_grid()
     implicit none
@@ -6901,9 +6945,9 @@ contains
       real(dp), allocatable :: dt(:)
       real(dp) :: tol, f, forward, reverse, span
       integer  :: rejects, level
-      logical  :: passes_check
-      call family_named('dirk', order, scheme, passes_check)
-      if (.not. passes_check) error stop 'adaptive_grid: order two, three or four'
+      logical  :: admissible
+      call family_named('dirk', order, scheme, admissible)
+      if (.not. admissible) error stop 'adaptive_grid: order two, three or four'
       write(*,'(a)') ' '
       write(*,'(a)') ' ' // title
       write(*,'(a)') '   tolerance     steps   rejects        sum dt - T          functional     forward-reverse'
@@ -7401,7 +7445,7 @@ contains
       logical  :: readable(0:max_order)
       character(len=:), allocatable :: line, orders, spreads, outcomes
       character(len=16) :: cell
-      integer :: g, m, windows, instants, expected, kept, counted, reaches
+      integer :: g, m, windows, instants, expected, attained_count, counted, reaches
 
       windows  = size(schemes)
       expected = minval(formal)
@@ -7447,7 +7491,7 @@ contains
          if (readable(m)) call order_of_grids(counts, discrepancy(:, m), fitted(m), spread(m))
       end do
 
-      kept    = count(readable .and. spread <= settled &
+      attained_count    = count(readable .and. spread <= settled &
            &          .and. fitted >= real(expected, dp) - allowed)
       counted = count(readable .and. spread <= settled)
 
@@ -7485,7 +7529,7 @@ contains
       write(*,'(a)') orders
       write(*,'(a)') spreads
       write(*,'(a)') outcomes
-      write(cell,'(i0)') kept
+      write(cell,'(i0)') attained_count
       line = '     reaches p at ' // trim(cell) // ' of '
       write(cell,'(i0)') counted
       line = line // trim(cell) // ' derivative degrees where one power applies'
@@ -8686,7 +8730,7 @@ contains
       character(len=*), intent(in) :: label
       real(dp)        , intent(in) :: a(:,:)
       integer  :: n, i, j, filled, below, above
-      real(dp) :: largest_entry, least, on_diagonal, row_most
+      real(dp) :: largest_entry, least, on_diagonal, infinity_norm
       n       = size(a, 1)
       largest_entry = maxval(abs(a))
       least   = 1.0e-12_dp * largest_entry
@@ -8705,10 +8749,10 @@ contains
       do i = 1, n
          on_diagonal = max(on_diagonal, abs(a(i, i)))
       end do
-      row_most = maxval(sum(abs(a), dim=2))
+      infinity_norm = maxval(sum(abs(a), dim=2))
       write(*,'(a,a,i8,i10,i8,i8,f12.2,3es15.4)') '  ', label // repeat(' ', 12 - len(label)), &
            & n, filled, below, above, 100.0_dp * real(filled, dp) / real(n * n, dp), &
-           & largest_entry, on_diagonal, row_most
+           & largest_entry, on_diagonal, infinity_norm
     end subroutine reported
   end subroutine demo_jacobian_shape
   subroutine demo_level_maps()
@@ -9313,18 +9357,18 @@ contains
       call demo_argument(3, argument)
       verbose = trim(argument) == 'verbose'
     end function verbose
-    integer function drawn(state, below) result(n)
+    integer function random_integer(state, below) result(n)
       integer(int64), intent(inout) :: state
       integer       , intent(in)    :: below
       state = mod(1103515245_int64 * state + 12345_int64, 2147483648_int64)
       n = int(mod(state / 65536_int64, int(below, int64))) + 1
-    end function drawn
-    real(dp) function drawn_real(state, low, high) result(x)
+    end function random_integer
+    real(dp) function random_real(state, low, high) result(x)
       integer(int64), intent(inout) :: state
       real(dp)      , intent(in)    :: low, high
       state = mod(1103515245_int64 * state + 12345_int64, 2147483648_int64)
       x = low + (high - low) * real(state, dp) / 2147483648.0_dp
-    end function drawn_real
+    end function random_real
     subroutine directions_of(schemes, added, degrees, duration, design, tangent, adjoint)
       type(family_container), intent(in)  :: schemes(:)
       integer            , intent(in)  :: added(:), degrees
@@ -9422,19 +9466,19 @@ contains
       integer(int64) :: state
       integer :: b, kind, order, widest
       state    = int(from, int64)
-      degrees  = drawn(state, 2) + 2
-      blocks   = drawn(state, 2) + 1
-      duration = drawn_real(state, 0.5_dp, 3.0_dp)
-      design   = drawn_real(state, 0.0_dp, 1.5_dp)
+      degrees  = random_integer(state, 2) + 2
+      blocks   = random_integer(state, 2) + 1
+      duration = random_real(state, 0.5_dp, 3.0_dp)
+      design   = random_real(state, 0.0_dp, 1.5_dp)
       if (allocated(schemes)) deallocate(schemes)
       if (allocated(added))   deallocate(added)
       allocate(schemes(blocks), added(blocks))
       label = ''
       do b = 1, blocks
-         kind  = drawn(state, 3)
-         order = drawn(state, 3)
+         kind  = random_integer(state, 3)
+         order = random_integer(state, 3)
          call fill(schemes(b), kind, order)
-         added(b) = schemes(b) % scheme % history_depth(degrees - 1) + 2 + drawn(state, 3)
+         added(b) = schemes(b) % scheme % history_depth(degrees - 1) + 2 + random_integer(state, 3)
          if (b > 1) label = trim(label) // '-'
          label = trim(label) // trim(named(kind, order))
       end do
@@ -9450,12 +9494,12 @@ contains
       real(dp), intent(out) :: duration, design
       integer(int64) :: state
       state    = int(from, int64)
-      degrees  = drawn(state, 2) + 2
-      order    = drawn(state, 3)
-      kind     = drawn(state, 3)
-      instants = 12 + 2 * drawn(state, 5)
-      duration = drawn_real(state, 0.5_dp, 4.0_dp)
-      design   = drawn_real(state, 0.0_dp, 1.5_dp)
+      degrees  = random_integer(state, 2) + 2
+      order    = random_integer(state, 3)
+      kind     = random_integer(state, 3)
+      instants = 12 + 2 * random_integer(state, 5)
+      duration = random_real(state, 0.5_dp, 4.0_dp)
+      design   = random_real(state, 0.0_dp, 1.5_dp)
     end subroutine draw
     subroutine halved(scheme, degrees, instants, half)
       class(family), intent(in)    :: scheme
@@ -9658,7 +9702,7 @@ contains
       type(rule_graph) :: rules
       type(data_graph) :: values, remaining
       type(pairing)    :: pairs
-      type(stored_directed_graph) :: one_point, bare
+      type(stored_directed_graph) :: one_point, uncoupled_domain
       type(stored_field) :: datum
       type(typed_field_domain) :: point_fields
       integer, allocatable :: first(:), last(:), order(:), releasable(:)
@@ -9673,9 +9717,9 @@ contains
       ! THE LIFETIMES ARE THE GRAPH'S AND THE ORDER'S, and no rule
       ! enters either result, so the rule passed here is never
       ! applied and nothing is marched.
-      bare = stored_directed_graph(nb, tails=[integer ::], heads=[integer ::])
+      uncoupled_domain = stored_directed_graph(nb, tails=[integer ::], heads=[integer ::])
       schedule = driver(immaterial, incidence, forward)
-      call executor % state(schedule, bare, bare % vertex_set(), 0)
+      call executor % state(schedule, uncoupled_domain, uncoupled_domain % vertex_set(), 0)
       order    = executor % visits()
 
       no_dependent = 0
@@ -10174,7 +10218,7 @@ contains
       type(family) :: scheme
       integer , allocatable :: added(:)
       real(dp), allocatable :: fixed(:), dt(:), t(:), b(:,:), a(:,:)
-      real(dp) :: achieved, duration, design, bare, scaled, step
+      real(dp) :: achieved, duration, design, unscaled_condition, scaled_condition, step
       character(len=8) :: named
       integer :: k, d, i, n
       duration = 3.0_dp
@@ -10191,17 +10235,17 @@ contains
       call chain_versions(chain, tower, [van_der_pol_energy(degrees - 1)], degrees, versions)
       step = dt(size(dt))
       call dense_jacobian(chain, design, a)
-      bare = kappa(a)
+      unscaled_condition = kappa(a)
       n = size(a, 1)
       allocate(b(n, n))
       do i = 1, n
          d = mod(i - 1, degrees)
          b(i, :) = a(i, :) * step ** d
       end do
-      scaled = kappa(b)
+      scaled_condition = kappa(b)
       write(named,'(a,i0)') 'bdf ', order
       write(*,'(a,a,i5,i10,f10.5,2es13.4,f10.1)') '  ', named, degrees - 1, &
-           & instants, step, bare, scaled, bare / scaled
+           & instants, step, unscaled_condition, scaled_condition, unscaled_condition / scaled_condition
     end subroutine conditioned
     real(dp) function kappa(a) result(k)
       real(dp), intent(in) :: a(:,:)
@@ -10273,7 +10317,7 @@ program graph_time_integrator
        & goal_oriented_partition
   use gti_sweeps            , only : spatial_rows, set_linear_solver, set_jacobian, set_storage, set_multigrid, set_preconditioner, &
        & set_rows, set_elimination, set_predictor_order, &
-       & set_coarse_nodes, set_linear_budget, set_newton_order
+       & set_coarse_nodes, set_linear_limits, set_newton_order
   use gti_sweeps            , only : pass_of, forward_pass, reverse_pass
   use operation_minimization, only : relative, absolute, by_count, by_rate
   use gti_driver            , only : settings, chosen_grid, steps_of, family_named, clock, &
@@ -10324,28 +10368,28 @@ contains
     type(configuration), intent(in) :: cfg
     character(len=16) :: every(5)
     class(family), allocatable :: scheme
-    logical :: staged, passes_check
+    logical :: staged, admissible
     integer :: i, order, depth
     every  = [character(len=16) :: 'bdf', 'adams', 'dirk', 'newmark', 'taylor-newmark']
     widest = 0
     do i = 1, size(every)
        if (.not. lists(cfg % families, trim(every(i)))) cycle
        do order = 1, cfg % max_discretization_order
-          call chosen(trim(every(i)), order, scheme, staged, passes_check)
-          if (.not. passes_check) cycle
+          call chosen(trim(every(i)), order, scheme, staged, admissible)
+          if (.not. admissible) cycle
           depth = scheme % history_depth(cfg % state_degree)
           if (depth < cfg % instants) widest = max(widest, depth)
        end do
     end do
   end function widest_depth
-  subroutine chosen(name, order, scheme, staged, passes_check)
+  subroutine chosen(name, order, scheme, staged, admissible)
     character(len=*), intent(in)  :: name
     integer         , intent(in)  :: order
     class(family), allocatable, intent(out) :: scheme
-    logical         , intent(out) :: staged, passes_check
-    call family_named(name, order, scheme, passes_check)
+    logical         , intent(out) :: staged, admissible
+    call family_named(name, order, scheme, admissible)
     staged = .false.
-    if (passes_check) staged = scheme % num_stages() > 1
+    if (admissible) staged = scheme % num_stages() > 1
   end subroutine chosen
   function labelled(names, orders) result(label)
     character(len=*), intent(in) :: names(:)
@@ -10434,14 +10478,14 @@ contains
     shown = cfg % accounting
     do b = 1, size(chain)
        call precision_needed(weight_of(chain(b) % scheme, nd, minval(chain(b) % dt(2:))), &
-            & maxval(abs(chain(b) % state)), chain(b) % began, needed, least)
+            & maxval(abs(chain(b) % state)), chain(b) % final_imbalance % initial_residual_norm, needed, least)
        if (least /= precision_named() .and. least /= 'single') shown = .true.
     end do
     if (.not. shown) return
     do b = 1, size(chain)
        weight     = weight_of(chain(b) % scheme, nd, minval(chain(b) % dt(2:)))
        state_size = maxval(abs(chain(b) % state))
-       call precision_needed(weight, state_size, chain(b) % began, needed, least)
+       call precision_needed(weight, state_size, chain(b) % final_imbalance % initial_residual_norm, needed, least)
        write(*,'(a,i0,a,es9.2,a,es9.2,a,es9.2,a,a,a,a)') '      precision, block ', b, &
             & '  ||A|| ', weight, '  ||q|| ', state_size, '  spacing needed ', real(needed, dp), &
             & '  least kind ', least, '  this build ', precision_named()
@@ -10453,7 +10497,7 @@ contains
     character(len=14) :: cell
     integer :: d
     write(*,'(a,es10.3,a,es10.3,a)') '      imbalance ', final_imbalance % norm, &
-         & ' against ', final_imbalance % began, ' at the start of the march'
+         & ' against ', final_imbalance % initial_residual_norm, ' at the start of the march'
     line = '      by degree '
     do d = 0, ubound(final_imbalance % by_degree, 1)
        write(cell,'(es14.3)') final_imbalance % by_degree(d)
@@ -10505,11 +10549,11 @@ contains
   function energy_of(cfg) result(f)
     type(configuration), intent(in) :: cfg
     type(expression) :: f
-    logical :: passes_check
+    logical :: admissible
     if (over_field) then
-       f = functional_of_physics(trim(cfg % physics), 'energy', cfg % state_degree, passes_check, size(counts))
+       f = functional_of_physics(trim(cfg % physics), 'energy', cfg % state_degree, admissible, size(counts))
     else
-       f = functional_of_physics(trim(cfg % physics), 'energy', cfg % state_degree, passes_check)
+       f = functional_of_physics(trim(cfg % physics), 'energy', cfg % state_degree, admissible)
     end if
   end function energy_of
   !===================================================================!
@@ -10539,14 +10583,14 @@ contains
     type(imbalance) :: final_imbalance
     real(dp) :: achieved
     integer :: nd, width, given, reported, i, m
-    logical :: passes_check
+    logical :: admissible
     character(len=20) :: cell
     character(len=:), allocatable :: line
     nd    = cfg % state_degree + 1
     width = nd * nodes
     allocate(schemes(size(names)), added(size(names)))
-    call assembled(cfg, names, orders, schemes, added, passes_check)
-    if (.not. passes_check) return
+    call assembled(cfg, names, orders, schemes, added, admissible)
+    if (.not. admissible) return
     call grid_partition(cfg, dt, t)
     given = schemes(1) % scheme % history_depth(nd - 1)
     call tally_enter(at_expansion)
@@ -10700,7 +10744,7 @@ contains
   subroutine chosen_functionals(cfg)
     type(configuration), intent(in) :: cfg
     character(len=32), allocatable :: names(:)
-    logical :: passes_check
+    logical :: admissible
     integer :: i
     call refuse_unknown(cfg % designs, ['physics', 'grid   '], 'designs')
     call refuse_unknown(cfg % functionals, ['energy     ', 'dissipation'], 'functionals')
@@ -10712,12 +10756,12 @@ contains
     allocate(functionals(size(names)))
     do i = 1, size(names)
        if (over_field) then
-          call functional_named(trim(cfg % physics), trim(names(i)), cfg % state_degree, functionals(i), passes_check, &
+          call functional_named(trim(cfg % physics), trim(names(i)), cfg % state_degree, functionals(i), admissible, &
                & size(counts))
        else
-          call functional_named(trim(cfg % physics), trim(names(i)), cfg % state_degree, functionals(i), passes_check)
+          call functional_named(trim(cfg % physics), trim(names(i)), cfg % state_degree, functionals(i), admissible)
        end if
-       if (passes_check) functionals(i) = stated_over(functionals(i), state_degrees_of(cfg), functionals(i) % name())
+       if (admissible) functionals(i) = stated_over(functionals(i), state_degrees_of(cfg), functionals(i) % name())
     end do
   end subroutine chosen_functionals
   subroutine against_the_ode(cfg, schemes, added, f_field)
@@ -10766,7 +10810,7 @@ contains
     type(configuration), intent(in) :: cfg
     type(expression) :: law
     type(continuous_domain) :: continuous
-    real(dp) :: began
+    real(dp) :: start_time
     real(dp), allocatable :: reals(:)
     call refuse_unknown(cfg % initial_field, ['constant', 'mode    ', 'bump    ', 'exact   '], 'initial_field')
     call refuse_unknown(cfg % export, ['none    ', 'paraview'], 'export')
@@ -10790,13 +10834,13 @@ contains
        if (size(extents) /= size(counts)) then
           error stop 'graph_time_integrator: one extent per count of cells'
        end if
-       began = clock()
+       start_time = clock()
        allocate(space)
        space = spatial_mesh(geometry_of(cfg % spatial_geometry), extents, counts, &
             & trim(cfg % spatial_grid) == 'random', cfg % seed)
        write(*,'(a,i0,a,i0,a,f12.6,a,i0,a,f9.3,a)') '   spatial mesh: cells ', &
             & space % num_cells, '   faces ', space % num_faces, '   area ', sum(space % volume), &
-            & '   form degree ', cfg % spatial_order, '   built in ', clock() - began, ' s'
+            & '   form degree ', cfg % spatial_order, '   built in ', clock() - start_time, ' s'
        if (spatial_rows()) then
           derivative_stencils = spatial_derivative_stencils(space, cfg % spatial_order)
        else
@@ -10836,30 +10880,30 @@ contains
        read(w(i), *) x(i)
     end do
   end function reals_of
-  subroutine assembled(cfg, names, orders, schemes, added, passes_check)
+  subroutine assembled(cfg, names, orders, schemes, added, admissible)
     type(configuration), intent(in)  :: cfg
     character(len=*)   , intent(in)  :: names(:)
     integer            , intent(in)  :: orders(:)
     type(family_container), intent(inout) :: schemes(:)
     integer            , intent(inout) :: added(:)
-    logical            , intent(out)   :: passes_check
+    logical            , intent(out)   :: admissible
     class(family), allocatable :: scheme
     logical :: staged, exists
     integer :: b, blocks, share
     blocks = size(names)
-    passes_check = .true.
+    admissible = .true.
     share = cfg % instants / blocks
     added = share
     added(1) = cfg % instants - share * (blocks - 1)
     do b = 1, blocks
        call chosen(names(b), orders(b), scheme, staged, exists)
        if (.not. exists) then
-          passes_check = .false.
+          admissible = .false.
           cycle
        end if
        allocate(schemes(b) % scheme, source=scheme)
        deallocate(scheme)
-       if (added(b) <= schemes(b) % scheme % history_depth(cfg % state_degree)) passes_check = .false.
+       if (added(b) <= schemes(b) % scheme % history_depth(cfg % state_degree)) admissible = .false.
     end do
   end subroutine assembled
   subroutine adaptive_context(cfg)
@@ -10883,8 +10927,13 @@ contains
     end if
     cfg % instants = size(adaptive_weights) + 1
     grid_adaptive  = .true.
-    write(*,'(a,i0,a,es9.2,a,i0,a)') '   adaptive grid: ', size(adaptive_weights), &
-         & ' steps to tolerance ', cfg % tolerance, ' (', rejects, ' rejected)'
+    if (trim(cfg % adaptive_check) == 'goal_oriented') then
+       write(*,'(a,i0,a,es9.2,a,i0,a)') '   adaptive grid: ', size(adaptive_weights), &
+            & ' steps at grid-stationarity tolerance ', cfg % tolerance, ' (', rejects, ' rejected)'
+    else
+       write(*,'(a,i0,a,es9.2,a,i0,a)') '   adaptive grid: ', size(adaptive_weights), &
+            & ' steps at estimated local-error tolerance ', cfg % tolerance, ' (', rejects, ' rejected)'
+    end if
   end subroutine adaptive_context
   subroutine grid_partition(cfg, dt, t)
     type(configuration), intent(in) :: cfg
@@ -10917,7 +10966,7 @@ contains
          & merge(relative, absolute, trim(cfg % tolerance_criterion) == 'relative'), &
          & merge(by_rate, by_count, trim(cfg % iteration_criterion) == 'by_rate'), &
          & cfg % max_iterations)
-    call set_linear_budget(cfg % krylov_restart, cfg % smoothing_sweeps, &
+    call set_linear_limits(cfg % krylov_restart, cfg % smoothing_sweeps, &
          & cfg % max_linear_iterations)
     call adaptive_context(cfg)
     if (cfg % accounting) then
@@ -11029,22 +11078,22 @@ contains
     character(len=16), allocatable, intent(out) :: names(:)
     integer         , allocatable, intent(out) :: orders(:)
     character(len=32), allocatable :: words(:)
-    integer :: i, mark, failed
+    integer :: i, separator_position, failed
     words = words_of(specification)
     if (size(words) < 1) then
        error stop 'gti_configuration: a chain names a window at least'
     end if
     allocate(names(size(words)), orders(size(words)))
     do i = 1, size(words)
-       mark = index(words(i), ':')
-       if (mark < 2 .or. mark >= len_trim(words(i))) then
+       separator_position = index(words(i), ':')
+       if (separator_position < 2 .or. separator_position >= len_trim(words(i))) then
           write(*,'(a)') ' '
           write(*,'(a)') ' the chain names ' // trim(words(i)) // &
                & ', which is not a family and an order.'
           error stop 'gti_configuration: a setting names something unknown'
        end if
-       names(i) = words(i)(1:mark - 1)
-       read(words(i)(mark + 1:), *, iostat=failed) orders(i)
+       names(i) = words(i)(1:separator_position - 1)
+       read(words(i)(separator_position + 1:), *, iostat=failed) orders(i)
        if (failed /= 0 .or. orders(i) < 1) then
           write(*,'(a)') ' '
           write(*,'(a)') ' the chain requests ' // trim(words(i)) // &

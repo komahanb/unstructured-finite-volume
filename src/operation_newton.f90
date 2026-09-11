@@ -80,7 +80,8 @@
 module operation_newton
 
   use util_precision  , only : dp
-  use operation_minimization        , only : minimizer
+  use operation_minimization        , only : minimizer, solve_result, SOLVE_INNER_FAILED
+  use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
   use operation_stencil     , only : stencil
   use util_tally, only : tally_record, newton_solves, primal_loops
   use field_stored  , only : stored_field
@@ -149,16 +150,22 @@ contains
     type(stored_field), allocatable :: inputs(:)
     integer , allocatable :: rows(:), columns(:)
     real(dp), allocatable :: weights(:)
-    logical :: available
+    logical :: tangent_defined
     real(dp), allocatable :: residual(:), y(:), dq(:)
     real(dp) :: linear_achieved
     integer :: it
+    type(solve_result) :: outcome
 
     call tally_record(newton_solves)
 
     allocate(dq(size(x)))
 
-    call this % begin_imbalance()
+    call this % initialize_residual_history()
+
+    call this % evaluate(x, y, inputs)
+    residual = y - rhs
+    achieved = this % norm(residual)
+    if (this % terminated(achieved, 0)) return
 
     ! the tangent in the unknown's argument; which mode it uses is
     ! determined by the statement, and no dispatch is defined here
@@ -167,20 +174,6 @@ contains
     do it = 1, this % max_iterations
 
        call tally_record(primal_loops)
-
-       ! The current iterate: the full statement, of any linearity,
-       ! evaluated on the input tuple every tangent below is frozen on.
-       call this % evaluate(x, y, inputs)
-       residual = y - rhs
-
-       achieved = this % norm(residual)
-
-       ! Converged; or not a number; or past the range of the
-       ! arithmetic; or diverging; or, where the iteration limit is
-       ! derived from the rate, stagnant - the slope of the residual's
-       ! logarithm compared with its own variance, no absolute lower
-       ! bound named. One predicate.
-       if (this % halted(achieved, it)) return
 
        ! The linear system at this iterate, solved by the inner
        ! minimizer: the Jacobian is frozen at the same input tuple the
@@ -191,13 +184,13 @@ contains
        ! minimizer a stencil, whose pattern is then the coupling a
        ! structured minimizer sweeps by; any other is passed the
        ! linearization, a matrix-vector product.
-       available = .false.
+       tangent_defined = .false.
        if (this % explicit) then
           call this % action % explicit_tangent(this % graph, this % action % bind(inputs), &
                & 1, rows, columns, &
-               & weights, available)
+               & weights, tangent_defined)
        end if
-       if (available) then
+       if (tangent_defined) then
           tangent = stencil(rows, columns, weights, &
                & spread(0.0_dp, 1, this % num_unknowns), 'explicit tangent')
           call tangent % versioned(this % action % version(), this % action % transpose_version())
@@ -215,21 +208,33 @@ contains
        ! a residual no completed solve produces, and one that
        ! overflowed reports a value that is not a number. Neither
        ! yields a step.
-       if (linear_achieved /= linear_achieved) return
-       if (linear_achieved > huge(1.0_dp) / 2.0_dp) return
+       outcome = this % inner % result()
+       if (outcome % failed() .or. .not. ieee_is_finite(linear_achieved) .or. &
+            & linear_achieved > huge(1.0_dp) / 2.0_dp) then
+          call this % record_result(achieved, it - 1, SOLVE_INNER_FAILED)
+          return
+       end if
 
        if (this % higher_order_jacobian_product > 1) then
           call halley_correction(this, inputs, dq, linear_achieved)
-          if (linear_achieved /= linear_achieved) return
-          if (linear_achieved > huge(1.0_dp) / 2.0_dp) return
+          outcome = this % inner % result()
+          if (outcome % failed() .or. .not. ieee_is_finite(linear_achieved) .or. &
+               & linear_achieved > huge(1.0_dp) / 2.0_dp) then
+             call this % record_result(achieved, it - 1, SOLVE_INNER_FAILED)
+             return
+          end if
        end if
 
        x = x + dq
 
-    end do
+       ! The reported residual and the next tangent use the same
+       ! updated state. The count is the number of completed steps.
+       call this % evaluate(x, y, inputs)
+       residual = y - rhs
+       achieved = this % norm(residual)
+       if (this % terminated(achieved, it)) return
 
-    call this % evaluate(x, y)
-    achieved = this % norm(y - rhs)
+    end do
 
   end subroutine solve
 
@@ -255,6 +260,7 @@ contains
     real(dp), allocatable :: b(:), correction(:), individual(:,:)
     real(dp) :: fact, one_achieved
     integer :: s, p
+    type(solve_result) :: outcome
 
     p = this % higher_order_jacobian_product
     achieved = 0.0_dp
@@ -286,7 +292,9 @@ contains
 
        correction = 0.0_dp
        call this % inner % solve(-b / (fact * real(s, dp)), correction, one_achieved)
+       outcome = this % inner % result()
        achieved = max(achieved, one_achieved)
+       if (outcome % failed()) return
        if (one_achieved /= one_achieved) return
        if (one_achieved > huge(1.0_dp) / 2.0_dp) return
 

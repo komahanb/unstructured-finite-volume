@@ -25,13 +25,13 @@ program algorithms_refusal
 
   type(graph)           :: a, b, c
   type(set_store)       :: sets
-  type(csr_relation)    :: lopsided, ring
-  type(stored_relation) :: fat
+  type(csr_relation)    :: unequal_domains, ring
+  type(stored_relation) :: ternary_relation
   integer, allocatable  :: order(:)
-  character(len=32)     :: which
+  character(len=32)     :: case_name
 
-  which = ''
-  call get_command_argument(1, which)
+  case_name = ''
+  call get_command_argument(1, case_name)
 
   call a % declare()
   call sets % bind(a, counted_set_representation(3))
@@ -40,21 +40,21 @@ program algorithms_refusal
   call sets % bind(b, counted_set_representation(2))
   call sets % name(b, 'b-domain')
 
-  select case (trim(which))
+  select case (trim(case_name))
 
   case ('notbinary')
 
      call c % declare()
      call sets % bind(c, counted_set_representation(2))
      call sets % name(c, 'c-domain')
-     fat = stored_relation('fat', [a, a, c], &
+     ternary_relation = stored_relation('fat', [a, a, c], &
           & reshape([1, 2, 1], [3, 1]), sets % set_map)
-     call topological_order(fat, sets % set_map, order)
+     call topological_order(ternary_relation, sets % set_map, order)
 
   case ('notsquare')
 
-     lopsided = csr_relation('lopsided', a, b, reshape([1, 1], [2, 1]), sets % set_map)
-     call topological_order(lopsided, sets % set_map, order)
+     unequal_domains = csr_relation('lopsided', a, b, reshape([1, 1], [2, 1]), sets % set_map)
+     call topological_order(unequal_domains, sets % set_map, order)
 
   case ('cycle')
 
@@ -69,6 +69,6 @@ program algorithms_refusal
   end select
 
   ! Reaching this line is the failure.
-  write(*,'(1x,a,a)') "REACHED PAST THE REFUSAL: ", trim(which)
+  write(*,'(1x,a,a)') "REACHED PAST THE REFUSAL: ", trim(case_name)
 
 end program algorithms_refusal

@@ -36,7 +36,7 @@
 program partitioned_pde_level_5
 
   use iso_fortran_env  , only : dp => REAL64
-  use partitioned_pde_assert, only : report, verdict
+  use partitioned_pde_assert, only : report, assert_all
   use partitioned_pde_assert, only : NV, NE, Q_EXACT
   use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation, &
@@ -79,7 +79,7 @@ program partitioned_pde_level_5
   call check_vertex_round_trip(nfail)
   call check_proper_subset_transport(nfail)
 
-  call verdict(nfail, "level 5")
+  call assert_all(nfail, "level 5")
 
 contains
   !===================================================================!
@@ -116,20 +116,20 @@ contains
 
     integer, intent(inout) :: nfail
 
-    real(dp), parameter :: PROBE(NE) = &
+    real(dp), parameter :: test_field(NE) = &
          & [10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp, 50.0_dp]
     type(stored_field)           :: z
-    real(dp), allocatable :: total(:), got(:)
+    real(dp), allocatable :: total(:), computed_values(:)
 
     z = stored_field('edge probe', g % edge_set(), g % num_edges())
-    call z % set_real_vector(PROBE)
+    call z % set_real_vector(test_field)
 
     allocate(total(NE))
     total = 0.0_dp
     call add_round_trip(z, 1, sets, total)
     call add_round_trip(z, 2, sets, total)
 
-    call report(maxval(abs(total - PROBE)) < 1.0d-13, &
+    call report(maxval(abs(total - test_field)) < 1.0d-13, &
          & "every global edge is assembled exactly once: the probe " // &
          & "returns unchanged", nfail)
     call report(abs(total(3) - 30.0_dp) < 1.0d-13, &
@@ -148,7 +148,7 @@ contains
          & "and every global vertex likewise, borrowed copies " // &
          & "notwithstanding", nfail)
 
-    if (allocated(got)) deallocate(got)
+    if (allocated(computed_values)) deallocate(computed_values)
 
   end subroutine check_edge_assembly_law
   !===================================================================!
@@ -186,7 +186,7 @@ contains
     real(dp), allocatable           :: v(:)
     character(len=1)                :: tag
     integer                         :: i
-    logical                         :: ok
+    logical                         :: satisfied
     type(partition_relation) :: rel
 
     write(tag,'(i1)') k
@@ -218,15 +218,15 @@ contains
     end select
 
     call pd % real_vector(v)
-    ok = .true.
+    satisfied = .true.
     select type (part)
     type is (stored_directed_graph)
        do i = 1, size(globals)
-          ok = ok .and. (rel % global_vertex_index(i) .eq. globals(i))
-          ok = ok .and. (abs(v(i) - expect(i)) < 1.0d-13)
+          satisfied = satisfied .and. (rel % global_vertex_index(i) .eq. globals(i))
+          satisfied = satisfied .and. (abs(v(i) - expect(i)) < 1.0d-13)
        end do
     end select
-    call report(ok, &
+    call report(satisfied, &
          & "and carries the right value at every GLOBAL member it " // &
          & "holds", nfail)
 
@@ -291,7 +291,7 @@ contains
     integer , allocatable           :: mem(:)
     real(dp)                        :: total(NV)
     integer                         :: k, i, gm
-    logical                         :: ok, seen(NV)
+    logical                         :: satisfied, represented(NV)
 
     vs = g % vertex_set()
     call s % declare()      ! non-global order
@@ -307,7 +307,7 @@ contains
          & nfail)
 
     total = 0.0_dp
-    seen  = .false.
+    represented  = .false.
     do k = 1, 2
        p = partitioner(PARTITION_LINEAR, num_parts=2, part=k)
        call p % partition_graph(g, part, rel)
@@ -317,16 +317,16 @@ contains
        dom = pd % domain()
        select type (pp => part)
        type is (stored_directed_graph)
-          ok = .true.
+          satisfied = .true.
           do i = 1, pp % num_vertices()
              if (sets % has(dom, i)) then
                 gm = rel % global_vertex_index(i)
-                ok = ok .and. (gm .eq. 6 .or. gm .eq. 3 .or. gm .eq. 4)
-                seen(gm) = .true.
+                satisfied = satisfied .and. (gm .eq. 6 .or. gm .eq. 3 .or. gm .eq. 4)
+                represented(gm) = .true.
              end if
           end do
        end select
-       call report(ok, &
+       call report(satisfied, &
             & "the transported piece holds only members of S that " // &
             & "this part can see", nfail)
 
@@ -345,7 +345,7 @@ contains
           end do
     end do
 
-    call report(seen(3) .and. seen(4) .and. seen(6), &
+    call report(represented(3) .and. represented(4) .and. represented(6), &
          & "and between them the parts saw all three members", nfail)
 
     call report(abs(total(6) - 600.0_dp) < 1.0d-13 .and. &

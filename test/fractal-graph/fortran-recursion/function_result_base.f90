@@ -1,4 +1,4 @@
-! NAVIGATION PROBE. A function reference as the leftmost part-ref.
+! NAVIGATION CHECK. A function reference as the leftmost part-ref.
 ! EXPECTED: rejected - 'The leftmost part-ref in a data-ref cannot be
 ! a function reference'. A function result is not a part-ref, so no
 ! data-ref may be built on one.

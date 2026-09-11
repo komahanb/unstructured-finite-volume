@@ -30,7 +30,7 @@
 ! the kernel type is branch(2) and a private token - yet production
 ! code names a derived subset after the domain it is derived from:
 !
-!     sg = subset_set(dom % name(), global_carrier, kept(1:n))
+!     sg = subset_set(dom % name(), global_carrier, members(1:n))
 !
 ! That is metadata, and metadata belongs beside the mathematics rather
 ! than inside it. Putting a label in graph_fractal would add to the
@@ -104,7 +104,7 @@ contains
     type(graph)     , intent(in)    :: element
     character(len=*), intent(in)    :: label
 
-    type(string), allocatable :: grown(:)
+    type(string), allocatable :: extended_labels(:)
     integer :: n, at
 
     at = this % rows % append(element % id(), &
@@ -115,10 +115,10 @@ contains
     ! not admitted under -std=f2023; the payload grows by move_alloc.
     if (.not. allocated(this % labels)) allocate(this % labels(0))
     n = size(this % labels)
-    allocate(grown(n + 1))
-    grown(1:n)   = this % labels
-    grown(n + 1) = string(label)
-    call move_alloc(grown, this % labels)
+    allocate(extended_labels(n + 1))
+    extended_labels(1:n)   = this % labels
+    extended_labels(n + 1) = string(label)
+    call move_alloc(extended_labels, this % labels)
 
   end subroutine bind_label
 

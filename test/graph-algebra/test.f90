@@ -43,13 +43,13 @@ program test_graph_algebra
 
 contains
 
-  subroutine report(ok, label, nfail)
+  subroutine report(satisfied, label, nfail)
 
-    logical         , intent(in)    :: ok
+    logical         , intent(in)    :: satisfied
     character(len=*), intent(in)    :: label
     integer         , intent(inout) :: nfail
 
-    if (ok) then
+    if (satisfied) then
        write(*,'(1x,a,a)') "PASS : ", label
     else
        write(*,'(1x,a,a)') "FAIL : ", label
@@ -59,7 +59,7 @@ contains
   end subroutine report
 
   !===================================================================!
-  ! Restriction keeps exactly the admitted tuples, holds the
+  ! Restriction retains exactly the admitted tuples, preserves the
   ! signature unchanged, and restricting by the full domain itself
   ! is the lawful identity restriction (A embeds in A).
   !===================================================================!
@@ -69,12 +69,12 @@ contains
     integer, intent(inout) :: nfail
 
     type(graph)              :: a, b, c
-    type(graph)               :: some_b, nobody
-    type(stored_relation)          :: r, narrowed
+    type(graph)               :: some_b, empty_subset
+    type(stored_relation)          :: r, restricted_relation
     type(graph) :: d
     integer, allocatable           :: rt(:,:)
     integer                        :: j
-    logical                        :: ok
+    logical                        :: satisfied
     type(set_map)     :: sets
     type(inclusion_map)     :: inclusions
 
@@ -92,52 +92,52 @@ contains
     call sets       % bind(some_b, listed_set_representation([2]))
     call inclusions % include_in(some_b, b)
 
-    narrowed = restrict_slot(r, 2, some_b, sets, inclusions)
+    restricted_relation = restrict_slot(r, 2, some_b, sets, inclusions)
 
-    call report(narrowed % num_tuples() .eq. 2, &
+    call report(restricted_relation % num_tuples() .eq. 2, &
          & "restriction keeps exactly the admitted tuples", nfail)
-    call report(narrowed % has([1, 2, 2]) .and. narrowed % has([2, 2, 1]), &
+    call report(restricted_relation % has([1, 2, 2]) .and. restricted_relation % has([2, 2, 1]), &
          & "and they are the right ones", nfail)
-    call report(narrowed % arity() .eq. 3, &
-         & "the signature's arity stands unchanged", nfail)
-    d = narrowed % domain(2)
+    call report(restricted_relation % arity() .eq. 3, &
+         & "the signature's arity is unchanged", nfail)
+    d = restricted_relation % domain(2)
     call report(d % same_as(b), &
-         & "and the restricted slot still answers its full domain", nfail)
+         & "and the restricted position still returns its full domain", nfail)
 
     ! Full-domain restriction is the identity, extensionally: equal
     ! count and every original tuple present - for two sets of equal
     ! finite size, that is equality.
-    narrowed = restrict_slot(r, 2, b, sets, inclusions)
+    restricted_relation = restrict_slot(r, 2, b, sets, inclusions)
     call r % tuples(rt)
-    ok = narrowed % num_tuples() .eq. r % num_tuples()
+    satisfied = restricted_relation % num_tuples() .eq. r % num_tuples()
     do j = 1, size(rt, 2)
-       ok = ok .and. narrowed % has(rt(:, j))
+       satisfied = satisfied .and. restricted_relation % has(rt(:, j))
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "restricting by the full domain is the identity, as sets", nfail)
 
-    ! The empty subset admits nothing; the signature stands whole.
-    call nobody % declare()
-    call sets       % bind(nobody, listed_set_representation([integer ::]))
-    call inclusions % include_in(nobody, b)
-    narrowed = restrict_slot(r, 2, nobody, sets, inclusions)
-    call report(narrowed % num_tuples() .eq. 0, &
+    ! The empty subset admits nothing; the signature is unchanged.
+    call empty_subset % declare()
+    call sets       % bind(empty_subset, listed_set_representation([integer ::]))
+    call inclusions % include_in(empty_subset, b)
+    restricted_relation = restrict_slot(r, 2, empty_subset, sets, inclusions)
+    call report(restricted_relation % num_tuples() .eq. 0, &
          & "restriction by the empty subset is the empty relation", nfail)
-    call report(narrowed % arity() .eq. 3, &
+    call report(restricted_relation % arity() .eq. 3, &
          & "whose arity is the original's", nfail)
-    d = narrowed % domain(1)
-    ok = d % same_as(a)
-    d = narrowed % domain(2)
-    ok = ok .and. d % same_as(b)
-    d = narrowed % domain(3)
-    ok = ok .and. d % same_as(c)
-    call report(ok, &
+    d = restricted_relation % domain(1)
+    satisfied = d % same_as(a)
+    d = restricted_relation % domain(2)
+    satisfied = satisfied .and. d % same_as(b)
+    d = restricted_relation % domain(3)
+    satisfied = satisfied .and. d % same_as(c)
+    call report(satisfied, &
          & "and whose signature is the original's, slot for slot", nfail)
 
   end subroutine check_restriction
 
   !===================================================================!
-  ! Projection answers exactly the chosen slots in the chosen
+  ! Projection returns exactly the selected positions in the chosen
   ! order - [2,1] is the reversed signature - and its image is a
   ! set: tuples that collapse, collapse.
   !===================================================================!
@@ -166,7 +166,7 @@ contains
     call report(image % arity() .eq. 2 .and. image % num_tuples() .eq. 2, &
          & "projection collapses what it makes indistinct", nfail)
     call report(image % has([1, 1]) .and. image % has([2, 3]), &
-         & "and holds exactly the projected set", nfail)
+         & "and contains exactly the projected set", nfail)
 
     image = project_slots(r, [2, 1], sets)
     d = image % domain(1)
@@ -182,7 +182,7 @@ contains
     call report(image % arity() .eq. 1 .and. image % num_tuples() .eq. 2, &
          & "projection to one slot is a unary relation, deduplicated", nfail)
 
-    ! The empty relation projects to the empty relation, carrying
+    ! The empty relation projects to the empty relation, preserving
     ! exactly the selected signature.
     none  = stored_relation('none', [a, b, c], &
          & reshape([integer ::], [3, 0]), sets)
@@ -199,10 +199,10 @@ contains
   end subroutine check_projection
 
   !===================================================================!
-  ! Composition is existential: (a, c) stands wherever SOME b
-  ! carries the chain, however many witnesses there are - the
+  ! Composition is existential: (a, c) exists wherever SOME b
+  ! satisfies both constituent relations, however many witnesses there are - the
   ! result is a set. The empty chain composes to the empty
-  ! relation, which is an answer, not an error.
+  ! relation, which is a valid result.
   !===================================================================!
 
   subroutine check_composition(nfail)
@@ -234,7 +234,7 @@ contains
     call report(chained % num_tuples() .eq. 2, &
          & "two witnesses, one tuple: composition is a set", nfail)
     call report(chained % has([1, 1]) .and. chained % has([1, 2]), &
-         & "and holds exactly the chained pairs", nfail)
+         & "and contains exactly the composed pairs", nfail)
     call report(.not. chained % has([2, 1]) .and. &
          &      .not. chained % has([2, 2]), &
          & "a member with no chain relates to nothing", nfail)

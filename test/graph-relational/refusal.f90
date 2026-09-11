@@ -26,11 +26,11 @@ program refusal
 
   implicit none
 
-  character(len=32) :: which
+  character(len=32) :: case_name
 
-  call get_command_argument(1, which)
+  call get_command_argument(1, case_name)
 
-  select case (trim(which))
+  select case (trim(case_name))
 
      !================================================================!
      ! The binding is partial: an unbound element has no object.
@@ -100,8 +100,8 @@ program refusal
 
      !================================================================!
      ! The binding stores identified objects. An undeclared object
-     ! does not match itself, so nothing the view asks about it can be
-     ! answered - not membership, not distinctness.
+     ! does not match itself, so the view cannot evaluate
+     ! membership or distinctness for it.
      !================================================================!
 
   case ('unsignedset')
@@ -126,7 +126,7 @@ program refusal
      ! The binding owns whole relations. Copying a borrowing view into
      ! owned storage copies a reference to a base the binding does not
      ! keep alive: it would own the view and not what makes it true.
-     ! A view rides above a bound relation, never inside one.
+     ! A view references a bound relation without owning it.
      !================================================================!
 
   case ('boundview')

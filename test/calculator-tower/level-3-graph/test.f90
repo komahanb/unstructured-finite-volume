@@ -26,7 +26,7 @@
 
 program calculator_level_3
 
-  use calculator_assert, only : report, verdict
+  use calculator_assert, only : report, assert_all
   use calculator_assert, only : SLOT_A, SLOT_B, SLOT_C, SLOT_D, SLOT_E
   use calculator_assert, only : OP_PLUS, OP_TIMES
   use calculator_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
@@ -129,11 +129,11 @@ program calculator_level_3
 
   call check_ownership(nfail)
   call check_signature_closure(nfail)
-  call check_ternary_stands(nfail)
+  call check_ternary_relation_identity(nfail)
   call check_coexistence(nfail)
   call check_validity(nfail)
 
-  call verdict(nfail, "level 3")
+  call assert_all(nfail, "level 3")
 
 contains
 
@@ -158,9 +158,9 @@ contains
          &      has_set(g, bnd, p), &
          & "X, O and P are its own, by identity", nfail)
 
-    call report(graph_holds_relation(g, bnd, flow), &
+    call report(graph_has_relation(g, bnd, flow), &
          & "the flow is owned, the same declared relation", nfail)
-    call report(graph_holds_relation(g, bnd, d), &
+    call report(graph_has_relation(g, bnd, d), &
          & "and so is the derived dependency", nfail)
 
   end subroutine check_ownership
@@ -177,17 +177,17 @@ contains
     class(relation), pointer       :: rp
     type(graph) :: dom
     integer                        :: k, s
-    logical                        :: ok
+    logical                        :: satisfied
 
-    ok = .true.
+    satisfied = .true.
     do k = 1, num_relations(g)
        rp => relation_at(g, bnd, k)
        do s = 1, rp % arity()
           dom = rp % domain(s)
-          ok = ok .and. has_set(g, bnd, dom)
+          satisfied = satisfied .and. has_set(g, bnd, dom)
        end do
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "every relation slot resolves to an owned carrier", nfail)
 
   end subroutine check_signature_closure
@@ -198,7 +198,7 @@ contains
   ! dependency answers its one. Nothing asked it to become binary.
   !===================================================================!
 
-  subroutine check_ternary_stands(nfail)
+  subroutine check_ternary_relation_identity(nfail)
 
     integer, intent(inout) :: nfail
 
@@ -221,7 +221,7 @@ contains
        end if
     end do
 
-  end subroutine check_ternary_stands
+  end subroutine check_ternary_relation_identity
 
   !===================================================================!
   ! Two relations of one signature are two citizens: D, and D
@@ -243,7 +243,7 @@ contains
     integer                          :: k2
     class(relation), pointer       :: r1, r2
     type(graph) :: da, db
-    logical                        :: ok
+    logical                        :: satisfied
 
     call times_only % declare()
     call sets       % bind(times_only, listed_set_representation([OP_TIMES]))
@@ -290,11 +290,11 @@ contains
 
     da = r1 % domain(1)
     db = r2 % domain(1)
-    ok = da % same_as(db)
+    satisfied = da % same_as(db)
     da = r1 % domain(2)
     db = r2 % domain(2)
-    ok = ok .and. da % same_as(db)
-    call report(ok, &
+    satisfied = satisfied .and. da % same_as(db)
+    call report(satisfied, &
          & "over the very same signature, slot for slot", nfail)
 
     call report(r1 % has([OP_PLUS, OP_TIMES]) .and. &
@@ -368,7 +368,7 @@ contains
 
   !===================================================================!
 
-  logical function graph_holds_relation(g, b, r)
+  logical function graph_has_relation(g, b, r)
 
     type(graph)             , intent(in) :: g
     type(relational_binding), intent(in) :: b
@@ -377,12 +377,12 @@ contains
     class(relation), pointer :: rp
     integer                  :: k
 
-    graph_holds_relation = .false.
+    graph_has_relation = .false.
     do k = 1, num_relations(g)
        rp => relation_at(g, b, k)
-       if (rp % same_as(r)) graph_holds_relation = .true.
+       if (rp % same_as(r)) graph_has_relation = .true.
     end do
 
-  end function graph_holds_relation
+  end function graph_has_relation
 
 end program calculator_level_3

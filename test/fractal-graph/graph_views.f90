@@ -1,7 +1,7 @@
 !=====================================================================!
 ! GRAPH VIEWS
 !
-! The kernel carries structure and identity. Attributes are bound
+! The kernel stores structure and identity. Attributes are bound
 ! here, in a partial map keyed by identity:
 !
 !     attribute_map : identity -> (number, symbol, index)
@@ -48,7 +48,7 @@ module graph_views
 
   !===================================================================!
   ! One row per graph in the domain of the map. Absence of a column
-  ! is absence from the domain: the map refuses rather than answers.
+  ! is absence from the domain: the map rejects an undefined query.
   !===================================================================!
 
   type :: attribute_map

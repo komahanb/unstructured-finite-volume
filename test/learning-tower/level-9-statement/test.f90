@@ -39,7 +39,7 @@
 program learning_level_9
 
   use iso_fortran_env, only : dp => REAL64
-  use learning_assert, only : report, verdict
+  use learning_assert, only : report, assert_all
   use learning_assert, only : SLOT_W, SLOT_X, SLOT_YHAT, SLOT_Y, SLOT_E
   use learning_assert, only : OP_PREDICT, OP_ERROR
   use learning_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
@@ -246,7 +246,7 @@ program learning_level_9
   ! -- the tower's one primary result, computed - never a literal
   write(*,'(1x,a,i0)') "LEARNING_RESULT = ", nint(w_learned)
 
-  call verdict(nfail, "level 9")
+  call assert_all(nfail, "level 9")
 
 contains
 
@@ -264,15 +264,15 @@ contains
 
     class(relation), pointer :: rp
     integer :: kk
-    logical :: flow_ok, d_ok, roles_ok
+    logical :: flow_valid, dependency_valid, roles_valid
 
-    flow_ok = .false.
-    d_ok    = .false.
+    flow_valid = .false.
+    dependency_valid    = .false.
     do kk = 1, num_relations(g)
        rp => relation_at(g, bnd, kk)
        if (rp % arity() .eq. 3) then
           gflow => rp
-          flow_ok = rp % num_tuples() .eq. 6 .and. &
+          flow_valid = rp % num_tuples() .eq. 6 .and. &
                & rp % has([OP_PREDICT, SLOT_W   , PORT_IN1]) .and. &
                & rp % has([OP_PREDICT, SLOT_X   , PORT_IN2]) .and. &
                & rp % has([OP_PREDICT, SLOT_YHAT, PORT_OUT]) .and. &
@@ -280,18 +280,18 @@ contains
                & rp % has([OP_ERROR  , SLOT_Y   , PORT_IN2]) .and. &
                & rp % has([OP_ERROR  , SLOT_E   , PORT_OUT])
        else if (rp % arity() .eq. 2) then
-          d_ok = rp % num_tuples() .eq. 1 .and. &
+          dependency_valid = rp % num_tuples() .eq. 1 .and. &
                & rp % has([OP_PREDICT, OP_ERROR])
        end if
     end do
 
-    roles_ok = sets % num_members_of(theta) .eq. 1 .and. sets % has(theta, SLOT_W)  .and. &
+    roles_valid = sets % num_members_of(theta) .eq. 1 .and. sets % has(theta, SLOT_W)  .and. &
          &     sets % num_members_of(k) .eq. 2 .and. sets % has(k, SLOT_Y)          .and. &
          &     sets % has(k, SLOT_X)                                  .and. &
          &     sets % num_members_of(u) .eq. 2 .and. sets % has(u, SLOT_E)          .and. &
          &     sets % has(u, SLOT_YHAT)
 
-    call report(flow_ok .and. d_ok .and. roles_ok, &
+    call report(flow_valid .and. dependency_valid .and. roles_valid, &
          & "six facts, one dependency, three roles - intact " // when, &
          & nfail)
 

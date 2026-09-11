@@ -348,8 +348,8 @@ contains
     integer         , intent(in) :: table(:,:)
     type(set_map)   , intent(in) :: sets
 
-    integer, allocatable :: kept(:)
-    integer              :: k, j, i, nkept
+    integer, allocatable :: retained_columns(:)
+    integer              :: k, j, i, num_retained
     logical              :: first_occurrence
 
     call this % declare(name, domains)
@@ -367,31 +367,31 @@ contains
     do j = 1, size(table, 2)
        do k = 1, size(domains)
           if (.not. sets % has(domains(k), table(k, j))) then
-             error stop 'relation_finitary: a tuple names a member its domain does not hold'
+             error stop 'relation_finitary: a tuple names a member its domain does not contain'
           end if
        end do
     end do
 
     ! A set, not a multiset: retain each tuple's first occurrence, in order.
-    allocate(kept(size(table, 2)))
-    nkept = 0
+    allocate(retained_columns(size(table, 2)))
+    num_retained = 0
     do j = 1, size(table, 2)
        first_occurrence = .true.
-       do i = 1, nkept
-          if (all(table(:, kept(i)) == table(:, j))) then
+       do i = 1, num_retained
+          if (all(table(:, retained_columns(i)) == table(:, j))) then
              first_occurrence = .false.
              exit
           end if
        end do
        if (first_occurrence) then
-          nkept       = nkept + 1
-          kept(nkept) = j
+          num_retained       = num_retained + 1
+          retained_columns(num_retained) = j
        end if
     end do
 
-    allocate(this % entry(size(domains), nkept))
-    do i = 1, nkept
-       this % entry(:, i) = table(:, kept(i))
+    allocate(this % entry(size(domains), num_retained))
+    do i = 1, num_retained
+       this % entry(:, i) = table(:, retained_columns(i))
     end do
 
   end function create_stored

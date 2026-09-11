@@ -32,7 +32,7 @@
 
 program learning_level_6
 
-  use learning_assert, only : report, verdict
+  use learning_assert, only : report, assert_all
   use learning_assert, only : SLOT_W, SLOT_X, SLOT_YHAT, SLOT_Y, SLOT_E
   use learning_assert, only : OP_PREDICT, OP_ERROR
   use learning_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
@@ -151,13 +151,13 @@ program learning_level_6
   call check_participation(nfail)
   call check_direct_dependency(nfail)
   call check_paths(nfail)
-  call check_residual_home(nfail)
+  call check_residual_location(nfail)
   call check_trainable_dependency(nfail)
   call check_trainable_support(nfail)
   call check_reverse_is_the_view(nfail)
   call check_order_invariance(nfail)
 
-  call verdict(nfail, "level 6")
+  call assert_all(nfail, "level 6")
 
 contains
 
@@ -186,34 +186,34 @@ contains
   end function derive_direct
 
   !===================================================================!
-  ! The row's home, read FROM L by scanning V in declaration order -
+  ! The row's location, read FROM L by scanning V in declaration order -
   ! exactly one, or the level stops. SLOT_E appears nowhere here:
   ! the source of truth is the location relation.
   !===================================================================!
 
-  integer function home_of(row) result(home)
+  integer function residual_location(row) result(located_member)
 
     integer, intent(in) :: row
 
     integer :: jv, hits
 
     hits = 0
-    home = 0
+    located_member = 0
     do jv = 1, sets % num_members_of(v)
        if (located % has([row, sets % member_of(v, jv)])) then
           hits = hits + 1
-          home = sets % member_of(v, jv)
+          located_member = sets % member_of(v, jv)
        end if
     end do
     if (hits .ne. 1) then
        error stop 'level 6: a residual row lives at exactly one value slot'
     end if
 
-  end function home_of
+  end function residual_location
 
   !===================================================================!
   ! The trainable dependency, generated - never written: (row, theta)
-  ! enters IFF theta reaches the row's home through the interpreted
+  ! enters IFF theta reaches the row's location through the interpreted
   ! value dependency. The pair (r, w) may appear in assertions only.
   !===================================================================!
 
@@ -231,7 +231,7 @@ contains
     do ri = 1, sets % num_members_of(y)
        row = sets % member_of(y, ri)
        do ti = 1, sets % num_members_of(theta)
-          if (reachable(dep_view, sets, sets % member_of(theta, ti), home_of(row))) then
+          if (reachable(dep_view, sets, sets % member_of(theta, ti), residual_location(row))) then
              npairs = npairs + 1
              pairs(:, npairs) = [row, sets % member_of(theta, ti)]
           end if
@@ -345,17 +345,17 @@ contains
   ! it back by scanning V against L. Only the assertion names e.
   !===================================================================!
 
-  subroutine check_residual_home(nfail)
+  subroutine check_residual_location(nfail)
 
     integer, intent(inout) :: nfail
 
     call report(located % num_tuples() .eq. 1 .and. &
          &      located % has([ROW_R, SLOT_E]), &
          & "L = { (r, e) }: the one architect-owned fact", nfail)
-    call report(home_of(ROW_R) .eq. SLOT_E, &
-         & "the row's home is read from L - and it is e", nfail)
+    call report(residual_location(ROW_R) .eq. SLOT_E, &
+         & "the row's location is read from L - and it is e", nfail)
 
-  end subroutine check_residual_home
+  end subroutine check_residual_location
 
   !===================================================================!
   ! J_Theta, exact: |Y| = |Theta| = 1, so one membership proves the
@@ -395,18 +395,18 @@ contains
 
     type(graph) :: sr
     integer          :: ti, n
-    integer, allocatable          :: kept(:)
+    integer, allocatable          :: support_members(:)
 
-    allocate(kept(sets % num_members_of(theta)))
+    allocate(support_members(sets % num_members_of(theta)))
     n = 0
     do ti = 1, sets % num_members_of(theta)
        if (j_theta % has([ROW_R, sets % member_of(theta, ti)])) then
           n = n + 1
-          kept(n) = sets % member_of(theta, ti)
+          support_members(n) = sets % member_of(theta, ti)
        end if
     end do
     call sr % declare()
-    call sets       % bind(sr, listed_set_representation(kept(1:n)))
+    call sets       % bind(sr, listed_set_representation(support_members(1:n)))
     call inclusions % include_in(sr, theta)
 
     call report(sets % num_members_of(sr) .eq. 1 .and. sets % has(sr, SLOT_W), &
@@ -451,7 +451,7 @@ contains
 
     integer              :: rev(3, 6), k
     integer, allocatable :: t1(:,:), t2(:,:)
-    logical              :: ok
+    logical              :: satisfied
 
     do k = 1, 6
        rev(:, k) = table(:, 7 - k)
@@ -492,14 +492,14 @@ contains
          & "|A1| = |A2|", nfail)
     call a % tuples(t1)
     call a2 % tuples(t2)
-    ok = .true.
+    satisfied = .true.
     do k = 1, size(t1, 2)
-       ok = ok .and. a2 % has(t1(:, k))
+       satisfied = satisfied .and. a2 % has(t1(:, k))
     end do
     do k = 1, size(t2, 2)
-       ok = ok .and. a % has(t2(:, k))
+       satisfied = satisfied .and. a % has(t2(:, k))
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "each A holds every pair of the other: equal as sets", &
          & nfail)
 
@@ -507,14 +507,14 @@ contains
          & "|J1| = |J2|", nfail)
     call j_theta % tuples(t1)
     call j_theta2 % tuples(t2)
-    ok = .true.
+    satisfied = .true.
     do k = 1, size(t1, 2)
-       ok = ok .and. j_theta2 % has(t1(:, k))
+       satisfied = satisfied .and. j_theta2 % has(t1(:, k))
     end do
     do k = 1, size(t2, 2)
-       ok = ok .and. j_theta % has(t2(:, k))
+       satisfied = satisfied .and. j_theta % has(t2(:, k))
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "and so are the trainable dependencies, both directions", &
          & nfail)
 

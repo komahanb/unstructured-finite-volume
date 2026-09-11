@@ -122,12 +122,12 @@ contains
     type(graph)         , intent(in)    :: part
     type(graph)         , intent(in)    :: ambient
 
-    type(token) :: above
+    type(token) :: ambient_id
     integer     :: at
 
-    above = ambient % id()
+    ambient_id = ambient % id()
 
-    if (.not. above % declared()) then
+    if (.not. ambient_id % declared()) then
        error stop 'map_inclusion: an inclusion is keyed on assigned identity'
     end if
 
@@ -140,7 +140,7 @@ contains
          & 'map_inclusion: a set is declared into one ambient')
 
     if (.not. allocated(this % ambients)) allocate(this % ambients(0))
-    this % ambients = [this % ambients, above]
+    this % ambients = [this % ambients, ambient_id]
 
   end subroutine include_in
 
@@ -161,32 +161,32 @@ contains
   ! to read their tokens.
   !===================================================================!
 
-  logical function declared_subobject(part, ancestor, m) result(below)
+  logical function declared_subobject(part, ancestor, m) result(is_subobject)
 
     type(graph)        , intent(in) :: part
     type(graph)        , intent(in) :: ancestor
     type(inclusion_map), intent(in) :: m
 
-    type(token) :: here, target_id
+    type(token) :: current_id, target_id
     integer     :: steps, bound, at
 
-    here      = part % id()
+    current_id      = part % id()
     target_id = ancestor % id()
 
-    below = here % matches(target_id)
-    if (below) return
+    is_subobject = current_id % matches(target_id)
+    if (is_subobject) return
 
     bound = m % rows % num_rows()
 
     do steps = 1, bound
-       at = m % rows % position(here)
+       at = m % rows % position(current_id)
        if (at == 0) return
-       here  = m % ambients(at)
-       below = here % matches(target_id)
-       if (below) return
+       current_id  = m % ambients(at)
+       is_subobject = current_id % matches(target_id)
+       if (is_subobject) return
     end do
 
-    if (m % rows % position(here) /= 0) then
+    if (m % rows % position(current_id) /= 0) then
        error stop 'map_inclusion: an inclusion chain is finite'
     end if
 

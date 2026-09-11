@@ -149,6 +149,7 @@ module relation_partition
      procedure :: owner_part
 
      procedure :: describes
+     procedure :: describes_whole
      procedure :: whole_vertex_set
      procedure :: whole_edge_set
      procedure :: num_whole_vertices
@@ -396,8 +397,8 @@ contains
   end function num_whole_edges
 
   !===================================================================!
-  ! THE ONE PREDICATE A RELATION MUST EVALUATE BEFORE IT IS USED: is
-  ! this the part the relation relates? Identity first, because two
+  ! Each end of a relation is checked before data crosses it: is
+  ! this the part, and is that its whole? Identity first, because two
   ! graphs of equal
   ! size are not the same graph; counts second, because a relation
   ! written over a part of six members cannot address a part of seven.
@@ -413,16 +414,35 @@ contains
     class(partition_relation), intent(in) :: this
     class(directed_graph)                    , intent(in) :: g
 
+    describes = describes_carriers(g, this % part_vertices, this % num_part_vertices, &
+         & this % part_edges, this % num_part_edges)
+
+  end function describes
+
+  logical function describes_whole(this, g)
+
+    class(partition_relation), intent(in) :: this
+    class(directed_graph)    , intent(in) :: g
+
+    describes_whole = describes_carriers(g, this % whole_vertices, this % nwv, &
+         & this % whole_edges, this % nwe)
+
+  end function describes_whole
+
+  logical function describes_carriers(g, vertices, nv, edges, ne)
+
+    class(directed_graph), intent(in) :: g
+    type(graph)          , intent(in) :: vertices, edges
+    integer              , intent(in) :: nv, ne
+
     type(graph) :: v, e
 
     v = g % vertex_set()
     e = g % edge_set()
 
-    describes = v % same_as(this % part_vertices)      .and. &
-         &      e % same_as(this % part_edges)      .and. &
-         &      g % num_vertices() == this % num_part_vertices .and. &
-         &      g % num_edges()    == this % num_part_edges
+    describes_carriers = v % same_as(vertices) .and. e % same_as(edges) .and. &
+         & g % num_vertices() == nv .and. g % num_edges() == ne
 
-  end function describes
+  end function describes_carriers
 
 end module relation_partition

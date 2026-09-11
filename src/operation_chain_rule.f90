@@ -300,8 +300,8 @@ contains
     type(argument_path)            , intent(in)    :: paths(:)
     class(field), allocatable, intent(inout) :: output
 
-    real(dp), allocatable :: running(:)
-    logical :: started
+    real(dp), allocatable :: derivative_sum(:)
+    logical :: sum_initialized
     integer :: p, num_components
 
     if (degree < 0) then
@@ -323,18 +323,18 @@ contains
        error stop 'total_derivative: the degree is no larger than the constructed highest degree'
     end if
 
-    started = .false.
+    sum_initialized = .false.
     num_components   = 1
 
     associate (partitions => this % of_degree(degree) % term)
       do p = 1, size(partitions)
          call assemble_partition(statement, input_graph, inputs, &
-              & partitions(p), paths, running, started, num_components)
+              & partitions(p), paths, derivative_sum, sum_initialized, num_components)
       end do
     end associate
 
-    call write_output(statement, input_graph, inputs, running, &
-         & started, num_components, output)
+    call write_output(statement, input_graph, inputs, derivative_sum, &
+         & sum_initialized, num_components, output)
 
   end subroutine assemble
 
@@ -442,7 +442,7 @@ contains
   !===================================================================!
   ! The multinomial count of one partition, as one exact integer
   ! division; the tuple's nondecreasing order makes every
-  ! multiplicity a contiguous run.
+  ! equal degrees adjacent for multiplicity counting.
   !===================================================================!
 
   pure function partition_coefficient(total, path_degree) result(coefficient)
@@ -452,23 +452,23 @@ contains
     integer(int64)      :: coefficient
 
     integer(int64) :: denominator
-    integer :: j, run
+    integer :: j, multiplicity
 
     denominator = 1_int64
     do j = 1, size(path_degree)
        denominator = denominator * factorial_int64(path_degree(j))
     end do
 
-    run = 1
+    multiplicity = 1
     do j = 2, size(path_degree)
        if (path_degree(j) == path_degree(j - 1)) then
-          run = run + 1
+          multiplicity = multiplicity + 1
        else
-          denominator = denominator * factorial_int64(run)
-          run = 1
+          denominator = denominator * factorial_int64(multiplicity)
+          multiplicity = 1
        end if
     end do
-    denominator = denominator * factorial_int64(run)
+    denominator = denominator * factorial_int64(multiplicity)
 
     coefficient = factorial_int64(total) / denominator
 
@@ -501,18 +501,18 @@ contains
   !===================================================================!
 
   subroutine assemble_partition(statement, input_graph, inputs, &
-       & partition, paths, running, started, num_components)
+       & partition, paths, derivative_sum, sum_initialized, num_components)
 
     class(operation)               , intent(in)    :: statement
     class(directed_graph)          , intent(in)    :: input_graph
     type(binding)                         , intent(in)    :: inputs(:)
     type(derivative_partition)     , intent(in)    :: partition
     type(argument_path)            , intent(in)    :: paths(:)
-    real(dp), allocatable          , intent(inout) :: running(:)
-    logical                        , intent(inout) :: started
+    real(dp), allocatable          , intent(inout) :: derivative_sum(:)
+    logical                        , intent(inout) :: sum_initialized
     integer                        , intent(inout) :: num_components
 
-    integer :: chosen(size(partition % path_degree))
+    integer :: path_indices(size(partition % path_degree))
     integer :: k, j, npaths
     logical :: admitted
 
@@ -520,13 +520,13 @@ contains
     npaths = size(paths)
     if (npaths == 0) return
 
-    chosen = 1
+    path_indices = 1
 
     do
 
        admitted = .true.
        do j = 1, k
-          if (.not. paths(chosen(j)) % &
+          if (.not. paths(path_indices(j)) % &
                & has_degree(partition % path_degree(j))) then
              admitted = .false.
              exit
@@ -535,16 +535,16 @@ contains
 
        if (admitted) then
           call emit_term(statement, input_graph, inputs, partition, &
-               & paths, chosen, running, started, num_components)
+               & paths, path_indices, derivative_sum, sum_initialized, num_components)
        end if
 
        ! mixed-radix increment: advance the last entry, with overflow into
        ! the left
        j = k
        do
-          chosen(j) = chosen(j) + 1
-          if (chosen(j) <= npaths) exit
-          chosen(j) = 1
+          path_indices(j) = path_indices(j) + 1
+          if (path_indices(j) <= npaths) exit
+          path_indices(j) = 1
           j = j - 1
           if (j == 0) return
        end do
@@ -563,24 +563,24 @@ contains
   !===================================================================!
 
   subroutine emit_term(statement, input_graph, inputs, partition, &
-       & paths, chosen, running, started, num_components)
+       & paths, path_indices, derivative_sum, sum_initialized, num_components)
 
     class(operation)               , intent(in)    :: statement
     class(directed_graph)          , intent(in)    :: input_graph
     type(binding)                         , intent(in)    :: inputs(:)
     type(derivative_partition)     , intent(in)    :: partition
     type(argument_path)            , intent(in)    :: paths(:)
-    integer                        , intent(in)    :: chosen(:)
-    real(dp), allocatable          , intent(inout) :: running(:)
-    logical                        , intent(inout) :: started
+    integer                        , intent(in)    :: path_indices(:)
+    real(dp), allocatable          , intent(inout) :: derivative_sum(:)
+    logical                        , intent(inout) :: sum_initialized
     integer                        , intent(inout) :: num_components
 
     class(field), allocatable :: output
-    type(variation) :: variations(size(chosen))
+    type(variation) :: variations(size(path_indices))
     real(dp), allocatable :: term(:)
     integer :: j, k
 
-    k = size(chosen)
+    k = size(path_indices)
 
     if (k > statement % max_degree()) then
        error stop 'total_derivative: the statement supports the requested order'
@@ -589,23 +589,23 @@ contains
     ! one factor per chosen path: its argument, and the derivative
     ! of the order this partition entry specifies as the direction
     do j = 1, k
-       variations(j) = variation(paths(chosen(j)) % wrt, &
-            & paths(chosen(j)) % derivative(partition % path_degree(j)) % direction)
+       variations(j) = variation(paths(path_indices(j)) % wrt, &
+            & paths(path_indices(j)) % derivative(partition % path_degree(j)) % direction)
     end do
 
     call statement % partial_action(input_graph, inputs, variations, output)
 
     call output % real_vector(term)
 
-    if (started) then
-       if (size(term) /= size(running)) then
+    if (sum_initialized) then
+       if (size(term) /= size(derivative_sum)) then
           error stop 'total_derivative: accumulated terms share one shape'
        end if
-       running = running + real(partition % coefficient, dp) * term
+       derivative_sum = derivative_sum + real(partition % coefficient, dp) * term
     else
-       running = real(partition % coefficient, dp) * term
+       derivative_sum = real(partition % coefficient, dp) * term
        num_components   = output % num_components()
-       started = .true.
+       sum_initialized = .true.
     end if
 
   end subroutine emit_term
@@ -616,14 +616,14 @@ contains
   ! is zero, with its shape taken from the statement's own value.
   !===================================================================!
 
-  subroutine write_output(statement, input_graph, inputs, running, &
-       & started, num_components, output)
+  subroutine write_output(statement, input_graph, inputs, derivative_sum, &
+       & sum_initialized, num_components, output)
 
     class(operation)               , intent(in)    :: statement
     class(directed_graph)          , intent(in)    :: input_graph
     type(binding)                         , intent(in)    :: inputs(:)
-    real(dp), allocatable          , intent(inout) :: running(:)
-    logical                        , intent(in)    :: started
+    real(dp), allocatable          , intent(inout) :: derivative_sum(:)
+    logical                        , intent(in)    :: sum_initialized
     integer                        , intent(in)    :: num_components
     class(field), allocatable, intent(inout) :: output
 
@@ -634,14 +634,14 @@ contains
     call statement % domain(input_graph, domain, n_domain)
 
     width = num_components
-    if (.not. started) then
+    if (.not. sum_initialized) then
        call statement % apply(input_graph, inputs, value)
-       call value % real_vector(running)
-       running = 0.0_dp
+       call value % real_vector(derivative_sum)
+       derivative_sum = 0.0_dp
        width   = value % num_components()
     end if
 
-    call emit_real('total derivative', domain, size(running) / width, running, output, width)
+    call emit_real('total derivative', domain, size(derivative_sum) / width, derivative_sum, output, width)
 
   end subroutine write_output
 

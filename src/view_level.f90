@@ -262,14 +262,14 @@ contains
 
     class(level_storage), intent(inout) :: this
 
-    type(node_pointer), allocatable :: grown(:)
+    type(node_pointer), allocatable :: expanded_nodes(:)
 
     if (.not. allocated(this % nodes)) allocate(this % nodes(8))
 
     if (this % filled == size(this % nodes)) then
-       allocate(grown(2 * this % filled))
-       grown(1:this % filled) = this % nodes
-       call move_alloc(grown, this % nodes)
+       allocate(expanded_nodes(2 * this % filled))
+       expanded_nodes(1:this % filled) = this % nodes
+       call move_alloc(expanded_nodes, this % nodes)
     end if
 
     this % filled = this % filled + 1

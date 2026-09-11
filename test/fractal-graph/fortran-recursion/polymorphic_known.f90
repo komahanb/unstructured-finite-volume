@@ -1,4 +1,4 @@
-! DECLARATION ORDER PROBE. As branch_before_graph, with a polymorphic
+! DECLARATION ORDER CHECK. As branch_before_graph, with a polymorphic
 ! forward reference. EXPECTED: compiles. Not used: no type extends
 ! graph, so class(graph) adds no admissible value.
 module polymorphic_known

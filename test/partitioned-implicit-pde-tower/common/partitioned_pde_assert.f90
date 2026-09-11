@@ -29,7 +29,7 @@ module partitioned_pde_assert
   implicit none
 
   private
-  public :: report, verdict
+  public :: report, assert_all
   public :: NV, NE, Q_EXACT, B_EXACT, L_EXACT
 
   ! The global chain: six vertices, five edges.
@@ -46,13 +46,13 @@ module partitioned_pde_assert
 
 contains
 
-  subroutine report(ok, label, nfail)
+  subroutine report(satisfied, label, nfail)
 
-    logical         , intent(in)    :: ok
+    logical         , intent(in)    :: satisfied
     character(len=*), intent(in)    :: label
     integer         , intent(inout) :: nfail
 
-    if (ok) then
+    if (satisfied) then
        write(*,'(1x,a,a)') "PASS : ", label
     else
        write(*,'(1x,a,a)') "FAIL : ", label
@@ -61,20 +61,20 @@ contains
 
   end subroutine report
 
-  subroutine verdict(nfail, gate)
+  subroutine assert_all(nfail, level)
 
     integer         , intent(in) :: nfail
-    character(len=*), intent(in) :: gate
+    character(len=*), intent(in) :: level
 
     write(*,'(1x,a)') "============================================="
     if (nfail .eq. 0) then
-       write(*,'(1x,a,a,a)') "partitioned pde ", gate, ": all truths hold"
+       write(*,'(1x,a,a,a)') "partitioned pde ", level, ": all truths hold"
     else
-       write(*,'(1x,a,a,a,i0,a)') "partitioned pde ", gate, ": ", &
+       write(*,'(1x,a,a,a,i0,a)') "partitioned pde ", level, ": ", &
             & nfail, " truth(s) FAILED"
        error stop
     end if
 
-  end subroutine verdict
+  end subroutine assert_all
 
 end module partitioned_pde_assert

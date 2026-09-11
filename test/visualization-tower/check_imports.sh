@@ -248,7 +248,7 @@ discretization_allowed() {
     esac
 }
 
-holds_no_number() {
+has_no_numeric_value() {
     local code
     code=$(sed 's/!.*//' "$1")
     echo "$code" | grep -qiE '\b(real|complex|double[[:space:]]+precision)\b' && return 1
@@ -543,15 +543,15 @@ if [ "$1" = "--selftest" ]; then
     numberless=$(mktemp); printf '! a real picture, honestly\nmodule m\n integer, parameter :: N = 4\n x = reshape([1, 2], [2, 1])\n if (k .eq. 3) call go(a)\nend module\n' > "$numberless"
     exponent=$(mktemp);   printf 'module m\n t = 1.0e-3\nend module\n' > "$exponent"
 
-    if holds_no_number "$numbered"; then
+    if has_no_numeric_value "$numbered"; then
         echo "FAIL : the numberless law accepted a real coefficient"
         fail=1
     fi
-    if holds_no_number "$exponent"; then
+    if has_no_numeric_value "$exponent"; then
         echo "FAIL : the numberless law accepted an exponent literal"
         fail=1
     fi
-    if holds_no_number "$numberless"; then :; else
+    if has_no_numeric_value "$numberless"; then :; else
         echo "FAIL : the numberless law refused integers and the word 'real' in a comment"
         fail=1
     fi
@@ -603,7 +603,7 @@ for dir in "$here"/common "$here"/level-*; do
         # is enforced rather than asserted. At Level 5 there are, and
         # the ceiling lifts for exactly those three sources.
         if ! numbers_allowed "$key"; then
-            if ! holds_no_number "$src"; then
+            if ! has_no_numeric_value "$src"; then
                 echo "IMPORT GATE: $(basename "$src") in $name carries a real declaration or a non-integer literal - only Level 5 holds coefficients"
                 violation=1
             fi

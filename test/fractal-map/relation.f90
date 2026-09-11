@@ -1,7 +1,7 @@
 !=====================================================================!
 ! PROTOTYPE . WHAT IS A RELATION IN THE FRACTAL SYSTEM
 !
-! Three things are separated and tested apart:
+! Three mathematical objects are tested independently:
 !
 !     R                  the semantic relation, an identity
 !     (A_1,...,A_k)      the ordered signature, small
@@ -129,7 +129,7 @@ program relation_map
     type(graph), target  :: saa(2), sab(2), sabc(3)   ! their signatures
     type(graph), pointer :: d
     integer              :: k
-    logical              :: ok
+    logical              :: satisfied
 
     call a % declare(); call b % declare(); call c % declare()
     call raa % declare(); call rab % declare(); call rabc % declare()
@@ -140,7 +140,7 @@ program relation_map
        call sabc(k) % declare()
     end do
 
-    ! A x A: the SAME set graph stands in both slots.
+    ! A x A: the SAME set graph occupies both positions.
     saa(1) % branch(1) = known_branch(a)
     saa(1) % branch(2) = known_branch(saa(2))
     saa(2) % branch(1) = known_branch(a)
@@ -149,10 +149,10 @@ program relation_map
     call check('1  A x A: arity 2, one repeated domain', &
          & sequence_num_elements(raa % branch(1)) .eq. 2)
     d => sequence_element(raa % branch(1), 1)
-    ok = d % same_as(a)
+    satisfied = d % same_as(a)
     d => sequence_element(raa % branch(1), 2)
     call check('1  and both slots name the same set, by identity', &
-         & ok .and. d % same_as(a))
+         & satisfied .and. d % same_as(a))
 
     ! A x B.
     sab(1) % branch(1) = known_branch(a)
@@ -173,10 +173,10 @@ program relation_map
     sabc(3) % branch(1) = known_branch(c)
     rabc % branch(1) = known_branch(sabc(1))
 
-    ok = sequence_num_elements(rabc % branch(1)) .eq. 3
-    d => sequence_element(rabc % branch(1), 2); ok = ok .and. d % same_as(b)
-    d => sequence_element(rabc % branch(1), 3); ok = ok .and. d % same_as(c)
-    call check('1  A x B x C: arity 3 is a longer sequence, not a case', ok)
+    satisfied = sequence_num_elements(rabc % branch(1)) .eq. 3
+    d => sequence_element(rabc % branch(1), 2); satisfied = satisfied .and. d % same_as(b)
+    d => sequence_element(rabc % branch(1), 3); satisfied = satisfied .and. d % same_as(c)
+    call check('1  A x B x C: arity 3 is a longer sequence, not a case', satisfied)
     call check('1  the signature costs O(k) cells, and k is small', &
          & size(saa) + size(sab) + size(sabc) .eq. 7)
 
@@ -185,7 +185,7 @@ program relation_map
   !===================================================================!
   ! 2 . TUPLE EQUALITY IS COMPONENT IDENTITY.
   !
-  ! Two tuple-holder graphs are built independently, both spelling
+  ! Two tuple-holder graphs are built independently, both representing
   ! (a, b). They are DIFFERENT graphs. If a relation deduped on holder
   ! identity it would hold (a,b) twice and stop being a set.
   !===================================================================!
@@ -232,7 +232,7 @@ program relation_map
   ! 3 . ONE SEMANTIC RELATION, TWO REPRESENTATIONS.
   !
   ! R is a graph. A table and a CSR both describe R's extension. They
-  ! answer the same membership questions and they are NOT the same
+  ! evaluate the same membership predicates and they are NOT the same
   ! object - representation identity is storage identity, and it is
   ! not the relation's.
   !===================================================================!
@@ -276,9 +276,9 @@ program relation_map
     end do
     agree = agree .and. (pt % has([1, 4]) .eqv. pc % has([1, 4]))
 
-    call check('3  table and CSR answer the same extension', agree)
+    call check('3  table and CSR describe the same extension', agree)
     call check('3  and are NOT the same object', .not. pt % same_as(pc))
-    call check('3  while R is one relation, whichever storage answers', &
+    call check('3  while R is one relation, for either storage representation', &
          & r % same_as(r))
     call check('3  the extension is integers, never one graph per tuple', &
          & pt % num_tuples() .eq. 3)
@@ -288,10 +288,10 @@ program relation_map
   !===================================================================!
   ! 4 . TRANSPOSE, AND WHAT ITS INVOLUTION PRESERVES.
   !
-  ! Measured on the production view first: transpose_of mints a fresh
-  ! identity, so T(T(R)) is a THIRD object and the law holds only
+  ! Measured on the production view first: transpose_of declares a new
+  ! identity, so T(T(R)) is a THIRD object and the law is satisfied only
   ! extensionally. Then the role-permutation prototype, where T(T(R))
-  ! is the base itself and the law holds at graph identity.
+  ! is the base itself and the law is satisfied at graph identity.
   !===================================================================!
 
   transpose_block: block
@@ -359,12 +359,12 @@ program relation_map
 
 contains
 
-  subroutine check(label, ok)
+  subroutine check(label, satisfied)
 
     character(len=*), intent(in) :: label
-    logical         , intent(in) :: ok
+    logical         , intent(in) :: satisfied
 
-    if (ok) then
+    if (satisfied) then
        print *, ' PASS : ', label
     else
        print *, ' FAIL : ', label

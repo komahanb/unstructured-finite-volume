@@ -201,14 +201,14 @@ contains
 
     integer, allocatable :: blk(:), tails(:), heads(:)
     integer :: nb, ne, e, t, h, bt, bh, n
-    logical, allocatable :: drawn(:,:)
+    logical, allocatable :: adjacent_blocks(:,:)
 
     call blocks_of(this, fine_graph, blk, nb)
 
     ne = fine_graph % num_edges()
     allocate(tails(ne), heads(ne))
-    allocate(drawn(nb, nb))
-    drawn = .false.
+    allocate(adjacent_blocks(nb, nb))
+    adjacent_blocks = .false.
     n = 0
 
     do e = 1, ne
@@ -232,9 +232,9 @@ contains
        ! face between two blocks is created once, whatever the number
        ! of fine faces joining them.
        if (bt == bh) cycle
-       if (drawn(bt, bh)) cycle
+       if (adjacent_blocks(bt, bh)) cycle
 
-       drawn(bt, bh) = .true.
+       adjacent_blocks(bt, bh) = .true.
        n = n + 1
        tails(n) = bt
        heads(n) = bh
@@ -277,7 +277,7 @@ contains
     integer             , intent(out) :: nb
 
     integer, allocatable :: nbrs(:)
-    integer :: nv, v, i, mate
+    integer :: nv, v, i, paired_vertex
 
     nv = fine_graph % num_vertices()
     allocate(blk(nv))
@@ -299,14 +299,14 @@ contains
        nb      = nb + 1
        blk(v)  = nb
        call fine_graph % adjacent_vertices(v, nbrs)
-       mate = 0
+       paired_vertex = 0
        do i = 1, size(nbrs)
           if (blk(nbrs(i)) == 0) then
-             mate = nbrs(i)
+             paired_vertex = nbrs(i)
              exit
           end if
        end do
-       if (mate /= 0) blk(mate) = nb
+       if (paired_vertex /= 0) blk(paired_vertex) = nb
     end do
 
   end subroutine blocks_of

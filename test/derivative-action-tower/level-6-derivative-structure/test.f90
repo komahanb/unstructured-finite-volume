@@ -44,7 +44,7 @@
 
 program derivative_level_6
 
-  use derivative_assert, only : report, verdict
+  use derivative_assert, only : report, assert_all
   use derivative_assert, only : SLOT_X, SLOT_Y, SLOT_U, SLOT_Z
   use derivative_assert, only : OP_PRODUCT, OP_SUM
   use derivative_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
@@ -167,7 +167,7 @@ program derivative_level_6
   call check_reverse_is_the_view(nfail)
   call check_order_invariance(nfail)
 
-  call verdict(nfail, "level 6")
+  call assert_all(nfail, "level 6")
 
 contains
 
@@ -421,7 +421,7 @@ contains
 
     integer              :: rev(3, 6), k
     integer, allocatable :: t1(:,:), t2(:,:)
-    logical              :: ok
+    logical              :: satisfied
 
     do k = 1, 6
        rev(:, k) = table(:, 7 - k)
@@ -463,14 +463,14 @@ contains
          & "|A1| = |A2|", nfail)
     call a % tuples(t1)
     call a2 % tuples(t2)
-    ok = .true.
+    satisfied = .true.
     do k = 1, size(t1, 2)
-       ok = ok .and. a2 % has(t1(:, k))
+       satisfied = satisfied .and. a2 % has(t1(:, k))
     end do
     do k = 1, size(t2, 2)
-       ok = ok .and. a % has(t2(:, k))
+       satisfied = satisfied .and. a % has(t2(:, k))
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "each A holds every pair of the other: equal as sets", &
          & nfail)
 
@@ -478,14 +478,14 @@ contains
          & "|J1| = |J2|", nfail)
     call j_zx % tuples(t1)
     call j_zx2 % tuples(t2)
-    ok = .true.
+    satisfied = .true.
     do k = 1, size(t1, 2)
-       ok = ok .and. j_zx2 % has(t1(:, k))
+       satisfied = satisfied .and. j_zx2 % has(t1(:, k))
     end do
     do k = 1, size(t2, 2)
-       ok = ok .and. j_zx % has(t2(:, k))
+       satisfied = satisfied .and. j_zx % has(t2(:, k))
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "and so are the Jacobian patterns, both directions", nfail)
 
     call report(jt2 % num_tuples() .eq. 2 .and. &

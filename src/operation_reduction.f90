@@ -424,17 +424,17 @@ contains
     real(dp), allocatable, intent(out)       :: m(:)
     logical              , intent(out)       :: weighted
 
-    real(dp), allocatable :: raw(:)
+    real(dp), allocatable :: measure_values(:)
 
     ! an absent measure weights every entry by one; that is a property
     ! of the reduction, so no vector of ones is allocated and read
     weighted = .false.
     if (present(measure)) then
-       call measure % real_vector(raw)
-       if (size(raw) >= nentry) then
+       call measure % real_vector(measure_values)
+       if (size(measure_values) >= nentry) then
           allocate(m(max(nentry, 1)))
           m = 1.0_dp
-          m(1:nentry) = raw(1:nentry)
+          m(1:nentry) = measure_values(1:nentry)
           weighted    = .true.
        end if
     end if

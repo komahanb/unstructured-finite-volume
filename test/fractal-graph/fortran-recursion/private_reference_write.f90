@@ -1,4 +1,4 @@
-! INVARIANT PROBE. External rebinding of the branch reference.
+! INVARIANT CHECK. External rebinding of the branch reference.
 ! EXPECTED: rejected - 'known_' is a PRIVATE component.
 ! Admitting it would allow KNOWN with known disassociated.
 program private_reference_write

@@ -69,16 +69,16 @@ for f in "$srcdir"/*.f90; do
     b=$(basename "$f" .f90)
     echo "$listed" | grep -qx "$b" || { echo " FAIL : $b.f90 is not in OBJECTS"; exit 1; }
 done
-seen=" "
+preceding_modules=" "
 for m in $listed; do
     for u in $(sed 's/!.*//' "$srcdir/$m.f90" | grep -oE '^ *use +[a-z_0-9]+' | awk '{print $2}' | sort -u); do
         [ -f "$srcdir/$u.f90" ] || continue
-        case "$seen" in
+        case "$preceding_modules" in
         *" $u "*) : ;;
         *) echo " FAIL : OBJECTS builds $m before its import $u"; exit 1 ;;
         esac
     done
-    seen="$seen$m "
+    preceding_modules="$preceding_modules$m "
 done
 echo " PASS : OBJECTS is complete and dependency-ordered"
 
@@ -182,22 +182,15 @@ fi
 # 8. Vocabulary: names and comments denote mathematical objects and
 #    operations. The closed list below holds the colloquial,
 #    metaphorical and anthropomorphic words removed from the sources
-#    on 2026-09-02, matched as whole words in identifiers, comments
-#    and strings alike, over src and the application. A refused word
+#    on 2026-09-02, matched as whole words in production comments and strings, and
+#    as components of identifiers throughout all source directories. A refused word
 #    names the mathematical term instead: traversal not walk, version
 #    not stamp, boundary not wall, iteration limit not budget, stored
 #    not held, returns not answers, pass not route, halo not borrowed.
 #---------------------------------------------------------------------
 
-banned='walk|walks|walked|walking|stamp|stamps|stamped|gate|gates|gated|gatekeeper|room|rooms|cliff|cliffs|spine|knob|knobs|dial|dials|lever|verdict|verdicts|judge|judges|judged|liar|liars|honest|honestly|stranger|strangers|alien|aliens|citizen|citizens|seat|seats|seated|teeth|tooth|door|doors|road|roads|journey|journeys|plumbing|wiring|glue|glued|bucket|buckets|handover|handovers|handed|borrow|borrows|borrowed|carve|carves|carved|fetch|fetches|fetched|grab|grabs|grabbed|budget|budgets|cheap|cheaply|expensive|costly|noisy|answer|answers|answered|asks|asked|says|knows|knowing|wants|wanted|lives|dies|died|dead|born|fresh|afresh|anew|held|holds|carry|carried|carries|carrying|worst|worse|best|probe|probes|probed|channel|channels|fold|folded|folds|route|routes|stitched|hood|mine|yours|ok|okay|price|priced|roll|said|seen|worker|got|spent|home|homes|ceiling|wall|walls|stands|sits|sitting|rides|riding|peek|peeks|poke|pokes|trick|tricks|hack|hacks|kludge|magic|fancy|nasty|ugly|nice|sweet|basically|essentially|actually|really|stuff|thing|things|guy|guys|bunch|handy|dumb|silly|cook|cooked|baked|punt|bail|nuke|kick|kicks|kicked|chunk|chunky|mess|messy|junk|garbage|trash|tidy|neat|hatched|squint|story|stories|chapter|book|books|tale|tales|readings|spelling|spellings|ghost|ghosts|lazy|heap|delivered|caught|bring|brings|brought|liar'
+banned='walk|walks|walked|walking|stamp|stamps|stamped|gate|gates|gated|gatekeeper|room|rooms|cliff|cliffs|spine|knob|knobs|dial|dials|lever|verdict|verdicts|judge|judges|judged|liar|liars|honest|honestly|stranger|strangers|alien|aliens|citizen|citizens|seat|seats|seated|teeth|tooth|door|doors|road|roads|journey|journeys|plumbing|wiring|glue|glued|bucket|buckets|handover|handovers|handed|borrow|borrows|borrowed|carve|carves|carved|fetch|fetches|fetched|grab|grabs|grabbed|budget|budgets|cheap|cheaply|expensive|costly|noisy|answer|answers|answered|asks|asked|says|knows|knowing|wants|wanted|lives|dies|died|dead|born|fresh|afresh|anew|held|holds|carry|carried|carries|carrying|kept|worst|worse|best|probe|probes|probed|channel|channels|fold|folded|folds|route|routes|stitched|hood|mine|yours|ok|okay|price|priced|roll|said|seen|worker|got|spent|home|homes|ceiling|wall|walls|stands|sits|sitting|rides|riding|peek|peeks|poke|pokes|trick|tricks|hack|hacks|kludge|magic|fancy|nasty|ugly|nice|sweet|basically|essentially|actually|really|stuff|thing|things|guy|guys|bunch|handy|dumb|silly|cook|cooked|baked|punt|bail|nuke|kick|kicks|kicked|chunk|chunky|mess|messy|junk|garbage|trash|tidy|neat|hatched|squint|story|stories|chapter|book|books|tale|tales|readings|spelling|spellings|ghost|ghosts|lazy|heap|delivered|caught|bring|brings|brought|liar'
 
-for d in "$srcdir" "$appdir"; do
-    if ls "$d"/*.f90 >/dev/null 2>&1 && grep -inwE "$banned" "$d"/*.f90 | grep -q .; then
-        grep -inwE "$banned" "$d"/*.f90 | head -5
-        echo " FAIL : a colloquial word exists in $(basename "$d") (see the list in check 8)"
-        exit 1
-    fi
-done
-echo " PASS : the vocabulary is mathematical - no word from the colloquial list"
+NAMING_BANNED="$banned" python3 "$root/tools/check_vocabulary.py" "$root"
 
 echo " PASS : the naming rules hold"

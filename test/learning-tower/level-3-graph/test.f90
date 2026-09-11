@@ -22,7 +22,7 @@
 
 program learning_level_3
 
-  use learning_assert, only : report, verdict
+  use learning_assert, only : report, assert_all
   use learning_assert, only : SLOT_W, SLOT_X, SLOT_YHAT, SLOT_Y, SLOT_E
   use learning_assert, only : OP_PREDICT, OP_ERROR
   use learning_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
@@ -129,7 +129,7 @@ program learning_level_3
   call check_graph_identity(nfail)
   call check_validity(nfail)
 
-  call verdict(nfail, "level 3")
+  call assert_all(nfail, "level 3")
 
 contains
 
@@ -151,9 +151,9 @@ contains
          &      has_set(g, bnd, p), &
          & "V, O and P are its own, by identity", nfail)
 
-    call report(graph_holds_relation(g, bnd, flow), &
+    call report(graph_contains_relation(g, bnd, flow), &
          & "the flow is owned, the same declared relation", nfail)
-    call report(graph_holds_relation(g, bnd, d), &
+    call report(graph_contains_relation(g, bnd, d), &
          & "and so is the derived dependency", nfail)
 
   end subroutine check_ownership
@@ -231,17 +231,17 @@ contains
     class(relation), pointer       :: rp
     type(graph) :: dom
     integer                        :: k, s
-    logical                        :: ok
+    logical                        :: satisfied
 
-    ok = .true.
+    satisfied = .true.
     do k = 1, num_relations(g)
        rp => relation_at(g, bnd, k)
        do s = 1, rp % arity()
           dom = rp % domain(s)
-          ok = ok .and. has_set(g, bnd, dom)
+          satisfied = satisfied .and. has_set(g, bnd, dom)
        end do
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "every relation slot resolves to an owned carrier", nfail)
 
   end subroutine check_signature_closure
@@ -352,7 +352,7 @@ contains
 
   !===================================================================!
 
-  logical function graph_holds_relation(g, b, r)
+  logical function graph_contains_relation(g, b, r)
 
     type(graph)             , intent(in) :: g
     type(relational_binding), intent(in) :: b
@@ -361,12 +361,12 @@ contains
     class(relation), pointer :: rp
     integer                  :: k
 
-    graph_holds_relation = .false.
+    graph_contains_relation = .false.
     do k = 1, num_relations(g)
        rp => relation_at(g, b, k)
-       if (rp % same_as(r)) graph_holds_relation = .true.
+       if (rp % same_as(r)) graph_contains_relation = .true.
     end do
 
-  end function graph_holds_relation
+  end function graph_contains_relation
 
 end program learning_level_3

@@ -29,25 +29,25 @@ program refusal
   use map_change_protocol, only : run_change, change_record
   use map_value      , only : value_map, VALUE_UNKNOWN
   use map_value_change   , only : value_change
-  use toy_changes          , only : silent_apply_change, silent_revert_change
+  use change_fixtures          , only : unreported_apply_change, unreported_revert_change
 
   implicit none
   type(change_record)         :: result
   type(value_map)             :: map
-  type(value_change)          :: loose
-  type(silent_apply_change)   :: silent_apply
-  type(silent_revert_change)  :: silent_revert
+  type(value_change)          :: unbound_change
+  type(unreported_apply_change)   :: unreported_apply
+  type(unreported_revert_change)  :: unreported_revert
 
-  type(graph) :: a, ghost
+  type(graph) :: a, undeclared_graph
   real(dp), allocatable :: rv(:)
 
-  character(len=32) :: which
+  character(len=32) :: case_name
 
-  call get_command_argument(1, which)
+  call get_command_argument(1, case_name)
 
   call a % declare()
 
-  select case (trim(which))
+  select case (trim(case_name))
 
   case ('attachtwice')
 
@@ -74,15 +74,15 @@ program refusal
 
   case ('undeclared')
 
-     call map % attach_unknown(ghost)
+     call map % attach_unknown(undeclared_graph)
 
   case ('silentapply')
 
-     call run_change(silent_apply, .true., result)
+     call run_change(unreported_apply, .true., result)
 
   case ('silentrevert')
 
-     call run_change(silent_revert, .true., result)
+     call run_change(unreported_revert, .true., result)
 
   case ('impossible')
 
@@ -92,7 +92,7 @@ program refusal
 
   case ('unbound')
 
-     call run_change(loose, .true., result)
+     call run_change(unbound_change, .true., result)
 
   case default
 
@@ -100,6 +100,6 @@ program refusal
 
   end select
 
-  write(*,*) 'refusal case survived: ', trim(which)
+  write(*,*) 'refusal case survived: ', trim(case_name)
 
 end program refusal

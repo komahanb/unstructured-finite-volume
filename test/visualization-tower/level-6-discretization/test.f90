@@ -69,7 +69,7 @@
 
 program visualization_level_6
 
-  use visualization_assert , only : report, verdict
+  use visualization_assert , only : report, assert_all
   use visualization_assert , only : ND1, ND2
   use visualization_assert , only : NX0, NX1, NX2
   use visualization_assert , only : X0_A, X0_B, X0_C, X0_D
@@ -184,7 +184,7 @@ program visualization_level_6
   call check_state_is_not_time(nfail)
   call check_the_visual_equality_theorem(nfail)
 
-  call verdict(nfail, "level 6")
+  call assert_all(nfail, "level 6")
 
 contains
 
@@ -209,10 +209,10 @@ contains
     pic = pattern_picture(pat_d2, '', sets, labels); call say_grid(pic, 2)
 
     verts = carrier_of(pat_d2)
-    call say_verdict("coordinate pattern equal", &
+    call show_predicate("coordinate pattern equal", &
          &           same_coordinate_pattern(d2, pat_d2, sets))
-    call say_verdict("typed source identity equal", verts % same_as(x1))
-    call say_verdict("typed target identity equal", verts % same_as(x2))
+    call show_predicate("typed source identity equal", verts % same_as(x1))
+    call show_predicate("typed target identity equal", verts % same_as(x2))
     write(*,*)
 
     write(*,'(4x,a)') "RECTANGULAR D1"
@@ -223,14 +223,14 @@ contains
     write(*,'(4x,a)') "STENCIL pattern for the same occupancy"
     pic = pattern_picture(pat_d1, '', sets, labels); call say_grid(pic, 2)
 
-    call say_verdict("production contract preserves this typed signature", &
+    call show_predicate("production contract preserves this typed signature", &
          &           coordinate_shapes_fit(d1, pat_d1, sets))
     write(*,*)
 
     write(*,'(4x,a)') "BDF2 block_connectivity()"
     pic = pattern_picture(motif_d2, '', sets, labels); call say_grid(pic, 2)
 
-    call say_verdict("state pattern equal", &
+    call show_predicate("state pattern equal", &
          &           same_production_pattern(motif_d2, pat_d2))
 
     write(*,'(1x,a)') "---------------------------------------------"
@@ -251,21 +251,21 @@ contains
 
   end subroutine say_grid
 
-  subroutine say_verdict(label, yes)
+  subroutine show_predicate(label, satisfied)
 
     character(len=*), intent(in) :: label
-    logical         , intent(in) :: yes
+    logical         , intent(in) :: satisfied
 
     character(len=48) :: dots
 
     dots = repeat('.', max(1, 48 - len(label)))
-    if (yes) then
+    if (satisfied) then
        write(*,'(4x,a,1x,a,1x,a)') label, trim(dots), "YES"
     else
        write(*,'(4x,a,1x,a,1x,a)') label, trim(dots), "NO"
     end if
 
-  end subroutine say_verdict
+  end subroutine show_predicate
 
   !===================================================================!
   ! MEASUREMENT ONE, first half. The Boolean occupancy agrees.

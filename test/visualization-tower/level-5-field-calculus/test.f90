@@ -61,7 +61,7 @@
 program visualization_level_5
 
   use iso_fortran_env      , only : dp => REAL64
-  use visualization_assert , only : report, verdict
+  use visualization_assert , only : report, assert_all
   use visualization_assert , only : ND1, ND2, ND3, ND21, ND31
   use visualization_assert , only : NX0, NE2
   use visualization_assert , only : X0_A, X0_B, X0_C, X0_D
@@ -150,7 +150,7 @@ program visualization_level_5
   call check_the_fields_exist(nfail)
   call check_the_exact_values(nfail)
   call check_the_domains_by_identity(nfail)
-  call check_the_occurrence_seat_is_unique(nfail)
+  call check_occurrence_uniqueness(nfail)
   call check_the_zero_witness(nfail)
   call check_zero_is_not_absence(nfail)
   call check_the_two_views_agree_on_presence(nfail)
@@ -158,7 +158,7 @@ program visualization_level_5
   call check_the_derivation_is_unchanged(nfail)
   call check_value_and_structure_are_independent(nfail)
 
-  call verdict(nfail, "level 5")
+  call assert_all(nfail, "level 5")
 
 contains
 
@@ -349,19 +349,19 @@ contains
   end subroutine check_the_domains_by_identity
 
   !===================================================================!
-  ! A coefficient picture is only well defined where the seat is
+  ! A coefficient picture is only well defined where the occurrence is
   ! unique. For the three direct dependencies it is: exactly one
   ! occurrence joins each tuple, and none joins a tuple that is
   ! absent.
   !===================================================================!
 
-  subroutine check_the_occurrence_seat_is_unique(nfail)
+  subroutine check_occurrence_uniqueness(nfail)
 
     integer, intent(inout) :: nfail
 
-    call report(seats_are_unique(d1, t1, h1, e1) .and. &
-         &      seats_are_unique(d2, t2, h2, e2) .and. &
-         &      seats_are_unique(d3, t3, h3, e3), &
+    call report(occurrences_are_unique(d1, t1, h1, e1) .and. &
+         &      occurrences_are_unique(d2, t2, h2, e2) .and. &
+         &      occurrences_are_unique(d3, t3, h3, e3), &
          & "every tuple of D1, D2, D3 is joined by EXACTLY ONE " // &
          & "occurrence, and every absent pair by none", nfail)
 
@@ -370,7 +370,7 @@ contains
          & "b->q is seated at e13; a->q is seated nowhere, because " // &
          & "a->q is not a dependency", nfail)
 
-  end subroutine check_the_occurrence_seat_is_unique
+  end subroutine check_occurrence_uniqueness
 
   !===================================================================!
   ! THE LOAD-BEARING ASSERTION.
@@ -592,26 +592,26 @@ contains
   ! Helpers.
   !===================================================================!
 
-  logical function near(got, want)
+  logical function near(actual, expected)
 
-    real(dp), intent(in) :: got, want
+    real(dp), intent(in) :: actual, expected
 
-    near = abs(got - want) .lt. TOL
+    near = abs(actual - expected) .lt. TOL
 
   end function near
 
-  logical function all_values_recovered(w, occurrences, want)
+  logical function all_values_recovered(w, occurrences, expected)
 
     class(stored_field)     , intent(in) :: w
     type(graph), intent(in) :: occurrences
-    real(dp)         , intent(in) :: want(:)
+    real(dp)         , intent(in) :: expected(:)
 
     integer :: k
 
-    all_values_recovered = (sets % num_members_of(occurrences) .eq. size(want))
+    all_values_recovered = (sets % num_members_of(occurrences) .eq. size(expected))
     do k = 1, sets % num_members_of(occurrences)
        all_values_recovered = all_values_recovered .and. &
-            & near(value_at(w, occurrences, sets % member_of(occurrences, k), sets), want(k))
+            & near(value_at(w, occurrences, sets % member_of(occurrences, k), sets), expected(k))
     end do
 
   end function all_values_recovered
@@ -621,33 +621,33 @@ contains
   ! over every cell of the grid, not a sample.
   !-------------------------------------------------------------------!
 
-  logical function seats_are_unique(d, tail, head, occurrences)
+  logical function occurrences_are_unique(d, tail, head, occurrences)
 
     class(relation)  , intent(in) :: d, tail, head
     type(graph), intent(in) :: occurrences
 
     type(graph) :: cols, rows
-    integer                        :: i, j, want
+    integer                        :: i, j, expected
 
     cols = d % domain(1)
     rows = d % domain(2)
 
-    seats_are_unique = .true.
+    occurrences_are_unique = .true.
     do j = 1, sets % num_members_of(cols)
        do i = 1, sets % num_members_of(rows)
           if (d % has([sets % member_of(cols, j), sets % member_of(rows, i)])) then
-             want = 1
+             expected = 1
           else
-             want = 0
+             expected = 0
           end if
-          seats_are_unique = seats_are_unique .and. &
+          occurrences_are_unique = occurrences_are_unique .and. &
                & (occurrences_joining(tail, head, occurrences, &
                &                      sets % member_of(cols, j), sets % member_of(rows, i), sets) &
-               &  .eq. want)
+               &  .eq. expected)
        end do
     end do
 
-  end function seats_are_unique
+  end function occurrences_are_unique
 
   !-------------------------------------------------------------------!
   ! THE TWO VIEWS, CELL BY CELL, with a third witness.

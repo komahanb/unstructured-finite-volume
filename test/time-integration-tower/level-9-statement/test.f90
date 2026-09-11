@@ -43,7 +43,7 @@
 program time_level_9
 
   use iso_fortran_env       , only : dp => REAL64
-  use time_assert           , only : report, verdict
+  use time_assert           , only : report, assert_all
   use time_assert           , only : NQ, NT, NSTEPS, TOL, TOL_MARCH
   use time_assert           , only : T0, T4, C_X, C_Y, H_STEP
   use time_assert           , only : TIME_COORD, BDF2_TRAJECTORY
@@ -94,9 +94,9 @@ program time_level_9
 
   call check_the_statement_s_two_ends(nfail)
   call check_the_endpoint_is_earned(nfail)
-  call check_the_answer(nfail)
+  call check_solution(nfail)
 
-  call verdict(nfail, "level 9")
+  call assert_all(nfail, "level 9")
 
   call say_the_result()
 
@@ -143,7 +143,7 @@ contains
     type(stored_directed_graph)    :: chain
     real(dp), allocatable :: tv(:)
     integer               :: here, i
-    logical               :: ok
+    logical               :: satisfied
 
     call tcoord % real_vector(tv)
 
@@ -157,12 +157,12 @@ contains
     incidence = march_incidence(NSTEPS, 1)
     chain     = incidence % projection(SECOND_PART)
     here = 1
-    ok = .true.
+    satisfied = .true.
     do i = 1, NSTEPS
-       ok = ok .and. (chain % edge_tail(i) .eq. here)
+       satisfied = satisfied .and. (chain % edge_tail(i) .eq. here)
        here = chain % edge_head(i)
     end do
-    call report(ok .and. here .eq. chain % num_vertices(), &
+    call report(satisfied .and. here .eq. chain % num_vertices(), &
          & "and four steps of the control chain reach its terminal " // &
          & "instant, followed through incidence rather than indexed", &
          & nfail)
@@ -178,7 +178,7 @@ contains
   ! THE ANSWER.
   !===================================================================!
 
-  subroutine check_the_answer(nfail)
+  subroutine check_solution(nfail)
 
     integer, intent(inout) :: nfail
 
@@ -195,7 +195,7 @@ contains
          & "read coordinate by coordinate at Q's local positions: " // &
          & "x = 7/24, y = 83/144", nfail)
 
-  end subroutine check_the_answer
+  end subroutine check_solution
 
   !===================================================================!
   ! The result contract: one marker, two real tokens, in Q's

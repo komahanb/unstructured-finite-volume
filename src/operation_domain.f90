@@ -96,11 +96,11 @@ contains
 
   end function create_continuous_domain
 
-  pure logical function continuous_domain_declared(this) result(yes)
+  pure logical function continuous_domain_declared(this) result(is_declared)
 
     class(continuous_domain), intent(in) :: this
 
-    yes = this % law % declared()
+    is_declared = this % law % declared()
 
   end function continuous_domain_declared
 

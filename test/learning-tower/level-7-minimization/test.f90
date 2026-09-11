@@ -151,7 +151,7 @@ end module learning_residual_fixture
 program learning_level_7
 
   use iso_fortran_env  , only : dp => REAL64
-  use learning_assert  , only : report, verdict, SLOT_W
+  use learning_assert  , only : report, assert_all, SLOT_W
   use field_calculus, only : field
   use field_stored, only : stored_field
   use view_directed_stored      , only : stored_directed_graph
@@ -267,6 +267,6 @@ program learning_level_7
        &      < 1.0d-9, &
        & "(x,y) = (4,8) fits w = 2: fitted, never recited", nfail)
 
-  call verdict(nfail, "level 7")
+  call assert_all(nfail, "level 7")
 
 end program learning_level_7

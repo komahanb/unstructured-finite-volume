@@ -113,8 +113,8 @@
 ! So a caller assembles and then passes the pairing:
 !
 !      link = operations % pair(values)
-!      call runner % pair_with(link)
-!      call runner % evaluate(on)
+!      call schedule % pair_with(link)
+!      call schedule % evaluate(on)
 !
 ! The separation is deliberate. An assembler may be rewritten - a
 ! different scheme, a different mesh, a coarser chain - without the
@@ -291,6 +291,12 @@ module operation_driver
      ! unallocated while a driver stores one rule for every vertex alike
      type(pairing), allocatable    :: stored_pairing
 
+     ! The immutable incidence and orientation determine this schedule
+     ! once. Release intervals contain each datum with a reader once;
+     ! data without readers are outputs and remain available.
+     integer, allocatable :: visiting(:), last_reader(:)
+     integer, allocatable :: first_release(:), release_data(:)
+
    contains
 
      procedure :: name  => driver_name
@@ -332,6 +338,7 @@ contains
     if (this % orientation /= forward .and. this % orientation /= reverse) then
        error stop 'operation_driver: an orientation is forward or reverse'
     end if
+    call scheduled(this)
     call this % declare_arguments(rule % num_arguments(), rule % contracts())
 
   end function driven_by
@@ -357,10 +364,46 @@ contains
   function visits(this) result(order)
     class(driver), intent(in) :: this
     integer, allocatable :: order(:)
-    type(stored_directed_graph) :: among_rules
-    among_rules = this % over % projection(FIRST_PART)
-    order = among_rules % loop(this % orientation)
+    order = [integer ::]
+    if (allocated(this % visiting)) order = this % visiting
   end function visits
+
+  subroutine scheduled(this)
+    class(driver), intent(inout) :: this
+    type(stored_directed_graph) :: among_rules
+    integer, allocatable :: readers(:), next(:), step_of_rule(:)
+    integer :: k, d, i, n
+
+    among_rules = this % over % projection(FIRST_PART)
+    this % visiting = among_rules % loop(this % orientation)
+    n = size(this % visiting)
+    allocate(step_of_rule(n))
+    do k = 1, n
+       step_of_rule(this % visiting(k)) = k
+    end do
+    allocate(this % last_reader(this % over % order_of_part(SECOND_PART)), source=0)
+    allocate(this % first_release(n + 1), source=0)
+    do d = 1, size(this % last_reader)
+       call this % neighbourhood(SECOND_PART, d, .false., readers)
+       do i = 1, size(readers)
+          this % last_reader(d) = max(this % last_reader(d), step_of_rule(readers(i)))
+       end do
+       k = this % last_reader(d)
+       if (k > 0) this % first_release(k + 1) = this % first_release(k + 1) + 1
+    end do
+    this % first_release(1) = 1
+    do k = 1, n
+       this % first_release(k + 1) = this % first_release(k + 1) + this % first_release(k)
+    end do
+    allocate(this % release_data(this % first_release(n + 1) - 1))
+    next = this % first_release(1:n)
+    do d = 1, size(this % last_reader)
+       k = this % last_reader(d)
+       if (k == 0) cycle
+       this % release_data(next(k)) = d
+       next(k) = next(k) + 1
+    end do
+  end subroutine scheduled
 
   function driven_rule(this) result(rule)
     class(driver), intent(in) :: this
@@ -576,18 +619,17 @@ contains
     class(operation), allocatable :: rule
     class(field)    , allocatable :: value, stored
     type(binding)   , allocatable :: inputs(:)
-    integer, allocatable :: order(:), reads(:), writes(:), releasable(:)
-    integer :: k, v, i, filled
+    integer, allocatable :: reads(:), writes(:)
+    integer :: k, v, i, num_inputs
 
     if (.not. allocated(this % stored_pairing)) then
        error stop 'operation_driver: a driver is paired with its data before it evaluates'
     end if
 
-    order = this % visits()
+    if (.not. allocated(this % visiting)) return
+    do k = 1, size(this % visiting)
 
-    do k = 1, size(order)
-
-       v = order(k)
+       v = this % visiting(k)
        call this % stored_pairing % rule_at(v, rule)
 
        ! A VERTEX STORING NO RULE STILL OCCUPIES A STEP. It computes
@@ -607,16 +649,16 @@ contains
              error stop 'operation_driver: a rule declares an argument for every vertex it reads'
           end if
           allocate(inputs(size(reads)))
-          filled = 0
+          num_inputs = 0
           do i = 1, size(reads)
              call this % stored_pairing % datum_at(reads(i), stored)
              if (.not. allocated(stored)) cycle
-             filled = filled + 1
-             inputs(filled) = moved_binding(rule % argument(i), stored)
+             num_inputs = num_inputs + 1
+             inputs(num_inputs) = moved_binding(rule % argument(i), stored)
           end do
 
-          if (filled > 0) then
-             call rule % apply(input_graph, inputs(1:filled), value)
+          if (num_inputs > 0) then
+             call rule % apply(input_graph, inputs(1:num_inputs), value)
           else
              call rule % apply(input_graph, output=value)
           end if
@@ -635,9 +677,8 @@ contains
        end if
 
        ! the data nothing reads again
-       releasable = this % released_after(k)
-       do i = 1, size(releasable)
-          call this % stored_pairing % release(releasable(i))
+       do i = this % first_release(k), this % first_release(k + 1) - 1
+          call this % stored_pairing % release(this % release_data(i))
        end do
 
     end do
@@ -645,10 +686,8 @@ contains
   end subroutine evaluate
 
   !===================================================================!
-  ! THE STEP A DATUM IS LAST READ AT. Traverse the visiting order;
-  ! the result is the latest step whose vertex has an arc from this
-  ! one. Zero records that nothing reads it, so it may be released as
-  ! soon as it is written.
+  ! THE STEP A DATUM IS LAST READ AT. Zero records that no rule reads
+  ! it. Such data remain available as outputs after evaluation.
   !
   !      order    1     2     3     4
   !      from v         .-----+-----'      last_reader_of(v) = 3
@@ -657,16 +696,10 @@ contains
   integer function last_reader_of(this, datum)
     class(driver), intent(in) :: this
     integer      , intent(in) :: datum
-    integer, allocatable :: order(:), readers(:)
-    integer :: k, i
-    last_reader_of = 0
-    order = this % visits()
-    call this % neighbourhood(SECOND_PART, datum, .false., readers)
-    do k = 1, size(order)
-       do i = 1, size(readers)
-          if (readers(i) == order(k)) last_reader_of = k
-       end do
-    end do
+    if (datum < 1 .or. datum > this % over % order_of_part(SECOND_PART)) then
+       error stop 'operation_driver: a datum belongs to the data part'
+    end if
+    last_reader_of = this % last_reader(datum)
   end function last_reader_of
 
   !===================================================================!
@@ -674,30 +707,20 @@ contains
   ! whose last reader is this step or earlier. A caller that releases
   ! these at each step stores only the live set, never the trajectory.
   !
-  ! The last reader of every datum is computed here, and each such
-  ! computation orders the vertices again, so a traversal that calls
-  ! this at every step computes the order once per step per datum.
-  ! For a graph whose vertices each store a linear solve this cost is
-  ! not measurable, and it is why a graph storing its transpose -
-  ! twice the vertices - measures the same. A graph of many low-cost
-  ! vertices requires the order stored once instead.
+  ! This public query is cumulative and ordered by datum number.
+  ! Evaluation uses the stored per-step intervals instead, so each
+  ! datum is released exactly once during a traversal.
   !===================================================================!
 
   function released_after(this, step) result(vertices)
     class(driver), intent(in) :: this
     integer      , intent(in) :: step
-    integer, allocatable :: vertices(:), keep(:)
-    integer :: d, kept, n
-    n = this % over % order_of_part(SECOND_PART)
-    allocate(keep(n))
-    kept = 0
-    do d = 1, n
-       if (this % last_reader_of(d) > 0 .and. this % last_reader_of(d) <= step) then
-          kept = kept + 1
-          keep(kept) = d
-       end if
-    end do
-    vertices = keep(1:kept)
+    integer, allocatable :: vertices(:)
+    integer :: d
+    vertices = [integer ::]
+    if (.not. allocated(this % last_reader)) return
+    vertices = pack([(d, d = 1, size(this % last_reader))], &
+         & this % last_reader > 0 .and. this % last_reader <= step)
   end function released_after
 
   !===================================================================!

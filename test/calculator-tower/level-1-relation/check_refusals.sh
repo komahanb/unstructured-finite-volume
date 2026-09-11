@@ -8,7 +8,7 @@ cd "$here"
 
 declare -A reason=(
   [arity]="each tuple has exactly one part per domain"
-  [member]="a tuple names a member its domain does not hold"
+  [member]="a tuple names a member its domain does not contain"
   [undeclared]="a signature refers to declared domains only"
 )
 

@@ -1,4 +1,4 @@
-! INVARIANT PROBE. External assignment of the branch status.
+! INVARIANT CHECK. External assignment of the branch status.
 ! EXPECTED: rejected - 'status_' is a PRIVATE component.
 ! Admitting it would allow status = KNOWN with known disassociated.
 program private_status_write

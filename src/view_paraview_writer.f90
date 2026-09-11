@@ -238,7 +238,7 @@ contains
 
     type(stored_field)   :: volume
     integer              :: ndim, num_points, c, k, n
-    integer, allocatable :: drawn(:), fixed(:)
+    integer, allocatable :: projection_axes(:), fixed(:)
     logical              :: sliced
 
     ndim             = size(coordinates, 1)
@@ -259,16 +259,16 @@ contains
 
     ! the axes drawn, and the ones not drawn in coordinate order
     if (present(axes)) then
-       drawn = axes
+       projection_axes = axes
     else
-       drawn = [(k, k = 1, min(ndim, 3))]
+       projection_axes = [(k, k = 1, min(ndim, 3))]
     end if
-    call require(size(drawn) >= 1 .and. size(drawn) <= 3, 'one to three axes drawn')
-    call require(all(drawn >= 1) .and. all(drawn <= ndim), 'drawn axes among the coordinates')
-    do k = 2, size(drawn)
-       call require(all(drawn(1:k-1) /= drawn(k)), 'drawn axes distinct')
+    call require(size(projection_axes) >= 1 .and. size(projection_axes) <= 3, 'one to three axes drawn')
+    call require(all(projection_axes >= 1) .and. all(projection_axes <= ndim), 'drawn axes among the coordinates')
+    do k = 2, size(projection_axes)
+       call require(all(projection_axes(1:k-1) /= projection_axes(k)), 'drawn axes distinct')
     end do
-    fixed = pack([(k, k = 1, ndim)], [(all(drawn /= k), k = 1, ndim)])
+    fixed = pack([(k, k = 1, ndim)], [(all(projection_axes /= k), k = 1, ndim)])
 
     sliced = .false.
     if (present(slice)) then
@@ -282,9 +282,9 @@ contains
 
     if (sliced) then
        call require(all(cell_types == hypercube_cell), 'hypercube cells for a slice')
-       call sectioned(this, coordinates, corners, drawn, fixed, slice)
+       call sectioned(this, coordinates, corners, projection_axes, fixed, slice)
     else
-       call projected(this, coordinates, corners, cell_types, drawn)
+       call projected(this, coordinates, corners, cell_types, projection_axes)
     end if
 
   end function construct_ragged
@@ -295,13 +295,13 @@ contains
   ! reordered to paraview's order along the drawn axes.
   !===================================================================!
 
-  subroutine projected(this, coordinates, corners, cell_types, drawn)
+  subroutine projected(this, coordinates, corners, cell_types, projection_axes)
 
     type(paraview_writer), intent(inout) :: this
     real(dp)             , intent(in)    :: coordinates(:,:)
     type(ragged)         , intent(in)    :: corners
     integer              , intent(in)    :: cell_types(:)
-    integer              , intent(in)    :: drawn(:)
+    integer              , intent(in)    :: projection_axes(:)
 
     integer, allocatable :: list(:)
     integer :: ndim, num_points, c, k, n, at
@@ -311,8 +311,8 @@ contains
 
     allocate(this % points(3, num_points))
     this % points = 0.0_dp
-    do k = 1, size(drawn)
-       this % points(k, :) = coordinates(drawn(k), :)
+    do k = 1, size(projection_axes)
+       this % points(k, :) = coordinates(projection_axes(k), :)
     end do
 
     this % cells = [(c, c = 1, this % num_cells)]
@@ -327,7 +327,7 @@ contains
        list = corners % list(c)
        if (cell_types(c) == hypercube_cell) then
           call require(ndim <= 3, 'a hypercube above three dimensions drawn through a slice')
-          this % cell_points(at : at + n - 1) = list(hypercube_order(ndim, [(k, k = 1, ndim)], drawn))
+          this % cell_points(at : at + n - 1) = list(hypercube_order(ndim, [(k, k = 1, ndim)], projection_axes))
           this % types(c) = hypercube_type(ndim)
        else
           this % cell_points(at : at + n - 1) = list
@@ -344,43 +344,43 @@ contains
   ! the drawn axes with its own points, shared with no other cell.
   !===================================================================!
 
-  subroutine sectioned(this, coordinates, corners, drawn, fixed, slice)
+  subroutine sectioned(this, coordinates, corners, projection_axes, fixed, slice)
 
     type(paraview_writer), intent(inout) :: this
     real(dp)             , intent(in)    :: coordinates(:,:)
     type(ragged)         , intent(in)    :: corners
-    integer              , intent(in)    :: drawn(:)
+    integer              , intent(in)    :: projection_axes(:)
     integer              , intent(in)    :: fixed(:)
     real(dp)             , intent(in)    :: slice(:)
 
-    integer :: num_drawn_corners, num_kept, c, i, j, k
+    integer :: num_projected_corners, num_section_cells, c, i, j, k
     real(dp), allocatable :: section(:,:)
 
-    num_drawn_corners = 2 ** size(drawn)
+    num_projected_corners = 2 ** size(projection_axes)
 
     ! the retained cells first, so the arrays are sized once
     this % cells = pack([(c, c = 1, this % num_cells)], &
          & [(within(coordinates(:, corners % list(c)), fixed, slice), c = 1, this % num_cells)])
-    num_kept = size(this % cells)
+    num_section_cells = size(this % cells)
 
-    allocate(this % points(3, num_drawn_corners * num_kept))
-    allocate(this % cell_points(num_drawn_corners * num_kept))
-    allocate(this % first_point(num_kept + 1))
-    allocate(this % types(num_kept))
+    allocate(this % points(3, num_projected_corners * num_section_cells))
+    allocate(this % cell_points(num_projected_corners * num_section_cells))
+    allocate(this % first_point(num_section_cells + 1))
+    allocate(this % types(num_section_cells))
     this % points = 0.0_dp
 
-    do i = 1, num_kept
+    do i = 1, num_section_cells
        c       = this % cells(i)
-       section = sectioned_corners(coordinates(:, corners % list(c)), fixed, slice, drawn)
-       do j = 1, num_drawn_corners
-          k = (i - 1) * num_drawn_corners + j
-          this % points(1:size(drawn), k) = section(drawn, j)
+       section = sectioned_corners(coordinates(:, corners % list(c)), fixed, slice, projection_axes)
+       do j = 1, num_projected_corners
+          k = (i - 1) * num_projected_corners + j
+          this % points(1:size(projection_axes), k) = section(projection_axes, j)
           this % cell_points(k)           = k
        end do
-       this % first_point(i) = (i - 1) * num_drawn_corners + 1
-       this % types(i)       = hypercube_type(size(drawn))
+       this % first_point(i) = (i - 1) * num_projected_corners + 1
+       this % types(i)       = hypercube_type(size(projection_axes))
     end do
-    this % first_point(num_kept + 1) = num_drawn_corners * num_kept + 1
+    this % first_point(num_section_cells + 1) = num_projected_corners * num_section_cells + 1
 
   end subroutine sectioned
 
@@ -413,12 +413,12 @@ contains
   ! along the drawn axes.
   !===================================================================!
 
-  pure function sectioned_corners(corners, fixed, slice, drawn) result (section)
+  pure function sectioned_corners(corners, fixed, slice, projection_axes) result (section)
 
     real(dp), intent(in)  :: corners(:,:)
     integer , intent(in)  :: fixed(:)
     real(dp), intent(in)  :: slice(:)
-    integer , intent(in)  :: drawn(:)
+    integer , intent(in)  :: projection_axes(:)
     real(dp), allocatable :: section(:,:)
 
     integer, allocatable :: remaining(:)
@@ -433,7 +433,7 @@ contains
        remaining = pack(remaining, remaining /= fixed(f))
     end do
 
-    section = section(:, hypercube_order(size(remaining), remaining, drawn))
+    section = section(:, hypercube_order(size(remaining), remaining, projection_axes))
 
   end function sectioned_corners
 
@@ -478,18 +478,18 @@ contains
   ! the quadrangle and of the hexahedron's two faces.
   !===================================================================!
 
-  pure function hypercube_order(n, remaining, drawn) result (perm)
+  pure function hypercube_order(n, remaining, projection_axes) result (perm)
 
     integer, intent(in)  :: n
-    integer, intent(in)  :: remaining(:), drawn(:)
+    integer, intent(in)  :: remaining(:), projection_axes(:)
     integer, allocatable :: perm(:)
 
     integer, allocatable :: order(:), tensor(:), ordering(:)
     integer :: c, q, r, k
 
     ! the drawn axes that remain, then the rest of the remaining
-    order = pack(drawn, [(any(remaining == drawn(k)), k = 1, size(drawn))])
-    order = [order, pack(remaining, [(all(drawn /= remaining(k)), k = 1, size(remaining))])]
+    order = pack(projection_axes, [(any(remaining == projection_axes(k)), k = 1, size(projection_axes))])
+    order = [order, pack(remaining, [(all(projection_axes /= remaining(k)), k = 1, size(remaining))])]
 
     allocate(tensor(2 ** n))
     do q = 0, 2 ** n - 1
@@ -530,9 +530,9 @@ contains
     integer :: ierr
     integer :: fhandle
     integer :: iresult
-    integer :: num_drawn
+    integer :: num_projection_axes
 
-    num_drawn = size(this % cells)
+    num_projection_axes = size(this % cells)
 
     if (present(solution_labels) .and. present(phic)) then
        call require(size(phic, 1) == this % num_cells, 'one value per mesh cell per label')
@@ -554,7 +554,7 @@ contains
     write(fhandle, '(a)') '<VTKFile type="UnstructuredGrid" version="0.1" byte_order="LittleEndian">'
     write(fhandle, '(a)') '<UnstructuredGrid>'
     write(fhandle, '(a,i0,a,i0,a)') '<Piece NumberOfPoints="', size(this % points, 2), &
-         & '" NumberOfCells="', num_drawn, '">'
+         & '" NumberOfCells="', num_projection_axes, '">'
 
     !-----------------------------------------------------------------!
     ! Write the vertices.
@@ -585,7 +585,7 @@ contains
       !---------------------------------------------------------------!
 
       write(fhandle, '(a)') '<DataArray type="Int32" Name="connectivity" format="ascii">'
-      do icell = 1, num_drawn
+      do icell = 1, num_projection_axes
          ! Correct for paraview's 0-based numbering.
          write(fhandle, '(*(1x,i0))') (this % cell_points(jvertex) - 1, &
               & jvertex = this % first_point(icell), this % first_point(icell + 1) - 1)
@@ -597,7 +597,7 @@ contains
       !---------------------------------------------------------------!
 
       write(fhandle, '(a)') '<DataArray type="Int32" Name="offsets" format="ascii">'
-      do icell = 1, num_drawn
+      do icell = 1, num_projection_axes
          write(fhandle, '(i0)') this % first_point(icell + 1) - 1
       end do
       write(fhandle, '(a)') '</DataArray>'
@@ -607,7 +607,7 @@ contains
       !---------------------------------------------------------------!
 
       write(fhandle, '(a)') '<DataArray type="UInt8" Name="types" format="ascii">'
-      do icell = 1, num_drawn
+      do icell = 1, num_projection_axes
          write(fhandle, '(i0)') this % types(icell)
       end do
       write(fhandle, '(a)') '</DataArray>'
@@ -624,7 +624,7 @@ contains
 
       ! Export the cell volumes.
       write(fhandle, '(a)') '<DataArray type="Float64" Name="volume" format="ascii">'
-      do icell = 1, num_drawn
+      do icell = 1, num_projection_axes
          write(fhandle, '(es24.16)') this % volumes(this % cells(icell))
       end do
       write(fhandle, '(a)') '</DataArray>'
@@ -633,7 +633,7 @@ contains
          do iresult = 1, size(solution_labels)
             write(fhandle, '(a,a,a)') '<DataArray type="Float64" Name="', &
                  & trim(solution_labels(iresult) % str), '" format="ascii">'
-            do icell = 1, num_drawn
+            do icell = 1, num_projection_axes
                write(fhandle, '(es24.16)') phic(this % cells(icell), iresult)
             end do
             write(fhandle, '(a)') '</DataArray>'

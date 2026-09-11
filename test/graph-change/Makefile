@@ -3,7 +3,7 @@ include ../../Makefile.in
 #=====================================================================#
 # Builds two binaries: run (the assertion suite) and refusal (the
 # invalid-input cases). Both link the shared fixture
-# toy_changes.o. -Wtarget-lifetime warns when a pointer may
+# change_fixtures.o. -Wtarget-lifetime warns when a pointer may
 # outlive its target.
 #=====================================================================#
 
@@ -13,11 +13,11 @@ LDFLAGS += -L../../lib/ ../../lib/libufvm.a
 
 all: run refusal
 
-run: toy_changes.o test.o
-	$(F90) toy_changes.o test.o -o $@ $(LDFLAGS)
+run: change_fixtures.o test.o
+	$(F90) change_fixtures.o test.o -o $@ $(LDFLAGS)
 
-refusal: toy_changes.o refusal.o
-	$(F90) toy_changes.o refusal.o -o $@ $(LDFLAGS)
+refusal: change_fixtures.o refusal.o
+	$(F90) change_fixtures.o refusal.o -o $@ $(LDFLAGS)
 
 clean:
 	@rm -f *.o *.mod *.so run refusal

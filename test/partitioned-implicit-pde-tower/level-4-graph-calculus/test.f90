@@ -50,7 +50,7 @@
 
 program partitioned_pde_level_4
 
-  use partitioned_pde_assert , only : report, verdict
+  use partitioned_pde_assert , only : report, assert_all
   use graph_fractal        , only : graph
   use map_set_representation, only : counted_set_representation
   use map_set        , only : set_map
@@ -106,7 +106,7 @@ program partitioned_pde_level_4
   call check_crossing_edge_presence(nfail)
   call check_production_selects_tail_ownership(nfail)
 
-  call verdict(nfail, "level 4")
+  call assert_all(nfail, "level 4")
 
 contains
 
@@ -154,17 +154,17 @@ contains
   !===================================================================!
 
   subroutine check_maps_and_ownership(part, kpart, globals, &
-       & borrowed_global, nfail)
+       & halo_global_index, nfail)
 
     class(directed_graph), intent(in)    :: part
-    integer     , intent(in)    :: kpart, globals(:), borrowed_global
+    integer     , intent(in)    :: kpart, globals(:), halo_global_index
     integer     , intent(inout) :: nfail
 
-    type(graph) :: owned, borrowed, overlap
+    type(graph) :: owned, halo, overlap
     type(set_store)  :: subsets
     character(len=1) :: tag
     integer          :: i
-    logical          :: ok
+    logical          :: satisfied
     type(partition_relation) :: rel
 
     write(tag,'(i1)') kpart
@@ -173,23 +173,23 @@ contains
     type is (stored_directed_graph)
        rel = part % whole_relation()
 
-       ok = part % num_vertices() .eq. size(globals)
+       satisfied = part % num_vertices() .eq. size(globals)
        do i = 1, min(part % num_vertices(), size(globals))
-          ok = ok .and. (rel % global_vertex_index(i) .eq. globals(i))
+          satisfied = satisfied .and. (rel % global_vertex_index(i) .eq. globals(i))
        end do
-       call report(ok, &
+       call report(satisfied, &
             & "G" // tag // "'s local-to-global map is exactly as " // &
             & "declared - local order is not global order", nfail)
 
-       ok = .true.
+       satisfied = .true.
        do i = 1, part % num_vertices()
-          if (rel % global_vertex_index(i) .eq. borrowed_global) then
-             ok = ok .and. (rel % vertex_owner_part(i) .ne. kpart)
+          if (rel % global_vertex_index(i) .eq. halo_global_index) then
+             satisfied = satisfied .and. (rel % vertex_owner_part(i) .ne. kpart)
           else
-             ok = ok .and. (rel % vertex_owner_part(i) .eq. kpart)
+             satisfied = satisfied .and. (rel % vertex_owner_part(i) .eq. kpart)
           end if
        end do
-       call report(ok, &
+       call report(satisfied, &
             & "G" // tag // " owns every local vertex but the one it " // &
             & "borrows: PRESENCE IS NOT OWNERSHIP", nfail)
 
@@ -198,27 +198,27 @@ contains
        call subsets % declare_subobject(owned, &
             & owner_selected(part, rel, kpart, .true.), &
             & 'owned_vertices', part % vertex_set())
-       call subsets % declare_subobject(borrowed, &
+       call subsets % declare_subobject(halo, &
             & owner_selected(part, rel, kpart, .false.), &
             & 'borrowed_vertices', part % vertex_set())
        call subsets % declare_subobject(overlap, &
             & [owner_selected(part, rel, kpart, .true.), &
             &  owner_selected(part, rel, kpart, .false.)], &
             & 'overlap_vertices', part % vertex_set())
-       call report(subsets % num_members_of(owned) .eq. 3 .and. subsets % num_members_of(borrowed) .eq. 1 &
+       call report(subsets % num_members_of(owned) .eq. 3 .and. subsets % num_members_of(halo) .eq. 1 &
             & .and. subsets % num_members_of(overlap) .eq. part % num_vertices(), &
             & "G" // tag // ": three owned, one borrowed, and the " // &
             & "overlap is the whole local carrier", nfail)
 
-       ok = .false.
+       satisfied = .false.
        do i = 1, part % num_vertices()
-          if (subsets % has(borrowed, i)) then
-             ok = rel % global_vertex_index(i) .eq. borrowed_global
+          if (subsets % has(halo, i)) then
+             satisfied = rel % global_vertex_index(i) .eq. halo_global_index
           end if
        end do
-       call report(ok, &
+       call report(satisfied, &
             & "G" // tag // " borrows global vertex " // &
-            & achar(48 + borrowed_global) // ", and only that one", &
+            & achar(48 + halo_global_index) // ", and only that one", &
             & nfail)
 
     end select
@@ -250,11 +250,11 @@ contains
 
     integer, intent(inout) :: nfail
 
-    call report(holds_global_edge(g1, 3) .and. holds_global_edge(g2, 3), &
+    call report(contains_global_edge(g1, 3) .and. contains_global_edge(g2, 3), &
          & "the crossing edge e3 = 3->4 is PRESENT in both parts", &
          & nfail)
-    call report(.not. holds_global_edge(g2, 1) .and. &
-         &      .not. holds_global_edge(g1, 5), &
+    call report(.not. contains_global_edge(g2, 1) .and. &
+         &      .not. contains_global_edge(g1, 5), &
          & "while e1 and e5 each live in one part only", nfail)
 
   end subroutine check_crossing_edge_presence
@@ -271,16 +271,16 @@ contains
     integer, intent(inout) :: nfail
 
     integer :: ge, produced
-    logical :: ok
+    logical :: satisfied
 
-    ok = .true.
+    satisfied = .true.
     do ge = 1, 5
        produced = owner_of_global_edge(g1, ge)
        if (produced .eq. 0) produced = owner_of_global_edge(g2, ge)
-       ok = ok .and. (produced .ne. 0)
-       ok = ok .and. tail_owner % has([ge, produced])
+       satisfied = satisfied .and. (produced .ne. 0)
+       satisfied = satisfied .and. tail_owner % has([ge, produced])
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "every edge_owner_part production reports agrees with " // &
          & "TailOwner = Own^T o Tail, edge for edge", nfail)
 
@@ -302,7 +302,7 @@ contains
 
   end subroutine check_production_selects_tail_ownership
 
-  logical function holds_global_edge(part, ge)
+  logical function contains_global_edge(part, ge)
 
     class(directed_graph), intent(in) :: part
     integer     , intent(in) :: ge
@@ -310,16 +310,16 @@ contains
     integer :: i
     type(partition_relation) :: rel
 
-    holds_global_edge = .false.
+    contains_global_edge = .false.
     select type (part)
     type is (stored_directed_graph)
        rel = part % whole_relation()
        do i = 1, part % num_edges()
-          if (rel % global_edge_index(i) .eq. ge) holds_global_edge = .true.
+          if (rel % global_edge_index(i) .eq. ge) contains_global_edge = .true.
        end do
     end select
 
-  end function holds_global_edge
+  end function contains_global_edge
 
   integer function owner_of_global_edge(part, ge)
 

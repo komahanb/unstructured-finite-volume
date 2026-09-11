@@ -36,7 +36,7 @@
 
 program adjoint_level_6
 
-  use adjoint_assert, only : report, verdict
+  use adjoint_assert, only : report, assert_all
   use adjoint_assert, only : VAR_P, VAR_U, VAR_V
   use adjoint_assert, only : TGT_R1, TGT_R2, TGT_F
   use graph_fractal        , only : graph
@@ -117,7 +117,7 @@ program adjoint_level_6
   call check_orientation_is_identity(nfail)
   call check_one_stored_truth(nfail)
 
-  call verdict(nfail, "level 6")
+  call assert_all(nfail, "level 6")
 
 contains
 
@@ -165,7 +165,7 @@ contains
 
     integer, allocatable :: tab(:,:)
     integer              :: k
-    logical              :: ok
+    logical              :: satisfied
 
     call report(jq_t % num_tuples() .eq. 4 .and. &
          &      jq_t % has([VAR_U, TGT_R1]) .and. &
@@ -175,11 +175,11 @@ contains
          & "J_Q^T = { (u,r1), (u,r2), (v,r1), (v,r2) }", nfail)
 
     call jq % tuples(tab)
-    ok = .true.
+    satisfied = .true.
     do k = 1, size(tab, 2)
-       ok = ok .and. jq_t % has([tab(2, k), tab(1, k)])
+       satisfied = satisfied .and. jq_t % has([tab(2, k), tab(1, k)])
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "and it holds every fact of J_Q, ends swapped: one truth, " // &
          & "read backwards", nfail)
 

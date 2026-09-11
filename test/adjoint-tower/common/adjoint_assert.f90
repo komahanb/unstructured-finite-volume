@@ -29,7 +29,7 @@ module adjoint_assert
   implicit none
 
   private
-  public :: report, verdict
+  public :: report, assert_all
   public :: VAR_P, VAR_U, VAR_V
   public :: TGT_R1, TGT_R2, TGT_F
 
@@ -45,13 +45,13 @@ module adjoint_assert
 
 contains
 
-  subroutine report(ok, label, nfail)
+  subroutine report(satisfied, label, nfail)
 
-    logical         , intent(in)    :: ok
+    logical         , intent(in)    :: satisfied
     character(len=*), intent(in)    :: label
     integer         , intent(inout) :: nfail
 
-    if (ok) then
+    if (satisfied) then
        write(*,'(1x,a,a)') "PASS : ", label
     else
        write(*,'(1x,a,a)') "FAIL : ", label
@@ -60,7 +60,7 @@ contains
 
   end subroutine report
 
-  subroutine verdict(nfail, level)
+  subroutine assert_all(nfail, level)
 
     integer         , intent(in) :: nfail
     character(len=*), intent(in) :: level
@@ -74,6 +74,6 @@ contains
        error stop
     end if
 
-  end subroutine verdict
+  end subroutine assert_all
 
 end module adjoint_assert

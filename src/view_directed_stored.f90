@@ -382,7 +382,7 @@ contains
     do v = 1, nv
        do k = xinc(v), xinc(v + 1) - 1
           e = einc(k)
-          other = far_end(tail(e), head(e), v)
+          other = opposite_endpoint(tail(e), head(e), v)
           if (other >= 1 .and. other /= v) then
              if (last_marked(other) /= v) then
                 last_marked(other) = v
@@ -403,17 +403,17 @@ contains
   ! face records that there is no cell beyond it.
   !===================================================================!
 
-  pure integer function far_end(tail, head, here)
+  pure integer function opposite_endpoint(tail, head, endpoint)
 
-    integer, intent(in) :: tail, head, here
+    integer, intent(in) :: tail, head, endpoint
 
-    if (tail == here) then
-       far_end = head
+    if (tail == endpoint) then
+       opposite_endpoint = head
     else
-       far_end = tail
+       opposite_endpoint = tail
     end if
 
-  end function far_end
+  end function opposite_endpoint
 
   !===================================================================!
   ! Group the edges by one of their endpoints - tails to get the
@@ -520,11 +520,11 @@ contains
     type(csr_relation) :: adjacency
     integer, allocatable :: table(:,:)
     logical :: acyclic
-    integer :: way, e, n
+    integer :: direction, e, n
 
-    way = forward
-    if (present(orientation)) way = orientation
-    if (way /= forward .and. way /= reverse) then
+    direction = forward
+    if (present(orientation)) direction = orientation
+    if (direction /= forward .and. direction /= reverse) then
        error stop 'stored_directed_graph: a loop runs forward or in reverse'
     end if
 
@@ -533,7 +533,7 @@ contains
     do e = 1, this % ne
        if (.not. this % edge_has_head(e)) cycle
        n = n + 1
-       if (way == forward) then
+       if (direction == forward) then
           table(:, n) = [this % edge_tail(e), this % edge_head(e)]
        else
           table(:, n) = [this % edge_head(e), this % edge_tail(e)]

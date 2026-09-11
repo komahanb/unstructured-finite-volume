@@ -2,7 +2,7 @@ include ../../Makefile.in
 
 #=====================================================================#
 # Two programs: the law suite, and the refusals that must die.
-# -Wtarget-lifetime keeps the borrows honest at compile time.
+# -Wtarget-lifetime checks pointer target lifetimes at compile time.
 #=====================================================================#
 
 # Ufvm (-I../../lib for the .mod files)

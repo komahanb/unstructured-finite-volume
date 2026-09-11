@@ -11,10 +11,10 @@
 ! trainable state, K = {y, x} is observed state, U = {e, yhat} is
 ! COMPUTED - so evaluation runs the laws INTO the computed slots
 ! along the DERIVED order [predict, error], and the residual is the
-! VALUE at the home L locates: r = e = w*x - y. Never q(e) - law:
+! VALUE at the member L locates: r = e = w*x - y. Never q(e) - law:
 ! there is no independent q(e). The structure supplies execution
 ! order (restrict, project, compose, admit, interpret, sort); the
-! constitution supplies laws; L supplies the home; the evaluator
+! constitution supplies laws; L supplies the location; the evaluator
 ! hard-codes no slot, no order, no location. The generated map
 ! reproduces Level 7's oracle - w = 0 gives -6, w = 3 gives 0 - and
 ! a second data instance (8, 4) proves data is not constitution.
@@ -29,7 +29,7 @@
 program learning_level_8
 
   use iso_fortran_env, only : dp => REAL64
-  use learning_assert, only : report, verdict
+  use learning_assert, only : report, assert_all
   use learning_assert, only : SLOT_W, SLOT_X, SLOT_YHAT, SLOT_Y, SLOT_E
   use learning_assert, only : OP_PREDICT, OP_ERROR
   use learning_assert, only : PORT_IN1, PORT_IN2, PORT_OUT
@@ -179,7 +179,7 @@ program learning_level_8
   call check_data_witness(nfail)
   call check_order_invariance(nfail)
 
-  call verdict(nfail, "level 8")
+  call assert_all(nfail, "level 8")
 
 contains
 
@@ -297,7 +297,7 @@ contains
   !===================================================================!
   ! The Level-8 preservation law: meaning added /= topology changed.
   ! The structural support is re-derived exactly as Level 6 derived
-  ! it - A from the flow, reachability to the home read from L -
+  ! it - A from the flow, reachability to the located member read from L -
   ! and held against the trainable slots the constituted evaluation
   ! actually READ. No numerical perturbation anywhere.
   !===================================================================!
@@ -309,7 +309,7 @@ contains
     real(dp)             :: r(1)
     integer, allocatable :: touched(:)
     integer, allocatable              :: sup(:)
-    integer              :: ti, nsup, home
+    integer              :: ti, nsup, residual_member
     logical              :: same
 
     allocate(sup(sets % num_members_of(theta)))
@@ -342,10 +342,10 @@ contains
     g_a % branch(1) = known_branch(scell2(1))
     g_a % branch(2) = known_branch(rcell2(1))
 
-    home = located_slot(located, v, sets, ROW_R)
+    residual_member = located_slot(located, v, sets, ROW_R)
     nsup = 0
     do ti = 1, sets % num_members_of(theta)
-       if (reachable(a, sets, sets % member_of(theta, ti), home)) then
+       if (reachable(a, sets, sets % member_of(theta, ti), residual_member)) then
           nsup      = nsup + 1
           sup(nsup) = sets % member_of(theta, ti)
        end if

@@ -9,16 +9,18 @@
 # and everything above it reports SKIPPED. An incomplete tower is
 # not an incorrect tower: only FAIL makes this runner fail.
 #
-# Before anything runs, the import gate audits every calculator
+# Before anything runs, the import group audits every calculator
 # source against its level's allowlist (check_imports.sh): a
 # forbidden `use` is a certification failure, mechanically.
 set -e
 
 here="$(cd "$(dirname "$0")" && pwd)"
 
-"$here/check_imports.sh" || { echo "└── the import gate refused the tower"; exit 1; }
+"$here/check_imports.sh" || { echo "└── the import group refused the tower"; exit 1; }
 
-( cd "$here/../.." && ./build.sh >/dev/null 2>&1 )
+if [ "${UFVM_SKIP_LIBRARY_BUILD:-0}" != 1 ]; then
+    ( cd "$here/../.." && ./build.sh >/dev/null 2>&1 )
+fi
 
 levels=(
   "level-0-carrier          level 0  carriers"
@@ -63,20 +65,20 @@ for entry in "${levels[@]}"; do
         continue
     fi
 
-    ok=1
-    ( cd "$here/$dir" && ./run >run.out 2>&1 ) || ok=0
+    valid=1
+    ( cd "$here/$dir" && ./run >run.out 2>&1 ) || valid=0
 
     # Refusals: a level may carry its own message-checking script;
     # otherwise a bare refusal binary must simply die.
     if [ -x "$here/$dir/check_refusals.sh" ]; then
-        ( cd "$here/$dir" && ./check_refusals.sh >>run.out 2>&1 ) || ok=0
+        ( cd "$here/$dir" && ./check_refusals.sh >>run.out 2>&1 ) || valid=0
     elif [ -x "$here/$dir/refusal" ]; then
         if ( cd "$here/$dir" && ./refusal >>run.out 2>&1 ); then
-            ok=0   # a refusal that survives is a failure
+            valid=0   # a refusal that survives is a failure
         fi
     fi
 
-    if [ "$ok" -eq 1 ]; then
+    if [ "$valid" -eq 1 ]; then
         echo "├── $label $dots PASS"
     else
         echo "├── $label $dots FAIL"

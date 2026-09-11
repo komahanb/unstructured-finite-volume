@@ -39,20 +39,20 @@ program mutation
 
     type(graph), target :: g, ref
     integer             :: from, to
-    logical             :: ok
+    logical             :: satisfied
 
     call ref % declare()
 
-    ok = .true.
+    satisfied = .true.
     do from = BRANCH_NULL, BRANCH_KNOWN
        do to = BRANCH_NULL, BRANCH_KNOWN
-          ok = ok .and. transition(from, to, ref)
+          satisfied = satisfied .and. transition(from, to, ref)
        end do
     end do
-    call check('T  all nine transitions apply, invariant and identity intact', ok)
+    call check('T  all nine transitions apply, invariant and identity intact', satisfied)
 
     ! And a transition may be applied repeatedly without accumulating
-    ! state: the branch holds its current value, not a history.
+    ! state: the branch stores only its current value.
     call g % declare()
     g % branch(1) = unknown_branch()
     g % branch(1) = known_branch(ref)
@@ -186,7 +186,7 @@ program mutation
   !     G(t1) -> compile -> C1
   !
   ! C0 stays internally valid and does not follow G. C1 reflects the
-  ! new structure. Neither carries a graph version: each is the value
+  ! new structure. Neither stores a graph version: each is the value
   ! that compilation returned.
   !===================================================================!
 
@@ -231,7 +231,7 @@ program mutation
     call check('S  C0 is unchanged and internally valid', &
          & all(c0 % rowptr .eq. [1, 2, 4, 5, 5]) .and. &
          & size(c0 % colidx) .eq. c0 % rowptr(5) - 1)
-    call check('S  C0 and C1 are independent values, neither carrying a version', &
+    call check('S  C0 and C1 are independent values, neither storing a version', &
          & size(c0 % colidx) .ne. size(c1 % colidx))
 
   end block snapshot_block
@@ -255,7 +255,7 @@ contains
   ! survive.
   !===================================================================!
 
-  logical function transition(a, b, ref) result(good)
+  logical function transition(a, b, ref) result(invariant_preserved)
 
     integer            , intent(in) :: a, b
     type(graph), target, intent(in) :: ref
@@ -270,7 +270,7 @@ contains
     t % branch(1) = branch_with(b, ref)
     after = t % id()
 
-    good = (t % branch(1) % status() .eq. b)                          .and. &
+    invariant_preserved = (t % branch(1) % status() .eq. b)                          .and. &
          & ((t % branch(1) % status() .eq. BRANCH_KNOWN)               .eqv. &
          &  associated(t % branch(1) % known()))                      .and. &
          & before % matches(after)
@@ -293,12 +293,12 @@ contains
 
   end function branch_with
 
-  subroutine check(label, ok)
+  subroutine check(label, satisfied)
 
     character(len=*), intent(in) :: label
-    logical         , intent(in) :: ok
+    logical         , intent(in) :: satisfied
 
-    if (ok) then
+    if (satisfied) then
        print *, ' PASS : ', label
     else
        print *, ' FAIL : ', label

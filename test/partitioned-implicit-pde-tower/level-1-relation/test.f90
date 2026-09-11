@@ -41,7 +41,7 @@
 
 program partitioned_pde_level_1
 
-  use partitioned_pde_assert , only : report, verdict
+  use partitioned_pde_assert , only : report, assert_all
   use graph_fractal        , only : graph
   use map_set        , only : set_map
   use relation_binary  , only : csr_relation
@@ -72,7 +72,7 @@ program partitioned_pde_level_1
   call check_ownership_extension(nfail)
   call check_orientation_is_signature(nfail)
 
-  call verdict(nfail, "level 1")
+  call assert_all(nfail, "level 1")
 
 contains
 
@@ -115,14 +115,14 @@ contains
     integer, intent(inout) :: nfail
 
     integer :: i
-    logical :: ok
+    logical :: satisfied
 
-    ok = tail % num_tuples() .eq. 5 .and. head % num_tuples() .eq. 5
+    satisfied = tail % num_tuples() .eq. 5 .and. head % num_tuples() .eq. 5
     do i = 1, 5
-       ok = ok .and. tail % has([i, i])
-       ok = ok .and. head % has([i, i + 1])
+       satisfied = satisfied .and. tail % has([i, i])
+       satisfied = satisfied .and. head % has([i, i + 1])
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "Tail and Head hold five facts each: e_i leaves i and " // &
          & "enters i+1", nfail)
 
@@ -142,7 +142,7 @@ contains
     integer, intent(inout) :: nfail
 
     integer :: i, count_owners
-    logical :: ok
+    logical :: satisfied
 
     call report(own % num_tuples() .eq. 6 .and. &
          &      own % has([1, 1]) .and. own % has([1, 2]) .and. &
@@ -152,14 +152,14 @@ contains
 
     ! Every vertex has exactly one owner - the law that will make
     ! reconstruction possible three levels above this one.
-    ok = .true.
+    satisfied = .true.
     do i = 1, sets % num_members_of(v)
        count_owners = 0
        if (own % has([1, sets % member_of(v, i)])) count_owners = count_owners + 1
        if (own % has([2, sets % member_of(v, i)])) count_owners = count_owners + 1
-       ok = ok .and. (count_owners .eq. 1)
+       satisfied = satisfied .and. (count_owners .eq. 1)
     end do
-    call report(ok, &
+    call report(satisfied, &
          & "and every vertex has exactly ONE owner: no vertex is " // &
          & "shared, none is orphaned", nfail)
 

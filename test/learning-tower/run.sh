@@ -11,7 +11,9 @@ here="$(cd "$(dirname "$0")" && pwd)"
 
 "$here/check_imports.sh" || { echo "└── the import gate refused the tower"; exit 1; }
 
-( cd "$here/../.." && ./build.sh >/dev/null 2>&1 )
+if [ "${UFVM_SKIP_LIBRARY_BUILD:-0}" != 1 ]; then
+    ( cd "$here/../.." && ./build.sh >/dev/null 2>&1 )
+fi
 
 levels=(
   "level-0-carrier          level 0  carriers"
@@ -56,17 +58,17 @@ for entry in "${levels[@]}"; do
         continue
     fi
 
-    ok=1
-    ( cd "$here/$dir" && ./run >run.out 2>&1 ) || ok=0
+    execution_succeeded=1
+    ( cd "$here/$dir" && ./run >run.out 2>&1 ) || execution_succeeded=0
     if [ -x "$here/$dir/check_refusals.sh" ]; then
-        ( cd "$here/$dir" && ./check_refusals.sh >>run.out 2>&1 ) || ok=0
+        ( cd "$here/$dir" && ./check_refusals.sh >>run.out 2>&1 ) || execution_succeeded=0
     elif [ -x "$here/$dir/refusal" ]; then
         if ( cd "$here/$dir" && ./refusal >>run.out 2>&1 ); then
-            ok=0
+            execution_succeeded=0
         fi
     fi
 
-    if [ "$ok" -eq 1 ]; then
+    if [ "$execution_succeeded" -eq 1 ]; then
         echo "├── $label $dots PASS"
     else
         echo "├── $label $dots FAIL"

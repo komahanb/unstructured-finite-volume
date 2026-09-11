@@ -548,7 +548,7 @@ real128 into `lib_quad/` and places the binary in `quad/`; the two
 builds coexist.
 
 From the repository root, `./verify.sh` builds the library and application
-once, then runs 37 solver, domain, scheduling, elimination, GTI failure,
+once, then runs 40 solver, domain, scheduling, elimination, GTI failure,
 analytic order and graph suites, including all seven application towers,
 and five derivative demonstrations. `UFVM_SKIP_LIBRARY_BUILD=1 ./verify.sh`
 uses an already rebuilt library and application. Naming checks and their
@@ -1000,3 +1000,8 @@ name pass through to it.
 `memory_shape` takes a part and an instant count, `block` and 41 unless
 given; `randomized_checks` takes a seed and a case count, 7 and 2 unless
 given.
+
+[GTI execution ownership](../doc/gti-execution.md) defines independent
+configuration and solver state, incremental block execution, and common
+forward/reverse dependencies. It also states trajectory lifetime and
+copying constraints.

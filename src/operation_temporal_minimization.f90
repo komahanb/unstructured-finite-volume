@@ -58,8 +58,15 @@ module operation_temporal_minimization
      procedure :: pairing_of
      procedure :: partition
      procedure :: visits
+     procedure :: next_rule
+     procedure :: complete
+     procedure :: num_completed
+     procedure :: advance
+     procedure :: set_rule
+     procedure :: clear_rule
      procedure :: last_dependent_of
      procedure :: released_after
+     procedure :: released_at
      procedure :: solve
 
   end type temporal_minimizer
@@ -133,6 +140,7 @@ contains
 
     call require_schedule(this)
     call this % schedule % pair_with(connection)
+    call this % initialize_residual_history()
 
   end subroutine pair_with
 
@@ -197,6 +205,50 @@ contains
 
   end function visits
 
+  integer function next_rule(this)
+    class(temporal_minimizer), intent(in) :: this
+    call require_schedule(this)
+    next_rule = this % schedule % next_rule()
+  end function next_rule
+
+  logical function complete(this)
+    class(temporal_minimizer), intent(in) :: this
+    call require_schedule(this)
+    complete = this % schedule % complete()
+  end function complete
+
+  integer function num_completed(this)
+    class(temporal_minimizer), intent(in) :: this
+    call require_schedule(this)
+    num_completed = this % schedule % num_completed()
+  end function num_completed
+
+  subroutine advance(this, executed)
+    class(temporal_minimizer), intent(inout) :: this
+    integer, intent(out), optional :: executed
+    call require_schedule(this)
+    call this % schedule % advance(this % graph, executed)
+    if (this % schedule % complete()) then
+       call this % initialize_residual_history()
+       call this % record_result(0.0_dp, this % schedule % num_completed(), SOLVE_EVALUATED)
+    end if
+  end subroutine advance
+
+  subroutine set_rule(this, vertex, rule)
+    class(temporal_minimizer), intent(inout) :: this
+    integer, intent(in) :: vertex
+    class(operation), intent(in) :: rule
+    call require_schedule(this)
+    call this % schedule % set_rule(vertex, rule)
+  end subroutine set_rule
+
+  subroutine clear_rule(this, vertex)
+    class(temporal_minimizer), intent(inout) :: this
+    integer, intent(in) :: vertex
+    call require_schedule(this)
+    call this % schedule % clear_rule(vertex)
+  end subroutine clear_rule
+
   integer function last_dependent_of(this, datum)
 
     class(temporal_minimizer), intent(in) :: this
@@ -217,6 +269,14 @@ contains
     vertices = this % schedule % released_after(step)
 
   end function released_after
+
+  function released_at(this, step) result(vertices)
+    class(temporal_minimizer), intent(in) :: this
+    integer, intent(in) :: step
+    integer, allocatable :: vertices(:)
+    call require_schedule(this)
+    vertices = this % schedule % released_at(step)
+  end function released_at
 
   !===================================================================!
   ! SOLVE. Where a schedule is stated, solving is the traversal of that

@@ -9,9 +9,12 @@ if [ "${UFVM_SKIP_LIBRARY_BUILD:-0}" != 1 ]; then
     ./application/build.sh
 fi
 export UFVM_SKIP_LIBRARY_BUILD=1
+gti_module_dir=$(mktemp -d)
+trap 'rm -rf "$gti_module_dir"' EXIT
+export UFVM_GTI_MODULE_DIR="$gti_module_dir"
 for suite in graph-contract graph-robustness graph-minimization graph-multigrid \
     graph-dense-direct graph-partition graph-field-transport graph-set-view \
-    graph-marching graph-elimination gti-contract time-integration-tower \
+    graph-marching graph-execution graph-elimination gti-contract gti-context gti-execution time-integration-tower \
     adjoint-tower derivative-action-tower fractal-graph fractal-map \
     graph-algebra graph-algorithms graph-binary graph-topology-ownership graph-change graph-characterization \
     graph-constitution graph-differentiation graph-field graph-identity-map \

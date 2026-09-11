@@ -7,13 +7,16 @@ if [ "${UFVM_SKIP_LIBRARY_BUILD:-0}" != 1 ]; then
 fi
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-# Compile the application's modules independently of its main program.
-sed '/^program graph_time_integrator/,$d' "$root/application/module_graph_time_integrator.f90" > "$work/modules.f90"
+module_dir=${UFVM_GTI_MODULE_DIR:-$work}
 compiler=${F90:-gfortran-15}
-"$compiler" -std=f2023 -fcoarray=single -cpp -fbounds-check -O2 -I"$root/lib" -J"$work" \
-    -c "$work/modules.f90" -o "$work/modules.o"
-"$compiler" -std=f2023 -fcoarray=single -fbounds-check -O2 -I"$root/lib" -I"$work" -J"$work" \
-    "$here/test.f90" "$work/modules.o" "$root/lib/libufvm.a" -o "$work/run"
+if [ ! -f "$module_dir/gti_demos.mod" ]; then
+    # verify.sh supplies a fresh private directory shared by the GTI suites.
+    sed '/^program graph_time_integrator/,$d' "$root/application/module_graph_time_integrator.f90" > "$module_dir/modules.f90"
+    "$compiler" -std=f2023 -fcoarray=single -cpp -fbounds-check -O2 -I"$root/lib" -J"$module_dir" \
+        -c "$module_dir/modules.f90" -o "$module_dir/modules.o"
+fi
+"$compiler" -std=f2023 -fcoarray=single -fbounds-check -O2 -I"$root/lib" -I"$module_dir" -J"$work" \
+    "$here/test.f90" "$module_dir/modules.o" "$root/lib/libufvm.a" -o "$work/run"
 "$work/run" accuracy
 "$work/run" status
 for mode in adaptive_failure minimum_step forward reverse linear_forward linear_reverse; do

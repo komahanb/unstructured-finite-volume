@@ -43,12 +43,17 @@ and the separate descending costate solve loop are removed.
 The generic driver constructs its order and release intervals once. It owns
 its completed position, and `advance` performs one rule, its writes, and its
 final reads. `evaluate` uses that same kernel for a complete traversal.
+`advance_with` performs the same step with a rule the caller passes (a
+`vertex_rule`), which the driver tells its vertex and the vertices its
+arguments read before applying it; the rule is not stored in the pairing.
 `released_at` returns only the data whose final reader is that completed
-step. Pairing with new data resets the position. Replacing or clearing one
+step; `expired_at` adds the data the step's vertex writes that no rule
+reads, the one lifetime statement the execution and the derivative passes
+read. Pairing with new data resets the position. Replacing or clearing one
 rule changes neither the immutable dependency graph nor its cached order.
 
-Primal rules borrow pointers into their execution only during `advance`.
-The stored rule is cleared before returning, so no rule retains a pointer to
+Primal rules borrow pointers into their execution only during `advance_with`,
+which returns without storing the rule, so no rule retains a pointer to
 a caller's non-TARGET execution object. A derivative call similarly owns its
 Taylor towers and retained costate derivatives. Forward rules reference
 these arrays, and release follows the same dependency schedule without a
@@ -63,9 +68,14 @@ Streamed Taylor coefficients and each block's functional contribution are
 computed immediately after the primal block. The execution uses the driver's
 release intervals to deallocate both primal state and tangent towers.
 An output with no subsequent reader is consumed by its own block's
-functional evaluation and is released at the end of that step. The
-independent last-reader calculations formerly present in Taylor preparation
-and chain differentiation are removed. Postprocessed forward derivatives use
+functional evaluation and is released at the end of that step, as
+`expired_at` states. The independent last-reader calculations formerly
+present in Taylor preparation, chain differentiation and the execution's
+advance, and the three placement loops (in-neighbourhood, argument count,
+set, advance, clear) are removed. The startup family is registered once,
+`gti_chain % startup_family`; execution ownership stays with the
+application's `chain_execution`, which reads the library's driver for its
+order, its step and its lifetimes and states no schedule of its own. Postprocessed forward derivatives use
 the same release intervals for tangent towers.
 
 Reverse derivatives retain primal state, tangent towers and lower-order

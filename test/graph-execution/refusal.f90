@@ -3,12 +3,13 @@ program execution_refusal
   use operation_driver, only : driver, rule_graph, data_graph
   use view_read_write, only : bipartite_digraph
   use view_directed_stored, only : stored_directed_graph
-  use linear_rules, only : linear_rule
+  use linear_rules, only : linear_rule, placed_rule
   implicit none
   type(driver) :: schedule
   type(stored_directed_graph) :: domain
   type(rule_graph) :: rules
   type(data_graph) :: values
+  type(placed_rule) :: rule
   character(len=32) :: case_name
 
   call get_command_argument(1, case_name)
@@ -19,6 +20,8 @@ program execution_refusal
   select case(trim(case_name))
   case('unpaired_advance')
      call schedule % advance(domain)
+  case('unpaired_advance_with')
+     call schedule % advance_with(domain, rule)
   case('unpaired_set')
      call schedule % set_rule(1, linear_rule([real(dp) ::], 0.0_dp))
   case('unpaired_clear')

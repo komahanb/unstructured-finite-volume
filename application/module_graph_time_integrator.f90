@@ -4771,7 +4771,7 @@ module gti_chain
   use field_calculus   , only : field, FIELD_REAL
   use operation_action , only : operation, emit, contract
   use operation_action , only : binding, is_bound, bound_value
-  use operation_driver , only : driver, rule_graph, data_graph, pairing
+  use operation_driver , only : driver, rule_graph, data_graph, pairing, vertex_rule
   use operation_temporal_minimization, only : temporal_minimizer
   use view_read_write  , only : bipartite_digraph, FIRST_PART, SECOND_PART
   use view_directed    , only : forward
@@ -4890,7 +4890,7 @@ module gti_chain
 
   end type block_state
 
-  type, extends(operation) :: block_rule
+  type, extends(vertex_rule) :: block_rule
 
      type(chain_block), pointer :: chain(:) => null()
      type(expansion)  , pointer :: tower    => null()
@@ -4904,7 +4904,7 @@ module gti_chain
      ! count and the offsets are the block's own once it is built
      type(block_layout) :: layout
 
-     integer  :: at = 0, in_tower = 0, degrees = 0
+     integer  :: in_tower = 0, degrees = 0
      real(dp) :: fraction = 1.0_dp, design = 0.0_dp
      logical  :: counted = .true.
 
@@ -4951,7 +4951,7 @@ module gti_chain
   ! The arrays are owned by one derivative call. Its scheduled rules
   ! reference them until that call returns; the dependency relation also
   ! determines the release of each forward tangent tower.
-  type, extends(operation) :: derivative_rule
+  type, extends(vertex_rule) :: derivative_rule
      type(chain_block), pointer :: chain(:) => null()
      type(tangent_tower), pointer :: w(:) => null()
      class(march_context), pointer :: context => null()
@@ -4964,9 +4964,8 @@ module gti_chain
      type(expression) :: physics
      type(expression), allocatable :: functionals(:)
      integer, pointer :: versions(:) => null()
-     integer, allocatable :: read_blocks(:)
      real(dp) :: design = 0.0_dp
-     integer :: at = 0, degrees = 0, nd = 0, top = 0, order = 0, from_size = 0, to_size = 0
+     integer :: degrees = 0, nd = 0, top = 0, order = 0, from_size = 0, to_size = 0
      integer :: functional = 0, rank = 0, degree = 0
      logical :: transposed = .false.
    contains
@@ -5120,7 +5119,7 @@ contains
     if (with_startup) then
        fine = [0.0_dp, (this % dt(1 + (k - 1) / r + 1) / real(r, dp), k = 1, (given - 1) * r)]
        design_field = fine(2:)
-       allocate(every(1) % scheme, source=crouzeix_three_stage())
+       allocate(every(1) % scheme, source=startup_family())
        layouts(1) = block_layout(1, (given - 1) * r + 1, 1, &
             & given=every(1) % scheme % history_depth(degrees - 1), nodes=m)
        spans(1) = (given - 1) * r + 1
@@ -5149,7 +5148,6 @@ contains
     incidence = dependency_incidence(layouts)
     allocate(rules % at(n), values % at(n))
     do b = 1, n
-       this % rules(b) % at = b
        this % rules(b) % in_tower = b
        this % rules(b) % degrees = degrees
        this % rules(b) % layout = layouts(b)
@@ -5191,19 +5189,17 @@ contains
     rule % tower => this % tower
     rule % context => this % context
     if (allocated(this % taylor)) rule % taylor => this % taylor
-    call this % schedule % set_rule(b, rule)
     call tally_enter(at_horizon)
-    call this % schedule % advance()
+    call this % schedule % advance_with(rule)
     call tally_leave()
-    call this % schedule % clear_rule(b)
     this % achieved = max(this % achieved, this % chain(b) % final_imbalance % norm)
     if (this % schedule % num_completed() == 1) this % final_imbalance = this % chain(b) % final_imbalance
     if (this % final_imbalance % converged .and. .not. this % chain(b) % final_imbalance % converged) &
          & this % final_imbalance = this % chain(b) % final_imbalance
     if (allocated(this % taylor)) then
-       released = this % schedule % released_at(this % schedule % num_completed())
-       ! The block's own functional has consumed an output with no later reader.
-       if (this % schedule % last_dependent_of(b) == 0) released = [released, b]
+       ! the block's final reads, and its own state when no later
+       ! block reads it: its functional contribution is already taken
+       released = this % schedule % expired_at(this % schedule % num_completed())
        do i = 1, size(released)
           h = released(i)
           if (allocated(this % taylor % w(h) % w)) then
@@ -5549,7 +5545,7 @@ contains
     class(block_rule), intent(in) :: this
     character(len=:), allocatable :: name
     character(len=12) :: digits
-    write(digits,'(i0)') this % at
+    write(digits,'(i0)') this % vertex
     name = 'block ' // trim(digits) // ' of the chain'
   end function block_rule_name
 
@@ -5617,7 +5613,7 @@ contains
     end if
 
     ! an unallocated transfer is an absent argument
-    call one_block(this % chain, this % at, this % tower, this % in_tower, this % scheme, &
+    call one_block(this % chain, this % vertex, this % tower, this % in_tower, this % scheme, &
          & this % physics, this % degrees, this % layout, this % dt, this % coarse_step, &
          & this % fraction, this % counted, this % design, this % initial, achieved, &
          & final_imbalance, transferred_values, context=this % context)
@@ -5626,19 +5622,19 @@ contains
     ! specifies nothing about how many points a state stores, and the
     ! two counts are unrelated. Substituting one for the other would
     ! give a field a domain it does not have.
-    state_domain = stored_directed_graph(this % chain(this % at) % rows % num_points(), &
+    state_domain = stored_directed_graph(this % chain(this % vertex) % rows % num_points(), &
          & tails=[integer ::], heads=[integer ::])
     states = typed_field_domain(state_domain % vertex_set(), &
-         & size(this % chain(this % at) % state))
-    state % stored_field = states % state(this % chain(this % at) % state)
-    state % at     = this % at
-    state % layout = this % chain(this % at) % block_layout
+         & size(this % chain(this % vertex) % state))
+    state % stored_field = states % state(this % chain(this % vertex) % state)
+    state % at     = this % vertex
+    state % layout = this % chain(this % vertex) % block_layout
     call emit(state, output)
     ! THE PIPELINED DERIVATIVE. With a context attached, the block's
     ! tower is solved immediately after the block, and every datum
     ! with no later reader is deallocated.
     if (associated(this % taylor)) then
-       call taylor_block(this % taylor, this % chain, this % at, this % context)
+       call taylor_block(this % taylor, this % chain, this % vertex, this % context)
     end if
   end subroutine block_rule_apply
 
@@ -5855,7 +5851,7 @@ contains
     type(bipartite_digraph) :: incidence
     type(block_layout), allocatable :: layouts(:)
     type(stored_directed_graph) :: domain
-    integer, allocatable :: reads(:), released(:)
+    integer, allocatable :: released(:)
     integer :: h
     type(march_context), target :: local_context
     class(march_context), pointer :: active
@@ -5943,16 +5939,9 @@ contains
     schedule = driver(rule, incidence, orientation=forward_pass)
     call schedule % pair_with(rules % pair(values))
     do while (.not. schedule % complete())
-       b = schedule % next_rule()
-       rule % at = b
-       call incidence % in_neighbourhood(BLOCKS, b, reads)
-       call rule % declare_arguments(size(reads))
-       call schedule % set_rule(b, rule)
-       call schedule % advance(domain)
-       call schedule % clear_rule(b)
+       call schedule % advance_with(domain, rule)
        if (forward) then
-          released = schedule % released_at(schedule % num_completed())
-          if (schedule % last_reader_of(b) == 0) released = [released, b]
+          released = schedule % expired_at(schedule % num_completed())
           do h = 1, size(released)
              p = released(h)
              if (.not. allocated(w(p) % w)) cycle
@@ -6001,14 +5990,7 @@ contains
              rule % degree = k
              call schedule % pair_with(rules % pair(values))
              do while (.not. schedule % complete())
-                b = schedule % next_rule()
-                rule % at = b
-                call incidence % in_neighbourhood(BLOCKS, b, reads)
-                rule % read_blocks = reads
-                call rule % declare_arguments(size(reads))
-                call schedule % set_rule(b, rule)
-                call schedule % advance(domain)
-                call schedule % clear_rule(b)
+                call schedule % advance_with(domain, rule)
              end do
           end do
        end do
@@ -6057,6 +6039,16 @@ contains
        end do
     end if
   end subroutine chain_derivative
+  !===================================================================!
+  ! THE STARTUP FAMILY: the stage family that integrates the history a
+  ! multistep first family reaches back over, on the refined steps of
+  ! the startup block. The one place the datum is registered; the
+  ! execution reads it and states no family of its own.
+  !===================================================================!
+  function startup_family() result(scheme)
+    type(family) :: scheme
+    scheme = crouzeix_three_stage()
+  end function startup_family
   pure function derivative_rule_name(this) result(name)
     class(derivative_rule), intent(in) :: this
     character(len=:), allocatable :: name
@@ -6077,7 +6069,7 @@ contains
     integer, allocatable :: s(:), read_order(:)
     integer :: b, n, p, child, i, j, index
     associate (unused_graph => input_graph); end associate
-    b = this % at
+    b = this % vertex
     if (.not. this % transposed) then
        call forward_block(this % chain, b, this % physics, this % functionals, this % degrees, &
             & this % design, this % nd, this % top, this % order, this % from_size, this % to_size, &
@@ -6095,13 +6087,13 @@ contains
     ! Read child costates in descending block order, reproducing the
     ! accumulation order of reverse substitution independently of how
     ! the incidence query orders its argument slots.
-    if (.not. allocated(this % read_blocks)) error stop 'gti_chain: a costate rule states its input blocks'
-    read_order = [(i, i = 1, size(this % read_blocks))]
+    if (.not. allocated(this % reads)) error stop 'gti_chain: a costate rule states its input blocks'
+    read_order = [(i, i = 1, size(this % reads))]
     do i = 2, size(read_order)
        index = read_order(i)
        j = i - 1
        do while (j >= 1)
-          if (this % read_blocks(read_order(j)) >= this % read_blocks(index)) exit
+          if (this % reads(read_order(j)) >= this % reads(index)) exit
           read_order(j + 1) = read_order(j)
           j = j - 1
        end do
@@ -6112,7 +6104,7 @@ contains
     end if
     do i = 1, size(read_order)
        index = read_order(i)
-       child = this % read_blocks(index)
+       child = this % reads(index)
        if (.not. is_bound(inputs, this % argument(index))) then
           error stop 'gti_chain: every child costate is bound before reverse substitution'
        end if

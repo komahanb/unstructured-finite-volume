@@ -21,7 +21,7 @@ module operation_temporal_minimization
   use operation_action      , only : operation
   use operation_minimization, only : minimizer, state, restrict, compact_labels
   use operation_minimization, only : solve_result, SOLVE_EVALUATED, SOLVE_STAGNATED, SOLVE_INNER_FAILED
-  use operation_driver      , only : driver, pairing
+  use operation_driver      , only : driver, pairing, vertex_rule
   use operation_residual    , only : residual_operator
   use field_calculus        , only : FIELD_REAL
   use field_stored          , only : stored_field
@@ -60,11 +60,12 @@ module operation_temporal_minimization
      procedure :: complete
      procedure :: num_completed
      procedure :: advance
+     procedure :: advance_with
      procedure :: set_rule
      procedure :: clear_rule
-     procedure :: last_dependent_of
      procedure :: released_after
      procedure :: released_at
+     procedure :: expired_at
      procedure :: solve
 
   end type temporal_minimizer
@@ -288,6 +289,18 @@ contains
     end if
   end subroutine advance
 
+  subroutine advance_with(this, rule, executed)
+    class(temporal_minimizer), intent(inout) :: this
+    class(vertex_rule), intent(inout) :: rule
+    integer, intent(out), optional :: executed
+    call require_schedule(this)
+    call this % schedule % advance_with(this % graph, rule, executed)
+    if (this % schedule % complete()) then
+       call this % initialize_residual_history()
+       call this % record_result(0.0_dp, this % schedule % num_completed(), SOLVE_EVALUATED)
+    end if
+  end subroutine advance_with
+
   subroutine set_rule(this, vertex, rule)
     class(temporal_minimizer), intent(inout) :: this
     integer, intent(in) :: vertex
@@ -302,16 +315,6 @@ contains
     call require_schedule(this)
     call this % schedule % clear_rule(vertex)
   end subroutine clear_rule
-
-  integer function last_dependent_of(this, datum)
-
-    class(temporal_minimizer), intent(in) :: this
-    integer                  , intent(in) :: datum
-
-    call require_schedule(this)
-    last_dependent_of = this % schedule % last_reader_of(datum)
-
-  end function last_dependent_of
 
   function released_after(this, step) result(vertices)
 
@@ -331,6 +334,14 @@ contains
     call require_schedule(this)
     vertices = this % schedule % released_at(step)
   end function released_at
+
+  function expired_at(this, step) result(vertices)
+    class(temporal_minimizer), intent(in) :: this
+    integer, intent(in) :: step
+    integer, allocatable :: vertices(:)
+    call require_schedule(this)
+    vertices = this % schedule % expired_at(step)
+  end function expired_at
 
   !===================================================================!
   ! SOLVE. Where a schedule is stated, solving is the traversal of that

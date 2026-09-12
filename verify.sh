@@ -16,7 +16,7 @@ trap 'rm -rf "$gti_module_dir"' EXIT
 export UFVM_GTI_MODULE_DIR="$gti_module_dir"
 for suite in graph-contract graph-robustness graph-minimization graph-multigrid \
     graph-dense-direct graph-partition graph-field-transport graph-set-view \
-    graph-marching graph-execution graph-elimination gti-contract gti-context gti-execution graph-benchmark time-integration-tower \
+    graph-marching graph-execution graph-elimination gti-contract gti-context gti-execution gti-concurrent graph-benchmark time-integration-tower \
     adjoint-tower derivative-action-tower fractal-graph fractal-map \
     graph-algebra graph-algorithms graph-binary graph-topology-ownership graph-change graph-characterization \
     graph-constitution graph-differentiation graph-field graph-identity-map \

@@ -1,12 +1,13 @@
 !=====================================================================!
 ! REFUSALS OF THE RELATIONAL VIEW
 !
-! Three laws, each of which must terminate the program with its own
-! message. Driven by run.sh.
+! Each law must terminate the program with its own message. Driven by
+! run.sh.
 !
 ! The binding is storage, and its laws are storage laws: an element it
-! does not hold cannot be resolved, and a binding that has lent
-! pointers cannot be replaced.
+! does not hold cannot be resolved, a binding with more than one owner
+! cannot be extended, and a binding whose objects were released by a
+! bitwise twin cannot be read.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -77,24 +78,40 @@ program refusal
      ! borrowers then read storage it had already freed.
      !================================================================!
 
-  case ('assign')
+  case ('sharedbind')
      block
        type(graph), target      :: e1, e2
        type(relational_binding) :: b, d
        type(graph)        :: s
        type(stored_relation)    :: r1, r2
-       class(relation), pointer :: p
        type(set_map)     :: sets
-       type(label_map)     :: labels
        call e1 % declare(); call e2 % declare()
        call s % declare()
        call sets % bind(s, counted_set_representation(4))
        r1 = stored_relation('R1', [s], reshape([1, 2], [1, 2]), sets)
        r2 = stored_relation('R2', [s], reshape([3, 4], [1, 2]), sets)
        call b % bind_relation(e1, r1)
-       call d % bind_relation(e2, r2)
-       p => b % relation_for(e1)                      ! b has lent
-       b = d
+       d = b                                          ! two owners
+       call b % bind_relation(e2, r2)                 ! extension refused
+     end block
+
+  case ('releasedtwin')
+     block
+       type(graph), target      :: e1
+       type(relational_binding) :: b
+       type(relational_binding), allocatable :: twin
+       type(graph)        :: s
+       type(stored_relation)    :: r1
+       class(relation), pointer :: p
+       type(set_map)     :: sets
+       call e1 % declare()
+       call s % declare()
+       call sets % bind(s, counted_set_representation(4))
+       r1 = stored_relation('R1', [s], reshape([1, 2], [1, 2]), sets)
+       call b % bind_relation(e1, r1)
+       allocate(twin, source=b)                       ! not an owner
+       deallocate(twin)                               ! releases b's binding
+       p => b % relation_for(e1)
        print *, p % name()
      end block
 

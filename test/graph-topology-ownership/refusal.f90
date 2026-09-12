@@ -2,10 +2,15 @@ program topology_refusal
   use graph_fractal, only : graph
   use view_directed_stored, only : stored_directed_graph
   use relation_binary, only : integer_fibre
+  use view_level, only : level_storage
   implicit none
   type(stored_directed_graph) :: incidence
   type(integer_fibre) :: fibre
   type(graph) :: undeclared_domain
+  type(graph), pointer :: node
+  type(level_storage) :: hierarchy, shared
+  type(level_storage), allocatable :: twin
+  integer :: at
   integer, target :: members(2) = [3,7]
   character(len=32) :: case_name
 
@@ -69,6 +74,17 @@ program topology_refusal
      print *, fibre % member(3)
   case('empty_fibre_index')
      print *, fibre % member(1)
+  case('hierarchy_shared_extension')
+     at = hierarchy % allocate_node()
+     shared = hierarchy
+     at = hierarchy % allocate_node()
+  case('hierarchy_released_twin')
+     at = hierarchy % allocate_node()
+     allocate(twin, source=hierarchy)
+     deallocate(twin)
+     node => hierarchy % node(at)
+  case('hierarchy_empty_index')
+     node => hierarchy % node(1)
   case default
      error stop 'unknown refusal case'
   end select

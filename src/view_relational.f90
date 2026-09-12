@@ -19,8 +19,9 @@
 !
 ! THE STORAGE LAW.
 !
-!     relational_binding is not assignable; bind_* preserves every
-!     outstanding object pointer until the binding is destroyed.
+!     a binding is a counted reference to its objects; bind_* preserves
+!     every outstanding object pointer while any owner of the binding
+!     remains.
 !
 ! That law has a cost. A row stores a POINTER to an individually
 ! allocated object, never the object itself: when the row array grows,
@@ -30,16 +31,19 @@
 ! reads freed storage: incorrect values first, a fatal error next. See
 ! test/graph-relational/lifetime.f90, which checks this law on every run.
 !
-! ASSIGNMENT IS REJECTED, at run time, because no Fortran mechanism
-! prohibits it at compile time; four were compiled and measured in
-! test/graph-relational/fortran-assignment. Extension and replacement
-! are different operations: bind_* extends a binding and preserves every
-! pointer it has returned, and no replacement can.
-!
-! The rejecting procedure takes its left-hand side INTENT(INOUT), not
-! INTENT(OUT), because an INTENT(OUT) dummy of a finalizable type is
-! finalized on entry - which would finalize the binding before the
-! rejection executes.
+! ASSIGNMENT BINDS ONE MORE OWNER of the same objects
+! (util_counted_storage); the last owner's finalization deallocates
+! them. No Fortran mechanism prohibits assignment at compile time;
+! four were compiled and measured in
+! test/graph-relational/fortran-assignment, and a deep copy was
+! measured and rejected (test/graph-relational/lifetime.f90).
+! Extension and replacement are different operations: bind_* extends
+! a binding with one owner and preserves every pointer it has
+! returned; a binding with more than one owner is immutable and
+! bind_* refuses. A copy made without defined assignment (allocate
+! with source=, a structure constructor, polymorphic assignment) is
+! not an owner: the first of the two to be finalized releases the
+! binding and the other is refused at its next access.
 !
 ! Because a row stores a pointer rather than the object, the pointer
 ! this module returns does not point into the binding. The binding
@@ -88,6 +92,7 @@ module view_relational
 
   use graph_fractal    , only : graph, branch
   use token_identity   , only : token
+  use util_counted_storage, only : counted_storage, counted_reference
   use map_token_rows   , only : identity_rows
   use relation_finitary, only : relation
   use view_sequence    , only : sequence_num_elements, sequence_element, &
@@ -104,7 +109,8 @@ module view_relational
   !===================================================================!
   ! Owned storage. The elements are the keys of two identity-row
   ! tables; the objects run parallel to the rows, each allocated
-  ! separately and referenced by pointer.
+  ! separately and referenced by pointer. The cell is jointly owned
+  ! by every binding value assigned from it.
   !===================================================================!
 
   type :: bound_set
@@ -115,11 +121,21 @@ module view_relational
      class(relation), pointer :: object => null()
   end type bound_relation
 
+  type, extends(counted_storage) :: bound_objects
+
+     type(identity_rows)              :: set_rows, relation_rows
+     type(bound_set)     , allocatable :: sets(:)
+     type(bound_relation), allocatable :: relations(:)
+
+   contains
+
+     procedure :: clear => release_objects
+
+  end type bound_objects
+
   type :: relational_binding
 
-     type(identity_rows)              , private :: set_rows, relation_rows
-     type(bound_set)     , allocatable, private :: sets(:)
-     type(bound_relation), allocatable, private :: relations(:)
+     type(counted_reference), private :: reference
 
    contains
 
@@ -127,11 +143,10 @@ module view_relational
      procedure :: bind_relation
      procedure :: set_for
      procedure :: relation_for
+     procedure :: num_owners
 
-     procedure, private :: refuse_assignment
-     generic :: assignment(=) => refuse_assignment
-
-     final :: release_binding
+     procedure, private :: cell
+     procedure, private :: extended
 
   end type relational_binding
 
@@ -155,6 +170,7 @@ contains
     type(graph)              , intent(in)    :: element
     type(graph)              , intent(in)    :: object
 
+    type(bound_objects), pointer :: objects
     integer :: at
 
     ! An undeclared token does not match itself.
@@ -162,13 +178,14 @@ contains
        error stop 'view_relational: a binding stores identified objects'
     end if
 
-    at = this % set_rows % append(element % id(), &
+    objects => this % extended()
+    at = objects % set_rows % append(element % id(), &
          & 'view_relational: a binding is keyed on assigned identity', &
          & 'view_relational: an element is bound once')
 
-    if (.not. allocated(this % sets)) allocate(this % sets(0))
-    this % sets = [this % sets, bound_set()]
-    allocate(this % sets(at) % object, source=object)
+    if (.not. allocated(objects % sets)) allocate(objects % sets(0))
+    objects % sets = [objects % sets, bound_set()]
+    allocate(objects % sets(at) % object, source=object)
 
   end subroutine bind_set
 
@@ -178,6 +195,7 @@ contains
     type(graph)              , intent(in)    :: element
     class(relation)          , intent(in)    :: object
 
+    type(bound_objects), pointer :: objects
     integer :: at
 
     if (.not. object % same_as(object)) then
@@ -188,15 +206,73 @@ contains
        error stop 'view_relational: a binding owns whole relations; a view cannot be bound'
     end if
 
-    at = this % relation_rows % append(element % id(), &
+    objects => this % extended()
+    at = objects % relation_rows % append(element % id(), &
          & 'view_relational: a binding is keyed on assigned identity', &
          & 'view_relational: an element is bound once')
 
-    if (.not. allocated(this % relations)) allocate(this % relations(0))
-    this % relations = [this % relations, bound_relation()]
-    allocate(this % relations(at) % object, source=object)
+    if (.not. allocated(objects % relations)) allocate(objects % relations(0))
+    objects % relations = [objects % relations, bound_relation()]
+    allocate(objects % relations(at) % object, source=object)
 
   end subroutine bind_relation
+
+  !===================================================================!
+  ! The cell this binding is bound to. A binding whose objects were
+  ! released stops the program: the last owner deallocated them, or
+  ! this value is a bitwise copy whose twin released the binding.
+  ! A binding never bound has no cell.
+  !===================================================================!
+
+  function cell(this) result(objects)
+
+    class(relational_binding), intent(in) :: this
+    type(bound_objects), pointer          :: objects
+
+    class(counted_storage), pointer :: storage
+
+    objects => null()
+    if (this % reference % released()) then
+       error stop 'view_relational: this binding''s objects have been released'
+    end if
+    storage => this % reference % storage()
+    if (.not. associated(storage)) return
+    select type (storage)
+    type is (bound_objects)
+       objects => storage
+    end select
+
+  end function cell
+
+  !===================================================================!
+  ! The cell to extend: acquired by the first bind_*; a binding with
+  ! more than one owner is immutable and stops the program.
+  !===================================================================!
+
+  function extended(this) result(objects)
+
+    class(relational_binding), intent(inout) :: this
+    type(bound_objects), pointer             :: objects
+
+    type(bound_objects) :: template
+
+    if (this % reference % num_owners() > 1) then
+       error stop 'view_relational: a binding is extended by its sole owner'
+    end if
+    if (.not. this % reference % live()) call this % reference % acquire(template)
+    objects => this % cell()
+
+  end function extended
+
+  ! The number of binding values bound to these objects; zero for a
+  ! binding without any.
+  pure integer function num_owners(this)
+
+    class(relational_binding), intent(in) :: this
+
+    num_owners = this % reference % num_owners()
+
+  end function num_owners
 
   !===================================================================!
   ! Lookup by element identity, returning a reference into owned
@@ -209,7 +285,13 @@ contains
     type(graph)              , intent(in) :: element
     type(graph), pointer                  :: s
 
-    s => this % sets(this % set_rows % row(element % id(), &
+    type(bound_objects), pointer :: objects
+
+    objects => this % cell()
+    if (.not. associated(objects)) then
+       error stop 'view_relational: no member set is bound to that element'
+    end if
+    s => objects % sets(objects % set_rows % row(element % id(), &
          & 'view_relational: no member set is bound to that element')) % object
 
   end function set_for
@@ -220,7 +302,13 @@ contains
     type(graph)              , intent(in) :: element
     class(relation), pointer              :: r
 
-    r => this % relations(this % relation_rows % row(element % id(), &
+    type(bound_objects), pointer :: objects
+
+    objects => this % cell()
+    if (.not. associated(objects)) then
+       error stop 'view_relational: no relation is bound to that element'
+    end if
+    r => objects % relations(objects % relation_rows % row(element % id(), &
          & 'view_relational: no relation is bound to that element')) % object
 
   end function relation_for
@@ -231,23 +319,15 @@ contains
   ! INTENT(OUT) dummy would be finalized before this body executed.
   !===================================================================!
 
-  subroutine refuse_assignment(lhs, rhs)
-
-    class(relational_binding), intent(inout) :: lhs
-    type(relational_binding) , intent(in)    :: rhs
-
-    error stop 'view_relational: a relational_binding is not assignable'
-
-  end subroutine refuse_assignment
-
   !===================================================================!
-  ! Release. Individually allocated objects are individually freed.
+  ! Release every object of a cell, when its last owner is finalized.
   !===================================================================!
 
-  subroutine release_binding(this)
+  subroutine release_objects(this)
 
-    type(relational_binding), intent(inout) :: this
+    class(bound_objects), intent(inout) :: this
 
+    type(identity_rows) :: no_rows
     integer :: k
 
     do k = 1, this % set_rows % num_rows()
@@ -258,12 +338,15 @@ contains
        if (associated(this % relations(k) % object)) deallocate(this % relations(k) % object)
     end do
 
-  end subroutine release_binding
+    if (allocated(this % sets)) deallocate(this % sets)
+    if (allocated(this % relations)) deallocate(this % relations)
+    ! the cell is recycled by the next acquisition: its key tables are
+    ! emptied with its objects
+    this % set_rows = no_rows
+    this % relation_rows = no_rows
 
-  !===================================================================!
-  ! The view. Counting and indexing are the sequence view's; this
-  ! module only names the two branches and resolves the binding.
-  !===================================================================!
+  end subroutine release_objects
+
 
   integer function num_member_sets(g) result(n)
 
@@ -321,13 +404,17 @@ contains
     type(relational_binding), intent(in) :: b
     type(graph)             , intent(in) :: s
 
+    type(bound_objects), pointer :: objects
     integer :: k
 
     stored = .false.
 
-    do k = 1, b % set_rows % num_rows()
-       if (b % sets(k) % object % same_as(s)) then
-          stored = sequence_has_key(g % branch(1), b % set_rows % key(k))
+    objects => b % cell()
+    if (.not. associated(objects)) return
+
+    do k = 1, objects % set_rows % num_rows()
+       if (objects % sets(k) % object % same_as(s)) then
+          stored = sequence_has_key(g % branch(1), objects % set_rows % key(k))
           return
        end if
     end do

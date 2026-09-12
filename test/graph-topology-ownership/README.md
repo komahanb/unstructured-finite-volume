@@ -12,6 +12,11 @@
   storage, pointer-valued relation results, and mutable or `TARGET` readers.
 - Constructor refusal of malformed extents, invalid endpoints, invalid partition
   indices or identities, noninjective partition maps, and invalid fibre indices.
+- Counted ownership of a hierarchy (`level_storage`): copies by assignment,
+  container, array element, function result and block scope are owners of
+  the same nodes with the same identities; either of source and destination
+  may be destroyed first; a `source=` copy observes the count and is not an
+  owner; a shared hierarchy is not extended; a released hierarchy is refused.
 - Zero dynamic allocations while reading actual fibre members, fibre arrays,
   explicit fibre contexts and the complete incoming index. An owning-copy measurement must
   allocate, demonstrating that the allocation counter is active.

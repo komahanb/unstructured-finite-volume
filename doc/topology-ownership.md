@@ -114,8 +114,10 @@ program is the suite's `check_counted_storage`):
 | function result assigned to a scalar, a container or a component; `allocate(source=function())` | owner |
 | `allocate(mold=)` followed by a dispatching copy of the same dynamic type | owner |
 | structure constructor with a live reference component | the constructed object owns; the source keeps reading while the copy lives, and is released with it |
-| `allocate(source=variable)`, scalar, container, `class(base)`, `class(*)` | not an owner: a bitwise copy with its twin's serial; whichever twin is finalized first releases the binding, the other is not live afterwards |
+| `allocate(source=variable)`, scalar, container, `class(base)`, `class(*)` | not an owner: a bitwise copy with its twin's serial; whichever twin is finalized first, or assigned over first, releases the binding, the other is not live afterwards |
 | polymorphic intrinsic assignment `class(base), allocatable :: b; b = a` | the same bitwise copy, whether or not `b` was allocated |
+| intrinsic assignment of a container whose reference lies inside an allocatable derived-type component, scalar or array (`type(t), allocatable :: c; ... b = a`) | the same bitwise copy: the component's defined assignment is not invoked (measured for R05, `artifacts/remaining-work-2026-09-11/r05/mechanisms/`); a reference is reached only through nonallocatable components |
+| `allocate(source=function())` of a container holding the reference inside nonallocatable components | the result is finalized and the copy is not live; assign the function result instead |
 | reallocating `arr = [arr, x]` of a type containing the reference | gfortran 15.2 runtime bounds failure |
 | assignment to an unallocated allocatable scalar of the type | gfortran 15.2 segmentation fault: allocate first |
 | whole-array assignment, array constructor or array function result reaching the reference through two component levels | gfortran 15.2 internal compiler error; element assignment compiles and binds |
@@ -130,7 +132,33 @@ assignment and function result. Registration by binding serial, with
 idempotent release, is correct for every mechanism that invokes
 defined assignment and never reads released storage under the others.
 
-The stored graph does not use the primitive yet. The driver copies
+### Shared hierarchies and bindings
+
+Two library types own their storage through the primitive. A
+hierarchy (`level_storage`, view_level) is a counted reference to a
+cell of separately allocated level nodes; a relational binding
+(`relational_binding`, view_relational) is a counted reference to a
+cell of separately allocated member sets and relations with their
+identity-row tables. For both, assignment binds one more owner of the
+same objects: a copy reads the same nodes and objects, with the same
+identities, and a pointer lent by one owner remains valid while any
+owner lives. The objects are deallocated with the last owner and the
+cell is recycled. A cell with more than one owner is immutable:
+`allocate_node`, `member_list`, `assemble`, `couple`, `bind_set` and
+`bind_relation` stop the program with `... is extended by its sole
+owner`; once the other owners are gone the remaining one may extend
+again. Reading through a binding that was bound and is no longer live
+stops the program with `... has been released`. `num_owners()` reports
+the count. These two types therefore follow the mechanism table above:
+a copy through a container, an array element, a function result, a
+block local or an allocated allocatable is an owner; a copy by
+`allocate(source=variable)`, structure constructor or polymorphic
+assignment is a twin of one binding. The refusal of assignment and
+the finalizers the two types had before are deleted.
+
+### The stored graph
+
+The stored graph does not use the primitive. The driver copies
 every rule and datum by `allocate(source=)`, minimizers copy
 themselves and their actions the same way, and a rule is a polymorphic
 operation that contains stencils and residual operators with graphs:
@@ -144,9 +172,10 @@ Moving graphs onto shared cells requires that no object containing a
 graph is copied by `allocate(source=)`, structure constructor or
 polymorphic assignment: the seventeen operation types and eight
 minimizer types need a dispatching copy, and driver data must be
-excluded or dispatched. That is the execution copy-semantics boundary
-of R05 and R06. The module state (version and serial counters, the
-recycled cells) is not synchronised across threads.
+excluded or dispatched. R05 changed none of those copy paths, so the
+patch remains blocked by them; that is the residual and generic
+execution boundary of R06. The module state (version and serial
+counters, the recycled cells) is not synchronised across threads.
 
 ## Verification
 
@@ -156,7 +185,13 @@ the orientation laws (transpose after finalization and replacement of
 its source, identity and partition preservation, reverse as an
 involution equal to the transpose, independence of container, array,
 `source=` and function-result copies), the counted-storage laws above,
-and counts allocations during traversal. The suite is part of
+the hierarchy ownership laws (owners through assignment, containers,
+array elements, function results and block scope; either destruction
+order; a `source=` twin observing the count; refusal of extension
+while shared and of access after release), and counts allocations
+during traversal. `test/graph-relational/run.sh` checks the same
+ownership laws for bindings (its `lifetime` section G and the
+refusals `sharedbind` and `releasedtwin`). The suite is part of
 `./verify.sh`. Existing partition tests continue to refuse transfer
 descriptions with incorrect identities, counts or mapped indices.
 

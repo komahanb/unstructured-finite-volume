@@ -78,6 +78,7 @@ module util_counted_storage
    contains
      procedure :: acquire
      procedure :: live
+     procedure :: released
      procedure :: num_owners
      procedure :: storage
      procedure, private :: assign
@@ -165,6 +166,18 @@ contains
     if (live) live = this % cell % version == this % version .and. this % version > 0
 
   end function live
+
+  ! Bound once and no longer live: the cell was cleared by its last
+  ! owner, or this value is a bitwise copy whose twin released the
+  ! binding. A default reference has never been bound and is not
+  ! released.
+  pure logical function released(this)
+
+    class(counted_reference), intent(in) :: this
+
+    released = this % version > 0 .and. .not. live(this)
+
+  end function released
 
   ! Zero for a reference that is not live.
   pure integer function num_owners(this)

@@ -10,10 +10,14 @@ def source(statement, declarations="", procedures=""):
     return f"""program topology_contract
   use view_directed_stored, only: stored_directed_graph
   use relation_binary, only: csr_relation, integer_fibre
+  use view_level, only: level_storage
+  use view_relational, only: relational_binding
   implicit none
   type(stored_directed_graph), target :: g
   type(csr_relation), target :: r
   type(integer_fibre) :: f
+  type(level_storage) :: hierarchy
+  type(relational_binding) :: binding
   {declarations}
   {statement}
   {procedures}
@@ -30,6 +34,8 @@ def main():
                       "xinc", "einc", "xadj", "vadj", "xout", "eout", "xin", "ein",
                       "vtag", "etag", "whole_rel", "vset", "eset"):
         refusals[component] = source(f"g % {component} = g % {component}")
+    refusals["hierarchy_reference"] = source("hierarchy % reference = hierarchy % reference")
+    refusals["binding_reference"] = source("binding % reference = binding % reference")
     refusals["fibre_storage"] = source("f % entries(1) = 1")
     refusals["fibre_pointer"] = source("p => r % image_view(1)", "integer, pointer :: p(:)")
     refusals["fibre_member"] = source("f % member(1) = 1")

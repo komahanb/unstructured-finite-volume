@@ -1583,7 +1583,7 @@ contains
     type(graph), pointer :: g
     g => this % nodes % node(at)
   end function node
-  pure integer function num_nodes(this)
+  integer function num_nodes(this)
     class(expansion), intent(in) :: this
     num_nodes = this % nodes % num_nodes()
   end function num_nodes

@@ -46,6 +46,13 @@ module gti_configuration
      real(dp) :: order_tolerance      = 0.5_dp
      real(dp) :: spread_tolerance     = 1.0_dp
 
+     ! WHETHER THE ORDER DEMONSTRATION IS AN ACCEPTANCE. exploratory
+     ! prints every measured order and returns success whatever the
+     ! table reads; required returns failure when a measured degree
+     ! is below p, is not one power of h, reached round-off, or a
+     ! chain could not be measured on the coarsest grid.
+     character(len=16) :: acceptance          = 'exploratory'
+
      ! ONE CHAIN, STATED EXPLICITLY. A window per word, each a family and
      ! the order required of it, so `bdf:2 dirk:3 adams:3 bdf:2` is a
      ! chain of four windows. Any length is accepted, and a family may
@@ -234,6 +241,8 @@ contains
        read(value, *) cfg % order_tolerance
     case ('spread_tolerance')
        read(value, *) cfg % spread_tolerance
+    case ('acceptance')
+       cfg % acceptance = value
     case ('families')
        cfg % families = value
     case ('state_degree')
@@ -7048,7 +7057,7 @@ module gti_demos
   use gti_chain             , only : chain_incidence
   use gti_sweeps, only : pass_of, forward_pass, reverse_pass, choose
   use gti_driver            , only : clock, cosine, dense_jacobian, family_named, settings
-  use gti_configuration     , only : configuration, argument_values, names_config, names_setting, &
+  use gti_configuration     , only : configuration, argument_values, names_config, names_setting, refuse_unknown, &
        & names_demo
   use view_read_write       , only : bipartite_digraph, FIRST_PART, SECOND_PART
   use operation_driver      , only : driver
@@ -7610,11 +7619,18 @@ contains
     real(dp) :: duration, ratio, finer
 
     real(dp) :: allowed, settled
+    integer  :: rows_measured, rows_excluded, degrees_reaching, degrees_below, &
+         &      degrees_unresolved, degrees_roundoff
+    logical  :: required
 
     ! THE GRIDS ARE THE CONFIGURATION'S, so the refinement ratio can be
     ! changed and the same table recomputed. An order that changes
     ! with the ratio is not asymptotic.
     call settings('order_of_accuracy', cfg)
+    call refuse_unknown(cfg % acceptance, ['exploratory', 'required   '], 'acceptance')
+    required = trim(cfg % acceptance) == 'required'
+    rows_measured = 0; rows_excluded = 0
+    degrees_reaching = 0; degrees_below = 0; degrees_unresolved = 0; degrees_roundoff = 0
     state_degree = cfg % state_degree
     degrees      = state_degree + 1
     max_order    = cfg % max_derivative_degree
@@ -7684,6 +7700,15 @@ contains
     write(*,'(a,f4.2,a)') '   spread above ', settled, ' is counted as no single power, printed "?".'
     write(*,'(a)') '   A dash means an error reached round-off, and no order can be measured.'
     write(*,'(a)') ' '
+    write(*,'(a)') '   EVERY MEASURED DEGREE IS ALSO WRITTEN AS ONE ORDER_RECORD LINE, its status'
+    write(*,'(a)') '   reaches, below, unresolved (no single power of h over these grids) or'
+    write(*,'(a)') '   roundoff, and a chain the coarsest grid cannot march is excluded.'
+    write(*,'(a)') '   ORDER_SUMMARY counts them. The reference is a finer numerical grid, so'
+    write(*,'(a)') '   this demonstration is exploratory: its exit status is success unless'
+    write(*,'(a)') '   --acceptance=required is given, when any degree not reaching p, any'
+    write(*,'(a)') '   unresolved or round-off degree and any excluded chain is a failure.'
+    write(*,'(a)') '   The required contract with analytic references is test/accuracy-contract.'
+    write(*,'(a)') ' '
     write(*,'(a)') '   THE RATIO IS THE CONFIGURATION''S. Measuring the same order at a second'
     write(*,'(a)') '   ratio shows the measurement is the scheme''s order and not an'
     write(*,'(a)') '   artefact of the grid positions:'
@@ -7751,6 +7776,20 @@ contains
          &  stored_family(crouzeix_two_stage()), stored_family(implicit_midpoint()), &
          &  stored_family(crouzeix_three_stage())])
 
+    write(*,'(a)') ' '
+    write(*,'(a,i0,a,i0,a,i0,a,i0,a,i0,a,i0,a,a)') ' ORDER_SUMMARY rows=', rows_measured, &
+         & ' reaches=', degrees_reaching, ' below=', degrees_below, ' unresolved=', degrees_unresolved, &
+         & ' roundoff=', degrees_roundoff, ' excluded=', rows_excluded, ' acceptance=', trim(cfg % acceptance)
+    if (required) then
+       if (degrees_below + degrees_unresolved + degrees_roundoff + rows_excluded > 0) then
+          write(*,'(a)') ' a required order study measures every chain and reaches p at every degree.'
+          error stop 'order_of_accuracy: every measured degree reaches p and every chain is measured'
+       end if
+       write(*,'(a)') ' every measured degree reaches p.'
+    else
+       write(*,'(a)') ' exploratory: the exit status does not certify these orders.'
+    end if
+
   contains
 
     !----------------------------------------------------------------!
@@ -7809,6 +7848,8 @@ contains
               & per_window, ' instants per window and a family here has history depth ', &
               & reaches, '.'
          write(*,'(a,i0,a)') '     raise coarsest_instants above ', reaches, ' to measure this chain.'
+         write(*,'(a,a,a,i0,a)') ' ORDER_RECORD chain="', title, '" p=', expected, ' status=excluded'
+         rows_excluded = rows_excluded + 1
          return
       end if
 
@@ -7879,6 +7920,28 @@ contains
       write(cell,'(i0)') counted
       line = line // trim(cell) // ' derivative degrees where one power applies'
       write(*,'(a)') line
+      rows_measured = rows_measured + 1
+      do m = 0, max_order
+         if (.not. readable(m)) then
+            degrees_roundoff = degrees_roundoff + 1
+            write(*,'(a,a,a,i0,a,i0,a)') ' ORDER_RECORD chain="', title, '" p=', expected, &
+                 & ' r=', m, ' status=roundoff'
+         else
+            if (spread(m) > settled) then
+               degrees_unresolved = degrees_unresolved + 1
+               line = 'unresolved'
+            else if (fitted(m) >= real(expected, dp) - allowed) then
+               degrees_reaching = degrees_reaching + 1
+               line = 'reaches'
+            else
+               degrees_below = degrees_below + 1
+               line = 'below'
+            end if
+            write(*,'(a,a,a,i0,a,i0,a,es12.4,a,es12.4,a,a)') ' ORDER_RECORD chain="', title, &
+                 & '" p=', expected, ' r=', m, ' fitted=', fitted(m), ' spread=', spread(m), &
+                 & ' status=', line
+         end if
+      end do
     end subroutine order_row
 
     !----------------------------------------------------------------!
@@ -10814,6 +10877,34 @@ contains
             & '  least kind ', least, '  this build ', precision_named()
     end do
   end subroutine shown_precision
+  !===================================================================!
+  ! The last instant's jet at node 1 to full precision, and every
+  ! block's final imbalance norm beside the norm its Newton solve
+  ! began at, so an external check reads the discrete solution and
+  ! the actual solver residuals rather than the converged flag.
+  !===================================================================!
+  subroutine shown_state(cfg, chain)
+    type(configuration), intent(in) :: cfg
+    type(chain_block)  , intent(in) :: chain(:)
+    real(dp), allocatable :: x(:)
+    character(len=:), allocatable :: line
+    character(len=24) :: cell
+    integer :: c, b, width
+    width = state_width(cfg)
+    x     = instant_components(chain, cfg % instants)
+    line  = '      state at the last instant, node 1:'
+    do c = 1, width
+       write(cell,'(es24.16)') x(c)
+       line = line // cell
+    end do
+    write(*,'(a)') line
+    do b = 1, size(chain)
+       write(*,'(a,i0,a,es12.4,a,es12.4,a,l1)') '      block ', b, ': imbalance ', &
+            & chain(b) % final_imbalance % norm, ' of initial ', &
+            & chain(b) % final_imbalance % initial_residual_norm, ' converged ', &
+            & chain(b) % final_imbalance % converged
+    end do
+  end subroutine shown_state
   subroutine shown_aspect(final_imbalance)
     type(imbalance), intent(in) :: final_imbalance
     character(len=:), allocatable :: line
@@ -10956,6 +11047,7 @@ contains
        write(*,'(a)') line
     end do
     call shown_precision(nd, chain, cfg)
+    if (lists(cfg % check, 'state')) call shown_state(cfg, chain)
     if (reported >= 1 .and. (grid_designed .or. lists(cfg % check, 'passes') &
          & .or. lists(cfg % check, 'sinks'))) then
        call first_derivatives(cfg, chain, tower, nd, dt, f)
@@ -11139,7 +11231,7 @@ contains
     call refuse_unknown(cfg % initial_field, ['constant', 'mode    ', 'bump    ', 'exact   '], 'initial_field')
     call refuse_unknown(cfg % export, ['none    ', 'paraview'], 'export')
     call refuse_unknown(cfg % check, ['none    ', 'ode     ', 'mode    ', 'operator', 'passes  ', 'exact   ', &
-         & 'sinks   '], &
+         & 'sinks   ', 'state   '], &
          & 'check')
     ! the counts of cells along the spatial coordinates, two or three
     ! words; every count zero is a run over time alone

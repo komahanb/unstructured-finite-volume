@@ -20,7 +20,7 @@ for suite in graph-contract graph-robustness graph-minimization graph-multigrid 
     graph-constitution graph-differentiation graph-field graph-identity-map \
     graph-inclusion graph-mesh graph-ordinary graph-relation graph-relational \
     graph-sequence graph-state calculator-tower learning-tower visualization-tower \
-    partitioned-implicit-pde-tower; do
+    partitioned-implicit-pde-tower accuracy-contract; do
     echo "Verifying $suite"
     "./test/$suite/run.sh"
 done

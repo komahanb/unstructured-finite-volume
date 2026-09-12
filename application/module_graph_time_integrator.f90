@@ -2176,21 +2176,26 @@ contains
     real(dp)        , intent(in)    :: step
     type(connectivity_graph) :: connectivity
     integer , allocatable :: table(:,:), field_table(:,:)
-    real(dp), allocatable :: w(:), field_w(:)
+    real(dp), allocatable :: w(:), field_w(:), step_w(:)
+    logical , allocatable :: within(:)
     integer :: e, ne, f
     associate (layout => this % layout)
     allocate(table(2, 0), w(0))
     do f = 1, layout % fields
        if (layout % count(f) < 2) cycle
+       ! the edges within the step; the instant behind (tail 1) is
+       ! transferred by add_coupling
        connectivity = scheme % stage_connectivity(layout % count(f))
        ne = connectivity % num_edges()
-       call weights_of(scheme_weight(scheme), connectivity, spread(step, 1, s + 2), field_w)
-       allocate(field_table(2, ne))
-       field_table(1,:) = [(stage_unknown(connectivity % edge_tail(e), connectivity % tail_degree(e), s, &
-            & layout, f), e = 1, ne)]
-       field_table(2,:) = [(stage_unknown(connectivity % edge_head(e), connectivity % head_degree(e), s, &
-            & layout, f), e = 1, ne)]
-       table = reshape([table, field_table], [2, size(table, 2) + ne])
+       call weights_of(scheme_weight(scheme), connectivity, spread(step, 1, s + 2), step_w)
+       within = [(connectivity % edge_tail(e) /= 1, e = 1, ne)]
+       allocate(field_table(2, count(within)))
+       field_table(1,:) = pack([(stage_unknown(connectivity % edge_tail(e), connectivity % tail_degree(e), s, &
+            & layout, f), e = 1, ne)], within)
+       field_table(2,:) = pack([(stage_unknown(connectivity % edge_head(e), connectivity % head_degree(e), s, &
+            & layout, f), e = 1, ne)], within)
+       field_w = pack(step_w, within)
+       table = reshape([table, field_table], [2, size(table, 2) + size(field_table, 2)])
        w     = [w, field_w]
        deallocate(field_table)
     end do
@@ -2216,41 +2221,6 @@ contains
     end if
   end function closing_instant
   !===================================================================!
-  ! The components transferred from the closing instant of one step
-  ! to every member of the next: for each field, every degree but
-  ! its highest.
-  !===================================================================!
-  subroutine transfer_table(layout, s, n, table, sources)
-    type(tuple_layout), intent(in) :: layout
-    integer           , intent(in) :: s, n
-    integer, allocatable, intent(out) :: table(:,:)
-    integer, allocatable, intent(out) :: sources(:)
-    integer :: kk, d, m, f, counted, pass, from, into, stride
-    stride = layout % stride
-    do pass = 1, 2
-       counted = 0
-       do kk = 2, n
-          from = closing_instant(kk - 1, s, stride)
-          do f = 1, layout % fields
-             do d = 0, layout % count(f) - 2
-                do m = 1, s + 1
-                   counted = counted + 1
-                   into = slice_base(kk, s, stride) + (m - 1) * stride + layout % row(f, d) + 1
-                   if (pass == 2) then
-                      table(1, counted) = from + layout % row(f, d) + 1
-                      table(2, counted) = into
-                      sources(counted)  = merge(2 + s, 1 + m, m == s + 1)
-                   end if
-                end do
-             end do
-          end do
-       end do
-       if (pass == 1) then
-          allocate(table(2, counted), sources(counted))
-       end if
-    end do
-  end subroutine transfer_table
-  !===================================================================!
   ! THE LAYOUT STRIDE: how many components one node stores at one
   ! moment. The equation's degrees come first and the spatial law's
   ! come after, so a scheme query reads degrees and a layout
@@ -2264,23 +2234,44 @@ contains
     class(expansion), intent(in) :: this
     gauged_field = this % gauge
   end function gauged_field
+  !===================================================================!
+  ! The transfer between steps: the instant-behind edges of the
+  ! family's stage connectivity (tail 1), placed at every step of the
+  ! block from the closing instant of the step before. A field
+  ! without a derivative has no row to transfer.
+  !===================================================================!
   integer function add_coupling(this, scheme, slices, first, last, dt) result(at)
     class(expansion), intent(inout) :: this
     class(family)   , intent(in)    :: scheme
     integer         , intent(in)    :: slices(:), first, last
     real(dp)        , intent(in)    :: dt(:)
-    integer, allocatable :: table(:,:), sources(:)
     type(connectivity_graph) :: connectivity
-    real(dp), allocatable :: w(:)
-    integer :: n, s, e, stride
+    integer , allocatable :: table(:,:), field_table(:,:)
+    real(dp), allocatable :: w(:), field_w(:), step_w(:)
+    logical , allocatable :: transferred(:)
+    integer :: n, s, e, kk, f, from, stride
     n      = last - first + 1
     stride = this % layout % stride
     s      = scheme % num_stages()
-    call transfer_table(this % layout, s, n, table, sources)
-    connectivity = connectivity_graph(s + 2, [(1, e = 1, size(sources))], sources, &
-         & [(this % layout % degree_of(mod(table(1, e) - 1, stride)), e = 1, size(sources))], &
-         & [(this % layout % degree_of(mod(table(2, e) - 1, stride)), e = 1, size(sources))])
-    call weights_of(scheme_weight(scheme), connectivity, spread(dt(first), 1, s + 2), w)
+    allocate(table(2, 0), w(0))
+    do kk = 2, n
+       from = closing_instant(kk - 1, s, stride)
+       do f = 1, this % layout % fields
+          if (this % layout % count(f) < 2) cycle
+          connectivity = scheme % stage_connectivity(this % layout % count(f))
+          call weights_of(scheme_weight(scheme), connectivity, spread(dt(first), 1, s + 2), step_w)
+          transferred = [(connectivity % edge_tail(e) == 1, e = 1, connectivity % num_edges())]
+          allocate(field_table(2, count(transferred)))
+          field_table(1,:) = pack([(from + this % layout % row(f, connectivity % tail_degree(e)) + 1, &
+               & e = 1, size(transferred))], transferred)
+          field_table(2,:) = pack([(slice_base(kk, s, stride) + stage_unknown(connectivity % edge_head(e), &
+               & connectivity % head_degree(e), s, this % layout, f), e = 1, size(transferred))], transferred)
+          field_w = pack(step_w, transferred)
+          table = reshape([table, field_table], [2, size(table, 2) + size(field_table, 2)])
+          w     = [w, field_w]
+          deallocate(field_table)
+       end do
+    end do
     at = coupled(this, slices, (1 + (n - 1) * (s + 1)) * stride, 'the components of this block', &
          & 'the constraint instances of this block', 'the transfer between steps', &
          & scheme % name() // ' transfer coupling', table, w)
@@ -2888,42 +2879,31 @@ module gti_march
   public :: weight_of, precision_needed
   public :: horizon_bounds
 contains
+  !===================================================================!
+  ! The row norm bound max over rows of 1 + sum |w|, over the block
+  ! of history depth + 1 instants in which every row of an unstaged
+  ! family fits once, or over the tableau's step, on the uniform
+  ! step given; the summands are read in the family's edge order.
+  !===================================================================!
   real(dp) function weight_of(scheme, degrees, step) result(w)
     class(family), intent(in) :: scheme
     integer      , intent(in) :: degrees
     real(dp)     , intent(in) :: step
-    integer, allocatable :: offset(:), tail_degree(:)
     type(connectivity_graph) :: edges
-    real(dp), allocatable :: c(:)
-    integer :: d, depth, s, i, k
-    logical :: any_pattern
-    w = 1.0_dp
-    any_pattern = .false.
-    do d = 0, degrees - 1
-       call scheme % row_pattern(d, degrees - 1, offset, tail_degree)
-       if (size(offset) == 0) cycle
-       any_pattern = .true.
-       depth = maxval(offset)
-       edges = connectivity_graph(depth + 1, &
-            & [(depth + 1 - offset(k), k = 1, size(offset))], [(depth + 1, k = 1, size(offset))], &
-            & tail_degree, [(d, k = 1, size(offset))])
-       call weights_of(scheme_weight(scheme), edges, [(step, k = 1, depth + 1)], c)
-       w = max(w, 1.0_dp + sum(abs(c)))
+    real(dp), allocatable :: c(:), row_sum(:,:)
+    integer :: e
+    if (marches_by_stages(scheme, degrees)) then
+       edges = scheme % stage_connectivity(degrees)
+    else
+       edges = scheme % block_connectivity(degrees, scheme % history_depth(degrees - 1) + 1)
+    end if
+    call weights_of(scheme_weight(scheme), edges, spread(step, 1, edges % num_vertices()), c)
+    allocate(row_sum(edges % num_vertices(), 0:degrees - 1), source=0.0_dp)
+    do e = 1, edges % num_edges()
+       row_sum(edges % edge_head(e), edges % head_degree(e)) = &
+            & row_sum(edges % edge_head(e), edges % head_degree(e)) + abs(c(e))
     end do
-    if (any_pattern) return
-    s = scheme % num_stages()
-    do d = 0, degrees - 2
-       do i = 1, s
-          edges = connectivity_graph(s + 2, [1, (1 + k, k = 1, i)], &
-               & [(1 + i, k = 0, i)], [d, (d + 1, k = 1, i)], [(d, k = 0, i)])
-          call weights_of(scheme_weight(scheme), edges, [(step, k = 1, s + 2)], c)
-          w = max(w, 1.0_dp + sum(abs(c)))
-       end do
-       edges = connectivity_graph(s + 2, [1, (1 + k, k = 1, s)], &
-            & [(s + 2, k = 0, s)], [d, (d + 1, k = 1, s)], [(d, k = 0, s)])
-       call weights_of(scheme_weight(scheme), edges, [(step, k = 1, s + 2)], c)
-       w = max(w, 1.0_dp + sum(abs(c)))
-    end do
+    w = 1.0_dp + maxval(row_sum)
   end function weight_of
   subroutine precision_needed(weight, state_size, initial_residual_norm, spacing_needed, least_kind, context)
     class(march_context), intent(inout), optional, target :: context
@@ -6915,7 +6895,7 @@ module gti_driver
   use operation_family      , only : bdf_family
   use operation_family      , only : adams_family
   use operation_family      , only : implicit_midpoint, crouzeix_two_stage, crouzeix_three_stage, &
-       & newmark_family, taylor_newmark_family
+       & newmark_family
   use operation_expression  , only : expression
   use gti_physics           , only : van_der_pol_energy, van_der_pol_dissipation, functional_of_physics
   use gti_chain             , only : chain_block
@@ -7007,20 +6987,23 @@ contains
        case default
           admissible = .false.
        end select
+    ! the row name's order selects a (beta, gamma) pair: the explicit
+    ! Taylor step, average acceleration, Fox-Goodwin; the family's
+    ! accuracy is 2 with gamma = 1/2 whatever the name states
     case ('newmark')
        select case (order)
        case (1)
-          allocate(scheme, source=newmark_family(0.0_dp, 0.0_dp, 1))
+          allocate(scheme, source=newmark_family(0.0_dp, 0.0_dp))
        case (2)
-          allocate(scheme, source=newmark_family(0.25_dp, 0.5_dp, 2))
+          allocate(scheme, source=newmark_family(0.25_dp, 0.5_dp))
        case (3)
-          allocate(scheme, source=newmark_family(1.0_dp / 12.0_dp, 0.5_dp, 3))
+          allocate(scheme, source=newmark_family(1.0_dp / 12.0_dp, 0.5_dp))
        case default
           admissible = .false.
        end select
     case ('taylor-newmark')
        if (order == 1) then
-          allocate(scheme, source=taylor_newmark_family())
+          allocate(scheme, source=newmark_family(0.0_dp, 0.0_dp))
        else
           admissible = .false.
        end if
@@ -7067,7 +7050,7 @@ module gti_demos
   use operation_family      , only : adams_family
   use operation_family      , only : dirk_family, implicit_midpoint, &
        & crouzeix_two_stage, crouzeix_three_stage, hairer_wanner_five_stage, &
-       & newmark_family, taylor_newmark_family
+       & newmark_family
   use operation_grid        , only : grid, uniform_grid, random_grid, designed_grid, partition
   use operation_coupling    , only : weights_of, coupling_inputs
   use operation_weight      , only : scheme_weight
@@ -8450,8 +8433,8 @@ contains
     call adams_on('uniform',     3, [(0.5_dp, k = 1, 3)])
     call adams_on('non-uniform', 3, [0.0_dp, 0.3_dp, 0.2_dp])
     call dirk_on(crouzeix_two_stage())
-    call newmark_on('newmark average acceleration', newmark_family(0.25_dp, 0.5_dp, 2))
-    call newmark_on('taylor-newmark', taylor_newmark_family())
+    call newmark_on('newmark average acceleration', newmark_family(0.25_dp, 0.5_dp))
+    call newmark_on('taylor-newmark', newmark_family(0.0_dp, 0.0_dp))
     call bdf_step_sensitivity([0.0_dp, 0.3_dp, 0.2_dp, 0.4_dp, 0.25_dp])
   contains
     subroutine bdf_on(label, dt)
@@ -8519,19 +8502,27 @@ contains
     subroutine newmark_on(label, scheme)
       character(len=*), intent(in) :: label
       type(family)    , intent(in) :: scheme
-      type(connectivity_graph) :: edges
       real(dp), allocatable :: c(:)
-      edges = connectivity_graph(3, [2, 2, 2, 3], [3, 3, 3, 3], &
-           & [0, 1, 2, 2], [0, 0, 0, 0])
-      call weights_of(scheme, edges, [0.0_dp, 0.5_dp, 0.5_dp], c)
+      ! both rows are read from the family's own pattern, placed at
+      ! instant 3 of a three-instant grid
+      call weights_of(scheme, newmark_row(scheme, 0), [0.0_dp, 0.5_dp, 0.5_dp], c)
       write(*,'(a)') ' '
       write(*,'(a)') ' ' // label // ', value row'
       write(*,'(a,4f10.5)') '   q, qdot, qddot behind/ahead  ', c
-      edges = connectivity_graph(3, [2, 2, 3], [3, 3, 3], [1, 2, 2], [1, 1, 1])
-      call weights_of(scheme, edges, [0.0_dp, 0.5_dp, 0.5_dp], c)
+      call weights_of(scheme, newmark_row(scheme, 1), [0.0_dp, 0.5_dp, 0.5_dp], c)
       write(*,'(a)') ' ' // label // ', velocity row'
       write(*,'(a,3f10.5)') '   qdot, qddot behind/ahead     ', c
     end subroutine newmark_on
+    function newmark_row(scheme, head_degree) result(edges)
+      type(family), intent(in) :: scheme
+      integer     , intent(in) :: head_degree
+      type(connectivity_graph) :: edges
+      integer, allocatable :: offset(:), tail_degree(:)
+      integer :: e
+      call scheme % row_pattern(head_degree, 2, offset, tail_degree)
+      edges = connectivity_graph(3, 3 - offset, [(3, e = 1, size(offset))], tail_degree, &
+           & [(head_degree, e = 1, size(offset))])
+    end function newmark_row
     subroutine bdf_step_sensitivity(dt)
       real(dp), intent(in) :: dt(:)
       integer , parameter :: last = 2 * order + 1
@@ -10175,9 +10166,9 @@ contains
     call bdf_rows(2, 'non-uniform', [0.0_dp, 0.30_dp, 0.20_dp, 0.40_dp, 0.25_dp])
     call adams_row(3, 'uniform',     [0.0_dp, 0.5_dp, 0.5_dp])
     call adams_row(3, 'non-uniform', [0.0_dp, 0.30_dp, 0.20_dp])
-    call newmark_rows('newmark average acceleration', newmark_family(0.25_dp, 0.5_dp, 2), 2)
-    call newmark_rows('newmark Fox-Goodwin', newmark_family(1.0_dp / 12.0_dp, 0.5_dp, 3), 2)
-    call newmark_rows('taylor-newmark', taylor_newmark_family(), 2)
+    call newmark_rows('newmark average acceleration', newmark_family(0.25_dp, 0.5_dp), 2)
+    call newmark_rows('newmark Fox-Goodwin', newmark_family(1.0_dp / 12.0_dp, 0.5_dp), 2)
+    call newmark_rows('taylor-newmark', newmark_family(0.0_dp, 0.0_dp), 2)
     call weight_partials(2, [0.0_dp, 0.30_dp, 0.20_dp, 0.40_dp, 0.25_dp])
   contains
     pure function instants(dt) result(t)
@@ -10314,12 +10305,18 @@ contains
       type(family)    , intent(in) :: scheme
       integer         , intent(in) :: exact_top
       real(dp), parameter :: dt(3) = [0.0_dp, 0.5_dp, 0.5_dp]
+      integer, allocatable :: offset(:), tail_degree(:)
+      integer :: e
+      ! each row's edges are the family's own pattern placed at the
+      ! last instant, q'' read at the arriving instant included
+      call scheme % row_pattern(0, 2, offset, tail_degree)
       call one_row(label // ' value row, uniform grid', &
-           & scheme, 3, [2, 2, 2, 3], 3, [0, 1, 2, 2], &
-           & [0, 0, 0, 0], dt, exact_top, exact_top=exact_top)
+           & scheme, 3, 3 - offset, 3, tail_degree, &
+           & [(0, e = 1, size(offset))], dt, exact_top, exact_top=exact_top)
+      call scheme % row_pattern(1, 2, offset, tail_degree)
       call one_row(label // ' velocity row, uniform grid', &
-           & scheme, 3, [2, 2, 3], 3, [1, 2, 2], &
-           & [1, 1, 1], dt, exact_top, exact_top=exact_top)
+           & scheme, 3, 3 - offset, 3, tail_degree, &
+           & [(1, e = 1, size(offset))], dt, exact_top, exact_top=exact_top)
     end subroutine newmark_rows
     subroutine weight_partials(p, dt)
       integer , intent(in) :: p
@@ -10728,6 +10725,8 @@ program graph_time_integrator
   use gti_configuration     , only : at_expansion, at_horizon, hierarchy_levels
   use gti_demos           , only : demo_requested, run_demo
   implicit none
+  character(len=16), parameter :: family_names(5) = &
+       & [character(len=16) :: 'bdf', 'adams', 'dirk', 'newmark', 'taylor-newmark']
   type(march_context) :: context
   type(configuration) :: cfg
   type(spatial_domain)   , allocatable :: space
@@ -10780,16 +10779,14 @@ contains
   end subroutine apply_stopping
   integer function widest_depth(cfg) result(widest)
     type(configuration), intent(in) :: cfg
-    character(len=16) :: every(5)
     class(family), allocatable :: scheme
     logical :: staged, admissible
     integer :: i, order, depth
-    every  = [character(len=16) :: 'bdf', 'adams', 'dirk', 'newmark', 'taylor-newmark']
     widest = 0
-    do i = 1, size(every)
-       if (.not. lists(cfg % families, trim(every(i)))) cycle
+    do i = 1, size(family_names)
+       if (.not. lists(cfg % families, trim(family_names(i)))) cycle
        do order = 1, cfg % max_discretization_order
-          call chosen(trim(every(i)), order, scheme, staged, admissible)
+          call chosen(trim(family_names(i)), order, scheme, staged, admissible)
           if (.not. admissible) cycle
           depth = scheme % history_depth(cfg % state_degree)
           if (depth < cfg % instants) widest = max(widest, depth)
@@ -11413,7 +11410,7 @@ contains
             &  'factorisations'], 'measurements')
     end if
     call refuse_unknown(cfg % families, &
-         & [character(len=16) :: 'bdf', 'adams', 'dirk', 'newmark', 'taylor-newmark'], 'families')
+         & family_names, 'families')
     call refuse_unwindowed(cfg % combinations)
     widest = widest_depth(cfg)
     if (.not. cfg % automatic_order_conservation) then
@@ -11539,7 +11536,7 @@ contains
        end if
     end do
     call refuse_unknown(names_phrase(names), &
-         & [character(len=16) :: 'bdf', 'adams', 'dirk', 'newmark', 'taylor-newmark'], 'chain')
+         & family_names, 'chain')
   end subroutine windows_of
 
   pure function names_phrase(names) result(phrase)
@@ -11578,19 +11575,17 @@ contains
   function listed(cfg) result(list)
     type(configuration), intent(in) :: cfg
     character(len=16), allocatable :: list(:)
-    character(len=16) :: every(5)
     integer :: i, n
-    every = [character(len=16) :: 'bdf', 'adams', 'dirk', 'newmark', 'taylor-newmark']
     n = 0
-    do i = 1, size(every)
-       if (lists(cfg % families, trim(every(i)))) n = n + 1
+    do i = 1, size(family_names)
+       if (lists(cfg % families, trim(family_names(i)))) n = n + 1
     end do
     allocate(list(n))
     n = 0
-    do i = 1, size(every)
-       if (lists(cfg % families, trim(every(i)))) then
+    do i = 1, size(family_names)
+       if (lists(cfg % families, trim(family_names(i)))) then
           n = n + 1
-          list(n) = every(i)
+          list(n) = family_names(i)
        end if
     end do
   end function listed

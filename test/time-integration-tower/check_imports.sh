@@ -41,6 +41,10 @@
 #
 #     field_stored       earned at Level 5
 #     operation_family      earned at Level 6, refused at 0-5
+#     view_directed_connectivity, operation_weight, operation_coupling
+#                           earned at Level 6, refused at 0-5: the
+#                           family's incidence and the weights read
+#                           from it, checked against closed forms
 #     operation_minimization      earned at Level 7, refused at 0-6
 #     operation_gmres       earned at Level 7, refused at 0-6
 #     operation_driver      earned at Level 8, refused at 0-7
@@ -155,9 +159,10 @@ allowed_for() {
         # ---- L5: + fields. Values, and nothing that steps or solves.
         level-5-field-calculus) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture graph_fractal map_set relation_finitary relation_algebra relation_binary field_calculus field_stored" ;;
         # ---- L6: + the directed graph (the compatibility host), the
-        #          operation contract, and the step operators. NO
-        #          minimizer: the scheme is tested before the solve.
-        level-6-discretization) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture temporal_step_fixture graph_fractal map_set view_directed relation_finitary relation_algebra relation_binary field_calculus view_directed_stored field_stored operation_family" ;;
+        #          operation contract, the step operators, and the
+        #          family's own incidence and weights. NO minimizer:
+        #          the scheme is tested before the solve.
+        level-6-discretization) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture temporal_step_fixture graph_fractal map_set view_directed relation_finitary relation_algebra relation_binary field_calculus view_directed_stored field_stored operation_family view_directed_connectivity operation_weight operation_coupling util_derivative_terms" ;;
         # ---- L7: + minimization and its gmres concretion. Still no
         #          marcher.
         level-7-minimization) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture temporal_step_fixture graph_fractal map_set view_directed relation_finitary relation_binary field_calculus view_directed_stored field_stored operation_family operation_minimization operation_gmres" ;;
@@ -275,10 +280,16 @@ if [ "$1" = "--selftest" ]; then
     refuses level-4-graph-calculus time_fields_fixture
 
     permits level-6-discretization operation_family
+    permits level-6-discretization view_directed_connectivity
+    permits level-6-discretization operation_weight
+    permits level-6-discretization operation_coupling
     permits level-6-discretization triangular_decay_fixture
     permits level-6-discretization temporal_step_fixture
     for lvl in $before_six; do
         refuses "$lvl" operation_family
+        refuses "$lvl" view_directed_connectivity
+        refuses "$lvl" operation_weight
+        refuses "$lvl" operation_coupling
         refuses "$lvl" triangular_decay_fixture
         refuses "$lvl" temporal_step_fixture
     done

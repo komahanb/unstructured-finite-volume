@@ -84,7 +84,7 @@ module operation_newton
   use operation_minimization        , only : minimizer, restrict, solve_result, SOLVE_INNER_FAILED
   use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
   use operation_stencil     , only : stencil
-  use util_tally, only : tally_record, newton_solves, primal_loops
+  use util_tally, only : newton_solves, primal_loops, tally
   use field_stored  , only : stored_field
   use field_calculus, only : field
   use operation_linearization, only : linearization, tangent_of
@@ -119,6 +119,7 @@ module operation_newton
 
      procedure :: name => newton_name
      procedure :: restrict => newton_restrict
+     procedure :: bind_account => newton_bind_account
      procedure :: storage_entries => newton_storage_entries
      procedure :: solve
 
@@ -186,7 +187,7 @@ contains
     integer :: it
     type(solve_result) :: outcome
 
-    call tally_record(newton_solves)
+    call this % record_event(newton_solves)
 
     allocate(dq(size(x)))
 
@@ -203,7 +204,7 @@ contains
 
     do it = 1, this % max_iterations
 
-       call tally_record(primal_loops)
+       call this % record_event(primal_loops)
 
        ! The linear system at this iterate, solved by the inner
        ! minimizer: the Jacobian is frozen at the same input tuple the
@@ -343,5 +344,19 @@ contains
     end do
 
   end subroutine halley_correction
+
+  !===================================================================!
+  ! Bind the account of this minimizer and of its children.
+  !===================================================================!
+
+  subroutine newton_bind_account(this, account)
+
+    class(newton), intent(inout) :: this
+    type(tally), pointer, intent(in) :: account
+
+    this % account => account
+    if (allocated(this % inner)) call this % inner % bind_account(account)
+
+  end subroutine newton_bind_account
 
 end module operation_newton

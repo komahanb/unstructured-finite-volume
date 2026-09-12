@@ -25,6 +25,7 @@ module operation_temporal_minimization
   use operation_residual    , only : residual_operator
   use field_calculus        , only : FIELD_REAL
   use field_stored          , only : stored_field
+  use util_tally            , only : tally
 
   implicit none
 
@@ -51,6 +52,7 @@ module operation_temporal_minimization
      procedure :: name  => temporal_minimizer_name
      procedure :: state => temporal_minimizer_state
      procedure :: restrict => temporal_minimizer_restrict
+     procedure :: bind_account => temporal_minimizer_bind_account
      procedure :: storage_entries => temporal_minimizer_storage_entries
      procedure :: pair_with
      procedure :: pairing_of
@@ -607,5 +609,19 @@ contains
     end if
 
   end subroutine require_schedule
+
+  !===================================================================!
+  ! Bind the account of this minimizer and of its children.
+  !===================================================================!
+
+  subroutine temporal_minimizer_bind_account(this, account)
+
+    class(temporal_minimizer), intent(inout) :: this
+    type(tally), pointer, intent(in) :: account
+
+    this % account => account
+    if (allocated(this % inner)) call this % inner % bind_account(account)
+
+  end subroutine temporal_minimizer_bind_account
 
 end module operation_temporal_minimization

@@ -2828,7 +2828,7 @@ module gti_march
   use graph_fractal           , only : graph
   use map_value               , only : VALUE_KNOWN
   use gti_sweeps              , only : solver_context, stopping_applied
-  use util_tally              , only : tally_record, tangent_loops, adjoint_loops
+  use util_tally              , only : tally, tangent_loops, adjoint_loops, factorisations
   implicit none
   type :: imbalance
      logical  :: converged = .false.
@@ -2879,6 +2879,9 @@ module gti_march
      integer :: stopping_criterion = relative
      integer :: stopping_limit_kind = by_rate
      integer :: stopping_iterations = 100
+     ! the accounting of this execution's solves; a caller adds its
+     ! executions' accounts into its own
+     type(tally), public :: account
    contains
      procedure :: set_stopping
      procedure :: set_space_coupling
@@ -3090,6 +3093,7 @@ contains
           do i = 1, nodes
              a   = slope(i, :, :)
              rhs = r(i, :)
+             call active_context % account % record(factorisations)
              call block_factor % factorise(a, 0.0_dp)
              call block_factor % substitute(rhs, dq, .false.)
              do f = 1, fields
@@ -3534,6 +3538,7 @@ contains
     type(solve_result), intent(out), optional :: outcome
     type(newton) :: solver
     type(stored_field), allocatable :: inputs(:)
+    type(tally), pointer :: account
     integer :: count, width
     if (present(context)) then
        active_context => context
@@ -3558,7 +3563,10 @@ contains
     call stopping_applied(solver, active_context % stopping_tolerance, active_context % stopping_criterion, &
          & active_context % stopping_limit_kind, &
          & active_context % stopping_iterations)
+    account => active_context % account
+    call solver % bind_account(account)
     call solver % solve(spread(0.0_dp, 1, count), q, achieved)
+    call solver % bind_account(null())
     if (present(outcome)) outcome = solver % result()
     call active_context % store_inner(solver % inner)
     if (present(final_imbalance)) call imbalance_of(solver, achieved, rows, q, inputs(2), &
@@ -3591,6 +3599,7 @@ contains
     context % stopping_criterion = this % stopping_criterion
     context % stopping_limit_kind = this % stopping_limit_kind
     context % stopping_iterations = this % stopping_iterations
+    context % account = this % account % restarted()
   end function configuration
   integer function next_version(this) result(version)
     class(march_context), intent(inout) :: this
@@ -3617,9 +3626,9 @@ contains
        active_context => default_context
     end if
     if (transposed) then
-       call tally_record(adjoint_loops)
+       call active_context % account % record(adjoint_loops)
     else
-       call tally_record(tangent_loops)
+       call active_context % account % record(tangent_loops)
     end if
     lin = rows % linear_block(rows % unknown_graph(), rows % bind(inputs), rhs, transposed, version)
     call swept(lin, 0.0_dp, w, achieved, outcome=completed, context=active_context)
@@ -3705,6 +3714,7 @@ contains
     type(temporal_minimizer) :: solver
     type(newton) :: newton_solver
     type(stored_field), allocatable :: inputs(:)
+    type(tally), pointer :: account
     integer , allocatable :: order(:), label(:)
     real(dp), allocatable :: rhs(:)
     integer :: count, width
@@ -3753,7 +3763,10 @@ contains
        call solver % partition(label, order, seed_from_previous=sequential_time)
     end if
     allocate(rhs(count), source=0.0_dp)
+    account => active_context % account
+    call solver % bind_account(account)
     call solver % solve(rhs, q, achieved)
+    call solver % bind_account(null())
     if (present(outcome)) outcome = solver % result()
     call active_context % clear_inner()
     if (present(final_imbalance)) call imbalance_of(solver, achieved, rows, q, &
@@ -4799,7 +4812,7 @@ module gti_chain
   use view_directed    , only : directed_graph
   use field_stored     , only : stored_field, typed_field_domain
   use gti_sweeps       , only : pass_of, pass_substitutions, forward_pass, reverse_pass
-  use util_tally            , only : tally_order, tally_enter, tally_leave
+  use util_tally            , only : tally
   use gti_configuration     , only : at_horizon, at_block, at_stage
   implicit none
   private
@@ -4967,6 +4980,7 @@ module gti_chain
      procedure :: complete => execution_complete
      procedure :: derivative => execution_derivative
      procedure :: take_results => execution_take_results
+     procedure :: account => execution_account
   end type chain_execution
 
   ! The arrays are owned by one derivative call. Its scheduled rules
@@ -5078,7 +5092,7 @@ contains
     integer         , intent(in), optional :: derivative_order
     real(dp), allocatable, intent(out), optional :: f(:,:)
     integer, intent(out), optional :: tower_storage(2), state_storage(2)
-    class(march_context), intent(in), optional :: context
+    class(march_context), intent(inout), optional :: context
     type(chain_execution) :: execution
     call execution % initialize(schemes, added, physics, degrees, steps, design, initial, &
          & grid_design, nodes, spatial_discretization_stencil, startup, functionals, derivative_order, &
@@ -5087,6 +5101,7 @@ contains
        call execution % advance()
     end do
     call execution % take_results(chain, tower, dt, t, achieved, final_imbalance, f, tower_storage, state_storage)
+    if (present(context)) call context % account % add(execution % context % account)
   end subroutine march_chain
 
   subroutine execution_initialize(this, schemes, added, physics, degrees, steps, design, initial, &
@@ -5210,9 +5225,9 @@ contains
     rule % tower => this % tower
     rule % context => this % context
     if (allocated(this % taylor)) rule % taylor => this % taylor
-    call tally_enter(at_horizon)
+    call this % context % account % enter(at_horizon)
     call this % schedule % advance_with(rule)
-    call tally_leave()
+    call this % context % account % leave()
     this % achieved = max(this % achieved, this % chain(b) % final_imbalance % norm)
     if (this % schedule % num_completed() == 1) this % final_imbalance = this % chain(b) % final_imbalance
     if (this % final_imbalance % converged .and. .not. this % chain(b) % final_imbalance % converged) &
@@ -5234,6 +5249,15 @@ contains
        end do
     end if
   end subroutine execution_advance
+
+  !===================================================================!
+  ! The accounting of this execution's solves.
+  !===================================================================!
+  function execution_account(this) result(account)
+    class(chain_execution), intent(in) :: this
+    type(tally) :: account
+    account = this % context % account
+  end function execution_account
 
   subroutine execution_take_results(this, chain, tower, dt, t, achieved, final_imbalance, f, &
        & tower_storage, state_storage)
@@ -5356,7 +5380,7 @@ contains
          & context % design, 1, context % order, context % order, 0, context % order, context % versions, &
          & context % u, context % w, context % tower_live, context % tower_total, context % tower_high, &
          & context % table, context % by_order, context=solver)
-    call tally_order(0)
+    call solver % account % order(0)
   end subroutine taylor_block
   !===================================================================!
   ! ONE BLOCK OF THE TAYLOR STATE MARCH. The block's tower: for every
@@ -5385,17 +5409,21 @@ contains
     integer , allocatable :: s(:)
     real(dp) :: share
     integer :: count, k, rank, i, size_of
+    type(march_context), target :: local_context
+    class(march_context), pointer :: active
+    active => local_context
+    if (present(context)) active => context
     count = chain(b) % rows % num_unknowns()
     allocate(w(b) % w(count, multiset_count(nd, max(top, 1)), max(top, 1)), source=0.0_dp)
     live         = live + size(w(b) % w)
     total        = total + size(w(b) % w)
     peak_storage = max(peak_storage, live)
     do k = 1, top
-       call tally_order(k)
-       call tally_enter(at_horizon)
+       call active % account % order(k)
+       call active % account % enter(at_horizon)
        do rank = 1, multiset_count(nd, k)
           s = multiset_of(rank, k, nd)
-          call tally_enter(at_block)
+          call active % account % enter(at_block)
           call forcing_of(chain, b, physics, degrees, design, s, w, u, nd, r)
           r = -r
           do i = 1, size(chain(b) % source_at)
@@ -5406,9 +5434,9 @@ contains
           call frozen_at(chain(b), design, inputs)
           call solve_linear(chain(b) % rows, inputs, r, .false., versions(b), one, context=context)
           w(b) % w(1:count, rank, k) = one
-          call tally_leave()
+          call active % account % leave()
        end do
-       call tally_leave()
+       call active % account % leave()
     end do
     do size_of = from_size, to_size
        do rank = 1, multiset_count(nd, size_of)
@@ -5676,6 +5704,10 @@ contains
     type(imbalance)       , intent(out)   :: final_imbalance
     real(dp)     , intent(in), optional   :: transferred_values(:)
     real(dp), allocatable :: fixed(:)
+    type(march_context), target :: local_context
+    class(march_context), pointer :: active
+    active => local_context
+    if (present(context)) active => context
     chain(b) % block_layout = layout
     chain(b) % given        = scheme % history_depth(degrees - 1)
     chain(b) % primary      = scheme % primary_degree(degrees - 1)
@@ -5704,15 +5736,15 @@ contains
        fixed = transferred(chain(1:b - 1), layout % first, layout % stride, chain(b) % given)
     end if
     if (scheme % num_stages() > 1) then
-       call tally_enter(at_stage)
+       call active % account % enter(at_stage)
     else
-       call tally_enter(at_block)
+       call active % account % enter(at_block)
     end if
     call built(tower, in_tower, scheme, physics, fixed, chain(b) % rows, &
          & chain(b) % instants_at, context=context)
     call swept(chain(b) % rows, design, chain(b) % state, achieved, final_imbalance, context=context)
     chain(b) % final_imbalance = final_imbalance
-    call tally_leave()
+    call active % account % leave()
   end subroutine one_block
   pure subroutine owned(chain, b, from, to)
     type(chain_block), intent(in)  :: chain(:)
@@ -5971,7 +6003,7 @@ contains
           end do
        end if
     end do
-    call tally_order(0)
+    call active % account % order(0)
     if (present(tower_storage)) tower_storage = [peak_storage, total]
     if (forward) then
        if (present(sinks)) then
@@ -6001,8 +6033,8 @@ contains
     end if
     schedule = driver(rule, incidence, orientation=forward_pass)
     do k = 0, top
-       call tally_order(k + 1)
-       call tally_enter(at_horizon)
+       call active % account % order(k + 1)
+       call active % account % enter(at_horizon)
        do rank = 1, multiset_count(nd, k)
           s = multiset_of(rank, k, nd)
           do i = 1, nf
@@ -6015,9 +6047,9 @@ contains
              end do
           end do
        end do
-       call tally_leave()
+       call active % account % leave()
     end do
-    call tally_order(0)
+    call active % account % order(0)
     allocate(every(nf, nd, multiset_count(nd, top)), source=0.0_dp)
     if (present(leibniz))  allocate(leibniz(nf, nd, multiset_count(nd, top), 0:top + 1), source=0.0_dp)
     if (present(by_order)) allocate(products(nf, nd, multiset_count(nd, top)))
@@ -6098,7 +6130,7 @@ contains
             & this % table, this % by_order, this % node_measure, this % context)
        return
     end if
-    call tally_enter(at_block)
+    call this % context % account % enter(at_block)
     n = this % chain(b) % rows % num_unknowns()
     s = multiset_of(this % rank, this % degree, this % nd)
     call costate_rows(this % chain, b, this % physics, this % functionals(this % functional), &
@@ -6153,7 +6185,7 @@ contains
        call sink_residual(this % is_sink(1:n, b), this % diagonal(1:n, b), &
             & rhs, one, this % sinks)
     end if
-    call tally_leave()
+    call this % context % account % leave()
     unknown_fields = typed_field_domain(this % chain(b) % rows % unknown_domain(), n)
     costate % stored_field = unknown_fields % costate(one)
     costate % at = b
@@ -10725,9 +10757,7 @@ program graph_time_integrator
        & functional_named
   use gti_configuration     , only : configuration, read_configuration, override, show, &
        & lists, refuse_unknown, words_of
-  use util_tally            , only : tally_open, tally_close, tally_order, &
-       & tally_enter, tally_leave, tally_amount, tally_event_of, &
-       & tally_num_levels, tally_level_name, tally_event_name, elapsed_time
+  use util_tally            , only : tally_event_of, tally_event_name, elapsed_time
   use gti_configuration     , only : at_expansion, at_horizon, hierarchy_levels
   use gti_demos           , only : demo_requested, run_demo
   implicit none
@@ -11040,8 +11070,8 @@ contains
     if (.not. admissible) return
     call grid_partition(cfg, dt, t)
     given = schemes(1) % scheme % history_depth(nd - 1)
-    call tally_enter(at_expansion)
-    call tally_order(0)
+    call context % account % enter(at_expansion)
+    call context % account % order(0)
     if (grid_designed) then
        weights = dt(2:cfg % instants)
        call march_chain(schemes, added, physics_of(cfg), nd, &
@@ -11067,7 +11097,7 @@ contains
        reported = cfg % max_derivative_degree
     end if
     call chain_expansion(chain, tower, functionals, nd, reported, f, node_measure=volume, context=context)
-    call tally_leave()
+    call context % account % leave()
     call show_row(labelled(names, orders), cfg % instants - given, f(:, 1), final_imbalance, &
          & cfg % max_derivative_degree)
     do i = 2, size(functionals)
@@ -11471,12 +11501,12 @@ contains
     call shown_initial(cfg)
     write(*,'(a,a)') '   precision of this build  ', precision_named()
     call heading(cfg)
-    if (cfg % accounting) call tally_open(cfg % max_derivative_degree, hierarchy_levels)
+    if (cfg % accounting) call context % account % open(cfg % max_derivative_degree, hierarchy_levels)
     printed = 0
     call every_window_count(cfg, printed)
     call the_named_chain(cfg, printed)
     if (cfg % accounting) then
-       call tally_close()
+       call context % account % close()
        call accounted(cfg)
     end if
     if (printed == 0) then
@@ -11711,7 +11741,7 @@ contains
     allocate(whole(0:top), source=0.0_dp)
     do m = 0, top
        if (event == elapsed_time) then
-          whole(m) = tally_amount(at_horizon, m, event)
+          whole(m) = context % account % amount(at_horizon, m, event)
        else
           whole(m) = over_levels(m, event)
        end if
@@ -11728,11 +11758,11 @@ contains
        line = line // right(order_named(m))
     end do
     write(*,'(a)') line
-    do level = 1, tally_num_levels()
-       line = '   ' // tally_level_name(level) // &
-            & repeat(' ', max(1, 18 - len(tally_level_name(level))))
+    do level = 1, context % account % num_levels()
+       line = '   ' // context % account % level_name(level) // &
+            & repeat(' ', max(1, 18 - len(context % account % level_name(level))))
        do m = 0, top
-          line = line // right(amount_cell(tally_amount(level, m, event), event))
+          line = line // right(amount_cell(context % account % amount(level, m, event), event))
        end do
        write(*,'(a)') line
     end do
@@ -11806,8 +11836,8 @@ contains
     integer, intent(in) :: m, event
     integer :: level
     total = 0.0_dp
-    do level = 1, tally_num_levels()
-       total = total + tally_amount(level, m, event)
+    do level = 1, context % account % num_levels()
+       total = total + context % account % amount(level, m, event)
     end do
   end function over_levels
   function order_named(m) result(named)

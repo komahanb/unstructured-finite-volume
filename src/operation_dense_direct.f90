@@ -40,7 +40,7 @@ module operation_dense_direct
   use operation_minimization , only : minimizer, restrict, solve_result, SOLVE_SINGULAR, SOLVE_CONTINUE, SOLVE_EXHAUSTED
   use iso_fortran_env   , only : int64
   use util_factorisation, only : dense_factorisation
-  use util_tally        , only : tally_record, linear_solves
+  use util_tally        , only : linear_solves, factorisations
 
   implicit none
 
@@ -154,7 +154,7 @@ contains
        error stop 'dense_direct: solution size matches rhs'
     end if
 
-    call tally_record(linear_solves)
+    call this % record_event(linear_solves)
 
     call this % initialize_residual_history()
     call this % imbalance(rhs, x, r)
@@ -180,6 +180,7 @@ contains
     if (.not. factors_current) then
        call compile_matrix_from_action(this % action, this % graph, this % unknown_domain, &
             & this % num_unknowns, n, this % num_components, a, constant, stored=this % stored)
+       call this % record_event(factorisations)
        call this % factor % factorise(a, this % singular_tolerance * maxval(abs(a)))
        this % retained_version  = this % action % version()
        this % retained_transposed = this % action % transpose_version()

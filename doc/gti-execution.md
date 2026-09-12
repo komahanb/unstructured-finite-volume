@@ -135,10 +135,27 @@ executions or expansions is a gfortran 15.2 internal compiler error
 
 ## Limits
 
-Interleaving is supported; concurrent threads are not certified. Diagnostic
-`tally` accounting is still application-wide, with every accounting scope
-closed before `advance` returns. Bounded reverse-memory algorithms remain
-separate architectural work.
+Interleaving is supported; concurrent threads are not certified. Bounded
+reverse-memory algorithms remain separate architectural work.
+
+## Accounting
+
+Diagnostic accounting is a value, `tally` (`util_tally`), owned by each
+execution's `march_context` as its `account`: the declared levels, the
+amounts a(l, k, e) by level, derivative order and event, and the stack of
+open levels. `configuration()` copies it restarted (same levels, orders
+and recording state, zero amounts), so an execution begins with an empty
+account of its caller's shape; `march_chain` adds the execution's
+account into the caller's context after taking the results, and
+`chain_execution % account()` returns it to a caller that drives the
+execution itself. Every scope opened in `advance` is closed before
+`advance` returns. A minimizer records through `record_event` into the
+tally its caller bound with `bind_account` for the duration of one solve
+(`solved` and `swept` bind the context's account before the solve and
+null after), composites binding their children, so a stored inner
+minimizer copied with an execution references no other execution's
+tally; a factorisation is recorded by the minimizer that requests it.
+No amount is stored in a module variable.
 
 ## Concurrency prerequisites
 
@@ -181,11 +198,11 @@ that a trapped execution is not isolated. `error stop` from any thread
 terminates the process; three numerical failure paths of the application
 still stop rather than return a failed result.
 
-Still shared and therefore not thread-safe: the `util_tally` accounting
-stack and amounts, output paths chosen by the caller, the six write
-statements reachable from an execution, the gmsh loader's unit selection
-by `inquire`, and the malloc counters of the benchmark instrumentation.
-`verbosity` must be set before the first parallel region.
+Still shared and therefore not thread-safe: output paths chosen by the
+caller, the six write statements reachable from an execution, the gmsh
+loader's unit selection by `inquire`, and the malloc counters of the
+benchmark instrumentation. `verbosity` must be set before the first
+parallel region.
 
 ## Solver restriction
 

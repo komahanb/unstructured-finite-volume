@@ -48,6 +48,7 @@ module operation_minimization
   use field_stored     , only : stored_field, typed_field_domain
   use operation_reduction , only : reduction, REDUCE_SUM, REDUCE_NORM
   use operation_traversal      , only : traversal, TRAVERSAL_COLOURING
+  use util_tally               , only : tally
 
   implicit none
 
@@ -194,7 +195,16 @@ module operation_minimization
 
      type(solve_result), private :: final_result
 
+     ! THE ACCOUNT. The tally of the execution whose solve this is,
+     ! bound by the caller for the duration of one solve and null
+     ! between solves, so a stored minimizer copied with an execution
+     ! references no other execution's tally.
+     type(tally), pointer :: account => null()
+
    contains
+
+     procedure :: bind_account
+     procedure :: record_event
 
      procedure :: initialize_residual_history
      procedure :: record_residual_norm
@@ -249,6 +259,33 @@ module operation_minimization
   end interface
 
 contains
+
+  !===================================================================!
+  ! Bind the tally the solves that follow record into, or null. A
+  ! minimizer with children binds theirs as well.
+  !===================================================================!
+
+  subroutine bind_account(this, account)
+
+    class(minimizer), intent(inout) :: this
+    type(tally), pointer, intent(in) :: account
+
+    this % account => account
+
+  end subroutine bind_account
+
+  !===================================================================!
+  ! Record one event into the bound tally; nothing when unbound.
+  !===================================================================!
+
+  subroutine record_event(this, event)
+
+    class(minimizer), intent(in) :: this
+    integer         , intent(in) :: event
+
+    if (associated(this % account)) call this % account % record(event)
+
+  end subroutine record_event
 
   !===================================================================!
   ! The imbalance an iteration begins at, against which a relative

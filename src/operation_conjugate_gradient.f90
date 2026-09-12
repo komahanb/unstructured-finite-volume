@@ -23,7 +23,7 @@ module operation_conjugate_gradient
 
   use util_precision  , only : dp
   use operation_minimization, only : minimizer, solve_result, SOLVE_BREAKDOWN, SOLVE_CONTINUE
-  use util_tally, only : tally_record, linear_solves
+  use util_tally, only : linear_solves
 
   implicit none
 
@@ -65,7 +65,7 @@ contains
     integer :: it
     type(solve_result) :: outcome
 
-    call tally_record(linear_solves)
+    call this % record_event(linear_solves)
 
     call this % imbalance(rhs, x, r)
     p = r

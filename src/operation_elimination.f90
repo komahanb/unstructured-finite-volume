@@ -58,6 +58,7 @@ module operation_elimination
   use operation_minimization, only : minimizer, state, restrict, saturated_sum
   use operation_minimization, only : solve_result, SOLVE_INNER_FAILED, SOLVE_EXHAUSTED, SOLVE_CONTINUE
   use operation_minimization, only : SOLVE_STORAGE_EXCEEDED
+  use util_tally            , only : tally
   use operation_stencil     , only : stencil
   use field_stored          , only : stored_field
 
@@ -148,6 +149,7 @@ module operation_elimination
      procedure :: name  => elimination_name
      procedure :: state => elimination_state
      procedure :: restrict => elimination_restrict
+     procedure :: bind_account => elimination_bind_account
      procedure :: storage_entries => elimination_storage_entries
      procedure :: solve => elimination_solve
 
@@ -968,5 +970,19 @@ contains
     end if
 
   end subroutine elimination_solve
+
+  !===================================================================!
+  ! Bind the account of this minimizer and of its children.
+  !===================================================================!
+
+  subroutine elimination_bind_account(this, account)
+
+    class(elimination), intent(inout) :: this
+    type(tally), pointer, intent(in) :: account
+
+    this % account => account
+    if (allocated(this % inner)) call this % inner % bind_account(account)
+
+  end subroutine elimination_bind_account
 
 end module operation_elimination

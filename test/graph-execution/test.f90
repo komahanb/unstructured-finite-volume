@@ -282,7 +282,7 @@ contains
   end subroutine check_replay
 
   subroutine check_temporal()
-    type(temporal_minimizer) :: first, second
+    type(temporal_minimizer) :: first, second, copied
     type(driver) :: schedule
     type(solve_result) :: outcome
     real(dp) :: achieved, rhs(0), x(0)
@@ -298,6 +298,11 @@ contains
     outcome = first % result()
     call assert_all(executed == 2 .and. first % next_rule() == 1 .and. second % next_rule() == 2 .and. &
          & outcome % reason == SOLVE_NOT_STARTED, 'temporal executions delegate independent progress without premature completion')
+    copied = first
+    call copied % advance()
+    call assert_all(copied % complete() .and. .not. first % complete() .and. first % next_rule() == 1 .and. &
+         & datum_value(copied % pairing_of(), 3) == 11.0_dp .and. .not. written(first % pairing_of(), 3), &
+         & 'a copy of a partially evaluated temporal execution completes with its own data')
     call second % solve(rhs, x, achieved)
     call first % advance()
     outcome = first % result()

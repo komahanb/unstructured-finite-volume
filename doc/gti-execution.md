@@ -78,14 +78,52 @@ graph metadata, or temporary solver storage.
 Periodic and event closure remain mathematical residual constraints. The
 execution graph remains acyclic.
 
-## Limits
+## Copies
 
-Execution objects are initialized independently and are not copyable values.
-Ordinary assignment is rejected. As with the existing owning `expansion`,
-Fortran SOURCE allocation and intrinsic copying through an enclosing object
-can bypass defined assignment; both are unsupported. Use independent
-initialization and `take_results` instead. Supporting arbitrary copies
-requires a separate owning graph-storage and rebinding contract.
+An expansion is immutable once built: its hierarchy of level nodes and
+its coupling binding are counted cells (`doc/topology-ownership.md`), and
+its maps, layout, designs, rule and grid are values. A copy of an
+expansion is one more owner of the two cells with its own values, so the
+node identities are preserved: the copy is the same mathematical
+expansion, and fields, domains and solver objects of the source are
+defined on the copy's domains.
+
+An execution is a value: trajectories (`chain(b) % state`), Taylor
+coefficients, schedule position, results, block rules, the solver
+context and every numerical cache are allocatable or scalar components
+without pointers, and the transient rule pointers into the execution are
+null between calls. Intrinsic assignment `copy = execution` therefore
+produces an independent execution with equal state sharing only the
+immutable expansion cells. Copies through a containing object, an array
+element, a function result, a block local or an allocated allocatable
+are the same copy. Numerical caches (the retained inner minimizer, a
+dense factorization, a Gauss-Seidel block diagonal) are copied, not
+invalidated: each is a function of the state it was computed from, the
+copy has an equal state, and no hook exists that could invalidate them
+under the copy mechanisms that bypass defined assignment. A copy and its
+source reach exactly equal states, forward and reverse derivative tables
+and streamed Taylor coefficients (`test/gti-execution`), and both equal
+an isolated execution within the suite's declared tolerance.
+
+The expansion is a nonallocatable component of the execution because
+gfortran 15 does not invoke the cells' defined assignment through an
+allocatable component (mechanism table in `doc/topology-ownership.md`).
+`take_results` assigns the expansion to the caller's tower, which then
+owns the cells, and leaves the execution without one.
+
+Copies by `allocate(source=variable)`, a structure constructor or
+polymorphic assignment are twins of one binding: their values are
+independent and both compute the same results while both live, but
+finalizing either, or taking either's results, releases the shared
+binding and the other is refused at its next access with
+`view_level: this storage's hierarchy has been released`. No storage is
+read after release and nothing is freed twice. `allocate(source=)` of an
+unevaluated or evaluated execution is therefore not a way to obtain a
+second execution; assign instead. Whole-array assignment of arrays of
+executions or expansions is a gfortran 15.2 internal compiler error
+(`gfc_get_descriptor_field`); assign the elements.
+
+## Limits
 
 Interleaving is supported; concurrent threads are not certified. Diagnostic
 `tally` accounting is still application-wide, with every accounting scope
@@ -158,8 +196,11 @@ is implemented: the complement is explicit, or the elimination is refused.
 The repository verification entry point includes context isolation, GTI
 execution interleaving, and generic incremental execution suites. These test
 different solver choices, problem dimensions, startup schemes, copied input
-configuration, partial reinitialization, forward/reverse derivatives, and
-streamed Taylor storage. The generic tests also check nontrivial visiting
+configuration, partial reinitialization, forward/reverse derivatives,
+streamed Taylor storage, and execution copies before, during and after a
+primal and a streamed Taylor march, alternating progress and
+reinitialization, either destruction order, containers, array elements,
+function results and the `source=` twin refusal. The generic tests also check nontrivial visiting
 order, final-read release intervals, argument identity, and refusal cases.
 Detailed results for this implementation are recorded in
 `artifacts/gti-execution-2026-09-11/implementation.md`.

@@ -37,6 +37,9 @@ declare -A reason=(
     [zero_fibre_index]='fibre index is outside its extent'
     [outside_fibre_index]='fibre index is outside its extent'
     [empty_fibre_index]='fibre index is outside its extent'
+    [hierarchy_shared_extension]='a hierarchy is extended by its sole owner'
+    [hierarchy_released_twin]="this storage's hierarchy has been released"
+    [hierarchy_empty_index]='the index names a node this storage owns'
 )
 refusal_output="$(mktemp)"
 trap 'rm -f "$refusal_output"' EXIT

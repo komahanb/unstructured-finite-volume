@@ -1,6 +1,7 @@
 module topology_statistics
   use util_counted_storage, only : counted_storage, counted_reference
   use view_directed_stored, only : stored_directed_graph
+  use view_level, only : level_storage
   implicit none
   ! A containing object: every copy of the container copies its graph.
   type :: graph_holder
@@ -16,6 +17,11 @@ module topology_statistics
   type :: reference_holder
      type(counted_reference) :: reference
   end type reference_holder
+  ! A containing object of a hierarchy: every copy of the container
+  ! binds one more owner of the same nodes.
+  type :: hierarchy_holder
+     type(level_storage) :: nodes
+  end type hierarchy_holder
   integer :: num_cleared = 0
   type :: fibre_statistics
      integer :: num_members = 0
@@ -52,8 +58,9 @@ program topology_ownership
   use view_directed_stored, only : stored_directed_graph
   use relation_partition, only : partition_relation
   use util_counted_storage, only : counted_storage, counted_reference
+  use view_level, only : level_storage, level_num_members, level_member, level_is_leaf
   use topology_statistics, only : fibre_statistics, sum_context_members, graph_holder, &
-       & counted_test_cell, reference_holder, num_cleared
+       & counted_test_cell, reference_holder, num_cleared, hierarchy_holder
 
   implicit none
 
@@ -66,6 +73,7 @@ program topology_ownership
   call check_incidence()
   call check_orientation()
   call check_counted_storage()
+  call check_hierarchy_ownership()
   if (num_failures /= 0) error stop 'topology ownership laws failed'
   print *, 'All topology ownership laws passed.'
 
@@ -459,6 +467,92 @@ contains
     type(counted_reference), intent(in) :: source
     reference_result = source
   end function reference_result
+
+  !-------------------------------------------------------------------!
+  ! A hierarchy (level_storage) is jointly owned immutable topology:
+  ! every copy by defined assignment reads the same nodes with the
+  ! same identities; the nodes are released with the last owner; a
+  ! hierarchy with more than one owner is not extended; a source=
+  ! copy observes the count and is not an owner.
+  !-------------------------------------------------------------------!
+  subroutine check_hierarchy_ownership()
+    type(level_storage), allocatable :: original, copy, twin
+    type(level_storage) :: elements(2), replacement
+    type(hierarchy_holder) :: holder, holder_copy
+    type(graph), pointer :: root, member, copied_root
+    integer :: leaf_a, leaf_b, root_at
+
+    allocate(original, copy)
+    call assert_all(original % num_nodes() == 0 .and. original % num_owners() == 0, &
+         & 'a hierarchy without nodes has no owner')
+    leaf_a = original % allocate_node()
+    leaf_b = original % allocate_node()
+    root_at = original % assemble([leaf_a, leaf_b], 0)
+    root => original % node(root_at)
+    call assert_all(original % num_nodes() == 5 .and. original % num_owners() == 1 .and. &
+         & level_num_members(root) == 2, 'a level of two leaves owns five nodes with one owner')
+    copy = original
+    copied_root => copy % node(root_at)
+    member => level_member(copied_root, 2)
+    call assert_all(copy % num_owners() == 2 .and. associated(copied_root, root) .and. &
+         & associated(member, original % node(leaf_b)) .and. member % same_as(original % node(leaf_b)), &
+         & 'a copy reads the same nodes with the same identities')
+    holder % nodes = copy
+    holder_copy = holder
+    elements(1) = copy
+    elements(2) = hierarchy_result(copy)
+    call assert_all(original % num_owners() == 6, &
+         & 'a container, its copy, an array element and a function result are owners')
+    allocate(twin, source=copy)
+    call assert_all(twin % num_owners() == 6 .and. twin % num_nodes() == 5, &
+         & 'a source= copy observes the count and the nodes and is not an owner')
+    deallocate(twin)
+    call assert_all(original % num_owners() == 5 .and. original % num_nodes() == 5, &
+         & 'finalizing the twin releases one binding, its owner twin, and the others read on')
+    deallocate(original)
+    root => copy % node(root_at)
+    member => level_member(root, 1)
+    call assert_all(copy % num_owners() == 4 .and. copy % num_nodes() == 5 .and. &
+         & level_is_leaf(member) .and. member % same_as(holder % nodes % node(leaf_a)), &
+         & 'the source destroyed first leaves the destination reading the nodes')
+    block
+      type(level_storage) :: local
+      local = copy
+      call assert_all(copy % num_owners() == 5, 'a block local is an owner')
+    end block
+    call assert_all(copy % num_owners() == 4, 'block scope end releases its owner')
+    replacement = holder % nodes
+    holder % nodes = elements(1)
+    call assert_all(copy % num_owners() == 5 .and. replacement % num_owners() == 5, &
+         & 'assignment between owners of one hierarchy keeps every owner')
+    deallocate(copy)
+    elements(1) = level_storage_result()
+    elements(2) = elements(1)
+    holder_copy = hierarchy_holder()
+    call assert_all(holder % nodes % num_owners() == 2 .and. elements(1) % num_owners() == 0 .and. &
+         & elements(1) % num_nodes() == 0, &
+         & 'the destination destroyed first leaves the source and its remaining owners')
+    root => replacement % node(root_at)
+    call assert_all(level_num_members(root) == 2 .and. replacement % num_nodes() == 5, &
+         & 'the last owners still read the hierarchy')
+    holder % nodes = elements(1)
+    call assert_all(replacement % num_owners() == 1, 'one owner remains')
+    leaf_a = replacement % allocate_node()
+    call assert_all(replacement % num_nodes() == 6 .and. replacement % num_owners() == 1, &
+         & 'the sole owner extends its hierarchy')
+    call assert_all(elements(1) % allocate_node() == 1 .and. elements(1) % num_owners() == 1, &
+         & 'a released storage builds a new hierarchy')
+  end subroutine check_hierarchy_ownership
+
+  type(level_storage) function hierarchy_result(source)
+    type(level_storage), intent(in) :: source
+    hierarchy_result = source
+  end function hierarchy_result
+
+  type(level_storage) function level_storage_result()
+    type(level_storage) :: unbound
+    level_storage_result = unbound
+  end function level_storage_result
 
   subroutine check_incoming(offsets, indices, sources)
     integer, intent(in) :: offsets(:), indices(:), sources(:)

@@ -43,6 +43,7 @@ module view_level
        & known_branch, null_branch
   use view_sequence , only : sequence_num_elements, sequence_element, &
        & sequence_empty, sequence_first, sequence_rest
+  use util_counted_storage, only : counted_storage, counted_reference
 
   implicit none
 
@@ -52,11 +53,11 @@ module view_level
   public :: level_storage
 
   !===================================================================!
-  ! THE OWNER OF A HIERARCHY
+  ! THE OWNERS OF A HIERARCHY
   !
   ! Branch references do not own their targets, so every graph a
   ! hierarchy is built from - the level nodes and the list cells
-  ! alike - has to outlive the branches pointing at it. One storage
+  ! alike - has to outlive the branches pointing at it. One cell
   ! owns them all, and a level is addressed by its index in it.
   !
   ! Each node is allocated separately and referenced by pointer, never as
@@ -65,35 +66,48 @@ module view_level
   ! the same arrangement relational_binding uses, and for the same
   ! measured reason.
   !
-  ! Assignment is rejected at run time. A copy would copy the
-  ! pointers of the original, and freeing either would leave the
-  ! other referencing released storage. No mechanism in the language
-  ! forbids the copy at compile time, so it is stopped when attempted.
+  ! A storage value is a counted reference to the cell
+  ! (util_counted_storage). Assignment binds one more owner of the
+  ! same nodes; the last owner's finalization deallocates them. A
+  ! cell with more than one owner is immutable: extension is refused,
+  ! so every owner reads the hierarchy it was bound to. A copy made
+  ! without defined assignment (allocate with source=, a structure
+  ! constructor, polymorphic assignment) is not an owner: the first
+  ! of the two to be finalized releases the binding and the other is
+  ! refused at its next access, never read from released storage.
   !===================================================================!
 
   type :: node_pointer
      type(graph), pointer :: node => null()
   end type node_pointer
 
+  type, extends(counted_storage) :: level_nodes
+
+     type(node_pointer), allocatable :: nodes(:)
+     integer                         :: filled = 0
+
+   contains
+
+     procedure :: clear => release_nodes
+
+  end type level_nodes
+
   type :: level_storage
 
-     type(node_pointer), allocatable, private :: nodes(:)
-     integer          , private              :: filled = 0
+     type(counted_reference), private :: reference
 
    contains
 
      procedure :: allocate_node
      procedure :: node
      procedure :: num_nodes
+     procedure :: num_owners
      procedure :: member_list
      procedure :: assemble
      procedure :: couple
 
      procedure, private :: branch_to
-     procedure, private :: refuse_assignment
-     generic :: assignment(=) => refuse_assignment
-
-     final :: release
+     procedure, private :: cell
 
   end type level_storage
 
@@ -253,30 +267,68 @@ contains
   end function level_consistent
 
   !===================================================================!
+  ! The cell this storage is bound to. A storage that was bound and
+  ! whose binding is no longer live stops the program: its nodes were
+  ! deallocated by the last owner, or this value is a bitwise copy
+  ! whose twin released the binding. A storage never bound has no
+  ! cell.
+  !===================================================================!
+
+  function cell(this) result(nodes)
+
+    class(level_storage), intent(in) :: this
+    type(level_nodes), pointer :: nodes
+
+    class(counted_storage), pointer :: storage
+
+    nodes => null()
+    if (this % reference % released()) then
+       error stop 'view_level: this storage''s hierarchy has been released'
+    end if
+    storage => this % reference % storage()
+    if (.not. associated(storage)) return
+    select type (storage)
+    type is (level_nodes)
+       nodes => storage
+    end select
+
+  end function cell
+
+  !===================================================================!
   ! A new graph, allocated separately, identity assigned, owned by
   ! this storage. Every other procedure here refers to the graph by
-  ! the index returned.
+  ! the index returned. The first node binds this storage to a cell
+  ! of its own. A hierarchy with more than one owner is immutable:
+  ! extending it stops the program.
   !===================================================================!
 
   integer function allocate_node(this) result(at)
 
     class(level_storage), intent(inout) :: this
 
+    type(level_nodes) :: template
+    type(level_nodes), pointer :: nodes
     type(node_pointer), allocatable :: expanded_nodes(:)
 
-    if (.not. allocated(this % nodes)) allocate(this % nodes(8))
+    if (this % reference % num_owners() > 1) then
+       error stop 'view_level: a hierarchy is extended by its sole owner'
+    end if
+    if (.not. this % reference % live()) call this % reference % acquire(template)
+    nodes => this % cell()
 
-    if (this % filled == size(this % nodes)) then
-       allocate(expanded_nodes(2 * this % filled))
-       expanded_nodes(1:this % filled) = this % nodes
-       call move_alloc(expanded_nodes, this % nodes)
+    if (.not. allocated(nodes % nodes)) allocate(nodes % nodes(8))
+
+    if (nodes % filled == size(nodes % nodes)) then
+       allocate(expanded_nodes(2 * nodes % filled))
+       expanded_nodes(1:nodes % filled) = nodes % nodes
+       call move_alloc(expanded_nodes, nodes % nodes)
     end if
 
-    this % filled = this % filled + 1
-    at = this % filled
+    nodes % filled = nodes % filled + 1
+    at = nodes % filled
 
-    allocate(this % nodes(at) % node)
-    call this % nodes(at) % node % declare()
+    allocate(nodes % nodes(at) % node)
+    call nodes % nodes(at) % node % declare()
 
   end function allocate_node
 
@@ -292,21 +344,42 @@ contains
     integer             , intent(in) :: at
     type(graph), pointer :: g
 
-    if (at < 1 .or. at > this % filled) then
+    type(level_nodes), pointer :: nodes
+
+    nodes => this % cell()
+    if (at < 1 .or. .not. associated(nodes)) then
+       error stop 'view_level: the index names a node this storage owns'
+    end if
+    if (at > nodes % filled) then
        error stop 'view_level: the index names a node this storage owns'
     end if
 
-    g => this % nodes(at) % node
+    g => nodes % nodes(at) % node
 
   end function node
 
-  pure integer function num_nodes(this)
+  ! Zero for a storage without a hierarchy.
+  integer function num_nodes(this)
 
     class(level_storage), intent(in) :: this
 
-    num_nodes = this % filled
+    type(level_nodes), pointer :: nodes
+
+    num_nodes = 0
+    nodes => this % cell()
+    if (associated(nodes)) num_nodes = nodes % filled
 
   end function num_nodes
+
+  ! The number of storage values bound to this hierarchy; zero for a
+  ! storage without one.
+  pure integer function num_owners(this)
+
+    class(level_storage), intent(in) :: this
+
+    num_owners = this % reference % num_owners()
+
+  end function num_owners
 
   !===================================================================!
   ! A list over the given members: no members is the empty list,
@@ -322,6 +395,7 @@ contains
     class(level_storage), intent(inout) :: this
     integer             , intent(in)    :: members(:)
 
+    type(graph), pointer :: g
     integer :: tail
 
     if (size(members) == 0) then
@@ -332,8 +406,9 @@ contains
     tail = this % member_list(members(2:))
     head = this % allocate_node()
 
-    this % nodes(head) % node % branch(1) = this % branch_to(members(1))
-    this % nodes(head) % node % branch(2) = this % branch_to(tail)
+    g => this % node(head)
+    g % branch(1) = this % branch_to(members(1))
+    g % branch(2) = this % branch_to(tail)
 
   end function member_list
 
@@ -353,7 +428,7 @@ contains
     if (at == 0) then
        b = null_branch()
     else
-       g => this % nodes(at) % node
+       g => this % node(at)
        b = known_branch(g)
     end if
 
@@ -374,15 +449,17 @@ contains
     integer             , intent(in)    :: members(:)
     integer             , intent(in)    :: coupling
 
+    type(graph), pointer :: g
     integer :: head
 
     head = this % member_list(members)
     at   = this % allocate_node()
 
-    this % nodes(at) % node % branch(1) = this % branch_to(head)
-    this % nodes(at) % node % branch(2) = this % branch_to(coupling)
+    g => this % node(at)
+    g % branch(1) = this % branch_to(head)
+    g % branch(2) = this % branch_to(coupling)
 
-    if (.not. level_consistent(this % nodes(at) % node)) then
+    if (.not. level_consistent(g)) then
        error stop 'view_level: the coupling''s carriers begin with this level''s own members'
     end if
 
@@ -403,41 +480,26 @@ contains
     class(level_storage), intent(inout) :: this
     integer             , intent(in)    :: carriers(:), relations(:)
 
+    type(graph), pointer :: g
     integer :: carrier_head, relation_head
 
     carrier_head  = this % member_list(carriers)
     relation_head = this % member_list(relations)
     at            = this % allocate_node()
 
-    this % nodes(at) % node % branch(1) = this % branch_to(carrier_head)
-    this % nodes(at) % node % branch(2) = this % branch_to(relation_head)
+    g => this % node(at)
+    g % branch(1) = this % branch_to(carrier_head)
+    g % branch(2) = this % branch_to(relation_head)
 
   end function couple
 
   !===================================================================!
-  ! A storage returns pointers into its own nodes, so a copy would
-  ! share them and releasing either would leave the other referencing
-  ! deallocated storage.
+  ! Release every node of a cell, when its last owner is finalized.
   !===================================================================!
 
-  subroutine refuse_assignment(lhs, rhs)
+  subroutine release_nodes(this)
 
-    class(level_storage), intent(out) :: lhs
-    class(level_storage), intent(in)  :: rhs
-
-    associate (u1 => lhs, u2 => rhs); end associate
-
-    error stop 'view_level: a level storage is not assignable'
-
-  end subroutine refuse_assignment
-
-  !===================================================================!
-  ! Release every node this storage allocated.
-  !===================================================================!
-
-  subroutine release(this)
-
-    type(level_storage), intent(inout) :: this
+    class(level_nodes), intent(inout) :: this
 
     integer :: k
 
@@ -450,6 +512,6 @@ contains
     deallocate(this % nodes)
     this % filled = 0
 
-  end subroutine release
+  end subroutine release_nodes
 
 end module view_level

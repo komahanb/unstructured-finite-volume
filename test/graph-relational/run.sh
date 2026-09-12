@@ -74,14 +74,15 @@ echo ''
 declare -A message=(
   [nosetbound]="no member set is bound to that element"
   [norelationbound]="no relation is bound to that element"
-  [assign]="a relational_binding is not assignable"
+  [sharedbind]="a binding is extended by its sole owner"
+  [releasedtwin]="this binding's objects have been released"
   [unsignedset]="a binding stores identified objects"
   [unsignedrelation]="a binding stores identified objects"
   [boundview]="a view cannot be bound"
 )
 
 echo ''
-for case in nosetbound norelationbound assign \
+for case in nosetbound norelationbound sharedbind releasedtwin \
             unsignedset unsignedrelation boundview; do
     if ./refusal "$case" >refusal.out 2>&1; then
         echo " FAIL : $case was admitted"

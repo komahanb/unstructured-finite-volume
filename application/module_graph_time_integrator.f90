@@ -1514,6 +1514,12 @@ module gti_expansion
   type :: family_container
      class(family), allocatable :: scheme
   end type family_container
+  ! An expansion is immutable once built. Its hierarchy and its coupling
+  ! binding are counted cells (doc/topology-ownership.md): a copy of an
+  ! expansion owns the same nodes, with the same identities, and its own
+  ! copies of the maps, layout, designs, rule and grid. Copies through
+  ! allocate(source=), a structure constructor or polymorphic assignment
+  ! are twins of one binding, refused once either is finalized.
   type :: expansion
      type(level_storage)     , private :: nodes
      type(label_map)         , private :: labels
@@ -1563,16 +1569,8 @@ module gti_expansion
      procedure :: step_partials
      procedure :: step_partial_along
      procedure, private :: weights_of_steps
-     procedure, private :: refuse_assignment
-     generic :: assignment(=) => refuse_assignment
   end type expansion
 contains
-  subroutine refuse_assignment(lhs, rhs)
-    class(expansion), intent(out) :: lhs
-    class(expansion), intent(in)  :: rhs
-    associate (u1 => lhs, u2 => rhs); end associate
-    error stop 'gti_expansion: an expansion is not assignable'
-  end subroutine refuse_assignment
   pure integer function root(this)
     class(expansion), intent(in) :: this
     root = this % root_at
@@ -1583,7 +1581,7 @@ contains
     type(graph), pointer :: g
     g => this % nodes % node(at)
   end function node
-  pure integer function num_nodes(this)
+  integer function num_nodes(this)
     class(expansion), intent(in) :: this
     num_nodes = this % nodes % num_nodes()
   end function num_nodes
@@ -4957,13 +4955,19 @@ module gti_chain
 
   end type block_rule
 
-  ! One execution owns all mutable state. Rules reference it only during
-  ! advance; no pointer into this value survives the call.
+  ! One execution owns all mutable state as values: trajectories, Taylor
+  ! coefficients, progress, results, solver state and numerical caches.
+  ! Rules reference it only during advance; no pointer into this value
+  ! survives the call. A copy is therefore an independent execution with
+  ! the same state, sharing only the immutable expansion cells; its
+  ! caches are the correct caches of its own equal state. The expansion
+  ! is not an allocatable component: gfortran 15 does not invoke the
+  ! cells' defined assignment through one (doc/topology-ownership.md).
   type :: chain_execution
      private
      type(march_context) :: context
      type(chain_block), allocatable :: chain(:)
-     type(expansion), allocatable :: tower
+     type(expansion) :: tower
      type(taylor_context), allocatable :: taylor
      type(block_rule), allocatable :: rules(:)
      type(temporal_minimizer) :: schedule
@@ -4978,8 +4982,6 @@ module gti_chain
      procedure :: complete => execution_complete
      procedure :: derivative => execution_derivative
      procedure :: take_results => execution_take_results
-     procedure, private :: refuse_assignment => execution_refuse_assignment
-     generic :: assignment(=) => refuse_assignment
   end type chain_execution
 
   ! The arrays are owned by one derivative call. Its scheduled rules
@@ -5103,13 +5105,6 @@ contains
     call execution % take_results(chain, tower, dt, t, achieved, final_imbalance, f, tower_storage, state_storage)
   end subroutine march_chain
 
-  subroutine execution_refuse_assignment(lhs, rhs)
-    class(chain_execution), intent(inout) :: lhs
-    class(chain_execution), intent(in) :: rhs
-    associate (u1 => lhs, u2 => rhs); end associate
-    error stop 'gti_chain: an execution is not assignable'
-  end subroutine execution_refuse_assignment
-
   subroutine execution_initialize(this, schemes, added, physics, degrees, steps, design, initial, &
        & grid_design, nodes, spatial_discretization_stencil, startup, functionals, derivative_order, &
        & spatial_derivative_stencils, gauge_field, context)
@@ -5184,7 +5179,6 @@ contains
        this % rules(at) % dt = this % dt(first(b):last(b))
        this % rules(at) % coarse_step = [(k, k = first(b), last(b))]
     end do
-    allocate(this % tower)
     call this % tower % build(physics, every, spans, steps, 0, design, nodes, spatial_discretization_stencil, &
          & weights=grid_design, block_steps=design_field, spatial_derivative_stencils=spatial_derivative_stencils, &
          & gauge_field=gauge_field)
@@ -5290,7 +5284,15 @@ contains
        if (present(state_storage)) state_storage = 0
     end if
     call move_alloc(this % chain, chain)
-    call move_alloc(this % tower, tower)
+    ! the caller's tower joins the owners of the expansion's cells and the
+    ! execution leaves them; an unallocated tower is allocated before the
+    ! assignment, which gfortran 15 requires
+    if (.not. allocated(tower)) allocate(tower)
+    tower = this % tower
+    block
+      type(expansion) :: unbuilt
+      this % tower = unbuilt
+    end block
     call move_alloc(this % dt, dt)
     call move_alloc(this % t, t)
     deallocate(this % rules)

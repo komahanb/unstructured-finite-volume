@@ -5,8 +5,9 @@
 ! a long-lived reader keeps such a pointer across growth. This
 ! suite verifies the storage law that makes that safe:
 !
-!     relational_binding is not assignable; bind_* preserves every
-!     outstanding object pointer until the binding is destroyed.
+!     a binding is a counted reference to its objects; bind_* preserves
+!     every outstanding object pointer while any owner of the binding
+!     remains.
 !
 ! The law is a property of the STORAGE, not of graph. A graph mutates
 ! freely under stable identity; an object that lends pointers may
@@ -32,11 +33,22 @@
 !       valgrind : invalid read of a freed block, and returns R1
 !
 ! Two allocators, two different incorrect results, and the first is one no
-! tool reports. No caller assigned a binding, so the copy that made
-! this reachable is gone and assignment refuses.
+! tool reports. Assignment therefore copies no object: it binds one
+! more owner of the same objects (util_counted_storage), and the
+! objects are deallocated with the last owner. Section G checks that
+! a lent pointer survives the destruction and the replacement of the
+! binding it was lent from while a copy owns the objects.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
+
+module binding_containers
+  use view_relational, only : relational_binding
+  implicit none
+  type :: binding_holder
+     type(relational_binding) :: binding
+  end type binding_holder
+end module binding_containers
 
 program lifetime
 
@@ -50,6 +62,7 @@ program lifetime
   use relation_binary, only : binary_relation, csr_relation
   use view_relational, only : relational_binding, relation_at, &
        & member_set_at
+  use binding_containers, only : binding_holder
 
   implicit none
 
@@ -232,6 +245,66 @@ program lifetime
   end block target_block
 
   !===================================================================!
+  ! G . OWNERS. A copy binds one more owner of the same objects. The
+  ! lent pointer survives the replacement of the lender (d = other) and
+  ! the destruction of the lender (deallocate) while the copy lives, and
+  ! a copy taken through a container, an array element and a function
+  ! result is an owner too. Extension is refused while shared and admitted
+  ! again once the copy is gone.
+  !===================================================================!
+
+  owners_block: block
+
+    type(graph), target      :: e1, e2, e3
+    type(relational_binding), allocatable :: b
+    type(relational_binding) :: d, other, elements(2)
+    type(binding_holder) :: holder, holder_copy
+    type(graph)        :: s
+    type(stored_relation)    :: r1, r2, r3
+    class(relation), pointer :: p, q
+    type(set_map)     :: sets
+
+    call e1 % declare(); call e2 % declare(); call e3 % declare()
+    call s % declare()
+    call sets % bind(s, counted_set_representation(4))
+    r1 = stored_relation('R1', [s], reshape([1, 2], [1, 2]), sets)
+    r2 = stored_relation('R2', [s], reshape([3, 4], [1, 2]), sets)
+    r3 = stored_relation('R3', [s], reshape([1, 4], [1, 2]), sets)
+
+    allocate(b)
+    call check('G  a binding without objects has no owner', b % num_owners() .eq. 0)
+    call b % bind_relation(e1, r1)
+    p => b % relation_for(e1)
+    d = b
+    call check('G  assignment binds a second owner of the same objects', &
+         & b % num_owners() .eq. 2 .and. associated(p, d % relation_for(e1)))
+    holder % binding = d
+    holder_copy = holder
+    elements(1) = d
+    elements(2) = binding_result(d)
+    call check('G  a container, its copy, an array element and a function result are owners', &
+         & b % num_owners() .eq. 6)
+    call other % bind_relation(e2, r2)
+    deallocate(b)
+    call check('G  the lent pointer survives the destruction of its lender while a copy owns', &
+         & d % num_owners() .eq. 5 .and. p % same_as(r1) .and. p % name() .eq. 'R1')
+    d = other
+    q => d % relation_for(e2)
+    call check('G  and the replacement of another owner', &
+         & holder % binding % num_owners() .eq. 4 .and. d % num_owners() .eq. 2 &
+         & .and. p % name() .eq. 'R1' .and. q % name() .eq. 'R2')
+    holder_copy % binding = other
+    elements(1) = other
+    elements(2) = other
+    call check('G  the sole remaining owner may extend', holder % binding % num_owners() .eq. 1)
+    call holder % binding % bind_relation(e3, r3)
+    q => holder % binding % relation_for(e3)
+    call check('G  and the extension preserves the lent pointer', &
+         & p % name() .eq. 'R1' .and. q % name() .eq. 'R3')
+
+  end block owners_block
+
+  !===================================================================!
 
   if (failures .eq. 0) then
      print *, ''
@@ -243,6 +316,11 @@ program lifetime
   end if
 
 contains
+
+  type(relational_binding) function binding_result(source)
+    type(relational_binding), intent(in) :: source
+    binding_result = source
+  end function binding_result
 
   subroutine check(label, satisfied)
 

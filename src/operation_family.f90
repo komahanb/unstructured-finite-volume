@@ -43,7 +43,7 @@ module operation_family
   private
   public :: family
   public :: adams_family, bdf_family, dirk_family
-  public :: newmark_family, taylor_newmark_family
+  public :: newmark_family
   public :: implicit_midpoint, crouzeix_two_stage, crouzeix_three_stage, &
        & hairer_wanner_five_stage
   public :: slope_at_zero, integral_over_step
@@ -59,7 +59,8 @@ module operation_family
   ! A family is its label, its geometry and its data: the order of a
   ! multistep family, the tableau (a, b) of a DIRK family, or beta and
   ! gamma of a Newmark family. Every unstaged family has one stage
-  ! with weight one, so b = [1].
+  ! with weight one, so b = [1]. The order is read by the multistep
+  ! geometries only; a one-step family stores one, its history depth.
   !===================================================================!
 
   type, extends(edge_function) :: family
@@ -153,26 +154,27 @@ contains
 
   end function dirk_family
 
-  function newmark_family(beta, gamma, order) result(this)
+  !===================================================================!
+  ! Newmark is the pair (beta, gamma) and nothing else: its rows
+  !
+  !    q_k  = q_(k-1) + h q'_(k-1) + h^2 (1/2 - beta) q''_(k-1)
+  !                                + h^2 beta q''_k
+  !    q'_k = q'_(k-1) + h (1 - gamma) q''_(k-1) + h gamma q''_k
+  !
+  ! reproduce t^0, t^1, t^2 for every pair and are second order in h
+  ! when gamma = 1/2, first order otherwise; no integer states more.
+  ! The pair (0, 0) is the explicit Taylor step of the jet.
+  !===================================================================!
+
+  function newmark_family(beta, gamma) result(this)
 
     real(dp), intent(in) :: beta, gamma
-    integer , intent(in) :: order
     type(family) :: this
 
-    if (order < 1) error stop 'operation_family: the order is positive'
-    this = create('newmark', FAMILY_NEWMARK, order, reshape([1.0_dp], [1, 1]), &
+    this = create('newmark', FAMILY_NEWMARK, 1, reshape([1.0_dp], [1, 1]), &
          & [1.0_dp], beta=beta, gamma=gamma)
 
   end function newmark_family
-
-  function taylor_newmark_family() result(this)
-
-    type(family) :: this
-
-    this = create('taylor-newmark', FAMILY_NEWMARK, 1, reshape([1.0_dp], [1, 1]), &
-         & [1.0_dp], beta=0.0_dp, gamma=0.0_dp)
-
-  end function taylor_newmark_family
 
   !===================================================================!
   ! The queries, each one read from the data.
@@ -237,10 +239,17 @@ contains
   end function family_stage_weight
 
   !===================================================================!
-  ! The interpolatory quadrature over the step ending at k, on the
-  ! nodes the family reads: min(order, k) for a multistep family,
-  ! one for DIRK (the rectangle rule). An instant outside the block
-  ! stops the program.
+  ! The interpolatory quadrature over the step [t_(k-1), t_k], on the
+  ! instants the family's rows read, so that it is of the order of the
+  ! scheme: min(order, k) for a multistep family; for Newmark the two
+  ! instants k - 1 and k its rows read (offsets 1 and 0), which is the
+  ! trapezoidal rule, weights (1/2, 1/2), exact on linear integrands,
+  ! global error -(h^2/12) [f'(T) - f'(0)] + O(h^4), the second order
+  ! of the pair with gamma = 1/2. A rule on a third instant would read
+  ! history the family does not hold. At k = 1 the single node has
+  ! the measure dt_1 = 0. A staged family integrates over its stages
+  ! with the tableau weights b, not over instants, and stops the
+  ! program here. An instant outside the block stops the program.
   !===================================================================!
 
   pure subroutine family_step_quadrature(this, dt, k, weight)
@@ -258,8 +267,10 @@ contains
     select case (this % geometry)
     case (FAMILY_ADAMS, FAMILY_BDF)
        num_nodes = min(this % order, k)
+    case (FAMILY_NEWMARK)
+       num_nodes = min(2, k)
     case default
-       num_nodes = 1
+       error stop 'operation_family: a staged family integrates over its stages by the tableau weights'
     end select
     allocate(weight(num_nodes))
     do j = 1, num_nodes
@@ -367,9 +378,16 @@ contains
   !===================================================================!
   ! The connectivity of the tableau over one step at nd degrees, on
   ! the vertices 1 (the instant behind), 2..s+1 (the stages) and s+2
-  ! (the instant ahead): stage i reads the degree above at stages
-  ! 1..i, and the instant ahead reads the degree above (the top
-  ! degree itself) at every stage. Degree outer, stage inner.
+  ! (the instant ahead). Below the top degree, stage i reads its own
+  ! degree at the instant behind and the degree above at stages 1..i,
+  ! and the instant ahead reads its own degree at the instant behind
+  ! and the degree above at every stage:
+  !
+  !    Q_i = q_(k-1) + h sum_(j<=i) a_ij Q'_j ,  q_k = q_(k-1) + h sum_j b_j Q'_j .
+  !
+  ! At the top degree the instant ahead reads that degree itself at
+  ! every stage with the weights b. Degree outer, stage inner; within
+  ! a row the instant behind precedes the stages.
   !===================================================================!
 
   function family_stage_connectivity(this, nd) result(connectivity)
@@ -382,12 +400,13 @@ contains
     integer :: s, d, i, j, at
 
     s  = size(this % b)
-    at = (nd - 1) * (s * (s + 1) / 2 + s) + s
+    at = (nd - 1) * (s * (s + 1) / 2 + 2 * s + 1) + s
     allocate(tails(at), heads(at), tail_degree(at), head_degree(at))
     at = 0
     do d = 0, nd - 1
        do i = 1, s
           if (d == nd - 1) cycle
+          call behind(1 + i)
           do j = 1, i
              at = at + 1
              tails(at) = 1 + j
@@ -396,6 +415,7 @@ contains
              head_degree(at) = d
           end do
        end do
+       if (d < nd - 1) call behind(2 + s)
        do j = 1, s
           at = at + 1
           tails(at) = 1 + j
@@ -406,6 +426,17 @@ contains
     end do
 
     connectivity = connectivity_graph(s + 2, tails, heads, tail_degree, head_degree)
+
+  contains
+
+    subroutine behind(head)
+      integer, intent(in) :: head
+      at = at + 1
+      tails(at) = 1
+      heads(at) = head
+      tail_degree(at) = d
+      head_degree(at) = d
+    end subroutine behind
 
   end function family_stage_connectivity
 

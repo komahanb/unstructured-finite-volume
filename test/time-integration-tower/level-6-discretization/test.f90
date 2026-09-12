@@ -58,6 +58,32 @@
 ! numbers. That is the Level-2 -> Level-6 Rosetta connection, and
 ! it is why Level 2 was right to refuse the name.
 !
+!                    THE FAMILY AS DATA
+!
+! The second half of the level reads a family's incidence and
+! weights from the family alone and checks them against closed
+! forms. Newmark (beta, gamma) advances the jet (q, q', q'') by
+!
+!      q_k  = q_(k-1) + h q'_(k-1) + h^2 (1/2 - beta) q''_(k-1)
+!                                  + h^2 beta q''_k
+!      q'_k = q'_(k-1) + h (1 - gamma) q''_(k-1) + h gamma q''_k
+!
+! with h = dt_k; both rows read q'' at the arriving instant, the
+! across-degree edge with tail = head. On q = t^m the rows vanish
+! for m = 0, 1, 2 whatever the pair, and on t^3 the value row leaves
+! 6 h^3 (beta - 1/6) and the velocity row 6 h^2 (gamma - 1/2), in
+! the sign convention  r = -D q_k + sum_e w_e D q_tail(e). The pair
+! (0, 0) is the explicit Taylor step: the weight of q''_k is zero.
+! A DIRK tableau's step connectivity states the same kind of rows,
+! Q_i = q_(k-1) + h sum_j a_ij Q'_j, q_k = q_(k-1) + h sum_j b_j Q'_j,
+! with the instant behind first in every row. A functional over the
+! step is integrated on the instants the rows read: for Newmark the
+! two instants k - 1 and k, the trapezoidal rule (1/2, 1/2), the
+! same rule Adams-Moulton 2 and BDF-2 state on their two instants;
+! at the first instant one node, whose measure is zero. Newmark
+! refuses an equation of degree other than two; a staged family
+! refuses the instant quadrature: each refusal stops a child process.
+!
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
@@ -76,7 +102,11 @@ program time_level_6
   use relation_binary , only : csr_relation
   use view_directed_stored           , only : stored_directed_graph
   use field_stored     , only : stored_field
-  use operation_family    , only : family, bdf_family
+  use operation_family    , only : family, bdf_family, adams_family, newmark_family, crouzeix_two_stage
+  use operation_weight    , only : scheme_weight
+  use operation_coupling  , only : weights_of
+  use view_directed_connectivity, only : connectivity_graph
+  use util_derivative_terms, only : derivative_terms, value
   use temporal_step_fixture , only : temporal_step, backward_euler, bdf
   use time_carriers_fixture , only : time_carriers
   use time_relations_fixture, only : tail_relation, head_relation
@@ -95,6 +125,10 @@ program time_level_6
   type(triangular_decay)     :: decay
   type(stored_field)                :: qf
   integer                    :: nfail
+  character(len=64)          :: mode
+
+  call get_command_argument(1, mode)
+  if (len_trim(mode) > 0) call refused_case(trim(mode))
 
   nfail = 0
 
@@ -123,6 +157,13 @@ program time_level_6
   call check_backward_euler_residual(nfail)
   call check_reach_supplies_the_history_roles(nfail)
   call check_bdf2_residual(nfail)
+  call check_newmark_connectivity(nfail)
+  call check_newmark_weights(nfail)
+  call check_newmark_polynomial_rows(nfail)
+  call check_taylor_newmark_datum(nfail)
+  call check_dirk_step_connectivity(nfail)
+  call check_newmark_step_quadrature(nfail)
+  call check_family_refusals(nfail)
 
   call assert_all(nfail, "level 6")
 
@@ -410,5 +451,364 @@ contains
          & "backward-euler q1", nfail)
 
   end subroutine check_bdf2_residual
+
+  !===================================================================!
+  ! The Newmark block connectivity over two instants at three
+  ! degrees: the value row reads q, q', q'' behind and q'' ahead; the
+  ! velocity row reads q', q'' behind and q'' ahead; the acceleration
+  ! (the primary degree) has no row. Over four instants the pattern
+  ! is placed at every instant with one behind it.
+  !===================================================================!
+
+  subroutine check_newmark_connectivity(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(family) :: scheme
+    type(connectivity_graph) :: edges
+    integer, parameter :: tails(7) = [1, 1, 1, 2, 1, 1, 2]
+    integer, parameter :: tail_degrees(7) = [0, 1, 2, 2, 1, 2, 2]
+    integer, parameter :: head_degrees(7) = [0, 0, 0, 0, 1, 1, 1]
+    integer :: e
+
+    scheme = newmark_family(0.25_dp, 0.5_dp)
+    call report(scheme % history_depth(2) .eq. 1 .and. scheme % primary_degree(2) .eq. 2 &
+         & .and. scheme % num_stages() .eq. 1, &
+         & "newmark reaches one instant back, determines the jet from " // &
+         & "the acceleration, and has one stage", nfail)
+
+    edges = scheme % block_connectivity(3, 2)
+    call report(edges % num_vertices() .eq. 2 .and. edges % num_edges() .eq. 7, &
+         & "over two instants at three degrees the family states seven " // &
+         & "edges: four into the value row, three into the velocity row", nfail)
+    call report(all([(edges % edge_tail(e) .eq. tails(e), e = 1, 7)]) .and. &
+         &      all([(edges % edge_head(e) .eq. 2, e = 1, 7)]) .and. &
+         &      all([(edges % tail_degree(e) .eq. tail_degrees(e), e = 1, 7)]) .and. &
+         &      all([(edges % head_degree(e) .eq. head_degrees(e), e = 1, 7)]), &
+         & "value row: q, q', q'' behind and q'' ahead; velocity row: " // &
+         & "q', q'' behind and q'' ahead, in the family's order", nfail)
+    call report(edges % edge_tail(4) .eq. edges % edge_head(4) .and. edges % tail_degree(4) .eq. 2 &
+         & .and. edges % edge_tail(7) .eq. edges % edge_head(7) .and. edges % tail_degree(7) .eq. 2, &
+         & "the across-degree edges: both rows read the acceleration at " // &
+         & "the instant they determine (tail = head)", nfail)
+
+    edges = scheme % block_connectivity(3, 4)
+    call report(edges % num_edges() .eq. 21 .and. &
+         & all([(edges % edge_head(e) .eq. 1 + (e - 1) / 7 + 1, e = 1, 21)]), &
+         & "over four instants the pattern is placed at instants 2, 3, 4: " // &
+         & "twenty-one edges, seven per arriving instant", nfail)
+
+  end subroutine check_newmark_connectivity
+
+  !===================================================================!
+  ! The weights of both rows against the closed forms, on a
+  ! non-uniform grid dt = [0, 0.3, 0.2]: every weight is a power of
+  ! the step arriving at the row's instant, so the two instants
+  ! give two different rows of numbers.
+  !===================================================================!
+
+  subroutine check_newmark_weights(nfail)
+
+    integer, intent(inout) :: nfail
+
+    real(dp), parameter :: dt(3) = [0.0_dp, 0.3_dp, 0.2_dp]
+    real(dp), parameter :: beta = 0.25_dp, gamma = 0.5_dp
+
+    call report(maxval(abs(newmark_weights(beta, gamma, dt) - closed_forms(beta, gamma, dt))) .lt. TOL, &
+         & "newmark (1/4, 1/2): value row [1, h, h^2 (1/2 - beta), h^2 beta], " // &
+         & "velocity row [1, h (1 - gamma), h gamma], at h = 0.3 and h = 0.2", nfail)
+    call report(maxval(abs(newmark_weights(1.0_dp / 12.0_dp, gamma, dt) &
+         & - closed_forms(1.0_dp / 12.0_dp, gamma, dt))) .lt. TOL, &
+         & "newmark (1/12, 1/2), Fox-Goodwin: the same closed forms", nfail)
+
+  end subroutine check_newmark_weights
+
+  !===================================================================!
+  ! The weights over the three-instant block, fourteen numbers: the
+  ! seven edges into instant 2 then the seven into instant 3.
+  !===================================================================!
+
+  function newmark_weights(beta, gamma, dt) result(w)
+
+    real(dp), intent(in) :: beta, gamma, dt(3)
+    real(dp), allocatable :: w(:)
+
+    type(family) :: scheme
+
+    scheme = newmark_family(beta, gamma)
+    call weights_of(scheme_weight(scheme), scheme % block_connectivity(3, 3), dt, w)
+
+  end function newmark_weights
+
+  function closed_forms(beta, gamma, dt) result(w)
+
+    real(dp), intent(in) :: beta, gamma, dt(3)
+    real(dp) :: w(14)
+
+    real(dp) :: h
+    integer :: k
+
+    do k = 2, 3
+       h = dt(k)
+       w(7 * (k - 2) + 1 : 7 * (k - 1)) = [1.0_dp, h, h * h * (0.5_dp - beta), h * h * beta, &
+            &                              1.0_dp, h * (1.0_dp - gamma), h * gamma]
+    end do
+
+  end function closed_forms
+
+  !===================================================================!
+  ! The rows on q = t^m at instant 3 (t = 0.5, h = 0.2): zero for
+  ! m = 0, 1, 2 whatever the pair; on t^3 the value row leaves
+  ! 6 h^3 (beta - 1/6) and the velocity row 6 h^2 (gamma - 1/2).
+  !===================================================================!
+
+  subroutine check_newmark_polynomial_rows(nfail)
+
+    integer, intent(inout) :: nfail
+
+    real(dp), parameter :: dt(3) = [0.0_dp, 0.3_dp, 0.2_dp]
+    real(dp), parameter :: pairs(2, 3) = reshape( &
+         & [0.25_dp, 0.5_dp,  1.0_dp / 12.0_dp, 0.5_dp,  0.0_dp, 0.0_dp], [2, 3])
+    real(dp) :: r(0:3, 0:1), h
+    integer :: p
+    logical :: quadratic, cubic
+
+    h = dt(3)
+    quadratic = .true.
+    cubic     = .true.
+    do p = 1, 3
+       r = row_residuals(pairs(1, p), pairs(2, p), dt)
+       quadratic = quadratic .and. maxval(abs(r(0:2, :))) .lt. TOL
+       cubic = cubic .and. abs(r(3, 0) - 6.0_dp * h**3 * (pairs(1, p) - 1.0_dp / 6.0_dp)) .lt. TOL &
+            &        .and. abs(r(3, 1) - 6.0_dp * h**2 * (pairs(2, p) - 0.5_dp)) .lt. TOL
+    end do
+    call report(quadratic, &
+         & "both rows vanish on t^0, t^1, t^2 for (1/4, 1/2), (1/12, 1/2) " // &
+         & "and (0, 0): the pair changes no exactness below the cubic", nfail)
+    call report(cubic, &
+         & "on t^3 the value row leaves 6 h^3 (beta - 1/6) and the velocity " // &
+         & "row 6 h^2 (gamma - 1/2): measured equals the closed form", nfail)
+
+  end subroutine check_newmark_polynomial_rows
+
+  !===================================================================!
+  ! r(m, d) = -D^d t_3^m + sum over the edges into (3, d) of
+  ! w_e D^(tail degree) t_tail^m.
+  !===================================================================!
+
+  function row_residuals(beta, gamma, dt) result(r)
+
+    real(dp), intent(in) :: beta, gamma, dt(3)
+    real(dp) :: r(0:3, 0:1)
+
+    type(family) :: scheme
+    type(connectivity_graph) :: edges
+    real(dp), allocatable :: w(:)
+    real(dp) :: t(3)
+    integer :: e, m, k
+
+    scheme = newmark_family(beta, gamma)
+    edges  = scheme % block_connectivity(3, 3)
+    call weights_of(scheme_weight(scheme), edges, dt, w)
+    t(1) = 0.0_dp
+    do k = 2, 3
+       t(k) = t(k - 1) + dt(k)
+    end do
+    do m = 0, 3
+       r(m, :) = -[monomial_derivative(m, 0, t(3)), monomial_derivative(m, 1, t(3))]
+       do e = 1, edges % num_edges()
+          if (edges % edge_head(e) .ne. 3) cycle
+          r(m, edges % head_degree(e)) = r(m, edges % head_degree(e)) &
+               & + w(e) * monomial_derivative(m, edges % tail_degree(e), t(edges % edge_tail(e)))
+       end do
+    end do
+
+  end function row_residuals
+
+  pure real(dp) function monomial_derivative(m, d, t) result(q)
+
+    integer , intent(in) :: m, d
+    real(dp), intent(in) :: t
+
+    integer :: i
+
+    q = 0.0_dp
+    if (d > m) return
+    q = 1.0_dp
+    do i = 0, d - 1
+       q = q * real(m - i, dp)
+    end do
+    q = q * t**(m - d)
+
+  end function monomial_derivative
+
+  !===================================================================!
+  ! Taylor-Newmark is the pair (0, 0): the same pattern, the weight
+  ! of q'' ahead zero in both rows, so the step is the explicit
+  ! Taylor expansion of the jet.
+  !===================================================================!
+
+  subroutine check_taylor_newmark_datum(nfail)
+
+    integer, intent(inout) :: nfail
+
+    real(dp), parameter :: dt(3) = [0.0_dp, 0.3_dp, 0.2_dp]
+    real(dp), allocatable :: w(:)
+
+    w = newmark_weights(0.0_dp, 0.0_dp, dt)
+    call report(maxval(abs(w - closed_forms(0.0_dp, 0.0_dp, dt))) .lt. TOL .and. &
+         & w(4) .eq. 0.0_dp .and. w(7) .eq. 0.0_dp .and. w(11) .eq. 0.0_dp .and. w(14) .eq. 0.0_dp, &
+         & "newmark (0, 0): value row [1, h, h^2/2, 0], velocity row [1, h, 0] - " // &
+         & "the explicit Taylor step, one datum under the name taylor-newmark", nfail)
+
+  end subroutine check_taylor_newmark_datum
+
+  !===================================================================!
+  ! The Crouzeix two-stage step at two degrees: ten edges, the
+  ! instant behind first in every row, weights [1, h g], [1, h (1 -
+  ! 2 g), h g], [1, h/2, h/2] below the top degree and [1/2, 1/2]
+  ! for the top degree at the instant ahead.
+  !===================================================================!
+
+  subroutine check_dirk_step_connectivity(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(family) :: scheme
+    type(connectivity_graph) :: edges
+    real(dp), allocatable :: w(:)
+    real(dp), parameter :: h = 0.3_dp
+    real(dp) :: g
+    integer, parameter :: tails(10) = [1, 2, 1, 2, 3, 1, 2, 3, 2, 3]
+    integer, parameter :: heads(10) = [2, 2, 3, 3, 3, 4, 4, 4, 4, 4]
+    integer, parameter :: tail_degrees(10) = [0, 1, 0, 1, 1, 0, 1, 1, 1, 1]
+    integer, parameter :: head_degrees(10) = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1]
+    integer :: e
+
+    g = (3.0_dp + sqrt(3.0_dp)) / 6.0_dp
+    scheme = crouzeix_two_stage()
+    edges  = scheme % stage_connectivity(2)
+    call report(edges % num_vertices() .eq. 4 .and. edges % num_edges() .eq. 10 .and. &
+         &      all([(edges % edge_tail(e) .eq. tails(e), e = 1, 10)]) .and. &
+         &      all([(edges % edge_head(e) .eq. heads(e), e = 1, 10)]) .and. &
+         &      all([(edges % tail_degree(e) .eq. tail_degrees(e), e = 1, 10)]) .and. &
+         &      all([(edges % head_degree(e) .eq. head_degrees(e), e = 1, 10)]), &
+         & "crouzeix two-stage at two degrees: stage 1 reads the instant " // &
+         & "behind and itself, stage 2 both stages, the instant ahead every " // &
+         & "stage; the instant behind is first in each row", nfail)
+    call weights_of(scheme_weight(scheme), edges, [(h, e = 1, 4)], w)
+    call report(maxval(abs(w - [1.0_dp, h * g, 1.0_dp, h * (1.0_dp - 2.0_dp * g), h * g, &
+         &                     1.0_dp, h / 2.0_dp, h / 2.0_dp, 0.5_dp, 0.5_dp])) .lt. TOL, &
+         & "with weights 1 on the instant behind, h a_ij on the stages, " // &
+         & "h b_j into the instant ahead and b_j at the top degree", nfail)
+
+  end subroutine check_dirk_step_connectivity
+
+  !===================================================================!
+  ! The step quadrature of Newmark on the non-uniform grid
+  ! dt = [0, 0.3, 0.2]: at instant 3 the two nodes are instants 3
+  ! and 2 with weights (1/2, 1/2) of the step dt_3, the trapezoidal
+  ! rule, equal to the two-instant rule of Adams-Moulton 2 and of
+  ! BDF-2; at instant 1 one node of weight one.
+  !===================================================================!
+
+  subroutine check_newmark_step_quadrature(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(family) :: scheme, adams2, bdf2
+    type(derivative_terms) :: dt(3)
+    type(derivative_terms), allocatable :: weight(:), reference(:)
+    integer :: k
+
+    dt = [derivative_terms(0.0_dp, 0), derivative_terms(0.3_dp, 0), derivative_terms(0.2_dp, 0)]
+    scheme = newmark_family(0.25_dp, 0.5_dp)
+    call scheme % step_quadrature(dt, 3, weight)
+    call report(size(weight) .eq. 2 .and. abs(value(weight(1)) - 0.5_dp) .lt. TOL &
+         & .and. abs(value(weight(2)) - 0.5_dp) .lt. TOL, &
+         & "newmark integrates the step on the two instants its rows " // &
+         & "read: the trapezoidal rule (1/2, 1/2)", nfail)
+    adams2 = adams_family(2)
+    bdf2   = bdf_family(2)
+    call adams2 % step_quadrature(dt, 3, reference)
+    call report(size(reference) .eq. 2 .and. maxval([(abs(value(weight(k)) - value(reference(k))), k = 1, 2)]) .lt. TOL, &
+         & "the same rule Adams-Moulton 2 states on its two instants", nfail)
+    call bdf2 % step_quadrature(dt, 3, reference)
+    call report(size(reference) .eq. 2 .and. maxval([(abs(value(weight(k)) - value(reference(k))), k = 1, 2)]) .lt. TOL, &
+         & "and the same rule BDF-2 states", nfail)
+    call scheme % step_quadrature(dt, 1, weight)
+    call report(size(weight) .eq. 1 .and. abs(value(weight(1)) - 1.0_dp) .lt. TOL, &
+         & "at the first instant one node of weight one, whose step " // &
+         & "measure is zero", nfail)
+
+  end subroutine check_newmark_step_quadrature
+
+  !===================================================================!
+  ! The refusals, each in a child process that must stop.
+  !===================================================================!
+
+  subroutine check_family_refusals(nfail)
+
+    integer, intent(inout) :: nfail
+
+    call report(stopped('newmark-history-depth') .and. stopped('newmark-row-pattern') &
+         & .and. stopped('newmark-primary-degree'), &
+         & "newmark refuses a first-order equation in every query that " // &
+         & "reads the equation degree", nfail)
+    call report(stopped('dirk-step-quadrature'), &
+         & "a staged family refuses the instant quadrature: it integrates " // &
+         & "over its stages by the tableau weights", nfail)
+
+  end subroutine check_family_refusals
+
+  logical function stopped(case_name)
+
+    character(len=*), intent(in) :: case_name
+
+    character(len=256) :: self
+    integer :: status, command_status, unit
+
+    call get_command_argument(0, self)
+    call execute_command_line(trim(self) // ' ' // case_name // ' > refusal.out 2>&1', &
+         & exitstat=status, cmdstat=command_status)
+    stopped = command_status .eq. 0 .and. status .ne. 0
+    open(newunit=unit, file='refusal.out', status='old')
+    close(unit, status='delete')
+
+  end function stopped
+
+  subroutine refused_case(case_name)
+
+    character(len=*), intent(in) :: case_name
+
+    type(family) :: scheme
+    type(derivative_terms) :: dt(2)
+    type(derivative_terms), allocatable :: weight(:)
+    integer, allocatable :: offset(:), tail_degree(:)
+    integer :: k
+
+    select case (case_name)
+    case ('newmark-history-depth')
+       scheme = newmark_family(0.25_dp, 0.5_dp)
+       k = scheme % history_depth(1)
+    case ('newmark-row-pattern')
+       scheme = newmark_family(0.25_dp, 0.5_dp)
+       call scheme % row_pattern(0, 1, offset, tail_degree)
+       k = size(offset)
+    case ('newmark-primary-degree')
+       scheme = newmark_family(0.25_dp, 0.5_dp)
+       k = scheme % primary_degree(1)
+    case ('dirk-step-quadrature')
+       scheme = crouzeix_two_stage()
+       dt = [derivative_terms(0.0_dp, 0), derivative_terms(0.5_dp, 0)]
+       call scheme % step_quadrature(dt, 2, weight)
+       k = size(weight)
+    case default
+       error stop 'level 6: an unknown refusal case'
+    end select
+    write(*,'(a,i0)') ' the case ' // case_name // ' was accepted with ', k
+    stop 0
+
+  end subroutine refused_case
 
 end program time_level_6

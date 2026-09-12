@@ -872,7 +872,12 @@ the defect fall as 2^p under halving). `families = bdf adams dirk` is
 the default survey. The accepted family names are `bdf` and `adams`
 at any order, `dirk` at orders two to four (the implicit midpoint rule
 and the two Crouzeix tableaux), `newmark` at orders one to three, and
-`taylor-newmark` at order one.
+`taylor-newmark` at order one. A Newmark family is the pair (beta,
+gamma) and nothing else; the `newmark` order names a pair, (0, 0) the
+explicit Taylor step, (1/4, 1/2) average acceleration, (1/12, 1/2)
+Fox-Goodwin, and `taylor-newmark` names (0, 0) again. Every pair is
+exact on quadratics; the scheme is second order when gamma = 1/2 and
+first order otherwise, whatever the row's name states.
 `combinations = 1 2 3` builds chains of that many windows, joined at
 their shared instants: one window is a single family over the whole
 horizon, and more than one changes family along it. Any count may be

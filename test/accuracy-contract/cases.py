@@ -249,6 +249,18 @@ def required_cases():
                       "Adams-Moulton 3, order 3"),
         temporal_case("T10-adams4", "adams4", 4, ["E", "invariant"],
                       "Adams-Moulton 4, order 4 in the functional and the invariant drift"),
+        temporal_case("T11-newmark2", "newmark2", 2, ["dE", "dD", "q", "qd", "conserved",
+                                                      "invariant_conserved"],
+                      "Newmark beta = 1/4, gamma = 1/2 (average acceleration), order 2: the "
+                      "trapezoidal rule on the first-order system, so the discrete energy and "
+                      "the invariant of the linear oscillator are conserved exactly; functionals "
+                      "integrated by the two-instant (trapezoidal) step quadrature",
+                      argv_extra=("--families=newmark",)),
+        temporal_case("T12-newmark3", "newmark3", 2, ["E", "dE", "dD", "qd"],
+                      "Newmark beta = 1/12, gamma = 1/2 (Fox-Goodwin), order 2 in the "
+                      "functionals, the design derivatives and the velocity; its position "
+                      "reaches order 4 on the linear oscillator and is not declared",
+                      argv_extra=("--families=newmark",)),
         temporal_case("C01-dirk3-bdf2", "dirk3-bdf2", 2, ["dE", "dD"],
                       "chain DIRK-3 then BDF-2: order min(3, 2) = 2", chain="dirk:3 bdf:2"),
         temporal_case("C02-bdf2-dirk3", "bdf2-dirk3", 2, ["dE", "dD"],
@@ -299,11 +311,6 @@ def required_cases():
                       "|q'' + q| at the last instant is first order in h",
                       limitation="|q'' + q| = 4.6e-2 at h = 0.1 for every DIRK row; BDF, "
                                  "Adams and Newmark rows satisfy the law to 1e-13"),
-        temporal_case("L02-newmark2-derivative", "newmark2", 2, ["dE", "dD"],
-                      "Newmark beta = 1/4, gamma = 1/2: exact energy, first-order design "
-                      "derivatives", argv_extra=("--families=newmark",),
-                      limitation="derivatives measured at order 1 for every Newmark scheme; "
-                                 "R07 owns the Newmark derivative oracle"),
         field_temporal_case("L03-field-adams3", "adams3", 3,
                             "Adams-Moulton 3 on the periodic mode converges at first order",
                             limitation="semi-discrete error measured at order 1.0 on the "
@@ -330,9 +337,6 @@ def exploratory_cases():
         numeric_reference,
         temporal_case("X02-bdf2-energy", "bdf2", 3, ["E"],
                       "BDF-2 energy functional on the linear oscillator: order 3 measured"),
-        temporal_case("X03-newmark-functionals", "newmark3", 2, ["E", "qd"],
-                      "Newmark beta = 1/12, gamma = 1/2 functional and velocity at order 2",
-                      argv_extra=("--families=newmark",)),
         temporal_case("X08-newmark3-position", "newmark3", 4, ["q"],
                       "Newmark beta = 1/12 (Fox-Goodwin): fourth-order position on the "
                       "linear oscillator", argv_extra=("--families=newmark",)),

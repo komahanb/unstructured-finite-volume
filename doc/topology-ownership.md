@@ -74,6 +74,66 @@ proportional to the graph. Sharing that storage requires a separate
 ownership change; this interface does not claim constant-cost graph
 transposition. Graphs with headless edges still refuse directed transpose.
 
+## Counted ownership of immutable storage
+
+`util_counted_storage` is the primitive for jointly owned immutable
+storage. A cell (`counted_storage`, extended by its owner with the
+stored contents and a `clear` procedure) records a version and the set
+of live binding serials. A `counted_reference` is bound to a cell by
+`acquire(template)` or by defined assignment, each binding with its
+own serial; finalization or assignment over it removes that serial.
+The last removal clears the cell's contents; the cell object is
+retained and reused for the next acquisition of the same dynamic type,
+with a new version, so a reference whose binding is stale addresses a
+cell that exists, reports `live() = .false.`, returns no storage and
+releases nothing. `num_owners()` is the number of live bindings.
+
+The contract was measured for GNU Fortran 15.2 at `-O0` and `-O3`
+(`artifacts/remaining-work-2026-09-11/r04/mechanisms/`, the same
+program is the suite's `check_counted_storage`):
+
+| Copy mechanism | Result |
+|---|---|
+| intrinsic assignment: scalar, container, nested container, allocated allocatable scalar | owner; released with the value |
+| element and whole-array assignment; array constructor into an allocated array of references | owner |
+| `intent(out)` dummy, block scope end, `move_alloc`, `value` dummy | released or transferred correctly |
+| function result assigned to a scalar, a container or a component; `allocate(source=function())` | owner |
+| `allocate(mold=)` followed by a dispatching copy of the same dynamic type | owner |
+| structure constructor with a live reference component | the constructed object owns; the source keeps reading while the copy lives, and is released with it |
+| `allocate(source=variable)`, scalar, container, `class(base)`, `class(*)` | not an owner: a bitwise copy with its twin's serial; whichever twin is finalized first releases the binding, the other is not live afterwards |
+| polymorphic intrinsic assignment `class(base), allocatable :: b; b = a` | the same bitwise copy, whether or not `b` was allocated |
+| reallocating `arr = [arr, x]` of a type containing the reference | gfortran 15.2 runtime bounds failure |
+| assignment to an unallocated allocatable scalar of the type | gfortran 15.2 segmentation fault: allocate first |
+| whole-array assignment, array constructor or array function result reaching the reference through two component levels | gfortran 15.2 internal compiler error; element assignment compiles and binds |
+
+gfortran assigns a containing object by finalizing the destination
+component in place and then calling the component's defined assignment
+on a temporary that still contains the destination's former bytes, and
+returns function results through bitwise-moved temporaries of which
+only the last is finalized. Registration keyed by the reference's
+address was measured and rejected: it leaks on every container
+assignment and function result. Registration by binding serial, with
+idempotent release, is correct for every mechanism that invokes
+defined assignment and never reads released storage under the others.
+
+The stored graph does not use the primitive. The driver copies
+every rule and datum by `allocate(source=)`, minimizers copy
+themselves and their actions the same way, and a rule is a polymorphic
+operation that contains stencils and residual operators with graphs:
+each such copy would be a bitwise duplicate of the graph's reference,
+and its finalization would release the stored twin. A shared-cell
+graph was implemented and passed the ownership laws in isolation, then
+refused the first `constrain` of every demonstration through exactly
+that path; the implementation is retained as
+`artifacts/remaining-work-2026-09-11/r04/shared-cell-graph.patch`.
+Moving graphs onto shared cells requires that no object containing a
+graph is copied by `allocate(source=)`, structure constructor or
+polymorphic assignment: the seventeen operation types and eight
+minimizer types need a dispatching copy, and driver data must be
+excluded or dispatched. That is the execution copy-semantics boundary
+of R05 and R06. The module state (version and serial counters, the
+recycled cells) is not synchronised across threads.
+
 ## Verification
 
 `test/graph-topology-ownership/run.sh` checks the access boundary with

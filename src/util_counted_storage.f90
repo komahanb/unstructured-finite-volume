@@ -29,8 +29,16 @@
 ! binding, and the twin is refused at its next access. The measured
 ! table of mechanisms is in doc/topology-ownership.md.
 !
-! The serial counter and the recycled cells are module state without
-! synchronisation across threads.
+! The version and binding serial counters, the free list of recycled
+! cells and every cell's binding list form one registry. Its writers
+! (acquire, assign, release) run inside one named OpenMP critical
+! region when the library is built with -fopenmp; without it the
+! sentinel lines are comments and the serial statements are unchanged.
+! An owner's deferred clear runs outside the region, because a clear
+! may finalize other counted references and the region is not
+! re-entrant; the cleared cell joins the free list in a second entry.
+! Reads by an owner (live, num_owners, storage) take no lock: no other
+! thread can clear a cell on which this thread has a live binding.
 !=====================================================================!
 
 module util_counted_storage
@@ -104,9 +112,14 @@ contains
     class(counted_storage) , intent(in)    :: template
 
     type(cell_link), pointer :: link, previous
+    class(counted_storage), pointer :: cleared
 
-    call release(this)
+    !$omp critical(counted_storage_registry)
+    call remove_binding(this, cleared)
+    !$omp end critical(counted_storage_registry)
+    call recycle(cleared)
 
+    !$omp critical(counted_storage_registry)
     previous => null()
     link => released_cells
     do while (associated(link))
@@ -133,10 +146,12 @@ contains
     this % cell % num_owners = 0
     if (.not. allocated(this % cell % bindings)) allocate(this % cell % bindings(4))
     this % binding = new_binding(this % cell)
+    !$omp end critical(counted_storage_registry)
 
   end subroutine acquire
 
   ! Register one more owner on a live cell and return its serial.
+  ! Called inside the registry's critical region.
   integer function new_binding(cell) result(binding)
 
     class(counted_storage), intent(inout) :: cell
@@ -215,9 +230,25 @@ contains
     class(counted_reference), intent(inout) :: lhs
     type(counted_reference) , intent(in)    :: rhs
 
+    class(counted_storage), pointer :: cleared
+
+    call bind_over(lhs, rhs, cleared)
+    call recycle(cleared)
+
+  end subroutine assign
+
+  ! The registry part of assignment: one more binding on the source's
+  ! cell, then the destination's own binding removed.
+  subroutine bind_over(lhs, rhs, cleared)
+
+    class(counted_reference), intent(inout) :: lhs
+    type(counted_reference) , intent(in)    :: rhs
+    class(counted_storage), pointer, intent(out) :: cleared
+
     class(counted_storage), pointer :: cell
     integer :: version, binding
 
+    !$omp critical(counted_storage_registry)
     cell => null()
     version = 0
     binding = 0
@@ -226,12 +257,13 @@ contains
        version = rhs % version
        binding = new_binding(cell)
     end if
-    call release(lhs)
+    call remove_binding(lhs, cleared)
     lhs % cell => cell
     lhs % version = version
     lhs % binding = binding
+    !$omp end critical(counted_storage_registry)
 
-  end subroutine assign
+  end subroutine bind_over
 
   !===================================================================!
   ! Finalization: remove this binding's serial; the last owner clears
@@ -244,9 +276,37 @@ contains
 
     type(counted_reference), intent(inout) :: this
 
-    type(cell_link), pointer :: link
+    class(counted_storage), pointer :: cleared
+
+    call release_binding(this, cleared)
+    call recycle(cleared)
+
+  end subroutine release
+
+  subroutine release_binding(this, cleared)
+
+    type(counted_reference), intent(inout) :: this
+    class(counted_storage), pointer, intent(out) :: cleared
+
+    !$omp critical(counted_storage_registry)
+    call remove_binding(this, cleared)
+    !$omp end critical(counted_storage_registry)
+
+  end subroutine release_binding
+
+  ! Remove this reference's serial from its cell and unbind the
+  ! reference. When the serial was the last one the cell's version
+  ! becomes zero, so no reference is live on it, and the cell is
+  ! returned for clearing; otherwise null. Called inside the
+  ! registry's critical region.
+  subroutine remove_binding(this, cleared)
+
+    type(counted_reference), intent(inout) :: this
+    class(counted_storage), pointer, intent(out) :: cleared
+
     integer :: k, n
 
+    cleared => null()
     if (live(this)) then
        n = this % cell % num_owners
        do k = 1, n
@@ -256,12 +316,8 @@ contains
           this % cell % bindings(k) = this % cell % bindings(n)
           this % cell % num_owners = n - 1
           if (n == 1) then
-             call this % cell % clear()
              this % cell % version = 0
-             allocate(link)
-             link % cell => this % cell
-             link % next => released_cells
-             released_cells => link
+             cleared => this % cell
           end if
        end if
     end if
@@ -269,6 +325,25 @@ contains
     this % version = 0
     this % binding = 0
 
-  end subroutine release
+  end subroutine remove_binding
+
+  ! Clear a cell that has no owner and place it on the free list. The
+  ! owner's clear runs outside the registry's critical region.
+  subroutine recycle(cell)
+
+    class(counted_storage), pointer, intent(in) :: cell
+
+    type(cell_link), pointer :: link
+
+    if (.not. associated(cell)) return
+    call cell % clear()
+    allocate(link)
+    link % cell => cell
+    !$omp critical(counted_storage_registry)
+    link % next => released_cells
+    released_cells => link
+    !$omp end critical(counted_storage_registry)
+
+  end subroutine recycle
 
 end module util_counted_storage

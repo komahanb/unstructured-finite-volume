@@ -57,13 +57,22 @@ contains
 
   !===================================================================!
   ! next_token returns the next token of this image: new,
-  ! unrepeatable, contents not selectable.
+  ! unrepeatable, contents not selectable. The increment and the read
+  ! of the counter are one atomic capture under OpenMP, so two threads
+  ! never receive one serial; without -fopenmp the sentinel lines are
+  ! comments and the statements are the serial ones.
   !===================================================================!
 
   type(token) function next_token()
 
-    last_serial          = last_serial + 1
-    next_token % serial  = last_serial
+    integer :: serial
+
+    !$omp atomic capture
+    last_serial = last_serial + 1
+    serial      = last_serial
+    !$omp end atomic
+
+    next_token % serial  = serial
     next_token % image   = this_image()
 
   end function next_token

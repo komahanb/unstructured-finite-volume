@@ -17,14 +17,36 @@
 
 module coarse_solve_fixture
   use iso_fortran_env, only : dp => REAL64
-  use operation_minimization, only : minimizer
+  use operation_minimization, only : minimizer, state
+  use operation_action      , only : operation
+  use view_directed         , only : directed_graph
+  use graph_fractal         , only : graph
+  use field_stored          , only : stored_field
   implicit none
   integer :: num_coarse_solves = 0
+  ! the versions of the coarse statements received, in order of statement
+  integer :: num_statements_received = 0
+  integer :: statement_versions(16) = 0
   type, extends(minimizer) :: counted_coarse_solver
   contains
+    procedure :: state => record_statement
     procedure :: solve => solve_coarse
   end type counted_coarse_solver
 contains
+  subroutine record_statement(this, action, context, unknown_domain, num_unknowns, &
+       & num_components, coupling, stored_inputs)
+    class(counted_coarse_solver), intent(inout)        :: this
+    class(operation)            , intent(in)           :: action
+    class(directed_graph)       , intent(in)           :: context
+    type(graph)                 , intent(in)           :: unknown_domain
+    integer                     , intent(in)           :: num_unknowns
+    integer                     , intent(in), optional :: num_components
+    class(directed_graph)       , intent(in), optional :: coupling
+    type(stored_field)          , intent(in), optional :: stored_inputs(:)
+    num_statements_received = num_statements_received + 1
+    statement_versions(num_statements_received) = action % version()
+    call state(this, action, context, unknown_domain, num_unknowns, num_components, coupling, stored_inputs)
+  end subroutine record_statement
   subroutine solve_coarse(this, rhs, x, achieved)
     class(counted_coarse_solver), intent(inout) :: this
     real(dp), intent(in) :: rhs(:)
@@ -54,7 +76,8 @@ program test_graph_multigrid
   use operation_jacobi   , only : jacobi
   use operation_gmres    , only : gmres
   use operation_minimization, only : solve_result, SOLVE_EXHAUSTED
-  use coarse_solve_fixture, only : counted_coarse_solver, num_coarse_solves
+  use coarse_solve_fixture, only : counted_coarse_solver, num_coarse_solves, &
+       & num_statements_received, statement_versions
 
   implicit none
 
@@ -66,6 +89,7 @@ program test_graph_multigrid
   call check_commutation_square(num_failures)
   call check_multigrid_gmres_equivalence(num_failures)
   call check_one_cycle(num_failures)
+  call check_statement_versions(num_failures)
 
   write(*, '(a)') ' ============================================='
   if (num_failures == 0) then
@@ -115,6 +139,51 @@ contains
     call report(num_coarse_solves == 0 .and. all(x == 0.0_dp) .and. outcome % reason == SOLVE_EXHAUSTED, &
          & 'a zero multigrid iteration limit performs no cycle', num_failures)
   end subroutine check_one_cycle
+
+  !===================================================================!
+  ! The version of the k-th coarse statement of one multigrid object is
+  ! k: the sequence belongs to the object, so two objects stated
+  ! alternately receive 1, 1, 2, 2, 3 and a copy continues its own
+  ! sequence from the count it was copied with.
+  !===================================================================!
+
+  subroutine check_statement_versions(num_failures)
+    integer, intent(inout) :: num_failures
+    type(stencil) :: a
+    type(multigrid) :: first, second, copy
+    type(jacobi) :: smoother
+
+    a = stencil([1, 1, 2, 2], [1, 2, 1, 2], [2.0_dp, 1.0_dp, 1.0_dp, 2.0_dp], &
+         & [0.0_dp, 0.0_dp], 'statement versions')
+    smoother % max_iterations = 1
+    allocate(first % smoother, source=smoother)
+    allocate(first % coarse, source=counted_coarse_solver())
+    allocate(second % smoother, source=smoother)
+    allocate(second % coarse, source=counted_coarse_solver())
+    num_statements_received = 0
+    statement_versions = 0
+
+    call first % state(a, a % pattern, a % pattern % vertex_set(), 2, coupling=a % pattern)
+    call first % setup([1, 1])
+    call second % state(a, a % pattern, a % pattern % vertex_set(), 2, coupling=a % pattern)
+    call second % setup([1, 1])
+    ! aggregates are stored, so a further state re-forms the coarse statement
+    call first % state(a, a % pattern, a % pattern % vertex_set(), 2, coupling=a % pattern)
+    call second % state(a, a % pattern, a % pattern % vertex_set(), 2, coupling=a % pattern)
+    call first % state(a, a % pattern, a % pattern % vertex_set(), 2, coupling=a % pattern)
+
+    call report(num_statements_received == 5 .and. all(statement_versions(1:5) == [1, 1, 2, 2, 3]), &
+         & 'two multigrid objects stated alternately number their coarse statements independently', num_failures)
+    call report(first % num_statements == 3 .and. second % num_statements == 2, &
+         & 'each multigrid object counts its own coarse statements', num_failures)
+
+    copy = first
+    call copy % state(a, a % pattern, a % pattern % vertex_set(), 2, coupling=a % pattern)
+    call first % state(a, a % pattern, a % pattern % vertex_set(), 2, coupling=a % pattern)
+    call report(num_statements_received == 7 .and. all(statement_versions(6:7) == [4, 4]) .and. &
+         & copy % num_statements == 4 .and. first % num_statements == 4, &
+         & 'a copied multigrid continues its own statement sequence from the copied count', num_failures)
+  end subroutine check_statement_versions
 
   subroutine report(satisfied, message, num_failures)
 

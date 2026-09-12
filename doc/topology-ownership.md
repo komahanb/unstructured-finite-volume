@@ -179,8 +179,23 @@ polymorphic assignment: the seventeen operation types and eight
 minimizer types need a dispatching copy, and driver data must be
 excluded or dispatched. R05 changed none of those copy paths, so the
 patch remains blocked by them; that is the residual and generic
-execution boundary of R06. The module state (version and serial
-counters, the recycled cells) is not synchronised across threads.
+execution boundary of R06.
+
+The registry (version and binding serial counters, the free list of
+recycled cells and each cell's binding list) is written by `acquire`,
+assignment and release inside one named OpenMP critical region when the
+library is built with `OPENMP=yes`; the owner's deferred `clear` runs
+outside the region, since a clear may finalize other counted references
+and the region is not re-entrant, and the cleared cell joins the free
+list in a second entry. Without `-fopenmp` the directives are comments
+and the serial sequence of versions, bindings and reuse is unchanged.
+Owner reads (`live`, `num_owners`, `storage`) take no lock, because no
+other thread can clear a cell on which the reader has a live binding.
+`test/graph-topology-ownership` checks that n acquisitions from a free
+list of n cells address n distinct cells with one owner each and that
+n bindings made and released on one cell, and n assignments over sole
+owners, leave the counts consistent; the loops run on two threads in
+the OpenMP build and are serial otherwise.
 
 ## Verification
 

@@ -35,6 +35,7 @@
 module operation_minimization
 
   use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
+  use iso_fortran_env , only : int64
   use util_precision  , only : dp, half_digits
   use util_norm, only : euclidean_norm
   use operation_action  , only : operation, contract
@@ -69,6 +70,7 @@ module operation_minimization
   integer, parameter, public :: SOLVE_DIVERGED = 5, SOLVE_SINGULAR = 6
   integer, parameter, public :: SOLVE_BREAKDOWN = 7, SOLVE_INNER_FAILED = 8
   integer, parameter, public :: SOLVE_EVALUATED = 9
+  integer, parameter, public :: SOLVE_STORAGE_EXCEEDED = 10
 
   type, public :: solve_result
      real(dp) :: residual = 0.0_dp, initial_residual = 0.0_dp
@@ -88,6 +90,7 @@ module operation_minimization
   public :: restrict
   public :: compact_labels
   public :: state_tuple
+  public :: saturated_sum
 
   !===================================================================!
   ! The base: a stated operation, the graph it reads, and the
@@ -207,6 +210,7 @@ module operation_minimization
 
      procedure :: state
      procedure :: restrict
+     procedure :: storage_entries
      procedure :: evaluate
      procedure :: matvec
      procedure :: imbalance
@@ -521,10 +525,13 @@ contains
   end function result_converged
 
   ! Exhaustion and stagnation can supply an approximate correction.
-  ! These reasons instead report a numerical failure of that correction.
+  ! These reasons instead report a numerical failure of that
+  ! correction, or a construction refused within its storage limit,
+  ! which supplies no correction at all.
   pure logical function result_failed(this) result(satisfied)
     class(solve_result), intent(in) :: this
-    satisfied = this % reason >= SOLVE_NONFINITE .and. this % reason <= SOLVE_INNER_FAILED
+    satisfied = (this % reason >= SOLVE_NONFINITE .and. this % reason <= SOLVE_INNER_FAILED) &
+         & .or. this % reason == SOLVE_STORAGE_EXCEEDED
   end function result_failed
 
   pure function result_description(this) result(description)
@@ -542,6 +549,7 @@ contains
     case (SOLVE_BREAKDOWN); description = 'linear iteration breakdown'
     case (SOLVE_INNER_FAILED); description = 'inner solve failed'
     case (SOLVE_EVALUATED); description = 'schedule evaluated'
+    case (SOLVE_STORAGE_EXCEEDED); description = 'storage limit exceeded'
     case default; description = 'invalid solve result'
     end select
   end function result_description
@@ -702,6 +710,46 @@ contains
     call this % initialize_residual_history()
 
   end subroutine restrict
+
+  !===================================================================!
+  ! The entries a minimizer retains for a statement over num_unknowns
+  ! unknowns beyond a fixed number of vectors over them: a
+  ! factorisation, a Krylov basis, a block diagonal, a complement, and
+  ! its children's. An enclosing minimizer with a storage limit reads
+  ! this before stating its inner minimizer, so a requirement beyond
+  ! the limit is refused before the allocation. The base retains none.
+  !===================================================================!
+
+  pure integer(int64) function storage_entries(this, num_unknowns) result(entries)
+
+    class(minimizer), intent(in) :: this
+    integer         , intent(in) :: num_unknowns
+
+    associate (u1 => this, u2 => num_unknowns); end associate
+    entries = 0_int64
+
+  end function storage_entries
+
+  !===================================================================!
+  ! a + b in 64-bit integers, the largest representable value where
+  ! the sum exceeds it: a storage requirement beyond every limit is
+  ! reported as such, never as a wrapped count.
+  !===================================================================!
+
+  pure integer(int64) function saturated_sum(a, b) result(total)
+
+    integer(int64), intent(in) :: a, b
+
+    if (a < 0_int64 .or. b < 0_int64) then
+       error stop 'minimization: a storage requirement is a count'
+    end if
+    if (a > huge(a) - b) then
+       total = huge(a)
+    else
+       total = a + b
+    end if
+
+  end function saturated_sum
 
   !===================================================================!
   ! Labels renumbered compactly in order of first appearance:

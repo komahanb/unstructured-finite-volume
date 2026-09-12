@@ -39,11 +39,13 @@
 
 module operation_multigrid
 
+  use iso_fortran_env , only : int64
   use util_precision  , only : dp
   use view_directed, only : directed_graph
   use view_directed_stored, only : stored_directed_graph
   use operation_stencil, only : stencil, combine_triples
   use operation_minimization , only : minimizer, state, restrict, compact_labels, solve_result, SOLVE_INNER_FAILED
+  use operation_minimization , only : saturated_sum
   use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
   use operation_action       , only : operation
   use graph_fractal          , only : graph
@@ -73,6 +75,7 @@ module operation_multigrid
      procedure :: setup
      procedure :: state => multigrid_state
      procedure :: restrict => multigrid_restrict
+     procedure :: storage_entries => multigrid_storage_entries
      procedure :: solve
 
   end type multigrid
@@ -154,6 +157,28 @@ contains
     if (allocated(this % smoother)) call this % smoother % restrict(selected)
 
   end subroutine multigrid_restrict
+
+  !===================================================================!
+  ! The smoother's entries over the fine unknowns and the coarse
+  ! minimizer's over the aggregates, where aggregates are stored.
+  !===================================================================!
+
+  pure integer(int64) function multigrid_storage_entries(this, num_unknowns) result(entries)
+
+    class(multigrid), intent(in) :: this
+    integer         , intent(in) :: num_unknowns
+
+    integer :: num_aggregates
+
+    entries = 0_int64
+    if (allocated(this % smoother)) entries = this % smoother % storage_entries(num_unknowns)
+    if (allocated(this % coarse) .and. allocated(this % aggregates)) then
+       num_aggregates = 0
+       if (size(this % aggregates) > 0) num_aggregates = maxval(this % aggregates)
+       entries = saturated_sum(entries, this % coarse % storage_entries(num_aggregates))
+    end if
+
+  end function multigrid_storage_entries
 
   subroutine setup(this, aggregates)
 

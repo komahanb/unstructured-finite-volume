@@ -903,6 +903,8 @@ contains
   !      over every unknown in blocks of two, aggregated by instant pairs
   !   4  newton > elimination of q' > delegating solver reporting
   !      failure > dense direct
+  !   5  newton > elimination of q' within one entry of storage >
+  !      dense direct
   !
   ! The temporal engine dispatches on none of these.
   !===================================================================!
@@ -961,8 +963,13 @@ contains
        schur % eliminated = [(mod(p, 2) == 0, p = 1, 2 * n)]
        allocate(schur % inner, source=delegate)
        allocate(ns % inner, source=schur)
+    case (5)
+       schur % eliminated = [(mod(p, 2) == 0, p = 1, 2 * n)]
+       schur % max_entries = 1
+       allocate(schur % inner, source=factorisation)
+       allocate(ns % inner, source=schur)
     case default
-       error stop 'test: a composition is one of the four'
+       error stop 'test: a composition is one of the five'
     end select
     allocate(template, source=ns)
 
@@ -1070,6 +1077,13 @@ contains
     integer :: p
 
     call composed(1, n, template)
+    select type (template)
+    type is (newton)
+       select type (schur => template % inner)
+       type is (elimination)
+          schur % max_entries = 12345
+       end select
+    end select
     allocate(copy, source=template)
     call copy % restrict(selected)
     mapped = .false.
@@ -1077,7 +1091,7 @@ contains
     type is (newton)
        select type (schur => copy % inner)
        type is (elimination)
-          mapped = size(schur % eliminated) == 6
+          mapped = size(schur % eliminated) == 6 .and. schur % max_entries == 12345
           if (mapped) mapped = all(schur % eliminated .eqv. [.false., .true., .false., .true., .false., .true.])
           select type (krylov => schur % inner)
           type is (gmres)
@@ -1091,8 +1105,8 @@ contains
           end select
        end select
     end select
-    call report(mapped, 'elimination flags follow the selection and the multigrid below it coarsens by the &
-         &retained members', num_failures)
+    call report(mapped, 'elimination flags and storage limit follow the selection and the multigrid below it &
+         &coarsens by the retained members', num_failures)
     call report(copy % num_unknowns == 0 .and. .not. allocated(copy % action), &
          & 'a restricted solver discards the whole statement until stated on the selection', num_failures)
     call report(template_intact(1, n, template) .and. template % num_unknowns == 0, &
@@ -1353,6 +1367,24 @@ contains
     outcome = solver % result()
     call report(outcome % failed() .and. outcome % reason == SOLVE_INNER_FAILED .and. outcome % iterations == 0, &
          & 'a failing solver below an elimination below newton is reported by the temporal minimizer', &
+         & num_failures)
+
+    ! the storage limit is metadata of every restricted member: an
+    ! elimination within one entry is refused in the first member and
+    ! reported at the top without an allocation or a stop
+    call composed(5, n, template)
+    if (allocated(solver)) deallocate(solver)
+    allocate(solver)
+    call move_alloc(template, solver % inner)
+    call solver % state(residual, unknowns, unknowns % vertex_set(), 2 * n, stored_inputs=[design])
+    solver % tolerance = 1.0e-10_dp
+    solver % criterion = absolute
+    call solver % partition(member_of, member_order, seed_from_previous=.true.)
+    call seeded(residual, n, q0, q)
+    call solver % solve(zeros, q, achieved)
+    outcome = solver % result()
+    call report(outcome % failed() .and. outcome % reason == SOLVE_INNER_FAILED .and. outcome % iterations == 0, &
+         & 'an elimination refused within its storage limit below newton is reported by the temporal minimizer', &
          & num_failures)
 
   end subroutine check_solver_restriction

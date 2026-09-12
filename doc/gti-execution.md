@@ -119,6 +119,40 @@ exterior fixed; its affine part is the exterior contribution. The temporal
 engine dispatches on no solver type, so a new composition, including one
 defined only in a test, participates without engine edits.
 
+## Elimination storage
+
+An `elimination` over retained unknowns K and eliminated unknowns E states
+the whole system and passes its inner minimizer the Schur complement
+S = J_KK - J_KE M with M = (I + N)^-1 D^-1 J_EK, D the eliminated diagonals
+and N strictly triangular in the substitution order. Every coefficient of M
+and of S is summed over its dependency paths before a dependant row reads
+it or the inner minimizer multiplies it; the complement is formed row by
+row with one accumulator over the retained columns, so no uncombined
+product J_KE M exists. Storage is bounded by `max_entries`, in entries (one
+coefficient with its index, 12 bytes), the sum of five accounts recorded in
+`elimination % storage`: input (nnz(J) triples read from the stencil and
+the retained block split out), substitution (J_KE, J_EK, N, the diagonals
+and M), temporary (the position of every unknown and one row accumulator),
+schur (nnz(S)) and factorisation (what the inner minimizer declares through
+`minimizer % storage_entries` for the retained unknowns: 2 nk^2 for a dense
+direct solve, (restart + 1) nk plus the preconditioner's for GMRES, the
+block diagonal for Gauss-Seidel, the smoother's and the coarse minimizer's
+for multigrid, the inner's for Newton and the temporal minimizer). Every
+count is accumulated in 64-bit integers and a total beyond `huge(1)`, the
+largest count an index array addresses, is refused whatever the limit.
+
+Each allocation proportional to a count of coefficients follows a check of
+the accounts against the limit. A refused statement stores no partition,
+records `SOLVE_STORAGE_EXCEEDED` (a failed result) with the accounts at
+the refusal, and its solve returns the initial residual with the unknowns
+unchanged; Newton and the temporal minimizer propagate it as
+`SOLVE_INNER_FAILED`. The limit is metadata: restriction keeps it, and the
+application key `elimination_entries` reaches every restricted member
+through the solver context's configuration copy. The pattern of the
+complement stencil, the minimizer objects and the process's own memory are
+outside these counts and are not claimed. No action-based Schur complement
+is implemented: the complement is explicit, or the elimination is refused.
+
 ## Verification
 
 The repository verification entry point includes context isolation, GTI

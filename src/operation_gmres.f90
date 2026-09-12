@@ -27,8 +27,10 @@
 
 module operation_gmres
 
+  use iso_fortran_env , only : int64
   use util_precision  , only : dp
   use operation_minimization, only : minimizer, state, restrict, solve_result, SOLVE_BREAKDOWN, SOLVE_INNER_FAILED, SOLVE_STAGNATED
+  use operation_minimization, only : saturated_sum
   use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
   use util_tally, only : tally_record, linear_solves
   use view_directed, only : directed_graph
@@ -52,6 +54,7 @@ module operation_gmres
      procedure :: name => gmres_name
      procedure :: state => gmres_state
      procedure :: restrict => gmres_restrict
+     procedure :: storage_entries => gmres_storage_entries
      procedure :: solve
 
   end type gmres
@@ -121,6 +124,26 @@ contains
     if (allocated(this % preconditioner)) call this % preconditioner % restrict(selected)
 
   end subroutine gmres_restrict
+
+  !===================================================================!
+  ! The Krylov basis of restart + 1 vectors over the unknowns, and
+  ! whatever the preconditioner retains.
+  !===================================================================!
+
+  pure integer(int64) function gmres_storage_entries(this, num_unknowns) result(entries)
+
+    class(gmres), intent(in) :: this
+    integer     , intent(in) :: num_unknowns
+
+    integer :: m
+
+    m = min(max(this % restart, 1), max(num_unknowns, 1))
+    entries = int(m + 1, int64) * int(num_unknowns, int64)
+    if (allocated(this % preconditioner)) then
+       entries = saturated_sum(entries, this % preconditioner % storage_entries(num_unknowns))
+    end if
+
+  end function gmres_storage_entries
 
   !===================================================================!
   ! The coupling of the blocks of `width` consecutive unknowns: an

@@ -69,6 +69,11 @@ def cases(quick, suites):
             chosen.append(("schur", "schur", [ne, str(nk), "2", "2", "2", "1e-9", "400"], "nk"))
         for c in ([1, 4] if quick else [1, 2, 4, 8]):
             chosen.append(("schur", "schur", [ne, "64", "2", str(c), "2", "1e-9", "400"], "c"))
+        # the storage limit: the accounts' total for ne=80, nk=8, p=2, c=2, ke=2 is 1902 entries
+        # (input 457, substitution 1041, temporary 216, schur 60, factorisation 128); the limit at
+        # the total admits the statement, one entry less refuses it before the allocation
+        for limit in (["1902", "1901"] if quick else ["1902", "1901", "600", "1"]):
+            chosen.append(("schur", "schur", ["80", "8", "2", "2", "2", "1e-9", "400", limit], "limit"))
     if "horizon" in suites:
         for n in ([10, 20] if quick else geometric(20, 5)):
             chosen.append(("horizon", "horizon", [str(n), "primal", "4", "1e-12"], "primal n"))
@@ -318,7 +323,8 @@ def case_size(case):
         if suite == "subset":
             return {"construct M": int(a[2]), "transport N": int(a[1]), "transport parts": int(a[5]), "transport M": int(a[2])}.get(series)
         if suite == "schur":
-            return {"ne": int(a[0]), "p": int(a[2]), "nk": int(a[1]), "c": int(a[3])}.get(series)
+            return {"ne": int(a[0]), "p": int(a[2]), "nk": int(a[1]), "c": int(a[3]),
+                    "limit": int(a[7]) if len(a) > 7 else None}.get(series)
         if suite == "horizon":
             return int(a[0])
         if suite == "application":

@@ -38,6 +38,7 @@ module operation_dense_direct
   use util_precision  , only : dp, spacing_at_one
   use operation_stencil, only : compile_matrix_from_action
   use operation_minimization , only : minimizer, restrict, solve_result, SOLVE_SINGULAR, SOLVE_CONTINUE, SOLVE_EXHAUSTED
+  use iso_fortran_env   , only : int64
   use util_factorisation, only : dense_factorisation
   use util_tally        , only : tally_record, linear_solves
 
@@ -70,6 +71,7 @@ module operation_dense_direct
 
      procedure :: name  => dense_direct_name
      procedure :: restrict => dense_direct_restrict
+     procedure :: storage_entries => dense_direct_storage_entries
      procedure :: solve => dense_direct_solve
 
   end type dense_direct
@@ -103,6 +105,26 @@ contains
     this % retained_transposed = .false.
 
   end subroutine dense_direct_restrict
+
+  !===================================================================!
+  ! The assembled matrix and its factorisation, n^2 entries each,
+  ! both stored while the matrix is factorised.
+  !===================================================================!
+
+  pure integer(int64) function dense_direct_storage_entries(this, num_unknowns) result(entries)
+
+    class(dense_direct), intent(in) :: this
+    integer            , intent(in) :: num_unknowns
+
+    associate (u1 => this); end associate
+    entries = int(num_unknowns, int64) * int(num_unknowns, int64)
+    if (entries <= huge(entries) - entries) then
+       entries = 2_int64 * entries
+    else
+       entries = huge(entries)
+    end if
+
+  end function dense_direct_storage_entries
 
   !===================================================================!
   ! Solve A x = rhs where A(:, j) = matvec(e_j). Checks, each

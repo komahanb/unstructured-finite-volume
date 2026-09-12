@@ -14,17 +14,22 @@
 ! the uncombined product triples J_KE M and the combined Schur fill
 ! from the same input. The numerical oracle is the residual of the
 ! whole system from the input triples and, below dense_limit unknowns,
-! the dense direct solution.
+! the dense direct solution. The storage accounts the elimination
+! declares are printed beside the symbolic counts; nnz(M) and the
+! Schur fill must equal the oracle's. A limit below the accounts'
+! total must be refused as SOLVE_STORAGE_EXCEEDED with no solve.
 !
-! usage: schur ne nk p c ke tolerance dense_limit
+! usage: schur ne nk p c ke tolerance dense_limit max_entries
 !=====================================================================!
 
 program elimination_scaling
 
+  use iso_fortran_env       , only : int64
   use util_precision        , only : dp
   use operation_elimination , only : elimination
   use operation_dense_direct, only : dense_direct
   use operation_stencil     , only : stencil
+  use operation_minimization, only : solve_result, SOLVE_STORAGE_EXCEEDED
   use benchmark_measurement , only : phase, begin_phase, end_phase, record, peak_rss_kilobytes, &
        &                             argument_integer, argument_real
 
@@ -32,7 +37,7 @@ program elimination_scaling
 
   character(len=:), allocatable :: tokens
   character(len=128) :: written
-  integer :: ne, nk, p, c, ke, n, count, i, j, q, r, e, num_failures, dense_limit
+  integer :: ne, nk, p, c, ke, n, count, i, j, q, r, e, num_failures, dense_limit, max_entries
   integer :: nnz_input, nnz_n, nnz_ek, nnz_ke, nnz_kk, nnz_m, uncombined, schur_nnz, num_active
   integer, allocatable :: rows(:), columns(:), pattern_first(:), pattern_column(:), column_row(:), active(:)
   real(dp), allocatable :: weights(:), exact(:), rhs(:), x(:), residual(:), full(:), paths(:)
@@ -43,6 +48,8 @@ program elimination_scaling
   type(elimination) :: solver
   type(dense_direct) :: reference
   type(phase) :: measured
+  type(solve_result) :: outcome
+  logical :: refused
 
   ne = argument_integer(1, 160)
   nk = argument_integer(2, 8)
@@ -51,6 +58,7 @@ program elimination_scaling
   ke = argument_integer(5, 2)
   tolerance = argument_real(6, 1.0e-9_dp)
   dense_limit = argument_integer(7, 400)
+  max_entries = argument_integer(8, huge(1))
   if (ne < 1 .or. nk < 1 .or. p < 1 .or. c < 1 .or. ke < 1) error stop 'schur: every count is positive'
   n = nk + ne
   write(written, '(a,i0,a,i0,a,i0,a,i0,a,i0)') 'suite=schur ne=', ne, ' nk=', nk, ' p=', p, ' c=', c, ' ke=', ke
@@ -162,28 +170,48 @@ program elimination_scaling
 
   allocate(solver % inner, source=dense_direct())
   solver % eliminated = [(i > nk, i = 1, n)]
+  solver % max_entries = max_entries
   call begin_phase(measured)
   call solver % state(matrix, matrix % pattern, matrix % pattern % vertex_set(), n)
   call end_phase(measured)
   call record(tokens, 'state', measured)
+  outcome = solver % result()
+  refused = outcome % reason == SOLVE_STORAGE_EXCEEDED
 
   x = 0.0_dp
-  call begin_phase(measured)
-  call solver % solve(rhs, x, achieved)
-  call end_phase(measured)
-  call record(tokens, 'solve', measured)
+  relative_residual = -1.0_dp
+  relative_error = -1.0_dp
+  achieved = -1.0_dp
+  if (refused) then
+     ! the refusal names a requirement beyond the limit, and the
+     ! solve reports it without a step
+     call solver % solve(rhs, x, achieved)
+     outcome = solver % result()
+     call verified(solver % storage % total() > int(max_entries, int64) .and. &
+          & outcome % reason == SOLVE_STORAGE_EXCEEDED .and. all(x == 0.0_dp), 'storage_limit_refused_as_declared')
+  else
+     call begin_phase(measured)
+     call solver % solve(rhs, x, achieved)
+     call end_phase(measured)
+     call record(tokens, 'solve', measured)
 
-  residual = -rhs
-  do j = 1, count
-     residual(rows(j)) = residual(rows(j)) + weights(j) * x(columns(j))
-  end do
-  relative_residual = maxval(abs(residual)) / maxval(abs(rhs))
-  relative_error = maxval(abs(x - exact)) / maxval(abs(exact))
-  call verified(relative_residual <= tolerance, 'whole_system_residual_within_tolerance')
-  call verified(relative_error <= tolerance, 'solution_within_tolerance_of_exact')
+     residual = -rhs
+     do j = 1, count
+        residual(rows(j)) = residual(rows(j)) + weights(j) * x(columns(j))
+     end do
+     relative_residual = maxval(abs(residual)) / maxval(abs(rhs))
+     relative_error = maxval(abs(x - exact)) / maxval(abs(exact))
+     call verified(relative_residual <= tolerance, 'whole_system_residual_within_tolerance')
+     call verified(relative_error <= tolerance, 'solution_within_tolerance_of_exact')
+     call verified(solver % storage % total() <= int(max_entries, int64), 'storage_within_limit')
+     ! the accounts against the symbolic oracle: M's coefficients and
+     ! the complement's fill, every coefficient here nonzero
+     call verified(solver % storage % substitution == int(nnz_ke + nnz_ek + nnz_n + ne + nnz_m, int64) .and. &
+          & solver % storage % schur == int(schur_nnz, int64), 'accounts_equal_symbolic_counts')
+  end if
 
   dense_departure = -1.0_dp
-  if (n <= dense_limit) then
+  if (n <= dense_limit .and. .not. refused) then
      call begin_phase(measured)
      call reference % state(matrix, matrix % pattern, matrix % pattern % vertex_set(), n)
      full = 0.0_dp
@@ -198,6 +226,12 @@ program elimination_scaling
        & 'summary', tokens, 'n=', n, 'nnz_input=', nnz_input, 'nnz_kk=', nnz_kk, 'nnz_ke=', nnz_ke, &
        & 'nnz_ek=', nnz_ek, 'nnz_n=', nnz_n, 'nnz_m=', nnz_m, 'schur_uncombined=', uncombined, &
        & 'schur_nnz=', schur_nnz, 'stored_entries=', nnz_ke + nnz_ek + nnz_n + ne + schur_nnz
+  write(*, '(a,1x,a,1x,a,i0,1x,a,i0,1x,a,i0,1x,a,i0,1x,a,i0,1x,a,i0,1x,a,i0,1x,a,i0,1x,a,l1)') &
+       & 'summary', tokens, 'input_entries=', solver % storage % input, &
+       & 'substitution_entries=', solver % storage % substitution, 'temporary_entries=', solver % storage % temporary, &
+       & 'schur_entries=', solver % storage % schur, 'factorisation_entries=', solver % storage % factorisation, &
+       & 'storage_total=', solver % storage % total(), 'storage_bytes=', solver % storage % bytes(), &
+       & 'storage_limit=', solver % storage % limit, 'storage_refused=', refused
   write(*, '(a,1x,a,1x,a,es12.4e3,1x,a,es12.4e3,1x,a,l1,1x,a,es12.4e3,1x,a,es12.4e3,1x,a,es12.4e3,1x,a,es12.4e3,1x,a,i0)') &
        & 'numbers', tokens, 'paths_maximum=', paths_maximum, 'paths_total=', paths_total, &
        & 'paths_exceeded=', paths_exceeded, 'relative_residual=', relative_residual, &

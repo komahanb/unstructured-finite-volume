@@ -76,6 +76,14 @@ module gti_configuration
      ! unknowns: any kind, the Newton steps the same as with the rows.
      character(len=16) :: elimination     = 'symbolic'
 
+     ! The storage limit of a numerical elimination, in entries (one
+     ! coefficient with its index): the sum of its input, substitution,
+     ! temporary, complement and factorisation accounts. The default
+     ! is the largest count an index array addresses; a construction
+     ! beyond the limit is refused before its allocation and reported
+     ! as a failed solve.
+     integer           :: elimination_entries = huge(1)
+
      ! The seed of each instant's Newton solve in a sequential sweep:
      ! the instant before, its stored jet along time shifted over the
      ! step to this order, the Taylor polynomial of the state in time
@@ -264,6 +272,8 @@ contains
        cfg % rows = value
     case ('elimination')
        cfg % elimination = value
+    case ('elimination_entries')
+       read(value, *) cfg % elimination_entries
     case ('predictor_order')
        read(value, *) cfg % predictor_order
     case ('storage')
@@ -416,6 +426,7 @@ contains
     write(*,'(a,a)')       '   jacobian                 ', trim(cfg % jacobian)
     write(*,'(a,a)')       '   rows                     ', trim(cfg % rows)
     write(*,'(a,a)')       '   elimination              ', trim(cfg % elimination)
+    write(*,'(a,i0)')      '   elimination entries      ', cfg % elimination_entries
     write(*,'(a,i0)')      '   predictor order          ', cfg % predictor_order
     write(*,'(a,a)')       '   storage                  ', trim(cfg % storage)
     write(*,'(a,l1)')      '   multigrid                ', cfg % multigrid
@@ -863,6 +874,7 @@ module gti_sweeps
      logical :: rows_in_space = .false.
      logical :: rows_in_time  = .true.
      character(len=16) :: elimination_kind = 'symbolic'
+     integer           :: elimination_entries = huge(1)
      integer           :: taylor_order = 0
      integer           :: jacobian_product_order = 1
      character(len=16) :: storage_kind  = 'dense'
@@ -886,6 +898,7 @@ module gti_sweeps
      procedure :: set_preconditioner
      procedure :: set_rows
      procedure :: set_elimination
+     procedure :: set_storage_limit
      procedure :: spatial_rows
      procedure :: eliminated_components
      procedure :: set_predictor_order
@@ -1035,6 +1048,20 @@ contains
     this % row_kinds = name
     call this % clear_inner()
   end subroutine set_rows
+  !===================================================================!
+  ! The storage limit of a numerical elimination, in entries: the sum
+  ! of the accounts an elimination declares. Invalid input: a limit
+  ! below one entry.
+  !===================================================================!
+  subroutine set_storage_limit(this, entries)
+    class(solver_context), intent(inout) :: this
+    integer, intent(in) :: entries
+    if (entries < 1) then
+       error stop 'gti_sweeps: the elimination storage limit is one entry at least'
+    end if
+    this % elimination_entries = entries
+    call this % clear_inner()
+  end subroutine set_storage_limit
   subroutine set_elimination(this, name)
     class(solver_context), intent(inout) :: this
     character(len=*), intent(in) :: name
@@ -1222,6 +1249,7 @@ contains
             &which a matrix-free jacobian does not store'
     end if
     complement % eliminated = eliminated
+    complement % max_entries = this % elimination_entries
     ! multigrid over the retained unknowns coarsens by their aggregates
     if (allocated(this % aggregates)) then
        if (size(this % aggregates) /= count) then
@@ -1391,6 +1419,7 @@ contains
     other % rows_in_space = this % rows_in_space
     other % rows_in_time = this % rows_in_time
     other % elimination_kind = this % elimination_kind
+    other % elimination_entries = this % elimination_entries
     other % taylor_order = this % taylor_order
     other % jacobian_product_order = this % jacobian_product_order
     other % storage_kind = this % storage_kind
@@ -10661,6 +10690,7 @@ program graph_time_integrator
   call context % set_jacobian(cfg % jacobian)
   call context % set_rows(cfg % rows)
   call context % set_elimination(cfg % elimination)
+  call context % set_storage_limit(cfg % elimination_entries)
   call context % set_predictor_order(cfg % predictor_order)
   call context % set_storage(cfg % storage)
   call context % set_multigrid(cfg % multigrid)

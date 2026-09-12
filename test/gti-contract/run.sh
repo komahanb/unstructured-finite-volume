@@ -3,7 +3,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/../.." && pwd)"
 if [ "${UFVM_SKIP_LIBRARY_BUILD:-0}" != 1 ]; then
-    (cd "$root" && ./build.sh)
+    (cd "$root" && ./build.sh && ./application/build.sh)
 fi
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
@@ -19,6 +19,7 @@ fi
     "$here/test.f90" "$module_dir/modules.o" "$root/lib/libufvm.a" -o "$work/run"
 "$work/run" accuracy
 "$work/run" status
+"$work/run" grid_stationary
 for mode in adaptive_failure minimum_step forward reverse linear_forward linear_reverse; do
     case "$mode" in
         adaptive_failure) expected='step solve did not converge' ;;
@@ -35,4 +36,46 @@ for mode in adaptive_failure minimum_step forward reverse linear_forward linear_
         exit 1
     fi
     echo "PASS: $mode reports its failure"
+done
+# The application discovers an adaptive grid for the one configured family at
+# max_discretization_order, and refuses the superseded word, two families, and step
+# doubling of a multistep family, which has no step from one state.
+application="$root/application"
+common='--grid=adaptive --time_duration=2 --design=0 --max_derivative_degree=0 --max_discretization_order=2'
+for case in dirk_stationary bdf_stationary dirk_doubling superseded_word two_families multistep_doubling; do
+    families='--families=dirk'
+    case "$case" in
+        dirk_stationary)    arguments='--adaptive_check=grid_stationarity'
+                            expected='8 steps of dirk2 at grid-stationarity tolerance  1.00E-12 (0 rejected)'; accepted=1 ;;
+        # BDF-2's F_h is not stationary on a uniform grid: e/|F_h| = 1.82e-3 on the seed and
+        # 1.35e-3 after one halving round, so 1.5e-3 requires exactly one rejection: the halving,
+        # the re-march through the startup block and the re-differentiation all run once
+        bdf_stationary)     arguments='--adaptive_check=grid_stationarity --grid_stationarity_tolerance=1.5e-3'
+                            families='--families=bdf'
+                            expected='12 steps of bdf2 at grid-stationarity tolerance  1.50E-03 (1 rejected)'; accepted=1 ;;
+        dirk_doubling)      arguments='--adaptive_check=step_doubling --tolerance=1e-6'
+                            expected='steps of dirk2 at estimated local-error tolerance  1.00E-06'; accepted=1 ;;
+        superseded_word)    arguments='--adaptive_check=goal_oriented'
+                            expected='adaptive_check = grid_stationarity'; accepted=0 ;;
+        two_families)       arguments='--adaptive_check=grid_stationarity'; families='--families=bdf dirk'
+                            expected='discovered for one family'; accepted=0 ;;
+        multistep_doubling) arguments='--adaptive_check=step_doubling'; families='--families=bdf'
+                            expected='self-starting scheme'; accepted=0 ;;
+    esac
+    if (cd "$application" && ./graph_time_integrator $common $arguments "$families") > "$work/$case.log" 2>&1; then
+        status=1
+    else
+        status=0
+    fi
+    if [ "$status" != "$accepted" ]; then
+        cat "$work/$case.log"
+        echo "FAIL: $case exit status"
+        exit 1
+    fi
+    if ! grep -qF "$expected" "$work/$case.log"; then
+        cat "$work/$case.log"
+        echo "FAIL: $case does not report: $expected"
+        exit 1
+    fi
+    echo "PASS: $case"
 done

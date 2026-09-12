@@ -120,7 +120,17 @@ module gti_configuration
      character(len=16)  :: check            = 'none'
      real(dp)          :: tolerance           = 1.0e-12_dp
      character(len=16) :: tolerance_criterion = 'relative'
-     character(len=16) :: adaptive_check       = 'step_doubling'
+
+     ! HOW AN ADAPTIVE GRID IS ACCEPTED. step_doubling controls the local
+     ! state error of each step. grid_stationarity accepts a grid on which
+     ! the energy functional F_h is stationary under every transfer of
+     ! duration between steps: the spread of the projected grid gradient
+     ! dF_h/dh_k, which is not the discretization error F(Q_exact) - F_h.
+     ! The stationarity criterion reads its own tolerance under
+     ! tolerance_criterion; the default equals the default of tolerance,
+     ! the value the criterion read before it had a key of its own.
+     character(len=32) :: adaptive_check       = 'step_doubling'
+     real(dp)          :: grid_stationarity_tolerance = 1.0e-12_dp
      character(len=16) :: iteration_criterion = 'by_rate'
      integer           :: max_iterations      = 100
      integer           :: higher_order_jacobian_product = 1
@@ -326,7 +336,17 @@ contains
     case ('tolerance_criterion')
        cfg % tolerance_criterion = value
     case ('adaptive_check')
+       if (value == 'goal_oriented') then
+          write(*,'(a)') ' '
+          write(*,'(a)') ' adaptive_check names goal_oriented, a superseded word: the check it named'
+          write(*,'(a)') ' measures the stationarity of the functional on the grid, not the'
+          write(*,'(a)') ' discretization error, and is adaptive_check = grid_stationarity with the'
+          write(*,'(a)') ' tolerance grid_stationarity_tolerance.'
+          error stop 'gti_configuration: adaptive_check = goal_oriented is superseded by grid_stationarity'
+       end if
        cfg % adaptive_check = value
+    case ('grid_stationarity_tolerance')
+       read(value, *) cfg % grid_stationarity_tolerance
     case ('iteration_criterion')
        cfg % iteration_criterion = value
     case ('krylov_restart')
@@ -466,8 +486,9 @@ contains
     write(*,'(a,a)')       '   tolerance criterion      ', trim(cfg % tolerance_criterion)
     if (trim(cfg % grid) == 'adaptive') then
        write(*,'(a,a)')    '   adaptive check           ', trim(cfg % adaptive_check)
-       if (trim(cfg % adaptive_check) == 'goal_oriented') then
-          write(*,'(a)')   '     targeting van der Pol energy'
+       if (trim(cfg % adaptive_check) == 'grid_stationarity') then
+          write(*,'(a,es9.2)') '   grid stationarity tolerance ', cfg % grid_stationarity_tolerance
+          write(*,'(a)')   '     of the energy functional, not its discretization error'
        end if
     end if
     write(*,'(a,a)')       '   iteration criterion      ', trim(cfg % iteration_criterion)
@@ -4788,7 +4809,7 @@ module gti_chain
   public :: chain_versions
   public :: expansion_substitutions
   public :: sink_costates
-  public :: goal_oriented_partition
+  public :: grid_stationary_partition
   public :: chain_incidence, chain_execution
   !===================================================================!
   ! THE LAYOUT OF ONE BLOCK'S STATE: the instants it covers, as the
@@ -6738,38 +6759,44 @@ contains
   end function expansion_substitutions
 
   !===================================================================!
-  ! A grid built for one functional, not the state alone.
+  ! A grid on which the discrete functional is stationary.
   !
   ! Once the steps are given as a design - gti_expansion's
-  ! design_of_steps - the reverse pass already returns dF/d(weight_i)
-  ! for every step i, one adjoint solve over the whole trajectory. It
-  ! is an adjoint-weighted sensitivity to the grid's position, not the
-  ! residual-weighted local defect a Becker-Rannacher estimator forms
-  ! from a comparison-order scheme - DIRK here has no embedded pair
-  ! to form one from. The two are related, not the same object.
+  ! design_of_steps - the reverse pass returns g_i = dF_h/dw_i for
+  ! every step i from one adjoint solve over the whole trajectory:
+  ! the sensitivity of the discrete functional F_h to the grid's
+  ! position. It is not the residual-weighted local defect a
+  ! Becker-Rannacher estimator forms from an enriched discretization,
+  ! and nothing in it involves F(Q_exact): the quantity compares F_h
+  ! with F_h on neighbouring grids.
   !
-  ! A weight is a fraction of a fixed duration, so F, as a function of
-  ! the weights, is unchanged by scaling all of them by one factor: F
-  ! is homogeneous of degree zero in w, and Euler's identity makes
-  ! sum(w_i dF/dw_i) vanish identically for every grid - a
+  ! A weight is a fraction of a fixed duration, so F_h, as a function
+  ! of the weights, is unchanged by scaling all of them by one factor:
+  ! F_h is homogeneous of degree zero in w, and Euler's identity makes
+  ! sum(w_i dF_h/dw_i) vanish identically for every grid - a
   ! reparametrisation identity, true of an accurate grid and an
   ! inaccurate one alike, and no acceptance check can be read from it.
-  ! What remains once that direction is projected away is the part of
-  ! dF/dw that does contain local information: the first-order change
-  ! in F from assigning a step more of the duration and every other step less.
+  ! What remains once that direction is projected away, eta, is the
+  ! first-order change in F_h from assigning a step more of the
+  ! duration and every other step less.
   !
-  ! The grid is accepted once the spread of that projected gradient,
-  ! scaled by one average step's duration, is within tolerance
-  ! relative to F (relative) or as an absolute value (absolute) - the
-  ! change in F from moving one such fraction from the least to the
-  ! most sensitive step. On rejection, every step whose projected
-  ! gradient is at least the mean is halved - the steps with more than
-  ! the mean sensitivity - and the whole trajectory, adjoint included,
-  ! is computed again.
+  ! The grid is accepted once e = (max eta - min eta) T/N, the change
+  ! in F_h from moving one average step's duration from the least to
+  ! the most sensitive step, is within tolerance relative to F_h
+  ! (relative) or as an absolute value (absolute): F_h is then
+  ! stationary under every transfer of duration between steps on the
+  ! constraint sum w = T. A stationary grid is not an accurate one:
+  ! implicit midpoint on the oscillator gives F_h = sum_k h_k /
+  ! (2 (1 + h_k^2/4)), one function of each step, so e = 0 on every
+  ! uniform grid while F_h - F = -1/65 at h = 1/4 (test/gti-contract).
+  ! On rejection, every step whose projected gradient is at least the
+  ! mean is halved and the whole trajectory, adjoint included, is
+  ! computed again. The accepted value of e is returned as the
+  ! stationarity defect.
   !===================================================================!
 
-  function goal_oriented_partition(scheme, physics, functional, degrees, duration, &
-       & lower, design, tolerance, relative, rejects, context) result(dt)
+  function grid_stationary_partition(scheme, physics, functional, degrees, duration, &
+       & lower, design, tolerance, relative, rejects, stationarity_defect, startup, context) result(dt)
 
     class(march_context), optional, target, intent(inout) :: context
     class(family)   , intent(in)  :: scheme
@@ -6778,6 +6805,9 @@ contains
     real(dp)        , intent(in)  :: duration, lower(:), design, tolerance
     logical         , intent(in)  :: relative
     integer         , intent(out), optional :: rejects
+    real(dp)        , intent(out), optional :: stationarity_defect
+    ! the startup refinement of a multistep family's history block, as march_chain reads it
+    integer         , intent(in) , optional :: startup
     real(dp), allocatable :: dt(:)
 
     integer, parameter :: seed_instants = 9
@@ -6808,8 +6838,13 @@ contains
     do
        attempt = attempt + 1
 
-       call march_chain(schemes, [size(dt)], physics, degrees, designed_grid(duration), &
-            & design, state, chain, tower, resolved, t, achieved, grid_design=dt, context=active)
+       ! one block of size(dt) + 1 instants: the first instant has no step, and
+       ! each weight is one step; a block of size(dt) instants normalises the
+       ! weights over one step fewer, and the gradient of that normalisation
+       ! is never zero, so no grid is accepted
+       call march_chain(schemes, [size(dt) + 1], physics, degrees, designed_grid(duration), &
+            & design, state, chain, tower, resolved, t, achieved, grid_design=dt, startup=startup, &
+            & context=active)
 
        call chain_expansion(chain, tower, functionals, degrees, 0, fvals, context=active)
        f = fvals(0, 1)
@@ -6831,13 +6866,14 @@ contains
        dt        = halved(dt, split)
 
        if (attempt > 50) then
-          error stop 'gti_chain: a goal-oriented grid remains above the tolerance after fifty attempts'
+          error stop 'gti_chain: a grid remains above the stationarity tolerance after fifty attempts'
        end if
     end do
 
     if (present(rejects)) rejects = rejected
+    if (present(stationarity_defect)) stationarity_defect = e
 
-  end function goal_oriented_partition
+  end function grid_stationary_partition
 
   pure function halved(dt, split) result(refined)
     real(dp), intent(in) :: dt(:)
@@ -10671,7 +10707,6 @@ program graph_time_integrator
   use operation_grid        , only : grid
   use gti_march, only : march_context, imbalance, weight_of, precision_needed
   use gti_adaptive          , only : adaptive_partition
-  use operation_family      , only : crouzeix_three_stage
   use operation_stencil     , only : stencil
   use operation_domain      , only : continuous_domain
   use gti_space             , only : spatial_domain, spatial_mesh, geometry_of, coarse_cells, spatial_derivative_stencils
@@ -10683,7 +10718,7 @@ program graph_time_integrator
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
        & expansion_substitutions, chain_versions, num_designs_of, &
        & instant_components, chain_derivative, asymmetry, sink_costates, &
-       & goal_oriented_partition
+       & grid_stationary_partition
   use gti_sweeps, only : pass_of, forward_pass, reverse_pass
   use operation_minimization, only : relative, absolute, by_count, by_rate
   use gti_driver            , only : settings, chosen_grid, steps_of, family_named, clock, &
@@ -11320,33 +11355,67 @@ contains
        if (added(b) <= schemes(b) % scheme % history_depth(cfg % state_degree)) admissible = .false.
     end do
   end subroutine assembled
+  !===================================================================!
+  ! The adaptive grid is discovered for one scheme: the one family
+  ! that families names, at max_discretization_order, the table's
+  ! highest row of that family. A criterion is a statement about one
+  ! discrete functional or one local error, so a grid discovered for
+  ! one scheme and marched by every row is frozen for rows the
+  ! criterion never concerned. Step doubling compares one step of h
+  ! with two of h/2 from one state, which a multistep family has no
+  ! step for; adaptive_partition refuses such a family, and the
+  ! refusal is reported rather than replaced by another scheme.
+  !===================================================================!
   subroutine adaptive_context(cfg)
     type(configuration), intent(inout) :: cfg
+    class(family), allocatable :: scheme
+    character(len=16), allocatable :: names(:)
+    character(len=2) :: digit
     integer :: nd, rejects
+    logical :: staged, admissible
     if (trim(cfg % grid) /= 'adaptive') return
     if (over_field) then
        error stop 'graph_time_integrator: an adaptive grid is over time alone'
     end if
+    names = listed(cfg)
+    if (size(names) /= 1) then
+       write(*,'(a)') ' '
+       write(*,'(a,a,i0,a)') ' an adaptive grid is discovered for one family at max_discretization_order,', &
+            & ' and families names ', size(names), ' families.'
+       error stop 'graph_time_integrator: an adaptive grid is discovered for one family'
+    end if
+    call chosen(trim(names(1)), cfg % max_discretization_order, scheme, staged, admissible)
+    if (.not. admissible) then
+       write(*,'(a)') ' '
+       write(*,'(a,i0,a)') ' the family ' // trim(names(1)) // ' has no row of order ', &
+            & cfg % max_discretization_order, ', the order an adaptive grid is discovered at.'
+       error stop 'graph_time_integrator: an adaptive grid is discovered at an admissible order'
+    end if
+    write(digit,'(i0)') cfg % max_discretization_order
     nd = cfg % state_degree + 1
-    if (trim(cfg % adaptive_check) == 'goal_oriented') then
-       adaptive_weights = goal_oriented_partition(crouzeix_three_stage(), &
+    if (trim(cfg % adaptive_check) == 'grid_stationarity') then
+       adaptive_weights = grid_stationary_partition(scheme, &
             & physics_of(cfg), energy_of(cfg), nd, &
-            & cfg % time_duration, q0(1:cfg % state_degree), cfg % design, cfg % tolerance, &
-            & trim(cfg % tolerance_criterion) == 'relative', rejects, context=context)
+            & cfg % time_duration, q0(1:cfg % state_degree), cfg % design, &
+            & cfg % grid_stationarity_tolerance, &
+            & trim(cfg % tolerance_criterion) == 'relative', rejects, &
+            & startup=cfg % startup_refinement, context=context)
     else
-       adaptive_weights = adaptive_partition(crouzeix_three_stage(), 4, &
+       adaptive_weights = adaptive_partition(scheme, cfg % max_discretization_order, &
             & physics_of(cfg), nd, cfg % time_duration, &
             & q0(1:cfg % state_degree), cfg % design, cfg % tolerance, &
             & trim(cfg % tolerance_criterion) == 'relative', rejects, context=context)
     end if
     cfg % instants = size(adaptive_weights) + 1
     grid_adaptive  = .true.
-    if (trim(cfg % adaptive_check) == 'goal_oriented') then
+    if (trim(cfg % adaptive_check) == 'grid_stationarity') then
        write(*,'(a,i0,a,es9.2,a,i0,a)') '   adaptive grid: ', size(adaptive_weights), &
-            & ' steps at grid-stationarity tolerance ', cfg % tolerance, ' (', rejects, ' rejected)'
+            & ' steps of ' // trim(names(1)) // trim(digit) // ' at grid-stationarity tolerance ', &
+            & cfg % grid_stationarity_tolerance, ' (', rejects, ' rejected)'
     else
        write(*,'(a,i0,a,es9.2,a,i0,a)') '   adaptive grid: ', size(adaptive_weights), &
-            & ' steps at estimated local-error tolerance ', cfg % tolerance, ' (', rejects, ' rejected)'
+            & ' steps of ' // trim(names(1)) // trim(digit) // ' at estimated local-error tolerance ', &
+            & cfg % tolerance, ' (', rejects, ' rejected)'
     end if
   end subroutine adaptive_context
   subroutine grid_partition(cfg, dt, t)
@@ -11370,8 +11439,8 @@ contains
     real(dp), allocatable :: dt(:), t(:)
     integer :: widest, printed
     call refuse_unknown(cfg % physics, ['vanderpol          ', 'vanderpol_algebraic', 'taylor_green       '], 'physics')
-    call refuse_unknown(cfg % adaptive_check, ['step_doubling', 'goal_oriented'], &
-         & 'adaptive_check')
+    call refuse_unknown(cfg % adaptive_check, &
+         & [character(len=17) :: 'step_doubling', 'grid_stationarity'], 'adaptive_check')
     call apply_stopping(cfg)
     call adaptive_context(cfg)
     if (cfg % accounting) then

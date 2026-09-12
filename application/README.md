@@ -569,8 +569,13 @@ correction; neither certifies convergence. GTI rejects unsuccessful linear
 derivative solves and derivatives of an unsuccessful primal march.
 Adaptive step doubling rejects a nonconverged step solve and reports
 failure if its minimum step cannot meet the error tolerance. The
-goal-oriented grid tolerance measures grid stationarity, not a bound on
-the functional's discretization error.
+grid-stationarity check (`adaptive_check = grid_stationarity`,
+`grid_stationarity_tolerance`) measures the stationarity of the discrete
+functional F_h on the constraint sum h_k = T, not the discretization
+error F(Q_exact) - F_h(Q_h): implicit midpoint on the oscillator has
+E_h = sum_k h_k / (2 (1 + h_k^2/4)), stationary on every uniform grid,
+while E_h - 1 = -1/65 at h = 1/4 (`test/gti-contract`, mode
+`grid_stationary`).
 
 ## Running
 
@@ -851,9 +856,29 @@ separately, by the scheme. `grid` is
 |---|---|
 | `uniform` | h_k = T/(n-1), the instants equidistant |
 | `random` | a reproducible drawn spacing from `seed`, each weight within [1/2, 3/2] of uniform |
-| `adaptive` | the steps an error-controlled march discovers to `tolerance`, then frozen; `instants` is set by the result |
+| `adaptive` | the steps a march of one configured scheme discovers under `adaptive_check`, then frozen; `instants` is set by the result |
 
-with n = `instants`. When `designs` names `grid`, the weights h_k join
+with n = `instants`. An adaptive grid is discovered for one scheme:
+`families` names exactly one family, and the scheme is that family at
+`max_discretization_order`, the table's highest row of it; every row
+then marches the frozen grid. `adaptive_check = step_doubling` accepts
+a step when one step of h and two of h/2 agree in the state to
+`tolerance` under `tolerance_criterion` — the local state error of a
+self-starting family; a multistep family has no step from one state
+and is refused. `adaptive_check = grid_stationarity` accepts a grid when
+e = (max eta - min eta) T/N is within `grid_stationarity_tolerance`
+(relative to |F_h| or absolute by `tolerance_criterion`), where eta is
+the reverse-pass gradient dF_h/dh_k of the energy functional with its
+component along h projected away (that component is identically zero:
+sum_k h_k dF_h/dh_k = 0 by homogeneity). e is the first-order change of
+F_h from moving one average step's duration from the least to the most
+sensitive step, so e = 0 states that F_h is stationary under every
+transfer of duration between steps. It is not the discretization error
+F(Q_exact) - F_h(Q_h) and bounds nothing about it: implicit midpoint on
+the oscillator is stationary on every uniform grid with E_h - 1 = -1/65
+at h = 1/4. The default of `grid_stationarity_tolerance` is 1e-12, the
+default of `tolerance`, which the criterion read before it had a key of
+its own. The former word `goal_oriented` is refused. When `designs` names `grid`, the weights h_k join
 nu as designs and the table reports df/dh beside df/dnu, together with
 the identity sum over k of h_k df/dh_k = 0, the steps being
 homogeneous of degree zero in their weights. The same map carries a

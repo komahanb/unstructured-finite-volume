@@ -20,6 +20,7 @@ program restriction_refusal
   use operation_elimination, only : elimination
   use operation_temporal_minimization, only : temporal_minimizer
   use operation_residual, only : residual_operator
+  use operation_domain, only : continuous_domain, discrete_domain
   use operation_expression, only : unknown, derivative, constant, stated, operator(+), operator(*), operator(**)
   use operation_action, only : variation
   use view_directed_stored, only : stored_directed_graph
@@ -38,6 +39,8 @@ program restriction_refusal
   type(stored_directed_graph) :: other
   type(typed_field_domain) :: fields
   type(stored_field) :: frozen(2), moved
+  type(continuous_domain) :: law
+  type(discrete_domain) :: placed
   class(field), allocatable :: image
   real(dp) :: x(2), achieved, q(4)
   character(len=32) :: case_name
@@ -77,6 +80,15 @@ program restriction_refusal
   case ('pairing_domain')
      ! a design on P paired with a state on U: refused by the pairing
      x(1) = frozen(2) % inner_product(frozen(1))
+  case ('other_placement')
+     ! one law placed on another point graph of the residual's
+     ! cardinality: the design typed by that placement is refused
+     other  = stored_directed_graph(2, tails=[integer ::], heads=[integer ::])
+     law    = continuous_domain(residual % rule())
+     placed = law % discrete(other)
+     fields = placed % design_fields()
+     moved  = fields % design([0.0_dp, 0.0_dp])
+     call residual % apply(residual % unknown_graph(), residual % bind([frozen(1), moved]), image)
   case ('host')
      other = stored_directed_graph(4, tails=[integer ::], heads=[integer ::])
      call residual % apply(other, residual % bind(frozen), image)

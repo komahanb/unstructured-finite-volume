@@ -102,9 +102,10 @@ program time_level_6
   use relation_binary , only : csr_relation
   use view_directed_stored           , only : stored_directed_graph
   use field_stored     , only : stored_field
-  use operation_family    , only : family, bdf_family, adams_family, newmark_family, crouzeix_two_stage
+  use operation_family    , only : family, bdf_family, adams_family, newmark_family, crouzeix_two_stage, &
+       & dirk_family
   use operation_weight    , only : scheme_weight
-  use operation_coupling  , only : weights_of
+  use operation_coupling  , only : weights_of, weights_terms
   use view_directed_connectivity, only : connectivity_graph
   use util_derivative_terms, only : derivative_terms, value
   use temporal_step_fixture , only : temporal_step, backward_euler, bdf
@@ -163,6 +164,7 @@ program time_level_6
   call check_taylor_newmark_datum(nfail)
   call check_dirk_step_connectivity(nfail)
   call check_newmark_step_quadrature(nfail)
+  call check_alexander_tableau(nfail)
   call check_family_refusals(nfail)
 
   call assert_all(nfail, "level 6")
@@ -758,8 +760,199 @@ contains
     call report(stopped('dirk-step-quadrature'), &
          & "a staged family refuses the instant quadrature: it integrates " // &
          & "over its stages by the tableau weights", nfail)
+    call report(stopped('dirk-top-degree-edge'), &
+         & "a tableau refuses a stage read at the constraint's own degree: " // &
+         & "the top degree at the instant ahead is the law's row", nfail)
 
   end subroutine check_family_refusals
+
+  !===================================================================!
+  ! A tableau registered by data alone: Alexander's two-stage
+  ! L-stable DIRK, g = 1 - sqrt(2)/2, a = [[g, 0], [1 - g, g]],
+  ! b = [1 - g, g], through dirk_family. The step map on q' = lambda q
+  ! is assembled from the family's stage connectivity and weights
+  ! alone: eight unknowns (four vertices at two degrees), the instant
+  ! behind fixed, three value rows of the family and three law rows.
+  ! The map equals the stability function
+  ! R(z) = (1 + (1 - 2 g) z) / (1 - g z)^2, z = h lambda; over T = 1
+  ! the error against exp(lambda T) quarters when the step halves;
+  ! the tangent of the step in h, from weights_terms seeded by dh = 1,
+  ! equals lambda R'(z) q; and the adjoint identity
+  ! e_k . du/dh = -mu . (dA/dh) u, A^T mu = e_k, holds through the
+  ! transposed solve.
+  !===================================================================!
+
+  subroutine check_alexander_tableau(nfail)
+
+    integer, intent(inout) :: nfail
+
+    real(dp), parameter :: lambda = -1.0_dp, duration = 1.0_dp, h = 0.3_dp
+    integer , parameter :: steps(3) = [10, 20, 40]
+    type(family) :: scheme
+    type(connectivity_graph) :: edges
+    real(dp), allocatable :: w(:), table(:,:), a(:,:), da(:,:), rhs(:), u(:), du(:), mu(:), seeds(:,:)
+    real(dp) :: g, z, r_exact, dr_exact, q, e(3), tangent, adjoint, ratio(2)
+    integer :: nv, ne, k, n, level, arriving
+
+    g = 1.0_dp - sqrt(2.0_dp) / 2.0_dp
+    scheme = dirk_family(reshape([g, 1.0_dp - g, 0.0_dp, g], [2, 2]), [1.0_dp - g, g])
+    edges  = scheme % stage_connectivity(2)
+    nv = edges % num_vertices()
+    ne = edges % num_edges()
+    arriving = 2 * (nv - 1) + 1
+    call weights_of(scheme_weight(scheme), edges, [(h, k = 1, nv)], w)
+    call report(nv .eq. 4 .and. ne .eq. 8 .and. &
+         & maxval(abs(w - [1.0_dp, h * g, 1.0_dp, h * (1.0_dp - g), h * g, &
+         &                 1.0_dp, h * (1.0_dp - g), h * g])) .lt. TOL, &
+         & "alexander two-stage at two degrees: eight edges with weights 1 on the " // &
+         & "instant behind, h a_ij on the stages and h b_j into the instant ahead", nfail)
+
+    ! one step from q = 1: the assembled map against R(z)
+    call decay_step_system(scheme, edges, lambda, h, 1.0_dp, a, rhs)
+    u = solved(a, rhs)
+    z = h * lambda
+    r_exact = (1.0_dp + (1.0_dp - 2.0_dp * g) * z) / (1.0_dp - g * z) ** 2
+    call report(abs(u(arriving) - r_exact) .lt. TOL, &
+         & "the step map assembled from the connectivity and weights equals the " // &
+         & "stability function (1 + (1 - 2 g) z) / (1 - g z)^2", nfail)
+
+    ! convergence over T = 1: the error quarters when the step halves
+    do level = 1, 3
+       n = steps(level)
+       q = 1.0_dp
+       do k = 1, n
+          call decay_step_system(scheme, edges, lambda, duration / real(n, dp), q, a, rhs)
+          u = solved(a, rhs)
+          q = u(arriving)
+       end do
+       e(level) = abs(q - exp(lambda * duration))
+    end do
+    ratio = e(1:2) / e(2:3)
+    call report(all(ratio .gt. 2.0_dp ** 1.75_dp) .and. all(ratio .lt. 2.0_dp ** 2.25_dp), &
+         & "second order on q' = -q over T = 1: the error ratio under halving " // &
+         & "lies within 2^(2 -/+ 1/4) at 10, 20, 40 steps", nfail)
+
+    ! the tangent in h from the weights' derivative terms, and the
+    ! adjoint identity through the transposed solve
+    allocate(seeds(nv, 1))
+    seeds = 1.0_dp
+    call weights_terms(scheme_weight(scheme), edges, [(h, k = 1, nv)], seeds, table)
+    call decay_step_system(scheme, edges, lambda, h, 1.0_dp, a, rhs)
+    u  = solved(a, rhs)
+    call decay_step_derivative(edges, table(:, 1), da)
+    du = solved(a, -matmul(da, u))
+    tangent  = du(arriving)
+    dr_exact = lambda * ((1.0_dp - 2.0_dp * g) * (1.0_dp - g * z) &
+         & + 2.0_dp * g * (1.0_dp + (1.0_dp - 2.0_dp * g) * z)) / (1.0_dp - g * z) ** 3
+    rhs = 0.0_dp
+    rhs(arriving) = 1.0_dp
+    mu = solved(transpose(a), rhs)
+    adjoint = -dot_product(mu, matmul(da, u))
+    call report(abs(tangent - dr_exact) .lt. TOL .and. abs(tangent - adjoint) .lt. TOL, &
+         & "the tangent of the step in h from weights_terms equals lambda R'(z) q, and " // &
+         & "the adjoint through the transposed solve equals the tangent", nfail)
+
+  end subroutine check_alexander_tableau
+
+  !===================================================================!
+  ! The linear system of one staged step on q' = lambda q at two
+  ! degrees, unknown (v, d) at row 2 (v - 1) + d + 1: the instant
+  ! behind fixed to (q, lambda q), each value row -u(head) + sum of
+  ! the weighted tails, each law row -u(v, 1) + lambda u(v, 0).
+  !===================================================================!
+
+  subroutine decay_step_system(scheme, edges, lambda, step, q_behind, a, rhs)
+
+    type(family)            , intent(in)  :: scheme
+    type(connectivity_graph), intent(in)  :: edges
+    real(dp)                , intent(in)  :: lambda, step, q_behind
+    real(dp), allocatable   , intent(out) :: a(:,:), rhs(:)
+
+    real(dp), allocatable :: wt(:)
+    integer :: nv, v, e, row, col
+
+    nv = edges % num_vertices()
+    call weights_of(scheme_weight(scheme), edges, [(step, v = 1, nv)], wt)
+    allocate(a(2 * nv, 2 * nv), rhs(2 * nv))
+    a   = 0.0_dp
+    rhs = 0.0_dp
+    a(1, 1) = 1.0_dp
+    a(2, 2) = 1.0_dp
+    rhs(1)  = q_behind
+    rhs(2)  = lambda * q_behind
+    do v = 2, nv
+       row = 2 * (v - 1) + 1
+       a(row, row)         = -1.0_dp
+       a(row + 1, row + 1) = -1.0_dp
+       a(row + 1, row)     = lambda
+    end do
+    do e = 1, edges % num_edges()
+       row = 2 * (edges % edge_head(e) - 1) + edges % head_degree(e) + 1
+       col = 2 * (edges % edge_tail(e) - 1) + edges % tail_degree(e) + 1
+       a(row, col) = a(row, col) + wt(e)
+    end do
+
+  end subroutine decay_step_system
+
+  subroutine decay_step_derivative(edges, dwt, da)
+
+    type(connectivity_graph), intent(in)  :: edges
+    real(dp)                , intent(in)  :: dwt(:)
+    real(dp), allocatable   , intent(out) :: da(:,:)
+
+    integer :: nv, e, row, col
+
+    nv = edges % num_vertices()
+    allocate(da(2 * nv, 2 * nv))
+    da = 0.0_dp
+    do e = 1, edges % num_edges()
+       row = 2 * (edges % edge_head(e) - 1) + edges % head_degree(e) + 1
+       col = 2 * (edges % edge_tail(e) - 1) + edges % tail_degree(e) + 1
+       da(row, col) = da(row, col) + dwt(e)
+    end do
+
+  end subroutine decay_step_derivative
+
+  !===================================================================!
+  ! Gaussian elimination with partial pivoting on a small dense
+  ! system; a zero pivot stops the program.
+  !===================================================================!
+
+  function solved(a, b) result(x)
+
+    real(dp), intent(in) :: a(:,:), b(:)
+    real(dp), allocatable :: x(:)
+
+    real(dp), allocatable :: m(:,:), r(:)
+    real(dp) :: factor
+    integer :: n, i, j, k, p
+
+    n = size(b)
+    m = a
+    r = b
+    do k = 1, n
+       p = k - 1 + maxloc(abs(m(k:n, k)), dim=1)
+       if (abs(m(p, k)) .eq. 0.0_dp) error stop 'level 6: a singular step system'
+       if (p .ne. k) then
+          m([k, p], :) = m([p, k], :)
+          r([k, p])    = r([p, k])
+       end if
+       do i = k + 1, n
+          factor  = m(i, k) / m(k, k)
+          m(i, :) = m(i, :) - factor * m(k, :)
+          r(i)    = r(i) - factor * r(k)
+       end do
+    end do
+    allocate(x(n))
+    do i = n, 1, -1
+       x(i) = r(i)
+       do j = i + 1, n
+          x(i) = x(i) - m(i, j) * x(j)
+       end do
+       x(i) = x(i) / m(i, i)
+    end do
+
+  end function solved
 
   logical function stopped(case_name)
 
@@ -802,6 +995,11 @@ contains
        scheme = crouzeix_two_stage()
        dt = [derivative_terms(0.0_dp, 0), derivative_terms(0.5_dp, 0)]
        call scheme % step_quadrature(dt, 2, weight)
+       k = size(weight)
+    case ('dirk-top-degree-edge')
+       scheme = crouzeix_two_stage()
+       dt = [derivative_terms(0.5_dp, 0), derivative_terms(0.5_dp, 0)]
+       weight = [scheme % edge_coefficient([dt, dt], 2, 4, 1, 1)]
        k = size(weight)
     case default
        error stop 'level 6: an unknown refusal case'

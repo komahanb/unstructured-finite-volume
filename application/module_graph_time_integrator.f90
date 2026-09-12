@@ -6859,7 +6859,7 @@ module gti_driver
   use operation_family      , only : bdf_family
   use operation_family      , only : adams_family
   use operation_family      , only : implicit_midpoint, crouzeix_two_stage, crouzeix_three_stage, &
-       & newmark_family
+       & newmark_family, dirk_family
   use operation_expression  , only : expression
   use gti_physics           , only : van_der_pol_energy, van_der_pol_dissipation, functional_of_physics
   use gti_chain             , only : chain_block
@@ -6970,10 +6970,26 @@ contains
        else
           admissible = .false.
        end if
+    ! Alexander's two-stage L-stable DIRK, gamma = 1 - sqrt(2)/2,
+    ! a = [[gamma, 0], [1 - gamma, gamma]], b = [1 - gamma, gamma],
+    ! order 2: a tableau registered here by its data alone
+    case ('alexander')
+       if (order == 2) then
+          allocate(scheme, source=dirk_family(alexander_tableau(), &
+               & [sqrt(2.0_dp) / 2.0_dp, 1.0_dp - sqrt(2.0_dp) / 2.0_dp]))
+       else
+          admissible = .false.
+       end if
     case default
        admissible = .false.
     end select
   end subroutine family_named
+  pure function alexander_tableau() result(a)
+    real(dp) :: a(2, 2)
+    real(dp) :: g
+    g = 1.0_dp - sqrt(2.0_dp) / 2.0_dp
+    a = reshape([g, 1.0_dp - g, 0.0_dp, g], [2, 2])
+  end function alexander_tableau
   subroutine functional_named(physics_name, name, degree, rule, admissible, dimension)
     character(len=*), intent(in)  :: physics_name, name
     integer         , intent(in)  :: degree
@@ -10687,8 +10703,8 @@ program graph_time_integrator
   use gti_configuration     , only : at_expansion, at_horizon, hierarchy_levels
   use gti_demos           , only : demo_requested, run_demo
   implicit none
-  character(len=16), parameter :: family_names(5) = &
-       & [character(len=16) :: 'bdf', 'adams', 'dirk', 'newmark', 'taylor-newmark']
+  character(len=16), parameter :: family_names(6) = &
+       & [character(len=16) :: 'bdf', 'adams', 'dirk', 'newmark', 'taylor-newmark', 'alexander']
   type(march_context) :: context
   type(configuration) :: cfg
   type(spatial_domain)   , allocatable :: space

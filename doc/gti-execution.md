@@ -281,6 +281,51 @@ Consumers of the boundary (library and `application/module_graph_time_integrator
 | versions | `march_context % next_version`, `versioned` | `linearize`, Newton (stamps the explicit stencil), `partitioned_solve` (member versions), `elimination` (complement), `dense_direct` (retained factors by version and transpose) |
 | higher partials | `residual_partial_action`, m >= 2 | `halley_correction` (`derivative_of`), `point_terms` (the Taylor towers read the physics expression directly) |
 
+## Family extension
+
+A time family is data of `operation_family`: a geometry tag and the
+coefficients that geometry reads (the order and its functional for
+Adams-Moulton and BDF, the tableau (a, b) for a diagonally implicit
+Runge-Kutta method, the pair (beta, gamma) for Newmark). Every incidence
+a discretization states is derived from that data by `row_pattern`,
+`block_connectivity` and `stage_connectivity`, every coefficient by
+`edge_coefficient`, every quadrature by `step_quadrature` and
+`stage_weight`; the application embeds those edges into its tuple layout
+and adds none of its own, and neither the temporal engine nor any
+solver reads a family name.
+
+Constructor-only, with no library and no engine edit: a tableau through
+`dirk_family(a, b)`, a Newmark pair through `newmark_family(beta, gamma)`,
+an Adams-Moulton or BDF order through `adams_family(p)` or
+`bdf_family(p)`. The application registers the name in `family_named`
+(name and order to constructor) and in `family_names`; nothing else
+changes. Alexander's two-stage L-stable tableau, gamma = 1 - sqrt(2)/2,
+is registered this way (`alexander`, order 2): its accuracy row runs in
+the accuracy contract (T14) and `time-integration-tower` level 6 states
+its connectivity and weights from the family, assembles its step map on
+q' = lambda q from them alone, and checks the stability function, second
+order under refinement, the tangent of the step in h from
+`weights_terms` and the adjoint identity through the transposed solve.
+
+Not constructor-only under the current design: a new geometry. The four
+geometries are the branches of `select case (this % geometry)` in
+`history_depth`, `primary_degree`, `row_pattern`, `step_quadrature`,
+`stage_weight` and `edge_coefficient`; generalised-alpha, a Nystrom
+method or a multistep with another row pattern is a fifth branch in each
+of them and a constructor, which is R12's extension proof, not a
+registration by data. The startup of a multistep family is one
+registered family (`gti_chain % startup_family`, Crouzeix's three-stage
+tableau) and is not configurable by name.
+
+The older plan's Newmark, typed-field and continuous/discrete-domain
+phases are closed with the source/consumer/test matrix in
+`artifacts/remaining-work-2026-09-11/r07/matrix-final.md`: the family's
+connectivities are the only source of incidence, the law governs the top
+degree at every evaluation point including the arriving instant of a
+staged step, fields read their extent from the graph that names their
+support, and one continuous law placed on two point graphs keeps two
+discrete-domain identities.
+
 ## Elimination storage
 
 An `elimination` over retained unknowns K and eliminated unknowns E states

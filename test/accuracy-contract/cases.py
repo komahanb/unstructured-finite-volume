@@ -253,6 +253,10 @@ def required_cases():
         temporal_case("T13-adams4-invariant-drift", "adams4", 5, ["invariant"],
                       "Adams-Moulton 4 invariant drift on the linear oscillator: order 5, one "
                       "above the scheme, as for BDF-4 and DIRK-4"),
+        temporal_case("T14-alexander2", "alexander2", 2, ["E", "dE", "dD", "q", "qd"],
+                      "Alexander's two-stage L-stable DIRK (gamma = 1 - sqrt 2 / 2), order 2: a "
+                      "tableau registered by its data alone in the application's name map",
+                      argv_extra=("--families=alexander",)),
         temporal_case("T11-newmark2", "newmark2", 2, ["dE", "dD", "q", "qd", "conserved",
                                                       "invariant_conserved"],
                       "Newmark beta = 1/4, gamma = 1/2 (average acceleration), order 2: the "

@@ -189,20 +189,56 @@ Runtime and compiler requirements of the OpenMP build with GNU Fortran
 `-pthread`, so every local array of every procedure is on its thread's
 stack and `OMP_STACKSIZE` must cover the largest automatic array of an
 execution (the dense factorisation is allocatable, not automatic). The
-library's debug flags include `-ffpe-trap=invalid,overflow,underflow`;
-the trap mask is inherited by every thread, so a non-finite value in one
-execution raises `SIGFPE` and terminates the process, whereas the solvers
-already return `SOLVE_NONFINITE` through `ieee_is_finite` checks. A
-concurrent build must either omit the trap for the library or accept
-that a trapped execution is not isolated. `error stop` from any thread
-terminates the process; three numerical failure paths of the application
-still stop rather than return a failed result.
+library's debug flags include `-ffpe-trap=invalid,overflow,underflow`
+(`Makefile.in`, `DEBUG=yes`, the default of `build.sh`); the trap mask is
+inherited by every thread, so a non-finite value in one execution raises
+`SIGFPE` and terminates the process, whereas the solvers return
+`SOLVE_NONFINITE` through `ieee_is_finite` checks when nothing traps.
+`FPETRAP=no ./build.sh` omits that one flag and keeps the rest of the
+debug flags; the default is unchanged, so a concurrent run of the
+default build is isolated against every failure except a non-finite
+value, which is stated as a limitation of that build. `error stop` from
+any thread terminates the process.
 
-Still shared and therefore not thread-safe: output paths chosen by the
-caller, the six write statements reachable from an execution, the gmsh
-loader's unit selection by `inquire`, and the malloc counters of the
-benchmark instrumentation. `verbosity` must be set before the first
-parallel region.
+## Failure results
+
+A numerical failure inside an execution is a `solve_result` returned to
+the execution's caller, never an `error stop`, so one failed execution
+leaves the process and every other execution alive:
+
+- a primal block that does not converge leaves the execution's
+  `final_imbalance % converged` false, its `outcome` the solver's
+  result, and the march continues on the state reached, as before;
+- `derivative(..., outcome)` reports the primal result of the first
+  block that did not converge (no derivative is solved, the table is
+  zero) or the first linear solve of the pass that did not converge
+  (`march_context % record_failure`, the first retained, reset at the
+  start of every pass); `chain_derivative(..., outcome)` is the same
+  contract for a caller that holds the chain;
+- a streamed Taylor block whose primal did not converge is recorded as
+  the failure of the march and its tower is solved at the state reached,
+  so later blocks read defined values and `take_results` reports the
+  non-converged `final_imbalance`;
+- `adaptive_partition(..., outcome)` returns the step solve that did not
+  converge with the steps accepted before it.
+
+Without an `outcome` argument each of these entry points stops the
+process with the same reason as before, which `test/gti-contract`
+checks.
+
+Output ownership: the paraview path of the main program is
+`<export_path>_<label>_r<serial>_<instant>.vtu`, the serial being the
+row's position in the run, so two rows of one label never write one
+file. The six write statements to standard output reachable from an
+execution (`consistent_states`, `initial_field`, the three `against_*`
+checks) are serialised by libgfortran per statement and remain
+unowned; a concurrent driver prints its own records after the join.
+
+Still shared and therefore not thread-safe: the six write statements
+reachable from an execution, the gmsh loader's unit selection by
+`inquire` (start-up only), and the malloc counters of the benchmark
+instrumentation. `verbosity` must be set before the first parallel
+region.
 
 ## Solver restriction
 

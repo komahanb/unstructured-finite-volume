@@ -71,7 +71,7 @@
 !             WHAT IS REJECTED
 !
 ! A derivative of anything but the unknown, or of negative degree; a
-! rule stated at a degree below one, or below the highest component
+! rule stated at a degree below zero, or below the highest component
 ! it reads; a state whose extent is not the instants times N+1; a
 ! design that is not one value per instant; a missing argument; a
 ! variation naming neither argument; a function index outside those
@@ -372,7 +372,12 @@ contains
     ! a rule stated again keeps its fields' degrees, its multipliers
     ! and the stationarity it is, unless these are given again
     this = rule
-    this % fields = max(1, maxval(this % field))
+
+    ! An explicit field declaration may include fields this row does
+    ! not read: several residual rows then use the same state tuple.
+    this % fields = max(this % fields, 1, maxval(this % field))
+    if (present(field_degrees)) this % fields = max(this % fields, size(field_degrees))
+
     if (present(multipliers)) then
        this % multipliers = multipliers
        this % varied      = 0
@@ -869,8 +874,8 @@ contains
   !===================================================================!
   ! The degree of the equation, declared when the rule is stated,
   ! with the name the rule reports and the highest exact degree: the
-  ! width the subset masks can index. A degree below one stops the
-  ! program: there is no highest derivative then.
+  ! width the subset masks can index. Degree zero declares algebraic
+  ! fields; a negative degree stops the program.
   !===================================================================!
 
   subroutine declare_degree(this, degrees, label)
@@ -882,9 +887,7 @@ contains
     if (size(degrees) < 1) then
        error stop 'operation_expression: a state is declared over one coordinate at least'
     end if
-    if (degrees(FIRST_COORDINATE) < 1) then
-       error stop 'operation_expression: the degree of the equation is positive'
-    end if
+
     if (any(degrees < 0)) then
        error stop 'operation_expression: a degree along a coordinate is not negative'
     end if

@@ -1,7 +1,7 @@
 include ../../Makefile.in
 
 #=====================================================================#
-# Two programs: the law suite, and the refusals that must die.
+# SDIRK coefficient example.
 # -Wtarget-lifetime checks pointer target lifetimes at compile time.
 #=====================================================================#
 
@@ -14,11 +14,8 @@ all: run
 run: test.o
 	$(F90) test.o -o $@ $(LDFLAGS)
 
-refusal: refusal.o
-	$(F90) refusal.o -o $@ $(LDFLAGS)
-
 clean:
-	@rm -f *.o *.mod *.so run refusal
+	@rm -f *.o *.mod *.so run
 
 .SUFFIXES: .f90 .o
 .PHONY: all clean

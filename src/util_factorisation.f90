@@ -8,7 +8,7 @@
 ! matrix frozen at the same state, so one factorisation serves them
 ! all and each costs a substitution. Formed again per solve, each
 ! would cost the factorisation again. Each factorisation is recorded
-! with util_tally, so the count is measured rather than modelled.
+! by its caller, so the count is measured rather than modelled.
 !
 ! Solving against the transpose uses the same factors. P A = L U gives
 ! A^T P^T = U^T L^T, so A^T x = b is U^T y = b, then L^T z = y, then
@@ -26,7 +26,6 @@
 module util_factorisation
 
   use util_precision  , only : dp
-  use util_tally     , only : tally_record, factorisations
 
   implicit none
 
@@ -71,8 +70,6 @@ contains
     if (size(a, 2) /= n) then
        error stop 'util_factorisation: a factorised matrix is square'
     end if
-
-    call tally_record(factorisations)
 
     this % n           = n
     this % lu          = a

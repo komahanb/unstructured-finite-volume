@@ -135,57 +135,162 @@ executions or expansions is a gfortran 15.2 internal compiler error
 
 ## Limits
 
-Interleaving is supported; concurrent threads are not certified. Diagnostic
-`tally` accounting is still application-wide, with every accounting scope
-closed before `advance` returns. Bounded reverse-memory algorithms remain
-separate architectural work.
+Interleaving is supported, and independent concurrent executions on the
+threads of one process are certified under the conditions of
+"Concurrent executions" below. Simultaneous blocks inside one dependent
+trajectory, MPI or coarray images and device kernels are not. Bounded
+reverse-memory algorithms remain separate architectural work.
 
-## Concurrency prerequisites
+## Accounting
 
-Concurrent executions are not yet certified: no acceptance case runs two
-executions on two threads, and the application-wide state listed below
-is still shared. What exists is the build option and the three library
-synchronisations that precede such a case.
+Diagnostic accounting is a value, `tally` (`util_tally`), owned by each
+execution's `march_context` as its `account`: the declared levels, the
+amounts a(l, k, e) by level, derivative order and event, and the stack of
+open levels. `configuration()` copies it restarted (same levels, orders
+and recording state, zero amounts), so an execution begins with an empty
+account of its caller's shape; `march_chain` adds the execution's
+account into the caller's context after taking the results, and
+`chain_execution % account()` returns it to a caller that drives the
+execution itself. Every scope opened in `advance` is closed before
+`advance` returns. A minimizer records through `record_event` into the
+tally its caller bound with `bind_account` for the duration of one solve
+(`solved` and `swept` bind the context's account before the solve and
+null after), composites binding their children, so a stored inner
+minimizer copied with an execution references no other execution's
+tally; a factorisation is recorded by the minimizer that requests it.
+No amount is stored in a module variable.
 
-`OPENMP=yes ./build.sh` and `OPENMP=yes ./application/build.sh` compile
-with `-fopenmp` and link `libgomp`; the suite Makefiles read the same
-variable from the environment, so a test build must use the setting of
-the library it links. The default build omits the flag: every `!$omp`
-directive and `!$` sentinel line is then a comment, and the serial
-statements are the fallback. The serial build's demonstration output is
-byte-identical to that of commit `aebe1f2`, and the OpenMP build under
-`OMP_NUM_THREADS=1` and `OMP_NUM_THREADS=2` reproduces the same bytes
-for every demonstration of the comparison set
-(`artifacts/remaining-work-2026-09-11/r11/evidence-slices-1-4/`).
+## Concurrent executions
 
-Three library states are synchronised. The version of every coarse
+Certified: independent concurrent CPU executions. Executions E_1, ...,
+E_n with independent inputs (`chain_execution` values initialized from
+their own `march_context`, copies of one shared template included) run
+one per iteration of `!$omp parallel do schedule(dynamic,1)` and give,
+per execution, the states, grid, derivative tables, Taylor coefficients,
+storage pairs, failure results and counted accounting events of the
+serial run at tolerance zero: every reduction inside one execution runs
+in the program order of the serial build, and no cross-execution
+reduction exists (a sum over executions is formed after the join in
+index order). `test/gti-concurrent` checks this for ten heterogeneous
+executions (state dimensions 3 and 4; BDF, Adams, DIRK and Newmark
+families; direct, GMRES with Gauss-Seidel, GMRES with one multigrid
+cycle and numerical elimination; designs and random grids; forward and
+reverse derivatives of orders 1 and 2; one streamed Taylor execution;
+one execution configured not to converge, whose derivative is a
+non-converged result while the other nine equal the serial run and the
+process exits normally), five repetitions at 1, 2 and 4 threads, each
+execution writing its own file inside the region, every line of
+standard output written after the join. The same source without
+`-fopenmp` is the serial fallback: the requested thread count is
+ignored and the suite passes with one thread.
+
+Conditions: GNU Fortran 15.2 with `libgomp`; `OPENMP=yes ./build.sh`
+(`-O3 -g -fbounds-check -fopenmp`, the default `FPETRAP=yes`) and
+`-fopenmp` for every compilation unit that links the library (the suite
+Makefiles read the same variable); `-fopenmp` implies `-frecursive` and
+`-pthread`, so every local array is on its thread's stack and
+`OMP_STACKSIZE` must cover the largest automatic array of an execution
+(the dense factorisation is allocatable, not automatic); `verbosity`
+set before the first parallel region. With the default trap a
+non-finite value in any execution raises `SIGFPE` and terminates the
+process, because the trap mask is inherited by every thread;
+`FPETRAP=no ./build.sh` omits that one flag and the solvers return
+`SOLVE_NONFINITE`, which is then a failure result of that execution
+alone. `error stop` sites are invalid-input refusals and terminate the
+process from any thread.
+
+Shared state and its synchronisation. The version of every coarse
 statement of a `multigrid` is that object's own count (`num_statements`),
-compared only by its coarse minimizer, so two objects have independent
-sequences. The identity serial of `next_token` is incremented and read
-in one `!$omp atomic capture`, so two threads never receive one serial.
-The counted-storage registry (`doc/topology-ownership.md`) performs
+compared only by its coarse minimizer. The identity serial of
+`next_token` is incremented and read in one `!$omp atomic capture`. The
+counted-storage registry (`doc/topology-ownership.md`) performs
 acquisition, binding and release inside one named critical region, the
-owner's `clear` outside it. Owner reads take no lock.
+owner's `clear` outside it; owner reads take no lock. Unowned and
+serialised only by libgfortran: the six write statements to standard
+output reachable from an execution (`consistent_states`,
+`initial_field`, the three `against_*` checks); start-up only: the gmsh
+loader's unit selection by `inquire`; process totals with lost updates:
+the malloc counters of the benchmark instrumentation. One location is
+generated by the compiler: GNU Fortran stores the length of every
+`character(len=:), allocatable` function result in a static variable
+at the call site, with every flag combination tried
+(`artifacts/remaining-work-2026-09-11/r11/evidence-slices-2-6/slice-6/deferred-length-defect`),
+so two threads at one of the 73 such call sites of the library and the
+application can exchange the lengths of two labels. No label result is
+compared or selects a branch; labels reach diagnostics, refusal
+messages and derived labels. The fix, results of
+`character(len=this % name_length())`, changes the `name` binding of
+every operation and is later work.
 
-Runtime and compiler requirements of the OpenMP build with GNU Fortran
-15: `libgomp` at run time; `-fopenmp` implies `-frecursive` and
-`-pthread`, so every local array of every procedure is on its thread's
-stack and `OMP_STACKSIZE` must cover the largest automatic array of an
-execution (the dense factorisation is allocatable, not automatic). The
-library's debug flags include `-ffpe-trap=invalid,overflow,underflow`;
-the trap mask is inherited by every thread, so a non-finite value in one
-execution raises `SIGFPE` and terminates the process, whereas the solvers
-already return `SOLVE_NONFINITE` through `ieee_is_finite` checks. A
-concurrent build must either omit the trap for the library or accept
-that a trapped execution is not isolated. `error stop` from any thread
-terminates the process; three numerical failure paths of the application
-still stop rather than return a failed result.
+Instrumentation and measurement
+(`artifacts/remaining-work-2026-09-11/r11/evidence-slices-2-6/slice-6`).
+ThreadSanitizer (`-fsanitize=thread -fopenmp -O1 -g`, no trap) over the
+suite at 4 threads: 17085 reports, every one classified: 16800
+races on the static length above, with two reads past a label's own
+buffer into a neighbouring freed block, the over-read an exchanged
+length produces (`field_stored % create`); 223 on counted-storage cells
+and registry counters accessed inside the critical region, whose libgomp
+futex lock ThreadSanitizer does not observe (the ownership suite's
+parallel cases pass with the region and fail without it), and
+lock-order inversions between libgfortran's unit-table and unit locks;
+nothing in the library's own state, and every numerical comparison of
+that run exact. Valgrind memcheck of the serial build's suite: no
+invalid access and no uninitialised value; the definitely-lost bytes
+come from `stencil_term`, `consistent_states` (the R05 origins, solver
+internals that predate this work) and `by_aspect` (the same
+`class(field), allocatable` result pattern, unchanged since R06).
+Throughput of the ten-execution set on four cores shared with two other
+agents, medians of five repetitions: 56.9 executions per second on one thread (range 56.3 to 57.4), 92.2 on two (87.5 to 93.1) and 125.1 on four (109.2 to 133.5), speedups 1.62 and 2.20 of the median wall time, with peak resident memory (`VmHWM`) 9.3, 9.9 and 11.2 MB at the fifth repetition (`slice-6/measurement/measurement.json`). Peak resident memory
+grows with the threads' simultaneous executions, not with the thread
+count itself.
 
-Still shared and therefore not thread-safe: the `util_tally` accounting
-stack and amounts, output paths chosen by the caller, the six write
-statements reachable from an execution, the gmsh loader's unit selection
-by `inquire`, and the malloc counters of the benchmark instrumentation.
-`verbosity` must be set before the first parallel region.
+Not certified: simultaneous blocks inside one trajectory (an execution
+is one thread for its whole life); MPI and coarray images
+(`-fcoarray=single` here; the OpenCoarrays build shares nothing and is
+outside this certification); device kernels; any run of the default
+trapping build in which a non-finite value occurs; the demonstrations
+of the OpenMP build at more than one thread beyond byte-identity of the
+comparison set, which run one execution at a time.
+
+## Failure results
+
+A numerical failure inside an execution is a `solve_result` returned to
+the execution's caller, never an `error stop`, so one failed execution
+leaves the process and every other execution alive:
+
+- a primal block that does not converge leaves the execution's
+  `final_imbalance % converged` false, its `outcome` the solver's
+  result, and the march continues on the state reached, as before;
+- `derivative(..., outcome)` reports the primal result of the first
+  block that did not converge (no derivative is solved, the table is
+  zero) or the first linear solve of the pass that did not converge
+  (`march_context % record_failure`, the first retained, reset at the
+  start of every pass); `chain_derivative(..., outcome)` is the same
+  contract for a caller that holds the chain;
+- a streamed Taylor block whose primal did not converge is recorded as
+  the failure of the march and its tower is solved at the state reached,
+  so later blocks read defined values and `take_results` reports the
+  non-converged `final_imbalance`;
+- `adaptive_partition(..., outcome)` returns the step solve that did not
+  converge with the steps accepted before it.
+
+Without an `outcome` argument each of these entry points stops the
+process with the same reason as before, which `test/gti-contract`
+checks.
+
+Output ownership: the paraview path of the main program is
+`<export_path>_<label>_r<serial>_<instant>.vtu`, the serial being the
+row's position in the run, so two rows of one label never write one
+file. The six write statements to standard output reachable from an
+execution (`consistent_states`, `initial_field`, the three `against_*`
+checks) are serialised by libgfortran per statement and remain
+unowned; a concurrent driver prints its own records after the join.
+
+Still shared and therefore not thread-safe: the six write statements
+reachable from an execution, the gmsh loader's unit selection by
+`inquire` (start-up only), and the malloc counters of the benchmark
+instrumentation. `verbosity` must be set before the first parallel
+region.
 
 ## Solver restriction
 
@@ -363,7 +468,8 @@ is implemented: the complement is explicit, or the elimination is refused.
 ## Verification
 
 The repository verification entry point includes context isolation, GTI
-execution interleaving, and generic incremental execution suites. These test
+execution interleaving, independent concurrent executions
+(`test/gti-concurrent`), and generic incremental execution suites. These test
 different solver choices, problem dimensions, startup schemes, copied input
 configuration, partial reinitialization, forward/reverse derivatives,
 streamed Taylor storage, and execution copies before, during and after a

@@ -50,7 +50,7 @@ module operation_multigrid
   use operation_action       , only : operation
   use graph_fractal          , only : graph
   use field_stored           , only : stored_field
-  use util_tally, only : tally_record, linear_solves
+  use util_tally, only : linear_solves, tally
   use transform_structure, only : through_blocks
 
   implicit none
@@ -78,6 +78,7 @@ module operation_multigrid
      procedure :: setup
      procedure :: state => multigrid_state
      procedure :: restrict => multigrid_restrict
+     procedure :: bind_account => multigrid_bind_account
      procedure :: storage_entries => multigrid_storage_entries
      procedure :: solve
 
@@ -315,7 +316,7 @@ contains
     integer :: it
     type(solve_result) :: outcome
 
-    call tally_record(linear_solves)
+    call this % record_event(linear_solves)
 
     allocate(ec(this % nblocks))
 
@@ -366,5 +367,20 @@ contains
 
   end subroutine solve
 
+
+  !===================================================================!
+  ! Bind the account of this minimizer and of its children.
+  !===================================================================!
+
+  subroutine multigrid_bind_account(this, account)
+
+    class(multigrid), intent(inout) :: this
+    type(tally), pointer, intent(in) :: account
+
+    this % account => account
+    if (allocated(this % smoother)) call this % smoother % bind_account(account)
+    if (allocated(this % coarse)) call this % coarse % bind_account(account)
+
+  end subroutine multigrid_bind_account
 
 end module operation_multigrid

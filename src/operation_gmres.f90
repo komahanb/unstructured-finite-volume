@@ -32,7 +32,7 @@ module operation_gmres
   use operation_minimization, only : minimizer, state, restrict, solve_result, SOLVE_BREAKDOWN, SOLVE_INNER_FAILED, SOLVE_STAGNATED
   use operation_minimization, only : saturated_sum
   use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
-  use util_tally, only : tally_record, linear_solves
+  use util_tally, only : linear_solves, tally
   use view_directed, only : directed_graph
   use view_directed_stored, only : stored_directed_graph
   use graph_fractal, only : graph
@@ -54,6 +54,7 @@ module operation_gmres
      procedure :: name => gmres_name
      procedure :: state => gmres_state
      procedure :: restrict => gmres_restrict
+     procedure :: bind_account => gmres_bind_account
      procedure :: storage_entries => gmres_storage_entries
      procedure :: solve
 
@@ -217,7 +218,7 @@ contains
     integer :: n, m, outer, i, j, k
     logical :: direction_admissible, breakdown, invariant
 
-    call tally_record(linear_solves)
+    call this % record_event(linear_solves)
 
     n = size(x)
     m = min(max(this % restart, 1), n)
@@ -346,5 +347,19 @@ contains
     end do
 
   end subroutine solve
+
+  !===================================================================!
+  ! Bind the account of this minimizer and of its children.
+  !===================================================================!
+
+  subroutine gmres_bind_account(this, account)
+
+    class(gmres), intent(inout) :: this
+    type(tally), pointer, intent(in) :: account
+
+    this % account => account
+    if (allocated(this % preconditioner)) call this % preconditioner % bind_account(account)
+
+  end subroutine gmres_bind_account
 
 end module operation_gmres

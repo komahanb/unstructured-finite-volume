@@ -28,7 +28,7 @@ module operation_gauss_seidel
   use util_precision  , only : dp
   use operation_minimization, only : minimizer
   use util_factorisation    , only : dense_factorisation
-  use util_tally, only : tally_record, linear_solves
+  use util_tally, only : linear_solves, factorisations
 
   implicit none
 
@@ -116,7 +116,7 @@ contains
     integer , allocatable :: colours(:)
     integer :: it, col, b, w, nb, i
 
-    call tally_record(linear_solves)
+    call this % record_event(linear_solves)
 
     call this % initialize_residual_history()
     call this % imbalance(rhs, x, r)
@@ -139,6 +139,7 @@ contains
        else
           allocate(block(nb))
           do b = 1, nb
+             call this % record_event(factorisations)
              call block(b) % factorise(d(:, :, b), tiny(1.0_dp))
              if (block(b) % singular()) then
                 error stop 'gauss_seidel: a block on the diagonal is singular'

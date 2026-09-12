@@ -12,9 +12,13 @@ PRECISION=${PRECISION:-double}
 # build treats every !$omp directive as a comment.
 OPENMP=${OPENMP:-no}
 
+# FPETRAP=no omits -ffpe-trap=invalid,overflow,underflow, whose trap mask
+# every thread inherits; the default build traps.
+FPETRAP=${FPETRAP:-yes}
+
 mkdir -p lib
-make -C src clean PRECISION=$PRECISION OPTIMIZE=yes OPENMP=$OPENMP
-make -C src PRECISION=$PRECISION OPTIMIZE=yes OPENMP=$OPENMP
-make -C src install PRECISION=$PRECISION OPTIMIZE=yes OPENMP=$OPENMP
+make -C src clean PRECISION=$PRECISION OPTIMIZE=yes OPENMP=$OPENMP FPETRAP=$FPETRAP
+make -C src PRECISION=$PRECISION OPTIMIZE=yes OPENMP=$OPENMP FPETRAP=$FPETRAP
+make -C src install PRECISION=$PRECISION OPTIMIZE=yes OPENMP=$OPENMP FPETRAP=$FPETRAP
 
 echo "library built in lib/ - now 'make' and run an example (e.g. examples/solver)"

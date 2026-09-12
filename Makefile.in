@@ -17,6 +17,10 @@ OPTIMIZE = no
 # includes this file compiles against the library with the same flag.
 OPENMP  ?= no
 
+# Floating-point trap of the debug build (invalid, overflow, underflow);
+# FPETRAP=no omits it for concurrent runs.
+FPETRAP ?= yes
+
 # libraries
 LAPACK   = no
 MPI      = no
@@ -76,10 +80,15 @@ ifeq ($(COMPILER),gnu)
     F90FLAGS += -std=$(FSTD)
   endif
 
-  # Debugging
+  # Debugging. FPETRAP=no omits the floating-point trap: the trap mask is
+  # inherited by every thread, so a non-finite value in one concurrent
+  # execution terminates the process, whereas the solvers return
+  # SOLVE_NONFINITE without it.
   ifeq ($(DEBUG),yes)
-    F90FLAGS += -g -Wall -pedantic -fbounds-check -fbacktrace\
-                -ffpe-trap=invalid,overflow,underflow
+    F90FLAGS += -g -Wall -pedantic -fbounds-check -fbacktrace
+    ifeq ($(FPETRAP),yes)
+      F90FLAGS += -ffpe-trap=invalid,overflow,underflow
+    endif
     LDFLAGS  += -g
   endif
 

@@ -19,13 +19,17 @@
 ! Levels nest, so a level's elapsed time includes the time of the levels
 ! opened inside it.
 !
-! Recording is off until tally_open, and an amount recorded while off
-! costs one test of a logical. Nothing here alters a computed value;
-! an amount is observed and never fed back.
+! A tally is a value owned by the execution whose amounts it records:
+! two executions record into two tallies, and a caller sums its
+! executions' tallies into its own. No amount is stored in the module.
+!
+! Recording is off until open, and an amount recorded while off costs
+! one test of a logical. Nothing here alters a computed value; an
+! amount is observed and never fed back.
 !
 ! An amount recorded with no level open is discarded rather than
 ! recorded under a level it did not occur in. An order outside the
-! range tally_open was given is discarded for the same reason.
+! range open was given is discarded for the same reason.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -39,21 +43,15 @@ module util_tally
 
   private
 
-  public :: tally_open, tally_close, tally_recording
-  public :: tally_order, tally_enter, tally_leave
-  public :: tally_record, tally_amount
-  public :: tally_num_levels, tally_num_events, tally_num_orders
-  public :: tally_level_name, tally_event_name, tally_event_of
+  public :: tally
+  public :: tally_num_events, tally_event_name, tally_event_of
 
   !-------------------------------------------------------------------!
   ! The levels an amount can be recorded under are the caller's,
-  ! declared outermost first at tally_open; the kinds of amount are
-  ! named here so a caller records by name and not by a number the
-  ! caller has to maintain.
+  ! declared outermost first at open; the kinds of amount are named
+  ! here so a caller records by name and not by a number the caller
+  ! has to maintain.
   !-------------------------------------------------------------------!
-
-  integer, save :: num_levels = 0
-  character(len=:), allocatable, save :: level_named(:)
 
   integer, parameter, public :: elapsed_time      = 1
   integer, parameter, public :: primal_loops   = 2
@@ -70,20 +68,40 @@ module util_tally
        &  'adjoint_loops ', 'newton_solves ', 'linear_solves ', &
        &  'factorisations']
 
-  !-------------------------------------------------------------------!
-  ! One tally per run. The tally observes and owns nothing the
-  ! computation reads, so a single tally serves every caller.
-  !-------------------------------------------------------------------!
-
   integer, parameter :: deepest = 32
 
-  logical , save :: recording = .false.
-  real(dp), save, allocatable :: amount(:,:,:)
-  integer , save :: highest = 0
-  integer , save :: order_now = 0
-  integer , save :: level_now(deepest) = 0
-  real(dp), save :: entered_at(deepest) = 0.0_dp
-  integer , save :: depth = 0
+  !-------------------------------------------------------------------!
+  ! One tally per execution: the declared levels, the amounts by
+  ! (level, order, event), the order now being computed and the stack
+  ! of open levels with the instant each was opened at.
+  !-------------------------------------------------------------------!
+
+  type :: tally
+     private
+     integer :: levels_declared = 0
+     character(len=:), allocatable :: level_named(:)
+     logical  :: on = .false.
+     real(dp), allocatable :: amounts(:,:,:)
+     integer  :: highest = 0
+     integer  :: order_now = 0
+     integer  :: level_now(deepest) = 0
+     real(dp) :: entered_at(deepest) = 0.0_dp
+     integer  :: depth = 0
+   contains
+     procedure :: open
+     procedure :: close
+     procedure :: recording
+     procedure :: num_levels
+     procedure :: num_orders
+     procedure :: level_name
+     procedure :: order
+     procedure :: enter
+     procedure :: leave
+     procedure :: record
+     procedure :: amount
+     procedure :: restarted
+     procedure :: add
+  end type tally
 
 contains
 
@@ -93,10 +111,11 @@ contains
   ! levels, or more levels than the stack contains stops the program.
   !===================================================================!
 
-  subroutine tally_open(highest_order, levels)
+  subroutine open(this, highest_order, levels)
 
-    integer         , intent(in) :: highest_order
-    character(len=*), intent(in) :: levels(:)
+    class(tally)    , intent(inout) :: this
+    integer         , intent(in)    :: highest_order
+    character(len=*), intent(in)    :: levels(:)
 
     if (highest_order < 0) then
        error stop 'util_tally: the highest order is zero or above'
@@ -105,41 +124,47 @@ contains
        error stop 'util_tally: the levels are one to the stack''s depth'
     end if
 
-    highest     = highest_order
-    num_levels  = size(levels)
-    level_named = levels
+    this % highest         = highest_order
+    this % levels_declared = size(levels)
+    this % level_named     = levels
 
-    if (allocated(amount)) deallocate(amount)
-    allocate(amount(num_levels, 0:highest, num_events), source=0.0_dp)
+    if (allocated(this % amounts)) deallocate(this % amounts)
+    allocate(this % amounts(this % levels_declared, 0:this % highest, num_events), source=0.0_dp)
 
-    order_now = 0
-    depth     = 0
-    recording = .true.
+    this % order_now = 0
+    this % depth     = 0
+    this % on        = .true.
 
-  end subroutine tally_open
+  end subroutine open
 
   !===================================================================!
   ! Stop recording. The recorded amounts remain readable, so a caller
   ! closes before printing.
   !===================================================================!
 
-  subroutine tally_close()
+  subroutine close(this)
 
-    recording = .false.
+    class(tally), intent(inout) :: this
 
-  end subroutine tally_close
+    this % on = .false.
 
-  pure logical function tally_recording() result(on)
+  end subroutine close
 
-    on = recording
+  pure logical function recording(this) result(on)
 
-  end function tally_recording
+    class(tally), intent(in) :: this
 
-  pure integer function tally_num_levels() result(n)
+    on = this % on
 
-    n = num_levels
+  end function recording
 
-  end function tally_num_levels
+  pure integer function num_levels(this) result(n)
+
+    class(tally), intent(in) :: this
+
+    n = this % levels_declared
+
+  end function num_levels
 
   pure integer function tally_num_events() result(n)
 
@@ -147,20 +172,23 @@ contains
 
   end function tally_num_events
 
-  pure integer function tally_num_orders() result(n)
+  pure integer function num_orders(this) result(n)
 
-    n = highest
+    class(tally), intent(in) :: this
 
-  end function tally_num_orders
+    n = this % highest
 
-  pure function tally_level_name(level) result(named)
+  end function num_orders
 
-    integer, intent(in) :: level
+  pure function level_name(this, level) result(named)
+
+    class(tally), intent(in) :: this
+    integer     , intent(in) :: level
     character(len=:), allocatable :: named
 
-    named = trim(level_named(level))
+    named = trim(this % level_named(level))
 
-  end function tally_level_name
+  end function level_name
 
   pure function tally_event_name(event) result(named)
 
@@ -192,15 +220,16 @@ contains
   ! Which derivative order the amounts that follow belong to.
   !===================================================================!
 
-  subroutine tally_order(order)
+  subroutine order(this, derivative_order)
 
-    integer, intent(in) :: order
+    class(tally), intent(inout) :: this
+    integer     , intent(in)    :: derivative_order
 
-    if (.not. recording) return
+    if (.not. this % on) return
 
-    order_now = order
+    this % order_now = derivative_order
 
-  end subroutine tally_order
+  end subroutine order
 
   !===================================================================!
   ! Open a level. A depth beyond the stack, or a level that is not
@@ -208,96 +237,144 @@ contains
   ! wrong level is less useful than not recording.
   !===================================================================!
 
-  subroutine tally_enter(level)
+  subroutine enter(this, level)
 
-    integer, intent(in) :: level
+    class(tally), intent(inout) :: this
+    integer     , intent(in)    :: level
 
-    if (.not. recording) return
+    if (.not. this % on) return
 
-    if (level < 1 .or. level > num_levels) then
+    if (level < 1 .or. level > this % levels_declared) then
        error stop 'util_tally: a level is one of those declared'
     end if
-    if (depth == deepest) then
+    if (this % depth == deepest) then
        error stop 'util_tally: the levels opened are within the stack'
     end if
 
-    depth             = depth + 1
-    level_now(depth)  = level
-    entered_at(depth) = clock()
+    this % depth                    = this % depth + 1
+    this % level_now(this % depth)  = level
+    this % entered_at(this % depth) = clock()
 
-  end subroutine tally_enter
+  end subroutine enter
 
   !===================================================================!
   ! Close the innermost level, recording the time it was open. Closing
   ! one that was never opened stops the program.
   !===================================================================!
 
-  subroutine tally_leave()
+  subroutine leave(this)
+
+    class(tally), intent(inout) :: this
 
     real(dp) :: elapsed
 
-    if (.not. recording) return
+    if (.not. this % on) return
 
-    if (depth == 0) then
+    if (this % depth == 0) then
        error stop 'util_tally: a level closed was opened'
     end if
 
-    elapsed = clock() - entered_at(depth)
-    if (order_now >= 0 .and. order_now <= highest) then
-       amount(level_now(depth), order_now, elapsed_time) = &
-            & amount(level_now(depth), order_now, elapsed_time) + elapsed
+    elapsed = clock() - this % entered_at(this % depth)
+    if (this % order_now >= 0 .and. this % order_now <= this % highest) then
+       this % amounts(this % level_now(this % depth), this % order_now, elapsed_time) = &
+            & this % amounts(this % level_now(this % depth), this % order_now, elapsed_time) + elapsed
     end if
 
-    depth = depth - 1
+    this % depth = this % depth - 1
 
-  end subroutine tally_leave
+  end subroutine leave
 
   !===================================================================!
   ! Record one event under the level now open.
   !===================================================================!
 
-  subroutine tally_record(event)
+  subroutine record(this, event)
 
-    integer, intent(in) :: event
+    class(tally), intent(inout) :: this
+    integer     , intent(in)    :: event
 
-    if (.not. recording) return
-    if (depth == 0) return
-    if (order_now < 0 .or. order_now > highest) return
+    if (.not. this % on) return
+    if (this % depth == 0) return
+    if (this % order_now < 0 .or. this % order_now > this % highest) return
 
     if (event < 1 .or. event > num_events) then
        error stop 'util_tally: an event is one of the kinds named'
     end if
 
-    amount(level_now(depth), order_now, event) = &
-         & amount(level_now(depth), order_now, event) + 1.0_dp
+    this % amounts(this % level_now(this % depth), this % order_now, event) = &
+         & this % amounts(this % level_now(this % depth), this % order_now, event) + 1.0_dp
 
-  end subroutine tally_record
+  end subroutine record
 
   !===================================================================!
-  ! The recorded amount. An index outside the extent tally_open
-  ! allocated stops the program.
+  ! The recorded amount. An index outside the extent open allocated
+  ! stops the program.
   !===================================================================!
 
-  pure real(dp) function tally_amount(level, order, event) result(elapsed)
+  pure real(dp) function amount(this, level, order, event) result(elapsed)
 
-    integer, intent(in) :: level, order, event
+    class(tally), intent(in) :: this
+    integer     , intent(in) :: level, order, event
 
-    if (.not. allocated(amount)) then
-       error stop 'util_tally: an amount is read after tally_open'
+    if (.not. allocated(this % amounts)) then
+       error stop 'util_tally: an amount is read after open'
     end if
-    if (level < 1 .or. level > num_levels) then
+    if (level < 1 .or. level > this % levels_declared) then
        error stop 'util_tally: a level is one of those declared'
     end if
-    if (order < 0 .or. order > highest) then
+    if (order < 0 .or. order > this % highest) then
        error stop 'util_tally: an order is within the range opened'
     end if
     if (event < 1 .or. event > num_events) then
        error stop 'util_tally: an event is one of the kinds named'
     end if
 
-    elapsed = amount(level, order, event)
+    elapsed = this % amounts(level, order, event)
 
-  end function tally_amount
+  end function amount
+
+  !===================================================================!
+  ! A tally over the same levels and orders, recording if this one
+  ! is, with zero amounts and no level open: the tally an execution
+  ! begins with, whose amounts its caller adds into this one.
+  !===================================================================!
+
+  function restarted(this) result(initial)
+
+    class(tally), intent(in) :: this
+    type(tally) :: initial
+
+    initial = this
+    initial % order_now  = 0
+    initial % level_now  = 0
+    initial % entered_at = 0.0_dp
+    initial % depth      = 0
+    if (allocated(initial % amounts)) initial % amounts = 0.0_dp
+
+  end function restarted
+
+  !===================================================================!
+  ! Add another tally's amounts into this one, cell by cell. A tally
+  ! that was never opened adds nothing; one opened over other levels
+  ! or orders stops the program, since its cells name other scopes.
+  !===================================================================!
+
+  subroutine add(this, other)
+
+    class(tally), intent(inout) :: this
+    type(tally) , intent(in)    :: other
+
+    if (.not. allocated(other % amounts)) return
+    if (.not. allocated(this % amounts)) then
+       error stop 'util_tally: amounts are added into an opened tally'
+    end if
+    if (any(shape(other % amounts) /= shape(this % amounts))) then
+       error stop 'util_tally: amounts added are over the same levels and orders'
+    end if
+
+    this % amounts = this % amounts + other % amounts
+
+  end subroutine add
 
   !===================================================================!
   ! Seconds, from the system clock.

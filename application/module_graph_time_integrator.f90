@@ -4838,6 +4838,11 @@ module gti_chain
   type :: tangent_tower
      real(dp), allocatable :: w(:,:,:)
   end type tangent_tower
+  ! the costates of one child block as the reverse rule reads them:
+  ! (unknown, functional, multiset, order) in one vector
+  type :: costate_values
+     real(dp), allocatable :: values(:)
+  end type costate_values
   !===================================================================!
   ! THE TAYLOR STATE OWNED BY ONE EXECUTION: the physics and
   ! the functionals, the derivative order, the tangent towers,
@@ -4956,17 +4961,19 @@ module gti_chain
      type(tangent_tower), pointer :: w(:) => null()
      class(march_context), pointer :: context => null()
      real(dp), pointer :: u(:,:,:) => null(), table(:,:) => null(), by_order(:,:,:) => null()
-     real(dp), pointer :: lambda(:,:,:,:,:) => null(), node_measure(:) => null()
-     real(dp), pointer :: diagonal(:,:) => null()
-     logical, pointer :: is_sink(:,:) => null()
+     real(dp), pointer :: node_measure(:) => null()
+     ! the reverse pass: every block's Lagrangian terms and Leibniz
+     ! parts, stored at the block and summed ascending afterwards
+     type(derivative_terms), pointer :: term(:,:,:,:) => null()
+     real(dp), pointer :: parts(:,:,:,:,:) => null()
      type(sink_costates), pointer :: sinks => null()
      integer, pointer :: live => null(), total => null(), peak_storage => null()
+     integer, pointer :: costate_live => null(), costate_total => null(), costate_high => null()
      type(expression) :: physics
      type(expression), allocatable :: functionals(:)
      integer, pointer :: versions(:) => null()
      real(dp) :: design = 0.0_dp
      integer :: degrees = 0, nd = 0, top = 0, order = 0, from_size = 0, to_size = 0
-     integer :: functional = 0, rank = 0, degree = 0
      logical :: transposed = .false.
    contains
      procedure :: name => derivative_rule_name
@@ -5830,20 +5837,20 @@ contains
     ! the maximum live and the total tower sizes: the storage the pass used
     integer, intent(out), optional :: tower_storage(2)
     type(tangent_tower), allocatable, target :: w(:)
-    real(dp), allocatable, target :: lambda(:,:,:,:,:), u(:,:,:)
-    integer, target :: live, peak_storage, total
+    real(dp), allocatable, target :: u(:,:,:)
+    integer, target :: live, peak_storage, total, costate_live, costate_total, costate_high
     type(derivative_terms) :: l
     type(derivative_terms), allocatable :: products(:,:,:)
+    type(derivative_terms), allocatable, target :: term(:,:,:,:)
+    real(dp), allocatable, target :: parts(:,:,:,:,:)
     real(dp), allocatable :: split(:)
     integer :: m, rank_s, mask, from_size, to_size
-    logical, allocatable, target :: is_sink(:,:)
-    real(dp), allocatable, target :: diagonal(:,:)
     real(dp), allocatable :: step_partials(:,:), every(:,:,:)
     integer , allocatable :: s(:)
     type(expression) :: physics
     real(dp) :: design
     logical  :: forward
-    integer :: nf, nd, nb, top, widest, k, b, i, j, p, rank
+    integer :: nf, nd, nb, top, widest, b, i, j, p, rank
     type(derivative_rule) :: rule
     type(driver) :: schedule
     type(rule_graph) :: rules
@@ -5912,6 +5919,9 @@ contains
     live         = 0
     peak_storage = 0
     total        = 0
+    costate_live  = 0
+    costate_total = 0
+    costate_high  = 0
     layouts = chain % block_layout
     incidence = dependency_incidence(layouts)
     domain = stored_directed_graph(nb, tails=[integer ::], heads=[integer ::])
@@ -5935,6 +5945,9 @@ contains
     rule % live => live
     rule % total => total
     rule % peak_storage => peak_storage
+    rule % costate_live  => costate_live
+    rule % costate_total => costate_total
+    rule % costate_high  => costate_high
     allocate(rules % at(nb), values % at(nb))
     schedule = driver(rule, incidence, orientation=forward_pass)
     call schedule % pair_with(rules % pair(values))
@@ -5963,38 +5976,35 @@ contains
        allocate(sinks % fixed_rows(0:chain(1) % rows % num_degrees() - 1), source=0)
        allocate(sinks % last(0:chain(1) % rows % num_degrees() - 1), source=0)
        allocate(sinks % interior(0:chain(1) % rows % num_degrees() - 1), source=0)
-       allocate(is_sink(widest, nb), source=.false.)
-       allocate(diagonal(widest, nb), source=0.0_dp)
-       do b = 1, nb
-          call sinks_of(chain(b), degrees, design, is_sink(:, b), diagonal(:, b), sinks)
-       end do
+       rule % sinks => sinks
     end if
-    allocate(lambda(widest, nb, nf, multiset_count(nd, max(top, 1)), 0:top), source=0.0_dp)
+    ! THE REVERSE PASS: block outer, order inner. At a block, in the
+    ! transposed order, the costates of every order, multiset and
+    ! functional are solved in sequence - order k reads the block's
+    ! own lower orders and the child costates the bindings supply -
+    ! and the block's Lagrangian terms are evaluated at once from its
+    ! state, tower and costates. The costates leave the block as one
+    ! datum, released by the transposed driver after their final
+    ! reader; the terms are summed ascending over the blocks below,
+    ! coefficientwise, so the tables equal the order-outer sums.
+    allocate(term(nf, nd, multiset_count(nd, top), nb))
+    if (present(leibniz)) then
+       allocate(parts(0:top + 1, nf, nd, multiset_count(nd, top), nb), source=0.0_dp)
+       rule % parts => parts
+    end if
+    rule % term => term
     incidence = dependency_incidence(layouts, transposed=.true.)
     rule % transposed = .true.
-    rule % lambda => lambda
-    if (present(sinks)) then
-       rule % sinks => sinks
-       rule % is_sink => is_sink
-       rule % diagonal => diagonal
-    end if
     schedule = driver(rule, incidence, orientation=forward_pass)
-    do k = 0, top
-       call tally_order(k + 1)
-       call tally_enter(at_horizon)
-       do rank = 1, multiset_count(nd, k)
-          s = multiset_of(rank, k, nd)
-          do i = 1, nf
-             rule % functional = i
-             rule % rank = rank
-             rule % degree = k
-             call schedule % pair_with(rules % pair(values))
-             do while (.not. schedule % complete())
-                call schedule % advance_with(domain, rule)
-             end do
-          end do
+    call schedule % pair_with(rules % pair(values))
+    do while (.not. schedule % complete())
+       call schedule % advance_with(domain, rule)
+       released = schedule % released_at(schedule % num_completed())
+       do h = 1, size(released)
+          p = released(h)
+          costate_live = costate_live - chain(p) % rows % num_unknowns() * nf &
+               & * multiset_count(nd, max(top, 1)) * (top + 1)
        end do
-       call tally_leave()
     end do
     call tally_order(0)
     allocate(every(nf, nd, multiset_count(nd, top)), source=0.0_dp)
@@ -6002,14 +6012,13 @@ contains
     if (present(by_order)) allocate(products(nf, nd, multiset_count(nd, top)))
     allocate(split(0:top + 1))
     do rank = 1, multiset_count(nd, top)
-       s = multiset_of(rank, top, nd)
        do j = 1, nd
           do i = 1, nf
              l     = derivative_terms(0.0_dp, top + 1)
              split = 0.0_dp
              do b = 1, nb
-                l = l + lagrangian_term(chain, b, physics, functionals(i), degrees, design, s, j, &
-                     & w, lambda, u, nd, i, node_measure, split)
+                l = l + term(i, j, rank, b)
+                if (present(leibniz)) split = split + parts(:, i, j, rank, b)
              end do
              every(i, j, rank) = mixed_partial(l)
              if (present(leibniz))  leibniz(i, j, rank, :) = split
@@ -6065,9 +6074,11 @@ contains
     type(typed_field_domain) :: unknown_fields
     type(block_state) :: costate
     class(field), allocatable :: value
-    real(dp), allocatable :: one(:), rhs(:), child_costate(:)
+    type(costate_values), allocatable :: children(:)
+    real(dp), allocatable :: one(:), rhs(:), lam(:,:,:,:), split(:), diagonal(:)
+    logical , allocatable :: is_sink(:)
     integer, allocatable :: s(:), read_order(:)
-    integer :: b, n, p, child, i, j, index
+    integer :: b, n, p, child, i, j, index, nf, top, m, k, rank, nc, offset
     associate (unused_graph => input_graph); end associate
     b = this % vertex
     if (.not. this % transposed) then
@@ -6077,13 +6088,14 @@ contains
             & this % table, this % by_order, this % node_measure, this % context)
        return
     end if
-    call tally_enter(at_block)
-    n = this % chain(b) % rows % num_unknowns()
-    s = multiset_of(this % rank, this % degree, this % nd)
-    call costate_rows(this % chain, b, this % physics, this % functionals(this % functional), &
-         & this % degrees, this % design, s, this % w, this % lambda, this % u, this % nd, &
-         & this % functional, this % node_measure, rhs)
-
+    n   = this % chain(b) % rows % num_unknowns()
+    nf  = size(this % functionals)
+    top = this % top
+    m   = multiset_count(this % nd, max(top, 1))
+    allocate(lam(n, nf, m, 0:top), source=0.0_dp)
+    this % costate_live  = this % costate_live + size(lam)
+    this % costate_total = this % costate_total + size(lam)
+    this % costate_high  = max(this % costate_high, this % costate_live)
     ! Read child costates in descending block order, reproducing the
     ! accumulation order of reverse substitution independently of how
     ! the incidence query orders its argument slots.
@@ -6102,6 +6114,7 @@ contains
     if (size(read_order) > 0 .and. .not. present(inputs)) then
        error stop 'gti_chain: every child costate is bound before reverse substitution'
     end if
+    allocate(children(size(read_order)))
     do i = 1, size(read_order)
        index = read_order(i)
        child = this % reads(index)
@@ -6112,29 +6125,65 @@ contains
        select type (child_state => value)
        type is (block_state)
           if (child_state % at /= child) error stop 'gti_chain: the bound costate belongs to its declared block'
-          call child_state % real_vector(child_costate)
+          call child_state % real_vector(children(i) % values)
        class default
           error stop 'gti_chain: a reverse dependency supplies a block costate'
        end select
-       if (size(child_costate) /= this % chain(child) % rows % num_unknowns()) then
-          error stop 'gti_chain: a child costate has one value per residual row'
+       if (size(children(i) % values) /= this % chain(child) % rows % num_unknowns() * nf * m * (top + 1)) then
+          error stop 'gti_chain: a child costate has one value per residual row, order, multiset and functional'
        end if
-       do p = 1, size(this % chain(child) % source_at)
-          if (this % chain(child) % source_block(p) /= b) cycle
-          rhs(this % chain(child) % source_at(p)) = rhs(this % chain(child) % source_at(p)) + child_costate(p)
+    end do
+    if (associated(this % sinks)) then
+       allocate(is_sink(n), diagonal(n))
+       call sinks_of(this % chain(b), this % degrees, this % design, is_sink, diagonal, this % sinks)
+    end if
+    call frozen_at(this % chain(b), this % design, frozen)
+    do k = 0, top
+       call tally_order(k + 1)
+       call tally_enter(at_horizon)
+       do rank = 1, multiset_count(this % nd, k)
+          s = multiset_of(rank, k, this % nd)
+          do i = 1, nf
+             call tally_enter(at_block)
+             call costate_rows(this % chain, b, this % physics, this % functionals(i), &
+                  & this % degrees, this % design, s, this % w, lam, this % u, this % nd, &
+                  & i, this % node_measure, rhs)
+             do j = 1, size(read_order)
+                child = this % reads(read_order(j))
+                nc = this % chain(child) % rows % num_unknowns()
+                offset = nc * ((i - 1) + nf * ((rank - 1) + m * k))
+                do p = 1, size(this % chain(child) % source_at)
+                   if (this % chain(child) % source_block(p) /= b) cycle
+                   rhs(this % chain(child) % source_at(p)) = rhs(this % chain(child) % source_at(p)) &
+                        & + children(j) % values(offset + p)
+                end do
+             end do
+             call solve_linear(this % chain(b) % rows, frozen, rhs, .true., &
+                  & this % versions(b), one, context=this % context)
+             lam(1:n, i, rank, k) = one
+             if (associated(this % sinks)) call sink_residual(is_sink, diagonal, rhs, one, this % sinks)
+             call tally_leave()
+          end do
+       end do
+       call tally_leave()
+    end do
+    ! the block's Lagrangian terms, from its own state, tower and costates
+    if (.not. associated(this % term)) error stop 'gti_chain: a costate rule stores its Lagrangian terms'
+    allocate(split(0:top + 1))
+    do rank = 1, multiset_count(this % nd, top)
+       s = multiset_of(rank, top, this % nd)
+       do j = 1, this % nd
+          do i = 1, nf
+             split = 0.0_dp
+             this % term(i, j, rank, b) = lagrangian_term(this % chain, b, this % physics, &
+                  & this % functionals(i), this % degrees, this % design, s, j, this % w, lam, &
+                  & this % u, this % nd, i, this % node_measure, split)
+             if (associated(this % parts)) this % parts(:, i, j, rank, b) = split
+          end do
        end do
     end do
-    call frozen_at(this % chain(b), this % design, frozen)
-    call solve_linear(this % chain(b) % rows, frozen, rhs, .true., &
-         & this % versions(b), one, context=this % context)
-    this % lambda(1:n, b, this % functional, this % rank, this % degree) = one
-    if (associated(this % sinks)) then
-       call sink_residual(this % is_sink(1:n, b), this % diagonal(1:n, b), &
-            & rhs, one, this % sinks)
-    end if
-    call tally_leave()
-    unknown_fields = typed_field_domain(this % chain(b) % rows % unknown_domain(), n)
-    costate % stored_field = unknown_fields % costate(one)
+    unknown_fields = typed_field_domain(this % chain(b) % rows % unknown_domain(), n, nf * m * (top + 1))
+    costate % stored_field = unknown_fields % costate(reshape(lam, [size(lam)]))
     costate % at = b
     costate % layout = this % chain(b) % block_layout
     call emit(costate, output)
@@ -6370,20 +6419,22 @@ contains
        end do
     end do
   end subroutine forcing_of
-  subroutine costates_at(chain, b, s, lambda, nd, i, lam)
-    type(chain_block)   , intent(in) :: chain(:)
-    integer             , intent(in) :: b, s(:), nd, i
-    real(dp)            , intent(in) :: lambda(:,:,:,:,0:)
+  !===================================================================!
+  ! THE COSTATES OF ONE BLOCK ALONG THE SUBSETS OF s: lambda is the
+  ! block's own (unknown, functional, multiset, order) array.
+  !===================================================================!
+  subroutine costates_at(count, s, lambda, nd, i, lam)
+    integer             , intent(in) :: count, s(:), nd, i
+    real(dp)            , intent(in) :: lambda(:,:,:,0:)
     real(dp), allocatable, intent(out) :: lam(:,:)
     integer, allocatable :: t(:)
-    integer :: n, full, mask, count, k
+    integer :: n, full, mask, k
     n     = size(s)
     full  = 2**n - 1
-    count = chain(b) % rows % num_unknowns()
     allocate(lam(count, 0:full))
     do mask = 0, full
        t = pack(s, [(btest(mask, k - 1), k = 1, n)])
-       lam(:, mask) = lambda(1:count, b, i, multiset_rank(t, nd), size(t))
+       lam(:, mask) = lambda(1:count, i, multiset_rank(t, nd), size(t))
     end do
   end subroutine costates_at
   subroutine sinks_of(b, degrees, design, is_sink, diagonal, sinks)
@@ -6452,7 +6503,7 @@ contains
     type(expression)    , intent(in) :: physics, rule
     real(dp)            , intent(in) :: design
     type(tangent_tower), intent(in) :: w(:)
-    real(dp), intent(in) :: lambda(:,:,:,:,0:), u(:,:,:)
+    real(dp), intent(in) :: lambda(:,:,:,0:), u(:,:,:)
     real(dp), intent(in), optional   :: node_measure(:)
     real(dp), allocatable, intent(out) :: g(:)
     type(derivative_terms) :: t
@@ -6485,7 +6536,7 @@ contains
        end do
     end do
     if (n == 0) return
-    call costates_at(chain, b, s, lambda, nd, i, lam)
+    call costates_at(count, s, lambda, nd, i, lam)
     call chain(b) % rows % rows_terms(chain(b) % scheme, chain(b) % dt, step_seed, tr, tc, tw)
     fixed_rows = chain(b) % rows % fixed_indicator()
     at      = chain(b) % rows % points_at()
@@ -6536,7 +6587,7 @@ contains
     type(expression)    , intent(in) :: physics, rule
     real(dp)            , intent(in) :: design
     type(tangent_tower), intent(in) :: w(:)
-    real(dp), intent(in) :: lambda(:,:,:,:,0:), u(:,:,:)
+    real(dp), intent(in) :: lambda(:,:,:,0:), u(:,:,:)
     real(dp), intent(in), optional   :: node_measure(:)
     real(dp), intent(inout)          :: parts(0:)
     type(derivative_terms) :: l
@@ -6588,7 +6639,7 @@ contains
                & + point_terms(chain(b) % rows % rule_of(jj), stride, design, at(p), n + 1, 0, state_seed, nu_seed)
        end do
     end do
-    call costates_at(chain, b, s, lambda, nd, i, lam)
+    call costates_at(count, s, lambda, nd, i, lam)
     allocate(costate(count))
     do row = 1, count
        along          = 0.0_dp

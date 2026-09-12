@@ -11,7 +11,6 @@ program gti_contract
   use gti_march, only : march_context, imbalance, consistent_state, frozen_inputs, solve_linear
   use gti_sweeps, only : reverse_pass
   use gti_adaptive, only : adaptive_partition
-  use view_directed_stored, only : stored_directed_graph
   use field_stored, only : stored_field
   implicit none
   type(march_context) :: context
@@ -20,7 +19,6 @@ program gti_contract
   type(expansion), allocatable, target :: tower
   type(expression) :: physics, functional(1)
   type(imbalance) :: final_imbalance
-  type(stored_directed_graph) :: domain
   type(stored_field), allocatable :: inputs(:)
   real(dp), allocatable :: initial(:), dt(:), t(:), values(:), table(:,:), rhs(:), direction(:)
   integer, allocatable :: versions(:)
@@ -85,13 +83,13 @@ program gti_contract
      call march_chain(schemes, [11], physics, 3, uniform_grid(1.0_dp), &
           & design_value, initial, chain, tower, dt, t, achieved, final_imbalance=final_imbalance, context=context)
      if (.not. final_imbalance % converged) error stop 'linear: primal solve must converge'
-     call frozen_inputs(chain(1) % state, design_value, chain(1) % rows % num_points(), domain, inputs)
+     call frozen_inputs(chain(1) % rows, chain(1) % state, design_value, inputs)
      rhs = [(real(k, dp), k = 1, size(chain(1) % state))]
      call context % set_linear_solver('iterative')
      call context % set_storage('sparse')
      call context % set_linear_limits(1, 1, 1)
      call context % set_stopping(1.0e-14_dp, absolute, by_count, 1)
-     call solve_linear(chain(1) % rows, domain, inputs, rhs, trim(mode) == 'linear_reverse', 1, direction, &
+     call solve_linear(chain(1) % rows, inputs, rhs, trim(mode) == 'linear_reverse', 1, direction, &
          & context=context)
   case default
      error stop 'gti_contract: an existing case is selected'

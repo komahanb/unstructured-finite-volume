@@ -131,13 +131,13 @@ module restriction_fixture
   use operation_minimization, only : minimizer, state, restrict, solve_result, SOLVE_SINGULAR
   use operation_stencil, only : stencil
   use operation_residual, only : residual_operator
-  use operation_expression, only : unknown, derivative, constant, stated
+  use operation_expression, only : unknown, derivative, constant, stated, design
   use operation_expression, only : operator(+), operator(*), operator(**)
 
   implicit none
 
   private
-  public :: delegating_solver, march_residual, num_restrictions
+  public :: delegating_solver, march_residual, designed_march_residual, num_restrictions
 
   ! how many restrictions the delegating solvers have received
   integer :: num_restrictions = 0
@@ -242,6 +242,37 @@ contains
          & [(2 * (p - 1), p = 1, n)], 2 * n, 2, [0], [1, 2], [q0, -c * q0 ** 3])
   end function march_residual
 
+  !===================================================================!
+  ! The same march with a design at every point: q' = -c q^3 - nu q,
+  ! the physics row q'_p + c q_p^3 + nu_p q_p, so the design tangent,
+  ! the mixed state-design partial and the third state partial are
+  ! nonzero at every governed point. The first instant is fixed at
+  ! (q0, -c q0^3 - nu_1 q0).
+  !===================================================================!
+
+  function designed_march_residual(n, h, c, q0, nu_1) result(residual)
+    integer , intent(in) :: n
+    real(dp), intent(in) :: h, c, q0, nu_1
+    type(residual_operator) :: residual
+    type(stencil) :: tying
+    integer , allocatable :: rows(:), columns(:)
+    real(dp), allocatable :: weights(:)
+    integer :: p, e
+    allocate(rows(3 * (n - 1)), columns(3 * (n - 1)), weights(3 * (n - 1)))
+    e = 0
+    do p = 2, n
+       rows(e + 1:e + 3)    = 2 * p
+       columns(e + 1:e + 3) = [2 * p, 2 * p - 1, 2 * p - 3]
+       weights(e + 1:e + 3) = [1.0_dp, -1.0_dp / h, 1.0_dp / h]
+       e = e + 3
+    end do
+    tying = stencil(rows, columns, weights, spread(0.0_dp, 1, 2 * n), 'tying rows')
+    residual = residual_operator(tying, &
+         & stated(derivative(unknown(), 1) + constant(c) * derivative(unknown(), 0) ** 3 &
+         &        + design() * derivative(unknown(), 0), 1, 'designed cubic decay'), &
+         & [(2 * (p - 1), p = 1, n)], 2 * n, 2, [0], [1, 2], [q0, -c * q0 ** 3 - nu_1 * q0])
+  end function designed_march_residual
+
 end module restriction_fixture
 
 program test_graph_minimization
@@ -267,6 +298,7 @@ program test_graph_minimization
   use operation_minimization, only : minimizer, solve_result, absolute, SOLVE_EXHAUSTED, SOLVE_BREAKDOWN, &
        & SOLVE_INNER_FAILED, SOLVE_NOT_STARTED, SOLVE_STAGNATED, state_tuple
   use operation_linearization, only : linearization, tangent_of
+  use operation_action, only : varied, variation, dense_of_triples
   use, intrinsic :: ieee_arithmetic, only : ieee_value, ieee_positive_inf, ieee_is_finite, ieee_is_nan
   use operation_dense_direct, only : dense_direct
   use operation_stencil, only : stencil
@@ -277,7 +309,7 @@ program test_graph_minimization
   use operation_residual, only : residual_operator
   use field_stored, only : typed_field_domain
   use cubic_statement_fixture, only : cubic_statement
-  use restriction_fixture, only : delegating_solver, march_residual, num_restrictions
+  use restriction_fixture, only : delegating_solver, march_residual, designed_march_residual, num_restrictions
 
   implicit none
 
@@ -299,6 +331,7 @@ program test_graph_minimization
   call check_restriction_maps(num_failures)
   call check_restricted_operator(num_failures)
   call check_solver_restriction(num_failures)
+  call check_residual_boundary(num_failures)
 
   write(*, '(a)') ' ============================================='
   if (num_failures == 0) then
@@ -1167,7 +1200,6 @@ contains
     real(dp), parameter :: h = 0.1_dp, c = 0.5_dp, q0 = 1.0_dp
     type(residual_operator) :: residual, sub
     type(stored_directed_graph) :: unknowns, members
-    type(typed_field_domain) :: designs
     type(stored_field), allocatable :: inputs(:), inputs_sub(:)
     type(linearization) :: tangent
     type(stencil) :: assembled
@@ -1181,14 +1213,13 @@ contains
     integer :: p, i, j
 
     residual = march_residual(n, h, c, q0)
-    unknowns = stored_directed_graph(2 * n, tails=[integer ::], heads=[integer ::])
-    designs  = typed_field_domain(unknowns % vertex_set(), n)
+    unknowns = residual % unknown_graph()
     allocate(x(2 * n))
     do p = 1, n
        x(2 * p - 1) = q0 * 0.9_dp ** p
        x(2 * p)     = -0.3_dp / real(p, dp)
     end do
-    inputs = state_tuple(unknowns % vertex_set(), 2 * n, 1, x, [designs % design(spread(0.0_dp, 1, n))])
+    inputs = residual % frozen_tuple(x, spread(0.0_dp, 1, n))
 
     call residual % apply(unknowns, residual % bind(inputs), image)
     call image % real_vector(r_whole)
@@ -1200,10 +1231,8 @@ contains
     end do
 
     sub     = residual % constrain(selected, x)
-    members = stored_directed_graph(k, tails=[integer ::], heads=[integer ::])
-    designs = typed_field_domain(members % vertex_set(), sub % num_points())
-    inputs_sub = state_tuple(members % vertex_set(), k, 1, x(selected), &
-         & [designs % design(spread(0.0_dp, 1, sub % num_points()))])
+    members = sub % unknown_graph()
+    inputs_sub = sub % frozen_tuple(x(selected), spread(0.0_dp, 1, sub % num_points()))
     call sub % apply(members, sub % bind(inputs_sub), image)
     call image % real_vector(r_sub)
     scale = max(1.0_dp, maxval(abs(r_whole)))
@@ -1232,7 +1261,7 @@ contains
     ! assembled tangent
     tangent = tangent_of(sub, sub % argument(1))
     call tangent % freeze(inputs_sub)
-    call action % state(tangent, members, members % vertex_set(), k)
+    call action % state(tangent, members, sub % unknown_domain(), k)
     allocate(basis(k))
     difference = 0.0_dp
     do j = 1, k
@@ -1281,8 +1310,7 @@ contains
          & 'instants in order', 'instants reversed', 'parity members reversed']
     type(residual_operator) :: residual
     type(stored_directed_graph) :: unknowns
-    type(typed_field_domain) :: designs
-    type(stored_field) :: design
+    type(stored_field) :: frozen(2)
     type(newton) :: coupled
     type(temporal_minimizer), allocatable :: solver
     class(minimizer), allocatable :: template
@@ -1294,9 +1322,8 @@ contains
     type(solve_result) :: outcome
 
     residual = march_residual(n, h, c, q0)
-    unknowns = stored_directed_graph(2 * n, tails=[integer ::], heads=[integer ::])
-    designs  = typed_field_domain(unknowns % vertex_set(), n)
-    design   = designs % design(spread(0.0_dp, 1, n))
+    unknowns = residual % unknown_graph()
+    frozen   = residual % frozen_tuple(spread(0.0_dp, 1, 2 * n), spread(0.0_dp, 1, n))
     allocate(zeros(2 * n), source=0.0_dp)
     fixed = residual % fixed_indicator()
 
@@ -1305,7 +1332,7 @@ contains
     allocate(coupled % inner, source=dense_direct())
     coupled % tolerance = 1.0e-12_dp
     coupled % criterion = absolute
-    call coupled % state(residual, unknowns, unknowns % vertex_set(), 2 * n, stored_inputs=[design])
+    call coupled % state(residual, unknowns, residual % unknown_domain(), 2 * n, stored_inputs=[frozen(2)])
     call seeded(residual, n, q0, reference)
     call coupled % solve(zeros, reference, achieved)
     outcome = coupled % result()
@@ -1328,7 +1355,7 @@ contains
           if (allocated(solver)) deallocate(solver)
           allocate(solver)
           call move_alloc(template, solver % inner)
-          call solver % state(residual, unknowns, unknowns % vertex_set(), 2 * n, stored_inputs=[design])
+          call solver % state(residual, unknowns, residual % unknown_domain(), 2 * n, stored_inputs=[frozen(2)])
           solver % tolerance      = 1.0e-10_dp
           solver % criterion      = absolute
           solver % max_iterations = 40
@@ -1358,7 +1385,7 @@ contains
     if (allocated(solver)) deallocate(solver)
     allocate(solver)
     call move_alloc(template, solver % inner)
-    call solver % state(residual, unknowns, unknowns % vertex_set(), 2 * n, stored_inputs=[design])
+    call solver % state(residual, unknowns, residual % unknown_domain(), 2 * n, stored_inputs=[frozen(2)])
     solver % tolerance = 1.0e-10_dp
     solver % criterion = absolute
     call solver % partition(member_of, member_order, seed_from_previous=.true.)
@@ -1376,7 +1403,7 @@ contains
     if (allocated(solver)) deallocate(solver)
     allocate(solver)
     call move_alloc(template, solver % inner)
-    call solver % state(residual, unknowns, unknowns % vertex_set(), 2 * n, stored_inputs=[design])
+    call solver % state(residual, unknowns, residual % unknown_domain(), 2 * n, stored_inputs=[frozen(2)])
     solver % tolerance = 1.0e-10_dp
     solver % criterion = absolute
     call solver % partition(member_of, member_order, seed_from_previous=.true.)
@@ -1388,5 +1415,305 @@ contains
          & num_failures)
 
   end subroutine check_solver_restriction
+
+  !===================================================================!
+  ! THE RESIDUAL BOUNDARY. One frozen tuple (Q, nu) on U x P is read
+  ! by every consumer: the value, the explicit tangent, the tangent
+  ! action, the frozen linearization and its transpose, the design
+  ! tangent, the mixed and third partials, and Newton by the explicit
+  ! and by the tangent action. On the fixed rows F: R_i = Q_i - h_i,
+  ! (D_Q R[v])_i = v_i, J has unit rows, and the design and higher
+  ! partials vanish. The pairing: under <u, v>_M = u^T M v the
+  ! adjoint of J is M^-1 J^T M; the coordinate transpose violates the
+  ! adjoint identity by exactly u^T (J^T M - M J^T) v; the sensitivity
+  ! of F = <g, Q>_M in the design by the tangent solve (J w = -D_nu R e)
+  ! and by the transposed solve (J^T lambda = M g) agree with a central
+  ! difference. The temporal partition restricts a point-varying
+  ! design to each member's points.
+  !===================================================================!
+
+  subroutine check_residual_boundary(num_failures)
+
+    integer, intent(inout) :: num_failures
+
+    integer , parameter :: n = 5, m = 2 * n
+    real(dp), parameter :: h = 0.1_dp, c = 0.5_dp, q0 = 1.0_dp
+    real(dp), parameter :: eps = 1.0e-3_dp, delta = 1.0e-5_dp
+    type(residual_operator) :: residual, lin, lin_t, moved
+    type(stored_directed_graph) :: unknowns
+    type(graph) :: u_domain, p_domain
+    type(typed_field_domain) :: states, designs
+    type(stored_field) :: inputs(2), shifted(2), lin_inputs(2)
+    type(newton) :: by_entries, by_action
+    type(dense_direct) :: factorisation
+    type(temporal_minimizer) :: partitioned
+    type(solve_result) :: outcome, outcome_action
+    class(field), allocatable :: image
+    integer , allocatable :: rows(:), columns(:), member_of(:), member_order(:)
+    real(dp), allocatable :: weights(:), x(:), nu(:), r(:), j(:,:), jm(:,:), y(:), basis(:), w(:)
+    real(dp), allocatable :: v1(:), v2(:), v3(:), wnu(:), y12(:), y21(:), plus(:), minus(:), y1n(:)
+    real(dp), allocatable :: y123(:), rhs(:), mm(:), u(:), vv(:), g(:), lambda(:), b(:), q(:), q2(:)
+    real(dp), allocatable :: expected(:), zeros(:)
+    real(dp) :: scale, difference, achieved, left, right, violation, exact_violation, df_t, df_a, df_d
+    logical :: tangent_defined, on_domain
+    integer :: p, i, k
+
+    allocate(x(m), nu(n), zeros(m))
+    zeros = 0.0_dp
+    do p = 1, n
+       x(2 * p - 1) = q0 * 0.9_dp ** p
+       x(2 * p)     = -0.3_dp / real(p, dp)
+       nu(p)        = 0.2_dp + 0.1_dp * real(p, dp)
+    end do
+    residual = designed_march_residual(n, h, c, q0, nu(1))
+    unknowns = residual % unknown_graph()
+    u_domain = residual % unknown_domain()
+    p_domain = residual % design_domain()
+    inputs   = residual % frozen_tuple(x, nu)
+    states   = typed_field_domain(u_domain, m)
+    designs  = typed_field_domain(p_domain, n)
+    call report(inputs(1) % defined_on(u_domain) .and. inputs(2) % defined_on(p_domain) .and. &
+         & inputs(2) % num_entries() == n, 'the frozen tuple is a state on U and a design on P, one value per point', &
+         & num_failures)
+
+    ! the value: physics rows, tying rows, fixed rows
+    call residual % apply(unknowns, residual % bind(inputs), image)
+    on_domain = image % defined_on(u_domain)
+    call image % real_vector(r)
+    allocate(expected(m))
+    expected(1) = x(1) - q0
+    expected(2) = x(2) - (-c * q0 ** 3 - nu(1) * q0)
+    do p = 2, n
+       expected(2 * p - 1) = x(2 * p) + c * x(2 * p - 1) ** 3 + nu(p) * x(2 * p - 1)
+       expected(2 * p)     = x(2 * p) - (x(2 * p - 1) - x(2 * p - 3)) / h
+    end do
+    scale = max(1.0_dp, maxval(abs(expected)))
+    call report(on_domain .and. maxval(abs(r - expected)) <= 1.0e-13_dp * scale, &
+         & 'the residual on U: the physics with the point design, the tying rows, and Q_i - h_i on F', num_failures)
+
+    ! the explicit tangent: entries, unit rows on F
+    call residual % explicit_tangent(unknowns, residual % bind(inputs), 1, rows, columns, weights, tangent_defined)
+    call dense_of_triples(m, rows, columns, weights, j)
+    difference = 0.0_dp
+    do p = 2, n
+       difference = max(difference, abs(j(2 * p - 1, 2 * p - 1) - (3.0_dp * c * x(2 * p - 1) ** 2 + nu(p))), &
+            & abs(j(2 * p - 1, 2 * p) - 1.0_dp), abs(j(2 * p, 2 * p) - 1.0_dp), &
+            & abs(j(2 * p, 2 * p - 1) + 1.0_dp / h), abs(j(2 * p, 2 * p - 3) - 1.0_dp / h))
+    end do
+    scale = max(1.0_dp, maxval(abs(j)))
+    call report(tangent_defined .and. difference <= 1.0e-13_dp * scale .and. &
+         & maxval(abs(j(1, :) - [(merge(1.0_dp, 0.0_dp, k == 1), k = 1, m)])) == 0.0_dp .and. &
+         & maxval(abs(j(2, :) - [(merge(1.0_dp, 0.0_dp, k == 2), k = 1, m)])) == 0.0_dp, &
+         & 'the explicit tangent: the physics and design partials, the tying weights, unit rows on F', num_failures)
+
+    ! the tangent action column by column against the explicit entries
+    allocate(basis(m))
+    difference = 0.0_dp
+    do k = 1, m
+       basis    = 0.0_dp
+       basis(k) = 1.0_dp
+       call varied(residual, unknowns, inputs, 1, u_domain, basis, y)
+       difference = max(difference, maxval(abs(y - j(:, k))))
+    end do
+    call report(difference <= 1.0e-13_dp * scale, &
+         & 'the tangent action D_Q R[e_k] is the k-th column of the explicit tangent, F rows included', num_failures)
+
+    ! the frozen linearization and its transpose on the same U and P
+    rhs = [(0.1_dp * real(k, dp) - 0.4_dp, k = 1, m)]
+    w   = [(0.5_dp - 0.07_dp * real(k, dp), k = 1, m)]
+    lin   = residual % linearize(unknowns, residual % bind(inputs), rhs, .false., 7)
+    lin_t = residual % linearize(unknowns, residual % bind(inputs), rhs, .true., 8)
+    lin_inputs = lin % frozen_tuple(w, nu)
+    call lin % apply(lin % unknown_graph(), lin % bind(lin_inputs), image)
+    call image % real_vector(y)
+    difference = maxval(abs(y - (matmul(j, w) - rhs)))
+    call lin_t % apply(lin_t % unknown_graph(), lin_t % bind(lin_inputs), image)
+    call image % real_vector(y)
+    difference = max(difference, maxval(abs(y - (matmul(transpose(j), w) - rhs))))
+    call report(difference <= 1.0e-13_dp * scale .and. lin % version() == 7 .and. lin_t % version() == 8 .and. &
+         & lin_t % transpose_version() .and. .not. lin % transpose_version(), &
+         & 'the frozen linearization computes J w - rhs and its transpose J^T w - rhs, versioned', num_failures)
+    call report(u_domain % same_as(lin % unknown_domain()) .and. p_domain % same_as(lin % design_domain()) .and. &
+         & u_domain % same_as(lin_t % unknown_domain()), &
+         & 'A = D_Q R maps U to U: the frozen linearization keeps the unknown and point domains', num_failures)
+
+    ! the design tangent: the physics partial at each point, zero on F
+    allocate(wnu(n))
+    wnu = [(1.0_dp + 0.3_dp * real(p, dp), p = 1, n)]
+    call varied(residual, unknowns, inputs, 2, p_domain, wnu, y)
+    expected = 0.0_dp
+    do p = 2, n
+       expected(2 * p - 1) = wnu(p) * x(2 * p - 1)
+    end do
+    call report(maxval(abs(y - expected)) <= 1.0e-13_dp * scale, &
+         & 'the design tangent D_nu R[w] is w_p q_p on the governed rows and zero on F and the tying rows', &
+         & num_failures)
+
+    ! second partials: symmetric, exact, and against a central
+    ! difference of the first partial along the second direction
+    v1 = [(0.3_dp + 0.1_dp * real(k, dp), k = 1, m)]
+    v2 = [(1.0_dp - 0.15_dp * real(k, dp), k = 1, m)]
+    v3 = [(0.2_dp * real(k, dp) - 0.9_dp, k = 1, m)]
+    call varied(residual, unknowns, inputs, 1, u_domain, v1, y12, 1, u_domain, v2)
+    call varied(residual, unknowns, inputs, 1, u_domain, v2, y21, 1, u_domain, v1)
+    expected = 0.0_dp
+    do p = 2, n
+       expected(2 * p - 1) = 6.0_dp * c * x(2 * p - 1) * v1(2 * p - 1) * v2(2 * p - 1)
+    end do
+    shifted = residual % frozen_tuple(x + eps * v2, nu)
+    call varied(residual, unknowns, shifted, 1, u_domain, v1, plus)
+    shifted = residual % frozen_tuple(x - eps * v2, nu)
+    call varied(residual, unknowns, shifted, 1, u_domain, v1, minus)
+    call report(maxval(abs(y12 - y21)) <= 1.0e-13_dp * scale .and. maxval(abs(y12 - expected)) <= 1.0e-13_dp * scale &
+         & .and. maxval(abs(y12 - (plus - minus) / (2.0_dp * eps))) <= 1.0e-9_dp * scale, &
+         & 'D^2 R[v1, v2] is symmetric, equals 6 c q v1 v2 on the governed rows, zero on F, and is the &
+         &central difference of D_Q R[v1] along v2', num_failures)
+
+    ! the mixed state-design partial against a difference of the
+    ! design tangent along the state direction
+    call varied(residual, unknowns, inputs, 1, u_domain, v1, y1n, 2, p_domain, wnu)
+    shifted = residual % frozen_tuple(x + eps * v1, nu)
+    call varied(residual, unknowns, shifted, 2, p_domain, wnu, plus)
+    shifted = residual % frozen_tuple(x - eps * v1, nu)
+    call varied(residual, unknowns, shifted, 2, p_domain, wnu, minus)
+    expected = 0.0_dp
+    do p = 2, n
+       expected(2 * p - 1) = wnu(p) * v1(2 * p - 1)
+    end do
+    call report(maxval(abs(y1n - expected)) <= 1.0e-13_dp * scale .and. &
+         & maxval(abs(y1n - (plus - minus) / (2.0_dp * eps))) <= 1.0e-9_dp * scale, &
+         & 'the mixed partial D_Q D_nu R[v, w] is w_p v_p on the governed rows and the difference of D_nu R[w] &
+         &along v', num_failures)
+
+    ! the third partial in the state, and the third mixed partial
+    call residual % partial_action(unknowns, residual % bind(inputs), &
+         & [variation(residual % argument(1), states % direction(v1)), &
+         &  variation(residual % argument(1), states % direction(v2)), &
+         &  variation(residual % argument(1), states % direction(v3))], image)
+    call image % real_vector(y123)
+    expected = 0.0_dp
+    do p = 2, n
+       expected(2 * p - 1) = 6.0_dp * c * v1(2 * p - 1) * v2(2 * p - 1) * v3(2 * p - 1)
+    end do
+    shifted = residual % frozen_tuple(x + eps * v3, nu)
+    call varied(residual, unknowns, shifted, 1, u_domain, v1, plus, 1, u_domain, v2)
+    shifted = residual % frozen_tuple(x - eps * v3, nu)
+    call varied(residual, unknowns, shifted, 1, u_domain, v1, minus, 1, u_domain, v2)
+    difference = maxval(abs(y123 - (plus - minus) / (2.0_dp * eps)))
+    call residual % partial_action(unknowns, residual % bind(inputs), &
+         & [variation(residual % argument(1), states % direction(v1)), &
+         &  variation(residual % argument(1), states % direction(v2)), &
+         &  variation(residual % argument(2), designs % direction(wnu))], image)
+    call image % real_vector(y)
+    call report(maxval(abs(y123 - expected)) <= 1.0e-13_dp * scale .and. difference <= 1.0e-9_dp * scale .and. &
+         & maxval(abs(y)) == 0.0_dp, &
+         & 'D^3 R[v1, v2, v3] is 6 c v1 v2 v3 on the governed rows, the difference of D^2 R[v1, v2] along v3, and &
+         &D^2_Q D_nu R vanishes', num_failures)
+
+    ! Newton by the explicit entries and by the tangent action from
+    ! one seed reach one iterate
+    allocate(by_entries % inner, source=dense_direct())
+    allocate(by_action  % inner, source=dense_direct())
+    by_entries % explicit = .true.
+    by_action  % explicit = .false.
+    by_entries % tolerance = 1.0e-12_dp
+    by_action  % tolerance = 1.0e-12_dp
+    by_entries % criterion = absolute
+    by_action  % criterion = absolute
+    call by_entries % state(residual, unknowns, u_domain, m, stored_inputs=[inputs(2)])
+    call by_action  % state(residual, unknowns, u_domain, m, stored_inputs=[inputs(2)])
+    call seeded(residual, n, q0, q)
+    call by_entries % solve(zeros, q, achieved)
+    outcome = by_entries % result()
+    call seeded(residual, n, q0, q2)
+    call by_action % solve(zeros, q2, achieved)
+    outcome_action = by_action % result()
+    call report(outcome % converged() .and. outcome_action % converged() .and. &
+         & maxval(abs(q - q2)) <= 1.0e-10_dp, &
+         & 'newton by the explicit entries and by the tangent action reach one iterate from one seed', num_failures)
+
+    ! the pairing <u, v>_M = u^T M v: the M-adjoint of J is M^-1 J^T M;
+    ! the coordinate transpose violates the identity by u^T (J^T M - M J^T) v
+    mm = [(1.0_dp + 0.4_dp * real(k, dp), k = 1, m)]
+    u  = [(0.3_dp + 0.1_dp * real(k, dp), k = 1, m)]
+    vv = [(1.0_dp - 0.2_dp * real(k, dp), k = 1, m)]
+    allocate(jm(m, m))
+    do i = 1, m
+       do k = 1, m
+          jm(i, k) = j(k, i) * mm(k) / mm(i)
+       end do
+    end do
+    left  = dot_product(matmul(j, u), mm * vv)
+    right = dot_product(u, mm * matmul(jm, vv))
+    violation       = left - dot_product(u, mm * matmul(transpose(j), vv))
+    exact_violation = 0.0_dp
+    do i = 1, m
+       do k = 1, m
+          exact_violation = exact_violation + u(i) * (j(k, i) * mm(k) - mm(i) * j(k, i)) * vv(k)
+       end do
+    end do
+    write(*, '(a, es12.4, a, es12.4)') '        <J u, v>_M = ', left, &
+         & '   coordinate-transpose violation of the M-adjoint identity = ', violation
+    call report(abs(left - right) <= 1.0e-13_dp * max(abs(left), 1.0_dp) .and. &
+         & abs(violation - exact_violation) <= 1.0e-13_dp * max(abs(left), 1.0_dp) .and. &
+         & abs(violation) > 1.0e-13_dp * max(abs(left), 1.0_dp), &
+         & 'under <u, v>_M the adjoint of J is M^-1 J^T M, and the coordinate transpose violates the identity by &
+         &u^T (J^T M - M J^T) v', num_failures)
+
+    ! the sensitivity of F = <g, Q(nu)>_M along the design direction
+    ! wnu: tangent J w = -D_nu R[wnu], adjoint J^T lambda = M g, and a
+    ! central difference of the solved F
+    g = [(0.1_dp * real(k, dp), k = 1, m)]
+    call seeded(residual, n, q0, q)
+    call by_entries % solve(zeros, q, achieved)
+    inputs = residual % frozen_tuple(q, nu)
+    call varied(residual, unknowns, inputs, 2, p_domain, wnu, b)
+    lin   = residual % linearize(unknowns, residual % bind(inputs), zeros, .false., 9)
+    lin_t = residual % linearize(unknowns, residual % bind(inputs), zeros, .true., 10)
+    call factorisation % state(lin, lin % unknown_graph(), lin % unknown_domain(), m, stored_inputs=[inputs(2)])
+    allocate(lambda(m))
+    w = 0.0_dp
+    call factorisation % solve(-b, w, achieved)
+    df_t = dot_product(g, mm * w)
+    call factorisation % state(lin_t, lin_t % unknown_graph(), lin_t % unknown_domain(), m, stored_inputs=[inputs(2)])
+    lambda = 0.0_dp
+    call factorisation % solve(mm * g, lambda, achieved)
+    df_a = -dot_product(lambda, b)
+    ! the moved design is a residual of its own, on its own U and P;
+    ! the fixed values h are data of the residual and do not move
+    moved   = designed_march_residual(n, h, c, q0, nu(1))
+    shifted = moved % frozen_tuple(zeros, nu + delta * wnu)
+    call by_entries % state(moved, moved % unknown_graph(), moved % unknown_domain(), m, stored_inputs=[shifted(2)])
+    call seeded(moved, n, q0, plus)
+    call by_entries % solve(zeros, plus, achieved)
+    moved   = designed_march_residual(n, h, c, q0, nu(1))
+    shifted = moved % frozen_tuple(zeros, nu - delta * wnu)
+    call by_entries % state(moved, moved % unknown_graph(), moved % unknown_domain(), m, stored_inputs=[shifted(2)])
+    call seeded(moved, n, q0, minus)
+    call by_entries % solve(zeros, minus, achieved)
+    df_d = (dot_product(g, mm * plus) - dot_product(g, mm * minus)) / (2.0_dp * delta)
+    write(*, '(a, 3es20.12)') '        dF/dnu[w]: tangent, adjoint, difference ', df_t, df_a, df_d
+    call report(abs(df_t - df_a) <= 1.0e-11_dp * max(abs(df_t), 1.0_dp) .and. &
+         & abs(df_t - df_d) <= 1.0e-7_dp * max(abs(df_t), 1.0_dp), &
+         & 'the M-weighted sensitivity by the tangent and by the transposed solve agree, and with a central &
+         &difference', num_failures)
+
+    ! the temporal partition with the point-varying design: each
+    ! member reads the design at its own points
+    call labels(1, n, member_of, member_order)
+    allocate(partitioned % inner, source=by_entries)
+    call partitioned % state(residual, unknowns, u_domain, m, stored_inputs=[inputs(2)])
+    partitioned % tolerance      = 1.0e-10_dp
+    partitioned % criterion      = absolute
+    partitioned % max_iterations = 40
+    call partitioned % partition(member_of, member_order, seed_from_previous=.true.)
+    call seeded(residual, n, q0, q2)
+    call partitioned % solve(zeros, q2, achieved)
+    outcome = partitioned % result()
+    call report(outcome % converged() .and. maxval(abs(q2 - q)) <= 1.0e-9_dp, &
+         & 'the temporal partition restricts the point-varying design to each member and reaches the coupled &
+         &solution', num_failures)
+
+  end subroutine check_residual_boundary
 
 end program test_graph_minimization

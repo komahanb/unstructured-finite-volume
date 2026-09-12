@@ -10,6 +10,7 @@ make -C "$here" >/dev/null
 "$here/run"
 declare -A reason=(
     [unpaired_advance]='a driver is paired with its data before it evaluates'
+    [unpaired_advance_with]='a driver is paired with its data before it evaluates'
     [unpaired_set]='this driver is not paired with its data'
     [unpaired_clear]='this driver is not paired with its data'
     [outside_set]='a vertex is one the pairing stores'

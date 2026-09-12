@@ -32,6 +32,12 @@ declare -A reason=(
     [no_retained]='a restriction retains an unknown at least'
     [partition]='a restriction selects unknowns of the partition'
     [unstated]='the operator is stated on the solver domain before it is evaluated'
+    [state_domain]='the state is defined on the unknown domain'
+    [design_domain]='the design is defined on the point domain with one value per point'
+    [design_count]='the design is defined on the point domain with one value per point'
+    [host]='the residual is applied on its own unknown graph'
+    [direction_domain]='a direction in the state is defined on the unknown domain'
+    [stored_domain]='the design is defined on the point domain with one value per point'
 )
 for case_name in "${!reason[@]}"; do
     if ./restriction_refusal "$case_name" >refusal.out 2>&1; then

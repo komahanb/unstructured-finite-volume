@@ -21,9 +21,8 @@ module operation_temporal_minimization
   use operation_action      , only : operation
   use operation_minimization, only : minimizer, state, restrict, compact_labels
   use operation_minimization, only : solve_result, SOLVE_EVALUATED, SOLVE_STAGNATED, SOLVE_INNER_FAILED
-  use operation_driver      , only : driver, pairing
+  use operation_driver      , only : driver, pairing, vertex_rule
   use operation_residual    , only : residual_operator
-  use view_directed_stored  , only : stored_directed_graph
   use field_calculus        , only : FIELD_REAL
   use field_stored          , only : stored_field
 
@@ -61,11 +60,12 @@ module operation_temporal_minimization
      procedure :: complete
      procedure :: num_completed
      procedure :: advance
+     procedure :: advance_with
      procedure :: set_rule
      procedure :: clear_rule
-     procedure :: last_dependent_of
      procedure :: released_after
      procedure :: released_at
+     procedure :: expired_at
      procedure :: solve
 
   end type temporal_minimizer
@@ -289,6 +289,18 @@ contains
     end if
   end subroutine advance
 
+  subroutine advance_with(this, rule, executed)
+    class(temporal_minimizer), intent(inout) :: this
+    class(vertex_rule), intent(inout) :: rule
+    integer, intent(out), optional :: executed
+    call require_schedule(this)
+    call this % schedule % advance_with(this % graph, rule, executed)
+    if (this % schedule % complete()) then
+       call this % initialize_residual_history()
+       call this % record_result(0.0_dp, this % schedule % num_completed(), SOLVE_EVALUATED)
+    end if
+  end subroutine advance_with
+
   subroutine set_rule(this, vertex, rule)
     class(temporal_minimizer), intent(inout) :: this
     integer, intent(in) :: vertex
@@ -303,16 +315,6 @@ contains
     call require_schedule(this)
     call this % schedule % clear_rule(vertex)
   end subroutine clear_rule
-
-  integer function last_dependent_of(this, datum)
-
-    class(temporal_minimizer), intent(in) :: this
-    integer                  , intent(in) :: datum
-
-    call require_schedule(this)
-    last_dependent_of = this % schedule % last_reader_of(datum)
-
-  end function last_dependent_of
 
   function released_after(this, step) result(vertices)
 
@@ -332,6 +334,14 @@ contains
     call require_schedule(this)
     vertices = this % schedule % released_at(step)
   end function released_at
+
+  function expired_at(this, step) result(vertices)
+    class(temporal_minimizer), intent(in) :: this
+    integer, intent(in) :: step
+    integer, allocatable :: vertices(:)
+    call require_schedule(this)
+    vertices = this % schedule % expired_at(step)
+  end function expired_at
 
   !===================================================================!
   ! SOLVE. Where a schedule is stated, solving is the traversal of that
@@ -403,7 +413,6 @@ contains
     real(dp)                  , intent(out)   :: achieved
 
     type(residual_operator) :: sub
-    type(stored_directed_graph) :: unknowns
     type(stored_field), allocatable :: inputs(:)
     class(minimizer), allocatable :: local
     real(dp), allocatable :: y(:), zeros(:), member_solution(:), previous_residual(:)
@@ -460,17 +469,16 @@ contains
                 call sub % versioned(abs(residual % version()) * size(this % member_order) + m, &
                      & transposed=residual % transpose_version())
              end if
-             unknowns = stored_directed_graph(sub % num_unknowns(), tails=[integer ::], heads=[integer ::])
-             call local_stored(this, sub, unknowns, inputs)
+             call local_stored(this, residual, member, sub, inputs)
              ! the inner minimizer restricted to the member: each
              ! solver maps its own metadata and its children's
              allocate(local, source=this % inner)
              call local % restrict(member)
              if (allocated(inputs)) then
-                call local % state(sub, unknowns, unknowns % vertex_set(), sub % num_unknowns(), &
+                call local % state(sub, sub % unknown_graph(), sub % unknown_domain(), sub % num_unknowns(), &
                      & stored_inputs=inputs)
              else
-                call local % state(sub, unknowns, unknowns % vertex_set(), sub % num_unknowns())
+                call local % state(sub, sub % unknown_graph(), sub % unknown_domain(), sub % num_unknowns())
              end if
              allocate(zeros(sub % num_unknowns()), source=0.0_dp)
              member_solution = x(member)
@@ -501,42 +509,49 @@ contains
 
   end subroutine partitioned_solve
 
-  subroutine local_stored(this, residual, unknowns, inputs)
+  !===================================================================!
+  ! THE STORED INPUTS RESTRICTED TO A MEMBER. A stored input of a
+  ! residual is a field on the residual's point domain P with one
+  ! value per point; the constrained residual's points are the
+  ! selected points, so the input restricted to the member is the
+  ! field on the constrained residual's P' of the values at those
+  ! points. Invalid input: a stored input that is not a real field on
+  ! P with one value per point.
+  !===================================================================!
+
+  subroutine local_stored(this, residual, member, sub, inputs)
 
     class(temporal_minimizer), intent(in)  :: this
-    type(residual_operator)  , intent(in)  :: residual
-    type(stored_directed_graph), intent(in) :: unknowns
+    class(residual_operator) , intent(in)  :: residual
+    integer                  , intent(in)  :: member(:)
+    class(residual_operator) , intent(in)  :: sub
     type(stored_field), allocatable, intent(out) :: inputs(:)
 
-    real(dp), allocatable :: values(:), local(:)
+    real(dp), allocatable :: values(:)
+    integer , allocatable :: points(:)
+    type(graph) :: whole, selected
     integer :: i
 
     if (.not. allocated(this % stored)) return
 
+    whole    = residual % design_domain()
+    selected = sub % design_domain()
+    points   = residual % selected_points(member)
     allocate(inputs(size(this % stored)))
     do i = 1, size(this % stored)
        if (this % stored(i) % value_kind() /= FIELD_REAL) then
           error stop 'temporal_minimizer: residual stored inputs are real fields'
        end if
-       if (this % stored(i) % num_components() /= 1) then
-          error stop 'temporal_minimizer: residual stored inputs have one component'
+       if (.not. this % stored(i) % defined_on(whole)) then
+          error stop 'temporal_minimizer: residual stored inputs are defined on the residual''s point domain'
+       end if
+       if (this % stored(i) % num_components() /= 1 .or. &
+            & this % stored(i) % num_entries() /= residual % num_points()) then
+          error stop 'temporal_minimizer: residual stored inputs have one value per point'
        end if
        call this % stored(i) % real_vector(values)
-       if (size(values) == residual % num_points()) then
-          local = values
-       else if (size(values) > 0) then
-          if (all(values == values(1))) then
-             allocate(local(residual % num_points()), source=values(1))
-          else
-             error stop 'temporal_minimizer: partitioned residual inputs are constant on a subproblem'
-          end if
-       else
-          error stop 'temporal_minimizer: partitioned residual inputs are constant on a subproblem'
-       end if
-       inputs(i) = stored_field(this % stored(i) % name(), unknowns % vertex_set(), &
-            & residual % num_points())
-       call inputs(i) % set_real_vector(local)
-       if (allocated(local)) deallocate(local)
+       inputs(i) = stored_field(this % stored(i) % name(), selected, size(points))
+       call inputs(i) % set_real_vector(values(points))
     end do
 
   end subroutine local_stored

@@ -8,7 +8,7 @@ program graph_execution
   use view_directed_stored, only : stored_directed_graph
   use field_calculus, only : field
   use field_stored, only : stored_field
-  use linear_rules, only : linear_rule
+  use linear_rules, only : linear_rule, placed_rule
   implicit none
 
   type(stored_directed_graph) :: domain
@@ -22,6 +22,7 @@ program graph_execution
   call check_output_absence()
   call check_replay()
   call check_temporal()
+  call check_placed()
   call check_empty()
   if (num_failures /= 0) error stop 'graph execution checks failed'
   print *, 'All graph execution checks passed.'
@@ -312,6 +313,88 @@ contains
          & datum_value(second % pairing_of(), 3) == 31.0_dp .and. achieved == 0.0_dp, &
          & 'incremental and complete temporal solves retain independent results')
   end subroutine check_temporal
+
+  !===================================================================!
+  ! A rule driven without being stored: the driver states its vertex
+  ! and the vertices it reads, the results equal the stored-rule
+  ! evaluation of the same combined forward/reverse graph, and the
+  ! lifetime of each datum ends exactly once, an unread output at its
+  ! own step.
+  !===================================================================!
+
+  subroutine check_placed()
+    type(bipartite_digraph) :: incidence
+    type(driver) :: schedule
+    type(rule_graph) :: rules
+    type(data_graph) :: values
+    type(stored_field) :: initial
+    type(placed_rule) :: rule
+    type(temporal_minimizer) :: temporal
+    type(pairing) :: connection
+    class(field), allocatable :: datum
+    real(dp), allocatable :: components(:)
+    integer, allocatable :: expired(:)
+    integer :: executed, step, num_expired
+    ! the incidence of check_lifetimes: rules 1, 2 read source 1 and
+    ! write 2, 3; rule 3 reads 2, 3, 4 and writes 5; rule 4 reads 1, 5
+    ! and writes 6, which nothing reads
+    incidence = bipartite_digraph(4, 6, &
+         & [2,1,2,1,2,2,2,1,2,2,1], [1,1,2,2,4,2,3,3,5,1,4], &
+         & [1,2,1,2,1,1,1,2,1,1,2], [1,2,2,3,3,3,3,5,4,4,6])
+    allocate(rules % at(4), values % at(6))
+    initial = stored_field('source', domain % vertex_set(), 1)
+    call initial % set_real_vector([3.0_dp])
+    allocate(values % at(1) % datum, source=initial)
+    call initial % set_real_vector([1.0_dp])
+    allocate(values % at(4) % datum, source=initial)
+    schedule = driver(linear_rule([1.0_dp], 0.0_dp), incidence)
+    call schedule % pair_with(rules % pair(values))
+    rule % coefficient = 2.0_dp
+    call schedule % advance_with(domain, rule, executed)
+    call assert_all(executed == 1 .and. rule % vertex == 1 .and. all(rule % reads == [1]) .and. &
+         & rule % num_arguments() == 1, 'a driven rule is told its vertex and the vertices it reads')
+    connection = schedule % pairing_of()
+    call connection % datum_at(2, datum)
+    call datum % real_vector(components)
+    call assert_all(all(components == [6.0_dp, 1.0_dp, 1.0_dp]), &
+         & 'the driven rule computes on the data its declared reads store')
+    num_expired = 0
+    do step = 2, 4
+       call schedule % advance_with(domain, rule, executed)
+       expired = schedule % expired_at(step)
+       num_expired = num_expired + size(expired)
+       if (step == 3) call assert_all(all(expired == [2,3,4]), &
+            & 'the lifetime of read data ends at their final reader as released_at states')
+       if (step == 4) call assert_all(all(expired == [1,5,6]), &
+            & 'an output nothing reads ends its lifetime at its own step, after that step''s final reads')
+    end do
+    call assert_all(rule % vertex == 4 .and. size(rule % reads) == 2 .and. sum(rule % reads) == 6 .and. &
+         & rule % num_arguments() == 2, &
+         & 'the argument count follows the reads of each vertex')
+    connection = schedule % pairing_of()
+    call connection % datum_at(6, datum)
+    call datum % real_vector(components)
+    ! d2 = 2 d1 = 6, d3 = 2 d2 = 12, d5 = 2 (d2 + d3 + d4) = 38, d6 = 2 (d1 + d5) = 82
+    call assert_all(all(components == [82.0_dp, 4.0_dp, 6.0_dp]), &
+         & 'the driven traversal equals the composition of the rules over the combined graph')
+    call assert_all(num_expired + size(schedule % expired_at(1)) == 6 .and. schedule % complete(), &
+         & 'every datum ends its lifetime exactly once over the traversal')
+    call schedule % advance_with(domain, rule, executed)
+    call assert_all(executed == 0, 'a completed driver drives no further rule')
+    ! the temporal minimizer delegates the same step
+    schedule = driver(linear_rule([1.0_dp], 0.0_dp), incidence)
+    call temporal % state(schedule, domain, domain % vertex_set(), 0)
+    call temporal % pair_with(rules % pair(values))
+    do step = 1, 4
+       call temporal % advance_with(rule, executed)
+    end do
+    connection = temporal % pairing_of()
+    call connection % datum_at(6, datum)
+    call datum % real_vector(components)
+    call assert_all(temporal % complete() .and. components(1) == 82.0_dp .and. &
+         & all(temporal % expired_at(4) == [1,5,6]), &
+         & 'a temporal minimizer delegates the driven step and the lifetime query to its schedule')
+  end subroutine check_placed
 
   subroutine check_empty()
     type(driver) :: schedule

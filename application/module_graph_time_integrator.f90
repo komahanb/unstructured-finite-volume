@@ -2796,6 +2796,7 @@ module gti_march
   use operation_weight        , only : scheme_weight
   use operation_scheme_stencil, only : derived_constraints
   use operation_expression       , only : expression, euler_lagrange
+  use operation_residual      , only : residual_operator
   use util_factorisation      , only : dense_factorisation
   use operation_domain        , only : continuous_domain, discrete_domain
   use gti_expansion           , only : family_container, expansion, marches_by_stages
@@ -2866,7 +2867,7 @@ module gti_march
      procedure :: configuration
   end type march_context
   private
-  public :: solved, unknowns_graph
+  public :: solved
   public :: block_from, instants_at_of
   public :: unknown, consistent_states, frozen_inputs, spatial_components_of
   public :: march_context
@@ -3102,18 +3103,13 @@ contains
        end do
     end do
   end subroutine spatial_components_of
-  subroutine frozen_inputs(q, design, num_points, unknowns, inputs)
+  ! the frozen tuple (Q, nu) of a residual at the state q and one
+  ! design value at every evaluation point
+  subroutine frozen_inputs(rows, q, design, inputs)
+    class(residual_operator), intent(in) :: rows
     real(dp), intent(in) :: q(:), design
-    integer , intent(in) :: num_points
-    type(stored_directed_graph)    , intent(out) :: unknowns
     type(stored_field), allocatable, intent(out) :: inputs(:)
-    type(typed_field_domain) :: states, designs
-    unknowns = stored_directed_graph(size(q), tails=[integer ::], heads=[integer ::])
-    allocate(inputs(2))
-    states    = typed_field_domain(unknowns % vertex_set(), size(q))
-    designs   = typed_field_domain(unknowns % vertex_set(), num_points)
-    inputs(1) = states % state(q)
-    inputs(2) = designs % design(spread(design, 1, num_points))
+    inputs = rows % frozen_tuple(q, spread(design, 1, rows % num_points()))
   end subroutine frozen_inputs
   subroutine set_stopping(this, tolerance, criterion, limit_kind, iterations)
     class(march_context), intent(inout) :: this
@@ -3138,11 +3134,6 @@ contains
     if (present(nodes)) m = nodes
     at = ((instant - 1) * m + (i - 1)) * degrees + degree + 1
   end function unknown
-  function unknowns_graph(n, degrees) result(g)
-    integer, intent(in) :: n, degrees
-    type(stored_directed_graph) :: g
-    g = stored_directed_graph(n * degrees, tails=[integer ::], heads=[integer ::])
-  end function unknowns_graph
   !===================================================================!
   ! THE OFFSET OF EACH INSTANT OF A BLOCK in the block's own state.
   ! The offset is determined by the tower's structure alone - the
@@ -3521,7 +3512,6 @@ contains
     real(dp)       , intent(in) , optional :: seed(:)
     type(solve_result), intent(out), optional :: outcome
     type(newton) :: solver
-    type(stored_directed_graph) :: unknowns
     type(stored_field), allocatable :: inputs(:)
     integer :: count, width
     if (present(context)) then
@@ -3535,12 +3525,12 @@ contains
     else
        q = at_first_instant(rows, count)
     end if
-    call frozen_inputs(q, design_value, rows % num_points(), unknowns, inputs)
+    call frozen_inputs(rows, q, design_value, inputs)
     width = rows % num_degrees()
     if (active_context % coarsens()) call active_context % set_aggregates( &
          & rows % aggregates(active_context % coarse_nodes(rows % num_nodes())))
     call active_context % read_inner(solver % inner, count, width, rows % eliminated_unknowns())
-    call solver % state(rows, unknowns, unknowns % vertex_set(), count, &
+    call solver % state(rows, rows % unknown_graph(), rows % unknown_domain(), count, &
          & stored_inputs = [inputs(2)])
     solver % explicit       = active_context % jacobian_present()
     solver % higher_order_jacobian_product = active_context % newton_order()
@@ -3550,18 +3540,17 @@ contains
     call solver % solve(spread(0.0_dp, 1, count), q, achieved)
     if (present(outcome)) outcome = solver % result()
     call active_context % store_inner(solver % inner)
-    if (present(final_imbalance)) call imbalance_of(solver, achieved, rows, unknowns, q, inputs(2), &
+    if (present(final_imbalance)) call imbalance_of(solver, achieved, rows, q, inputs(2), &
          & final_imbalance)
   end subroutine solved
   !===================================================================!
   ! THE IMBALANCE A SOLVE ENDED AT, and where it lies when the solve
   ! did not converge.
   !===================================================================!
-  subroutine imbalance_of(solver, achieved, rows, unknowns, q, design, final_imbalance)
+  subroutine imbalance_of(solver, achieved, rows, q, design, final_imbalance)
     class(minimizer)           , intent(in)  :: solver
     real(dp)                   , intent(in)  :: achieved, q(:)
     type(block_residual)       , intent(in)  :: rows
-    type(stored_directed_graph), intent(in)  :: unknowns
     type(stored_field)         , intent(in)  :: design
     type(imbalance)            , intent(out) :: final_imbalance
     final_imbalance % outcome = solver % result()
@@ -3569,7 +3558,7 @@ contains
     final_imbalance % diverging = solver % diverging(achieved)
     final_imbalance % norm      = achieved
     final_imbalance % initial_residual_norm     = solver % initial_residual_norm()
-    if (.not. final_imbalance % converged) call by_aspect(rows, unknowns, q, design, final_imbalance)
+    if (.not. final_imbalance % converged) call by_aspect(rows, q, design, final_imbalance)
   end subroutine imbalance_of
   function configuration(this) result(context)
     class(march_context), intent(in) :: this
@@ -3587,12 +3576,11 @@ contains
     this % versions_given = this % versions_given + 1
     version = this % versions_given
   end function next_version
-  subroutine solve_linear(rows, unknowns, inputs, rhs, transposed, version, w, outcome, context)
+  subroutine solve_linear(rows, inputs, rhs, transposed, version, w, outcome, context)
     class(march_context), intent(inout), optional, target :: context
     type(march_context), target :: default_context
     class(march_context), pointer :: active_context
     type(block_residual)       , intent(in)  :: rows
-    class(directed_graph)      , intent(in)  :: unknowns
     type(stored_field)         , intent(in)  :: inputs(:)
     real(dp)                   , intent(in)  :: rhs(:)
     logical                    , intent(in)  :: transposed
@@ -3612,7 +3600,7 @@ contains
     else
        call tally_record(tangent_loops)
     end if
-    lin = rows % linear_block(unknowns, rows % bind(inputs), rhs, transposed, version)
+    lin = rows % linear_block(rows % unknown_graph(), rows % bind(inputs), rhs, transposed, version)
     call swept(lin, 0.0_dp, w, achieved, outcome=completed, context=active_context)
     if (present(outcome)) then
        outcome = completed
@@ -3620,13 +3608,12 @@ contains
        error stop 'gti_march: derivative solve did not converge: ' // completed % description()
     end if
   end subroutine solve_linear
-  real(dp) function by_tangent(rows, unknowns, inputs, g, design_rate, explicit, version, context) &
+  real(dp) function by_tangent(rows, inputs, g, design_rate, explicit, version, context) &
        & result(df)
     class(march_context), intent(inout), optional, target :: context
     type(march_context), target :: default_context
     class(march_context), pointer :: active_context
     type(block_residual) , intent(in) :: rows
-    class(directed_graph), intent(in) :: unknowns
     type(stored_field)   , intent(in) :: inputs(:)
     real(dp)             , intent(in) :: g(:), design_rate(:), explicit
     integer              , intent(in) :: version
@@ -3638,19 +3625,18 @@ contains
     else
        active_context => default_context
     end if
-    call solve_linear(rows, unknowns, inputs, -design_rate, .false., version, w, context=active_context)
-    unknown_fields = typed_field_domain(unknowns % vertex_set(), size(g))
+    call solve_linear(rows, inputs, -design_rate, .false., version, w, context=active_context)
+    unknown_fields = typed_field_domain(rows % unknown_domain(), size(g))
     gradient       = unknown_fields % real_field('functional gradient', g)
     tangent        = unknown_fields % tangent(w)
     df = explicit + gradient % inner_product(tangent)
   end function by_tangent
-  real(dp) function by_adjoint(rows, unknowns, inputs, g, design_rate, explicit, version, context) &
+  real(dp) function by_adjoint(rows, inputs, g, design_rate, explicit, version, context) &
        & result(df)
     class(march_context), intent(inout), optional, target :: context
     type(march_context), target :: default_context
     class(march_context), pointer :: active_context
     type(block_residual) , intent(in) :: rows
-    class(directed_graph), intent(in) :: unknowns
     type(stored_field)   , intent(in) :: inputs(:)
     real(dp)             , intent(in) :: g(:), design_rate(:), explicit
     integer              , intent(in) :: version
@@ -3662,8 +3648,8 @@ contains
     else
        active_context => default_context
     end if
-    call solve_linear(rows, unknowns, inputs, g, .true., version, lambda, context=active_context)
-    unknown_fields = typed_field_domain(unknowns % vertex_set(), size(g))
+    call solve_linear(rows, inputs, g, .true., version, lambda, context=active_context)
+    unknown_fields = typed_field_domain(rows % unknown_domain(), size(g))
     costate        = unknown_fields % costate(lambda)
     forcing        = unknown_fields % forcing(design_rate)
     df = explicit - costate % inner_product(forcing)
@@ -3697,7 +3683,6 @@ contains
     type(solve_result), intent(out), optional :: outcome
     type(temporal_minimizer) :: solver
     type(newton) :: newton_solver
-    type(stored_directed_graph) :: unknowns
     type(stored_field), allocatable :: inputs(:)
     integer , allocatable :: order(:), label(:)
     real(dp), allocatable :: rhs(:)
@@ -3719,12 +3704,12 @@ contains
     call rows % sweep_labels(sequential_space, sequential_time, label, order)
     q = at_first_instant(rows, count)
     q(rows % fixed_unknowns()) = rows % fixed_values()
-    call frozen_inputs(q, design_value, rows % num_points(), unknowns, inputs)
+    call frozen_inputs(rows, q, design_value, inputs)
     width = rows % num_degrees()
     if (active_context % coarsens()) call active_context % set_aggregates( &
          & rows % aggregates(active_context % coarse_nodes(rows % num_nodes())))
     call active_context % read_inner(newton_solver % inner, count, width, rows % eliminated_unknowns())
-    call newton_solver % state(rows, unknowns, unknowns % vertex_set(), count, &
+    call newton_solver % state(rows, rows % unknown_graph(), rows % unknown_domain(), count, &
          & stored_inputs = [inputs(2)])
     newton_solver % explicit       = active_context % jacobian_present()
     newton_solver % higher_order_jacobian_product = active_context % newton_order()
@@ -3732,7 +3717,7 @@ contains
          & active_context % stopping_limit_kind, &
          & active_context % stopping_iterations)
     allocate(solver % inner, source=newton_solver)
-    call solver % state(rows, unknowns, unknowns % vertex_set(), count, &
+    call solver % state(rows, rows % unknown_graph(), rows % unknown_domain(), count, &
          & stored_inputs = [inputs(2)])
     call stopping_applied(solver, active_context % stopping_tolerance, active_context % stopping_criterion, &
          & active_context % stopping_limit_kind, &
@@ -3750,12 +3735,11 @@ contains
     call solver % solve(rhs, q, achieved)
     if (present(outcome)) outcome = solver % result()
     call active_context % clear_inner()
-    if (present(final_imbalance)) call imbalance_of(solver, achieved, rows, unknowns, q, &
+    if (present(final_imbalance)) call imbalance_of(solver, achieved, rows, q, &
          & inputs(2), final_imbalance)
   end subroutine swept
-  subroutine by_aspect(rows, unknowns, q, design, final_imbalance)
+  subroutine by_aspect(rows, q, design, final_imbalance)
     type(block_residual)       , intent(in)    :: rows
-    type(stored_directed_graph), intent(in)    :: unknowns
     real(dp)                   , intent(in)    :: q(:)
     type(stored_field)         , intent(in)    :: design
     type(imbalance)            , intent(inout) :: final_imbalance
@@ -3766,9 +3750,9 @@ contains
     integer :: i, d, nd, n
     n  = size(q)
     nd = rows % num_degrees()
-    states = typed_field_domain(unknowns % vertex_set(), n)
+    states = typed_field_domain(rows % unknown_domain(), n)
     state  = states % state(q)
-    call rows % apply(unknowns, rows % bind([state, design]), out)
+    call rows % apply(rows % unknown_graph(), rows % bind([state, design]), out)
     call out % real_vector(r)
     allocate(final_imbalance % by_degree(0:nd - 1), source=0.0_dp)
     do i = 1, n
@@ -3780,7 +3764,7 @@ contains
     final_imbalance % largest_slot   = (i - 1) / nd + 1
     final_imbalance % largest_degree = mod(i - 1, nd)
     if (final_imbalance % norm <= 0.0_dp) return
-    call jacobian_of(rows, unknowns, [state, design], n, unknowns % vertex_set(), a)
+    call jacobian_of(rows, rows % unknown_graph(), [state, design], n, rows % unknown_domain(), a)
     slope = matmul(r, a) / final_imbalance % norm
     i = maxloc(abs(slope), dim=1)
     final_imbalance % steepest_slot   = (i - 1) / nd + 1
@@ -4787,7 +4771,7 @@ module gti_chain
   use field_calculus   , only : field, FIELD_REAL
   use operation_action , only : operation, emit, contract
   use operation_action , only : binding, is_bound, bound_value
-  use operation_driver , only : driver, rule_graph, data_graph, pairing
+  use operation_driver , only : driver, rule_graph, data_graph, pairing, vertex_rule
   use operation_temporal_minimization, only : temporal_minimizer
   use view_read_write  , only : bipartite_digraph, FIRST_PART, SECOND_PART
   use view_directed    , only : forward
@@ -4906,7 +4890,7 @@ module gti_chain
 
   end type block_state
 
-  type, extends(operation) :: block_rule
+  type, extends(vertex_rule) :: block_rule
 
      type(chain_block), pointer :: chain(:) => null()
      type(expansion)  , pointer :: tower    => null()
@@ -4920,7 +4904,7 @@ module gti_chain
      ! count and the offsets are the block's own once it is built
      type(block_layout) :: layout
 
-     integer  :: at = 0, in_tower = 0, degrees = 0
+     integer  :: in_tower = 0, degrees = 0
      real(dp) :: fraction = 1.0_dp, design = 0.0_dp
      logical  :: counted = .true.
 
@@ -4967,7 +4951,7 @@ module gti_chain
   ! The arrays are owned by one derivative call. Its scheduled rules
   ! reference them until that call returns; the dependency relation also
   ! determines the release of each forward tangent tower.
-  type, extends(operation) :: derivative_rule
+  type, extends(vertex_rule) :: derivative_rule
      type(chain_block), pointer :: chain(:) => null()
      type(tangent_tower), pointer :: w(:) => null()
      class(march_context), pointer :: context => null()
@@ -4980,9 +4964,8 @@ module gti_chain
      type(expression) :: physics
      type(expression), allocatable :: functionals(:)
      integer, pointer :: versions(:) => null()
-     integer, allocatable :: read_blocks(:)
      real(dp) :: design = 0.0_dp
-     integer :: at = 0, degrees = 0, nd = 0, top = 0, order = 0, from_size = 0, to_size = 0
+     integer :: degrees = 0, nd = 0, top = 0, order = 0, from_size = 0, to_size = 0
      integer :: functional = 0, rank = 0, degree = 0
      logical :: transposed = .false.
    contains
@@ -5136,7 +5119,7 @@ contains
     if (with_startup) then
        fine = [0.0_dp, (this % dt(1 + (k - 1) / r + 1) / real(r, dp), k = 1, (given - 1) * r)]
        design_field = fine(2:)
-       allocate(every(1) % scheme, source=crouzeix_three_stage())
+       allocate(every(1) % scheme, source=startup_family())
        layouts(1) = block_layout(1, (given - 1) * r + 1, 1, &
             & given=every(1) % scheme % history_depth(degrees - 1), nodes=m)
        spans(1) = (given - 1) * r + 1
@@ -5165,7 +5148,6 @@ contains
     incidence = dependency_incidence(layouts)
     allocate(rules % at(n), values % at(n))
     do b = 1, n
-       this % rules(b) % at = b
        this % rules(b) % in_tower = b
        this % rules(b) % degrees = degrees
        this % rules(b) % layout = layouts(b)
@@ -5207,19 +5189,17 @@ contains
     rule % tower => this % tower
     rule % context => this % context
     if (allocated(this % taylor)) rule % taylor => this % taylor
-    call this % schedule % set_rule(b, rule)
     call tally_enter(at_horizon)
-    call this % schedule % advance()
+    call this % schedule % advance_with(rule)
     call tally_leave()
-    call this % schedule % clear_rule(b)
     this % achieved = max(this % achieved, this % chain(b) % final_imbalance % norm)
     if (this % schedule % num_completed() == 1) this % final_imbalance = this % chain(b) % final_imbalance
     if (this % final_imbalance % converged .and. .not. this % chain(b) % final_imbalance % converged) &
          & this % final_imbalance = this % chain(b) % final_imbalance
     if (allocated(this % taylor)) then
-       released = this % schedule % released_at(this % schedule % num_completed())
-       ! The block's own functional has consumed an output with no later reader.
-       if (this % schedule % last_dependent_of(b) == 0) released = [released, b]
+       ! the block's final reads, and its own state when no later
+       ! block reads it: its functional contribution is already taken
+       released = this % schedule % expired_at(this % schedule % num_completed())
        do i = 1, size(released)
           h = released(i)
           if (allocated(this % taylor % w(h) % w)) then
@@ -5379,7 +5359,6 @@ contains
     integer            , intent(inout) :: live, total, peak_storage
     real(dp), intent(inout), optional  :: table(:,:), by_order(:,:,0:)
     real(dp), intent(in)   , optional  :: node_measure(:)
-    type(stored_directed_graph) :: unknowns
     type(stored_field), allocatable :: inputs(:)
     real(dp), allocatable :: r(:), one(:)
     integer , allocatable :: s(:)
@@ -5403,8 +5382,8 @@ contains
                 r(i) = w(chain(b) % source_block(i)) % w(chain(b) % source_at(i), rank, k)
              end if
           end do
-          call frozen_at(chain(b), design, unknowns, inputs)
-          call solve_linear(chain(b) % rows, unknowns, inputs, r, .false., versions(b), one, context=context)
+          call frozen_at(chain(b), design, inputs)
+          call solve_linear(chain(b) % rows, inputs, r, .false., versions(b), one, context=context)
           w(b) % w(1:count, rank, k) = one
           call tally_leave()
        end do
@@ -5566,7 +5545,7 @@ contains
     class(block_rule), intent(in) :: this
     character(len=:), allocatable :: name
     character(len=12) :: digits
-    write(digits,'(i0)') this % at
+    write(digits,'(i0)') this % vertex
     name = 'block ' // trim(digits) // ' of the chain'
   end function block_rule_name
 
@@ -5634,7 +5613,7 @@ contains
     end if
 
     ! an unallocated transfer is an absent argument
-    call one_block(this % chain, this % at, this % tower, this % in_tower, this % scheme, &
+    call one_block(this % chain, this % vertex, this % tower, this % in_tower, this % scheme, &
          & this % physics, this % degrees, this % layout, this % dt, this % coarse_step, &
          & this % fraction, this % counted, this % design, this % initial, achieved, &
          & final_imbalance, transferred_values, context=this % context)
@@ -5643,19 +5622,19 @@ contains
     ! specifies nothing about how many points a state stores, and the
     ! two counts are unrelated. Substituting one for the other would
     ! give a field a domain it does not have.
-    state_domain = stored_directed_graph(this % chain(this % at) % rows % num_points(), &
+    state_domain = stored_directed_graph(this % chain(this % vertex) % rows % num_points(), &
          & tails=[integer ::], heads=[integer ::])
     states = typed_field_domain(state_domain % vertex_set(), &
-         & size(this % chain(this % at) % state))
-    state % stored_field = states % state(this % chain(this % at) % state)
-    state % at     = this % at
-    state % layout = this % chain(this % at) % block_layout
+         & size(this % chain(this % vertex) % state))
+    state % stored_field = states % state(this % chain(this % vertex) % state)
+    state % at     = this % vertex
+    state % layout = this % chain(this % vertex) % block_layout
     call emit(state, output)
     ! THE PIPELINED DERIVATIVE. With a context attached, the block's
     ! tower is solved immediately after the block, and every datum
     ! with no later reader is deallocated.
     if (associated(this % taylor)) then
-       call taylor_block(this % taylor, this % chain, this % at, this % context)
+       call taylor_block(this % taylor, this % chain, this % vertex, this % context)
     end if
   end subroutine block_rule_apply
 
@@ -5751,12 +5730,11 @@ contains
        f(m, :) = by_order(:, 1, m)
     end do
   end subroutine chain_expansion
-  subroutine frozen_at(b, design, unknowns, inputs)
+  subroutine frozen_at(b, design, inputs)
     type(chain_block), intent(in) :: b
     real(dp)         , intent(in) :: design
-    type(stored_directed_graph), intent(out) :: unknowns
     type(stored_field), allocatable, intent(out) :: inputs(:)
-    call frozen_inputs(b % state, design, b % rows % num_points(), unknowns, inputs)
+    call frozen_inputs(b % rows, b % state, design, inputs)
   end subroutine frozen_at
   subroutine chain_versions(chain, tower, functionals, degrees, versions, node_measure, context)
     class(march_context), optional, target, intent(inout) :: context
@@ -5873,7 +5851,7 @@ contains
     type(bipartite_digraph) :: incidence
     type(block_layout), allocatable :: layouts(:)
     type(stored_directed_graph) :: domain
-    integer, allocatable :: reads(:), released(:)
+    integer, allocatable :: released(:)
     integer :: h
     type(march_context), target :: local_context
     class(march_context), pointer :: active
@@ -5961,16 +5939,9 @@ contains
     schedule = driver(rule, incidence, orientation=forward_pass)
     call schedule % pair_with(rules % pair(values))
     do while (.not. schedule % complete())
-       b = schedule % next_rule()
-       rule % at = b
-       call incidence % in_neighbourhood(BLOCKS, b, reads)
-       call rule % declare_arguments(size(reads))
-       call schedule % set_rule(b, rule)
-       call schedule % advance(domain)
-       call schedule % clear_rule(b)
+       call schedule % advance_with(domain, rule)
        if (forward) then
-          released = schedule % released_at(schedule % num_completed())
-          if (schedule % last_reader_of(b) == 0) released = [released, b]
+          released = schedule % expired_at(schedule % num_completed())
           do h = 1, size(released)
              p = released(h)
              if (.not. allocated(w(p) % w)) cycle
@@ -6019,14 +5990,7 @@ contains
              rule % degree = k
              call schedule % pair_with(rules % pair(values))
              do while (.not. schedule % complete())
-                b = schedule % next_rule()
-                rule % at = b
-                call incidence % in_neighbourhood(BLOCKS, b, reads)
-                rule % read_blocks = reads
-                call rule % declare_arguments(size(reads))
-                call schedule % set_rule(b, rule)
-                call schedule % advance(domain)
-                call schedule % clear_rule(b)
+                call schedule % advance_with(domain, rule)
              end do
           end do
        end do
@@ -6075,6 +6039,16 @@ contains
        end do
     end if
   end subroutine chain_derivative
+  !===================================================================!
+  ! THE STARTUP FAMILY: the stage family that integrates the history a
+  ! multistep first family reaches back over, on the refined steps of
+  ! the startup block. The one place the datum is registered; the
+  ! execution reads it and states no family of its own.
+  !===================================================================!
+  function startup_family() result(scheme)
+    type(family) :: scheme
+    scheme = crouzeix_three_stage()
+  end function startup_family
   pure function derivative_rule_name(this) result(name)
     class(derivative_rule), intent(in) :: this
     character(len=:), allocatable :: name
@@ -6087,7 +6061,6 @@ contains
     class(directed_graph), intent(in) :: input_graph
     type(binding), intent(in), optional :: inputs(:)
     class(field), allocatable, intent(inout) :: output
-    type(stored_directed_graph) :: unknowns
     type(stored_field), allocatable :: frozen(:)
     type(typed_field_domain) :: unknown_fields
     type(block_state) :: costate
@@ -6096,7 +6069,7 @@ contains
     integer, allocatable :: s(:), read_order(:)
     integer :: b, n, p, child, i, j, index
     associate (unused_graph => input_graph); end associate
-    b = this % at
+    b = this % vertex
     if (.not. this % transposed) then
        call forward_block(this % chain, b, this % physics, this % functionals, this % degrees, &
             & this % design, this % nd, this % top, this % order, this % from_size, this % to_size, &
@@ -6114,13 +6087,13 @@ contains
     ! Read child costates in descending block order, reproducing the
     ! accumulation order of reverse substitution independently of how
     ! the incidence query orders its argument slots.
-    if (.not. allocated(this % read_blocks)) error stop 'gti_chain: a costate rule states its input blocks'
-    read_order = [(i, i = 1, size(this % read_blocks))]
+    if (.not. allocated(this % reads)) error stop 'gti_chain: a costate rule states its input blocks'
+    read_order = [(i, i = 1, size(this % reads))]
     do i = 2, size(read_order)
        index = read_order(i)
        j = i - 1
        do while (j >= 1)
-          if (this % read_blocks(read_order(j)) >= this % read_blocks(index)) exit
+          if (this % reads(read_order(j)) >= this % reads(index)) exit
           read_order(j + 1) = read_order(j)
           j = j - 1
        end do
@@ -6131,7 +6104,7 @@ contains
     end if
     do i = 1, size(read_order)
        index = read_order(i)
-       child = this % read_blocks(index)
+       child = this % reads(index)
        if (.not. is_bound(inputs, this % argument(index))) then
           error stop 'gti_chain: every child costate is bound before reverse substitution'
        end if
@@ -6151,8 +6124,8 @@ contains
           rhs(this % chain(child) % source_at(p)) = rhs(this % chain(child) % source_at(p)) + child_costate(p)
        end do
     end do
-    call frozen_at(this % chain(b), this % design, unknowns, frozen)
-    call solve_linear(this % chain(b) % rows, unknowns, frozen, rhs, .true., &
+    call frozen_at(this % chain(b), this % design, frozen)
+    call solve_linear(this % chain(b) % rows, frozen, rhs, .true., &
          & this % versions(b), one, context=this % context)
     this % lambda(1:n, b, this % functional, this % rank, this % degree) = one
     if (associated(this % sinks)) then
@@ -6160,7 +6133,7 @@ contains
             & rhs, one, this % sinks)
     end if
     call tally_leave()
-    unknown_fields = typed_field_domain(unknowns % vertex_set(), n)
+    unknown_fields = typed_field_domain(this % chain(b) % rows % unknown_domain(), n)
     costate % stored_field = unknown_fields % costate(one)
     costate % at = b
     costate % layout = this % chain(b) % block_layout
@@ -6420,15 +6393,14 @@ contains
     logical            , intent(out)   :: is_sink(:)
     real(dp)           , intent(out)   :: diagonal(:)
     type(sink_costates), intent(inout) :: sinks
-    type(stored_directed_graph) :: unknowns
     type(stored_field), allocatable :: inputs(:)
     integer , allocatable :: r(:), c(:), reads(:)
     real(dp), allocatable :: w(:)
     logical , allocatable :: has_diagonal(:), fixed_rows(:)
     logical :: tangent_defined
     integer :: n, e, p, d, stride
-    call frozen_at(b, design, unknowns, inputs)
-    call b % rows % explicit_tangent(unknowns, b % rows % bind(inputs), 1, r, c, w, tangent_defined)
+    call frozen_at(b, design, inputs)
+    call b % rows % explicit_tangent(b % rows % unknown_graph(), b % rows % bind(inputs), 1, r, c, w, tangent_defined)
     if (.not. tangent_defined) then
        error stop 'gti_chain: the block tangent in the state is explicit'
     end if
@@ -6961,11 +6933,10 @@ contains
     type(chain_block), intent(in) :: chain(:)
     real(dp)         , intent(in) :: design
     real(dp), allocatable, intent(out) :: a(:,:)
-    type(stored_directed_graph) :: unknowns
     type(stored_field), allocatable :: inputs(:)
-    call frozen_inputs(chain(1) % state, design, chain(1) % rows % num_points(), unknowns, inputs)
-    call jacobian_of(chain(1) % rows, unknowns, inputs, chain(1) % rows % num_unknowns(), &
-         & unknowns % vertex_set(), a)
+    call frozen_inputs(chain(1) % rows, chain(1) % state, design, inputs)
+    call jacobian_of(chain(1) % rows, chain(1) % rows % unknown_graph(), inputs, chain(1) % rows % num_unknowns(), &
+         & chain(1) % rows % unknown_domain(), a)
   end subroutine dense_jacobian
   subroutine family_named(name, order, scheme, admissible)
     character(len=*), intent(in)  :: name
@@ -7062,7 +7033,7 @@ module gti_demos
   use operation_minimization, only : relative, by_rate
   use gti_expansion         , only : expansion, family_container
   use gti_block             , only : block_residual
-  use gti_march, only : march_context, block_from, solved, unknowns_graph, &
+  use gti_march, only : march_context, block_from, solved, &
        & horizon_bounds, consistent_state, imbalance, by_tangent, by_adjoint, instants_at_of
   use gti_adaptive          , only : adaptive_partition
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
@@ -10383,7 +10354,7 @@ contains
       type(expansion) :: tower
       type(family_container) :: owner(1)
       integer, allocatable :: at(:)
-      type(stored_directed_graph) :: unknowns, instants
+      type(stored_directed_graph) :: instants
       type(stored_field) :: state, design_field
       type(typed_field_domain) :: energy_states, instant_scalars
       type(continuous_domain) :: energy_domain
@@ -10397,7 +10368,6 @@ contains
            & 0, 0.0_dp)
       call block_from(tower, 1, scheme, van_der_pol(state_degree), fixed, rows, at, context=context)
       call solved(rows, design_value, q, achieved, context=context)
-      unknowns = unknowns_graph(num_instants, degrees)
       instants = stored_directed_graph(num_instants, tails=[integer ::], heads=[integer ::])
       energy   = van_der_pol_energy(state_degree)
       energy_domain  = continuous_domain(energy)
@@ -10437,7 +10407,7 @@ contains
       type(expansion) :: tower
       type(family_container) :: owner(1)
       integer, allocatable :: at(:)
-      type(stored_directed_graph) :: unknowns, instants
+      type(stored_directed_graph) :: instants
       type(stored_field) :: state, design_field, energy_state, energy_design
       type(typed_field_domain) :: unknown_fields, unknown_designs, energy_states, instant_scalars
       type(continuous_domain) :: energy_domain
@@ -10449,10 +10419,9 @@ contains
       call tower % build(van_der_pol(state_degree), owner, [num_instants], uniform_grid(duration), &
            & 0, 0.0_dp)
       call block_from(tower, 1, scheme, van_der_pol(state_degree), fixed, rows, at, context=context)
-      unknowns = unknowns_graph(num_instants, degrees)
       instants = stored_directed_graph(num_instants, tails=[integer ::], heads=[integer ::])
-      unknown_fields = typed_field_domain(unknowns % vertex_set(), size(q))
-      unknown_designs = typed_field_domain(unknowns % vertex_set(), num_instants)
+      unknown_fields = typed_field_domain(rows % unknown_domain(), size(q))
+      unknown_designs = typed_field_domain(rows % design_domain(), num_instants)
       state        = unknown_fields % state(q)
       design_field = unknown_designs % design(spread(design, 1, num_instants))
       energy       = van_der_pol_energy(state_degree)
@@ -10463,12 +10432,12 @@ contains
       energy_state    = energy_states % functional_state(q)
       energy_design   = instant_scalars % design(spread(design, 1, num_instants))
       call functional_gradient(energy, instants, &
-           & [energy_state, energy_design], dt, num_instants, degrees, unknowns % vertex_set(), g)
-      call sweep_design_partial(rows, unknowns, [state, design_field], num_instants, &
-           & unknowns % vertex_set(), rate)
+           & [energy_state, energy_design], dt, num_instants, degrees, rows % unknown_domain(), g)
+      call sweep_design_partial(rows, rows % unknown_graph(), [state, design_field], num_instants, &
+           & rows % design_domain(), rate)
       version    = context % next_version()
-      tangent = by_tangent(rows, unknowns, [state, design_field], g, rate, 0.0_dp, version, context=context)
-      adjoint = by_adjoint(rows, unknowns, [state, design_field], g, rate, 0.0_dp, version, context=context)
+      tangent = by_tangent(rows, [state, design_field], g, rate, 0.0_dp, version, context=context)
+      adjoint = by_adjoint(rows, [state, design_field], g, rate, 0.0_dp, version, context=context)
     end subroutine three_objects
   end subroutine demo_sensitivity
   subroutine demo_solve_cost()

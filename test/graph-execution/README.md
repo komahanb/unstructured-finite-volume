@@ -10,6 +10,14 @@ pairing or changing its incidence, order or release intervals. A caller can
 therefore bind transient execution references immediately before an advance
 and remove those references immediately afterward.
 
+`advance_with` executes the next scheduled vertex with a rule the caller
+passes instead of one stored in the pairing: the driver states the rule's
+vertex and the vertices its arguments read (`vertex_rule`), declares one
+argument per read when the rule declares another count, and performs the
+same writes and final reads as `advance`. `expired_at` returns `released_at`
+followed by the data the step's vertex writes that no rule reads, so a
+caller retaining outputs reads one lifetime for both.
+
 `evaluate` retains full traversal semantics: it resets the position and uses
 the same `advance` implementation until complete. It does not reconstruct data
 released during an earlier traversal. `pair_with` supplies a new data branch

@@ -242,38 +242,41 @@ contains
 
        call this % of % partial_action(input_graph, this % of % bind(tuple), &
             & [variation(this % wrt, direction)], tangent_value)
-       call require_domain(tangent_value, on)
+       call require_domain(tangent_value, on, n_on)
        call tangent_value % real_vector(y)
 
     else
 
        ! the base residual: from freeze when passed, computed here
-       ! once otherwise
-       if (allocated(this % base)) then
+       ! once otherwise; a zero direction reads the statement's result
+       ! once for its entries and component count, and returns zero
+       magnitude = euclidean_norm(v)
+       if (allocated(this % base) .and. magnitude > 0.0_dp) then
           base = this % base
        else
           call this % of % apply(input_graph, this % of % bind(tuple), tangent_value)
-          call require_domain(tangent_value, on)
+          call require_domain(tangent_value, on, n_on)
           call tangent_value % real_vector(base)
        end if
 
        ! The perturbation has the stated step length independently of
        ! the direction's magnitude. A small correction must not vanish
        ! when added to the frozen state before its derivative is read.
-       magnitude = euclidean_norm(v)
        if (magnitude == 0.0_dp) then
           y = spread(0.0_dp, 1, size(base))
        else
           call tuple(p) % set_real_vector(x + this % step * (v / magnitude))
           call this % of % apply(input_graph, this % of % bind(tuple), tangent_value)
-          call require_domain(tangent_value, on)
+          call require_domain(tangent_value, on, n_on)
           call tangent_value % real_vector(y)
           y = ((y - base) / this % step) * magnitude
        end if
 
     end if
 
-    image_domain = typed_field_domain(on, n_on, max(size(y) / n_on, 1))
+    ! the image has the entries and the component count the
+    ! statement's result states, never a count divided out of a length
+    image_domain = typed_field_domain(on, tangent_value % num_entries(), tangent_value % num_components())
     out          = image_domain % real_field('J v', y)
     call emit(out, output)
 
@@ -281,17 +284,21 @@ contains
 
   !===================================================================!
   ! A same-domain tangent subtracts or contracts results, so each
-  ! must have come from the statement's domain; equal length is not
-  ! that claim.
+  ! must have come from the statement's domain with one entry per
+  ! element of it; equal length is not that claim.
   !===================================================================!
 
-  subroutine require_domain(result, expected)
+  subroutine require_domain(result, expected, num_entries)
 
     class(field), intent(in) :: result
     type(graph) , intent(in) :: expected
+    integer     , intent(in) :: num_entries
 
     if (.not. result % defined_on(expected)) then
        error stop 'linearization: the operation result is defined on its stated domain'
+    end if
+    if (result % num_entries() /= num_entries) then
+       error stop 'linearization: the operation result has one entry per element of its stated domain'
     end if
 
   end subroutine require_domain

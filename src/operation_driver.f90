@@ -162,9 +162,27 @@ module operation_driver
   private
 
   public :: driver
+  public :: vertex_rule
   public :: rule_vertex, data_vertex, pairing
   public :: rule_graph, data_graph
   public :: driven_by, paired
+
+  !===================================================================!
+  ! A RULE APPLIED AT A VERTEX IT IS TOLD. A rule driven by advance_with
+  ! is not stored in the pairing: before it is applied the driver
+  ! states the vertex it computes and the vertices its arguments read,
+  ! in argument order (the k-th argument is the datum at reads(k)),
+  ! and declares one argument per read when the rule declares another
+  ! count. The rule reads its place from these two components and
+  ! states nothing about the schedule itself.
+  !===================================================================!
+
+  type, abstract, extends(operation) :: vertex_rule
+
+     integer              :: vertex = 0
+     integer, allocatable :: reads(:)
+
+  end type vertex_rule
 
   !===================================================================!
   ! ONE VERTEX OF B2. The rule computed there. A vertex whose rule is
@@ -308,6 +326,7 @@ module operation_driver
      procedure :: pairing_of              ! the pairing it stores
      procedure :: evaluate                ! the rules over the data, in order
      procedure :: advance                 ! evaluate one scheduled vertex
+     procedure :: advance_with            ! evaluate one scheduled vertex by a rule given for it
      procedure :: next_rule               ! the next vertex in the stored order
      procedure :: complete                ! whether the stored order is exhausted
      procedure :: num_completed           ! completed positions in the stored order
@@ -316,6 +335,7 @@ module operation_driver
      procedure :: last_reader_of          ! the step a datum is last read at
      procedure :: released_after          ! the data releasable after a step
      procedure :: released_at             ! the data whose last reader is one step
+     procedure :: expired_at              ! released_at with the step's outputs nothing reads
      procedure, private :: neighbourhood
 
   end type driver
@@ -698,10 +718,7 @@ contains
     integer, intent(out), optional :: executed
 
     class(operation), allocatable :: rule
-    class(field)    , allocatable :: value, stored
-    type(binding)   , allocatable :: inputs(:)
-    integer, allocatable :: reads(:), writes(:)
-    integer :: k, v, i, num_inputs
+    integer :: k, v
 
     if (.not. allocated(this % stored_pairing)) then
        error stop 'operation_driver: a driver is paired with its data before it evaluates'
@@ -710,63 +727,124 @@ contains
     if (this % complete()) return
 
     k = this % completed_steps + 1
-
     v = this % visiting(k)
     call this % stored_pairing % rule_at(v, rule)
 
     ! A VERTEX STORING NO RULE STILL OCCUPIES A STEP. It computes
     ! nothing, but the arcs entering it are reads like any other,
     ! so a datum's last reader may be located there and the
-    ! lifetimes below must be resolved at this step as well.
-    if (allocated(rule)) then
-
-       ! what the rule reads
-       call this % neighbourhood(FIRST_PART, v, .true., reads)
-       ! THE RULE'S ARGUMENT k IS THE DATUM AT THE k-TH VERTEX IT
-       ! READS. The binding passes that identity into the rule, so
-       ! a rule may receive a datum of its own type rather than
-       ! a bare vector of values. A vertex nothing has written yet
-       ! leaves its argument unbound.
-       if (size(reads) > rule % num_arguments()) then
-          error stop 'operation_driver: a rule declares an argument for every vertex it reads'
-       end if
-       allocate(inputs(size(reads)))
-       num_inputs = 0
-       do i = 1, size(reads)
-          call this % stored_pairing % datum_at(reads(i), stored)
-          if (.not. allocated(stored)) cycle
-          num_inputs = num_inputs + 1
-          inputs(num_inputs) = moved_binding(rule % argument(i), stored)
-       end do
-
-       if (num_inputs > 0) then
-          call rule % apply(input_graph, inputs(1:num_inputs), value)
-       else
-          call rule % apply(input_graph, output=value)
-       end if
-
-       ! what the rule writes: the data on the other side of it
-       if (allocated(value)) then
-          call this % neighbourhood(FIRST_PART, v, .false., writes)
-          do i = 1, size(writes)
-             call this % stored_pairing % assign(writes(i), value)
-          end do
-       end if
-
-       deallocate(inputs)
-       deallocate(rule)
-
-    end if
-
-    ! the data nothing reads again
-    do i = this % first_release(k), this % first_release(k + 1) - 1
-       call this % stored_pairing % release(this % release_data(i))
-    end do
-
-    this % completed_steps = k
+    ! lifetimes must be resolved at this step as well.
+    if (allocated(rule)) call applied_at(this, input_graph, v, rule)
+    call completed(this, k)
     if (present(executed)) executed = v
 
   end subroutine advance
+
+  !===================================================================!
+  ! ONE SCHEDULED VERTEX EVALUATED BY A RULE GIVEN FOR IT. The rule is
+  ! applied at the next vertex of the stored order without being
+  ! stored in the pairing: it is told its vertex and the vertices its
+  ! arguments read, and the step's writes and final reads are those of
+  ! advance. A rule whose transient references into a caller's storage
+  ! must not outlive the step is driven this way.
+  !===================================================================!
+
+  subroutine advance_with(this, input_graph, rule, executed)
+
+    class(driver)        , intent(inout) :: this
+    class(directed_graph), intent(in)    :: input_graph
+    class(vertex_rule)   , intent(inout) :: rule
+    integer, intent(out), optional :: executed
+
+    integer :: k, v
+
+    if (.not. allocated(this % stored_pairing)) then
+       error stop 'operation_driver: a driver is paired with its data before it evaluates'
+    end if
+    if (present(executed)) executed = 0
+    if (this % complete()) return
+
+    k = this % completed_steps + 1
+    v = this % visiting(k)
+    rule % vertex = v
+    call this % neighbourhood(FIRST_PART, v, .true., rule % reads)
+    if (rule % num_arguments() /= size(rule % reads)) call rule % declare_arguments(size(rule % reads))
+    call applied_at(this, input_graph, v, rule)
+    call completed(this, k)
+    if (present(executed)) executed = v
+
+  end subroutine advance_with
+
+  !===================================================================!
+  ! THE STEP KERNEL: the rule applied at vertex v to the data its
+  ! in-neighbours store, its result placed at the data it writes.
+  !===================================================================!
+
+  subroutine applied_at(this, input_graph, v, rule)
+
+    class(driver)        , intent(inout) :: this
+    class(directed_graph), intent(in)    :: input_graph
+    integer              , intent(in)    :: v
+    class(operation)     , intent(in)    :: rule
+
+    class(field)    , allocatable :: value, stored
+    type(binding)   , allocatable :: inputs(:)
+    integer, allocatable :: reads(:), writes(:)
+    integer :: i, num_inputs
+
+    ! what the rule reads
+    call this % neighbourhood(FIRST_PART, v, .true., reads)
+    ! THE RULE'S ARGUMENT k IS THE DATUM AT THE k-TH VERTEX IT
+    ! READS. The binding passes that identity into the rule, so
+    ! a rule may receive a datum of its own type rather than
+    ! a bare vector of values. A vertex nothing has written yet
+    ! leaves its argument unbound.
+    if (size(reads) > rule % num_arguments()) then
+       error stop 'operation_driver: a rule declares an argument for every vertex it reads'
+    end if
+    allocate(inputs(size(reads)))
+    num_inputs = 0
+    do i = 1, size(reads)
+       call this % stored_pairing % datum_at(reads(i), stored)
+       if (.not. allocated(stored)) cycle
+       num_inputs = num_inputs + 1
+       inputs(num_inputs) = moved_binding(rule % argument(i), stored)
+    end do
+
+    if (num_inputs > 0) then
+       call rule % apply(input_graph, inputs(1:num_inputs), value)
+    else
+       call rule % apply(input_graph, output=value)
+    end if
+
+    ! what the rule writes: the data on the other side of it
+    if (allocated(value)) then
+       call this % neighbourhood(FIRST_PART, v, .false., writes)
+       do i = 1, size(writes)
+          call this % stored_pairing % assign(writes(i), value)
+       end do
+    end if
+
+  end subroutine applied_at
+
+  !===================================================================!
+  ! Step k completed: the data nothing reads again are released and
+  ! the position advances.
+  !===================================================================!
+
+  subroutine completed(this, k)
+
+    class(driver), intent(inout) :: this
+    integer      , intent(in)    :: k
+
+    integer :: i
+
+    do i = this % first_release(k), this % first_release(k + 1) - 1
+       call this % stored_pairing % release(this % release_data(i))
+    end do
+    this % completed_steps = k
+
+  end subroutine completed
 
   !===================================================================!
   ! THE STEP A DATUM IS LAST READ AT. Zero records that no rule reads
@@ -815,6 +893,29 @@ contains
     if (step < 1 .or. step >= size(this % first_release)) return
     vertices = this % release_data(this % first_release(step):this % first_release(step + 1) - 1)
   end function released_at
+
+  !===================================================================!
+  ! THE DATA WHOSE LIFETIME ENDS AT ONE STEP: its final reads, then
+  ! the data the step's vertex writes that no rule reads. An output
+  ! without a reader is complete once its own step has consumed it,
+  ! and a caller retaining outputs decides for itself whether to keep
+  ! it; the schedule states only that nothing later reads it.
+  !===================================================================!
+
+  function expired_at(this, step) result(vertices)
+    class(driver), intent(in) :: this
+    integer, intent(in) :: step
+    integer, allocatable :: vertices(:)
+    integer, allocatable :: writes(:)
+    integer :: i
+    vertices = this % released_at(step)
+    if (.not. allocated(this % visiting)) return
+    if (step < 1 .or. step > size(this % visiting)) return
+    call this % neighbourhood(FIRST_PART, this % visiting(step), .false., writes)
+    do i = 1, size(writes)
+       if (this % last_reader(writes(i)) == 0) vertices = [vertices, writes(i)]
+    end do
+  end function expired_at
 
   !===================================================================!
   ! THE OPERATION INTERFACE IS NOT THE TRAVERSAL. A driver reads its

@@ -52,6 +52,8 @@ program lifetime
        & listed_set_representation
   use map_set           , only : set_map
   use map_inclusion     , only : inclusion_map, declared_subobject
+  use token_identity    , only : token, next_token
+  !$ use omp_lib        , only : omp_get_num_threads
 
   implicit none
 
@@ -169,6 +171,59 @@ program lifetime
   end block value_block
 
   !===================================================================!
+  ! D . SERIALS ARE A BIJECTION ONTO A CONTIGUOUS RANGE.
+  !
+  ! After s0 the next n calls of next_token return the serials
+  ! s0+1, ..., s0+n, each exactly once: in call order when the calls
+  ! are serial, and as a set when the calls are made by two threads
+  ! at once. The concurrent loop is the serial loop in a build
+  ! without -fopenmp; the thread count observed is printed.
+  !===================================================================!
+
+  serial_block: block
+
+    integer, parameter :: num_tokens = 4096, num_segments = 8
+    type(token) :: before, tokens(num_tokens)
+    integer :: serial_before, i, segment, num_threads, length
+    logical :: in_order
+
+    before = next_token()
+    serial_before = before % serial_number()
+    do i = 1, num_tokens
+       tokens(i) = next_token()
+    end do
+    in_order = .true.
+    do i = 1, num_tokens
+       in_order = in_order .and. tokens(i) % serial_number() == serial_before + i
+    end do
+    call check('D  serial calls return consecutive serials in call order', in_order)
+    call check('D  and every token matches itself and no other', &
+         & tokens(1) % matches(tokens(1)) .and. .not. tokens(1) % matches(tokens(2)) &
+         & .and. .not. tokens(num_tokens) % matches(tokens(1)))
+
+    before = next_token()
+    serial_before = before % serial_number()
+    length = num_tokens / num_segments
+    num_threads = 1
+    !$omp parallel num_threads(2)
+    !$omp single
+    !$ num_threads = omp_get_num_threads()
+    !$omp end single
+    !$omp do private(i)
+    do segment = 1, num_segments
+       do i = 1, length
+          tokens((segment - 1) * length + i) = next_token()
+       end do
+    end do
+    !$omp end do
+    !$omp end parallel
+    write(*,'(1x,a,i0,a)') 'D  concurrent allocation over ', num_threads, ' thread(s)'
+    call check('D  concurrent calls return each serial of the range exactly once', &
+         & bijective(tokens, serial_before))
+
+  end block serial_block
+
+  !===================================================================!
 
   if (failures .eq. 0) then
      print *, ''
@@ -231,6 +286,35 @@ contains
     deallocate(a, b, s, t)
 
   end subroutine declare_and_die
+
+  !===================================================================!
+  ! Whether the serials of tokens are exactly serial_before+1, ...,
+  ! serial_before+size(tokens), each once.
+  !===================================================================!
+
+  logical function bijective(tokens, serial_before)
+
+    type(token), intent(in) :: tokens(:)
+    integer    , intent(in) :: serial_before
+
+    logical :: assigned(size(tokens))
+    integer :: i, serial
+
+    assigned = .false.
+    bijective = .true.
+    do i = 1, size(tokens)
+       serial = tokens(i) % serial_number() - serial_before
+       if (serial < 1 .or. serial > size(tokens)) then
+          bijective = .false.
+       else if (assigned(serial)) then
+          bijective = .false.
+       else
+          assigned(serial) = .true.
+       end if
+    end do
+    bijective = bijective .and. all(assigned)
+
+  end function bijective
 
   subroutine check(label, passes)
 

@@ -130,6 +130,53 @@ Interleaving is supported; concurrent threads are not certified. Diagnostic
 closed before `advance` returns. Bounded reverse-memory algorithms remain
 separate architectural work.
 
+## Concurrency prerequisites
+
+Concurrent executions are not yet certified: no acceptance case runs two
+executions on two threads, and the application-wide state listed below
+is still shared. What exists is the build option and the three library
+synchronisations that precede such a case.
+
+`OPENMP=yes ./build.sh` and `OPENMP=yes ./application/build.sh` compile
+with `-fopenmp` and link `libgomp`; the suite Makefiles read the same
+variable from the environment, so a test build must use the setting of
+the library it links. The default build omits the flag: every `!$omp`
+directive and `!$` sentinel line is then a comment, and the serial
+statements are the fallback. The serial build's demonstration output is
+byte-identical to that of commit `aebe1f2`, and the OpenMP build under
+`OMP_NUM_THREADS=1` and `OMP_NUM_THREADS=2` reproduces the same bytes
+for every demonstration of the comparison set
+(`artifacts/remaining-work-2026-09-11/r11/evidence-slices-1-4/`).
+
+Three library states are synchronised. The version of every coarse
+statement of a `multigrid` is that object's own count (`num_statements`),
+compared only by its coarse minimizer, so two objects have independent
+sequences. The identity serial of `next_token` is incremented and read
+in one `!$omp atomic capture`, so two threads never receive one serial.
+The counted-storage registry (`doc/topology-ownership.md`) performs
+acquisition, binding and release inside one named critical region, the
+owner's `clear` outside it. Owner reads take no lock.
+
+Runtime and compiler requirements of the OpenMP build with GNU Fortran
+15: `libgomp` at run time; `-fopenmp` implies `-frecursive` and
+`-pthread`, so every local array of every procedure is on its thread's
+stack and `OMP_STACKSIZE` must cover the largest automatic array of an
+execution (the dense factorisation is allocatable, not automatic). The
+library's debug flags include `-ffpe-trap=invalid,overflow,underflow`;
+the trap mask is inherited by every thread, so a non-finite value in one
+execution raises `SIGFPE` and terminates the process, whereas the solvers
+already return `SOLVE_NONFINITE` through `ieee_is_finite` checks. A
+concurrent build must either omit the trap for the library or accept
+that a trapped execution is not isolated. `error stop` from any thread
+terminates the process; three numerical failure paths of the application
+still stop rather than return a failed result.
+
+Still shared and therefore not thread-safe: the `util_tally` accounting
+stack and amounts, output paths chosen by the caller, the six write
+statements reachable from an execution, the gmsh loader's unit selection
+by `inquire`, and the malloc counters of the benchmark instrumentation.
+`verbosity` must be set before the first parallel region.
+
 ## Solver restriction
 
 A partitioned temporal solve constrains the residual to one member of the

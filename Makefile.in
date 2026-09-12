@@ -12,6 +12,11 @@ DEBUG    = yes
 PROFILE  = no
 OPTIMIZE = no
 
+# OpenMP: compiles the !$omp directives and !$ sentinel lines and links
+# libgomp. Read from the environment so that every suite Makefile that
+# includes this file compiles against the library with the same flag.
+OPENMP  ?= no
+
 # libraries
 LAPACK   = no
 MPI      = no
@@ -87,6 +92,12 @@ ifeq ($(COMPILER),gnu)
   # Optimization
   ifeq ($(OPTIMIZE),yes)
     F90FLAGS += -O3
+  endif
+
+  # OpenMP: -fopenmp implies -frecursive and -pthread
+  ifeq ($(OPENMP),yes)
+    F90FLAGS += -fopenmp
+    LDFLAGS  += -fopenmp
   endif
 endif
 

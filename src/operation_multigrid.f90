@@ -57,8 +57,6 @@ module operation_multigrid
 
   private
 
-  ! a version number for every coarse statement made
-  integer, save :: statements_made = 0
   public :: multigrid
 
   type, extends(minimizer) :: multigrid
@@ -68,6 +66,11 @@ module operation_multigrid
 
      integer, allocatable :: aggregates(:)
      integer :: nblocks = 0
+
+     ! the number of coarse statements this object has made: the
+     ! version of the k-th is k, compared only by this object's coarse
+     ! minimizer, so the sequence is the object's and not the module's
+     integer :: num_statements = 0
 
    contains
 
@@ -202,8 +205,8 @@ contains
     block_statement = stencil(rows, columns, weights, zeros, label='block statement')
     ! versioned, so a direct coarse solver factorises it once and
     ! not once per cycle
-    statements_made = statements_made + 1
-    call block_statement % versioned(statements_made)
+    this % num_statements = this % num_statements + 1
+    call block_statement % versioned(this % num_statements)
 
     ! The smoother is a STRUCTURED one - jacobi, gauss-seidel - so it
     ! is passed the dependent-variable coupling explicitly. On this

@@ -32,6 +32,7 @@ contains
   subroutine clear_test_cell(this)
     class(counted_test_cell), intent(inout) :: this
     if (allocated(this % payload)) deallocate(this % payload)
+    !$omp atomic
     num_cleared = num_cleared + 1
   end subroutine clear_test_cell
 
@@ -61,6 +62,7 @@ program topology_ownership
   use view_level, only : level_storage, level_num_members, level_member, level_is_leaf
   use topology_statistics, only : fibre_statistics, sum_context_members, graph_holder, &
        & counted_test_cell, reference_holder, num_cleared, hierarchy_holder
+  !$ use omp_lib, only : omp_get_num_threads
 
   implicit none
 
@@ -73,6 +75,7 @@ program topology_ownership
   call check_incidence()
   call check_orientation()
   call check_counted_storage()
+  call check_registry_consistency()
   call check_hierarchy_ownership()
   if (num_failures /= 0) error stop 'topology ownership laws failed'
   print *, 'All topology ownership laws passed.'
@@ -462,6 +465,89 @@ contains
     call assert_all(second % num_owners() == 1 .and. replacement % num_owners() == 1, &
          & 'finalizing a stale observer releases nothing')
   end subroutine check_counted_storage
+
+  !-------------------------------------------------------------------!
+  ! The registry: n sole owners released clear n cells; n acquisitions
+  ! from that free list address n distinct cells with one owner each;
+  ! n bindings on one cell made and released return its owner count
+  ! to one, and n assignments over sole owners clear their n cells.
+  ! The loops run on two threads when built with -fopenmp and are the
+  ! serial loops otherwise; the thread count observed is printed.
+  !-------------------------------------------------------------------!
+  subroutine check_registry_consistency()
+    integer, parameter :: num_cells = 256
+    type(counted_test_cell) :: template
+    type(counted_reference), allocatable :: references(:)
+    type(counted_reference) :: shared
+    class(counted_storage), pointer :: cell_i, cell_j
+    integer :: cleared_before, i, j, num_threads
+    logical :: distinct, sole_owners, bound
+
+    cleared_before = num_cleared
+    allocate(references(num_cells))
+    do i = 1, num_cells
+       call references(i) % acquire(template)
+    end do
+    deallocate(references)
+    call assert_all(num_cleared == cleared_before + num_cells, 'releasing n sole owners clears n cells')
+
+    allocate(references(num_cells))
+    num_threads = 1
+    !$omp parallel num_threads(2)
+    !$omp single
+    !$ num_threads = omp_get_num_threads()
+    !$omp end single
+    !$omp do
+    do i = 1, num_cells
+       call references(i) % acquire(template)
+    end do
+    !$omp end do
+    !$omp end parallel
+    print '(1x,a,i0,a)', 'registry operations over ', num_threads, ' thread(s)'
+    distinct = .true.
+    sole_owners = .true.
+    do i = 1, num_cells
+       sole_owners = sole_owners .and. references(i) % live() .and. references(i) % num_owners() == 1
+       cell_i => references(i) % storage()
+       do j = i + 1, num_cells
+          cell_j => references(j) % storage()
+          if (associated(cell_i, cell_j)) distinct = .false.
+       end do
+    end do
+    call assert_all(distinct, 'n acquisitions from a free list of n cells address n distinct cells')
+    call assert_all(sole_owners .and. num_cleared == cleared_before + num_cells, &
+         & 'each acquired cell has one owner and none was cleared')
+
+    call shared % acquire(template)
+    bound = .true.
+    !$omp parallel do num_threads(2) reduction(.and.:bound)
+    do i = 1, num_cells
+       bound = bound .and. bound_and_released(shared)
+    end do
+    !$omp end parallel do
+    call assert_all(bound .and. shared % num_owners() == 1 .and. num_cleared == cleared_before + num_cells, &
+         & 'n bindings made and released on one cell return its owner count to one')
+
+    !$omp parallel do num_threads(2)
+    do i = 1, num_cells
+       references(i) = shared
+    end do
+    !$omp end parallel do
+    call assert_all(shared % num_owners() == num_cells + 1 .and. num_cleared == cleared_before + 2 * num_cells, &
+         & 'n assignments over sole owners bind n more owners and clear n cells')
+    deallocate(references)
+    call assert_all(shared % num_owners() == 1 .and. num_cleared == cleared_before + 2 * num_cells, &
+         & 'finalizing the n owners leaves the original owner and clears nothing')
+  end subroutine check_registry_consistency
+
+  ! Bind a local reference to the shared cell and release it on return.
+  logical function bound_and_released(shared)
+    type(counted_reference), intent(in) :: shared
+    type(counted_reference) :: local_reference
+    local_reference = shared
+    bound_and_released = local_reference % live() .and. local_reference % num_owners() >= 2 .and. &
+         & associated(local_reference % storage(), shared % storage())
+  end function bound_and_released
 
   type(counted_reference) function reference_result(source)
     type(counted_reference), intent(in) :: source

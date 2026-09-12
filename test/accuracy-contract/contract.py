@@ -103,7 +103,7 @@ def parse_table(text):
                        "f": [number(t) for t in tokens], "status": status,
                        "dissipation": None, "state": None, "blocks": [], "transpose": None,
                        "mode": None, "semi": None, "velocity": None, "pressure": None,
-                       "divergence": None}
+                       "divergence": None, "functional_error": {}, "indicators": {}}
             rows[current["label"]] = current
             continue
         if current is None:
@@ -120,6 +120,20 @@ def parse_table(text):
         if m:
             current["blocks"].append({"block": int(m.group(1)), "norm": number(m.group(2)),
                                       "initial": number(m.group(3)), "converged": m.group(4) == "T"})
+            continue
+        m = re.match(r"^      functional error, (\S+): estimate\s+(\S+) residual\s+(\S+) quadrature\s+(\S+)"
+                     r" scale\s+(\S+) transfer\s+(\S+) enriched (\S+)", line)
+        if m:
+            current["functional_error"][m.group(1)] = {
+                "estimate": number(m.group(2)), "residual": number(m.group(3)),
+                "quadrature": number(m.group(4)), "scale": number(m.group(5)),
+                "transfer": number(m.group(6)), "enriched": m.group(7)}
+            continue
+        m = re.match(r"^      indicator, (\S+), step (\d+): t\s+(\S+) h\s+(\S+) eta\s+(\S+)", line)
+        if m:
+            current["indicators"].setdefault(m.group(1), []).append(
+                {"step": int(m.group(2)), "t": number(m.group(3)), "h": number(m.group(4)),
+                 "eta": number(m.group(5))})
             continue
         m = re.match(r"^      tangent against adjoint over the table, relative\s+(\S+)", line)
         if m:
@@ -183,8 +197,55 @@ def parse_order_demo(text):
 PARSERS = {"table": parse_table, "sensitivity": parse_sensitivity, "order_demo": parse_order_demo}
 
 
-def quantity_of(row, record, quantity):
-    """The number a quantity names in one row, or None when it is absent."""
+def functional_value(row, word):
+    """The value F_h of the functional a configured word names, or None."""
+    if word == "energy":
+        return row["f"][0] if row.get("f") else None
+    if word == "dissipation":
+        return row["dissipation"][0] if row.get("dissipation") else None
+    values = row.get(word)
+    return values[0] if values else None
+
+
+def interval_sum(indicators, a, b):
+    """The sum of |eta_k| over the steps inside [a, b]; an instant within half
+    a step of a bound lies on it (the application's coarsening rule)."""
+    if not indicators:
+        return None
+    return sum(abs(i["eta"]) for i in indicators
+               if i["t"] - i["h"] >= a - i["h"] / 2 and i["t"] <= b + i["h"] / 2)
+
+
+def quantity_of(row, record, quantity, check=None, paired=None):
+    """The number a quantity names in one row, or None when it is absent.
+    The functional-error quantities read `functional error` and `indicator`
+    lines: estimate:<word>, scale:<word>, transfer:<word>, effectivity:<word>
+    = eta / (F - F_h) with F the declared reference of the word (infinite
+    where F_h = F), and localization:<word> = log2 of the sum of |eta_k|
+    over the check's interval against the same sum on the paired row."""
+    if ":" in quantity:
+        kind, word = quantity.split(":", 1)
+        estimate = row.get("functional_error", {}).get(word)
+        if estimate is None:
+            return None
+        if kind in ("estimate", "scale", "transfer"):
+            return estimate[kind]
+        if kind == "effectivity":
+            value = functional_value(row, word)
+            if value is None:
+                return None
+            error = declared.FUNCTIONAL_REFERENCES[word] - value
+            return estimate["estimate"] / error if error != 0.0 else math.inf
+        if kind == "localization":
+            if paired is None or check is None:
+                return None
+            a, b = check["interval"]
+            own = interval_sum(row["indicators"].get(word), a, b)
+            other = interval_sum(paired["indicators"].get(word), a, b)
+            if own is None or other is None or own <= 0.0 or other <= 0.0:
+                return None
+            return math.log2(own / other)
+        raise ValueError(quantity)
     if quantity == "E":
         return row["f"][0] if row.get("f") else None
     if quantity == "dE":
@@ -255,7 +316,24 @@ class Executor:
 
 # ----------------------------------------------------------------- evaluation
 
-def order_of(check, grids, values, references, terms, scale):
+def resolution_of(check, row, value):
+    """Half a unit of the last printed digit of a quantity: propagated through
+    the quotient for an effectivity, eta / (F - F_h), whose two operands are
+    printed; the quantity's own print resolution otherwise."""
+    quantity = check["quantity"]
+    if quantity.startswith("effectivity:"):
+        word = quantity.split(":", 1)[1]
+        estimate = row["functional_error"][word]["estimate"]
+        f = functional_value(row, word)
+        error = abs(declared.FUNCTIONAL_REFERENCES[word] - f)
+        if error == 0.0:
+            return math.inf
+        return (print_resolution(estimate, check["digits"])
+                + abs(value) * print_resolution(f, check["digits"])) / error
+    return print_resolution(value, check["digits"])
+
+
+def order_of(check, grids, values, references, terms, scale, resolutions):
     """Status and diagnostics of an order declaration over the grids."""
     p = check["order"]
     result = {"errors": [], "pairwise_slopes": [], "status": None}
@@ -280,8 +358,7 @@ def order_of(check, grids, values, references, terms, scale):
         return result
     ratio = hs[-2] / hs[-1]
     delta = window(ratio)
-    floors = [print_resolution(v, check["digits"]) + gamma(n) * s
-              for v, n, s in zip(values, terms, scale)]
+    floors = [r + gamma(n) * s for r, n, s in zip(resolutions, terms, scale)]
     widening = (floors[-2] / errors[-2] + floors[-1] / errors[-1]) / math.log(ratio)
     bias = 0.0
     if isinstance(check["reference"], dict):
@@ -368,10 +445,17 @@ def evaluate_check(check, case, rows, records):
         outcome["status"] = "pass"
         outcome["message"] = "every block's imbalance is within tolerance x initial norm"
         return outcome
-    values, terms, scales, references = [], [], [], []
+    values, terms, scales, references, resolutions = [], [], [], [], []
     for label, _, n in grids:
         row = rows[label]
-        value = quantity_of(row, records[label], check["quantity"])
+        paired = None
+        if check.get("paired"):
+            paired = rows.get(check["paired"] + label[label.index("="):])
+            if paired is None:
+                outcome["status"] = "missing_result"
+                outcome["message"] = f"no paired {check['paired']} run for {label}"
+                return outcome
+        value = quantity_of(row, records[label], check["quantity"], check, paired)
         if value is None:
             outcome["status"] = "missing_result"
             outcome["message"] = f"{check['quantity']} absent from {label}"
@@ -382,6 +466,7 @@ def evaluate_check(check, case, rows, records):
             return outcome
         values.append(value)
         terms.append(n)
+        resolutions.append(resolution_of(check, row, value))
         if kind == "order":
             reference = check["reference"]
             if isinstance(reference, dict):
@@ -396,7 +481,7 @@ def evaluate_check(check, case, rows, records):
     if kind == "order":
         outcome["order"] = check["order"]
         outcome["references"] = references
-        outcome.update(order_of(check, grids, values, references, terms, scales))
+        outcome.update(order_of(check, grids, values, references, terms, scales, resolutions))
         return outcome
     if kind == "floor":
         outcome["thresholds"] = []

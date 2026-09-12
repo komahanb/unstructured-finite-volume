@@ -326,6 +326,33 @@ staged step, fields read their extent from the graph that names their
 support, and one continuous law placed on two point graphs keeps two
 discrete-domain identities.
 
+## Functional discretization error
+
+`gti_chain % functional_error` estimates F(Q_exact) - F_h(Q_h) for every
+functional of a marched chain from the retained coarse state alone: an
+enriched chain of blocks (`enriched_family`: the family of order p + 1 on
+the same instants, the identity prolongation of the instant jets, the
+history of each enriched block read from the coarse chain by
+`transferred`) is built by `block_from` at the coarse state, no primal
+solve is performed, the enriched costates lambda+ are solved in descending
+block order by `solve_linear` transposed at the frozen state with each
+child's costate added on the transfer rows as the reverse pass does, and
+the estimate is eta = - lambda+^T R+(P Q_h) + [F+(P Q_h) - F_h(Q_h)], the
+residual part per step (the rows between two arriving instants) and the
+quadrature part per step (the enriched family's complete rule against the
+coarse rule). Class: asymptotically exact, I = eta / (F - F_h) = 1 +
+O(h^(min(p+, 2p) - p)), order 1 in |I - 1| for p+ = p + 1; not a bound. The
+`functional_error_estimate` carries the estimate, both parts, the scale
+S = sum |w_k f(Q_k)|, F_h and F+(P Q_h), the largest fixed-row residual
+of the enriched blocks (the transfer identity, zero under a consistent
+prolongation) and the indicators by step. The coarse chain's costates are
+not read: the enriched rows are differently scaled equations (a BDF row
+against an Adams row), so no prolongation of lambda_h onto them exists;
+the estimator's costates are its own, solved once per functional. The
+application prints the estimate with `check = functional_error` and the
+indicators with `indicators`; `test/accuracy-contract` measures the
+effectivity and the localization (G01-G05, X13-X15).
+
 ## Elimination storage
 
 An `elimination` over retained unknowns K and eliminated unknowns E states

@@ -129,6 +129,26 @@ admitted numerical reference and the rejection case R03 a refused one.
   tolerance 1e-12 satisfies |tangent - quotient| <= (tolerance + u) |F| /
   delta with delta = 1e-6, the delta^2 truncation term being far below it.
 
+## Functional discretization error
+
+The estimator of `gti_chain % functional_error` (application README,
+"The functional discretization error") is measured against the analytic
+references: quantity `effectivity:energy` = eta / (E_REF - E_h) declared
+at reference 1, order 1 (enrichment A leaves the coarse block's first own
+instant fixed in the enriched block at its local order p + 1, so
+|I - 1| = O(h) whatever the order of F+); `estimate:energy` = eta at the
+order of E_h - E against 0. The floor of an effectivity is the print
+resolution of eta and of E_h propagated through the quotient, divided by
+|E_REF - E_h|. `localization:energy` reads the step indicators of a
+`coarsened` grid (pairs of uniform steps merged inside an interval) and of
+the paired uniform run of the same instant count, and is log2 of the ratio
+of the sums of |eta_k| over the interval, declared at reference p, order 1:
+an indicator is C(t) h_k^(p+1), and the two transition steps at the bounds
+contribute O(h) of the sum. Where p+ = p (the BDF-2 energy at order 3
+estimated by BDF-3, the BDF-4 energy at order 5 by BDF-5) the estimate is
+a heuristic and only the estimate's own order is declared (exploratory
+X13, X14, effectivities recorded in their descriptions).
+
 ## Declared limitations at 3fb9c97
 
 - L01 (resolved by R07 slice 3): Adams-Moulton 4 design derivatives and

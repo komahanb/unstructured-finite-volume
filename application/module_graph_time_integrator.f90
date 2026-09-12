@@ -117,7 +117,7 @@ module gti_configuration
      character(len=16)  :: initial_field    = 'constant'
      character(len=16)  :: export           = 'none'
      character(len=128) :: export_path      = 'field'
-     character(len=16)  :: check            = 'none'
+     character(len=64)  :: check            = 'none'
      real(dp)          :: tolerance           = 1.0e-12_dp
      character(len=16) :: tolerance_criterion = 'relative'
 
@@ -131,6 +131,12 @@ module gti_configuration
      ! the value the criterion read before it had a key of its own.
      character(len=32) :: adaptive_check       = 'step_doubling'
      real(dp)          :: grid_stationarity_tolerance = 1.0e-12_dp
+
+     ! THE COARSENED GRID (grid = coarsened): the uniform grid of
+     ! instants instants whose steps inside the interval "a b" are
+     ! merged in pairs, the grid of the localized functional-error
+     ! case; instants is set by the result.
+     character(len=64) :: coarsened_interval   = '0.0 0.0'
      character(len=16) :: iteration_criterion = 'by_rate'
      integer           :: max_iterations      = 100
      integer           :: higher_order_jacobian_product = 1
@@ -347,6 +353,8 @@ contains
        cfg % adaptive_check = value
     case ('grid_stationarity_tolerance')
        read(value, *) cfg % grid_stationarity_tolerance
+    case ('coarsened_interval')
+       cfg % coarsened_interval = value
     case ('iteration_criterion')
        cfg % iteration_criterion = value
     case ('krylov_restart')
@@ -4800,9 +4808,12 @@ module gti_chain
   use gti_sweeps       , only : pass_of, pass_substitutions, forward_pass, reverse_pass
   use util_tally            , only : tally_order, tally_enter, tally_leave
   use gti_configuration     , only : at_horizon, at_block, at_stage
+  use view_level            , only : level_member
+  use graph_fractal         , only : graph
   implicit none
   private
   public :: chain_block, march_chain, chain_expansion, instant_components
+  public :: functional_error_estimate, functional_error
   public :: first_of, chain_derivative, asymmetry
   public :: multiset_count, multiset_rank, multiset_of, num_designs_of
   public :: chain_versions
@@ -4841,6 +4852,12 @@ module gti_chain
      real(dp)              :: fraction = 1.0_dp
      logical               :: counted = .true.
      type(imbalance) :: final_imbalance
+     ! the quadrature of the block's functional: the family's rule on
+     ! the instants its rows read (false), or the complete rule of the
+     ! enriched functional (true, functional_error); and the first
+     ! step the block integrates, zero for the chain's rule in owned
+     logical               :: complete_quadrature = .false.
+     integer               :: integrates_from = 0
   end type chain_block
   type :: sink_costates
      integer , allocatable :: fixed_rows(:), last(:), interior(:)
@@ -4849,6 +4866,26 @@ module gti_chain
      real(dp) :: costate   = 0.0_dp
      real(dp) :: unread    = 0.0_dp
   end type sink_costates
+  !===================================================================!
+  ! THE ESTIMATE OF ONE FUNCTIONAL'S DISCRETIZATION ERROR
+  ! F(Q_exact) - F_h(Q_h) (functional_error): the estimate eta, its
+  ! residual part - lambda+^T R+(P Q_h) and its quadrature part
+  ! F+(P Q_h) - F_h(Q_h); the scale S = sum |w_k f(Q_k)| of the
+  ! relative criterion |eta| <= tol S; the values F_h(Q_h) and
+  ! F+(P Q_h); the largest fixed-row residual of the enriched blocks
+  ! (zero to roundoff under a consistent prolongation); and the
+  ! indicator eta_k of every coarse step, summing to the estimate.
+  !===================================================================!
+  type :: functional_error_estimate
+     real(dp) :: estimate        = 0.0_dp
+     real(dp) :: residual_part   = 0.0_dp
+     real(dp) :: quadrature_part = 0.0_dp
+     real(dp) :: scale           = 0.0_dp
+     real(dp) :: value           = 0.0_dp
+     real(dp) :: enriched_value  = 0.0_dp
+     real(dp) :: transfer_defect = 0.0_dp
+     real(dp), allocatable :: by_step(:)
+  end type functional_error_estimate
   !===================================================================!
   ! THE TANGENT TOWER OF ONE BLOCK: the derivatives of its state along
   ! every multiset of designs, of every order, w(unknown, multiset,
@@ -5716,6 +5753,10 @@ contains
        from = to + 1
        return
     end if
+    if (chain(b) % integrates_from > 0) then
+       from = chain(b) % integrates_from
+       return
+    end if
     from = 1
     if (b > 1) then
        if (chain(b - 1) % counted) from = 1 + chain(b) % given
@@ -6278,16 +6319,17 @@ contains
     type(derivative_terms), intent(in)  :: steps(:)
     integer , allocatable , intent(out) :: offset(:)
     type(derivative_terms), allocatable, intent(out) :: weight(:)
+    integer, allocatable :: instant(:)
     integer :: s, i, width, nodes
     if (.not. b % staged) then
-       call b % scheme % step_quadrature(steps, k, weight)
+       call b % scheme % step_quadrature(steps, k, weight, complete=b % complete_quadrature, instant=instant)
        nodes = size(weight)
        allocate(offset(nodes))
        do i = 1, nodes
-          if (k - i + 1 < 1) then
+          if (instant(i) < 1 .or. instant(i) > size(b % instants_at)) then
              error stop 'gti_chain: a quadrature reads instants the block stores'
           end if
-          offset(i) = b % instants_at(k - i + 1)
+          offset(i) = b % instants_at(instant(i))
        end do
        return
     end if
@@ -6614,8 +6656,15 @@ contains
        parts(0:n) = parts(0:n) - split(0:n)
     end do
   end function lagrangian_term
+  !===================================================================!
+  ! The block's share of a functional's derivative along s (and the
+  ! open design), summed over the steps the block integrates; by_step
+  ! returns the share of each step of the block and magnitude_by_step
+  ! the sum of the absolute values of its terms, the scale S of the
+  ! functional-error criterion.
+  !===================================================================!
   real(dp) function functional_along(chain, b, rule, degrees, design, s, open, w, u, nd, &
-       & node_measure) result(part)
+       & node_measure, by_step, magnitude_by_step) result(part)
     type(chain_block)   , intent(in) :: chain(:)
     integer             , intent(in) :: b, degrees, s(:), open, nd
     type(expression)    , intent(in) :: rule
@@ -6623,10 +6672,12 @@ contains
     type(tangent_tower), intent(in) :: w(:)
     real(dp), intent(in) :: u(:,:,:)
     real(dp), intent(in), optional   :: node_measure(:)
+    real(dp), allocatable, intent(out), optional :: by_step(:), magnitude_by_step(:)
     type(derivative_terms) :: t
     real(dp), allocatable :: state_seed(:,:), step_seed(:,:), nu_seed(:)
     integer , allocatable :: offset(:)
     type(derivative_terms), allocatable :: beta(:), steps(:)
+    real(dp) :: term
     integer :: n, full, k, node, from, to, point, pt, stride
     n      = size(s) + merge(1, 0, open > 0)
     full   = 2**n - 1
@@ -6634,6 +6685,8 @@ contains
     associate (u1 => degrees); end associate
     call seeds_of(chain, b, s, open, .true., w, u, nd, state_seed, step_seed, nu_seed)
     part = 0.0_dp
+    if (present(by_step)) allocate(by_step(size(chain(b) % dt)), source=0.0_dp)
+    if (present(magnitude_by_step)) allocate(magnitude_by_step(size(chain(b) % dt)), source=0.0_dp)
     call owned(chain, b, from, to)
     steps = stepped_terms(chain(b), step_seed, n, 0)
     do k = from, to
@@ -6643,7 +6696,10 @@ contains
              point = offset(pt) + (node - 1) * stride
              t = beta(pt) * measure_terms(chain(b), k, node, n, 0, step_seed, node_measure) &
                   & * point_terms(rule, stride, design, point, n, 0, state_seed, nu_seed)
-             part = part + coefficient(t, full)
+             term = coefficient(t, full)
+             part = part + term
+             if (present(by_step)) by_step(k) = by_step(k) + term
+             if (present(magnitude_by_step)) magnitude_by_step(k) = magnitude_by_step(k) + abs(term)
           end do
        end do
     end do
@@ -6880,6 +6936,216 @@ contains
     end do
   end function halved
 
+  !===================================================================!
+  ! THE FUNCTIONAL DISCRETIZATION-ERROR ESTIMATOR. For the discrete
+  ! problem R(Q) = 0 with functional F_h and the code's Lagrangian
+  ! L = F_h - lambda^T R, an enriched problem R+ : V+ -> Y+ with
+  ! functional F+ and a prolongation P : V_h -> V+ gives, with
+  ! e = Q+ - P Q_h and the enriched costate J+(P Q_h)^T lambda+ =
+  ! dF+/dQ (P Q_h)^T,
+  !
+  !    F(Q_exact) - F_h(Q_h) = [F - F+(Q+)] + eta_R + eta_Q + O(|e|^2),
+  !    eta_R = - lambda+^T R+(P Q_h),   eta_Q = F+(P Q_h) - F_h(Q_h),
+  !
+  ! and the estimate is eta = eta_R + eta_Q. Class: with p the order
+  ! of F_h and p+ the order of F+, the effectivity eta / (F - F_h) is
+  ! 1 + O(h^(min(p+, 2p) - p)): asymptotically exact, order 1 in the
+  ! effectivity for p+ = p + 1. It is not a bound: no inequality with
+  ! a known constant is proved and none is claimed. Where p+ = p (a
+  ! functional superconvergent to the enriched order) the estimate
+  ! is a heuristic.
+  !
+  ! Enrichment here: the same grid, the family enriched(b) of order
+  ! p + 1 on every configured block, P the identity on the instant
+  ! jets; the enriched block's history is its first history_depth+
+  ! instants read from the coarse chain, so the coarse block's own
+  ! first solved instants stay in [F - F+(Q+)] at their local order
+  ! p + 1. The enriched functional integrates the same steps as F_h
+  ! with the enriched family's complete rule (operation_family). The
+  ! startup block of a multistep family is rebuilt with its own
+  ! family at the coarse state, where R(Q_h) = 0 to the solver
+  ! tolerance: its history error is not estimated (declared). The
+  ! enriched costates are solved in descending block order against
+  ! the transposed linearization at P Q_h, each child's costate on
+  ! the transfer rows added to its owner's right side as in the
+  ! reverse pass; no primal solve is performed. Invalid input: an
+  ! enriched family whose block does not lie on the coarse instants
+  ! (the identity prolongation), or one enriched family per block
+  ! not supplied.
+  !===================================================================!
+
+  subroutine functional_error(chain, tower, enriched, physics, degrees, steps, design, functionals, &
+       & estimates, nodes, spatial_discretization_stencil, spatial_derivative_stencils, gauge_field, &
+       & node_measure, context)
+
+    class(march_context), optional, target, intent(inout) :: context
+    type(chain_block)     , intent(in) :: chain(:)
+    type(expansion)       , intent(in) :: tower
+    type(family_container), intent(in) :: enriched(:)
+    type(expression)      , intent(in) :: physics, functionals(:)
+    integer               , intent(in) :: degrees
+    class(grid)           , intent(in) :: steps
+    real(dp)              , intent(in) :: design
+    type(functional_error_estimate), allocatable, intent(out) :: estimates(:)
+    integer        , intent(in), optional :: nodes, gauge_field
+    type(stencil)  , intent(in), optional :: spatial_discretization_stencil
+    type(stencil)  , intent(in), optional :: spatial_derivative_stencils(:)
+    real(dp)       , intent(in), optional :: node_measure(:)
+
+    type(march_context), target :: local_context
+    class(march_context), pointer :: active
+    type(expansion) :: enriched_tower
+    type(family_container), allocatable :: every(:)
+    type(chain_block), allocatable :: plus(:)
+    type(tangent_tower), allocatable :: w(:), costate(:)
+    type(stored_field), allocatable :: frozen(:)
+    class(field), allocatable :: out
+    real(dp), allocatable :: block_steps(:), weights(:), fixed(:), rhs(:), one(:), r(:), u(:,:,:)
+    real(dp), allocatable :: lambda(:,:,:,:,:), share(:), coarse_share(:), magnitude(:)
+    integer , allocatable :: spans(:), versions(:)
+    logical , allocatable :: fixed_rows(:)
+    real(dp) :: part
+    integer :: nb, before, b, c, i, k, n, p, from, to, lo, hi, num_steps, step
+
+    active => local_context
+    if (present(context)) active => context
+    nb     = size(chain)
+    before = merge(1, 0, .not. chain(1) % counted)
+    if (size(enriched) /= nb - before) then
+       error stop 'gti_chain: one enriched family per configured block'
+    end if
+    allocate(every(nb), spans(nb), plus(nb), w(nb), costate(nb), versions(nb))
+    if (before == 1) allocate(every(1) % scheme, source=startup_family())
+    do b = 1 + before, nb
+       allocate(every(b) % scheme, source=enriched(b - before) % scheme)
+    end do
+    do b = 1, nb
+       spans(b) = size(chain(b) % instants_at)
+    end do
+    ! the enriched tower: the coarse tower's grid, block steps and
+    ! step weights with the enriched families
+    block_steps = tower_block_steps(tower, nb)
+    do k = 1, tower % num_designs()
+       if (tower % design_kind_of(k) == design_of_steps) call tower % design_value(k, weights)
+    end do
+    call enriched_tower % build(physics, every, spans, steps, 0, design, nodes, &
+         & spatial_discretization_stencil, weights=weights, block_steps=block_steps(2:), &
+         & spatial_derivative_stencils=spatial_derivative_stencils, gauge_field=gauge_field)
+    do b = 1, nb
+       if (chain(b) % staged .and. b > before) then
+          error stop 'gti_chain: the identity prolongation reads instant jets; a staged block stores stages'
+       end if
+       plus(b) % block_layout = chain(b) % block_layout
+       plus(b) % given        = every(b) % scheme % history_depth(degrees - 1)
+       plus(b) % primary      = every(b) % scheme % primary_degree(degrees - 1)
+       plus(b) % width        = chain(b) % width
+       allocate(plus(b) % scheme, source=every(b) % scheme)
+       plus(b) % staged       = marches_by_stages(every(b) % scheme, degrees)
+       plus(b) % dt           = chain(b) % dt
+       plus(b) % coarse_step  = chain(b) % coarse_step
+       plus(b) % fraction     = chain(b) % fraction
+       plus(b) % counted      = chain(b) % counted
+       plus(b) % complete_quadrature = .true.
+       call owned(chain, b, from, to)
+       plus(b) % integrates_from = from
+       call transfer_layout(plus, b)
+       fixed = transferred(chain, plus(b) % first, plus(b) % stride, plus(b) % given)
+       call built(enriched_tower, b, every(b) % scheme, physics, fixed, plus(b) % rows, &
+            & plus(b) % instants_at, context=active)
+       if (size(plus(b) % instants_at) /= size(chain(b) % instants_at)) then
+          error stop 'gti_chain: the identity prolongation places the enriched block on the coarse instants'
+       end if
+       if (any(plus(b) % instants_at /= chain(b) % instants_at)) then
+          error stop 'gti_chain: the identity prolongation places the enriched block on the coarse instants'
+       end if
+       if (plus(b) % rows % num_unknowns() /= size(chain(b) % state)) then
+          error stop 'gti_chain: the enriched block stores the coarse block''s unknowns'
+       end if
+       plus(b) % state = chain(b) % state
+       versions(b)     = active % next_version()
+    end do
+    ! the coarse instants: one indicator per coarse step
+    num_steps = (chain(nb) % last - 1) / chain(nb) % stride + 1
+    allocate(estimates(size(functionals)))
+    do i = 1, size(functionals)
+       allocate(estimates(i) % by_step(num_steps), source=0.0_dp)
+    end do
+    allocate(u(1, 1, 1), source=0.0_dp)
+    allocate(lambda(1, 1, 1, 1, 0:0), source=0.0_dp)
+    do i = 1, size(functionals)
+       do b = nb, 1, -1
+          n = plus(b) % rows % num_unknowns()
+          call costate_rows(plus, b, physics, functionals(i), degrees, design, [integer ::], w, lambda, u, 1, i, &
+               & node_measure, rhs)
+          do c = nb, b + 1, -1
+             do p = 1, size(plus(c) % source_at)
+                if (plus(c) % source_block(p) /= b) cycle
+                rhs(plus(c) % source_at(p)) = rhs(plus(c) % source_at(p)) + costate(c) % w(p, 1, 1)
+             end do
+          end do
+          call frozen_at(plus(b), design, frozen)
+          call solve_linear(plus(b) % rows, frozen, rhs, .true., versions(b), one, context=active)
+          if (allocated(costate(b) % w)) deallocate(costate(b) % w)
+          allocate(costate(b) % w(n, 1, 1))
+          costate(b) % w(:, 1, 1) = one
+       end do
+       do b = 1, nb
+          call frozen_at(plus(b), design, frozen)
+          call plus(b) % rows % apply(plus(b) % rows % unknown_graph(), plus(b) % rows % bind(frozen), out)
+          call out % real_vector(r)
+          fixed_rows = plus(b) % rows % fixed_indicator()
+          if (any(fixed_rows)) then
+             estimates(i) % transfer_defect = max(estimates(i) % transfer_defect, maxval(abs(r), mask=fixed_rows))
+          end if
+          ! the rows of step k: the stages of a staged step precede its
+          ! arriving instant
+          do k = 1, size(plus(b) % dt)
+             lo = 0
+             if (k > 1) lo = plus(b) % instants_at(k - 1) + plus(b) % width
+             hi = plus(b) % instants_at(k) + plus(b) % width
+             part = -sum(costate(b) % w(lo + 1:hi, 1, 1) * r(lo + 1:hi), mask=.not. fixed_rows(lo + 1:hi))
+             step = plus(b) % coarse_step(k)
+             if (step > 0) estimates(i) % by_step(step) = estimates(i) % by_step(step) + part
+             estimates(i) % residual_part = estimates(i) % residual_part + part
+          end do
+          estimates(i) % enriched_value = estimates(i) % enriched_value &
+               & + functional_along(plus, b, functionals(i), degrees, design, [integer ::], 0, w, u, 1, &
+               & node_measure, by_step=share)
+          estimates(i) % value = estimates(i) % value &
+               & + functional_along(chain, b, functionals(i), degrees, design, [integer ::], 0, w, u, 1, &
+               & node_measure, by_step=coarse_share, magnitude_by_step=magnitude)
+          estimates(i) % scale = estimates(i) % scale + sum(magnitude)
+          do k = 1, size(plus(b) % dt)
+             step = plus(b) % coarse_step(k)
+             if (step > 0) estimates(i) % by_step(step) = estimates(i) % by_step(step) + share(k) - coarse_share(k)
+          end do
+       end do
+       estimates(i) % quadrature_part = estimates(i) % enriched_value - estimates(i) % value
+       estimates(i) % estimate        = estimates(i) % residual_part + estimates(i) % quadrature_part
+    end do
+
+  end subroutine functional_error
+
+  !===================================================================!
+  ! The steps of every block of the tower, block after block, as the
+  ! tower stores them: the value of each block node of the horizon.
+  !===================================================================!
+
+  function tower_block_steps(tower, nb) result(dt)
+    type(expansion), intent(in), target :: tower
+    integer        , intent(in) :: nb
+    real(dp), allocatable :: dt(:)
+    type(graph), pointer :: horizon
+    real(dp), allocatable :: one(:)
+    integer :: b
+    horizon => level_member(level_member(tower % node(tower % root()), 1), 1)
+    dt = [real(dp) ::]
+    do b = 1, nb
+       call tower % value_of(level_member(horizon, b), one)
+       dt = [dt, one]
+    end do
+  end function tower_block_steps
+
 end module gti_chain
 module gti_driver
   use iso_fortran_env  , only : int64
@@ -6902,7 +7168,7 @@ module gti_driver
   implicit none
   private
   public :: settings, chosen_grid, steps_of, clock, cosine, dense_jacobian
-  public :: family_named, functional_named
+  public :: family_named, functional_named, enriched_family
 contains
   subroutine settings(default_name, cfg)
     character(len=*)   , intent(in)  :: default_name
@@ -7026,6 +7292,48 @@ contains
     g = 1.0_dp - sqrt(2.0_dp) / 2.0_dp
     a = reshape([g, 1.0_dp - g, 0.0_dp, g], [2, 2])
   end function alexander_tableau
+  !===================================================================!
+  ! THE ENRICHMENT OF A FAMILY for the functional-error estimator
+  ! (gti_chain % functional_error): a family of order p + 1 on the
+  ! same grid whose rows read the coarse instant jets, the identity
+  ! prolongation. bdf p -> bdf p+1 for p <= 5 (bdf 6 is the last
+  ! zero-stable member); adams p -> adams p+1; newmark (every pair,
+  ! order 2 with gamma = 1/2) -> adams 3. A staged family stores
+  ! stages between its instants, which the identity prolongation does
+  ! not read: not admissible here. Not admissible where the coarse
+  ! family has no scheme either.
+  !===================================================================!
+  subroutine enriched_family(name, order, scheme, admissible, label)
+    character(len=*), intent(in)  :: name
+    integer         , intent(in)  :: order
+    class(family), allocatable, intent(out) :: scheme
+    logical         , intent(out) :: admissible
+    character(len=:), allocatable, intent(out) :: label
+    class(family), allocatable :: coarse
+    character(len=:), allocatable :: enriched_name
+    character(len=2) :: digit
+    integer :: enriched_order
+    call family_named(name, order, coarse, admissible)
+    label = ''
+    if (.not. admissible) return
+    enriched_name = name
+    select case (name)
+    case ('bdf')
+       admissible = order <= 5
+       enriched_order = order + 1
+    case ('adams')
+       enriched_order = order + 1
+    case ('newmark')
+       enriched_name  = 'adams'
+       enriched_order = 3
+    case default
+       admissible = .false.
+    end select
+    if (.not. admissible) return
+    call family_named(enriched_name, enriched_order, scheme, admissible)
+    write(digit,'(i0)') enriched_order
+    label = enriched_name // trim(digit)
+  end subroutine enriched_family
   subroutine functional_named(physics_name, name, degree, rule, admissible, dimension)
     character(len=*), intent(in)  :: physics_name, name
     integer         , intent(in)  :: degree
@@ -10708,7 +11016,7 @@ program graph_time_integrator
   use operation_family      , only : family
   use operation_family      , only : bdf_family
   use operation_family      , only : adams_family
-  use operation_grid        , only : uniform_grid, random_grid, designed_grid, fixed_grid
+  use operation_grid        , only : uniform_grid, random_grid, designed_grid, fixed_grid, partitioned
   use operation_expression  , only : expression, stated_over
   use gti_physics           , only : van_der_pol, van_der_pol_energy, physics_named, functional_of_physics, gauge_field_of
   use operation_grid        , only : grid
@@ -10725,11 +11033,11 @@ program graph_time_integrator
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
        & expansion_substitutions, chain_versions, num_designs_of, &
        & instant_components, chain_derivative, asymmetry, sink_costates, &
-       & grid_stationary_partition
+       & grid_stationary_partition, functional_error, functional_error_estimate
   use gti_sweeps, only : pass_of, forward_pass, reverse_pass
   use operation_minimization, only : relative, absolute, by_count, by_rate
   use gti_driver            , only : settings, chosen_grid, steps_of, family_named, clock, &
-       & functional_named
+       & functional_named, enriched_family
   use gti_configuration     , only : configuration, read_configuration, override, show, &
        & lists, refuse_unknown, words_of
   use util_tally            , only : tally_open, tally_close, tally_order, &
@@ -10752,8 +11060,8 @@ program graph_time_integrator
   logical  :: over_field = .false.
   type(expression)      , allocatable :: functionals(:)
   logical :: grid_designed = .false.
-  logical :: grid_adaptive = .false.
-  real(dp), allocatable :: adaptive_weights(:)
+  logical :: grid_fixed = .false.
+  real(dp), allocatable :: fixed_weights(:)
   if (demo_requested()) then
      call run_demo()
      stop
@@ -11034,6 +11342,7 @@ contains
     type(expansion), allocatable, target :: tower
     integer , allocatable :: added(:)
     real(dp), allocatable :: dt(:), t(:), f(:,:), weights(:)
+    class(grid), allocatable :: steps
     type(imbalance) :: final_imbalance
     real(dp) :: achieved
     integer :: nd, width, given, reported, i, m
@@ -11049,25 +11358,15 @@ contains
     given = schemes(1) % scheme % history_depth(nd - 1)
     call tally_enter(at_expansion)
     call tally_order(0)
-    if (grid_designed) then
-       weights = dt(2:cfg % instants)
-       call march_chain(schemes, added, physics_of(cfg), nd, &
-            & designed_grid(cfg % time_duration), cfg % design, q0, chain, tower, dt, t, &
-            & achieved, grid_design=weights, final_imbalance=final_imbalance, nodes=nodes, spatial_discretization_stencil=spatial_discretization_stencil, &
-            & spatial_derivative_stencils=derivative_stencils, gauge_field=gauge_of(cfg), &
-            & startup=cfg % startup_refinement, context=context)
-    else if (grid_adaptive) then
-       call march_chain(schemes, added, physics_of(cfg), nd, &
-            & fixed_grid(adaptive_weights), cfg % design, q0, chain, tower, dt, t, achieved, &
-            & final_imbalance=final_imbalance, nodes=nodes, spatial_discretization_stencil=spatial_discretization_stencil, &
-            & spatial_derivative_stencils=derivative_stencils, gauge_field=gauge_of(cfg), &
-            & startup=cfg % startup_refinement, context=context)
-    else
-       call march_chain(schemes, added, physics_of(cfg), nd, &
-            & chosen_grid(cfg), cfg % design, q0, chain, tower, dt, t, achieved, final_imbalance=final_imbalance, &
-            & nodes=nodes, spatial_discretization_stencil=spatial_discretization_stencil, startup=cfg % startup_refinement, &
-            & spatial_derivative_stencils=derivative_stencils, gauge_field=gauge_of(cfg), context=context)
-    end if
+    ! the designed grid reads its weights as the design; an unallocated
+    ! weights is an absent argument
+    allocate(steps, source=marched_grid(cfg))
+    if (grid_designed) weights = dt(2:cfg % instants)
+    call march_chain(schemes, added, physics_of(cfg), nd, steps, cfg % design, q0, chain, tower, dt, t, &
+         & achieved, grid_design=weights, final_imbalance=final_imbalance, nodes=nodes, &
+         & spatial_discretization_stencil=spatial_discretization_stencil, &
+         & spatial_derivative_stencils=derivative_stencils, gauge_field=gauge_of(cfg), &
+         & startup=cfg % startup_refinement, context=context)
     if (.not. final_imbalance % converged) then
        reported = 0
     else
@@ -11092,6 +11391,9 @@ contains
          & .or. lists(cfg % check, 'sinks'))) then
        call first_derivatives(cfg, chain, tower, nd, dt, f)
     end if
+    if (lists(cfg % check, 'functional_error') .and. final_imbalance % converged) then
+       call shown_functional_error(cfg, names, orders, chain, tower, steps, dt)
+    end if
     if (over_field) then
        if (lists(cfg % check, 'ode')) then
           if (context % spatial_rows()) then
@@ -11111,6 +11413,78 @@ contains
     end if
     printed = printed + 1
   end subroutine one_row
+  !===================================================================!
+  ! The grid a row marches: the designed grid when the steps are a
+  ! design, the frozen steps of an adaptive or coarsened grid, else
+  ! the configured kind.
+  !===================================================================!
+  function marched_grid(cfg) result(steps)
+    type(configuration), intent(in) :: cfg
+    class(grid), allocatable :: steps
+    if (grid_designed) then
+       allocate(steps, source=designed_grid(cfg % time_duration))
+    else if (grid_fixed) then
+       allocate(steps, source=fixed_grid(fixed_weights))
+    else
+       allocate(steps, source=chosen_grid(cfg))
+    end if
+  end function marched_grid
+  !===================================================================!
+  ! The discretization-error estimate of every functional of the row
+  ! (gti_chain % functional_error, enrichment A: the family of order
+  ! p + 1 on the same grid): one line per functional with the
+  ! estimate, its residual and quadrature parts, the scale S of the
+  ! relative criterion and the transfer defect; with indicators one
+  ! line per step. A block whose family has no enrichment reports so
+  ! and estimates nothing.
+  !===================================================================!
+  subroutine shown_functional_error(cfg, names, orders, chain, tower, steps, dt)
+    type(configuration), intent(in) :: cfg
+    character(len=*)   , intent(in) :: names(:)
+    integer            , intent(in) :: orders(:)
+    type(chain_block)  , intent(in) :: chain(:)
+    type(expansion)    , intent(in) :: tower
+    class(grid)        , intent(in) :: steps
+    real(dp)           , intent(in) :: dt(:)
+    type(family_container), allocatable :: enriched(:)
+    type(functional_error_estimate), allocatable :: estimates(:)
+    character(len=32), allocatable :: words(:)
+    character(len=:), allocatable :: label, plus
+    class(family), allocatable :: scheme
+    real(dp) :: t
+    logical :: admissible
+    integer :: b, i, k
+    allocate(enriched(size(names)))
+    plus = ''
+    do b = 1, size(names)
+       call enriched_family(trim(names(b)), orders(b), scheme, admissible, label)
+       if (.not. admissible) then
+          write(*,'(a)') '      functional error: no enrichment of ' // labelled(names(b:b), orders(b:b))
+          return
+       end if
+       allocate(enriched(b) % scheme, source=scheme)
+       deallocate(scheme)
+       if (b > 1) plus = plus // '-'
+       plus = plus // label
+    end do
+    call functional_error(chain, tower, enriched, physics_of(cfg), cfg % state_degree + 1, steps, &
+         & cfg % design, functionals, estimates, nodes, spatial_discretization_stencil, derivative_stencils, &
+         & gauge_of(cfg), volume, context)
+    words = words_of(cfg % functionals)
+    do i = 1, size(estimates)
+       write(*,'(a,5(a,es20.11),a)') '      functional error, ' // trim(words(i)) // ':', &
+            & ' estimate', estimates(i) % estimate, ' residual', estimates(i) % residual_part, &
+            & ' quadrature', estimates(i) % quadrature_part, ' scale', estimates(i) % scale, &
+            & ' transfer', estimates(i) % transfer_defect, ' enriched ' // plus
+       if (.not. lists(cfg % check, 'indicators')) cycle
+       t = 0.0_dp
+       do k = 2, size(estimates(i) % by_step)
+          t = t + dt(k)
+          write(*,'(a,i0,a,3(a,es20.11))') '      indicator, ' // trim(words(i)) // ', step ', k - 1, ':', &
+               & ' t', t, ' h', dt(k), ' eta', estimates(i) % by_step(k)
+       end do
+    end do
+  end subroutine shown_functional_error
   subroutine first_derivatives(cfg, chain, tower, nd, dt, f)
     type(configuration), intent(in) :: cfg
     type(chain_block)  , intent(in) :: chain(:)
@@ -11270,9 +11644,8 @@ contains
     real(dp), allocatable :: reals(:)
     call refuse_unknown(cfg % initial_field, ['constant', 'mode    ', 'bump    ', 'exact   '], 'initial_field')
     call refuse_unknown(cfg % export, ['none    ', 'paraview'], 'export')
-    call refuse_unknown(cfg % check, ['none    ', 'ode     ', 'mode    ', 'operator', 'passes  ', 'exact   ', &
-         & 'sinks   ', 'state   '], &
-         & 'check')
+    call refuse_unknown(cfg % check, [character(len=16) :: 'none', 'ode', 'mode', 'operator', 'passes', &
+         & 'exact', 'sinks', 'state', 'functional_error', 'indicators'], 'check')
     ! the counts of cells along the spatial coordinates, two or three
     ! words; every count zero is a run over time alone
     reals  = reals_of(cfg % spatial_counts, 'counts')
@@ -11401,38 +11774,83 @@ contains
     write(digit,'(i0)') cfg % max_discretization_order
     nd = cfg % state_degree + 1
     if (trim(cfg % adaptive_check) == 'grid_stationarity') then
-       adaptive_weights = grid_stationary_partition(scheme, &
+       fixed_weights = grid_stationary_partition(scheme, &
             & physics_of(cfg), energy_of(cfg), nd, &
             & cfg % time_duration, q0(1:cfg % state_degree), cfg % design, &
             & cfg % grid_stationarity_tolerance, &
             & trim(cfg % tolerance_criterion) == 'relative', rejects, &
             & startup=cfg % startup_refinement, context=context)
     else
-       adaptive_weights = adaptive_partition(scheme, cfg % max_discretization_order, &
+       fixed_weights = adaptive_partition(scheme, cfg % max_discretization_order, &
             & physics_of(cfg), nd, cfg % time_duration, &
             & q0(1:cfg % state_degree), cfg % design, cfg % tolerance, &
             & trim(cfg % tolerance_criterion) == 'relative', rejects, context=context)
     end if
-    cfg % instants = size(adaptive_weights) + 1
-    grid_adaptive  = .true.
+    cfg % instants = size(fixed_weights) + 1
+    grid_fixed  = .true.
     if (trim(cfg % adaptive_check) == 'grid_stationarity') then
-       write(*,'(a,i0,a,es9.2,a,i0,a)') '   adaptive grid: ', size(adaptive_weights), &
+       write(*,'(a,i0,a,es9.2,a,i0,a)') '   adaptive grid: ', size(fixed_weights), &
             & ' steps of ' // trim(names(1)) // trim(digit) // ' at grid-stationarity tolerance ', &
             & cfg % grid_stationarity_tolerance, ' (', rejects, ' rejected)'
     else
-       write(*,'(a,i0,a,es9.2,a,i0,a)') '   adaptive grid: ', size(adaptive_weights), &
+       write(*,'(a,i0,a,es9.2,a,i0,a)') '   adaptive grid: ', size(fixed_weights), &
             & ' steps of ' // trim(names(1)) // trim(digit) // ' at estimated local-error tolerance ', &
             & cfg % tolerance, ' (', rejects, ' rejected)'
     end if
   end subroutine adaptive_context
+  !===================================================================!
+  ! The coarsened grid: the uniform grid of instants instants, its
+  ! steps inside coarsened_interval merged in pairs (a step is inside
+  ! when both its instants lie within the interval, an instant within
+  ! half a step of a bound lying on it), then frozen. The grid of the localized functional-error case: the
+  ! indicators of the merged steps against those of the same interval
+  ! on the uniform grid. An interval containing no pair of steps is
+  ! refused.
+  !===================================================================!
+  subroutine coarsened_context(cfg)
+    type(configuration), intent(inout) :: cfg
+    real(dp), allocatable :: interval(:), dt(:), t(:)
+    integer :: k, merged
+    logical :: inside_k, inside_next
+    if (trim(cfg % grid) /= 'coarsened') return
+    interval = reals_of(cfg % coarsened_interval, 'coarsened_interval')
+    if (size(interval) /= 2) then
+       error stop 'graph_time_integrator: coarsened_interval is two instants "a b"'
+    end if
+    call partitioned(uniform_grid(cfg % time_duration), cfg % instants, dt, t)
+    fixed_weights = [real(dp) ::]
+    merged = 0
+    k = 2
+    do while (k <= cfg % instants)
+       ! an instant within half a step of a bound lies on it
+       inside_k = t(k - 1) >= interval(1) - dt(k) / 2.0_dp .and. t(k) <= interval(2) + dt(k) / 2.0_dp
+       inside_next = .false.
+       if (k < cfg % instants) inside_next = t(k + 1) <= interval(2) + dt(k + 1) / 2.0_dp
+       if (inside_k .and. inside_next) then
+          fixed_weights = [fixed_weights, dt(k) + dt(k + 1)]
+          merged = merged + 1
+          k = k + 2
+       else
+          fixed_weights = [fixed_weights, dt(k)]
+          k = k + 1
+       end if
+    end do
+    if (merged == 0) then
+       error stop 'graph_time_integrator: the coarsened interval contains a pair of steps'
+    end if
+    write(*,'(a,i0,a,i0,a,es9.2,a,es9.2,a)') '   coarsened grid: ', size(fixed_weights), ' steps, ', merged, &
+         & ' of them pairs of uniform steps merged inside [', interval(1), ', ', interval(2), ']'
+    cfg % instants = size(fixed_weights) + 1
+    grid_fixed  = .true.
+  end subroutine coarsened_context
   subroutine grid_partition(cfg, dt, t)
     type(configuration), intent(in) :: cfg
     real(dp), allocatable, intent(out) :: dt(:), t(:)
     integer :: k
-    if (grid_adaptive) then
+    if (grid_fixed) then
        allocate(dt(cfg % instants), t(cfg % instants))
        dt(1)  = 0.0_dp
-       dt(2:) = adaptive_weights
+       dt(2:) = fixed_weights
        t(1)   = 0.0_dp
        do k = 2, cfg % instants
           t(k) = t(k - 1) + dt(k)
@@ -11450,6 +11868,7 @@ contains
          & [character(len=17) :: 'step_doubling', 'grid_stationarity'], 'adaptive_check')
     call apply_stopping(cfg)
     call adaptive_context(cfg)
+    call coarsened_context(cfg)
     if (cfg % accounting) then
        call refuse_unknown(cfg % measurements, &
             & ['elapsed_time  ', 'primal_loops  ', 'tangent_loops ', &

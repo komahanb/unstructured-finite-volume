@@ -19,6 +19,13 @@ A quantity is read from one row of the record:
   semi, mode     error against the semi-discrete and the exact mode
   operator       relative rms error of the discrete Laplacian of the mode
   velocity       Taylor-Green velocity error, relative rms
+  estimate:<f>, effectivity:<f>, scale:<f>, transfer:<f>, localization:<f>
+                 the functional discretization-error estimate of functional
+                 <f> (check = functional_error): eta, eta / (F - F_h) with F
+                 the declared reference, the scale S of the relative
+                 criterion, the transfer defect, and log2 of the sum of the
+                 step indicators |eta_k| over an interval against the same
+                 sum on the paired uniform grid (check = indicators)
 """
 
 import math
@@ -34,6 +41,8 @@ DD_REF = 3 * DURATION / 8 - math.sin(2 * DURATION) / 4 + math.sin(4 * DURATION) 
 Q_REF = math.cos(DURATION)
 QD_REF = -math.sin(DURATION)
 INVARIANT_REF = 0.5
+# the exact value of each functional word at nu = 0: E = T/2; D = 0 identically
+FUNCTIONAL_REFERENCES = {"energy": E_REF, "dissipation": 0.0}
 
 # the configured Newton stopping rule of every run: relative 1e-12
 TOLERANCE = 1.0e-12
@@ -45,12 +54,12 @@ THETA_TEXT = ("window from the two-term expansion e = C h^p (1 + a h) with |a h|
 
 
 def ode_argv(instants, families="bdf adams dirk", max_order=4, derivative=1,
-             physics="vanderpol", chain=None, extra=()):
+             physics="vanderpol", chain=None, extra=(), check="state passes"):
     argv = [APPLICATION, f"--physics={physics}", "--design=0.0", "--initial_state=1.0",
             f"--time_duration={DURATION}", f"--instants={instants}", "--grid=uniform",
             f"--families={families}", f"--max_discretization_order={max_order}",
             f"--max_derivative_degree={derivative}", "--functionals=energy dissipation",
-            "--combinations=1", "--check=state passes"]
+            "--combinations=1", f"--check={check}"]
     if chain:
         argv.append(f"--chain={chain}")
     return argv + list(extra)
@@ -199,6 +208,62 @@ def taylor_green_case(identifier, cells, description, set_name="required", timeo
             "timeout": timeout}
 
 
+EFFECTIVITY_TEXT = ("effectivity eta / (F - F_h) of the functional-error estimate against 1: "
+                    "enrichment A (the family of order p + 1 on the same grid, the identity "
+                    "prolongation) is asymptotically exact, I = 1 + O(h^(min(p+, 2p) - p)); "
+                    "the coarse block's first own instant stays fixed in the enriched block "
+                    "at its local order p + 1, so |I - 1| converges at order 1; " + THETA_TEXT)
+
+
+def estimator_case(identifier, row, order, description, families="bdf adams", max_order=4,
+                   instants=(21, 41, 81, 161), argv_extra=(), set_name="required",
+                   effectivity=True, limitation=None):
+    """The functional-error estimate of one row: its effectivity at order 1 and
+    the estimate itself at the order of F_h - F (README, section
+    'Functional discretization error')."""
+    grids = ode_grids(instants)
+    runs = {label: ode_argv(n, families=families, max_order=max_order,
+                            check="state functional_error", extra=argv_extra)
+            for (label, _, _), n in zip(grids, instants)}
+    checks = []
+    if effectivity:
+        checks.append(order_check("effectivity:energy", 1, 1.0, TABLE_DIGITS, EFFECTIVITY_TEXT))
+    checks.append(order_check("estimate:energy", order, 0.0, TABLE_DIGITS,
+                              "the estimate eta converges to zero at the order of F_h - F; "
+                              + THETA_TEXT))
+    checks += [LAW, residual_check()]
+    return {"id": identifier, "set": set_name, "description": description, "row": row,
+            "grids": grids, "runs": runs, "checks": checks, "limitation": limitation,
+            "timeout": 120}
+
+
+def localized_case(identifier, row, order, interval, description, instants=(41, 81, 161),
+                   families="bdf", max_order=3, set_name="required"):
+    """The step indicators on the coarsened grid (steps merged in pairs inside the
+    interval) against those of the same interval on the uniform grid of the same
+    instant count: log2 of the ratio of the sums of |eta_k| tends to p, the
+    indicators being C(t) h_k^(p+1) with the transition steps at the bounds
+    contributing O(h) of the sum."""
+    grids = ode_grids(instants)
+    runs = {}
+    for (label, _, _), n in zip(grids, instants):
+        runs[label] = ode_argv(n, families=families, max_order=max_order,
+                               check="state functional_error indicators",
+                               extra=("--grid=coarsened",
+                                      f"--coarsened_interval={interval[0]} {interval[1]}"))
+        runs[f"uniform={n}"] = ode_argv(n, families=families, max_order=max_order,
+                                        check="state functional_error indicators")
+    checks = [{"kind": "order", "quantity": "localization:energy", "order": 1, "reference": order,
+               "digits": TABLE_DIGITS, "paired": "uniform", "interval": list(interval),
+               "justification": "log2(sum of |eta_k| over the coarsened steps of the interval / "
+                                "the same sum on the uniform grid) against p: the indicator of "
+                                "a step is C(t) h_k^(p+1), so pairs merged into 2h give 2^p, "
+                                f"the transition steps at the bounds O(h); {THETA_TEXT}"},
+              residual_check()]
+    return {"id": identifier, "set": set_name, "description": description, "row": row,
+            "grids": grids, "runs": runs, "checks": checks, "limitation": None, "timeout": 120}
+
+
 def sensitivity_case():
     delta = 1.0e-6
     return {"id": "P02-sensitivity-demo", "set": "required", "record": "sensitivity",
@@ -310,6 +375,24 @@ def required_cases():
                           "Taylor-Green vortex, BDF-2, cells 8 and 16: one pair, so the "
                           "asymptotic regime is not verified by a second pair"),
         sensitivity_case(),
+        estimator_case("G01-estimate-bdf1", "bdf1", 1,
+                       "functional-error estimate of BDF-1 by BDF-2: effectivity at order 1 "
+                       "(measured 0.83, 0.91, 0.95, 0.98), estimate at order 1"),
+        estimator_case("G02-estimate-bdf3", "bdf3", 3,
+                       "functional-error estimate of BDF-3 by BDF-4: effectivity at order 1 "
+                       "(measured 0.86, 0.94, 0.97, 0.985), estimate at order 3"),
+        estimator_case("G03-estimate-adams3", "adams3", 3,
+                       "functional-error estimate of Adams-Moulton 3 by Adams-Moulton 4: "
+                       "effectivity at order 1 (measured 0.89, 0.95, 0.975, 0.987), estimate "
+                       "at order 3"),
+        estimator_case("G04-estimate-newmark3", "newmark3", 2,
+                       "functional-error estimate of Newmark beta = 1/12 (Fox-Goodwin) by "
+                       "Adams-Moulton 3: effectivity at order 1 (measured 1.06, 1.04, 1.02, "
+                       "1.01), estimate at order 2", families="newmark", max_order=3),
+        localized_case("G05-localized-bdf3", "bdf3", 3, (0.7, 1.1),
+                       "localized error: BDF-3 on the uniform grid with the steps inside "
+                       "[0.7, 1.1] merged in pairs; log2 of the indicator sums over the "
+                       "interval tends to 3 at order 1 (measured 2.50, 2.77 at 41, 81)"),
     ]
     # declared limitations: measured below their theoretical order
     cases += [
@@ -349,6 +432,19 @@ def exploratory_cases():
                       "BDF-4 invariant drift at order 5"),
         temporal_case("X04-bdf1-dE-crossing", "bdf1", 1, ["dE"],
                       "BDF-1 dE/dnu changes sign inside these grids"),
+        estimator_case("X13-estimate-bdf2-heuristic", "bdf2", 3,
+                       "BDF-2 energy (order 3 by superconvergence) estimated by BDF-3 (order "
+                       "3): p+ = p, the estimate is a heuristic; its effectivity tends to 2 "
+                       "(measured 1.89, 1.95, 1.98, 1.99) and is not declared; the estimate "
+                       "itself converges at order 3", effectivity=False),
+        estimator_case("X14-estimate-bdf4-heuristic", "bdf4", 5,
+                       "BDF-4 energy (order 5 by superconvergence) estimated by BDF-5: p+ = p, "
+                       "a heuristic; effectivity measured 1.31, 1.41, 1.46, 1.52 and not "
+                       "declared; the estimate converges at order 5", effectivity=False),
+        estimator_case("X15-estimate-newmark1", "newmark1", 1,
+                       "Newmark beta = gamma = 0 (the explicit Taylor step, order 1) estimated "
+                       "by Adams-Moulton 3: effectivity at order 1 (measured 1.02, 1.01, "
+                       "1.006, 1.003)", families="newmark", max_order=3),
         field_temporal_case("X05-field-bdf3", "bdf3", 3,
                             "temporal order on the 16 x 16 periodic mode, BDF-3"),
         spatial_case("X06-taylor-green-three-grids", "bdf2", "velocity", 2,

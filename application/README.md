@@ -863,6 +863,7 @@ separately, by the scheme. `grid` is
 | `uniform` | h_k = T/(n-1), the instants equidistant |
 | `random` | a reproducible drawn spacing from `seed`, each weight within [1/2, 3/2] of uniform |
 | `adaptive` | the steps a march of one configured scheme discovers under `adaptive_check`, then frozen; `instants` is set by the result |
+| `coarsened` | the uniform grid of `instants` instants with the steps inside `coarsened_interval = "a b"` merged in pairs, then frozen; the grid of the localized functional-error case |
 
 with n = `instants`. An adaptive grid is discovered for one scheme:
 `families` names exactly one family, and the scheme is that family at
@@ -946,6 +947,50 @@ edges. `check` names a comparison against a known quantity:
 | `ode` | a field at kappa = 0 equals one node's ordinary equation |
 | `mode` | a rectangle at nu = 0 against the separated solution of the heat equation |
 | `operator` | the fitted balance against kappa times the laplacian of the mode |
+| `functional_error` | the discretization-error estimate eta of every functional (below); `indicators` adds one line per step |
+
+**The functional discretization error.** `check = functional_error`
+estimates F(Q_exact) - F_h(Q_h) for every functional of a row (`gti_chain
+% functional_error`). With the discrete problem R(Q) = 0, the Lagrangian
+L = F_h - lambda^T R, an enriched problem R+ on the same instants with
+functional F+, the identity prolongation P of the instant jets and the
+enriched costate J+(P Q_h)^T lambda+ = dF+/dQ(P Q_h)^T,
+
+    F(Q_exact) - F_h(Q_h) = [F - F+(Q+)] + eta_R + eta_Q + O(|Q+ - P Q_h|^2)
+    eta_R = - lambda+^T R+(P Q_h),   eta_Q = F+(P Q_h) - F_h(Q_h),
+
+and the estimate is eta = eta_R + eta_Q, printed with its two parts, the
+scale S = sum_k |w_k f(Q_k)| of the relative criterion |eta| <= tol S
+(S >= |F_h|, and S does not cancel where F_h does), the largest fixed-row
+residual of the enriched blocks (zero to roundoff under the identity
+prolongation) and the enriched family. Class: with p the order of F_h on
+the case and p+ that of F+, the effectivity I = eta / (F - F_h) is 1 +
+O(h^(min(p+, 2p) - p)): an asymptotically exact estimator, not a bound;
+no inequality with a known constant is proved and none is claimed. The
+enrichment (`gti_driver % enriched_family`) is the family of order p + 1
+on the same grid: bdf p -> bdf p+1 (p <= 5), adams p -> adams p+1,
+newmark -> adams 3; the enriched block's history is its first p + 1
+instants read from the coarse chain, so the coarse block's first own
+instant stays fixed at its local order p + 1 and |I - 1| converges at
+order 1 (measured 0.83, 0.91, 0.95, 0.98 for bdf1, 0.86, 0.94, 0.97, 0.985
+for bdf3, 0.89, 0.95, 0.975, 0.987 for adams3, 1.06, 1.04, 1.02, 1.01 for
+Fox-Goodwin Newmark, instants 21 to 161; `test/accuracy-contract` G01-G04).
+The enriched functional integrates every step with the enriched family's
+complete rule (`family_step_quadrature(complete=.true.)`: the full node
+count at the first steps, nodes ahead of the step), so the coarse rule's
+degraded first steps enter eta_Q exactly. Where p+ = p the estimate is a
+heuristic: the BDF-2 energy (order 3 by superconvergence) estimated by
+BDF-3 has I -> 2, the BDF-4 energy (order 5) by BDF-5 has I between 1.3
+and 1.5 (exploratory X13, X14). The startup block of a multistep family
+is rebuilt with its own family at the coarse state, where its residual is
+at the solver tolerance: its history error is not estimated. The
+indicators eta_k (one per step, summing to eta) localize the error: on
+the grid `coarsened` the sum of |eta_k| over the merged steps against the
+same sum on the uniform grid tends to 2^p (G05, log2 measured 2.50, 2.77,
+2.89 for bdf3 at 41, 81, 161 against 3). A staged family (dirk, alexander)
+has no enrichment on its instants here: its block stores stages between
+them, which the identity prolongation does not read, and the row prints
+`no enrichment`. A derivative functional (dF/dnu) is not estimated.
 
 **The solvers.** Newton drives every block; `linear_solver` is
 `direct` or `iterative` (GMRES), refined by `assembly`, `storage`,

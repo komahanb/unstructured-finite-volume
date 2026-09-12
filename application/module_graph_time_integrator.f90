@@ -132,6 +132,16 @@ module gti_configuration
      character(len=32) :: adaptive_check       = 'step_doubling'
      real(dp)          :: grid_stationarity_tolerance = 1.0e-12_dp
 
+     ! functional_error accepts a grid when the estimate of the energy
+     ! functional's discretization error (check = functional_error)
+     ! satisfies |eta| <= functional_error_tolerance x S under
+     ! tolerance_criterion; adaptation_instants is the largest instant
+     ! count a grid may reach, the resource limit of every adaptive
+     ! loop: the default is two uniform halvings of the finest required
+     ! grid of the accuracy contract, 4 x 320 + 1.
+     real(dp)          :: functional_error_tolerance = 1.0e-3_dp
+     integer           :: adaptation_instants        = 1281
+
      ! THE COARSENED GRID (grid = coarsened): the uniform grid of
      ! instants instants whose steps inside the interval "a b" are
      ! merged in pairs, the grid of the localized functional-error
@@ -353,6 +363,10 @@ contains
        cfg % adaptive_check = value
     case ('grid_stationarity_tolerance')
        read(value, *) cfg % grid_stationarity_tolerance
+    case ('functional_error_tolerance')
+       read(value, *) cfg % functional_error_tolerance
+    case ('adaptation_instants')
+       read(value, *) cfg % adaptation_instants
     case ('coarsened_interval')
        cfg % coarsened_interval = value
     case ('iteration_criterion')
@@ -385,6 +399,8 @@ contains
          & 'max_derivative_degree', 'the value on its own is degree zero')
     call refuse_below(cfg % max_discretization_order, 1, &
          & 'max_discretization_order', 'no scheme is built below order one')
+    call refuse_below(cfg % adaptation_instants, 2, &
+         & 'adaptation_instants', 'a grid has two instants at least')
   end subroutine assign
   subroutine refuse_below(given, least, name, why)
     integer         , intent(in) :: given, least
@@ -496,6 +512,12 @@ contains
        write(*,'(a,a)')    '   adaptive check           ', trim(cfg % adaptive_check)
        if (trim(cfg % adaptive_check) == 'grid_stationarity') then
           write(*,'(a,es9.2)') '   grid stationarity tolerance ', cfg % grid_stationarity_tolerance
+       end if
+       if (trim(cfg % adaptive_check) == 'functional_error') then
+          write(*,'(a,es9.2)') '   functional error tolerance ', cfg % functional_error_tolerance
+       end if
+       if (trim(cfg % adaptive_check) /= 'step_doubling') then
+          write(*,'(a,i0)')    '   adaptation instants      ', cfg % adaptation_instants
           write(*,'(a)')   '     of the energy functional, not its discretization error'
        end if
     end if
@@ -4780,9 +4802,10 @@ contains
   end subroutine export_instant
 end module gti_field
 module gti_chain
+  use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
   use util_precision  , only : dp
   use operation_family , only : family
-  use operation_grid   , only : grid, partitioned, designed_grid
+  use operation_grid   , only : grid, partitioned, designed_grid, fixed_grid
   use operation_expression, only : expression
   use gti_expansion    , only : family_container, marches_by_stages, expansion, &
        & design_of_physics, design_of_steps
@@ -4814,6 +4837,8 @@ module gti_chain
   private
   public :: chain_block, march_chain, chain_expansion, instant_components
   public :: functional_error_estimate, functional_error
+  public :: adaptation_outcome, functional_error_partition, adaptation_description
+  public :: ADAPTATION_MET, ADAPTATION_UNMET, ADAPTATION_NONFINITE
   public :: first_of, chain_derivative, asymmetry
   public :: multiset_count, multiset_rank, multiset_of, num_designs_of
   public :: chain_versions
@@ -4886,6 +4911,25 @@ module gti_chain
      real(dp) :: transfer_defect = 0.0_dp
      real(dp), allocatable :: by_step(:)
   end type functional_error_estimate
+  !===================================================================!
+  ! THE OUTCOME OF AN ADAPTIVE GRID (functional_error_partition,
+  ! grid_stationary_partition): met, the criterion is satisfied on the
+  ! returned grid; unmet, the next grid would exceed the instant
+  ! limit and the returned grid is the last one marched, its criterion
+  ! value recorded; nonfinite, the estimate is not a finite number.
+  ! Neither of the last two is an acceptance. rounds counts the
+  ! rejected grids.
+  !===================================================================!
+  integer, parameter :: ADAPTATION_MET = 1, ADAPTATION_UNMET = 2, ADAPTATION_NONFINITE = 3
+  type :: adaptation_outcome
+     integer  :: status    = ADAPTATION_UNMET
+     real(dp) :: estimate  = 0.0_dp
+     real(dp) :: scale     = 1.0_dp
+     real(dp) :: tolerance = 0.0_dp
+     integer  :: instants  = 0
+     integer  :: limit     = 0
+     integer  :: rounds    = 0
+  end type adaptation_outcome
   !===================================================================!
   ! THE TANGENT TOWER OF ONE BLOCK: the derivatives of its state along
   ! every multiset of designs, of every order, w(unknown, multiset,
@@ -6838,22 +6882,27 @@ contains
   ! On rejection, every step whose projected gradient is at least the
   ! mean is halved and the whole trajectory, adjoint included, is
   ! computed again. The accepted value of e is returned as the
-  ! stationarity defect.
+  ! stationarity defect. A grid whose halving would exceed
+  ! instants_limit instants is not accepted: the outcome is returned
+  ! as ADAPTATION_UNMET with the last grid, or, with no outcome
+  ! argument, stops the program.
   !===================================================================!
 
   function grid_stationary_partition(scheme, physics, functional, degrees, duration, &
-       & lower, design, tolerance, relative, rejects, stationarity_defect, startup, context) result(dt)
+       & lower, design, tolerance, relative, instants_limit, rejects, stationarity_defect, startup, &
+       & outcome, context) result(dt)
 
     class(march_context), optional, target, intent(inout) :: context
     class(family)   , intent(in)  :: scheme
     type(expression), intent(in)  :: physics, functional
-    integer         , intent(in)  :: degrees
+    integer         , intent(in)  :: degrees, instants_limit
     real(dp)        , intent(in)  :: duration, lower(:), design, tolerance
     logical         , intent(in)  :: relative
     integer         , intent(out), optional :: rejects
     real(dp)        , intent(out), optional :: stationarity_defect
     ! the startup refinement of a multistep family's history block, as march_chain reads it
     integer         , intent(in) , optional :: startup
+    type(adaptation_outcome), intent(out), optional :: outcome
     real(dp), allocatable :: dt(:)
 
     integer, parameter :: seed_instants = 9
@@ -6862,11 +6911,12 @@ contains
     type(expression)     :: functionals(1)
     type(chain_block), allocatable :: chain(:)
     type(expansion)  , allocatable :: tower
+    type(adaptation_outcome) :: result
     integer , allocatable :: versions(:)
     real(dp), allocatable :: state(:), resolved(:), t(:), fvals(:,:), table(:,:), eta(:)
     logical , allocatable :: split(:)
     real(dp) :: achieved, f, e, threshold
-    integer  :: attempt, rejected
+    integer  :: rejected
 
     type(march_context), target :: local_context
     class(march_context), pointer :: active
@@ -6878,11 +6928,14 @@ contains
     state = consistent_state(physics, degrees, lower, design, context=active)
 
     dt = spread(duration / real(seed_instants - 1, dp), 1, seed_instants - 1)
+    if (size(dt) + 1 > instants_limit) then
+       error stop 'gti_chain: the instant limit admits the seed grid'
+    end if
+    result % tolerance = tolerance
+    result % limit     = instants_limit
 
     rejected = 0
-    attempt  = 0
     do
-       attempt = attempt + 1
 
        ! one block of size(dt) + 1 instants: the first instant has no step, and
        ! each weight is one step; a block of size(dt) instants normalises the
@@ -6903,38 +6956,183 @@ contains
        eta = eta - sum(eta * dt) / sum(dt * dt) * dt
        e   = (maxval(eta) - minval(eta)) * (duration / real(size(eta), dp))
        if (relative) e = e / max(abs(f), tiny(1.0_dp))
+       result % estimate = e
+       result % instants = size(dt) + 1
+       result % rounds   = rejected
 
-       if (e <= tolerance) exit
+       if (.not. ieee_is_finite(e)) then
+          result % status = ADAPTATION_NONFINITE
+          exit
+       end if
+       if (e <= tolerance) then
+          result % status = ADAPTATION_MET
+          exit
+       end if
 
-       rejected  = rejected + 1
        threshold = sum(eta) / real(size(eta), dp)
        split     = eta >= threshold
-       dt        = halved(dt, split)
-
-       if (attempt > 50) then
-          error stop 'gti_chain: a grid remains above the stationarity tolerance after fifty attempts'
+       if (size(dt) + count(split) + 1 > instants_limit) then
+          result % status = ADAPTATION_UNMET
+          exit
        end if
+       rejected  = rejected + 1
+       dt        = divided(dt, merge(2, 1, split))
     end do
 
     if (present(rejects)) rejects = rejected
     if (present(stationarity_defect)) stationarity_defect = e
+    if (present(outcome)) then
+       outcome = result
+    else if (result % status /= ADAPTATION_MET) then
+       write(*,'(a)') ' ' // adaptation_description(result)
+       error stop 'gti_chain: the grid-stationarity criterion is not met within the instant limit'
+    end if
 
   end function grid_stationary_partition
 
-  pure function halved(dt, split) result(refined)
+  !===================================================================!
+  ! Every step divided into parts(k) equal steps; one part keeps it.
+  !===================================================================!
+  pure function divided(dt, parts) result(refined)
     real(dp), intent(in) :: dt(:)
-    logical , intent(in) :: split(:)
+    integer , intent(in) :: parts(:)
     real(dp), allocatable :: refined(:)
     integer :: i
     refined = [real(dp) ::]
     do i = 1, size(dt)
-       if (split(i)) then
-          refined = [refined, dt(i) / 2.0_dp, dt(i) / 2.0_dp]
-       else
-          refined = [refined, dt(i)]
-       end if
+       refined = [refined, spread(dt(i) / real(parts(i), dp), 1, parts(i))]
     end do
-  end function halved
+  end function divided
+
+  !===================================================================!
+  ! THE ADAPTIVE GRID DRIVEN BY THE FUNCTIONAL-ERROR ESTIMATE. From
+  ! the uniform seed of `instants` instants: march (the startup block
+  ! included), estimate eta by functional_error with the enriched
+  ! family, accept when |eta| <= tolerance S, with S = sum |w_k f(Q_k)|
+  ! (relative) or S = 1 (absolute). Otherwise mark by
+  ! equidistribution: with N steps, every step k with |eta_k| >
+  ! tolerance S / N is divided into the least whole number of equal
+  ! steps not below h_k / h_k', with
+  ! h_k' = h_k (tolerance S / (N |eta_k|))^(1/(p+1)), p the family's
+  ! declared order (the indicator of a step is of order h^(p+1));
+  ! halving is the case h_k' >= h_k/2. A next grid that would exceed
+  ! instants_limit instants is not marched: the outcome is
+  ! ADAPTATION_UNMET with the last grid, its |eta| and S; an estimate
+  ! that is not finite is ADAPTATION_NONFINITE. Neither is an
+  ! acceptance: the caller reports the outcome. Invalid input: a seed
+  ! above the limit, a tolerance or an order that is not positive.
+  !===================================================================!
+  function functional_error_partition(scheme, enriched, order, physics, functional, degrees, duration, &
+       & lower, design, tolerance, relative, instants, instants_limit, outcome, startup, context) result(dt)
+
+    class(march_context), optional, target, intent(inout) :: context
+    class(family)   , intent(in)  :: scheme, enriched
+    integer         , intent(in)  :: order, degrees, instants, instants_limit
+    type(expression), intent(in)  :: physics, functional
+    real(dp)        , intent(in)  :: duration, lower(:), design, tolerance
+    logical         , intent(in)  :: relative
+    type(adaptation_outcome), intent(out) :: outcome
+    integer         , intent(in) , optional :: startup
+    real(dp), allocatable :: dt(:)
+
+    type(family_container) :: schemes(1), enrichments(1)
+    type(expression)     :: functionals(1)
+    type(chain_block), allocatable :: chain(:)
+    type(expansion)  , allocatable :: tower
+    type(functional_error_estimate), allocatable :: estimates(:)
+    type(imbalance) :: final_imbalance
+    real(dp), allocatable :: state(:), resolved(:), t(:)
+    integer , allocatable :: parts(:)
+    real(dp) :: achieved, eta, s, threshold, predicted
+    integer  :: k, n
+
+    type(march_context), target :: local_context
+    class(march_context), pointer :: active
+    active => local_context
+    if (present(context)) active => context
+
+    if (tolerance <= 0.0_dp .or. .not. ieee_is_finite(tolerance)) then
+       error stop 'gti_chain: the functional-error tolerance is positive and finite'
+    end if
+    if (order < 1) error stop 'gti_chain: the family''s order is positive'
+    if (instants < 2 .or. instants > instants_limit) then
+       error stop 'gti_chain: the instant limit admits the seed grid'
+    end if
+    allocate(schemes(1) % scheme, source=scheme)
+    allocate(enrichments(1) % scheme, source=enriched)
+    functionals(1) = functional
+    state = consistent_state(physics, degrees, lower, design, context=active)
+    dt = spread(duration / real(instants - 1, dp), 1, instants - 1)
+    outcome % tolerance = tolerance
+    outcome % limit     = instants_limit
+    outcome % rounds    = 0
+    do
+       n = size(dt)
+       call march_chain(schemes, [n + 1], physics, degrees, fixed_grid(dt), design, state, chain, tower, &
+            & resolved, t, achieved, final_imbalance=final_imbalance, startup=startup, context=active)
+       if (.not. final_imbalance % converged) then
+          error stop 'gti_chain: the primal march must converge before its functional error is estimated'
+       end if
+       call functional_error(chain, tower, enrichments, physics, degrees, fixed_grid(dt), design, &
+            & functionals, estimates, context=active)
+       eta = estimates(1) % estimate
+       s   = 1.0_dp
+       if (relative) s = estimates(1) % scale
+       outcome % estimate = eta
+       outcome % scale    = s
+       outcome % instants = n + 1
+       if (.not. ieee_is_finite(eta)) then
+          outcome % status = ADAPTATION_NONFINITE
+          return
+       end if
+       if (abs(eta) <= tolerance * s) then
+          outcome % status = ADAPTATION_MET
+          return
+       end if
+       ! marking by equidistribution over the N steps; by_step is
+       ! indexed by the arriving instant
+       threshold = tolerance * s / real(n, dp)
+       allocate(parts(n), source=1)
+       do k = 1, n
+          if (abs(estimates(1) % by_step(k + 1)) <= threshold) cycle
+          predicted = dt(k) * (threshold / abs(estimates(1) % by_step(k + 1))) ** (1.0_dp / real(order + 1, dp))
+          parts(k)  = ceiling(dt(k) / predicted)
+       end do
+       if (sum(parts) + 1 > instants_limit) then
+          outcome % status = ADAPTATION_UNMET
+          return
+       end if
+       outcome % rounds = outcome % rounds + 1
+       dt = divided(dt, parts)
+       deallocate(parts)
+    end do
+
+  end function functional_error_partition
+
+  !===================================================================!
+  ! The outcome as one line: its status word, the criterion value
+  ! against the tolerance and the scale, the grid and the limit.
+  !===================================================================!
+  function adaptation_description(outcome) result(line)
+    type(adaptation_outcome), intent(in) :: outcome
+    character(len=:), allocatable :: line
+    character(len=160) :: text
+    select case (outcome % status)
+    case (ADAPTATION_MET)
+       write(text,'(a,es10.3,a,es9.2,a,es9.2,a,i0,a,i0,a)') 'ADAPTATION_MET: |estimate| ', abs(outcome % estimate), &
+            & ' within tolerance ', outcome % tolerance, ' x scale ', outcome % scale, ' on ', outcome % instants, &
+            & ' instants (', outcome % rounds, ' rejected)'
+    case (ADAPTATION_UNMET)
+       write(text,'(a,es10.3,a,es9.2,a,es9.2,a,i0,a,i0,a,i0,a)') 'ADAPTATION_UNMET: |estimate| ', &
+            & abs(outcome % estimate), ' above tolerance ', outcome % tolerance, ' x scale ', outcome % scale, &
+            & ' on ', outcome % instants, ' instants; the next grid exceeds the limit of ', outcome % limit, &
+            & ' instants (', outcome % rounds, ' rejected)'
+    case default
+       write(text,'(a,es10.3,a,i0,a)') 'ADAPTATION_NONFINITE: the estimate ', outcome % estimate, ' on ', &
+            & outcome % instants, ' instants is not a finite number'
+    end select
+    line = trim(text)
+  end function adaptation_description
 
   !===================================================================!
   ! THE FUNCTIONAL DISCRETIZATION-ERROR ESTIMATOR. For the discrete
@@ -11086,7 +11284,8 @@ program graph_time_integrator
   use gti_chain             , only : chain_block, march_chain, chain_expansion, &
        & expansion_substitutions, chain_versions, num_designs_of, &
        & instant_components, chain_derivative, asymmetry, sink_costates, &
-       & grid_stationary_partition, functional_error, functional_error_estimate
+       & grid_stationary_partition, functional_error, functional_error_estimate, &
+       & functional_error_partition, adaptation_outcome, adaptation_description, ADAPTATION_MET
   use gti_sweeps, only : pass_of, forward_pass, reverse_pass
   use operation_minimization, only : relative, absolute, by_count, by_rate
   use gti_driver            , only : settings, chosen_grid, steps_of, family_named, clock, &
@@ -11801,8 +12000,10 @@ contains
   !===================================================================!
   subroutine adaptive_context(cfg)
     type(configuration), intent(inout) :: cfg
-    class(family), allocatable :: scheme
+    class(family), allocatable :: scheme, enriched
+    type(adaptation_outcome) :: outcome
     character(len=16), allocatable :: names(:)
+    character(len=:), allocatable :: label
     character(len=2) :: digit
     integer :: nd, rejects
     logical :: staged, admissible
@@ -11826,30 +12027,56 @@ contains
     end if
     write(digit,'(i0)') cfg % max_discretization_order
     nd = cfg % state_degree + 1
-    if (trim(cfg % adaptive_check) == 'grid_stationarity') then
+    select case (trim(cfg % adaptive_check))
+    case ('grid_stationarity')
        fixed_weights = grid_stationary_partition(scheme, &
             & physics_of(cfg), energy_of(cfg), nd, &
             & cfg % time_duration, q0(1:cfg % state_degree), cfg % design, &
             & cfg % grid_stationarity_tolerance, &
-            & trim(cfg % tolerance_criterion) == 'relative', rejects, &
-            & startup=cfg % startup_refinement, context=context)
-    else
+            & trim(cfg % tolerance_criterion) == 'relative', cfg % adaptation_instants, rejects, &
+            & startup=cfg % startup_refinement, outcome=outcome, context=context)
+    case ('functional_error')
+       call enriched_family(trim(names(1)), cfg % max_discretization_order, enriched, admissible, label)
+       if (.not. admissible) then
+          write(*,'(a)') ' '
+          write(*,'(a)') ' the family ' // trim(names(1)) // trim(digit) // ' has no enrichment for the' // &
+               & ' functional-error estimate.'
+          error stop 'graph_time_integrator: an adaptive grid under functional_error is discovered with an enriched family'
+       end if
+       fixed_weights = functional_error_partition(scheme, enriched, cfg % max_discretization_order, &
+            & physics_of(cfg), energy_of(cfg), nd, cfg % time_duration, q0(1:cfg % state_degree), cfg % design, &
+            & cfg % functional_error_tolerance, trim(cfg % tolerance_criterion) == 'relative', &
+            & cfg % instants, cfg % adaptation_instants, outcome, startup=cfg % startup_refinement, context=context)
+       rejects = outcome % rounds
+    case default
        fixed_weights = adaptive_partition(scheme, cfg % max_discretization_order, &
             & physics_of(cfg), nd, cfg % time_duration, &
             & q0(1:cfg % state_degree), cfg % design, cfg % tolerance, &
             & trim(cfg % tolerance_criterion) == 'relative', rejects, context=context)
+       outcome % status = ADAPTATION_MET
+    end select
+    if (outcome % status /= ADAPTATION_MET) then
+       write(*,'(a)') ' '
+       write(*,'(a)') ' ' // adaptation_description(outcome)
+       error stop 'graph_time_integrator: the adaptive grid does not meet its criterion within adaptation_instants'
     end if
     cfg % instants = size(fixed_weights) + 1
     grid_fixed  = .true.
-    if (trim(cfg % adaptive_check) == 'grid_stationarity') then
+    select case (trim(cfg % adaptive_check))
+    case ('grid_stationarity')
        write(*,'(a,i0,a,es9.2,a,i0,a)') '   adaptive grid: ', size(fixed_weights), &
             & ' steps of ' // trim(names(1)) // trim(digit) // ' at grid-stationarity tolerance ', &
             & cfg % grid_stationarity_tolerance, ' (', rejects, ' rejected)'
-    else
+    case ('functional_error')
+       write(*,'(a,i0,a,es9.2,a,i0,a)') '   adaptive grid: ', size(fixed_weights), &
+            & ' steps of ' // trim(names(1)) // trim(digit) // ' at functional-error tolerance ', &
+            & cfg % functional_error_tolerance, ' (', rejects, ' rejected)'
+       write(*,'(a)') '   ' // adaptation_description(outcome)
+    case default
        write(*,'(a,i0,a,es9.2,a,i0,a)') '   adaptive grid: ', size(fixed_weights), &
             & ' steps of ' // trim(names(1)) // trim(digit) // ' at estimated local-error tolerance ', &
             & cfg % tolerance, ' (', rejects, ' rejected)'
-    end if
+    end select
   end subroutine adaptive_context
   !===================================================================!
   ! The coarsened grid: the uniform grid of instants instants, its
@@ -11918,7 +12145,7 @@ contains
     integer :: widest, printed
     call refuse_unknown(cfg % physics, ['vanderpol          ', 'vanderpol_algebraic', 'taylor_green       '], 'physics')
     call refuse_unknown(cfg % adaptive_check, &
-         & [character(len=17) :: 'step_doubling', 'grid_stationarity'], 'adaptive_check')
+         & [character(len=17) :: 'step_doubling', 'grid_stationarity', 'functional_error'], 'adaptive_check')
     call apply_stopping(cfg)
     call adaptive_context(cfg)
     call coarsened_context(cfg)

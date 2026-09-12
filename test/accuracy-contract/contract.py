@@ -6,6 +6,9 @@ declaration is not met.
     contract.py --set required|exploratory|rejection [--case ID ...]
                 [--results DIR] [--root DIR]
 
+Check kinds: order, floor, residual, records, value (a quantity recorded
+without a declaration, failing only where it is absent or not finite).
+
 Statuses of a case: pass, limitation (a declared limitation that is still
 unmet), and the failures below, unresolved, exceeds, not_monotone,
 under_resolved_reference, missing_result, malformed_record, nonfinite,
@@ -404,6 +407,11 @@ def floor_threshold(check, value, row, terms, case):
         return gamma(terms) * abs(row.get("tangent", 0.0))
     if isinstance(scale, (list, tuple)) and scale[0] == "difference":
         return (declared.TOLERANCE + UNIT_ROUNDOFF) * abs(row.get("functional", 0.0)) / scale[1]
+    if isinstance(scale, (list, tuple)) and scale[0] == "estimate":
+        # the adaptive criterion: tolerance x S, S the scale of the estimate
+        word = check["quantity"] if ":" in check["quantity"] else "energy"
+        estimate = row["functional_error"][word.split(":")[-1]]
+        return scale[1] * estimate["scale"] + print_resolution(value, check["digits"])
     magnitude = abs(check["reference"]) if scale is None else scale
     return print_resolution(check["reference"] if check["reference"] else value, check["digits"]) \
         + gamma(terms) * magnitude
@@ -482,6 +490,10 @@ def evaluate_check(check, case, rows, records):
         outcome["order"] = check["order"]
         outcome["references"] = references
         outcome.update(order_of(check, grids, values, references, terms, scales, resolutions))
+        return outcome
+    if kind == "value":
+        outcome["status"] = "pass"
+        outcome["message"] = "recorded: " + ", ".join(f"{v:.6g}" for v in values)
         return outcome
     if kind == "floor":
         outcome["thresholds"] = []

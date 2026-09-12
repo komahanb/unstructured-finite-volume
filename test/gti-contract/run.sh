@@ -20,8 +20,10 @@ fi
 "$work/run" accuracy
 "$work/run" status
 "$work/run" grid_stationary
-for mode in adaptive_failure minimum_step forward reverse linear_forward linear_reverse; do
+"$work/run" functional_error
+for mode in adaptation_unmet adaptive_failure minimum_step forward reverse linear_forward linear_reverse; do
     case "$mode" in
+        adaptation_unmet) expected='ADAPTATION_UNMET' ;;
         adaptive_failure) expected='step solve did not converge' ;;
         minimum_step) expected='minimum step cannot meet the tolerance' ;;
         forward|reverse) expected='primal march must converge' ;;
@@ -42,7 +44,8 @@ done
 # doubling of a multistep family, which has no step from one state.
 application="$root/application"
 common='--grid=adaptive --time_duration=2 --design=0 --max_derivative_degree=0 --max_discretization_order=2'
-for case in dirk_stationary bdf_stationary dirk_doubling superseded_word two_families multistep_doubling; do
+for case in dirk_stationary bdf_stationary dirk_doubling superseded_word two_families multistep_doubling \
+            dirk_functional_error budget_unmet; do
     families='--families=dirk'
     case "$case" in
         dirk_stationary)    arguments='--adaptive_check=grid_stationarity'
@@ -61,6 +64,15 @@ for case in dirk_stationary bdf_stationary dirk_doubling superseded_word two_fam
                             expected='discovered for one family'; accepted=0 ;;
         multistep_doubling) arguments='--adaptive_check=step_doubling'; families='--families=bdf'
                             expected='self-starting scheme'; accepted=0 ;;
+        # the estimator-driven grid from the configured 21-instant seed: implicit midpoint's
+        # E - E_h = 2.5e-3 at h = 0.1 is above 1e-3, every step is halved once, and the
+        # 40-step grid has E - E_h = 6.2e-4 within the tolerance
+        dirk_functional_error) arguments='--adaptive_check=functional_error --functional_error_tolerance=1e-3 --instants=21'
+                            expected='40 steps of dirk2 at functional-error tolerance  1.00E-03 (1 rejected)'; accepted=1 ;;
+        # the same loop with adaptation_instants below the 41 instants it needs: no
+        # acceptance, the outcome is reported and the program stops
+        budget_unmet)       arguments='--adaptive_check=functional_error --functional_error_tolerance=1e-3 --instants=21 --adaptation_instants=30'
+                            expected='ADAPTATION_UNMET'; accepted=0 ;;
     esac
     if (cd "$application" && ./graph_time_integrator $common $arguments "$families") > "$work/$case.log" 2>&1; then
         status=1

@@ -354,7 +354,20 @@ against an Adams row), so no prolongation of lambda_h onto them exists;
 the estimator's costates are its own, solved once per functional. The
 application prints the estimate with `check = functional_error` and the
 indicators with `indicators`; `test/accuracy-contract` measures the
-effectivity and the localization (G01-G05, X13-X15).
+effectivity and the localization (G01-G12, X13-X18).
+
+`functional_error_partition` drives an adaptive grid by the estimate:
+accept at |eta| <= tol S, otherwise divide every step with |eta_k| >
+tol S / N into ceiling(h_k / h_k') equal steps, h_k' = h_k (tol S /
+(N |eta_k|))^(1/(p+1)). It returns an `adaptation_outcome`
+(`ADAPTATION_MET`, `ADAPTATION_UNMET` when the next grid would exceed the
+instant limit, `ADAPTATION_NONFINITE`), never an accepted grid at
+exhaustion; `grid_stationary_partition` takes the same limit and returns
+the same outcome (or stops the program without an outcome argument). The
+application reports either failure with nonzero status
+(`test/gti-contract` modes `functional_error`, `adaptation_unmet`, cases
+`dirk_functional_error`, `budget_unmet`; `test/accuracy-contract` A01,
+A02, R14).
 
 ## Elimination storage
 

@@ -153,7 +153,11 @@ with a coarse-family block transferring the junction sensitivity
 the BDF-4 energy at order 5 by BDF-5, the chains through BDF-2) the
 estimate is a heuristic and only the estimate's own order is declared
 (exploratory X13, X14, X17, X18, effectivities recorded in their
-descriptions).
+descriptions). The adaptive cases A01, A02 (`adaptive_check =
+functional_error`) check |E - E_h| <= tolerance x S on the accepted grid,
+the loop's own criterion, and record the estimator/error ratio (check
+kind `value`); the rejection case R14 gives the loop `adaptation_instants`
+below its need and expects the process to fail with ADAPTATION_UNMET.
 
 ## Declared limitations at 3fb9c97
 

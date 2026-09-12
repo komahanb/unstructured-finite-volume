@@ -275,6 +275,32 @@ def localized_case(identifier, row, order, interval, description, instants=(41, 
             "grids": grids, "runs": runs, "checks": checks, "limitation": None, "timeout": 120}
 
 
+def adaptation_case(identifier, row, tolerance, description, families, max_order, instants=21,
+                    limit=None, set_name="required"):
+    """The adaptive grid driven by the estimator (adaptive_check = functional_error):
+    on the accepted grid |E - E_h| <= tolerance x S, S the scale of the relative
+    criterion; the estimator/error ratio is recorded. A limit below the need is
+    the rejection case: no acceptance, the process fails with ADAPTATION_UNMET."""
+    extra = ["--grid=adaptive", "--adaptive_check=functional_error",
+             f"--functional_error_tolerance={tolerance}"]
+    if limit:
+        extra.append(f"--adaptation_instants={limit}")
+    # the accepted grid is not known beforehand: gamma_N is taken at the limit
+    terms = (limit if limit else 1281) * STATE_COMPONENTS
+    grids = [("adaptive", DURATION / (instants - 1), terms)]
+    runs = {"adaptive": ode_argv(instants, families=families, max_order=max_order,
+                                 check="state functional_error", extra=extra)}
+    checks = [{"kind": "floor", "quantity": "E", "reference": E_REF, "digits": TABLE_DIGITS,
+               "scale": ("estimate", tolerance),
+               "justification": f"|E - E_h| <= {tolerance:g} x S on the accepted grid, the "
+                                "declared criterion of the adaptive loop, S = sum |w_k f(Q_k)|"},
+              {"kind": "value", "quantity": "effectivity:energy", "digits": TABLE_DIGITS,
+               "justification": "the estimator/error ratio on the accepted grid, recorded"},
+              LAW, residual_check()]
+    return {"id": identifier, "set": set_name, "description": description, "row": row,
+            "grids": grids, "runs": runs, "checks": checks, "limitation": None, "timeout": 120}
+
+
 def sensitivity_case():
     delta = 1.0e-6
     return {"id": "P02-sensitivity-demo", "set": "required", "record": "sensitivity",
@@ -434,6 +460,17 @@ def required_cases():
                        "chain BDF-3 then DIRK-3 by BDF-4 then BDF-4: effectivity at order 1 "
                        "(measured 0.87, 0.95, 0.98, 0.99), estimate at order 3",
                        chain="bdf:3 dirk:3"),
+        adaptation_case("A01-adaptive-dirk2", "dirk2", 1.0e-3,
+                        "implicit midpoint from 21 instants at the relative tolerance 1e-3: "
+                        "E - E_h = 2.5e-3 at h = 0.1 rejects the seed, every step is halved "
+                        "once, and the 40-step grid has E - E_h = 6.2e-4 (ratio 1.09)",
+                        families="dirk", max_order=2),
+        adaptation_case("A02-adaptive-bdf3", "bdf3", 1.0e-4,
+                        "BDF-3 from 21 instants at the relative tolerance 1e-4: eta = -3.3e-4 "
+                        "rejects the seed; its indicators vary along t, so the marking divides "
+                        "the steps unequally, and the accepted grid has E - E_h = -8.3e-5 "
+                        "within 1e-4 x S = 1.17e-4 (ratio 0.61 on this non-uniform grid)",
+                        families="bdf", max_order=3),
     ]
     # declared limitations: measured below their theoretical order
     cases += [
@@ -586,5 +623,10 @@ def rejection_cases(fixtures):
                           instants=(21, 41, 81, 161), limitation="declared for this test only",
                           argv_extra=dirk)
     stale["expected_status"] = "unexpected_pass"
+    unmet = adaptation_case("R14-adaptation-limit", "dirk2", 1.0e-3,
+                             "the adaptive loop with adaptation_instants = 30 below the 41 "
+                             "instants the tolerance needs: no acceptance, the process reports "
+                             "ADAPTATION_UNMET and fails", families="dirk", max_order=2, limit=30)
+    unmet["expected_status"] = "process_failure"
     return [wrong, low, under, malformed, nonfinite, unconverged, slow, missing, column,
-            process, residual, roundoff, stale]
+            process, residual, roundoff, stale, unmet]

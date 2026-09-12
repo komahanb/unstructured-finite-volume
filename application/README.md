@@ -862,7 +862,7 @@ separately, by the scheme. `grid` is
 |---|---|
 | `uniform` | h_k = T/(n-1), the instants equidistant |
 | `random` | a reproducible drawn spacing from `seed`, each weight within [1/2, 3/2] of uniform |
-| `adaptive` | the steps a march of one configured scheme discovers under `adaptive_check`, then frozen; `instants` is set by the result |
+| `adaptive` | the steps a march of one configured scheme discovers under `adaptive_check`, then frozen; `instants` is set by the result (the seed of `functional_error`); every loop is bounded by `adaptation_instants` |
 | `coarsened` | the uniform grid of `instants` instants with the steps inside `coarsened_interval = "a b"` merged in pairs, then frozen; the grid of the localized functional-error case |
 
 with n = `instants`. An adaptive grid is discovered for one scheme:
@@ -885,7 +885,25 @@ F(Q_exact) - F_h(Q_h) and bounds nothing about it: implicit midpoint on
 the oscillator is stationary on every uniform grid with E_h - 1 = -1/65
 at h = 1/4. The default of `grid_stationarity_tolerance` is 1e-12, the
 default of `tolerance`, which the criterion read before it had a key of
-its own. The former word `goal_oriented` is refused. When `designs` names `grid`, the weights h_k join
+its own. The former word `goal_oriented` is refused. `adaptive_check =
+functional_error` accepts a grid when the estimate eta of the energy
+functional's discretization error (`check = functional_error` below)
+satisfies |eta| <= `functional_error_tolerance` x S, S = sum |w_k f(Q_k)|
+(relative) or 1 (absolute); from the uniform seed of `instants` instants
+each rejected grid is refined by equidistribution: every step with
+|eta_k| > tol S / N is divided into ceiling(h_k / h_k') equal steps,
+h_k' = h_k (tol S / (N |eta_k|))^(1/(p+1)), p the family's declared order
+(implicit midpoint from 21 instants at 1e-3: the seed's 2.5e-3 rejects,
+every step is halved once, the 40-step grid has E - E_h = 6.2e-4;
+`test/gti-contract` case `dirk_functional_error`, `test/accuracy-contract`
+A01, A02). Every adaptive loop is bounded by `adaptation_instants`, the
+largest instant count a grid may reach (default 1281, two uniform
+halvings of the finest required grid of the accuracy contract): a next
+grid beyond it is not marched, the outcome `ADAPTATION_UNMET` is printed
+with the last grid's estimate, scale and instant count, and the program
+stops with nonzero status; a non-finite estimate is `ADAPTATION_NONFINITE`
+and stops likewise. No grid is accepted at exhaustion, under
+`grid_stationarity` either (its former fifty-attempt stop is deleted). When `designs` names `grid`, the weights h_k join
 nu as designs and the table reports df/dh beside df/dnu, together with
 the identity sum over k of h_k df/dh_k = 0, the steps being
 homogeneous of degree zero in their weights. The same map carries a

@@ -8,7 +8,8 @@ program gti_contract
   use gti_expansion, only : expansion, family_container
   use gti_chain, only : chain_block, march_chain, chain_expansion, chain_versions, &
        & chain_derivative, instant_components, grid_stationary_partition, &
-       & functional_error, functional_error_estimate
+       & functional_error, functional_error_estimate, functional_error_partition, &
+       & adaptation_outcome, adaptation_description, ADAPTATION_MET, ADAPTATION_UNMET
   use gti_march, only : march_context, imbalance, consistent_state, frozen_inputs, solve_linear
   use gti_sweeps, only : reverse_pass
   use gti_adaptive, only : adaptive_partition
@@ -17,6 +18,7 @@ program gti_contract
   type(march_context) :: context
   type(family_container) :: schemes(1), enriched(1)
   type(functional_error_estimate), allocatable :: estimates(:)
+  type(adaptation_outcome) :: outcome
   type(chain_block), allocatable :: chain(:)
   type(expansion), allocatable, target :: tower
   type(expression) :: physics, functional(1)
@@ -35,6 +37,8 @@ program gti_contract
   integer , parameter :: stationary_steps = 8
   real(dp), parameter :: stationary_duration = 2.0_dp
   real(dp), parameter :: stationary_energy = 64.0_dp / 65.0_dp
+  ! the largest grid an adaptive loop here may reach: two halvings of the seed
+  integer, parameter :: instants_limit = 4 * (stationary_steps + 1)
   real(dp) :: achieved, errors(3), slope, design_value, stationarity_defect, energy, floor
   integer :: k, n, rejects
   character(len=32) :: mode
@@ -44,7 +48,8 @@ program gti_contract
   physics = van_der_pol(2)
   functional = [van_der_pol_energy(2)]
   design_value = 0.8_dp
-  if (trim(mode) == 'accuracy' .or. trim(mode) == 'grid_stationary') design_value = 0.0_dp
+  if (trim(mode) == 'accuracy' .or. trim(mode) == 'grid_stationary' .or. trim(mode) == 'functional_error' &
+       & .or. trim(mode) == 'adaptation_unmet') design_value = 0.0_dp
   initial = consistent_state(physics, 3, [1.0_dp, 0.0_dp], design_value, context=context)
   allocate(schemes(1) % scheme, source=implicit_midpoint())
   select case (trim(mode))
@@ -67,7 +72,7 @@ program gti_contract
      ! far above roundoff, while the functional misses its exact value by 1/65: the
      ! stationarity defect is not an error bound
      weights = grid_stationary_partition(implicit_midpoint(), physics, functional(1), 3, &
-          & stationary_duration, [1.0_dp, 0.0_dp], design_value, solver_tolerance, .true., rejects, &
+          & stationary_duration, [1.0_dp, 0.0_dp], design_value, solver_tolerance, .true., instants_limit, rejects, &
           & stationarity_defect=stationarity_defect, context=context)
      if (rejects /= 0) error stop 'grid_stationary: the uniform seed is accepted at the first attempt'
      if (size(weights) /= stationary_steps) error stop 'grid_stationary: the seed has eight steps'
@@ -111,6 +116,47 @@ program gti_contract
      write(*,'(a,es12.4,a,es12.4,a,f8.4)') '       functional error estimate ', estimates(1) % estimate, &
           & ' against E - E_h = ', stationary_duration / 2.0_dp - energy, ' effectivity ', &
           & estimates(1) % estimate / (stationary_duration / 2.0_dp - energy)
+  case ('functional_error')
+     ! the adaptive grid driven by the estimator: implicit midpoint from the 9-instant
+     ! seed at the relative tolerance 1e-3. Prediction: E - E_h = 1/65 = 1.54e-2 at h = 1/4
+     ! and the indicators are nearly uniform, so every step is divided by
+     ! ceiling((N |eta_k| / (tol S))^(1/3)) = ceiling((1.87e-2 / 1e-3)^(1/3)) = 3 into 24
+     ! steps, where E - E_h = 1/(65 x 9) x (1 + O(h^2)) = 1.7e-3 is above 1e-3 again, then by
+     ! 2 into 48, where E - E_h = 4.3e-4 <= 1e-3: accepted with two rejections, and the
+     ! error on the accepted grid is within the tolerance
+     weights = functional_error_partition(implicit_midpoint(), bdf_family(3), 2, physics, functional(1), 3, &
+          & stationary_duration, [1.0_dp, 0.0_dp], design_value, 1.0e-3_dp, .true., stationary_steps + 1, &
+          & 8 * stationary_steps + 1, outcome, context=context)
+     write(*,'(a)') '       ' // adaptation_description(outcome)
+     if (outcome % status /= ADAPTATION_MET) error stop 'functional_error: the tolerance is met within the limit'
+     if (size(weights) + 1 /= outcome % instants) error stop 'functional_error: the outcome names the accepted grid'
+     call march_chain(schemes, [size(weights) + 1], physics, 3, fixed_grid(weights), &
+          & design_value, initial, chain, tower, dt, t, achieved, final_imbalance=final_imbalance, context=context)
+     if (.not. final_imbalance % converged) error stop 'functional_error: primal solve must converge'
+     call chain_expansion(chain, tower, functional, 3, 0, table, context=context)
+     energy = table(0, 1)
+     write(*,'(a,i0,a,es12.4,a,es12.4,a,f8.4)') '       accepted grid of ', size(weights), ' steps: E - E_h = ', &
+          & stationary_duration / 2.0_dp - energy, ' estimate ', outcome % estimate, ' ratio ', &
+          & outcome % estimate / (stationary_duration / 2.0_dp - energy)
+     if (abs(stationary_duration / 2.0_dp - energy) > 1.0e-3_dp * outcome % scale) &
+          & error stop 'functional_error: the error on the accepted grid is within tolerance x S'
+     if (outcome % rounds /= 2) error stop 'functional_error: two grids are rejected'
+     print *, 'PASS: the estimator-driven grid meets the functional-error tolerance'
+  case ('adaptation_unmet')
+     ! the same loop with a limit the second grid exceeds: the outcome is unmet, the
+     ! last grid marched is returned with its estimate, and no grid is accepted
+     weights = functional_error_partition(implicit_midpoint(), bdf_family(3), 2, physics, functional(1), 3, &
+          & stationary_duration, [1.0_dp, 0.0_dp], design_value, 1.0e-3_dp, .true., stationary_steps + 1, &
+          & 2 * stationary_steps + 1, outcome, context=context)
+     write(*,'(a)') '       ' // adaptation_description(outcome)
+     if (outcome % status /= ADAPTATION_UNMET) error stop 'adaptation_unmet: the limit is reported as unmet'
+     if (outcome % instants /= stationary_steps + 1 .or. size(weights) /= stationary_steps) &
+          & error stop 'adaptation_unmet: the last grid marched is the seed'
+     if (abs(outcome % estimate) <= 1.0e-3_dp * outcome % scale) error stop 'adaptation_unmet: the estimate is above tolerance'
+     ! the stationarity loop under the same limit: its halving of the 9-instant seed would
+     ! exceed a limit of 12 instants; with no outcome argument the program stops
+     weights = grid_stationary_partition(bdf_family(2), physics, functional(1), 3, stationary_duration, &
+          & [1.0_dp, 0.0_dp], design_value, 1.0e-6_dp, .true., stationary_steps + 4, startup=2, context=context)
   case ('adaptive_failure')
      call context % set_stopping(1.0e-14_dp, relative, by_count, 1)
      dt = adaptive_partition(crouzeix_three_stage(), 4, physics, 3, 1.0_dp, &

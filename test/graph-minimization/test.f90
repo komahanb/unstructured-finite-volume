@@ -1470,8 +1470,8 @@ contains
     u_domain = residual % unknown_domain()
     p_domain = residual % design_domain()
     inputs   = residual % frozen_tuple(x, nu)
-    states   = typed_field_domain(u_domain, m)
-    designs  = typed_field_domain(p_domain, n)
+    states   = residual % state_fields()
+    designs  = residual % design_fields()
     call report(inputs(1) % defined_on(u_domain) .and. inputs(2) % defined_on(p_domain) .and. &
          & inputs(2) % num_entries() == n, 'the frozen tuple is a state on U and a design on P, one value per point', &
          & num_failures)
@@ -1660,6 +1660,34 @@ contains
          & 'under <u, v>_M the adjoint of J is M^-1 J^T M, and the coordinate transpose violates the identity by &
          &u^T (J^T M - M J^T) v', num_failures)
 
+    ! the pairing law on the typed supports: a direction u on U, its
+    ! image J u on Y and a costate v on Y pair as <J u, v>_Y = <u, J^T v>_U
+    ! under the Euclidean measure, evaluated through the fields'
+    ! inner product; a costate pairs with the residual on Y
+    block
+      type(typed_field_domain) :: residuals
+      type(stored_field) :: u_field, v_field, ju_field, jtv_field, lambda_field
+      real(dp) :: paired_left, paired_right, paired_lagrangian
+      residuals  = residual % residual_fields()
+      u_field    = states % direction(u)
+      call residual % partial_action(unknowns, residual % bind(inputs), &
+           & [variation(residual % argument(1), u_field)], image)
+      call image % real_vector(y)
+      ju_field   = residuals % residual(y, 'J u')
+      v_field    = residuals % costate(vv)
+      jtv_field  = states % direction(matmul(transpose(j), vv))
+      lambda_field = residuals % costate(vv)
+      paired_left  = ju_field % inner_product(v_field)
+      paired_right = u_field % inner_product(jtv_field)
+      paired_lagrangian = lambda_field % inner_product(image)
+      call report(abs(paired_left - dot_product(matmul(j, u), vv)) <= 1.0e-13_dp * max(abs(paired_left), 1.0_dp) &
+           & .and. abs(paired_left - paired_right) <= 1.0e-13_dp * max(abs(paired_left), 1.0_dp) &
+           & .and. abs(paired_lagrangian - dot_product(vv, y)) <= 1.0e-13_dp * max(abs(paired_lagrangian), 1.0_dp) &
+           & .and. ju_field % defined_on(u_domain) .and. u_field % defined_on(u_domain), &
+           & 'through the typed supports <J u, v>_Y = <u, J^T v>_U under the Euclidean measure, and the costate &
+           &pairs with the residual on Y = U', num_failures)
+    end block
+
     ! the sensitivity of F = <g, Q(nu)>_M along the design direction
     ! wnu: tangent J w = -D_nu R[wnu], adjoint J^T lambda = M g, and a
     ! central difference of the solved F
@@ -1715,5 +1743,6 @@ contains
          &solution', num_failures)
 
   end subroutine check_residual_boundary
+
 
 end program test_graph_minimization

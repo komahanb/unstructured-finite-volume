@@ -69,12 +69,6 @@ module operation_domain
 
      procedure :: state_fields            => discrete_domain_state_fields
      procedure :: design_fields           => discrete_domain_design_fields
-     procedure :: residual_fields         => discrete_domain_residual_fields
-     procedure :: direction_fields        => discrete_domain_direction_fields
-     procedure :: tangent_fields          => discrete_domain_tangent_fields
-     procedure :: costate_fields          => discrete_domain_costate_fields
-     procedure :: forcing_fields          => discrete_domain_forcing_fields
-     procedure :: solution_fields         => discrete_domain_solution_fields
      procedure :: functional_state_fields => discrete_domain_functional_state_fields
 
   end type discrete_domain
@@ -212,54 +206,6 @@ contains
     fields = typed_field_domain(this % point_set, this % points)
 
   end function discrete_domain_design_fields
-
-  type(typed_field_domain) function discrete_domain_residual_fields(this) result(fields)
-
-    class(discrete_domain), intent(in) :: this
-
-    fields = typed_field_domain(this % point_set, this % points)
-
-  end function discrete_domain_residual_fields
-
-  type(typed_field_domain) function discrete_domain_direction_fields(this) result(fields)
-
-    class(discrete_domain), intent(in) :: this
-
-    fields = this % state_fields()
-
-  end function discrete_domain_direction_fields
-
-  type(typed_field_domain) function discrete_domain_tangent_fields(this) result(fields)
-
-    class(discrete_domain), intent(in) :: this
-
-    fields = this % state_fields()
-
-  end function discrete_domain_tangent_fields
-
-  type(typed_field_domain) function discrete_domain_costate_fields(this) result(fields)
-
-    class(discrete_domain), intent(in) :: this
-
-    fields = this % residual_fields()
-
-  end function discrete_domain_costate_fields
-
-  type(typed_field_domain) function discrete_domain_forcing_fields(this) result(fields)
-
-    class(discrete_domain), intent(in) :: this
-
-    fields = this % residual_fields()
-
-  end function discrete_domain_forcing_fields
-
-  type(typed_field_domain) function discrete_domain_solution_fields(this) result(fields)
-
-    class(discrete_domain), intent(in) :: this
-
-    fields = this % state_fields()
-
-  end function discrete_domain_solution_fields
 
   type(typed_field_domain) function discrete_domain_functional_state_fields(this) result(fields)
 

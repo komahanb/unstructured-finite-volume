@@ -105,6 +105,9 @@ module operation_residual
      procedure :: unknown_graph
      procedure :: unknown_domain
      procedure :: design_domain
+     procedure :: state_fields
+     procedure :: residual_fields
+     procedure :: design_fields
      procedure :: frozen_tuple
      procedure :: selected_points
      procedure :: constrain
@@ -348,6 +351,29 @@ contains
   end function design_domain
 
   !===================================================================!
+  ! THE TYPED SUPPORTS. The state, a direction in the state and a
+  ! tangent are fields on U with one value per unknown; the residual,
+  ! a costate and a forcing are fields on Y = U; the design and a
+  ! direction in the design are fields on P with one value per point.
+  ! Each support reads its extent from the residual's own graph.
+  !===================================================================!
+
+  type(typed_field_domain) function state_fields(this) result(fields)
+    class(residual_operator), intent(in) :: this
+    fields = typed_field_domain(this % unknown_vertices)
+  end function state_fields
+
+  type(typed_field_domain) function residual_fields(this) result(fields)
+    class(residual_operator), intent(in) :: this
+    fields = typed_field_domain(this % unknown_vertices)
+  end function residual_fields
+
+  type(typed_field_domain) function design_fields(this) result(fields)
+    class(residual_operator), intent(in) :: this
+    fields = typed_field_domain(this % points)
+  end function design_fields
+
+  !===================================================================!
   ! THE FROZEN TUPLE (Q, nu) on U x P: the state x, one value per
   ! unknown, and the design nu, one value per point. Every consumer -
   ! the value, the explicit tangent, the tangent and adjoint actions,
@@ -367,8 +393,8 @@ contains
     if (size(nu) /= size(this % at)) then
        error stop 'operation_residual: the design contains one value per evaluation point'
     end if
-    states  = typed_field_domain(this % unknown_domain(), this % unknowns)
-    designs = typed_field_domain(this % design_domain(), size(this % at))
+    states  = this % state_fields()
+    designs = this % design_fields()
     inputs(1) = states  % state(x)
     inputs(2) = designs % design(nu)
   end function frozen_tuple
@@ -551,7 +577,7 @@ contains
             &per unknown point'
     end if
     call bound_real_vector(inputs, this % argument(1), x)
-    states = typed_field_domain(this % unknown_domain(), this % unknowns)
+    states = this % state_fields()
     state  = states % state(x)
   end subroutine state_of
 
@@ -584,7 +610,7 @@ contains
     class(field), allocatable, intent(inout) :: output
     type(stored_field) :: out
     type(typed_field_domain) :: residuals
-    residuals = typed_field_domain(this % unknown_domain(), this % unknowns)
+    residuals = this % residual_fields()
     out       = residuals % residual(r, this % name())
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
@@ -634,7 +660,7 @@ contains
        r = r + coupled
     end if
     if (present(v)) then
-       points    = typed_field_domain(this % points % vertex_set(), size(this % at), this % stride())
+       points    = typed_field_domain(this % points, this % stride())
        direction = points % direction(gathered(this, v))
        call governed(this, point_data, governing, [variation(this % physics % argument(1), direction)])
     else
@@ -647,7 +673,7 @@ contains
       type(stored_field) :: along
       type(typed_field_domain) :: domain
       if (present(v)) then
-         domain = typed_field_domain(this % unknown_domain(), size(v))
+         domain = this % state_fields()
          along  = domain % direction(v)
          call op % partial_action(this % unknown_vertices, op % bind([state]), &
               & [variation(op % argument(1), along)], half)
@@ -693,7 +719,7 @@ contains
     ! each rule's partials in the components it reads alone: a
     ! component no leaf of the rule names has a zero column
     allocate(v(npts * this % degrees))
-    points = typed_field_domain(this % points % vertex_set(), npts, this % degrees)
+    points = typed_field_domain(this % points, this % degrees)
     do j = 1, size(this % rules)
        call this % rules(j) % read_components(reads)
        do k = 1, size(reads)
@@ -808,7 +834,7 @@ contains
     real(dp), allocatable :: v(:)
     call given % direction(v)
     if (given % argument_is(this % argument(1))) then
-       points    = typed_field_domain(this % points % vertex_set(), size(this % at), this % stride())
+       points    = typed_field_domain(this % points, this % stride())
        direction = points % direction(gathered(this, v))
        at_points = variation(this % physics % argument(1), direction)
     else if (given % argument_is(this % argument(2))) then

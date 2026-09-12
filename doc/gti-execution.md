@@ -239,6 +239,19 @@ A state, a direction in the state or a right side defined on a graph
 other than U, a design or a direction in the design defined on a graph
 other than P or with a value count other than the point count, and a
 host graph of another identity are refused, whatever their length.
+The residual types its supports from its own graphs: `state_fields`
+(U, one value per unknown: state, direction, tangent), `residual_fields`
+(Y = U: residual, costate, forcing) and `design_fields` (P, one value
+per point). A `typed_field_domain` placed through a directed graph
+reads its extent from that graph's vertex count, so no consumer states
+an extent read from an array; the extent form of the constructor is
+for an owner that stores the declared cardinality of the same identity
+(a `discrete_domain`, the residual, a linearization's image). A value
+vector that does not fill entries times components is refused at
+placement. A `discrete_domain` types the placed law's inputs (state
+with the law's component count, design with one value per point) and
+a functional's state; the six unused factories for residual, costate,
+forcing, direction, tangent and solution on the point set are deleted.
 `domain` returns U with one entry per unknown, so a minimizer stated
 on a residual reads Y = U from the residual. The linearization emits
 its image with the entries and component count of the statement's

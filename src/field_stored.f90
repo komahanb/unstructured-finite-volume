@@ -75,6 +75,7 @@ module field_stored
   use util_precision  , only : dp
   use field_calculus, only : field
   use graph_fractal , only : graph
+  use view_directed , only : directed_graph
   use token_identity, only : token
 
   implicit none
@@ -136,6 +137,7 @@ module field_stored
 
   interface typed_field_domain
      module procedure create_domain
+     module procedure create_placed
   end interface typed_field_domain
 
 contains
@@ -160,10 +162,34 @@ contains
   end function create
 
   !===================================================================!
-  ! Build the common domain of a family of fields. The stored_field
-  ! setter remains the vector-size check; this constructor states the
-  ! identity and component count once so every construction below uses the
-  ! same object.
+  ! Build the common domain of a family of fields on the vertex set
+  ! of a directed graph: the identity is the graph's vertex set and
+  ! the extent is its vertex count, so no caller states an extent
+  ! read from an array. The stored_field setter refuses a value
+  ! vector that does not fill entries times components.
+  !===================================================================!
+
+  type(typed_field_domain) function create_placed(points, num_components) result(this)
+
+    class(directed_graph), intent(in)           :: points
+    integer              , intent(in), optional :: num_components
+
+    if (present(num_components)) then
+       this = create_domain(points % vertex_set(), points % num_vertices(), num_components)
+    else
+       this = create_domain(points % vertex_set(), points % num_vertices())
+    end if
+
+  end function create_placed
+
+  !===================================================================!
+  ! Build the common domain of a family of fields from an identity
+  ! and its extent. A graph value is an identity without a
+  ! cardinality, so this form is for an owner that stores the declared
+  ! cardinality of that same identity (a discrete domain, a residual's
+  ! unknown and point sets, a linearization's image read from the
+  ! statement's result); a caller with the directed graph places
+  ! through it instead.
   !===================================================================!
 
   type(typed_field_domain) function create_domain(domain, num_entries, num_components) result(this)

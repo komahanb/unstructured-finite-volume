@@ -307,6 +307,9 @@ program test_graph_minimization
   use operation_multigrid, only : multigrid
   use operation_temporal_minimization, only : temporal_minimizer
   use operation_residual, only : residual_operator
+  use operation_domain, only : continuous_domain, discrete_domain
+  use operation_expression, only : expression, unknown, derivative, constant, stated, &
+       & operator(+), operator(*), operator(**)
   use field_stored, only : typed_field_domain
   use cubic_statement_fixture, only : cubic_statement
   use restriction_fixture, only : delegating_solver, march_residual, designed_march_residual, num_restrictions
@@ -332,6 +335,7 @@ program test_graph_minimization
   call check_restricted_operator(num_failures)
   call check_solver_restriction(num_failures)
   call check_residual_boundary(num_failures)
+  call check_one_law_two_placements(num_failures)
 
   write(*, '(a)') ' ============================================='
   if (num_failures == 0) then
@@ -1470,8 +1474,8 @@ contains
     u_domain = residual % unknown_domain()
     p_domain = residual % design_domain()
     inputs   = residual % frozen_tuple(x, nu)
-    states   = typed_field_domain(u_domain, m)
-    designs  = typed_field_domain(p_domain, n)
+    states   = residual % state_fields()
+    designs  = residual % design_fields()
     call report(inputs(1) % defined_on(u_domain) .and. inputs(2) % defined_on(p_domain) .and. &
          & inputs(2) % num_entries() == n, 'the frozen tuple is a state on U and a design on P, one value per point', &
          & num_failures)
@@ -1660,6 +1664,34 @@ contains
          & 'under <u, v>_M the adjoint of J is M^-1 J^T M, and the coordinate transpose violates the identity by &
          &u^T (J^T M - M J^T) v', num_failures)
 
+    ! the pairing law on the typed supports: a direction u on U, its
+    ! image J u on Y and a costate v on Y pair as <J u, v>_Y = <u, J^T v>_U
+    ! under the Euclidean measure, evaluated through the fields'
+    ! inner product; a costate pairs with the residual on Y
+    block
+      type(typed_field_domain) :: residuals
+      type(stored_field) :: u_field, v_field, ju_field, jtv_field, lambda_field
+      real(dp) :: paired_left, paired_right, paired_lagrangian
+      residuals  = residual % residual_fields()
+      u_field    = states % direction(u)
+      call residual % partial_action(unknowns, residual % bind(inputs), &
+           & [variation(residual % argument(1), u_field)], image)
+      call image % real_vector(y)
+      ju_field   = residuals % residual(y, 'J u')
+      v_field    = residuals % costate(vv)
+      jtv_field  = states % direction(matmul(transpose(j), vv))
+      lambda_field = residuals % costate(vv)
+      paired_left  = ju_field % inner_product(v_field)
+      paired_right = u_field % inner_product(jtv_field)
+      paired_lagrangian = lambda_field % inner_product(image)
+      call report(abs(paired_left - dot_product(matmul(j, u), vv)) <= 1.0e-13_dp * max(abs(paired_left), 1.0_dp) &
+           & .and. abs(paired_left - paired_right) <= 1.0e-13_dp * max(abs(paired_left), 1.0_dp) &
+           & .and. abs(paired_lagrangian - dot_product(vv, y)) <= 1.0e-13_dp * max(abs(paired_lagrangian), 1.0_dp) &
+           & .and. ju_field % defined_on(u_domain) .and. u_field % defined_on(u_domain), &
+           & 'through the typed supports <J u, v>_Y = <u, J^T v>_U under the Euclidean measure, and the costate &
+           &pairs with the residual on Y = U', num_failures)
+    end block
+
     ! the sensitivity of F = <g, Q(nu)>_M along the design direction
     ! wnu: tangent J w = -D_nu R[wnu], adjoint J^T lambda = M g, and a
     ! central difference of the solved F
@@ -1715,5 +1747,104 @@ contains
          &solution', num_failures)
 
   end subroutine check_residual_boundary
+  !===================================================================!
+  ! ONE LAW, TWO DISCRETIZATIONS. A continuous law is placed on an
+  ! instant graph of five vertices and on a cell graph of nine: both
+  ! placements evaluate the same law to the same value at equal
+  ! tuples, their state supports are distinct identities of extents
+  ! 5 and 9 with the law's component count, and a residual placed on
+  ! its own point graph accepts the design typed by the placement on
+  ! that graph (the other placement is refused, restriction_refusal
+  ! case other_placement).
+  !===================================================================!
+
+  subroutine check_one_law_two_placements(num_failures)
+
+    integer, intent(inout) :: num_failures
+
+    integer , parameter :: n = 5, m = 2 * n
+    real(dp), parameter :: h = 0.1_dp, c = 0.5_dp, q0 = 1.0_dp
+    type(expression) :: law_expression, law_a, law_b
+    type(continuous_domain) :: law
+    type(discrete_domain) :: on_instants, on_cells, on_points
+    type(stored_directed_graph) :: instants, cells, unknowns
+    type(graph) :: instant_identity, cell_identity
+    type(continuous_domain) :: residual_law
+    type(typed_field_domain) :: instant_states, cell_states, instant_designs, cell_designs, point_designs
+    type(stored_field) :: state_a, design_a, state_b, design_b, inputs(2), nu_field
+    type(residual_operator) :: residual
+    class(field), allocatable :: out, image
+    real(dp), allocatable :: ra(:), rb(:), r(:), r_placed(:), x(:), nu(:)
+    real(dp) :: tuple(2), value
+    integer :: k, p
+
+    law_expression = stated(derivative(unknown(), 1) + constant(c) * derivative(unknown(), 0) ** 3, 1, 'cubic decay')
+    law      = continuous_domain(law_expression)
+    instants = stored_directed_graph(5, tails=[integer ::], heads=[integer ::])
+    cells    = stored_directed_graph(9, tails=[integer ::], heads=[integer ::])
+    on_instants = law % discrete(instants)
+    on_cells    = law % discrete(cells)
+    instant_states  = on_instants % state_fields()
+    cell_states     = on_cells % state_fields()
+    instant_designs = on_instants % design_fields()
+    cell_designs    = on_cells % design_fields()
+    tuple = [0.8_dp, -0.3_dp]
+    value = tuple(2) + c * tuple(1) ** 3
+    state_a  = instant_states % state([(tuple, k = 1, 5)])
+    design_a = instant_designs % design([(0.2_dp, k = 1, 5)])
+    state_b  = cell_states % state([(tuple, k = 1, 9)])
+    design_b = cell_designs % design([(0.2_dp, k = 1, 9)])
+    law_a = on_instants % law()
+    law_b = on_cells % law()
+    call law_a % apply(instants, law_a % bind([state_a, design_a]), out)
+    call out % real_vector(ra)
+    call law_b % apply(cells, law_b % bind([state_b, design_b]), out)
+    call out % real_vector(rb)
+    call report(on_instants % num_points() == 5 .and. on_cells % num_points() == 9 .and. &
+         & on_instants % equation_degree() == on_cells % equation_degree() .and. &
+         & on_instants % num_components() == on_cells % num_components() .and. &
+         & size(ra) == 5 .and. size(rb) == 9 .and. &
+         & maxval(abs(ra - value)) <= 1.0e-14_dp .and. maxval(abs(rb - value)) <= 1.0e-14_dp .and. &
+         & out % defined_on(cells % vertex_set()), &
+         & 'one continuous law placed on five instants and on nine cells evaluates to dq/dt + c q^3 at every &
+         &point of either placement', num_failures)
+    instant_identity = instant_states % domain()
+    cell_identity    = cell_states % domain()
+    call report(.not. instant_identity % same_as(cell_identity) .and. &
+         & instant_identity % same_as(instants % vertex_set()) .and. &
+         & cell_identity % same_as(cells % vertex_set()) .and. &
+         & instant_states % num_entries() == 5 .and. cell_states % num_entries() == 9 .and. &
+         & instant_states % num_components() == on_instants % num_components() .and. &
+         & cell_states % num_components() == on_cells % num_components() .and. &
+         & instant_designs % num_components() == 1 .and. cell_designs % num_entries() == 9, &
+         & 'the two placements keep their own discrete-domain identities: extents 5 and 9, the law''s component &
+         &count on the state, one value per point on the design', num_failures)
+
+    ! the residual placed on its own points accepts the design typed
+    ! by the placement of its law on that same point graph
+    allocate(x(m), nu(n))
+    do p = 1, n
+       x(2 * p - 1) = q0 * 0.9_dp ** p
+       x(2 * p)     = -0.3_dp / real(p, dp)
+       nu(p)        = 0.2_dp + 0.1_dp * real(p, dp)
+    end do
+    residual  = designed_march_residual(n, h, c, q0, nu(1))
+    unknowns  = residual % unknown_graph()
+    inputs    = residual % frozen_tuple(x, nu)
+    residual_law = continuous_domain(residual % rule())
+    on_points    = residual_law % discrete(residual % point_domain())
+    point_designs = on_points % design_fields()
+    nu_field  = point_designs % design(nu)
+    call residual % apply(unknowns, residual % bind(inputs), image)
+    call image % real_vector(r)
+    call residual % apply(unknowns, residual % bind([inputs(1), nu_field]), image)
+    call image % real_vector(r_placed)
+    call report(nu_field % defined_on(residual % design_domain()) .and. on_points % num_points() == n .and. &
+         & maxval(abs(r - r_placed)) == 0.0_dp, &
+         & 'the law placed on the residual''s own point graph types a design the residual accepts, with the &
+         &same value', num_failures)
+
+  end subroutine check_one_law_two_placements
+
 
 end program test_graph_minimization

@@ -239,6 +239,19 @@ A state, a direction in the state or a right side defined on a graph
 other than U, a design or a direction in the design defined on a graph
 other than P or with a value count other than the point count, and a
 host graph of another identity are refused, whatever their length.
+The residual types its supports from its own graphs: `state_fields`
+(U, one value per unknown: state, direction, tangent), `residual_fields`
+(Y = U: residual, costate, forcing) and `design_fields` (P, one value
+per point). A `typed_field_domain` placed through a directed graph
+reads its extent from that graph's vertex count, so no consumer states
+an extent read from an array; the extent form of the constructor is
+for an owner that stores the declared cardinality of the same identity
+(a `discrete_domain`, the residual, a linearization's image). A value
+vector that does not fill entries times components is refused at
+placement. A `discrete_domain` types the placed law's inputs (state
+with the law's component count, design with one value per point) and
+a functional's state; the six unused factories for residual, costate,
+forcing, direction, tangent and solution on the point set are deleted.
 `domain` returns U with one entry per unknown, so a minimizer stated
 on a residual reads Y = U from the residual. The linearization emits
 its image with the entries and component count of the statement's
@@ -267,6 +280,51 @@ Consumers of the boundary (library and `application/module_graph_time_integrator
 | adjoint action | `linearize(transposed=.true.)`, `stencil % reverse` | `solve_linear` -> `swept` (costate solves), `by_adjoint`, `derivative_rule_apply` |
 | versions | `march_context % next_version`, `versioned` | `linearize`, Newton (stamps the explicit stencil), `partitioned_solve` (member versions), `elimination` (complement), `dense_direct` (retained factors by version and transpose) |
 | higher partials | `residual_partial_action`, m >= 2 | `halley_correction` (`derivative_of`), `point_terms` (the Taylor towers read the physics expression directly) |
+
+## Family extension
+
+A time family is data of `operation_family`: a geometry tag and the
+coefficients that geometry reads (the order and its functional for
+Adams-Moulton and BDF, the tableau (a, b) for a diagonally implicit
+Runge-Kutta method, the pair (beta, gamma) for Newmark). Every incidence
+a discretization states is derived from that data by `row_pattern`,
+`block_connectivity` and `stage_connectivity`, every coefficient by
+`edge_coefficient`, every quadrature by `step_quadrature` and
+`stage_weight`; the application embeds those edges into its tuple layout
+and adds none of its own, and neither the temporal engine nor any
+solver reads a family name.
+
+Constructor-only, with no library and no engine edit: a tableau through
+`dirk_family(a, b)`, a Newmark pair through `newmark_family(beta, gamma)`,
+an Adams-Moulton or BDF order through `adams_family(p)` or
+`bdf_family(p)`. The application registers the name in `family_named`
+(name and order to constructor) and in `family_names`; nothing else
+changes. Alexander's two-stage L-stable tableau, gamma = 1 - sqrt(2)/2,
+is registered this way (`alexander`, order 2): its accuracy row runs in
+the accuracy contract (T14) and `time-integration-tower` level 6 states
+its connectivity and weights from the family, assembles its step map on
+q' = lambda q from them alone, and checks the stability function, second
+order under refinement, the tangent of the step in h from
+`weights_terms` and the adjoint identity through the transposed solve.
+
+Not constructor-only under the current design: a new geometry. The four
+geometries are the branches of `select case (this % geometry)` in
+`history_depth`, `primary_degree`, `row_pattern`, `step_quadrature`,
+`stage_weight` and `edge_coefficient`; generalised-alpha, a Nystrom
+method or a multistep with another row pattern is a fifth branch in each
+of them and a constructor, which is R12's extension proof, not a
+registration by data. The startup of a multistep family is one
+registered family (`gti_chain % startup_family`, Crouzeix's three-stage
+tableau) and is not configurable by name.
+
+The older plan's Newmark, typed-field and continuous/discrete-domain
+phases are closed with the source/consumer/test matrix in
+`artifacts/remaining-work-2026-09-11/r07/matrix-final.md`: the family's
+connectivities are the only source of incidence, the law governs the top
+degree at every evaluation point including the arriving instant of a
+staged step, fields read their extent from the graph that names their
+support, and one continuous law placed on two point graphs keeps two
+discrete-domain identities.
 
 ## Elimination storage
 

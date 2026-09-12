@@ -9,11 +9,9 @@
 ! (`at`), one rule per row it governs (`primary`), and each rule's
 ! result is added into the summed stencils on its row. A Lagrangian
 ! with k multipliers governs k rows, its stationarity in the j-th
-! multiplier on primary(j); a plain rule governs one. A rule may
-! govern a subset of the points (`governs`): a staged march places a
-! differential rule at the stages alone and an algebraic rule at the
-! arriving instant too. A row named fixed instead reads
-! x(row) - fixed(row): the identity, not the physics.
+! multiplier on primary(j); a plain rule governs one, at every point.
+! A row named fixed instead reads x(row) - fixed(row): the identity,
+! not the physics.
 !
 ! apply, explicit_tangent and partial_action are composed once here
 ! from the two stencils' own apply/explicit_tangent/partial_action
@@ -74,7 +72,6 @@ module operation_residual
      integer                , private :: connected_degrees = 0
      integer                , private :: unknowns = 0
      integer , allocatable, private :: primary(:)
-     logical , allocatable, private :: governs(:,:)
 
    contains
 
@@ -97,7 +94,6 @@ module operation_residual
      procedure :: primary_row
      procedure :: num_rules
      procedure :: rule_of
-     procedure :: governs_at
      procedure :: num_points
      procedure :: points_at
      procedure :: rule
@@ -109,6 +105,9 @@ module operation_residual
      procedure :: unknown_graph
      procedure :: unknown_domain
      procedure :: design_domain
+     procedure :: state_fields
+     procedure :: residual_fields
+     procedure :: design_fields
      procedure :: frozen_tuple
      procedure :: selected_points
      procedure :: constrain
@@ -133,7 +132,7 @@ contains
   !===================================================================!
 
   function create(primary_law, rule, at, unknowns, degrees, primary, fixed_rows, fixed, &
-       & connected_law, governs) result(this)
+       & connected_law) result(this)
 
     type(stencil)         , intent(in) :: primary_law
     type(expression)      , intent(in) :: rule
@@ -141,7 +140,6 @@ contains
     integer               , intent(in) :: fixed_rows(:)
     real(dp)              , intent(in) :: fixed(:)
     type(stencil)         , intent(in), optional :: connected_law
-    logical               , intent(in), optional :: governs(:,:)
     type(residual_operator) :: this
     type(continuous_domain) :: domain
     integer :: j
@@ -177,13 +175,6 @@ contains
        end do
     else
        this % rules = [rule]
-    end if
-    allocate(this % governs(size(at), size(this % rules)), source=.true.)
-    if (present(governs)) then
-       if (any(shape(governs) /= shape(this % governs))) then
-          error stop 'operation_residual: one governing flag per point and rule'
-       end if
-       this % governs = governs
     end if
     this % at      = at
     this % unknowns = unknowns
@@ -256,12 +247,6 @@ contains
     type(expression) :: law
     law = this % rules(j)
   end function rule_of
-
-  pure logical function governs_at(this, p, j)
-    class(residual_operator), intent(in) :: this
-    integer                 , intent(in) :: p, j
-    governs_at = this % governs(p, j)
-  end function governs_at
 
   pure integer function num_points(this)
     class(residual_operator), intent(in) :: this
@@ -366,6 +351,29 @@ contains
   end function design_domain
 
   !===================================================================!
+  ! THE TYPED SUPPORTS. The state, a direction in the state and a
+  ! tangent are fields on U with one value per unknown; the residual,
+  ! a costate and a forcing are fields on Y = U; the design and a
+  ! direction in the design are fields on P with one value per point.
+  ! Each support reads its extent from the residual's own graph.
+  !===================================================================!
+
+  type(typed_field_domain) function state_fields(this) result(fields)
+    class(residual_operator), intent(in) :: this
+    fields = typed_field_domain(this % unknown_vertices)
+  end function state_fields
+
+  type(typed_field_domain) function residual_fields(this) result(fields)
+    class(residual_operator), intent(in) :: this
+    fields = typed_field_domain(this % unknown_vertices)
+  end function residual_fields
+
+  type(typed_field_domain) function design_fields(this) result(fields)
+    class(residual_operator), intent(in) :: this
+    fields = typed_field_domain(this % points)
+  end function design_fields
+
+  !===================================================================!
   ! THE FROZEN TUPLE (Q, nu) on U x P: the state x, one value per
   ! unknown, and the design nu, one value per point. Every consumer -
   ! the value, the explicit tangent, the tangent and adjoint actions,
@@ -385,8 +393,8 @@ contains
     if (size(nu) /= size(this % at)) then
        error stop 'operation_residual: the design contains one value per evaluation point'
     end if
-    states  = typed_field_domain(this % unknown_domain(), this % unknowns)
-    designs = typed_field_domain(this % design_domain(), size(this % at))
+    states  = this % state_fields()
+    designs = this % design_fields()
     inputs(1) = states  % state(x)
     inputs(2) = designs % design(nu)
   end function frozen_tuple
@@ -492,7 +500,6 @@ contains
     integer :: p, j
     do j = 1, size(this % rules)
        do p = 1, size(this % at)
-          if (.not. this % governs(p, j)) cycle
           r(this % at(p) + this % primary(j) + 1) = &
                & r(this % at(p) + this % primary(j) + 1) + governing(p, j)
        end do
@@ -570,7 +577,7 @@ contains
             &per unknown point'
     end if
     call bound_real_vector(inputs, this % argument(1), x)
-    states = typed_field_domain(this % unknown_domain(), this % unknowns)
+    states = this % state_fields()
     state  = states % state(x)
   end subroutine state_of
 
@@ -603,7 +610,7 @@ contains
     class(field), allocatable, intent(inout) :: output
     type(stored_field) :: out
     type(typed_field_domain) :: residuals
-    residuals = typed_field_domain(this % unknown_domain(), this % unknowns)
+    residuals = this % residual_fields()
     out       = residuals % residual(r, this % name())
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
@@ -653,7 +660,7 @@ contains
        r = r + coupled
     end if
     if (present(v)) then
-       points    = typed_field_domain(this % points % vertex_set(), size(this % at), this % stride())
+       points    = typed_field_domain(this % points, this % stride())
        direction = points % direction(gathered(this, v))
        call governed(this, point_data, governing, [variation(this % physics % argument(1), direction)])
     else
@@ -666,7 +673,7 @@ contains
       type(stored_field) :: along
       type(typed_field_domain) :: domain
       if (present(v)) then
-         domain = typed_field_domain(this % unknown_domain(), size(v))
+         domain = this % state_fields()
          along  = domain % direction(v)
          call op % partial_action(this % unknown_vertices, op % bind([state]), &
               & [variation(op % argument(1), along)], half)
@@ -712,7 +719,7 @@ contains
     ! each rule's partials in the components it reads alone: a
     ! component no leaf of the rule names has a zero column
     allocate(v(npts * this % degrees))
-    points = typed_field_domain(this % points % vertex_set(), npts, this % degrees)
+    points = typed_field_domain(this % points, this % degrees)
     do j = 1, size(this % rules)
        call this % rules(j) % read_components(reads)
        do k = 1, size(reads)
@@ -726,7 +733,6 @@ contains
                & [variation(this % physics % argument(1), direction)], out)
           call out % real_vector(column)
           do p = 1, npts
-             if (.not. this % governs(p, j)) cycle
              if (is_fixed(this % at(p) + this % primary(j) + 1)) cycle
              num_triples    = num_triples + 1
              r(num_triples) = this % at(p) + this % primary(j) + 1
@@ -828,7 +834,7 @@ contains
     real(dp), allocatable :: v(:)
     call given % direction(v)
     if (given % argument_is(this % argument(1))) then
-       points    = typed_field_domain(this % points % vertex_set(), size(this % at), this % stride())
+       points    = typed_field_domain(this % points, this % stride())
        direction = points % direction(gathered(this, v))
        at_points = variation(this % physics % argument(1), direction)
     else if (given % argument_is(this % argument(2))) then
@@ -873,7 +879,6 @@ contains
     type(stencil) :: derived
     integer , allocatable :: sub_of(:), at(:), fixed_rows(:), points(:)
     real(dp), allocatable :: fixed(:)
-    logical , allocatable :: governs(:,:)
     integer :: e, p, npts, ncar
 
     allocate(sub_of(this % unknowns), source=0)
@@ -883,10 +888,9 @@ contains
 
     points = this % selected_points(free)
     npts   = size(points)
-    allocate(at(npts), governs(npts, size(this % rules)))
+    allocate(at(npts))
     do p = 1, npts
-       at(p)         = sub_of(this % at(points(p)) + 1) - 1
-       governs(p, :) = this % governs(points(p), :)
+       at(p) = sub_of(this % at(points(p)) + 1) - 1
     end do
 
     ncar = 0
@@ -902,11 +906,10 @@ contains
     if (allocated(this % connected_law)) then
        secondary = this % connected_law % restricted(free, values)
        sub = residual_operator(derived, this % physics, at, size(free), &
-            & this % degrees, this % primary, fixed_rows(1:ncar), fixed(1:ncar), connected_law=secondary, &
-            & governs=governs)
+            & this % degrees, this % primary, fixed_rows(1:ncar), fixed(1:ncar), connected_law=secondary)
     else
        sub = residual_operator(derived, this % physics, at, size(free), &
-            & this % degrees, this % primary, fixed_rows(1:ncar), fixed(1:ncar), governs=governs)
+            & this % degrees, this % primary, fixed_rows(1:ncar), fixed(1:ncar))
     end if
 
   end function constrain

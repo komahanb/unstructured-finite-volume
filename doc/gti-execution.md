@@ -157,6 +157,60 @@ exterior fixed; its affine part is the exterior contribution. The temporal
 engine dispatches on no solver type, so a new composition, including one
 defined only in a test, participates without engine edits.
 
+## Residual boundary
+
+Let Q be the state on the unknown domain U, nu the design on the point
+domain P (one value per evaluation point), R(Q, nu) in Y the residual
+and A = D_Q R(Q, nu): U -> Y its frozen linearization. The family is
+square: row i is the equation of unknown i, so Y = U. `residual_operator`
+owns U (`unknown_graph`, the host every consumer passes, and its vertex
+set `unknown_domain`) and P (`design_domain`, the vertex set of
+`point_domain`). Every consumer reads one frozen tuple (Q, nu) on U x P,
+built by `frozen_tuple(x, nu)`, and the same fixed rows F with values h:
+
+| consumer | definition | on F |
+|---|---|---|
+| value `apply` | stencils on Q plus the physics at the points | R_i = Q_i - h_i |
+| state tangent `partial_action` | D_Q R[v], v on U | v_i |
+| explicit `explicit_tangent` | J = D_Q R as triples | unit rows |
+| design tangent `partial_action` | D_nu R[w], w on P | 0 |
+| higher `partial_action` | D^m R[s_1..s_m], m <= the physics' degree, each s_k on U or P | 0 |
+| frozen `linearize(rhs, transposed)` | w -> J w - rhs, or J^T w - rhs, on the same U and P, versioned | identity rows of J |
+| constrained `constrain(free, h)` | R on the free unknowns with the exterior fixed, on a new U' and P' = `selected_points(free)` | the retained fixed rows |
+
+A state, a direction in the state or a right side defined on a graph
+other than U, a design or a direction in the design defined on a graph
+other than P or with a value count other than the point count, and a
+host graph of another identity are refused, whatever their length.
+`domain` returns U with one entry per unknown, so a minimizer stated
+on a residual reads Y = U from the residual. The linearization emits
+its image with the entries and component count of the statement's
+result and refuses a result whose entry count is not the domain's.
+The temporal partition restricts a stored input of a residual, a field
+on P with one value per point, to each member by `selected_points`
+onto the constrained residual's P'.
+
+The adjoint of J under the Euclidean pairing on U is the coordinate
+transpose J^T, which `linearize(transposed=.true.)` states through the
+stencil's orientation reversal. Under <u, v>_M = u^T M v the adjoint is
+M^-1 J^T M; the coordinate transpose violates the adjoint identity by
+u^T (J^T M - M J^T) v, and the M-weighted sensitivity of F = <g, Q>_M
+is obtained from the transposed linearization by solving J^T lambda = M g
+(`test/graph-minimization`, `check_residual_boundary`).
+
+Consumers of the boundary (library and `application/module_graph_time_integrator.f90`):
+
+| quantity | producer | consumers |
+|---|---|---|
+| residual value | `residual_apply` | `minimizer % evaluate` (Newton, temporal partition, `by_aspect`), difference-mode `linearization` |
+| constraints | `fixed_rows`, `fixed` (`create`, `constrain`) | `partitioned_solve` (seeds x on F), `at_first_instant`, `sinks_of`, `forcing_of`, `costate_rows`, `lagrangian_term` |
+| frozen inputs | `frozen_tuple`; `state_tuple` in `minimizer % evaluate` | `gti_march % frozen_inputs` (`solved`, `swept`, `frozen_at`, `dense_jacobian`, `gti-contract`), Newton (`evaluate(x, y, inputs)` then `freeze`) |
+| explicit Jacobian | `residual_explicit_tangent` | Newton (explicit entries), `linearize`, `sinks_of`, `jacobian_of` (`by_aspect`, `dense_jacobian`) |
+| tangent action | `residual_partial_action`, one variation | `linearization_apply` exact mode (Newton by the tangent action), `varied`, `design_partial` |
+| adjoint action | `linearize(transposed=.true.)`, `stencil % reverse` | `solve_linear` -> `swept` (costate solves), `by_adjoint`, `derivative_rule_apply` |
+| versions | `march_context % next_version`, `versioned` | `linearize`, Newton (stamps the explicit stencil), `partitioned_solve` (member versions), `elimination` (complement), `dense_direct` (retained factors by version and transpose) |
+| higher partials | `residual_partial_action`, m >= 2 | `halley_correction` (`derivative_of`), `point_terms` (the Taylor towers read the physics expression directly) |
+
 ## Elimination storage
 
 An `elimination` over retained unknowns K and eliminated unknowns E states

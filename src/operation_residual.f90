@@ -25,6 +25,18 @@
 ! the stencils (a time march, a spatial mesh, or both together) by
 ! building them before construction; this type does not know which.
 !
+! THE DOMAINS. The residual owns its unknown domain U (`unknown_graph`,
+! one vertex per unknown, no edges) and its design domain P
+! (`point_domain`, one vertex per evaluation point). The state Q and
+! every direction in the state are fields on U with one value per
+! unknown; the design nu and every direction in the design are fields
+! on P with one value per point; the residual, its tangents and its
+! partials are fields on Y = U. A field of equal length on another
+! domain, and a host graph of another identity, are refused: every
+! consumer - value, explicit tangent, tangent and adjoint actions,
+! higher partials, the frozen linearization and the constrained
+! residual - reads one frozen tuple (Q, nu) on U x P.
+!
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
@@ -32,8 +44,9 @@ module operation_residual
 
   use util_precision   , only : dp
   use operation_action , only : operation, contract, variation
-  use operation_action  , only : binding, bound_real_vector
+  use operation_action  , only : binding, bound_real_vector, bound_value
   use view_directed     , only : directed_graph
+  use graph_fractal     , only : graph
   use view_directed_stored, only : stored_directed_graph
   use field_calculus    , only : field, FIELD_REAL
   use field_stored      , only : stored_field, typed_field_domain
@@ -53,6 +66,7 @@ module operation_residual
      type(expression)           , private :: physics
      type(expression), allocatable, private :: rules(:)
      type(stored_directed_graph), private :: points
+     type(stored_directed_graph), private :: unknown_vertices
      integer , allocatable, private :: at(:)
      integer , allocatable, private :: fixed_rows(:)
      real(dp), allocatable, private :: fixed(:)
@@ -65,6 +79,7 @@ module operation_residual
    contains
 
      procedure :: name           => residual_name
+     procedure :: domain         => residual_domain
      procedure :: apply          => residual_apply
      procedure :: max_degree     => residual_max_degree
      procedure :: partial_action => residual_partial_action
@@ -91,6 +106,11 @@ module operation_residual
      procedure :: connected_stencil
      procedure :: attach_connected_stencil
      procedure :: point_domain
+     procedure :: unknown_graph
+     procedure :: unknown_domain
+     procedure :: design_domain
+     procedure :: frozen_tuple
+     procedure :: selected_points
      procedure :: constrain
      procedure :: linearize
 
@@ -175,6 +195,7 @@ contains
     this % fixed_rows = fixed_rows
     this % fixed      = fixed
     this % points = stored_directed_graph(size(at), tails=[integer ::], heads=[integer ::])
+    this % unknown_vertices = stored_directed_graph(unknowns, tails=[integer ::], heads=[integer ::])
     call this % declare_arguments(2, [contract(FIELD_REAL, 1), contract(FIELD_REAL, 1)])
 
   end function create
@@ -317,6 +338,111 @@ contains
   end function point_domain
 
   !===================================================================!
+  ! THE UNKNOWN DOMAIN U: the graph the residual is evaluated over
+  ! (passed as the host of every apply, tangent and linearization),
+  ! and its vertex set, the domain of the state, of every direction
+  ! in the state and of the residual itself.
+  !===================================================================!
+
+  type(stored_directed_graph) function unknown_graph(this) result(unknowns)
+    class(residual_operator), intent(in) :: this
+    unknowns = this % unknown_vertices
+  end function unknown_graph
+
+  type(graph) function unknown_domain(this) result(domain)
+    class(residual_operator), intent(in) :: this
+    domain = this % unknown_vertices % vertex_set()
+  end function unknown_domain
+
+  !===================================================================!
+  ! THE DESIGN DOMAIN P: the vertex set of the evaluation points, the
+  ! domain of the design and of every direction in it, one value per
+  ! point.
+  !===================================================================!
+
+  type(graph) function design_domain(this) result(domain)
+    class(residual_operator), intent(in) :: this
+    domain = this % points % vertex_set()
+  end function design_domain
+
+  !===================================================================!
+  ! THE FROZEN TUPLE (Q, nu) on U x P: the state x, one value per
+  ! unknown, and the design nu, one value per point. Every consumer -
+  ! the value, the explicit tangent, the tangent and adjoint actions,
+  ! the higher partials - reads a tuple built here, so each
+  ! linearizes the same function at the same point. Invalid input: a
+  ! state or a design of another length.
+  !===================================================================!
+
+  function frozen_tuple(this, x, nu) result(inputs)
+    class(residual_operator), intent(in) :: this
+    real(dp)                , intent(in) :: x(:), nu(:)
+    type(stored_field) :: inputs(2)
+    type(typed_field_domain) :: states, designs
+    if (size(x) /= this % unknowns) then
+       error stop 'operation_residual: the state contains one component per degree per unknown point'
+    end if
+    if (size(nu) /= size(this % at)) then
+       error stop 'operation_residual: the design contains one value per evaluation point'
+    end if
+    states  = typed_field_domain(this % unknown_domain(), this % unknowns)
+    designs = typed_field_domain(this % design_domain(), size(this % at))
+    inputs(1) = states  % state(x)
+    inputs(2) = designs % design(nu)
+  end function frozen_tuple
+
+  !===================================================================!
+  ! The residual's own domain: Y = U, one row per unknown, whatever
+  ! graph it is applied on.
+  !===================================================================!
+
+  subroutine residual_domain(this, input_graph, domain, num_entries)
+    class(residual_operator), intent(in)  :: this
+    class(directed_graph)   , intent(in)  :: input_graph
+    type(graph)             , intent(out) :: domain
+    integer                 , intent(out) :: num_entries
+    associate (u1 => input_graph); end associate
+    domain      = this % unknown_domain()
+    num_entries = this % unknowns
+  end subroutine residual_domain
+
+  !===================================================================!
+  ! Refuse a host graph other than U: the residual reads and writes
+  ! fields on its own unknown domain, and a graph of another identity
+  ! with an equal vertex count would type them on a domain they are
+  ! not defined on.
+  !===================================================================!
+
+  subroutine require_host(this, input_graph)
+    class(residual_operator), intent(in) :: this
+    class(directed_graph)   , intent(in) :: input_graph
+    type(graph) :: given, own
+    given = input_graph % vertex_set()
+    own   = this % unknown_domain()
+    if (.not. own % same_as(given)) then
+       error stop 'operation_residual: the residual is applied on its own unknown graph'
+    end if
+  end subroutine require_host
+
+  !===================================================================!
+  ! Refuse a field defined on another domain than the one stated,
+  ! or of another extent: equal length is not the claim.
+  !===================================================================!
+
+  subroutine require_field(value, domain, num_entries, message)
+    class(field)    , intent(in) :: value
+    type(graph)     , intent(in) :: domain
+    integer         , intent(in) :: num_entries
+    character(len=*), intent(in) :: message
+    if (.not. value % defined_on(domain)) then
+       error stop 'operation_residual: ' // message
+    end if
+    if (value % num_entries() * value % num_components() /= num_entries) then
+       error stop 'operation_residual: ' // message
+    end if
+  end subroutine require_field
+
+  !===================================================================!
   ! The state gathered one point at a time, primary components then
   ! connected ones, in the order the physics reads a point's tuple.
   !===================================================================!
@@ -333,6 +459,13 @@ contains
     end do
   end function gathered
 
+  !===================================================================!
+  ! The physics' inputs at the points: the state gathered per point
+  ! and the design read from the frozen tuple. The design is a field
+  ! on P with one value per point; another domain or extent is
+  ! refused.
+  !===================================================================!
+
   subroutine point_inputs(this, inputs, x, point_data)
     class(residual_operator), intent(in) :: this
     type(binding)            , intent(in) :: inputs(:)
@@ -342,8 +475,12 @@ contains
     type(typed_field_domain) :: points, designs
     type(continuous_domain) :: continuous
     type(discrete_domain) :: domain
+    class(field), allocatable :: given
     real(dp), allocatable :: design_values(:)
-    call bound_real_vector(inputs, this % argument(2), design_values)
+    call bound_value(inputs, this % argument(2), given)
+    call require_field(given, this % design_domain(), size(this % at), &
+         & 'the design is defined on the point domain with one value per point')
+    call given % real_vector(design_values)
     continuous = continuous_domain(this % physics)
     domain     = continuous % discrete(this % points)
     points  = domain % state_fields()
@@ -422,29 +559,54 @@ contains
     end do
   end subroutine zero_fixed_rows
 
-  subroutine state_of(this, inputs, input_graph, x, state)
+  !===================================================================!
+  ! The state read from the frozen tuple: a field on U with one value
+  ! per unknown; another domain or extent is refused.
+  !===================================================================!
+
+  subroutine state_of(this, inputs, x, state)
     class(residual_operator), intent(in)  :: this
     type(binding)             , intent(in)  :: inputs(:)
-    class(directed_graph)    , intent(in)  :: input_graph
     real(dp), allocatable, intent(out) :: x(:)
     type(stored_field)   , intent(out) :: state
     type(typed_field_domain) :: states
-    call bound_real_vector(inputs, this % argument(1), x)
-    if (size(x) /= this % num_unknowns()) then
-       error stop 'operation_residual: the state contains one component per degree per unknown point'
-    end if
-    states = typed_field_domain(input_graph % vertex_set(), size(x))
+    class(field), allocatable :: given
+    call bound_value(inputs, this % argument(1), given)
+    call require_field(given, this % unknown_domain(), this % unknowns, &
+         & 'the state is defined on the unknown domain with one component per degree per unknown point')
+    call given % real_vector(x)
+    states = typed_field_domain(this % unknown_domain(), this % unknowns)
     state  = states % state(x)
   end subroutine state_of
 
-  subroutine placed_output(this, input_graph, r, output)
+  !===================================================================!
+  ! A direction in the state is a field on U of the state's extent; a
+  ! direction in the design is a field on P with one value per point.
+  !===================================================================!
+
+  subroutine require_direction(this, given)
     class(residual_operator), intent(in) :: this
-    class(directed_graph)    , intent(in) :: input_graph
+    type(variation)         , intent(in) :: given
+    type(stored_field) :: along
+    along = given % field()
+    if (given % argument_is(this % argument(1))) then
+       call require_field(along, this % unknown_domain(), this % unknowns, &
+            & 'a direction in the state is defined on the unknown domain with one value per unknown')
+    else if (given % argument_is(this % argument(2))) then
+       call require_field(along, this % design_domain(), size(this % at), &
+            & 'a direction in the design is defined on the point domain with one value per point')
+    else
+       error stop 'operation_residual: a variation names the state or the design'
+    end if
+  end subroutine require_direction
+
+  subroutine placed_output(this, r, output)
+    class(residual_operator), intent(in) :: this
     real(dp)                 , intent(in) :: r(:)
     class(field), allocatable, intent(inout) :: output
     type(stored_field) :: out
     type(typed_field_domain) :: residuals
-    residuals = typed_field_domain(input_graph % vertex_set(), size(r))
+    residuals = typed_field_domain(this % unknown_domain(), this % unknowns)
     out       = residuals % residual(r, this % name())
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
@@ -460,11 +622,12 @@ contains
     if (.not. present(inputs)) then
        error stop 'operation_residual: the state and the design are given'
     end if
-    call state_of(this, inputs, input_graph, x, state)
-    call discretized(this, input_graph, inputs, state, x, r, governing)
+    call require_host(this, input_graph)
+    call state_of(this, inputs, x, state)
+    call discretized(this, inputs, state, x, r, governing)
     call placed(this, governing, r)
     call accumulate_state(this, x, r)
-    call placed_output(this, input_graph, r, output)
+    call placed_output(this, r, output)
   end subroutine residual_apply
 
   !===================================================================!
@@ -474,9 +637,8 @@ contains
   ! action of each in place of its value.
   !===================================================================!
 
-  subroutine discretized(this, input_graph, inputs, state, x, r, governing, v)
+  subroutine discretized(this, inputs, state, x, r, governing, v)
     class(residual_operator), intent(in) :: this
-    class(directed_graph)    , intent(in) :: input_graph
     type(binding)            , intent(in) :: inputs(:)
     type(stored_field)       , intent(in) :: state
     real(dp)                 , intent(in) :: x(:)
@@ -507,12 +669,12 @@ contains
       type(stored_field) :: along
       type(typed_field_domain) :: domain
       if (present(v)) then
-         domain = typed_field_domain(input_graph % vertex_set(), size(v))
+         domain = typed_field_domain(this % unknown_domain(), size(v))
          along  = domain % direction(v)
-         call op % partial_action(input_graph, op % bind([state]), &
+         call op % partial_action(this % unknown_vertices, op % bind([state]), &
               & [variation(op % argument(1), along)], half)
       else
-         call op % apply(input_graph, op % bind([state]), half)
+         call op % apply(this % unknown_vertices, op % bind([state]), half)
       end if
       call half % real_vector(y)
     end subroutine stencil_term
@@ -537,10 +699,11 @@ contains
     integer :: e, d, p, npts, n, num_triples, count, j, k
     tangent_defined = which == 1
     if (.not. tangent_defined) return
+    call require_host(this, input_graph)
     n    = this % unknowns
     npts = size(this % at)
     is_fixed = this % fixed_indicator()
-    call state_of(this, inputs, input_graph, x, state)
+    call state_of(this, inputs, x, state)
     call point_inputs(this, inputs, x, point_data)
     count = this % primary_law % pattern % num_edges() + npts * this % degrees * size(this % rules) &
          & + size(this % fixed_rows)
@@ -611,32 +774,35 @@ contains
     class(field), allocatable, intent(inout) :: output
     type(stored_field) :: state
     real(dp), allocatable :: r(:), governing(:,:), v(:), x(:)
+    integer :: i
     call this % require_owned(variations)
     if (size(variations) < 1 .or. size(variations) > this % max_degree()) then
        error stop 'operation_residual: the requested order is within max_degree'
     end if
-    call state_of(this, inputs, input_graph, x, state)
+    call require_host(this, input_graph)
+    do i = 1, size(variations)
+       call require_direction(this, variations(i))
+    end do
+    call state_of(this, inputs, x, state)
     if (size(variations) >= 2) then
        call second_tangent(this, inputs, variations, x, governing)
        allocate(r(this % num_unknowns()), source=0.0_dp)
        call placed(this, governing, r)
        call zero_fixed_rows(this, r)
-       call placed_output(this, input_graph, r, output)
+       call placed_output(this, r, output)
        return
     end if
     call variations(1) % direction(v)
     if (variations(1) % argument_is(this % argument(1))) then
-       call discretized(this, input_graph, inputs, state, x, r, governing, v)
+       call discretized(this, inputs, state, x, r, governing, v)
        call placed(this, governing, r)
        call accumulate_direction(this, v, r)
-    else if (variations(1) % argument_is(this % argument(2))) then
+    else
        call design_tangent(this, inputs, variations, x, r, governing)
        call placed(this, governing, r)
        call zero_fixed_rows(this, r)
-    else
-       error stop 'operation_residual: a variation names the state or the design'
     end if
-    call placed_output(this, input_graph, r, output)
+    call placed_output(this, r, output)
   end subroutine residual_partial_action
 
   subroutine second_tangent(this, inputs, variations, x, governing)
@@ -708,30 +874,22 @@ contains
 
     type(stencil), allocatable :: secondary
     type(stencil) :: derived
-    integer , allocatable :: sub_of(:), at(:), fixed_rows(:)
+    integer , allocatable :: sub_of(:), at(:), fixed_rows(:), points(:)
     real(dp), allocatable :: fixed(:)
     logical , allocatable :: governs(:,:)
-    integer :: e, p, d, inside, npts, ncar
+    integer :: e, p, npts, ncar
 
     allocate(sub_of(this % unknowns), source=0)
     do e = 1, size(free)
        sub_of(free(e)) = e
     end do
 
-    npts = 0
-    allocate(at(size(this % at)), governs(size(this % at), size(this % rules)))
-    do p = 1, size(this % at)
-       inside = 0
-       do d = 1, this % degrees
-          if (sub_of(this % at(p) + d) > 0) inside = inside + 1
-       end do
-       if (inside == 0) cycle
-       if (inside /= this % degrees) then
-          error stop 'operation_residual: a member contains whole points'
-       end if
-       npts     = npts + 1
-       at(npts) = sub_of(this % at(p) + 1) - 1
-       governs(npts, :) = this % governs(p, :)
+    points = this % selected_points(free)
+    npts   = size(points)
+    allocate(at(npts), governs(npts, size(this % rules)))
+    do p = 1, npts
+       at(p)         = sub_of(this % at(points(p)) + 1) - 1
+       governs(p, :) = this % governs(points(p), :)
     end do
 
     ncar = 0
@@ -746,15 +904,61 @@ contains
     derived = this % primary_law % restricted(free, values)
     if (allocated(this % connected_law)) then
        secondary = this % connected_law % restricted(free, values)
-       sub = residual_operator(derived, this % physics, at(1:npts), size(free), &
+       sub = residual_operator(derived, this % physics, at, size(free), &
             & this % degrees, this % primary, fixed_rows(1:ncar), fixed(1:ncar), connected_law=secondary, &
-            & governs=governs(1:npts, :))
+            & governs=governs)
     else
-       sub = residual_operator(derived, this % physics, at(1:npts), size(free), &
-            & this % degrees, this % primary, fixed_rows(1:ncar), fixed(1:ncar), governs=governs(1:npts, :))
+       sub = residual_operator(derived, this % physics, at, size(free), &
+            & this % degrees, this % primary, fixed_rows(1:ncar), fixed(1:ncar), governs=governs)
     end if
 
   end function constrain
+
+  !===================================================================!
+  ! THE POINTS A CONSTRAINT RETAINS: the evaluation points whose
+  ! degree components all lie in free, in the order of this
+  ! residual's points; the constrained residual's j-th point is the
+  ! selected_points(j)-th point of this one, and a field on P
+  ! restricts to the constrained residual's P' by these indices. A
+  ! point split across the boundary (some but not all of its degrees
+  ! in free) is an invalid constraint.
+  !===================================================================!
+
+  function selected_points(this, free) result(points)
+
+    class(residual_operator), intent(in) :: this
+    integer                 , intent(in) :: free(:)
+    integer, allocatable :: points(:)
+
+    logical, allocatable :: chosen(:)
+    integer, allocatable :: selected(:)
+    integer :: e, p, d, inside, npts
+
+    if (any(free < 1) .or. any(free > this % unknowns)) then
+       error stop 'operation_residual: a constraint selects unknowns of the residual'
+    end if
+    allocate(chosen(this % unknowns), source=.false.)
+    do e = 1, size(free)
+       chosen(free(e)) = .true.
+    end do
+
+    npts = 0
+    allocate(selected(size(this % at)))
+    do p = 1, size(this % at)
+       inside = 0
+       do d = 1, this % degrees
+          if (chosen(this % at(p) + d)) inside = inside + 1
+       end do
+       if (inside == 0) cycle
+       if (inside /= this % degrees) then
+          error stop 'operation_residual: a member contains whole points'
+       end if
+       npts           = npts + 1
+       selected(npts) = p
+    end do
+    points = selected(1:npts)
+
+  end function selected_points
 
   !===================================================================!
   ! THE EXPLICIT TANGENT, FROZEN INTO A LINEAR RESIDUAL. Ch. 4.6.3 of
@@ -797,6 +1001,10 @@ contains
 
     lin = residual_operator(a, stated(constant(0.0_dp), this % degrees - 1, 'zero'), this % at, &
          & this % unknowns, this % degrees, this % primary(1:1), [integer ::], [real(dp) ::])
+    ! A = D_Q R maps U to Y = U: the frozen residual is on the same
+    ! unknown and point domains as the residual it linearizes
+    lin % unknown_vertices = this % unknown_vertices
+    lin % points           = this % points
     call lin % versioned(version_number, transposed=transposed)
 
   end function linearize

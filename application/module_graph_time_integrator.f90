@@ -91,6 +91,14 @@ module gti_configuration
      ! as a failed solve.
      integer           :: elimination_entries = huge(1)
 
+     ! The storage limit of a reverse derivative pass, in entries: the
+     ! largest sum of its live states, towers, costates, restart states
+     ! and per-block Lagrangian terms. The default retains every block;
+     ! a smaller limit recomputes blocks from stored restart states,
+     ! and one below the working set of one recomputation is refused
+     ! before any tower is solved.
+     integer           :: reverse_entries = huge(1)
+
      ! The seed of each instant's Newton solve in a sequential sweep:
      ! the instant before, its stored jet along time shifted over the
      ! step to this order, the Taylor polynomial of the state in time
@@ -283,6 +291,8 @@ contains
        cfg % elimination = value
     case ('elimination_entries')
        read(value, *) cfg % elimination_entries
+    case ('reverse_entries')
+       read(value, *) cfg % reverse_entries
     case ('predictor_order')
        read(value, *) cfg % predictor_order
     case ('storage')
@@ -436,6 +446,9 @@ contains
     write(*,'(a,a)')       '   rows                     ', trim(cfg % rows)
     write(*,'(a,a)')       '   elimination              ', trim(cfg % elimination)
     write(*,'(a,i0)')      '   elimination entries      ', cfg % elimination_entries
+    if (cfg % reverse_entries /= huge(1)) then
+       write(*,'(a,i0)')   '   reverse entries          ', cfg % reverse_entries
+    end if
     write(*,'(a,i0)')      '   predictor order          ', cfg % predictor_order
     write(*,'(a,a)')       '   storage                  ', trim(cfg % storage)
     write(*,'(a,l1)')      '   multigrid                ', cfg % multigrid
@@ -5070,6 +5083,7 @@ module gti_chain
      procedure :: complete => execution_complete
      procedure :: derivative => execution_derivative
      procedure :: take_results => execution_take_results
+     procedure :: streamed_storage => execution_streamed_storage
   end type chain_execution
 
   ! The arrays are owned by one derivative call. Its scheduled rules
@@ -5523,6 +5537,21 @@ contains
       this % schedule = initial_schedule
     end block
   end subroutine execution_take_results
+
+  !===================================================================!
+  ! THE STORAGE ACCOUNTS OF A STREAMED EXECUTION: after initialize the
+  ! schedule's quantities (the restart state, the leaf, the window,
+  ! the terms, retention, the limit and the checkpoints admitted),
+  ! after the march and the derivative the live, high and total
+  ! counts of every account and the peak. Invalid input: an execution
+  ! without a streamed derivative.
+  !===================================================================!
+  function execution_streamed_storage(this) result(storage)
+    class(chain_execution), intent(in) :: this
+    type(derivative_storage) :: storage
+    if (.not. allocated(this % taylor)) error stop 'gti_chain: storage accounts are those of a streamed execution'
+    storage = this % taylor % storage
+  end function execution_streamed_storage
 
   subroutine execution_derivative(this, functionals, order, pass_kind, table, node_measure, &
        & entries, designs, by_order, sinks, leibniz, tower_storage, storage)
@@ -11649,6 +11678,7 @@ program graph_time_integrator
   call context % set_rows(cfg % rows)
   call context % set_elimination(cfg % elimination)
   call context % set_storage_limit(cfg % elimination_entries)
+  call context % set_reverse_limit(cfg % reverse_entries)
   call context % set_predictor_order(cfg % predictor_order)
   call context % set_storage(cfg % storage)
   call context % set_multigrid(cfg % multigrid)

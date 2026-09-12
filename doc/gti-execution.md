@@ -141,7 +141,10 @@ tower solves; the costates read the versions of the first evaluation. A
 later `derivative` finds no restart state stored and recomputes from the
 initial state within the same bound. `take_results` of such an execution
 returns no Taylor table. The streamed tables equal the retained post-hoc
-pass bitwise (`test/gti-execution`).
+pass bitwise (`test/gti-execution`; `test/graph-benchmark` `horizon`'s
+`reverse` mode and `scaling.py`'s `reverse` series record the accounts, the
+extra solves against retention, the peak resident size and the tables of
+every restart count, equal across counts to 17 digits).
 
 Periodic and event closure remain mathematical residual constraints. The
 execution graph remains acyclic.

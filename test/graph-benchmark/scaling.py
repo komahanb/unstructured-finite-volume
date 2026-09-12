@@ -79,6 +79,26 @@ def cases(quick, suites):
             chosen.append(("horizon", "horizon", [str(n), "primal", "4", "1e-12"], "primal n"))
         for n in ([10, 20] if quick else geometric(20, 4)):
             chosen.append(("horizon", "horizon", [str(n), "taylor", "4", "1e-12"], "taylor n"))
+    if "reverse" in suites:
+        # the streamed reverse execution: horizons at budgets of 1, 2, 4, sqrt n
+        # and every restart state (retained); orders at n = 80; the mixed and the
+        # designed chains at two horizons
+        if quick:
+            for restart_count in ["1", "retained"]:
+                chosen.append(("reverse", "horizon", ["10", "reverse", "2", "1e-12", restart_count, "crouzeix"], "reverse n"))
+            chosen.append(("reverse", "horizon", ["19", "reverse", "2", "1e-12", "1", "mixed"], "reverse mixed"))
+            chosen.append(("reverse", "horizon", ["9", "reverse", "2", "1e-12", "1", "designed"], "reverse designed"))
+        else:
+            for n in geometric(20, 5):
+                for restart_count in ["1", "2", "4", str(math.isqrt(n)), "retained"]:
+                    chosen.append(("reverse", "horizon", [str(n), "reverse", "2", "1e-12", restart_count, "crouzeix"], "reverse n"))
+            for order in [1, 3, 4]:
+                for restart_count in ["4", "retained"]:
+                    chosen.append(("reverse", "horizon", ["80", "reverse", str(order), "1e-12", restart_count, "crouzeix"], "reverse order"))
+            for kind in ["mixed", "designed"]:
+                for n in [40, 80]:
+                    for restart_count in ["1", str(math.isqrt(n)), "retained"]:
+                        chosen.append(("reverse", "horizon", [str(n), "reverse", "2", "1e-12", restart_count, kind], "reverse " + kind))
     if "application" in suites and not quick:
         for cells in ["4 4", "8 8", "16 16"]:
             for rows in ["states", "states state-time-derivatives state-spatial-derivatives"]:
@@ -206,10 +226,50 @@ def measure(arguments):
                 print("%s %s %s sample %d: %s seconds=%.4f maxrss=%d KB %s" % (
                     label, suite, " ".join(args), sample, "ok" if run["returncode"] == 0 else "FAILED", run["seconds"],
                     run["summary"].get("peak_rss_kilobytes", run["child_maxrss_kilobytes"]), " ".join("%s=%.3es" % (k, v["seconds"]) for k, v in run["phases"].items())), flush=True)
+    failures += reverse_agreement(records)
     records["failures"] = failures
     (output_dir / "records.json").write_text(json.dumps(records, indent=1))
     (output_dir / "tables.md").write_text(tables(records))
     print("failures: %d; records in %s" % (failures, output_dir))
+    return failures
+
+
+def reverse_agreement(records):
+    """The reverse suite's records against retention: within one chain, horizon and
+    order, every restart_count's table (17 digits) must equal the retained run's, and the
+    extra Newton and linear solves are the reverse phase's counts less retention's.
+    Each case gains "agreement" and "extra" per build; a disagreement is a failure."""
+    failures = 0
+    groups = {}
+    for case in records["cases"]:
+        if case["suite"] != "reverse":
+            continue
+        a = case["arguments"]
+        groups.setdefault((a[5], a[0], a[2]), []).append(case)
+    for group in groups.values():
+        retained = [c for c in group if c["arguments"][4] == "retained"]
+        if not retained:
+            continue
+        for case in group:
+            case["agreement"], case["extra"] = {}, {}
+            for label, runs in case["runs"].items():
+                reference = [r["summary"] for r in retained[0]["runs"][label] if r["returncode"] == 0]
+                candidate = [r["summary"] for r in runs if r["returncode"] == 0]
+                if not reference or not candidate:
+                    case["agreement"][label] = False
+                    failures += 1
+                    continue
+                keys = [k for k in reference[0] if k.startswith("table_")]
+                equal = all(all(m.get(k) == reference[0].get(k) for k in keys) for m in candidate) and \
+                    all(all(r.get(k) == reference[0].get(k) for k in keys) for r in reference)
+                case["agreement"][label] = equal
+                if not equal:
+                    failures += 1
+                case["extra"][label] = {
+                    "newton_solves": statistics.median(m["reverse_newton_solves"] for m in candidate)
+                    - statistics.median(r["reverse_newton_solves"] for r in reference),
+                    "linear_solves": statistics.median(m["reverse_linear_solves"] for m in candidate)
+                    - statistics.median(r["reverse_linear_solves"] for r in reference)}
     return failures
 
 
@@ -295,6 +355,26 @@ def tables(records):
             for (args, label), summary in summaries.items():
                 lines.append("| %s | %s | %s |" % (args, label, " | ".join(scientific(summary.get(k, "-")) for k in keys)))
             lines.append("")
+        if suite == "reverse":
+            lines.append("| arguments | build | checkpoints | evaluations | peak | limit | retained | state | tower | costate | checkpoint | scalars | extra Newton | extra linear | reverse median s | advance median s | peak RSS KB | table equals retained |")
+            lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+            for case in group:
+                for label in builds:
+                    runs = [r for r in case["runs"][label] if r["returncode"] == 0]
+                    if not runs:
+                        continue
+                    summary = runs[-1]["summary"]
+                    extra = case.get("extra", {}).get(label, {})
+                    reverse_seconds = median_range([r["phases"]["reverse"]["seconds"] for r in runs if "reverse" in r["phases"]])[0]
+                    advance_seconds = median_range([r["phases"]["advance"]["seconds"] for r in runs if "advance" in r["phases"]])[0]
+                    rss = statistics.median(r["summary"].get("peak_rss_kilobytes", r["child_maxrss_kilobytes"]) for r in runs)
+                    lines.append("| %s | %s | %s |" % (" ".join(case["arguments"]), label, " | ".join(str(v) for v in [
+                        summary.get("checkpoints"), summary.get("evaluations"), summary.get("peak"), summary.get("limit"),
+                        summary.get("retained"), summary.get("state_high"), summary.get("tower_high"), summary.get("costate_high"),
+                        summary.get("checkpoint_high"), summary.get("scalars_high"), extra.get("newton_solves", "-"),
+                        extra.get("linear_solves", "-"), scientific(reverse_seconds), scientific(advance_seconds), int(rss),
+                        case.get("agreement", {}).get(label, "-")])))
+            lines.append("")
         if len(builds) > 1:
             lines.append("Ratios of medians, %s over %s (slowdowns above 1.10 marked):" % (builds[1], builds[0]))
             lines.append("")
@@ -325,7 +405,7 @@ def case_size(case):
         if suite == "schur":
             return {"ne": int(a[0]), "p": int(a[2]), "nk": int(a[1]), "c": int(a[3]),
                     "limit": int(a[7]) if len(a) > 7 else None}.get(series)
-        if suite == "horizon":
+        if suite in ("horizon", "reverse"):
             return int(a[0])
         if suite == "application":
             return int(a[1].split("=")[1].split()[0])
@@ -341,7 +421,7 @@ def main():
     parser.add_argument("--cpus", default=None, help="processor list for taskset, e.g. 2,3")
     parser.add_argument("--priority", type=int, default=None, help="nice increment for every measured process")
     parser.add_argument("--build", action="append", default=[], help="label=directory of built benchmark programs; repeatable")
-    parser.add_argument("--suites", default="schedule,subset,schur,horizon", help="comma-separated subset of schedule,subset,schur,horizon,application")
+    parser.add_argument("--suites", default="schedule,subset,schur,horizon,reverse", help="comma-separated subset of schedule,subset,schur,horizon,reverse,application")
     parser.add_argument("--quick", action="store_true", help="small sizes, one sample: the oracle check for run.sh")
     parser.add_argument("--tables", default=None, help="rewrite tables.md from an existing records.json and exit")
     arguments = parser.parse_args()

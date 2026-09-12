@@ -77,7 +77,7 @@ program topology_traversal
   type(graph) :: domain
   type(set_map) :: sets
   type(csr_relation), target :: relation
-  type(stored_directed_graph) :: incidence
+  type(stored_directed_graph) :: incidence, transposed
   type(fibre_sum) :: context
 #ifdef BASELINE
   integer, pointer :: fibre(:)
@@ -197,13 +197,49 @@ program topology_traversal
   seconds = real(final_count-initial_count, real64) / real(count_rate, real64)
   call report('incoming_read', graph_sum)
 
+  ! Reversal in place: the orientation of one value changes over its
+  ! own immutable arrays, no storage allocated, cost independent of
+  ! the graph. Edge 2 joins 1 to 2, so the reversed value reads tail
+  ! 2 and head 1. The copy is made before the measurement.
+  transposed = incidence
+  checksum = 0
+  call system_clock(initial_count)
+  call allocation_begin()
+  do repetition = 1, num_repetitions * 100
+     call transposed % reverse()
+     checksum = checksum + transposed % edge_tail(2) + transposed % edge_head(2)
+     call transposed % reverse()
+  end do
+  num_allocations = allocation_end()
+  call system_clock(final_count)
+  seconds = real(final_count-initial_count, real64) / real(count_rate, real64)
+  call report('reverse', 3_c_int64_t * num_repetitions * 100)
+
+  ! The owning transpose copies every array of vertex or edge extent;
+  ! its allocations and time are reported, not required to vanish.
+  checksum = 0
+  call system_clock(initial_count)
+  call allocation_begin()
+  do repetition = 1, num_repetitions
+     transposed = incidence % transpose()
+     checksum = checksum + transposed % edge_tail(2) + transposed % edge_head(2)
+  end do
+  num_allocations = allocation_end()
+  call system_clock(final_count)
+  seconds = real(final_count-initial_count, real64) / real(count_rate, real64)
+  call report('transpose_copy', 3_c_int64_t * num_repetitions, allocation_free=.false.)
+
 contains
 
-  subroutine report(operation_name, expected)
+  subroutine report(operation_name, expected, allocation_free)
     character(len=*), intent(in) :: operation_name
     integer(c_int64_t), intent(in) :: expected
+    logical, intent(in), optional :: allocation_free
+    logical :: required
+    required = .true.
+    if (present(allocation_free)) required = allocation_free
     if (checksum /= expected) error stop 'traversal changed incidence values'
-    if (num_allocations /= 0) error stop 'traversal allocated storage'
+    if (required .and. num_allocations /= 0) error stop 'traversal allocated storage'
     print '(a,a,f12.6,a,i0,a,i0)', trim(operation_name), ' seconds=', seconds, &
          & ' allocations=', num_allocations, ' checksum=', checksum
   end subroutine report

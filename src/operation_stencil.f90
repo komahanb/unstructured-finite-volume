@@ -69,6 +69,7 @@ module operation_stencil
      procedure :: apply        => stencil_apply
      procedure :: entries       => stencil_entries
      procedure :: transpose     => stencil_transpose
+     procedure :: reverse       => stencil_reverse
      procedure :: restricted    => stencil_restricted
      procedure :: partial_action => stencil_partial_action
 
@@ -514,6 +515,31 @@ contains
          & label='transpose of ' // this % name(), max_degree=1)
 
   end function stencil_transpose
+
+  !===================================================================!
+  ! The transpose taken in place: the pattern's orientation reversed
+  ! at constant cost, the constants removed, no weight and no edge
+  ! copied. The result equals the owning transpose of the former value.
+  !===================================================================!
+
+  subroutine stencil_reverse(this)
+
+    class(stencil), intent(inout) :: this
+
+    real(dp), allocatable :: zeros(:)
+
+    call this % pattern % reverse()
+
+    allocate(zeros(this % pattern % num_vertices()))
+    zeros = 0.0_dp
+    this % constants = stored_field('stencil constants', &
+         & this % pattern % vertex_set(), this % pattern % num_vertices())
+    call this % constants % set_real_vector(zeros)
+
+    call this % declare_arguments(1, [contract(FIELD_REAL, 1)], &
+         & label='transpose of ' // this % name(), max_degree=1)
+
+  end subroutine stencil_reverse
 
   !===================================================================!
   ! Combine duplicate (row, column) entries of a weighted triple

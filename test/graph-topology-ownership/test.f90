@@ -1,11 +1,34 @@
 module topology_statistics
+  use util_counted_storage, only : counted_storage, counted_reference
+  use view_directed_stored, only : stored_directed_graph
   implicit none
+  ! A containing object: every copy of the container copies its graph.
+  type :: graph_holder
+     type(stored_directed_graph) :: incidence
+  end type graph_holder
+  ! A cell of the counted primitive with a payload, and the number of
+  ! times any cell was cleared.
+  type, extends(counted_storage) :: counted_test_cell
+     integer, allocatable :: payload(:)
+   contains
+     procedure :: clear => clear_test_cell
+  end type counted_test_cell
+  type :: reference_holder
+     type(counted_reference) :: reference
+  end type reference_holder
+  integer :: num_cleared = 0
   type :: fibre_statistics
      integer :: num_members = 0
      integer :: member_sum = 0
      integer :: num_reads = 0
   end type fibre_statistics
 contains
+  subroutine clear_test_cell(this)
+    class(counted_test_cell), intent(inout) :: this
+    if (allocated(this % payload)) deallocate(this % payload)
+    num_cleared = num_cleared + 1
+  end subroutine clear_test_cell
+
   subroutine sum_context_members(members, context)
     integer, intent(in) :: members(:)
     class(*), intent(inout) :: context
@@ -27,7 +50,10 @@ program topology_ownership
   use map_set_representation, only : listed_set_representation
   use relation_binary, only : csr_relation, transposed_relation, transpose_of, integer_fibre
   use view_directed_stored, only : stored_directed_graph
-  use topology_statistics, only : fibre_statistics, sum_context_members
+  use relation_partition, only : partition_relation
+  use util_counted_storage, only : counted_storage, counted_reference
+  use topology_statistics, only : fibre_statistics, sum_context_members, graph_holder, &
+       & counted_test_cell, reference_holder, num_cleared
 
   implicit none
 
@@ -38,6 +64,8 @@ program topology_ownership
 
   call check_fibres()
   call check_incidence()
+  call check_orientation()
+  call check_counted_storage()
   if (num_failures /= 0) error stop 'topology ownership laws failed'
   print *, 'All topology ownership laws passed.'
 
@@ -229,6 +257,208 @@ contains
     call active_graph % read_incoming(check_incoming)
     call assert_all(num_reads == 1, 'transposed graph invokes one reader')
   end subroutine check_incidence
+
+  !-------------------------------------------------------------------!
+  ! Orientation laws of a stored graph value. The owning transpose is
+  ! valid after its source is finalized or replaced; reverse changes
+  ! the orientation of one value in place; every copy of a value or of
+  ! an object containing it is independent under every copy mechanism.
+  !-------------------------------------------------------------------!
+  subroutine check_orientation()
+    integer, parameter :: tails(5) = [1,1,2,3,4], heads(5) = [2,3,4,4,4]
+    integer, parameter :: global_vertices(5) = [5,4,3,2,1]
+    type(stored_directed_graph), allocatable :: original, transposed_graph, duplicate, reversed_graph
+    type(stored_directed_graph) :: replaced, replacement_transpose
+    type(graph_holder), allocatable :: holder, second_holder, holders(:)
+    type(graph) :: vertex_identity, edge_identity, transposed_identity
+    type(partition_relation) :: relation
+    integer, allocatable :: outgoing(:), incoming(:)
+    integer :: edge_index, vertex, i
+
+    allocate(original, transposed_graph)
+    original = stored_directed_graph(5, tails, heads, number=29, num_parts=30, vglobal=global_vertices)
+    vertex_identity = original % vertex_set()
+    edge_identity = original % edge_set()
+    transposed_graph = original % transpose()
+    deallocate(original)
+    call assert_all(transposed_graph % transposed() .and. transposed_graph % id() == 29, &
+         & 'the transpose keeps orientation and identity after its source is finalized')
+    do edge_index = 1, 5
+       call assert_all(transposed_graph % edge_tail(edge_index) == heads(edge_index) .and. &
+            & transposed_graph % edge_head(edge_index) == tails(edge_index), &
+            & 'the transpose reads exchanged endpoints after its source is finalized')
+    end do
+    transposed_identity = transposed_graph % vertex_set()
+    call assert_all(transposed_identity % same_as(vertex_identity), 'the transpose keeps the vertex identity')
+    transposed_identity = transposed_graph % edge_set()
+    call assert_all(transposed_identity % same_as(edge_identity), 'the transpose keeps the edge identity')
+    relation = transposed_graph % whole_relation()
+    call assert_all(relation % has_part_relation() .and. &
+         & all([(relation % global_vertex_index(vertex) == global_vertices(vertex), vertex = 1, 5)]), &
+         & 'the transpose keeps the partition maps')
+    active_graph = transposed_graph
+    num_reads = 0
+    call active_graph % read_incoming(check_incoming)
+    call assert_all(num_reads == 1, 'the transpose reads its compressed incidence after its source is finalized')
+
+    ! reverse in place equals the transpose and is an involution
+    allocate(reversed_graph)
+    reversed_graph = stored_directed_graph(5, tails, heads, number=29)
+    call reversed_graph % reverse()
+    call assert_all(reversed_graph % transposed(), 'reverse changes the orientation in place')
+    do edge_index = 1, 5
+       call assert_all(reversed_graph % edge_tail(edge_index) == transposed_graph % edge_tail(edge_index) .and. &
+            & reversed_graph % edge_head(edge_index) == transposed_graph % edge_head(edge_index), &
+            & 'the reversed value reads the transpose endpoints')
+    end do
+    do vertex = 1, 5
+       call reversed_graph % incoming_edges(vertex, incoming)
+       call transposed_graph % incoming_edges(vertex, outgoing)
+       call assert_all(size(outgoing) == size(incoming) .and. all(outgoing == incoming), &
+            & 'the reversed value reads the transpose incidence')
+    end do
+    active_graph = reversed_graph
+    num_reads = 0
+    call active_graph % read_incoming(check_incoming)
+    call assert_all(num_reads == 1, 'the reversed value invokes one reader')
+    call reversed_graph % reverse()
+    call assert_all(.not. reversed_graph % transposed() .and. &
+         & all([(reversed_graph % edge_tail(edge_index) == tails(edge_index) .and. &
+         &        reversed_graph % edge_head(edge_index) == heads(edge_index), edge_index = 1, 5)]), &
+         & 'reversing twice restores the orientation')
+
+    ! independence of copies under every copy mechanism
+    allocate(holder, second_holder, holders(3))
+    holder % incidence = reversed_graph
+    second_holder = holder
+    call second_holder % incidence % reverse()
+    call assert_all(.not. holder % incidence % transposed() .and. second_holder % incidence % transposed(), &
+         & 'a container copy has an independent orientation')
+    do i = 1, 3
+       holders(i) % incidence = holder % incidence
+    end do
+    call holders(2) % incidence % reverse()
+    call assert_all(.not. holders(1) % incidence % transposed() .and. holders(2) % incidence % transposed() .and. &
+         & .not. holders(3) % incidence % transposed() .and. .not. holder % incidence % transposed(), &
+         & 'array elements of containers have independent orientations')
+    allocate(duplicate, source=reversed_graph)
+    call duplicate % reverse()
+    call assert_all(duplicate % transposed() .and. .not. reversed_graph % transposed() .and. &
+         & duplicate % edge_tail(2) == 3 .and. reversed_graph % edge_tail(2) == 1, &
+         & 'a source= copy has independent orientation and reads its own arrays')
+    deallocate(reversed_graph)
+    call assert_all(duplicate % edge_head(5) == 4 .and. duplicate % num_edges() == 5, &
+         & 'a source= copy is valid after its source is finalized')
+    block
+      type(stored_directed_graph) :: local_copy
+      local_copy = transpose_result(duplicate)
+      call assert_all(.not. local_copy % transposed() .and. duplicate % transposed(), &
+           & 'a function result is an independent value')
+    end block
+    call assert_all(duplicate % transposed() .and. duplicate % edge_tail(2) == 3, &
+         & 'block scope end leaves other values unchanged')
+    deallocate(holder, second_holder, holders)
+
+    ! replacement: the transpose survives the replacement of its source
+    replaced = stored_directed_graph(3, [1,2], [2,3], number=7)
+    replacement_transpose = replaced % transpose()
+    replaced = stored_directed_graph(2, [1], [2], number=8)
+    call assert_all(replacement_transpose % num_vertices() == 3 .and. replacement_transpose % edge_tail(2) == 3 .and. &
+         & replacement_transpose % id() == 7, 'the transpose reads its own arrays after its source is replaced')
+    call assert_all(replaced % num_vertices() == 2 .and. replaced % edge_head(1) == 2 .and. replaced % id() == 8, &
+         & 'the replaced value reads the new arrays')
+  end subroutine check_orientation
+
+  type(stored_directed_graph) function transpose_result(source)
+    type(stored_directed_graph), intent(in) :: source
+    transpose_result = source % transpose()
+  end function transpose_result
+
+  !-------------------------------------------------------------------!
+  ! The counted ownership primitive: owners bound through defined
+  ! assignment, released by finalization, the cell cleared with the
+  ! last owner and reused; a source= copy is not an owner and observes
+  ! the count. The mechanisms measured in doc/topology-ownership.md.
+  !-------------------------------------------------------------------!
+  subroutine check_counted_storage()
+    type(counted_test_cell) :: template
+    type(counted_reference), allocatable :: first, second, observer, moved
+    type(counted_reference) :: replacement
+    type(reference_holder), allocatable :: holder, second_holder, holders(:)
+    class(counted_storage), pointer :: first_cell, second_cell
+    integer :: cleared_before, i
+
+    cleared_before = num_cleared
+    allocate(first, second)
+    call assert_all(.not. first % live() .and. first % num_owners() == 0 .and. .not. associated(first % storage()), &
+         & 'a default reference is not live and has no storage')
+    call first % acquire(template)
+    first_cell => first % storage()
+    select type (first_cell)
+    type is (counted_test_cell)
+       allocate(first_cell % payload(4))
+       first_cell % payload = 7
+    class default
+       call assert_all(.false., 'the acquired cell has the template type')
+    end select
+    call assert_all(first % live() .and. first % num_owners() == 1, 'acquisition binds one owner')
+    second = first
+    call assert_all(second % live() .and. second % num_owners() == 2 .and. associated(second % storage(), first_cell), &
+         & 'assignment binds a second owner of the same cell')
+    allocate(observer, source=first)
+    call assert_all(observer % num_owners() == 2, 'a source= copy observes the count and is not an owner')
+    first = first
+    call assert_all(first % num_owners() == 2, 'self assignment changes no owner')
+    second = first
+    call assert_all(second % num_owners() == 2, 'assignment between owners of one cell changes no owner')
+    deallocate(first)
+    call assert_all(second % num_owners() == 1 .and. num_cleared == cleared_before, &
+         & 'finalizing one owner releases one binding and clears nothing')
+
+    allocate(holder, second_holder, holders(3))
+    holder % reference = second
+    second_holder = holder
+    call assert_all(second % num_owners() == 3, 'container assignment binds the contained reference')
+    do i = 1, 3
+       holders(i) % reference = second_holder % reference
+    end do
+    call assert_all(second % num_owners() == 6, 'array elements of containers are owners')
+    deallocate(holder, second_holder)
+    call assert_all(second % num_owners() == 4, 'finalizing containers releases their bindings')
+    deallocate(holders)
+    call assert_all(second % num_owners() == 1, 'finalizing an array of containers releases every element')
+    block
+      type(counted_reference) :: local_reference
+      type(reference_holder) :: local_holder
+      local_reference = second
+      local_holder % reference = reference_result(second)
+      call assert_all(second % num_owners() == 3, 'block locals and a function result are owners')
+    end block
+    call assert_all(second % num_owners() == 1, 'block scope end releases its owners')
+    call move_alloc(second, moved)
+    call assert_all(moved % num_owners() == 1, 'move_alloc transfers a binding without a new owner')
+    replacement = moved
+    call replacement % acquire(template)
+    call assert_all(moved % num_owners() == 1 .and. replacement % num_owners() == 1 .and. &
+         & .not. associated(replacement % storage(), first_cell), 'acquiring over a binding releases it')
+    deallocate(moved)
+    call assert_all(num_cleared == cleared_before + 1 .and. observer % num_owners() == 0 .and. .not. observer % live() &
+         & .and. .not. associated(observer % storage()), &
+         & 'the last owner clears the cell and the observer is not live')
+    allocate(second)
+    call second % acquire(template)
+    second_cell => second % storage()
+    call assert_all(associated(second_cell, first_cell) .and. .not. observer % live(), &
+         & 'a cleared cell is reused with a new version and the stale observer stays not live')
+    deallocate(observer)
+    call assert_all(second % num_owners() == 1 .and. replacement % num_owners() == 1, &
+         & 'finalizing a stale observer releases nothing')
+  end subroutine check_counted_storage
+
+  type(counted_reference) function reference_result(source)
+    type(counted_reference), intent(in) :: source
+    reference_result = source
+  end function reference_result
 
   subroutine check_incoming(offsets, indices, sources)
     integer, intent(in) :: offsets(:), indices(:), sources(:)

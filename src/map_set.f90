@@ -141,12 +141,16 @@ contains
          & 'map_set: a set map is keyed on assigned identity', &
          & 'map_set: a set is described once')
 
-    if (.not. allocated(this % extents)) allocate(this % extents(0))
-    n = size(this % extents)
-    allocate(extended_extents(n + 1))
-    extended_extents(1:n) = this % extents
-    allocate(extended_extents(n + 1) % representation, source=representation)
-    call move_alloc(extended_extents, this % extents)
+    ! the payload doubles its capacity, so a bind costs amortised
+    ! constant time rather than a copy of every representation
+    if (.not. allocated(this % extents)) allocate(this % extents(max(at, 8)))
+    if (at > size(this % extents)) then
+       n = size(this % extents)
+       allocate(extended_extents(2 * n))
+       extended_extents(1:n) = this % extents(1:n)
+       call move_alloc(extended_extents, this % extents)
+    end if
+    allocate(this % extents(at) % representation, source=representation)
 
   end subroutine bind
 

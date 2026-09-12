@@ -123,6 +123,7 @@ contains
     type(graph)         , intent(in)    :: ambient
 
     type(token) :: ambient_id
+    type(token), allocatable :: extended_ambients(:)
     integer     :: at
 
     ambient_id = ambient % id()
@@ -139,8 +140,15 @@ contains
          & 'map_inclusion: an inclusion is keyed on assigned identity', &
          & 'map_inclusion: a set is declared into one ambient')
 
-    if (.not. allocated(this % ambients)) allocate(this % ambients(0))
-    this % ambients = [this % ambients, ambient_id]
+    ! the payload doubles its capacity: an inclusion costs amortised
+    ! constant time
+    if (.not. allocated(this % ambients)) allocate(this % ambients(max(at, 8)))
+    if (at > size(this % ambients)) then
+       allocate(extended_ambients(2 * size(this % ambients)))
+       extended_ambients(1:at - 1) = this % ambients(1:at - 1)
+       call move_alloc(extended_ambients, this % ambients)
+    end if
+    this % ambients(at) = ambient_id
 
   end subroutine include_in
 

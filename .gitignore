@@ -18,6 +18,10 @@ test/*/run_serial
 *.res
 test/*/refusal
 test/*/restriction_refusal
+test/graph-benchmark/schedule
+test/graph-benchmark/subset
+test/graph-benchmark/schur
+test/graph-benchmark/horizon
 test/*/mutation
 test/graph-topology-ownership/traversal
 test/fractal-map/set

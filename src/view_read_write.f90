@@ -358,17 +358,27 @@ contains
     integer, allocatable :: ends(:)
 
     integer, allocatable :: first_neighbours(:), second_neighbours(:)
-    integer :: y, u
+    integer :: y, u, k, total
 
     call this % require_position(part, vertex)
     u = this % offset(part) + vertex
     call step(this, u, backwards, first_neighbours)
-    ends = [integer ::]
+    ! the paths are counted, then placed: linear in their number
+    total = 0
     do y = 1, size(first_neighbours)
        call step(this, first_neighbours(y), backwards, second_neighbours)
-       ends = [ends, pack(second_neighbours, second_neighbours /= u)]
+       total = total + count(second_neighbours /= u)
     end do
-    ends = ends - this % offset(part)
+    allocate(ends(total))
+    total = 0
+    do y = 1, size(first_neighbours)
+       call step(this, first_neighbours(y), backwards, second_neighbours)
+       do k = 1, size(second_neighbours)
+          if (second_neighbours(k) == u) cycle
+          total = total + 1
+          ends(total) = second_neighbours(k) - this % offset(part)
+       end do
+    end do
 
   end function two_step_endpoints
 
@@ -417,18 +427,26 @@ contains
     integer                 , intent(in) :: part
     type(stored_directed_graph) :: induced
 
-    integer, allocatable :: tails(:), heads(:), ends(:)
-    integer :: u
+    integer, allocatable :: tails(:), heads(:), ends(:), first(:)
+    integer :: u, n
 
-    tails = [integer ::]
-    heads = [integer ::]
-    do u = 1, this % order_of_part(part)
-       ends  = two_step_endpoints(this, part, u, .false.)
-       tails = [tails, spread(u, 1, size(ends))]
-       heads = [heads, ends]
+    ! the paths are counted by vertex, then placed: linear in their
+    ! number, where growing one array by concatenation is quadratic
+    n = this % order_of_part(part)
+    allocate(first(n + 1))
+    first(1) = 1
+    do u = 1, n
+       ends = two_step_endpoints(this, part, u, .false.)
+       first(u + 1) = first(u) + size(ends)
+    end do
+    allocate(tails(first(n + 1) - 1), heads(first(n + 1) - 1))
+    do u = 1, n
+       ends = two_step_endpoints(this, part, u, .false.)
+       tails(first(u):first(u + 1) - 1) = u
+       heads(first(u):first(u + 1) - 1) = ends
     end do
 
-    induced = stored_directed_graph(this % order_of_part(part), tails=tails, heads=heads)
+    induced = stored_directed_graph(n, tails=tails, heads=heads)
 
   end function projection
 

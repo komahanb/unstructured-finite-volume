@@ -112,13 +112,16 @@ contains
          & 'map_label: a set is named once')
 
     ! type(string) is finalizable, so the array-constructor grow is
-    ! not admitted under -std=f2023; the payload grows by move_alloc.
-    if (.not. allocated(this % labels)) allocate(this % labels(0))
-    n = size(this % labels)
-    allocate(extended_labels(n + 1))
-    extended_labels(1:n)   = this % labels
-    extended_labels(n + 1) = string(label)
-    call move_alloc(extended_labels, this % labels)
+    ! not admitted under -std=f2023; the payload grows by move_alloc,
+    ! doubling its capacity so a bind costs amortised constant time.
+    if (.not. allocated(this % labels)) allocate(this % labels(max(at, 8)))
+    if (at > size(this % labels)) then
+       n = size(this % labels)
+       allocate(extended_labels(2 * n))
+       extended_labels(1:n) = this % labels(1:n)
+       call move_alloc(extended_labels, this % labels)
+    end if
+    this % labels(at) = string(label)
 
   end subroutine bind_label
 

@@ -63,7 +63,7 @@ module operation_action
   public :: contract
   public :: variation
   public :: binding, moved_binding
-  public :: is_bound, bound_value, bound_real_vector, bound_integer_vector
+  public :: is_bound, bound_on, bound_value, bound_real_vector, bound_integer_vector
   public :: applied, varied
   public :: design_partial, jacobian_of
   public :: dense_of_triples
@@ -1022,6 +1022,27 @@ contains
     if (k > 0) is_bound = allocated(bound(k) % value)
 
   end function is_bound
+
+  !===================================================================!
+  ! Whether the bound field of an argument is defined on the domain
+  ! with the stated number of values (entries times components): the
+  ! check read from the binding itself, without a copy of the field.
+  !===================================================================!
+
+  logical function bound_on(bound, a, domain, num_values) result(defined)
+
+    type(binding) , intent(in) :: bound(:)
+    type(argument), intent(in) :: a
+    type(graph)   , intent(in) :: domain
+    integer       , intent(in) :: num_values
+
+    integer :: found
+
+    found   = bound_index(bound, a)
+    defined = bound(found) % value % defined_on(domain) .and. &
+         & bound(found) % value % num_entries() * bound(found) % value % num_components() == num_values
+
+  end function bound_on
 
   subroutine bound_value(bound, a, value)
 

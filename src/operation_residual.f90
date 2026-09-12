@@ -44,7 +44,7 @@ module operation_residual
 
   use util_precision   , only : dp
   use operation_action , only : operation, contract, variation
-  use operation_action  , only : binding, bound_real_vector, bound_value
+  use operation_action  , only : binding, bound_real_vector, bound_on
   use view_directed     , only : directed_graph
   use graph_fractal     , only : graph
   use view_directed_stored, only : stored_directed_graph
@@ -425,19 +425,15 @@ contains
   end subroutine require_host
 
   !===================================================================!
-  ! Refuse a field defined on another domain than the one stated,
-  ! or of another extent: equal length is not the claim.
+  ! Refuse a field on another domain than the one stated, or with
+  ! another number of values: equal length is not the claim.
   !===================================================================!
 
-  subroutine require_field(value, domain, num_entries, message)
-    class(field)    , intent(in) :: value
-    type(graph)     , intent(in) :: domain
-    integer         , intent(in) :: num_entries
+  subroutine require_field(given, num_given, domain, num_values, message)
+    type(graph)     , intent(in) :: given, domain
+    integer         , intent(in) :: num_given, num_values
     character(len=*), intent(in) :: message
-    if (.not. value % defined_on(domain)) then
-       error stop 'operation_residual: ' // message
-    end if
-    if (value % num_entries() * value % num_components() /= num_entries) then
+    if (.not. domain % same_as(given) .or. num_given /= num_values) then
        error stop 'operation_residual: ' // message
     end if
   end subroutine require_field
@@ -475,12 +471,11 @@ contains
     type(typed_field_domain) :: points, designs
     type(continuous_domain) :: continuous
     type(discrete_domain) :: domain
-    class(field), allocatable :: given
     real(dp), allocatable :: design_values(:)
-    call bound_value(inputs, this % argument(2), given)
-    call require_field(given, this % design_domain(), size(this % at), &
-         & 'the design is defined on the point domain with one value per point')
-    call given % real_vector(design_values)
+    if (.not. bound_on(inputs, this % argument(2), this % design_domain(), size(this % at))) then
+       error stop 'operation_residual: the design is defined on the point domain with one value per point'
+    end if
+    call bound_real_vector(inputs, this % argument(2), design_values)
     continuous = continuous_domain(this % physics)
     domain     = continuous % discrete(this % points)
     points  = domain % state_fields()
@@ -570,11 +565,11 @@ contains
     real(dp), allocatable, intent(out) :: x(:)
     type(stored_field)   , intent(out) :: state
     type(typed_field_domain) :: states
-    class(field), allocatable :: given
-    call bound_value(inputs, this % argument(1), given)
-    call require_field(given, this % unknown_domain(), this % unknowns, &
-         & 'the state is defined on the unknown domain with one component per degree per unknown point')
-    call given % real_vector(x)
+    if (.not. bound_on(inputs, this % argument(1), this % unknown_domain(), this % unknowns)) then
+       error stop 'operation_residual: the state is defined on the unknown domain with one component per degree &
+            &per unknown point'
+    end if
+    call bound_real_vector(inputs, this % argument(1), x)
     states = typed_field_domain(this % unknown_domain(), this % unknowns)
     state  = states % state(x)
   end subroutine state_of
@@ -587,13 +582,15 @@ contains
   subroutine require_direction(this, given)
     class(residual_operator), intent(in) :: this
     type(variation)         , intent(in) :: given
-    type(stored_field) :: along
-    along = given % field()
+    type(graph) :: along
+    real(dp), allocatable :: v(:)
+    along = given % domain()
+    call given % direction(v)
     if (given % argument_is(this % argument(1))) then
-       call require_field(along, this % unknown_domain(), this % unknowns, &
+       call require_field(along, size(v), this % unknown_domain(), this % unknowns, &
             & 'a direction in the state is defined on the unknown domain with one value per unknown')
     else if (given % argument_is(this % argument(2))) then
-       call require_field(along, this % design_domain(), size(this % at), &
+       call require_field(along, size(v), this % design_domain(), size(this % at), &
             & 'a direction in the design is defined on the point domain with one value per point')
     else
        error stop 'operation_residual: a variation names the state or the design'

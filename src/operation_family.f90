@@ -239,12 +239,17 @@ contains
   end function family_stage_weight
 
   !===================================================================!
-  ! The interpolatory quadrature over the step ending at k, on the
-  ! instants the family's rows read: min(order, k) for a multistep
-  ! family, the arriving instant for Newmark. A staged family
-  ! integrates over its stages with the tableau weights b, not over
-  ! instants, and stops the program here. An instant outside the
-  ! block stops the program.
+  ! The interpolatory quadrature over the step [t_(k-1), t_k], on the
+  ! instants the family's rows read, so that it is of the order of the
+  ! scheme: min(order, k) for a multistep family; for Newmark the two
+  ! instants k - 1 and k its rows read (offsets 1 and 0), which is the
+  ! trapezoidal rule, weights (1/2, 1/2), exact on linear integrands,
+  ! global error -(h^2/12) [f'(T) - f'(0)] + O(h^4), the second order
+  ! of the pair with gamma = 1/2. A rule on a third instant would read
+  ! history the family does not hold. At k = 1 the single node has
+  ! the measure dt_1 = 0. A staged family integrates over its stages
+  ! with the tableau weights b, not over instants, and stops the
+  ! program here. An instant outside the block stops the program.
   !===================================================================!
 
   pure subroutine family_step_quadrature(this, dt, k, weight)
@@ -263,7 +268,7 @@ contains
     case (FAMILY_ADAMS, FAMILY_BDF)
        num_nodes = min(this % order, k)
     case (FAMILY_NEWMARK)
-       num_nodes = 1
+       num_nodes = min(2, k)
     case default
        error stop 'operation_family: a staged family integrates over its stages by the tableau weights'
     end select

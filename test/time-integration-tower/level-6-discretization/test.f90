@@ -76,9 +76,13 @@
 ! (0, 0) is the explicit Taylor step: the weight of q''_k is zero.
 ! A DIRK tableau's step connectivity states the same kind of rows,
 ! Q_i = q_(k-1) + h sum_j a_ij Q'_j, q_k = q_(k-1) + h sum_j b_j Q'_j,
-! with the instant behind first in every row. Newmark refuses an
-! equation of degree other than two; a staged family refuses the
-! instant quadrature: each refusal stops a child process.
+! with the instant behind first in every row. A functional over the
+! step is integrated on the instants the rows read: for Newmark the
+! two instants k - 1 and k, the trapezoidal rule (1/2, 1/2), the
+! same rule Adams-Moulton 2 and BDF-2 state on their two instants;
+! at the first instant one node, whose measure is zero. Newmark
+! refuses an equation of degree other than two; a staged family
+! refuses the instant quadrature: each refusal stops a child process.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -98,7 +102,7 @@ program time_level_6
   use relation_binary , only : csr_relation
   use view_directed_stored           , only : stored_directed_graph
   use field_stored     , only : stored_field
-  use operation_family    , only : family, bdf_family, newmark_family, crouzeix_two_stage
+  use operation_family    , only : family, bdf_family, adams_family, newmark_family, crouzeix_two_stage
   use operation_weight    , only : scheme_weight
   use operation_coupling  , only : weights_of
   use view_directed_connectivity, only : connectivity_graph
@@ -158,6 +162,7 @@ program time_level_6
   call check_newmark_polynomial_rows(nfail)
   call check_taylor_newmark_datum(nfail)
   call check_dirk_step_connectivity(nfail)
+  call check_newmark_step_quadrature(nfail)
   call check_family_refusals(nfail)
 
   call assert_all(nfail, "level 6")
@@ -698,6 +703,45 @@ contains
          & "h b_j into the instant ahead and b_j at the top degree", nfail)
 
   end subroutine check_dirk_step_connectivity
+
+  !===================================================================!
+  ! The step quadrature of Newmark on the non-uniform grid
+  ! dt = [0, 0.3, 0.2]: at instant 3 the two nodes are instants 3
+  ! and 2 with weights (1/2, 1/2) of the step dt_3, the trapezoidal
+  ! rule, equal to the two-instant rule of Adams-Moulton 2 and of
+  ! BDF-2; at instant 1 one node of weight one.
+  !===================================================================!
+
+  subroutine check_newmark_step_quadrature(nfail)
+
+    integer, intent(inout) :: nfail
+
+    type(family) :: scheme, adams2, bdf2
+    type(derivative_terms) :: dt(3)
+    type(derivative_terms), allocatable :: weight(:), reference(:)
+    integer :: k
+
+    dt = [derivative_terms(0.0_dp, 0), derivative_terms(0.3_dp, 0), derivative_terms(0.2_dp, 0)]
+    scheme = newmark_family(0.25_dp, 0.5_dp)
+    call scheme % step_quadrature(dt, 3, weight)
+    call report(size(weight) .eq. 2 .and. abs(value(weight(1)) - 0.5_dp) .lt. TOL &
+         & .and. abs(value(weight(2)) - 0.5_dp) .lt. TOL, &
+         & "newmark integrates the step on the two instants its rows " // &
+         & "read: the trapezoidal rule (1/2, 1/2)", nfail)
+    adams2 = adams_family(2)
+    bdf2   = bdf_family(2)
+    call adams2 % step_quadrature(dt, 3, reference)
+    call report(size(reference) .eq. 2 .and. maxval([(abs(value(weight(k)) - value(reference(k))), k = 1, 2)]) .lt. TOL, &
+         & "the same rule Adams-Moulton 2 states on its two instants", nfail)
+    call bdf2 % step_quadrature(dt, 3, reference)
+    call report(size(reference) .eq. 2 .and. maxval([(abs(value(weight(k)) - value(reference(k))), k = 1, 2)]) .lt. TOL, &
+         & "and the same rule BDF-2 states", nfail)
+    call scheme % step_quadrature(dt, 1, weight)
+    call report(size(weight) .eq. 1 .and. abs(value(weight(1)) - 1.0_dp) .lt. TOL, &
+         & "at the first instant one node of weight one, whose step " // &
+         & "measure is zero", nfail)
+
+  end subroutine check_newmark_step_quadrature
 
   !===================================================================!
   ! The refusals, each in a child process that must stop.

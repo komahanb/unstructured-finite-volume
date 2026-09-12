@@ -117,6 +117,11 @@ admitted numerical reference and the rejection case R03 a refused one.
   residual at nu = 0, bounded by tolerance x initial norm + gamma_N |q|.
   Declared for multistep and Newmark rows; the DIRK rows violate it at
   first order (limitation L05).
+- Functional quadrature: a functional over one step is integrated on the
+  instants the family's rows read (Adams and BDF: `min(order, k)` instants;
+  Newmark: the two instants k - 1 and k, the trapezoidal rule), so the
+  quadrature is of the order of the scheme; a staged family integrates over
+  its stages with the tableau weights.
 - Sensitivity demonstration: |tangent - adjoint| <= gamma_N |tangent|; the
   central difference quotient of two functionals each solved to relative
   tolerance 1e-12 satisfies |tangent - quotient| <= (tolerance + u) |F| /
@@ -126,8 +131,13 @@ admitted numerical reference and the rejection case R03 a refused one.
 
 - L01: Adams-Moulton 4 design derivatives and last-instant state converge
   at order 3 while its functional reaches 4.
-- L02: every Newmark scheme's design derivatives converge at first order
-  (R07 owns the Newmark derivative oracle).
+- L02 (resolved by R07 slice 2): every Newmark scheme's design derivatives
+  converged at first order because `family_step_quadrature` integrated the
+  functionals of an unstaged one-step family by the right-endpoint rectangle
+  rule; the two-instant (trapezoidal) rule of the instants the Newmark rows
+  read restores order 2. The case is now required as T11 (beta = 1/4,
+  gamma = 1/2: dE, dD, q, q' at order 2, E and the invariant conserved) and
+  T12 (Fox-Goodwin: E, dE, dD, q' at order 2), the former exploratory X03.
 - L03: Adams-Moulton 3 and 4 on the periodic field converge at first order
   in time while the same schemes reach their order on the ODE.
 - L04: the form-degree-4 spatial operator converges at order 2.2 on the

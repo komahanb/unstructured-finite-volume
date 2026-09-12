@@ -5372,10 +5372,13 @@ contains
     real(dp) :: share
     integer :: count, k, rank, i, size_of
     count = chain(b) % rows % num_unknowns()
-    allocate(w(b) % w(count, multiset_count(nd, max(top, 1)), max(top, 1)), source=0.0_dp)
-    live         = live + size(w(b) % w)
-    total        = total + size(w(b) % w)
-    peak_storage = max(peak_storage, live)
+    ! at top = 0 no tower is solved and none is read, so none is stored
+    if (top > 0) then
+       allocate(w(b) % w(count, multiset_count(nd, top), top), source=0.0_dp)
+       live         = live + size(w(b) % w)
+       total        = total + size(w(b) % w)
+       peak_storage = max(peak_storage, live)
+    end if
     do k = 1, top
        call tally_order(k)
        call tally_enter(at_horizon)
@@ -6003,7 +6006,7 @@ contains
        do h = 1, size(released)
           p = released(h)
           costate_live = costate_live - chain(p) % rows % num_unknowns() * nf &
-               & * multiset_count(nd, max(top, 1)) * (top + 1)
+               & * multiset_count(nd, top) * (top + 1)
        end do
     end do
     call tally_order(0)
@@ -6091,7 +6094,7 @@ contains
     n   = this % chain(b) % rows % num_unknowns()
     nf  = size(this % functionals)
     top = this % top
-    m   = multiset_count(this % nd, max(top, 1))
+    m   = multiset_count(this % nd, top)
     allocate(lam(n, nf, m, 0:top), source=0.0_dp)
     this % costate_live  = this % costate_live + size(lam)
     this % costate_total = this % costate_total + size(lam)

@@ -81,12 +81,45 @@ application's `chain_execution`, which reads the library's driver for its
 order, its step and its lifetimes and states no schedule of its own. Postprocessed forward derivatives use
 the same release intervals for tangent towers.
 
-Reverse derivatives retain primal state, tangent towers and lower-order
-costates because higher derivatives and the final Lagrangian evaluation
-still read them. Their storage grows with the horizon. The reported Taylor
-storage pairs count maximum live and total allocated numerical entries in
-the specified state/tower arrays; they do not measure total process memory,
-graph metadata, or temporary solver storage.
+Reverse derivatives are solved block-outer, order-inner in the transposed
+order: at a block the costates of every order, multiset and functional are
+solved in sequence, order k reading the block's own lower orders and the
+child costates the bindings supply, and the block's Lagrangian terms are
+evaluated at once from its state, tower and costates. The costates leave
+the block as one datum on its unknown domain, released by the transposed
+driver after the final predecessor read; the terms are stored per block
+and summed ascending afterwards, so the tables equal the order-outer sums
+bitwise. The Leibniz parts are per-block sums added ascending, no longer one
+running sum over the rows of all blocks.
+
+## Bounded reverse storage
+
+The restart state of a completed position p of the forward traversal is
+R_p = { (S_e, W_e) : e in `live_after`(p) }, the states and towers of the
+blocks written at or before p and read beyond it; with the immutable rules,
+expansion and configuration it recomputes every later block bitwise (Newton
+starts from the fixed values, primal rows re-factorise at version zero, a
+recomputed tower is solved under a fresh version so that each costate solve
+reads the factors of its own tower only where the retained pass does, the
+last block). `chain_derivative` and `derivative` read the solver context's
+`reverse_entries` (application key `reverse_entries`, default `huge(1)`):
+the largest sum of the live entries of five accounts - states, towers,
+costates, restart states and per-block Lagrangian terms - returned as the
+`derivative_storage` record with the schedule's quantities. With L the
+largest restart state, F_max the largest block's forward entries, the window
+the largest live costate data during a step with that step's own, and the
+scalars, retention stores sum F + window + scalars; c stored restart states
+give peak <= (c + 1) L + F_max + window + scalars, and the limit admits
+c = floor((limit - L - F_max - window - scalars) / L), c = 0 recomputing every
+block from the initial state; a limit at or above retention stores
+everything, one below min(retention, the bound at c = 0) is refused with the
+accounts before any tower is solved. The schedule is the recursion
+`reversed(first, last, c)`: t(n, 0) = n (n + 1) / 2 forward evaluations,
+t(n, c) = min over m of m + t(n - m, c - 1) + t(m - 1, c), a restart state
+stored after block m carrying that block's own forward data. The bound
+excludes the blocks' rows and rules, the expansion, the driver's copies of
+the data it passes and the solvers' temporaries. Streamed Taylor storage
+pairs count maximum live and total entries of the tower and state accounts.
 
 Periodic and event closure remain mathematical residual constraints. The
 execution graph remains acyclic.
@@ -140,7 +173,8 @@ executions or expansions is a gfortran 15.2 internal compiler error
 
 Interleaving is supported; concurrent threads are not certified. Diagnostic
 `tally` accounting is still application-wide, with every accounting scope
-closed before `advance` returns. Bounded reverse-memory algorithms remain
+closed before `advance` returns. A reverse derivative of a streamed
+execution and periodic or event closure remain
 separate architectural work.
 
 ## Concurrency prerequisites

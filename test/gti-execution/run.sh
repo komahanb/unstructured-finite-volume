@@ -17,13 +17,15 @@ fi
 "$compiler" -std=f2023 -fcoarray=single -fbounds-check -O2 -I"$root/lib" -I"$module_dir" -J"$work" \
     "$suite_dir/test.f90" "$module_dir/modules.o" "$root/lib/libufvm.a" -o "$work/run"
 "$work/run"
-for mode in source_twin advance_uninitialized results_incomplete derivative_incomplete derivative_streamed; do
+for mode in source_twin advance_uninitialized results_incomplete derivative_incomplete derivative_streamed \
+    reverse_limit_insufficient; do
     case "$mode" in
         source_twin) diagnostic="view_level: this storage's hierarchy has been released" ;;
         advance_uninitialized) diagnostic='gti_chain: initialize an execution before advancing it' ;;
         results_incomplete) diagnostic='gti_chain: results require a completed execution' ;;
         derivative_incomplete) diagnostic='gti_chain: a derivative requires a completed primal execution' ;;
         derivative_streamed) diagnostic='gti_chain: a streamed Taylor execution has released its primal state' ;;
+        reverse_limit_insufficient) diagnostic='gti_chain: the reverse storage limit admits the working set of one recomputation at least' ;;
     esac
     if "$work/run" "$mode" > "$work/$mode.log" 2>&1; then
         echo "FAIL: execution accepted $mode"

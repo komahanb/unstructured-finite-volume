@@ -26,7 +26,7 @@ def main():
     if not compiler:
         raise SystemExit("compiler and module search flags are required")
     refusals = {}
-    for component in ("number", "nv", "ne", "reversed", "tail", "head",
+    for component in ("number", "nv", "ne", "reversed", "tail", "head", "num_without_head",
                       "xinc", "einc", "xadj", "vadj", "xout", "eout", "xin", "ein",
                       "vtag", "etag", "whole_rel", "vset", "eset"):
         refusals[component] = source(f"g % {component} = g % {component}")
@@ -92,7 +92,7 @@ def main():
             result = subprocess.run(compiler + ["-fsyntax-only", str(path)], capture_output=True, text=True)
             if result.returncode == 0:
                 raise SystemExit(f"FAIL : external mutation admitted: {name}")
-            if name in ("fibre_storage", *tuple(refusals)[:19]) and "private" not in result.stderr.lower():
+            if name in ("fibre_storage", *tuple(refusals)[:20]) and "private" not in result.stderr.lower():
                 raise SystemExit(f"FAIL : {name} refused for an unrelated reason:\n{result.stderr}")
             print(f"PASS : compiler refuses {name}")
 

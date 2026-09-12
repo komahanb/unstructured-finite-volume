@@ -56,23 +56,37 @@ mutable traversal state.
 Test consumers also use the new readers; the former writable pointer
 result is removed.
 
-## Lifetime and transpose
+## Lifetime, orientation and transpose
 
-A stored graph and a CSR relation own their arrays. An `integer_fibre`
-borrows its array: its source must have `target`, remain allocated, and
-not be reassigned for the duration of every use of the fibre. Copying a
-fibre copies its reference and does not extend that lifetime. Constructors
-of other binary relation representations can use `integer_fibre(members)`
-under the same requirement. Use `values()` when a result must outlive its
-source. Privacy enforces access; it does not manage borrowed lifetimes.
+A stored graph value owns its arrays, and every copy of the value or of
+an object containing it copies them: intrinsic assignment,
+`allocate(source=)`, structure constructors, function results, arrays
+and polymorphic copies all produce an independent value by the
+language's own semantics. No finalizer and no shared reference is
+involved, so a graph value is valid under every copy mechanism and
+after its source is finalized or replaced. `transpose()` is such a
+copy in the other orientation, with the same carrier identities and
+partition relation; its cost is proportional to the graph (ten
+allocations per copy and the array copies). `reverse()` changes the
+orientation of one value in place at constant cost and without
+allocation: the same immutable arrays read with tail and head
+exchanged. Reversing twice restores the orientation; reverse and
+transpose read identical endpoints and incidence. Both refuse a graph
+with an edge without a head, using a count stored at construction. The
+stencil has the same pair: `transpose()` copies, `reverse()` changes
+its pattern's orientation in place and removes its constants; the
+explicit-tangent linearization uses the latter.
 
-`transpose_of(relation)` is a constant-cost borrowed view. Its base must
-outlive the view, and transposed fibres obey the same lifetime rule.
-`stored_directed_graph % transpose()` remains an owning copy with reversed
-orientation and the same carrier identities. It has storage cost
-proportional to the graph. Sharing that storage requires a separate
-ownership change; this interface does not claim constant-cost graph
-transposition. Graphs with headless edges still refuse directed transpose.
+A CSR relation owns its arrays. An `integer_fibre` borrows its array:
+its source must have `target`, remain allocated, and not be reassigned
+for the duration of every use of the fibre. Copying a fibre copies its
+reference and does not extend that lifetime. Constructors of other
+binary relation representations can use `integer_fibre(members)` under
+the same requirement. Use `values()` when a result must outlive its
+source. `transpose_of(relation)` is a constant-cost borrowed view: its
+base must outlive the view, and transposed fibres obey the same rule.
+Privacy enforces access; it does not manage borrowed lifetimes. These
+two are the relation views that require their source to remain alive.
 
 ## Counted ownership of immutable storage
 
@@ -116,7 +130,7 @@ assignment and function result. Registration by binding serial, with
 idempotent release, is correct for every mechanism that invokes
 defined assignment and never reads released storage under the others.
 
-The stored graph does not use the primitive. The driver copies
+The stored graph does not use the primitive yet. The driver copies
 every rule and datum by `allocate(source=)`, minimizers copy
 themselves and their actions the same way, and a rule is a polymorphic
 operation that contains stencils and residual operators with graphs:
@@ -138,6 +152,10 @@ recycled cells) is not synchronised across threads.
 
 `test/graph-topology-ownership/run.sh` checks the access boundary with
 compiler refusals, exercises sparse fibres and transpose/incidence laws,
+the orientation laws (transpose after finalization and replacement of
+its source, identity and partition preservation, reverse as an
+involution equal to the transpose, independence of container, array,
+`source=` and function-result copies), the counted-storage laws above,
 and counts allocations during traversal. The suite is part of
 `./verify.sh`. Existing partition tests continue to refuse transfer
 descriptions with incorrect identities, counts or mapped indices.
@@ -166,6 +184,19 @@ edges, 100 unsuccessful queries on 513 vertices and 261,632 edges, and
 in each reachability case; the DAG's required order is `1,...,2000`.
 These are focused local measurements, not a whole-application speed
 guarantee.
+
+Against commit `483e0db`, with the in-place reverse and the stored
+headless-edge count (five interleaved pinned pairs on a machine shared
+with other builds, `artifacts/remaining-work-2026-09-11/r04/comparison/`):
+the four traversal phases on 20,000 degree-six members over 100
+repetitions measured ratios 0.991, 1.003, 0.993 and 0.972 with equal
+checksums and zero allocations on both builds; the `taylor_state`
+demonstration 1.513 against 1.530 seconds (ratio 1.011); every
+demonstration output byte-identical to `baseline-3fb9c97`. One
+reversal costs 6 to 7 nanoseconds and no allocation at 2,000, 20,000
+and 200,000 vertices; one owning transpose copy costs ten allocations
+and 75 microseconds, 1.2 milliseconds and 12.9 milliseconds at those
+sizes, proportional to the graph.
 
 Scalar `member(i)` validates each access and has more call overhead than
 a raw array subscript. Bulk readers avoid that per-member call; the graph

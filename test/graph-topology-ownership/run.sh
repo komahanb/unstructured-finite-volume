@@ -33,6 +33,7 @@ declare -A reason=(
     [inconsistent_vertex_extent]='one vertex carrier has one extent'
     [inconsistent_edge_extent]='one edge carrier has one extent'
     [boundary_transpose]='a graph with an edge without a head has no transpose'
+    [boundary_reverse]='a graph with an edge without a head has no transpose'
     [zero_fibre_index]='fibre index is outside its extent'
     [outside_fibre_index]='fibre index is outside its extent'
     [empty_fibre_index]='fibre index is outside its extent'

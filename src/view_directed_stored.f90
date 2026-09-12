@@ -87,16 +87,22 @@ module view_directed_stored
      ! both endpoint lists and both compressed directions are stored,
      ! and reversed records which is which. The transpose of the
      ! transpose restores the original orientation. Each graph value
-     ! owns its arrays; transpose copies this storage before reversal.
+     ! owns its arrays and every copy of the value copies them, so a
+     ! value is valid under every Fortran copy mechanism. reverse
+     ! changes the orientation of this value in place at constant
+     ! cost; transpose is an owning copy in the other orientation.
      !----------------------------------------------------------------!
      logical :: reversed = .false.
 
      !----------------------------------------------------------------!
-     ! Edge endpoints. A head of zero means the edge has none.
+     ! Edge endpoints. A head of zero means the edge has none; the
+     ! number of such edges, counted once at construction, decides
+     ! whether the orientation can be reversed.
      !----------------------------------------------------------------!
 
      integer, allocatable :: tail(:)
      integer, allocatable :: head(:)
+     integer :: num_without_head = 0
 
      !----------------------------------------------------------------!
      ! The compressed lists, built once. Vertex v's incident edges are
@@ -171,6 +177,7 @@ module view_directed_stored
      procedure :: edge_head
      procedure :: edge_has_head
      procedure :: transpose
+     procedure :: reverse => reverse_orientation
      procedure :: transposed
      procedure :: loop
 
@@ -367,11 +374,13 @@ contains
 
     ! Normalise every missing head to zero, so one test suffices
     ! everywhere afterwards.
+    this % num_without_head = 0
     do e = 1, this % ne
        if (heads(e) >= 1 .and. heads(e) <= nv) then
           this % head(e) = heads(e)
        else
           this % head(e) = 0
+          this % num_without_head = this % num_without_head + 1
        end if
     end do
 
@@ -659,14 +668,17 @@ contains
   ! twice returns the original. An edge without a head would become an
   ! edge without a tail, which is not an edge; such a graph has no
   ! transpose and the request stops the program. Intrinsic assignment
-  ! copies the allocatable storage; this is not a constant-cost view.
+  ! copies the allocatable storage: the cost is proportional to the
+  ! graph, and the copy is valid after this value is finalized or
+  ! replaced. A value that is only read in the other orientation from
+  ! now on is reversed in place instead.
   !===================================================================!
 
   type(stored_directed_graph) function transpose(this) result(transposed_graph)
 
     class(stored_directed_graph), intent(in) :: this
 
-    if (any(this % head < 1)) then
+    if (this % num_without_head > 0) then
        error stop 'stored_directed_graph: a graph with an edge without a head has no transpose'
     end if
 
@@ -674,6 +686,25 @@ contains
     transposed_graph % reversed = .not. this % reversed
 
   end function transpose
+
+  !===================================================================!
+  ! Reverse the orientation of this value in place: the same
+  ! immutable arrays read with tail and head exchanged, at constant
+  ! cost and without allocation. Reversing twice restores the
+  ! orientation. The refusal is the transpose's.
+  !===================================================================!
+
+  subroutine reverse_orientation(this)
+
+    class(stored_directed_graph), intent(inout) :: this
+
+    if (this % num_without_head > 0) then
+       error stop 'stored_directed_graph: a graph with an edge without a head has no transpose'
+    end if
+
+    this % reversed = .not. this % reversed
+
+  end subroutine reverse_orientation
 
   pure logical function transposed(this)
 

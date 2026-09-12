@@ -792,7 +792,7 @@ contains
     end if
 
     a = stencil(r, c, w, spread(0.0_dp, 1, this % unknowns), 'explicit tangent')
-    if (transposed) a = a % transpose()
+    if (transposed) call a % reverse()
     call a % constants % set_real_vector(-rhs)
 
     lin = residual_operator(a, stated(constant(0.0_dp), this % degrees - 1, 'zero'), this % at, &

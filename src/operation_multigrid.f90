@@ -43,7 +43,7 @@ module operation_multigrid
   use view_directed, only : directed_graph
   use view_directed_stored, only : stored_directed_graph
   use operation_stencil, only : stencil, combine_triples
-  use operation_minimization , only : minimizer, state, solve_result, SOLVE_INNER_FAILED
+  use operation_minimization , only : minimizer, state, restrict, compact_labels, solve_result, SOLVE_INNER_FAILED
   use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
   use operation_action       , only : operation
   use graph_fractal          , only : graph
@@ -72,6 +72,7 @@ module operation_multigrid
      procedure :: name  => multigrid_name
      procedure :: setup
      procedure :: state => multigrid_state
+     procedure :: restrict => multigrid_restrict
      procedure :: solve
 
   end type multigrid
@@ -124,6 +125,35 @@ contains
     end if
 
   end subroutine multigrid_state
+
+  !===================================================================!
+  ! The aggregates of the selected unknowns, relabelled compactly in
+  ! order of first appearance. The smoother is over the fine domain
+  ! and is restricted by the selection itself; the coarse minimizer is
+  ! over the blocks and is restricted by the blocks the selection
+  ! meets, in that same order.
+  !===================================================================!
+
+  subroutine multigrid_restrict(this, selected)
+
+    class(multigrid), intent(inout) :: this
+    integer         , intent(in)    :: selected(:)
+
+    integer, allocatable :: labels(:), blocks(:)
+
+    call restrict(this, selected)
+    if (allocated(this % aggregates)) then
+       if (any(selected > size(this % aggregates))) then
+          error stop 'multigrid: a restriction selects unknowns of the stated aggregates'
+       end if
+       call compact_labels(this % aggregates(selected), labels, blocks)
+       this % aggregates = labels
+       this % nblocks    = size(blocks)
+       if (allocated(this % coarse)) call this % coarse % restrict(blocks)
+    end if
+    if (allocated(this % smoother)) call this % smoother % restrict(selected)
+
+  end subroutine multigrid_restrict
 
   subroutine setup(this, aggregates)
 

@@ -28,7 +28,7 @@
 module operation_gmres
 
   use util_precision  , only : dp
-  use operation_minimization, only : minimizer, state, solve_result, SOLVE_BREAKDOWN, SOLVE_INNER_FAILED, SOLVE_STAGNATED
+  use operation_minimization, only : minimizer, state, restrict, solve_result, SOLVE_BREAKDOWN, SOLVE_INNER_FAILED, SOLVE_STAGNATED
   use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
   use util_tally, only : tally_record, linear_solves
   use view_directed, only : directed_graph
@@ -51,6 +51,7 @@ module operation_gmres
 
      procedure :: name => gmres_name
      procedure :: state => gmres_state
+     procedure :: restrict => gmres_restrict
      procedure :: solve
 
   end type gmres
@@ -105,6 +106,21 @@ contains
     end if
 
   end subroutine gmres_state
+
+  !===================================================================!
+  ! The preconditioner is stated on the same operator, so it is
+  ! restricted by the selection itself.
+  !===================================================================!
+
+  subroutine gmres_restrict(this, selected)
+
+    class(gmres), intent(inout) :: this
+    integer     , intent(in)    :: selected(:)
+
+    call restrict(this, selected)
+    if (allocated(this % preconditioner)) call this % preconditioner % restrict(selected)
+
+  end subroutine gmres_restrict
 
   !===================================================================!
   ! The coupling of the blocks of `width` consecutive unknowns: an

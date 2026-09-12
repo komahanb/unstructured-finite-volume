@@ -18,14 +18,10 @@ module operation_temporal_minimization
   use graph_fractal         , only : graph
   use view_directed         , only : directed_graph
   use operation_action      , only : operation
-  use operation_minimization, only : minimizer, state
+  use operation_minimization, only : minimizer, state, restrict, compact_labels
   use operation_minimization, only : solve_result, SOLVE_EVALUATED, SOLVE_STAGNATED, SOLVE_INNER_FAILED
   use operation_driver      , only : driver, pairing
   use operation_residual    , only : residual_operator
-  use operation_multigrid   , only : multigrid
-  use operation_newton      , only : newton
-  use operation_gmres       , only : gmres
-  use operation_elimination , only : elimination
   use view_directed_stored  , only : stored_directed_graph
   use field_calculus        , only : FIELD_REAL
   use field_stored          , only : stored_field
@@ -54,6 +50,7 @@ module operation_temporal_minimization
 
      procedure :: name  => temporal_minimizer_name
      procedure :: state => temporal_minimizer_state
+     procedure :: restrict => temporal_minimizer_restrict
      procedure :: pair_with
      procedure :: pairing_of
      procedure :: partition
@@ -194,6 +191,51 @@ contains
     end if
 
   end subroutine partition
+
+  !===================================================================!
+  ! The partition of the selected unknowns: their labels relabelled
+  ! compactly in order of first appearance, the member order retaining
+  ! the members the selection meets in their stated order, and the
+  ! seed transfer of each retained member. The inner template is
+  ! restricted by the selection itself. A schedule is over rules, not
+  ! unknowns, and a scheduled minimizer refuses restriction.
+  !===================================================================!
+
+  subroutine temporal_minimizer_restrict(this, selected)
+
+    class(temporal_minimizer), intent(inout) :: this
+    integer                  , intent(in)    :: selected(:)
+
+    integer, allocatable :: labels(:), members(:), order(:)
+    integer :: k, at, n
+
+    if (this % scheduled) then
+       error stop 'temporal_minimizer: a schedule is over rules, and is not restricted to unknowns'
+    end if
+    call restrict(this, selected)
+    if (allocated(this % member_of)) then
+       if (any(selected > size(this % member_of))) then
+          error stop 'temporal_minimizer: a restriction selects unknowns of the partition'
+       end if
+       call compact_labels(this % member_of(selected), labels, members)
+       this % member_of = labels
+       allocate(order(size(this % member_order)))
+       n = 0
+       do k = 1, size(this % member_order)
+          at = findloc(members, this % member_order(k), dim=1)
+          if (at == 0) cycle
+          n = n + 1
+          order(n) = at
+       end do
+       if (n < 1) then
+          error stop 'temporal_minimizer: a restriction meets an ordered member at least'
+       end if
+       this % member_order = order(1:n)
+       if (allocated(this % seed_transfer)) this % seed_transfer = this % seed_transfer(:, :, members)
+    end if
+    if (allocated(this % inner)) call this % inner % restrict(selected)
+
+  end subroutine temporal_minimizer_restrict
 
   function visits(this) result(order)
 
@@ -407,7 +449,10 @@ contains
              end if
              unknowns = stored_directed_graph(sub % num_unknowns(), tails=[integer ::], heads=[integer ::])
              call local_stored(this, sub, unknowns, inputs)
-             call minimizer_over_member(this, member, local)
+             ! the inner minimizer restricted to the member: each
+             ! solver maps its own metadata and its children's
+             allocate(local, source=this % inner)
+             call local % restrict(member)
              if (allocated(inputs)) then
                 call local % state(sub, unknowns, unknowns % vertex_set(), sub % num_unknowns(), &
                      & stored_inputs=inputs)
@@ -442,126 +487,6 @@ contains
     end select
 
   end subroutine partitioned_solve
-
-  subroutine minimizer_over_member(this, member, local)
-
-    class(temporal_minimizer), intent(in)  :: this
-    integer                  , intent(in)  :: member(:)
-    class(minimizer), allocatable, intent(out) :: local
-
-    allocate(local, source=this % inner)
-    select type (local)
-    type is (multigrid)
-       if (allocated(local % aggregates)) then
-          local % aggregates = compact_labels(local % aggregates(member))
-       end if
-    type is (newton)
-       ! a Newton solve over the member coarsens by the member's
-       ! aggregates as well
-       if (allocated(local % inner)) then
-          select type (inner => local % inner)
-          type is (multigrid)
-             if (allocated(inner % aggregates)) then
-                inner % aggregates = compact_labels(inner % aggregates(member))
-             end if
-          type is (gmres)
-             ! and so does a multigrid preconditioner under its Krylov solve
-             if (allocated(inner % preconditioner)) then
-                select type (levels => inner % preconditioner)
-                type is (multigrid)
-                   if (allocated(levels % aggregates)) then
-                      levels % aggregates = compact_labels(levels % aggregates(member))
-                   end if
-                end select
-             end if
-          type is (elimination)
-             ! the rows eliminated over the member are the member's,
-             ! and a multigrid under the elimination coarsens by the
-             ! aggregates of the member's retained unknowns
-             if (allocated(inner % eliminated)) then
-                call restricted_elimination(inner, member)
-             end if
-          end select
-       end if
-    end select
-
-  end subroutine minimizer_over_member
-
-  !===================================================================!
-  ! The elimination restricted to a member: its flags are the member's,
-  ! and the aggregates of a multigrid solving its complement, stated
-  ! over the retained unknowns of the whole system, are those of the
-  ! member's retained unknowns, relabelled compactly.
-  !===================================================================!
-
-  subroutine restricted_elimination(schur, member)
-
-    class(elimination), intent(inout) :: schur
-    integer          , intent(in)    :: member(:)
-
-    integer, allocatable :: retained_position(:), retained_of_member(:), of_member(:)
-    logical, allocatable :: flags(:), member_flags(:)
-    class(minimizer), allocatable :: solve
-    integer :: i, n
-
-    flags = schur % eliminated
-    n = size(flags)
-    allocate(retained_position(n))
-    retained_position = 0
-    do i = 1, n
-       if (i > 1) retained_position(i) = retained_position(i - 1)
-       if (.not. flags(i)) retained_position(i) = retained_position(i) + 1
-    end do
-    allocate(of_member(size(member)), member_flags(size(member)))
-    do i = 1, size(member)
-       of_member(i)    = retained_position(member(i))
-       member_flags(i) = flags(member(i))
-    end do
-    retained_of_member = pack(of_member, .not. member_flags)
-    schur % eliminated = member_flags
-    if (.not. allocated(schur % inner)) return
-    call move_alloc(schur % inner, solve)
-    select type (solve)
-    type is (multigrid)
-       if (allocated(solve % aggregates)) then
-          solve % aggregates = compact_labels(solve % aggregates(retained_of_member))
-       end if
-    type is (gmres)
-       if (allocated(solve % preconditioner)) then
-          select type (levels => solve % preconditioner)
-          type is (multigrid)
-             if (allocated(levels % aggregates)) then
-                levels % aggregates = compact_labels(levels % aggregates(retained_of_member))
-             end if
-          end select
-       end if
-    end select
-    call move_alloc(solve, schur % inner)
-
-  end subroutine restricted_elimination
-
-  function compact_labels(label) result(mapped)
-
-    integer, intent(in) :: label(:)
-    integer, allocatable :: mapped(:)
-
-    integer, allocatable :: representative(:)
-    integer :: i, at, n
-
-    allocate(mapped(size(label)), representative(size(label)))
-    n = 0
-    do i = 1, size(label)
-       at = 0
-       if (n > 0) at = findloc(representative(1:n), label(i), dim=1)
-       if (at == 0) then
-          n = n + 1
-          representative(n) = label(i)
-          at = n
-       end if
-       mapped(i) = at
-    end do
-
-  end function compact_labels
 
   subroutine local_stored(this, residual, unknowns, inputs)
 

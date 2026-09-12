@@ -89,8 +89,35 @@ requires a separate owning graph-storage and rebinding contract.
 
 Interleaving is supported; concurrent threads are not certified. Diagnostic
 `tally` accounting is still application-wide, with every accounting scope
-closed before `advance` returns. Arbitrary nested solver restriction and
-bounded reverse-memory algorithms remain separate architectural work.
+closed before `advance` returns. Bounded reverse-memory algorithms remain
+separate architectural work.
+
+## Solver restriction
+
+A partitioned temporal solve constrains the residual to one member of the
+unknowns and solves it with a copy of the inner solver template restricted
+to that member. Restriction is each minimizer's own contract: `restrict`
+receives the selection `selected(i)`, the whole index of the i-th selected
+unknown, as an injective map of the selected domain into the whole. The
+family is square, so the selected residual rows are the same indices.
+
+The base discards every quantity evaluated on the whole (statement, affine
+part, coupling, stored inputs, block diagonal, residual history), preserves
+stopping rules, block width and component width, and refuses an empty,
+repeated, out-of-range or block-splitting selection. Each solver with
+metadata composes it with the selection and restricts its children by the
+selection induced on their domains: an elimination restricts its inner by
+the retained positions of the retained selected unknowns; a multigrid
+restricts its aggregates, its smoother by the selection and its coarse
+solver by the distinct aggregate labels in first-appearance order; Newton,
+GMRES and a preconditioned solver pass the selection through; a dense
+direct solver discards its retained factorization; the temporal minimizer
+restricts its own partition labels, member order and seed transfers.
+
+The operator on the selection is the residual constrained to it with the
+exterior fixed; its affine part is the exterior contribution. The temporal
+engine dispatches on no solver type, so a new composition, including one
+defined only in a test, participates without engine edits.
 
 ## Verification
 

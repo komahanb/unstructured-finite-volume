@@ -85,6 +85,8 @@ module operation_minimization
   integer, parameter :: window = 5
   public :: minimizer
   public :: state
+  public :: restrict
+  public :: compact_labels
   public :: state_tuple
 
   !===================================================================!
@@ -204,6 +206,7 @@ module operation_minimization
      procedure :: result => minimizer_result
 
      procedure :: state
+     procedure :: restrict
      procedure :: evaluate
      procedure :: matvec
      procedure :: imbalance
@@ -617,6 +620,122 @@ contains
   end subroutine state
 
   !===================================================================!
+  ! RESTRICTION TO A SELECTED DOMAIN. selected(i) is the whole index
+  ! of the i-th unknown of the selected domain: an injective map of
+  ! the selected domain into the whole. The family is square, so the
+  ! selected residual rows are the rows of the same indices.
+  !
+  ! The base restricts what every minimizer owns. The block layout is
+  ! preserved: a selection is whole blocks of the stated width, aligned
+  ! as the whole numbers them, in block order. Every quantity evaluated
+  ! on the whole domain - the statement, its affine part, the coupling,
+  ! the stored inputs, the block diagonal, the residual history - is
+  ! invalid on the selected domain and is discarded. The operator on
+  ! the selected domain, the whole constrained to the selection with
+  ! its exterior fixed, is stated afterwards; its affine part R_s(0)
+  ! is then the exterior contribution. Stopping rules, the block
+  ! width and the component width are the same on the selection.
+  !
+  ! A minimizer owning metadata indexed by the whole, or children over
+  ! domains derived from it, overrides this: it calls this base, maps
+  ! its metadata through the selection, and restricts each child by the
+  ! selection induced on the child's domain.
+  !
+  ! Invalid input: an empty selection, an index below one or beyond
+  ! the stated unknowns, a repeated index, or a selection that splits
+  ! or misaligns a block.
+  !===================================================================!
+
+  subroutine restrict(this, selected)
+
+    class(minimizer), intent(inout) :: this
+    integer         , intent(in)    :: selected(:)
+
+    logical, allocatable :: chosen(:)
+    integer :: i, b, w, nb
+
+    if (size(selected) < 1) then
+       error stop 'minimization: a restriction selects an unknown at least'
+    end if
+    if (any(selected < 1)) then
+       error stop 'minimization: a restriction selects unknowns of the whole domain'
+    end if
+    if (this % num_unknowns > 0) then
+       if (any(selected > this % num_unknowns)) then
+          error stop 'minimization: a restriction selects unknowns of the whole domain'
+       end if
+    end if
+    allocate(chosen(maxval(selected)), source=.false.)
+    do i = 1, size(selected)
+       if (chosen(selected(i))) then
+          error stop 'minimization: a restriction selects each unknown once'
+       end if
+       chosen(selected(i)) = .true.
+    end do
+
+    w = this % block_width
+    if (w > 1) then
+       nb = size(selected) / w
+       if (nb * w /= size(selected)) then
+          error stop 'minimization: a restriction selects whole blocks'
+       end if
+       do b = 1, nb
+          if (mod(selected((b - 1) * w + 1) - 1, w) /= 0) then
+             error stop 'minimization: a restriction selects whole blocks'
+          end if
+          do i = 2, w
+             if (selected((b - 1) * w + i) /= selected((b - 1) * w + 1) + i - 1) then
+                error stop 'minimization: a restriction selects whole blocks'
+             end if
+          end do
+       end do
+    end if
+
+    if (allocated(this % action))   deallocate(this % action)
+    if (allocated(this % graph))    deallocate(this % graph)
+    if (allocated(this % coupling)) deallocate(this % coupling)
+    if (allocated(this % stored))   deallocate(this % stored)
+    if (allocated(this % affine))   deallocate(this % affine)
+    this % num_unknowns   = 0
+    this % num_residuals  = 0
+    this % diagonal_valid = .false.
+    call this % initialize_residual_history()
+
+  end subroutine restrict
+
+  !===================================================================!
+  ! Labels renumbered compactly in order of first appearance:
+  ! mapped(i) is the compact label of label(i), and representative(j)
+  ! the original label of the compact label j. A metadata
+  ! restriction maps its labels through this, and the representatives
+  ! are the selection induced on the domain the labels index.
+  !===================================================================!
+
+  subroutine compact_labels(label, mapped, representative)
+
+    integer, intent(in) :: label(:)
+    integer, allocatable, intent(out) :: mapped(:), representative(:)
+
+    integer, allocatable :: distinct(:)
+    integer :: i, at, n
+
+    allocate(mapped(size(label)), distinct(size(label)))
+    n = 0
+    do i = 1, size(label)
+       at = 0
+       if (n > 0) at = findloc(distinct(1:n), label(i), dim=1)
+       if (at == 0) then
+          n = n + 1
+          distinct(n) = label(i)
+          at = n
+       end if
+       mapped(i) = at
+    end do
+    representative = distinct(1:n)
+
+  end subroutine compact_labels
+
+  !===================================================================!
   ! The inputs a statement is evaluated on at the state x: x stored
   ! on the unknown domain, n members of the given width, then the
   ! fixed inputs where given. The residual and every tangent taken of
@@ -662,6 +781,9 @@ contains
     type(stored_field), allocatable :: tuple(:)
     class(field), allocatable :: image
 
+    if (.not. allocated(this % action)) then
+       error stop 'minimization: the operator is stated on the solver domain before it is evaluated'
+    end if
     tuple = state_tuple(this % unknown_domain, this % num_unknowns, this % num_components, x, this % stored)
     call this % action % apply(this % graph, this % action % bind(tuple), image)
 

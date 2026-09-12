@@ -45,7 +45,7 @@ module operation_elimination
   use view_directed         , only : directed_graph
   use view_directed_stored  , only : stored_directed_graph
   use operation_action      , only : operation
-  use operation_minimization, only : minimizer, state
+  use operation_minimization, only : minimizer, state, restrict
   use operation_minimization, only : solve_result, SOLVE_INNER_FAILED, SOLVE_EXHAUSTED, SOLVE_CONTINUE
   use operation_stencil     , only : stencil, combine_triples
   use field_stored          , only : stored_field
@@ -81,6 +81,7 @@ module operation_elimination
 
      procedure :: name  => elimination_name
      procedure :: state => elimination_state
+     procedure :: restrict => elimination_restrict
      procedure :: solve => elimination_solve
 
   end type elimination
@@ -333,6 +334,49 @@ contains
     call move_alloc(larger_columns, columns)
     call move_alloc(larger_weights, weights)
   end subroutine reserve_coefficients
+
+  !===================================================================!
+  ! The flags of the selected unknowns, in the selection's order. The
+  ! inner minimizer is over the retained set K of the whole; the
+  ! selection induced on it is the position in K of every retained
+  ! selected unknown, in the selection's order. The partition of the
+  ! whole is invalid on the selection and is released. Invalid input:
+  ! a selection retaining no unknown, or one beyond the stated flags.
+  !===================================================================!
+
+  subroutine elimination_restrict(this, selected)
+
+    class(elimination), intent(inout) :: this
+    integer           , intent(in)    :: selected(:)
+
+    integer, allocatable :: retained_position(:), retained_of_selection(:)
+    integer :: i, n
+
+    call restrict(this, selected)
+    call clear_partition(this)
+    if (.not. allocated(this % eliminated)) then
+       error stop 'elimination: one flag per unknown states which rows are eliminated before &
+            &the unknowns retained by a restriction are known'
+    end if
+    if (any(selected > size(this % eliminated))) then
+       error stop 'elimination: a restriction selects unknowns of the stated flags'
+    end if
+
+    n = size(this % eliminated)
+    allocate(retained_position(n))
+    retained_position = 0
+    do i = 1, n
+       if (i > 1) retained_position(i) = retained_position(i - 1)
+       if (.not. this % eliminated(i)) retained_position(i) = retained_position(i) + 1
+    end do
+    retained_of_selection = pack(retained_position(selected), .not. this % eliminated(selected))
+    if (size(retained_of_selection) < 1) then
+       error stop 'elimination: a restriction retains an unknown at least'
+    end if
+    this % eliminated = this % eliminated(selected)
+    if (allocated(this % inner)) call this % inner % restrict(retained_of_selection)
+
+  end subroutine elimination_restrict
 
   !===================================================================!
   ! The stored partition released before a statement is read again.

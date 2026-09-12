@@ -115,6 +115,135 @@ contains
 
 end module cubic_statement_fixture
 
+!=====================================================================!
+! Fixtures for solver restriction: a test-only solver composition and
+! a two-component implicit march whose residual the temporal
+! partition constrains to members.
+!=====================================================================!
+
+module restriction_fixture
+
+  use iso_fortran_env, only : dp => REAL64
+  use graph_fractal, only : graph
+  use view_directed, only : directed_graph
+  use field_stored, only : stored_field
+  use operation_action, only : operation
+  use operation_minimization, only : minimizer, state, restrict, solve_result, SOLVE_SINGULAR
+  use operation_stencil, only : stencil
+  use operation_residual, only : residual_operator
+  use operation_expression, only : unknown, derivative, constant, stated
+  use operation_expression, only : operator(+), operator(*), operator(**)
+
+  implicit none
+
+  private
+  public :: delegating_solver, march_residual, num_restrictions
+
+  ! how many restrictions the delegating solvers have received
+  integer :: num_restrictions = 0
+
+  !===================================================================!
+  ! A solver of no metadata of its own, stating and solving through
+  ! the inner minimizer it owns. It restricts by delegation alone and
+  ! counts the restrictions it receives. With report_failure set its
+  ! solve reports a singular result, so an outer solver's propagation
+  ! of an unsuccessful inner solve is observable.
+  !===================================================================!
+
+  type, extends(minimizer) :: delegating_solver
+     class(minimizer), allocatable :: inner
+     logical :: report_failure = .false.
+   contains
+     procedure :: name     => delegating_name
+     procedure :: state    => delegating_state
+     procedure :: restrict => delegating_restrict
+     procedure :: solve    => delegating_solve
+  end type delegating_solver
+
+contains
+
+  pure function delegating_name(this) result(name)
+    class(delegating_solver), intent(in) :: this
+    character(len=:), allocatable :: name
+    associate (u1 => this); end associate
+    name = 'delegating solver'
+  end function delegating_name
+
+  subroutine delegating_state(this, action, context, unknown_domain, num_unknowns, &
+       & num_components, coupling, stored_inputs)
+    class(delegating_solver), intent(inout) :: this
+    class(operation)        , intent(in)    :: action
+    class(directed_graph)   , intent(in)    :: context
+    type(graph)             , intent(in)    :: unknown_domain
+    integer                 , intent(in)    :: num_unknowns
+    integer                 , intent(in), optional :: num_components
+    class(directed_graph)   , intent(in), optional :: coupling
+    type(stored_field)      , intent(in), optional :: stored_inputs(:)
+    call state(this, action, context, unknown_domain, num_unknowns, num_components, coupling, stored_inputs)
+    call this % inner % state(action, context, unknown_domain, num_unknowns, num_components, coupling, stored_inputs)
+  end subroutine delegating_state
+
+  subroutine delegating_restrict(this, selected)
+    class(delegating_solver), intent(inout) :: this
+    integer                 , intent(in)    :: selected(:)
+    call restrict(this, selected)
+    num_restrictions = num_restrictions + 1
+    if (allocated(this % inner)) call this % inner % restrict(selected)
+  end subroutine delegating_restrict
+
+  subroutine delegating_solve(this, rhs, x, achieved)
+    class(delegating_solver), intent(inout) :: this
+    real(dp), intent(in)    :: rhs(:)
+    real(dp), intent(inout) :: x(:)
+    real(dp), intent(out)   :: achieved
+    real(dp), allocatable :: r(:)
+    type(solve_result) :: outcome
+    call this % initialize_residual_history()
+    if (this % report_failure) then
+       call this % imbalance(rhs, x, r)
+       achieved = this % norm(r)
+       call this % record_residual_norm(achieved)
+       call this % record_result(achieved, 0, SOLVE_SINGULAR)
+       return
+    end if
+    call this % inner % solve(rhs, x, achieved)
+    outcome = this % inner % result()
+    call this % record_residual_norm(this % inner % initial_residual_norm())
+    call this % record_result(outcome % residual, outcome % iterations, outcome % reason)
+  end subroutine delegating_solve
+
+  !===================================================================!
+  ! The implicit march q' = -c q^3 over n instants of step h from
+  ! q(0) = q0. Instant p stores the tuple (q_p, q'_p) at unknowns
+  ! 2p - 1 and 2p. The physics governs the q row, q'_p + c q_p^3, and
+  ! the stencil ties the q' row, q'_p - (q_p - q_{p-1}) / h. The first
+  ! instant is fixed at (q0, -c q0^3).
+  !===================================================================!
+
+  function march_residual(n, h, c, q0) result(residual)
+    integer , intent(in) :: n
+    real(dp), intent(in) :: h, c, q0
+    type(residual_operator) :: residual
+    type(stencil) :: tying
+    integer , allocatable :: rows(:), columns(:)
+    real(dp), allocatable :: weights(:)
+    integer :: p, e
+    allocate(rows(3 * (n - 1)), columns(3 * (n - 1)), weights(3 * (n - 1)))
+    e = 0
+    do p = 2, n
+       rows(e + 1:e + 3)    = 2 * p
+       columns(e + 1:e + 3) = [2 * p, 2 * p - 1, 2 * p - 3]
+       weights(e + 1:e + 3) = [1.0_dp, -1.0_dp / h, 1.0_dp / h]
+       e = e + 3
+    end do
+    tying = stencil(rows, columns, weights, spread(0.0_dp, 1, 2 * n), 'tying rows')
+    residual = residual_operator(tying, &
+         & stated(derivative(unknown(), 1) + constant(c) * derivative(unknown(), 0) ** 3, 1, 'cubic decay'), &
+         & [(2 * (p - 1), p = 1, n)], 2 * n, 2, [0], [1, 2], [q0, -c * q0 ** 3])
+  end function march_residual
+
+end module restriction_fixture
+
 program test_graph_minimization
 
   use iso_fortran_env, only : dp => REAL64
@@ -136,13 +265,19 @@ program test_graph_minimization
   use operation_gmres    , only : gmres
   use operation_newton   , only : newton
   use operation_minimization, only : minimizer, solve_result, absolute, SOLVE_EXHAUSTED, SOLVE_BREAKDOWN, &
-       & SOLVE_INNER_FAILED, SOLVE_NOT_STARTED, SOLVE_STAGNATED
+       & SOLVE_INNER_FAILED, SOLVE_NOT_STARTED, SOLVE_STAGNATED, state_tuple
   use operation_linearization, only : linearization, tangent_of
   use, intrinsic :: ieee_arithmetic, only : ieee_value, ieee_positive_inf, ieee_is_finite, ieee_is_nan
   use operation_dense_direct, only : dense_direct
   use operation_stencil, only : stencil
   use operation_balance  , only : balance
+  use operation_elimination, only : elimination
+  use operation_multigrid, only : multigrid
+  use operation_temporal_minimization, only : temporal_minimizer
+  use operation_residual, only : residual_operator
+  use field_stored, only : typed_field_domain
   use cubic_statement_fixture, only : cubic_statement
+  use restriction_fixture, only : delegating_solver, march_residual, num_restrictions
 
   implicit none
 
@@ -161,6 +296,9 @@ program test_graph_minimization
   call check_scaled_gmres(num_failures)
   call check_gmres_exit(num_failures)
   call check_direction_scale(num_failures)
+  call check_restriction_maps(num_failures)
+  call check_restricted_operator(num_failures)
+  call check_solver_restriction(num_failures)
 
   write(*, '(a)') ' ============================================='
   if (num_failures == 0) then
@@ -753,5 +891,470 @@ contains
          & 'and the heated chain still rises monotonically', num_failures)
 
   end subroutine check_newton
+
+  !===================================================================!
+  ! SOLVER RESTRICTION. A nested composition over the march of n
+  ! instants, each instant a tuple (q, q'):
+  !
+  !   1  newton > elimination of q' > gmres > multigrid preconditioner
+  !      over the retained q, aggregated by instant pairs
+  !   2  newton > gmres > elimination preconditioner > dense direct
+  !   3  newton > delegating solver > gmres > multigrid preconditioner
+  !      over every unknown in blocks of two, aggregated by instant pairs
+  !   4  newton > elimination of q' > delegating solver reporting
+  !      failure > dense direct
+  !
+  ! The temporal engine dispatches on none of these.
+  !===================================================================!
+
+  subroutine composed(kind, n, template)
+
+    integer, intent(in) :: kind, n
+    class(minimizer), allocatable, intent(out) :: template
+
+    type(newton)       :: ns
+    type(elimination)  :: schur
+    type(gmres)        :: krylov
+    type(multigrid)    :: levels
+    type(jacobi)       :: smoother
+    type(gauss_seidel) :: sweeps
+    type(dense_direct) :: factorisation
+    type(delegating_solver) :: delegate
+    integer :: p
+
+    ns % tolerance      = 1.0e-11_dp
+    ns % criterion      = absolute
+    ns % max_iterations = 30
+    krylov % tolerance      = 1.0e-13_dp
+    krylov % max_iterations = 50
+    levels % max_iterations = 1
+    factorisation % singular_reported = .true.
+
+    select case (kind)
+    case (1)
+       smoother % max_iterations = 2
+       allocate(levels % smoother, source=smoother)
+       allocate(levels % coarse, source=factorisation)
+       levels % aggregates = [((p + 1) / 2, p = 1, n)]
+       allocate(krylov % preconditioner, source=levels)
+       schur % eliminated = [(mod(p, 2) == 0, p = 1, 2 * n)]
+       allocate(schur % inner, source=krylov)
+       allocate(ns % inner, source=schur)
+    case (2)
+       schur % eliminated = [(mod(p, 2) == 0, p = 1, 2 * n)]
+       allocate(schur % inner, source=factorisation)
+       allocate(krylov % preconditioner, source=schur)
+       allocate(ns % inner, source=krylov)
+    case (3)
+       sweeps % max_iterations = 2
+       sweeps % block_width    = 2
+       allocate(levels % smoother, source=sweeps)
+       allocate(levels % coarse, source=factorisation)
+       levels % block_width = 2
+       levels % aggregates  = [(((p - 1) / 2) / 2 + 1, p = 1, 2 * n)]
+       allocate(krylov % preconditioner, source=levels)
+       allocate(delegate % inner, source=krylov)
+       allocate(ns % inner, source=delegate)
+    case (4)
+       delegate % report_failure = .true.
+       allocate(delegate % inner, source=factorisation)
+       schur % eliminated = [(mod(p, 2) == 0, p = 1, 2 * n)]
+       allocate(schur % inner, source=delegate)
+       allocate(ns % inner, source=schur)
+    case default
+       error stop 'test: a composition is one of the four'
+    end select
+    allocate(template, source=ns)
+
+  end subroutine composed
+
+  ! whether a composition's template still holds its whole-domain
+  ! metadata at every level
+  logical function template_intact(kind, n, template) result(intact)
+
+    integer, intent(in) :: kind, n
+    class(minimizer), intent(in) :: template
+
+    integer :: p
+
+    intact = .false.
+    select type (template)
+    type is (newton)
+       select type (inner => template % inner)
+       type is (elimination)
+          intact = flags_whole(inner, n)
+          if (kind == 1) then
+             select type (krylov => inner % inner)
+             type is (gmres)
+                select type (levels => krylov % preconditioner)
+                type is (multigrid)
+                   intact = intact .and. size(levels % aggregates) == n
+                   if (intact) intact = all(levels % aggregates == [((p + 1) / 2, p = 1, n)])
+                end select
+             end select
+          end if
+       type is (gmres)
+          select type (schur => inner % preconditioner)
+          type is (elimination)
+             intact = flags_whole(schur, n)
+          end select
+       type is (delegating_solver)
+          select type (krylov => inner % inner)
+          type is (gmres)
+             select type (levels => krylov % preconditioner)
+             type is (multigrid)
+                intact = size(levels % aggregates) == 2 * n .and. levels % block_width == 2
+                if (intact) intact = all(levels % aggregates == [(((p - 1) / 2) / 2 + 1, p = 1, 2 * n)])
+             end select
+          end select
+       end select
+    end select
+
+  end function template_intact
+
+  ! whether an elimination still flags the q' rows of n instants
+  logical function flags_whole(schur, n)
+    type(elimination), intent(in) :: schur
+    integer          , intent(in) :: n
+    integer :: p
+    flags_whole = size(schur % eliminated) == 2 * n
+    if (flags_whole) flags_whole = all(schur % eliminated .eqv. [(mod(p, 2) == 0, p = 1, 2 * n)])
+  end function flags_whole
+
+  ! the state the march solves begin from: q0 at every instant, q'
+  ! zero, the fixed first instant at its values
+  subroutine seeded(residual, n, q0, x)
+    type(residual_operator), intent(in) :: residual
+    integer , intent(in) :: n
+    real(dp), intent(in) :: q0
+    real(dp), allocatable, intent(out) :: x(:)
+    allocate(x(2 * n), source=0.0_dp)
+    x(1::2) = q0
+    x(residual % fixed_unknowns()) = residual % fixed_values()
+  end subroutine seeded
+
+  ! the partition of 2n unknowns: instants in order, instants
+  ! reversed, or the parity members reversed
+  subroutine labels(layout, n, member_of, member_order)
+    integer, intent(in) :: layout, n
+    integer, allocatable, intent(out) :: member_of(:), member_order(:)
+    integer :: p
+    select case (layout)
+    case (1)
+       member_of    = [((p + 1) / 2, p = 1, 2 * n)]
+       member_order = [(p, p = 1, n)]
+    case (2)
+       member_of    = [((p + 1) / 2, p = 1, 2 * n)]
+       member_order = [(n + 1 - p, p = 1, n)]
+    case default
+       member_of    = [(2 - mod((p + 1) / 2, 2), p = 1, 2 * n)]
+       member_order = [2, 1]
+    end select
+  end subroutine labels
+
+  !===================================================================!
+  ! Each solver maps its own metadata through a reordered,
+  ! noncontiguous selection and induces its children's selections:
+  ! instants 4, 2 and 6 of six, in that order.
+  !===================================================================!
+
+  subroutine check_restriction_maps(num_failures)
+
+    integer, intent(inout) :: num_failures
+
+    integer, parameter :: n = 6
+    integer, parameter :: selected(6) = [7, 8, 3, 4, 11, 12]
+    class(minimizer), allocatable :: template, copy
+    type(temporal_minimizer) :: solver
+    logical :: mapped
+    integer :: p
+
+    call composed(1, n, template)
+    allocate(copy, source=template)
+    call copy % restrict(selected)
+    mapped = .false.
+    select type (copy)
+    type is (newton)
+       select type (schur => copy % inner)
+       type is (elimination)
+          mapped = size(schur % eliminated) == 6
+          if (mapped) mapped = all(schur % eliminated .eqv. [.false., .true., .false., .true., .false., .true.])
+          select type (krylov => schur % inner)
+          type is (gmres)
+             select type (levels => krylov % preconditioner)
+             type is (multigrid)
+                ! retained positions 4, 2, 6 of the whole; their
+                ! aggregates 2, 1, 3 relabelled in order of appearance
+                mapped = mapped .and. size(levels % aggregates) == 3
+                if (mapped) mapped = all(levels % aggregates == [1, 2, 3])
+             end select
+          end select
+       end select
+    end select
+    call report(mapped, 'elimination flags follow the selection and the multigrid below it coarsens by the &
+         &retained members', num_failures)
+    call report(copy % num_unknowns == 0 .and. .not. allocated(copy % action), &
+         & 'a restricted solver discards the whole statement until stated on the selection', num_failures)
+    call report(template_intact(1, n, template) .and. template % num_unknowns == 0, &
+         & 'the whole template is unchanged by restricting a copy', num_failures)
+    deallocate(copy, template)
+
+    num_restrictions = 0
+    call composed(3, n, template)
+    allocate(copy, source=template)
+    call copy % restrict(selected)
+    mapped = .false.
+    select type (copy)
+    type is (newton)
+       select type (delegate => copy % inner)
+       type is (delegating_solver)
+          select type (krylov => delegate % inner)
+          type is (gmres)
+             select type (levels => krylov % preconditioner)
+             type is (multigrid)
+                mapped = size(levels % aggregates) == 6 .and. levels % block_width == 2
+                if (mapped) mapped = all(levels % aggregates == [1, 1, 2, 2, 3, 3])
+             end select
+          end select
+       end select
+    end select
+    call report(mapped .and. num_restrictions == 1, &
+         & 'a test-only solver delegates restriction and the multigrid below it keeps its block layout', &
+         & num_failures)
+    call report(template_intact(3, n, template), 'the test-only template is unchanged', num_failures)
+    deallocate(copy, template)
+
+    ! the temporal minimizer's own partition: instants in reverse
+    ! order, restricted to instants 4, 2, 6
+    call solver % partition([((p + 1) / 2, p = 1, 2 * n)], [(n + 1 - p, p = 1, n)])
+    call solver % restrict(selected)
+    mapped = size(solver % member_of) == 6 .and. size(solver % member_order) == 3
+    if (mapped) mapped = all(solver % member_of == [1, 1, 2, 2, 3, 3]) .and. all(solver % member_order == [3, 1, 2])
+    call report(mapped, 'a partition restricts to the members the selection meets, in the stated order', &
+         & num_failures)
+
+  end subroutine check_restriction_maps
+
+  !===================================================================!
+  ! The operator on a selection: the residual constrained to instants
+  ! 4, 2 and 6 with the exterior fixed at the state agrees with the
+  ! whole residual on those rows, its explicit tangent is the whole
+  ! tangent's submatrix, the linearization action reproduces that
+  ! assembled tangent, and the transposed stencil's action is its
+  ! adjoint under the Euclidean pairing.
+  !===================================================================!
+
+  subroutine check_restricted_operator(num_failures)
+
+    integer, intent(inout) :: num_failures
+
+    integer , parameter :: n = 6, k = 6
+    integer , parameter :: selected(k) = [7, 8, 3, 4, 11, 12]
+    real(dp), parameter :: h = 0.1_dp, c = 0.5_dp, q0 = 1.0_dp
+    type(residual_operator) :: residual, sub
+    type(stored_directed_graph) :: unknowns, members
+    type(typed_field_domain) :: designs
+    type(stored_field), allocatable :: inputs(:), inputs_sub(:)
+    type(linearization) :: tangent
+    type(stencil) :: assembled
+    type(dense_direct) :: action, adjoint
+    class(field), allocatable :: image
+    integer , allocatable :: rows(:), columns(:)
+    real(dp), allocatable :: weights(:), x(:), r_whole(:), r_sub(:), j_whole(:,:), j_sub(:,:), y(:)
+    real(dp), allocatable :: basis(:), u(:), v(:), ju(:), jtv(:)
+    real(dp) :: scale, difference
+    logical :: tangent_defined
+    integer :: p, i, j
+
+    residual = march_residual(n, h, c, q0)
+    unknowns = stored_directed_graph(2 * n, tails=[integer ::], heads=[integer ::])
+    designs  = typed_field_domain(unknowns % vertex_set(), n)
+    allocate(x(2 * n))
+    do p = 1, n
+       x(2 * p - 1) = q0 * 0.9_dp ** p
+       x(2 * p)     = -0.3_dp / real(p, dp)
+    end do
+    inputs = state_tuple(unknowns % vertex_set(), 2 * n, 1, x, [designs % design(spread(0.0_dp, 1, n))])
+
+    call residual % apply(unknowns, residual % bind(inputs), image)
+    call image % real_vector(r_whole)
+    call residual % explicit_tangent(unknowns, residual % bind(inputs), 1, rows, columns, weights, tangent_defined)
+    call report(tangent_defined, 'the march residual states an explicit tangent', num_failures)
+    allocate(j_whole(2 * n, 2 * n), source=0.0_dp)
+    do i = 1, size(rows)
+       j_whole(rows(i), columns(i)) = j_whole(rows(i), columns(i)) + weights(i)
+    end do
+
+    sub     = residual % constrain(selected, x)
+    members = stored_directed_graph(k, tails=[integer ::], heads=[integer ::])
+    designs = typed_field_domain(members % vertex_set(), sub % num_points())
+    inputs_sub = state_tuple(members % vertex_set(), k, 1, x(selected), &
+         & [designs % design(spread(0.0_dp, 1, sub % num_points()))])
+    call sub % apply(members, sub % bind(inputs_sub), image)
+    call image % real_vector(r_sub)
+    scale = max(1.0_dp, maxval(abs(r_whole)))
+    call report(sub % num_points() == 3 .and. size(r_sub) == k, 'the constrained residual is over the &
+         &selected points', num_failures)
+    call report(maxval(abs(r_sub - r_whole(selected))) <= 1.0e-13_dp * scale, &
+         & 'the constrained residual with the exterior fixed equals the whole residual on the selected rows', &
+         & num_failures)
+
+    call sub % explicit_tangent(members, sub % bind(inputs_sub), 1, rows, columns, weights, tangent_defined)
+    allocate(j_sub(k, k), source=0.0_dp)
+    do i = 1, size(rows)
+       j_sub(rows(i), columns(i)) = j_sub(rows(i), columns(i)) + weights(i)
+    end do
+    difference = 0.0_dp
+    do j = 1, k
+       do i = 1, k
+          difference = max(difference, abs(j_sub(i, j) - j_whole(selected(i), selected(j))))
+       end do
+    end do
+    scale = max(1.0_dp, maxval(abs(j_whole)))
+    call report(tangent_defined .and. difference <= 1.0e-13_dp * scale, &
+         & 'the assembled tangent of the constrained residual is the whole tangent''s submatrix', num_failures)
+
+    ! the linearization action, column by column, against the
+    ! assembled tangent
+    tangent = tangent_of(sub, sub % argument(1))
+    call tangent % freeze(inputs_sub)
+    call action % state(tangent, members, members % vertex_set(), k)
+    allocate(basis(k))
+    difference = 0.0_dp
+    do j = 1, k
+       basis    = 0.0_dp
+       basis(j) = 1.0_dp
+       call action % matvec(basis, y)
+       difference = max(difference, maxval(abs(y - j_sub(:, j))))
+    end do
+    call report(tangent % exact() .and. difference <= 1.0e-13_dp * scale, &
+         & 'the exact tangent action on the selection reproduces the assembled tangent', num_failures)
+
+    ! the adjoint: <J u, v> = <u, J^T v> through the transposed stencil
+    assembled = stencil(rows, columns, weights, spread(0.0_dp, 1, k), 'selected tangent')
+    assembled = assembled % transpose()
+    call adjoint % state(assembled, assembled % pattern, assembled % pattern % vertex_set(), k)
+    u = [(0.3_dp + 0.1_dp * real(i, dp), i = 1, k)]
+    v = [(1.0_dp - 0.2_dp * real(i, dp), i = 1, k)]
+    call action  % matvec(u, ju)
+    call adjoint % matvec(v, jtv)
+    difference = abs(dot_product(ju, v) - dot_product(u, jtv))
+    call report(difference <= 1.0e-13_dp * max(abs(dot_product(ju, v)), 1.0_dp), &
+         & 'the transposed action on the selection is the adjoint of the tangent action', num_failures)
+
+  end subroutine check_restricted_operator
+
+  !===================================================================!
+  ! The temporal partition restricts a copy of its inner template to
+  ! every member through the solvers' own restrictions. Three
+  ! compositions under three partitions - instants in order, instants
+  ! reversed, and the parity members reversed - reach the coupled
+  ! solution; the template keeps its whole-domain metadata; and a
+  ! failing solver nested below an elimination is reported at the top.
+  !===================================================================!
+
+  subroutine check_solver_restriction(num_failures)
+
+    integer, intent(inout) :: num_failures
+
+    integer , parameter :: n = 6
+    real(dp), parameter :: h = 0.1_dp, c = 0.5_dp, q0 = 1.0_dp
+    character(len=44), parameter :: composition(3) = [character(len=44) :: &
+         & 'newton > elimination > gmres > multigrid', &
+         & 'newton > gmres > elimination > dense direct', &
+         & 'newton > delegating > gmres > multigrid']
+    character(len=24), parameter :: layout_named(3) = [character(len=24) :: &
+         & 'instants in order', 'instants reversed', 'parity members reversed']
+    type(residual_operator) :: residual
+    type(stored_directed_graph) :: unknowns
+    type(typed_field_domain) :: designs
+    type(stored_field) :: design
+    type(newton) :: coupled
+    type(temporal_minimizer), allocatable :: solver
+    class(minimizer), allocatable :: template
+    real(dp), allocatable :: reference(:), q(:), zeros(:), scalar_march(:)
+    integer , allocatable :: member_of(:), member_order(:)
+    logical , allocatable :: fixed(:)
+    real(dp) :: achieved, root
+    integer :: kind, layout, p, active_members, m
+    type(solve_result) :: outcome
+
+    residual = march_residual(n, h, c, q0)
+    unknowns = stored_directed_graph(2 * n, tails=[integer ::], heads=[integer ::])
+    designs  = typed_field_domain(unknowns % vertex_set(), n)
+    design   = designs % design(spread(0.0_dp, 1, n))
+    allocate(zeros(2 * n), source=0.0_dp)
+    fixed = residual % fixed_indicator()
+
+    ! the coupled reference, and the scalar recurrence
+    ! q_p + h c q_p^3 = q_{p-1} it must reproduce
+    allocate(coupled % inner, source=dense_direct())
+    coupled % tolerance = 1.0e-12_dp
+    coupled % criterion = absolute
+    call coupled % state(residual, unknowns, unknowns % vertex_set(), 2 * n, stored_inputs=[design])
+    call seeded(residual, n, q0, reference)
+    call coupled % solve(zeros, reference, achieved)
+    outcome = coupled % result()
+    allocate(scalar_march(n))
+    scalar_march(1) = q0
+    do p = 2, n
+       root = scalar_march(p - 1)
+       do m = 1, 50
+          root = root - (root + h * c * root ** 3 - scalar_march(p - 1)) / (1.0_dp + 3.0_dp * h * c * root ** 2)
+       end do
+       scalar_march(p) = root
+    end do
+    call report(outcome % converged() .and. maxval(abs(reference(1::2) - scalar_march)) <= 1.0e-10_dp, &
+         & 'the coupled newton solve of the march reproduces the scalar implicit recurrence', num_failures)
+
+    do kind = 1, 3
+       do layout = 1, 3
+          call labels(layout, n, member_of, member_order)
+          call composed(kind, n, template)
+          if (allocated(solver)) deallocate(solver)
+          allocate(solver)
+          call move_alloc(template, solver % inner)
+          call solver % state(residual, unknowns, unknowns % vertex_set(), 2 * n, stored_inputs=[design])
+          solver % tolerance      = 1.0e-10_dp
+          solver % criterion      = absolute
+          solver % max_iterations = 40
+          call solver % partition(member_of, member_order, seed_from_previous=.true.)
+          call seeded(residual, n, q0, q)
+          num_restrictions = 0
+          call solver % solve(zeros, q, achieved)
+          outcome = solver % result()
+          call report(outcome % converged() .and. maxval(abs(q - reference)) <= 1.0e-9_dp, &
+               & trim(composition(kind)) // ' under ' // trim(layout_named(layout)) // &
+               & ' reaches the coupled solution', num_failures)
+          call report(template_intact(kind, n, solver % inner), &
+               & trim(composition(kind)) // ': the template keeps its whole-domain metadata', num_failures)
+          if (kind == 3) then
+             active_members = 0
+             do m = 1, maxval(member_of)
+                if (any(.not. fixed .and. member_of == m)) active_members = active_members + 1
+             end do
+             call report(num_restrictions == active_members * outcome % iterations, &
+                  & 'the test-only solver is restricted once per member per pass', num_failures)
+          end if
+       end do
+    end do
+
+    call labels(1, n, member_of, member_order)
+    call composed(4, n, template)
+    if (allocated(solver)) deallocate(solver)
+    allocate(solver)
+    call move_alloc(template, solver % inner)
+    call solver % state(residual, unknowns, unknowns % vertex_set(), 2 * n, stored_inputs=[design])
+    solver % tolerance = 1.0e-10_dp
+    solver % criterion = absolute
+    call solver % partition(member_of, member_order, seed_from_previous=.true.)
+    call seeded(residual, n, q0, q)
+    call solver % solve(zeros, q, achieved)
+    outcome = solver % result()
+    call report(outcome % failed() .and. outcome % reason == SOLVE_INNER_FAILED .and. outcome % iterations == 0, &
+         & 'a failing solver below an elimination below newton is reported by the temporal minimizer', &
+         & num_failures)
+
+  end subroutine check_solver_restriction
 
 end program test_graph_minimization

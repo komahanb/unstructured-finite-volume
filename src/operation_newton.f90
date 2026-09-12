@@ -80,7 +80,7 @@
 module operation_newton
 
   use util_precision  , only : dp
-  use operation_minimization        , only : minimizer, solve_result, SOLVE_INNER_FAILED
+  use operation_minimization        , only : minimizer, restrict, solve_result, SOLVE_INNER_FAILED
   use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
   use operation_stencil     , only : stencil
   use util_tally, only : tally_record, newton_solves, primal_loops
@@ -117,6 +117,7 @@ module operation_newton
    contains
 
      procedure :: name => newton_name
+     procedure :: restrict => newton_restrict
      procedure :: solve
 
   end type newton
@@ -133,6 +134,22 @@ contains
     name = 'newton'
 
   end function newton_name
+
+  !===================================================================!
+  ! The linear system of every step is over the same unknowns as the
+  ! statement, so the inner minimizer is restricted by the selection
+  ! itself.
+  !===================================================================!
+
+  subroutine newton_restrict(this, selected)
+
+    class(newton), intent(inout) :: this
+    integer      , intent(in)    :: selected(:)
+
+    call restrict(this, selected)
+    if (allocated(this % inner)) call this % inner % restrict(selected)
+
+  end subroutine newton_restrict
 
   !===================================================================!
   ! Drive action(q) toward rhs from the given q.

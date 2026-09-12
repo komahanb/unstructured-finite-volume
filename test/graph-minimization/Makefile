@@ -16,7 +16,7 @@ LDFLAGS += -L../../lib/ ../../lib/libufvm.a
 # Targets
 #=====================================================================#
 
-all: $(program) refusal
+all: $(program) refusal restriction_refusal
 
 $(program): $(objects)
 	$(F90) $(objects) -o $@ $(LDFLAGS)
@@ -24,8 +24,11 @@ $(program): $(objects)
 refusal: refusal.o
 	$(F90) refusal.o -o $@ $(LDFLAGS)
 
+restriction_refusal: restriction_refusal.o
+	$(F90) restriction_refusal.o -o $@ $(LDFLAGS)
+
 clean:
-	@rm -f *.o *.mod *.so $(program) refusal
+	@rm -f *.o *.mod *.so $(program) refusal restriction_refusal
 
 #=====================================================================#
 # Rule

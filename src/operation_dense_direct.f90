@@ -37,7 +37,7 @@ module operation_dense_direct
 
   use util_precision  , only : dp, spacing_at_one
   use operation_stencil, only : compile_matrix_from_action
-  use operation_minimization , only : minimizer, solve_result, SOLVE_SINGULAR, SOLVE_CONTINUE, SOLVE_EXHAUSTED
+  use operation_minimization , only : minimizer, restrict, solve_result, SOLVE_SINGULAR, SOLVE_CONTINUE, SOLVE_EXHAUSTED
   use util_factorisation, only : dense_factorisation
   use util_tally        , only : tally_record, linear_solves
 
@@ -69,6 +69,7 @@ module operation_dense_direct
    contains
 
      procedure :: name  => dense_direct_name
+     procedure :: restrict => dense_direct_restrict
      procedure :: solve => dense_direct_solve
 
   end type dense_direct
@@ -85,6 +86,23 @@ contains
     name = 'dense direct'
 
   end function dense_direct_name
+
+  !===================================================================!
+  ! The factors retained belong to the whole statement and are not
+  ! those of any restriction of it: the retained version is cleared so
+  ! the selected statement is factorised when first solved.
+  !===================================================================!
+
+  subroutine dense_direct_restrict(this, selected)
+
+    class(dense_direct), intent(inout) :: this
+    integer            , intent(in)    :: selected(:)
+
+    call restrict(this, selected)
+    this % retained_version    = 0
+    this % retained_transposed = .false.
+
+  end subroutine dense_direct_restrict
 
   !===================================================================!
   ! Solve A x = rhs where A(:, j) = matvec(e_j). Checks, each

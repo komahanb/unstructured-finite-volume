@@ -24,6 +24,7 @@
 
 module operation_gauss_seidel
 
+  use iso_fortran_env , only : int64
   use util_precision  , only : dp
   use operation_minimization, only : minimizer
   use util_factorisation    , only : dense_factorisation
@@ -50,6 +51,7 @@ module operation_gauss_seidel
 
      procedure :: name => gauss_seidel_name
      procedure :: colouring
+     procedure :: storage_entries => gauss_seidel_storage_entries
      procedure :: solve
 
   end type gauss_seidel
@@ -85,6 +87,21 @@ contains
     end if
 
   end subroutine colouring
+
+  !===================================================================!
+  ! The block diagonal, one square block of the stated width per
+  ! block of unknowns, and its factorised copy where wider than one.
+  !===================================================================!
+
+  pure integer(int64) function gauss_seidel_storage_entries(this, num_unknowns) result(entries)
+
+    class(gauss_seidel), intent(in) :: this
+    integer            , intent(in) :: num_unknowns
+
+    entries = int(num_unknowns, int64) * int(max(this % block_width, 1), int64)
+    if (this % block_width > 1) entries = 2_int64 * entries
+
+  end function gauss_seidel_storage_entries
 
 
   subroutine solve(this, rhs, x, achieved)

@@ -736,6 +736,27 @@ effect of its coarse solve. Under a staged family the states at
 the stages are the tied components, so its time derivatives stay as
 rows.
 
+`elimination_entries` is the storage limit of the numerical
+elimination, in entries, one coefficient with its index (12 bytes).
+It bounds the sum of five accounts the elimination declares: the
+input triples with the retained block split out, the substitution
+coefficients J_KE, J_EK, N, the diagonals and M = (I + N)^-1 J_EK,
+the temporary work-space of one row over the retained columns and
+the position of every unknown, the combined complement nnz(S), and
+the entries the inner minimizer declares for the retained unknowns
+(2 nk^2 for the dense direct solve, (restart + 1) nk plus its
+preconditioner's for GMRES, the block diagonal for Gauss-Seidel, the
+smoother's and the coarse solve's for multigrid). Every coefficient
+of M and of S is summed over its dependency paths before a dependant
+reads it, so no account counts paths or uncombined products. The
+default is the largest count an index array addresses, 2^31 - 1, and
+every count is formed in 64-bit integers: a requirement beyond that
+count is refused as an overflow whatever the limit. A construction
+beyond the limit is refused before its allocation and reported by the
+solve result `storage limit exceeded`, which Newton and the temporal
+sweep propagate as a failed inner solve; the limit is copied with the
+solver configuration into every restricted member of a sweep.
+
 **The Newton iteration.** `higher_order_jacobian_product = 2` takes
 Halley's step, the second-order term of the Chebyshev family solved
 against the same frozen Jacobian: the vortex at 8 x 8 goes from 106

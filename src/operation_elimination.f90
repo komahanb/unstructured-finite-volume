@@ -34,26 +34,82 @@
 ! a diagonal, or whose reads of eliminated unknowns close a cycle, is
 ! not of the form above, and the solve stops there naming it.
 !
+! Every coefficient of M and of the complement is summed over its
+! dependency paths before a dependant reads it or the inner minimizer
+! multiplies it, so the storage counts coefficients, never paths or
+! uncombined products. The entries stored are bounded by max_entries,
+! the sum of five accounts declared in elimination_storage; a
+! construction beyond the limit, or beyond the largest count an index
+! array addresses, is refused before its allocation and reported by
+! the solve result SOLVE_STORAGE_EXCEEDED.
+!
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module operation_elimination
 
   use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
+  use iso_fortran_env       , only : int64
   use util_precision        , only : dp
   use graph_fractal         , only : graph
   use view_directed         , only : directed_graph
   use view_directed_stored  , only : stored_directed_graph
   use operation_action      , only : operation
-  use operation_minimization, only : minimizer, state, restrict
+  use operation_minimization, only : minimizer, state, restrict, saturated_sum
   use operation_minimization, only : solve_result, SOLVE_INNER_FAILED, SOLVE_EXHAUSTED, SOLVE_CONTINUE
-  use operation_stencil     , only : stencil, combine_triples
+  use operation_minimization, only : SOLVE_STORAGE_EXCEEDED
+  use operation_stencil     , only : stencil
   use field_stored          , only : stored_field
 
   implicit none
 
   private
-  public :: elimination
+  public :: elimination, elimination_storage
+
+  ! one entry: a coefficient with its column index
+  integer, parameter, public :: entry_bytes = (storage_size(1.0_dp) + storage_size(1)) / 8
+
+  !===================================================================!
+  ! The entries an elimination stores, by account, and the limit their
+  ! sum is admitted under. Every count is a number of entries; bytes
+  ! multiply by entry_bytes. The pattern of the complement stencil and
+  ! the minimizer objects themselves are outside these counts.
+  !===================================================================!
+
+  type :: elimination_storage
+
+     ! nnz(J) triples read from the stencil and the retained block
+     ! J_KK split out, released once the complement is formed
+     integer(int64) :: input = 0_int64
+
+     ! J_KE, J_EK, N, the diagonals and M = (I + N)^-1 J_EK, retained
+     ! through the solve
+     integer(int64) :: substitution = 0_int64
+
+     ! the position of every unknown, one row accumulator over the
+     ! retained columns and two permutations of the complement's
+     ! entries ordering each row's columns, all released after the
+     ! statement; the index permutations grouping the input triples by
+     ! row are proportional to the input account and are not counted
+     ! again
+     integer(int64) :: temporary = 0_int64
+
+     ! nnz(S), the combined complement the inner minimizer is stated on
+     integer(int64) :: schur = 0_int64
+
+     ! the entries the inner minimizer declares for the retained unknowns
+     integer(int64) :: factorisation = 0_int64
+
+     ! the limit on the sum, in entries
+     integer(int64) :: limit = int(huge(1), int64)
+
+   contains
+
+     procedure :: total => storage_total
+     procedure :: bytes => storage_bytes
+     procedure :: admitted => storage_admitted
+
+  end type elimination_storage
 
   type, extends(minimizer) :: elimination
 
@@ -62,6 +118,16 @@ module operation_elimination
      logical, allocatable :: eliminated(:)
 
      class(minimizer), allocatable :: inner
+
+     ! the limit on the entries stored, the sum of the five accounts
+     integer :: max_entries = huge(1)
+
+     ! the accounts of the last statement, or at its refusal the
+     ! accounts including the increment refused
+     type(elimination_storage) :: storage
+
+     ! whether the last statement was refused within its limit
+     logical, private :: storage_exceeded = .false.
 
      ! the unknowns of each set, in the order the inner reads them
      integer, allocatable, private :: retained_at(:), eliminated_at(:)
@@ -82,6 +148,7 @@ module operation_elimination
      procedure :: name  => elimination_name
      procedure :: state => elimination_state
      procedure :: restrict => elimination_restrict
+     procedure :: storage_entries => elimination_storage_entries
      procedure :: solve => elimination_solve
 
   end type elimination
@@ -101,10 +168,49 @@ contains
 
   end function elimination_name
 
+  pure integer(int64) function storage_total(this) result(total)
+
+    class(elimination_storage), intent(in) :: this
+
+    total = saturated_sum(this % input, this % substitution)
+    total = saturated_sum(total, this % temporary)
+    total = saturated_sum(total, this % schur)
+    total = saturated_sum(total, this % factorisation)
+
+  end function storage_total
+
+  pure integer(int64) function storage_bytes(this) result(bytes)
+
+    class(elimination_storage), intent(in) :: this
+
+    bytes = this % total()
+    if (real(bytes, dp) * real(entry_bytes, dp) > real(huge(bytes), dp)) then
+       bytes = huge(bytes)
+    else
+       bytes = bytes * int(entry_bytes, int64)
+    end if
+
+  end function storage_bytes
+
+  !===================================================================!
+  ! Whether the accounts are within the limit and within the largest
+  ! count a default-integer index array addresses.
+  !===================================================================!
+
+  pure logical function storage_admitted(this) result(admitted)
+
+    class(elimination_storage), intent(in) :: this
+
+    admitted = this % total() <= min(this % limit, int(huge(1), int64))
+
+  end function storage_admitted
+
   !===================================================================!
   ! State the whole system, split its triples by set, divide the
   ! eliminated rows by their diagonals, assemble the complement and
-  ! state the inner minimizer on it.
+  ! state the inner minimizer on it. Every allocation proportional to
+  ! a count of coefficients follows a check of the accounts against
+  ! the limit; a refused statement stores no partition.
   !===================================================================!
 
   subroutine elimination_state(this, action, context, unknown_domain, num_unknowns, &
@@ -120,17 +226,23 @@ contains
     type(stored_field)   , intent(in), optional :: stored_inputs(:)
 
     integer , allocatable :: rows(:), columns(:), position(:), kk_row(:), kk_column(:)
-    integer , allocatable :: first_ek(:), by_row(:), rk(:), ck(:)
-    integer , allocatable :: n_row(:), first_m(:), count_m(:), m_column(:)
-    integer , allocatable :: column_row(:), active_columns(:)
-    real(dp), allocatable :: weights(:), kk_weight(:), wk(:), m_weight(:), row_weight(:)
+    integer , allocatable :: first_ek(:), by_row(:), n_row(:), first_m(:), count_m(:), m_column(:)
+    integer , allocatable :: s_row(:), s_column(:), first_s(:)
+    real(dp), allocatable :: weights(:), kk_weight(:), m_weight(:), s_weight(:)
     type(stencil) :: complement
     type(stored_directed_graph) :: retained
-    integer :: n, nk, ne, e, r, c, i, j, k, nkk, nke, nek, nn, m, total, num_active_columns
+    integer(int64) :: stored_substitution
+    integer :: n, nk, ne, e, r, c, i, nkk, nke, nek, nn, m, total, capacity
+    logical :: within
 
     call state(this, action, context, unknown_domain, num_unknowns, &
          & num_components, coupling, stored_inputs)
     call clear_partition(this)
+    this % storage_exceeded = .false.
+    if (this % max_entries < 1) then
+       error stop 'elimination: the storage limit is one entry at least'
+    end if
+    this % storage = elimination_storage(limit = int(this % max_entries, int64))
 
     if (present(num_components)) then
        if (num_components > 1) then
@@ -150,10 +262,28 @@ contains
 
     select type (action)
     type is (stencil)
-       call action % entries(rows, columns, weights)
+       m = action % pattern % num_edges()
     class default
        error stop 'elimination: the complement is read from the explicit tangent, and this &
             &statement is a matrix-vector product without one'
+    end select
+
+    nk = count(.not. this % eliminated)
+    ne = n - nk
+    if (nk < 1) then
+       error stop 'elimination: an unknown is retained at least'
+    end if
+
+    ! the input triples, the work-space and the inner's requirement
+    ! are known before any of them is allocated
+    this % storage % input         = int(m, int64)
+    this % storage % temporary     = int(n, int64) + int(nk, int64)
+    this % storage % factorisation = this % inner % storage_entries(nk)
+    if (.not. admitted(this)) return
+
+    select type (action)
+    type is (stencil)
+       call action % entries(rows, columns, weights)
     end select
 
     ! the position of every unknown within its set
@@ -169,18 +299,9 @@ contains
           position(i) = nk
        end if
     end do
-    if (nk < 1) then
-       error stop 'elimination: an unknown is retained at least'
-    end if
     this % retained_at   = pack([(i, i = 1, n)], .not. this % eliminated)
     this % eliminated_at = pack([(i, i = 1, n)],       this % eliminated)
 
-    ! split the triples by set
-    m = size(rows)
-    allocate(kk_row(m), kk_column(m), kk_weight(m))
-    allocate(this % ke_row(m), this % ke_column(m), this % ke_weight(m))
-    allocate(this % ek_row(m), this % ek_column(m), this % ek_weight(m))
-    allocate(n_row(m), this % n_column(m), this % n_weight(m))
     ! the diagonal of every eliminated row, its own scale
     allocate(this % diagonal(ne), source=0.0_dp)
     do e = 1, m
@@ -193,6 +314,37 @@ contains
             &its unknown; under a staged family the states at the stages are the tied &
             &components, so its time derivatives are stated as rows'
     end if
+
+    ! the triples of every block counted before the blocks are stored
+    nkk = 0
+    nke = 0
+    nek = 0
+    nn  = 0
+    do e = 1, m
+       r = rows(e)
+       c = columns(e)
+       if (this % eliminated(r)) then
+          if (this % eliminated(c)) then
+             if (r /= c .and. weights(e) /= 0.0_dp) nn = nn + 1
+          else
+             nek = nek + 1
+          end if
+       else
+          if (this % eliminated(c)) then
+             nke = nke + 1
+          else
+             nkk = nkk + 1
+          end if
+       end if
+    end do
+    this % storage % input        = int(m, int64) + int(nkk, int64)
+    this % storage % substitution = int(nke, int64) + int(nek, int64) + int(nn, int64) + int(ne, int64)
+    if (.not. admitted(this)) return
+
+    allocate(kk_row(nkk), kk_column(nkk), kk_weight(nkk))
+    allocate(this % ke_row(nke), this % ke_column(nke), this % ke_weight(nke))
+    allocate(this % ek_row(nek), this % ek_column(nek), this % ek_weight(nek))
+    allocate(n_row(nn), this % n_column(nn), this % n_weight(nn))
     nkk = 0
     nke = 0
     nek = 0
@@ -228,15 +380,10 @@ contains
           end if
        end if
     end do
-    this % ke_row    = this % ke_row(1:nke)
-    this % ke_column = this % ke_column(1:nke)
-    this % ke_weight = this % ke_weight(1:nke)
-    this % ek_row    = this % ek_row(1:nek)
-    this % ek_column = this % ek_column(1:nek)
-    this % ek_weight = this % ek_weight(1:nek)
+    deallocate(rows, columns, weights)
 
     ! N and J_EK by row
-    call by_rows(ne, n_row(1:nn), by_row, this % first_n)
+    call by_rows(ne, n_row, by_row, this % first_n)
     this % n_column = this % n_column(by_row)
     this % n_weight = this % n_weight(by_row)
     call by_rows(ne, this % ek_row, by_row, first_ek)
@@ -244,18 +391,74 @@ contains
     ! the substitution order: a row after every eliminated row it reads
     call ordered(ne, this % first_n, this % n_column, this % order)
 
-    ! M = (I + N)^-1 J_EK row by row in that order. Sum equal
-    ! retained columns before another row reads this one: storage
-    ! then counts the nonzero coefficients of M, not dependency paths.
+    ! M = (I + N)^-1 J_EK row by row in the substitution order, then
+    ! the complement J_KK - J_KE M row by row over K, each within the
+    ! capacity its account admits; a row beyond it is refused with the
+    ! account naming the requirement
+    stored_substitution = this % storage % substitution
+    capacity = admissible(this, stored_substitution) - int(stored_substitution)
+    call substitution_rows(this, nk, first_ek, by_row, capacity, first_m, count_m, m_column, m_weight, total, within)
+    this % storage % substitution = stored_substitution + int(total, int64)
+    if (.not. within) then
+       call refused(this)
+       return
+    end if
+    capacity = admissible(this, 0_int64)
+    call complement_rows(this, nk, kk_row, kk_column, kk_weight, first_m, count_m, m_column, m_weight, capacity, &
+         & s_row, s_column, s_weight, first_s, total, within)
+    this % storage % schur = int(total, int64)
+    if (.not. within) then
+       call refused(this)
+       return
+    end if
+
+    ! each row's columns ascending, by two permutations of the entries
+    this % storage % temporary = this % storage % temporary + 2_int64 * int(total, int64)
+    if (.not. admitted(this)) return
+    call ordered_columns(nk, first_s, s_row, s_column, s_weight)
+
+    complement = stencil(s_row, s_column, s_weight, spread(0.0_dp, 1, nk), 'eliminated tangent')
+    call complement % versioned(action % version(), action % transpose_version())
+    retained = stored_directed_graph(nk, tails=[integer ::], heads=[integer ::])
+    call this % inner % state(complement, complement % pattern, retained % vertex_set(), nk, &
+         & num_components = 1, coupling = complement % pattern)
+
+  end subroutine elimination_state
+
+  !===================================================================!
+  ! M = (I + N)^-1 J_EK row by row in the substitution order: the row
+  ! of J_EK less the rows of M it reads, equal retained columns summed
+  ! before another row reads this one, so storage counts the nonzero
+  ! coefficients of M and not dependency paths. total is the entries
+  ! stored, or where a row exceeds the capacity the requirement
+  ! refused, within then false.
+  !===================================================================!
+
+  subroutine substitution_rows(this, nk, first_ek, ek_by_row, capacity, first_m, count_m, m_column, m_weight, &
+       & total, within)
+
+    class(elimination), intent(in) :: this
+    integer, intent(in) :: nk, first_ek(:), ek_by_row(:), capacity
+    integer , allocatable, intent(out) :: first_m(:), count_m(:), m_column(:)
+    real(dp), allocatable, intent(out) :: m_weight(:)
+    integer, intent(out) :: total
+    logical, intent(out) :: within
+
+    integer , allocatable :: column_row(:), active_columns(:)
+    real(dp), allocatable :: row_weight(:)
+    integer :: ne, i, j, k, e, c, num_active_columns, nonzero
+
+    ne = size(this % order)
     allocate(first_m(ne), count_m(ne))
     allocate(column_row(nk), source=0)
     allocate(active_columns(nk), row_weight(nk), m_column(0), m_weight(0))
+    within = .true.
     total = 0
     do i = 1, ne
        e = this % order(i)
        num_active_columns = 0
        do j = first_ek(e), first_ek(e + 1) - 1
-          call accumulated(this % ek_column(by_row(j)), this % ek_weight(by_row(j)))
+          call accumulated(this % ek_column(ek_by_row(j)), this % ek_weight(ek_by_row(j)))
        end do
        do j = this % first_n(e), this % first_n(e + 1) - 1
           c = this % n_column(j)
@@ -263,8 +466,22 @@ contains
              call accumulated(m_column(k), -this % n_weight(j) * m_weight(k))
           end do
        end do
+       ! the coefficients stored are the nonzero ones: counted exactly
+       ! where the active columns would exceed the capacity
+       nonzero = num_active_columns
+       if (total + nonzero > capacity) then
+          nonzero = 0
+          do j = 1, num_active_columns
+             if (row_weight(active_columns(j)) /= 0.0_dp) nonzero = nonzero + 1
+          end do
+          if (total + nonzero > capacity) then
+             total = total + nonzero
+             within = .false.
+             return
+          end if
+       end if
        first_m(e) = total + 1
-       call reserve_coefficients(total + num_active_columns, total, m_column, m_weight)
+       call reserve_coefficients(total + nonzero, capacity, total, m_column, m_weight)
        do j = 1, num_active_columns
           c = active_columns(j)
           if (row_weight(c) == 0.0_dp) cycle
@@ -275,33 +492,10 @@ contains
        count_m(e) = total - first_m(e) + 1
     end do
 
-    ! the complement's triples: J_KK, then minus J_KE M
-    m = nkk
-    do e = 1, nke
-       m = m + count_m(this % ke_column(e))
-    end do
-    allocate(rk(m), ck(m), wk(m))
-    rk(1:nkk) = kk_row(1:nkk)
-    ck(1:nkk) = kk_column(1:nkk)
-    wk(1:nkk) = kk_weight(1:nkk)
-    m = nkk
-    do e = 1, nke
-       c = this % ke_column(e)
-       rk(m + 1:m + count_m(c)) = this % ke_row(e)
-       ck(m + 1:m + count_m(c)) = m_column(first_m(c):first_m(c) + count_m(c) - 1)
-       wk(m + 1:m + count_m(c)) = -this % ke_weight(e) * m_weight(first_m(c):first_m(c) + count_m(c) - 1)
-       m = m + count_m(c)
-    end do
-    call combine_triples(nk, nk, rk, ck, wk, rows, columns, weights)
-
-    complement = stencil(rows, columns, weights, spread(0.0_dp, 1, nk), 'eliminated tangent')
-    call complement % versioned(action % version(), action % transpose_version())
-    retained = stored_directed_graph(nk, tails=[integer ::], heads=[integer ::])
-    call this % inner % state(complement, complement % pattern, retained % vertex_set(), nk, &
-         & num_components = 1, coupling = complement % pattern)
-
   contains
 
+    ! a coefficient of the row being formed: the first of its column
+    ! begins the sum at zero
     subroutine accumulated(column, weight)
       integer , intent(in) :: column
       real(dp), intent(in) :: weight
@@ -314,26 +508,220 @@ contains
       row_weight(column) = row_weight(column) + weight
     end subroutine accumulated
 
-  end subroutine elimination_state
+  end subroutine substitution_rows
 
-  subroutine reserve_coefficients(required, used, columns, weights)
-    integer, intent(in) :: required, used
+  !===================================================================!
+  ! The complement row by row over K: J_KK less J_KE M, every retained
+  ! column summed once per row in the order the triples of that row
+  ! arrive - J_KK's, then each J_KE entry's product with its row of M
+  ! - so no uncombined product is formed. first_s(r) is the first
+  ! entry of row r. total is the entries stored, or where a row
+  ! exceeds the capacity the requirement refused, within then false.
+  !===================================================================!
+
+  subroutine complement_rows(this, nk, kk_row, kk_column, kk_weight, first_m, count_m, m_column, m_weight, &
+       & capacity, s_row, s_column, s_weight, first_s, total, within)
+
+    class(elimination), intent(in) :: this
+    integer , intent(in) :: nk, kk_row(:), kk_column(:), first_m(:), count_m(:), m_column(:), capacity
+    real(dp), intent(in) :: kk_weight(:), m_weight(:)
+    integer , allocatable, intent(out) :: s_row(:), s_column(:), first_s(:)
+    real(dp), allocatable, intent(out) :: s_weight(:)
+    integer, intent(out) :: total
+    logical, intent(out) :: within
+
+    integer , allocatable :: kk_by_row(:), first_kk(:), ke_by_row(:), first_ke(:), column_row(:), active_columns(:)
+    real(dp), allocatable :: row_weight(:)
+    integer :: r, j, k, e, c, num_active_columns
+
+    call by_rows(nk, kk_row, kk_by_row, first_kk)
+    call by_rows(nk, this % ke_row, ke_by_row, first_ke)
+    allocate(column_row(nk), source=0)
+    allocate(active_columns(nk), row_weight(nk), s_row(0), s_column(0), s_weight(0), first_s(nk + 1))
+    within = .true.
+    total = 0
+    first_s(1) = 1
+    do r = 1, nk
+       num_active_columns = 0
+       do j = first_kk(r), first_kk(r + 1) - 1
+          call combined(kk_column(kk_by_row(j)), kk_weight(kk_by_row(j)))
+       end do
+       do j = first_ke(r), first_ke(r + 1) - 1
+          e = ke_by_row(j)
+          c = this % ke_column(e)
+          do k = first_m(c), first_m(c) + count_m(c) - 1
+             call combined(m_column(k), -this % ke_weight(e) * m_weight(k))
+          end do
+       end do
+       if (total + num_active_columns > capacity) then
+          total = total + num_active_columns
+          within = .false.
+          return
+       end if
+       call reserve_coefficients(total + num_active_columns, capacity, total, s_column, s_weight)
+       call reserve_rows(size(s_column), total, s_row)
+       do j = 1, num_active_columns
+          c = active_columns(j)
+          total = total + 1
+          s_row(total)    = r
+          s_column(total) = c
+          s_weight(total) = row_weight(c)
+       end do
+       first_s(r + 1) = total + 1
+    end do
+
+  contains
+
+    ! a coefficient of the row being formed: the first of its column
+    ! is the sum's first term
+    subroutine combined(column, weight)
+      integer , intent(in) :: column
+      real(dp), intent(in) :: weight
+      if (column_row(column) /= r) then
+         column_row(column) = r
+         num_active_columns = num_active_columns + 1
+         active_columns(num_active_columns) = column
+         row_weight(column) = weight
+      else
+         row_weight(column) = row_weight(column) + weight
+      end if
+    end subroutine combined
+
+  end subroutine complement_rows
+
+  !===================================================================!
+  ! The complement's entries in ascending column order within each
+  ! row: grouped by column, then that sequence by row, both groupings
+  ! stable, so the triples are in the order of a combined triple list.
+  !===================================================================!
+
+  subroutine ordered_columns(nk, first_s, s_row, s_column, s_weight)
+
+    integer, intent(in) :: nk, first_s(:)
+    integer , allocatable, intent(inout) :: s_row(:), s_column(:)
+    real(dp), allocatable, intent(inout) :: s_weight(:)
+
+    integer, allocatable :: by_column(:), first_column(:), by_row_column(:), next(:)
+    integer :: total, j, e, r
+
+    total = first_s(nk + 1) - 1
+    call by_rows(nk, s_column(1:total), by_column, first_column)
+    allocate(by_row_column(total))
+    next = first_s(1:nk)
+    do j = 1, total
+       e = by_column(j)
+       r = s_row(e)
+       by_row_column(next(r)) = e
+       next(r) = next(r) + 1
+    end do
+    deallocate(by_column)
+    s_row    = s_row(by_row_column)
+    s_column = s_column(by_row_column)
+    s_weight = s_weight(by_row_column)
+
+  end subroutine ordered_columns
+
+  !===================================================================!
+  ! Whether the accounts are admitted; a refusal releases the partial
+  ! partition and records the outcome the solve will report.
+  !===================================================================!
+
+  logical function admitted(this)
+
+    class(elimination), intent(inout) :: this
+
+    admitted = this % storage % admitted()
+    if (.not. admitted) call refused(this)
+
+  end function admitted
+
+  subroutine refused(this)
+
+    class(elimination), intent(inout) :: this
+
+    call clear_partition(this)
+    this % storage_exceeded = .true.
+    call this % record_result(0.0_dp, 0, SOLVE_STORAGE_EXCEEDED)
+
+  end subroutine refused
+
+  !===================================================================!
+  ! The largest capacity an account may grow to within the limit: the
+  ! limit less every other account, where the account reads entries.
+  !===================================================================!
+
+  pure integer function admissible(this, account) result(capacity)
+
+    class(elimination), intent(in) :: this
+    integer(int64)    , intent(in) :: account
+
+    integer(int64) :: others
+
+    others = this % storage % total() - account
+    capacity = int(min(this % storage % limit - others, int(huge(1), int64)))
+
+  end function admissible
+
+  !===================================================================!
+  ! Capacity for required coefficients, doubling within the admissible
+  ! capacity, never below what is required.
+  !===================================================================!
+
+  subroutine reserve_coefficients(required, admissible_capacity, used, columns, weights)
+
+    integer, intent(in) :: required, admissible_capacity, used
     integer, allocatable, intent(inout) :: columns(:)
     real(dp), allocatable, intent(inout) :: weights(:)
+
     integer, allocatable :: larger_columns(:)
     real(dp), allocatable :: larger_weights(:)
     integer :: capacity
 
     capacity = size(columns)
     if (required <= capacity) return
-    if (capacity <= huge(capacity) / 2) capacity = 2 * capacity
-    capacity = max(required, capacity)
+    if (capacity <= huge(capacity) / 2) then
+       capacity = 2 * capacity
+    else
+       capacity = huge(capacity)
+    end if
+    capacity = max(required, min(capacity, admissible_capacity))
     allocate(larger_columns(capacity), larger_weights(capacity))
     larger_columns(1:used) = columns(1:used)
     larger_weights(1:used) = weights(1:used)
     call move_alloc(larger_columns, columns)
     call move_alloc(larger_weights, weights)
+
   end subroutine reserve_coefficients
+
+  ! the row indices at the capacity of the columns beside them
+  subroutine reserve_rows(capacity, used, rows)
+
+    integer, intent(in) :: capacity, used
+    integer, allocatable, intent(inout) :: rows(:)
+
+    integer, allocatable :: larger(:)
+
+    if (capacity <= size(rows)) return
+    allocate(larger(capacity))
+    larger(1:used) = rows(1:used)
+    call move_alloc(larger, rows)
+
+  end subroutine reserve_rows
+
+  !===================================================================!
+  ! The entries the last statement stored, its complement's included:
+  ! an enclosing minimizer reads the accounts of the statement made.
+  !===================================================================!
+
+  pure integer(int64) function elimination_storage_entries(this, num_unknowns) result(entries)
+
+    class(elimination), intent(in) :: this
+    integer           , intent(in) :: num_unknowns
+
+    associate (u1 => num_unknowns); end associate
+    entries = this % storage % total()
+
+  end function elimination_storage_entries
 
   !===================================================================!
   ! The flags of the selected unknowns, in the selection's order. The
@@ -354,6 +742,8 @@ contains
 
     call restrict(this, selected)
     call clear_partition(this)
+    this % storage_exceeded = .false.
+    this % storage = elimination_storage(limit = int(this % max_entries, int64))
     if (.not. allocated(this % eliminated)) then
        error stop 'elimination: one flag per unknown states which rows are eliminated before &
             &the unknowns retained by a restriction are known'
@@ -526,6 +916,13 @@ contains
     call this % imbalance(rhs, x, r)
     achieved = this % norm(r)
     call this % record_residual_norm(achieved)
+
+    ! a statement refused within its storage limit stored no
+    ! partition: the unknowns are unchanged and the refusal reported
+    if (this % storage_exceeded) then
+       call this % record_result(achieved, 0, SOLVE_STORAGE_EXCEEDED)
+       return
+    end if
 
     ! b_K - J_KE (I + N)^-1 b_E, the eliminated rows divided by their diagonals
     x_eliminated = rhs(this % eliminated_at) / this % diagonal

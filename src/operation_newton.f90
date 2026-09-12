@@ -79,6 +79,7 @@
 
 module operation_newton
 
+  use iso_fortran_env , only : int64
   use util_precision  , only : dp
   use operation_minimization        , only : minimizer, restrict, solve_result, SOLVE_INNER_FAILED
   use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
@@ -118,6 +119,7 @@ module operation_newton
 
      procedure :: name => newton_name
      procedure :: restrict => newton_restrict
+     procedure :: storage_entries => newton_storage_entries
      procedure :: solve
 
   end type newton
@@ -150,6 +152,17 @@ contains
     if (allocated(this % inner)) call this % inner % restrict(selected)
 
   end subroutine newton_restrict
+
+  ! the inner minimizer's entries over the same unknowns
+  pure integer(int64) function newton_storage_entries(this, num_unknowns) result(entries)
+
+    class(newton), intent(in) :: this
+    integer      , intent(in) :: num_unknowns
+
+    entries = 0_int64
+    if (allocated(this % inner)) entries = this % inner % storage_entries(num_unknowns)
+
+  end function newton_storage_entries
 
   !===================================================================!
   ! Drive action(q) toward rhs from the given q.

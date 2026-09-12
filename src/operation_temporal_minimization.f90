@@ -14,6 +14,7 @@
 
 module operation_temporal_minimization
 
+  use iso_fortran_env       , only : int64
   use util_precision        , only : dp
   use graph_fractal         , only : graph
   use view_directed         , only : directed_graph
@@ -51,6 +52,7 @@ module operation_temporal_minimization
      procedure :: name  => temporal_minimizer_name
      procedure :: state => temporal_minimizer_state
      procedure :: restrict => temporal_minimizer_restrict
+     procedure :: storage_entries => temporal_minimizer_storage_entries
      procedure :: pair_with
      procedure :: pairing_of
      procedure :: partition
@@ -236,6 +238,17 @@ contains
     if (allocated(this % inner)) call this % inner % restrict(selected)
 
   end subroutine temporal_minimizer_restrict
+
+  ! the inner template's entries over the same unknowns
+  pure integer(int64) function temporal_minimizer_storage_entries(this, num_unknowns) result(entries)
+
+    class(temporal_minimizer), intent(in) :: this
+    integer                  , intent(in) :: num_unknowns
+
+    entries = 0_int64
+    if (allocated(this % inner)) entries = this % inner % storage_entries(num_unknowns)
+
+  end function temporal_minimizer_storage_entries
 
   function visits(this) result(order)
 

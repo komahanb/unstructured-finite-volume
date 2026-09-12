@@ -99,7 +99,7 @@ R_p = { (S_e, W_e) : e in `live_after`(p) }, the states and towers of the
 blocks written at or before p and read beyond it; with the immutable rules,
 expansion and configuration it recomputes every later block bitwise (Newton
 starts from the fixed values, primal rows re-factorise at version zero, a
-recomputed tower is solved under a fresh version so that each costate solve
+recomputed tower is solved under a version of its own so that each costate solve
 reads the factors of its own tower only where the retained pass does, the
 last block). `chain_derivative` and `derivative` read the solver context's
 `reverse_entries` (application key `reverse_entries`, default `huge(1)`):
@@ -108,9 +108,11 @@ costates, restart states and per-block Lagrangian terms - returned as the
 `derivative_storage` record with the schedule's quantities. With L the
 largest restart state, F_max the largest block's forward entries, the window
 the largest live costate data during a step with that step's own, and the
-scalars, retention stores sum F + window + scalars; c stored restart states
-give peak <= (c + 1) L + F_max + window + scalars, and the limit admits
-c = floor((limit - L - F_max - window - scalars) / L), c = 0 recomputing every
+terms N nf nd M (2^(top+1) + top + 2) declared for the Lagrangian terms and
+Leibniz parts whether or not the parts are requested, retention stores
+sum F + window + terms; c stored restart states give
+peak <= (c + 1) L + F_max + window + terms, and the limit admits
+c = floor((limit - L - F_max - window - terms) / L), c = 0 recomputing every
 block from the initial state; a limit at or above retention stores
 everything, one below min(retention, the bound at c = 0) is refused with the
 accounts before any tower is solved. The schedule is the recursion
@@ -120,6 +122,26 @@ stored after block m carrying that block's own forward data. The bound
 excludes the blocks' rows and rules, the expansion, the driver's copies of
 the data it passes and the solvers' temporaries. Streamed Taylor storage
 pairs count maximum live and total entries of the tower and state accounts.
+
+A reverse derivative over a bounded primal is requested at `initialize`
+(`functionals`, `derivative_order`, `pass_kind = reverse_pass`, optionally
+`designs`, the leading designs of the tower), as the Taylor mode is. The
+block sizes are read from the expansion before any block is solved
+(`block_unknowns`), so the schedule is fixed at initialization: the march
+solves each block's tower to top = order - 1 with the block, takes the
+functional values, stores the restart state - states and towers of the
+blocks live after the position - at the positions of the recursion's right
+descent, retains the final block (every block under retention) and releases
+everything else at `expired_at`. `derivative(reverse_pass, the same order
+and functional count)` resumes the recursion with the forward driver paired
+at the final position; a block recomputed is the execution's own block rule
+applied again, the driver's data branch restored with the live states, so
+the Newton solves of recomputation are counted by the tally beside the
+tower solves; the costates read the versions of the first evaluation. A
+later `derivative` finds no restart state stored and recomputes from the
+initial state within the same bound. `take_results` of such an execution
+returns no Taylor table. The streamed tables equal the retained post-hoc
+pass bitwise (`test/gti-execution`).
 
 Periodic and event closure remain mathematical residual constraints. The
 execution graph remains acyclic.
@@ -173,8 +195,7 @@ executions or expansions is a gfortran 15.2 internal compiler error
 
 Interleaving is supported; concurrent threads are not certified. Diagnostic
 `tally` accounting is still application-wide, with every accounting scope
-closed before `advance` returns. A reverse derivative of a streamed
-execution and periodic or event closure remain
+closed before `advance` returns. Periodic or event closure remains
 separate architectural work.
 
 ## Concurrency prerequisites

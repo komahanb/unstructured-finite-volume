@@ -18,7 +18,7 @@ fi
     "$suite_dir/test.f90" "$module_dir/modules.o" "$root/lib/libufvm.a" -o "$work/run"
 "$work/run"
 for mode in source_twin advance_uninitialized results_incomplete derivative_incomplete derivative_streamed \
-    reverse_limit_insufficient; do
+    reverse_limit_insufficient reverse_streamed_forward_pass reverse_streamed_results; do
     case "$mode" in
         source_twin) diagnostic="view_level: this storage's hierarchy has been released" ;;
         advance_uninitialized) diagnostic='gti_chain: initialize an execution before advancing it' ;;
@@ -26,6 +26,8 @@ for mode in source_twin advance_uninitialized results_incomplete derivative_inco
         derivative_incomplete) diagnostic='gti_chain: a derivative requires a completed primal execution' ;;
         derivative_streamed) diagnostic='gti_chain: a streamed Taylor execution has released its primal state' ;;
         reverse_limit_insufficient) diagnostic='gti_chain: the reverse storage limit admits the working set of one recomputation at least' ;;
+        reverse_streamed_forward_pass) diagnostic='gti_chain: a streamed reverse execution differentiates the functionals and order of its initialization' ;;
+        reverse_streamed_results) diagnostic='gti_chain: Taylor results are those of a forward Taylor execution' ;;
     esac
     if "$work/run" "$mode" > "$work/$mode.log" 2>&1; then
         echo "FAIL: execution accepted $mode"

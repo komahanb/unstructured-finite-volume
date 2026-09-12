@@ -2,8 +2,9 @@
 ! Independent concurrent executions.
 !
 ! A set of heterogeneous executions E_1..E_n (state degrees 2 and 3;
-! BDF, Adams, DIRK and Newmark families; direct, GMRES with Gauss-Seidel
-! and numerical-elimination solvers; designs and random grids; forward
+! BDF, Adams, DIRK and Newmark families; direct, GMRES with Gauss-Seidel,
+! GMRES with one multigrid cycle and numerical-elimination solvers;
+! designs and random grids; forward
 ! and reverse derivatives of orders 1 and 2; one streamed Taylor
 ! execution; one execution configured not to converge) is run serially
 ! into the reference S, then over `!$omp parallel do schedule(dynamic,1)`
@@ -40,7 +41,7 @@ program concurrent_executions
 
   implicit none
 
-  integer, parameter :: num_executions = 9, num_repetitions = 5, highest_order = 2
+  integer, parameter :: num_executions = 10, num_repetitions = 5, highest_order = 2
   integer, parameter :: streamed_case = 7, failing_case = 8
 
   type :: execution_record
@@ -233,6 +234,12 @@ contains
        allocate(schemes(1)); allocate(schemes(1) % scheme, source=implicit_midpoint())
        call context % set_linear_solver('iterative'); call context % set_storage('sparse')
        call context % set_linear_limits(20, 1, 100); call context % set_time_coupling('sequential')
+    case (10)
+       degree = 2; duration = 0.6_dp; design = 0.5_dp; lower = [0.9_dp, 0.1_dp]; added = [5, 4]; startup = 2
+       allocate(schemes(size(added)))
+       do b = 1, size(added); allocate(schemes(b) % scheme, source=bdf_family(2)); end do
+       call context % set_linear_solver('iterative'); call context % set_storage('sparse')
+       call context % set_preconditioner('multigrid'); call context % set_linear_limits(30, 2, 200)
     case default
        error stop 'concurrent_executions: a case of the set is selected'
     end select

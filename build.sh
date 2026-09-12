@@ -8,9 +8,13 @@ set -e
 # the default is real64 into lib/.
 PRECISION=${PRECISION:-double}
 
+# OPENMP=yes compiles the library with -fopenmp; the default serial
+# build treats every !$omp directive as a comment.
+OPENMP=${OPENMP:-no}
+
 mkdir -p lib
-make -C src clean PRECISION=$PRECISION OPTIMIZE=yes
-make -C src PRECISION=$PRECISION OPTIMIZE=yes
-make -C src install PRECISION=$PRECISION OPTIMIZE=yes
+make -C src clean PRECISION=$PRECISION OPTIMIZE=yes OPENMP=$OPENMP
+make -C src PRECISION=$PRECISION OPTIMIZE=yes OPENMP=$OPENMP
+make -C src install PRECISION=$PRECISION OPTIMIZE=yes OPENMP=$OPENMP
 
 echo "library built in lib/ - now 'make' and run an example (e.g. examples/solver)"

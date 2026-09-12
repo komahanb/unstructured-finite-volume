@@ -10,6 +10,13 @@ cd "$(dirname "$0")"
 F90=${F90:-gfortran-15}
 FLAGS="-std=f2023 -fcoarray=single -cpp -Wall -fbounds-check -O2"
 
+# OPENMP=yes compiles and links with -fopenmp, as the library must
+# have been built (../build.sh with the same setting).
+OPENMP=${OPENMP:-no}
+if [ "$OPENMP" = yes ]; then
+   FLAGS="$FLAGS -fopenmp"
+fi
+
 # PRECISION=quad links against lib_quad and puts its binaries in
 # quad/, so a double and a quadruple build coexist.
 PRECISION=${PRECISION:-double}

@@ -23,6 +23,7 @@ program graph_execution
   call check_replay()
   call check_temporal()
   call check_placed()
+  call check_positions()
   call check_empty()
   if (num_failures /= 0) error stop 'graph execution checks failed'
   print *, 'All graph execution checks passed.'
@@ -395,6 +396,74 @@ contains
          & all(temporal % expired_at(4) == [1,5,6]), &
          & 'a temporal minimizer delegates the driven step and the lifetime query to its schedule')
   end subroutine check_placed
+
+  !-------------------------------------------------------------------!
+  ! Restart state. The data live after a step are those written at or
+  ! before it and read beyond it; paired at that position with those
+  ! data, the driver resumes there and computes the same values.
+  !-------------------------------------------------------------------!
+  subroutine check_positions()
+    type(bipartite_digraph) :: incidence
+    type(driver) :: schedule, resumed
+    type(rule_graph) :: rules
+    type(data_graph) :: values, restart
+    type(stored_field) :: initial
+    type(pairing) :: connection
+    class(field), allocatable :: datum
+    integer, allocatable :: live(:)
+    integer :: step, d, executed
+    real(dp) :: whole, again
+    ! the incidence of check_lifetimes: rules 1, 2 read source 1 and
+    ! write 2, 3; rule 3 reads 2, 3, 4 and writes 5; rule 4 reads 1, 5
+    ! and writes 6, which nothing reads
+    incidence = bipartite_digraph(4, 6, &
+         & [2,1,2,1,2,2,2,1,2,2,1], [1,1,2,2,4,2,3,3,5,1,4], &
+         & [1,2,1,2,1,1,1,2,1,1,2], [1,2,2,3,3,3,3,5,4,4,6])
+    allocate(rules % at(4), values % at(6))
+    allocate(rules % at(1) % rule, source=linear_rule([2.0_dp], 0.0_dp))
+    allocate(rules % at(2) % rule, source=linear_rule([2.0_dp], 0.0_dp))
+    allocate(rules % at(3) % rule, source=linear_rule([1.0_dp,10.0_dp,0.0_dp], 0.0_dp))
+    allocate(rules % at(4) % rule, source=linear_rule([1.0_dp,100.0_dp], 0.0_dp))
+    initial = stored_field('source', domain % vertex_set(), 1)
+    call initial % set_real_vector([3.0_dp])
+    allocate(values % at(1) % datum, source=initial)
+    call initial % set_real_vector([1.0_dp])
+    allocate(values % at(4) % datum, source=initial)
+    schedule = driver(linear_rule([1.0_dp], 0.0_dp), incidence)
+    call schedule % pair_with(rules % pair(values))
+    call assert_all(all(schedule % live_after(0) == [1, 4]) .and. all(schedule % live_after(1) == [1, 2, 4]) &
+         & .and. all(schedule % live_after(2) == [1, 2, 3, 4]) .and. all(schedule % live_after(3) == [1, 5]) &
+         & .and. size(schedule % live_after(4)) == 0, &
+         & 'the data live after a step are written at or before it and read beyond it')
+    do step = 1, 2
+       call schedule % advance(domain)
+    end do
+    ! the restart state after step 2: the live data copied out of the pairing
+    connection = schedule % pairing_of()
+    allocate(restart % at(6))
+    live = schedule % live_after(2)
+    do d = 1, size(live)
+       call connection % datum_at(live(d), datum)
+       allocate(restart % at(live(d)) % datum, source=datum)
+    end do
+    do step = 3, 4
+       call schedule % advance(domain)
+    end do
+    whole = datum_value(schedule % pairing_of(), 6)
+    resumed = driver(linear_rule([1.0_dp], 0.0_dp), incidence)
+    call resumed % pair_with(rules % pair(restart), position=2)
+    call assert_all(resumed % num_completed() == 2 .and. resumed % next_rule() == 3, &
+         & 'pairing at a completed position resumes the stored order there')
+    call resumed % advance(domain, executed)
+    call assert_all(executed == 3 .and. .not. written(resumed % pairing_of(), 2), &
+         & 'a resumed step performs its rule and its final reads')
+    call resumed % advance(domain)
+    again = datum_value(resumed % pairing_of(), 6)
+    call assert_all(resumed % complete() .and. again == whole .and. whole == 361.0_dp, &
+         & 'a traversal resumed from the live data of a position computes the same values')
+    call resumed % pair_with(rules % pair(restart))
+    call assert_all(resumed % num_completed() == 0, 'pairing without a position starts the stored order')
+  end subroutine check_positions
 
   subroutine check_empty()
     type(driver) :: schedule

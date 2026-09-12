@@ -32,6 +32,11 @@ program execution_refusal
   case('outside_clear')
      call schedule % pair_with(rules % pair(values))
      call schedule % clear_rule(0)
+  case('outside_position')
+     call schedule % pair_with(rules % pair(values), position=2)
+  case('outside_live')
+     call schedule % pair_with(rules % pair(values))
+     print *, schedule % live_after(-1)
   case default
      error stop 'unknown refusal case'
   end select

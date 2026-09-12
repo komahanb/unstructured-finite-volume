@@ -49,7 +49,10 @@ arguments read before applying it; the rule is not stored in the pairing.
 `released_at` returns only the data whose final reader is that completed
 step; `expired_at` adds the data the step's vertex writes that no rule
 reads, the one lifetime statement the execution and the derivative passes
-read. Pairing with new data resets the position. Replacing or clearing one
+read. Pairing with new data starts the position at zero, or at the completed
+position the caller names when the branch stores the data `live_after` that
+position (written at or before it, read beyond it), which is the driver's
+restart state. Replacing or clearing one
 rule changes neither the immutable dependency graph nor its cached order.
 
 Primal rules borrow pointers into their execution only during `advance_with`,

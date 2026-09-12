@@ -6836,7 +6836,11 @@ contains
     do
        attempt = attempt + 1
 
-       call march_chain(schemes, [size(dt)], physics, degrees, designed_grid(duration), &
+       ! one block of size(dt) + 1 instants: the first instant has no step, and
+       ! each weight is one step; a block of size(dt) instants normalises the
+       ! weights over one step fewer, and the gradient of that normalisation
+       ! is never zero, so no grid is accepted
+       call march_chain(schemes, [size(dt) + 1], physics, degrees, designed_grid(duration), &
             & design, state, chain, tower, resolved, t, achieved, grid_design=dt, context=active)
 
        call chain_expansion(chain, tower, functionals, degrees, 0, fvals, context=active)

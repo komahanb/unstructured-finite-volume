@@ -331,8 +331,11 @@ discrete-domain identities.
 `gti_chain % functional_error` estimates F(Q_exact) - F_h(Q_h) for every
 functional of a marched chain from the retained coarse state alone: an
 enriched chain of blocks (`enriched_family`: the family of order p + 1 on
-the same instants, the identity prolongation of the instant jets, the
-history of each enriched block read from the coarse chain by
+the same instants, a staged family by its arriving-instant jets, the
+identity prolongation of the instant jets; per configured block a block
+of the coarse family over its first p + 1 instants, whose costate
+transfers the junction sensitivity into the block before, then the
+enriched block; the history of each read from the coarse chain by
 `transferred`) is built by `block_from` at the coarse state, no primal
 solve is performed, the enriched costates lambda+ are solved in descending
 block order by `solve_linear` transposed at the frozen state with each

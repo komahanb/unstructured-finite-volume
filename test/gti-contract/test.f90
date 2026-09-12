@@ -1,20 +1,22 @@
 program gti_contract
   use util_precision, only : dp
   use operation_minimization, only : relative, absolute, by_count, SOLVE_NOT_STARTED
-  use operation_family, only : implicit_midpoint, crouzeix_three_stage
+  use operation_family, only : implicit_midpoint, crouzeix_three_stage, bdf_family
   use operation_grid, only : uniform_grid, fixed_grid
   use operation_expression, only : expression
   use gti_physics, only : van_der_pol, van_der_pol_energy
   use gti_expansion, only : expansion, family_container
   use gti_chain, only : chain_block, march_chain, chain_expansion, chain_versions, &
-       & chain_derivative, instant_components, grid_stationary_partition
+       & chain_derivative, instant_components, grid_stationary_partition, &
+       & functional_error, functional_error_estimate
   use gti_march, only : march_context, imbalance, consistent_state, frozen_inputs, solve_linear
   use gti_sweeps, only : reverse_pass
   use gti_adaptive, only : adaptive_partition
   use field_stored, only : stored_field
   implicit none
   type(march_context) :: context
-  type(family_container) :: schemes(1)
+  type(family_container) :: schemes(1), enriched(1)
+  type(functional_error_estimate), allocatable :: estimates(:)
   type(chain_block), allocatable :: chain(:)
   type(expansion), allocatable, target :: tower
   type(expression) :: physics, functional(1)
@@ -93,6 +95,22 @@ program gti_contract
           & stationarity_defect, ' accepted at ', solver_tolerance
      write(*,'(a,es23.16,a,es9.2,a,es9.2)') '       E_h = ', energy, ' with E_h - 64/65 = ', &
           & energy - stationary_energy, ' and E_h - T/2 = ', energy - stationary_duration / 2.0_dp
+     ! the functional-error estimator on the accepted grid, enriched by bdf3 on the
+     ! instants: its quadrature part is F+(P Q_h) - F_h = 1 - 64/65 exactly (the instant
+     ! jets have (q^2 + q'^2)/2 = 1/2 and the bdf3 weights sum to each step), so the
+     ! estimate reports the 1/65 the stationarity check misses, with the sign of E - E_h
+     allocate(enriched(1) % scheme, source=bdf_family(3))
+     call functional_error(chain, tower, enriched, physics, 3, fixed_grid(weights), design_value, &
+          & functional, estimates, context=context)
+     if (abs(estimates(1) % quadrature_part - (1.0_dp - stationary_energy)) > floor) &
+          & error stop 'grid_stationary: the quadrature part is 1 - 64/65'
+     if (abs(estimates(1) % estimate) <= 1.0e-2_dp) &
+          & error stop 'grid_stationary: the estimator reports the error the stationarity check misses'
+     if (estimates(1) % estimate * (stationary_duration / 2.0_dp - energy) <= 0.0_dp) &
+          & error stop 'grid_stationary: the estimate has the sign of E - E_h'
+     write(*,'(a,es12.4,a,es12.4,a,f8.4)') '       functional error estimate ', estimates(1) % estimate, &
+          & ' against E - E_h = ', stationary_duration / 2.0_dp - energy, ' effectivity ', &
+          & estimates(1) % estimate / (stationary_duration / 2.0_dp - energy)
   case ('adaptive_failure')
      call context % set_stopping(1.0e-14_dp, relative, by_count, 1)
      dt = adaptive_partition(crouzeix_three_stage(), 4, physics, 3, 1.0_dp, &

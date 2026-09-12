@@ -215,23 +215,34 @@ EFFECTIVITY_TEXT = ("effectivity eta / (F - F_h) of the functional-error estimat
                     "at its local order p + 1, so |I - 1| converges at order 1; " + THETA_TEXT)
 
 
+TRANSFER = floor_check("transfer:energy", 0.0, TABLE_DIGITS,
+                       "the fixed-row residual of every enriched block, Q+_i - Q_j at P Q_h, "
+                       "vanishes under the identity prolongation: zero within gamma_N |Q|, "
+                       "|Q| <= 1 on the oscillator", scale=1.0)
+
+
 def estimator_case(identifier, row, order, description, families="bdf adams", max_order=4,
                    instants=(21, 41, 81, 161), argv_extra=(), set_name="required",
-                   effectivity=True, limitation=None):
-    """The functional-error estimate of one row: its effectivity at order 1 and
-    the estimate itself at the order of F_h - F (README, section
-    'Functional discretization error')."""
+                   effectivity=True, limitation=None, chain=None):
+    """The functional-error estimate of one row: its effectivity at order 1, the
+    estimate itself at the order of F_h - F and the transfer identity (README,
+    section 'Functional discretization error')."""
     grids = ode_grids(instants)
-    runs = {label: ode_argv(n, families=families, max_order=max_order,
-                            check="state functional_error", extra=argv_extra)
-            for (label, _, _), n in zip(grids, instants)}
+    if chain:
+        runs = {label: ode_argv(n, families="bdf", max_order=1, chain=chain,
+                                check="state functional_error", extra=argv_extra)
+                for (label, _, _), n in zip(grids, instants)}
+    else:
+        runs = {label: ode_argv(n, families=families, max_order=max_order,
+                                check="state functional_error", extra=argv_extra)
+                for (label, _, _), n in zip(grids, instants)}
     checks = []
     if effectivity:
         checks.append(order_check("effectivity:energy", 1, 1.0, TABLE_DIGITS, EFFECTIVITY_TEXT))
     checks.append(order_check("estimate:energy", order, 0.0, TABLE_DIGITS,
                               "the estimate eta converges to zero at the order of F_h - F; "
                               + THETA_TEXT))
-    checks += [LAW, residual_check()]
+    checks += [TRANSFER, LAW, residual_check()]
     return {"id": identifier, "set": set_name, "description": description, "row": row,
             "grids": grids, "runs": runs, "checks": checks, "limitation": limitation,
             "timeout": 120}
@@ -393,6 +404,36 @@ def required_cases():
                        "localized error: BDF-3 on the uniform grid with the steps inside "
                        "[0.7, 1.1] merged in pairs; log2 of the indicator sums over the "
                        "interval tends to 3 at order 1 (measured 2.50, 2.77 at 41, 81)"),
+        estimator_case("G06-estimate-dirk2", "dirk2", 2,
+                       "the grid-stationary counterexample under refinement: implicit midpoint "
+                       "estimated by BDF-3 on its arriving instants, whose quadrature part is "
+                       "the whole error F+(P Q_h) - F_h; effectivity at order 1 (measured "
+                       "1.15, 1.09, 1.05, 1.02), estimate at order 2", families="dirk"),
+        estimator_case("G07-estimate-dirk3", "dirk3", 3,
+                       "Crouzeix two-stage DIRK estimated by BDF-4 on its arriving instants: "
+                       "effectivity at order 1 (measured 0.75, 0.85, 0.92, 0.96), estimate at "
+                       "order 3", families="dirk"),
+        estimator_case("G08-estimate-dirk4", "dirk4", 4,
+                       "Crouzeix three-stage DIRK estimated by BDF-5: effectivity at order 1 "
+                       "(measured 1.08, 1.03, 1.01, 1.006, slopes 1.41, 1.24, 1.15), estimate "
+                       "at order 4", families="dirk"),
+        estimator_case("G09-estimate-adams3-dirk4", "adams3-dirk4", 3,
+                       "chain Adams-3 then DIRK-4 by Adams-4 then BDF-5: the junction "
+                       "sensitivity flows through the coarse-family block of the enriched "
+                       "chain; effectivity at order 1 (measured 0.93, 0.95, 0.97, 0.985), "
+                       "estimate at order 3", chain="adams:3 dirk:4"),
+        estimator_case("G10-estimate-dirk4-bdf4-adams4", "dirk4-bdf4-adams4", 4,
+                       "chain DIRK-4, BDF-4, Adams-4 by BDF-5, BDF-5, Adams-5: effectivity at "
+                       "order 1 (measured 1.21, 1.07, 1.03, 1.015), estimate at order 4",
+                       chain="dirk:4 bdf:4 adams:4"),
+        estimator_case("G11-estimate-dirk3-adams3", "dirk3-adams3", 3,
+                       "chain DIRK-3 then Adams-3 by BDF-4 then Adams-4: effectivity at order "
+                       "1 (measured 0.61, 0.78, 0.88, 0.94), estimate at order 3",
+                       chain="dirk:3 adams:3"),
+        estimator_case("G12-estimate-bdf3-dirk3", "bdf3-dirk3", 3,
+                       "chain BDF-3 then DIRK-3 by BDF-4 then BDF-4: effectivity at order 1 "
+                       "(measured 0.87, 0.95, 0.98, 0.99), estimate at order 3",
+                       chain="bdf:3 dirk:3"),
     ]
     # declared limitations: measured below their theoretical order
     cases += [
@@ -445,6 +486,19 @@ def exploratory_cases():
                        "Newmark beta = gamma = 0 (the explicit Taylor step, order 1) estimated "
                        "by Adams-Moulton 3: effectivity at order 1 (measured 1.02, 1.01, "
                        "1.006, 1.003)", families="newmark", max_order=3),
+        estimator_case("X16-estimate-alexander2", "alexander2", 2,
+                       "Alexander's L-stable DIRK estimated by BDF-3: effectivity 1.61, 1.36, "
+                       "1.19, 1.10 (order 1 in |I - 1|, far from 1 on the coarse grids), "
+                       "estimate at order 2", families="alexander", max_order=2),
+        estimator_case("X17-estimate-dirk3-bdf2-heuristic", "dirk3-bdf2", 3,
+                       "chain DIRK-3 then BDF-2: the BDF-2 energy is superconvergent (order "
+                       "3) and BDF-3 enriches it at the same order, a heuristic; effectivity "
+                       "measured 1.05, 1.26, 1.37, 1.43 and not declared; estimate at order 3",
+                       chain="dirk:3 bdf:2", effectivity=False),
+        estimator_case("X18-estimate-bdf2-dirk3-heuristic", "bdf2-dirk3", 3,
+                       "chain BDF-2 then DIRK-3, a heuristic for the same reason; effectivity "
+                       "measured 1.60, 1.76, 1.83, 1.86 and not declared; estimate at order 3",
+                       chain="bdf:2 dirk:3", effectivity=False),
         field_temporal_case("X05-field-bdf3", "bdf3", 3,
                             "temporal order on the 16 x 16 periodic mode, BDF-3"),
         spatial_case("X06-taylor-green-three-grids", "bdf2", "velocity", 2,

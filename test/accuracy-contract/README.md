@@ -144,10 +144,16 @@ resolution of eta and of E_h propagated through the quotient, divided by
 the paired uniform run of the same instant count, and is log2 of the ratio
 of the sums of |eta_k| over the interval, declared at reference p, order 1:
 an indicator is C(t) h_k^(p+1), and the two transition steps at the bounds
-contribute O(h) of the sum. Where p+ = p (the BDF-2 energy at order 3
-estimated by BDF-3, the BDF-4 energy at order 5 by BDF-5) the estimate is
-a heuristic and only the estimate's own order is declared (exploratory
-X13, X14, effectivities recorded in their descriptions).
+contribute O(h) of the sum. `transfer:energy` is the largest
+fixed-row residual of the enriched blocks, zero within gamma_N |Q| under
+the identity prolongation. Staged rows are enriched by BDF p+1 on their
+arriving instants (G06-G08) and chains by one enriched family per block
+with a coarse-family block transferring the junction sensitivity
+(G09-G12). Where p+ = p (the BDF-2 energy at order 3 estimated by BDF-3,
+the BDF-4 energy at order 5 by BDF-5, the chains through BDF-2) the
+estimate is a heuristic and only the estimate's own order is declared
+(exploratory X13, X14, X17, X18, effectivities recorded in their
+descriptions).
 
 ## Declared limitations at 3fb9c97
 

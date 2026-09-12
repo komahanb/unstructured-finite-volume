@@ -969,12 +969,28 @@ O(h^(min(p+, 2p) - p)): an asymptotically exact estimator, not a bound;
 no inequality with a known constant is proved and none is claimed. The
 enrichment (`gti_driver % enriched_family`) is the family of order p + 1
 on the same grid: bdf p -> bdf p+1 (p <= 5), adams p -> adams p+1,
-newmark -> adams 3; the enriched block's history is its first p + 1
-instants read from the coarse chain, so the coarse block's first own
-instant stays fixed at its local order p + 1 and |I - 1| converges at
-order 1 (measured 0.83, 0.91, 0.95, 0.98 for bdf1, 0.86, 0.94, 0.97, 0.985
-for bdf3, 0.89, 0.95, 0.975, 0.987 for adams3, 1.06, 1.04, 1.02, 1.01 for
-Fox-Goodwin Newmark, instants 21 to 161; `test/accuracy-contract` G01-G04).
+newmark -> adams 3, and a staged family (dirk p, alexander 2) -> bdf p+1
+on its arriving instants, whose jets satisfy the law (the stages between
+them are not read). The enriched chain contains, for every configured block,
+a block of the coarse family over the block's first p + 1 instants (its
+coarse rows are satisfied at Q_h, so it contributes no residual; its
+costate transfers the sensitivity of the later functional to those
+instants into the block before, the propagated error of a chain junction)
+followed by the enriched block with those instants fixed, so the coarse
+block's first own instant stays at its local order p + 1 and |I - 1|
+converges at order 1 (measured 0.83, 0.91, 0.95, 0.98 for bdf1, 0.86,
+0.94, 0.97, 0.985 for bdf3, 0.89, 0.95, 0.975, 0.987 for adams3, 1.06,
+1.04, 1.02, 1.01 for Fox-Goodwin Newmark, 1.15, 1.09, 1.05, 1.02 for
+implicit midpoint, 0.75, 0.85, 0.92, 0.96 for dirk3, 1.08, 1.03, 1.01,
+1.006 for dirk4, 0.93, 0.95, 0.97, 0.985 for the chain adams3-dirk4, 1.21,
+1.07, 1.03, 1.015 for dirk4-bdf4-adams4, instants 21 to 161;
+`test/accuracy-contract` G01-G04, G06-G12; the 9-instant counterexample
+of `test/gti-contract`, whose quadrature part is 1 - 64/65 exactly).
+Without the coarse-family block a chain's estimate loses the part of the
+junction sensitivity that the extra fixed instants hold (effectivities
+0.5 for adams3-dirk4 and 0.2 for dirk3-adams3 were measured that way).
+The transfer identity, the fixed-row residual of every enriched block at
+P Q_h, is returned and checked at zero within gamma_N |Q| on every row.
 The enriched functional integrates every step with the enriched family's
 complete rule (`family_step_quadrature(complete=.true.)`: the full node
 count at the first steps, nodes ahead of the step), so the coarse rule's
@@ -987,10 +1003,9 @@ at the solver tolerance: its history error is not estimated. The
 indicators eta_k (one per step, summing to eta) localize the error: on
 the grid `coarsened` the sum of |eta_k| over the merged steps against the
 same sum on the uniform grid tends to 2^p (G05, log2 measured 2.50, 2.77,
-2.89 for bdf3 at 41, 81, 161 against 3). A staged family (dirk, alexander)
-has no enrichment on its instants here: its block stores stages between
-them, which the identity prolongation does not read, and the row prints
-`no enrichment`. A derivative functional (dF/dnu) is not estimated.
+2.89 for bdf3 at 41, 81, 161 against 3). A chain whose block is BDF-2 is
+a heuristic for the same reason (X17, X18). A derivative functional
+(dF/dnu) is not estimated.
 
 **The solvers.** Newton drives every block; `linear_solver` is
 `direct` or `iterative` (GMRES), refined by `assembly`, `storage`,

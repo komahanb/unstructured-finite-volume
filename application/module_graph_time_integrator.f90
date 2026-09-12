@@ -6957,21 +6957,30 @@ contains
   !
   ! Enrichment here: the same grid, the family enriched(b) of order
   ! p + 1 on every configured block, P the identity on the instant
-  ! jets; the enriched block's history is its first history_depth+
-  ! instants read from the coarse chain, so the coarse block's own
-  ! first solved instants stay in [F - F+(Q+)] at their local order
-  ! p + 1. The enriched functional integrates the same steps as F_h
-  ! with the enriched family's complete rule (operation_family). The
-  ! startup block of a multistep family is rebuilt with its own
-  ! family at the coarse state, where R(Q_h) = 0 to the solver
-  ! tolerance: its history error is not estimated (declared). The
-  ! enriched costates are solved in descending block order against
-  ! the transposed linearization at P Q_h, each child's costate on
-  ! the transfer rows added to its owner's right side as in the
-  ! reverse pass; no primal solve is performed. Invalid input: an
+  ! jets. The enriched chain contains, for every configured block, a
+  ! block of the coarse family over the block's first given+ instants
+  ! (given+ the enriched family's history depth; its given instants
+  ! read from the block before, its coarse rows satisfied at Q_h, so
+  ! it contributes no residual; its costate transfers the sensitivity
+  ! of the later functional to those instants into the block before,
+  ! the propagated error of a chain junction) followed by the enriched
+  ! block over all the block's instants with those given+ instants
+  ! fixed; the local error of the coarse block's own first instants
+  ! stays in [F - F+(Q+)] at its order p + 1. A staged coarse block is
+  ! prolonged by its arriving-instant jets alone, which satisfy the
+  ! law; its stages are not read. The enriched functional integrates
+  ! the same steps as F_h with the enriched family's complete rule
+  ! (operation_family). The startup block of a multistep family is
+  ! rebuilt with its own family at the coarse state, where R(Q_h) = 0
+  ! to the solver tolerance: its history error is not estimated
+  ! (declared). The enriched costates are solved in descending block
+  ! order against the transposed linearization at P Q_h, each child's
+  ! costate on the transfer rows added to its owner's right side as in
+  ! the reverse pass; no primal solve is performed. Invalid input: an
   ! enriched family whose block does not lie on the coarse instants
-  ! (the identity prolongation), or one enriched family per block
-  ! not supplied.
+  ! (the identity prolongation), an enriched family reaching back over
+  ! more instants than the block covers, a staged enriched family on a
+  ! configured block, or one enriched family per block not supplied.
   !===================================================================!
 
   subroutine functional_error(chain, tower, enriched, physics, degrees, steps, design, functionals, &
@@ -6980,7 +6989,7 @@ contains
 
     class(march_context), optional, target, intent(inout) :: context
     type(chain_block)     , intent(in) :: chain(:)
-    type(expansion)       , intent(in) :: tower
+    type(expansion)       , intent(in), target :: tower
     type(family_container), intent(in) :: enriched(:)
     type(expression)      , intent(in) :: physics, functionals(:)
     integer               , intent(in) :: degrees
@@ -7000,12 +7009,13 @@ contains
     type(tangent_tower), allocatable :: w(:), costate(:)
     type(stored_field), allocatable :: frozen(:)
     class(field), allocatable :: out
-    real(dp), allocatable :: block_steps(:), weights(:), fixed(:), rhs(:), one(:), r(:), u(:,:,:)
-    real(dp), allocatable :: lambda(:,:,:,:,:), share(:), coarse_share(:), magnitude(:)
-    integer , allocatable :: spans(:), versions(:)
-    logical , allocatable :: fixed_rows(:)
+    type(graph), pointer :: horizon
+    real(dp), allocatable :: block_steps(:), one(:), fixed(:), rhs(:), r(:), u(:,:,:)
+    real(dp), allocatable :: lambda(:,:,:,:,:), share(:), magnitude(:)
+    integer , allocatable :: spans(:), versions(:), origin(:)
+    logical , allocatable :: fixed_rows(:), short(:)
     real(dp) :: part
-    integer :: nb, before, b, c, i, k, n, p, from, to, lo, hi, num_steps, step
+    integer :: nb, np, before, b, c, i, j, k, n, p, from, to, lo, hi, num_steps, step, plus_given
 
     active => local_context
     if (present(context)) active => context
@@ -7014,57 +7024,110 @@ contains
     if (size(enriched) /= nb - before) then
        error stop 'gti_chain: one enriched family per configured block'
     end if
-    allocate(every(nb), spans(nb), plus(nb), w(nb), costate(nb), versions(nb))
-    if (before == 1) allocate(every(1) % scheme, source=startup_family())
+    ! the enriched chain: the startup block, then per configured block
+    ! the block of the coarse family over its first given+ instants
+    ! (absent where the enriched family reaches back no further than
+    ! the coarse one) and the enriched block; the tower's block steps
+    ! as the coarse tower stores them
+    np = before
     do b = 1 + before, nb
-       allocate(every(b) % scheme, source=enriched(b - before) % scheme)
+       plus_given = enriched(b - before) % scheme % history_depth(degrees - 1)
+       if (plus_given > size(chain(b) % instants_at)) then
+          error stop 'gti_chain: an enriched family reaches back over instants its block covers'
+       end if
+       np = np + 1 + merge(1, 0, plus_given > chain(b) % given)
     end do
+    allocate(every(np), spans(np), plus(np), w(np), costate(np), versions(np), origin(np), short(np))
+    horizon => level_member(level_member(tower % node(tower % root()), 1), 1)
+    block_steps = [real(dp) ::]
+    j = 0
     do b = 1, nb
-       spans(b) = size(chain(b) % instants_at)
-    end do
-    ! the enriched tower: the coarse tower's grid, block steps and
-    ! step weights with the enriched families
-    block_steps = tower_block_steps(tower, nb)
-    do k = 1, tower % num_designs()
-       if (tower % design_kind_of(k) == design_of_steps) call tower % design_value(k, weights)
+       call tower % value_of(level_member(horizon, b), one)
+       if (b <= before) then
+          j = j + 1
+          allocate(every(j) % scheme, source=startup_family())
+          origin(j) = b
+          short(j)  = .false.
+          spans(j)  = size(chain(b) % instants_at)
+          block_steps = [block_steps, one]
+          cycle
+       end if
+       plus_given = enriched(b - before) % scheme % history_depth(degrees - 1)
+       if (plus_given > chain(b) % given) then
+          j = j + 1
+          allocate(every(j) % scheme, source=chain(b) % scheme)
+          origin(j) = b
+          short(j)  = .true.
+          spans(j)  = plus_given
+          block_steps = [block_steps, one(1:plus_given)]
+       end if
+       j = j + 1
+       allocate(every(j) % scheme, source=enriched(b - before) % scheme)
+       origin(j) = b
+       short(j)  = .false.
+       spans(j)  = size(chain(b) % instants_at)
+       block_steps = [block_steps, one]
     end do
     call enriched_tower % build(physics, every, spans, steps, 0, design, nodes, &
-         & spatial_discretization_stencil, weights=weights, block_steps=block_steps(2:), &
+         & spatial_discretization_stencil, block_steps=block_steps(2:), &
          & spatial_derivative_stencils=spatial_derivative_stencils, gauge_field=gauge_field)
-    do b = 1, nb
-       if (chain(b) % staged .and. b > before) then
-          error stop 'gti_chain: the identity prolongation reads instant jets; a staged block stores stages'
+    do j = 1, np
+       b = origin(j)
+       plus(j) % block_layout = chain(b) % block_layout
+       if (short(j)) then
+          plus(j) % last  = chain(b) % first + (spans(j) - 1) * chain(b) % stride
+          plus(j) % given = chain(b) % given
+       else
+          plus(j) % given = every(j) % scheme % history_depth(degrees - 1)
        end if
-       plus(b) % block_layout = chain(b) % block_layout
-       plus(b) % given        = every(b) % scheme % history_depth(degrees - 1)
-       plus(b) % primary      = every(b) % scheme % primary_degree(degrees - 1)
-       plus(b) % width        = chain(b) % width
-       allocate(plus(b) % scheme, source=every(b) % scheme)
-       plus(b) % staged       = marches_by_stages(every(b) % scheme, degrees)
-       plus(b) % dt           = chain(b) % dt
-       plus(b) % coarse_step  = chain(b) % coarse_step
-       plus(b) % fraction     = chain(b) % fraction
-       plus(b) % counted      = chain(b) % counted
-       plus(b) % complete_quadrature = .true.
+       plus(j) % primary = every(j) % scheme % primary_degree(degrees - 1)
+       plus(j) % width   = chain(b) % width
+       allocate(plus(j) % scheme, source=every(j) % scheme)
+       plus(j) % staged      = marches_by_stages(every(j) % scheme, degrees)
+       plus(j) % dt          = chain(b) % dt(1:spans(j))
+       plus(j) % coarse_step = chain(b) % coarse_step(1:spans(j))
+       plus(j) % fraction    = chain(b) % fraction
+       plus(j) % counted     = chain(b) % counted .and. .not. short(j)
+       plus(j) % complete_quadrature = .not. short(j)
        call owned(chain, b, from, to)
-       plus(b) % integrates_from = from
-       call transfer_layout(plus, b)
-       fixed = transferred(chain, plus(b) % first, plus(b) % stride, plus(b) % given)
-       call built(enriched_tower, b, every(b) % scheme, physics, fixed, plus(b) % rows, &
-            & plus(b) % instants_at, context=active)
-       if (size(plus(b) % instants_at) /= size(chain(b) % instants_at)) then
-          error stop 'gti_chain: the identity prolongation places the enriched block on the coarse instants'
+       plus(j) % integrates_from = from
+       call transfer_layout(plus, j)
+       fixed = transferred(chain, plus(j) % first, plus(j) % stride, plus(j) % given)
+       call built(enriched_tower, j, every(j) % scheme, physics, fixed, plus(j) % rows, &
+            & plus(j) % instants_at, context=active)
+       if (size(plus(j) % instants_at) /= spans(j)) then
+          error stop 'gti_chain: the identity prolongation places the enriched chain on the coarse instants'
        end if
-       if (any(plus(b) % instants_at /= chain(b) % instants_at)) then
-          error stop 'gti_chain: the identity prolongation places the enriched block on the coarse instants'
+       n = plus(j) % rows % num_unknowns()
+       if (short(j) .or. b <= before) then
+          ! a block of the coarse family stores the leading part of the
+          ! coarse state, stages included
+          if (n > size(chain(b) % state)) then
+             error stop 'gti_chain: a block of the coarse family stores the leading part of the coarse state'
+          end if
+          if (any(plus(j) % instants_at /= chain(b) % instants_at(1:spans(j)))) then
+             error stop 'gti_chain: a block of the coarse family stores the leading part of the coarse state'
+          end if
+          plus(j) % state = chain(b) % state(1:n)
+       else
+          ! P: the identity on the instant jets; a staged coarse
+          ! block's stages lie between its instants and are not read
+          if (plus(j) % staged) then
+             error stop 'gti_chain: an enriched family marches by instants'
+          end if
+          if (n /= spans(j) * plus(j) % width) then
+             error stop 'gti_chain: an enriched block stores one jet per instant'
+          end if
+          allocate(plus(j) % state(n))
+          do k = 1, spans(j)
+             plus(j) % state(plus(j) % instants_at(k) + 1:plus(j) % instants_at(k) + plus(j) % width) = &
+                  & chain(b) % state(chain(b) % instants_at(k) + 1:chain(b) % instants_at(k) + chain(b) % width)
+          end do
        end if
-       if (plus(b) % rows % num_unknowns() /= size(chain(b) % state)) then
-          error stop 'gti_chain: the enriched block stores the coarse block''s unknowns'
-       end if
-       plus(b) % state = chain(b) % state
-       versions(b)     = active % next_version()
+       versions(j) = active % next_version()
     end do
-    ! the coarse instants: one indicator per coarse step
+    ! the coarse instants: one indicator per coarse step, indexed by
+    ! the arriving instant (the first instant has no step)
     num_steps = (chain(nb) % last - 1) / chain(nb) % stride + 1
     allocate(estimates(size(functionals)))
     do i = 1, size(functionals)
@@ -7073,51 +7136,58 @@ contains
     allocate(u(1, 1, 1), source=0.0_dp)
     allocate(lambda(1, 1, 1, 1, 0:0), source=0.0_dp)
     do i = 1, size(functionals)
-       do b = nb, 1, -1
-          n = plus(b) % rows % num_unknowns()
-          call costate_rows(plus, b, physics, functionals(i), degrees, design, [integer ::], w, lambda, u, 1, i, &
+       do j = np, 1, -1
+          n = plus(j) % rows % num_unknowns()
+          call costate_rows(plus, j, physics, functionals(i), degrees, design, [integer ::], w, lambda, u, 1, i, &
                & node_measure, rhs)
-          do c = nb, b + 1, -1
+          do c = np, j + 1, -1
              do p = 1, size(plus(c) % source_at)
-                if (plus(c) % source_block(p) /= b) cycle
+                if (plus(c) % source_block(p) /= j) cycle
                 rhs(plus(c) % source_at(p)) = rhs(plus(c) % source_at(p)) + costate(c) % w(p, 1, 1)
              end do
           end do
-          call frozen_at(plus(b), design, frozen)
-          call solve_linear(plus(b) % rows, frozen, rhs, .true., versions(b), one, context=active)
-          if (allocated(costate(b) % w)) deallocate(costate(b) % w)
-          allocate(costate(b) % w(n, 1, 1))
-          costate(b) % w(:, 1, 1) = one
+          call frozen_at(plus(j), design, frozen)
+          call solve_linear(plus(j) % rows, frozen, rhs, .true., versions(j), one, context=active)
+          if (allocated(costate(j) % w)) deallocate(costate(j) % w)
+          allocate(costate(j) % w(n, 1, 1))
+          costate(j) % w(:, 1, 1) = one
        end do
-       do b = 1, nb
-          call frozen_at(plus(b), design, frozen)
-          call plus(b) % rows % apply(plus(b) % rows % unknown_graph(), plus(b) % rows % bind(frozen), out)
+       do j = 1, np
+          call frozen_at(plus(j), design, frozen)
+          call plus(j) % rows % apply(plus(j) % rows % unknown_graph(), plus(j) % rows % bind(frozen), out)
           call out % real_vector(r)
-          fixed_rows = plus(b) % rows % fixed_indicator()
+          fixed_rows = plus(j) % rows % fixed_indicator()
           if (any(fixed_rows)) then
              estimates(i) % transfer_defect = max(estimates(i) % transfer_defect, maxval(abs(r), mask=fixed_rows))
           end if
           ! the rows of step k: the stages of a staged step precede its
           ! arriving instant
-          do k = 1, size(plus(b) % dt)
+          do k = 1, size(plus(j) % dt)
              lo = 0
-             if (k > 1) lo = plus(b) % instants_at(k - 1) + plus(b) % width
-             hi = plus(b) % instants_at(k) + plus(b) % width
-             part = -sum(costate(b) % w(lo + 1:hi, 1, 1) * r(lo + 1:hi), mask=.not. fixed_rows(lo + 1:hi))
-             step = plus(b) % coarse_step(k)
+             if (k > 1) lo = plus(j) % instants_at(k - 1) + plus(j) % width
+             hi = plus(j) % instants_at(k) + plus(j) % width
+             part = -sum(costate(j) % w(lo + 1:hi, 1, 1) * r(lo + 1:hi), mask=.not. fixed_rows(lo + 1:hi))
+             step = plus(j) % coarse_step(k)
              if (step > 0) estimates(i) % by_step(step) = estimates(i) % by_step(step) + part
              estimates(i) % residual_part = estimates(i) % residual_part + part
           end do
+          if (short(j)) cycle
           estimates(i) % enriched_value = estimates(i) % enriched_value &
-               & + functional_along(plus, b, functionals(i), degrees, design, [integer ::], 0, w, u, 1, &
+               & + functional_along(plus, j, functionals(i), degrees, design, [integer ::], 0, w, u, 1, &
                & node_measure, by_step=share)
+          do k = 1, size(plus(j) % dt)
+             step = plus(j) % coarse_step(k)
+             if (step > 0) estimates(i) % by_step(step) = estimates(i) % by_step(step) + share(k)
+          end do
+       end do
+       do b = 1, nb
           estimates(i) % value = estimates(i) % value &
                & + functional_along(chain, b, functionals(i), degrees, design, [integer ::], 0, w, u, 1, &
-               & node_measure, by_step=coarse_share, magnitude_by_step=magnitude)
+               & node_measure, by_step=share, magnitude_by_step=magnitude)
           estimates(i) % scale = estimates(i) % scale + sum(magnitude)
-          do k = 1, size(plus(b) % dt)
-             step = plus(b) % coarse_step(k)
-             if (step > 0) estimates(i) % by_step(step) = estimates(i) % by_step(step) + share(k) - coarse_share(k)
+          do k = 1, size(chain(b) % dt)
+             step = chain(b) % coarse_step(k)
+             if (step > 0) estimates(i) % by_step(step) = estimates(i) % by_step(step) - share(k)
           end do
        end do
        estimates(i) % quadrature_part = estimates(i) % enriched_value - estimates(i) % value
@@ -7125,26 +7195,6 @@ contains
     end do
 
   end subroutine functional_error
-
-  !===================================================================!
-  ! The steps of every block of the tower, block after block, as the
-  ! tower stores them: the value of each block node of the horizon.
-  !===================================================================!
-
-  function tower_block_steps(tower, nb) result(dt)
-    type(expansion), intent(in), target :: tower
-    integer        , intent(in) :: nb
-    real(dp), allocatable :: dt(:)
-    type(graph), pointer :: horizon
-    real(dp), allocatable :: one(:)
-    integer :: b
-    horizon => level_member(level_member(tower % node(tower % root()), 1), 1)
-    dt = [real(dp) ::]
-    do b = 1, nb
-       call tower % value_of(level_member(horizon, b), one)
-       dt = [dt, one]
-    end do
-  end function tower_block_steps
 
 end module gti_chain
 module gti_driver
@@ -7298,10 +7348,10 @@ contains
   ! same grid whose rows read the coarse instant jets, the identity
   ! prolongation. bdf p -> bdf p+1 for p <= 5 (bdf 6 is the last
   ! zero-stable member); adams p -> adams p+1; newmark (every pair,
-  ! order 2 with gamma = 1/2) -> adams 3. A staged family stores
-  ! stages between its instants, which the identity prolongation does
-  ! not read: not admissible here. Not admissible where the coarse
-  ! family has no scheme either.
+  ! order 2 with gamma = 1/2) -> adams 3; a staged family (dirk p,
+  ! alexander 2) -> bdf p+1 on its arriving instants, whose jets
+  ! satisfy the law (the stages between them are not read). Not
+  ! admissible where the coarse family has no scheme.
   !===================================================================!
   subroutine enriched_family(name, order, scheme, admissible, label)
     character(len=*), intent(in)  :: name
@@ -7326,6 +7376,9 @@ contains
     case ('newmark')
        enriched_name  = 'adams'
        enriched_order = 3
+    case ('dirk', 'alexander')
+       enriched_name  = 'bdf'
+       enriched_order = order + 1
     case default
        admissible = .false.
     end select

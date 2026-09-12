@@ -9,6 +9,8 @@ if [ "${UFVM_SKIP_LIBRARY_BUILD:-0}" != 1 ]; then
     ./application/build.sh
 fi
 export UFVM_SKIP_LIBRARY_BUILD=1
+# The generated mesh is read by suites that run before graph-mesh generates it.
+[ -e test/square-10.msh ] || meshgen/ensure.sh test/square-10.msh > /dev/null
 gti_module_dir=$(mktemp -d)
 trap 'rm -rf "$gti_module_dir"' EXIT
 export UFVM_GTI_MODULE_DIR="$gti_module_dir"

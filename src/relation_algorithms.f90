@@ -88,6 +88,10 @@ module relation_algorithms
      type(set_map), pointer :: sets => null()
      type(graph) :: domain
      integer, pointer :: indegree(:) => null()
+     ! the members of zero indegree not yet enumerated: a priority
+     ! queue by local index in an array, whose first entry is the minimum
+     integer, pointer :: ready(:) => null()
+     integer :: num_ready = 0
   end type topological_order_context
 
 contains
@@ -254,6 +258,8 @@ contains
   ! The deterministic Kahn algorithm: n rounds, each taking the FIRST
   ! member of zero indegree in the domain's declaration order -
   ! local_index, never numeric value - so one graph has one order.
+  ! The members of zero indegree form a priority queue by local index,
+  ! so a round costs log n and the order (n + e) log n rather than n^2.
   ! Members are returned as member values. A cycle leaves no member of
   ! zero indegree before the n rounds are complete, and the algorithm
   ! rejects the input.
@@ -268,33 +274,28 @@ contains
 
     class(binary_relation), pointer :: a
     type(topological_order_context) :: context
-    integer, allocatable, target :: indegree(:)
-    logical, allocatable :: enumerated(:)
+    integer, allocatable, target :: indegree(:), ready(:)
     type(integer_fibre) :: fibre
     integer              :: n, i, order_index, selected
 
     call require_adjacency(adjacency, a, context % domain)
     n   = sets % num_members_of(context % domain)
 
-    allocate(indegree(n), enumerated(n), order(n))
-    enumerated = .false.
+    allocate(indegree(n), ready(n), order(n))
     context % sets => sets
     context % indegree => indegree
+    context % ready => ready
     if (present(acyclic)) acyclic = .true.
     do i = 1, n
        fibre = a % preimage_view(sets % member_of(context % domain, i))
        indegree(i) = fibre % num_members()
     end do
+    do i = 1, n
+       if (indegree(i) == 0) call push_ready(context, i)
+    end do
 
     do order_index = 1, n
-       selected = 0
-       do i = 1, n
-          if (.not. enumerated(i) .and. indegree(i) == 0) then
-             selected = i
-             exit
-          end if
-       end do
-       if (selected == 0) then
+       if (context % num_ready == 0) then
           if (present(acyclic)) then
              acyclic = .false.
              order   = order(1:order_index - 1)
@@ -303,7 +304,7 @@ contains
           error stop 'relation_algorithms: a topological order needs an acyclic graph'
        end if
 
-       enumerated(selected) = .true.
+       selected = pop_ready(context)
        order(order_index) = sets % member_of(context % domain, selected)
 
        fibre = a % image_view(sets % member_of(context % domain, selected))
@@ -311,6 +312,53 @@ contains
     end do
 
   end subroutine topological_order
+
+  ! The priority queue of members of zero indegree, a binary tree in an
+  ! array: the parent of position at is at / 2, and no parent exceeds
+  ! its children.
+  subroutine push_ready(context, member_index)
+
+    type(topological_order_context), intent(inout) :: context
+    integer, intent(in) :: member_index
+    integer :: at, parent, exchanged
+
+    context % num_ready = context % num_ready + 1
+    at = context % num_ready
+    context % ready(at) = member_index
+    do while (at > 1)
+       parent = at / 2
+       if (context % ready(parent) <= context % ready(at)) exit
+       exchanged = context % ready(parent)
+       context % ready(parent) = context % ready(at)
+       context % ready(at) = exchanged
+       at = parent
+    end do
+
+  end subroutine push_ready
+
+  integer function pop_ready(context) result(member_index)
+
+    type(topological_order_context), intent(inout) :: context
+    integer :: at, child, exchanged
+
+    member_index = context % ready(1)
+    context % ready(1) = context % ready(context % num_ready)
+    context % num_ready = context % num_ready - 1
+    at = 1
+    do
+       child = 2 * at
+       if (child > context % num_ready) exit
+       if (child < context % num_ready) then
+          if (context % ready(child + 1) < context % ready(child)) child = child + 1
+       end if
+       if (context % ready(at) <= context % ready(child)) exit
+       exchanged = context % ready(at)
+       context % ready(at) = context % ready(child)
+       context % ready(child) = exchanged
+       at = child
+    end do
+
+  end function pop_ready
 
   subroutine decrease_indegrees(members, context)
 
@@ -323,6 +371,7 @@ contains
       do j = 1, size(members)
          member_index = context % sets % index_in(context % domain, members(j))
          context % indegree(member_index) = context % indegree(member_index) - 1
+         if (context % indegree(member_index) == 0) call push_ready(context, member_index)
       end do
     class default
        error stop 'relation_algorithms: the indegree reader requires a topological order context'

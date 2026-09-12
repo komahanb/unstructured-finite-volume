@@ -85,14 +85,22 @@ contains
     class(value_map), intent(inout) :: this
     type(graph)     , intent(in)    :: element
 
+    type(value_state), allocatable :: extended_states(:)
     integer :: at
 
     at = this % rows % append(element % id(), &
          & 'map_value: a value map is keyed on assigned identity', &
          & 'map_value: a value row is attached once')
 
-    if (.not. allocated(this % states)) allocate(this % states(0))
-    this % states = [this % states, value_state()]
+    ! the payload doubles its capacity: an attachment costs amortised
+    ! constant time
+    if (.not. allocated(this % states)) allocate(this % states(max(at, 8)))
+    if (at > size(this % states)) then
+       allocate(extended_states(2 * size(this % states)))
+       extended_states(1:at - 1) = this % states(1:at - 1)
+       call move_alloc(extended_states, this % states)
+    end if
+    this % states(at) = value_state()
 
   end subroutine attach_unknown
 
@@ -160,12 +168,16 @@ contains
     class(value_map), intent(inout) :: this
     type(graph)     , intent(in)    :: element
 
-    integer :: at
+    integer :: at, n, i
 
     at = this % rows % row(element % id(), 'map_value: a detach removes an attached row')
 
+    n = this % rows % num_rows()
     call this % rows % remove(at)
-    this % states = [this % states(1:at - 1), this % states(at + 1:)]
+    do i = at, n - 1
+       this % states(i) = this % states(i + 1)
+    end do
+    this % states(n) = value_state()
 
   end subroutine detach
 

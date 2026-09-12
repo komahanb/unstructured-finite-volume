@@ -47,7 +47,8 @@
 
 module map_token_rows
 
-  use token_identity, only : token, index_of
+  use iso_fortran_env, only : int64
+  use token_identity , only : token
 
   implicit none
 
@@ -56,7 +57,14 @@ module map_token_rows
 
   type :: identity_rows
 
+     ! the rows 1..num_stored of a column with spare capacity, so an
+     ! append costs amortised constant time rather than a whole copy
      type(token), allocatable, private :: keys(:)
+     integer, private :: num_stored = 0
+     ! the row at each slot of an open-addressing table on the serial
+     ! number, zero for an empty slot; the slot count is a power of two
+     ! of at least twice the rows, so a position costs constant time
+     integer, allocatable, private :: slot_row(:)
 
    contains
 
@@ -73,7 +81,8 @@ contains
 
   !===================================================================!
   ! The row of a key, or zero. Unallocated storage returns zero, so a
-  ! map need not check for an empty table itself.
+  ! map need not check for an empty table itself. The slots are read
+  ! linearly from the key's slot until its row or an empty slot.
   !===================================================================!
 
   pure integer function position(this, key) result(at)
@@ -81,11 +90,77 @@ contains
     class(identity_rows), intent(in) :: this
     type(token)      , intent(in) :: key
 
+    integer :: slot
+
     at = 0
-    if (.not. allocated(this % keys)) return
-    at = index_of(this % keys, key)
+    if (this % num_stored == 0 .or. .not. key % declared()) return
+    slot = slot_of(key, size(this % slot_row))
+    do
+       at = this % slot_row(slot)
+       if (at == 0) return
+       if (this % keys(at) % matches(key)) return
+       slot = mod(slot, size(this % slot_row)) + 1
+    end do
 
   end function position
+
+  pure integer function slot_of(key, num_slots)
+
+    type(token), intent(in) :: key
+    integer    , intent(in) :: num_slots
+
+    ! the high bits of the product with an odd constant, masked to the
+    ! power-of-two slot count
+    slot_of = int(iand(ishft(int(key % serial_number(), int64) * 2654435761_int64, -16), &
+         & int(num_slots - 1, int64))) + 1
+
+  end function slot_of
+
+  ! One row placed into the first empty slot from its key's slot.
+  subroutine place(this, at)
+
+    class(identity_rows), intent(inout) :: this
+    integer             , intent(in)    :: at
+
+    integer :: slot
+
+    slot = slot_of(this % keys(at), size(this % slot_row))
+    do while (this % slot_row(slot) /= 0)
+       slot = mod(slot, size(this % slot_row)) + 1
+    end do
+    this % slot_row(slot) = at
+
+  end subroutine place
+
+  ! Capacity for one more row: the column doubles when full, and the
+  ! slots are rebuilt at twice the rows when they fall below that.
+  subroutine reserve(this, required)
+
+    class(identity_rows), intent(inout) :: this
+    integer             , intent(in)    :: required
+
+    type(token), allocatable :: larger(:)
+    integer :: num_slots, at
+
+    if (.not. allocated(this % keys)) allocate(this % keys(max(required, 8)))
+    if (required > size(this % keys)) then
+       allocate(larger(max(required, 2 * size(this % keys))))
+       larger(1:this % num_stored) = this % keys(1:this % num_stored)
+       call move_alloc(larger, this % keys)
+    end if
+    num_slots = 16
+    if (allocated(this % slot_row)) num_slots = size(this % slot_row)
+    if (allocated(this % slot_row) .and. 2 * required <= num_slots) return
+    do while (num_slots < 2 * required)
+       num_slots = 2 * num_slots
+    end do
+    if (allocated(this % slot_row)) deallocate(this % slot_row)
+    allocate(this % slot_row(num_slots), source=0)
+    do at = 1, this % num_stored
+       call place(this, at)
+    end do
+
+  end subroutine reserve
 
   !===================================================================!
   ! The row of a key. No row stops the program with the caller's
@@ -116,8 +191,7 @@ contains
 
     class(identity_rows), intent(in) :: this
 
-    num_rows = 0
-    if (allocated(this % keys)) num_rows = size(this % keys)
+    num_rows = this % num_stored
 
   end function num_rows
 
@@ -137,9 +211,11 @@ contains
     if (.not. key % declared())     error stop undeclared
     if (this % position(key) /= 0) error stop duplicate
 
-    if (.not. allocated(this % keys)) allocate(this % keys(0))
-    this % keys = [this % keys, key]
-    at = size(this % keys)
+    call reserve(this, this % num_stored + 1)
+    this % num_stored = this % num_stored + 1
+    at = this % num_stored
+    this % keys(at) = key
+    call place(this, at)
 
   end function append
 
@@ -154,11 +230,18 @@ contains
     class(identity_rows), intent(inout) :: this
     integer          , intent(in)    :: at
 
+    integer :: slot
+
     if (at < 1 .or. at > this % num_rows()) then
        error stop 'map_token_rows: a removal requires an existing row'
     end if
 
-    this % keys = [this % keys(1:at - 1), this % keys(at + 1:)]
+    this % keys(at:this % num_stored - 1) = this % keys(at + 1:this % num_stored)
+    this % num_stored = this % num_stored - 1
+    this % slot_row = 0
+    do slot = 1, this % num_stored
+       call place(this, slot)
+    end do
 
   end subroutine remove
 

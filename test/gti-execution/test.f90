@@ -19,8 +19,15 @@ program execution_independence
      integer :: tower_storage(2) = 0, state_storage(2) = 0
   end type execution_result
 
+  ! A containing object: its copy copies the execution it contains.
+  type :: execution_holder
+     type(chain_execution) :: execution
+     integer :: label = 0
+  end type execution_holder
+
   type(march_context) :: context_a, context_b
   type(chain_execution) :: execution_a, execution_b
+  type(chain_execution), allocatable :: twin
   type(execution_result) :: reference_a, reference_b, interleaved_a, interleaved_b, repeated
   type(execution_result) :: stream_a, stream_b, interleaved_stream_a, interleaved_stream_b
   integer :: advances_a, advances_b, order
@@ -30,9 +37,11 @@ program execution_independence
   call configure(context_b, 2)
   call get_command_argument(1, mode)
   select case (trim(mode))
-  case ('assignment')
+  case ('source_twin')
      call initialize_case(execution_a, 1, context_a)
-     execution_b = execution_a
+     allocate(twin, source=execution_a)
+     deallocate(twin)
+     call execution_a % advance()
   case ('advance_uninitialized')
      call execution_a % advance()
   case ('results_incomplete')
@@ -126,7 +135,180 @@ program execution_independence
   call compare_stream(repeated, stream_a, reference_a)
   print *, 'PASS: reinitialization removes an unfinished Taylor expansion'
 
+  call check_copies()
+
 contains
+
+  !-------------------------------------------------------------------!
+  ! Copy semantics. A copy of an execution is an independent execution
+  ! with equal state: it reaches the same results by the same
+  ! arithmetic, so states, derivative tables and Taylor coefficients of
+  ! a copy and its source are equal exactly, and both equal the
+  ! isolated reference within the declared tolerance.
+  !-------------------------------------------------------------------!
+  subroutine check_copies()
+    type(chain_execution) :: source, copy, elements(2)
+    type(chain_execution), allocatable :: first_destroyed, survivor
+    type(execution_holder) :: holder, holder_copy
+    type(execution_result) :: from_source, from_copy, from_elements(2), from_holder
+    type(execution_result) :: streamed_source, streamed_copy
+
+    ! before any advance
+    call initialize_case(source, 1, context_a)
+    copy = source
+    call check(.not. copy % complete(), 'a copy of an unevaluated execution is unevaluated')
+    call finish(source)
+    call check(.not. copy % complete(), 'advancing the source does not advance the copy')
+    call finish(copy)
+    call differentiate(source, 2, from_source)
+    call differentiate(copy, 2, from_copy)
+    call extract(source, from_source)
+    call extract(copy, from_copy)
+    call compare_exact(from_copy, from_source)
+    call compare(from_copy, reference_a)
+    print *, 'PASS: a copy taken before the march reaches the same states and derivatives'
+
+    ! during the march, then alternating progress and reinitialization
+    call initialize_case(source, 1, context_a)
+    call source % advance()
+    copy = source
+    call source % advance()
+    call check(.not. copy % complete(), 'the copy keeps its own progress')
+    call initialize_case(source, 2, context_b)
+    call copy % advance()
+    call source % advance()
+    call finish(copy)
+    call finish(source)
+    call differentiate(copy, 2, from_copy)
+    call extract(copy, from_copy)
+    call compare(from_copy, reference_a)
+    call differentiate(source, 3, from_source)
+    call extract(source, from_source)
+    call compare(from_source, reference_b)
+    print *, 'PASS: a copy taken during the march continues independently of the reinitialized source'
+
+    ! after the march, with derivatives already computed on the source
+    call initialize_case(source, 1, context_a)
+    call finish(source)
+    call differentiate_order(source, 2, 2, forward_pass, from_source)
+    copy = source
+    call differentiate(copy, 2, from_copy)
+    call differentiate(source, 2, from_source)
+    call check(all(from_copy % forward_derivative == from_source % forward_derivative) .and. &
+         & all(from_copy % reverse_derivative == from_source % reverse_derivative), &
+         & 'forward and reverse derivatives of a copy taken after the march equal the source exactly')
+    call extract(copy, from_copy)
+    call extract(source, from_source)
+    call compare_exact(from_copy, from_source)
+    print *, 'PASS: a copy taken after the march has equal forward and reverse derivatives'
+
+    ! the streamed Taylor march, copied during the march
+    call initialize_case(source, 1, context_a, streamed=.true.)
+    call source % advance()
+    copy = source
+    call finish(source)
+    call finish(copy)
+    call extract(source, streamed_source, streamed=.true.)
+    call extract(copy, streamed_copy, streamed=.true.)
+    call check(all(streamed_copy % functional == streamed_source % functional) .and. &
+         & all(streamed_copy % tower_storage == streamed_source % tower_storage) .and. &
+         & all(streamed_copy % state_storage == streamed_source % state_storage), &
+         & 'a streamed copy owns its Taylor coefficients and storage accounting')
+    call compare_stream(streamed_copy, stream_a, reference_a)
+    print *, 'PASS: a copy taken during a streamed Taylor march reaches the same coefficients'
+
+    ! source destroyed first; destination destroyed first
+    allocate(first_destroyed, survivor)
+    call initialize_case(first_destroyed, 1, context_a)
+    call first_destroyed % advance()
+    survivor = first_destroyed
+    deallocate(first_destroyed)
+    call finish(survivor)
+    call differentiate(survivor, 2, from_copy)
+    call extract(survivor, from_copy)
+    call compare(from_copy, reference_a)
+    allocate(first_destroyed)
+    call initialize_case(survivor, 1, context_a)
+    call survivor % advance()
+    first_destroyed = survivor
+    deallocate(first_destroyed)
+    call finish(survivor)
+    call differentiate(survivor, 2, from_source)
+    call extract(survivor, from_source)
+    call compare_exact(from_source, from_copy)
+    deallocate(survivor)
+    print *, 'PASS: the survivor of either destruction order completes the march'
+
+    ! a containing object, array elements and a function result
+    call initialize_case(source, 1, context_a)
+    call source % advance()
+    holder % execution = source
+    holder % label = 1
+    holder_copy = holder
+    elements(1) = source
+    elements(2) = elements(1)
+    copy = execution_copy(source)
+    call finish(source)
+    call finish(holder_copy % execution)
+    call finish(elements(1))
+    call finish(elements(2))
+    call finish(copy)
+    call check(.not. holder % execution % complete(), 'the contained source keeps its own progress')
+    call finish(holder % execution)
+    call differentiate(source, 2, from_source)
+    call differentiate(holder_copy % execution, 2, from_holder)
+    call differentiate(elements(1), 2, from_elements(1))
+    call differentiate(elements(2), 2, from_elements(2))
+    call differentiate(copy, 2, from_copy)
+    call extract(source, from_source)
+    call extract(holder_copy % execution, from_holder)
+    call extract(elements(1), from_elements(1))
+    call extract(elements(2), from_elements(2))
+    call extract(copy, from_copy)
+    call compare_exact(from_holder, from_source)
+    call compare_exact(from_elements(1), from_source)
+    call compare_exact(from_elements(2), from_source)
+    call compare_exact(from_copy, from_source)
+    call compare(from_source, reference_a)
+    print *, 'PASS: copies through a container, array elements and a function result are complete executions'
+
+    ! a source= twin is not an owner: it computes the same results while
+    ! both live, and taking its results releases the one binding both
+    ! carry; run.sh checks that the source is refused after that
+    call initialize_case(source, 1, context_a)
+    call source % advance()
+    allocate(twin, source=source)
+    call finish(twin)
+    call finish(source)
+    call differentiate(twin, 2, from_copy)
+    call differentiate(source, 2, from_source)
+    call check(all(from_copy % forward_derivative == from_source % forward_derivative) .and. &
+         & all(from_copy % reverse_derivative == from_source % reverse_derivative), &
+         & 'a source= twin has exactly the derivatives of its source while both live')
+    call extract(twin, from_copy)
+    call compare(from_copy, reference_a)
+    deallocate(twin)
+    print *, 'PASS: a source= twin computes the same results while both live; run.sh checks its refusal after'
+  end subroutine check_copies
+
+  type(chain_execution) function execution_copy(source)
+    type(chain_execution), intent(in) :: source
+    execution_copy = source
+  end function execution_copy
+
+  subroutine compare_exact(actual, expected)
+    type(execution_result), intent(in) :: actual, expected
+    call check(size(actual % states) == size(expected % states), 'copied trajectory extents agree')
+    call check(all(actual % states == expected % states), 'a copy reaches exactly the states of its source')
+    call check(all(actual % steps == expected % steps) .and. all(actual % times == expected % times), &
+         & 'a copy has exactly the grid of its source')
+    call check(all(shape(actual % forward_derivative) == shape(expected % forward_derivative)) .and. &
+         & all(actual % forward_derivative == expected % forward_derivative), &
+         & 'a copy has exactly the forward derivatives of its source')
+    call check(all(shape(actual % reverse_derivative) == shape(expected % reverse_derivative)) .and. &
+         & all(actual % reverse_derivative == expected % reverse_derivative), &
+         & 'a copy has exactly the reverse derivatives of its source')
+  end subroutine compare_exact
 
   subroutine configure(context, case_index)
     type(march_context), intent(out) :: context

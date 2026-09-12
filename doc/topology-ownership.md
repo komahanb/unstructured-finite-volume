@@ -156,6 +156,11 @@ block local or an allocated allocatable is an owner; a copy by
 assignment is a twin of one binding. The refusal of assignment and
 the finalizers the two types had before are deleted.
 
+An expansion (gti_expansion) holds one hierarchy and one binding and
+is immutable once built, so a copy of an expansion is one more owner
+of both cells with its own copies of every value component; an
+execution copy is described in `doc/gti-execution.md`.
+
 ### The stored graph
 
 The stored graph does not use the primitive. The driver copies

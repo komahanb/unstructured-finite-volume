@@ -17,9 +17,9 @@ fi
 "$compiler" -std=f2023 -fcoarray=single -fbounds-check -O2 -I"$root/lib" -I"$module_dir" -J"$work" \
     "$suite_dir/test.f90" "$module_dir/modules.o" "$root/lib/libufvm.a" -o "$work/run"
 "$work/run"
-for mode in assignment advance_uninitialized results_incomplete derivative_incomplete derivative_streamed; do
+for mode in source_twin advance_uninitialized results_incomplete derivative_incomplete derivative_streamed; do
     case "$mode" in
-        assignment) diagnostic='gti_chain: an execution is not assignable' ;;
+        source_twin) diagnostic="view_level: this storage's hierarchy has been released" ;;
         advance_uninitialized) diagnostic='gti_chain: initialize an execution before advancing it' ;;
         results_incomplete) diagnostic='gti_chain: results require a completed execution' ;;
         derivative_incomplete) diagnostic='gti_chain: a derivative requires a completed primal execution' ;;

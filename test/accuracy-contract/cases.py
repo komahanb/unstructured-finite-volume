@@ -248,6 +248,30 @@ def estimator_case(identifier, row, order, description, families="bdf adams", ma
             "timeout": 120}
 
 
+def field_estimator_case(identifier, row, order, description, families="dirk bdf", max_order=3,
+                         set_name="required", effectivity=True):
+    """Enrichment A in time on the fixed 16 x 16 periodic mesh: the estimate of the
+    energy functional against the semi-discrete mode energy printed by the
+    application (omega_h from the discrete operator, of which the mode is an
+    eigenvector), which isolates the temporal error; effectivity at order 1."""
+    instants = (6, 11, 21, 41)
+    grids = [(f"instants={n}", 0.5 / (n - 1), 256 * n * STATE_COMPONENTS) for n in instants]
+    runs = {f"instants={n}": field_argv(16, n, families, max_order, SPARSE,
+                                        check="mode state functional_error") for n in instants}
+    checks = []
+    if effectivity:
+        checks.append(dict(order_check("effectivity:energy", 1, 1.0, TABLE_DIGITS,
+                                       "effectivity against the semi-discrete mode energy on the fixed "
+                                       "16 x 16 mesh, the temporal part of the error; " + EFFECTIVITY_TEXT),
+                           functional_reference="semi_energy"))
+    checks.append(order_check("estimate:energy", order, 0.0, TABLE_DIGITS,
+                              "the estimate eta converges to zero at the temporal order of E_h - "
+                              "E_semi; " + THETA_TEXT))
+    checks += [TRANSFER, residual_check()]
+    return {"id": identifier, "set": set_name, "description": description, "row": row,
+            "grids": grids, "runs": runs, "checks": checks, "limitation": None, "timeout": 300}
+
+
 def localized_case(identifier, row, order, interval, description, instants=(41, 81, 161),
                    families="bdf", max_order=3, set_name="required"):
     """The step indicators on the coarsened grid (steps merged in pairs inside the
@@ -465,6 +489,11 @@ def required_cases():
                         "E - E_h = 2.5e-3 at h = 0.1 rejects the seed, every step is halved "
                         "once, and the 40-step grid has E - E_h = 6.2e-4 (ratio 1.09)",
                         families="dirk", max_order=2),
+        field_estimator_case("G13-field-estimate-dirk3", "dirk3", 3,
+                             "enrichment A in time on the 16 x 16 periodic mode: Crouzeix DIRK-3 "
+                             "estimated by BDF-4 against the semi-discrete mode energy; "
+                             "effectivity at order 1 (measured 0.38, 0.65, 0.81, 0.90 on 6, 11, "
+                             "21, 41 instants, slopes 0.82, 0.93, 0.95), estimate at order 3"),
         adaptation_case("A02-adaptive-bdf3", "bdf3", 1.0e-4,
                         "BDF-3 from 21 instants at the relative tolerance 1e-4: eta = -3.3e-4 "
                         "rejects the seed; its indicators vary along t, so the marking divides "
@@ -523,6 +552,24 @@ def exploratory_cases():
                        "Newmark beta = gamma = 0 (the explicit Taylor step, order 1) estimated "
                        "by Adams-Moulton 3: effectivity at order 1 (measured 1.02, 1.01, "
                        "1.006, 1.003)", families="newmark", max_order=3),
+        field_estimator_case("X19-field-estimate-bdf3", "bdf3", 3,
+                             "BDF-3 on the 16 x 16 mode by BDF-4: effectivity 0.37, 0.72, 0.88, "
+                             "0.94 (order 1, slopes 1.15, 1.19, 1.10); the estimate's slopes "
+                             "0.99, 2.29, 2.71 are below 3 on these grids (omega_h h from 0.75 "
+                             "to 0.09) and are not declared", set_name="exploratory"),
+        dict(field_estimator_case("X20-field-estimate-dirk2", "dirk2", 2,
+                                  "implicit midpoint on the 16 x 16 mode by BDF-3: effectivity "
+                                  "0.79, 0.94, 0.99, 1.0006 converges faster than O(h) and "
+                                  "crosses 1 at the finest grid, so no order of |I - 1| is "
+                                  "declared; the estimate at order 2", set_name="exploratory",
+                                  effectivity=False)),
+        dict(field_estimator_case("X21-field-estimate-bdf1", "bdf1", 1,
+                                  "BDF-1 on the 16 x 16 mode by BDF-2: effectivity 0.15, 0.45, "
+                                  "0.68, 0.83 (order 1, slopes 0.63, 0.79, 0.89); its estimate "
+                                  "is not monotone on the two coarsest grids and is not declared",
+                                  set_name="exploratory"), checks=[
+                 dict(order_check("effectivity:energy", 1, 1.0, TABLE_DIGITS, EFFECTIVITY_TEXT),
+                      functional_reference="semi_energy"), TRANSFER, residual_check()]),
         estimator_case("X16-estimate-alexander2", "alexander2", 2,
                        "Alexander's L-stable DIRK estimated by BDF-3: effectivity 1.61, 1.36, "
                        "1.19, 1.10 (order 1 in |I - 1|, far from 1 on the coarse grids), "

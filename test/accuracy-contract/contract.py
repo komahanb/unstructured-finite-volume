@@ -32,6 +32,7 @@ from pathlib import Path
 import cases as declared
 
 UNIT_ROUNDOFF = 2.0 ** -53
+STATE_DIGITS = 17
 THETA = 0.25
 DECLARATION_FAILURES = {"below", "exceeds", "unresolved", "not_monotone", "floor_exceeded"}
 ACCEPTED = {"pass", "limitation"}
@@ -106,7 +107,8 @@ def parse_table(text):
                        "f": [number(t) for t in tokens], "status": status,
                        "dissipation": None, "state": None, "blocks": [], "transpose": None,
                        "mode": None, "semi": None, "velocity": None, "pressure": None,
-                       "divergence": None, "functional_error": {}, "indicators": {}}
+                       "divergence": None, "functional_error": {}, "indicators": {},
+                       "mode_energy": None, "semi_energy": None}
             rows[current["label"]] = current
             continue
         if current is None:
@@ -123,6 +125,11 @@ def parse_table(text):
         if m:
             current["blocks"].append({"block": int(m.group(1)), "norm": number(m.group(2)),
                                       "initial": number(m.group(3)), "converged": m.group(4) == "T"})
+            continue
+        m = re.match(r"^      energy of the mode over the horizon: exact\s+(\S+)\s+semi-discrete\s+(\S+)", line)
+        if m:
+            current["mode_energy"] = number(m.group(1))
+            current["semi_energy"] = number(m.group(2))
             continue
         m = re.match(r"^      functional error, (\S+): estimate\s+(\S+) residual\s+(\S+) quadrature\s+(\S+)"
                      r" scale\s+(\S+) transfer\s+(\S+) enriched (\S+)", line)
@@ -200,6 +207,15 @@ def parse_order_demo(text):
 PARSERS = {"table": parse_table, "sensitivity": parse_sensitivity, "order_demo": parse_order_demo}
 
 
+def functional_reference(row, word, check=None):
+    """The exact value F of the functional a word names: the declared analytic
+    reference, or the row quantity the check names as functional_reference (the
+    semi-discrete mode energy of a field run)."""
+    if check and check.get("functional_reference"):
+        return row.get(check["functional_reference"])
+    return declared.FUNCTIONAL_REFERENCES[word]
+
+
 def functional_value(row, word):
     """The value F_h of the functional a configured word names, or None."""
     if word == "energy":
@@ -235,9 +251,10 @@ def quantity_of(row, record, quantity, check=None, paired=None):
             return estimate[kind]
         if kind == "effectivity":
             value = functional_value(row, word)
-            if value is None:
+            reference = functional_reference(row, word, check)
+            if value is None or reference is None:
                 return None
-            error = declared.FUNCTIONAL_REFERENCES[word] - value
+            error = reference - value
             return estimate["estimate"] / error if error != 0.0 else math.inf
         if kind == "localization":
             if paired is None or check is None:
@@ -328,11 +345,15 @@ def resolution_of(check, row, value):
         word = quantity.split(":", 1)[1]
         estimate = row["functional_error"][word]["estimate"]
         f = functional_value(row, word)
-        error = abs(declared.FUNCTIONAL_REFERENCES[word] - f)
+        reference = functional_reference(row, word, check)
+        error = abs(reference - f)
         if error == 0.0:
             return math.inf
+        # a reference read from the record carries its own print resolution
         return (print_resolution(estimate, check["digits"])
-                + abs(value) * print_resolution(f, check["digits"])) / error
+                + abs(value) * (print_resolution(f, check["digits"])
+                                + (print_resolution(reference, STATE_DIGITS)
+                                   if check.get("functional_reference") else 0.0))) / error
     return print_resolution(value, check["digits"])
 
 

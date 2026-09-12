@@ -4735,11 +4735,27 @@ contains
          & '   one boundary ', sqrt(err(1) / max(norm(1), tiny(1.0_dp))), &
          & '   corner ',   sqrt(err(2) / max(norm(2), tiny(1.0_dp)))
   end subroutine against_the_laplacian
-  subroutine against_the_mode(space, kappa, degree, design, t_last, x, degrees)
+  !===================================================================!
+  ! The marched field at the last instant against the separated mode
+  ! shape(x) cos(omega t), omega^2 = 1 + kappa |k|^2, and against the
+  ! semi-discrete mode shape(x) cos(omega_h t), omega_h^2 = 1 - <shape,
+  ! balance(shape)> / <shape, shape>_vol, the mode being an eigenvector
+  ! of the discrete operator on the uniform periodic box. With
+  ! with_energy the energy of each mode over [0, t_last],
+  !
+  !    E = M/2 [ T (1 + omega^2) / 2 + (1 - omega^2) sin(2 omega T) / (4 omega) ],
+  !    M = sum_i vol_i shape_i^2,
+  !
+  ! is printed at full precision: the semi-discrete value is the
+  ! reference of the temporal functional error on a fixed mesh
+  ! (test/accuracy-contract, effectivity of the field estimate).
+  !===================================================================!
+  subroutine against_the_mode(space, kappa, degree, design, t_last, x, degrees, with_energy)
     type(spatial_domain), intent(in) :: space
     real(dp)  , intent(in) :: kappa, design, t_last, x(:)
     integer   , intent(in) :: degree, degrees
-    real(dp) :: omega, omega_h, exact, semi, e_exact, e_semi, area, mode
+    logical   , intent(in), optional :: with_energy
+    real(dp) :: omega, omega_h, exact, semi, e_exact, e_semi, area, mode, mass
     real(dp), allocatable :: shape(:), balanced(:)
     integer  :: i
     if (.not. box_shaped(space) .or. design /= 0.0_dp) return
@@ -4761,7 +4777,17 @@ contains
     write(*,'(a,es12.3,a,es12.3,a,f10.6,a,f10.6)') &
          & '      error at the last instant, compared with the mode ', sqrt(e_exact / area), &
          & '   semi-discrete ', sqrt(e_semi / area), '   omega ', omega, '   omega_h ', omega_h
+    if (.not. present(with_energy)) return
+    if (.not. with_energy) return
+    mass = dot_product(shape, space % volume * shape)
+    write(*,'(a,es23.16,a,es23.16)') '      energy of the mode over the horizon: exact ', &
+         & mode_energy(mass, omega, t_last), '   semi-discrete ', mode_energy(mass, omega_h, t_last)
   end subroutine against_the_mode
+  pure real(dp) function mode_energy(mass, omega, t) result(e)
+    real(dp), intent(in) :: mass, omega, t
+    e = mass / 2.0_dp * (t * (1.0_dp + omega ** 2) / 2.0_dp &
+         & + (1.0_dp - omega ** 2) * sin(2.0_dp * omega * t) / (4.0_dp * omega))
+  end function mode_energy
   !===================================================================!
   ! One instant written: every component of every state field at
   ! every cell, named by its field, its coordinate and its order:
@@ -11655,7 +11681,8 @@ contains
        end if
        if (lists(cfg % check, 'mode')) then
           call against_the_mode(space, cfg % diffusion, cfg % spatial_order, &
-               & cfg % design, t(cfg % instants), instant_components(chain, cfg % instants), state_width(cfg))
+               & cfg % design, t(cfg % instants), instant_components(chain, cfg % instants), state_width(cfg), &
+               & with_energy=lists(cfg % check, 'functional_error'))
        end if
        if (lists(cfg % check, 'exact')) then
           call against_the_exact_flow(space, physics_of(cfg), t(cfg % instants), cfg % design, &

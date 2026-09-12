@@ -1022,8 +1022,19 @@ indicators eta_k (one per step, summing to eta) localize the error: on
 the grid `coarsened` the sum of |eta_k| over the merged steps against the
 same sum on the uniform grid tends to 2^p (G05, log2 measured 2.50, 2.77,
 2.89 for bdf3 at 41, 81, 161 against 3). A chain whose block is BDF-2 is
-a heuristic for the same reason (X17, X18). A derivative functional
-(dF/dnu) is not estimated.
+a heuristic for the same reason (X17, X18). On a spatial field the same
+enrichment in time estimates the temporal part of the error on the fixed
+mesh: against the semi-discrete mode energy (printed with the `mode`
+check under `functional_error`, omega_h from the discrete operator, of
+which the mode is an eigenvector on the uniform periodic box), dirk3 by
+bdf4 on the 16 x 16 mode reaches effectivities 0.38, 0.65, 0.81, 0.90 on
+6, 11, 21, 41 instants (order 1; G13) and bdf3 by bdf4 0.37, 0.72, 0.88,
+0.94 (X19); the spatial part of the error (mesh n -> 2n, enrichment B in
+space) is not estimated: the prolongation of cell values onto the refined
+mesh must be exact to O(H^6) for the fine Laplacian of P Q_h to fall
+below the O(H^2) truncation error, and no such tensor interpolant is
+implemented; a localized spatial error is not supported either (uniform
+periodic box only). A derivative functional (dF/dnu) is not estimated.
 
 **The solvers.** Newton drives every block; `linear_solver` is
 `direct` or `iterative` (GMRES), refined by `assembly`, `storage`,

@@ -356,6 +356,12 @@ application prints the estimate with `check = functional_error` and the
 indicators with `indicators`; `test/accuracy-contract` measures the
 effectivity and the localization (G01-G12, X13-X18).
 
+On a spatial field the same enrichment in time estimates the temporal
+error against the semi-discrete mode energy on the fixed mesh (G13);
+enrichment in space (a refined mesh with a prolongation exact to O(H^6))
+and a localized spatial error are not implemented and are declared
+unsupported.
+
 `functional_error_partition` drives an adaptive grid by the estimate:
 accept at |eta| <= tol S, otherwise divide every step with |eta_k| >
 tol S / N into ceiling(h_k / h_k') equal steps, h_k' = h_k (tol S /

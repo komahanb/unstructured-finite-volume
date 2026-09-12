@@ -664,10 +664,10 @@ contains
   end subroutine check_taylor_newmark_datum
 
   !===================================================================!
-  ! The Crouzeix two-stage step at two degrees: ten edges, the
+  ! The Crouzeix two-stage step at two degrees: eight edges, the
   ! instant behind first in every row, weights [1, h g], [1, h (1 -
-  ! 2 g), h g], [1, h/2, h/2] below the top degree and [1/2, 1/2]
-  ! for the top degree at the instant ahead.
+  ! 2 g), h g], [1, h/2, h/2], all below the top degree; the top
+  ! degree at the instant ahead is the law's row, not the family's.
   !===================================================================!
 
   subroutine check_dirk_step_connectivity(nfail)
@@ -679,28 +679,28 @@ contains
     real(dp), allocatable :: w(:)
     real(dp), parameter :: h = 0.3_dp
     real(dp) :: g
-    integer, parameter :: tails(10) = [1, 2, 1, 2, 3, 1, 2, 3, 2, 3]
-    integer, parameter :: heads(10) = [2, 2, 3, 3, 3, 4, 4, 4, 4, 4]
-    integer, parameter :: tail_degrees(10) = [0, 1, 0, 1, 1, 0, 1, 1, 1, 1]
-    integer, parameter :: head_degrees(10) = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1]
+    integer, parameter :: tails(8) = [1, 2, 1, 2, 3, 1, 2, 3]
+    integer, parameter :: heads(8) = [2, 2, 3, 3, 3, 4, 4, 4]
+    integer, parameter :: tail_degrees(8) = [0, 1, 0, 1, 1, 0, 1, 1]
+    integer, parameter :: head_degrees(8) = [0, 0, 0, 0, 0, 0, 0, 0]
     integer :: e
 
     g = (3.0_dp + sqrt(3.0_dp)) / 6.0_dp
     scheme = crouzeix_two_stage()
     edges  = scheme % stage_connectivity(2)
-    call report(edges % num_vertices() .eq. 4 .and. edges % num_edges() .eq. 10 .and. &
-         &      all([(edges % edge_tail(e) .eq. tails(e), e = 1, 10)]) .and. &
-         &      all([(edges % edge_head(e) .eq. heads(e), e = 1, 10)]) .and. &
-         &      all([(edges % tail_degree(e) .eq. tail_degrees(e), e = 1, 10)]) .and. &
-         &      all([(edges % head_degree(e) .eq. head_degrees(e), e = 1, 10)]), &
+    call report(edges % num_vertices() .eq. 4 .and. edges % num_edges() .eq. 8 .and. &
+         &      all([(edges % edge_tail(e) .eq. tails(e), e = 1, 8)]) .and. &
+         &      all([(edges % edge_head(e) .eq. heads(e), e = 1, 8)]) .and. &
+         &      all([(edges % tail_degree(e) .eq. tail_degrees(e), e = 1, 8)]) .and. &
+         &      all([(edges % head_degree(e) .eq. head_degrees(e), e = 1, 8)]), &
          & "crouzeix two-stage at two degrees: stage 1 reads the instant " // &
          & "behind and itself, stage 2 both stages, the instant ahead every " // &
-         & "stage; the instant behind is first in each row", nfail)
+         & "stage, all below the top degree; the instant behind is first in each row", nfail)
     call weights_of(scheme_weight(scheme), edges, [(h, e = 1, 4)], w)
     call report(maxval(abs(w - [1.0_dp, h * g, 1.0_dp, h * (1.0_dp - 2.0_dp * g), h * g, &
-         &                     1.0_dp, h / 2.0_dp, h / 2.0_dp, 0.5_dp, 0.5_dp])) .lt. TOL, &
-         & "with weights 1 on the instant behind, h a_ij on the stages, " // &
-         & "h b_j into the instant ahead and b_j at the top degree", nfail)
+         &                     1.0_dp, h / 2.0_dp, h / 2.0_dp])) .lt. TOL, &
+         & "with weights 1 on the instant behind, h a_ij on the stages and " // &
+         & "h b_j into the instant ahead; the top degree has no row of the family", nfail)
 
   end subroutine check_dirk_step_connectivity
 

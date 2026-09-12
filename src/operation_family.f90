@@ -385,9 +385,9 @@ contains
   !
   !    Q_i = q_(k-1) + h sum_(j<=i) a_ij Q'_j ,  q_k = q_(k-1) + h sum_j b_j Q'_j .
   !
-  ! At the top degree the instant ahead reads that degree itself at
-  ! every stage with the weights b. Degree outer, stage inner; within
-  ! a row the instant behind precedes the stages.
+  ! The top degree has no row of the family: at every stage and at
+  ! the instant ahead it is the law's own row. Degree outer, stage
+  ! inner; within a row the instant behind precedes the stages.
   !===================================================================!
 
   function family_stage_connectivity(this, nd) result(connectivity)
@@ -400,12 +400,11 @@ contains
     integer :: s, d, i, j, at
 
     s  = size(this % b)
-    at = (nd - 1) * (s * (s + 1) / 2 + 2 * s + 1) + s
+    at = (nd - 1) * (s * (s + 1) / 2 + 2 * s + 1)
     allocate(tails(at), heads(at), tail_degree(at), head_degree(at))
     at = 0
-    do d = 0, nd - 1
+    do d = 0, nd - 2
        do i = 1, s
-          if (d == nd - 1) cycle
           call behind(1 + i)
           do j = 1, i
              at = at + 1
@@ -415,12 +414,12 @@ contains
              head_degree(at) = d
           end do
        end do
-       if (d < nd - 1) call behind(2 + s)
+       call behind(2 + s)
        do j = 1, s
           at = at + 1
           tails(at) = 1 + j
           heads(at) = 2 + s
-          tail_degree(at) = min(d + 1, nd - 1)
+          tail_degree(at) = d + 1
           head_degree(at) = d
        end do
     end do
@@ -528,12 +527,15 @@ contains
        if (head == 1 .or. tail == 2 + s) then
           error stop 'operation_family: an edge runs from the initial instant or a stage into a later vertex'
        end if
-       if (tail_degree /= head_degree .and. tail_degree /= head_degree + 1) then
-          error stop 'operation_family: a source is the constraint''s degree or one above'
-       end if
        if (tail == 1) then
+          if (tail_degree /= head_degree) then
+             error stop 'operation_family: the instant behind is read at the constraint''s degree'
+          end if
           c = derivative_terms(1.0_dp, dt(head))
           return
+       end if
+       if (tail_degree /= head_degree + 1) then
+          error stop 'operation_family: a stage is read at the degree above the constraint''s'
        end if
        j = tail - 1
        if (head == 2 + s) then

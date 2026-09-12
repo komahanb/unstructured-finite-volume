@@ -9,11 +9,9 @@
 ! (`at`), one rule per row it governs (`primary`), and each rule's
 ! result is added into the summed stencils on its row. A Lagrangian
 ! with k multipliers governs k rows, its stationarity in the j-th
-! multiplier on primary(j); a plain rule governs one. A rule may
-! govern a subset of the points (`governs`): a staged march places a
-! differential rule at the stages alone and an algebraic rule at the
-! arriving instant too. A row named fixed instead reads
-! x(row) - fixed(row): the identity, not the physics.
+! multiplier on primary(j); a plain rule governs one, at every point.
+! A row named fixed instead reads x(row) - fixed(row): the identity,
+! not the physics.
 !
 ! apply, explicit_tangent and partial_action are composed once here
 ! from the two stencils' own apply/explicit_tangent/partial_action
@@ -74,7 +72,6 @@ module operation_residual
      integer                , private :: connected_degrees = 0
      integer                , private :: unknowns = 0
      integer , allocatable, private :: primary(:)
-     logical , allocatable, private :: governs(:,:)
 
    contains
 
@@ -97,7 +94,6 @@ module operation_residual
      procedure :: primary_row
      procedure :: num_rules
      procedure :: rule_of
-     procedure :: governs_at
      procedure :: num_points
      procedure :: points_at
      procedure :: rule
@@ -133,7 +129,7 @@ contains
   !===================================================================!
 
   function create(primary_law, rule, at, unknowns, degrees, primary, fixed_rows, fixed, &
-       & connected_law, governs) result(this)
+       & connected_law) result(this)
 
     type(stencil)         , intent(in) :: primary_law
     type(expression)      , intent(in) :: rule
@@ -141,7 +137,6 @@ contains
     integer               , intent(in) :: fixed_rows(:)
     real(dp)              , intent(in) :: fixed(:)
     type(stencil)         , intent(in), optional :: connected_law
-    logical               , intent(in), optional :: governs(:,:)
     type(residual_operator) :: this
     type(continuous_domain) :: domain
     integer :: j
@@ -177,13 +172,6 @@ contains
        end do
     else
        this % rules = [rule]
-    end if
-    allocate(this % governs(size(at), size(this % rules)), source=.true.)
-    if (present(governs)) then
-       if (any(shape(governs) /= shape(this % governs))) then
-          error stop 'operation_residual: one governing flag per point and rule'
-       end if
-       this % governs = governs
     end if
     this % at      = at
     this % unknowns = unknowns
@@ -256,12 +244,6 @@ contains
     type(expression) :: law
     law = this % rules(j)
   end function rule_of
-
-  pure logical function governs_at(this, p, j)
-    class(residual_operator), intent(in) :: this
-    integer                 , intent(in) :: p, j
-    governs_at = this % governs(p, j)
-  end function governs_at
 
   pure integer function num_points(this)
     class(residual_operator), intent(in) :: this
@@ -492,7 +474,6 @@ contains
     integer :: p, j
     do j = 1, size(this % rules)
        do p = 1, size(this % at)
-          if (.not. this % governs(p, j)) cycle
           r(this % at(p) + this % primary(j) + 1) = &
                & r(this % at(p) + this % primary(j) + 1) + governing(p, j)
        end do
@@ -726,7 +707,6 @@ contains
                & [variation(this % physics % argument(1), direction)], out)
           call out % real_vector(column)
           do p = 1, npts
-             if (.not. this % governs(p, j)) cycle
              if (is_fixed(this % at(p) + this % primary(j) + 1)) cycle
              num_triples    = num_triples + 1
              r(num_triples) = this % at(p) + this % primary(j) + 1
@@ -873,7 +853,6 @@ contains
     type(stencil) :: derived
     integer , allocatable :: sub_of(:), at(:), fixed_rows(:), points(:)
     real(dp), allocatable :: fixed(:)
-    logical , allocatable :: governs(:,:)
     integer :: e, p, npts, ncar
 
     allocate(sub_of(this % unknowns), source=0)
@@ -883,10 +862,9 @@ contains
 
     points = this % selected_points(free)
     npts   = size(points)
-    allocate(at(npts), governs(npts, size(this % rules)))
+    allocate(at(npts))
     do p = 1, npts
-       at(p)         = sub_of(this % at(points(p)) + 1) - 1
-       governs(p, :) = this % governs(points(p), :)
+       at(p) = sub_of(this % at(points(p)) + 1) - 1
     end do
 
     ncar = 0
@@ -902,11 +880,10 @@ contains
     if (allocated(this % connected_law)) then
        secondary = this % connected_law % restricted(free, values)
        sub = residual_operator(derived, this % physics, at, size(free), &
-            & this % degrees, this % primary, fixed_rows(1:ncar), fixed(1:ncar), connected_law=secondary, &
-            & governs=governs)
+            & this % degrees, this % primary, fixed_rows(1:ncar), fixed(1:ncar), connected_law=secondary)
     else
        sub = residual_operator(derived, this % physics, at, size(free), &
-            & this % degrees, this % primary, fixed_rows(1:ncar), fixed(1:ncar), governs=governs)
+            & this % degrees, this % primary, fixed_rows(1:ncar), fixed(1:ncar))
     end if
 
   end function constrain

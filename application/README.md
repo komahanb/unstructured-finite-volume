@@ -822,8 +822,10 @@ fields, governs k state fields, its first k, one rule each: the
 stationarity in the j-th multiplier occupies the j-th field's primary
 row. Each field stores its own jet along the instants, to the degree
 listed for it, and a field of degree zero is algebraic: its rule reads
-no time derivative, the family ties nothing to it, and a staged family
-evaluates it at the arriving instant as well as at the stages. The
+no time derivative and the family ties nothing to it. A staged family
+evaluates every rule at the arriving instant as well as at the stages:
+the family states the degrees below the top there, and the top degree
+is the law's own row. The
 initial state lists the first field's components below its highest;
 the highest of every field is solved together, one small Newton per
 node. `physics = vanderpol_algebraic` states the same equation with

@@ -2342,17 +2342,16 @@ module gti_block
   end interface block_residual
 contains
   function create(derived, physics, at, unknowns, degrees, primary, fixed_rows, fixed, &
-       & spatial_discretization_stencil, governs) result(this)
+       & spatial_discretization_stencil) result(this)
     type(stencil)         , intent(in) :: derived
     type(expression)      , intent(in) :: physics
     integer               , intent(in) :: at(:), unknowns, degrees, primary(:)
     integer               , intent(in) :: fixed_rows(:)
     real(dp)              , intent(in) :: fixed(:)
     type(stencil)         , intent(in), optional :: spatial_discretization_stencil
-    logical               , intent(in), optional :: governs(:,:)
     type(block_residual) :: this
     this % residual_operator = residual_operator(derived, physics, at, unknowns, degrees, primary, &
-         & fixed_rows, fixed, spatial_discretization_stencil, governs)
+         & fixed_rows, fixed, spatial_discretization_stencil)
   end function create
   subroutine placed_on(this, tower, node)
     class(block_residual), intent(inout)     :: this
@@ -3195,7 +3194,7 @@ contains
     integer , allocatable :: r(:), c(:), table(:,:), rs(:), cs(:)
     real(dp), allocatable :: dt(:), w(:,:), seeds(:,:), spatial_weights(:), ws(:), appended(:,:), values(:)
     integer :: ns, gauge_row
-    logical , allocatable :: point(:), arriving(:), governs(:,:)
+    logical , allocatable :: point(:)
     integer :: m, nd, stride, width, n, s, k, j, g, moments, i, d, count, npts, ncar, f
     logical :: staged
     ! nd is the marching coordinate's degree count, which the scheme
@@ -3224,10 +3223,10 @@ contains
        members(k) = merge(level_num_members(level_member(block, k)), 1, staged)
     end do
     moments = sum(members)
-    allocate(slice_of(moments), member_of(moments), point(moments), arriving(moments))
-    ! a staged family evaluates a differential rule at the stages
-    ! alone; an algebraic rule, one of a field without a derivative,
-    ! is evaluated at the arriving instant as well
+    allocate(slice_of(moments), member_of(moments), point(moments))
+    ! every rule is evaluated at every stage and at every arriving
+    ! instant of a staged block; the instant behind a staged block is
+    ! history, not a point
     g = 0
     do k = 1, n
        do j = 1, members(k)
@@ -3235,12 +3234,11 @@ contains
           slice_of(g)  = k
           member_of(g) = j
           point(g)     = .not. staged .or. k > 1
-          arriving(g)  = staged .and. k > 1 .and. j > s
        end do
     end do
     count = moments * width
     below => null()
-    allocate(fixed_rows(count), at(moments * m), governs(moments * m, layout % fields))
+    allocate(fixed_rows(count), at(moments * m))
     ncar = 0
     npts = 0
     do g = 1, moments
@@ -3263,9 +3261,6 @@ contains
           do i = 1, m
              npts = npts + 1
              at(npts) = (g - 1) * width + (i - 1) * stride
-             do f = 1, layout % fields
-                governs(npts, f) = layout % count(f) < 2 .or. .not. arriving(g)
-             end do
           end do
           component => level_member(moment_node, layout % primary_row(scheme, 1) + 1)
           if (level_couples(component) .and. .not. associated(below)) then
@@ -3318,7 +3313,7 @@ contains
     end if
     rows = block_residual(derived_constraints(r, c, -w(:, 0), moments * width, 'time discretization stencil'), &
          & physics, at(1:npts), moments * width, stride, layout % primary_rows(scheme), &
-         & fixed_rows(1:ncar), values, governs=governs(1:npts, :))
+         & fixed_rows(1:ncar), values)
     call rows % placed_on(tower, block)
     call rows % with_connectivity(connectivity)
     if (ns > 0) call rows % with_spatial_rows(rs, cs, ws)
@@ -6362,7 +6357,6 @@ contains
     end do
     do j = 1, chain(b) % rows % num_rules()
        do p = 1, size(at)
-          if (.not. chain(b) % rows % governs_at(p, j)) cycle
           row = at(p) + chain(b) % rows % primary_row(j) + 1
           if (fixed_rows(row)) cycle
           r(row) = r(row) + coefficient(point_terms(chain(b) % rows % rule_of(j), stride, design, at(p), n, 0, &
@@ -6497,7 +6491,6 @@ contains
     end do
     do j = 1, chain(b) % rows % num_rules()
        do p = 1, size(at)
-          if (.not. chain(b) % rows % governs_at(p, j)) cycle
           row = at(p) + chain(b) % rows % primary_row(j) + 1
           if (fixed_rows(row)) cycle
           t = point_terms(chain(b) % rows % rule_of(j), stride, design, at(p), n, stride, state_seed, nu_seed)
@@ -6581,7 +6574,6 @@ contains
     end do
     do jj = 1, chain(b) % rows % num_rules()
        do p = 1, size(at)
-          if (.not. chain(b) % rows % governs_at(p, jj)) cycle
           row = at(p) + chain(b) % rows % primary_row(jj) + 1
           if (fixed_rows(row)) cycle
           residual(row) = residual(row) &

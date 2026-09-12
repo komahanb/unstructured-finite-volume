@@ -115,8 +115,10 @@ admitted numerical reference and the rejection case R03 a refused one.
   rather than from the converged flag.
 - Physics residual: q'' + q at the last instant is a row of the solved
   residual at nu = 0, bounded by tolerance x initial norm + gamma_N |q|.
-  Declared for multistep and Newmark rows; the DIRK rows violate it at
-  first order (limitation L05).
+  Declared for every temporal case: the law governs the top degree at
+  every evaluation point, the arriving instant of a staged step included
+  (R07 slice 3; before it the DIRK rows stated the tableau's average
+  acceleration there, L05).
 - Functional quadrature: a functional over one step is integrated on the
   instants the family's rows read (Adams and BDF: `min(order, k)` instants;
   Newmark: the two instants k - 1 and k, the trapezoidal rule), so the
@@ -129,8 +131,16 @@ admitted numerical reference and the rejection case R03 a refused one.
 
 ## Declared limitations at 3fb9c97
 
-- L01: Adams-Moulton 4 design derivatives and last-instant state converge
-  at order 3 while its functional reaches 4.
+- L01 (resolved by R07 slice 3): Adams-Moulton 4 design derivatives and
+  last-instant state converged at order 3 while its functional reached 4,
+  because the Adams velocity row reads q'' at the history instants, which
+  the staged startup block closed by the tableau's average acceleration
+  (L05) with the error (h_f/2) q''' = O(h^3) at t = O(h). With the law at
+  the arriving instant the case is required in T10 at order 4 (measured
+  4.08, 4.02, 3.99, 3.98); the energy functional then reaches the 12-digit
+  print floor before the finest grid and is stated at its measured order 5
+  over the three coarsest grids (X12), and the invariant drift is at order 5
+  (T13, measured 4.99), one above the scheme as for BDF-4 and DIRK-4.
 - L02 (resolved by R07 slice 2): every Newmark scheme's design derivatives
   converged at first order because `family_step_quadrature` integrated the
   functionals of an unstaged one-step family by the right-endpoint rectangle
@@ -138,12 +148,22 @@ admitted numerical reference and the rejection case R03 a refused one.
   read restores order 2. The case is now required as T11 (beta = 1/4,
   gamma = 1/2: dE, dD, q, q' at order 2, E and the invariant conserved) and
   T12 (Fox-Goodwin: E, dE, dD, q' at order 2), the former exploratory X03.
-- L03: Adams-Moulton 3 and 4 on the periodic field converge at first order
-  in time while the same schemes reach their order on the ODE.
+- L03 (resolved by R07 slice 3): Adams-Moulton 3 on the periodic field
+  converged at first order in time because its history instants are the
+  staged startup's arriving instants, whose top degree q' was the
+  tableau's average (h_f/2) q'' = O(h) from the law, and q''(0) =
+  -omega^2 on the mode; with the law at the arriving instant the case is
+  required as F05 at order 3 (measured 3.11; errors 1.25e-4, 1.37e-5,
+  1.53e-6, 1.78e-7 against 6.5e-2 .. 9.3e-3 before).
 - L04: the form-degree-4 spatial operator converges at order 2.2 on the
   periodic mode, not 4.
-- L05: the DIRK jet at an arriving instant does not satisfy the law:
-  |q'' + q| = 0.46 h at the last instant.
+- L05 (resolved by R07 slice 3): the DIRK jet at an arriving instant did
+  not satisfy the law, |q'' + q| = (1 - sum_j b_j c_j) h q'(T) = 0.46 h at
+  the last instant, because the family's stage connectivity stated
+  q''_k = sum_j b_j Q''_j at the top degree and the block withheld the law
+  there. The family now states no top-degree row at the arriving instant
+  and the law governs it; the law floor is checked in every temporal case
+  (0 to 17 digits on every grid of every DIRK row).
 
 ## Summary record
 

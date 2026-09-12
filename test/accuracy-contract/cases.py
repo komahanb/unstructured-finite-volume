@@ -106,8 +106,7 @@ CHECK_DIGITS = 4
 
 
 def temporal_case(identifier, row, order, quantities, description, chain=None,
-                  limitation=None, argv_extra=(), instants=INSTANTS, set_name="required",
-                  law=True):
+                  limitation=None, argv_extra=(), instants=INSTANTS, set_name="required"):
     grids = ode_grids(instants)
     if chain:
         runs = {label: ode_argv(n, families="bdf", max_order=1, chain=chain, extra=argv_extra)
@@ -146,7 +145,7 @@ def temporal_case(identifier, row, order, quantities, description, chain=None,
                                       "resolution + gamma_N / 2", scale=INVARIANT_REF))
         else:
             raise ValueError(quantity)
-    checks += ([LAW] if law else []) + [TRANSPOSE, residual_check()]
+    checks += [LAW, TRANSPOSE, residual_check()]
     return {"id": identifier, "set": set_name, "description": description, "row": row,
             "grids": grids, "runs": runs, "checks": checks, "limitation": limitation,
             "timeout": 120}
@@ -222,13 +221,12 @@ def sensitivity_case():
 def required_cases():
     cases = [
         temporal_case("T01-dirk2", "dirk2", 2, ["E", "dE", "dD", "q", "qd", "invariant_conserved"],
-                      "implicit midpoint, one stage, order 2; conserves the quadratic invariant",
-                      law=False),
+                      "implicit midpoint, one stage, order 2; conserves the quadratic invariant"),
         temporal_case("T02-dirk3", "dirk3", 3, ["E", "dE", "dD", "q", "qd", "invariant"],
-                      "Crouzeix two-stage DIRK, order 3", law=False),
+                      "Crouzeix two-stage DIRK, order 3"),
         temporal_case("T03-dirk4", "dirk4", 4, ["E", "dE", "dD", "q", "qd"],
                       "Crouzeix three-stage DIRK, order 4; its invariant drifts at order 5 "
-                      "and is not declared", law=False),
+                      "and is not declared"),
         temporal_case("T04-bdf1", "bdf1", 1, ["E", "dD", "q", "qd", "invariant"],
                       "BDF-1, order 1; dE/dnu changes sign inside these grids and is not "
                       "declared"),
@@ -247,8 +245,14 @@ def required_cases():
                       "linear oscillator is conserved exactly"),
         temporal_case("T09-adams3", "adams3", 3, ["E", "dE", "dD", "q", "qd", "invariant"],
                       "Adams-Moulton 3, order 3"),
-        temporal_case("T10-adams4", "adams4", 4, ["E", "invariant"],
-                      "Adams-Moulton 4, order 4 in the functional and the invariant drift"),
+        temporal_case("T10-adams4", "adams4", 4, ["dE", "dD", "q", "qd"],
+                      "Adams-Moulton 4, order 4 in the design derivatives and the state; its "
+                      "energy functional reaches the print resolution before the finest grid "
+                      "(X12 states its order 5 above the floor) and its invariant drifts at "
+                      "order 5 (T13)"),
+        temporal_case("T13-adams4-invariant-drift", "adams4", 5, ["invariant"],
+                      "Adams-Moulton 4 invariant drift on the linear oscillator: order 5, one "
+                      "above the scheme, as for BDF-4 and DIRK-4"),
         temporal_case("T11-newmark2", "newmark2", 2, ["dE", "dD", "q", "qd", "conserved",
                                                       "invariant_conserved"],
                       "Newmark beta = 1/4, gamma = 1/2 (average acceleration), order 2: the "
@@ -264,11 +268,11 @@ def required_cases():
         temporal_case("C01-dirk3-bdf2", "dirk3-bdf2", 2, ["dE", "dD"],
                       "chain DIRK-3 then BDF-2: order min(3, 2) = 2", chain="dirk:3 bdf:2"),
         temporal_case("C02-bdf2-dirk3", "bdf2-dirk3", 2, ["dE", "dD"],
-                      "chain BDF-2 then DIRK-3: order 2", chain="bdf:2 dirk:3", law=False),
+                      "chain BDF-2 then DIRK-3: order 2", chain="bdf:2 dirk:3"),
         temporal_case("C03-adams3-dirk4", "adams3-dirk4", 3, ["E", "dD"],
                       "chain Adams-3 then DIRK-4: order 3; dE/dnu's next term exceeds the "
                       "declared quarter at these grids and is not declared",
-                      chain="adams:3 dirk:4", law=False),
+                      chain="adams:3 dirk:4"),
         temporal_case("C04-dirk4-bdf4-adams4", "dirk4-bdf4-adams4", 4, ["E", "dD"],
                       "chain DIRK-4, BDF-4, Adams-4: order 4", chain="dirk:4 bdf:4 adams:4"),
         temporal_case("C05-dirk2-adams2-bdf2", "dirk2-adams2-bdf2", 2, ["dE", "dD"],
@@ -277,7 +281,7 @@ def required_cases():
                       "two state fields q and y = q^2 tied algebraically, DIRK-3",
                       argv_extra=("--physics=vanderpol_algebraic", "--families=dirk",
                                   "--max_discretization_order=3"),
-                      instants=(21, 41, 81, 161), law=False),
+                      instants=(21, 41, 81, 161)),
         temporal_case("M02-algebraic-bdf2", "bdf2", 2, ["dE", "dD", "q", "qd"],
                       "two state fields q and y = q^2 tied algebraically, BDF-2",
                       argv_extra=("--physics=vanderpol_algebraic", "--families=bdf",
@@ -290,6 +294,9 @@ def required_cases():
                             "temporal order on the 16 x 16 periodic mode, BDF-2"),
         field_temporal_case("F04-field-bdf4", "bdf4", 4,
                             "temporal order on the 16 x 16 periodic mode, BDF-4"),
+        field_temporal_case("F05-field-adams3", "adams3", 3,
+                            "temporal order on the 16 x 16 periodic mode, Adams-Moulton 3 "
+                            "from the staged startup", families="adams", max_order=3),
         spatial_case("S01-operator-degree2", "bdf1", "operator", 2,
                      "discrete Laplacian of the mode, form degree 2, cells 8, 16, 32",
                      instants=3, families="bdf", max_order=1, extra=()),
@@ -300,22 +307,8 @@ def required_cases():
                           "asymptotic regime is not verified by a second pair"),
         sensitivity_case(),
     ]
-    # declared limitations: measured below their theoretical order at 3fb9c97
+    # declared limitations: measured below their theoretical order
     cases += [
-        temporal_case("L01-adams4-derivatives", "adams4", 4, ["dE", "dD", "q", "qd"],
-                      "Adams-Moulton 4 design derivatives and state converge at order 3, one "
-                      "below the functional", limitation="dE/dnu, dD/dnu, q(T) and q'(T) "
-                      "measured at orders 3.0, 3.1, 3.0, 3.0 while the functional reaches 4.0"),
-        temporal_case("L05-dirk-law-residual", "dirk3", 3, [],
-                      "the DIRK jet at the arriving instant does not satisfy the law: "
-                      "|q'' + q| at the last instant is first order in h",
-                      limitation="|q'' + q| = 4.6e-2 at h = 0.1 for every DIRK row; BDF, "
-                                 "Adams and Newmark rows satisfy the law to 1e-13"),
-        field_temporal_case("L03-field-adams3", "adams3", 3,
-                            "Adams-Moulton 3 on the periodic mode converges at first order",
-                            limitation="semi-discrete error measured at order 1.0 on the "
-                                       "field while the ODE reaches 3.0",
-                            families="adams", max_order=3),
         spatial_case("L04-operator-degree4", "bdf1", "operator", 4,
                      "discrete Laplacian of the mode at form degree 4 converges at order 2",
                      instants=3, families="bdf", max_order=1, extra=(), spatial_order=4,
@@ -337,11 +330,15 @@ def exploratory_cases():
         numeric_reference,
         temporal_case("X02-bdf2-energy", "bdf2", 3, ["E"],
                       "BDF-2 energy functional on the linear oscillator: order 3 measured"),
+        temporal_case("X12-adams4-energy", "adams4", 5, ["E"],
+                      "Adams-Moulton 4 energy functional on the linear oscillator: order 5 "
+                      "over the three grids above the 12-digit print floor (the error at 161 "
+                      "instants is one unit of the last printed digit)", instants=(21, 41, 81)),
         temporal_case("X08-newmark3-position", "newmark3", 4, ["q"],
                       "Newmark beta = 1/12 (Fox-Goodwin): fourth-order position on the "
                       "linear oscillator", argv_extra=("--families=newmark",)),
         temporal_case("X09-dirk4-invariant-drift", "dirk4", 5, ["invariant"],
-                      "DIRK-4 invariant drift at order 5", law=False),
+                      "DIRK-4 invariant drift at order 5"),
         temporal_case("X10-bdf2-invariant-drift", "bdf2", 3, ["invariant"],
                       "BDF-2 invariant drift at order 3"),
         temporal_case("X11-bdf4-invariant-drift", "bdf4", 5, ["invariant"],
@@ -375,16 +372,16 @@ def rejection_cases(fixtures):
     """Cases that must fail, each with the status the contract must report."""
     dirk = ("--families=dirk",)
     wrong = temporal_case("R01-wrong-order-above", "dirk2", 3, ["E"],
-                          "DIRK-2 declared order 3", instants=(21, 41, 81, 161), law=False,
+                          "DIRK-2 declared order 3", instants=(21, 41, 81, 161),
                           argv_extra=dirk)
     wrong["expected_status"] = "below"
     low = temporal_case("R02-wrong-order-below", "dirk3", 2, ["E"],
-                        "DIRK-3 declared order 2", instants=(21, 41, 81, 161), law=False,
+                        "DIRK-3 declared order 2", instants=(21, 41, 81, 161),
                         argv_extra=dirk)
     low["expected_status"] = "exceeds"
     under = temporal_case("R03-under-resolved-reference", "dirk2", 2, ["E"],
                           "reference grid only 1.5 times finer than the finest",
-                          instants=(21, 41, 81), law=False, argv_extra=dirk)
+                          instants=(21, 41, 81), argv_extra=dirk)
     under["runs"]["reference"] = ode_argv(121, extra=dirk)
     under["checks"][0]["reference"] = {"run": "reference", "refinement": 1.5}
     under["expected_status"] = "under_resolved_reference"
@@ -415,7 +412,7 @@ def rejection_cases(fixtures):
     missing["expected_status"] = "missing_result"
     column = temporal_case("R09-missing-column", "dirk2", 2, ["dE"],
                            "the derivative column is not computed", instants=(21, 41),
-                           argv_extra=("--max_derivative_degree=0", "--families=dirk"), law=False)
+                           argv_extra=("--max_derivative_degree=0", "--families=dirk"))
     column["expected_status"] = "missing_result"
     process = temporal_case("R10-process-failure", "dirk2", 2, ["E"],
                             "an unknown setting stops the program", instants=(21, 41),
@@ -433,7 +430,7 @@ def rejection_cases(fixtures):
     stale = temporal_case("R13-stale-limitation", "dirk2", 2, ["E"],
                           "a declared limitation that is met must be reported",
                           instants=(21, 41, 81, 161), limitation="declared for this test only",
-                          law=False, argv_extra=dirk)
+                          argv_extra=dirk)
     stale["expected_status"] = "unexpected_pass"
     return [wrong, low, under, malformed, nonfinite, unconverged, slow, missing, column,
             process, residual, roundoff, stale]

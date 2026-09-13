@@ -85,13 +85,24 @@ def number(token):
 def parse_table(text):
     """Rows of the application table with their check lines."""
     rows = {}
-    record = {"rows": rows, "operator": None}
+    record = {"rows": rows, "operator": None, "conservation": None}
     current = None
     for line in text.splitlines():
         m = re.match(r"^   relative rms error\s+interior\s+(\S+)\s+one boundary\s+(\S+)\s+corner\s+(\S+)", line)
         if m:
             record["operator"] = {"interior": number(m.group(1)), "one_boundary": number(m.group(2)),
                                   "corner": number(m.group(3))}
+            continue
+        m = re.match(r"^   relative rms error\s+interior\s+(\S+)\s+boundary ring\s+(\S+)\s+"
+                     r"centre cell\s+(\S+)", line)
+        if m:
+            record["operator"] = {"interior": number(m.group(1)), "one_boundary": number(m.group(2)),
+                                  "corner": number(m.group(3))}
+            continue
+        m = re.match(r"^   the balance summed over the cells, relative to the sum of magnitudes\s+"
+                     r"the field above\s+(\S+)\s+a seeded field\s+(\S+)", line)
+        if m:
+            record["conservation"] = {"field": number(m.group(1)), "seeded": number(m.group(2))}
             continue
         m = ROW.match(line)
         if m and not line.startswith("      "):
@@ -224,8 +235,13 @@ def quantity_of(row, record, quantity, design=None):
         if not state or len(state) < 3 or state[0] is None or state[2] is None:
             return None
         return state[2] + state[0]
-    if quantity == "operator":
-        return record["operator"]["interior"] if record.get("operator") else None
+    if quantity in ("operator", "operator_boundary", "operator_centre"):
+        column = {"operator": "interior", "operator_boundary": "one_boundary",
+                  "operator_centre": "corner"}[quantity]
+        return record["operator"][column] if record.get("operator") else None
+    if quantity in ("balance_sum", "balance_sum_seeded"):
+        column = "field" if quantity == "balance_sum" else "seeded"
+        return record["conservation"][column] if record.get("conservation") else None
     return row.get(quantity)
 
 

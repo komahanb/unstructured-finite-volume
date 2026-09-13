@@ -4660,7 +4660,9 @@ module gti_field
   use operation_expression, only : expression, FIRST_COORDINATE
   use gti_configuration, only : words_of
   use gti_march        , only : march_context, consistent_states, spatial_components_of
-  use gti_space        , only : spatial_domain, spatial_operator, cartesian, periodic, written_paraview
+  use gti_space        , only : spatial_domain, spatial_operator, cartesian, periodic, circular, elliptical, &
+       & written_paraview
+  use operation_grid   , only : random_grid, partitioned
   implicit none
   private
   public :: against_the_exact_flow, spatial_discretization_stencil_of, initial_field
@@ -4878,37 +4880,119 @@ contains
     call op % apply(op % pattern, op % bind([given]), out)
     call out % real_vector(balanced)
   end subroutine balance_of
-  subroutine against_the_laplacian(space, kappa, degree)
+  !===================================================================!
+  ! THE FIELD THE OPERATOR IS COMPARED AGAINST, with kappa times its
+  ! laplacian at every cell centre. On the box the separated mode. On
+  ! the disc the quartic u = (r^2 - a^2)^2, whose laplacian is
+  ! 16 r^2 - 8 a^2 and whose radial derivative 4 r (r^2 - a^2)
+  ! vanishes at r = a, so it satisfies the same zero Neumann condition
+  ! the operator states there.
+  !===================================================================!
+  subroutine operator_field(space, kappa, values, exact)
+    type(spatial_domain), intent(in) :: space
+    real(dp)            , intent(in) :: kappa
+    real(dp), allocatable, intent(out) :: values(:), exact(:)
+    real(dp) :: a, radius_square
+    integer  :: i
+    if (box_shaped(space)) then
+       values = mode_shape(space)
+       exact  = -kappa * sum(wavenumbers(space) ** 2) * values
+       return
+    end if
+    a = space % extents(1)
+    allocate(values(space % num_cells), exact(space % num_cells))
+    do i = 1, space % num_cells
+       radius_square = sum(space % centre(:, i) ** 2)
+       values(i) = (radius_square - a ** 2) ** 2
+       exact(i)  = kappa * (16.0_dp * radius_square - 8.0_dp * a ** 2)
+    end do
+  end subroutine operator_field
+  !===================================================================!
+  ! The class of a cell, by its count of boundary faces: on the box
+  ! the count of coordinates at either end, interior, one boundary or
+  ! corner. On the disc the angular coordinate is identified and only
+  ! the outer ring meets the boundary, so the classes are the interior,
+  ! that ring, and the polygonal centre cell, which is its own.
+  !===================================================================!
+  pure integer function cell_class(space, i) result(which)
+    type(spatial_domain), intent(in) :: space
+    integer             , intent(in) :: i
+    which = 0
+    if (space % geometry == periodic) return
+    if (box_shaped(space)) then
+       which = count(space % cell_multi(:, i) == 1 .or. space % cell_multi(:, i) == space % n)
+       return
+    end if
+    if (i == 1) then
+       which = 2
+    else if (space % cell_multi(2, i) == space % n(1)) then
+       which = 1
+    end if
+  end function cell_class
+  !===================================================================!
+  ! THE DISCRETE DIVERGENCE THEOREM. The balance of a cell sums its
+  ! face fluxes; an interior face is counted twice with opposite
+  ! signs and a boundary face has the zero Neumann flux, so the
+  ! balance summed over every cell is zero for every field. Reported
+  ! relative to the sum of the magnitudes, so the floor is gamma_N.
+  !===================================================================!
+  real(dp) function conservation_defect(space, kappa, degree, values) result(relative)
+    type(spatial_domain), intent(in) :: space
+    real(dp)            , intent(in) :: kappa, values(:)
+    integer             , intent(in) :: degree
+    real(dp), allocatable :: balanced(:)
+    call balance_of(space, kappa, degree, values, balanced)
+    relative = sum(balanced) / max(sum(abs(balanced)), tiny(1.0_dp))
+  end function conservation_defect
+  ! a field of the run's own seed, one value per cell: the random
+  ! grid's steps over the unit interval
+  function seeded_field(space, seed) result(values)
+    type(spatial_domain), intent(in) :: space
+    integer             , intent(in) :: seed
+    real(dp), allocatable :: values(:)
+    real(dp), allocatable :: steps(:), line(:)
+    call partitioned(random_grid(1.0_dp, seed), space % num_cells + 1, steps, line)
+    values = steps(1:space % num_cells)
+  end function seeded_field
+  subroutine against_the_laplacian(space, kappa, degree, seed)
     type(spatial_domain), intent(in) :: space
     real(dp)  , intent(in) :: kappa
-    integer   , intent(in) :: degree
+    integer   , intent(in) :: degree, seed
     real(dp), allocatable :: shape(:), balanced(:), exact(:)
     real(dp) :: err(0:3), norm(0:3)
-    integer  :: i, boundary_count, counted(0:3)
-    if (.not. box_shaped(space)) then
-       error stop 'gti_field: the laplacian check is defined on the box'
+    integer  :: i, which, counted(0:3)
+    if (.not. box_shaped(space) .and. space % geometry /= circular) then
+       error stop 'gti_field: the laplacian check is defined on the box and on the disc'
     end if
-    shape = mode_shape(space)
-    exact = -kappa * sum(wavenumbers(space) ** 2) * shape
+    call operator_field(space, kappa, shape, exact)
     call balance_of(space, kappa, degree, shape, balanced)
     err   = 0.0_dp
     norm  = 0.0_dp
     counted = 0
     do i = 1, space % num_cells
-       boundary_count = 0
-       if (space % geometry /= periodic) then
-          boundary_count = count(space % cell_multi(:, i) == 1 .or. space % cell_multi(:, i) == space % n)
-       end if
-       err(boundary_count)   = err(boundary_count)   + (balanced(i) / space % volume(i) - exact(i)) ** 2
-       norm(boundary_count)  = norm(boundary_count)  + exact(i) ** 2
-       counted(boundary_count) = counted(boundary_count) + 1
+       which = cell_class(space, i)
+       err(which)     = err(which)  + (balanced(i) / space % volume(i) - exact(i)) ** 2
+       norm(which)    = norm(which) + exact(i) ** 2
+       counted(which) = counted(which) + 1
     end do
-    write(*,'(a,i0,a,i0,a)') '   the operator compared with kappa times the laplacian of the mode, ', &
-         & space % num_cells, ' cells, form degree ', degree, ':'
-    write(*,'(a,3(a,es10.3))') '   relative rms error', &
-         & '   interior ', sqrt(err(0) / max(norm(0), tiny(1.0_dp))), &
-         & '   one boundary ', sqrt(err(1) / max(norm(1), tiny(1.0_dp))), &
-         & '   corner ',   sqrt(err(2) / max(norm(2), tiny(1.0_dp)))
+    if (box_shaped(space)) then
+       write(*,'(a,i0,a,i0,a)') '   the operator compared with kappa times the laplacian of the mode, ', &
+            & space % num_cells, ' cells, form degree ', degree, ':'
+       write(*,'(a,3(a,es10.3))') '   relative rms error', &
+            & '   interior ', sqrt(err(0) / max(norm(0), tiny(1.0_dp))), &
+            & '   one boundary ', sqrt(err(1) / max(norm(1), tiny(1.0_dp))), &
+            & '   corner ',   sqrt(err(2) / max(norm(2), tiny(1.0_dp)))
+    else
+       write(*,'(a,i0,a,i0,a)') '   the operator compared with kappa times the laplacian of the quartic, ', &
+            & space % num_cells, ' cells, form degree ', degree, ':'
+       write(*,'(a,3(a,es10.3))') '   relative rms error', &
+            & '   interior ', sqrt(err(0) / max(norm(0), tiny(1.0_dp))), &
+            & '   boundary ring ', sqrt(err(1) / max(norm(1), tiny(1.0_dp))), &
+            & '   centre cell ',   sqrt(err(2) / max(norm(2), tiny(1.0_dp)))
+    end if
+    write(*,'(a,2(a,es10.3))') '   the balance summed over the cells, relative to the sum of magnitudes', &
+         & '   the field above ', conservation_defect(space, kappa, degree, shape), &
+         & '   a seeded field ', conservation_defect(space, kappa, degree, seeded_field(space, seed))
   end subroutine against_the_laplacian
   subroutine against_the_mode(space, kappa, degree, design, t_last, x, degrees)
     type(spatial_domain), intent(in) :: space
@@ -12470,7 +12554,7 @@ contains
        nodes  = space % num_cells
        volume = space % volume
        if (lists(cfg % check, 'operator')) then
-          call against_the_laplacian(space, cfg % diffusion, cfg % spatial_order)
+          call against_the_laplacian(space, cfg % diffusion, cfg % spatial_order, cfg % seed)
        end if
     else
        nodes  = 1

@@ -255,6 +255,62 @@ def spatial_case(identifier, row, quantity, order, description, cells=(8, 16, 32
             "timeout": timeout}
 
 
+# THE DISC: the polar mesh of n1 radial and n2 angular cells, so the radial
+# step is a/n1 and the angular arc 2 pi a/n2, both halving along the sequence.
+# The cells are 1 + (n1 - 1) n2, the centre being one polygonal cell.
+DISC_COUNTS = ((9, 16), (17, 32), (33, 64))
+
+
+def disc_argv(counts, instants=3, families="bdf", max_order=1, check="operator",
+              derivative=0, spatial_order=2, initial_field="constant", rows=None,
+              extra=SPARSE):
+    argv = [APPLICATION, "--config=disc", f"--spatial_counts={counts[0]} {counts[1]}",
+            f"--instants={instants}", f"--families={families}",
+            f"--max_discretization_order={max_order}",
+            f"--max_derivative_degree={derivative}",
+            f"--spatial_order={spatial_order}", f"--initial_field={initial_field}",
+            f"--check={check}"] + list(extra)
+    if rows is not None:
+        argv.append(f"--rows={rows}")
+    return argv
+
+
+def disc_cells(counts):
+    return 1 + (counts[0] - 1) * counts[1]
+
+
+def disc_operator_case(identifier, quantity, description, order=2, limitation=None,
+                       counts=DISC_COUNTS, set_name="required"):
+    """One class of cells of the disc against kappa times the laplacian of the
+    quartic (r^2 - a^2)^2, whose radial derivative vanishes at r = a."""
+    grids = [(f"cells={n1}x{n2}", 1.0 / n1, disc_cells((n1, n2))) for n1, n2 in counts]
+    runs = {f"cells={n1}x{n2}": disc_argv((n1, n2)) for n1, n2 in counts}
+    text = ("relative rms error of the fitted balance applied to (r^2 - a^2)^2 against "
+            "kappa (16 r^2 - 8 a^2), by cell class, at form degree 2 on the polar mesh; "
+            f"{THETA_TEXT}")
+    return {"id": identifier, "set": set_name, "description": description, "row": "bdf1",
+            "grids": grids, "runs": runs,
+            "checks": [order_check(quantity, order, None, CHECK_DIGITS, text)],
+            "limitation": limitation, "timeout": 600}
+
+
+def disc_conservation_case(counts=DISC_COUNTS):
+    """The discrete divergence theorem on the disc: an interior face is counted
+    twice with opposite signs and a boundary face carries the zero Neumann flux,
+    so the balance summed over the cells is zero for every field."""
+    grids = [(f"cells={n1}x{n2}", 1.0 / n1, 2 * disc_cells((n1, n2))) for n1, n2 in counts]
+    runs = {f"cells={n1}x{n2}": disc_argv((n1, n2)) for n1, n2 in counts}
+    text = ("the balance summed over every cell, relative to the sum of the magnitudes: "
+            "zero for every field, bounded by gamma_N with N twice the cells")
+    return {"id": "D04-disc-conservation", "set": "required",
+            "description": "the discrete divergence theorem on the disc, for the quartic and "
+                           "for a field of the run's own seed",
+            "row": "bdf1", "grids": grids, "runs": runs,
+            "checks": [floor_check("balance_sum", 0.0, CHECK_DIGITS, text, scale=1.0),
+                       floor_check("balance_sum_seeded", 0.0, CHECK_DIGITS, text, scale=1.0)],
+            "limitation": None, "timeout": 600}
+
+
 def taylor_green_case(identifier, cells, description, set_name="required", timeout=120,
                       instants=6):
     grids = [(f"cells={n}", 2 * math.pi / n, n * n * instants * 6) for n in cells]
@@ -410,6 +466,12 @@ def required_cases():
                     "trapezoidal step as Adams-Moulton 2, and its rows read the same initial "
                     "acceleration, so dF_2/dnu is E13's declared limitation",
                     argv_extra=("--families=newmark",)),
+        # THE DISC, a second discretization use on supported geometry: the polar
+        # mesh's identified angular seam, curved Neumann boundary, anisotropic
+        # cells and polygonal centre cell.
+        disc_operator_case("D01-disc-operator-centre", "operator_centre",
+                           "the polygonal centre cell of the disc, its own class, at order 2"),
+        disc_conservation_case(),
         radial_case("E10-radial-alexander2", "alexander2", 2,
                     ["E", "dE", "F2", "dF2", "q", "qd"],
                     "radial oscillator, Alexander's two-stage L-stable DIRK, order 2: a "
@@ -446,6 +508,18 @@ def required_cases():
                     limitation="the same omitted design rate; the trapezoidal step makes "
                                "the measured slopes those of E11, 1.118, 1.064, 1.033, 1.017",
                     argv_extra=("--families=newmark",)),
+        disc_operator_case("D02-disc-operator-interior", "operator",
+                           "the interior cells of the disc declared at order 2",
+                           limitation="the fitted balance on the polar mesh converges at "
+                                      "order 1.74 in the interior: errors 3.653e-2, 1.187e-2, "
+                                      "3.734e-3, slopes 1.768 and 1.744 at the step ratio "
+                                      "1.9412, and 1.208e-3 over a fourth grid of 65 x 128"),
+        disc_operator_case("D03-disc-operator-ring", "operator_boundary",
+                           "the boundary ring of the disc declared at order 2",
+                           limitation="the one-sided fits against the curved Neumann boundary "
+                                      "converge at order 1.33: errors 2.327e-1, 8.220e-2, "
+                                      "3.395e-2, slopes 1.636 and 1.333 at the step ratio "
+                                      "1.9412, and 1.530e-2 over a fourth grid of 65 x 128"),
         spatial_case("L04-operator-degree4", "bdf1", "operator", 4,
                      "discrete Laplacian of the mode at form degree 4 converges at order 2",
                      instants=3, families="bdf", max_order=1, extra=(), spatial_order=4,

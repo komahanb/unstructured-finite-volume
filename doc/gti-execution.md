@@ -508,21 +508,36 @@ it is defined, and `matvec` - with `imbalance`, `block_diagonal` and
 statement that has none. Before that, every law had to have a value at
 the zero state because the minimizer evaluated it there.
 
-Two limits the law extension measured, both open:
+One limit the law extension measured and repaired, and one still open:
 
 - The initial tuple supplies the components below the highest and the
   law closes the highest, `q''(0) = nu/q(0)**3 - q(0)` here, which
-  depends on the design. A family whose rows read the acceleration at
-  the initial instant - Adams-Moulton and Newmark, not the Runge-Kutta
-  stages and not the BDF rows - therefore carries a design rate the
-  derivative pass does not account for, and the reported design
-  derivative is **not** the derivative of the reported functional: at 81
-  instants the central difference of the printed adams2 square integral
-  over `nu` is 1.1891925 against the printed 1.17836909, and the
-  discrepancy halves with the step. The accuracy cases E11, E12 and E13
-  declare it with its measured first order. Van der Pol hides it, since
-  `q''(0) = nu (1 - q(0)**2) q'(0) - q(0)` does not depend on `nu` at
-  `q'(0) = 0`.
+  depends on the design. `consistent_states` now returns that rate by
+  implicit differentiation of the closure, `slope dQ_top/dnu =
+  -dRule/dnu`, the same linear system its Newton step already forms;
+  `residual_operator` carries it as `fixed_rate` beside `fixed`, since
+  a fixed row reads `x(row) - h(row)` and its design partial is
+  `-dh/dnu`, not zero. The three places that assembled a design
+  derivative - the residual's own `partial_action`, the forward pass's
+  `forcing_of` and the reverse pass's `lagrangian_term` - all read it.
+  Before the repair the reported design derivative was **not** the
+  derivative of the reported functional for a family whose rows read
+  the acceleration at the initial instant: at 81 instants the central
+  difference of the printed adams2 square integral over `nu` was
+  1.1891925 against a printed 1.17836909, and the discrepancy halved
+  with the step. It now reads 1.18919269571 against the same
+  1.1891925, and the forward and reverse passes agree to 1.1e-15
+  where they disagreed by 9.1e-3. Adams-Moulton 2, Adams-Moulton 3 and
+  Newmark reach their orders on every quantity (E04, E05, E09);
+  Runge-Kutta stages and BDF rows never read that acceleration and are
+  unchanged. Van der Pol's rate is identically zero at `q'(0) = 0`, so
+  every demonstration is byte-identical across the repair.
+- **Open**: only the first design rate of a fixed value is carried. A
+  closure nonlinear in the design would need `d^m h/dnu^m`; a repeated
+  derivative in the physics design of a closed component is refused
+  rather than reported as zero. Both laws in the repository close
+  affinely in the design, so no run reaches that refusal.
+
 - A law undefined at a point the solver visits stops the program inside
   a `pure` function several frames below the residual, naming neither
   the rule nor the point.

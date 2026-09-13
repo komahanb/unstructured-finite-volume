@@ -221,7 +221,8 @@ contains
     if (this % block_width > 1) then
        call this % smoother % state(this % action, this % graph, &
             & this % unknown_domain, this % num_unknowns, &
-            & coupling = read_through(this % action, size(this % affine), this % block_width))
+            & coupling = read_through(this % action, this % num_unknowns * this % num_components, &
+            &                        this % block_width))
     else
        call this % smoother % state(this % action, this % graph, &
             & this % unknown_domain, this % num_unknowns, coupling = this % graph)

@@ -157,6 +157,7 @@ module operation_expression
    contains
 
      procedure :: apply          => expression_apply
+     procedure :: defined_at_zero => expression_defined_at_zero
      procedure :: partial_action => expression_partial_action
      procedure :: at_instant     => expression_at_instant
      procedure :: declared        => expression_declared
@@ -742,6 +743,56 @@ contains
   !===================================================================!
   ! The loop over the vertices, on the stored tuple.
   !===================================================================!
+
+  !===================================================================!
+  ! WHETHER THE ZERO STATE LIES IN THE EXPRESSION'S DOMAIN. A vertex
+  ! reads the state when it is a state component or when either of
+  ! its operands does. The expression has a value at the zero state
+  ! unless such a vertex is a divisor, the base of a negative integer
+  ! power, the base of a real power below the first, or the argument
+  ! of a logarithm or a square root - each of which is singular, or
+  ! has a singular derivative, at zero. The design is an input of its
+  ! own and is not zeroed with the state.
+  !===================================================================!
+
+  pure logical function expression_defined_at_zero(this) result(defined)
+
+    class(expression), intent(in) :: this
+
+    logical, allocatable :: reads_state(:)
+    integer :: i
+
+    allocate(reads_state(size(this % kind)), source=.false.)
+    defined = .true.
+
+    do i = 1, size(this % kind)
+       select case (this % kind(i))
+       case (VERTEX_LEAF)
+          reads_state(i) = this % position(i) == ARGUMENT_STATE
+       case (VERTEX_CONSTANT)
+          reads_state(i) = .false.
+       case (VERTEX_SUM, VERTEX_DIFFERENCE, VERTEX_PRODUCT)
+          reads_state(i) = reads_state(this % first(i)) .or. reads_state(this % second(i))
+       case (VERTEX_QUOTIENT)
+          reads_state(i) = reads_state(this % first(i)) .or. reads_state(this % second(i))
+          if (reads_state(this % second(i))) defined = .false.
+       case (VERTEX_INTEGER_POWER)
+          reads_state(i) = reads_state(this % first(i))
+          if (reads_state(i) .and. nint(this % coefficient(i)) < 0) defined = .false.
+       case (VERTEX_REAL_POWER)
+          reads_state(i) = reads_state(this % first(i))
+          if (reads_state(i) .and. this % coefficient(i) < 1.0_dp) defined = .false.
+       case (VERTEX_FUNCTION)
+          reads_state(i) = reads_state(this % first(i))
+          if (reads_state(i) .and. (this % order(i) == LOGARITHM .or. this % order(i) == ROOT)) then
+             defined = .false.
+          end if
+       case default
+          defined = .false.
+       end select
+    end do
+
+  end function expression_defined_at_zero
 
   pure function evaluated_over(this, q, nu) result(r)
 

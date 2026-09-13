@@ -232,10 +232,15 @@ PARSERS = {"table": parse_table, "sensitivity": parse_sensitivity, "order_demo":
 
 def functional_reference(row, word, check=None):
     """The exact value F of the functional a word names: the declared analytic
-    reference, or the row quantity the check names as functional_reference (the
-    semi-discrete mode energy of a field run)."""
-    if check and check.get("functional_reference"):
-        return row.get(check["functional_reference"])
+    reference of the word; the number the check names as functional_reference,
+    when the law of the run gives the word an exact value of its own (the
+    radial oscillator's energy and square integral); or the row quantity the
+    check names by that key (the semi-discrete mode energy of a field run)."""
+    named = check.get("functional_reference") if check else None
+    if isinstance(named, str):
+        return row.get(named)
+    if named is not None:
+        return named
     return declared.FUNCTIONAL_REFERENCES[word]
 
 
@@ -418,7 +423,8 @@ def resolution_of(check, row, value):
         return (print_resolution(estimate, check["digits"])
                 + abs(value) * (print_resolution(f, check["digits"])
                                 + (print_resolution(reference, STATE_DIGITS)
-                                   if check.get("functional_reference") else 0.0))) / error
+                                   if isinstance(check.get("functional_reference"), str)
+                                   else 0.0))) / error
     return print_resolution(value, check["digits"])
 
 

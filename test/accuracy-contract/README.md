@@ -163,6 +163,14 @@ Lagrangian, against the analytic dE/dnu and dD/dnu; G16 is the near-zero
 functional `mean` over one period, whose scale S is declared against
 int |q| dt = 4, and G17 the identically zero integrand, whose scale and
 estimate are exactly zero.
+On the radial oscillator, whose two functionals are known in closed form at
+every grid, `functional_reference` carries that exact number in place of the
+word's declared value: the word `energy` names T (1 + nu)/2 there, not the
+van der Pol T/2, and `square_integral` names (1 + nu) T/2 + (1 - nu) sin 2T/4.
+A number declared in the check is exact and adds no print resolution to the
+floor, where a reference read from the record does. G22 and G23 measure the
+estimate of BDF-1 by BDF-2 and of BDF-3 by BDF-4 on that law, each functional
+against its own closed form.
 The adaptive cases A01, A02 (`adaptive_check = functional_error`) check
 |E - E_h| <= tolerance x S on the accepted grid, the loop's own
 criterion, and record the estimator/error ratio (check

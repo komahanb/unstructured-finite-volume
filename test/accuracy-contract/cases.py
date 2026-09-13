@@ -103,12 +103,13 @@ def ode_argv(instants, families="bdf adams dirk", max_order=4, derivative=1,
     return argv + list(extra)
 
 
-def radial_argv(instants, families="bdf adams dirk", max_order=4, derivative=1, extra=()):
+def radial_argv(instants, families="bdf adams dirk", max_order=4, derivative=1, extra=(),
+                check="state passes"):
     return [APPLICATION, "--physics=radial_oscillator", f"--design={RADIAL_DESIGN}",
             "--initial_state=1.0", f"--time_duration={DURATION}", f"--instants={instants}",
             "--grid=uniform", f"--families={families}", f"--max_discretization_order={max_order}",
             f"--max_derivative_degree={derivative}", "--functionals=energy square_integral",
-            "--combinations=1", "--check=state passes"] + list(extra)
+            "--combinations=1", f"--check={check}"] + list(extra)
 
 
 def ode_grids(instants=INSTANTS, duration=DURATION):
@@ -240,6 +241,33 @@ def radial_case(identifier, row, order, quantities, description, limitation=None
     checks += [RADIAL_LAW, TRANSPOSE, residual_check()]
     return {"id": identifier, "set": set_name, "description": description, "row": row,
             "grids": grids, "runs": runs, "checks": checks, "limitation": limitation,
+            "timeout": 180}
+
+
+def radial_estimator_case(identifier, row, order, description, families="bdf", max_order=4,
+                          instants=INSTANTS, set_name="required"):
+    """The functional-error estimate on the radial oscillator, the one law whose
+    exact functionals are known at every grid: the effectivity of each against
+    its own closed form at order 1, the estimate at the order of F_h - F, the
+    transfer identity of each enriched block, and the law at the last instant.
+    The word energy names a different number here than on van der Pol, so each
+    effectivity carries its exact value as functional_reference."""
+    grids = ode_grids(instants)
+    runs = {label: radial_argv(n, families=families, max_order=max_order,
+                               check="state functional_error")
+            for (label, _, _), n in zip(grids, instants)}
+    checks = []
+    for word, reference in (("energy", RADIAL_E_REF), ("square_integral", RADIAL_F2_REF)):
+        checks.append(dict(order_check(f"effectivity:{word}", 1, 1.0, TABLE_DIGITS,
+                                       EFFECTIVITY_TEXT),
+                           functional_reference=reference))
+        checks.append(order_check(f"estimate:{word}", order, 0.0, TABLE_DIGITS,
+                                  "the estimate eta converges to zero at the order of F_h - F; "
+                                  + THETA_TEXT))
+        checks.append(transfer_check(word))
+    checks += [RADIAL_LAW, residual_check()]
+    return {"id": identifier, "set": set_name, "description": description, "row": row,
+            "grids": grids, "runs": runs, "checks": checks, "limitation": None,
             "timeout": 180}
 
 
@@ -837,6 +865,25 @@ def required_cases():
                     "radial oscillator, Alexander's two-stage L-stable DIRK, order 2: a "
                     "tableau registered by its data alone",
                     argv_extra=("--families=alexander",)),
+        # THE FUNCTIONAL DISCRETIZATION-ERROR ESTIMATOR ON THE NEW LAW. The
+        # radial oscillator is the one law stated here whose functionals are
+        # known in closed form at every grid, so the effectivity is read
+        # against an exact F rather than against a refined one.
+        radial_estimator_case("G22-radial-estimate-bdf1", "bdf1", 1,
+                              "the same estimate of BDF-1 by BDF-2, the pair whose effectivity "
+                              "is furthest from 1 on the coarse grids: the energy measured "
+                              "0.7098, 0.8495, 0.9243, 0.9622, 0.9811, slopes 0.95, 0.99, "
+                              "1.00, 1.00, and the square integral 0.7494, 0.8763, 0.9390, "
+                              "0.9698, 0.9850, slopes 1.02, 1.02, 1.01, 1.01; each estimate "
+                              "at order 1"),
+        radial_estimator_case("G23-radial-estimate-bdf3", "bdf3", 3,
+                              "the functional-error estimate on the radial oscillator: BDF-3 "
+                              "estimated by BDF-4 on the same grid, each functional against "
+                              "its closed form; effectivity at order 1 (the energy measured "
+                              "0.8868, 0.9653, 0.9880, 0.9953, slopes 1.70, 1.54, 1.35, and "
+                              "the square integral 0.8857, 0.9601, 0.9844, 0.9933, slopes "
+                              "1.52, 1.36, 1.21, both falling to 1 from above), each estimate "
+                              "at order 3"),
     ]
     # declared limitations: measured below their theoretical order
     cases += [

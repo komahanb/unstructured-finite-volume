@@ -187,6 +187,7 @@ module operation_action
      procedure(operation_apply_interface) , deferred :: apply
 
      procedure :: max_degree       => operation_max_degree
+     procedure :: defined_at_zero  => operation_defined_at_zero
      procedure :: partial_action   => operation_partial_action
      procedure :: value_by_partial_action
      procedure :: explicit_tangent => operation_explicit_tangent
@@ -616,6 +617,27 @@ contains
     degree = this % exact_degree
 
   end function operation_max_degree
+
+  !===================================================================!
+  ! WHETHER THE ZERO STATE LIES IN THE OPERATION'S DOMAIN. A(0) is the
+  ! constant part a linear solver subtracts to read the linear part of
+  ! an affine statement, and a minimizer evaluates it when the
+  ! operation is stated. An operation built from sums, products and
+  ! non-negative powers has a value there, and the default declares
+  ! so. An operation that divides by, or takes a negative power, a
+  ! logarithm or a square root of, a quantity read from the state
+  ! overrides this: the zero state is outside its domain and is never
+  ! evaluated.
+  !===================================================================!
+
+  pure logical function operation_defined_at_zero(this) result(defined)
+
+    class(operation), intent(in) :: this
+
+    associate (u1 => this); end associate
+    defined = .true.
+
+  end function operation_defined_at_zero
 
   !===================================================================!
   ! The default rejects every request, because max_degree is 0. A

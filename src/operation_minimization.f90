@@ -647,17 +647,29 @@ contains
 
     n = this % num_unknowns
 
-    allocate(zero(n * this % num_components))
-    zero = 0.0_dp
-    call evaluate(this, zero, this % affine)
+    ! THE CONSTANT PART IS THE STATEMENT AT THE ZERO STATE. A(0) is
+    ! the contribution of boundary values and sources alone when
+    ! A(x) = A(0) + L x, and matvec and the operations built on it -
+    ! the operations of a linear solve - are its only readers. A
+    ! statement whose domain excludes the zero state, as the radial
+    ! oscillator's nu / q**3 does, is not evaluated there and declares
+    ! no constant part.
+    if (allocated(this % affine)) deallocate(this % affine)
+    if (action % defined_at_zero()) then
+       allocate(zero(n * this % num_components))
+       zero = 0.0_dp
+       call evaluate(this, zero, this % affine)
 
-    ! Classification is not admissibility: U and Y stay distinct
-    ! identities, but THIS solver family is square - the scalar
-    ! dimensions must agree. A rectangular least-squares family may
-    ! support R^n -> R^m later; none exists yet.
-    if (size(this % affine) /= n * this % num_components) then
-       error stop 'minimization: the current solver family requires equal &
-            &unknown and residual value dimensions'
+       ! Classification is not admissibility: U and Y stay distinct
+       ! identities, but THIS solver family is square - the scalar
+       ! dimensions must agree. A rectangular least-squares family may
+       ! support R^n -> R^m later; none exists yet.
+       if (size(this % affine) /= n * this % num_components) then
+          error stop 'minimization: the current solver family requires equal &
+               &unknown and residual value dimensions'
+       end if
+    else
+       allocate(this % affine(0))
     end if
 
     this % diagonal_valid = .false.
@@ -877,6 +889,16 @@ contains
     end if
 
     call image % real_vector(y)
+
+    ! A statement with no constant part was not evaluated when it was
+    ! stated, so the family's squareness is checked here instead.
+    if (size(this % affine) == 0 .and. this % num_unknowns > 0) then
+       if (size(y) /= this % num_unknowns * this % num_components) then
+          error stop 'minimization: the current solver family requires equal &
+               &unknown and residual value dimensions'
+       end if
+    end if
+
     if (present(inputs)) call move_alloc(tuple, inputs)
 
   end subroutine evaluate
@@ -892,6 +914,14 @@ contains
     real(dp), allocatable, intent(out) :: y(:)
 
     call evaluate(this, x, y)
+
+    ! A x is the statement less its value at the zero state, which a
+    ! statement whose domain excludes that state does not have.
+    if (size(this % affine) /= size(y)) then
+       error stop 'minimization: a matrix-vector product subtracts the statement at the zero &
+            &state, which lies outside this statement''s domain'
+    end if
+
     y = y - this % affine
 
   end subroutine matvec
@@ -978,7 +1008,7 @@ contains
        error stop 'diagonal: the coloured indicator evaluates one number per cell'
     end if
 
-    n  = size(this % affine)
+    n  = this % num_unknowns * this % num_components
     w  = this % block_width
     nb = n / w
     if (nb * w /= n) then

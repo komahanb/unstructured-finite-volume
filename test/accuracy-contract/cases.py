@@ -57,6 +57,30 @@ FUNCTIONAL_REFERENCES = {"energy": E_REF, "dissipation": 0.0, "mean": MEAN_REF}
 # - 9/32 sin t, whose integral over [0, 2 pi] is 0 term by term
 FUNCTIONAL_DERIVATIVE_REFERENCES = {"energy": DE_REF, "dissipation": DD_REF, "mean": 0.0}
 
+# THE RADIAL OSCILLATOR q'' + q - nu / q^3 = 0 at nu = L^2, with q(0) = 1,
+# q'(0) = 0: q = sqrt(cos^2 t + nu sin^2 t) (with y = q^2 the equation reads
+# y y'' - y'^2/2 + 2 y^2 = 2 nu, which a cos^2 t + b sin^2 t satisfies when
+# a b = nu). Every reference below follows from that solution.
+RADIAL_DESIGN = 2.0
+
+
+def radial_state(t, nu):
+    """q, q' and q'' of the radial oscillator at time t."""
+    q = math.sqrt(math.cos(t) ** 2 + nu * math.sin(t) ** 2)
+    return q, (nu - 1.0) * math.sin(2 * t) / (2 * q), nu / q ** 3 - q
+
+
+RADIAL_Q_REF, RADIAL_QD_REF, _ = radial_state(DURATION, RADIAL_DESIGN)
+# E = q'^2/2 + q^2/2 + nu/(2 q^2) = (1 + nu)/2 at every instant, so the energy
+# functional is T E and its design derivative is T/2
+RADIAL_INVARIANT_REF = 0.5 * (1.0 + RADIAL_DESIGN)
+RADIAL_E_REF = DURATION * RADIAL_INVARIANT_REF
+RADIAL_DE_REF = DURATION / 2
+# F_2 = int_0^T q^2 dt = int (cos^2 t + nu sin^2 t) dt
+RADIAL_F2_REF = (1.0 + RADIAL_DESIGN) * DURATION / 2 \
+    + (1.0 - RADIAL_DESIGN) * math.sin(2 * DURATION) / 4
+RADIAL_DF2_REF = DURATION / 2 - math.sin(2 * DURATION) / 4
+
 # the configured Newton stopping rule of every run: relative 1e-12
 TOLERANCE = 1.0e-12
 STATE_COMPONENTS = 3
@@ -79,6 +103,14 @@ def ode_argv(instants, families="bdf adams dirk", max_order=4, derivative=1,
     return argv + list(extra)
 
 
+def radial_argv(instants, families="bdf adams dirk", max_order=4, derivative=1, extra=()):
+    return [APPLICATION, "--physics=radial_oscillator", f"--design={RADIAL_DESIGN}",
+            "--initial_state=1.0", f"--time_duration={DURATION}", f"--instants={instants}",
+            "--grid=uniform", f"--families={families}", f"--max_discretization_order={max_order}",
+            f"--max_derivative_degree={derivative}", "--functionals=energy square_integral",
+            "--combinations=1", "--check=state passes"] + list(extra)
+
+
 def ode_grids(instants=INSTANTS, duration=DURATION):
     return [(f"instants={n}", duration / (n - 1), n * STATE_COMPONENTS) for n in instants]
 
@@ -99,14 +131,16 @@ def taylor_green_argv(cells, instants=6):
             "--families=bdf", "--max_discretization_order=2", "--check=exact state"]
 
 
-def order_check(quantity, order, reference, digits, justification):
+def order_check(quantity, order, reference, digits, justification, design=None):
     return {"kind": "order", "quantity": quantity, "order": order,
-            "reference": reference, "digits": digits, "justification": justification}
+            "reference": reference, "digits": digits, "justification": justification,
+            "design": design}
 
 
-def floor_check(quantity, reference, digits, justification, scale=None):
+def floor_check(quantity, reference, digits, justification, scale=None, design=None):
     return {"kind": "floor", "quantity": quantity, "reference": reference,
-            "digits": digits, "scale": scale, "justification": justification}
+            "digits": digits, "scale": scale, "justification": justification,
+            "design": design}
 
 
 def residual_check(tolerance=TOLERANCE):
@@ -174,6 +208,41 @@ def temporal_case(identifier, row, order, quantities, description, chain=None,
             "timeout": 120}
 
 
+RADIAL_LAW = floor_check("radial_law", 0.0, 17, "q'' + q - nu / q^3 at the last instant is a "
+                         "row of the solved residual: bounded by tolerance x initial residual "
+                         "norm of its block plus gamma_N |q|", scale="law", design=RADIAL_DESIGN)
+
+
+def radial_case(identifier, row, order, quantities, description, limitation=None,
+                argv_extra=(), instants=INSTANTS, set_name="required"):
+    """The radial oscillator at nu = 2 over the refined grids: the two
+    functionals, their design derivatives, the state and the law."""
+    grids = ode_grids(instants)
+    runs = {label: radial_argv(n, extra=argv_extra) for (label, _, _), n in zip(grids, instants)}
+    references = {"E": (RADIAL_E_REF, TABLE_DIGITS, "the energy functional against T (1 + nu)/2"),
+                  "dE": (RADIAL_DE_REF, TABLE_DIGITS, "dF_E/dnu against T/2"),
+                  "F2": (RADIAL_F2_REF, TABLE_DIGITS,
+                         "int q^2 against (1 + nu) T/2 + (1 - nu) sin 2T/4"),
+                  "dF2": (RADIAL_DF2_REF, TABLE_DIGITS,
+                          "dF_2/dnu against T/2 - sin 2T/4"),
+                  "q": (RADIAL_Q_REF, STATE_DIGITS,
+                        "q(T) against sqrt(cos^2 T + nu sin^2 T)"),
+                  "qd": (RADIAL_QD_REF, STATE_DIGITS,
+                         "q'(T) against (nu - 1) sin 2T / (2 q(T))"),
+                  "radial_invariant": (RADIAL_INVARIANT_REF, STATE_DIGITS,
+                                       "the invariant drift q'^2/2 + q^2/2 + nu/(2 q^2) - "
+                                       "(1 + nu)/2 at T")}
+    checks = []
+    for quantity in quantities:
+        reference, digits, text = references[quantity]
+        checks.append(order_check(quantity, order, reference, digits,
+                                  f"{text}; {THETA_TEXT}", design=RADIAL_DESIGN))
+    checks += [RADIAL_LAW, TRANSPOSE, residual_check()]
+    return {"id": identifier, "set": set_name, "description": description, "row": row,
+            "grids": grids, "runs": runs, "checks": checks, "limitation": limitation,
+            "timeout": 180}
+
+
 def field_temporal_case(identifier, row, order, description, limitation=None,
                         set_name="required", families="dirk bdf", max_order=4):
     instants = (6, 11, 21, 41)
@@ -207,6 +276,98 @@ def spatial_case(identifier, row, quantity, order, description, cells=(8, 16, 32
     return {"id": identifier, "set": set_name, "description": description, "row": row,
             "grids": grids, "runs": runs, "checks": checks, "limitation": limitation,
             "timeout": timeout}
+
+
+# THE DISC: the polar mesh of n1 radial and n2 angular cells, so the radial
+# step is a/n1 and the angular arc 2 pi a/n2, both halving along the sequence.
+# The cells are 1 + (n1 - 1) n2, the centre being one polygonal cell.
+DISC_COUNTS = ((9, 16), (17, 32), (33, 64))
+
+
+def disc_argv(counts, instants=3, families="bdf", max_order=1, check="operator",
+              derivative=0, spatial_order=2, initial_field="constant", rows=None,
+              extra=SPARSE):
+    argv = [APPLICATION, "--config=disc", f"--spatial_counts={counts[0]} {counts[1]}",
+            f"--instants={instants}", f"--families={families}",
+            f"--max_discretization_order={max_order}",
+            f"--max_derivative_degree={derivative}",
+            f"--spatial_order={spatial_order}", f"--initial_field={initial_field}",
+            f"--check={check}"] + list(extra)
+    if rows is not None:
+        argv.append(f"--rows={rows}")
+    return argv
+
+
+def disc_cells(counts):
+    return 1 + (counts[0] - 1) * counts[1]
+
+
+def disc_operator_case(identifier, quantity, description, order=2, limitation=None,
+                       counts=DISC_COUNTS, set_name="required"):
+    """One class of cells of the disc against kappa times the laplacian of the
+    quartic (r^2 - a^2)^2, whose radial derivative vanishes at r = a."""
+    grids = [(f"cells={n1}x{n2}", 1.0 / n1, disc_cells((n1, n2))) for n1, n2 in counts]
+    runs = {f"cells={n1}x{n2}": disc_argv((n1, n2)) for n1, n2 in counts}
+    text = ("relative rms error of the fitted balance applied to (r^2 - a^2)^2 against "
+            "kappa (16 r^2 - 8 a^2), by cell class, at form degree 2 on the polar mesh; "
+            f"{THETA_TEXT}")
+    return {"id": identifier, "set": set_name, "description": description, "row": "bdf1",
+            "grids": grids, "runs": runs,
+            "checks": [order_check(quantity, order, None, CHECK_DIGITS, text)],
+            "limitation": limitation, "timeout": 600}
+
+
+def disc_conservation_case(counts=DISC_COUNTS):
+    """The discrete divergence theorem on the disc: an interior face is counted
+    twice with opposite signs and a boundary face carries the zero Neumann flux,
+    so the balance summed over the cells is zero for every field."""
+    grids = [(f"cells={n1}x{n2}", 1.0 / n1, 2 * disc_cells((n1, n2))) for n1, n2 in counts]
+    runs = {f"cells={n1}x{n2}": disc_argv((n1, n2)) for n1, n2 in counts}
+    text = ("the balance summed over every cell, relative to the sum of the magnitudes: "
+            "zero for every field, bounded by gamma_N with N twice the cells")
+    return {"id": "D04-disc-conservation", "set": "required",
+            "description": "the discrete divergence theorem on the disc, for the quartic and "
+                           "for a field of the run's own seed",
+            "row": "bdf1", "grids": grids, "runs": runs,
+            "checks": [floor_check("balance_sum", 0.0, CHECK_DIGITS, text, scale=1.0),
+                       floor_check("balance_sum_seeded", 0.0, CHECK_DIGITS, text, scale=1.0)],
+            "limitation": None, "timeout": 600}
+
+
+def disc_mode_case(identifier, description, order=2, rows=None, counts=DISC_COUNTS,
+                   limitation=None, set_name="required"):
+    """The radially symmetric Neumann mode of the disc, J_0(z_1 r / a) cos(omega t)
+    with omega^2 = 1 + kappa (z_1/a)^2, marched by a fourth-order family at ten
+    steps so the spatial error is the one measured."""
+    instants = 11
+    grids = [(f"cells={n1}x{n2}", 1.0 / n1, disc_cells((n1, n2)) * instants * STATE_COMPONENTS)
+             for n1, n2 in counts]
+    runs = {f"cells={n1}x{n2}": disc_argv((n1, n2), instants=instants, families="dirk",
+                                          max_order=4, check="mode state",
+                                          initial_field="mode", rows=rows)
+            for n1, n2 in counts}
+    text = ("error against J_0(z_1 r / a) cos(omega t) at T = 0.5, DIRK-4 at ten steps, "
+            "whose temporal error is below 8 % of the spatial error already at five steps; "
+            f"{THETA_TEXT}")
+    return {"id": identifier, "set": set_name, "description": description, "row": "dirk4",
+            "grids": grids, "runs": runs,
+            "checks": [order_check("mode", order, None, CHECK_DIGITS, text), residual_check()],
+            "limitation": limitation, "timeout": 900}
+
+
+def disc_transpose_case(identifier, description, rows=None, counts=((9, 16), (17, 32))):
+    """One bilinear form evaluated by the forward and the reverse pass on the disc."""
+    instants = 6
+    grids = [(f"cells={n1}x{n2}", 1.0 / n1, disc_cells((n1, n2)) * instants * STATE_COMPONENTS)
+             for n1, n2 in counts]
+    runs = {f"cells={n1}x{n2}": disc_argv((n1, n2), instants=instants, families="dirk",
+                                          max_order=2, derivative=1,
+                                          check="mode state passes", initial_field="mode",
+                                          rows=rows)
+            for n1, n2 in counts}
+    return {"id": identifier, "set": "required", "description": description, "row": "dirk2",
+            "grids": grids, "runs": runs, "checks": [TRANSPOSE, residual_check()],
+            "limitation": None, "timeout": 900}
 
 
 def taylor_green_case(identifier, cells, description, set_name="required", timeout=120,
@@ -611,9 +772,132 @@ def required_cases():
                         "the steps unequally, and the accepted grid has E - E_h = -8.3e-5 "
                         "within 1e-4 x S = 1.17e-4 (ratio 0.61 on this non-uniform grid)",
                         families="bdf", max_order=3),
+        # THE RADIAL OSCILLATOR, a law absent from the tested baseline: the
+        # residual is nonlinear through a negative integer power and its two
+        # functionals have closed forms, the square integral's depending on
+        # the trajectory in both its value and its design derivative.
+        radial_case("E01-radial-bdf2", "bdf2", 2, ["E", "dE", "F2", "q", "qd"],
+                    "radial oscillator q'' + q - nu/q^3 at nu = 2, BDF-2, order 2; its "
+                    "dF_2/dnu changes sign inside these grids (X22) and is not declared"),
+        radial_case("E02-radial-bdf3", "bdf3", 3, ["E", "dE", "F2", "dF2", "q", "qd"],
+                    "radial oscillator, BDF-3, order 3 in both functionals, both design "
+                    "derivatives and the state"),
+        radial_case("E03-radial-bdf4", "bdf4", 4, ["E", "dE", "q", "qd"],
+                    "radial oscillator, BDF-4, order 4 in the energy, its design derivative "
+                    "and the state; the square integral and its design derivative carry the "
+                    "staged startup's lower order (X23) and are not declared"),
+        radial_case("E04-radial-adams2", "adams2", 2, ["E", "dE", "F2", "q", "qd"],
+                    "radial oscillator, Adams-Moulton 2 (trapezoidal), order 2; dF_2/dnu is "
+                    "E11's declared limitation"),
+        radial_case("E05-radial-adams3", "adams3", 3, ["E", "F2", "q", "qd"],
+                    "radial oscillator, Adams-Moulton 3, order 3 in both functionals and the "
+                    "state; both design derivatives are E12's declared limitation"),
+        radial_case("E06-radial-dirk2", "dirk2", 2, ["E", "dE", "F2", "dF2", "q", "qd"],
+                    "radial oscillator, implicit midpoint, order 2"),
+        radial_case("E07-radial-dirk3", "dirk3", 3, ["E", "dE", "F2", "dF2", "q", "qd"],
+                    "radial oscillator, Crouzeix two-stage DIRK, order 3"),
+        radial_case("E08-radial-dirk4", "dirk4", 4, ["E", "dE", "F2", "dF2", "q", "qd"],
+                    "radial oscillator, Crouzeix three-stage DIRK, order 4"),
+        radial_case("E09-radial-newmark2", "newmark2", 2, ["E", "dE", "F2", "q", "qd"],
+                    "radial oscillator, Newmark beta = 1/4, gamma = 1/2, order 2; the same "
+                    "trapezoidal step as Adams-Moulton 2, and its rows read the same initial "
+                    "acceleration, so dF_2/dnu is E13's declared limitation",
+                    argv_extra=("--families=newmark",)),
+        # CONSERVATION. The radial oscillator's energy
+        # E = q'^2/2 + q^2/2 + nu/(2 q^2) is (1 + nu)/2 at every instant of the
+        # continuous flow. None of these families is symplectic, so the defect
+        # drifts with the horizon and no exact conservation is claimed; at a
+        # fixed horizon it converges at the order of the scheme.
+        radial_case("G18-radial-dirk2-invariant", "dirk2", 2, ["radial_invariant"],
+                    "the invariant defect of the implicit midpoint at T = 2, order 2"),
+        radial_case("G19-radial-dirk3-invariant", "dirk3", 3, ["radial_invariant"],
+                    "the invariant defect of the Crouzeix two-stage DIRK, order 3"),
+        radial_case("G20-radial-bdf3-invariant", "bdf3", 3, ["radial_invariant"],
+                    "the invariant defect of BDF-3, order 3"),
+        radial_case("G21-radial-adams2-invariant", "adams2", 2, ["radial_invariant"],
+                    "the invariant defect of Adams-Moulton 2, order 2"),
+        # THE DISC, a second discretization use on supported geometry: the polar
+        # mesh's identified angular seam, curved Neumann boundary, anisotropic
+        # cells and polygonal centre cell.
+        disc_operator_case("D01-disc-operator-centre", "operator_centre",
+                           "the polygonal centre cell of the disc, its own class, at order 2"),
+        disc_conservation_case(),
+        disc_mode_case("D05-disc-mode-fitted-balance",
+                       "the radial Neumann mode marched on the disc, the spatial law "
+                       "substituted into the state row as the fitted balance: order 2"),
+        disc_transpose_case("D06-disc-transpose",
+                            "the disc's forward and reverse passes evaluate one bilinear "
+                            "form, the fitted balance"),
+        disc_transpose_case("D08-disc-transpose-jet",
+                            "the same bilinear form with the spatial derivatives as rows of "
+                            "the jet, the second discretization of the same law",
+                            rows="states state-time-derivatives state-spatial-derivatives"),
+        radial_case("E10-radial-alexander2", "alexander2", 2,
+                    ["E", "dE", "F2", "dF2", "q", "qd"],
+                    "radial oscillator, Alexander's two-stage L-stable DIRK, order 2: a "
+                    "tableau registered by its data alone",
+                    argv_extra=("--families=alexander",)),
     ]
     # declared limitations: measured below their theoretical order
     cases += [
+        # THE DESIGN DEPENDENCE OF THE CONSISTENT INITIAL ACCELERATION. The
+        # initial tuple supplies q(0) and q'(0); the law closes q''(0) =
+        # nu/q(0)^3 - q(0), which depends on the design. A family whose rows
+        # read the acceleration at the initial instant - Adams-Moulton and
+        # Newmark, not the Runge-Kutta stages and not the BDF rows - therefore
+        # carries a design rate the derivative pass does not account for, and
+        # the reported design derivative is not the derivative of the reported
+        # functional: at 81 instants the central difference of the printed
+        # adams2 square integral over nu is 1.1891925 against the printed
+        # 1.17836909, and the discrepancy halves with the step. Van der Pol
+        # hides it, since q''(0) = nu (1 - q(0)^2) q'(0) - q(0) is independent
+        # of nu at q'(0) = 0.
+        radial_case("E11-radial-adams2-design-derivative", "adams2", 2, ["dF2"],
+                    "radial oscillator, Adams-Moulton 2: dF_2/dnu declared at order 2",
+                    limitation="the omitted design rate of the consistent initial "
+                               "acceleration makes dF_2/dnu first order; measured slopes "
+                               "1.118, 1.064, 1.033, 1.017"),
+        radial_case("E12-radial-adams3-design-derivatives", "adams3", 3, ["dE", "dF2"],
+                    "radial oscillator, Adams-Moulton 3: dF_E/dnu and dF_2/dnu declared at "
+                    "order 3",
+                    limitation="the same omitted design rate: dF_E/dnu measured 2.075, "
+                               "2.051, 2.029, 2.016 and dF_2/dnu 1.357, 1.195, 1.101, 1.051"),
+        radial_case("E13-radial-newmark2-design-derivative", "newmark2", 2, ["dF2"],
+                    "radial oscillator, Newmark beta = 1/4, gamma = 1/2: dF_2/dnu declared "
+                    "at order 2",
+                    limitation="the same omitted design rate; the trapezoidal step makes "
+                               "the measured slopes those of E11, 1.118, 1.064, 1.033, 1.017",
+                    argv_extra=("--families=newmark",)),
+        # THE SECOND DISCRETIZATION OF THE SAME LAW ON THE DISC. The spatial
+        # derivatives are rows of the jet, each tied to the values by the fit's
+        # row at form degree 2. That form is the compact one - the powers of one
+        # coordinate over the cell and its face neighbours, with no mixed
+        # member - and on the polar mesh the face neighbours lie along the
+        # radial and angular directions, which are the coordinate axes only
+        # along two rays. On the box, where they are always axis aligned, the
+        # same form reaches order 2 (config/mode_jet.cfg).
+        disc_mode_case("D07-disc-mode-jet",
+                       "the radial Neumann mode marched on the disc with the spatial "
+                       "derivatives as rows of the jet, declared at order 2",
+                       rows="states state-time-derivatives state-spatial-derivatives",
+                       limitation="the compact form fits the second derivatives from "
+                                  "axis-pure members over a neighbourhood the polar mesh "
+                                  "does not align with the axes: errors 3.778e-2, 2.190e-2, "
+                                  "1.703e-2 at the step ratio 1.9412, slopes 0.822 and 0.379, "
+                                  "against the fitted balance's 4.791e-3, 1.162e-3, 3.035e-4 "
+                                  "at 2.136 and 2.024"),
+        disc_operator_case("D02-disc-operator-interior", "operator",
+                           "the interior cells of the disc declared at order 2",
+                           limitation="the fitted balance on the polar mesh converges at "
+                                      "order 1.74 in the interior: errors 3.653e-2, 1.187e-2, "
+                                      "3.734e-3, slopes 1.768 and 1.744 at the step ratio "
+                                      "1.9412, and 1.208e-3 over a fourth grid of 65 x 128"),
+        disc_operator_case("D03-disc-operator-ring", "operator_boundary",
+                           "the boundary ring of the disc declared at order 2",
+                           limitation="the one-sided fits against the curved Neumann boundary "
+                                      "converge at order 1.33: errors 2.327e-1, 8.220e-2, "
+                                      "3.395e-2, slopes 1.636 and 1.333 at the step ratio "
+                                      "1.9412, and 1.530e-2 over a fourth grid of 65 x 128"),
         spatial_case("L04-operator-degree4", "bdf1", "operator", 4,
                      "discrete Laplacian of the mode at form degree 4 converges at order 2",
                      instants=3, families="bdf", max_order=1, extra=(), spatial_order=4,
@@ -695,6 +979,14 @@ def exploratory_cases():
                        "chain BDF-2 then DIRK-3, a heuristic for the same reason; effectivity "
                        "measured 1.60, 1.76, 1.83, 1.86 and not declared; estimate at order 3",
                        chain="bdf:2 dirk:3", effectivity=False),
+        radial_case("X22-radial-bdf2-design-derivative", "bdf2", 2, ["dF2"],
+                    "radial oscillator, BDF-2: dF_2/dnu changes sign between 21 and 41 "
+                    "instants, the pairwise slopes 4.462, 0.595, 1.134, 1.687 contracting "
+                    "towards 2", set_name="exploratory"),
+        radial_case("X23-radial-bdf4-square-integral", "bdf4", 4, ["F2", "dF2"],
+                    "radial oscillator, BDF-4: the square integral converges at the measured "
+                    "2.72 and its design derivative changes sign between 161 and 321 instants",
+                    set_name="exploratory"),
         field_temporal_case("X05-field-bdf3", "bdf3", 3,
                             "temporal order on the 16 x 16 periodic mode, BDF-3"),
         spatial_case("X06-taylor-green-three-grids", "bdf2", "velocity", 2,

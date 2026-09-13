@@ -641,6 +641,54 @@ contains
     q = unknown(STATE)
     f = 0.5_dp * (derivative(q, 0)**2 + derivative(q, 1)**2)
   end function energy_rule
+  !===================================================================!
+  ! THE RADIAL OSCILLATOR: the radial equation of the planar isotropic
+  ! oscillator at angular momentum L, the design nu = L**2,
+  !
+  !     R(q, nu) = q'' + q - nu / q**3,
+  !
+  ! the negative integer power a member of the expression's algebra.
+  ! With q(0) = 1, q'(0) = 0 the solution is q = sqrt(cos^2 t + nu
+  ! sin^2 t), which stays away from the singularity at q = 0 for
+  ! nu > 0.
+  !===================================================================!
+  function radial_rule(degree) result(r)
+    integer, intent(in) :: degree
+    type(expression) :: r
+    type(expression) :: q, nu
+    q  = unknown(STATE)
+    nu = design()
+    r = derivative(q, degree) + derivative(q, 0) - nu * derivative(q, 0)**(-3)
+  end function radial_rule
+  !===================================================================!
+  ! The Lagrangian L = F + lambda R of the radial oscillator over its
+  ! state and its costate: the residual is its stationarity in the
+  ! multiplier and F is the Lagrangian at a zero multiplier.
+  !===================================================================!
+  function radial_lagrangian(functional, degree, label) result(l)
+    type(expression), intent(in) :: functional
+    integer         , intent(in) :: degree
+    character(len=*), intent(in) :: label
+    type(expression) :: l
+    type(expression) :: rule
+    rule = functional + unknown(COSTATE) * radial_rule(degree)
+    l    = stated_over(rule, [degree], label, multipliers=1)
+  end function radial_lagrangian
+  ! the energy of the radial oscillator, conserved by its flow at the
+  ! value (1 + nu)/2 on q(0) = 1, q'(0) = 0
+  function radial_energy_rule() result(f)
+    type(expression) :: f
+    type(expression) :: q, nu
+    q  = unknown(STATE)
+    nu = design()
+    f = 0.5_dp * (derivative(q, 0)**2 + derivative(q, 1)**2) + 0.5_dp * nu * derivative(q, 0)**(-2)
+  end function radial_energy_rule
+  ! the square of the state, whose integral over the horizon depends
+  ! on the trajectory in both its value and its design derivative
+  function square_integral_rule() result(f)
+    type(expression) :: f
+    f = derivative(unknown(STATE), 0)**2
+  end function square_integral_rule
   function dissipation_rule() result(f)
     type(expression) :: f
     type(expression) :: q, nu
@@ -677,6 +725,15 @@ contains
        end if
        r = euler_lagrange(taylor_green(kinetic_energy_rule(dimension), dimension, 'taylor-green lagrangian'), 1, &
             & 'taylor-green momentum')
+    else if (trim(name) == 'radial_oscillator') then
+       if (degree /= 2) then
+          error stop 'gti_physics: the radial oscillator is of second order in time'
+       end if
+       if (present(dimension)) then
+          error stop 'gti_physics: the radial oscillator is a law in time alone'
+       end if
+       r = euler_lagrange(radial_lagrangian(radial_energy_rule(), degree, 'radial oscillator lagrangian'), 1, &
+            & 'radial oscillator residual')
     else
        r = euler_lagrange(lagrangian(energy_rule(), degree, 'van der pol lagrangian', algebraic_named(name), &
             & diffusion, dimension), 1, 'van der pol residual')
@@ -787,6 +844,19 @@ contains
        case ('dissipation')
           f = at_zero(taylor_green(viscous_dissipation_rule(dimension), dimension, 'taylor-green lagrangian'), &
                & 'viscous dissipation')
+       case default
+          admissible = .false.
+       end select
+       return
+    end if
+    if (trim(physics_name) == 'radial_oscillator') then
+       select case (name)
+       case ('energy')
+          f = at_zero(radial_lagrangian(radial_energy_rule(), degree, 'radial oscillator lagrangian'), &
+               & 'radial oscillator energy')
+       case ('square_integral')
+          f = at_zero(radial_lagrangian(square_integral_rule(), degree, 'radial oscillator lagrangian'), &
+               & 'radial oscillator square integral')
        case default
           admissible = .false.
        end select
@@ -4632,7 +4702,9 @@ module gti_field
   use operation_expression, only : expression, FIRST_COORDINATE
   use gti_configuration, only : words_of
   use gti_march        , only : march_context, consistent_states, spatial_components_of
-  use gti_space        , only : spatial_domain, spatial_operator, cartesian, periodic, written_paraview
+  use gti_space        , only : spatial_domain, spatial_operator, cartesian, periodic, circular, elliptical, &
+       & written_paraview
+  use operation_grid   , only : random_grid, partitioned
   implicit none
   private
   public :: against_the_exact_flow, spatial_discretization_stencil_of, initial_field
@@ -4708,7 +4780,10 @@ contains
        end do
     case ('mode')
        if (.not. present(space)) error stop 'gti_field: the mode is a field over a mesh'
-       if (.not. box_shaped(space)) error stop 'gti_field: the mode is defined on the box'
+       if (.not. mode_shaped(space)) then
+          error stop 'gti_field: the mode is the eigenfunction of the laplacian on the box and &
+               &on the disc; the ellipse states none'
+       end if
        lower(1, :) = mode_shape(space)
     case ('bump')
        if (.not. present(space)) error stop 'gti_field: the bump is a field over a mesh'
@@ -4827,14 +4902,84 @@ contains
     real(dp), allocatable :: k(:)
     k = merge(2.0_dp, 1.0_dp, space % geometry == periodic) * acos(-1.0_dp) / space % extents
   end function wavenumbers
+  !===================================================================!
+  ! THE BESSEL FUNCTION J_n of the first kind, from its convergent
+  ! series sum_m (-1)^m (z/2)^(2m+n) / (m! (m+n)!), summed until a term
+  ! falls below the unit roundoff times the largest so far.
+  !===================================================================!
+  pure real(dp) function bessel_j(n, z) result(j)
+    integer , intent(in) :: n
+    real(dp), intent(in) :: z
+    real(dp) :: term, largest, half
+    integer  :: m
+    half = 0.5_dp * z
+    term = 1.0_dp
+    do m = 1, n
+       term = term * half / real(m, dp)
+    end do
+    j       = term
+    largest = abs(term)
+    do m = 1, 1000
+       term    = -term * half * half / (real(m, dp) * real(m + n, dp))
+       j       = j + term
+       largest = max(largest, abs(term))
+       if (abs(term) <= epsilon(1.0_dp) * largest) exit
+    end do
+  end function bessel_j
+  !===================================================================!
+  ! The first positive zero of J_1, by Newton from z = 3.5 with
+  ! J_1'(z) = J_0(z) - J_1(z)/z. Since J_0' = -J_1, k = z_1 / a makes
+  ! J_0(k r) satisfy dq/dr = 0 at r = a, the condition the operator
+  ! states on the disc's boundary. The value is 3.8317059702075125,
+  ! at which |J_1| is 6.5e-17.
+  !===================================================================!
+  pure real(dp) function first_bessel_zero() result(z)
+    real(dp) :: value, slope
+    integer  :: it
+    z = 3.5_dp
+    do it = 1, 100
+       value = bessel_j(1, z)
+       slope = bessel_j(0, z) - value / z
+       if (abs(value) <= epsilon(1.0_dp)) exit
+       z = z - value / slope
+    end do
+  end function first_bessel_zero
+  !===================================================================!
+  ! THE MODE: the eigenfunction of the laplacian under the condition
+  ! the operator states, and the square of its wavenumber. On the box
+  ! the separated product of cosines, one half wave on a box with
+  ! insulated sides and one whole wave on the periodic box. On the disc
+  ! the radially symmetric J_0(k r) with k = z_1 / a, whose laplacian
+  ! is -k^2 times itself, so the mode marches as
+  ! q = J_0(k r) cos(omega t) with omega^2 = 1 + kappa k^2.
+  !===================================================================!
+  pure real(dp) function mode_wavenumber_square(space) result(k_square)
+    type(spatial_domain), intent(in) :: space
+    if (box_shaped(space)) then
+       k_square = sum(wavenumbers(space) ** 2)
+    else
+       k_square = (first_bessel_zero() / space % extents(1)) ** 2
+    end if
+  end function mode_wavenumber_square
   pure function mode_shape(space) result(shape)
     type(spatial_domain), intent(in) :: space
     real(dp), allocatable :: shape(:)
     real(dp), allocatable :: k(:)
+    real(dp) :: radial
     integer  :: i
-    k = wavenumbers(space)
-    shape = [(product(cos(k * space % centre(:, i))), i = 1, space % num_cells)]
+    if (box_shaped(space)) then
+       k = wavenumbers(space)
+       shape = [(product(cos(k * space % centre(:, i))), i = 1, space % num_cells)]
+       return
+    end if
+    radial = sqrt(mode_wavenumber_square(space))
+    shape = [(bessel_j(0, radial * sqrt(sum(space % centre(:, i) ** 2))), &
+         &    i = 1, space % num_cells)]
   end function mode_shape
+  pure logical function mode_shaped(space) result(yes)
+    type(spatial_domain), intent(in) :: space
+    yes = box_shaped(space) .or. space % geometry == circular
+  end function mode_shaped
   subroutine balance_of(space, kappa, degree, values, balanced)
     type(spatial_domain), intent(in) :: space
     real(dp)  , intent(in) :: kappa, values(:)
@@ -4850,37 +4995,119 @@ contains
     call op % apply(op % pattern, op % bind([given]), out)
     call out % real_vector(balanced)
   end subroutine balance_of
-  subroutine against_the_laplacian(space, kappa, degree)
+  !===================================================================!
+  ! THE FIELD THE OPERATOR IS COMPARED AGAINST, with kappa times its
+  ! laplacian at every cell centre. On the box the separated mode. On
+  ! the disc the quartic u = (r^2 - a^2)^2, whose laplacian is
+  ! 16 r^2 - 8 a^2 and whose radial derivative 4 r (r^2 - a^2)
+  ! vanishes at r = a, so it satisfies the same zero Neumann condition
+  ! the operator states there.
+  !===================================================================!
+  subroutine operator_field(space, kappa, values, exact)
+    type(spatial_domain), intent(in) :: space
+    real(dp)            , intent(in) :: kappa
+    real(dp), allocatable, intent(out) :: values(:), exact(:)
+    real(dp) :: a, radius_square
+    integer  :: i
+    if (box_shaped(space)) then
+       values = mode_shape(space)
+       exact  = -kappa * sum(wavenumbers(space) ** 2) * values
+       return
+    end if
+    a = space % extents(1)
+    allocate(values(space % num_cells), exact(space % num_cells))
+    do i = 1, space % num_cells
+       radius_square = sum(space % centre(:, i) ** 2)
+       values(i) = (radius_square - a ** 2) ** 2
+       exact(i)  = kappa * (16.0_dp * radius_square - 8.0_dp * a ** 2)
+    end do
+  end subroutine operator_field
+  !===================================================================!
+  ! The class of a cell, by its count of boundary faces: on the box
+  ! the count of coordinates at either end, interior, one boundary or
+  ! corner. On the disc the angular coordinate is identified and only
+  ! the outer ring meets the boundary, so the classes are the interior,
+  ! that ring, and the polygonal centre cell, which is its own.
+  !===================================================================!
+  pure integer function cell_class(space, i) result(which)
+    type(spatial_domain), intent(in) :: space
+    integer             , intent(in) :: i
+    which = 0
+    if (space % geometry == periodic) return
+    if (box_shaped(space)) then
+       which = count(space % cell_multi(:, i) == 1 .or. space % cell_multi(:, i) == space % n)
+       return
+    end if
+    if (i == 1) then
+       which = 2
+    else if (space % cell_multi(2, i) == space % n(1)) then
+       which = 1
+    end if
+  end function cell_class
+  !===================================================================!
+  ! THE DISCRETE DIVERGENCE THEOREM. The balance of a cell sums its
+  ! face fluxes; an interior face is counted twice with opposite
+  ! signs and a boundary face has the zero Neumann flux, so the
+  ! balance summed over every cell is zero for every field. Reported
+  ! relative to the sum of the magnitudes, so the floor is gamma_N.
+  !===================================================================!
+  real(dp) function conservation_defect(space, kappa, degree, values) result(relative)
+    type(spatial_domain), intent(in) :: space
+    real(dp)            , intent(in) :: kappa, values(:)
+    integer             , intent(in) :: degree
+    real(dp), allocatable :: balanced(:)
+    call balance_of(space, kappa, degree, values, balanced)
+    relative = sum(balanced) / max(sum(abs(balanced)), tiny(1.0_dp))
+  end function conservation_defect
+  ! a field of the run's own seed, one value per cell: the random
+  ! grid's steps over the unit interval
+  function seeded_field(space, seed) result(values)
+    type(spatial_domain), intent(in) :: space
+    integer             , intent(in) :: seed
+    real(dp), allocatable :: values(:)
+    real(dp), allocatable :: steps(:), line(:)
+    call partitioned(random_grid(1.0_dp, seed), space % num_cells + 1, steps, line)
+    values = steps(1:space % num_cells)
+  end function seeded_field
+  subroutine against_the_laplacian(space, kappa, degree, seed)
     type(spatial_domain), intent(in) :: space
     real(dp)  , intent(in) :: kappa
-    integer   , intent(in) :: degree
+    integer   , intent(in) :: degree, seed
     real(dp), allocatable :: shape(:), balanced(:), exact(:)
     real(dp) :: err(0:3), norm(0:3)
-    integer  :: i, boundary_count, counted(0:3)
-    if (.not. box_shaped(space)) then
-       error stop 'gti_field: the laplacian check is defined on the box'
+    integer  :: i, which, counted(0:3)
+    if (.not. box_shaped(space) .and. space % geometry /= circular) then
+       error stop 'gti_field: the laplacian check is defined on the box and on the disc'
     end if
-    shape = mode_shape(space)
-    exact = -kappa * sum(wavenumbers(space) ** 2) * shape
+    call operator_field(space, kappa, shape, exact)
     call balance_of(space, kappa, degree, shape, balanced)
     err   = 0.0_dp
     norm  = 0.0_dp
     counted = 0
     do i = 1, space % num_cells
-       boundary_count = 0
-       if (space % geometry /= periodic) then
-          boundary_count = count(space % cell_multi(:, i) == 1 .or. space % cell_multi(:, i) == space % n)
-       end if
-       err(boundary_count)   = err(boundary_count)   + (balanced(i) / space % volume(i) - exact(i)) ** 2
-       norm(boundary_count)  = norm(boundary_count)  + exact(i) ** 2
-       counted(boundary_count) = counted(boundary_count) + 1
+       which = cell_class(space, i)
+       err(which)     = err(which)  + (balanced(i) / space % volume(i) - exact(i)) ** 2
+       norm(which)    = norm(which) + exact(i) ** 2
+       counted(which) = counted(which) + 1
     end do
-    write(*,'(a,i0,a,i0,a)') '   the operator compared with kappa times the laplacian of the mode, ', &
-         & space % num_cells, ' cells, form degree ', degree, ':'
-    write(*,'(a,3(a,es10.3))') '   relative rms error', &
-         & '   interior ', sqrt(err(0) / max(norm(0), tiny(1.0_dp))), &
-         & '   one boundary ', sqrt(err(1) / max(norm(1), tiny(1.0_dp))), &
-         & '   corner ',   sqrt(err(2) / max(norm(2), tiny(1.0_dp)))
+    if (box_shaped(space)) then
+       write(*,'(a,i0,a,i0,a)') '   the operator compared with kappa times the laplacian of the mode, ', &
+            & space % num_cells, ' cells, form degree ', degree, ':'
+       write(*,'(a,3(a,es10.3))') '   relative rms error', &
+            & '   interior ', sqrt(err(0) / max(norm(0), tiny(1.0_dp))), &
+            & '   one boundary ', sqrt(err(1) / max(norm(1), tiny(1.0_dp))), &
+            & '   corner ',   sqrt(err(2) / max(norm(2), tiny(1.0_dp)))
+    else
+       write(*,'(a,i0,a,i0,a)') '   the operator compared with kappa times the laplacian of the quartic, ', &
+            & space % num_cells, ' cells, form degree ', degree, ':'
+       write(*,'(a,3(a,es10.3))') '   relative rms error', &
+            & '   interior ', sqrt(err(0) / max(norm(0), tiny(1.0_dp))), &
+            & '   boundary ring ', sqrt(err(1) / max(norm(1), tiny(1.0_dp))), &
+            & '   centre cell ',   sqrt(err(2) / max(norm(2), tiny(1.0_dp)))
+    end if
+    write(*,'(a,2(a,es10.3))') '   the balance summed over the cells, relative to the sum of magnitudes', &
+         & '   the field above ', conservation_defect(space, kappa, degree, shape), &
+         & '   a seeded field ', conservation_defect(space, kappa, degree, seeded_field(space, seed))
   end subroutine against_the_laplacian
   !===================================================================!
   ! The marched field at the last instant against the separated mode
@@ -4905,8 +5132,8 @@ contains
     real(dp) :: omega, omega_h, exact, semi, e_exact, e_semi, area, mode, mass
     real(dp), allocatable :: shape(:), balanced(:)
     integer  :: i
-    if (.not. box_shaped(space) .or. design /= 0.0_dp) return
-    omega = sqrt(1.0_dp + kappa * sum(wavenumbers(space) ** 2))
+    if (.not. mode_shaped(space) .or. design /= 0.0_dp) return
+    omega = sqrt(1.0_dp + kappa * mode_wavenumber_square(space))
     shape = mode_shape(space)
     call balance_of(space, kappa, degree, shape, balanced)
     omega_h = sqrt(1.0_dp - dot_product(shape, balanced) / &
@@ -13076,7 +13303,8 @@ contains
     logical :: admissible
     integer :: i
     call refuse_unknown(cfg % designs, ['physics', 'grid   '], 'designs')
-    call refuse_unknown(cfg % functionals, ['energy     ', 'dissipation', 'mean       '], 'functionals')
+    call refuse_unknown(cfg % functionals, [character(len=15) :: 'energy', 'dissipation', 'mean', &
+         & 'square_integral'], 'functionals')
     if (.not. lists(cfg % designs, 'physics')) then
        error stop 'graph_time_integrator: the physics'' parameter is the first design'
     end if
@@ -13090,7 +13318,12 @@ contains
        else
           call functional_named(trim(cfg % physics), trim(names(i)), cfg % state_degree, functionals(i), admissible)
        end if
-       if (admissible) functionals(i) = stated_over(functionals(i), state_degrees_of(cfg), functionals(i) % name())
+       if (.not. admissible) then
+          write(*,'(a)') ' '
+          write(*,'(a)') ' ' // trim(cfg % physics) // ' admits no functional named ' // trim(names(i)) // '.'
+          error stop 'graph_time_integrator: a functional is one the physics admits'
+       end if
+       functionals(i) = stated_over(functionals(i), state_degrees_of(cfg), functionals(i) % name())
     end do
   end subroutine chosen_functionals
   subroutine against_the_ode(cfg, schemes, added, f_field)
@@ -13183,7 +13416,7 @@ contains
        nodes  = space % num_cells
        volume = space % volume
        if (lists(cfg % check, 'operator')) then
-          call against_the_laplacian(space, cfg % diffusion, cfg % spatial_order)
+          call against_the_laplacian(space, cfg % diffusion, cfg % spatial_order, cfg % seed)
        end if
     else
        nodes  = 1
@@ -13395,7 +13628,8 @@ contains
     type(configuration), intent(inout) :: cfg
     real(dp), allocatable :: dt(:), t(:)
     integer :: widest, printed
-    call refuse_unknown(cfg % physics, ['vanderpol          ', 'vanderpol_algebraic', 'taylor_green       '], 'physics')
+    call refuse_unknown(cfg % physics, ['vanderpol          ', 'vanderpol_algebraic', 'taylor_green       ', &
+         & 'radial_oscillator  '], 'physics')
     call refuse_unknown(cfg % adaptive_check, &
          & [character(len=17) :: 'step_doubling', 'grid_stationarity', 'functional_error'], 'adaptive_check')
     call apply_stopping(cfg)

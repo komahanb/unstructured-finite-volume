@@ -89,13 +89,24 @@ def number(token):
 def parse_table(text):
     """Rows of the application table with their check lines."""
     rows = {}
-    record = {"rows": rows, "operator": None}
+    record = {"rows": rows, "operator": None, "conservation": None}
     current = None
     for line in text.splitlines():
         m = re.match(r"^   relative rms error\s+interior\s+(\S+)\s+one boundary\s+(\S+)\s+corner\s+(\S+)", line)
         if m:
             record["operator"] = {"interior": number(m.group(1)), "one_boundary": number(m.group(2)),
                                   "corner": number(m.group(3))}
+            continue
+        m = re.match(r"^   relative rms error\s+interior\s+(\S+)\s+boundary ring\s+(\S+)\s+"
+                     r"centre cell\s+(\S+)", line)
+        if m:
+            record["operator"] = {"interior": number(m.group(1)), "one_boundary": number(m.group(2)),
+                                  "corner": number(m.group(3))}
+            continue
+        m = re.match(r"^   the balance summed over the cells, relative to the sum of magnitudes\s+"
+                     r"the field above\s+(\S+)\s+a seeded field\s+(\S+)", line)
+        if m:
+            record["conservation"] = {"field": number(m.group(1)), "seeded": number(m.group(2))}
             continue
         m = ROW.match(line)
         if m and not line.startswith("      "):
@@ -105,7 +116,7 @@ def parse_table(text):
                 status = tokens.pop()
             current = {"label": m.group(1), "solved": int(m.group(2)),
                        "f": [number(t) for t in tokens], "status": status,
-                       "dissipation": None, "state": None, "blocks": [], "transpose": None,
+                       "dissipation": None, "square_integral": None, "state": None, "blocks": [], "transpose": None,
                        "mode": None, "semi": None, "velocity": None, "pressure": None,
                        "divergence": None, "functional_error": {}, "indicators": {},
                        "mode_energy": None, "semi_energy": None}
@@ -124,6 +135,10 @@ def parse_table(text):
             current["functional_error"].setdefault(m.group(1), {})["derivative"] = {
                 "estimate": number(m.group(2)), "costate": number(m.group(3)),
                 "partial": number(m.group(4)), "value": number(m.group(5))}
+            continue
+        m = re.match(r"^      radial oscillator square integral\s+(.*?)\s*$", line)
+        if m:
+            current["square_integral"] = [number(t) for t in m.group(1).split()]
             continue
         m = re.match(r"^      state at the last instant, node 1:\s*(.*?)\s*$", line)
         if m:
@@ -242,13 +257,16 @@ def interval_sum(indicators, a, b):
                if i["t"] - i["h"] >= a - i["h"] / 2 and i["t"] <= b + i["h"] / 2)
 
 
-def quantity_of(row, record, quantity, check=None, paired=None):
+def quantity_of(row, record, quantity, check=None, paired=None, design=None):
     """The number a quantity names in one row, or None when it is absent.
     The functional-error quantities read `functional error` and `indicator`
     lines: estimate:<word>, scale:<word>, transfer:<word>, effectivity:<word>
     = eta / (F - F_h) with F the declared reference of the word (infinite
     where F_h = F), and localization:<word> = log2 of the sum of |eta_k|
-    over the check's interval against the same sum on the paired row."""
+    over the check's interval against the same sum on the paired row. F2 and
+    dF2 are the square integral and its design derivative, and the radial
+    quantities are the invariant and the law of the radial oscillator, each
+    read at the design the check declares."""
     if ":" in quantity:
         kind, word = quantity.split(":", 1)
         estimate = row.get("functional_error", {}).get(word)
@@ -284,6 +302,21 @@ def quantity_of(row, record, quantity, check=None, paired=None):
                 return None
             return math.log2(own / other)
         raise ValueError(quantity)
+    if quantity == "F2":
+        column = row.get("square_integral")
+        return column[0] if column else None
+    if quantity == "dF2":
+        column = row.get("square_integral")
+        return column[1] if column and len(column) > 1 else None
+    if quantity in ("radial_invariant", "radial_law"):
+        state = row.get("state")
+        if not state or len(state) < 3 or any(state[i] is None for i in range(3)):
+            return None
+        if state[0] == 0.0:
+            return None
+        if quantity == "radial_invariant":
+            return 0.5 * (state[0] ** 2 + state[1] ** 2) + 0.5 * design / state[0] ** 2
+        return state[2] + state[0] - design / state[0] ** 3
     if quantity == "E":
         return row["f"][0] if row.get("f") else None
     if quantity == "dE":
@@ -304,8 +337,13 @@ def quantity_of(row, record, quantity, check=None, paired=None):
         if not state or len(state) < 3 or state[0] is None or state[2] is None:
             return None
         return state[2] + state[0]
-    if quantity == "operator":
-        return record["operator"]["interior"] if record.get("operator") else None
+    if quantity in ("operator", "operator_boundary", "operator_centre"):
+        column = {"operator": "interior", "operator_boundary": "one_boundary",
+                  "operator_centre": "corner"}[quantity]
+        return record["operator"][column] if record.get("operator") else None
+    if quantity in ("balance_sum", "balance_sum_seeded"):
+        column = "field" if quantity == "balance_sum" else "seeded"
+        return record["conservation"][column] if record.get("conservation") else None
     return row.get(quantity)
 
 
@@ -511,7 +549,8 @@ def evaluate_check(check, case, rows, records):
                 outcome["status"] = "missing_result"
                 outcome["message"] = f"no paired {check['paired']} run for {label}"
                 return outcome
-        value = quantity_of(row, records[label], check["quantity"], check, paired)
+        value = quantity_of(row, records[label], check["quantity"], check, paired,
+                            check.get("design"))
         if value is None:
             outcome["status"] = "missing_result"
             outcome["message"] = f"{check['quantity']} absent from {label}"
@@ -526,7 +565,8 @@ def evaluate_check(check, case, rows, records):
         if kind == "order":
             reference = check["reference"]
             if isinstance(reference, dict):
-                reference = quantity_of(rows[reference["run"]], records[reference["run"]], check["quantity"])
+                reference = quantity_of(rows[reference["run"]], records[reference["run"]],
+                                        check["quantity"], design=check.get("design"))
                 if reference is None:
                     outcome["status"] = "missing_result"
                     outcome["message"] = "the reference run lacks the quantity"

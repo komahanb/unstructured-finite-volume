@@ -79,6 +79,7 @@ module operation_residual
      procedure :: domain         => residual_domain
      procedure :: apply          => residual_apply
      procedure :: max_degree     => residual_max_degree
+     procedure :: defined_at_zero => residual_defined_at_zero
      procedure :: partial_action => residual_partial_action
      procedure :: explicit_tangent => residual_explicit_tangent
 
@@ -284,6 +285,23 @@ contains
     ! partial above the first is the physics expression's alone
     residual_max_degree = this % physics % max_degree()
   end function residual_max_degree
+
+  !===================================================================!
+  ! A LAW NEED NOT BE DEFINED AT THE ZERO STATE. The discretization
+  ! stencils are linear in the state, so the zero state lies in the
+  ! residual's domain exactly when it lies in the domain of every one
+  ! of its rules: the radial oscillator's nu / q**3 excludes it, the
+  ! frozen linearization, whose rule is the zero expression, does not.
+  !===================================================================!
+
+  pure logical function residual_defined_at_zero(this) result(defined)
+    class(residual_operator), intent(in) :: this
+    integer :: j
+    defined = .true.
+    do j = 1, size(this % rules)
+       defined = defined .and. this % rules(j) % defined_at_zero()
+    end do
+  end function residual_defined_at_zero
 
   type(expression) function rule(this) result(law)
     class(residual_operator), intent(in) :: this

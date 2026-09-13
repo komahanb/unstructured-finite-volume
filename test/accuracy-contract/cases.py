@@ -502,6 +502,19 @@ def required_cases():
                     "trapezoidal step as Adams-Moulton 2, and its rows read the same initial "
                     "acceleration, so dF_2/dnu is E13's declared limitation",
                     argv_extra=("--families=newmark",)),
+        # CONSERVATION. The radial oscillator's energy
+        # E = q'^2/2 + q^2/2 + nu/(2 q^2) is (1 + nu)/2 at every instant of the
+        # continuous flow. None of these families is symplectic, so the defect
+        # drifts with the horizon and no exact conservation is claimed; at a
+        # fixed horizon it converges at the order of the scheme.
+        radial_case("G01-radial-dirk2-invariant", "dirk2", 2, ["radial_invariant"],
+                    "the invariant defect of the implicit midpoint at T = 2, order 2"),
+        radial_case("G02-radial-dirk3-invariant", "dirk3", 3, ["radial_invariant"],
+                    "the invariant defect of the Crouzeix two-stage DIRK, order 3"),
+        radial_case("G03-radial-bdf3-invariant", "bdf3", 3, ["radial_invariant"],
+                    "the invariant defect of BDF-3, order 3"),
+        radial_case("G04-radial-adams2-invariant", "adams2", 2, ["radial_invariant"],
+                    "the invariant defect of Adams-Moulton 2, order 2"),
         # THE DISC, a second discretization use on supported geometry: the polar
         # mesh's identified angular seam, curved Neumann boundary, anisotropic
         # cells and polygonal centre cell.

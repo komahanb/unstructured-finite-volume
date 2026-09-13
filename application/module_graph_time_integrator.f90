@@ -125,7 +125,7 @@ module gti_configuration
      character(len=16)  :: initial_field    = 'constant'
      character(len=16)  :: export           = 'none'
      character(len=128) :: export_path      = 'field'
-     character(len=16)  :: check            = 'none'
+     character(len=32)  :: check            = 'none'
      real(dp)          :: tolerance           = 1.0e-12_dp
      character(len=16) :: tolerance_criterion = 'relative'
 
@@ -4738,7 +4738,10 @@ contains
        end do
     case ('mode')
        if (.not. present(space)) error stop 'gti_field: the mode is a field over a mesh'
-       if (.not. box_shaped(space)) error stop 'gti_field: the mode is defined on the box'
+       if (.not. mode_shaped(space)) then
+          error stop 'gti_field: the mode is the eigenfunction of the laplacian on the box and &
+               &on the disc; the ellipse states none'
+       end if
        lower(1, :) = mode_shape(space)
     case ('bump')
        if (.not. present(space)) error stop 'gti_field: the bump is a field over a mesh'
@@ -4857,14 +4860,84 @@ contains
     real(dp), allocatable :: k(:)
     k = merge(2.0_dp, 1.0_dp, space % geometry == periodic) * acos(-1.0_dp) / space % extents
   end function wavenumbers
+  !===================================================================!
+  ! THE BESSEL FUNCTION J_n of the first kind, from its convergent
+  ! series sum_m (-1)^m (z/2)^(2m+n) / (m! (m+n)!), summed until a term
+  ! falls below the unit roundoff times the largest so far.
+  !===================================================================!
+  pure real(dp) function bessel_j(n, z) result(j)
+    integer , intent(in) :: n
+    real(dp), intent(in) :: z
+    real(dp) :: term, largest, half
+    integer  :: m
+    half = 0.5_dp * z
+    term = 1.0_dp
+    do m = 1, n
+       term = term * half / real(m, dp)
+    end do
+    j       = term
+    largest = abs(term)
+    do m = 1, 1000
+       term    = -term * half * half / (real(m, dp) * real(m + n, dp))
+       j       = j + term
+       largest = max(largest, abs(term))
+       if (abs(term) <= epsilon(1.0_dp) * largest) exit
+    end do
+  end function bessel_j
+  !===================================================================!
+  ! The first positive zero of J_1, by Newton from z = 3.5 with
+  ! J_1'(z) = J_0(z) - J_1(z)/z. Since J_0' = -J_1, k = z_1 / a makes
+  ! J_0(k r) satisfy dq/dr = 0 at r = a, the condition the operator
+  ! states on the disc's boundary. The value is 3.8317059702075125,
+  ! at which |J_1| is 6.5e-17.
+  !===================================================================!
+  pure real(dp) function first_bessel_zero() result(z)
+    real(dp) :: value, slope
+    integer  :: it
+    z = 3.5_dp
+    do it = 1, 100
+       value = bessel_j(1, z)
+       slope = bessel_j(0, z) - value / z
+       if (abs(value) <= epsilon(1.0_dp)) exit
+       z = z - value / slope
+    end do
+  end function first_bessel_zero
+  !===================================================================!
+  ! THE MODE: the eigenfunction of the laplacian under the condition
+  ! the operator states, and the square of its wavenumber. On the box
+  ! the separated product of cosines, one half wave on a box with
+  ! insulated sides and one whole wave on the periodic box. On the disc
+  ! the radially symmetric J_0(k r) with k = z_1 / a, whose laplacian
+  ! is -k^2 times itself, so the mode marches as
+  ! q = J_0(k r) cos(omega t) with omega^2 = 1 + kappa k^2.
+  !===================================================================!
+  pure real(dp) function mode_wavenumber_square(space) result(k_square)
+    type(spatial_domain), intent(in) :: space
+    if (box_shaped(space)) then
+       k_square = sum(wavenumbers(space) ** 2)
+    else
+       k_square = (first_bessel_zero() / space % extents(1)) ** 2
+    end if
+  end function mode_wavenumber_square
   pure function mode_shape(space) result(shape)
     type(spatial_domain), intent(in) :: space
     real(dp), allocatable :: shape(:)
     real(dp), allocatable :: k(:)
+    real(dp) :: radial
     integer  :: i
-    k = wavenumbers(space)
-    shape = [(product(cos(k * space % centre(:, i))), i = 1, space % num_cells)]
+    if (box_shaped(space)) then
+       k = wavenumbers(space)
+       shape = [(product(cos(k * space % centre(:, i))), i = 1, space % num_cells)]
+       return
+    end if
+    radial = sqrt(mode_wavenumber_square(space))
+    shape = [(bessel_j(0, radial * sqrt(sum(space % centre(:, i) ** 2))), &
+         &    i = 1, space % num_cells)]
   end function mode_shape
+  pure logical function mode_shaped(space) result(yes)
+    type(spatial_domain), intent(in) :: space
+    yes = box_shaped(space) .or. space % geometry == circular
+  end function mode_shaped
   subroutine balance_of(space, kappa, degree, values, balanced)
     type(spatial_domain), intent(in) :: space
     real(dp)  , intent(in) :: kappa, values(:)
@@ -5001,8 +5074,8 @@ contains
     real(dp) :: omega, omega_h, exact, semi, e_exact, e_semi, area, mode
     real(dp), allocatable :: shape(:), balanced(:)
     integer  :: i
-    if (.not. box_shaped(space) .or. design /= 0.0_dp) return
-    omega = sqrt(1.0_dp + kappa * sum(wavenumbers(space) ** 2))
+    if (.not. mode_shaped(space) .or. design /= 0.0_dp) return
+    omega = sqrt(1.0_dp + kappa * mode_wavenumber_square(space))
     shape = mode_shape(space)
     call balance_of(space, kappa, degree, shape, balanced)
     omega_h = sqrt(1.0_dp - dot_product(shape, balanced) / &

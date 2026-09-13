@@ -311,6 +311,42 @@ def disc_conservation_case(counts=DISC_COUNTS):
             "limitation": None, "timeout": 600}
 
 
+def disc_mode_case(identifier, description, order=2, rows=None, counts=DISC_COUNTS,
+                   limitation=None, set_name="required"):
+    """The radially symmetric Neumann mode of the disc, J_0(z_1 r / a) cos(omega t)
+    with omega^2 = 1 + kappa (z_1/a)^2, marched by a fourth-order family at ten
+    steps so the spatial error is the one measured."""
+    instants = 11
+    grids = [(f"cells={n1}x{n2}", 1.0 / n1, disc_cells((n1, n2)) * instants * STATE_COMPONENTS)
+             for n1, n2 in counts]
+    runs = {f"cells={n1}x{n2}": disc_argv((n1, n2), instants=instants, families="dirk",
+                                          max_order=4, check="mode state",
+                                          initial_field="mode", rows=rows)
+            for n1, n2 in counts}
+    text = ("error against J_0(z_1 r / a) cos(omega t) at T = 0.5, DIRK-4 at ten steps, "
+            "whose temporal error is below 8 % of the spatial error already at five steps; "
+            f"{THETA_TEXT}")
+    return {"id": identifier, "set": set_name, "description": description, "row": "dirk4",
+            "grids": grids, "runs": runs,
+            "checks": [order_check("mode", order, None, CHECK_DIGITS, text), residual_check()],
+            "limitation": limitation, "timeout": 900}
+
+
+def disc_transpose_case(identifier, description, rows=None, counts=((9, 16), (17, 32))):
+    """One bilinear form evaluated by the forward and the reverse pass on the disc."""
+    instants = 6
+    grids = [(f"cells={n1}x{n2}", 1.0 / n1, disc_cells((n1, n2)) * instants * STATE_COMPONENTS)
+             for n1, n2 in counts]
+    runs = {f"cells={n1}x{n2}": disc_argv((n1, n2), instants=instants, families="dirk",
+                                          max_order=2, derivative=1,
+                                          check="mode state passes", initial_field="mode",
+                                          rows=rows)
+            for n1, n2 in counts}
+    return {"id": identifier, "set": "required", "description": description, "row": "dirk2",
+            "grids": grids, "runs": runs, "checks": [TRANSPOSE, residual_check()],
+            "limitation": None, "timeout": 900}
+
+
 def taylor_green_case(identifier, cells, description, set_name="required", timeout=120,
                       instants=6):
     grids = [(f"cells={n}", 2 * math.pi / n, n * n * instants * 6) for n in cells]
@@ -472,6 +508,12 @@ def required_cases():
         disc_operator_case("D01-disc-operator-centre", "operator_centre",
                            "the polygonal centre cell of the disc, its own class, at order 2"),
         disc_conservation_case(),
+        disc_mode_case("D05-disc-mode-fitted-balance",
+                       "the radial Neumann mode marched on the disc, the spatial law "
+                       "substituted into the state row as the fitted balance: order 2"),
+        disc_transpose_case("D06-disc-transpose",
+                            "the disc's forward and reverse passes evaluate one bilinear "
+                            "form, the fitted balance"),
         radial_case("E10-radial-alexander2", "alexander2", 2,
                     ["E", "dE", "F2", "dF2", "q", "qd"],
                     "radial oscillator, Alexander's two-stage L-stable DIRK, order 2: a "

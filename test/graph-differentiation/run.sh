@@ -8,16 +8,16 @@ make -C "$here" clean >/dev/null 2>&1 || true
 make -C "$here" >/dev/null
 cd "$here" && ./run
 declare -A reason=(
-  [dupslot]="total_derivative: a duplicate argument path is rejected"
-  [badslot]="operation: the argument is declared"
-  [foreignpath]="total_derivative: a path names an argument of the statement"
-  [foreignvariation]="operation: a variation names an argument of the operation"
-  [undeclared]="operation: the argument space is declared before an argument is named"
-  [negdegree]="total_derivative: degree is supported"
-  [pastcalculus]="total_derivative: the statement supports the requested order"
-  [hugedegree]="total_derivative: partition coefficient is representable"
-  [unfrozen]="linearization: the tangent is taken at a frozen state"
-  [flatcalculus]="operation: the requested order is within max_degree"
+  [dupslot]="a duplicate argument path is rejected"
+  [badslot]="argument() was called with k outside 1..declared_arguments"
+  [foreignpath]="a path must name one of its declared arguments"
+  [foreignvariation]="found a variation naming an argument of another operation"
+  [undeclared]="was called before declare_arguments()"
+  [negdegree]="does not support a negative degree"
+  [pastcalculus]="the statement does not support the requested order"
+  [hugedegree]="the partition coefficient is not representable"
+  [unfrozen]="was requested before freeze_inputs was called"
+  [flatcalculus]="partial_action() is not implemented by this operation type"
 )
 for case in dupslot badslot foreignpath foreignvariation undeclared \
             negdegree pastcalculus hugedegree unfrozen flatcalculus; do

@@ -15,10 +15,10 @@ make -C "$here" >/dev/null
 cd "$here" && ./run
 
 declare -A reason=(
-  [unsigned]="keyed on assigned identity"
-  [selfsame]="not declared into itself"
-  [twoambients]="declared into one ambient"
-  [cycle]="an inclusion chain is finite"
+  [unsigned]="requires the added set to have an assigned identity"
+  [selfsame]="a set cannot be declared into itself"
+  [twoambients]="it cannot be declared twice"
+  [cycle]="so it revisits a set - a cycle"
 )
 
 echo ''

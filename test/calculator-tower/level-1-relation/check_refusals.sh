@@ -7,9 +7,9 @@ here="$(cd "$(dirname "$0")" && pwd)"
 cd "$here"
 
 declare -A reason=(
-  [arity]="each tuple has exactly one part per domain"
-  [member]="a tuple names a member its domain does not contain"
-  [undeclared]="a signature refers to declared domains only"
+  [arity]="requires one row per domain"
+  [member]="requires every tuple entry to belong to its domain"
+  [undeclared]="requires a signature of declared domains only"
 )
 
 for case in arity member undeclared; do

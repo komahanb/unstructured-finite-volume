@@ -8,12 +8,12 @@ make -C "$here" clean >/dev/null 2>&1 || true
 make -C "$here" >/dev/null
 cd "$here" && ./run
 declare -A reason=(
-  [zero_tolerance]="dense_direct: singular tolerance is positive"
-  [size_mismatch]="dense_direct: solution size matches rhs"
-  [singular]="dense_direct: the pivot is singular"
-  [nonsquare]="stencil: a dense matrix is square"
-  [nonintegral_width]="stencil: the width is a whole number of values per member"
-  [incompatible_components]="operation: a bound field satisfies its argument contract"
+  [zero_tolerance]="dense_direct: singular_tolerance must be positive"
+  [size_mismatch]="dense_direct: size(x) must equal size(rhs)"
+  [singular]="dense_direct: factorisation found a singular pivot"
+  [nonsquare]="stencil: a dense matrix must be square"
+  [nonintegral_width]="stencil: the width must be a positive whole multiple of n_dom"
+  [incompatible_components]="operation: the bound field does not satisfy its argument contract"
 )
 for case in zero_tolerance size_mismatch singular nonsquare nonintegral_width incompatible_components; do
     if ./refusal "$case" >refusal.out 2>&1; then echo " FAIL : '$case' accepted"; exit 1; fi

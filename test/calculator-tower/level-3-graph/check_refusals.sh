@@ -11,7 +11,7 @@ cd "$here"
 # properties of a representation already built. What remains a refusal
 # is the storage law.
 declare -A reason=(
-  [view]="a view cannot be bound"
+  [view]="bind_relation requires a materialized relation"
 )
 
 for case in view; do

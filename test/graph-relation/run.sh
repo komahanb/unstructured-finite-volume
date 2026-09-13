@@ -15,11 +15,11 @@ make -C "$here" >/dev/null
 cd "$here" && ./run
 
 declare -A reason=(
-  [member]="a tuple names a member its domain does not contain"
-  [arity]="each tuple has exactly one part per domain"
-  [undeclared]="a signature refers to declared domains only"
-  [empty]="a relation relates at least one domain"
-  [twice]="a relation is declared at most once"
+  [member]="requires every tuple entry to belong to its domain"
+  [arity]="requires one row per domain"
+  [undeclared]="requires a signature of declared domains only"
+  [empty]="requires at least one domain"
+  [twice]="requires an undeclared relation, but this relation is already declared"
 )
 
 for case in member arity undeclared empty twice; do

@@ -9,14 +9,14 @@ make -C "$here" clean >/dev/null
 make -C "$here" >/dev/null
 "$here/run"
 declare -A reason=(
-    [unpaired_advance]='a driver is paired with its data before it evaluates'
-    [unpaired_advance_with]='a driver is paired with its data before it evaluates'
-    [unpaired_set]='this driver is not paired with its data'
-    [unpaired_clear]='this driver is not paired with its data'
-    [outside_set]='a vertex is one the pairing stores'
-    [outside_clear]='a vertex is one the pairing stores'
-    [outside_position]='a position is a completed count of the stored order'
-    [outside_live]='a position is a completed count of the stored order'
+    [unpaired_advance]='advance was called before this driver was paired with its data'
+    [unpaired_advance_with]='advance_with was called before this driver was paired with its data'
+    [unpaired_set]='driver_set_rule was called before this driver was paired with its data'
+    [unpaired_clear]='driver_clear_rule was called before this driver was paired with its data'
+    [outside_set]='vertex must be one the pairing stores'
+    [outside_clear]='vertex must be one the pairing stores'
+    [outside_position]='must be a completed count of the stored order'
+    [outside_live]='must be a completed count of the stored order'
 )
 refusal_output="$(mktemp)"
 trap 'rm -f "$refusal_output"' EXIT

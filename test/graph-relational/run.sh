@@ -74,11 +74,11 @@ echo ''
 declare -A message=(
   [nosetbound]="no member set is bound to that element"
   [norelationbound]="no relation is bound to that element"
-  [sharedbind]="a binding is extended by its sole owner"
+  [sharedbind]="extended requires a binding with a sole owner"
   [releasedtwin]="this binding's objects have been released"
-  [unsignedset]="a binding stores identified objects"
-  [unsignedrelation]="a binding stores identified objects"
-  [boundview]="a view cannot be bound"
+  [unsignedset]="bind_set requires an identified object"
+  [unsignedrelation]="bind_relation requires an identified object"
+  [boundview]="bind_relation requires a materialized relation"
 )
 
 echo ''

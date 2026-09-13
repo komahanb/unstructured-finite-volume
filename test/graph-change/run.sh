@@ -10,14 +10,14 @@ cd "$suite_dir" && ./run
 declare -A reason=(
   [attachtwice]="map_value: a value row is attached once"
   [updatefree]="map_value: an update requires an attached row"
-  [readunknown]="map_value: a known value is read"
+  [readunknown]="value_of requires status VALUE_KNOWN"
   [detachfree]="map_value: a detach removes an attached row"
-  [emptyknown]="map_value: a known value has values"
+  [emptyknown]="mark_known requires at least one value"
   [undeclared]="map_value: a value map is keyed on assigned identity"
-  [silentapply]="run_change: applied change reports applied"
-  [silentrevert]="run_change: reverted change reports reverted"
-  [impossible]="change_record: terminal state is consistent"
-  [unbound]="value_change: value map is bound"
+  [silentapply]="returned without result"
+  [silentrevert]="was called after an apply failure"
+  [impossible]="this record is marked both committed and reverted"
+  [unbound]="call bind first"
 )
 for case in attachtwice updatefree readunknown detachfree emptyknown \
             undeclared silentapply silentrevert impossible unbound; do

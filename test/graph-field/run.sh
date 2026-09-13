@@ -8,12 +8,12 @@ make -C "$suite_dir" clean >/dev/null 2>&1 || true
 make -C "$suite_dir" >/dev/null
 cd "$suite_dir" && ./run
 declare -A reason=(
-  [ishape]="a value vector must fill its domain exactly"
-  [rshape]="a value vector must fill its domain exactly"
-  [cshape]="a value vector must fill its domain exactly"
-  [lshape]="a value vector must fill its domain exactly"
-  [sshape]="a value vector must fill its domain exactly"
-  [unsigned]="a field requires a declared domain"
+  [ishape]="requires the values to fill num_entries"
+  [rshape]="requires the values to fill num_entries"
+  [cshape]="requires the values to fill num_entries"
+  [lshape]="requires the values to fill num_entries"
+  [sshape]="requires the values to fill num_entries"
+  [unsigned]="describe requires a declared domain"
 )
 for case in ishape rshape cshape lshape sshape unsigned; do
     if ./refusal "$case" >refusal.out 2>&1; then echo " FAIL : '$case' accepted"; exit 1; fi

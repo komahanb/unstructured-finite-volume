@@ -14,14 +14,14 @@ make -C "$suite_dir" >/dev/null
 cd "$suite_dir" && ./run
 
 declare -A expected=(
-  [wrong-whole]="assemble: this relation was not written for this whole"
-  [smaller-whole]="assemble: this relation was not written for this whole"
-  [whole-vertex-count]="assemble: this relation was not written for this whole"
-  [whole-edge-count]="assemble: this relation was not written for this whole"
-  [part-count]="assemble: this relation was not written for this part"
-  [out-of-range-full]="assemble: a relation must map into the whole carrier"
-  [out-of-range-subset]="assemble: a relation must map into the whole carrier"
-  [field-count]="assemble: a full field must fill the part carrier"
+  [wrong-whole]="rel was not written for this whole"
+  [smaller-whole]="rel was not written for this whole"
+  [whole-vertex-count]="rel was not written for this whole"
+  [whole-edge-count]="rel was not written for this whole"
+  [part-count]="rel was not written for this part"
+  [out-of-range-full]="the full-coverage relation must map into the whole carrier"
+  [out-of-range-subset]="the subset relation must map into the whole carrier"
+  [field-count]="a full field must fill the part carrier"
 )
 for mode in wrong-whole smaller-whole whole-vertex-count whole-edge-count \
             part-count out-of-range-full out-of-range-subset field-count; do

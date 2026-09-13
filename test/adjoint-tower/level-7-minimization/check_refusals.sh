@@ -8,8 +8,8 @@ here="$(cd "$(dirname "$0")" && pwd)"
 cd "$here"
 
 declare -A reason=(
-  [primal-rhs-on-Q]="a right-hand side is defined on the residual domain"
-  [adjoint-rhs-on-Y]="a right-hand side is defined on the residual domain"
+  [primal-rhs-on-Q]="the bound right-hand side is not defined on the stated residual domain"
+  [adjoint-rhs-on-Y]="the bound right-hand side is not defined on the stated residual domain"
   [primal-state-on-Y]="the state must live on the state domain"
   [adjoint-covector-on-Q]="the covector must live on the residual-row domain"
 )

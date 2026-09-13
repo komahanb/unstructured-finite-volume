@@ -8,7 +8,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 cd "$here"
 
 declare -A reason=(
-  [cyclic-order]="a topological order needs an acyclic graph"
+  [cyclic-order]="requires an acyclic graph"
 )
 
 for case in cyclic-order; do

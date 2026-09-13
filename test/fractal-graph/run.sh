@@ -99,8 +99,8 @@ echo ''
 ./mutation
 
 declare -A message=(
-  [twice]="graph identity is assigned once"
-  [undeclared]="KNOWN requires a graph with assigned identity"
+  [twice]="identity is assigned once"
+  [undeclared]="requires that to have an assigned identity"
   [nonumber]="no number bound to this identity"
   [nosymbol]="no symbol bound to this identity"
   [noindex]="no index bound to this identity"

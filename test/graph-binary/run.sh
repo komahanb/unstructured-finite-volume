@@ -15,9 +15,9 @@ make -C "$here" >/dev/null
 cd "$here" && ./run
 
 declare -A reason=(
-  [member]="a tuple names a member its domain does not contain"
-  [arity]="each tuple has exactly one part per position"
-  [undeclared]="a signature refers to declared domains only"
+  [member]="names a source member the source domain does not contain"
+  [arity]="each tuple must have exactly one part per position"
+  [undeclared]="requires a signature of declared domains only"
 )
 
 for case in member arity undeclared; do

@@ -23,24 +23,24 @@ rm -f refusal.out
 
 # solver restriction refusals: one invalid selection per case
 declare -A reason=(
-    [outside]='a restriction selects unknowns of the whole domain'
-    [repeated]='a restriction selects each unknown once'
-    [empty]='a restriction selects an unknown at least'
-    [split_block]='a restriction selects whole blocks'
-    [aggregates]='a restriction selects unknowns of the stated aggregates'
-    [flags]='a restriction selects unknowns of the stated flags'
-    [no_retained]='a restriction retains an unknown at least'
-    [partition]='a restriction selects unknowns of the partition'
-    [unstated]='the operator is stated on the solver domain before it is evaluated'
-    [state_domain]='the state is defined on the unknown domain'
-    [design_domain]='the design is defined on the point domain with one value per point'
-    [design_count]='the design is defined on the point domain with one value per point'
-    [state_count]='a value vector must fill its domain exactly'
-    [pairing_domain]='an inner product pairs fields on the same domain'
-    [other_placement]='the design is defined on the point domain with one value per point'
-    [host]='the residual is applied on its own unknown graph'
-    [direction_domain]='a direction in the state is defined on the unknown domain'
-    [stored_domain]='the design is defined on the point domain with one value per point'
+    [outside]='every selected index must belong to the whole domain'
+    [repeated]='a restriction must select each unknown once'
+    [empty]='a restriction must select an unknown at least'
+    [split_block]='a restriction must select whole blocks'
+    [aggregates]='a restriction must select unknowns of the stated aggregates'
+    [flags]='a restriction must select unknowns of the stated flags'
+    [no_retained]='a restriction must retain an unknown at least'
+    [partition]='a restriction must select unknowns of the partition'
+    [unstated]='evaluate was called before the operator was stated on the solver domain'
+    [state_domain]='the bound state must be defined on the unknown domain'
+    [design_domain]='the design must be defined on the point domain with one value per point'
+    [design_count]='the design must be defined on the point domain with one value per point'
+    [state_count]='requires the values to fill num_entries * num_components exactly'
+    [pairing_domain]='requires fields on the same domain'
+    [other_placement]='the design must be defined on the point domain with one value per point'
+    [host]="received a graph that is not this residual's own unknown graph"
+    [direction_domain]='a direction in the state must be defined on the unknown domain'
+    [stored_domain]='the design must be defined on the point domain with one value per point'
 )
 for case_name in "${!reason[@]}"; do
     if ./restriction_refusal "$case_name" >refusal.out 2>&1; then

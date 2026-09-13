@@ -15,13 +15,13 @@ make -C "$suite_dir" >/dev/null
 cd "$suite_dir" && ./run
 
 declare -A reason=(
-  [slot]="a slot index must name a slot of the relation"
-  [embed]="a restriction domain must embed in the slot it restricts"
-  [none]="a projection selects at least one slot"
-  [range]="a slot index must name a slot of the relation"
-  [repeat]="a projection selects each slot at most once"
-  [binary]="composition takes two binary relations"
-  [middle]="composition requires one shared middle domain"
+  [slot]="restrict_slot requires a slot index in 1..arity"
+  [embed]="requires the restriction domain to embed in the slot it restricts"
+  [none]="project_slots requires at least one slot"
+  [range]="project_slots requires each slot index in 1..arity"
+  [repeat]="project_slots requires each slot selected at most once"
+  [binary]="compose_binary requires two binary relations"
+  [middle]="compose_binary requires one shared middle domain"
 )
 
 for case in slot embed none range repeat binary middle; do

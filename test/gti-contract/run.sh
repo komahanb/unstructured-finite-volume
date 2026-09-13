@@ -98,14 +98,14 @@ radial='--physics=radial_oscillator --design=2.0 --time_duration=2 --instants=11
 for case in radial_degree unadmitted_functional unadmitted_dissipation mode_without_eigenfunction; do
     case "$case" in
         radial_degree)         arguments="$radial --state_degree=1 --functionals=energy"
-                               expected='the radial oscillator is of second order in time' ;;
+                               expected='the radial oscillator must be of second order in time' ;;
         unadmitted_functional) arguments='--physics=vanderpol --time_duration=2 --instants=11 --functionals=square_integral'
                                expected='vanderpol admits no functional named square_integral' ;;
         unadmitted_dissipation) arguments="$radial --functionals=dissipation"
                                expected='radial_oscillator admits no functional named dissipation' ;;
         mode_without_eigenfunction)
                                arguments='--config=disc --spatial_geometry=elliptical --initial_field=mode --check=none'
-                               expected='the mode is the eigenfunction of the laplacian on the box and on the disc' ;;
+                               expected='requires the box or the disc (the ellipse has no eigenfunction of the laplacian)' ;;
     esac
     if (cd "$application" && ./graph_time_integrator $arguments) > "$work/$case.log" 2>&1; then
         cat "$work/$case.log"

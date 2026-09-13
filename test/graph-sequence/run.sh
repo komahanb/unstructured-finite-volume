@@ -43,12 +43,12 @@ echo ''
 ./run
 
 declare -A message=(
-  [cellnull]="a sequence cell contains a KNOWN element"
-  [cellunknown]="a sequence cell contains a KNOWN element"
-  [sizeunknownholder]="the extent depends on an unknown tail"
-  [sizeunknowntail]="the extent depends on an unknown tail"
-  [containsunknowntail]="membership depends on an unknown tail"
-  [indexzero]="a sequence is indexed from one"
+  [cellnull]="a sequence cell must contain a KNOWN element"
+  [cellunknown]="a sequence cell must contain a KNOWN element"
+  [sizeunknownholder]="the number of elements requires a known tail"
+  [sizeunknowntail]="the number of elements requires a known tail"
+  [containsunknowntail]="membership requires a known tail beyond the first element"
+  [indexzero]="a sequence must be indexed from one"
   [pastend]="the sequence has no such element"
   [pastunknown]="that element lies beyond an unknown tail"
   [emptyindexed]="the sequence has no such element"

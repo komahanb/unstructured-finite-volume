@@ -15,9 +15,9 @@ make -C "$suite_dir" >/dev/null
 cd "$suite_dir" && ./run
 
 declare -A reason=(
-  [dataunknown]="Q is not KNOWN"
-  [residualunknown]="R is not KNOWN"
-  [nullname]="NULL has no epistemic name"
+  [dataunknown]="requires the data branch to be KNOWN"
+  [residualunknown]="requires the operator branch to be KNOWN"
+  [nullname]="requires an epistemically-defined graph"
 )
 
 for case in dataunknown residualunknown nullname; do

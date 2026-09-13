@@ -514,6 +514,10 @@ def required_cases():
         disc_transpose_case("D06-disc-transpose",
                             "the disc's forward and reverse passes evaluate one bilinear "
                             "form, the fitted balance"),
+        disc_transpose_case("D08-disc-transpose-jet",
+                            "the same bilinear form with the spatial derivatives as rows of "
+                            "the jet, the second discretization of the same law",
+                            rows="states state-time-derivatives state-spatial-derivatives"),
         radial_case("E10-radial-alexander2", "alexander2", 2,
                     ["E", "dE", "F2", "dF2", "q", "qd"],
                     "radial oscillator, Alexander's two-stage L-stable DIRK, order 2: a "
@@ -550,6 +554,24 @@ def required_cases():
                     limitation="the same omitted design rate; the trapezoidal step makes "
                                "the measured slopes those of E11, 1.118, 1.064, 1.033, 1.017",
                     argv_extra=("--families=newmark",)),
+        # THE SECOND DISCRETIZATION OF THE SAME LAW ON THE DISC. The spatial
+        # derivatives are rows of the jet, each tied to the values by the fit's
+        # row at form degree 2. That form is the compact one - the powers of one
+        # coordinate over the cell and its face neighbours, with no mixed
+        # member - and on the polar mesh the face neighbours lie along the
+        # radial and angular directions, which are the coordinate axes only
+        # along two rays. On the box, where they are always axis aligned, the
+        # same form reaches order 2 (config/mode_jet.cfg).
+        disc_mode_case("D07-disc-mode-jet",
+                       "the radial Neumann mode marched on the disc with the spatial "
+                       "derivatives as rows of the jet, declared at order 2",
+                       rows="states state-time-derivatives state-spatial-derivatives",
+                       limitation="the compact form fits the second derivatives from "
+                                  "axis-pure members over a neighbourhood the polar mesh "
+                                  "does not align with the axes: errors 3.778e-2, 2.190e-2, "
+                                  "1.703e-2 at the step ratio 1.9412, slopes 0.822 and 0.379, "
+                                  "against the fitted balance's 4.791e-3, 1.162e-3, 3.035e-4 "
+                                  "at 2.136 and 2.024"),
         disc_operator_case("D02-disc-operator-interior", "operator",
                            "the interior cells of the disc declared at order 2",
                            limitation="the fitted balance on the polar mesh converges at "

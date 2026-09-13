@@ -71,17 +71,31 @@ contains
     real(dp), intent(in) :: weight(:)
     integer , intent(in) :: num_unknowns
 
+    character(len=200) :: message
+    integer :: bad
+
     if (size(source) /= size(determined) .or. size(weight) /= size(determined)) then
-       error stop 'operation_scheme_stencil: one row, one column and one weight per edge'
+       write(message,'(a,i0,a,i0,a,i0)') 'operation_scheme_stencil: require_within requires &
+            &one row, one column and one weight per edge; size(determined) = ', size(determined), &
+            & ', size(source) = ', size(source), ', size(weight) = ', size(weight)
+       error stop trim(message)
     end if
 
     if (any(determined < 1) .or. any(determined > num_unknowns) .or. &
          & any(source < 1) .or. any(source > num_unknowns)) then
-       error stop 'operation_scheme_stencil: every index names an unknown'
+       write(message,'(a,i0,a,i0,a,i0,a,i0,a,i0)') 'operation_scheme_stencil: require_within &
+            &requires every index in 1..num_unknowns (', num_unknowns, '); determined ranges &
+            &from ', minval(determined), ' to ', maxval(determined), ', source ranges from ', &
+            & minval(source), ' to ', maxval(source)
+       error stop trim(message)
     end if
 
     if (any(determined == source)) then
-       error stop 'operation_scheme_stencil: a constraint reads no source it determines itself'
+       bad = findloc(determined == source, .true., dim=1)
+       write(message,'(a,i0,a,i0)') 'operation_scheme_stencil: require_within requires a &
+            &constraint to read no source it determines itself; edge ', bad, ' has &
+            &determined = source = ', determined(bad)
+       error stop trim(message)
     end if
 
   end subroutine require_within
@@ -100,6 +114,7 @@ contains
 
     integer, allocatable :: start(:), order(:)
     integer :: r, i, j, e
+    character(len=200) :: message
 
     call group_by_key(num_unknowns, determined, [(e, e = 1, size(determined))], start, order)
 
@@ -107,7 +122,10 @@ contains
        do i = start(r), start(r + 1) - 1
           do j = start(r), i - 1
              if (source(order(i)) == source(order(j))) then
-                error stop 'operation_scheme_stencil: a row reads each column once'
+                write(message,'(a,i0,a,i0)') 'operation_scheme_stencil: require_distinct &
+                     &requires a row to read each column once; row ', r, ' reads column ', &
+                     & source(order(i))
+                error stop trim(message)
              end if
           end do
        end do

@@ -44,7 +44,6 @@
 
 module view_mesh
 
-  use iso_fortran_env, only : error_unit
   use util_precision  , only : dp
   use field_stored  , only : stored_field
   use view_directed_stored        , only : stored_directed_graph
@@ -189,8 +188,7 @@ contains
 
     if (satisfied) return
 
-    write(error_unit, *) 'mesh check: expected ', condition_description
-    error stop 'mesh: a precondition on the structure or its measurements failed'
+    error stop 'mesh: a precondition failed - expected ' // condition_description
 
   end subroutine require
 
@@ -277,6 +275,7 @@ contains
     integer , allocatable :: edges(:)
     integer :: d, r, k, e, f, other, before, at
     real(dp) :: sign
+    character(len=250) :: message
 
     d = this % dimension
     call values_of(this % shifts, shift)
@@ -320,7 +319,11 @@ contains
              at = findloc(members, other, dim=1)
              if (at > 0) then
                 if (any(abs(offsets(:, at) - translation) > 0.0_dp)) then
-                   error stop 'mesh: a periodic box stores more cells than the neighbourhood reaches around it'
+                   write(message,'(a,i0,a,i0,a)') 'mesh: the periodic box has ', size(members), &
+                        & ' cell(s), but member ', other, &
+                        & ' is reached again with a different offset - too few cells for the &
+                        &requested neighbourhood reach'
+                   error stop trim(message)
                 end if
                 cycle
              end if

@@ -190,9 +190,12 @@ contains
     integer            , intent(in) :: order
     type(argument_path), intent(in) :: along(:)
     type(total_derivative) :: this
+    character(len=250) :: message
 
     if (order < 0) then
-       error stop 'total_derivative: the order of a derivative is not negative'
+       write(message,'(a,i0)') 'total_derivative: the order of a derivative must not be &
+            &negative; order = ', order
+       error stop trim(message)
     end if
 
     this = total_derivative(order)
@@ -217,10 +220,12 @@ contains
     class(field), allocatable, intent(inout) :: output
 
     if (.not. allocated(this % statement)) then
-       error stop 'total_derivative: a derivative is taken of a statement by derivative_of()'
+       error stop 'total_derivative: total_derivative_apply was called on a value not &
+            &constructed by derivative_of() - this % statement is not allocated'
     end if
     if (.not. present(inputs)) then
-       error stop 'total_derivative: the statement''s inputs are given'
+       error stop 'total_derivative: total_derivative_apply was called without the &
+            &statement''s inputs'
     end if
 
     call this % assemble(this % statement, input_graph, &
@@ -233,9 +238,12 @@ contains
     type(argument), intent(in) :: wrt
     integer       , intent(in) :: degree
     type(argument_path)        :: path
+    character(len=250) :: message
 
     if (degree < 0) then
-       error stop 'argument_path: the derivative degree is nonnegative'
+       write(message,'(a,i0)') 'argument_path: the derivative degree must be nonnegative; &
+            &degree = ', degree
+       error stop trim(message)
     end if
 
     path % wrt = wrt
@@ -272,9 +280,12 @@ contains
     type(total_derivative) :: this
 
     integer :: degree
+    character(len=250) :: message
 
     if (max_degree < 0) then
-       error stop 'total_derivative: the highest degree is nonnegative'
+       write(message,'(a,i0)') 'total_derivative: the highest degree must be nonnegative; &
+            &max_degree = ', max_degree
+       error stop trim(message)
     end if
 
     allocate(this % of_degree(max_degree))
@@ -303,12 +314,16 @@ contains
     real(dp), allocatable :: derivative_sum(:)
     logical :: sum_initialized
     integer :: p, num_components
+    character(len=250) :: message
 
     if (degree < 0) then
-       error stop 'total_derivative: degree is supported'
+       write(message,'(a,i0)') 'total_derivative: assemble does not support a negative degree; &
+            &degree = ', degree
+       error stop trim(message)
     end if
     if (.not. allocated(this % of_degree)) then
-       error stop 'total_derivative: the assembler is constructed for a highest degree'
+       error stop 'total_derivative: assemble was called before the assembler was constructed &
+            &for a highest degree - this % of_degree is not allocated'
     end if
 
     call require_valid_paths(paths, statement)
@@ -320,7 +335,10 @@ contains
     end if
 
     if (degree > size(this % of_degree)) then
-       error stop 'total_derivative: the degree is no larger than the constructed highest degree'
+       write(message,'(a,i0,a,i0)') 'total_derivative: degree must be no larger than the &
+            &constructed highest degree; degree = ', degree, ', size(of_degree) = ', &
+            & size(this % of_degree)
+       error stop trim(message)
     end if
 
     sum_initialized = .false.
@@ -355,14 +373,16 @@ contains
 
     do i = 1, size(paths)
        if (.not. statement % owns(paths(i) % wrt)) then
-          error stop 'total_derivative: a path names an argument of the statement'
+          error stop 'total_derivative: paths(i) % wrt is not owned by the statement - a path &
+               &must name one of its declared arguments'
        end if
     end do
 
     do i = 1, size(paths)
        do j = i + 1, size(paths)
           if (paths(i) % wrt % matches(paths(j) % wrt)) then
-             error stop 'total_derivative: a duplicate argument path is rejected'
+             error stop 'total_derivative: paths(i) % wrt matches paths(j) % wrt for i /= j - &
+                  &a duplicate argument path is rejected'
           end if
        end do
     end do
@@ -483,7 +503,8 @@ contains
 
     ! 21! overflows int64; stop rather than wrap
     if (n > 20) then
-       error stop 'total_derivative: partition coefficient is representable'
+       error stop 'total_derivative: n exceeds 20 - 21! overflows int64, so the partition &
+            &coefficient is not representable'
     end if
 
     factorial = 1_int64
@@ -579,11 +600,14 @@ contains
     type(variation) :: variations(size(path_indices))
     real(dp), allocatable :: term(:)
     integer :: j, k
+    character(len=250) :: message
 
     k = size(path_indices)
 
     if (k > statement % max_degree()) then
-       error stop 'total_derivative: the statement supports the requested order'
+       write(message,'(a,i0,a,i0)') 'total_derivative: the statement does not support the &
+            &requested order; k = ', k, ', max_degree() = ', statement % max_degree()
+       error stop trim(message)
     end if
 
     ! one factor per chosen path: its argument, and the derivative
@@ -599,7 +623,9 @@ contains
 
     if (sum_initialized) then
        if (size(term) /= size(derivative_sum)) then
-          error stop 'total_derivative: accumulated terms share one shape'
+          write(message,'(a,i0,a,i0)') 'total_derivative: accumulated terms must share one &
+               &shape; size(term) = ', size(term), ', size(derivative_sum) = ', size(derivative_sum)
+          error stop trim(message)
        end if
        derivative_sum = derivative_sum + real(partition % coefficient, dp) * term
     else

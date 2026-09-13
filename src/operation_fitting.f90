@@ -141,13 +141,18 @@ contains
     real(dp), intent(in), optional :: scale
     integer , intent(in), optional :: orders(:)
 
+    character(len=250) :: message
+
     allocate(this % shape, source=shape)
     this % at        = at
     this % direction = direction
     if (present(scale)) this % scale = scale
     if (present(orders)) then
        if (size(orders) /= shape % dimension() .or. any(orders < 0)) then
-          error stop 'fitting: one order per coordinate of the form, none negative'
+          write(message,'(a,i0,a,i0,a,i0)') 'fitting: one order per coordinate of the form is &
+               &required, none negative; size(orders) = ', size(orders), ', dimension = ', &
+               & shape % dimension(), ', minval(orders) = ', minval(orders)
+          error stop trim(message)
        end if
        this % orders = orders
     end if
@@ -192,6 +197,7 @@ contains
     logical , allocatable :: active(:)
     real(dp) :: achieved, d2, nearest
     integer :: npts, nc, i, j, d
+    character(len=250) :: message
 
     npts = input_graph % num_vertices()
 
@@ -203,7 +209,10 @@ contains
 
        d = this % shape % dimension()
        if (size(this % at) /= d .or. size(positions) /= d * npts) then
-          error stop 'fitting: the form, the target and the positions read one dimension'
+          write(message,'(a,i0,a,i0,a,i0)') 'fitting: the form, the target and the positions &
+               &must read one dimension; dimension = ', d, ', size(at) = ', size(this % at), &
+               & ', size(positions) = ', size(positions)
+          error stop trim(message)
        end if
 
        nc = this % shape % num_members()

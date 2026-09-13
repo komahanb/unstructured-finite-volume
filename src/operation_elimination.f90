@@ -236,44 +236,55 @@ contains
     integer(int64) :: stored_substitution
     integer :: n, nk, ne, e, r, c, i, nkk, nke, nek, nn, m, total, capacity
     logical :: within
+    character(len=250) :: message
 
     call state(this, action, context, unknown_domain, num_unknowns, &
          & num_components, coupling, stored_inputs)
     call clear_partition(this)
     this % storage_exceeded = .false.
     if (this % max_entries < 1) then
-       error stop 'elimination: the storage limit is one entry at least'
+       write(message,'(a,i0)') 'elimination: the storage limit must be one entry at least; &
+            &max_entries = ', this % max_entries
+       error stop trim(message)
     end if
     this % storage = elimination_storage(limit = int(this % max_entries, int64))
 
     if (present(num_components)) then
        if (num_components > 1) then
-          error stop 'elimination: one value per unknown; a wider right-hand side is not eliminated'
+          write(message,'(a,i0,a)') 'elimination: an eliminated system stores one value per unknown; &
+               &num_components = ', num_components, ' requests a wider right-hand side, which is not supported'
+          error stop trim(message)
        end if
     end if
     if (.not. allocated(this % inner)) then
-       error stop 'elimination: an inner minimizer solves the complement, and none is stored'
+       error stop 'elimination: an inner minimizer solves the complement, and this % inner is &
+            &not allocated'
     end if
     n = num_unknowns
     if (.not. allocated(this % eliminated)) then
-       error stop 'elimination: one flag per unknown states which rows are eliminated'
+       error stop 'elimination: one flag per unknown states which rows are eliminated, and &
+            &this % eliminated is not allocated'
     end if
     if (size(this % eliminated) /= n) then
-       error stop 'elimination: one flag per unknown'
+       write(message,'(a,i0,a,i0)') 'elimination: one flag is required per unknown; &
+            &size(eliminated) = ', size(this % eliminated), ', num_unknowns = ', n
+       error stop trim(message)
     end if
 
     select type (action)
     type is (stencil)
        m = action % pattern % num_edges()
     class default
-       error stop 'elimination: the complement is read from the explicit tangent, and this &
-            &statement is a matrix-vector product without one'
+       error stop 'elimination: the complement is read from the explicit tangent, but the &
+            &statement passed is a matrix-vector product without one'
     end select
 
     nk = count(.not. this % eliminated)
     ne = n - nk
     if (nk < 1) then
-       error stop 'elimination: an unknown is retained at least'
+       write(message,'(a,i0,a,i0)') 'elimination: an unknown must be retained at least; n = ', &
+            & n, ', eliminated count = ', ne
+       error stop trim(message)
     end if
 
     ! the input triples, the work-space and the inner's requirement
@@ -312,9 +323,11 @@ contains
        end if
     end do
     if (any(this % diagonal == 0.0_dp)) then
-       error stop 'elimination: an eliminated row has no diagonal: it is not the tying row of &
-            &its unknown; under a staged family the states at the stages are the tied &
-            &components, so its time derivatives are stated as rows'
+       write(message,'(a,i0,a)') 'elimination: eliminated unknown ', &
+            & this % eliminated_at(findloc(this % diagonal, 0.0_dp, dim=1)), ' has no diagonal - &
+            &it is not the tying row of its unknown; under a staged family the states at the &
+            &stages are the tied components, so its time derivatives are stated as rows'
+       error stop trim(message)
     end if
 
     ! the triples of every block counted before the blocks are stored
@@ -741,17 +754,22 @@ contains
 
     integer, allocatable :: retained_position(:), retained_of_selection(:)
     integer :: i, n
+    character(len=250) :: message
 
     call restrict(this, selected)
     call clear_partition(this)
     this % storage_exceeded = .false.
     this % storage = elimination_storage(limit = int(this % max_entries, int64))
     if (.not. allocated(this % eliminated)) then
-       error stop 'elimination: one flag per unknown states which rows are eliminated before &
-            &the unknowns retained by a restriction are known'
+       error stop 'elimination: one flag per unknown states which rows are eliminated, and &
+            &this % eliminated is not allocated before the unknowns retained by a restriction &
+            &are known'
     end if
     if (any(selected > size(this % eliminated))) then
-       error stop 'elimination: a restriction selects unknowns of the stated flags'
+       write(message,'(a,i0,a,i0)') 'elimination: a restriction must select unknowns of the &
+            &stated flags; maxval(selected) = ', maxval(selected), ', size(eliminated) = ', &
+            & size(this % eliminated)
+       error stop trim(message)
     end if
 
     n = size(this % eliminated)
@@ -763,7 +781,8 @@ contains
     end do
     retained_of_selection = pack(retained_position(selected), .not. this % eliminated(selected))
     if (size(retained_of_selection) < 1) then
-       error stop 'elimination: a restriction retains an unknown at least'
+       error stop 'elimination: a restriction must retain an unknown at least; &
+            &retained_of_selection is empty'
     end if
     this % eliminated = this % eliminated(selected)
     if (allocated(this % inner)) call this % inner % restrict(retained_of_selection)
@@ -863,8 +882,8 @@ contains
        end do
     end do
     if (placed /= ne) then
-       error stop 'elimination: the eliminated rows read one another in a cycle; &
-            &state one of their kinds as rows'
+       error stop 'elimination: placed is below ne - the eliminated rows read one another in &
+            &a cycle; state one of their kinds as rows'
     end if
 
   end subroutine ordered
@@ -906,12 +925,17 @@ contains
     real(dp) :: inner_achieved
     integer :: e
     type(solve_result) :: outcome
+    character(len=250) :: message
 
     if (size(x) /= size(rhs)) then
-       error stop 'elimination: solution size matches rhs'
+       write(message,'(a,i0,a,i0)') 'elimination: the solution must have the same size as rhs; &
+            &size(x) = ', size(x), ', size(rhs) = ', size(rhs)
+       error stop trim(message)
     end if
     if (size(rhs) /= size(this % eliminated)) then
-       error stop 'elimination: the right-hand side is over the stated unknowns'
+       write(message,'(a,i0,a,i0)') 'elimination: the right-hand side must be over the stated &
+            &unknowns; size(rhs) = ', size(rhs), ', size(eliminated) = ', size(this % eliminated)
+       error stop trim(message)
     end if
 
     call this % initialize_residual_history()

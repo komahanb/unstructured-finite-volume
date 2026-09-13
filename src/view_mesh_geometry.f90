@@ -159,6 +159,7 @@ contains
     integer :: shared_node_count, shared_kind
     integer, allocatable :: shared_vertices(:)
     integer :: nf
+    character(len=250) :: message
 
     num_faces = (sum(element_num_faces(cell_types)) - nbfaces)/2 + nbfaces
 
@@ -206,7 +207,9 @@ contains
           if (shared_node_count >= spatial_dim) then
              shared_kind = face_kind(spatial_dim - 1, shared_node_count)
              if (shared_kind == 0) then
-                error stop 'view_mesh_geometry: two cells share the vertices of a face the table defines'
+                write(message,'(a,i0,a,i0,a)') 'view_mesh_geometry: cells ', icell, ' and ', jcell, &
+                     & ' share a vertex set the element table has no face kind for'
+                error stop trim(message)
              end if
              nf = nf + 1
              face_tags(nf)         = cell_tags(icell)
@@ -223,11 +226,15 @@ contains
     end do
 
     if (nf .ne. num_faces) then
-       error stop 'view_mesh_geometry: the derived face count matches the algebraic count'
+       write(message,'(a,i0,a,i0)') 'view_mesh_geometry: the derived face count must match the &
+            &algebraic count; derived nf = ', nf, ', num_faces = ', num_faces
+       error stop trim(message)
     end if
 
     if (maxval(face_vertices) .ne. num_points) then
-       error stop 'view_mesh_geometry: every vertex belongs to a face'
+       write(message,'(a,i0,a,i0)') 'view_mesh_geometry: every vertex must belong to a face; &
+            &maxval(face_vertices) = ', maxval(face_vertices), ', num_points = ', num_points
+       error stop trim(message)
     end if
 
   end subroutine derive_faces
@@ -280,7 +287,8 @@ contains
     end do
 
     if (minval(num_face_cells) .lt. 1) then
-       error stop 'view_mesh_geometry: every face is incident to a cell'
+       error stop 'view_mesh_geometry: at least one face is incident to no cell (a face with an &
+            &empty vertex-to-cell search)'
     end if
 
   end subroutine derive_face_cells
@@ -366,7 +374,7 @@ contains
     ! kind's: a quadruple-precision build has a far smaller tiny()
     ! than a double-precision build, and the check scales with it
     if (minval(face_areas) < 10.0_dp * tiny(1.0_dp)) then
-       error stop 'view_mesh_geometry: a face has a nonzero area vector'
+       error stop 'view_mesh_geometry: at least one face has a zero (or near-zero) area vector'
     end if
 
   end subroutine derive_face_vectors
@@ -445,7 +453,8 @@ contains
           cell_centres(:, lcell) = cell_centres(:, lcell) + flux * centre
        end do
        if (cell_volumes(lcell) .lt. 0.0_dp) then
-          error stop 'view_mesh_geometry: a cell volume is nonnegative'
+          error stop 'view_mesh_geometry: a cell''s divergence-theorem volume came out negative &
+               &(an inside-out cell)'
        end if
        cell_centres(:, lcell) = cell_centres(:, lcell) &
             & / (real(spatial_dim + 1, dp) * cell_volumes(lcell))
@@ -666,13 +675,16 @@ contains
     real(dp), allocatable :: face_vectors(:,:), face_areas(:), cell_volumes(:), lvec(:,:)
     real(dp), allocatable :: face_deltas(:), face_cell_weights(:,:), normals(:), weights(:)
     integer :: num_cells, num_faces, c, f, d
+    character(len=250) :: message
 
     d         = spatial_dim
     num_cells = size(num_cell_vertices)
     num_faces = size(num_face_vertices)
 
     if (size(coordinates, 1) < d) then
-       error stop 'view_mesh_geometry: the coordinates have a row for every dimension of the space'
+       write(message,'(a,i0,a,i0)') 'view_mesh_geometry: coordinates must have a row for every &
+            &dimension of the space; size(coordinates,1) = ', size(coordinates, 1), ', spatial_dim = ', d
+       error stop trim(message)
     end if
 
     call transpose_padded(face_cells, num_face_cells, num_cells, cell_faces, num_cell_faces)
@@ -694,7 +706,10 @@ contains
     allocate(shift(size(coordinates, 1), num_faces), source=0.0_dp)
     if (present(face_shift)) then
        if (size(face_shift, 1) /= d .or. size(face_shift, 2) /= num_faces) then
-          error stop 'view_mesh_geometry: one shift of d parts per face'
+          write(message,'(a,i0,a,i0,a,i0,a,i0)') 'view_mesh_geometry: face_shift must have d rows &
+               &and one column per face; size(face_shift) = ', size(face_shift, 1), 'x', &
+               & size(face_shift, 2), ', expected ', d, 'x', num_faces
+          error stop trim(message)
        end if
        shift(1:d, :) = face_shift
     end if
@@ -809,9 +824,12 @@ contains
 
     type(element_kind) :: cell_shape
     integer :: iface, ivertex, n, match_count
+    character(len=250) :: message
 
     if (element_num_faces(cell_type) == 0) then
-       error stop 'view_mesh_geometry: the element table lists the faces of this cell type'
+       write(message,'(a,i0)') 'view_mesh_geometry: the element table lists no faces for cell &
+            &type ', cell_type
+       error stop trim(message)
     end if
 
     cell_shape = elements(cell_type)
@@ -831,7 +849,9 @@ contains
        end if
     end do
 
-    error stop 'view_mesh_geometry: the vertices two cells share are a face of the cell'
+    write(message,'(a,i0,a,i0)') 'view_mesh_geometry: the shared vertex set is not a face of cell &
+         &type ', cell_type, '; shared vertex count = ', size(face_vertices_unordered)
+    error stop trim(message)
 
   end subroutine order_face_vertices
 

@@ -175,7 +175,8 @@ contains
 
     ! An undeclared token does not match itself.
     if (.not. object % same_as(object)) then
-       error stop 'view_relational: a binding stores identified objects'
+       error stop 'view_relational: bind_set requires an identified object, but this object is &
+            &not self-identical (its identity is undeclared)'
     end if
 
     objects => this % extended()
@@ -199,11 +200,13 @@ contains
     integer :: at
 
     if (.not. object % same_as(object)) then
-       error stop 'view_relational: a binding stores identified objects'
+       error stop 'view_relational: bind_relation requires an identified object, but this object &
+            &is not self-identical (its identity is undeclared)'
     end if
 
     if (.not. object % materialized()) then
-       error stop 'view_relational: a binding owns whole relations; a view cannot be bound'
+       error stop 'view_relational: bind_relation requires a materialized relation, but this &
+            &object is a view, not materialized'
     end if
 
     objects => this % extended()
@@ -255,9 +258,12 @@ contains
     type(bound_objects), pointer             :: objects
 
     type(bound_objects) :: template
+    character(len=100) :: message
 
     if (this % reference % num_owners() > 1) then
-       error stop 'view_relational: a binding is extended by its sole owner'
+       write(message,'(a,i0)') 'view_relational: extended requires a binding with a sole owner; &
+            &num_owners = ', this % reference % num_owners()
+       error stop trim(message)
     end if
     if (.not. this % reference % live()) call this % reference % acquire(template)
     objects => this % cell()

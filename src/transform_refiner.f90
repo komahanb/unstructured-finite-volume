@@ -239,7 +239,8 @@ contains
        allocate(fine_data, source=out)
 
     class default
-       error stop 'refine: this data is not handled by this transform'
+       error stop 'refine: coarse_data''s dynamic type is not class(stored_field), &
+            &which refine_data requires'
     end select
 
   end subroutine refine_data

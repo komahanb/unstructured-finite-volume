@@ -316,10 +316,10 @@ contains
     integer, intent(in) :: index
 
     if (.not. associated(this % entries)) then
-       error stop 'relation_binary: fibre index is outside its extent'
+       error stop 'relation_binary: fibre_member was called on a fibre with no entries associated'
     end if
     if (index < 1 .or. index > size(this % entries)) then
-       error stop 'relation_binary: fibre index is outside its extent'
+       error stop 'relation_binary: the index argument lies outside the fibre''s extent'
     end if
     member = this % entries(index)
 
@@ -451,11 +451,14 @@ contains
     integer, allocatable :: source_members(:), target_rows(:)
     integer              :: na, nb, nt
     integer              :: j, p, q, row, col, num_retained
+    character(len=250) :: message
 
     call this % declare(name, [source, target])
 
     if (size(table, 1) /= 2) then
-       error stop 'relation_binary: each tuple has exactly one part per position'
+       write(message,'(a,i0)') 'relation_binary: each tuple must have exactly one part per &
+            &position (source, target); size(table,1) = ', size(table, 1)
+       error stop trim(message)
     end if
 
     !----------------------------------------------------------------!
@@ -476,9 +479,15 @@ contains
     ! member's row through their own inverse enumeration.
     allocate(aloc(nt), bloc(nt))
     do j = 1, nt
-       if (.not. this % source_coords % has(table(1, j)) .or. &
-            & .not. this % target_coords % has(table(2, j))) then
-          error stop 'relation_binary: a tuple names a member its domain does not contain'
+       if (.not. this % source_coords % has(table(1, j))) then
+          write(message,'(a,i0,a,i0)') 'relation_binary: tuple ', j, ' names a source member the &
+               &source domain does not contain; table(1,j) = ', table(1, j)
+          error stop trim(message)
+       end if
+       if (.not. this % target_coords % has(table(2, j))) then
+          write(message,'(a,i0,a,i0)') 'relation_binary: tuple ', j, ' names a target member the &
+               &target domain does not contain; table(2,j) = ', table(2, j)
+          error stop trim(message)
        end if
        aloc(j) = this % source_coords % local_index(table(1, j))
        bloc(j) = this % target_coords % local_index(table(2, j))
@@ -799,8 +808,10 @@ contains
 
     integer :: k, at
 
-    if (size(x, 2) /= size(num_x)) error stop 'ragged: one count per list'
-    if (any(num_x < 0) .or. any(num_x > size(x, 1))) error stop 'ragged: counts within the width'
+    if (size(x, 2) /= size(num_x)) error stop 'ragged: x and num_x must name the same number of lists'
+    if (any(num_x < 0) .or. any(num_x > size(x, 1))) then
+       error stop 'ragged: every count in num_x must lie within 0..size(x,1)'
+    end if
 
     allocate(this % first(size(num_x) + 1), this % entries(sum(num_x)))
     at = 1
@@ -819,9 +830,9 @@ contains
     integer, intent(in) :: entries(:)
     type(ragged) :: this
 
-    if (size(first) < 1) error stop 'ragged: a first entry for every list and one past the last'
+    if (size(first) < 1) error stop 'ragged: first must have at least one entry, the one past the last list'
     if (first(1) /= 1 .or. first(size(first)) /= size(entries) + 1) then
-       error stop 'ragged: the lists cover the entries exactly'
+       error stop 'ragged: first must start at 1 and end one past the last entry'
     end if
 
     this % first   = first

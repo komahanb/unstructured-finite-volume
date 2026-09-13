@@ -158,8 +158,12 @@ contains
     integer    , intent(in) :: k
     type(graph), pointer    :: member
 
+    character(len=100) :: message
+
     if (level_is_leaf(g)) then
-       error stop 'view_level: a leaf has no members to index'
+       write(message,'(a,i0,a)') 'view_level: level_member requires a non-leaf level, but this &
+            &level is a leaf (member ', k, ' was requested)'
+       error stop trim(message)
     end if
 
     member => sequence_element(g % branch(1), k)
@@ -309,9 +313,12 @@ contains
     type(level_nodes) :: template
     type(level_nodes), pointer :: nodes
     type(node_pointer), allocatable :: expanded_nodes(:)
+    character(len=100) :: message
 
     if (this % reference % num_owners() > 1) then
-       error stop 'view_level: a hierarchy is extended by its sole owner'
+       write(message,'(a,i0)') 'view_level: allocate_node requires a hierarchy with a sole owner; &
+            &num_owners = ', this % reference % num_owners()
+       error stop trim(message)
     end if
     if (.not. this % reference % live()) call this % reference % acquire(template)
     nodes => this % cell()
@@ -345,13 +352,20 @@ contains
     type(graph), pointer :: g
 
     type(level_nodes), pointer :: nodes
+    character(len=100) :: message
 
     nodes => this % cell()
-    if (at < 1 .or. .not. associated(nodes)) then
-       error stop 'view_level: the index names a node this storage owns'
+    if (.not. associated(nodes)) then
+       error stop 'view_level: node() requires an allocated hierarchy, but this storage has none'
+    end if
+    if (at < 1) then
+       write(message,'(a,i0)') 'view_level: node() requires at >= 1; at = ', at
+       error stop trim(message)
     end if
     if (at > nodes % filled) then
-       error stop 'view_level: the index names a node this storage owns'
+       write(message,'(a,i0,a,i0)') 'view_level: node() requires at <= the filled node count; &
+            &at = ', at, ', filled = ', nodes % filled
+       error stop trim(message)
     end if
 
     g => nodes % nodes(at) % node
@@ -460,7 +474,8 @@ contains
     g % branch(2) = this % branch_to(coupling)
 
     if (.not. level_consistent(g)) then
-       error stop 'view_level: the coupling''s carriers begin with this level''s own members'
+       error stop 'view_level: assemble requires the coupling''s carriers to begin with this &
+            &level''s own members, but they do not'
     end if
 
   end function assemble

@@ -100,7 +100,6 @@
 
 module view_paraview_writer
 
-  use iso_fortran_env, only : error_unit
   use util_precision , only : dp
   use view_mesh_geometry, only : elements, gmsh_kinds, face_kind
   use util_string    , only : string
@@ -531,6 +530,7 @@ contains
     integer :: fhandle
     integer :: iresult
     integer :: num_projection_axes
+    character(len=250) :: message
 
     num_projection_axes = size(this % cells)
 
@@ -543,8 +543,9 @@ contains
     open(newunit=fhandle, file=trim(filename), iostat=ierr, action='write', &
          & form='formatted', status='replace')
     if (ierr .ne. 0) then
-       write(error_unit, '(a)') 'paraview writer: opening ' // trim(filename) // ' failed'
-       error stop 'paraview writer: the file cannot be written'
+       write(message,'(a,i0)') 'paraview writer: opening ' // trim(filename) // &
+            & ' failed; iostat = ', ierr
+       error stop trim(message)
     end if
 
     !-----------------------------------------------------------------!

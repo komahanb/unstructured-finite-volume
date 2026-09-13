@@ -231,9 +231,12 @@ contains
     integer          , intent(in)    :: at
 
     integer :: slot
+    character(len=100) :: message
 
     if (at < 1 .or. at > this % num_rows()) then
-       error stop 'map_token_rows: a removal requires an existing row'
+       write(message,'(a,i0,a,i0)') 'map_token_rows: remove requires an existing row; at = ', &
+            & at, ', num_rows = ', this % num_rows()
+       error stop trim(message)
     end if
 
     this % keys(at:this % num_stored - 1) = this % keys(at + 1:this % num_stored)

@@ -695,8 +695,8 @@ contains
     direction = forward
     if (present(orientation)) direction = orientation
     if (direction /= forward .and. direction /= reverse) then
-       write(message,'(a,i0,a,i0,a,i0)') 'stored_directed_graph: a loop runs forward or in reverse; &
-            &orientation = ', direction, ' (forward = ', forward, ', reverse = ', reverse
+       write(message,'(a,i0,a,i0,a,i0)') 'stored_directed_graph: orientation must equal forward or &
+            &reverse; orientation = ', direction, ' (forward = ', forward, ', reverse = ', reverse
        error stop trim(message)
     end if
 
@@ -742,8 +742,8 @@ contains
     character(len=250) :: message
 
     if (this % num_without_head > 0) then
-       write(message,'(a,i0,a)') 'stored_directed_graph: a graph with an edge without a head has &
-            &no transpose; ', this % num_without_head, ' edge(s) lack a head'
+       write(message,'(a,i0,a)') 'stored_directed_graph: this graph cannot be transposed; ', &
+            & this % num_without_head, ' edge(s) lack a head'
        error stop trim(message)
     end if
 
@@ -766,8 +766,8 @@ contains
     character(len=250) :: message
 
     if (this % num_without_head > 0) then
-       write(message,'(a,i0,a)') 'stored_directed_graph: a graph with an edge without a head has &
-            &no transpose; ', this % num_without_head, ' edge(s) lack a head'
+       write(message,'(a,i0,a)') 'stored_directed_graph: this graph cannot be transposed; ', &
+            & this % num_without_head, ' edge(s) lack a head'
        error stop trim(message)
     end if
 

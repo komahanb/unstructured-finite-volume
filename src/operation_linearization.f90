@@ -72,11 +72,15 @@ contains
     type(argument), intent(in), optional     :: wrt
     type(linearization)                      :: this
 
+    character(len=250) :: message
+
     allocate(this % of, source=of)
 
     if (present(wrt)) then
        if (.not. of % owns(wrt)) then
-          error stop 'linearization: the argument is one the statement owns'
+          write(message,'(a)') "linearization: wrt is not an argument of '" // &
+               & trim(of % name()) // "'"
+          error stop trim(message)
        end if
        this % wrt = wrt
     else
@@ -115,7 +119,7 @@ contains
     real(dp), intent(in), optional       :: base(:)
 
     if (size(at_inputs) < 1) then
-       error stop 'linearization: the frozen tuple contains the statement''s inputs'
+       error stop 'linearization: freeze_inputs was called with an empty tuple (at_inputs has 0 entries)'
     end if
 
     this % at = at_inputs
@@ -166,9 +170,10 @@ contains
     integer             , intent(out) :: position
 
     integer :: k
+    character(len=250) :: message
 
     if (.not. allocated(this % at)) then
-       error stop 'linearization: the tangent is taken at a frozen state'
+       error stop 'linearization: the tangent was requested before freeze_inputs was called'
     end if
     tuple = this % at
 
@@ -177,7 +182,9 @@ contains
        if (this % wrt % matches(this % of % argument(k))) position = k
     end do
     if (position < 1 .or. position > size(tuple)) then
-       error stop 'linearization: the frozen tuple includes the differentiated argument'
+       write(message,'(a,i0,a,i0)') 'linearization: the differentiated argument was not found in &
+            &the frozen tuple; position = ', position, ', size(tuple) = ', size(tuple)
+       error stop trim(message)
     end if
 
   end subroutine frozen_tuple
@@ -207,11 +214,13 @@ contains
     real(dp), allocatable :: v(:), y(:), base(:), x(:)
     real(dp) :: magnitude
     integer :: n_on, p, width
+    character(len=250) :: message
 
     call this % of % domain(input_graph, on, n_on)
 
     if (n_on <= 0) then
-       error stop 'linearization: the operation''s domain is empty'
+       write(message,'(a,i0)') 'linearization: the operation''s domain must be nonempty; n_on = ', n_on
+       error stop trim(message)
     end if
 
     call frozen_tuple(this, tuple, p)
@@ -223,11 +232,14 @@ contains
     if (present(inputs)) then
        call bound_value(inputs, this % argument(1), bound_direction)
        if (.not. bound_direction % defined_on(along)) then
-          error stop 'linearization: the direction must be defined on the differentiated argument''s domain'
+          error stop 'linearization: the bound direction is not defined on the differentiated &
+               &argument''s domain'
        end if
        call bound_direction % real_vector(v)
        if (size(v) /= width) then
-          error stop 'linearization: the direction must match the frozen state''s width'
+          write(message,'(a,i0,a,i0)') 'linearization: the direction must match the frozen &
+               &state''s width; size(v) = ', size(v), ', width = ', width
+          error stop trim(message)
        end if
     else
        allocate(v(width))
@@ -294,11 +306,16 @@ contains
     type(graph) , intent(in) :: expected
     integer     , intent(in) :: num_entries
 
+    character(len=250) :: message
+
     if (.not. result % defined_on(expected)) then
-       error stop 'linearization: the operation result is defined on its stated domain'
+       error stop 'linearization: the operation result is not defined on its stated domain'
     end if
     if (result % num_entries() /= num_entries) then
-       error stop 'linearization: the operation result has one entry per element of its stated domain'
+       write(message,'(a,i0,a,i0)') 'linearization: the operation result must have one entry per &
+            &element of its stated domain; result % num_entries() = ', result % num_entries(), &
+            & ', num_entries = ', num_entries
+       error stop trim(message)
     end if
 
   end subroutine require_domain

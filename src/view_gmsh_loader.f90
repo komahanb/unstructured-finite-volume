@@ -175,9 +175,8 @@ contains
       associate(mlines => lines(section_start(MESH)+1:section_start(MESH)+1))
         call mlines(1) % tokenize(" ", num_tokens, tokens)
         if (floor(tokens(1) % as_real()) .ne. 4) then
-           print *, "mesh format ", tokens(1) % str, &
+           error stop "mesh format " // tokens(1) % str // &
                 & " is not msh 4.x - regenerate with python meshgen/generate.py"
-           error stop
         end if
       end associate
 

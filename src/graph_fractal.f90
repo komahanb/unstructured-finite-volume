@@ -145,7 +145,8 @@ contains
     type(graph), target, intent(in) :: that
 
     if (.not. that % identity % declared()) then
-       error stop 'graph_fractal: KNOWN requires a graph with assigned identity'
+       error stop 'graph_fractal: known_branch requires that to have an assigned identity, &
+            &but that % identity % declared() is false'
     end if
 
     this % status_ = BRANCH_KNOWN
@@ -162,7 +163,8 @@ contains
     class(graph), intent(inout) :: this
 
     if (this % identity % declared()) then
-       error stop 'graph_fractal: graph identity is assigned once'
+       error stop 'graph_fractal: declare was called on a graph whose identity is already &
+            &assigned; identity is assigned once'
     end if
 
     this % identity = next_token()

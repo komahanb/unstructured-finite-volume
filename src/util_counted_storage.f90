@@ -157,10 +157,13 @@ contains
     class(counted_storage), intent(inout) :: cell
 
     integer, allocatable :: larger(:)
+    character(len=250) :: message
 
     if (cell % num_owners == size(cell % bindings)) then
        if (cell % num_owners > huge(cell % num_owners) / 2) then
-          error stop 'util_counted_storage: the number of owners exceeds the integer range'
+          write(message,'(a,i0)') 'util_counted_storage: doubling the bindings array would &
+               &exceed the integer range; num_owners = ', cell % num_owners
+          error stop trim(message)
        end if
        allocate(larger(2 * cell % num_owners))
        larger(1:cell % num_owners) = cell % bindings(1:cell % num_owners)

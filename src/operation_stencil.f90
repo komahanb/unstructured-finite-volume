@@ -154,10 +154,13 @@ contains
     integer , allocatable :: rows(:), columns(:)
     real(dp), allocatable :: weights(:), constant(:)
     integer :: n, i, j, e
+    character(len=250) :: message
 
     n = size(a, 1)
     if (size(a, 2) /= n) then
-       error stop 'stencil: a dense matrix is square'
+       write(message,'(a,i0,a,i0)') 'stencil: a dense matrix must be square; size(a,1) = ', n, &
+            & ', size(a,2) = ', size(a, 2)
+       error stop trim(message)
     end if
 
     allocate(rows(n * n), columns(n * n), weights(n * n), constant(n))
@@ -199,14 +202,18 @@ contains
     type(graph) :: dom
     real(dp), allocatable :: a(:,:), constant(:)
     integer :: n_dom, num_components
+    character(len=250) :: message
 
     call action % domain(context, dom, n_dom)
 
     if (n_dom <= 0) then
-       error stop 'stencil: the operation''s domain is nonempty'
+       write(message,'(a,i0)') 'stencil: the operation''s domain must be nonempty; n_dom = ', n_dom
+       error stop trim(message)
     end if
     if (width <= 0 .or. mod(width, n_dom) /= 0) then
-       error stop 'stencil: the width is a whole number of values per member'
+       write(message,'(a,i0,a,i0)') 'stencil: the width must be a positive whole multiple of &
+            &n_dom; width = ', width, ', n_dom = ', n_dom
+       error stop trim(message)
     end if
 
     num_components = width / n_dom
@@ -246,6 +253,7 @@ contains
     real(dp), allocatable :: e(:), y(:), weights(:)
     integer , allocatable :: rows(:), columns(:)
     integer :: j
+    character(len=250) :: message
 
     ! A STENCIL IS ITS OWN MATRIX. Evaluating it column by column costs
     ! one application per column to recover numbers the pattern
@@ -277,7 +285,9 @@ contains
        end if
        call output % real_vector(y)
        if (size(y) /= width) then
-          error stop 'stencil: the operation result matches the width'
+          write(message,'(a,i0,a,i0)') 'stencil: the operation result must match the width; &
+               &size(y) = ', size(y), ', width = ', width
+          error stop trim(message)
        end if
        if (j == 0) then
           constant = y
@@ -310,15 +320,20 @@ contains
     real(dp), allocatable :: weights(:), w(:), constant(:), stored(:)
     type(triple_list) :: triples
     integer :: n, m, e, row
+    character(len=250) :: message
 
     n = this % pattern % num_vertices()
     m = size(retained)
 
     if (size(values) /= n) then
-       error stop 'stencil: one fixed value per vertex'
+       write(message,'(a,i0,a,i0)') 'stencil: one fixed value is required per vertex; &
+            &size(values) = ', size(values), ', num_vertices = ', n
+       error stop trim(message)
     end if
     if (any(retained < 1) .or. any(retained > n)) then
-       error stop 'stencil: a retained member is one of the vertices'
+       write(message,'(a,i0,a,i0,a,i0)') 'stencil: every retained member must be one of the &
+            &vertices 1..', n, '; retained ranges from ', minval(retained), ' to ', maxval(retained)
+       error stop trim(message)
     end if
 
     allocate(sub_of(n), source=0)
@@ -461,16 +476,19 @@ contains
     type(stored_field)   :: out
     type(typed_field_domain)   :: image
     real(dp), allocatable :: v(:), y(:)
+    character(len=250) :: message
 
     associate (u1 => inputs); end associate
 
     call this % require_owned(variations)
 
     if (size(variations) /= 1) then
-       error stop 'stencil: the requested order is within max_degree'
+       write(message,'(a,i0)') 'stencil: a stencil''s max_degree is 1, so exactly one variation &
+            &is required; size(variations) = ', size(variations)
+       error stop trim(message)
     end if
     if (.not. variations(1) % argument_is(this % argument(1))) then
-       error stop 'stencil: the partial action is taken in the one argument'
+       error stop 'stencil: variations(1) does not vary the stencil''s one argument'
     end if
 
     call variations(1) % direction(v)

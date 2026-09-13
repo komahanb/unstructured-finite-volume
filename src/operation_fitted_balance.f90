@@ -106,6 +106,7 @@ contains
     real(dp) :: vb, wb
     type(triple_list) :: triples
     integer :: nv, ne, e, t, h, j, npts, width, d
+    character(len=150) :: message
 
     ! A fit needs at least as many points as its form has members,
     ! so the neighbourhood grows ring by ring until it contains that
@@ -114,7 +115,9 @@ contains
     width = 0
     if (present(rings)) width = rings
     if (present(rings) .and. width < 1) then
-       error stop 'fitted_balance: a neighbourhood is at least one ring'
+       write(message,'(a,i0)') 'fitted_balance: fitted_balance_stencil requires a neighbourhood &
+            &of at least one ring; rings = ', width
+       error stop trim(message)
     end if
 
     nv = m % num_vertices()
@@ -228,16 +231,21 @@ contains
     integer , allocatable :: rows(:), columns(:), cell_neighbourhood(:), active(:)
     type(triple_list) :: triples
     integer :: nv, c, j, npts, width, d, needed
+    character(len=150) :: message
 
     width = 0
     if (present(rings)) width = rings
     if (present(rings) .and. width < 1) then
-       error stop 'fitted_derivative: a neighbourhood is at least one ring'
+       write(message,'(a,i0)') 'fitted_derivative: fitted_derivative_stencil requires a &
+            &neighbourhood of at least one ring; rings = ', width
+       error stop trim(message)
     end if
     nv = m % num_vertices()
     d  = m % dimension
     if (size(orders) /= d) then
-       error stop 'fitted_derivative: one order per coordinate of the mesh'
+       write(message,'(a,i0,a,i0)') 'fitted_derivative: fitted_derivative_stencil requires one &
+            &order per coordinate; size(orders) = ', size(orders), ', dimension = ', d
+       error stop trim(message)
     end if
     call values_of(m % cell_centre(), centres)
     ! the neighbourhood grows until it has as many points as the
@@ -258,8 +266,10 @@ contains
           end do
           if (independent_on(shape, centres(d * c - d + 1 : d * c), pts, active)) exit
           if (present(rings) .or. npts < needed) then
-             error stop 'fitted_derivative: the form members are dependent on the neighbourhood, &
-                  &and it cannot grow'
+             write(message,'(a,i0,a,i0,a,i0)') 'fitted_derivative: the form members are &
+                  &dependent on the neighbourhood at cell ', c, ', and it cannot grow further &
+                  &(rings fixed, or npts = ', npts, ' already reached needed = ', needed, ')'
+             error stop trim(message)
           end if
           needed = npts + 1
        end do

@@ -103,9 +103,12 @@ contains
     type(graph)              :: d
     integer, allocatable         :: table(:,:), restricted_tuples(:,:)
     integer                      :: k, j, n
+    character(len=150) :: message
 
     if (slot_index < 1 .or. slot_index > r % arity()) then
-       error stop 'relation_algebra: a slot index must name a slot of the relation'
+       write(message,'(a,i0,a,i0)') 'relation_algebra: restrict_slot requires a slot index in &
+            &1..arity; slot_index = ', slot_index, ', arity = ', r % arity()
+       error stop trim(message)
     end if
 
     !----------------------------------------------------------------!
@@ -117,7 +120,8 @@ contains
 
     d = r % domain(slot_index)
     if (.not. declared_subobject(allowed, d, inclusions)) then
-       error stop 'relation_algebra: a restriction domain must embed in the slot it restricts'
+       error stop 'relation_algebra: restrict_slot requires the restriction domain to embed in &
+            &the slot it restricts, but it does not'
     end if
 
     allocate(domains(r % arity()))
@@ -162,19 +166,28 @@ contains
     type(graph), allocatable :: domains(:)
     integer, allocatable         :: table(:,:), proj(:,:)
     integer                      :: k, l, j, m
+    character(len=150) :: message
 
     m = size(slot_indices)
 
     if (m < 1) then
-       error stop 'relation_algebra: a projection selects at least one slot'
+       write(message,'(a,i0)') 'relation_algebra: project_slots requires at least one slot; &
+            &size(slot_indices) = ', m
+       error stop trim(message)
     end if
     do k = 1, m
        if (slot_indices(k) < 1 .or. slot_indices(k) > r % arity()) then
-          error stop 'relation_algebra: a slot index must name a slot of the relation'
+          write(message,'(a,i0,a,i0,a,i0)') 'relation_algebra: project_slots requires each slot &
+               &index in 1..arity; slot_indices(', k, ') = ', slot_indices(k), ', arity = ', &
+               & r % arity()
+          error stop trim(message)
        end if
        do l = 1, k - 1
           if (slot_indices(l) == slot_indices(k)) then
-             error stop 'relation_algebra: a projection selects each slot at most once'
+             write(message,'(a,i0,a,i0,a,i0)') 'relation_algebra: project_slots requires each &
+                  &slot selected at most once; slot_indices(', l, ') and slot_indices(', k, &
+                  & ') are both ', slot_indices(k)
+             error stop trim(message)
           end if
        end do
     end do
@@ -221,15 +234,19 @@ contains
     type(graph)      :: da, db, db2, dc
     integer, allocatable :: tab(:,:), tbc(:,:), pairs(:,:)
     integer              :: i, j, n
+    character(len=150) :: message
 
     if (r_ab % arity() /= 2 .or. r_bc % arity() /= 2) then
-       error stop 'relation_algebra: composition takes two binary relations'
+       write(message,'(a,i0,a,i0)') 'relation_algebra: compose_binary requires two binary &
+            &relations; r_ab % arity() = ', r_ab % arity(), ', r_bc % arity() = ', r_bc % arity()
+       error stop trim(message)
     end if
 
     db  = r_ab % domain(2)
     db2 = r_bc % domain(1)
     if (.not. db % same_as(db2)) then
-       error stop 'relation_algebra: composition requires one shared middle domain'
+       error stop 'relation_algebra: compose_binary requires one shared middle domain, but &
+            &r_ab''s second domain and r_bc''s first domain differ'
     end if
 
     call r_ab % tuples(tab)

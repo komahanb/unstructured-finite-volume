@@ -275,16 +275,20 @@ contains
 
     integer :: p, d, deg, m, width, k
     integer, allocatable :: alpha(:)
+    character(len=250) :: message
 
     p = 1
     if (present(degree)) p = degree
     if (p < 0) then
-       error stop 'field_forms: a polynomial degree is zero or above'
+       write(message,'(a,i0)') 'field_forms: a polynomial degree must be zero or above; degree = ', p
+       error stop trim(message)
     end if
     d = 3
     if (present(dimension)) d = dimension
     if (d < 1) then
-       error stop 'field_forms: a polynomial reads at least one coordinate'
+       write(message,'(a,i0)') 'field_forms: a polynomial must read at least one coordinate; &
+            &dimension = ', d
+       error stop trim(message)
     end if
 
     ! every multi-index of d powers summing to at most p: C(d + p, p)
@@ -300,7 +304,11 @@ contains
     do deg = 0, p
        call multi_indices(deg, 1, alpha, this % power, m)
     end do
-    if (m /= width) error stop 'field_forms: the multi-indices fill the table'
+    if (m /= width) then
+       write(message,'(a,i0,a,i0)') 'field_forms: the multi-indices must fill the table; m = ', &
+            & m, ', width = ', width
+       error stop trim(message)
+    end if
 
     call this % declare_basis(width)
 

@@ -131,8 +131,11 @@ contains
     character(len=*), intent(in) :: label
     type(grid) :: this
 
+    character(len=250) :: message
+
     if (span <= 0.0_dp) then
-       error stop 'operation_grid: a duration is positive'
+       write(message,'(a,es14.6)') 'operation_grid: the duration must be positive; span = ', span
+       error stop trim(message)
     end if
     this % kind = kind
     this % span = span
@@ -180,8 +183,12 @@ contains
     real(dp), intent(in) :: steps(:)
     type(grid) :: this
 
+    character(len=250) :: message
+
     if (any(steps <= 0.0_dp)) then
-       error stop 'operation_grid: every given step is positive'
+       write(message,'(a,es14.6,a,i0)') 'operation_grid: every given step must be positive; &
+            &minval(steps) = ', minval(steps), ', count(steps<=0) = ', count(steps <= 0.0_dp)
+       error stop trim(message)
     end if
 
     this = grid_of(GRID_FIXED, sum(steps), 'fixed grid')
@@ -250,7 +257,7 @@ contains
 
     associate (u1 => n); end associate
     if (k - 1 < 1 .or. k - 1 > size(this % steps)) then
-       error stop 'operation_grid: the instant is one of the given partition'
+       error stop 'operation_grid: the instant argument k does not fall within the given partition'
     end if
     w = derivative_terms(this % steps(k - 1), design(1))
 
@@ -288,7 +295,7 @@ contains
     integer  :: iteration, j
 
     if (k < 1 .or. k > n) then
-       error stop 'operation_grid: the node is one of the rule'
+       error stop 'operation_grid: the node index k does not fall within the n-point rule'
     end if
 
     pi = acos(-1.0_dp)
@@ -378,7 +385,7 @@ contains
     associate (u1 => this, u2 => n); end associate
 
     if (k - 1 < 1 .or. k - 1 > size(design)) then
-       error stop 'operation_grid: the design has one entry per step'
+       error stop 'operation_grid: the instant argument k does not name an entry the design stores'
     end if
 
     w = design(k - 1)
@@ -399,12 +406,14 @@ contains
 
     type(derivative_terms) :: total
     integer :: k, first
+    character(len=250) :: message
 
     ! a partition's first instant has no step; a quadrature
     ! weighs every point
     first = merge(1, 2, this % kind == GRID_GAUSS)
     if (n < 2) then
-       error stop 'operation_grid: a partition needs two instants'
+       write(message,'(a,i0)') 'operation_grid: a partition needs at least two instants; n = ', n
+       error stop trim(message)
     end if
 
     allocate(dt(n))
@@ -414,7 +423,9 @@ contains
     do k = first, n
        dt(k) = this % weight_of(design, k, n)
        if (value(dt(k)) <= 0.0_dp) then
-          error stop 'operation_grid: every step weight is positive'
+          write(message,'(a,i0,a,es14.6)') 'operation_grid: every step weight must be positive; &
+               &step k = ', k, ', value(dt(k)) = ', value(dt(k))
+          error stop trim(message)
        end if
        total = total + dt(k)
     end do
@@ -544,11 +555,14 @@ contains
 
     type(derivative_terms), allocatable :: design(:), dt(:)
     integer :: consumed
+    character(len=250) :: message
 
     call this % require_variations(variations)
     call seeded_argument(this, inputs, variations, 1, design, consumed)
     if (consumed < size(variations)) then
-       error stop 'operation_grid: the steps vary with the design alone'
+       write(message,'(a,i0,a,i0)') 'operation_grid: a variation names an argument other than &
+            &the design; consumed = ', consumed, ', size(variations) = ', size(variations)
+       error stop trim(message)
     end if
     if (size(design) == 0) design = [derivative_terms(0.0_dp, size(variations))]
     call partitioned(this, design, input_graph % num_vertices(), dt)

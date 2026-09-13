@@ -180,11 +180,15 @@ contains
     type(derivative_terms), allocatable :: dt(:)
     integer , allocatable :: tail_degree(:), head_degree(:)
     integer :: consumed
+    character(len=250) :: message
 
     call this % require_variations(variations)
     call seeded_argument(this, inputs, variations, 1, dt, consumed)
     if (consumed < size(variations)) then
-       error stop 'operation_edge_function: the coefficients vary with the steps alone'
+       write(message,'(a,i0,a,i0,a)') 'operation_edge_function: the coefficients must vary with &
+            &the steps alone; ', size(variations) - consumed, ' of ', size(variations), &
+            & ' variation(s) name a different argument'
+       error stop trim(message)
     end if
     call bound_integer_vector(inputs, this % argument(2), tail_degree)
     call bound_integer_vector(inputs, this % argument(3), head_degree)

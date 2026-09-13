@@ -198,13 +198,17 @@ contains
     integer    , intent(in)           :: num_entries
     integer    , intent(in), optional :: num_components
     type(token) :: identity
+    character(len=150) :: message
 
     identity = domain % id()
     if (.not. identity % declared()) then
-       error stop 'field_stored: a field domain requires a declared graph'
+       error stop 'field_stored: create_domain requires a declared graph, but this domain''s &
+            &identity is undeclared'
     end if
     if (num_entries < 0) then
-       error stop 'field_stored: a field domain has a nonnegative extent'
+       write(message,'(a,i0)') 'field_stored: create_domain requires a nonnegative extent; &
+            &num_entries = ', num_entries
+       error stop trim(message)
     end if
 
     this % graph = domain
@@ -212,7 +216,9 @@ contains
     this % nc    = 1
     if (present(num_components)) this % nc = num_components
     if (this % nc < 1) then
-       error stop 'field_stored: a field domain has at least one component'
+       write(message,'(a,i0)') 'field_stored: create_domain requires at least one component; &
+            &num_components = ', this % nc
+       error stop trim(message)
     end if
 
   end function create_domain
@@ -361,7 +367,8 @@ contains
     type is (stored_field)
        location = this
     class default
-       error stop 'field_stored: a stored field is placed at a stored field'
+       error stop 'field_stored: stored_field_assign_in requires the location to be a &
+            &stored_field, but the actual location has a different dynamic type'
     end select
 
   end subroutine stored_field_assign_in

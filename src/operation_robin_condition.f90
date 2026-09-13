@@ -165,6 +165,7 @@ contains
     real(dp), allocatable :: area(:), delta(:)
     real(dp) :: sign_factor, coefficient
     integer  :: q, p
+    character(len=250) :: message
 
     select case (which)
     case (COEFFICIENT_LHS)
@@ -178,7 +179,9 @@ contains
     case (COEFFICIENT_OPERATOR)
        sign_factor =  1.0_dp; coefficient = this % a; q = 0; p = 0
     case default
-       error stop 'operation_robin_condition: unknown coefficient projection'
+       write(message,'(a,i0)') 'operation_robin_condition: which does not name one of the five &
+            &coefficient projections; which = ', which
+       error stop trim(message)
     end select
 
     call this % faces(m, sets, members)

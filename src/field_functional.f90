@@ -119,7 +119,8 @@ contains
     type is (stored_functional)
        location = this
     class default
-       error stop 'field_functional: a stored functional is placed at a stored functional'
+       error stop 'field_functional: location''s dynamic type is not type(stored_functional); &
+            &a stored functional can only be placed at a stored functional'
     end select
 
   end subroutine stored_functional_assign_in

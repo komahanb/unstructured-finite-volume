@@ -104,7 +104,8 @@ contains
     type(change_record), intent(inout) :: result
 
     if (.not. associated(this % values)) then
-       error stop 'value_change: value map is bound'
+       error stop 'value_change: apply requires this % values to be bound, but it is &
+            &not associated - call bind first'
     end if
 
     this % old_status = this % values % status_of(this % element)

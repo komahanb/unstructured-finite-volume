@@ -58,8 +58,13 @@ contains
     integer, intent(in) :: tails(:), heads(:)
     integer, intent(in) :: tail_degrees(:), head_degrees(:)
 
+    character(len=250) :: message
+
     if (size(tail_degrees) /= size(tails) .or. size(head_degrees) /= size(tails)) then
-       error stop 'view_directed_connectivity: one degree pair per edge'
+       write(message,'(a,i0,a,i0,a,i0)') 'view_directed_connectivity: one degree pair is &
+            &required per edge; size(tails) = ', size(tails), ', size(tail_degrees) = ', &
+            & size(tail_degrees), ', size(head_degrees) = ', size(head_degrees)
+       error stop trim(message)
     end if
 
     this % stored_directed_graph = stored_directed_graph(nv, tails=tails, heads=heads)

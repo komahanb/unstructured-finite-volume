@@ -504,6 +504,7 @@ contains
 
     type(graph) :: dom
     integer         :: n_dom
+    character(len=250) :: message
 
     associate (u1 => this); end associate
 
@@ -512,7 +513,7 @@ contains
     ! onto a part by another part's numbering, no abort, wrong values
     ! near a cut - which is the failure the design exists to prevent.
     if (.not. rel % describes(part_graph)) then
-       error stop 'partition: this relation was not written for this part'
+       error stop 'partition: rel does not describe part_graph; rel % describes(part_graph) is false'
     end if
 
     select type (global_data)
@@ -531,11 +532,14 @@ contains
                & global_graph % edge_set(), global_graph % num_edges(), &
                & part_graph, rel, .false., sets, part_data)
        else
-          error stop 'partition: this field is not defined on this graph''s domains'
+          write(message,'(a,i0,a)') 'partition: global_data has ', n_dom, &
+               & ' entries, which match neither the vertex set nor the edge set of global_graph'
+          error stop trim(message)
        end if
 
     class default
-       error stop 'partition: this data is not handled by this transform'
+       error stop 'partition: global_data''s dynamic type is not handled by this transform; &
+            &only class(stored_field) is'
     end select
 
   end subroutine partition_data

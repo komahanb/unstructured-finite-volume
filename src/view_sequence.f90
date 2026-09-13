@@ -89,7 +89,7 @@ contains
     type(branch), intent(in) :: b
 
     if (b % status() .eq. BRANCH_UNKNOWN) then
-       error stop 'view_sequence: the extent depends on an unknown tail'
+       error stop 'view_sequence: the number of elements requires a known tail, but this branch is UNKNOWN'
     end if
 
     n = 0
@@ -110,8 +110,11 @@ contains
     integer     , intent(in) :: k
     type(graph), pointer     :: element
 
+    character(len=100) :: message
+
     if (k .lt. 1) then
-       error stop 'view_sequence: a sequence is indexed from one'
+       write(message,'(a,i0)') 'view_sequence: a sequence must be indexed from one; k = ', k
+       error stop trim(message)
     end if
 
     if (k .eq. 1) then
@@ -143,7 +146,7 @@ contains
     found = .false.
     if (sequence_empty(b)) return
     if (b % status() .eq. BRANCH_UNKNOWN) then
-       error stop 'view_sequence: membership depends on an unknown sequence'
+       error stop 'view_sequence: membership requires a known sequence, but this branch is UNKNOWN'
     end if
 
     element => sequence_first(b)
@@ -152,7 +155,7 @@ contains
 
     rest = sequence_rest(b)
     if (rest % status() .eq. BRANCH_UNKNOWN) then
-       error stop 'view_sequence: membership depends on an unknown tail'
+       error stop 'view_sequence: membership requires a known tail beyond the first element, but this branch is UNKNOWN'
     end if
     found = sequence_has(rest, g)
 
@@ -221,8 +224,12 @@ contains
 
     type(graph), intent(in) :: cell
 
+    character(len=100) :: message
+
     if (cell % branch(1) % status() .ne. BRANCH_KNOWN) then
-       error stop 'view_sequence: a sequence cell contains a KNOWN element'
+       write(message,'(a,i0)') 'view_sequence: a sequence cell must contain a KNOWN element; &
+            &its status is ', cell % branch(1) % status()
+       error stop trim(message)
     end if
 
   end subroutine require_cell
@@ -232,10 +239,10 @@ contains
     type(branch), intent(in) :: b
 
     if (b % status() .eq. BRANCH_NULL) then
-       error stop 'view_sequence: the sequence has no such element'
+       error stop 'view_sequence: the sequence has no such element, this branch is NULL'
     end if
     if (b % status() .eq. BRANCH_UNKNOWN) then
-       error stop 'view_sequence: that element lies beyond an unknown tail'
+       error stop 'view_sequence: that element lies beyond an unknown tail, this branch is UNKNOWN'
     end if
 
   end subroutine require_reachable

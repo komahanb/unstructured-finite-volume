@@ -89,7 +89,7 @@ contains
 
     real(dp), intent(in) :: k(:,:)
 
-    if (size(k, 1) /= size(k, 2)) error stop 'conduction: the conductivity tensor is square'
+    if (size(k, 1) /= size(k, 2)) error stop 'conduction: k must be square, but size(k,1) /= size(k,2)'
     this % tensor = k
 
   end function tensor
@@ -107,6 +107,7 @@ contains
 
     real(dp), allocatable :: normals(:), n(:)
     integer :: ne, e, d
+    character(len=250) :: message
 
     call values_of(m % face_normal(), normals)
 
@@ -115,11 +116,18 @@ contains
     allocate(values(ne), n(d))
 
     if (allocated(this % vector)) then
-       if (size(this % vector) /= d) error stop 'advection: the velocity has one component per space dimension'
+       if (size(this % vector) /= d) then
+          write(message,'(a,i0,a,i0)') 'advection: velocity must have one component per space &
+               &dimension; size(velocity) = ', size(this % vector), ', dimension = ', d
+          error stop trim(message)
+       end if
     end if
     if (allocated(this % tensor)) then
        if (size(this % tensor, 1) /= d) then
-          error stop 'conduction: the conductivity tensor has the dimension of the space'
+          write(message,'(a,i0,a,i0)') 'conduction: the conductivity tensor must have the &
+               &dimension of the space; size(tensor,1) = ', size(this % tensor, 1), &
+               & ', dimension = ', d
+          error stop trim(message)
        end if
     end if
 

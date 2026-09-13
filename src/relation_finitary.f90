@@ -222,18 +222,24 @@ contains
     type(graph)     , intent(in)    :: domains(:)
 
     integer :: k
+    character(len=150) :: message
 
     if (this % identity % declared()) then
-       error stop 'relation_finitary: a relation is declared at most once'
+       error stop 'relation_finitary: declare requires an undeclared relation, but this &
+            &relation is already declared'
     end if
 
     if (size(domains) < 1) then
-       error stop 'relation_finitary: a relation relates at least one domain'
+       write(message,'(a,i0)') 'relation_finitary: declare requires at least one domain; &
+            &size(domains) = ', size(domains)
+       error stop trim(message)
     end if
 
     do k = 1, size(domains)
        if (.not. domains(k) % same_as(domains(k))) then
-          error stop 'relation_finitary: a signature refers to declared domains only'
+          write(message,'(a,i0,a)') 'relation_finitary: declare requires a signature of &
+               &declared domains only; domains(', k, ') is not self-identical (undeclared)'
+          error stop trim(message)
        end if
     end do
 
@@ -351,23 +357,30 @@ contains
     integer, allocatable :: retained_columns(:)
     integer              :: k, j, i, num_retained
     logical              :: first_occurrence
+    character(len=150) :: message
 
     call this % declare(name, domains)
 
     do k = 1, size(domains)
        if (.not. sets % describes(domains(k))) then
-          error stop 'relation_finitary: a signature refers to described domains only'
+          write(message,'(a,i0,a)') 'relation_finitary: create_stored requires a signature of &
+               &described domains only; domains(', k, ') is not described by sets'
+          error stop trim(message)
        end if
     end do
 
     if (size(table, 1) /= size(domains)) then
-       error stop 'relation_finitary: each tuple has exactly one part per domain'
+       write(message,'(a,i0,a,i0)') 'relation_finitary: create_stored requires one row per &
+            &domain; size(table,1) = ', size(table, 1), ', size(domains) = ', size(domains)
+       error stop trim(message)
     end if
 
     do j = 1, size(table, 2)
        do k = 1, size(domains)
           if (.not. sets % has(domains(k), table(k, j))) then
-             error stop 'relation_finitary: a tuple names a member its domain does not contain'
+             write(message,'(a,i0,a,i0,a,i0)') 'relation_finitary: create_stored requires every &
+                  &tuple entry to belong to its domain; table(', k, ',', j, ') = ', table(k, j)
+             error stop trim(message)
           end if
        end do
     end do

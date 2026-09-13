@@ -129,16 +129,18 @@ contains
     ambient_id = ambient % id()
 
     if (.not. ambient_id % declared()) then
-       error stop 'map_inclusion: an inclusion is keyed on assigned identity'
+       error stop 'map_inclusion: include_in requires ambient to have an assigned identity, &
+            &but ambient_id % declared() is false'
     end if
 
     if (part % same_as(ambient)) then
-       error stop 'map_inclusion: a set is not declared into itself'
+       error stop 'map_inclusion: part and ambient are the same set (part % same_as(ambient) &
+            &is true); a set cannot be declared into itself'
     end if
 
     at = this % rows % append(part % id(), &
-         & 'map_inclusion: an inclusion is keyed on assigned identity', &
-         & 'map_inclusion: a set is declared into one ambient')
+         & 'map_inclusion: append requires the added set to have an assigned identity', &
+         & 'map_inclusion: this set is already declared into an ambient; it cannot be declared twice')
 
     ! the payload doubles its capacity: an inclusion costs amortised
     ! constant time
@@ -177,6 +179,7 @@ contains
 
     type(token) :: current_id, target_id
     integer     :: steps, bound, at
+    character(len=250) :: message
 
     current_id      = part % id()
     target_id = ancestor % id()
@@ -195,7 +198,9 @@ contains
     end do
 
     if (m % rows % position(current_id) /= 0) then
-       error stop 'map_inclusion: an inclusion chain is finite'
+       write(message,'(a,i0,a)') 'map_inclusion: the inclusion chain still names a declared set &
+            &after ', bound, ' step(s) (one per declared row), so it revisits a set - a cycle'
+       error stop trim(message)
     end if
 
   end function declared_subobject

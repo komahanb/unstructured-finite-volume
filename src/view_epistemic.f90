@@ -99,7 +99,8 @@ contains
     character(len=:), allocatable :: name
 
     if (.not. epistemic_defined(g)) then
-       error stop 'view_epistemic: NULL has no epistemic name'
+       error stop 'view_epistemic: epistemic_name requires an epistemically-defined graph, &
+            &but epistemic_defined(g) is false'
     end if
 
     if (has_data(g)) then
@@ -129,7 +130,8 @@ contains
     type(graph), pointer    :: q
 
     if (.not. has_data(g)) then
-       error stop 'view_epistemic: Q is not KNOWN'
+       error stop 'view_epistemic: data_of requires the data branch to be KNOWN, &
+            &but has_data(g) is false'
     end if
 
     q => g % branch(1) % known()
@@ -142,7 +144,8 @@ contains
     type(graph), pointer    :: r
 
     if (.not. has_operator(g)) then
-       error stop 'view_epistemic: R is not KNOWN'
+       error stop 'view_epistemic: residual_of requires the operator branch to be KNOWN, &
+            &but has_operator(g) is false'
     end if
 
     r => g % branch(2) % known()

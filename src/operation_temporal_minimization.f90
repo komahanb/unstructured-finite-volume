@@ -165,20 +165,25 @@ contains
     real(dp)                 , intent(in), optional :: seed_transfer(:,:,:)
 
     integer :: last_member
+    character(len=250) :: message
 
     if (size(member_of) < 1) then
-       error stop 'temporal_minimizer: a partition labels at least one unknown'
+       error stop 'temporal_minimizer: a partition must label at least one unknown, but member_of is empty'
     end if
     if (size(member_order) < 1) then
-       error stop 'temporal_minimizer: a partition states at least one member'
+       error stop 'temporal_minimizer: a partition must state at least one member, but member_order is empty'
     end if
     if (any(member_of < 1) .or. any(member_order < 1)) then
-       error stop 'temporal_minimizer: partition labels are positive'
+       write(message,'(a,i0,a,i0)') 'temporal_minimizer: partition labels must be positive; &
+            &minval(member_of) = ', minval(member_of), ', minval(member_order) = ', minval(member_order)
+       error stop trim(message)
     end if
 
     last_member = maxval(member_of)
     if (maxval(member_order) > last_member) then
-       error stop 'temporal_minimizer: the member order names the partition'
+       write(message,'(a,i0,a,i0)') 'temporal_minimizer: the member order must name a member of the &
+            &partition; maxval(member_order) = ', maxval(member_order), ', last_member = ', last_member
+       error stop trim(message)
     end if
 
     this % member_of    = member_of
@@ -188,10 +193,15 @@ contains
     if (allocated(this % seed_transfer)) deallocate(this % seed_transfer)
     if (present(seed_transfer)) then
        if (size(seed_transfer, 1) /= size(seed_transfer, 2)) then
-          error stop 'temporal_minimizer: a seed transfer is square over the tuple'
+          write(message,'(a,i0,a,i0)') 'temporal_minimizer: a seed transfer must be square over the &
+               &tuple; size(seed_transfer,1) = ', size(seed_transfer, 1), &
+               & ', size(seed_transfer,2) = ', size(seed_transfer, 2)
+          error stop trim(message)
        end if
        if (size(seed_transfer, 3) /= last_member) then
-          error stop 'temporal_minimizer: one seed transfer per member'
+          write(message,'(a,i0,a,i0)') 'temporal_minimizer: one seed transfer is required per member; &
+               &size(seed_transfer,3) = ', size(seed_transfer, 3), ', last_member = ', last_member
+          error stop trim(message)
        end if
        this % seed_transfer = seed_transfer
     end if
@@ -214,14 +224,18 @@ contains
 
     integer, allocatable :: labels(:), members(:), order(:)
     integer :: k, at, n
+    character(len=250) :: message
 
     if (this % scheduled) then
-       error stop 'temporal_minimizer: a schedule is over rules, and is not restricted to unknowns'
+       error stop 'temporal_minimizer: a schedule is over rules, so restrict() does not apply to unknowns'
     end if
     call restrict(this, selected)
     if (allocated(this % member_of)) then
        if (any(selected > size(this % member_of))) then
-          error stop 'temporal_minimizer: a restriction selects unknowns of the partition'
+          write(message,'(a,i0,a,i0)') 'temporal_minimizer: a restriction must select unknowns of &
+               &the partition; maxval(selected) = ', maxval(selected), ', size(member_of) = ', &
+               & size(this % member_of)
+          error stop trim(message)
        end if
        call compact_labels(this % member_of(selected), labels, members)
        this % member_of = labels
@@ -234,7 +248,9 @@ contains
           order(n) = at
        end do
        if (n < 1) then
-          error stop 'temporal_minimizer: a restriction meets an ordered member at least'
+          write(message,'(a,i0,a)') 'temporal_minimizer: the restriction meets none of the ', &
+               & size(this % member_order), ' ordered members'
+          error stop trim(message)
        end if
        this % member_order = order(1:n)
        if (allocated(this % seed_transfer)) this % seed_transfer = this % seed_transfer(:, :, members)
@@ -367,10 +383,13 @@ contains
     real(dp)                  , intent(inout) :: x(:)
     real(dp)                  , intent(out)   :: achieved
     type(solve_result) :: outcome
+    character(len=250) :: message
 
     if (this % scheduled) then
        if (size(rhs) /= 0 .or. size(x) /= 0) then
-          error stop 'temporal_minimizer: a scheduled solve has no flat right side'
+          write(message,'(a,i0,a,i0)') 'temporal_minimizer: a scheduled solve has no flat right &
+               &side; size(rhs) = ', size(rhs), ', size(x) = ', size(x)
+          error stop trim(message)
        end if
        call require_schedule(this)
        call this % schedule % evaluate(this % graph)
@@ -386,7 +405,7 @@ contains
     end if
 
     if (.not. allocated(this % inner)) then
-       error stop 'temporal_minimizer: an inner minimizer is stated'
+       error stop 'temporal_minimizer: solve() requires an inner minimizer, but this % inner is unallocated'
     end if
 
     if (allocated(this % coupling)) then
@@ -432,21 +451,31 @@ contains
     logical, allocatable :: fixed(:)
     integer :: pass, mm, m, count
     type(solve_result) :: outcome
+    character(len=250) :: message
 
     if (.not. allocated(this % inner)) then
-       error stop 'temporal_minimizer: an inner minimizer is stated'
+       error stop 'temporal_minimizer: partitioned_solve() requires an inner minimizer, but this % inner is unallocated'
     end if
     if (this % num_components /= 1) then
-       error stop 'temporal_minimizer: a partitioned residual is scalar in each unknown'
+       write(message,'(a,i0)') 'temporal_minimizer: a partitioned residual must be scalar in each &
+            &unknown; num_components = ', this % num_components
+       error stop trim(message)
     end if
     if (size(x) /= this % num_unknowns .or. size(rhs) /= this % num_unknowns) then
-       error stop 'temporal_minimizer: a partitioned solve is sized by its stated unknowns'
+       write(message,'(a,i0,a,i0,a,i0)') 'temporal_minimizer: a partitioned solve must be sized by &
+            &its stated unknowns; size(x) = ', size(x), ', size(rhs) = ', size(rhs), &
+            & ', num_unknowns = ', this % num_unknowns
+       error stop trim(message)
     end if
     if (size(this % member_of) /= this % num_unknowns) then
-       error stop 'temporal_minimizer: a partition labels every unknown'
+       write(message,'(a,i0,a,i0)') 'temporal_minimizer: a partition must label every unknown; &
+            &size(member_of) = ', size(this % member_of), ', num_unknowns = ', this % num_unknowns
+       error stop trim(message)
     end if
     if (any(abs(rhs) > 0.0_dp)) then
-       error stop 'temporal_minimizer: a partitioned residual solve has zero right hand side'
+       write(message,'(a,es12.5)') 'temporal_minimizer: a partitioned residual solve must have a &
+            &zero right hand side; maxval(abs(rhs)) = ', maxval(abs(rhs))
+       error stop trim(message)
     end if
 
     select type (residual => this % action)
@@ -516,7 +545,8 @@ contains
           end if
        end do
     class default
-       error stop 'temporal_minimizer: a partitioned solve states a residual operator'
+       error stop 'temporal_minimizer: a partitioned solve requires this % action to be a &
+            &residual_operator, but its dynamic type is not'
     end select
 
   end subroutine partitioned_solve
@@ -543,6 +573,7 @@ contains
     integer , allocatable :: points(:)
     type(graph) :: whole, selected
     integer :: i
+    character(len=250) :: message
 
     if (.not. allocated(this % stored)) return
 
@@ -552,14 +583,22 @@ contains
     allocate(inputs(size(this % stored)))
     do i = 1, size(this % stored)
        if (this % stored(i) % value_kind() /= FIELD_REAL) then
-          error stop 'temporal_minimizer: residual stored inputs are real fields'
+          write(message,'(a,i0,a,i0)') 'temporal_minimizer: residual stored input ', i, &
+               & ' must be a real field; value_kind() = ', this % stored(i) % value_kind()
+          error stop trim(message)
        end if
        if (.not. this % stored(i) % defined_on(whole)) then
-          error stop 'temporal_minimizer: residual stored inputs are defined on the residual''s point domain'
+          write(message,'(a,i0,a)') 'temporal_minimizer: residual stored input ', i, &
+               & ' is not defined on the residual''s point domain'
+          error stop trim(message)
        end if
        if (this % stored(i) % num_components() /= 1 .or. &
             & this % stored(i) % num_entries() /= residual % num_points()) then
-          error stop 'temporal_minimizer: residual stored inputs have one value per point'
+          write(message,'(a,i0,a,i0,a,i0,a,i0)') 'temporal_minimizer: residual stored input ', i, &
+               & ' must have one value per point; num_components = ', &
+               & this % stored(i) % num_components(), ', num_entries = ', &
+               & this % stored(i) % num_entries(), ', num_points = ', residual % num_points()
+          error stop trim(message)
        end if
        call this % stored(i) % real_vector(values)
        inputs(i) = stored_field(this % stored(i) % name(), selected, size(points))
@@ -575,6 +614,7 @@ contains
     real(dp), intent(in), optional :: transfer(:,:)
 
     integer :: pieces, i, width
+    character(len=250) :: message
 
     if (size(previous) < 1) return
 
@@ -583,7 +623,10 @@ contains
     if (present(transfer)) then
        width = size(transfer, 1)
        if (size(member) /= size(previous) .or. mod(size(member), width) /= 0) then
-          error stop 'temporal_minimizer: a seed transfer maps a predecessor of the same tuples'
+          write(message,'(a,i0,a,i0,a,i0)') 'temporal_minimizer: a seed transfer must map a &
+               &predecessor of the same tuples; size(member) = ', size(member), &
+               & ', size(previous) = ', size(previous), ', transfer width = ', width
+          error stop trim(message)
        end if
        pieces = size(member) / width
        do i = 1, pieces
@@ -605,7 +648,9 @@ contains
        width = size(member)
        x(member) = x(previous(size(previous) - width + 1:))
     else
-       error stop 'temporal_minimizer: a member is seeded from a compatible predecessor'
+       write(message,'(a,i0,a,i0)') 'temporal_minimizer: a member must be seeded from a compatible &
+            &predecessor; size(member) = ', size(member), ', size(previous) = ', size(previous)
+       error stop trim(message)
     end if
 
   end subroutine seed_from_member
@@ -615,7 +660,7 @@ contains
     class(temporal_minimizer), intent(in) :: this
 
     if (.not. this % scheduled) then
-       error stop 'temporal_minimizer: a temporal schedule is stated'
+       error stop 'temporal_minimizer: this call requires a temporal schedule, but none is stated'
     end if
 
   end subroutine require_schedule

@@ -358,13 +358,17 @@ contains
     type(bipartite_digraph), intent(in) :: over
     integer               , intent(in), optional :: orientation
     type(driver) :: this
+    character(len=250) :: message
 
     this % over = over
     allocate(this % rule, source=rule)
     this % orientation = forward
     if (present(orientation)) this % orientation = orientation
     if (this % orientation /= forward .and. this % orientation /= reverse) then
-       error stop 'operation_driver: an orientation is forward or reverse'
+       write(message,'(a,i0,a,i0,a,i0)') 'operation_driver: an orientation must be forward or &
+            &reverse; orientation = ', this % orientation, ' (forward = ', forward, ', reverse = &
+            &', reverse
+       error stop trim(message)
     end if
     call scheduled(this)
     call this % declare_arguments(rule % num_arguments(), rule % contracts())
@@ -591,8 +595,11 @@ contains
   subroutine require_vertex(this, part, vertex)
     class(pairing), intent(in) :: this
     integer       , intent(in) :: part, vertex
+    character(len=250) :: message
     if (vertex < 1 .or. vertex > this % paired_order(part)) then
-       error stop 'operation_driver: a vertex is one the pairing stores'
+       write(message,'(a,i0,a,i0)') 'operation_driver: vertex must be one the pairing stores; &
+            &vertex = ', vertex, ', paired_order(part) = ', this % paired_order(part)
+       error stop trim(message)
     end if
   end subroutine require_vertex
 
@@ -610,15 +617,23 @@ contains
     class(driver), intent(inout) :: this
     type(pairing), intent(in)    :: connection
     integer      , intent(in), optional :: position
+    character(len=250) :: message
     if (connection % paired_order(FIRST_PART) /= this % over % order_of_part(FIRST_PART) .or. &
         & connection % paired_order(SECOND_PART) /= this % over % order_of_part(SECOND_PART)) then
-       error stop 'operation_driver: the pairing labels one vertex of each part'
+       write(message,'(a,i0,a,i0,a,i0,a,i0)') 'operation_driver: the pairing must label one &
+            &vertex of each part; connection first/second = ', connection % paired_order(FIRST_PART), &
+            & '/', connection % paired_order(SECOND_PART), ', over first/second = ', &
+            & this % over % order_of_part(FIRST_PART), '/', this % over % order_of_part(SECOND_PART)
+       error stop trim(message)
     end if
     this % stored_pairing = connection
     this % completed_steps = 0
     if (present(position)) then
        if (position < 0 .or. position > size(this % visiting)) then
-          error stop 'operation_driver: a position is a completed count of the stored order'
+          write(message,'(a,i0,a,i0)') 'operation_driver: position must be a completed count &
+               &of the stored order; position = ', position, ', size(visiting) = ', &
+               & size(this % visiting)
+          error stop trim(message)
        end if
        this % completed_steps = position
     end if
@@ -629,7 +644,8 @@ contains
     integer, intent(in) :: vertex
     class(operation), intent(in) :: rule
     if (.not. allocated(this % stored_pairing)) then
-       error stop 'operation_driver: this driver is not paired with its data'
+       error stop 'operation_driver: driver_set_rule was called before this driver was paired &
+            &with its data'
     end if
     call this % stored_pairing % set_rule(vertex, rule)
   end subroutine driver_set_rule
@@ -638,7 +654,8 @@ contains
     class(driver), intent(inout) :: this
     integer, intent(in) :: vertex
     if (.not. allocated(this % stored_pairing)) then
-       error stop 'operation_driver: this driver is not paired with its data'
+       error stop 'operation_driver: driver_clear_rule was called before this driver was paired &
+            &with its data'
     end if
     call this % stored_pairing % clear_rule(vertex)
   end subroutine driver_clear_rule
@@ -647,7 +664,8 @@ contains
     class(driver), intent(in) :: this
     type(pairing) :: stored
     if (.not. allocated(this % stored_pairing)) then
-       error stop 'operation_driver: this driver is not paired with its data'
+       error stop 'operation_driver: pairing_of was called before this driver was paired with &
+            &its data'
     end if
     stored = this % stored_pairing
   end function pairing_of
@@ -697,7 +715,7 @@ contains
     class(directed_graph), intent(in)    :: input_graph
 
     if (.not. allocated(this % stored_pairing)) then
-       error stop 'operation_driver: a driver is paired with its data before it evaluates'
+       error stop 'operation_driver: evaluate was called before this driver was paired with its data'
     end if
     ! Complete evaluation replays the current pairing. Data released by
     ! an earlier pass must be restored by pairing another data branch.
@@ -739,7 +757,7 @@ contains
     integer :: k, v
 
     if (.not. allocated(this % stored_pairing)) then
-       error stop 'operation_driver: a driver is paired with its data before it evaluates'
+       error stop 'operation_driver: advance was called before this driver was paired with its data'
     end if
     if (present(executed)) executed = 0
     if (this % complete()) return
@@ -777,7 +795,8 @@ contains
     integer :: k, v
 
     if (.not. allocated(this % stored_pairing)) then
-       error stop 'operation_driver: a driver is paired with its data before it evaluates'
+       error stop 'operation_driver: advance_with was called before this driver was paired with &
+            &its data'
     end if
     if (present(executed)) executed = 0
     if (this % complete()) return
@@ -809,6 +828,7 @@ contains
     type(binding)   , allocatable :: inputs(:)
     integer, allocatable :: reads(:), writes(:)
     integer :: i, num_inputs
+    character(len=250) :: message
 
     ! what the rule reads
     call this % neighbourhood(FIRST_PART, v, .true., reads)
@@ -818,7 +838,10 @@ contains
     ! a bare vector of values. A vertex nothing has written yet
     ! leaves its argument unbound.
     if (size(reads) > rule % num_arguments()) then
-       error stop 'operation_driver: a rule declares an argument for every vertex it reads'
+       write(message,'(a,i0,a,i0)') 'operation_driver: a rule must declare an argument for &
+            &every vertex it reads; size(reads) = ', size(reads), ', rule % num_arguments() = ', &
+            & rule % num_arguments()
+       error stop trim(message)
     end if
     allocate(inputs(size(reads)))
     num_inputs = 0
@@ -875,8 +898,12 @@ contains
   integer function last_reader_of(this, datum)
     class(driver), intent(in) :: this
     integer      , intent(in) :: datum
+    character(len=250) :: message
     if (datum < 1 .or. datum > this % over % order_of_part(SECOND_PART)) then
-       error stop 'operation_driver: a datum belongs to the data part'
+       write(message,'(a,i0,a,i0)') 'operation_driver: datum must belong to the data part; &
+            &datum = ', datum, ', order_of_part(SECOND_PART) = ', &
+            & this % over % order_of_part(SECOND_PART)
+       error stop trim(message)
     end if
     last_reader_of = this % last_reader(datum)
   end function last_reader_of
@@ -894,10 +921,13 @@ contains
     integer      , intent(in) :: step
     integer, allocatable :: vertices(:)
     integer :: d
+    character(len=250) :: message
     vertices = [integer ::]
     if (.not. allocated(this % last_reader)) return
     if (step < 0 .or. step > size(this % visiting)) then
-       error stop 'operation_driver: a position is a completed count of the stored order'
+       write(message,'(a,i0,a,i0)') 'operation_driver: step must be a completed count of the &
+            &stored order; step = ', step, ', size(visiting) = ', size(this % visiting)
+       error stop trim(message)
     end if
     vertices = pack([(d, d = 1, size(this % last_reader))], &
          & this % written_at <= step .and. this % last_reader > step)
@@ -973,7 +1003,8 @@ contains
     associate (u1 => this, u2 => input_graph, u3 => present(inputs)); end associate
     if (allocated(output)) deallocate(output)
 
-    error stop 'operation_driver: a driver is driven by evaluate, not applied'
+    error stop 'operation_driver: driver_apply was called, but a driver is driven by evaluate, &
+         &not applied'
 
   end subroutine driver_apply
 

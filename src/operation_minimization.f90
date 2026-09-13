@@ -343,6 +343,7 @@ contains
     class(minimizer), intent(in) :: this
     real(dp)        , intent(in) :: imbalance
     integer :: relative_exponent
+    character(len=250) :: message
 
     criterion_met = .false.
     if (.not. ieee_is_finite(imbalance) .or. .not. ieee_is_finite(this % initial_residual)) return
@@ -368,7 +369,9 @@ contains
     case (absolute)
        criterion_met = imbalance <= this % tolerance
     case default
-       error stop 'minimizer: a tolerance is measured relative or absolute'
+       write(message,'(a,i0)') 'minimizer: a tolerance must be measured relative or absolute; &
+            &this % criterion = ', this % criterion
+       error stop trim(message)
     end select
 
   end function converged
@@ -483,6 +486,7 @@ contains
 
     class(minimizer), intent(in) :: this
     integer         , intent(in) :: iteration
+    character(len=250) :: message
 
     criterion_met = iteration >= this % max_iterations
 
@@ -492,7 +496,9 @@ contains
     case (by_rate)
        criterion_met = criterion_met .or. this % stagnated()
     case default
-       error stop 'minimizer: an iteration limit is counted or taken from the rate'
+       write(message,'(a,i0)') 'minimizer: an iteration limit must be counted or taken from the &
+            &rate; this % limit_kind = ', this % limit_kind
+       error stop trim(message)
     end select
 
   end function exhausted
@@ -525,6 +531,7 @@ contains
     real(dp), intent(in) :: imbalance
     integer, intent(in) :: iteration
     integer, intent(in), optional :: reason
+    character(len=250) :: message
     this % final_result % residual = imbalance
     this % final_result % initial_residual = this % initial_residual
     this % final_result % iterations = iteration
@@ -546,7 +553,9 @@ contains
        this % final_result % reason = SOLVE_CONTINUE
     end if
     if (this % limit_kind /= by_count .and. this % limit_kind /= by_rate) then
-       error stop 'minimizer: an iteration limit is counted or taken from the rate'
+       write(message,'(a,i0)') 'minimizer: an iteration limit must be counted or taken from the &
+            &rate; this % limit_kind = ', this % limit_kind
+       error stop trim(message)
     end if
   end subroutine record_result
 
@@ -611,6 +620,7 @@ contains
 
     real(dp), allocatable :: zero(:)
     integer :: n
+    character(len=250) :: message
 
     call this % initialize_residual_history()
     if (allocated(this % action)) deallocate(this % action)
@@ -665,8 +675,10 @@ contains
        ! dimensions must agree. A rectangular least-squares family may
        ! support R^n -> R^m later; none exists yet.
        if (size(this % affine) /= n * this % num_components) then
-          error stop 'minimization: the current solver family requires equal &
-               &unknown and residual value dimensions'
+          write(message,'(a,i0,a,i0)') 'minimization: the current solver family requires equal &
+               &unknown and residual value dimensions; size(affine) = ', size(this % affine), &
+               & ', n * num_components = ', n * this % num_components
+          error stop trim(message)
        end if
     else
        allocate(this % affine(0))
@@ -710,22 +722,30 @@ contains
 
     logical, allocatable :: chosen(:)
     integer :: i, b, w, nb
+    character(len=250) :: message
 
     if (size(selected) < 1) then
-       error stop 'minimization: a restriction selects an unknown at least'
+       error stop 'minimization: a restriction must select an unknown at least; selected is empty'
     end if
     if (any(selected < 1)) then
-       error stop 'minimization: a restriction selects unknowns of the whole domain'
+       write(message,'(a,i0)') 'minimization: every selected index must belong to the whole &
+            &domain; minval(selected) = ', minval(selected)
+       error stop trim(message)
     end if
     if (this % num_unknowns > 0) then
        if (any(selected > this % num_unknowns)) then
-          error stop 'minimization: a restriction selects unknowns of the whole domain'
+          write(message,'(a,i0,a,i0)') 'minimization: every selected index must belong to the &
+               &whole domain; maxval(selected) = ', maxval(selected), ', num_unknowns = ', &
+               & this % num_unknowns
+          error stop trim(message)
        end if
     end if
     allocate(chosen(maxval(selected)), source=.false.)
     do i = 1, size(selected)
        if (chosen(selected(i))) then
-          error stop 'minimization: a restriction selects each unknown once'
+          write(message,'(a,i0,a,i0)') 'minimization: a restriction must select each unknown &
+               &once; selected(', i, ') repeats the index ', selected(i)
+          error stop trim(message)
        end if
        chosen(selected(i)) = .true.
     end do
@@ -734,15 +754,22 @@ contains
     if (w > 1) then
        nb = size(selected) / w
        if (nb * w /= size(selected)) then
-          error stop 'minimization: a restriction selects whole blocks'
+          write(message,'(a,i0,a,i0)') 'minimization: a restriction must select whole blocks; &
+               &size(selected) = ', size(selected), ' is not a multiple of block_width = ', w
+          error stop trim(message)
        end if
        do b = 1, nb
           if (mod(selected((b - 1) * w + 1) - 1, w) /= 0) then
-             error stop 'minimization: a restriction selects whole blocks'
+             write(message,'(a,i0,a,i0)') 'minimization: a restriction must select whole blocks; &
+                  &block ', b, ' starts at unaligned index ', selected((b - 1) * w + 1)
+             error stop trim(message)
           end if
           do i = 2, w
              if (selected((b - 1) * w + i) /= selected((b - 1) * w + 1) + i - 1) then
-                error stop 'minimization: a restriction selects whole blocks'
+                write(message,'(a,i0,a,i0,a,i0)') 'minimization: a restriction must select whole &
+                     &blocks; block ', b, ' entry ', i, ' is not contiguous with the block''s &
+                     &first index ', selected((b - 1) * w + 1)
+                error stop trim(message)
              end if
           end do
        end do
@@ -790,7 +817,8 @@ contains
     integer(int64), intent(in) :: a, b
 
     if (a < 0_int64 .or. b < 0_int64) then
-       error stop 'minimization: a storage requirement is a count'
+       error stop 'minimization: a storage requirement must be a nonnegative count, but a &
+            &negative term was passed to saturated_sum'
     end if
     if (a > huge(a) - b) then
        total = huge(a)
@@ -877,15 +905,18 @@ contains
 
     type(stored_field), allocatable :: tuple(:)
     class(field), allocatable :: image
+    character(len=250) :: message
 
     if (.not. allocated(this % action)) then
-       error stop 'minimization: the operator is stated on the solver domain before it is evaluated'
+       error stop 'minimization: evaluate was called before the operator was stated on the &
+            &solver domain; this % action is not allocated'
     end if
     tuple = state_tuple(this % unknown_domain, this % num_unknowns, this % num_components, x, this % stored)
     call this % action % apply(this % graph, this % action % bind(tuple), image)
 
     if (.not. image % defined_on(this % residual_domain)) then
-       error stop 'minimization: the action must return a field on its stated residual domain'
+       error stop 'minimization: the action returned a field that is not defined on the &
+            &statement''s residual domain'
     end if
 
     call image % real_vector(y)
@@ -894,8 +925,10 @@ contains
     ! stated, so the family's squareness is checked here instead.
     if (size(this % affine) == 0 .and. this % num_unknowns > 0) then
        if (size(y) /= this % num_unknowns * this % num_components) then
-          error stop 'minimization: the current solver family requires equal &
-               &unknown and residual value dimensions'
+          write(message,'(a,i0,a,i0)') 'minimization: the current solver family requires equal &
+               &unknown and residual value dimensions; size(y) = ', size(y), ', num_unknowns * &
+               &num_components = ', this % num_unknowns * this % num_components
+          error stop trim(message)
        end if
     end if
 
@@ -912,14 +945,17 @@ contains
     class(minimizer), intent(in)   :: this
     real(dp), intent(in)               :: x(:)
     real(dp), allocatable, intent(out) :: y(:)
+    character(len=250) :: message
 
     call evaluate(this, x, y)
 
     ! A x is the statement less its value at the zero state, which a
     ! statement whose domain excludes that state does not have.
     if (size(this % affine) /= size(y)) then
-       error stop 'minimization: a matrix-vector product subtracts the statement at the zero &
-            &state, which lies outside this statement''s domain'
+       write(message,'(a,i0,a,i0)') 'minimization: a matrix-vector product subtracts the &
+            &statement at the zero state, which lies outside this statement''s domain; &
+            &size(affine) = ', size(this % affine), ', size(y) = ', size(y)
+       error stop trim(message)
     end if
 
     y = y - this % affine
@@ -976,8 +1012,8 @@ contains
     ! nothing couples them, and the graph an action executes over does
     ! not record that.
     if (.not. allocated(this % coupling)) then
-       error stop 'minimization: a sweep needs the dependent-variable &
-            &coupling - state it with coupling='
+       error stop 'minimization: sweep_order requires the dependent-variable coupling, but this &
+            &% coupling is not allocated - state it with coupling='
     end if
 
     colouring = traversal(TRAVERSAL_COLOURING)
@@ -1003,16 +1039,21 @@ contains
     integer , allocatable :: colours(:)
     real(dp), allocatable :: indicator(:), y(:)
     integer :: n, w, nb, col, b, k, i
+    character(len=250) :: message
 
     if (this % num_components > 1) then
-       error stop 'diagonal: the coloured indicator evaluates one number per cell'
+       write(message,'(a,i0)') 'diagonal: the coloured indicator must evaluate one number per cell; &
+            &num_components = ', this % num_components
+       error stop trim(message)
     end if
 
     n  = this % num_unknowns * this % num_components
     w  = this % block_width
     nb = n / w
     if (nb * w /= n) then
-       error stop 'diagonal: the unknowns come in whole blocks'
+       write(message,'(a,i0,a,i0)') 'diagonal: the unknowns must come in whole blocks; n = ', n, &
+            & ', block_width = ', w
+       error stop trim(message)
     end if
 
     allocate(d(w, w, nb), indicator(n))
@@ -1020,7 +1061,9 @@ contains
 
     call this % sweep_order(colours)
     if (size(colours) /= nb) then
-       error stop 'diagonal: the coupling stated is over the blocks, one colour each'
+       write(message,'(a,i0,a,i0)') 'diagonal: the coupling must be stated over the blocks, one &
+            &colour each; size(colours) = ', size(colours), ', nb = ', nb
+       error stop trim(message)
     end if
 
     do col = 1, maxval(colours)
@@ -1083,7 +1126,8 @@ contains
     if (present(inputs)) then
        call bound_value(inputs, this % argument(1), right_hand_side)
        if (.not. right_hand_side % defined_on(this % residual_domain)) then
-          error stop 'minimization: a right-hand side is defined on the residual domain'
+          error stop 'minimization: the bound right-hand side is not defined on the stated &
+               &residual domain'
        end if
        call right_hand_side % real_vector(rhs)
        allocate(copy, source=this)

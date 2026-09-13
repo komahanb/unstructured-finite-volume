@@ -179,13 +179,20 @@ contains
 
     integer, allocatable :: tails(:), heads(:)
     integer :: a, n
+    character(len=150) :: message
 
     n = size(from_part)
     if (size(from_vertex) /= n .or. size(to_part) /= n .or. size(to_vertex) /= n) then
-       error stop 'view_read_write: an arc has one end in each part'
+       write(message,'(a,i0,a,i0,a,i0,a,i0)') 'view_read_write: crossing requires one end per &
+            &arc in each array; size(from_part) = ', n, ', size(from_vertex) = ', &
+            & size(from_vertex), ', size(to_part) = ', size(to_part), ', size(to_vertex) = ', &
+            & size(to_vertex)
+       error stop trim(message)
     end if
     if (first_order < 0 .or. second_order < 0) then
-       error stop 'view_read_write: a part has a non-negative vertex count'
+       write(message,'(a,i0,a,i0)') 'view_read_write: crossing requires a non-negative vertex &
+            &count per part; first_order = ', first_order, ', second_order = ', second_order
+       error stop trim(message)
     end if
 
     this % first_order  = first_order
@@ -194,7 +201,9 @@ contains
     allocate(tails(n), heads(n))
     do a = 1, n
        if (from_part(a) == to_part(a)) then
-          error stop 'view_read_write: an arc of a bipartite digraph crosses its parts'
+          write(message,'(a,i0,a,i0)') 'view_read_write: crossing requires an arc to cross &
+               &parts, but arc ', a, ' has both ends in part ', from_part(a)
+          error stop trim(message)
        end if
        call this % require_position(from_part(a), from_vertex(a))
        call this % require_position(to_part(a)  , to_vertex(a))
@@ -229,11 +238,16 @@ contains
   subroutine require_position(this, part, vertex)
     class(bipartite_digraph), intent(in) :: this
     integer                 , intent(in) :: part, vertex
+    character(len=150) :: message
     if (part /= FIRST_PART .and. part /= SECOND_PART) then
-       error stop 'view_read_write: a part is the first or the second'
+       write(message,'(a,i0,a,i0,a,i0)') 'view_read_write: require_position requires part = &
+            &FIRST_PART (', FIRST_PART, ') or SECOND_PART (', SECOND_PART, '); part = ', part
+       error stop trim(message)
     end if
     if (vertex < 1 .or. vertex > this % order_of_part(part)) then
-       error stop 'view_read_write: a vertex is one the part contains'
+       write(message,'(a,i0,a,i0)') 'view_read_write: require_position requires a vertex the &
+            &part contains; vertex = ', vertex, ', order_of_part = ', this % order_of_part(part)
+       error stop trim(message)
     end if
   end subroutine require_position
 

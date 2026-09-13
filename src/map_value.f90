@@ -124,7 +124,7 @@ contains
     at = this % rows % row(element % id(), 'map_value: an update requires an attached row')
 
     if (size(values) == 0) then
-       error stop 'map_value: a known value has values'
+       error stop 'map_value: mark_known requires at least one value, but values is empty'
     end if
 
     width = 1
@@ -221,11 +221,14 @@ contains
     real(dp), allocatable, intent(out) :: values(:)
 
     integer :: at
+    character(len=250) :: message
 
-    at = this % rows % row(element % id(), 'map_value: a known value is read')
+    at = this % rows % row(element % id(), 'map_value: value_of requires a stored row for this element, but none exists')
 
     if (this % states(at) % status /= VALUE_KNOWN) then
-       error stop 'map_value: a known value is read'
+       write(message,'(a,i0,a,i0)') 'map_value: value_of requires status VALUE_KNOWN; status = ', &
+            & this % states(at) % status, ', VALUE_KNOWN = ', VALUE_KNOWN
+       error stop trim(message)
     end if
 
     call this % states(at) % value % real_vector(values)

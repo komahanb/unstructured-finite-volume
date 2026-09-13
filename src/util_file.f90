@@ -113,8 +113,7 @@ contains
 
     inquire(file=this % filename, exist=file_exists)
     if (file_exists  .eqv. .false.) then
-       print *, 'file does not exist ', this % filename
-       error stop
+       error stop 'file: does not exist - ' // this % filename
     end if
     
     open(unit = this % file_unit, file = this % filename)

@@ -117,11 +117,17 @@ contains
     integer         , intent(in)    :: highest_order
     character(len=*), intent(in)    :: levels(:)
 
+    character(len=250) :: message
+
     if (highest_order < 0) then
-       error stop 'util_tally: the highest order is zero or above'
+       write(message,'(a,i0)') 'util_tally: the highest order must be zero or above; &
+            &highest_order = ', highest_order
+       error stop trim(message)
     end if
     if (size(levels) < 1 .or. size(levels) > deepest) then
-       error stop 'util_tally: the levels are one to the stack''s depth'
+       write(message,'(a,i0,a,i0)') 'util_tally: the levels must number one to the stack''s &
+            &depth; size(levels) = ', size(levels), ', deepest = ', deepest
+       error stop trim(message)
     end if
 
     this % highest         = highest_order
@@ -242,13 +248,19 @@ contains
     class(tally), intent(inout) :: this
     integer     , intent(in)    :: level
 
+    character(len=250) :: message
+
     if (.not. this % on) return
 
     if (level < 1 .or. level > this % levels_declared) then
-       error stop 'util_tally: a level is one of those declared'
+       write(message,'(a,i0,a,i0)') 'util_tally: the level must be one of those declared; &
+            &level = ', level, ', levels_declared = ', this % levels_declared
+       error stop trim(message)
     end if
     if (this % depth == deepest) then
-       error stop 'util_tally: the levels opened are within the stack'
+       write(message,'(a,i0,a)') 'util_tally: entering this level would exceed the stack''s &
+            &declared depth; deepest = ', deepest, ', and that many levels are already open'
+       error stop trim(message)
     end if
 
     this % depth                    = this % depth + 1
@@ -271,7 +283,7 @@ contains
     if (.not. this % on) return
 
     if (this % depth == 0) then
-       error stop 'util_tally: a level closed was opened'
+       error stop 'util_tally: leave was called with no level open'
     end if
 
     elapsed = clock() - this % entered_at(this % depth)
@@ -293,12 +305,16 @@ contains
     class(tally), intent(inout) :: this
     integer     , intent(in)    :: event
 
+    character(len=250) :: message
+
     if (.not. this % on) return
     if (this % depth == 0) return
     if (this % order_now < 0 .or. this % order_now > this % highest) return
 
     if (event < 1 .or. event > num_events) then
-       error stop 'util_tally: an event is one of the kinds named'
+       write(message,'(a,i0,a,i0)') 'util_tally: the event must name one of the kinds recorded; &
+            &event = ', event, ', num_events = ', num_events
+       error stop trim(message)
     end if
 
     this % amounts(this % level_now(this % depth), this % order_now, event) = &
@@ -317,16 +333,16 @@ contains
     integer     , intent(in) :: level, order, event
 
     if (.not. allocated(this % amounts)) then
-       error stop 'util_tally: an amount is read after open'
+       error stop 'util_tally: amount was read before this tally was opened'
     end if
     if (level < 1 .or. level > this % levels_declared) then
-       error stop 'util_tally: a level is one of those declared'
+       error stop 'util_tally: the level argument does not name one of the levels declared'
     end if
     if (order < 0 .or. order > this % highest) then
-       error stop 'util_tally: an order is within the range opened'
+       error stop 'util_tally: the order argument lies outside the range opened'
     end if
     if (event < 1 .or. event > num_events) then
-       error stop 'util_tally: an event is one of the kinds named'
+       error stop 'util_tally: the event argument does not name one of the kinds recorded'
     end if
 
     elapsed = this % amounts(level, order, event)
@@ -364,12 +380,17 @@ contains
     class(tally), intent(inout) :: this
     type(tally) , intent(in)    :: other
 
+    character(len=250) :: message
+
     if (.not. allocated(other % amounts)) return
     if (.not. allocated(this % amounts)) then
-       error stop 'util_tally: amounts are added into an opened tally'
+       error stop 'util_tally: amounts cannot be added because this tally was never opened'
     end if
     if (any(shape(other % amounts) /= shape(this % amounts))) then
-       error stop 'util_tally: amounts added are over the same levels and orders'
+       write(message,'(a,3(i0,1x),a,3(i0,1x))') 'util_tally: amounts must be added over the same &
+            &levels and orders; this shape = ', shape(this % amounts), ', other shape = ', &
+            & shape(other % amounts)
+       error stop trim(message)
     end if
 
     this % amounts = this % amounts + other % amounts

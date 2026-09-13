@@ -116,7 +116,12 @@ contains
     integer, intent(in) :: order
     type(family) :: this
 
-    if (order < 1) error stop 'operation_family: the order is positive'
+    character(len=250) :: message
+
+    if (order < 1) then
+       write(message,'(a,i0)') 'operation_family: the order must be positive; order = ', order
+       error stop trim(message)
+    end if
     this = create('adams-moulton', FAMILY_ADAMS, order, &
          & reshape([1.0_dp], [1, 1]), [1.0_dp])
 
@@ -127,7 +132,12 @@ contains
     integer, intent(in) :: order
     type(family) :: this
 
-    if (order < 1) error stop 'operation_family: the order is positive'
+    character(len=250) :: message
+
+    if (order < 1) then
+       write(message,'(a,i0)') 'operation_family: the order must be positive; order = ', order
+       error stop trim(message)
+    end if
     this = create('bdf', FAMILY_BDF, order, reshape([1.0_dp], [1, 1]), [1.0_dp])
 
   end function bdf_family
@@ -139,14 +149,19 @@ contains
     type(family) :: this
 
     integer :: i, j
+    character(len=250) :: message
 
     if (size(a, 1) /= size(a, 2) .or. size(b) /= size(a, 1)) then
-       error stop 'operation_family: the tableau is square with one weight per stage'
+       write(message,'(a,i0,a,i0,a,i0)') 'operation_family: the tableau must be square with one &
+            &weight per stage; shape(a) = [', size(a, 1), ',', size(a, 2), '], size(b) = ', size(b)
+       error stop trim(message)
     end if
     do i = 1, size(a, 1)
        do j = i + 1, size(a, 2)
           if (a(i, j) /= 0.0_dp) then
-             error stop 'operation_family: a diagonally implicit tableau has no entry above its diagonal'
+             write(message,'(a,i0,a,i0,a,es12.5)') 'operation_family: a diagonally implicit &
+                  &tableau must have no entry above its diagonal; a(', i, ',', j, ') = ', a(i, j)
+             error stop trim(message)
           end if
        end do
     end do
@@ -186,7 +201,8 @@ contains
     integer      , intent(in) :: equation_degree
 
     if (this % geometry == FAMILY_NEWMARK .and. equation_degree /= 2) then
-       error stop 'operation_family: Newmark advances a second-order state'
+       error stop 'operation_family: Newmark requires a second-order (degree-two) state; a &
+            &different equation degree was passed'
     end if
 
   end subroutine require_newmark_equation
@@ -232,7 +248,7 @@ contains
     integer      , intent(in) :: i
 
     if (i < 1 .or. i > size(this % b)) then
-       error stop 'operation_family: the stage is one of the tableau'
+       error stop 'operation_family: this stage is not one of the tableau'
     end if
     family_stage_weight = this % b(i)
 
@@ -276,7 +292,7 @@ contains
     logical :: ahead
 
     if (k < 1 .or. k > size(dt)) then
-       error stop 'operation_family: a quadrature is evaluated at an instant of the block'
+       error stop 'operation_family: this quadrature was evaluated at an instant outside the block'
     end if
     select case (this % geometry)
     case (FAMILY_ADAMS, FAMILY_BDF)
@@ -284,14 +300,15 @@ contains
     case (FAMILY_NEWMARK)
        n = 2
     case default
-       error stop 'operation_family: a staged family integrates over its stages by the tableau weights'
+       error stop 'operation_family: this staged family cannot be integrated over instants; it &
+            &integrates over its stages by the tableau weights'
     end select
     ahead = .false.
     if (present(complete)) ahead = complete .and. k > 1 .and. k < n
     num_nodes = min(n, k)
     if (ahead) num_nodes = n
     if (num_nodes > size(dt)) then
-       error stop 'operation_family: a complete rule reads instants of the block'
+       error stop 'operation_family: this complete rule reads instants beyond the block'
     end if
     if (ahead) then
        u = nodes_ahead(dt, k, n)
@@ -486,40 +503,47 @@ contains
 
     case (FAMILY_ADAMS)
        i = head - tail
-       if (i < 0) error stop 'operation_family: an edge runs from an earlier instant'
+       if (i < 0) error stop 'operation_family: an Adams edge runs from an instant later than its head'
        if (head_degree < 0) then
-          error stop 'operation_family: a constraint head_degree a degree at or above the value'
+          error stop 'operation_family: an Adams constraint names a negative head_degree'
        end if
        if (tail_degree == head_degree) then
-          if (i /= 1) error stop 'operation_family: the same degree is read at offset one'
+          if (i /= 1) error stop 'operation_family: the same degree must be read at offset one, &
+               &but was read at a different offset'
           c = derivative_terms(1.0_dp, dt(head))
        else if (tail_degree == head_degree + 1) then
-          if (i >= this % order) error stop 'operation_family: the quadrature spans p instants'
+          if (i >= this % order) error stop 'operation_family: the quadrature must span at most &
+               &p instants, but this offset reaches beyond p'
           c = integral_over_step(nodes(dt, head, this % order), i)
        else
-          error stop 'operation_family: a source is the constraint''s degree or one above'
+          error stop 'operation_family: this source names neither the constraint''s degree nor &
+               &one above it'
        end if
 
     case (FAMILY_BDF)
        j = head - tail
-       if (j < 0) error stop 'operation_family: an edge runs from an earlier instant'
-       if (head_degree < 1) error stop 'operation_family: a derived row head_degree a derivative'
+       if (j < 0) error stop 'operation_family: a BDF edge runs from an instant later than its head'
+       if (head_degree < 1) error stop 'operation_family: a derived BDF row''s head_degree must &
+            &name a derivative, but head_degree is not positive'
        if (tail_degree /= head_degree - 1) then
-          error stop 'operation_family: every source is the degree below the one determined'
+          error stop 'operation_family: this source does not name the degree below the one determined'
        end if
-       if (j > this % order) error stop 'operation_family: a row reaches p instants'
+       if (j > this % order) error stop 'operation_family: this BDF row reaches beyond p instants'
        c = slope_at_zero(nodes(dt, head, this % order + 1), j)
 
     case (FAMILY_NEWMARK)
        if (head_degree < 0 .or. head_degree > 1) then
-          error stop 'operation_family: a Newmark row determines q or qdot'
+          error stop 'operation_family: a Newmark row must determine q or qdot; this head_degree &
+               &names neither'
        end if
        if (tail /= head .and. tail /= head - 1) then
-          error stop 'operation_family: a Newmark row reads the current or previous instant'
+          error stop 'operation_family: a Newmark row must read the current or previous instant; &
+               &this tail names neither'
        end if
        if (tail == head) then
           if (tail_degree /= 2) then
-             error stop 'operation_family: Newmark reads the current acceleration'
+             error stop 'operation_family: Newmark must read the current acceleration here, but &
+                  &tail_degree names a different derivative'
           end if
           if (head_degree == 0) then
              c = derivative_terms(this % beta, dt(head))
@@ -535,7 +559,8 @@ contains
              case (2)
                 c = derivative_terms(0.5_dp - this % beta, dt(head))
              case default
-                error stop 'operation_family: a Newmark value row reads q, qdot and qddot'
+                error stop 'operation_family: a Newmark value row must read q, qdot or qddot; &
+                     &this tail_degree names none of them'
              end select
           case (1)
              select case (tail_degree)
@@ -544,7 +569,8 @@ contains
              case (2)
                 c = derivative_terms(1.0_dp - this % gamma, dt(head))
              case default
-                error stop 'operation_family: a Newmark velocity row reads qdot and qddot'
+                error stop 'operation_family: a Newmark velocity row must read qdot or qddot; &
+                     &this tail_degree names neither'
              end select
           end select
        end if
@@ -552,17 +578,20 @@ contains
     case default
        s = size(this % b)
        if (head == 1 .or. tail == 2 + s) then
-          error stop 'operation_family: an edge runs from the initial instant or a stage into a later vertex'
+          error stop 'operation_family: this edge runs from the initial instant or a stage into &
+               &a later vertex, which a staged family does not permit'
        end if
        if (tail == 1) then
           if (tail_degree /= head_degree) then
-             error stop 'operation_family: the instant behind is read at the constraint''s degree'
+             error stop 'operation_family: the instant behind must be read at the constraint''s &
+                  &degree; tail_degree and head_degree differ here'
           end if
           c = derivative_terms(1.0_dp, dt(head))
           return
        end if
        if (tail_degree /= head_degree + 1) then
-          error stop 'operation_family: a stage is read at the degree above the constraint''s'
+          error stop 'operation_family: a stage must be read at the degree above the &
+               &constraint''s; tail_degree does not name that degree here'
        end if
        j = tail - 1
        if (head == 2 + s) then
@@ -570,7 +599,8 @@ contains
           return
        end if
        i = head - 1
-       if (j > i) error stop 'operation_family: a stage reads stages at or before it'
+       if (j > i) error stop 'operation_family: a stage must read stages at or before it; this &
+            &one reads a later stage'
        c = derivative_terms(this % a(i, j), dt(head))
 
     end select
@@ -593,7 +623,7 @@ contains
 
     do j = k - n + 2, k
        if (value(dt(j)) <= 0.0_dp) then
-          error stop 'operation_family: every time step read is positive'
+          error stop 'operation_family: one of the time steps behind instant k is not positive'
        end if
     end do
     u(0) = derivative_terms(0.0_dp, dt(k))
@@ -622,7 +652,7 @@ contains
 
     do j = 2, n
        if (value(dt(j)) <= 0.0_dp) then
-          error stop 'operation_family: every time step read is positive'
+          error stop 'operation_family: one of the time steps among the first n is not positive'
        end if
     end do
     u(0:k-1) = nodes(dt, k, k)

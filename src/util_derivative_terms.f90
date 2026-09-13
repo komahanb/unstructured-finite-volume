@@ -195,7 +195,8 @@ contains
     type(derivative_terms) :: this
 
     if (num_directions < 0 .or. num_directions > max_subset_width()) then
-       error stop 'util_derivative_terms: the count of directions is within the mask width'
+       error stop 'util_derivative_terms: num_directions is negative or exceeds the mask &
+            &width max_subset_width()'
     end if
 
     this % directions = num_directions
@@ -229,7 +230,8 @@ contains
 
     n = trailz(max(size(c), 1))
     if (size(c) < 1 .or. 2**n /= size(c) .or. n > max_subset_width()) then
-       error stop 'util_derivative_terms: the coefficients number a power of two, one per subset'
+       error stop 'util_derivative_terms: size(c) is empty, not a power of two, or exceeds &
+            &the mask width - one coefficient is required per subset'
     end if
 
     this % directions = n
@@ -253,7 +255,8 @@ contains
     type(derivative_terms) :: this
 
     if (num_directions < x % directions) then
-       error stop 'util_derivative_terms: widening adds directions'
+       error stop 'util_derivative_terms: extend_directions was called with num_directions &
+            &less than x % directions - a direction is never discarded'
     end if
     this = create_constant(0.0_dp, num_directions)
     this % terms(1:size(x % terms)) = x % terms
@@ -276,7 +279,7 @@ contains
     integer :: m, low, high, bit
 
     if (i < 1 .or. i > x % directions) then
-       error stop 'util_derivative_terms: the direction is one of those declared'
+       error stop 'util_derivative_terms: i is outside the declared directions 1..x % directions'
     end if
     this = create_constant(0.0_dp, x % directions - 1)
     bit = 2**(i - 1)
@@ -310,7 +313,7 @@ contains
     real(dp)               , intent(in)    :: x
 
     if (i < 1 .or. i > this % directions) then
-       error stop 'util_derivative_terms: the direction is one of those declared'
+       error stop 'util_derivative_terms: i is outside the declared directions 1..this % directions'
     end if
 
     this % terms(2**(i - 1) + 1) = x
@@ -332,7 +335,7 @@ contains
     integer :: m
 
     if (order < 0 .or. order > this % directions) then
-       error stop 'util_derivative_terms: the order is at most the count of directions'
+       error stop 'util_derivative_terms: order is negative or exceeds this % directions'
     end if
 
     do m = 0, size(this % terms) - 1
@@ -355,7 +358,8 @@ contains
     real(dp)               , intent(in)    :: x
 
     if (m < 1 .or. m >= size(this % terms)) then
-       error stop 'util_derivative_terms: the mask names a nonempty subset of the directions'
+       error stop 'util_derivative_terms: m is zero or outside 1..size(this % terms)-1 - the &
+            &mask must name a nonempty subset of the directions'
     end if
 
     this % terms(m + 1) = x
@@ -390,7 +394,7 @@ contains
     integer               , intent(in) :: m
 
     if (m < 0 .or. m >= size(x % terms)) then
-       error stop 'util_derivative_terms: the mask names a subset of the directions'
+       error stop 'util_derivative_terms: m is outside 0..size(x % terms)-1'
     end if
 
     coefficient = x % terms(m + 1)
@@ -472,7 +476,7 @@ contains
     integer  :: m, s
 
     if (b % terms(1) == 0.0_dp) then
-       error stop 'util_derivative_terms: a quotient divides by a nonzero value'
+       error stop 'util_derivative_terms: b % terms(1) is zero - a quotient cannot divide by zero'
     end if
 
     r = create_like(0.0_dp, a)
@@ -506,7 +510,8 @@ contains
     integer :: full, s
 
     if (a % directions /= b % directions) then
-       error stop 'util_derivative_terms: the factors of a product have the same count of directions'
+       error stop 'util_derivative_terms: a % directions and b % directions differ - the &
+            &factors of a product must share the same count of directions'
     end if
 
     full  = size(a % terms) - 1
@@ -534,11 +539,13 @@ contains
     integer :: i
 
     if (size(a) /= size(b)) then
-       error stop 'util_derivative_terms: an inner product pairs factors of the same extent'
+       error stop 'util_derivative_terms: size(a) and size(b) differ - an inner product pairs &
+            &factors of the same extent'
     end if
     if (present(active)) then
        if (size(active) < size(a)) then
-          error stop 'util_derivative_terms: the active mask covers every entry'
+          error stop 'util_derivative_terms: size(active) is smaller than size(a) - the active &
+               &mask must cover every entry'
        end if
     end if
 
@@ -605,7 +612,8 @@ contains
     n = a % directions
 
     if (ubound(f, 1) < n) then
-       error stop 'util_derivative_terms: a function supplies n + 1 derivatives'
+       error stop 'util_derivative_terms: ubound(f,1) is below n - the composed function must &
+            &supply n + 1 derivatives'
     end if
 
     allocate(table(0:n, 0:2**n - 1))
@@ -697,7 +705,8 @@ contains
 
     x = a % terms(1)
     if (x <= 0.0_dp) then
-       error stop 'util_derivative_terms: log is taken at a positive value'
+       error stop 'util_derivative_terms: a % terms(1) is not positive - log is only &
+            &differentiated at a positive value'
     end if
 
     f(0) = log(x)
@@ -727,7 +736,8 @@ contains
 
     x = a % terms(1)
     if (x <= 0.0_dp) then
-       error stop 'util_derivative_terms: a real power is taken at a positive value'
+       error stop 'util_derivative_terms: a % terms(1) is not positive - a real power is only &
+            &differentiated at a positive value'
     end if
 
     f(0) = x**p

@@ -145,13 +145,18 @@ contains
     integer :: n
     logical :: factors_current
     type(solve_result) :: outcome
+    character(len=250) :: message
 
     if (this % singular_tolerance <= 0.0_dp) then
-       error stop 'dense_direct: singular tolerance is positive'
+       write(message,'(a,es12.5)') 'dense_direct: singular_tolerance must be positive; actual = ', &
+            & this % singular_tolerance
+       error stop trim(message)
     end if
 
     if (size(x) /= size(rhs)) then
-       error stop 'dense_direct: solution size matches rhs'
+       write(message,'(a,i0,a,i0)') 'dense_direct: size(x) must equal size(rhs); size(x) = ', &
+            & size(x), ', size(rhs) = ', size(rhs)
+       error stop trim(message)
     end if
 
     call this % record_event(linear_solves)
@@ -198,7 +203,8 @@ contains
           call this % record_result(this % norm(r), 0, SOLVE_SINGULAR)
           return
        end if
-       error stop 'dense_direct: the pivot is singular'
+       error stop 'dense_direct: factorisation found a singular pivot, and singular_reported is &
+            &false so the failure is not returned through achieved'
     end if
 
     call this % factor % substitute(rhs, solution, &

@@ -202,9 +202,12 @@ contains
 
     integer, allocatable :: tails(:), heads(:)
     integer :: ne, e, nv_global, l, largest_entry
+    character(len=250) :: message
 
     if (.not. this % defined_on_relation(rel, part_graph)) then
-       error stop 'assemble: this relation was not written for this part'
+       write(message,'(a,i0)') 'assemble_graph: rel was not written for this part; &
+            &rel % part_id() = ', rel % part_id()
+       error stop trim(message)
     end if
 
     ne = part_graph % num_edges()
@@ -254,13 +257,18 @@ contains
 
     type(graph) :: dom
     integer         :: n_dom
+    character(len=250) :: message
 
     if (.not. this % defined_on_relation(rel, part_graph)) then
-       error stop 'assemble: this relation was not written for this part'
+       write(message,'(a,i0)') 'assemble_data: rel was not written for this part; &
+            &rel % part_id() = ', rel % part_id()
+       error stop trim(message)
     end if
 
     if (.not. rel % describes_whole(global_graph)) then
-       error stop 'assemble: this relation was not written for this whole'
+       write(message,'(a,i0)') 'assemble_data: rel was not written for this whole; &
+            &rel % part_id() = ', rel % part_id()
+       error stop trim(message)
     end if
 
     select type (part_data)
@@ -279,11 +287,13 @@ contains
                & part_graph % edge_set(), part_graph % num_edges(), &
                & global_graph, .false., sets, global_data)
        else
-          error stop 'assemble: this field is not defined on this part''s domains'
+          write(message,'(a)') "assemble_data: field '" // trim(part_data % name()) // &
+               & "' is not defined on either of this part's domains"
+          error stop trim(message)
        end if
 
     class default
-       error stop 'assemble: this data is not handled by this transform'
+       error stop 'assemble_data: part_data''s dynamic type is not one this transform handles'
     end select
 
   end subroutine assemble_data
@@ -320,6 +330,7 @@ contains
     real(dp), allocatable :: lv(:), fv(:)
     integer , allocatable :: global_members(:), origin(:)
     integer :: nglobal, nlocal, num_components, l, c, f, own_part, n, at
+    character(len=250) :: message
 
     if (on_vertices) then
        nglobal        = global_graph % num_vertices()
@@ -335,13 +346,17 @@ contains
 
     call part_data % real_vector(lv)
     if (size(lv) /= n_dom * num_components) then
-       error stop 'assemble: the field values must fill its stated domain'
+       write(message,'(a,i0,a,i0,a,i0)') 'gather_field: the field values must fill its stated &
+            &domain; size(lv) = ', size(lv), ', n_dom = ', n_dom, ', num_components = ', num_components
+       error stop trim(message)
     end if
 
     if (dom % same_as(part_carrier)) then
 
        if (n_dom /= n_part_carrier) then
-          error stop 'assemble: a full field must fill the part carrier'
+          write(message,'(a,i0,a,i0)') 'gather_field: a full field must fill the part carrier; &
+               &n_dom = ', n_dom, ', n_part_carrier = ', n_part_carrier
+          error stop trim(message)
        end if
 
        ! Full coverage: the established dense assembly, owned only.
@@ -356,7 +371,9 @@ contains
           end if
           f = rel % global_index(l, on_vertices)
           if (f < 1 .or. f > nglobal) then
-             error stop 'assemble: a relation must map into the whole carrier'
+             write(message,'(a,i0,a,i0)') 'gather_field: the full-coverage relation must map into &
+                  &the whole carrier 1..nglobal; f = ', f, ', nglobal = ', nglobal
+             error stop trim(message)
           end if
           do c = 1, num_components
              associate (to => (f - 1) * num_components + c, from => (l - 1) * num_components + c)
@@ -372,21 +389,27 @@ contains
        ! Proper subset: map the members to the global set and retain
        ! only the owned ones.
        if (sets % num_members_of(dom) /= n_dom) then
-          error stop 'assemble: a subset field must fill its stated domain'
+          write(message,'(a,i0,a,i0)') 'gather_field: a subset field must fill its stated domain; &
+               &num_members_of(dom) = ', sets % num_members_of(dom), ', n_dom = ', n_dom
+          error stop trim(message)
        end if
        allocate(global_members(n_dom), origin(n_dom))
        n = 0
        do l = 1, n_dom
           at = sets % member_of(dom, l)      ! part-local member
           if (at < 1 .or. at > n_part_carrier) then
-             error stop 'assemble: a subset must belong to the part carrier'
+             write(message,'(a,i0,a,i0)') 'gather_field: a subset must belong to the part carrier &
+                  &1..n_part_carrier; at = ', at, ', n_part_carrier = ', n_part_carrier
+             error stop trim(message)
           end if
           if (rel % has_part_relation()) then
              if (rel % owner_part(at, on_vertices) /= own_part) cycle
           end if
           f = rel % global_index(at, on_vertices)
           if (f < 1 .or. f > nglobal) then
-             error stop 'assemble: a relation must map into the whole carrier'
+             write(message,'(a,i0,a,i0)') 'gather_field: the subset relation must map into the &
+                  &whole carrier 1..nglobal; f = ', f, ', nglobal = ', nglobal
+             error stop trim(message)
           end if
           n = n + 1
           global_members(n) = f

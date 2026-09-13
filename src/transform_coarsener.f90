@@ -353,7 +353,8 @@ contains
        allocate(coarse_data, source=out)
 
     class default
-       error stop 'coarsen: the transform is defined on stored_field data only'
+       error stop 'coarsen: fine_data''s dynamic type is not class(stored_field), &
+            &which coarsen_data requires'
     end select
 
   end subroutine coarsen_data

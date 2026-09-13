@@ -529,7 +529,7 @@ contains
     integer :: k2, j, n, row1
 
     if (a2 % ncols /= a1 % nrows) then
-       error stop 'differential_operator: composed maps agree on the inner extent'
+       error stop 'differential_operator: compose requires a2 % ncols == a1 % nrows, but they differ'
     end if
 
     a % nrows = a2 % nrows
@@ -719,10 +719,12 @@ contains
     type(stencil)                  :: compiled
 
     type(affine_map) :: a
+    character(len=250) :: message
 
     if (operator % landing /= SIDE_VERTEX) then
-       error stop 'differential_operator: a stencil is square - only the &
-            &vertex landing compiles to one'
+       write(message,'(a,i0,a,i0)') 'differential_operator: only the vertex landing compiles to &
+            &a stencil; operator % landing = ', operator % landing, ', SIDE_VERTEX = ', SIDE_VERTEX
+       error stop trim(message)
     end if
 
     a = compiled_map(operator, input_graph, enters_on_edges=.false.)

@@ -177,15 +177,15 @@ contains
     class(change_record), intent(in) :: this
 
     if (this % committed .and. this % reverted) then
-       error stop 'change_record: terminal state is consistent'
+       error stop 'change_record: this record is marked both committed and reverted'
     end if
 
     if (this % accepted .and. .not. this % committed) then
-       error stop 'change_record: terminal state is consistent'
+       error stop 'change_record: this record is marked accepted without being committed'
     end if
 
     if (this % failed .and. this % committed) then
-       error stop 'change_record: terminal state is consistent'
+       error stop 'change_record: this record is marked both failed and committed'
     end if
 
   end subroutine validate_terminal
@@ -213,28 +213,31 @@ contains
     if (result % failed) then
        call change % revert(result)
        if (.not. result % reverted) then
-          error stop 'run_change: reverted change reports reverted'
+          error stop 'run_change: change%revert() was called after an apply failure, but &
+               &result%reverted is still false'
        end if
        call result % validate_terminal()
        return
     end if
 
     if (.not. result % applied) then
-       error stop 'run_change: applied change reports applied'
+       error stop 'run_change: change%apply() returned without result%applied being set true'
     end if
 
     call change % check(result)
 
     if (.not. result % failed) then
        if (.not. result % checked) then
-          error stop 'run_change: checked change reports checked'
+          error stop 'run_change: change%check() returned without failing, but result%checked &
+               &is still false'
        end if
     end if
 
     if (result % failed .or. .not. result % check_passed) then
        call change % revert(result)
        if (.not. result % reverted) then
-          error stop 'run_change: reverted change reports reverted'
+          error stop 'run_change: change%revert() was called after a check failure or a &
+               &rejected check, but result%reverted is still false'
        end if
        call result % validate_terminal()
        return
@@ -244,12 +247,13 @@ contains
        result % accepted = .true.
        call change % commit(result)
        if (.not. result % committed) then
-          error stop 'run_change: committed change reports committed'
+          error stop 'run_change: change%commit() returned without result%committed being set true'
        end if
     else
        call change % revert(result)
        if (.not. result % reverted) then
-          error stop 'run_change: reverted change reports reverted'
+          error stop 'run_change: change%revert() was called because accept was false, but &
+               &result%reverted is still false'
        end if
     end if
 

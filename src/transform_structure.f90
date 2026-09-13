@@ -81,12 +81,14 @@ contains
 
     nv = size(block_of)
     if (any(block_of < 1) .or. any(block_of > num_blocks)) then
-       error stop 'through_blocks: every member belongs to a block'
+       error stop 'through_blocks: every entry of block_of must lie in 1..num_blocks, &
+            &but at least one does not'
     end if
 
     if (transposed) then
        if (size(coarse) /= num_blocks * num_components) then
-          error stop 'through_blocks: one value per component per block'
+          error stop 'through_blocks: coarse must hold num_blocks*num_components values, &
+               &but its size does not match'
        end if
        if (allocated(fine)) deallocate(fine)
        allocate(fine(nv * num_components))
@@ -98,7 +100,8 @@ contains
        end do
     else
        if (size(fine) /= nv * num_components) then
-          error stop 'through_blocks: one value per component per member'
+          error stop 'through_blocks: fine must hold nv*num_components values, &
+               &but its size does not match'
        end if
        if (allocated(coarse)) deallocate(coarse)
        allocate(coarse(num_blocks * num_components), tally(num_blocks))

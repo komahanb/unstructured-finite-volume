@@ -151,30 +151,50 @@ contains
     type(residual_operator) :: this
     type(continuous_domain) :: domain
     integer :: j
+    character(len=250) :: message
 
     if (size(fixed_rows) /= size(fixed)) then
-       error stop 'operation_residual: one value per fixed component'
+       write(message,'(a,i0,a,i0)') 'operation_residual: one value is required per fixed &
+            &component; size(fixed_rows) = ', size(fixed_rows), ', size(fixed) = ', size(fixed)
+       error stop trim(message)
     end if
     if (present(fixed_rate)) then
        if (size(fixed_rate) /= size(fixed)) then
-          error stop 'operation_residual: one design rate per fixed value'
+          write(message,'(a,i0,a,i0)') 'operation_residual: one design rate is required per &
+               &fixed value; size(fixed_rate) = ', size(fixed_rate), ', size(fixed) = ', size(fixed)
+          error stop trim(message)
        end if
     end if
     if (any(fixed_rows < 1) .or. any(fixed_rows > unknowns)) then
-       error stop 'operation_residual: every fixed row names an unknown'
+       write(message,'(a,i0,a,i0,a,i0)') 'operation_residual: every fixed row must name an &
+            &unknown 1..', unknowns, '; fixed_rows range from ', minval(fixed_rows), ' to ', &
+            & maxval(fixed_rows)
+       error stop trim(message)
     end if
     if (any(at < 0) .or. any(at + degrees > unknowns)) then
-       error stop 'operation_residual: an evaluation point''s degree components lie within the unknowns'
+       write(message,'(a,i0,a,i0,a,i0)') 'operation_residual: an evaluation point''s degree &
+            &components must lie within the unknowns; unknowns = ', unknowns, ', minval(at) = ', &
+            & minval(at), ', maxval(at) + degrees = ', maxval(at) + degrees
+       error stop trim(message)
     end if
     domain = continuous_domain(rule)
     if (degrees < 1 .or. degrees > domain % num_components()) then
-       error stop 'operation_residual: primary degree count is within the law''s component count'
+       write(message,'(a,i0,a,i0)') 'operation_residual: the primary degree count must lie within &
+            &the law''s component count; degrees = ', degrees, ', num_components = ', &
+            & domain % num_components()
+       error stop trim(message)
     end if
     if (size(primary) /= max(1, rule % num_multipliers())) then
-       error stop 'operation_residual: one governed row per rule'
+       write(message,'(a,i0,a,i0)') 'operation_residual: one governed row is required per rule; &
+            &size(primary) = ', size(primary), ', max(1,num_multipliers) = ', &
+            & max(1, rule % num_multipliers())
+       error stop trim(message)
     end if
     if (any(primary < 0) .or. any(primary >= degrees)) then
-       error stop 'operation_residual: a governed row is one of the point''s degree components'
+       write(message,'(a,i0,a,i0,a,i0)') 'operation_residual: a governed row must be one of the &
+            &point''s degree components 0..', degrees - 1, '; primary ranges from ', &
+            & minval(primary), ' to ', maxval(primary)
+       error stop trim(message)
     end if
 
     this % primary_law = primary_law
@@ -426,11 +446,16 @@ contains
     real(dp)                , intent(in) :: x(:), nu(:)
     type(stored_field) :: inputs(2)
     type(typed_field_domain) :: states, designs
+    character(len=250) :: message
     if (size(x) /= this % unknowns) then
-       error stop 'operation_residual: the state contains one component per degree per unknown point'
+       write(message,'(a,i0,a,i0)') 'operation_residual: the state must contain one component per &
+            &degree per unknown point; size(x) = ', size(x), ', unknowns = ', this % unknowns
+       error stop trim(message)
     end if
     if (size(nu) /= size(this % at)) then
-       error stop 'operation_residual: the design contains one value per evaluation point'
+       write(message,'(a,i0,a,i0)') 'operation_residual: the design must contain one value per &
+            &evaluation point; size(nu) = ', size(nu), ', size(at) = ', size(this % at)
+       error stop trim(message)
     end if
     states  = this % state_fields()
     designs = this % design_fields()
@@ -467,7 +492,7 @@ contains
     given = input_graph % vertex_set()
     own   = this % unknown_domain()
     if (.not. own % same_as(given)) then
-       error stop 'operation_residual: the residual is applied on its own unknown graph'
+       error stop 'operation_residual: require_host received a graph that is not this residual''s own unknown graph'
     end if
   end subroutine require_host
 
@@ -480,8 +505,12 @@ contains
     type(graph)     , intent(in) :: given, domain
     integer         , intent(in) :: num_given, num_values
     character(len=*), intent(in) :: message
+    character(len=250) :: diagnostic
     if (.not. domain % same_as(given) .or. num_given /= num_values) then
-       error stop 'operation_residual: ' // message
+       write(diagnostic,'(a,a,a,l1,a,i0,a,i0)') 'operation_residual: ', message, &
+            & '; domain matches = ', domain % same_as(given), ', num_given = ', num_given, &
+            & ', num_values = ', num_values
+       error stop trim(diagnostic)
     end if
   end subroutine require_field
 
@@ -520,7 +549,7 @@ contains
     type(discrete_domain) :: domain
     real(dp), allocatable :: design_values(:)
     if (.not. bound_on(inputs, this % argument(2), this % design_domain(), size(this % at))) then
-       error stop 'operation_residual: the design is defined on the point domain with one value per point'
+       error stop 'operation_residual: the design must be defined on the point domain with one value per point'
     end if
     call bound_real_vector(inputs, this % argument(2), design_values)
     continuous = continuous_domain(this % physics)
@@ -646,9 +675,11 @@ contains
     real(dp), allocatable, intent(out) :: x(:)
     type(stored_field)   , intent(out) :: state
     type(typed_field_domain) :: states
+    character(len=250) :: message
     if (.not. bound_on(inputs, this % argument(1), this % unknown_domain(), this % unknowns)) then
-       error stop 'operation_residual: the state is defined on the unknown domain with one component per degree &
-            &per unknown point'
+       write(message,'(a,i0)') 'operation_residual: the bound state must be defined on the unknown &
+            &domain with one component per degree per unknown point; unknowns = ', this % unknowns
+       error stop trim(message)
     end if
     call bound_real_vector(inputs, this % argument(1), x)
     states = this % state_fields()
@@ -669,12 +700,12 @@ contains
     call given % direction(v)
     if (given % argument_is(this % argument(1))) then
        call require_field(along, size(v), this % unknown_domain(), this % unknowns, &
-            & 'a direction in the state is defined on the unknown domain with one value per unknown')
+            & 'a direction in the state must be defined on the unknown domain with one value per unknown')
     else if (given % argument_is(this % argument(2))) then
        call require_field(along, size(v), this % design_domain(), size(this % at), &
-            & 'a direction in the design is defined on the point domain with one value per point')
+            & 'a direction in the design must be defined on the point domain with one value per point')
     else
-       error stop 'operation_residual: a variation names the state or the design'
+       error stop 'operation_residual: require_direction received a variation naming neither the state nor the design'
     end if
   end subroutine require_direction
 
@@ -698,7 +729,7 @@ contains
     type(stored_field) :: state
     real(dp), allocatable :: r(:), governing(:,:), x(:)
     if (.not. present(inputs)) then
-       error stop 'operation_residual: the state and the design are given'
+       error stop 'operation_residual: residual_apply requires inputs (the state and the design), but the optional inputs argument was not given'
     end if
     call require_host(this, input_graph)
     call state_of(this, inputs, x, state)
@@ -852,9 +883,12 @@ contains
     type(stored_field) :: state
     real(dp), allocatable :: r(:), governing(:,:), v(:), x(:)
     integer :: i
+    character(len=250) :: message
     call this % require_owned(variations)
     if (size(variations) < 1 .or. size(variations) > this % max_degree()) then
-       error stop 'operation_residual: the requested order is within max_degree'
+       write(message,'(a,i0,a,i0)') 'operation_residual: the requested order must lie within &
+            &max_degree; size(variations) = ', size(variations), ', max_degree = ', this % max_degree()
+       error stop trim(message)
     end if
     call require_host(this, input_graph)
     do i = 1, size(variations)
@@ -925,7 +959,7 @@ contains
     else if (given % argument_is(this % argument(2))) then
        at_points = given % with_argument(this % physics % argument(2))
     else
-       error stop 'operation_residual: a variation names the state or the design'
+       error stop 'operation_residual: physics_variation received a variation naming neither the state nor the design'
     end if
   end function physics_variation
 
@@ -1022,9 +1056,13 @@ contains
     logical, allocatable :: chosen(:)
     integer, allocatable :: selected(:)
     integer :: e, p, d, inside, npts
+    character(len=250) :: message
 
     if (any(free < 1) .or. any(free > this % unknowns)) then
-       error stop 'operation_residual: a constraint selects unknowns of the residual'
+       write(message,'(a,i0,a,i0,a,i0)') 'operation_residual: a constraint must select unknowns &
+            &of the residual 1..', this % unknowns, '; free ranges from ', minval(free), ' to ', &
+            & maxval(free)
+       error stop trim(message)
     end if
     allocate(chosen(this % unknowns), source=.false.)
     do e = 1, size(free)
@@ -1040,7 +1078,9 @@ contains
        end do
        if (inside == 0) cycle
        if (inside /= this % degrees) then
-          error stop 'operation_residual: a member contains whole points'
+          write(message,'(a,i0,a,i0,a,i0)') 'operation_residual: point ', p, ' is split across &
+               &the constraint boundary; ', inside, ' of its ', this % degrees, ' degree components are free'
+          error stop trim(message)
        end if
        npts           = npts + 1
        selected(npts) = p
@@ -1074,14 +1114,18 @@ contains
     integer , allocatable :: r(:), c(:)
     real(dp), allocatable :: w(:)
     logical :: tangent_defined
+    character(len=250) :: message
 
     if (size(rhs) /= this % unknowns) then
-       error stop 'operation_residual: one right side per unknown'
+       write(message,'(a,i0,a,i0)') 'operation_residual: one right side value is required per &
+            &unknown; size(rhs) = ', size(rhs), ', unknowns = ', this % unknowns
+       error stop trim(message)
     end if
 
     call this % explicit_tangent(input_graph, inputs, 1, r, c, w, tangent_defined)
     if (.not. tangent_defined) then
-       error stop 'operation_residual: the tangent in the state is explicit'
+       error stop 'operation_residual: linearize requires the tangent in the state to be &
+            &explicit, but explicit_tangent() reported none'
     end if
 
     a = stencil(r, c, w, spread(0.0_dp, 1, this % unknowns), 'explicit tangent')

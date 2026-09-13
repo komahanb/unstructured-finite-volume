@@ -147,11 +147,15 @@ contains
     integer         , intent(in)    :: selected(:)
 
     integer, allocatable :: labels(:), blocks(:)
+    character(len=250) :: message
 
     call restrict(this, selected)
     if (allocated(this % aggregates)) then
        if (any(selected > size(this % aggregates))) then
-          error stop 'multigrid: a restriction selects unknowns of the stated aggregates'
+          write(message,'(a,i0,a,i0)') 'multigrid: a restriction must select unknowns of the &
+               &stated aggregates; maxval(selected) = ', maxval(selected), &
+               & ', size(aggregates) = ', size(this % aggregates)
+          error stop trim(message)
        end if
        call compact_labels(this % aggregates(selected), labels, blocks)
        this % aggregates = labels
@@ -272,7 +276,8 @@ contains
        end do
        call combine_triples(nb, nb, r, c, w, rows, columns, weights)
     class default
-       error stop 'multigrid: state an explicit (stencil) operator'
+       error stop 'multigrid: fine''s dynamic type is not type(stencil); through_map requires &
+            &an explicit stencil operator'
     end select
 
   end subroutine through_map

@@ -80,10 +80,14 @@ contains
     integer            , intent(in)  :: n
     integer, allocatable, intent(out) :: colours(:)
 
+    character(len=250) :: message
+
     call this % sweep_order(colours)
 
     if (size(colours) /= n) then
-       error stop 'gauss_seidel: one colour per unknown'
+       write(message,'(a,i0,a,i0)') 'gauss_seidel: one colour is required per unknown; &
+            &size(colours) = ', size(colours), ', n = ', n
+       error stop trim(message)
     end if
 
   end subroutine colouring
@@ -115,6 +119,7 @@ contains
     type(dense_factorisation), allocatable :: block(:)
     integer , allocatable :: colours(:)
     integer :: it, col, b, w, nb, i
+    character(len=250) :: message
 
     call this % record_event(linear_solves)
 
@@ -142,7 +147,9 @@ contains
              call this % record_event(factorisations)
              call block(b) % factorise(d(:, :, b), tiny(1.0_dp))
              if (block(b) % singular()) then
-                error stop 'gauss_seidel: a block on the diagonal is singular'
+                write(message,'(a,i0,a,i0)') 'gauss_seidel: the diagonal block at position ', b, &
+                     & ' of ', nb, ' is singular'
+                error stop trim(message)
              end if
           end do
        end if

@@ -249,7 +249,8 @@ contains
          end if
       end do
     class default
-       error stop 'relation_algorithms: the successor reader requires a reachability context'
+       error stop 'relation_algorithms: visit_successors requires a reachability_context, but &
+            &the actual context has a different dynamic type'
     end select
 
   end subroutine visit_successors
@@ -277,6 +278,7 @@ contains
     integer, allocatable, target :: indegree(:), ready(:)
     type(integer_fibre) :: fibre
     integer              :: n, i, order_index, selected
+    character(len=150) :: message
 
     call require_adjacency(adjacency, a, context % domain)
     n   = sets % num_members_of(context % domain)
@@ -301,7 +303,10 @@ contains
              order   = order(1:order_index - 1)
              return
           end if
-          error stop 'relation_algorithms: a topological order needs an acyclic graph'
+          write(message,'(a,i0,a,i0,a)') 'relation_algorithms: topological_order requires an &
+               &acyclic graph; no member of zero indegree remains after ', order_index - 1, &
+               & ' of ', n, ' rounds'
+          error stop trim(message)
        end if
 
        selected = pop_ready(context)
@@ -374,7 +379,8 @@ contains
          if (context % indegree(member_index) == 0) call push_ready(context, member_index)
       end do
     class default
-       error stop 'relation_algorithms: the indegree reader requires a topological order context'
+       error stop 'relation_algorithms: decrease_indegrees requires a topological_order_context, &
+            &but the actual context has a different dynamic type'
     end select
 
   end subroutine decrease_indegrees
@@ -398,13 +404,15 @@ contains
     class is (binary_relation)
        a => adjacency
     class default
-       error stop 'relation_algorithms: the adjacency is a binary relation'
+       error stop 'relation_algorithms: require_adjacency requires a binary_relation, but the &
+            &actual adjacency has a different dynamic type'
     end select
 
     s = a % source()
     t = a % target()
     if (.not. s % same_as(t)) then
-       error stop 'relation_algorithms: the adjacency runs over one domain'
+       error stop 'relation_algorithms: require_adjacency requires source and target to be the &
+            &same domain, but they differ'
     end if
 
     dom = s

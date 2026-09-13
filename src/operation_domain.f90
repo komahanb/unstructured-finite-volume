@@ -84,7 +84,8 @@ contains
     type(expression), intent(in) :: law
 
     if (.not. law % declared()) then
-       error stop 'operation_domain: a continuous domain requires a stated law'
+       error stop 'operation_domain: create_continuous_domain requires a stated law, &
+            &but law % declared() is false'
     end if
     this % law = law
 

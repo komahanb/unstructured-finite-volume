@@ -623,12 +623,16 @@ contains
 
     class(functional), allocatable :: reduced
     class(field), allocatable :: values, measure
+    character(len=250) :: message
 
     associate (u1 => input_graph); end associate
 
     if (present(inputs)) then
        if (size(inputs) < 1 .or. size(inputs) > this % num_arguments()) then
-          error stop 'operation_reduction: values and an optional measure are bound'
+          write(message,'(a,i0,a,i0)') 'operation_reduction: inputs must bind values and an &
+               &optional measure, 1 to num_arguments() entries; size(inputs) = ', size(inputs), &
+               & ', num_arguments() = ', this % num_arguments()
+          error stop trim(message)
        end if
        if (size(inputs) >= 2) then
           call bound_value(inputs, this % argument(1), values)
@@ -686,7 +690,8 @@ contains
        class is (functional)
           call this % broadcast(f, out)
        class default
-          error stop 'broadcast: the operation interface requires a functional'
+          error stop 'broadcast: the bound input''s dynamic type is not a functional, &
+            &which the operation interface requires'
        end select
     end if
 

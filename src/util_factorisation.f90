@@ -65,10 +65,13 @@ contains
     real(dp), allocatable :: row(:)
     real(dp) :: factor
     integer  :: n, k, p, j
+    character(len=150) :: message
 
     n = size(a, 1)
     if (size(a, 2) /= n) then
-       error stop 'util_factorisation: a factorised matrix is square'
+       write(message,'(a,i0,a,i0)') 'util_factorisation: factorise requires a square matrix; &
+            &size(a,1) = ', n, ', size(a,2) = ', size(a, 2)
+       error stop trim(message)
     end if
 
     this % n           = n
@@ -124,17 +127,21 @@ contains
 
     real(dp) :: stored
     integer  :: n, i, j, k
+    character(len=150) :: message
 
     n = this % n
 
     if (n == 0) then
-       error stop 'util_factorisation: a substitution follows a factorisation'
+       error stop 'util_factorisation: substitute requires a prior factorise, but this % n = 0'
     end if
     if (this % is_singular) then
-       error stop 'util_factorisation: a singular factorisation is not substituted against'
+       error stop 'util_factorisation: substitute requires a non-singular factorisation, but &
+            &this factorisation is singular'
     end if
     if (size(b) /= n) then
-       error stop 'util_factorisation: the right side matches the matrix'
+       write(message,'(a,i0,a,i0)') 'util_factorisation: substitute requires the right side to &
+            &match the matrix; size(b) = ', size(b), ', n = ', n
+       error stop trim(message)
     end if
 
     x = b

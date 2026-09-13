@@ -103,6 +103,7 @@ contains
     type(derivative_terms), allocatable :: dt(:)
     type(derivative_terms) :: c
     integer :: n, k, m, e, ne, nv
+    character(len=250) :: message
 
     nv = connectivity % num_vertices()
     ne = connectivity % num_edges()
@@ -112,7 +113,11 @@ contains
        n = n + 1
     end do
     if (size(seeds, 1) /= nv .or. size(seeds, 2) /= 2**n - 1) then
-       error stop 'operation_coupling: one seed row per vertex, one column per nonempty subset'
+       write(message,'(a,i0,a,i0,a,i0,a,i0)') 'operation_coupling: seeds must have one row per &
+            &vertex and one column per nonempty subset; size(seeds,1) = ', size(seeds, 1), &
+            & ', num_vertices = ', nv, ', size(seeds,2) = ', size(seeds, 2), &
+            & ', expected = ', 2**n - 1
+       error stop trim(message)
     end if
 
     allocate(dt(nv))
@@ -134,7 +139,8 @@ contains
           end do
        end do
     class default
-       error stop 'operation_coupling: the weights are an edge function of the steps'
+       error stop 'operation_coupling: action''s dynamic type is not class(edge_function), &
+            &which weights_terms requires'
     end select
 
   end subroutine weights_terms

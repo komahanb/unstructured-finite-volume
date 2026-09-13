@@ -259,11 +259,13 @@ contains
     type(expression) :: this
 
     integer :: field
+    character(len=250) :: message
 
     field = 1
     if (present(i)) field = i
     if (field < 1) then
-       error stop 'operation_expression: a field is named by a positive index'
+       write(message,'(a,i0)') 'operation_expression: a field must be named by a positive index; field = ', field
+       error stop trim(message)
     end if
 
     this = vertex(VERTEX_LEAF, ARGUMENT_STATE, 0, 0.0_dp, field=field)
@@ -299,11 +301,18 @@ contains
     integer         , intent(in) :: d
     type(expression) :: this
 
+    character(len=250) :: message
+
     if (size(x % kind) /= 1 .or. x % kind(1) /= VERTEX_LEAF .or. x % position(1) /= ARGUMENT_STATE) then
-       error stop 'operation_expression: a derivative is taken of the unknown'
+       write(message,'(a,i0,a,i0,a,i0)') 'operation_expression: derivative requires its &
+            &argument to be the unknown; size(x % kind) = ', size(x % kind), ', x % kind(1) = ', &
+            & x % kind(1), ', x % position(1) = ', x % position(1)
+       error stop trim(message)
     end if
     if (d < 0) then
-       error stop 'operation_expression: the degree of a derivative is not negative'
+       write(message,'(a,i0)') 'operation_expression: the degree of a derivative must not be &
+            &negative; d = ', d
+       error stop trim(message)
     end if
 
     this = vertex(VERTEX_LEAF, ARGUMENT_STATE, d, 0.0_dp, FIRST_COORDINATE, x % field(1))
@@ -322,14 +331,23 @@ contains
     integer         , intent(in) :: coordinate, d
     type(expression) :: this
 
+    character(len=250) :: message
+
     if (size(x % kind) /= 1 .or. x % kind(1) /= VERTEX_LEAF .or. x % position(1) /= ARGUMENT_STATE) then
-       error stop 'operation_expression: a derivative is taken of the unknown'
+       write(message,'(a,i0,a,i0,a,i0)') 'operation_expression: derivative_along requires its &
+            &argument to be the unknown; size(x % kind) = ', size(x % kind), ', x % kind(1) = ', &
+            & x % kind(1), ', x % position(1) = ', x % position(1)
+       error stop trim(message)
     end if
     if (d < 0) then
-       error stop 'operation_expression: the degree of a derivative is not negative'
+       write(message,'(a,i0)') 'operation_expression: the degree of a derivative must not be &
+            &negative; d = ', d
+       error stop trim(message)
     end if
     if (coordinate < FIRST_COORDINATE) then
-       error stop 'operation_expression: a coordinate is one of those declared'
+       write(message,'(a,i0,a,i0)') 'operation_expression: a coordinate must be one of those &
+            &declared; coordinate = ', coordinate, ', FIRST_COORDINATE = ', FIRST_COORDINATE
+       error stop trim(message)
     end if
 
     this = vertex(VERTEX_LEAF, ARGUMENT_STATE, d, 0.0_dp, coordinate, x % field(1))
@@ -369,6 +387,7 @@ contains
     type(expression) :: this
 
     integer :: c, f
+    character(len=250) :: message
 
     ! a rule stated again keeps its fields' degrees, its multipliers
     ! and the stationarity it is, unless these are given again
@@ -384,41 +403,65 @@ contains
        this % varied      = 0
     end if
     if (this % multipliers < 0 .or. 2 * this % multipliers > this % fields) then
-       error stop 'operation_expression: the multipliers are the last fields, each paired with a state field'
+       write(message,'(a,i0,a,i0)') 'operation_expression: the multipliers must be the last &
+            &fields, each paired with a state field; multipliers = ', this % multipliers, &
+            & ', fields = ', this % fields
+       error stop trim(message)
     end if
 
     if (size(degrees) < 1) then
-       error stop 'operation_expression: a state is declared over one coordinate at least'
+       write(message,'(a,i0)') 'operation_expression: a state must be declared over one &
+            &coordinate at least; size(degrees) = ', size(degrees)
+       error stop trim(message)
     end if
     if (.not. allocated(this % field_degree)) then
        allocate(this % field_degree(this % fields))
        this % field_degree = degrees(FIRST_COORDINATE)
        if (this % multipliers > 0) this % field_degree(this % fields - this % multipliers + 1:) = 0
     else if (size(this % field_degree) /= this % fields) then
-       error stop 'operation_expression: a rule stated again reads the fields it was stated over'
+       write(message,'(a,i0,a,i0)') 'operation_expression: a rule stated again must read the &
+            &fields it was stated over; size(this % field_degree) = ', size(this % field_degree), &
+            & ', this % fields = ', this % fields
+       error stop trim(message)
     end if
     if (present(field_degrees)) then
        if (size(field_degrees) /= this % fields) then
-          error stop 'operation_expression: one degree per field the rule is stated over'
+          write(message,'(a,i0,a,i0)') 'operation_expression: one degree is required per field &
+               &the rule is stated over; size(field_degrees) = ', size(field_degrees), &
+               & ', this % fields = ', this % fields
+          error stop trim(message)
        end if
        this % field_degree = field_degrees
     end if
     if (this % field_degree(1) /= degrees(FIRST_COORDINATE)) then
-       error stop 'operation_expression: the first field stores the equation''s degree'
+       write(message,'(a,i0,a,i0)') 'operation_expression: the first field must store the &
+            &equation''s degree; this % field_degree(1) = ', this % field_degree(1), &
+            & ', degrees(FIRST_COORDINATE) = ', degrees(FIRST_COORDINATE)
+       error stop trim(message)
     end if
 
     do f = 1, this % fields
        if (this % highest_degree_along(FIRST_COORDINATE, f) > this % field_degree(f)) then
-          error stop 'operation_expression: the rule reads a component the state stores'
+          write(message,'(a,i0,a,i0,a,i0)') 'operation_expression: the rule reads a component &
+               &the state does not store, at field ', f, '; rule degree = ', &
+               & this % highest_degree_along(FIRST_COORDINATE, f), ', state degree = ', &
+               & this % field_degree(f)
+          error stop trim(message)
        end if
     end do
     do c = FIRST_COORDINATE + 1, size(degrees)
        if (this % highest_degree_along(c) > degrees(c)) then
-          error stop 'operation_expression: the rule reads a component the state stores'
+          write(message,'(a,i0,a,i0,a,i0)') 'operation_expression: the rule reads a component &
+               &the state does not store, along coordinate ', c, '; rule degree = ', &
+               & this % highest_degree_along(c), ', state degree = ', degrees(c)
+          error stop trim(message)
        end if
     end do
     if (this % highest_degree_along(size(degrees) + 1) >= 0) then
-       error stop 'operation_expression: the rule reads a coordinate the state is not declared over'
+       write(message,'(a,i0,a,i0)') 'operation_expression: the rule reads a coordinate the &
+            &state is not declared over; coordinate = ', size(degrees) + 1, &
+            & ', rule degree there = ', this % highest_degree_along(size(degrees) + 1)
+       error stop trim(message)
     end if
 
     call this % declare_degree(degrees, label)
@@ -439,11 +482,17 @@ contains
     character(len=*), intent(in), optional :: label
     type(expression) :: this
 
+    character(len=250) :: message
+
     if (.not. lagrangian % declared()) then
-       error stop 'operation_expression: a Lagrangian is stated before its stationarity is read'
+       error stop 'operation_expression: the stationarity of a Lagrangian was read before the &
+            &Lagrangian was stated'
     end if
     if (multiplier < 1 .or. multiplier > lagrangian % multipliers) then
-       error stop 'operation_expression: the stationarity is in a multiplier the Lagrangian declares'
+       write(message,'(a,i0,a,i0)') 'operation_expression: the stationarity must be in a &
+            &multiplier the Lagrangian declares; multiplier = ', multiplier, &
+            & ', lagrangian % multipliers = ', lagrangian % multipliers
+       error stop trim(message)
     end if
 
     this = lagrangian
@@ -465,7 +514,8 @@ contains
     type(expression) :: this
 
     if (.not. lagrangian % declared()) then
-       error stop 'operation_expression: a Lagrangian is stated before its value at zero is read'
+       error stop 'operation_expression: the value at zero of a Lagrangian was read before the &
+            &Lagrangian was stated'
     end if
 
     this = lagrangian
@@ -701,7 +751,7 @@ contains
     integer :: per, f, n, j, at, given, total
 
     if (size(q) /= this % num_components()) then
-       error stop 'operation_expression: a point stores one component per law component'
+       error stop 'operation_expression: the point does not store one component per law component'
     end if
     if (this % multipliers == 0) then
        r = this % evaluated_over(q, nu)
@@ -819,7 +869,8 @@ contains
              ! components run along time first, then along space
              at = this % stored_at(this % field(i), this % along(i), this % order(i))
              if (at > ubound(q, 1)) then
-                error stop 'operation_expression: the state stores the component read'
+                error stop 'operation_expression: the state does not store the component read, &
+                     &beyond the end of the stored tuple'
              end if
              v(i) = q(at)
           else
@@ -847,10 +898,12 @@ contains
           case (LOGARITHM);   v(i) = log(v(this % first(i)))
           case (ROOT);        v(i) = sqrt(v(this % first(i)))
           case default
-             error stop 'operation_expression: the function is one of those defined'
+             error stop 'operation_expression: this vertex names a function that is not one of &
+                  &those defined'
           end select
        case default
-          error stop 'operation_expression: the vertex kind is one of those defined'
+          error stop 'operation_expression: this vertex names a kind that is not one of those &
+               &defined'
        end select
     end do
 
@@ -935,12 +988,19 @@ contains
     integer               , intent(in)    :: degrees(:)
     character(len=*)      , intent(in), optional :: label
 
+    character(len=250) :: message
+
     if (size(degrees) < 1) then
-       error stop 'operation_expression: a state is declared over one coordinate at least'
+       write(message,'(a,i0)') 'operation_expression: a state must be declared over one &
+            &coordinate at least; size(degrees) = ', size(degrees)
+       error stop trim(message)
     end if
 
     if (any(degrees < 0)) then
-       error stop 'operation_expression: a degree along a coordinate is not negative'
+       write(message,'(a,i0,a,i0)') 'operation_expression: a degree along a coordinate must not &
+            &be negative; minval(degrees) = ', minval(degrees), &
+            & ' at coordinate ', minloc(degrees, dim=1)
+       error stop trim(message)
     end if
 
     this % degrees = degrees
@@ -988,10 +1048,11 @@ contains
     integer :: f
 
     if (field < 1 .or. field > this % fields) then
-       error stop 'operation_expression: a component names a field the rule is stated over'
+       error stop 'operation_expression: this component names a field the rule is not stated over'
     end if
     if (field > this % fields - this % multipliers) then
-       error stop 'operation_expression: a multiplier is not stored in the tuple'
+       error stop 'operation_expression: this component names a multiplier, which is not stored &
+            &in the tuple'
     end if
     at = 0
     do f = 1, field - 1
@@ -1028,17 +1089,18 @@ contains
     integer :: c
 
     if (.not. this % declared()) then
-       error stop 'operation_expression: the law is stated before its components are read'
+       error stop 'operation_expression: a component was read before the law was stated'
     end if
     if (coordinate < FIRST_COORDINATE .or. coordinate > this % num_coordinates()) then
-       error stop 'operation_expression: a component names a declared coordinate'
+       error stop 'operation_expression: this component names a coordinate the law does not declare'
     end if
     if (coordinate > FIRST_COORDINATE .and. order < 1) then
-       error stop 'operation_expression: a component away from the first coordinate names a positive order'
+       error stop 'operation_expression: this component names order zero away from the first &
+            &coordinate, where only a positive order is named'
     end if
     if (order < 0 .or. order > merge(this % field_degree(field), this % degrees(coordinate), &
          & coordinate == FIRST_COORDINATE)) then
-       error stop 'operation_expression: a component names an order declared on the coordinate'
+       error stop 'operation_expression: this component names an order the coordinate does not declare'
     end if
 
     at = order
@@ -1063,7 +1125,7 @@ contains
     integer          , intent(in) :: field
 
     if (.not. this % declared()) then
-       error stop 'operation_expression: the law is stated before its component count is read'
+       error stop 'operation_expression: the component count was read before the law was stated'
     end if
 
     components_per_field = this % field_degree(field) + 1
@@ -1108,10 +1170,10 @@ contains
     integer          , intent(in) :: coordinate
 
     if (.not. this % declared()) then
-       error stop 'operation_expression: the law is stated before its degrees are read'
+       error stop 'operation_expression: a degree was read before the law was stated'
     end if
     if (coordinate < FIRST_COORDINATE .or. coordinate > size(this % degrees)) then
-       error stop 'operation_expression: a degree names a declared coordinate'
+       error stop 'operation_expression: this degree names a coordinate the law does not declare'
     end if
     degree = this % degrees(coordinate)
 
@@ -1135,10 +1197,10 @@ contains
     integer          , intent(in) :: field
 
     if (.not. this % declared()) then
-       error stop 'operation_expression: the law is stated before a field''s degree is read'
+       error stop 'operation_expression: a field''s degree was read before the law was stated'
     end if
     if (field < 1 .or. field > this % fields) then
-       error stop 'operation_expression: a degree names a field the rule is stated over'
+       error stop 'operation_expression: this degree names a field the rule is not stated over'
     end if
     degree = this % field_degree(field)
 
@@ -1157,7 +1219,7 @@ contains
     class(expression), intent(in) :: this
 
     if (.not. this % declared()) then
-       error stop 'operation_expression: the law is stated before its coordinate count is read'
+       error stop 'operation_expression: the coordinate count was read before the law was stated'
     end if
     num_coordinates = size(this % degrees)
 
@@ -1168,7 +1230,7 @@ contains
     class(expression)     , intent(in) :: this
 
     if (.not. this % declared()) then
-       error stop 'operation_expression: the law is stated before its equation degree is read'
+       error stop 'operation_expression: the equation degree was read before the law was stated'
     end if
     equation_degree = this % degrees(FIRST_COORDINATE)
 
@@ -1188,14 +1250,20 @@ contains
 
     real(dp), allocatable :: values(:)
     integer :: k, nd, base
+    character(len=250) :: message
 
     nd = this % num_components()
 
     if (size(q) /= input_graph % num_vertices() * nd) then
-       error stop 'operation_expression: the state stores one component per law component per point'
+       write(message,'(a,i0,a,i0,a,i0)') 'operation_expression: the state does not store one &
+            &component per law component per point; size(q) = ', size(q), &
+            & ', num_vertices = ', input_graph % num_vertices(), ', components per point = ', nd
+       error stop trim(message)
     end if
     if (size(nu) /= input_graph % num_vertices()) then
-       error stop 'operation_expression: the design stores one value per point'
+       write(message,'(a,i0,a,i0)') 'operation_expression: the design does not store one value &
+            &per point; size(nu) = ', size(nu), ', num_vertices = ', input_graph % num_vertices()
+       error stop trim(message)
     end if
 
     allocate(values(input_graph % num_vertices()))
@@ -1237,12 +1305,16 @@ contains
 
     type(derivative_terms), allocatable :: q(:), nu(:)
     integer :: on_state, on_design
+    character(len=250) :: message
 
     call this % require_variations(variations)
     call seeded_argument(this, inputs, variations, ARGUMENT_STATE , q , on_state)
     call seeded_argument(this, inputs, variations, ARGUMENT_DESIGN, nu, on_design)
     if (on_state + on_design < size(variations)) then
-       error stop 'operation_expression: a variation names the state or the design'
+       write(message,'(a,i0,a,i0,a,i0)') 'operation_expression: a variation names neither the &
+            &state nor the design; on_state = ', on_state, ', on_design = ', on_design, &
+            & ', size(variations) = ', size(variations)
+       error stop trim(message)
     end if
     call evaluated(this, input_graph, q, nu, output)
 

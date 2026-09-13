@@ -68,6 +68,7 @@ contains
     real(dp), allocatable :: vb(:), wb(:), values(:), weights(:), flux(:)
     logical , allocatable :: known(:)
     integer :: k, f, e, ne
+    character(len=250) :: message
 
     ne = m % num_edges()
 
@@ -101,7 +102,10 @@ contains
        ! refinement removes.
        if (conditions(k) % a == 0.0_dp) then
           if (conditions(k) % b == 0.0_dp) then
-             error stop 'operation_diffusion: a boundary condition fixes a value, a gradient, or both'
+             write(message,'(a,i0,a)') 'operation_diffusion: conditions(', k, &
+                  & ') fixes neither a value nor a gradient (a = 0 and b = 0); &
+                  &a boundary condition must fix a value, a gradient, or both'
+             error stop trim(message)
           end if
           do f = 1, sets % num_members_of(members)
              e        = sets % member_of(members, f)

@@ -236,7 +236,7 @@ contains
     type(contract) :: this
 
     if (value_kind == FIELD_NONE) then
-       error stop 'operation: a contract requires a value kind'
+       error stop 'operation: create_contract received value_kind = FIELD_NONE, which is not a valid value kind'
     end if
 
     this % value_kinds = [value_kind]
@@ -250,8 +250,11 @@ contains
     integer, intent(in), optional :: components
     type(contract) :: this
 
-    if (size(value_kinds) < 1 .or. any(value_kinds == FIELD_NONE)) then
-       error stop 'operation: a contract requires value kinds'
+    if (size(value_kinds) < 1) then
+       error stop 'operation: create_contract_set requires at least one value kind, but value_kinds is empty'
+    end if
+    if (any(value_kinds == FIELD_NONE)) then
+       error stop 'operation: create_contract_set''s value_kinds must not contain FIELD_NONE'
     end if
 
     this % value_kinds = value_kinds
@@ -267,7 +270,7 @@ contains
     this % components = 0
     if (present(components)) then
        if (components < 1) then
-          error stop 'operation: a contract requires a positive component count'
+          error stop 'operation: fix_components requires a positive component count, but components is not positive'
        end if
        this % components = components
     end if
@@ -320,7 +323,7 @@ contains
     type(contract) :: required
 
     if (.not. this % is_named()) then
-       error stop 'operation: a contract belongs to a named argument'
+       error stop 'operation: argument_contract requires a named argument, but this % is_named() is false'
     end if
 
     required = this % required
@@ -343,13 +346,17 @@ contains
     type(contract)  , intent(in), optional :: contracts(:)
     character(len=*), intent(in), optional :: label
     integer         , intent(in), optional :: max_degree
+    character(len=250) :: message
 
     if (n < 0) then
-       error stop 'operation: the argument count is nonnegative'
+       write(message,'(a,i0)') 'operation: the argument count must be nonnegative; n = ', n
+       error stop trim(message)
     end if
     if (present(contracts)) then
        if (size(contracts) /= n) then
-          error stop 'operation: every argument has one contract'
+          write(message,'(a,i0,a,i0)') 'operation: every argument must have one contract; &
+               &size(contracts) = ', size(contracts), ', n = ', n
+          error stop trim(message)
        end if
     end if
 
@@ -416,10 +423,10 @@ contains
     type(argument) :: a
 
     if (.not. this % arguments_space % declared()) then
-       error stop 'operation: the argument space is declared before an argument is named'
+       error stop 'operation: argument() was called before declare_arguments(), so no argument space exists'
     end if
     if (k < 1 .or. k > this % declared_arguments) then
-       error stop 'operation: the argument is declared'
+       error stop 'operation: argument() was called with k outside 1..declared_arguments'
     end if
 
     a % space   = this % arguments_space
@@ -457,7 +464,7 @@ contains
 
     do j = 1, size(variations)
        if (.not. this % owns(variations(j) % wrt)) then
-          error stop 'operation: a variation names an argument of the operation'
+          error stop 'operation: require_owned found a variation naming an argument of another operation'
        end if
     end do
 
@@ -476,7 +483,7 @@ contains
 
     call this % require_owned(variations)
     if (size(variations) > this % max_degree()) then
-       error stop 'operation: the requested order is within max_degree'
+       error stop 'operation: require_variations found size(variations) exceeds max_degree()'
     end if
 
   end subroutine require_variations
@@ -503,6 +510,7 @@ contains
     real(dp), allocatable :: x(:), v(:)
     type(argument) :: a
     integer :: i, j
+    character(len=250) :: message
 
     a = this % argument(k)
     call bound_real_vector(inputs, a, x)
@@ -517,7 +525,9 @@ contains
        if (.not. variations(i) % argument_is(a)) cycle
        call variations(i) % direction(v)
        if (size(v) /= size(x)) then
-          error stop 'operation: a direction has one entry per value of the argument it varies'
+          write(message,'(a,i0,a,i0)') 'operation: a direction must have one entry per value of &
+               &the argument it varies; size(direction) = ', size(v), ', size(argument) = ', size(x)
+          error stop trim(message)
        end if
        do j = 1, size(x)
           call terms(j) % set_direction(i, v(j))
@@ -720,7 +730,7 @@ contains
          & u4 => variations); end associate
     if (allocated(output)) deallocate(output)
 
-    error stop 'operation: the requested order is within max_degree'
+    error stop 'operation: partial_action() is not implemented by this operation type'
 
   end subroutine operation_partial_action
 
@@ -740,7 +750,7 @@ contains
     type(variation) :: none(0)
 
     if (.not. present(inputs)) then
-       error stop 'operation: the arguments are bound'
+       error stop 'operation: value_by_partial_action requires inputs, but the optional inputs argument was not given'
     end if
 
     call this % partial_action(input_graph, inputs, none, output)
@@ -889,7 +899,7 @@ contains
     type(binding) :: this
 
     if (.not. allocated(stored)) then
-       error stop 'operation: a binding contains a field'
+       error stop 'operation: moved_binding requires an allocated field, but stored is unallocated'
     end if
     call require_bindable(to, stored)
     this % to = to
@@ -907,13 +917,17 @@ contains
     type(argument), intent(in) :: to
     class(field)  , intent(in) :: value
     type(contract) :: required
+    character(len=250) :: message
 
     if (.not. to % is_named()) then
-       error stop 'operation: a binding names an argument'
+       error stop 'operation: require_bindable requires a named argument, but to % is_named() is false'
     end if
     required = to % contract()
     if (.not. required % accepts(value)) then
-       error stop 'operation: a bound field satisfies its argument contract'
+       write(message,'(a,i0,a,i0)') 'operation: the bound field does not satisfy its argument &
+            &contract; value_kind = ', value % value_kind(), ', num_components = ', &
+            & value % num_components()
+       error stop trim(message)
     end if
 
   end subroutine require_bindable
@@ -940,9 +954,12 @@ contains
     type(binding), allocatable :: bound(:)
 
     integer :: k
+    character(len=250) :: message
 
     if (size(fields) > this % num_arguments()) then
-       error stop 'operation: every bound field names a declared argument'
+       write(message,'(a,i0,a,i0)') 'operation: bind_fields received more fields than declared &
+            &arguments; size(fields) = ', size(fields), ', num_arguments = ', this % num_arguments()
+       error stop trim(message)
     end if
 
     allocate(bound(size(fields)))
@@ -965,15 +982,20 @@ contains
     type(binding), allocatable :: bound(:)
 
     integer :: k
+    character(len=250) :: message
 
     if (size(others) > this % num_arguments()) then
-       error stop 'operation: every bound field names a declared argument'
+       write(message,'(a,i0,a,i0)') 'operation: bind_bindings received more bindings than declared &
+            &arguments; size(others) = ', size(others), ', num_arguments = ', this % num_arguments()
+       error stop trim(message)
     end if
 
     allocate(bound(size(others)))
     do k = 1, size(others)
        if (.not. allocated(others(k) % value)) then
-          error stop 'operation: a binding contains a field'
+          write(message,'(a,i0,a)') 'operation: bind_bindings found binding ', k, &
+               & ' with an unallocated field'
+          error stop trim(message)
        end if
        bound(k) = binding(this % argument(k), others(k) % value)
     end do
@@ -993,14 +1015,14 @@ contains
     integer :: k
 
     if (.not. a % is_named()) then
-       error stop 'operation: a bound value is named by an argument'
+       error stop 'operation: binding_position requires a named argument, but a % is_named() is false'
     end if
 
     found = 0
     do k = 1, size(bound)
        if (bound(k) % argument_is(a)) then
           if (found /= 0) then
-             error stop 'operation: an argument is bound once'
+             error stop 'operation: binding_position found the same argument bound more than once'
           end if
           found = k
        end if
@@ -1019,10 +1041,10 @@ contains
 
     found = binding_position(bound, a)
     if (found == 0) then
-       error stop 'operation: the argument is bound'
+       error stop 'operation: bound_index requires argument a to have a binding, but none was found'
     end if
     if (.not. allocated(bound(found) % value)) then
-       error stop 'operation: a binding contains a field'
+       error stop 'operation: bound_index found a binding with an unallocated field'
     end if
 
   end function bound_index

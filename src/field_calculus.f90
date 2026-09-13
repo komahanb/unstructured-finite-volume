@@ -213,11 +213,16 @@ contains
     integer         , intent(in), optional :: num_components
     character(len=*), intent(in), optional :: unit_name
 
+    character(len=150) :: message
+
     if (.not. domain % same_as(domain)) then
-       error stop 'field: a field requires a declared domain'
+       error stop 'field: describe requires a declared domain, but this domain is not &
+            &self-identical (undeclared)'
     end if
     if (num_entries < 0) then
-       error stop 'field: the entry count of a domain is not negative'
+       write(message,'(a,i0)') 'field: describe requires a non-negative entry count; &
+            &num_entries = ', num_entries
+       error stop trim(message)
     end if
 
     this % label = label
@@ -317,12 +322,17 @@ contains
     class(field), intent(in) :: other
 
     real(dp), allocatable :: u(:), v(:)
+    character(len=150) :: message
 
     if (.not. this % defined_on(other % domain())) then
-       error stop 'field: an inner product pairs fields on the same domain'
+       error stop 'field: field_inner_product requires fields on the same domain, but this &
+            &field and other are defined on different domains'
     end if
     if (this % value_kind() /= FIELD_REAL .or. other % value_kind() /= FIELD_REAL) then
-       error stop 'field: an inner product pairs real-valued fields'
+       write(message,'(a,i0,a,i0)') 'field: field_inner_product requires real-valued fields; &
+            &this % value_kind() = ', this % value_kind(), ', other % value_kind() = ', &
+            & other % value_kind()
+       error stop trim(message)
     end if
 
     call this  % real_vector(u)
@@ -372,7 +382,8 @@ contains
     class(*)    , intent(in)    :: values(:)
 
     if (size(values) /= this % num_entries() * this % num_components()) then
-       error stop 'field: a value vector must fill its domain exactly'
+       error stop 'field: store requires the values to fill num_entries * num_components &
+            &exactly, but the supplied vector does not'
     end if
 
     ! a store of the same kind and length is written in place: the

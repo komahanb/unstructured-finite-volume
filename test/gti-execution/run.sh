@@ -21,13 +21,13 @@ for mode in source_twin advance_uninitialized results_incomplete derivative_inco
     reverse_limit_insufficient reverse_streamed_forward_pass reverse_streamed_results; do
     case "$mode" in
         source_twin) diagnostic="view_level: this storage's hierarchy has been released" ;;
-        advance_uninitialized) diagnostic='gti_chain: initialize an execution before advancing it' ;;
+        advance_uninitialized) diagnostic='gti_chain: an execution must be initialized before it is advanced' ;;
         results_incomplete) diagnostic='gti_chain: results require a completed execution' ;;
-        derivative_incomplete) diagnostic='gti_chain: a derivative requires a completed primal execution' ;;
+        derivative_incomplete) diagnostic='gti_chain: execution_derivative requires a completed primal execution' ;;
         derivative_streamed) diagnostic='gti_chain: a streamed Taylor execution has released its primal state' ;;
-        reverse_limit_insufficient) diagnostic='gti_chain: the reverse storage limit admits the working set of one recomputation at least' ;;
+        reverse_limit_insufficient) diagnostic='gti_chain: the reverse storage limit must admit the working set of one recomputation at least' ;;
         reverse_streamed_forward_pass) diagnostic='gti_chain: a streamed reverse execution differentiates the functionals and order of its initialization' ;;
-        reverse_streamed_results) diagnostic='gti_chain: Taylor results are those of a forward Taylor execution' ;;
+        reverse_streamed_results) diagnostic='gti_chain: f must not be requested unless the Taylor execution is forward' ;;
     esac
     if "$work/run" "$mode" > "$work/$mode.log" 2>&1; then
         echo "FAIL: execution accepted $mode"

@@ -15,9 +15,9 @@ make -C "$suite_dir" >/dev/null
 cd "$suite_dir" && ./run
 
 declare -A reason=(
-  [notbinary]="relation_algorithms: the adjacency is a binary relation"
-  [notsquare]="relation_algorithms: the adjacency runs over one domain"
-  [cycle]="a topological order needs an acyclic graph"
+  [notbinary]="require_adjacency requires a binary_relation"
+  [notsquare]="require_adjacency requires source and target to be the same domain"
+  [cycle]="topological_order requires an acyclic graph"
 )
 
 for case in notbinary notsquare cycle; do

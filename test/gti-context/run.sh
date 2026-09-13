@@ -42,14 +42,14 @@ reverse_case() {
         --chain="dirk:3 dirk:3 dirk:3 dirk:3" --functionals="energy dissipation" --check=passes "$@")
 }
 if reverse_case --reverse_entries=0 > "$work/reverse-zero.log" 2>&1 || \
-    ! grep -Fq 'gti_sweeps: the reverse storage limit is one entry at least' "$work/reverse-zero.log"; then
+    ! grep -Fq 'gti_sweeps: the reverse storage limit must be one entry at least' "$work/reverse-zero.log"; then
     cat "$work/reverse-zero.log"
     echo 'FAIL: a reverse storage limit below one entry was accepted'
     exit 1
 fi
 if reverse_case --reverse_entries=1 > "$work/reverse-one.log" 2>&1 || \
-    ! grep -Fq 'gti_chain: the reverse storage limit admits the working set of one recomputation at least' "$work/reverse-one.log" || \
-    ! grep -Eq 'reverse storage limit 1 entries; recomputation requires [0-9]+ \(restart state [0-9]+, leaf [0-9]+, costate window [0-9]+, Lagrangian terms [0-9]+\); retention requires [0-9]+' "$work/reverse-one.log"; then
+    ! grep -Fq 'gti_chain: the reverse storage limit must admit the working set of one recomputation at least' "$work/reverse-one.log" || \
+    ! grep -Eq 'reverse storage limit must admit the working set of one recomputation at least; limit 1 entries, recomputation requires [0-9]+ \(restart state [0-9]+, leaf [0-9]+, costate window [0-9]+, Lagrangian terms [0-9]+\); retention requires [0-9]+' "$work/reverse-one.log"; then
     cat "$work/reverse-one.log"
     echo 'FAIL: an insufficient reverse storage limit was accepted or reported without its accounts'
     exit 1

@@ -251,10 +251,8 @@ contains
           if (trim(list(i)) == trim(every(j))) at = j
        end do
        if (at == 0) then
-          write(*,'(a)') ' '
-          write(*,'(a)') ' ' // subject // ' names ' // trim(list(i)) // &
-               & ', which this program does not define.'
-          error stop 'gti_configuration: a setting names something unknown'
+          error stop 'gti_configuration: ' // subject // ' names ' // trim(list(i)) // &
+               & ', which this program does not define'
        end if
     end do
     if (present(which)) which = at
@@ -363,12 +361,10 @@ contains
        cfg % tolerance_criterion = value
     case ('adaptive_check')
        if (value == 'goal_oriented') then
-          write(*,'(a)') ' '
-          write(*,'(a)') ' adaptive_check names goal_oriented, a superseded word: the check it named'
-          write(*,'(a)') ' measures the stationarity of the functional on the grid, not the'
-          write(*,'(a)') ' discretization error, and is adaptive_check = grid_stationarity with the'
-          write(*,'(a)') ' tolerance grid_stationarity_tolerance.'
-          error stop 'gti_configuration: adaptive_check = goal_oriented is superseded by grid_stationarity'
+          error stop 'gti_configuration: adaptive_check names goal_oriented, a superseded word - the &
+               &check it named measures the stationarity of the functional on the grid, not the &
+               &discretization error; use adaptive_check = grid_stationarity with the tolerance &
+               &grid_stationarity_tolerance'
        end if
        cfg % adaptive_check = value
     case ('grid_stationarity_tolerance')
@@ -396,8 +392,7 @@ contains
     case ('measurements')
        cfg % measurements = value
     case default
-       write(*,'(a)') ' this is not a setting: ' // levelled(name)
-       error stop 'gti_configuration: every setting given is one that exists'
+       error stop 'gti_configuration: this is not a setting: ' // levelled(name)
     end select
     call refuse_below(cfg % max_iterations, 1, &
          & 'max_iterations', 'an iteration limit is at least one')
@@ -415,11 +410,11 @@ contains
   subroutine refuse_below(given, least, name, why)
     integer         , intent(in) :: given, least
     character(len=*), intent(in) :: name, why
+    character(len=250) :: message
     if (given >= least) return
-    write(*,'(a)') ' '
-    write(*,'(a,i0,a,i0,a)') ' ' // name // ' is ', given, ', under ', least, &
-         & ': ' // why // '.'
-    error stop 'gti_configuration: a setting is below its least meaningful value'
+    write(message,'(a,i0,a,i0,a)') 'gti_configuration: ' // name // ' is ', given, &
+         & ', under its least meaningful value of ', least, ': ' // why
+    error stop trim(message)
   end subroutine refuse_below
   subroutine read_line(cfg, line)
     type(configuration), intent(inout) :: cfg
@@ -432,8 +427,7 @@ contains
     if (len(setting) == 0) return
     at = index(setting, '=')
     if (at == 0) then
-       write(*,'(a)') ' this line names no setting: ' // setting
-       error stop 'gti_configuration: a setting is named, then given its value'
+       error stop 'gti_configuration: this line names no setting=value pair: ' // setting
     end if
     call assign(cfg, setting(:at - 1), trim(adjustl(setting(at + 1:))))
   end subroutine read_line
@@ -445,8 +439,7 @@ contains
     open(newunit=unit, file='config/' // trim(name) // '.cfg', &
          & status='old', action='read', iostat=status)
     if (status /= 0) then
-       write(*,'(a)') ' no such configuration: config/' // trim(name) // '.cfg'
-       error stop 'gti_configuration: a configuration names a file that exists'
+       error stop 'gti_configuration: no such configuration file: config/' // trim(name) // '.cfg'
     end if
     do
        read(unit, '(a)', iostat=status) line
@@ -466,8 +459,7 @@ contains
     end if
     at = index(setting, '=')
     if (at == 0) then
-       write(*,'(a)') ' this argument names no setting: ' // setting
-       error stop 'gti_configuration: an argument is a setting and its value'
+       error stop 'gti_configuration: this argument names no setting=value pair: ' // setting
     end if
     call assign(cfg, setting(:at - 1), trim(adjustl(setting(at + 1:))))
   end subroutine override
@@ -716,21 +708,27 @@ contains
     real(dp)        , intent(in), optional :: diffusion
     integer         , intent(in), optional :: dimension
     type(expression) :: r
+    character(len=250) :: message
     if (trim(name) == 'taylor_green') then
        if (.not. present(dimension)) then
-          error stop 'gti_physics: the Taylor-Green vortex is a flow over a mesh'
+          error stop 'gti_physics: taylor_green is a flow over a mesh, but no dimension was given'
        end if
        if (degree /= 1) then
-          error stop 'gti_physics: the Taylor-Green vortex is of first order in time'
+          write(message,'(a,i0)') 'gti_physics: taylor_green must be of first order in time; degree = ', degree
+          error stop trim(message)
        end if
        r = euler_lagrange(taylor_green(kinetic_energy_rule(dimension), dimension, 'taylor-green lagrangian'), 1, &
             & 'taylor-green momentum')
     else if (trim(name) == 'radial_oscillator') then
        if (degree /= 2) then
-          error stop 'gti_physics: the radial oscillator is of second order in time'
+          write(message,'(a,i0)') 'gti_physics: the radial oscillator must be of second order in time; &
+               &degree = ', degree
+          error stop trim(message)
        end if
        if (present(dimension)) then
-          error stop 'gti_physics: the radial oscillator is a law in time alone'
+          write(message,'(a,i0)') 'gti_physics: the radial oscillator must be a law in time alone, but &
+               &dimension was passed; dimension = ', dimension
+          error stop trim(message)
        end if
        r = euler_lagrange(radial_lagrangian(radial_energy_rule(), degree, 'radial oscillator lagrangian'), 1, &
             & 'radial oscillator residual')
@@ -835,7 +833,7 @@ contains
     admissible = .true.
     if (trim(physics_name) == 'taylor_green') then
        if (.not. present(dimension)) then
-          error stop 'gti_physics: the Taylor-Green vortex is a flow over a mesh'
+          error stop 'gti_physics: taylor_green is a flow over a mesh, but no dimension was given'
        end if
        select case (name)
        case ('energy')
@@ -933,9 +931,12 @@ contains
     type(expression), intent(in) :: physics
     type(tuple_layout) :: this
     integer :: f
+    character(len=250) :: message
     this % fields = physics % num_fields() - physics % num_multipliers()
     if (max(1, physics % num_multipliers()) /= this % fields) then
-       error stop 'gti_layout: one rule per state field'
+       write(message,'(a,i0,a,i0)') 'gti_layout: one rule is required per state field; &
+            &state fields = ', this % fields, ', multipliers = ', physics % num_multipliers()
+       error stop trim(message)
     end if
     this % stride = physics % num_components()
     allocate(this % count(this % fields), this % offset(this % fields))
@@ -1164,14 +1165,18 @@ contains
     integer           , intent(in) :: primary(:)
     logical, allocatable :: eliminated(:)
     integer :: c, f, d
+    character(len=250) :: message
     if (size(primary) /= layout % fields) then
-       error stop 'gti_sweeps: one primary row per field'
+       write(message,'(a,i0,a,i0)') 'gti_sweeps: one primary row is required per field; &
+            &size(primary) = ', size(primary), ', layout % fields = ', layout % fields
+       error stop trim(message)
     end if
     allocate(eliminated(layout % stride), source=.false.)
     if (trim(this % elimination_kind) /= 'numerical') then
        if (.not. this % rows_in_time) then
-          error stop 'gti_sweeps: the family substituted into the rule is not implemented; &
-               &elimination = numerical eliminates the assembled time derivative rows'
+          error stop 'gti_sweeps: the family substituted into the rule is not implemented for &
+               &elimination = ' // trim(this % elimination_kind) // '; elimination = numerical &
+               &eliminates the assembled time derivative rows'
        end if
        return
     end if
@@ -1197,7 +1202,8 @@ contains
     in_time  = lists(name, 'state-time-derivatives')
     in_space = lists(name, 'state-spatial-derivatives')
     if (.not. states) then
-       error stop 'gti_sweeps: the states are always assembled; rows names them'
+       error stop 'gti_sweeps: the states are always assembled; rows must name them, but rows = ' &
+            & // trim(name) // ' does not'
     end if
     ! a kind left out of rows is eliminated: the time derivatives only
     ! numerically, their family rows assembled then eliminated; the
@@ -1216,8 +1222,11 @@ contains
   subroutine set_storage_limit(this, entries)
     class(solver_context), intent(inout) :: this
     integer, intent(in) :: entries
+    character(len=250) :: message
     if (entries < 1) then
-       error stop 'gti_sweeps: the elimination storage limit is one entry at least'
+       write(message,'(a,i0)') 'gti_sweeps: the elimination storage limit must be one entry at &
+            &least; entries = ', entries
+       error stop trim(message)
     end if
     this % elimination_entries = entries
     call this % clear_inner()
@@ -1232,8 +1241,11 @@ contains
   subroutine set_reverse_limit(this, entries)
     class(solver_context), intent(inout) :: this
     integer, intent(in) :: entries
+    character(len=250) :: message
     if (entries < 1) then
-       error stop 'gti_sweeps: the reverse storage limit is one entry at least'
+       write(message,'(a,i0)') 'gti_sweeps: the reverse storage limit must be one entry at least; &
+            &entries = ', entries
+       error stop trim(message)
     end if
     this % reverse_entries = entries
   end subroutine set_reverse_limit
@@ -1251,8 +1263,11 @@ contains
   subroutine set_predictor_order(this, order)
     class(solver_context), intent(inout) :: this
     integer, intent(in) :: order
+    character(len=250) :: message
     if (order < 0) then
-       error stop 'gti_sweeps: the predictor order is zero, the copy, or the order of the Taylor seed'
+       write(message,'(a,i0)') 'gti_sweeps: the predictor order must be zero (the copy) or positive &
+            &(the order of the Taylor seed); order = ', order
+       error stop trim(message)
     end if
     this % taylor_order = order
   end subroutine set_predictor_order
@@ -1299,7 +1314,12 @@ contains
   subroutine set_newton_order(this, order)
     class(solver_context), intent(inout) :: this
     integer, intent(in) :: order
-    if (order < 1) error stop 'gti_sweeps: one is Newton, and there is no order below it'
+    character(len=250) :: message
+    if (order < 1) then
+       write(message,'(a,i0)') 'gti_sweeps: order must be at least 1 - one is Newton, and there &
+            &is no order below it; order = ', order
+       error stop trim(message)
+    end if
     this % jacobian_product_order = order
   end subroutine set_newton_order
   pure integer function newton_order(this) result(order)
@@ -1359,9 +1379,12 @@ contains
     integer, intent(in) :: nodes
     integer, allocatable :: cell(:)
     integer :: i
+    character(len=250) :: message
     if (allocated(this % coarse_members)) then
        if (size(this % coarse_members) < nodes) then
-          error stop 'gti_sweeps: a coarse cell for every node'
+          write(message,'(a,i0,a,i0)') 'gti_sweeps: a coarse cell is required for every node; &
+               &coarse cells given = ', size(this % coarse_members), ', nodes = ', nodes
+          error stop trim(message)
        end if
        cell = this % coarse_members
     else
@@ -1372,12 +1395,22 @@ contains
     class(solver_context), intent(inout) :: this
     real(dp), intent(in) :: tolerance
     integer , intent(in) :: criterion, limit_kind
-    if (tolerance <= 0.0_dp) error stop 'gti_sweeps: a tolerance is positive'
+    character(len=250) :: message
+    if (tolerance <= 0.0_dp) then
+       write(message,'(a,es12.4)') 'gti_sweeps: a tolerance must be positive; tolerance = ', tolerance
+       error stop trim(message)
+    end if
     if (criterion /= relative .and. criterion /= absolute) then
-       error stop 'gti_sweeps: a tolerance is measured relative or absolute'
+       write(message,'(a,i0,a,i0,a,i0)') 'gti_sweeps: a tolerance must be measured relative or &
+            &absolute, but criterion matched neither; criterion = ', criterion, ' (relative = ', &
+            & relative, ', absolute = ', absolute
+       error stop trim(message)
     end if
     if (limit_kind /= by_count .and. limit_kind /= by_rate) then
-       error stop 'gti_sweeps: an iteration limit is counted or taken from the rate'
+       write(message,'(a,i0,a,i0,a,i0)') 'gti_sweeps: an iteration limit must be counted or &
+            &taken from the rate, but limit_kind matched neither; limit_kind = ', limit_kind, &
+            & ' (by_count = ', by_count, ', by_rate = ', by_rate
+       error stop trim(message)
     end if
     this % linear_tolerance = tolerance
     this % linear_criterion = criterion
@@ -1387,8 +1420,12 @@ contains
   subroutine set_linear_limits(this, restart, sweeps, iterations)
     class(solver_context), intent(inout) :: this
     integer, intent(in) :: restart, sweeps, iterations
+    character(len=250) :: message
     if (restart < 1 .or. sweeps < 1 .or. iterations < 1) then
-       error stop 'gti_sweeps: a restart, a sweep count and an iteration limit are positive'
+       write(message,'(a,i0,a,i0,a,i0)') 'gti_sweeps: a restart, a sweep count and an iteration &
+            &limit must all be positive; restart = ', restart, ', sweeps = ', sweeps, &
+            & ', iterations = ', iterations
+       error stop trim(message)
     end if
     this % linear_restart    = restart
     this % linear_sweeps     = sweeps
@@ -1408,31 +1445,41 @@ contains
     class(minimizer), allocatable :: inner
     type(elimination) :: complement
     integer :: i
+    character(len=250) :: message
     if (size(eliminated) /= count) then
-       error stop 'gti_sweeps: one elimination flag per unknown'
+       write(message,'(a,i0,a,i0)') 'gti_sweeps: one elimination flag is required per unknown; &
+            &size(eliminated) = ', size(eliminated), ', count = ', count
+       error stop trim(message)
     end if
     if (.not. any(eliminated)) then
        inner = this % solve_minimizer(count, width)
        return
     end if
     if (mod(count, width) /= 0) then
-       error stop 'gti_sweeps: the unknowns come in whole tuples'
+       write(message,'(a,i0,a,i0)') 'gti_sweeps: the unknowns must come in whole tuples; &
+            &count = ', count, ', width = ', width
+       error stop trim(message)
     end if
     do i = 1, count
        if (eliminated(i) .neqv. eliminated(mod(i - 1, width) + 1)) then
-          error stop 'gti_sweeps: the components eliminated are the same in every tuple'
+          write(message,'(a,i0,a,i0,a,i0)') 'gti_sweeps: the components eliminated must be the &
+               &same in every tuple; unknown ', i, ' disagrees with unknown ', &
+               & mod(i - 1, width) + 1, ' at tuple width ', width
+          error stop trim(message)
        end if
     end do
     if (trim(this % jacobian_kind) == 'free') then
-       error stop 'gti_sweeps: the rows eliminated are read from the explicit tangent, &
-            &which a matrix-free jacobian does not store'
+       error stop 'gti_sweeps: the eliminated rows are read from the explicit tangent, which a &
+            &matrix-free jacobian does not store; jacobian_kind = ' // trim(this % jacobian_kind)
     end if
     complement % eliminated = eliminated
     complement % max_entries = this % elimination_entries
     ! multigrid over the retained unknowns coarsens by their aggregates
     if (allocated(this % aggregates)) then
        if (size(this % aggregates) /= count) then
-          error stop 'gti_sweeps: one aggregate per unknown'
+          write(message,'(a,i0,a,i0)') 'gti_sweeps: one aggregate is required per unknown; &
+               &size(aggregates) = ', size(this % aggregates), ', count = ', count
+          error stop trim(message)
        end if
        allocate(complement % inner, source=this % solve_minimizer(count - count_of(eliminated), &
             & width - count_of(eliminated(1:width)), &
@@ -1458,6 +1505,7 @@ contains
     type(multigrid)    :: levels
     type(gauss_seidel) :: sweeps
     integer, allocatable :: coarsening(:)
+    character(len=250) :: message
     ! the aggregates given are over the retained unknowns of an
     ! elimination; otherwise the stated ones over every unknown
     if (present(aggregates)) then
@@ -1466,17 +1514,21 @@ contains
        coarsening = this % aggregates
     end if
     if (trim(this % jacobian_kind) == 'free' .and. trim(this % linear_solver_kind) == 'direct') then
-       error stop 'gti_sweeps: a matrix-free jacobian has no matrix to factorise; its solver iterates'
+       error stop 'gti_sweeps: a matrix-free jacobian has no matrix to factorise, but &
+            &linear_solver = direct requires one'
     end if
     if (trim(this % linear_solver_kind) == 'direct' .and. trim(this % storage_kind) == 'sparse') then
-       error stop 'gti_sweeps: a sparse direct solve is not implemented'
+       error stop 'gti_sweeps: a sparse direct solve is not implemented; storage = sparse with &
+            &linear_solver = direct'
     end if
     if (trim(this % linear_solver_kind) == 'iterative' .and. trim(this % jacobian_kind) == 'matrix' &
          & .and. trim(this % storage_kind) == 'dense') then
-       error stop 'gti_sweeps: an iterative solve reads the sparse stencil; dense storage is for factorising'
+       error stop 'gti_sweeps: an iterative solve reads the sparse stencil, but storage = dense &
+            &has none; dense storage is for factorising'
     end if
     if (this % multigrid_enabled .and. trim(this % jacobian_kind) == 'free') then
-       error stop 'gti_sweeps: multigrid coarsens a stencil, which a matrix-free jacobian does not store'
+       error stop 'gti_sweeps: multigrid requires a stored stencil to coarsen, but a matrix-free &
+            &jacobian does not store one; jacobian_kind = ' // trim(this % jacobian_kind)
     end if
     select case (trim(this % linear_solver_kind))
     case ('direct')
@@ -1497,10 +1549,13 @@ contains
           ! one cycle: block Gauss-Seidel sweeps, the coarse correction
           ! by an unpreconditioned solve over the aggregates, sweeps again
           if (.not. allocated(coarsening)) then
-             error stop 'gti_sweeps: multigrid coarsens by aggregates, and none were given'
+             error stop 'gti_sweeps: preconditioner = multigrid coarsens by aggregates, and none &
+                  &were given'
           end if
           if (size(coarsening) /= count) then
-             error stop 'gti_sweeps: one aggregate per unknown'
+             write(message,'(a,i0,a,i0)') 'gti_sweeps: one aggregate is required per unknown; &
+                  &size(coarsening) = ', size(coarsening), ', count = ', count
+             error stop trim(message)
           end if
           sweeps % max_iterations = this % linear_sweeps
           sweeps % block_width    = width
@@ -1522,10 +1577,12 @@ contains
        return
     end if
     if (.not. allocated(coarsening)) then
-       error stop 'gti_sweeps: multigrid coarsens by aggregates, and none were given'
+       error stop 'gti_sweeps: multigrid_enabled coarsens by aggregates, and none were given'
     end if
     if (size(coarsening) /= count) then
-       error stop 'gti_sweeps: one aggregate per unknown'
+       write(message,'(a,i0,a,i0)') 'gti_sweeps: one aggregate is required per unknown; &
+            &size(coarsening) = ', size(coarsening), ', count = ', count
+       error stop trim(message)
     end if
     sweeps % max_iterations = this % linear_sweeps
     sweeps % block_width    = width
@@ -1619,7 +1676,8 @@ contains
   pure integer function pass_of(num_designs, num_functionals, order) result(pass_kind)
     integer, intent(in) :: num_designs, num_functionals, order
     if (num_designs < 1 .or. num_functionals < 1 .or. order < 1) then
-       error stop 'gti_sweeps: a differentiation pass is chosen for at least one design, one functional and order one'
+       error stop 'gti_sweeps: a differentiation pass requires num_designs >= 1, num_functionals &
+            &>= 1 and order >= 1; at least one of these three is below its minimum'
     end if
     if (num_designs <= order * num_functionals) then
        pass_kind = forward_pass
@@ -1636,7 +1694,7 @@ contains
     case (reverse_pass)
        count = (1 + num_functionals) * choose(num_designs + order - 2, order - 1)
     case default
-       error stop 'gti_sweeps: a pass is forward or reverse'
+       error stop 'gti_sweeps: a pass must be forward_pass or reverse_pass; pass_kind matched neither'
     end select
   end function pass_substitutions
   pure integer function choose(n, k) result(c)
@@ -1785,15 +1843,18 @@ contains
     type(graph)     , intent(in) :: coupling
     integer, allocatable, intent(out) :: table(:,:)
     class(relation), pointer :: r
+    character(len=250) :: message
     if (num_relations(coupling) /= 1) then
-       error stop 'gti_expansion: a coupling contains one relation'
+       write(message,'(a,i0)') 'gti_expansion: a coupling must contain exactly one relation; &
+            &num_relations = ', num_relations(coupling)
+       error stop trim(message)
     end if
     r => relation_at(coupling, this % bindings, 1)
     select type (r)
     class is (binary_relation)
        call r % tuples(table)
     class default
-       error stop 'gti_expansion: a coupling''s relation is binary'
+       error stop 'gti_expansion: a coupling''s relation must be binary'
     end select
   end subroutine tuples_of
   function in_relation_order(this, coupling, table, w) result(placed)
@@ -1804,9 +1865,12 @@ contains
     real(dp), allocatable :: placed(:)
     integer, allocatable :: relation_tuples(:,:), at(:,:)
     integer :: e, n
+    character(len=250) :: message
     call this % tuples_of(coupling, relation_tuples)
     if (size(relation_tuples, 2) /= size(table, 2)) then
-       error stop 'gti_expansion: a coupling names each tuple once'
+       write(message,'(a,i0,a,i0)') 'gti_expansion: a coupling must name each tuple once; &
+            &relation tuples = ', size(relation_tuples, 2), ', table tuples = ', size(table, 2)
+       error stop trim(message)
     end if
     n = max(maxval(table(1, :)), maxval(table(2, :)))
     allocate(at(n, n), source=0)
@@ -1837,11 +1901,14 @@ contains
     type(continuous_domain) :: continuous
     integer , allocatable :: sweeps(:), couplings(:)
     integer :: s, i, f
+    character(len=250) :: message
     if (this % root_at /= 0) then
-       error stop 'gti_expansion: an expansion is built once'
+       error stop 'gti_expansion: an expansion is built once, but this % root_at is already set'
     end if
     if (size(schemes) /= size(instants)) then
-       error stop 'gti_expansion: one family and one instant count per block'
+       write(message,'(a,i0,a,i0)') 'gti_expansion: one family and one instant count is required &
+            &per block; size(schemes) = ', size(schemes), ', size(instants) = ', size(instants)
+       error stop trim(message)
     end if
     continuous = continuous_domain(physics)
     ! degrees is the marching coordinate's own count, which is what
@@ -1865,7 +1932,11 @@ contains
        do f = 1, this % layout % fields
           if (this % layout % count(f) + size(spatial_derivative_stencils) > &
                & this % layout % offset_after(f) - this % layout % offset(f)) then
-             error stop 'gti_expansion: one derivative stencil per spatial component of every field'
+             write(message,'(a,i0,a,i0,a,i0,a)') 'gti_expansion: one derivative stencil is &
+                  &required per spatial component of every field; field ', f, ' has ', &
+                  & this % layout % count(f), ' state components but ', &
+                  & size(spatial_derivative_stencils), ' stencils were given'
+             error stop trim(message)
           end if
           do i = 1, size(spatial_derivative_stencils)
              this % component_coupling_at(this % layout % offset(f) + this % layout % count(f) + i) = couplings(i)
@@ -1877,7 +1948,10 @@ contains
     allocate(this % stored_grid, source=steps)
     if (present(block_steps)) then
        if (size(block_steps) /= sum(instants) - 1) then
-          error stop 'gti_expansion: one step per instant after the first'
+          write(message,'(a,i0,a,i0)') 'gti_expansion: one step is required per instant after &
+               &the first; size(block_steps) = ', size(block_steps), ', sum(instants) - 1 = ', &
+               & sum(instants) - 1
+          error stop trim(message)
        end if
        dt = [0.0_dp, block_steps]
     else if (present(weights)) then
@@ -1952,9 +2026,13 @@ contains
     class(field), allocatable :: out
     real(dp), allocatable :: weights(:), e(:)
     integer :: n, i
+    character(len=250) :: message
     call this % weights_of_steps(weights)
     if (any(weights_varied < 1) .or. any(weights_varied > size(weights))) then
-       error stop 'gti_expansion: every weight varied is one of the grid''s'
+       write(message,'(a,i0,a,i0,a,i0)') 'gti_expansion: every weight varied must be one of the &
+            &grid''s 1..', size(weights), '; weights_varied ranges from ', minval(weights_varied), &
+            & ' to ', maxval(weights_varied)
+       error stop trim(message)
     end if
     ! the weights are one per step: their set has one member fewer
     ! than the instant set the grid emits its steps on
@@ -1995,7 +2073,7 @@ contains
           return
        end if
     end do
-    error stop 'gti_expansion: the steps of this expansion are not designs'
+    error stop 'gti_expansion: none of this expansion''s designs is design_of_steps'
   end subroutine weights_of_steps
   integer function spatial_discretization_coupling(this, spatial_discretization_stencil) result(at)
     class(expansion), intent(inout) :: this
@@ -2003,8 +2081,12 @@ contains
     integer , allocatable :: table(:,:), heads(:), tails(:), rows(:), cols(:)
     real(dp), allocatable :: given(:), w(:)
     integer :: e, ne
+    character(len=250) :: message
     if (spatial_discretization_stencil % pattern % num_vertices() /= this % node_extent) then
-       error stop 'gti_expansion: the spatial discretization stencil is a stencil over the nodes'
+       write(message,'(a,i0,a,i0)') 'gti_expansion: the spatial discretization stencil must be &
+            &over the nodes; stencil vertices = ', spatial_discretization_stencil % pattern &
+            & % num_vertices(), ', node_extent = ', this % node_extent
+       error stop trim(message)
     end if
     ne = spatial_discretization_stencil % pattern % num_edges()
     heads = [(spatial_discretization_stencil % pattern % edge_head(e), e = 1, ne)]
@@ -2098,8 +2180,12 @@ contains
     real(dp)              , intent(in)    :: dt(:)
     integer, allocatable :: slices(:)
     integer :: k, coupling
+    character(len=250) :: message
     if (last - first + 1 <= scheme % history_depth(this % degrees - 1)) then
-       error stop 'gti_expansion: a block contains more instants than its family''s history depth'
+       write(message,'(a,i0,a,i0)') 'gti_expansion: a block must contain more instants than its &
+            &family''s history depth; instants = ', last - first + 1, ', history_depth = ', &
+            & scheme % history_depth(this % degrees - 1)
+       error stop trim(message)
     end if
     allocate(slices(last - first + 1))
     do k = first, last
@@ -2231,7 +2317,7 @@ contains
     type is (real(dp))
        write(buffer,'(f0.4)') n
     class default
-       error stop 'gti_expansion: a label is written from a number'
+       error stop 'gti_expansion: written() formats an integer or a real(dp), but n is neither'
     end select
     name = trim(buffer)
   end function written
@@ -2575,7 +2661,7 @@ contains
     class(block_residual), intent(in) :: this
     integer, allocatable , intent(out) :: slice(:), node(:), moment(:)
     if (.not. allocated(this % layout % moment)) then
-       error stop 'gti_block: the block has not been placed in the graph'
+       error stop 'gti_block: labels_of was called before the block was placed in the graph'
     end if
     if (allocated(this % free)) then
        slice  = this % layout % slice(this % free)
@@ -2619,16 +2705,22 @@ contains
     integer , allocatable :: base(:,:), r(:), c(:), slice(:), node(:), moment(:), at(:)
     real(dp), allocatable :: lw(:), fixed(:), w(:)
     integer :: nodes, moments, p, u, e, g, ne, n, rc, cc
+    character(len=250) :: message
     call this % labels_of(slice, node, moment)
     at = this % points_at()
     nodes   = maxval(node)
     moments = maxval(moment)
     if (spatial_discretization_stencil % pattern % num_vertices() /= nodes) then
-       error stop 'gti_block: the spatial discretization stencil is a stencil over the nodes'
+       write(message,'(a,i0,a,i0)') 'gti_block: the spatial discretization stencil must be over &
+            &the nodes; stencil vertices = ', spatial_discretization_stencil % pattern &
+            & % num_vertices(), ', nodes = ', nodes
+       error stop trim(message)
     end if
     call spatial_discretization_stencil % constants % real_vector(fixed)
     if (any(abs(fixed) > 0.0_dp)) then
-       error stop 'gti_block: the spatial discretization stencil has no constant term'
+       write(message,'(a,es12.4)') 'gti_block: the spatial discretization stencil must have no &
+            &constant term; largest magnitude constant = ', maxval(abs(fixed))
+       error stop trim(message)
     end if
     call spatial_discretization_stencil % weights % real_vector(lw)
     allocate(base(nodes, moments), source=-1)
@@ -2645,7 +2737,9 @@ contains
           cc = spatial_discretization_stencil % pattern % edge_tail(e)
           if (base(rc, g) < 0) cycle
           if (base(cc, g) < 0) then
-             error stop 'gti_block: a moment contains every node or none'
+             write(message,'(a,i0,a,i0,a,i0)') 'gti_block: a moment must contain every node or &
+                  &none; moment ', g, ' has node ', rc, ' but not node ', cc
+             error stop trim(message)
           end if
           n    = n + 1
           r(n) = base(rc, g) + this % primary_degree() + 1
@@ -2664,9 +2758,12 @@ contains
     class(block_residual), intent(inout) :: this
     logical              , intent(in)    :: components(:)
     integer :: u, width
+    character(len=250) :: message
     width = this % num_degrees()
     if (size(components) /= width) then
-       error stop 'gti_block: one elimination flag per tuple component'
+       write(message,'(a,i0,a,i0)') 'gti_block: one elimination flag is required per tuple &
+            &component; size(components) = ', size(components), ', width = ', width
+       error stop trim(message)
     end if
     this % eliminated = [(components(mod(u - 1, width) + 1), u = 1, this % num_unknowns())]
   end subroutine with_elimination
@@ -2683,8 +2780,8 @@ contains
     class(block_residual), intent(in) :: this
     real(dp), allocatable :: t(:)
     if (.not. allocated(this % moment_time)) then
-       error stop 'gti_block: the moments of a staged block are not at one instant each; &
-            &the Taylor seed over stages is not implemented'
+       error stop 'gti_block: moment_times was called on a staged block whose moments are not at &
+            &one instant each; the Taylor seed over stages is not implemented'
     end if
     t = this % moment_time
   end function moment_times
@@ -2704,10 +2801,13 @@ contains
     real(dp), allocatable :: t(:)
     real(dp) :: h, term
     integer :: m, mm, width, f, d, k, i
+    character(len=250) :: message
     t     = this % moment_times()
     width = this % num_degrees()
     if (layout % stride /= width) then
-       error stop 'gti_block: the layout and the block agree on the tuple width'
+       write(message,'(a,i0,a,i0)') 'gti_block: the layout and the block must agree on the tuple &
+            &width; layout % stride = ', layout % stride, ', block width = ', width
+       error stop trim(message)
     end if
     allocate(transfer(width, width, size(t)), source=0.0_dp)
     do m = 1, size(t)
@@ -2760,7 +2860,7 @@ contains
     real(dp), allocatable :: appended(:,:)
     integer :: n, ns
     if (.not. allocated(this % connectivity)) then
-       error stop 'gti_block: the block was built without its connectivity'
+       error stop 'gti_block: rows_terms was called before with_connectivity was'
     end if
     call connectivity_terms(scheme, this % connectivity, this % num_nodes(), this % num_degrees(), dt, seeds, r, c, w)
     ! the spatial rows read no step, so their derivatives in the
@@ -2782,11 +2882,14 @@ contains
     integer, allocatable :: aggregate(:)
     integer, allocatable :: numbered(:), slice(:), node(:), moment(:)
     integer :: u, coarse, key, count, unknowns, degrees
+    character(len=250) :: message
     unknowns = this % num_unknowns()
     degrees  = this % num_degrees()
     call this % labels_of(slice, node, moment)
     if (size(cell) < maxval(node)) then
-       error stop 'gti_block: a coarse cell for every node'
+       write(message,'(a,i0,a,i0)') 'gti_block: a coarse cell is required for every node; &
+            &size(cell) = ', size(cell), ', maxval(node) = ', maxval(node)
+       error stop trim(message)
     end if
     coarse = maxval(cell)
     allocate(aggregate(unknowns))
@@ -3120,13 +3223,16 @@ contains
     real(dp)              , intent(in) :: lower(:), design_value
     real(dp), allocatable, intent(out), optional :: rate(:)
     real(dp), allocatable :: q(:)
+    character(len=250) :: message
     if (present(context)) then
        active_context => context
     else
        active_context => default_context
     end if
     if (size(lower) /= degrees - 1) then
-       error stop 'gti_march: the components below the highest are given, and no others'
+       write(message,'(a,i0,a,i0)') 'gti_march: the components below the highest must be given, &
+            &and no others; size(lower) = ', size(lower), ', degrees - 1 = ', degrees - 1
+       error stop trim(message)
     end if
     q = consistent_states(physics, degrees, reshape(lower, [degrees - 1, 1]), design_value, &
          & rate=rate, context=active_context)
@@ -3161,6 +3267,7 @@ contains
     integer , allocatable :: top(:), count(:), offset(:)
     real(dp) :: initial_residual_norm, target
     integer  :: nodes, i, k, iteration, fields, f, j, given
+    character(len=250) :: message
     if (present(context)) then
        active_context => context
     else
@@ -3169,7 +3276,10 @@ contains
     nodes  = size(lower, 2)
     fields = physics % num_fields() - physics % num_multipliers()
     if (degrees /= physics % num_components()) then
-       error stop 'gti_march: the degrees given are the components a point stores'
+       write(message,'(a,i0,a,i0)') 'gti_march: the degrees given must be the components a point &
+            &stores; degrees = ', degrees, ', physics % num_components() = ', &
+            & physics % num_components()
+       error stop trim(message)
     end if
     ! each field's components below its highest are given, field after
     ! field; the highest of each is solved from that field's rule
@@ -3180,7 +3290,10 @@ contains
        top(f)    = offset(f) + count(f) - 1
     end do
     if (size(lower, 1) /= sum(count) - fields) then
-       error stop 'gti_march: the components below the highest are given at every node'
+       write(message,'(a,i0,a,i0)') 'gti_march: the components below the highest must be given &
+            &at every node; size(lower, 1) = ', size(lower, 1), ', sum(count) - fields = ', &
+            & sum(count) - fields
+       error stop trim(message)
     end if
     allocate(rules(fields))
     if (physics % num_multipliers() > 0) then
@@ -3193,7 +3306,10 @@ contains
     allocate(below(nodes), source=0.0_dp)
     if (present(spatial_discretization_stencil)) then
        if (spatial_discretization_stencil % pattern % num_vertices() /= nodes) then
-          error stop 'gti_march: the spatial discretization stencil is a stencil over the nodes'
+          write(message,'(a,i0,a,i0)') 'gti_march: the spatial discretization stencil must be &
+               &over the nodes; stencil vertices = ', spatial_discretization_stencil % pattern &
+               & % num_vertices(), ', nodes = ', nodes
+          error stop trim(message)
        end if
        call spatial_discretization_stencil % weights % real_vector(weights)
        do k = 1, spatial_discretization_stencil % pattern % num_edges()
@@ -3277,8 +3393,10 @@ contains
           end do
        end if
     end do
-    write(*,'(a,es12.3)') ' the residual of the physics at the initial instant is ', norm2(r)
-    error stop 'gti_march: the initial state is consistent with the physics'
+    write(message,'(a,i0,a,es12.4,a,es12.4)') 'gti_march: the initial state did not become &
+         &consistent with the physics within ', active_context % stopping_iterations, &
+         & ' iterations; residual = ', norm2(r), ', tolerance = ', active_context % stopping_tolerance
+    error stop trim(message)
   contains
     subroutine filled_rate()
       real(dp), allocatable :: entry(:), matrix(:,:), right(:), closed(:)
@@ -3363,9 +3481,12 @@ contains
     class(march_context), intent(inout) :: this
     real(dp), intent(in) :: tolerance
     integer , intent(in) :: criterion, limit_kind, iterations
+    character(len=250) :: message
     call this % set_linear_stopping(tolerance, criterion, limit_kind)
     if (iterations < 1) then
-       error stop 'gti_march: an iteration limit is positive'
+       write(message,'(a,i0)') 'gti_march: an iteration limit must be positive; iterations = ', &
+            & iterations
+       error stop trim(message)
     end if
     this % stopping_tolerance  = tolerance
     this % stopping_criterion  = criterion
@@ -3448,6 +3569,7 @@ contains
     logical , allocatable :: point(:)
     integer :: m, nd, stride, width, n, s, k, j, g, moments, i, d, count, npts, ncar
     logical :: staged
+    character(len=250) :: message
     ! nd is the marching coordinate's degree count, which the scheme
     ! reads; stride is the point's whole component count, which the
     ! layout reads. The two differ once a rule names a second
@@ -3511,7 +3633,9 @@ contains
        end if
     end do
     if (size(fixed) /= ncar) then
-       error stop 'gti_march: one fixed value per known component'
+       write(message,'(a,i0,a,i0)') 'gti_march: one fixed value is required per known component; &
+            &size(fixed) = ', size(fixed), ', known components = ', ncar
+       error stop trim(message)
     end if
     values = fixed
     ! every fixed value's design rate, in the order of the values: the
@@ -3519,7 +3643,9 @@ contains
     allocate(rates(size(values)), source=0.0_dp)
     if (present(fixed_rate)) then
        if (size(fixed_rate) /= size(fixed)) then
-          error stop 'gti_march: one design rate per fixed value'
+          write(message,'(a,i0,a,i0)') 'gti_march: one design rate is required per fixed value; &
+               &size(fixed_rate) = ', size(fixed_rate), ', size(fixed) = ', size(fixed)
+          error stop trim(message)
        end if
        rates = fixed_rate
     end if
@@ -3719,6 +3845,7 @@ contains
     integer, allocatable :: table(:,:), accumulate_state(:,:), first_moment(:), counted(:), filled(:)
     type(embedded_edge) :: edge
     integer :: kk, e, tail_moment, head_moment, vertex_tail, vertex_head
+    character(len=250) :: message
     allocate(connectivity(this % num_slices - 1), raw(this % num_slices - 1), &
          & first_moment(this % num_slices), counted(this % num_slices), filled(this % num_slices))
     first_moment(1) = 1
@@ -3776,7 +3903,11 @@ contains
        call raw(kk - 1) % place(connectivity(kk - 1), filled(kk), edge)
     end do
     if (any(filled /= counted)) then
-       error stop 'gti_march: every edge of a step is placed once'
+       write(message,'(a,i0,a,i0,a,i0)') 'gti_march: every edge of a step must be placed exactly &
+            &once; slice ', findloc(filled /= counted, .true., dim=1), ' has filled = ', &
+            & filled(findloc(filled /= counted, .true., dim=1)), ', counted = ', &
+            & counted(findloc(filled /= counted, .true., dim=1))
+       error stop trim(message)
     end if
     do kk = 2, this % num_slices
        connectivity(kk - 1) % graph = connectivity_graph(this % num_stages + 2, raw(kk - 1) % tails, raw(kk - 1) % heads, &
@@ -4120,8 +4251,11 @@ contains
     integer            , intent(in) :: added(:), equation_degree
     integer, allocatable, intent(out) :: first(:), last(:)
     integer :: b
+    character(len=250) :: message
     if (size(schemes) /= size(added)) then
-       error stop 'gti_march: one family and one instant count per block'
+       write(message,'(a,i0,a,i0)') 'gti_march: one family and one instant count is required per &
+            &block; size(schemes) = ', size(schemes), ', size(added) = ', size(added)
+       error stop trim(message)
     end if
     allocate(first(size(added)), last(size(added)))
     do b = 1, size(added)
@@ -4138,14 +4272,21 @@ contains
        ! own order. A deeper family still adds more instants than it
        ! reaches back over, so its given instants are in one block.
        if (added(b) < 1) then
-          error stop 'gti_march: a block adds an instant at least'
+          write(message,'(a,i0,a,i0)') 'gti_march: a block must add at least one instant; block ', &
+               & b, ' adds ', added(b)
+          error stop trim(message)
        end if
        if ((b == 1 .or. schemes(b) % scheme % history_depth(equation_degree) > 1) .and. &
             & added(b) <= schemes(b) % scheme % history_depth(equation_degree)) then
-          error stop 'gti_march: a block adds more instants than its family reaches'
+          write(message,'(a,i0,a,i0,a,i0)') 'gti_march: a block must add more instants than its &
+               &family reaches; block ', b, ' adds ', added(b), ', history_depth = ', &
+               & schemes(b) % scheme % history_depth(equation_degree)
+          error stop trim(message)
        end if
        if (first(b) < 1) then
-          error stop 'gti_march: the horizon contains every instant its blocks reach back over'
+          write(message,'(a,i0,a,i0)') 'gti_march: the horizon must contain every instant its &
+               &blocks reach back over; block ', b, ' reaches back to instant ', first(b)
+          error stop trim(message)
        end if
     end do
   end subroutine horizon_bounds
@@ -4214,24 +4355,40 @@ contains
     real(dp), allocatable :: state(:), coarse(:), fine(:)
     real(dp) :: t, h, e, factor, smallest
     integer  :: attempt, rejected
+    character(len=250) :: message
     active => local_context
     if (present(context)) active => context
     if (scheme % history_depth(degrees - 1) > 1) then
-       error stop 'gti_adaptive: an adaptive march is a self-starting scheme'
+       write(message,'(a,i0)') 'gti_adaptive: an adaptive march requires a self-starting scheme; &
+            &history_depth = ', scheme % history_depth(degrees - 1)
+       error stop trim(message)
     end if
     if (.not. ieee_is_finite(duration) .or. .not. ieee_is_finite(tolerance)) then
-       error stop 'gti_adaptive: the duration and the tolerance are finite'
+       write(message,'(a,es12.4,a,es12.4)') 'gti_adaptive: the duration and the tolerance must be &
+            &finite; duration = ', duration, ', tolerance = ', tolerance
+       error stop trim(message)
     end if
     if (duration <= 0.0_dp .or. tolerance <= 0.0_dp) then
-       error stop 'gti_adaptive: the duration and the tolerance are positive'
+       write(message,'(a,es12.4,a,es12.4)') 'gti_adaptive: the duration and the tolerance must be &
+            &positive; duration = ', duration, ', tolerance = ', tolerance
+       error stop trim(message)
     end if
     smallest = duration * 1.0e-10_dp
     if (present(minimum_step)) smallest = minimum_step
-    if (.not. ieee_is_finite(smallest)) error stop 'gti_adaptive: the minimum step is finite'
-    if (smallest <= 0.0_dp .or. smallest > duration) then
-       error stop 'gti_adaptive: the minimum step is positive and no greater than the duration'
+    if (.not. ieee_is_finite(smallest)) then
+       write(message,'(a,es12.4)') 'gti_adaptive: the minimum step must be finite; smallest = ', &
+            & smallest
+       error stop trim(message)
     end if
-    if (p < 1) error stop 'gti_adaptive: the scheme order is positive'
+    if (smallest <= 0.0_dp .or. smallest > duration) then
+       write(message,'(a,es12.4,a,es12.4)') 'gti_adaptive: the minimum step must be positive and &
+            &no greater than the duration; smallest = ', smallest, ', duration = ', duration
+       error stop trim(message)
+    end if
+    if (p < 1) then
+       write(message,'(a,i0)') 'gti_adaptive: the scheme order must be positive; p = ', p
+       error stop trim(message)
+    end if
     state    = consistent_state(physics, degrees, lower, design, context=active)
     dt       = [real(dp) ::]
     t        = 0.0_dp
@@ -4248,17 +4405,24 @@ contains
           call stepped(scheme, physics, degrees, state, h, 3, design, fine, active, step_outcome)
           if (.not. step_outcome % converged()) exit
           e      = estimate(coarse, fine, degrees, relative)
-          if (.not. ieee_is_finite(e)) error stop 'gti_adaptive: the error estimate is finite'
+          if (.not. ieee_is_finite(e)) then
+             write(message,'(a,es12.4)') 'gti_adaptive: the error estimate must be finite; e = ', e
+             error stop trim(message)
+          end if
           if (e <= tolerance) exit
           if (h <= smallest .or. t + h <= t) then
-             error stop 'gti_adaptive: the minimum step cannot meet the tolerance'
+             write(message,'(a,es12.4,a,es12.4)') 'gti_adaptive: the minimum step cannot meet the &
+                  &tolerance; h = ', h, ', smallest = ', smallest
+             error stop trim(message)
           end if
           factor = safety * (tolerance / max(e, tiny(1.0_dp))) ** (1.0_dp / real(p + 1, dp))
           factor = min(growth, max(shrinkage, factor))
           rejected = rejected + 1
           h = max(smallest, h * factor)
           if (attempt > 50) then
-             error stop 'gti_adaptive: a step remains above the tolerance after fifty attempts'
+             write(message,'(a,es12.4,a,es12.4)') 'gti_adaptive: a step remains above the &
+                  &tolerance after fifty attempts; e = ', e, ', tolerance = ', tolerance
+             error stop trim(message)
           end if
        end do
        if (.not. step_outcome % converged()) then
@@ -4385,17 +4549,26 @@ contains
     real(dp), intent(in) :: extents(:)
     logical , intent(in) :: randomized
     type(spatial_domain) :: this
+    character(len=250) :: message
     if (size(counts) < 2 .or. size(counts) > 3) then
-       error stop 'gti_space: a mesh has two or three coordinates'
+       write(message,'(a,i0)') 'gti_space: a mesh must have two or three coordinates; &
+            &size(counts) = ', size(counts)
+       error stop trim(message)
     end if
     if (size(extents) /= size(counts)) then
-       error stop 'gti_space: one extent per coordinate'
+       write(message,'(a,i0,a,i0)') 'gti_space: one extent is required per coordinate; &
+            &size(extents) = ', size(extents), ', size(counts) = ', size(counts)
+       error stop trim(message)
     end if
     if (any(counts < 2)) then
-       error stop 'gti_space: at least two cells along each coordinate'
+       write(message,'(a,i0)') 'gti_space: at least two cells are required along each &
+            &coordinate; smallest count = ', minval(counts)
+       error stop trim(message)
     end if
     if (any(extents <= 0.0_dp)) then
-       error stop 'gti_space: an extent is positive'
+       write(message,'(a,es12.4)') 'gti_space: an extent must be positive; smallest extent = ', &
+            & minval(extents)
+       error stop trim(message)
     end if
     this % geometry  = geometry
     this % dimension = size(counts)
@@ -4403,7 +4576,9 @@ contains
     this % extents   = extents
     if (geometry == circular .or. geometry == elliptical) then
        if (size(counts) /= 2) then
-          error stop 'gti_space: the disc and the ellipse are plane'
+          write(message,'(a,i0)') 'gti_space: the disc and the ellipse must be plane, but &
+               &size(counts) is not 2; size(counts) = ', size(counts)
+          error stop trim(message)
        end if
        call polar_mesh(this, randomized, seed)
     else
@@ -4669,8 +4844,11 @@ contains
     integer   , intent(in) :: degree
     type(stencil) :: op
     type(robin_condition) :: boundary_condition(1)
+    character(len=250) :: message
     if (degree < 1) then
-       error stop 'gti_space: a form of degree below one fits no gradient'
+       write(message,'(a,i0)') 'gti_space: a gradient requires degree at least 1 (a form of &
+            &degree below one fits no gradient); degree = ', degree
+       error stop trim(message)
     end if
     boundary_condition(1) = neumann('edge', 0.0_dp)
     op = diffusion_stencil(this % m, conduction(kappa), boundary_condition, polynomial_form(degree, this % m % dimension))
@@ -4689,8 +4867,11 @@ contains
     type(polynomial_form) :: shape
     integer, allocatable :: orders(:), pure(:)
     integer :: j, k, i, dim
+    character(len=250) :: message
     if (degree < 2) then
-       error stop 'gti_space: a form of degree below two fits no second derivative'
+       write(message,'(a,i0)') 'gti_space: a second derivative requires degree at least 2 (a &
+            &form of degree below two fits no second derivative); degree = ', degree
+       error stop trim(message)
     end if
     ! an odd degree's members of the top degree are odd about the
     ! centre, so on a neighbourhood symmetric about it the second
@@ -4699,9 +4880,10 @@ contains
     ! laplacian has a grid mode in its kernel: at degree 3 the pressure
     ! grew to 1e13 in one step, on two rings and on three
     if (mod(degree, 2) == 1) then
-       error stop 'gti_space: an odd form degree fits the second derivatives of the even degree &
-            &below it over a neighbourhood whose laplacian has a grid mode in its kernel; &
-            &take an even degree'
+       write(message,'(a,i0,a)') 'gti_space: an odd form degree fits the second derivatives of &
+            &the even degree below it over a neighbourhood whose laplacian has a grid mode in &
+            &its kernel; degree = ', degree, ' is odd - use an even degree'
+       error stop trim(message)
     end if
     dim = this % m % dimension
     allocate(ops(2 * dim), orders(dim))
@@ -4760,8 +4942,12 @@ contains
     character(len=*), intent(in) :: path, names(:)
     real(dp)        , intent(in) :: values(:,:)
     type(paraview_writer) :: writer
+    character(len=250) :: message
     if (size(values, 1) /= this % num_cells .or. size(values, 2) /= size(names)) then
-       error stop 'gti_space: one value per cell per name'
+       write(message,'(a,i0,a,i0,a,i0,a,i0)') 'gti_space: one value is required per cell per &
+            &name; size(values) = (', size(values, 1), ',', size(values, 2), '), expected (', &
+            & this % num_cells, ',', size(names)
+       error stop trim(message)
     end if
     writer = paraview_writer(this % m, this % corner, &
          & ragged(this % first_corner, this % cell_corner), &
@@ -4822,6 +5008,7 @@ contains
     character(len=32), allocatable :: given(:)
     real(dp), allocatable :: lower(:,:)
     integer  :: nodes, i, d, fields, first_below, below
+    character(len=250) :: message
     nodes = 1
     if (present(space)) nodes = space % num_cells
     ! each field's components below its highest along the instants,
@@ -4836,9 +5023,13 @@ contains
     allocate(lower(below, nodes), source=0.0_dp)
     select case (trim(kind))
     case ('exact')
-       if (.not. present(space)) error stop 'gti_field: the exact field is a field over a mesh'
+       if (.not. present(space)) then
+          error stop 'gti_field: initial_state = exact requires a field over a mesh, but space &
+               &was not given'
+       end if
        if (.not. present(spatial_derivative_stencils)) then
-          error stop 'gti_field: the exact field stores the spatial derivatives as rows of the jet'
+          error stop 'gti_field: initial_state = exact requires the spatial derivatives as rows &
+               &of the jet, but spatial_derivative_stencils was not given'
        end if
        call taylor_green_state(space, physics, 0.0_dp, design, q, spatial_derivative_stencils)
        ! the exact vortex states every component, so the law closes none
@@ -4847,9 +5038,10 @@ contains
     case ('constant')
        given = words_of(initial_state)
        if (size(given) > first_below) then
-          write(*,'(a,i0,a)') ' the initial state contains the ', first_below, &
-               & ' components below the highest; the physics determines the highest.'
-          error stop 'gti_field: the initial state is given below the highest derivative'
+          write(message,'(a,i0,a,i0,a)') 'gti_field: the initial state must be given below the &
+               &highest derivative; the physics admits ', first_below, ' components below it, &
+               &but ', size(given), ' were given'
+          error stop trim(message)
        end if
        do d = 1, size(given)
           read(given(d), *) lower(d, 1)
@@ -4858,17 +5050,26 @@ contains
           lower(:, i) = lower(:, 1)
        end do
     case ('mode')
-       if (.not. present(space)) error stop 'gti_field: the mode is a field over a mesh'
+       if (.not. present(space)) then
+          error stop 'gti_field: initial_state = mode requires a field over a mesh, but space was &
+               &not given'
+       end if
        if (.not. mode_shaped(space)) then
-          error stop 'gti_field: the mode is the eigenfunction of the laplacian on the box and &
-               &on the disc; the ellipse states none'
+          write(message,'(a,i0)') 'gti_field: initial_state = mode requires the box or the disc &
+               &(the ellipse has no eigenfunction of the laplacian); space % geometry = ', &
+               & space % geometry
+          error stop trim(message)
        end if
        lower(1, :) = mode_shape(space)
     case ('bump')
-       if (.not. present(space)) error stop 'gti_field: the bump is a field over a mesh'
+       if (.not. present(space)) then
+          error stop 'gti_field: initial_state = bump requires a field over a mesh, but space was &
+               &not given'
+       end if
        lower(1, :) = 1.0_dp + 0.5_dp * mode_shape(space)
     case default
-       error stop 'gti_field: an initial field is constant, the mode, or the bump'
+       error stop 'gti_field: an initial field must be constant, mode or bump; initial_state = ' &
+            & // trim(kind)
     end select
     q = consistent_states(physics, degrees, lower, design, spatial_discretization_stencil, &
          & spatial_derivative_stencils, rate=rate, context=context)
@@ -4890,15 +5091,21 @@ contains
     integer, allocatable :: offset(:), count(:)
     real(dp) :: two_pi, amplitude, x(3), u(3), pressure
     integer :: d, stride, fields, i, f, at
+    character(len=250) :: message
     two_pi = 2.0_dp * acos(-1.0_dp)
     d      = space % dimension
     if (space % geometry /= periodic .or. any(abs(space % extents - two_pi) > spacing(two_pi))) then
-       error stop 'gti_field: the Taylor-Green vortex is on the periodic box of side 2 pi'
+       write(message,'(a,i0,a,es12.4,a,es12.4)') 'gti_field: the Taylor-Green vortex requires the &
+            &periodic box of side 2 pi; geometry = ', space % geometry, ', largest extent error &
+            &= ', maxval(abs(space % extents - two_pi)), ', 2 pi = ', two_pi
+       error stop trim(message)
     end if
     stride = law % num_components()
     fields = law % num_fields() - law % num_multipliers()
     if (fields /= d + 1) then
-       error stop 'gti_field: the Taylor-Green vortex stores the velocity components and the pressure'
+       write(message,'(a,i0,a,i0)') 'gti_field: the Taylor-Green vortex must store the velocity &
+            &components and the pressure; fields = ', fields, ', dimension + 1 = ', d + 1
+       error stop trim(message)
     end if
     allocate(offset(fields), count(fields))
     do f = 1, fields
@@ -5155,8 +5362,11 @@ contains
     real(dp), allocatable :: shape(:), balanced(:), exact(:)
     real(dp) :: err(0:3), norm(0:3)
     integer  :: i, which, counted(0:3)
+    character(len=250) :: message
     if (.not. box_shaped(space) .and. space % geometry /= circular) then
-       error stop 'gti_field: the laplacian check is defined on the box and on the disc'
+       write(message,'(a,i0)') 'gti_field: the laplacian check must be run on the box or the &
+            &disc, but space is neither; space % geometry = ', space % geometry
+       error stop trim(message)
     end if
     call operator_field(space, kappa, shape, exact)
     call balance_of(space, kappa, degree, shape, balanced)
@@ -5671,6 +5881,7 @@ contains
     type(derivative_storage), intent(inout) :: storage
     integer                 , intent(in)    :: item
     integer(int64)          , intent(in)    :: n
+    character(len=250) :: message
     select case (item)
     case (STATE_ACCOUNT)
        call account(storage % state, n)
@@ -5683,7 +5894,9 @@ contains
     case (SCALARS_ACCOUNT)
        call account(storage % scalars, n)
     case default
-       error stop 'gti_chain: an account is one of the five stored'
+       write(message,'(a,i0)') 'gti_chain: an account must be one of the five stored (STATE, &
+            &TOWER, COSTATE, CHECKPOINT, SCALARS); item = ', item
+       error stop trim(message)
     end select
     storage % peak = max(storage % peak, storage % state % live + storage % tower % live &
          & + storage % costate % live + storage % checkpoint % live + storage % scalars % live)
@@ -5716,7 +5929,8 @@ contains
     real(dp), allocatable :: x(:)
     integer :: b, local, at
     call locate(chain, fine, b, local)
-    if (b == 0) error stop 'gti_chain: the instant lies outside the chain'
+    if (b == 0) error stop 'gti_chain: the instant must lie inside the chain, but locate found &
+         &no owning block for it'
     at = chain(b) % instants_at(local)
     x  = chain(b) % state(at + 1:at + chain(b) % width)
   end function fine_components
@@ -5827,13 +6041,27 @@ contains
     type(contract), allocatable :: contracts(:)
     integer :: b, k, r, given, before, m, n, at, streamed_pass
     logical :: with_startup
-    if (size(added) < 1) error stop 'gti_chain: a chain contains at least one block'
-    if (present(functionals) .neqv. present(derivative_order)) &
-         & error stop 'gti_chain: a Taylor execution specifies functionals and derivative order together'
+    character(len=250) :: message
+    if (size(added) < 1) then
+       write(message,'(a,i0)') 'gti_chain: a chain requires at least one block; size(added) = ', &
+            & size(added)
+       error stop trim(message)
+    end if
+    if (present(functionals) .neqv. present(derivative_order)) then
+       error stop 'gti_chain: a Taylor execution requires functionals and derivative_order &
+            &together; exactly one of the two was given'
+    end if
     streamed_pass = forward_pass
     if (present(pass_kind)) then
-       if (.not. present(functionals)) error stop 'gti_chain: a pass accompanies functionals and a derivative order'
-       if (pass_kind /= forward_pass .and. pass_kind /= reverse_pass) error stop 'gti_chain: a pass is forward or reverse'
+       if (.not. present(functionals)) then
+          error stop 'gti_chain: pass_kind was given without functionals and a derivative order'
+       end if
+       if (pass_kind /= forward_pass .and. pass_kind /= reverse_pass) then
+          write(message,'(a,i0,a,i0,a,i0)') 'gti_chain: a pass must be forward_pass or &
+               &reverse_pass; pass_kind = ', pass_kind, ' (forward_pass = ', forward_pass, &
+               & ', reverse_pass = ', reverse_pass
+          error stop trim(message)
+       end if
        streamed_pass = pass_kind
     end if
     if (present(context)) this % context = context % configuration()
@@ -5896,7 +6124,10 @@ contains
        this % rules(b) % initial = initial
        if (present(initial_rate)) then
           if (size(initial_rate) /= size(initial)) then
-             error stop 'gti_chain: one design rate per initial component'
+             write(message,'(a,i0,a,i0)') 'gti_chain: one design rate is required per initial &
+                  &component; size(initial_rate) = ', size(initial_rate), ', size(initial) = ', &
+                  & size(initial)
+             error stop trim(message)
           end if
           this % rules(b) % initial_rate = initial_rate
        else
@@ -5967,7 +6198,10 @@ contains
     type(block_rule) :: rule
     integer, allocatable :: released(:)
     integer :: b, h, i
-    if (.not. allocated(this % chain)) error stop 'gti_chain: initialize an execution before advancing it'
+    if (.not. allocated(this % chain)) then
+       error stop 'gti_chain: an execution must be initialized before it is advanced, but &
+            &this % chain is not allocated'
+    end if
     if (this % complete()) return
     b = this % schedule % next_rule()
     rule = this % rules(b)
@@ -6035,7 +6269,8 @@ contains
     if (present(final_imbalance)) final_imbalance = this % final_imbalance
     if (allocated(this % taylor)) then
        if (this % taylor % pass_kind == reverse_pass .and. present(f)) then
-          error stop 'gti_chain: Taylor results are those of a forward Taylor execution'
+          error stop 'gti_chain: f must not be requested unless the Taylor execution is forward; &
+               &this % taylor % pass_kind is reverse_pass'
        end if
        this % taylor % by_order(:, :, this % taylor % order) = this % taylor % table
        if (present(f)) then
@@ -6086,7 +6321,10 @@ contains
   function execution_streamed_storage(this) result(storage)
     class(chain_execution), intent(in) :: this
     type(derivative_storage) :: storage
-    if (.not. allocated(this % taylor)) error stop 'gti_chain: storage accounts are those of a streamed execution'
+    if (.not. allocated(this % taylor)) then
+       error stop 'gti_chain: storage accounts require a streamed execution, but this % taylor &
+            &is not allocated'
+    end if
     storage = this % taylor % storage
   end function execution_streamed_storage
 
@@ -6103,19 +6341,34 @@ contains
     integer, intent(out), optional :: tower_storage(2)
     type(derivative_storage), intent(out), optional :: storage
     type(solve_result), intent(out), optional :: outcome
-    if (.not. this % complete()) error stop 'gti_chain: a derivative requires a completed primal execution'
+    character(len=250) :: message
+    if (.not. this % complete()) then
+       error stop 'gti_chain: execution_derivative requires a completed primal execution'
+    end if
     if (allocated(this % taylor)) then
        if (this % taylor % pass_kind /= reverse_pass) then
-          error stop 'gti_chain: a streamed Taylor execution has released its primal state'
+          error stop 'gti_chain: a streamed Taylor execution has released its primal state; &
+               &this % taylor % pass_kind is not reverse_pass'
        end if
        if (pass_kind /= reverse_pass .or. order /= this % taylor % order .or. &
             & size(functionals) /= this % taylor % nf) then
-          error stop 'gti_chain: a streamed reverse execution differentiates the functionals and order of its initialization'
+          write(message,'(a,i0,a,i0,a,i0,a,i0,a,i0)') 'gti_chain: a streamed reverse execution &
+               &differentiates the functionals and order of its initialization; pass_kind = ', &
+               & pass_kind, ' (reverse_pass = ', reverse_pass, '), order = ', order, ' (expected ', &
+               & this % taylor % order, '), size(functionals) = ', size(functionals)
+          error stop trim(message)
        end if
        if (present(designs)) then
-          if (designs /= this % taylor % nd) error stop 'gti_chain: a streamed reverse execution runs over the tower''s designs'
+          if (designs /= this % taylor % nd) then
+             write(message,'(a,i0,a,i0)') 'gti_chain: a streamed reverse execution must run over &
+                  &the tower''s designs; designs = ', designs, ', tower designs = ', this % taylor % nd
+             error stop trim(message)
+          end if
        end if
-       if (present(node_measure)) error stop 'gti_chain: a streamed execution integrates its functionals with the unit measure'
+       if (present(node_measure)) then
+          error stop 'gti_chain: a streamed execution integrates its functionals with the unit &
+               &measure, but node_measure was given'
+       end if
        call streamed_reverse(this, functionals, table, entries, by_order, sinks, leibniz, tower_storage, &
             & storage, outcome)
        return
@@ -6140,16 +6393,25 @@ contains
     integer, intent(in) :: order, degrees, nbb, pass_kind
     integer, intent(in), optional :: designs
     real(dp), allocatable :: step_partials(:,:)
+    character(len=250) :: message
     if (order < 0) then
-       error stop 'gti_chain: a derivative has an order of zero or more'
+       write(message,'(a,i0)') 'gti_chain: taylor_prepare requires a derivative order of zero or &
+            &more; order = ', order
+       error stop trim(message)
     end if
     context % pass_kind = pass_kind
     if (pass_kind == reverse_pass) then
-       if (order < 1) error stop 'gti_chain: a streamed reverse execution has an order of one or more'
+       if (order < 1) then
+          write(message,'(a,i0)') 'gti_chain: a streamed reverse execution requires an order of &
+               &one or more; order = ', order
+          error stop trim(message)
+       end if
        context % nd = num_designs_of(tower)
        if (present(designs)) then
           if (designs < 1 .or. designs > context % nd) then
-             error stop 'gti_chain: the designs run over are among the tower''s'
+             write(message,'(a,i0,a,i0)') 'gti_chain: the designs run over must be among the &
+                  &tower''s; designs = ', designs, ', tower designs = ', context % nd
+             error stop trim(message)
           end if
           context % nd = designs
        end if
@@ -6157,10 +6419,16 @@ contains
        context % to_size = 0
     else
        if (num_designs_of(tower) /= 1) then
-          error stop 'gti_chain: the pipelined march runs over the physics'' parameter alone'
+          write(message,'(a,i0)') 'gti_chain: the pipelined march runs over the physics'' &
+               &parameter alone; tower has ', num_designs_of(tower)
+          error stop trim(message)
        end if
        if (present(designs)) then
-          if (designs /= 1) error stop 'gti_chain: the pipelined march runs over the physics'' parameter alone'
+          if (designs /= 1) then
+             write(message,'(a,i0)') 'gti_chain: the pipelined march runs over the physics'' &
+                  &parameter alone; designs = ', designs
+             error stop trim(message)
+          end if
        end if
        context % nd      = 1
        context % top     = order
@@ -6309,6 +6577,7 @@ contains
     integer, allocatable :: from_part(:), from_vertex(:), to_part(:), to_vertex(:)
     integer :: n, a, b, i, e, instant, owner, capacity, first_read
     logical :: adjoint
+    character(len=250) :: message
     n = size(layouts)
     capacity = n + sum(layouts % given)
     allocate(from_part(capacity), from_vertex(capacity), to_part(capacity), to_vertex(capacity))
@@ -6330,7 +6599,11 @@ contains
              owner = e
              exit
           end do
-          if (owner == 0) error stop 'gti_chain: each history instant has a preceding owner'
+          if (owner == 0) then
+             write(message,'(a,i0,a,i0)') 'gti_chain: each history instant must have a preceding &
+                  &owner; instant ', instant, ' of block ', b
+             error stop trim(message)
+          end if
           if (any(from_vertex(first_read:a) == owner)) cycle
           a = a + 1
           from_part(a) = STATES
@@ -6380,20 +6653,29 @@ contains
     real(dp), allocatable, intent(out) :: values(:)
     real(dp), allocatable :: whole(:)
     integer :: local, offset
+    character(len=250) :: message
     if (.not. this % covers(instant)) then
-       error stop 'gti_chain: a state covers the instant requested of it'
+       write(message,'(a,i0,a,i0,a,i0,a,i0)') 'gti_chain: a state must cover the instant &
+            &requested of it; instant = ', instant, ', first = ', this % layout % first, &
+            & ', last = ', this % layout % last, ', stride = ', this % layout % stride
+       error stop trim(message)
     end if
     local = (instant - this % layout % first) / this % layout % stride + 1
     if (.not. allocated(this % layout % instants_at)) then
-       error stop 'gti_chain: a state stores the offsets of the instants it covers'
+       error stop 'gti_chain: values_at was called before this state''s instant offsets were set'
     end if
     if (local < 1 .or. local > size(this % layout % instants_at)) then
-       error stop 'gti_chain: a state stores the offsets of the instants it covers'
+       write(message,'(a,i0,a,i0)') 'gti_chain: a state must store the offsets of the instants &
+            &it covers; local = ', local, ', size(instants_at) = ', &
+            & size(this % layout % instants_at)
+       error stop trim(message)
     end if
     offset = this % layout % instants_at(local)
     call this % real_vector(whole)
     if (offset < 0 .or. offset + width > size(whole)) then
-       error stop 'gti_chain: an instant lies inside the values a state stores'
+       write(message,'(a,i0,a,i0,a,i0)') 'gti_chain: an instant must lie inside the values a &
+            &state stores; offset = ', offset, ', width = ', width, ', size(whole) = ', size(whole)
+       error stop trim(message)
     end if
     values = whole(offset + 1:offset + width)
   end subroutine values_at
@@ -6410,7 +6692,8 @@ contains
     type is (block_state)
        location = this
     class default
-       error stop 'gti_chain: a block state is placed at a block state'
+       error stop 'gti_chain: a block state can only be assigned into a block state, but the &
+            &location is a different type'
     end select
   end subroutine block_state_assign_in
 
@@ -6439,8 +6722,10 @@ contains
     real(dp) :: achieved
     type(imbalance) :: final_imbalance
     integer :: i, e, given, width, instant, owner_block, taken
+    character(len=250) :: message
     if (.not. associated(this % chain) .or. .not. associated(this % tower)) then
-       error stop 'gti_chain: a block rule is placed at a block of a chain'
+       error stop 'gti_chain: a block rule must be placed at a block of a chain, but its chain &
+            &or tower pointer is not associated'
     end if
     ! THE TRANSFER, READ FROM THE DATA THEMSELVES. Each instant the
     ! scheme reaches back over is requested of every datum passed in,
@@ -6472,7 +6757,9 @@ contains
              end select
           end do
           if (taken < 1) then
-             error stop 'gti_chain: a block is passed the data its scheme reaches back over'
+             write(message,'(a,i0)') 'gti_chain: a block must be passed the data its scheme &
+                  &reaches back over; no bound input covers instant ', instant
+             error stop trim(message)
           end if
           call bound_value(inputs, this % argument(taken), value)
           select type (datum => value)
@@ -6536,6 +6823,7 @@ contains
     real(dp), allocatable :: fixed(:), rate(:)
     type(march_context), target :: local_context
     class(march_context), pointer :: active
+    character(len=250) :: message
     active => local_context
     if (present(context)) active => context
     chain(b) % block_layout = layout
@@ -6569,7 +6857,10 @@ contains
        if (b == 1) rate = initial_rate
     else if (b == 1) then
        if (size(initial) /= chain(b) % given * chain(b) % width) then
-          error stop 'gti_chain: the initial state contains the first block''s given instants'
+          write(message,'(a,i0,a,i0)') 'gti_chain: the initial state must contain the first &
+               &block''s given instants; size(initial) = ', size(initial), &
+               & ', given * width = ', chain(b) % given * chain(b) % width
+          error stop trim(message)
        end if
        fixed = initial
        rate  = initial_rate
@@ -6667,8 +6958,12 @@ contains
     real(dp)       , intent(out) :: design
     real(dp), allocatable, intent(out) :: step_partials(:,:)
     integer :: k
+    character(len=250) :: message
     if (tower % design_kind_of(1) /= design_of_physics) then
-       error stop 'gti_chain: the physics'' parameter is the first design'
+       write(message,'(a,i0,a,i0)') 'gti_chain: the physics'' parameter must be the first &
+            &design; design_kind_of(1) = ', tower % design_kind_of(1), ', design_of_physics = ', &
+            & design_of_physics
+       error stop trim(message)
     end if
     design = tower % parameter()
     do k = 2, tower % num_designs()
@@ -6759,21 +7054,29 @@ contains
     integer :: h
     type(march_context), target :: local_context
     class(march_context), pointer :: active
+    character(len=250) :: message
     active => local_context
     if (present(context)) active => context
     call active % reset_failure()
     if (order < 0) then
-       error stop 'gti_chain: a derivative has an order of zero or more'
+       write(message,'(a,i0)') 'gti_chain: chain_derivative requires a derivative order of zero &
+            &or more; order = ', order
+       error stop trim(message)
     end if
     if (pass_kind /= forward_pass .and. pass_kind /= reverse_pass) then
-       error stop 'gti_chain: a pass is forward or reverse'
+       write(message,'(a,i0,a,i0,a,i0)') 'gti_chain: a pass must be forward_pass or reverse_pass; &
+            &pass_kind = ', pass_kind, ' (forward_pass = ', forward_pass, ', reverse_pass = ', &
+            & reverse_pass
+       error stop trim(message)
     end if
     call designs_of(tower, design, step_partials)
     nd = 1
     if (allocated(step_partials)) nd = 1 + size(step_partials, 2)
     if (present(designs)) then
        if (designs < 1 .or. designs > nd) then
-          error stop 'gti_chain: the designs run over are among the tower''s'
+          write(message,'(a,i0,a,i0)') 'gti_chain: the designs run over must be among the &
+               &tower''s; designs = ', designs, ', tower designs = ', nd
+          error stop trim(message)
        end if
        nd = designs
     end if
@@ -6782,7 +7085,9 @@ contains
        do b = 1, size(chain)
           if (.not. chain(b) % final_imbalance % converged) then
              if (.not. present(outcome)) then
-                error stop 'gti_chain: the primal march must converge before its derivatives are solved'
+                write(message,'(a,i0,a)') 'gti_chain: the primal march must converge before its &
+                     &derivatives are solved; block ', b, ' did not converge'
+                error stop trim(message)
              end if
              outcome = chain(b) % final_imbalance % outcome
              allocate(table(nf, multiset_count(nd, order)), source=0.0_dp)
@@ -6858,7 +7163,9 @@ contains
        if (present(tower_storage)) tower_storage = int([accounts % tower % high, accounts % tower % total])
        if (present(storage)) storage = accounts
        if (present(sinks)) then
-          error stop 'gti_chain: the sinks are checked on the reverse pass'
+          write(message,'(a,i0)') 'gti_chain: sinks were requested, but sinks are checked on the &
+               &reverse pass only; pass_kind = ', pass_kind
+          error stop trim(message)
        end if
        if (present(by_order)) by_order(:, :, order) = table
        call pass_outcome(active, outcome)
@@ -7141,6 +7448,7 @@ contains
     logical , allocatable :: is_sink(:)
     integer, allocatable :: s(:), read_order(:)
     integer :: b, n, p, child, i, j, index, nf, top, m, k, rank, nc, offset
+    character(len=250) :: message
     associate (unused_graph => input_graph); end associate
     b = this % vertex
     if (.not. this % transposed) then
@@ -7160,7 +7468,10 @@ contains
     ! Read child costates in descending block order, reproducing the
     ! accumulation order of reverse substitution independently of how
     ! the incidence query orders its argument slots.
-    if (.not. allocated(this % reads)) error stop 'gti_chain: a costate rule states its input blocks'
+    if (.not. allocated(this % reads)) then
+       error stop 'gti_chain: a costate rule must have its input blocks stated; this % reads is &
+            &not allocated'
+    end if
     read_order = [(i, i = 1, size(this % reads))]
     do i = 2, size(read_order)
        index = read_order(i)
@@ -7173,25 +7484,38 @@ contains
        read_order(j + 1) = index
     end do
     if (size(read_order) > 0 .and. .not. present(inputs)) then
-       error stop 'gti_chain: every child costate is bound before reverse substitution'
+       write(message,'(a,i0)') 'gti_chain: every child costate must be bound before reverse &
+            &substitution, but inputs was not given; size(read_order) = ', size(read_order)
+       error stop trim(message)
     end if
     allocate(children(size(read_order)))
     do i = 1, size(read_order)
        index = read_order(i)
        child = this % reads(index)
        if (.not. is_bound(inputs, this % argument(index))) then
-          error stop 'gti_chain: every child costate is bound before reverse substitution'
+          write(message,'(a,i0,a)') 'gti_chain: every child costate must be bound before reverse &
+               &substitution; input ', index, ' is not bound'
+          error stop trim(message)
        end if
        call bound_value(inputs, this % argument(index), value)
        select type (child_state => value)
        type is (block_state)
-          if (child_state % at /= child) error stop 'gti_chain: the bound costate belongs to its declared block'
+          if (child_state % at /= child) then
+             write(message,'(a,i0,a,i0)') 'gti_chain: the bound costate must belong to its &
+                  &declared block; child_state % at = ', child_state % at, ', child = ', child
+             error stop trim(message)
+          end if
           call child_state % real_vector(children(i) % values)
        class default
-          error stop 'gti_chain: a reverse dependency supplies a block costate'
+          error stop 'gti_chain: a reverse dependency must supply a block costate, but the bound &
+               &value is a different type'
        end select
        if (size(children(i) % values) /= this % chain(child) % rows % num_unknowns() * nf * m * (top + 1)) then
-          error stop 'gti_chain: a child costate has one value per residual row, order, multiset and functional'
+          write(message,'(a,i0,a,i0)') 'gti_chain: a child costate must have one value per &
+               &residual row, order, multiset and functional; size(values) = ', &
+               & size(children(i) % values), ', expected = ', &
+               & this % chain(child) % rows % num_unknowns() * nf * m * (top + 1)
+          error stop trim(message)
        end if
     end do
     if (associated(this % sinks)) then
@@ -7230,7 +7554,10 @@ contains
        call this % context % account % leave()
     end do
     ! the block's Lagrangian terms, from its own state, tower and costates
-    if (.not. associated(this % term)) error stop 'gti_chain: a costate rule stores its Lagrangian terms'
+    if (.not. associated(this % term)) then
+       error stop 'gti_chain: a costate rule must have its Lagrangian terms stored; this % term &
+            &is not associated'
+    end if
     allocate(split(0:top + 1))
     do rank = 1, multiset_count(this % nd, top)
        s = multiset_of(rank, top, this % nd)
@@ -7290,6 +7617,7 @@ contains
     integer, allocatable :: live(:), visiting(:)
     integer(int64) :: at, fixed
     integer :: p, q, e, n, c
+    character(len=400) :: message
     n = this % num_blocks
     associate (storage => this % storage)
       storage % limit = limit
@@ -7326,11 +7654,12 @@ contains
          c = 0
          this % leaf = n
       else if (limit < storage % minimum .or. storage % restart == 0) then
-         write(*, '(a,i0,a,i0,a,i0,a,i0,a,i0,a,i0,a,i0)') ' reverse storage limit ', limit, &
-              & ' entries; recomputation requires ', storage % minimum, ' (restart state ', &
+         write(message, '(a,i0,a,i0,a,i0,a,i0,a,i0,a,i0,a,i0)') 'gti_chain: the reverse storage &
+              &limit must admit the working set of one recomputation at least; limit ', limit, &
+              & ' entries, recomputation requires ', storage % minimum, ' (restart state ', &
               & storage % restart, ', leaf ', storage % leaf, ', costate window ', storage % window, &
               & ', Lagrangian terms ', storage % terms, '); retention requires ', storage % retained
-         error stop 'gti_chain: the reverse storage limit admits the working set of one recomputation at least'
+         error stop trim(message)
       else
          c = int(min(int(n - 1, int64), (limit - storage % restart - storage % leaf - fixed) / storage % restart))
          this % leaf = 1
@@ -7385,7 +7714,8 @@ contains
           m = k
        end if
     end do
-    if (m == 0) error stop 'gti_chain: a range longer than the leaf splits'
+    if (m == 0) error stop 'gti_chain: a range longer than the leaf must split; n and c leave &
+         &every candidate split no better than the unsplit range'
   end function split_at
   !===================================================================!
   ! THE POSITIONS AT WHICH THE FIRST SWEEP STORES A RESTART STATE: the
@@ -7428,6 +7758,7 @@ contains
     integer, intent(in) :: first, last, c
     integer :: n, t, b
     logical :: present_whole
+    character(len=250) :: message
     n = last - first + 1
     if (n < 1) return
     if (n <= this % leaf) then
@@ -7471,7 +7802,9 @@ contains
     call reversed(this, t, last, c - 1)
     call restored(this, t - 1)
     if (.not. forward_present(this, t - 1)) then
-       error stop 'gti_chain: a restart state includes the block it is stored after'
+       write(message,'(a,i0,a)') 'gti_chain: a restart state must include the block it is &
+            &stored after; block ', t - 1, ' is not forward-present'
+       error stop trim(message)
     end if
     call reverse_step(this, t - 1)
     call released_forward(this, first, t - 1)
@@ -7501,8 +7834,13 @@ contains
     type(block_rule) :: primal
     integer, allocatable :: released(:)
     integer :: h, b
+    character(len=250) :: message
     b = this % forward_schedule % next_rule()
-    if (b < 1) error stop 'gti_chain: a forward step lies within the stored order'
+    if (b < 1) then
+       write(message,'(a,i0)') 'gti_chain: a forward step must lie within the stored order; &
+            &next_rule() = ', b
+       error stop trim(message)
+    end if
     if (this % recomputes_primal) then
        ! the execution's own block rule: the block from the data the
        ! driver binds, its datum emitted, its tower solved by the
@@ -7564,8 +7902,12 @@ contains
     integer, intent(in) :: b
     integer, allocatable :: released(:)
     integer :: h
+    character(len=250) :: message
     if (this % transposed_schedule % next_rule() /= b) then
-       error stop 'gti_chain: the transposed order is the reverse of the forward order'
+       write(message,'(a,i0,a,i0)') 'gti_chain: the transposed order must be the reverse of the &
+            &forward order; next_rule() = ', this % transposed_schedule % next_rule(), ', &
+            &expected b = ', b
+       error stop trim(message)
     end if
     call this % transposed_schedule % advance_with(this % domain, this % costate)
     released = this % transposed_schedule % expired_at(this % transposed_schedule % num_completed())
@@ -7581,8 +7923,12 @@ contains
   subroutine store(this, position)
     type(checkpointed_reverse), intent(inout) :: this
     integer, intent(in) :: position
+    character(len=250) :: message
     if (this % forward_schedule % num_completed() /= position) then
-       error stop 'gti_chain: a restart state is stored at the traversal''s own position'
+       write(message,'(a,i0,a,i0)') 'gti_chain: a restart state must be stored at the &
+            &traversal''s own position; num_completed() = ', &
+            & this % forward_schedule % num_completed(), ', position = ', position
+       error stop trim(message)
     end if
     call stored_restart(this % stored, position, this % forward_schedule % live_after(position), &
          & this % chain, this % w, this % storage, this % recomputes_primal)
@@ -7601,6 +7947,7 @@ contains
     type(derivative_storage), intent(inout) :: storage
     logical, intent(in) :: with_states
     integer :: k, e
+    character(len=250) :: message
     k = 0
     do e = 1, size(stored)
        if (stored(e) % position < 0) then
@@ -7608,7 +7955,11 @@ contains
           exit
        end if
     end do
-    if (k == 0) error stop 'gti_chain: the schedule stores at most its checkpoints'
+    if (k == 0) then
+       write(message,'(a,i0,a)') 'gti_chain: the schedule must store at most its checkpoints; &
+            &every one of size(stored) = ', size(stored), ' slots is in use'
+       error stop trim(message)
+    end if
     allocate(stored(k) % live(size(live)))
     do e = 1, size(live)
        stored(k) % live(e) % at = live(e)
@@ -7617,7 +7968,11 @@ contains
           call counted(storage, CHECKPOINT_ACCOUNT, int(size(w(live(e)) % w), int64))
        end if
        if (with_states) then
-          if (.not. allocated(chain(live(e)) % state)) error stop 'gti_chain: a restart state stores the live states'
+          if (.not. allocated(chain(live(e)) % state)) then
+             write(message,'(a,i0,a)') 'gti_chain: a restart state must store the live states; &
+                  &block ', live(e), ' has no stored state'
+             error stop trim(message)
+          end if
           stored(k) % live(e) % state = chain(live(e)) % state
           call counted(storage, CHECKPOINT_ACCOUNT, int(size(chain(live(e)) % state), int64))
        end if
@@ -7628,6 +7983,7 @@ contains
     type(checkpointed_reverse), intent(inout) :: this
     integer, intent(in) :: position
     integer :: k, e
+    character(len=250) :: message
     do k = 1, size(this % stored)
        if (this % stored(k) % position /= position) cycle
        do e = 1, size(this % stored(k) % live)
@@ -7640,7 +7996,9 @@ contains
        this % stored(k) % position = -1
        return
     end do
-    error stop 'gti_chain: a restart state is released once'
+    write(message,'(a,i0)') 'gti_chain: a restart state must be released once, but no stored &
+         &state has position = ', position
+    error stop trim(message)
   end subroutine released_stored
   !===================================================================!
   ! Resume the forward traversal at a position: the towers of the
@@ -7654,12 +8012,17 @@ contains
     type(data_graph) :: values
     integer, allocatable :: live(:)
     integer :: k, e, b
+    character(len=250) :: message
     k = 0
     if (position > 0) then
        do e = 1, size(this % stored)
           if (this % stored(e) % position == position) k = e
        end do
-       if (k == 0) error stop 'gti_chain: a restart state is stored before the traversal resumes at its position'
+       if (k == 0) then
+          write(message,'(a,i0)') 'gti_chain: a restart state must be stored before the &
+               &traversal resumes at its position; no stored state has position = ', position
+          error stop trim(message)
+       end if
        do e = 1, size(this % stored(k) % live)
           b = this % stored(k) % live(e) % at
           if (.not. allocated(this % w(b) % w) .and. allocated(this % stored(k) % live(e) % w)) then
@@ -7680,7 +8043,9 @@ contains
        live = this % forward_schedule % live_after(position)
        do e = 1, size(live)
           if (.not. allocated(this % chain(live(e)) % state)) then
-             error stop 'gti_chain: the traversal resumes from the states live after its position'
+             write(message,'(a,i0,a)') 'gti_chain: the traversal must resume from the states &
+                  &live after its position, but block ', live(e), ' has no stored state'
+             error stop trim(message)
           end if
           allocate(values % at(live(e)) % datum, source=state_datum(this % chain, live(e)))
        end do
@@ -7825,13 +8190,16 @@ contains
     type(derivative_terms), allocatable, intent(out) :: weight(:)
     integer, allocatable :: instant(:)
     integer :: s, i, width, nodes
+    character(len=250) :: message
     if (.not. b % staged) then
        call b % scheme % step_quadrature(steps, k, weight, complete=b % complete_quadrature, instant=instant)
        nodes = size(weight)
        allocate(offset(nodes))
        do i = 1, nodes
           if (instant(i) < 1 .or. instant(i) > size(b % instants_at)) then
-             error stop 'gti_chain: a quadrature reads instants the block stores'
+             write(message,'(a,i0,a,i0)') 'gti_chain: a quadrature must read instants the block &
+                  &stores; instant(', i, ') = ', instant(i)
+             error stop trim(message)
           end if
           offset(i) = b % instants_at(instant(i))
        end do
@@ -7879,10 +8247,13 @@ contains
     type(derivative_terms) :: t
     real(dp) :: measure
     integer  :: mask
+    character(len=250) :: message
     measure = 1.0_dp
     if (present(node_measure)) then
        if (size(node_measure) /= b % nodes) then
-          error stop 'gti_chain: one measure per node'
+          write(message,'(a,i0,a,i0)') 'gti_chain: one measure is required per node; &
+               &size(node_measure) = ', size(node_measure), ', b % nodes = ', b % nodes
+          error stop trim(message)
        end if
        measure = node_measure(node)
     end if
@@ -7949,12 +8320,15 @@ contains
     integer , allocatable :: which(:)
     real(dp), allocatable :: rate(:)
     integer :: i
+    character(len=250) :: message
     which = rows % fixed_unknowns()
     rate  = rows % fixed_rates()
     if (all(rate == 0.0_dp)) return
     if (count(s == 1) > 1) then
-       error stop 'gti_chain: a fixed value''s design rate is stated to first order only; &
-            &a repeated derivative in the physics design of a closed initial component is not stated'
+       write(message,'(a,i0)') 'gti_chain: a fixed value''s design rate must be stated to first &
+            &order only; a repeated derivative in the physics design of a closed initial &
+            &component is not stated - count(s == 1) = ', count(s == 1)
+       error stop trim(message)
     end if
     do i = 1, size(which)
        r(which(i)) = -rate(i) * seed
@@ -7994,7 +8368,8 @@ contains
     call frozen_at(b, design, inputs)
     call b % rows % explicit_tangent(b % rows % unknown_graph(), b % rows % bind(inputs), 1, r, c, w, tangent_defined)
     if (.not. tangent_defined) then
-       error stop 'gti_chain: the block tangent in the state is explicit'
+       error stop 'gti_chain: the block tangent in the state must be explicit, but &
+            &explicit_tangent reports tangent_defined = .false.'
     end if
     n = b % rows % num_unknowns()
     allocate(reads(n), source=0)
@@ -8139,13 +8514,16 @@ contains
     logical , allocatable :: fixed_rows(:)
     integer , allocatable :: offset(:)
     integer :: n, fulln, e, p, row, k, node, from, to, point, pt, count, stride, jj
+    character(len=250) :: message
     n      = size(s)
     fulln  = 2**n - 1
     count  = chain(b) % rows % num_unknowns()
     stride = chain(b) % rows % num_degrees()
     associate (u1 => physics, u2 => degrees); end associate
     if (size(parts) /= n + 2) then
-       error stop 'gti_chain: the parts number the costate orders and the functional''s own term'
+       write(message,'(a,i0,a,i0)') 'gti_chain: the parts must number the costate orders and &
+            &the functional''s own term; size(parts) = ', size(parts), ', n + 2 = ', n + 2
+       error stop trim(message)
     end if
     call seeds_of(chain, b, s, j, .true., w, u, nd, state_seed, step_seed, nu_seed)
     f = derivative_terms(0.0_dp, n + 1)
@@ -8215,12 +8593,15 @@ contains
     integer , allocatable :: which(:)
     real(dp), allocatable :: rate(:), along(:)
     integer :: i, mask
+    character(len=250) :: message
     which = rows % fixed_unknowns()
     rate  = rows % fixed_rates()
     if (all(rate == 0.0_dp)) return
     if (count(s == 1) > 1) then
-       error stop 'gti_chain: a fixed value''s design rate is stated to first order only; &
-            &a repeated derivative in the physics design of a closed initial component is not stated'
+       write(message,'(a,i0)') 'gti_chain: a fixed value''s design rate must be stated to first &
+            &order only; a repeated derivative in the physics design of a closed initial &
+            &component is not stated - count(s == 1) = ', count(s == 1)
+       error stop trim(message)
     end if
     allocate(along(0:size(nu_seed)))
     do i = 1, size(which)
@@ -8289,10 +8670,10 @@ contains
     integer :: k, i, y, previous
     k = size(s)
     if (any(s < 1) .or. any(s > designs)) then
-       error stop 'gti_chain: a multiset contains designs of the tower'
+       error stop 'gti_chain: a multiset must contain designs of the tower, values in 1..designs'
     end if
     do i = 2, k
-       if (s(i) < s(i - 1)) error stop 'gti_chain: a multiset is nondecreasing'
+       if (s(i) < s(i - 1)) error stop 'gti_chain: a multiset must be nondecreasing'
     end do
     rank     = 1
     previous = 1
@@ -8308,7 +8689,8 @@ contains
     integer :: s(size_of)
     integer :: remaining, y, i, block
     if (rank < 1 .or. rank > multiset_count(designs, size_of)) then
-       error stop 'gti_chain: a rank names one of the multisets'
+       error stop 'gti_chain: a rank must name one of the multisets, 1..multiset_count(designs, &
+            &size_of)'
     end if
     remaining = rank - 1
     y         = 1
@@ -8335,7 +8717,7 @@ contains
     integer :: padded(size_of)
     integer :: k, p
     if (size(t) > size_of) then
-       error stop 'gti_chain: a sub-multiset is no larger than the multiset containing it'
+       error stop 'gti_chain: a sub-multiset must be no larger than the multiset containing it'
     end if
     padded = sorted([t, (1, k = 1, size_of - size(t))])
     rank   = multiset_rank(padded, designs)
@@ -8449,6 +8831,7 @@ contains
     logical , allocatable :: split(:)
     real(dp) :: achieved, f, e, threshold
     integer  :: rejected
+    character(len=400) :: message
 
     type(march_context), target :: local_context
     class(march_context), pointer :: active
@@ -8461,7 +8844,9 @@ contains
 
     dt = spread(duration / real(seed_instants - 1, dp), 1, seed_instants - 1)
     if (size(dt) + 1 > instants_limit) then
-       error stop 'gti_chain: the instant limit admits the seed grid'
+       write(message,'(a,i0,a,i0)') 'gti_chain: the instant limit must admit the seed grid; &
+            &seed instants = ', size(dt) + 1, ', instants_limit = ', instants_limit
+       error stop trim(message)
     end if
     result % tolerance = tolerance
     result % limit     = instants_limit
@@ -8516,8 +8901,9 @@ contains
     if (present(outcome)) then
        outcome = result
     else if (result % status /= ADAPTATION_MET) then
-       write(*,'(a)') ' ' // adaptation_description(result)
-       error stop 'gti_chain: the grid-stationarity criterion is not met within the instant limit'
+       message = 'gti_chain: the grid-stationarity criterion must be met within the instant &
+            &limit - ' // adaptation_description(result)
+       error stop trim(message)
     end if
 
   end function grid_stationary_partition
@@ -8577,6 +8963,7 @@ contains
     integer , allocatable :: parts(:)
     real(dp) :: achieved, eta, s, threshold, predicted
     integer  :: k, n
+    character(len=250) :: message
 
     type(march_context), target :: local_context
     class(march_context), pointer :: active
@@ -8584,11 +8971,18 @@ contains
     if (present(context)) active => context
 
     if (tolerance <= 0.0_dp .or. .not. ieee_is_finite(tolerance)) then
-       error stop 'gti_chain: the functional-error tolerance is positive and finite'
+       write(message,'(a,es12.4)') 'gti_chain: the functional-error tolerance must be positive &
+            &and finite; tolerance = ', tolerance
+       error stop trim(message)
     end if
-    if (order < 1) error stop 'gti_chain: the family''s order is positive'
+    if (order < 1) then
+       write(message,'(a,i0)') 'gti_chain: the family''s order must be positive; order = ', order
+       error stop trim(message)
+    end if
     if (instants < 2 .or. instants > instants_limit) then
-       error stop 'gti_chain: the instant limit admits the seed grid'
+       write(message,'(a,i0,a,i0)') 'gti_chain: the instant limit must admit the seed grid; &
+            &instants = ', instants, ', instants_limit = ', instants_limit
+       error stop trim(message)
     end if
     allocate(schemes(1) % scheme, source=scheme)
     allocate(enrichments(1) % scheme, source=enriched)
@@ -8603,7 +8997,9 @@ contains
        call march_chain(schemes, [n + 1], physics, degrees, fixed_grid(dt), design, state, chain, tower, &
             & resolved, t, achieved, final_imbalance=final_imbalance, startup=startup, context=active)
        if (.not. final_imbalance % converged) then
-          error stop 'gti_chain: the primal march must converge before its functional error is estimated'
+          write(message,'(a,i0)') 'gti_chain: the primal march must converge before its &
+               &functional error is estimated; block instants = ', n + 1
+          error stop trim(message)
        end if
        call functional_error(chain, tower, enrichments, physics, degrees, fixed_grid(dt), design, &
             & functionals, estimates, context=active)
@@ -8770,6 +9166,7 @@ contains
     ! estimator reads no quantity from it
     type(derivative_storage) :: accounts
     logical :: derivative
+    character(len=250) :: message
 
     active => local_context
     if (present(context)) active => context
@@ -8778,7 +9175,9 @@ contains
     nb     = size(chain)
     before = merge(1, 0, .not. chain(1) % counted)
     if (size(enriched) /= nb - before) then
-       error stop 'gti_chain: one enriched family per configured block'
+       write(message,'(a,i0,a,i0)') 'gti_chain: one enriched family is required per configured &
+            &block; size(enriched) = ', size(enriched), ', configured blocks = ', nb - before
+       error stop trim(message)
     end if
     ! the enriched chain: the startup block, then per configured block
     ! the block of the coarse family over its first given+ instants
@@ -8789,7 +9188,10 @@ contains
     do b = 1 + before, nb
        plus_given = enriched(b - before) % scheme % history_depth(degrees - 1)
        if (plus_given > size(chain(b) % instants_at)) then
-          error stop 'gti_chain: an enriched family reaches back over instants its block covers'
+          write(message,'(a,i0,a,i0)') 'gti_chain: an enriched family must reach back over &
+               &instants its block covers; plus_given = ', plus_given, ', block instants = ', &
+               & size(chain(b) % instants_at)
+          error stop trim(message)
        end if
        np = np + 1 + merge(1, 0, plus_given > chain(b) % given)
     end do
@@ -8852,26 +9254,36 @@ contains
        call built(enriched_tower, j, every(j) % scheme, physics, fixed, plus(j) % rows, &
             & plus(j) % instants_at, context=active)
        if (size(plus(j) % instants_at) /= spans(j)) then
-          error stop 'gti_chain: the identity prolongation places the enriched chain on the coarse instants'
+          write(message,'(a,i0,a,i0)') 'gti_chain: the identity prolongation must place the &
+               &enriched chain on the coarse instants; size(instants_at) = ', &
+               & size(plus(j) % instants_at), ', spans(j) = ', spans(j)
+          error stop trim(message)
        end if
        n = plus(j) % rows % num_unknowns()
        if (short(j) .or. b <= before) then
           ! a block of the coarse family stores the leading part of the
           ! coarse state, stages included
           if (n > size(chain(b) % state)) then
-             error stop 'gti_chain: a block of the coarse family stores the leading part of the coarse state'
+             write(message,'(a,i0,a,i0)') 'gti_chain: a block of the coarse family must store &
+                  &the leading part of the coarse state; n = ', n, ', size(chain(b) % state) = ', &
+                  & size(chain(b) % state)
+             error stop trim(message)
           end if
           if (any(plus(j) % instants_at /= chain(b) % instants_at(1:spans(j)))) then
-             error stop 'gti_chain: a block of the coarse family stores the leading part of the coarse state'
+             error stop 'gti_chain: a block of the coarse family must store the leading part of &
+                  &the coarse state, but its instants_at disagree with the coarse block''s'
           end if
        else
           ! P: the identity on the instant jets; a staged coarse
           ! block's stages lie between its instants and are not read
           if (plus(j) % staged) then
-             error stop 'gti_chain: an enriched family marches by instants'
+             error stop 'gti_chain: an enriched family must march by instants, but plus(j) % &
+                  &staged is .true.'
           end if
           if (n /= spans(j) * plus(j) % width) then
-             error stop 'gti_chain: an enriched block stores one jet per instant'
+             write(message,'(a,i0,a,i0)') 'gti_chain: an enriched block must store one jet per &
+                  &instant; n = ', n, ', spans(j) * width = ', spans(j) * plus(j) % width
+             error stop trim(message)
           end if
        end if
        plus(j) % state = prolonged(j, chain(b) % state)
@@ -9085,7 +9497,7 @@ contains
     case ('random')
        allocate(steps, source=random_grid(cfg % time_duration, cfg % seed))
     case default
-       error stop 'gti_driver: a grid is uniform or random'
+       error stop 'gti_driver: a grid must be uniform or random; cfg % grid = ' // trim(cfg % grid)
     end select
   end function chosen_grid
   subroutine steps_of(cfg, dt, t)
@@ -9372,9 +9784,8 @@ contains
     case ('tolerance_form')
        call demo_tolerance_form()
     case default
-       write(*,'(a)') ' unknown demo: ' // name
        call list_demos()
-       error stop 'graph_time_integrator: unknown demo'
+       error stop 'graph_time_integrator: unknown demo: ' // trim(name)
     end select
   end subroutine run_demo
   function demo_name() result(name)
@@ -9480,8 +9891,13 @@ contains
     integer         , intent(in) :: order
     type(family_container) :: h
     logical :: admissible
+    character(len=250) :: message
     call family_named(family_of, order, h % scheme, admissible)
-    if (.not. admissible) error stop 'gti_demos: the named family has a scheme at that order'
+    if (.not. admissible) then
+       write(message,'(a,i0)') 'gti_demos: the named family must have a scheme at that order; &
+            &family_of = ' // trim(family_of) // ', order = ', order
+       error stop trim(message)
+    end if
   end function container_named
   subroutine demo_adaptive_grid()
     implicit none
@@ -9526,8 +9942,13 @@ contains
       real(dp) :: tol, f, forward, reverse, span
       integer  :: rejects, level
       logical  :: admissible
+      character(len=250) :: message
       call family_named('dirk', order, scheme, admissible)
-      if (.not. admissible) error stop 'adaptive_grid: order two, three or four'
+      if (.not. admissible) then
+         write(message,'(a,i0)') 'adaptive_grid: dirk must be admissible at order two, three or &
+              &four; order = ', order
+         error stop trim(message)
+      end if
       write(*,'(a)') ' '
       write(*,'(a)') ' ' // title
       write(*,'(a)') '   tolerance     steps   rejects        sum dt - T          functional     forward-reverse'
@@ -9591,6 +10012,7 @@ contains
       type(graph)    , intent(in) :: g
       character(len=:), allocatable :: label
       real(dp), allocatable :: x(:)
+      character(len=250) :: message
       select case (tower % status_of(g))
       case (VALUE_KNOWN)
          call tower % value_of(g, x)
@@ -9600,7 +10022,10 @@ contains
       case (VALUE_UNATTACHED)
          label = ''
       case default
-         error stop 'assembled_tower: a value status is one of the three'
+         write(message,'(a,i0)') 'assembled_tower: a value status must be one of the three &
+              &(VALUE_KNOWN, VALUE_UNKNOWN, VALUE_UNATTACHED); status_of(g) = ', &
+              & tower % status_of(g)
+         error stop trim(message)
       end select
     end function status
     function extent(tower, g) result(label)
@@ -9852,6 +10277,7 @@ contains
     integer  :: rows_measured, rows_excluded, degrees_reaching, degrees_below, &
          &      degrees_unresolved, degrees_roundoff
     logical  :: required
+    character(len=250) :: message
 
     ! THE GRIDS ARE THE CONFIGURATION'S, so the refinement ratio can be
     ! changed and the same table recomputed. An order that changes
@@ -9872,13 +10298,19 @@ contains
     allowed      = cfg % order_tolerance
     settled      = cfg % spread_tolerance
     if (ratio <= 1.0_dp) then
-       error stop 'gti_demos: a refinement ratio is above one'
+       write(message,'(a,es12.4)') 'gti_demos: a refinement ratio must be above one; ratio = ', &
+            & ratio
+       error stop trim(message)
     end if
     if (grids < 3) then
-       error stop 'gti_demos: three grids at least, or no spread can be computed'
+       write(message,'(a,i0)') 'gti_demos: three grids are required at least, or no spread can &
+            &be computed; grids = ', grids
+       error stop trim(message)
     end if
     if (finer <= 1.0_dp) then
-       error stop 'gti_demos: a reference grid is finer than the finest measured'
+       write(message,'(a,es12.4)') 'gti_demos: a reference grid must be finer than the finest &
+            &measured; reference_refinement = ', finer
+       error stop trim(message)
     end if
 
     write(*,'(a)') ' '
@@ -10012,8 +10444,11 @@ contains
          & ' roundoff=', degrees_roundoff, ' excluded=', rows_excluded, ' acceptance=', trim(cfg % acceptance)
     if (required) then
        if (degrees_below + degrees_unresolved + degrees_roundoff + rows_excluded > 0) then
-          write(*,'(a)') ' a required order study measures every chain and reaches p at every degree.'
-          error stop 'order_of_accuracy: every measured degree reaches p and every chain is measured'
+          write(message,'(a,i0,a,i0,a,i0,a,i0)') 'order_of_accuracy: a required order study must &
+               &measure every chain and reach p at every degree; below = ', degrees_below, &
+               & ', unresolved = ', degrees_unresolved, ', roundoff = ', degrees_roundoff, &
+               & ', excluded = ', rows_excluded
+          error stop trim(message)
        end if
        write(*,'(a)') ' every measured degree reaches p.'
     else
@@ -10831,13 +11266,15 @@ contains
          & sin, cos, exp, log, sqrt
     implicit none
     integer :: n, failures
+    character(len=250) :: message
     failures = 0
     do n = 1, 5
        call identities(n, failures)
     end do
     if (failures > 0) then
-       write(*,'(a,i0,a)') ' FAIL : ', failures, ' identities exceeded the rounding bound'
-       error stop
+       write(message,'(a,i0,a)') 'demo_function_identities: every identity must stay within &
+            &the rounding bound; failures = ', failures, ' identities exceeded it'
+       error stop trim(message)
     end if
     write(*,'(a)') ' PASS : the elementary functions compose exactly to five directions'
   contains
@@ -11011,12 +11448,18 @@ contains
       integer , intent(in), optional :: order
       type(imbalance) :: final_imbalance
       integer :: m
+      character(len=250) :: message
       m = 1
       if (present(order)) m = order
       call march_chain(schemes, [11, 10], van_der_pol(state_degree), degrees, &
            & designed_grid(duration), nu, q0, chain, tower, dt, t, achieved, grid_design=weights, &
            & final_imbalance=final_imbalance, startup=4, context=context)
-      if (.not. final_imbalance % converged) error stop 'grid_design_check: the march converged'
+      if (.not. final_imbalance % converged) then
+         write(message,'(a,es12.4,a,es12.4)') 'grid_design_check: the march must converge; &
+              &residual = ', final_imbalance % norm, ', initial residual = ', &
+              & final_imbalance % initial_residual_norm
+         error stop trim(message)
+      end if
       call chain_expansion(chain, tower, functionals, degrees, m, f, context=context)
     end subroutine marched
     subroutine differenced_table(weights, nu, order, t)
@@ -11087,6 +11530,7 @@ contains
     real(dp), allocatable :: q0(:), dt(:), t(:), f(:,:), table(:,:), by_order(:,:,:), terms(:,:,:,:)
     real(dp) :: tau, achieved, agreement, departure, scale, rounding_bound
     integer :: max_order, order, n, k, i, b, rows, failures
+    character(len=250) :: message
     failures  = 0
     tau       = demo_real(1, 1.0e-12_dp)
     max_order = nint(demo_real(2, 4.0_dp))
@@ -11098,7 +11542,12 @@ contains
     q0 = consistent_state(van_der_pol(state_degree), degrees, [1.0_dp, 0.0_dp], design, context=context)
     call march_chain(schemes, [instants], van_der_pol(state_degree), degrees, uniform_grid(duration), &
          & design, q0, chain, tower, dt, t, achieved, final_imbalance=final_imbalance, startup=4, context=context)
-    if (.not. final_imbalance % converged) error stop 'lagrangian_expansion: the march converged'
+    if (.not. final_imbalance % converged) then
+       write(message,'(a,es12.4,a,es12.4)') 'lagrangian_expansion: the march must converge; &
+            &residual = ', final_imbalance % norm, ', initial residual = ', &
+            & final_imbalance % initial_residual_norm
+       error stop trim(message)
+    end if
     rows = 0
     do b = 1, size(chain)
        rows = rows + chain(b) % rows % num_unknowns()
@@ -11148,8 +11597,9 @@ contains
     end do
     write(*,'(a)') ' '
     if (failures > 0) then
-       write(*,'(a,i0,a)') ' FAIL : ', failures, ' checks exceeded their bound'
-       error stop
+       write(message,'(a,i0,a)') 'lagrangian_expansion: every check must stay within its bound; &
+            &failures = ', failures, ' checks exceeded their bound'
+       error stop trim(message)
     end if
     write(*,'(a)') ' PASS : the reverse pass is the leibniz expansion of the lagrangian, every order from one pass'
   end subroutine demo_lagrangian_expansion
@@ -11183,6 +11633,7 @@ contains
     real(dp), allocatable :: q0(:), dt(:), t(:), table(:,:), whole(:,:), by_order(:,:,:)
     real(dp) :: tau, achieved, agreement, departure
     integer :: max_order, storage(2), expected, nb, b, k, failures
+    character(len=250) :: message
     failures  = 0
     tau       = demo_real(1, 1.0e-12_dp)
     max_order = nint(demo_real(2, 4.0_dp))
@@ -11207,7 +11658,12 @@ contains
        end do
        call march_chain(schemes, added, van_der_pol(state_degree), degrees, uniform_grid(duration), &
             & design, q0, chain, tower, dt, t, achieved, final_imbalance=final_imbalance, startup=4, context=context)
-       if (.not. final_imbalance % converged) error stop 'taylor_state: the march converged'
+       if (.not. final_imbalance % converged) then
+          write(message,'(a,i0,a,es12.4,a,es12.4)') 'taylor_state: the march must converge; &
+               &blocks = ', nb, ', residual = ', final_imbalance % norm, ', initial residual = ', &
+               & final_imbalance % initial_residual_norm
+          error stop trim(message)
+       end if
        call chain_versions(chain, tower, functionals, degrees, versions, context=context)
        call chain_derivative(chain, tower, versions, functionals, degrees, max_order, forward_pass, &
             & table, designs=1, by_order=by_order, tower_storage=storage, context=context)
@@ -11236,8 +11692,9 @@ contains
     call pipelined()
     write(*,'(a)') ' '
     if (failures > 0) then
-       write(*,'(a,i0,a)') ' FAIL : ', failures, ' checks exceeded their bound'
-       error stop
+       write(message,'(a,i0,a)') 'taylor_state: every check must stay within its bound; &
+            &failures = ', failures, ' checks exceeded their bound'
+       error stop trim(message)
     end if
     write(*,'(a)') ' PASS : the taylor state march stores one block''s history depth of towers, and the tables are unchanged'
   contains
@@ -11269,13 +11726,21 @@ contains
               & uniform_grid(duration), design, q0, chain, tower, dt, t, achieved, final_imbalance=final_imbalance, &
               & functionals=functionals, derivative_order=max_order, f=fp, &
               & tower_storage=ts, state_storage=ss, context=context)
-         if (.not. final_imbalance % converged) error stop 'taylor_state: the pipelined march converged'
+         if (.not. final_imbalance % converged) then
+            write(message,'(a,i0,a,es12.4)') 'taylor_state: the pipelined march must converge; &
+                 &instants = ', n, ', residual = ', final_imbalance % norm
+            error stop trim(message)
+         end if
          deallocate(steps)
          allocate(steps(1))
          steps(1) = stored_family(crouzeix_three_stage())
          call march_chain(steps, [n], van_der_pol(state_degree), degrees, uniform_grid(duration), &
               & design, q0, chain, tower, dt, t, achieved, final_imbalance=final_imbalance, context=context)
-         if (.not. final_imbalance % converged) error stop 'taylor_state: the whole march converged'
+         if (.not. final_imbalance % converged) then
+            write(message,'(a,i0,a,es12.4)') 'taylor_state: the whole march must converge; &
+                 &instants = ', n, ', residual = ', final_imbalance % norm
+            error stop trim(message)
+         end if
          call chain_expansion(chain, tower, functionals, degrees, max_order, fr, context=context)
          departure = maxval(abs(fp - fr) / max(1.0_dp, abs(fr)))
          write(*,'(i11,i15,i9,i15,i9,es22.2)') n, ts(1), ts(2), ss(1), ss(2), departure
@@ -11517,7 +11982,8 @@ contains
       case (VALUE_UNATTACHED)
          name = 'no value'
       case default
-         error stop 'level_maps: a value status is one of the three'
+         error stop 'level_maps: a value status must be one of the three (VALUE_KNOWN, &
+              &VALUE_UNKNOWN, VALUE_UNATTACHED); status matched none'
       end select
     end function status_name
     function extent_of(g) result(label)
@@ -11920,6 +12386,7 @@ contains
     integer, allocatable :: at(:)
     type(family)            :: scheme
     character(len=32) :: what, given
+    character(len=250) :: message
     integer , allocatable :: tails(:), heads(:)
     real(dp), allocatable :: dt(:), t(:), fixed(:)
     integer :: instants, n, m, h, band, i, j, e
@@ -11965,7 +12432,9 @@ contains
        call tower % build(van_der_pol(degrees - 1), owner, [instants], uniform_grid(3.0_dp), 0, 0.0_dp)
        call block_from(tower, 1, scheme, van_der_pol(degrees - 1), fixed, rows, at, context=context)
     case default
-       error stop 'memory_shape: the part is none, vertices, edges, field or block'
+       message = 'memory_shape: the part must be none, vertices, edges, field or block; what = ' &
+            & // trim(what)
+       error stop trim(message)
     end select
     write(*,'(a,i8,i9,i9,f12.3)') trim(what), instants, n, m, peak()
   contains
@@ -11991,6 +12460,7 @@ contains
     type(march_context) :: context
     integer , parameter :: max_order = 2
     integer :: seed, cases, i, failures, skipped
+    character(len=250) :: message
     seed  = nint(demo_real(1, 7.0_dp))
     cases = nint(demo_real(2, 2.0_dp))
     failures = 0
@@ -12007,7 +12477,11 @@ contains
     write(*,'(a)')      ' '
     write(*,'(a,i0,a,i0,a,i0,a)') ' ', cases - skipped, ' cases checked, ', &
          & failures, ' failed, ', skipped, ' skipped'
-    if (failures > 0) error stop 'randomized_checks: an invariant did not hold'
+    if (failures > 0) then
+       write(message,'(a,i0,a,i0)') 'randomized_checks: an invariant must hold in every case; &
+            &failures = ', failures, ', cases checked = ', cases - skipped
+       error stop trim(message)
+    end if
   contains
     logical function verbose()
       character(len=8) :: argument
@@ -12356,6 +12830,7 @@ contains
       type(expression) :: rule
       integer, allocatable :: first(:), last(:), primal_order(:), adjoint_order(:)
       integer :: nb, discrepancy
+      character(len=250) :: message
 
       nb = size(added)
       call horizon_bounds(schemes, added, degrees - 1, first, last)
@@ -12366,13 +12841,20 @@ contains
       primal_order = primal_schedule % visits()
       adjoint_order = adjoint_schedule % visits()
       if (size(primal_order) /= nb .or. size(adjoint_order) /= nb) then
-         error stop 'transposed_dependencies: one rule per block in each orientation'
+         write(message,'(a,i0,a,i0,a,i0)') 'transposed_dependencies: one rule is required per &
+              &block in each orientation; blocks = ', nb, ', primal steps = ', size(primal_order), &
+              & ', adjoint steps = ', size(adjoint_order)
+         error stop trim(message)
       end if
       discrepancy = count(adjoint_order /= primal_order(nb:1:-1))
       write(*,'(a,a,a,i0,a,i0,a,i0,a,i0)') '   ', title, &
            & '  blocks ', nb, '  forward steps ', size(primal_order), &
            & '  reverse steps ', size(adjoint_order), '  reversal discrepancies ', discrepancy
-      if (discrepancy /= 0) error stop 'transposed_dependencies: the reverse order is the transposed block order'
+      if (discrepancy /= 0) then
+         write(message,'(a,i0)') 'transposed_dependencies: the reverse order must be the &
+              &transposed block order; reversal discrepancies = ', discrepancy
+         error stop trim(message)
+      end if
     end subroutine checked
 
   end subroutine demo_transposed_dependencies
@@ -12482,16 +12964,19 @@ contains
       real(dp)        , intent(in) :: residual(0:)
       integer         , intent(in) :: exact_top
       real(dp) :: floor
+      character(len=250) :: message
       if (exact_top > ubound(residual, 1)) then
-         error stop 'gti_demos: an exactness check lies inside the reported degree range'
+         write(message,'(a,i0,a,i0)') 'gti_demos: an exactness check must lie inside the &
+              &reported degree range; exact_top = ', exact_top, ', ubound(residual, 1) = ', &
+              & ubound(residual, 1)
+         error stop trim(message)
       end if
       floor = real(128 * max(1, exact_top + 1), dp) * epsilon(1.0_dp)
       if (maxval(abs(residual(0:exact_top))) > floor) then
-         write(*,'(a)') ' '
-         write(*,'(a)') ' row failed: ' // title
-         write(*,'(a,es12.4)') '   floor       ', floor
-         write(*,'(a,9es12.4)') '   residual    ', residual(0:exact_top)
-         error stop 'gti_demos: a scheme row reproduces its polynomial class'
+         write(message,'(a,es12.4,a,es12.4)') 'gti_demos: a scheme row must reproduce its &
+              &polynomial class - row failed: ' // trim(title) // '; largest residual = ', &
+              & maxval(abs(residual(0:exact_top))), ', floor = ', floor
+         error stop trim(message)
       end if
     end subroutine require_exact
     subroutine bdf_rows(p, label, dt)
@@ -13179,8 +13664,8 @@ contains
        r = physics_named(trim(cfg % physics), cfg % state_degree, cfg % diffusion, size(counts))
     else
        if (trim(cfg % physics) == 'taylor_green') then
-          error stop 'graph_time_integrator: the Taylor-Green vortex is a flow over a mesh with the spatial &
-               &derivatives as rows'
+          error stop 'graph_time_integrator: taylor_green requires a mesh with the spatial &
+               &derivatives as rows, but over_field or context % spatial_rows() is false'
        end if
        r = physics_named(trim(cfg % physics), cfg % state_degree)
     end if
@@ -13292,7 +13777,8 @@ contains
     if (over_field) then
        if (lists(cfg % check, 'ode')) then
           if (context % spatial_rows()) then
-             error stop 'graph_time_integrator: the ode check reads the law without its spatial jet'
+             error stop 'graph_time_integrator: the ode check requires the law without its &
+                  &spatial jet, but context % spatial_rows() is .true.'
           end if
           call against_the_ode(cfg, schemes, added, f(:, 1))
        end if
@@ -13481,7 +13967,8 @@ contains
     call refuse_unknown(cfg % functionals, [character(len=15) :: 'energy', 'dissipation', 'mean', &
          & 'square_integral'], 'functionals')
     if (.not. lists(cfg % designs, 'physics')) then
-       error stop 'graph_time_integrator: the physics'' parameter is the first design'
+       error stop 'graph_time_integrator: the physics'' parameter must be the first design; &
+            &designs = ' // trim(cfg % designs) // ' does not name physics'
     end if
     grid_designed = lists(cfg % designs, 'grid')
     names = words_of(cfg % functionals)
@@ -13494,9 +13981,8 @@ contains
           call functional_named(trim(cfg % physics), trim(names(i)), cfg % state_degree, functionals(i), admissible)
        end if
        if (.not. admissible) then
-          write(*,'(a)') ' '
-          write(*,'(a)') ' ' // trim(cfg % physics) // ' admits no functional named ' // trim(names(i)) // '.'
-          error stop 'graph_time_integrator: a functional is one the physics admits'
+          error stop 'graph_time_integrator: a functional must be one the physics admits; ' // &
+               & trim(cfg % physics) // ' admits no functional named ' // trim(names(i))
        end if
        functionals(i) = stated_over(functionals(i), state_degrees_of(cfg), functionals(i) % name())
     end do
@@ -13554,6 +14040,7 @@ contains
     type(continuous_domain) :: continuous
     real(dp) :: start_time
     real(dp), allocatable :: reals(:)
+    character(len=250) :: message
     call refuse_unknown(cfg % initial_field, ['constant', 'mode    ', 'bump    ', 'exact   '], 'initial_field')
     call refuse_unknown(cfg % export, ['none    ', 'paraview'], 'export')
     call refuse_unknown(cfg % check, [character(len=16) :: 'none', 'ode', 'mode', 'operator', 'passes', &
@@ -13563,17 +14050,21 @@ contains
     reals  = reals_of(cfg % spatial_counts, 'counts')
     counts = nint(reals)
     if (any(real(counts, dp) /= reals)) then
-       error stop 'graph_time_integrator: a count of cells is whole'
+       error stop 'graph_time_integrator: a count of cells must be whole; spatial_counts = ' // &
+            & trim(cfg % spatial_counts)
     end if
     over_field = any(counts > 0)
     if (over_field .and. any(counts <= 0)) then
-       error stop 'graph_time_integrator: a mesh has cells along every coordinate'
+       error stop 'graph_time_integrator: a mesh must have cells along every coordinate once one &
+            &is positive; spatial_counts = ' // trim(cfg % spatial_counts)
     end if
     if (over_field) then
        call refuse_unknown(cfg % spatial_grid, ['uniform', 'random '], 'spatial_grid')
        extents = reals_of(cfg % spatial_extent, 'extents')
        if (size(extents) /= size(counts)) then
-          error stop 'graph_time_integrator: one extent per count of cells'
+          write(message,'(a,i0,a,i0)') 'graph_time_integrator: one extent is required per count &
+               &of cells; size(extents) = ', size(extents), ', size(counts) = ', size(counts)
+          error stop trim(message)
        end if
        start_time = clock()
        allocate(space)
@@ -13615,7 +14106,10 @@ contains
     character(len=32), allocatable :: w(:)
     integer :: i
     w = words_of(listed)
-    if (size(w) < 1) error stop 'graph_time_integrator: ' // subject // ' lists one number per coordinate'
+    if (size(w) < 1) then
+       error stop 'graph_time_integrator: ' // subject // ' must list one number per &
+            &coordinate, but it is empty'
+    end if
     allocate(x(size(w)))
     do i = 1, size(w)
        read(w(i), *) x(i)
@@ -13665,25 +14159,25 @@ contains
     character(len=16), allocatable :: names(:)
     character(len=:), allocatable :: label
     character(len=2) :: digit
+    character(len=400) :: message
     integer :: nd, rejects
     logical :: staged, admissible
     if (trim(cfg % grid) /= 'adaptive') return
     if (over_field) then
-       error stop 'graph_time_integrator: an adaptive grid is over time alone'
+       error stop 'graph_time_integrator: an adaptive grid must be over time alone, but &
+            &over_field is .true.'
     end if
     names = listed(cfg)
     if (size(names) /= 1) then
-       write(*,'(a)') ' '
-       write(*,'(a,a,i0,a)') ' an adaptive grid is discovered for one family at max_discretization_order,', &
-            & ' and families names ', size(names), ' families.'
-       error stop 'graph_time_integrator: an adaptive grid is discovered for one family'
+       write(digit,'(i0)') size(names)
+       error stop 'graph_time_integrator: an adaptive grid must be discovered for one family at &
+            &max_discretization_order, but families names ' // trim(digit) // ' families'
     end if
     call chosen(trim(names(1)), cfg % max_discretization_order, scheme, staged, admissible)
     if (.not. admissible) then
-       write(*,'(a)') ' '
-       write(*,'(a,i0,a)') ' the family ' // trim(names(1)) // ' has no row of order ', &
-            & cfg % max_discretization_order, ', the order an adaptive grid is discovered at.'
-       error stop 'graph_time_integrator: an adaptive grid is discovered at an admissible order'
+       write(digit,'(i0)') cfg % max_discretization_order
+       error stop 'graph_time_integrator: an adaptive grid must be discovered at an admissible &
+            &order - the family ' // trim(names(1)) // ' has no row of order ' // trim(digit)
     end if
     write(digit,'(i0)') cfg % max_discretization_order
     nd = cfg % state_degree + 1
@@ -13698,10 +14192,9 @@ contains
     case ('functional_error')
        call enriched_family(trim(names(1)), cfg % max_discretization_order, enriched, admissible, label)
        if (.not. admissible) then
-          write(*,'(a)') ' '
-          write(*,'(a)') ' the family ' // trim(names(1)) // trim(digit) // ' has no enrichment for the' // &
-               & ' functional-error estimate.'
-          error stop 'graph_time_integrator: an adaptive grid under functional_error is discovered with an enriched family'
+          error stop 'graph_time_integrator: an adaptive grid under functional_error must be &
+               &discovered with an enriched family - the family ' // trim(names(1)) // &
+               & trim(digit) // ' has no enrichment for the functional-error estimate'
        end if
        fixed_weights = functional_error_partition(scheme, enriched, cfg % max_discretization_order, &
             & physics_of(cfg), energy_of(cfg), nd, cfg % time_duration, q0(1:cfg % state_degree), cfg % design, &
@@ -13716,9 +14209,9 @@ contains
        outcome % status = ADAPTATION_MET
     end select
     if (outcome % status /= ADAPTATION_MET) then
-       write(*,'(a)') ' '
-       write(*,'(a)') ' ' // adaptation_description(outcome)
-       error stop 'graph_time_integrator: the adaptive grid does not meet its criterion within adaptation_instants'
+       message = 'graph_time_integrator: the adaptive grid must meet its criterion within &
+            &adaptation_instants - ' // adaptation_description(outcome)
+       error stop trim(message)
     end if
     cfg % instants = size(fixed_weights) + 1
     grid_fixed  = .true.
@@ -13752,10 +14245,13 @@ contains
     real(dp), allocatable :: interval(:), dt(:), t(:)
     integer :: k, merged
     logical :: inside_k, inside_next
+    character(len=250) :: message
     if (trim(cfg % grid) /= 'coarsened') return
     interval = reals_of(cfg % coarsened_interval, 'coarsened_interval')
     if (size(interval) /= 2) then
-       error stop 'graph_time_integrator: coarsened_interval is two instants "a b"'
+       write(message,'(a,i0)') 'graph_time_integrator: coarsened_interval must be two instants &
+            &"a b"; size(interval) = ', size(interval)
+       error stop trim(message)
     end if
     call partitioned(uniform_grid(cfg % time_duration), cfg % instants, dt, t)
     fixed_weights = [real(dp) ::]
@@ -13776,7 +14272,9 @@ contains
        end if
     end do
     if (merged == 0) then
-       error stop 'graph_time_integrator: the coarsened interval contains a pair of steps'
+       write(message,'(a,es12.4,a,es12.4,a)') 'graph_time_integrator: the coarsened interval &
+            &must contain a pair of steps; interval = [', interval(1), ', ', interval(2), ']'
+       error stop trim(message)
     end if
     write(*,'(a,i0,a,i0,a,es9.2,a,es9.2,a)') '   coarsened grid: ', size(fixed_weights), ' steps, ', merged, &
          & ' of them pairs of uniform steps merged inside [', interval(1), ', ', interval(2), ']'
@@ -13803,6 +14301,7 @@ contains
     type(configuration), intent(inout) :: cfg
     real(dp), allocatable :: dt(:), t(:)
     integer :: widest, printed
+    character(len=400) :: message
     call refuse_unknown(cfg % physics, ['vanderpol          ', 'vanderpol_algebraic', 'taylor_green       ', &
          & 'radial_oscillator  '], 'physics')
     call refuse_unknown(cfg % adaptive_check, &
@@ -13821,18 +14320,17 @@ contains
     call refuse_unwindowed(cfg % combinations)
     widest = widest_depth(cfg)
     if (.not. cfg % automatic_order_conservation) then
-       write(*,'(a)')    ' '
-       write(*,'(a,i0)') ' the widest row here has history depth in instants: ', widest
-       write(*,'(a)')    ' filling them by any other means leaves the rows solving different'
-       write(*,'(a)')    ' problems from different initial states, and no table compared across'
-       write(*,'(a)')    ' such rows is meaningful.'
-       error stop 'graph_time_integrator: order conservation is the only startup built'
+       write(message,'(a,i0,a)') 'graph_time_integrator: order conservation is the only startup &
+            &built, but automatic_order_conservation is .false.; the widest row here has &
+            &history depth in instants: ', widest, ' - filling it by any other means leaves the &
+            &rows solving different problems from different initial states'
+       error stop trim(message)
     end if
     if (widest == 0) then
-       write(*,'(a)')    ' '
-       write(*,'(a,i0)') ' every family and order requested has a history depth beyond the'
-       write(*,'(a,i0)') ' horizon, whose instant count is: ', cfg % instants
-       error stop 'graph_time_integrator: no row fits in this horizon'
+       write(message,'(a,i0)') 'graph_time_integrator: no row fits in this horizon; every family &
+            &and order requested has a history depth beyond the horizon, whose instant count is &
+            &', cfg % instants
+       error stop trim(message)
     end if
     call grid_partition(cfg, dt, t)
     call shown_initial(cfg)
@@ -13888,23 +14386,23 @@ contains
     character(len=16), allocatable :: names(:)
     integer         , allocatable :: orders(:)
     integer :: windows, before
+    character(len=250) :: message
     if (len_trim(cfg % chain) < 1) return
     call windows_of(cfg % chain, names, orders)
     windows = size(names)
     if (cfg % instants / windows <= 0) then
-       write(*,'(a)') ' '
-       write(*,'(a,i0,a,i0,a)') ' the chain names ', windows, ' windows and the horizon contains ', &
-            & cfg % instants, ' instants, so a window would contain none.'
-       error stop 'graph_time_integrator: a window of a named chain contains instants'
+       write(message,'(a,i0,a,i0,a)') 'graph_time_integrator: a window of a named chain must &
+            &contain instants; the chain names ', windows, ' windows and the horizon contains ', &
+            & cfg % instants, ' instants, so a window would contain none'
+       error stop trim(message)
     end if
     before = printed
     call one_row(cfg, names, orders, printed)
     if (printed == before) then
-       write(*,'(a)') ' '
-       write(*,'(a)') ' the chain ' // trim(cfg % chain) // ' built no row. A family has no'
-       write(*,'(a)') ' scheme at the order requested of it, or a window adds no more instants'
-       write(*,'(a)') ' than the history depth of the family assigned to it.'
-       error stop 'graph_time_integrator: a named chain builds its row'
+       error stop 'graph_time_integrator: a named chain must build its row - the chain ' // &
+            & trim(cfg % chain) // ' built no row; a family has no scheme at the order &
+            &requested of it, or a window adds no more instants than the history depth of the &
+            &family assigned to it'
     end if
   end subroutine the_named_chain
 
@@ -13922,24 +14420,20 @@ contains
     integer :: i, separator_position, failed
     words = words_of(specification)
     if (size(words) < 1) then
-       error stop 'gti_configuration: a chain names a window at least'
+       error stop 'gti_configuration: a chain must name a window at least; specification is empty'
     end if
     allocate(names(size(words)), orders(size(words)))
     do i = 1, size(words)
        separator_position = index(words(i), ':')
        if (separator_position < 2 .or. separator_position >= len_trim(words(i))) then
-          write(*,'(a)') ' '
-          write(*,'(a)') ' the chain names ' // trim(words(i)) // &
-               & ', which is not a family and an order.'
-          error stop 'gti_configuration: a setting names something unknown'
+          error stop 'gti_configuration: the chain names ' // trim(words(i)) // ', which is not &
+               &a family and an order'
        end if
        names(i) = words(i)(1:separator_position - 1)
        read(words(i)(separator_position + 1:), *, iostat=failed) orders(i)
        if (failed /= 0 .or. orders(i) < 1) then
-          write(*,'(a)') ' '
-          write(*,'(a)') ' the chain requests ' // trim(words(i)) // &
-               & ' for an order that is not a whole number of one or more.'
-          error stop 'gti_configuration: a setting names something unknown'
+          error stop 'gti_configuration: the chain requests ' // trim(words(i)) // ' for an &
+               &order that is not a whole number of one or more'
        end if
     end do
     call refuse_unknown(names_phrase(names), &
@@ -13967,15 +14461,14 @@ contains
     integer :: i, windows, failed
     counts = words_of(combinations)
     if (size(counts) < 1) then
-       error stop 'gti_configuration: the combinations name a window count'
+       error stop 'gti_configuration: the combinations must name a window count at least; &
+            &combinations is empty'
     end if
     do i = 1, size(counts)
        read(counts(i), *, iostat=failed) windows
        if (failed /= 0 .or. windows < 1) then
-          write(*,'(a)') ' '
-          write(*,'(a)') ' combinations names ' // trim(counts(i)) // &
-               & ', which is not a count of windows.'
-          error stop 'gti_configuration: a setting names something unknown'
+          error stop 'gti_configuration: combinations names ' // trim(counts(i)) // ', which is &
+               &not a count of windows'
        end if
     end do
   end subroutine refuse_unwindowed

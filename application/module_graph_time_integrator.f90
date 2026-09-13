@@ -611,6 +611,54 @@ contains
     q = unknown(STATE)
     f = 0.5_dp * (derivative(q, 0)**2 + derivative(q, 1)**2)
   end function energy_rule
+  !===================================================================!
+  ! THE RADIAL OSCILLATOR: the radial equation of the planar isotropic
+  ! oscillator at angular momentum L, the design nu = L**2,
+  !
+  !     R(q, nu) = q'' + q - nu / q**3,
+  !
+  ! the negative integer power a member of the expression's algebra.
+  ! With q(0) = 1, q'(0) = 0 the solution is q = sqrt(cos^2 t + nu
+  ! sin^2 t), which stays away from the singularity at q = 0 for
+  ! nu > 0.
+  !===================================================================!
+  function radial_rule(degree) result(r)
+    integer, intent(in) :: degree
+    type(expression) :: r
+    type(expression) :: q, nu
+    q  = unknown(STATE)
+    nu = design()
+    r = derivative(q, degree) + derivative(q, 0) - nu * derivative(q, 0)**(-3)
+  end function radial_rule
+  !===================================================================!
+  ! The Lagrangian L = F + lambda R of the radial oscillator over its
+  ! state and its costate: the residual is its stationarity in the
+  ! multiplier and F is the Lagrangian at a zero multiplier.
+  !===================================================================!
+  function radial_lagrangian(functional, degree, label) result(l)
+    type(expression), intent(in) :: functional
+    integer         , intent(in) :: degree
+    character(len=*), intent(in) :: label
+    type(expression) :: l
+    type(expression) :: rule
+    rule = functional + unknown(COSTATE) * radial_rule(degree)
+    l    = stated_over(rule, [degree], label, multipliers=1)
+  end function radial_lagrangian
+  ! the energy of the radial oscillator, conserved by its flow at the
+  ! value (1 + nu)/2 on q(0) = 1, q'(0) = 0
+  function radial_energy_rule() result(f)
+    type(expression) :: f
+    type(expression) :: q, nu
+    q  = unknown(STATE)
+    nu = design()
+    f = 0.5_dp * (derivative(q, 0)**2 + derivative(q, 1)**2) + 0.5_dp * nu * derivative(q, 0)**(-2)
+  end function radial_energy_rule
+  ! the square of the state, whose integral over the horizon depends
+  ! on the trajectory in both its value and its design derivative
+  function square_integral_rule() result(f)
+    type(expression) :: f
+    f = derivative(unknown(STATE), 0)**2
+  end function square_integral_rule
   function dissipation_rule() result(f)
     type(expression) :: f
     type(expression) :: q, nu
@@ -638,6 +686,15 @@ contains
        end if
        r = euler_lagrange(taylor_green(kinetic_energy_rule(dimension), dimension, 'taylor-green lagrangian'), 1, &
             & 'taylor-green momentum')
+    else if (trim(name) == 'radial_oscillator') then
+       if (degree /= 2) then
+          error stop 'gti_physics: the radial oscillator is of second order in time'
+       end if
+       if (present(dimension)) then
+          error stop 'gti_physics: the radial oscillator is a law in time alone'
+       end if
+       r = euler_lagrange(radial_lagrangian(radial_energy_rule(), degree, 'radial oscillator lagrangian'), 1, &
+            & 'radial oscillator residual')
     else
        r = euler_lagrange(lagrangian(energy_rule(), degree, 'van der pol lagrangian', algebraic_named(name), &
             & diffusion, dimension), 1, 'van der pol residual')
@@ -748,6 +805,19 @@ contains
        case ('dissipation')
           f = at_zero(taylor_green(viscous_dissipation_rule(dimension), dimension, 'taylor-green lagrangian'), &
                & 'viscous dissipation')
+       case default
+          admissible = .false.
+       end select
+       return
+    end if
+    if (trim(physics_name) == 'radial_oscillator') then
+       select case (name)
+       case ('energy')
+          f = at_zero(radial_lagrangian(radial_energy_rule(), degree, 'radial oscillator lagrangian'), &
+               & 'radial oscillator energy')
+       case ('square_integral')
+          f = at_zero(radial_lagrangian(square_integral_rule(), degree, 'radial oscillator lagrangian'), &
+               & 'radial oscillator square integral')
        case default
           admissible = .false.
        end select
@@ -12287,7 +12357,7 @@ contains
     logical :: admissible
     integer :: i
     call refuse_unknown(cfg % designs, ['physics', 'grid   '], 'designs')
-    call refuse_unknown(cfg % functionals, ['energy     ', 'dissipation'], 'functionals')
+    call refuse_unknown(cfg % functionals, ['energy         ', 'dissipation    ', 'square_integral'], 'functionals')
     if (.not. lists(cfg % designs, 'physics')) then
        error stop 'graph_time_integrator: the physics'' parameter is the first design'
     end if
@@ -12301,7 +12371,12 @@ contains
        else
           call functional_named(trim(cfg % physics), trim(names(i)), cfg % state_degree, functionals(i), admissible)
        end if
-       if (admissible) functionals(i) = stated_over(functionals(i), state_degrees_of(cfg), functionals(i) % name())
+       if (.not. admissible) then
+          write(*,'(a)') ' '
+          write(*,'(a)') ' ' // trim(cfg % physics) // ' admits no functional named ' // trim(names(i)) // '.'
+          error stop 'graph_time_integrator: a functional is one the physics admits'
+       end if
+       functionals(i) = stated_over(functionals(i), state_degrees_of(cfg), functionals(i) % name())
     end do
   end subroutine chosen_functionals
   subroutine against_the_ode(cfg, schemes, added, f_field)
@@ -12534,7 +12609,8 @@ contains
     type(configuration), intent(inout) :: cfg
     real(dp), allocatable :: dt(:), t(:)
     integer :: widest, printed
-    call refuse_unknown(cfg % physics, ['vanderpol          ', 'vanderpol_algebraic', 'taylor_green       '], 'physics')
+    call refuse_unknown(cfg % physics, ['vanderpol          ', 'vanderpol_algebraic', 'taylor_green       ', &
+         & 'radial_oscillator  '], 'physics')
     call refuse_unknown(cfg % adaptive_check, &
          & [character(len=17) :: 'step_doubling', 'grid_stationarity'], 'adaptive_check')
     call apply_stopping(cfg)

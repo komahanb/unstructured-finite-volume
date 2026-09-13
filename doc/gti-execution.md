@@ -479,10 +479,79 @@ geometries are the branches of `select case (this % geometry)` in
 `history_depth`, `primary_degree`, `row_pattern`, `step_quadrature`,
 `stage_weight` and `edge_coefficient`; generalised-alpha, a Nystrom
 method or a multistep with another row pattern is a fifth branch in each
-of them and a constructor, which is R12's extension proof, not a
-registration by data. The startup of a multistep family is one
+of them and a constructor, not a registration by data. **This remains
+open**: R12 proved extensibility with a physical law and a second
+discretization use, not with a family geometry, so no geometry has been
+added through these contracts and the six branches stand as the cost of
+adding one. The startup of a multistep family is one
 registered family (`gti_chain % startup_family`, Crouzeix's three-stage
 tableau) and is not configurable by name.
+
+## Law extension
+
+A physical law is data of `gti_physics`: one Lagrangian over the state
+fields and one multiplier each, built from the fields, the design,
+constants, the four arithmetic operations, integer and real powers, and
+sin, cos, exp, log and sqrt. The residual is its stationarity in the
+first multiplier and each functional is the same Lagrangian at a zero
+multiplier, so both read one tuple. The radial oscillator
+`q'' + q - nu/q**3 = 0` was added that way, with `energy` and
+`square_integral` beside it, and `git diff --stat -- src` is empty
+across that slice: no library edit, no engine edit, no solver branch.
+
+The zero state is **not** assumed to lie in a statement's domain.
+`operation % defined_at_zero` declares it; an expression answers by a
+structural scan of its own graph, a residual by the conjunction over its
+rules. `minimizer % state` evaluates the constant part `A(0)` only where
+it is defined, and `matvec` - with `imbalance`, `block_diagonal` and
+`dense_matrix_of`, the operations of a linear solve - refuses a
+statement that has none. Before that, every law had to have a value at
+the zero state because the minimizer evaluated it there.
+
+Two limits the law extension measured, both open:
+
+- The initial tuple supplies the components below the highest and the
+  law closes the highest, `q''(0) = nu/q(0)**3 - q(0)` here, which
+  depends on the design. A family whose rows read the acceleration at
+  the initial instant - Adams-Moulton and Newmark, not the Runge-Kutta
+  stages and not the BDF rows - therefore carries a design rate the
+  derivative pass does not account for, and the reported design
+  derivative is **not** the derivative of the reported functional: at 81
+  instants the central difference of the printed adams2 square integral
+  over `nu` is 1.1891925 against the printed 1.17836909, and the
+  discrepancy halves with the step. The accuracy cases E11, E12 and E13
+  declare it with its measured first order. Van der Pol hides it, since
+  `q''(0) = nu (1 - q(0)**2) q'(0) - q(0)` does not depend on `nu` at
+  `q'(0) = 0`.
+- A law undefined at a point the solver visits stops the program inside
+  a `pure` function several frames below the residual, naming neither
+  the rule nor the point.
+
+## Geometry extension
+
+`spatial_geometry = circular` states the disc: a polar mesh whose
+angular coordinate is identified across the seam, whose outer ring meets
+the curved Neumann boundary `dq/dr = 0`, and whose centre is one
+polygonal cell that is its own coarse cell. It is stated through the
+same keys as the box and reaches `verify.sh` as the accuracy cases
+D01-D08, with `git diff --stat -- src` empty across those slices. What
+the disc measures, and does not:
+
+- The balance summed over every cell is zero for every field, to
+  1e-15 relative over 129, 513 and 2049 cells: an interior face is
+  counted twice with opposite signs and a boundary face has the zero
+  Neumann flux.
+- Against `kappa` times the laplacian of `(r^2 - a^2)^2` the fitted
+  balance at form degree 2 attains order 2 only on the centre cell
+  (1.99). The interior converges at 1.74 and the boundary ring at 1.33,
+  both declared limitations. At form degree 4 the polar fit is ill
+  conditioned, the interior error reading 4.2e+9.
+- The marched radial mode `J_0(z_1 r/a) cos(omega t)` nevertheless
+  converges at order 2 (2.02) under the fitted balance, one order above
+  the operator's own interior rate. Under the jet rows it converges at
+  0.38: the compact form at degree 2 fits the second derivatives from
+  axis-pure members over a neighbourhood the polar mesh does not align
+  with the axes.
 
 The older plan's Newmark, typed-field and continuous/discrete-domain
 phases are closed with the source/consumer/test matrix in

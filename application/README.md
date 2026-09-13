@@ -633,6 +633,29 @@ Lagrangian beside this one, built from the fields, the design,
 constants, the four arithmetic operations, integer and real powers,
 and sin, cos, exp, log, sqrt.
 
+**The radial oscillator.** `physics = radial_oscillator`,
+`state_degree = 2`, `design = nu`. The radial equation of the planar
+isotropic oscillator at angular momentum L, with nu = L^2, is a second
+Lagrangian beside van der Pol's, nonlinear through a negative integer
+power:
+
+    R(q, nu) = q'' + q - nu / q**3
+
+Its functionals are `energy`, F_E = int (q'^2/2 + q^2/2 + nu/(2 q^2))
+dt, and `square_integral`, F_2 = int q^2 dt. With q(0) = 1, q'(0) = 0
+the solution is q = sqrt(cos^2 t + nu sin^2 t), so the energy is
+(1 + nu)/2 at every instant, F_E = T (1 + nu)/2, dF_E/dnu = T/2,
+F_2 = (1 + nu) T/2 + (1 - nu) sin 2T/4 and dF_2/dnu = T/2 - sin 2T/4.
+At nu = 2 over [0, 2] with 321 uniform instants, bdf4 reads
+q(T) = 1.3515997164 against 1.3515997227, F_2 = 3.18920065853 against
+3.18920062383 and dF_2/dnu = 1.18920064584 against 1.18920062383;
+tangent against adjoint 4.3e-15. The accuracy cases E01-E13 and
+G01-G04 measure every family's order and the invariant's drift. The
+design derivative of a functional is first order for Adams-Moulton and
+Newmark, whose rows read the acceleration at the initial instant, whose
+design dependence the derivative pass omits: E11, E12 and E13 declare
+that limitation.
+
 **The Taylor-Green vortex.** `physics = taylor_green` states
 incompressible flow on the periodic box of side 2 pi as a Lagrangian
 over the velocity components and the pressure, one multiplier each:
@@ -996,6 +1019,30 @@ run at 12 x 6 x 6 and 16 x 8 x 8 cells; at 16 x 8 x 8 on the box the
 balance's boundary fits at form degree 2 are ill conditioned, an
 operator error of 8.6e+1 on the cells with one boundary face, while
 the jet rows converge, 4.7e-2 to 9.9e-3 from 8 x 4 x 4 to 16 x 8 x 8.
+**The disc.** `spatial_geometry = circular`, `spatial_extent = a b`,
+`spatial_counts = n1 n2` states the polar mesh of radius a: n1 - 1
+rings of n2 cells each around one polygonal centre cell, the angular
+coordinate identified across the seam, the outer ring against the
+curved Neumann boundary dq/dr = 0 (`config/disc.cfg`). `check =
+operator` compares the fitted balance with kappa times the laplacian of
+u = (r^2 - a^2)^2, whose laplacian is 16 r^2 - 8 a^2 and whose radial
+derivative vanishes at r = a, by cell class, and reports the balance
+summed over every cell, which is zero for every field. Over 9 x 16,
+17 x 32 and 33 x 64 cells the relative rms error reads 3.5e-2, 1.0e-2,
+2.7e-3 on the centre cell (order 2), 3.7e-2, 1.2e-2, 3.7e-3 in the
+interior (order 1.74) and 2.3e-1, 8.2e-2, 3.4e-2 on the boundary ring
+(order 1.33); the summed balance reads -6.9e-16, -3.8e-17, 5.8e-15
+relative to the sum of the magnitudes. `initial_field = mode` and
+`check = mode` state the radially symmetric Neumann mode
+J_0(z_1 r / a) cos(omega t), omega^2 = 1 + kappa (z_1/a)^2, with J_0,
+J_1 and the first zero z_1 = 3.8317059702075125 from their own series
+and Newton. Marched to T = 0.5 by dirk4 at ten steps the error reads
+4.8e-3, 1.2e-3, 3.0e-4, second order under the fitted balance; under
+the jet rows 3.8e-2, 2.2e-2, 1.7e-2, order 0.38, the compact form's
+axis-pure members not aligning with the polar neighbourhood. At form
+degree 4 the polar fit is ill conditioned, the interior operator error
+reading 4.2e+9.
+
 `export = paraview` names every component: q, qt, qtt along the
 instants, qx, qxx, qy, qyy, qz, qzz along space, a second field with
 its index after q.

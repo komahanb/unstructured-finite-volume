@@ -278,26 +278,46 @@ contains
 
     integer :: e, np, part_number, nwv, nwe
     type(token) :: whole_identity
+    character(len=250) :: message
 
     ! Validate the input arrays before reading endpoints or constructing
     ! any compressed index. Every edge has a tail in the vertex set;
     ! the documented boundary convention applies only to its head.
-    if (nv < 0) error stop 'stored_directed_graph: the vertex count is nonnegative'
+    if (nv < 0) then
+       write(message,'(a,i0)') 'stored_directed_graph: the vertex count must be nonnegative; nv = ', nv
+       error stop trim(message)
+    end if
     if (size(heads) /= size(tails)) then
-       error stop 'stored_directed_graph: head and tail arrays have equal extent'
+       write(message,'(a,i0,a,i0)') 'stored_directed_graph: head and tail arrays must have equal &
+            &extent; size(heads) = ', size(heads), ', size(tails) = ', size(tails)
+       error stop trim(message)
     end if
     if (any(tails < 1) .or. any(tails > nv)) then
-       error stop 'stored_directed_graph: every tail belongs to the vertex set'
+       write(message,'(a,i0,a,i0,a,i0)') 'stored_directed_graph: every tail must belong to the &
+            &vertex set 1..', nv, '; tails range from ', minval(tails), ' to ', maxval(tails)
+       error stop trim(message)
     end if
     if (present(vtags)) then
-       if (size(vtags) /= nv) error stop 'stored_directed_graph: one tag per vertex'
+       if (size(vtags) /= nv) then
+          write(message,'(a,i0,a,i0)') 'stored_directed_graph: one tag is required per vertex; &
+               &size(vtags) = ', size(vtags), ', nv = ', nv
+          error stop trim(message)
+       end if
     end if
     if (present(etags)) then
-       if (size(etags) /= size(tails)) error stop 'stored_directed_graph: one tag per edge'
+       if (size(etags) /= size(tails)) then
+          write(message,'(a,i0,a,i0)') 'stored_directed_graph: one tag is required per edge; &
+               &size(etags) = ', size(etags), ', size(tails) = ', size(tails)
+          error stop trim(message)
+       end if
     end if
 
     if (present(vglobal)) then
-       if (size(vglobal) /= nv) error stop 'stored_directed_graph: one global index per vertex'
+       if (size(vglobal) /= nv) then
+          write(message,'(a,i0,a,i0)') 'stored_directed_graph: one global index is required per &
+               &vertex; size(vglobal) = ', size(vglobal), ', nv = ', nv
+          error stop trim(message)
+       end if
        np = merge_count(num_parts, 1)
        part_number = merge_count(number, 1)
        nwv = merge_count(num_whole_vertices, nv)
@@ -305,58 +325,94 @@ contains
        if (present(whole_vertices)) then
           whole_identity = whole_vertices % id()
           if (.not. whole_identity % declared()) then
-             error stop 'stored_directed_graph: the whole vertex carrier is declared'
+             error stop 'stored_directed_graph: whole_vertices was passed but its identity is undeclared'
           end if
        else if (nwv /= nv) then
-          error stop 'stored_directed_graph: one vertex carrier has one extent'
+          write(message,'(a,i0,a,i0)') 'stored_directed_graph: the vertex carrier''s extent must &
+               &equal nv; num_whole_vertices = ', nwv, ', nv = ', nv
+          error stop trim(message)
        end if
        if (present(whole_edges)) then
           whole_identity = whole_edges % id()
           if (.not. whole_identity % declared()) then
-             error stop 'stored_directed_graph: the whole edge carrier is declared'
+             error stop 'stored_directed_graph: whole_edges was passed but its identity is undeclared'
           end if
        else if (nwe /= size(tails)) then
-          error stop 'stored_directed_graph: one edge carrier has one extent'
+          write(message,'(a,i0,a,i0)') 'stored_directed_graph: the edge carrier''s extent must &
+               &equal size(tails); num_whole_edges = ', nwe, ', size(tails) = ', size(tails)
+          error stop trim(message)
        end if
        if (np < 1 .or. part_number < 1 .or. part_number > np) then
-          error stop 'stored_directed_graph: the part number belongs to the set of parts'
+          write(message,'(a,i0,a,i0)') 'stored_directed_graph: the part number must lie in 1..np; &
+               &number = ', part_number, ', np = ', np
+          error stop trim(message)
        end if
        if (nwv < 0 .or. nwe < 0) then
-          error stop 'stored_directed_graph: whole carrier counts are nonnegative'
+          write(message,'(a,i0,a,i0)') 'stored_directed_graph: whole carrier counts must be &
+               &nonnegative; num_whole_vertices = ', nwv, ', num_whole_edges = ', nwe
+          error stop trim(message)
        end if
        if (any(vglobal < 1) .or. any(vglobal > nwv)) then
-          error stop 'stored_directed_graph: global vertices belong to the whole carrier'
+          write(message,'(a,i0,a,i0,a,i0)') 'stored_directed_graph: every global vertex index must &
+               &belong to the whole carrier 1..', nwv, '; vglobal ranges from ', minval(vglobal), &
+               & ' to ', maxval(vglobal)
+          error stop trim(message)
        end if
        if (.not. injective(vglobal)) then
-          error stop 'stored_directed_graph: global vertex indices are injective'
+          error stop 'stored_directed_graph: global vertex indices must be injective, but a value repeats'
        end if
        if (present(vowner)) then
-          if (size(vowner) /= nv) error stop 'stored_directed_graph: one owner per vertex'
+          if (size(vowner) /= nv) then
+             write(message,'(a,i0,a,i0)') 'stored_directed_graph: one owner is required per vertex; &
+                  &size(vowner) = ', size(vowner), ', nv = ', nv
+             error stop trim(message)
+          end if
           if (any(vowner < 1) .or. any(vowner > np)) then
-             error stop 'stored_directed_graph: vertex owners belong to the set of parts'
+             write(message,'(a,i0,a,i0,a,i0)') 'stored_directed_graph: every vertex owner must &
+                  &belong to the set of parts 1..', np, '; vowner ranges from ', minval(vowner), &
+                  & ' to ', maxval(vowner)
+             error stop trim(message)
           end if
        end if
        if (present(eglobal)) then
-          if (size(eglobal) /= size(tails)) error stop 'stored_directed_graph: one global index per edge'
+          if (size(eglobal) /= size(tails)) then
+             write(message,'(a,i0,a,i0)') 'stored_directed_graph: one global index is required &
+                  &per edge; size(eglobal) = ', size(eglobal), ', size(tails) = ', size(tails)
+             error stop trim(message)
+          end if
           if (any(eglobal < 1) .or. any(eglobal > nwe)) then
-             error stop 'stored_directed_graph: global edges belong to the whole carrier'
+             write(message,'(a,i0,a,i0,a,i0)') 'stored_directed_graph: every global edge index must &
+                  &belong to the whole carrier 1..', nwe, '; eglobal ranges from ', minval(eglobal), &
+                  & ' to ', maxval(eglobal)
+             error stop trim(message)
           end if
           if (.not. injective(eglobal)) then
-             error stop 'stored_directed_graph: global edge indices are injective'
+             error stop 'stored_directed_graph: global edge indices must be injective, but a value repeats'
           end if
        else if (size(tails) > nwe) then
-          error stop 'stored_directed_graph: global edges belong to the whole carrier'
+          write(message,'(a,i0,a,i0)') 'stored_directed_graph: with no eglobal, edges are numbered &
+               &by position, but size(tails) exceeds num_whole_edges; size(tails) = ', size(tails), &
+               & ', num_whole_edges = ', nwe
+          error stop trim(message)
        end if
        if (present(eowner)) then
-          if (size(eowner) /= size(tails)) error stop 'stored_directed_graph: one owner per edge'
+          if (size(eowner) /= size(tails)) then
+             write(message,'(a,i0,a,i0)') 'stored_directed_graph: one owner is required per edge; &
+                  &size(eowner) = ', size(eowner), ', size(tails) = ', size(tails)
+             error stop trim(message)
+          end if
           if (any(eowner < 1) .or. any(eowner > np)) then
-             error stop 'stored_directed_graph: edge owners belong to the set of parts'
+             write(message,'(a,i0,a,i0,a,i0)') 'stored_directed_graph: every edge owner must belong &
+                  &to the set of parts 1..', np, '; eowner ranges from ', minval(eowner), ' to ', &
+                  & maxval(eowner)
+             error stop trim(message)
           end if
        end if
     else if (present(vowner) .or. present(eglobal) .or. present(eowner) .or. &
          & present(num_parts) .or. present(whole_vertices) .or. present(whole_edges) .or. &
          & present(num_whole_vertices) .or. present(num_whole_edges)) then
-       error stop 'stored_directed_graph: a partition relation requires global vertex indices'
+       error stop 'stored_directed_graph: a partition argument (vowner, eglobal, eowner, num_parts, &
+            &whole_vertices, whole_edges, num_whole_vertices or num_whole_edges) was passed without vglobal'
     end if
 
     this % nv = nv
@@ -634,11 +690,14 @@ contains
     integer, allocatable :: table(:,:)
     logical :: acyclic
     integer :: direction, e, n
+    character(len=250) :: message
 
     direction = forward
     if (present(orientation)) direction = orientation
     if (direction /= forward .and. direction /= reverse) then
-       error stop 'stored_directed_graph: a loop runs forward or in reverse'
+       write(message,'(a,i0,a,i0,a,i0)') 'stored_directed_graph: a loop runs forward or in reverse; &
+            &orientation = ', direction, ' (forward = ', forward, ', reverse = ', reverse
+       error stop trim(message)
     end if
 
     allocate(table(2, this % ne))
@@ -657,7 +716,9 @@ contains
     adjacency = csr_relation('adjacency', this % vset, this % vset, table(:, 1:n), sets)
     call topological_order(adjacency, sets, order, acyclic)
     if (.not. acyclic) then
-       error stop 'stored_directed_graph: a graph with a cycle has no loop'
+       write(message,'(a,i0,a,i0,a)') 'stored_directed_graph: a loop requires an acyclic graph, but &
+            &this graph (', this % nv, ' vertices, ', this % ne, ' edges) has a cycle'
+       error stop trim(message)
     end if
 
   end function loop
@@ -678,8 +739,12 @@ contains
 
     class(stored_directed_graph), intent(in) :: this
 
+    character(len=250) :: message
+
     if (this % num_without_head > 0) then
-       error stop 'stored_directed_graph: a graph with an edge without a head has no transpose'
+       write(message,'(a,i0,a)') 'stored_directed_graph: a graph with an edge without a head has &
+            &no transpose; ', this % num_without_head, ' edge(s) lack a head'
+       error stop trim(message)
     end if
 
     transposed_graph = this
@@ -698,8 +763,12 @@ contains
 
     class(stored_directed_graph), intent(inout) :: this
 
+    character(len=250) :: message
+
     if (this % num_without_head > 0) then
-       error stop 'stored_directed_graph: a graph with an edge without a head has no transpose'
+       write(message,'(a,i0,a)') 'stored_directed_graph: a graph with an edge without a head has &
+            &no transpose; ', this % num_without_head, ' edge(s) lack a head'
+       error stop trim(message)
     end if
 
     this % reversed = .not. this % reversed

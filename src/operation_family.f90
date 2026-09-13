@@ -250,32 +250,59 @@ contains
   ! the measure dt_1 = 0. A staged family integrates over its stages
   ! with the tableau weights b, not over instants, and stops the
   ! program here. An instant outside the block stops the program.
+  !
+  ! The complete rule keeps the full node count at every step after
+  ! the first: at a step k with fewer than n instants behind it the
+  ! nodes are the instants 1 .. n, those ahead of the step included,
+  ! and the weights are the integrals over [t_(k-1), t_k] of the
+  ! Lagrange basis through them; the rule is then of order n at every
+  ! step. It is the quadrature of an enriched functional (the
+  ! functional-error estimator), never of the family's own F_h. The
+  ! instant each weight multiplies is returned in instant, ordered k,
+  ! k - 1, .., 1, then k + 1, .., n.
   !===================================================================!
 
-  pure subroutine family_step_quadrature(this, dt, k, weight)
+  pure subroutine family_step_quadrature(this, dt, k, weight, complete, instant)
 
     class(family)         , intent(in) :: this
     type(derivative_terms), intent(in) :: dt(:)
     integer               , intent(in) :: k
     type(derivative_terms), allocatable, intent(out) :: weight(:)
+    logical               , intent(in) , optional :: complete
+    integer  , allocatable, intent(out), optional :: instant(:)
 
-    integer :: num_nodes, j
+    type(derivative_terms), allocatable :: u(:)
+    integer :: num_nodes, n, j
+    logical :: ahead
 
     if (k < 1 .or. k > size(dt)) then
        error stop 'operation_family: a quadrature is evaluated at an instant of the block'
     end if
     select case (this % geometry)
     case (FAMILY_ADAMS, FAMILY_BDF)
-       num_nodes = min(this % order, k)
+       n = this % order
     case (FAMILY_NEWMARK)
-       num_nodes = min(2, k)
+       n = 2
     case default
        error stop 'operation_family: a staged family integrates over its stages by the tableau weights'
     end select
+    ahead = .false.
+    if (present(complete)) ahead = complete .and. k > 1 .and. k < n
+    num_nodes = min(n, k)
+    if (ahead) num_nodes = n
+    if (num_nodes > size(dt)) then
+       error stop 'operation_family: a complete rule reads instants of the block'
+    end if
+    if (ahead) then
+       u = nodes_ahead(dt, k, n)
+    else
+       u = nodes(dt, k, num_nodes)
+    end if
     allocate(weight(num_nodes))
     do j = 1, num_nodes
-       weight(j) = integral_over_step(nodes(dt, k, num_nodes), j - 1)
+       weight(j) = integral_over_step(u, j - 1)
     end do
+    if (present(instant)) instant = [(k - j + 1, j = 1, min(n, k)), (j, j = k + 1, num_nodes)]
 
   end subroutine family_step_quadrature
 
@@ -575,6 +602,36 @@ contains
     end do
 
   end function nodes
+
+  !===================================================================!
+  ! The n Lagrange nodes at the instants 1 .. n of a step k below n,
+  ! in the order of the complete rule (k, k - 1, .., 1, k + 1, .., n),
+  ! scaled by dt(k) so that the step just taken is [-1, 0]: the
+  ! instants behind by the backward recurrence of nodes, those ahead
+  ! by the steps following k. A step read that is not positive stops
+  ! the program.
+  !===================================================================!
+
+  pure function nodes_ahead(dt, k, n) result(u)
+
+    type(derivative_terms), intent(in) :: dt(:)
+    integer               , intent(in) :: k, n
+    type(derivative_terms) :: u(0:n-1)
+
+    integer :: j
+
+    do j = 2, n
+       if (value(dt(j)) <= 0.0_dp) then
+          error stop 'operation_family: every time step read is positive'
+       end if
+    end do
+    u(0:k-1) = nodes(dt, k, k)
+    u(k) = derivative_terms(0.0_dp, dt(k)) + dt(k + 1) / dt(k)
+    do j = k + 2, n
+       u(j - 1) = u(j - 2) + dt(j) / dt(k)
+    end do
+
+  end function nodes_ahead
 
   !===================================================================!
   ! The slope at zero of the j-th Lagrange basis function through the

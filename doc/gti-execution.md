@@ -493,6 +493,69 @@ staged step, fields read their extent from the graph that names their
 support, and one continuous law placed on two point graphs keeps two
 discrete-domain identities.
 
+## Functional discretization error
+
+`gti_chain % functional_error` estimates F(Q_exact) - F_h(Q_h) for every
+functional of a marched chain from the retained coarse state alone: an
+enriched chain of blocks (`enriched_family`: the family of order p + 1 on
+the same instants, a staged family by its arriving-instant jets, the
+identity prolongation of the instant jets; per configured block a block
+of the coarse family over its first p + 1 instants, whose costate
+transfers the junction sensitivity into the block before, then the
+enriched block; the history of each read from the coarse chain by
+`transferred`) is built by `block_from` at the coarse state, no primal
+solve is performed, the enriched costates lambda+ are solved in descending
+block order by `solve_linear` transposed at the frozen state with each
+child's costate added on the transfer rows as the reverse pass does, and
+the estimate is eta = - lambda+^T R+(P Q_h) + [F+(P Q_h) - F_h(Q_h)], the
+residual part per step (the rows between two arriving instants) and the
+quadrature part per step (the enriched family's complete rule against the
+coarse rule). Class: asymptotically exact, I = eta / (F - F_h) = 1 +
+O(h^(min(p+, 2p) - p)), order 1 in |I - 1| for p+ = p + 1; not a bound. The
+`functional_error_estimate` carries the estimate, both parts, the scale
+S = sum |w_k f(Q_k)|, F_h and F+(P Q_h), the largest fixed-row residual
+of the enriched blocks (the transfer identity, zero under a consistent
+prolongation) and the indicators by step. The coarse chain's costates are
+not read: the enriched rows are differently scaled equations (a BDF row
+against an Adams row), so no prolongation of lambda_h onto them exists;
+the estimator's costates are its own, solved once per functional. The
+application prints the estimate with `check = functional_error` and the
+indicators with `indicators`; `test/accuracy-contract` measures the
+effectivity and the localization (G01-G12, X13-X18).
+
+On a spatial field the same enrichment in time estimates the temporal
+error against the semi-discrete mode energy on the fixed mesh (G13);
+enrichment in space (a refined mesh with a prolongation exact to O(H^6))
+and a localized spatial error are not implemented and are declared
+unsupported.
+
+With `with_derivative` the same object carries the estimate of the error
+of the design derivative G_h = dF_h/dnu, the order-1 Lagrangian:
+eta_G = - lambda+'^T R+(P Q_h) + [F+_nu - lambda+^T R+_nu](P Q_h) - G_h,
+the costate rate lambda+' from J+^T lambda+' = d/dnu[F+_Q - J+^T lambda+]
+along the prolonged coarse tangent P w_h (`forward_block` on the coarse
+chain, `costate_rows` at the multiset [1]) and the bracket from
+`lagrangian_term` at s = [], j = 1 on the enriched chain. It is the
+derivative of an asymptotically exact estimate, measured at order 1 in
+|I - 1| with its estimate at the order of G_h - G (G14, G15); no per-step
+indicator of a derivative functional is produced. The near-zero case is
+the functional `mean` = int q dt over one period: the criterion divides
+by S, never by |F_h| (G16), and an identically zero integrand gives
+S = 0, lambda+ = 0 and eta = 0 exactly (G17).
+
+`functional_error_partition` drives an adaptive grid by the estimate:
+accept at |eta| <= tol S, otherwise divide every step with |eta_k| >
+tol S / N into ceiling(h_k / h_k') equal steps, h_k' = h_k (tol S /
+(N |eta_k|))^(1/(p+1)). It returns an `adaptation_outcome`
+(`ADAPTATION_MET`, `ADAPTATION_UNMET` when the next grid would exceed the
+instant limit, `ADAPTATION_NONFINITE`), never an accepted grid at
+exhaustion; `grid_stationary_partition` takes the same limit and returns
+the same outcome (or stops the program without an outcome argument). The
+application reports either failure with nonzero status
+(`test/gti-contract` modes `functional_error`, `adaptation_unmet`, cases
+`dirk_functional_error`, `budget_unmet`; `test/accuracy-contract` A01,
+A02, R14).
+
 ## Elimination storage
 
 An `elimination` over retained unknowns K and eliminated unknowns E states

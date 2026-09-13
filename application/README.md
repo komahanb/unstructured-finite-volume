@@ -862,7 +862,8 @@ separately, by the scheme. `grid` is
 |---|---|
 | `uniform` | h_k = T/(n-1), the instants equidistant |
 | `random` | a reproducible drawn spacing from `seed`, each weight within [1/2, 3/2] of uniform |
-| `adaptive` | the steps a march of one configured scheme discovers under `adaptive_check`, then frozen; `instants` is set by the result |
+| `adaptive` | the steps a march of one configured scheme discovers under `adaptive_check`, then frozen; `instants` is set by the result (the seed of `functional_error`); every loop is bounded by `adaptation_instants` |
+| `coarsened` | the uniform grid of `instants` instants with the steps inside `coarsened_interval = "a b"` merged in pairs, then frozen; the grid of the localized functional-error case |
 
 with n = `instants`. An adaptive grid is discovered for one scheme:
 `families` names exactly one family, and the scheme is that family at
@@ -884,7 +885,25 @@ F(Q_exact) - F_h(Q_h) and bounds nothing about it: implicit midpoint on
 the oscillator is stationary on every uniform grid with E_h - 1 = -1/65
 at h = 1/4. The default of `grid_stationarity_tolerance` is 1e-12, the
 default of `tolerance`, which the criterion read before it had a key of
-its own. The former word `goal_oriented` is refused. When `designs` names `grid`, the weights h_k join
+its own. The former word `goal_oriented` is refused. `adaptive_check =
+functional_error` accepts a grid when the estimate eta of the energy
+functional's discretization error (`check = functional_error` below)
+satisfies |eta| <= `functional_error_tolerance` x S, S = sum |w_k f(Q_k)|
+(relative) or 1 (absolute); from the uniform seed of `instants` instants
+each rejected grid is refined by equidistribution: every step with
+|eta_k| > tol S / N is divided into ceiling(h_k / h_k') equal steps,
+h_k' = h_k (tol S / (N |eta_k|))^(1/(p+1)), p the family's declared order
+(implicit midpoint from 21 instants at 1e-3: the seed's 2.5e-3 rejects,
+every step is halved once, the 40-step grid has E - E_h = 6.2e-4;
+`test/gti-contract` case `dirk_functional_error`, `test/accuracy-contract`
+A01, A02). Every adaptive loop is bounded by `adaptation_instants`, the
+largest instant count a grid may reach (default 1281, two uniform
+halvings of the finest required grid of the accuracy contract): a next
+grid beyond it is not marched, the outcome `ADAPTATION_UNMET` is printed
+with the last grid's estimate, scale and instant count, and the program
+stops with nonzero status; a non-finite estimate is `ADAPTATION_NONFINITE`
+and stops likewise. No grid is accepted at exhaustion, under
+`grid_stationarity` either (its former fifty-attempt stop is deleted). When `designs` names `grid`, the weights h_k join
 nu as designs and the table reports df/dh beside df/dnu, together with
 the identity sum over k of h_k df/dh_k = 0, the steps being
 homogeneous of degree zero in their weights. The same map carries a
@@ -929,7 +948,7 @@ by a stage block over steps refined by `startup_refinement`, so every
 row integrates the same initial-value problem.
 
 **The functionals and their derivatives.**
-`functionals = energy dissipation`, `designs = physics [grid]`,
+`functionals = energy dissipation | mean`, `designs = physics [grid]`,
 `max_derivative_degree = m`. The derivatives are computed by a forward
 expansion in the design; with several designs the tangent and adjoint
 passes are chosen by counting sources against sinks - the tangent
@@ -946,6 +965,107 @@ edges. `check` names a comparison against a known quantity:
 | `ode` | a field at kappa = 0 equals one node's ordinary equation |
 | `mode` | a rectangle at nu = 0 against the separated solution of the heat equation |
 | `operator` | the fitted balance against kappa times the laplacian of the mode |
+| `functional_error` | the discretization-error estimate eta of every functional (below); `indicators` adds one line per step |
+
+**The functional discretization error.** `check = functional_error`
+estimates F(Q_exact) - F_h(Q_h) for every functional of a row (`gti_chain
+% functional_error`). With the discrete problem R(Q) = 0, the Lagrangian
+L = F_h - lambda^T R, an enriched problem R+ on the same instants with
+functional F+, the identity prolongation P of the instant jets and the
+enriched costate J+(P Q_h)^T lambda+ = dF+/dQ(P Q_h)^T,
+
+    F(Q_exact) - F_h(Q_h) = [F - F+(Q+)] + eta_R + eta_Q + O(|Q+ - P Q_h|^2)
+    eta_R = - lambda+^T R+(P Q_h),   eta_Q = F+(P Q_h) - F_h(Q_h),
+
+and the estimate is eta = eta_R + eta_Q, printed with its two parts, the
+scale S = sum_k |w_k f(Q_k)| of the relative criterion |eta| <= tol S
+(S >= |F_h|, and S does not cancel where F_h does), the largest fixed-row
+residual of the enriched blocks (zero to roundoff under the identity
+prolongation) and the enriched family. Class: with p the order of F_h on
+the case and p+ that of F+, the effectivity I = eta / (F - F_h) is 1 +
+O(h^(min(p+, 2p) - p)): an asymptotically exact estimator, not a bound;
+no inequality with a known constant is proved and none is claimed. The
+enrichment (`gti_driver % enriched_family`) is the family of order p + 1
+on the same grid: bdf p -> bdf p+1 (p <= 5), adams p -> adams p+1,
+newmark -> adams 3, and a staged family (dirk p, alexander 2) -> bdf p+1
+on its arriving instants, whose jets satisfy the law (the stages between
+them are not read). The enriched chain contains, for every configured block,
+a block of the coarse family over the block's first p + 1 instants (its
+coarse rows are satisfied at Q_h, so it contributes no residual; its
+costate transfers the sensitivity of the later functional to those
+instants into the block before, the propagated error of a chain junction)
+followed by the enriched block with those instants fixed, so the coarse
+block's first own instant stays at its local order p + 1 and |I - 1|
+converges at order 1 (measured 0.83, 0.91, 0.95, 0.98 for bdf1, 0.86,
+0.94, 0.97, 0.985 for bdf3, 0.89, 0.95, 0.975, 0.987 for adams3, 1.06,
+1.04, 1.02, 1.01 for Fox-Goodwin Newmark, 1.15, 1.09, 1.05, 1.02 for
+implicit midpoint, 0.75, 0.85, 0.92, 0.96 for dirk3, 1.08, 1.03, 1.01,
+1.006 for dirk4, 0.93, 0.95, 0.97, 0.985 for the chain adams3-dirk4, 1.21,
+1.07, 1.03, 1.015 for dirk4-bdf4-adams4, instants 21 to 161;
+`test/accuracy-contract` G01-G04, G06-G12; the 9-instant counterexample
+of `test/gti-contract`, whose quadrature part is 1 - 64/65 exactly).
+Without the coarse-family block a chain's estimate loses the part of the
+junction sensitivity that the extra fixed instants hold (effectivities
+0.5 for adams3-dirk4 and 0.2 for dirk3-adams3 were measured that way).
+The transfer identity, the fixed-row residual of every enriched block at
+P Q_h, is returned and checked at zero within gamma_N |Q| on every row.
+The enriched functional integrates every step with the enriched family's
+complete rule (`family_step_quadrature(complete=.true.)`: the full node
+count at the first steps, nodes ahead of the step), so the coarse rule's
+degraded first steps enter eta_Q exactly. Where p+ = p the estimate is a
+heuristic: the BDF-2 energy (order 3 by superconvergence) estimated by
+BDF-3 has I -> 2, the BDF-4 energy (order 5) by BDF-5 has I between 1.3
+and 1.5 (exploratory X13, X14). The startup block of a multistep family
+is rebuilt with its own family at the coarse state, where its residual is
+at the solver tolerance: its history error is not estimated. The
+indicators eta_k (one per step, summing to eta) localize the error: on
+the grid `coarsened` the sum of |eta_k| over the merged steps against the
+same sum on the uniform grid tends to 2^p (G05, log2 measured 2.50, 2.77,
+2.89 for bdf3 at 41, 81, 161 against 3). A chain whose block is BDF-2 is
+a heuristic for the same reason (X17, X18). On a spatial field the same
+enrichment in time estimates the temporal part of the error on the fixed
+mesh: against the semi-discrete mode energy (printed with the `mode`
+check under `functional_error`, omega_h from the discrete operator, of
+which the mode is an eigenvector on the uniform periodic box), dirk3 by
+bdf4 on the 16 x 16 mode reaches effectivities 0.38, 0.65, 0.81, 0.90 on
+6, 11, 21, 41 instants (order 1; G13) and bdf3 by bdf4 0.37, 0.72, 0.88,
+0.94 (X19); the spatial part of the error (mesh n -> 2n, enrichment B in
+space) is not estimated: the prolongation of cell values onto the refined
+mesh must be exact to O(H^6) for the fine Laplacian of P Q_h to fall
+below the O(H^2) truncation error, and no such tensor interpolant is
+implemented; a localized spatial error is not supported either (uniform
+periodic box only).
+
+**The derivative functional.** With `max_derivative_degree >= 1` the same
+line is printed for G_h = dF_h/dnu, the order-1 Lagrangian. The coarse
+costate has no prolongation onto the enriched rows (a BDF row and an
+Adams row are differently scaled equations), so the estimate of G - G_h
+is the derivative of the estimate: with eta(nu) = L+(P Q_h(nu),
+lambda+(nu)) - F_h(Q_h(nu)) and L+_Q = 0 by the costate equation,
+
+    eta_G = - lambda+'^T R+(P Q_h) + [F+_nu - lambda+^T R+_nu](P Q_h) - G_h,
+
+the costate rate lambda+' solving J+^T lambda+' = d/dnu[F+_Q - J+^T
+lambda+] along the prolonged coarse tangent P w_h, and the bracket the
+order-1 Lagrangian on the enriched chain. It is the derivative of an
+asymptotically exact estimate: measured effectivities 0.951, 0.985,
+0.995, 0.998, 0.9991 for dE/dnu and 0.832, 0.922, 0.963, 0.982, 0.991
+for dD/dnu (bdf3 by bdf4, instants 21 to 321), |I - 1| at order 1 with
+the estimates at order 3 (G14, G15). No per-step indicator of a
+derivative functional is produced, and adaptation marks by the value
+functional.
+
+**The near-zero functional.** `functionals = mean` integrates int q dt,
+zero by cancellation over one period. The criterion divides by S, never
+by |F_h|: S = sum_k |w_k f(Q_k)| stays finite where F_h cancels, and it
+tends to int |f| dt exactly where the rule's weights are non-negative
+(BDF-2: measured 3.877, 3.970, 3.993, 3.998 against int |q| = 4 at
+order 2), while a rule with a negative weight keeps its own limit (the
+three-instant rule of BDF-3 has weights (-1, 8, 5)/12, so S tends to
+7/6 times int |f|, 4.66 against 4; G16). Where the integrand vanishes
+identically, S = 0, lambda+ = 0 and eta = 0 exactly: the dissipation at
+nu = 0 meets the criterion without dividing by a functional value
+(G17).
 
 **The solvers.** Newton drives every block; `linear_solver` is
 `direct` or `iterative` (GMRES), refined by `assembly`, `storage`,

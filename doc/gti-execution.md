@@ -49,7 +49,10 @@ arguments read before applying it; the rule is not stored in the pairing.
 `released_at` returns only the data whose final reader is that completed
 step; `expired_at` adds the data the step's vertex writes that no rule
 reads, the one lifetime statement the execution and the derivative passes
-read. Pairing with new data resets the position. Replacing or clearing one
+read. Pairing with new data starts the position at zero, or at the completed
+position the caller names when the branch stores the data `live_after` that
+position (written at or before it, read beyond it), which is the driver's
+restart state. Replacing or clearing one
 rule changes neither the immutable dependency graph nor its cached order.
 
 Primal rules borrow pointers into their execution only during `advance_with`,
@@ -78,12 +81,70 @@ application's `chain_execution`, which reads the library's driver for its
 order, its step and its lifetimes and states no schedule of its own. Postprocessed forward derivatives use
 the same release intervals for tangent towers.
 
-Reverse derivatives retain primal state, tangent towers and lower-order
-costates because higher derivatives and the final Lagrangian evaluation
-still read them. Their storage grows with the horizon. The reported Taylor
-storage pairs count maximum live and total allocated numerical entries in
-the specified state/tower arrays; they do not measure total process memory,
-graph metadata, or temporary solver storage.
+Reverse derivatives are solved block-outer, order-inner in the transposed
+order: at a block the costates of every order, multiset and functional are
+solved in sequence, order k reading the block's own lower orders and the
+child costates the bindings supply, and the block's Lagrangian terms are
+evaluated at once from its state, tower and costates. The costates leave
+the block as one datum on its unknown domain, released by the transposed
+driver after the final predecessor read; the terms are stored per block
+and summed ascending afterwards, so the tables equal the order-outer sums
+bitwise. The Leibniz parts are per-block sums added ascending, no longer one
+running sum over the rows of all blocks.
+
+## Bounded reverse storage
+
+The restart state of a completed position p of the forward traversal is
+R_p = { (S_e, W_e) : e in `live_after`(p) }, the states and towers of the
+blocks written at or before p and read beyond it; with the immutable rules,
+expansion and configuration it recomputes every later block bitwise (Newton
+starts from the fixed values, primal rows re-factorise at version zero, a
+recomputed tower is solved under a version of its own so that each costate solve
+reads the factors of its own tower only where the retained pass does, the
+last block). `chain_derivative` and `derivative` read the solver context's
+`reverse_entries` (application key `reverse_entries`, default `huge(1)`):
+the largest sum of the live entries of five accounts - states, towers,
+costates, restart states and per-block Lagrangian terms - returned as the
+`derivative_storage` record with the schedule's quantities. With L the
+largest restart state, F_max the largest block's forward entries, the window
+the largest live costate data during a step with that step's own, and the
+terms N nf nd M (2^(top+1) + top + 2) declared for the Lagrangian terms and
+Leibniz parts whether or not the parts are requested, retention stores
+sum F + window + terms; c stored restart states give
+peak <= (c + 1) L + F_max + window + terms, and the limit admits
+c = floor((limit - L - F_max - window - terms) / L), c = 0 recomputing every
+block from the initial state; a limit at or above retention stores
+everything, one below min(retention, the bound at c = 0) is refused with the
+accounts before any tower is solved. The schedule is the recursion
+`reversed(first, last, c)`: t(n, 0) = n (n + 1) / 2 forward evaluations,
+t(n, c) = min over m of m + t(n - m, c - 1) + t(m - 1, c), a restart state
+stored after block m carrying that block's own forward data. The bound
+excludes the blocks' rows and rules, the expansion, the driver's copies of
+the data it passes and the solvers' temporaries. Streamed Taylor storage
+pairs count maximum live and total entries of the tower and state accounts.
+
+A reverse derivative over a bounded primal is requested at `initialize`
+(`functionals`, `derivative_order`, `pass_kind = reverse_pass`, optionally
+`designs`, the leading designs of the tower), as the Taylor mode is. The
+block sizes are read from the expansion before any block is solved
+(`block_unknowns`), so the schedule is fixed at initialization: the march
+solves each block's tower to top = order - 1 with the block, takes the
+functional values, stores the restart state - states and towers of the
+blocks live after the position - at the positions of the recursion's right
+descent, retains the final block (every block under retention) and releases
+everything else at `expired_at`. `derivative(reverse_pass, the same order
+and functional count)` resumes the recursion with the forward driver paired
+at the final position; a block recomputed is the execution's own block rule
+applied again, the driver's data branch restored with the live states, so
+the Newton solves of recomputation are counted by the tally beside the
+tower solves; the costates read the versions of the first evaluation. A
+later `derivative` finds no restart state stored and recomputes from the
+initial state within the same bound. `take_results` of such an execution
+returns no Taylor table. The streamed tables equal the retained post-hoc
+pass bitwise (`test/gti-execution`; `test/graph-benchmark` `horizon`'s
+`reverse` mode and `scaling.py`'s `reverse` series record the accounts, the
+extra solves against retention, the peak resident size and the tables of
+every restart count, equal across counts to 17 digits).
 
 Periodic and event closure remain mathematical residual constraints. The
 execution graph remains acyclic.
@@ -138,8 +199,9 @@ executions or expansions is a gfortran 15.2 internal compiler error
 Interleaving is supported, and independent concurrent executions on the
 threads of one process are certified under the conditions of
 "Concurrent executions" below. Simultaneous blocks inside one dependent
-trajectory, MPI or coarray images and device kernels are not. Bounded
-reverse-memory algorithms remain separate architectural work.
+trajectory, MPI or coarray images and device kernels are not. Reverse
+storage is bounded by the schedule of "Bounded reverse storage" above.
+Periodic or event closure remains separate architectural work.
 
 ## Accounting
 

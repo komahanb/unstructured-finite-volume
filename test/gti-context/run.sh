@@ -32,3 +32,37 @@ if ! awk '/initial state, consistent/ {matched = ($4 == 1 && $5 == 0 && $6 == 0)
     exit 1
 fi
 echo 'PASS: the configured stopping rule applies before the initial consistency solve'
+# The reverse storage limit (reverse_entries): a limit below one entry is
+# refused where it is set; a limit below the working set of one
+# recomputation is refused with the accounts before any tower is solved;
+# a limit at retention runs the reverse pass, agreeing with the forward.
+reverse_case() {
+    (cd "$root/application" && ./graph_time_integrator --families=dirk --max_discretization_order=3 \
+        --max_derivative_degree=1 --instants=13 --time_duration=1 --grid=uniform \
+        --chain="dirk:3 dirk:3 dirk:3 dirk:3" --functionals="energy dissipation" --check=passes "$@")
+}
+if reverse_case --reverse_entries=0 > "$work/reverse-zero.log" 2>&1 || \
+    ! grep -Fq 'gti_sweeps: the reverse storage limit is one entry at least' "$work/reverse-zero.log"; then
+    cat "$work/reverse-zero.log"
+    echo 'FAIL: a reverse storage limit below one entry was accepted'
+    exit 1
+fi
+if reverse_case --reverse_entries=1 > "$work/reverse-one.log" 2>&1 || \
+    ! grep -Fq 'gti_chain: the reverse storage limit admits the working set of one recomputation at least' "$work/reverse-one.log" || \
+    ! grep -Eq 'reverse storage limit 1 entries; recomputation requires [0-9]+ \(restart state [0-9]+, leaf [0-9]+, costate window [0-9]+, Lagrangian terms [0-9]+\); retention requires [0-9]+' "$work/reverse-one.log"; then
+    cat "$work/reverse-one.log"
+    echo 'FAIL: an insufficient reverse storage limit was accepted or reported without its accounts'
+    exit 1
+fi
+# above the retention of every row (the rows differ in size; the smallest
+# admissible limit of one chain is exercised by test/gti-execution): the
+# limit is shown among the settings and every row's passes agree
+if ! reverse_case --reverse_entries=100000 > "$work/reverse-retained.log" 2>&1 || \
+    ! grep -Fq '   reverse entries          100000' "$work/reverse-retained.log" || \
+    ! awk '/tangent against adjoint over the table, relative/ {rows++; if ($8 + 0.0 > 1.0e-12) failed++} \
+        END {exit !(rows >= 2 && failed == 0)}' "$work/reverse-retained.log"; then
+    cat "$work/reverse-retained.log"
+    echo 'FAIL: the reverse pass under a limit above retention did not agree with the forward pass'
+    exit 1
+fi
+echo 'PASS: the reverse storage limit is refused below one entry and below one recomputation, and applies above retention'

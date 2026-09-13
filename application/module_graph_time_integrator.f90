@@ -91,6 +91,14 @@ module gti_configuration
      ! as a failed solve.
      integer           :: elimination_entries = huge(1)
 
+     ! The storage limit of a reverse derivative pass, in entries: the
+     ! largest sum of its live states, towers, costates, restart states
+     ! and per-block Lagrangian terms. The default retains every block;
+     ! a smaller limit recomputes blocks from stored restart states,
+     ! and one below the working set of one recomputation is refused
+     ! before any tower is solved.
+     integer           :: reverse_entries = huge(1)
+
      ! The seed of each instant's Newton solve in a sequential sweep:
      ! the instant before, its stored jet along time shifted over the
      ! step to this order, the Taylor polynomial of the state in time
@@ -293,6 +301,8 @@ contains
        cfg % elimination = value
     case ('elimination_entries')
        read(value, *) cfg % elimination_entries
+    case ('reverse_entries')
+       read(value, *) cfg % reverse_entries
     case ('predictor_order')
        read(value, *) cfg % predictor_order
     case ('storage')
@@ -456,6 +466,9 @@ contains
     write(*,'(a,a)')       '   rows                     ', trim(cfg % rows)
     write(*,'(a,a)')       '   elimination              ', trim(cfg % elimination)
     write(*,'(a,i0)')      '   elimination entries      ', cfg % elimination_entries
+    if (cfg % reverse_entries /= huge(1)) then
+       write(*,'(a,i0)')   '   reverse entries          ', cfg % reverse_entries
+    end if
     write(*,'(a,i0)')      '   predictor order          ', cfg % predictor_order
     write(*,'(a,a)')       '   storage                  ', trim(cfg % storage)
     write(*,'(a,l1)')      '   multigrid                ', cfg % multigrid
@@ -905,6 +918,9 @@ module gti_sweeps
      logical :: rows_in_time  = .true.
      character(len=16) :: elimination_kind = 'symbolic'
      integer           :: elimination_entries = huge(1)
+     ! the storage of a reverse derivative pass, in entries: states,
+     ! towers, costates, restart states and per-block Lagrangian terms
+     integer           :: reverse_entries = huge(1)
      integer           :: taylor_order = 0
      integer           :: jacobian_product_order = 1
      character(len=16) :: storage_kind  = 'dense'
@@ -929,6 +945,8 @@ module gti_sweeps
      procedure :: set_rows
      procedure :: set_elimination
      procedure :: set_storage_limit
+     procedure :: set_reverse_limit
+     procedure :: reverse_limit
      procedure :: spatial_rows
      procedure :: eliminated_components
      procedure :: set_predictor_order
@@ -1092,6 +1110,25 @@ contains
     this % elimination_entries = entries
     call this % clear_inner()
   end subroutine set_storage_limit
+  !===================================================================!
+  ! The storage of a reverse derivative pass, in entries: the largest
+  ! sum of the live states, towers, costates, restart states and
+  ! per-block Lagrangian terms; the pass chooses the checkpoint count
+  ! the limit admits and refuses a limit below one checkpoint.
+  ! Invalid input: a limit below one entry.
+  !===================================================================!
+  subroutine set_reverse_limit(this, entries)
+    class(solver_context), intent(inout) :: this
+    integer, intent(in) :: entries
+    if (entries < 1) then
+       error stop 'gti_sweeps: the reverse storage limit is one entry at least'
+    end if
+    this % reverse_entries = entries
+  end subroutine set_reverse_limit
+  pure integer function reverse_limit(this)
+    class(solver_context), intent(in) :: this
+    reverse_limit = this % reverse_entries
+  end function reverse_limit
   subroutine set_elimination(this, name)
     class(solver_context), intent(inout) :: this
     character(len=*), intent(in) :: name
@@ -1450,6 +1487,7 @@ contains
     other % rows_in_time = this % rows_in_time
     other % elimination_kind = this % elimination_kind
     other % elimination_entries = this % elimination_entries
+    other % reverse_entries = this % reverse_entries
     other % taylor_order = this % taylor_order
     other % jacobian_product_order = this % jacobian_product_order
     other % storage_kind = this % storage_kind
@@ -2902,7 +2940,7 @@ module gti_march
   end type march_context
   private
   public :: solved
-  public :: block_from, instants_at_of
+  public :: block_from, instants_at_of, block_unknowns
   public :: unknown, consistent_states, frozen_inputs, spatial_components_of
   public :: march_context
   public :: consistent_state
@@ -3221,7 +3259,7 @@ contains
     real(dp)              , intent(in)  :: fixed(:)
     type(block_residual)  , intent(out) :: rows
     integer, allocatable  , intent(out) :: instants_at(:)
-    type(graph), pointer :: horizon, block, slice, moment_node, component, below
+    type(graph), pointer :: block, slice, moment_node, component, below
     type(matrix_scheme_connectivity), allocatable :: connectivity(:)
     type(block_embedding) :: embedding
     type(continuous_domain) :: continuous
@@ -3246,18 +3284,9 @@ contains
     nd     = continuous % equation_degree() + 1
     stride = continuous % num_components()
     layout = tuple_layout(physics)
-    horizon => level_member(level_member(tower % node(tower % root()), 1), 1)
-    block   => level_member(horizon, b)
-    n       = level_num_members(block)
+    call block_moments(tower, b, scheme, nd, stride, block, n, staged, m, width, members)
     call tower % value_of(block, dt)
-    staged  = marches_by_stages(scheme, nd)
     s       = scheme % num_stages()
-    m     = tower % extent_of(level_member(first_moment(block, staged), 1))
-    width = stride * m
-    allocate(members(n))
-    do k = 1, n
-       members(k) = merge(level_num_members(level_member(block, k)), 1, staged)
-    end do
     moments = sum(members)
     allocate(slice_of(moments), member_of(moments), point(moments))
     ! every rule is evaluated at every stage and at every arriving
@@ -3375,6 +3404,54 @@ contains
     end if
     instants_at = instants_at_of(tower, b, scheme, physics)
   end subroutine block_from
+  !===================================================================!
+  ! THE MOMENTS OF ONE BLOCK OF THE EXPANSION: its node, its instant
+  ! count n, whether its family marches by stages, the point count m
+  ! of an instant, the width stride m of an instant and the members
+  ! (stages and arriving instant, or the instant alone) of each of its
+  ! instants. Read from the immutable expansion, so the block's
+  ! unknown count is known before the block is built.
+  !===================================================================!
+  subroutine block_moments(tower, b, scheme, nd, stride, block, n, staged, m, width, members)
+    type(expansion), intent(in), target :: tower
+    integer        , intent(in)  :: b, nd, stride
+    class(family)  , intent(in)  :: scheme
+    type(graph), pointer, intent(out) :: block
+    integer        , intent(out) :: n, m, width
+    logical        , intent(out) :: staged
+    integer, allocatable, intent(out) :: members(:)
+    type(graph), pointer :: horizon
+    integer :: k
+    horizon => level_member(level_member(tower % node(tower % root()), 1), 1)
+    block   => level_member(horizon, b)
+    n       = level_num_members(block)
+    staged  = marches_by_stages(scheme, nd)
+    m     = tower % extent_of(level_member(first_moment(block, staged), 1))
+    width = stride * m
+    allocate(members(n))
+    do k = 1, n
+       members(k) = merge(level_num_members(level_member(block, k)), 1, staged)
+    end do
+  end subroutine block_moments
+  !===================================================================!
+  ! THE UNKNOWN COUNT OF ONE BLOCK: every component at every moment,
+  ! the given instants included, as block_from lays the rows out.
+  !===================================================================!
+  integer function block_unknowns(tower, b, scheme, physics) result(count)
+    type(expansion) , intent(in), target :: tower
+    integer         , intent(in) :: b
+    class(family)   , intent(in) :: scheme
+    type(expression), intent(in) :: physics
+    type(continuous_domain) :: continuous
+    type(graph), pointer :: block
+    integer, allocatable :: members(:)
+    integer :: n, m, width
+    logical :: staged
+    continuous = continuous_domain(physics)
+    call block_moments(tower, b, scheme, continuous % equation_degree() + 1, continuous % num_components(), &
+         & block, n, staged, m, width, members)
+    count = sum(members) * width
+  end function block_unknowns
   !===================================================================!
   ! The rows tying the first field's spatial components to its values
   ! over one block: for each component with a coupling, the coupling's
@@ -4830,6 +4907,7 @@ contains
   end subroutine export_instant
 end module gti_field
 module gti_chain
+  use iso_fortran_env , only : int64
   use util_precision  , only : dp
   use operation_family , only : family
   use operation_grid   , only : grid, partitioned, designed_grid
@@ -4839,7 +4917,7 @@ module gti_chain
   use gti_block        , only : block_residual
   use gti_march        , only : imbalance, swept, solve_linear, march_context, horizon_bounds, &
        & frozen_inputs
-  use gti_march        , only : block_from, consistent_state
+  use gti_march        , only : block_from, consistent_state, block_unknowns
   use gti_sweeps       , only : choose
   use util_derivative_terms, only : derivative_terms, coefficient, mixed_partial, leibniz_parts, &
        & inner_product, operator(+), operator(-), operator(*)
@@ -4866,7 +4944,7 @@ module gti_chain
   public :: multiset_count, multiset_rank, multiset_of, num_designs_of
   public :: chain_versions
   public :: expansion_substitutions
-  public :: sink_costates
+  public :: sink_costates, derivative_storage, storage_account
   public :: grid_stationary_partition
   public :: chain_incidence, chain_execution
   !===================================================================!
@@ -4918,6 +4996,55 @@ module gti_chain
      real(dp), allocatable :: w(:,:,:)
   end type tangent_tower
   !===================================================================!
+  ! THE ENTRIES A DERIVATIVE PASS STORES, BY ACCOUNT: primal states,
+  ! tangent towers, costates, restart states and the per-block
+  ! Lagrangian terms. live counts the entries stored now, high the
+  ! largest live count, total every entry allocated; peak is the
+  ! largest sum of the live counts of all accounts at one moment, the
+  ! quantity a reverse storage limit bounds. Outside the accounts:
+  ! the rows and rules of the blocks, the expansion, the driver's
+  ! copies of the data it passes, the solvers' temporaries.
+  !===================================================================!
+  type :: storage_account
+     integer(int64) :: live = 0, high = 0, total = 0
+  end type storage_account
+  type :: derivative_storage
+     type(storage_account) :: state, tower, costate, checkpoint, scalars
+     integer(int64) :: peak = 0
+     ! the schedule's quantities: L the largest restart state, the
+     ! costate window, the largest block's forward entries, the
+     ! smallest admissible limit (one checkpoint), the peak of
+     ! retention, the limit read; the checkpoints chosen and the
+     ! forward block evaluations the reverse phase performed
+     integer(int64) :: restart = 0, window = 0, leaf = 0, minimum = 0, retained = 0, limit = 0
+     ! the per-block Lagrangian terms and Leibniz parts the pass may
+     ! store, N nf nd M (2^(top+1) + top + 2), declared whether or not
+     ! the parts are requested, so the bound covers a later request
+     integer(int64) :: terms = 0
+     integer :: checkpoints = 0, evaluations = 0
+  end type derivative_storage
+  integer, parameter :: STATE_ACCOUNT = 1, TOWER_ACCOUNT = 2, COSTATE_ACCOUNT = 3, &
+       & CHECKPOINT_ACCOUNT = 4, SCALARS_ACCOUNT = 5
+  !===================================================================!
+  ! ONE RESTART STATE: the blocks live after a completed position of
+  ! the forward traversal, as copies of their states and towers. With
+  ! the immutable rules, expansion and configuration, the traversal
+  ! resumed at the position from these recomputes every later block.
+  !===================================================================!
+  type :: restart_block
+     integer :: at = 0
+     real(dp), allocatable :: state(:), w(:,:,:)
+  end type restart_block
+  type :: restart_state
+     integer :: position = -1
+     type(restart_block), allocatable :: live(:)
+  end type restart_state
+  ! the costates of one child block as the reverse rule reads them:
+  ! (unknown, functional, multiset, order) in one vector
+  type :: costate_values
+     real(dp), allocatable :: values(:)
+  end type costate_values
+  !===================================================================!
   ! THE TAYLOR STATE OWNED BY ONE EXECUTION: the physics and
   ! the functionals, the derivative order, the tangent towers,
   ! the accumulated tables, and the storage counters. One
@@ -4932,8 +5059,18 @@ module gti_chain
      type(tangent_tower), allocatable :: w(:)
      integer , allocatable :: versions(:)
      real(dp), allocatable :: table(:,:), by_order(:,:,:)
-     integer :: tower_live = 0, tower_high = 0, tower_total = 0
-     integer :: state_live = 0, state_high = 0, state_total = 0
+     type(derivative_storage) :: storage
+     ! the pass requested of the march: the forward pass solves the
+     ! towers to the order over the physics' parameter and takes every
+     ! functional share; the reverse pass solves them to top = order - 1
+     ! over the tower's nd designs, takes the functional values alone
+     ! (to_size 0, and -1 when a block is recomputed) and stores the
+     ! restart states of the first sweep at the positions the schedule
+     ! names, retaining the blocks from retained_from on
+     integer :: pass_kind = forward_pass, nd = 1, top = 0, to_size = 0
+     integer :: leaf = 1, retained_from = 1
+     integer, allocatable :: unknowns(:), stored_positions(:), evaluations(:,:)
+     type(restart_state), allocatable :: stored(:)
   end type taylor_context
   !===================================================================!
   ! A block rule references its execution's chain, expansion, solver and
@@ -5026,6 +5163,7 @@ module gti_chain
      procedure :: derivative => execution_derivative
      procedure :: take_results => execution_take_results
      procedure :: account => execution_account
+     procedure :: streamed_storage => execution_streamed_storage
   end type chain_execution
 
   ! The arrays are owned by one derivative call. Its scheduled rules
@@ -5036,24 +5174,94 @@ module gti_chain
      type(tangent_tower), pointer :: w(:) => null()
      class(march_context), pointer :: context => null()
      real(dp), pointer :: u(:,:,:) => null(), table(:,:) => null(), by_order(:,:,:) => null()
-     real(dp), pointer :: lambda(:,:,:,:,:) => null(), node_measure(:) => null()
-     real(dp), pointer :: diagonal(:,:) => null()
-     logical, pointer :: is_sink(:,:) => null()
+     real(dp), pointer :: node_measure(:) => null()
+     ! the reverse pass: every block's Lagrangian terms and Leibniz
+     ! parts, stored at the block and summed ascending afterwards
+     type(derivative_terms), pointer :: term(:,:,:,:) => null()
+     real(dp), pointer :: parts(:,:,:,:,:) => null()
      type(sink_costates), pointer :: sinks => null()
-     integer, pointer :: live => null(), total => null(), peak_storage => null()
+     type(derivative_storage), pointer :: storage => null()
      type(expression) :: physics
      type(expression), allocatable :: functionals(:)
      integer, pointer :: versions(:) => null()
      real(dp) :: design = 0.0_dp
      integer :: degrees = 0, nd = 0, top = 0, order = 0, from_size = 0, to_size = 0
-     integer :: functional = 0, rank = 0, degree = 0
      logical :: transposed = .false.
    contains
      procedure :: name => derivative_rule_name
      procedure :: apply => derivative_rule_apply
   end type derivative_rule
+  !===================================================================!
+  ! THE CHECKPOINTED REVERSE TRAVERSAL: the forward traversal of the
+  ! dependency graph, resumed at stored restart states, and the
+  ! transposed traversal of the costates. The forward step solves the
+  ! tangent tower of one block; a restart state stores the towers
+  ! live after a position. The schedule is the recursion reversed():
+  ! a range of blocks longer than the leaf is split at the position
+  ! minimising the forward evaluations, the right part reversed with
+  ! one checkpoint fewer, the left part with the same count.
+  !===================================================================!
+  type :: checkpointed_reverse
+     type(chain_block), pointer :: chain(:) => null()
+     type(tangent_tower), pointer :: w(:) => null()
+     type(derivative_storage), pointer :: storage => null()
+     type(derivative_rule) :: tangent, costate
+     type(driver) :: forward_schedule, transposed_schedule
+     type(stored_directed_graph) :: domain
+     type(rule_graph) :: rules
+     type(restart_state), allocatable :: stored(:)
+     ! t(n, c): the forward block evaluations reversing n blocks with
+     ! c checkpoints, n <= leaf retained whole
+     integer, allocatable :: evaluations(:,:)
+     ! a block's functional shares are accumulated at its first
+     ! evaluation alone; a recomputation solves the tower and no more
+     logical, allocatable :: evaluated(:)
+     integer :: leaf = 1, num_blocks = 0, share_to = -1
+     ! the unknown count of every block, known before any is solved
+     integer, allocatable :: unknowns(:)
+     ! a streamed execution recomputes the primal with the tower: the
+     ! forward step is the execution's own block rule, with the state
+     ! in the restart states and the accounts
+     logical :: recomputes_primal = .false.
+     type(block_rule), pointer :: primal(:) => null()
+     type(expansion), pointer :: tower => null()
+     class(march_context), pointer :: context => null()
+     type(taylor_context), pointer :: taylor => null()
+  end type checkpointed_reverse
 
 contains
+  !===================================================================!
+  ! Record entries allocated (n > 0) or released (n < 0) under one
+  ! account, and the peak over all accounts.
+  !===================================================================!
+  subroutine counted(storage, item, n)
+    type(derivative_storage), intent(inout) :: storage
+    integer                 , intent(in)    :: item
+    integer(int64)          , intent(in)    :: n
+    select case (item)
+    case (STATE_ACCOUNT)
+       call account(storage % state, n)
+    case (TOWER_ACCOUNT)
+       call account(storage % tower, n)
+    case (COSTATE_ACCOUNT)
+       call account(storage % costate, n)
+    case (CHECKPOINT_ACCOUNT)
+       call account(storage % checkpoint, n)
+    case (SCALARS_ACCOUNT)
+       call account(storage % scalars, n)
+    case default
+       error stop 'gti_chain: an account is one of the five stored'
+    end select
+    storage % peak = max(storage % peak, storage % state % live + storage % tower % live &
+         & + storage % costate % live + storage % checkpoint % live + storage % scalars % live)
+  end subroutine counted
+  pure subroutine account(item, n)
+    type(storage_account), intent(inout) :: item
+    integer(int64)       , intent(in)    :: n
+    item % live = item % live + n
+    if (n > 0) item % total = item % total + n
+    item % high = max(item % high, item % live)
+  end subroutine account
   pure subroutine locate(chain, fine, owner_block, local)
     type(chain_block), intent(in)  :: chain(:)
     integer          , intent(in)  :: fine
@@ -5151,7 +5359,7 @@ contains
 
   subroutine execution_initialize(this, schemes, added, physics, degrees, steps, design, initial, &
        & grid_design, nodes, spatial_discretization_stencil, startup, functionals, derivative_order, &
-       & spatial_derivative_stencils, gauge_field, context)
+       & spatial_derivative_stencils, gauge_field, context, pass_kind, designs)
     class(chain_execution), intent(out) :: this
     type(family_container), intent(in) :: schemes(:)
     integer, intent(in) :: added(:), degrees
@@ -5163,6 +5371,11 @@ contains
     type(stencil), intent(in), optional :: spatial_discretization_stencil, spatial_derivative_stencils(:)
     type(expression), intent(in), optional :: functionals(:)
     class(march_context), intent(in), optional :: context
+    ! the pass of a streamed derivative: forward (the default), or
+    ! reverse, whose restart states the march stores within the
+    ! context's reverse storage limit; the designs a streamed reverse
+    ! runs over, the leading ones of the tower's (all by default)
+    integer, intent(in), optional :: pass_kind, designs
     type(family_container), allocatable :: every(:)
     type(block_layout), allocatable :: layouts(:)
     integer, allocatable :: first(:), last(:), spans(:), reads(:)
@@ -5173,11 +5386,17 @@ contains
     type(data_graph) :: values
     type(stored_directed_graph) :: domain
     type(contract), allocatable :: contracts(:)
-    integer :: b, k, r, given, before, m, n, at
+    integer :: b, k, r, given, before, m, n, at, streamed_pass
     logical :: with_startup
     if (size(added) < 1) error stop 'gti_chain: a chain contains at least one block'
     if (present(functionals) .neqv. present(derivative_order)) &
          & error stop 'gti_chain: a Taylor execution specifies functionals and derivative order together'
+    streamed_pass = forward_pass
+    if (present(pass_kind)) then
+       if (.not. present(functionals)) error stop 'gti_chain: a pass accompanies functionals and a derivative order'
+       if (pass_kind /= forward_pass .and. pass_kind /= reverse_pass) error stop 'gti_chain: a pass is forward or reverse'
+       streamed_pass = pass_kind
+    end if
     if (present(context)) this % context = context % configuration()
     this % degrees = degrees
     call horizon_bounds(schemes, added, degrees - 1, first, last)
@@ -5247,9 +5466,48 @@ contains
     call this % schedule % pair_with(rules % pair(values))
     if (present(functionals)) then
        allocate(this % taylor)
-       call taylor_prepare(this % taylor, this % tower, functionals, derivative_order, degrees, n)
+       call taylor_prepare(this % taylor, this % tower, functionals, derivative_order, degrees, n, streamed_pass, designs)
+       this % taylor % retained_from = n + 1
+       if (streamed_pass == reverse_pass) then
+          allocate(this % taylor % unknowns(n))
+          do b = 1, n
+             this % taylor % unknowns(b) = block_unknowns(this % tower, b, every(b) % scheme, physics)
+          end do
+          call reverse_scheduled(this % taylor, this % rules(1), layouts, this % context % reverse_limit())
+       end if
     end if
   end subroutine execution_initialize
+  !===================================================================!
+  ! THE SCHEDULE OF A STREAMED REVERSE EXECUTION, fixed at initialize
+  ! from the block sizes and the two traversals' lifetimes: the
+  ! checkpoint count the limit admits, the evaluation table, the
+  ! positions at which the first sweep (the march) stores a restart
+  ! state - the recursion's right descent - and the block from which
+  ! the march retains its data: the first with retention, else the
+  ! last block alone, the leaf the recursion reverses first.
+  !===================================================================!
+  subroutine reverse_scheduled(taylor, rule, layouts, limit)
+    type(taylor_context), intent(inout), target :: taylor
+    type(block_rule)    , intent(in) :: rule
+    type(block_layout)  , intent(in) :: layouts(:)
+    integer             , intent(in) :: limit
+    type(checkpointed_reverse) :: traversal
+    integer :: n
+    n = size(layouts)
+    traversal % num_blocks = n
+    traversal % unknowns = taylor % unknowns
+    traversal % recomputes_primal = .true.
+    traversal % storage => taylor % storage
+    traversal % forward_schedule = driver(rule, dependency_incidence(layouts), orientation=forward)
+    traversal % transposed_schedule = driver(rule, dependency_incidence(layouts, transposed=.true.), &
+         & orientation=forward)
+    call scheduled_within(traversal, limit, taylor % nf, taylor % nd, taylor % top)
+    taylor % leaf = traversal % leaf
+    taylor % retained_from = merge(1, n, traversal % leaf == n)
+    taylor % stored_positions = first_sweep_positions(traversal)
+    call move_alloc(traversal % stored, taylor % stored)
+    call move_alloc(traversal % evaluations, taylor % evaluations)
+  end subroutine reverse_scheduled
 
   logical function execution_complete(this)
     class(chain_execution), intent(in) :: this
@@ -5279,19 +5537,29 @@ contains
          & this % final_imbalance = this % chain(b) % final_imbalance
     if (allocated(this % taylor)) then
        ! the block's final reads, and its own state when no later
-       ! block reads it: its functional contribution is already taken
+       ! block reads it: its functional contribution is already taken;
+       ! a reverse march retains the blocks its schedule names and
+       ! stores a restart state at the positions of the first sweep
        released = this % schedule % expired_at(this % schedule % num_completed())
        do i = 1, size(released)
           h = released(i)
+          if (h >= this % taylor % retained_from) cycle
           if (allocated(this % taylor % w(h) % w)) then
-             this % taylor % tower_live = this % taylor % tower_live - size(this % taylor % w(h) % w)
+             call counted(this % taylor % storage, TOWER_ACCOUNT, -int(size(this % taylor % w(h) % w), int64))
              deallocate(this % taylor % w(h) % w)
           end if
           if (allocated(this % chain(h) % state)) then
-             this % taylor % state_live = this % taylor % state_live - size(this % chain(h) % state)
+             call counted(this % taylor % storage, STATE_ACCOUNT, -int(size(this % chain(h) % state), int64))
              deallocate(this % chain(h) % state)
           end if
        end do
+       if (allocated(this % taylor % stored_positions)) then
+          h = this % schedule % num_completed()
+          if (any(this % taylor % stored_positions == h)) then
+             call stored_restart(this % taylor % stored, h, this % schedule % live_after(h), this % chain, &
+                  & this % taylor % w, this % taylor % storage, .true.)
+          end if
+       end if
     end if
   end subroutine execution_advance
 
@@ -5319,6 +5587,9 @@ contains
     achieved = this % achieved
     if (present(final_imbalance)) final_imbalance = this % final_imbalance
     if (allocated(this % taylor)) then
+       if (this % taylor % pass_kind == reverse_pass .and. present(f)) then
+          error stop 'gti_chain: Taylor results are those of a forward Taylor execution'
+       end if
        this % taylor % by_order(:, :, this % taylor % order) = this % taylor % table
        if (present(f)) then
           allocate(f(0:this % taylor % order, this % taylor % nf))
@@ -5326,8 +5597,10 @@ contains
              f(k, :) = this % taylor % by_order(:, 1, k)
           end do
        end if
-       if (present(tower_storage)) tower_storage = [this % taylor % tower_high, this % taylor % tower_total]
-       if (present(state_storage)) state_storage = [this % taylor % state_high, this % taylor % state_total]
+       if (present(tower_storage)) tower_storage = &
+            & int([this % taylor % storage % tower % high, this % taylor % storage % tower % total])
+       if (present(state_storage)) state_storage = &
+            & int([this % taylor % storage % state % high, this % taylor % storage % state % total])
     else
        if (present(f)) error stop 'gti_chain: Taylor results require functionals and derivative order'
        if (present(tower_storage)) tower_storage = 0
@@ -5355,9 +5628,24 @@ contains
     end block
   end subroutine execution_take_results
 
+  !===================================================================!
+  ! THE STORAGE ACCOUNTS OF A STREAMED EXECUTION: after initialize the
+  ! schedule's quantities (the restart state, the leaf, the window,
+  ! the terms, retention, the limit and the checkpoints admitted),
+  ! after the march and the derivative the live, high and total
+  ! counts of every account and the peak. Invalid input: an execution
+  ! without a streamed derivative.
+  !===================================================================!
+  function execution_streamed_storage(this) result(storage)
+    class(chain_execution), intent(in) :: this
+    type(derivative_storage) :: storage
+    if (.not. allocated(this % taylor)) error stop 'gti_chain: storage accounts are those of a streamed execution'
+    storage = this % taylor % storage
+  end function execution_streamed_storage
+
   subroutine execution_derivative(this, functionals, order, pass_kind, table, node_measure, &
-       & entries, designs, by_order, sinks, leibniz, tower_storage, outcome)
-    class(chain_execution), intent(inout) :: this
+       & entries, designs, by_order, sinks, leibniz, tower_storage, storage, outcome)
+    class(chain_execution), target, intent(inout) :: this
     type(expression), intent(in) :: functionals(:)
     integer, intent(in) :: order, pass_kind
     real(dp), allocatable, intent(out) :: table(:,:)
@@ -5366,33 +5654,70 @@ contains
     integer, intent(in), optional :: designs
     type(sink_costates), intent(out), optional :: sinks
     integer, intent(out), optional :: tower_storage(2)
+    type(derivative_storage), intent(out), optional :: storage
     type(solve_result), intent(out), optional :: outcome
     if (.not. this % complete()) error stop 'gti_chain: a derivative requires a completed primal execution'
-    if (allocated(this % taylor)) error stop 'gti_chain: a streamed Taylor execution has released its primal state'
+    if (allocated(this % taylor)) then
+       if (this % taylor % pass_kind /= reverse_pass) then
+          error stop 'gti_chain: a streamed Taylor execution has released its primal state'
+       end if
+       if (pass_kind /= reverse_pass .or. order /= this % taylor % order .or. &
+            & size(functionals) /= this % taylor % nf) then
+          error stop 'gti_chain: a streamed reverse execution differentiates the functionals and order of its initialization'
+       end if
+       if (present(designs)) then
+          if (designs /= this % taylor % nd) error stop 'gti_chain: a streamed reverse execution runs over the tower''s designs'
+       end if
+       if (present(node_measure)) error stop 'gti_chain: a streamed execution integrates its functionals with the unit measure'
+       call streamed_reverse(this, functionals, table, entries, by_order, sinks, leibniz, tower_storage, &
+            & storage, outcome)
+       return
+    end if
     if (.not. allocated(this % versions)) then
        call chain_versions(this % chain, this % tower, functionals, this % degrees, this % versions, &
             & context=this % context)
     end if
     call chain_derivative(this % chain, this % tower, this % versions, functionals, this % degrees, &
          & order, pass_kind, table, node_measure, entries, designs, by_order, sinks, leibniz, tower_storage, &
-         & context=this % context, outcome=outcome)
+         & storage, context=this % context, outcome=outcome)
   end subroutine execution_derivative
   !===================================================================!
   ! Prepare the Taylor coefficients for one execution. Its schedule
   ! determines data lifetimes. A tower with more designs than the
   ! physics' parameter is rejected.
   !===================================================================!
-  subroutine taylor_prepare(context, tower, functionals, order, degrees, nbb)
+  subroutine taylor_prepare(context, tower, functionals, order, degrees, nbb, pass_kind, designs)
     type(taylor_context), intent(out) :: context
     type(expansion), intent(in) :: tower
     type(expression), intent(in) :: functionals(:)
-    integer, intent(in) :: order, degrees, nbb
+    integer, intent(in) :: order, degrees, nbb, pass_kind
+    integer, intent(in), optional :: designs
     real(dp), allocatable :: step_partials(:,:)
     if (order < 0) then
        error stop 'gti_chain: a derivative has an order of zero or more'
     end if
-    if (num_designs_of(tower) /= 1) then
-       error stop 'gti_chain: the pipelined march runs over the physics'' parameter alone'
+    context % pass_kind = pass_kind
+    if (pass_kind == reverse_pass) then
+       if (order < 1) error stop 'gti_chain: a streamed reverse execution has an order of one or more'
+       context % nd = num_designs_of(tower)
+       if (present(designs)) then
+          if (designs < 1 .or. designs > context % nd) then
+             error stop 'gti_chain: the designs run over are among the tower''s'
+          end if
+          context % nd = designs
+       end if
+       context % top     = order - 1
+       context % to_size = 0
+    else
+       if (num_designs_of(tower) /= 1) then
+          error stop 'gti_chain: the pipelined march runs over the physics'' parameter alone'
+       end if
+       if (present(designs)) then
+          if (designs /= 1) error stop 'gti_chain: the pipelined march runs over the physics'' parameter alone'
+       end if
+       context % nd      = 1
+       context % top     = order
+       context % to_size = order
     end if
     context % order   = order
     context % nf      = size(functionals)
@@ -5400,9 +5725,10 @@ contains
     call designs_of(tower, context % design, step_partials)
     context % physics     = tower % rule()
     context % functionals = functionals
-    call steps_along(tower, 1, max(order, 1), context % u)
+    call steps_along(tower, context % nd, max(order, 1), context % u)
     allocate(context % w(nbb), context % versions(nbb))
-    allocate(context % table(context % nf, 1), context % by_order(context % nf, 1, 0:order), source=0.0_dp)
+    allocate(context % table(context % nf, multiset_count(context % nd, order)), &
+         & context % by_order(context % nf, multiset_count(context % nd, order), 0:order), source=0.0_dp)
   end subroutine taylor_prepare
   !===================================================================!
   ! THE PIPELINED TAYLOR STATE MARCH, ONE BLOCK'S CONTRIBUTION: solve
@@ -5422,12 +5748,10 @@ contains
        call solver % record_failure(chain(at) % final_imbalance % outcome)
     end if
     context % versions(at)   = solver % next_version()
-    context % state_live  = context % state_live + size(chain(at) % state)
-    context % state_total = context % state_total + size(chain(at) % state)
-    context % state_high  = max(context % state_high, context % state_live)
+    call counted(context % storage, STATE_ACCOUNT, int(size(chain(at) % state), int64))
     call forward_block(chain, at, context % physics, context % functionals, context % degrees, &
-         & context % design, 1, context % order, context % order, 0, context % order, context % versions, &
-         & context % u, context % w, context % tower_live, context % tower_total, context % tower_high, &
+         & context % design, context % nd, context % top, context % order, 0, context % to_size, &
+         & context % versions, context % u, context % w, context % storage, &
          & context % table, context % by_order, context=solver)
     call solver % account % order(0)
   end subroutine taylor_block
@@ -5440,17 +5764,17 @@ contains
   ! block's share of every functional at the multiset sizes from_size
   ! to to_size, the size order into table and every other into
   ! by_order. The enclosing schedule controls tower release.
-  ! live, total and peak_storage count the tower numbers stored.
+  ! The tower numbers stored are recorded under the tower account.
   !===================================================================!
   subroutine forward_block(chain, b, physics, functionals, degrees, design, nd, top, order, &
-       & from_size, to_size, versions, u, w, live, total, peak_storage, table, by_order, node_measure, context)
+       & from_size, to_size, versions, u, w, storage, table, by_order, node_measure, context)
     class(march_context), optional, target, intent(inout) :: context
     type(chain_block)  , intent(in)    :: chain(:)
     integer            , intent(in)    :: b, degrees, nd, top, order, from_size, to_size, versions(:)
     type(expression)   , intent(in)    :: physics, functionals(:)
     real(dp)           , intent(in)    :: design, u(:,:,:)
     type(tangent_tower), intent(inout) :: w(:)
-    integer            , intent(inout) :: live, total, peak_storage
+    type(derivative_storage), intent(inout) :: storage
     real(dp), intent(inout), optional  :: table(:,:), by_order(:,:,0:)
     real(dp), intent(in)   , optional  :: node_measure(:)
     type(stored_field), allocatable :: inputs(:)
@@ -5464,10 +5788,11 @@ contains
     active => local_context
     if (present(context)) active => context
     count = chain(b) % rows % num_unknowns()
-    allocate(w(b) % w(count, multiset_count(nd, max(top, 1)), max(top, 1)), source=0.0_dp)
-    live         = live + size(w(b) % w)
-    total        = total + size(w(b) % w)
-    peak_storage = max(peak_storage, live)
+    ! at top = 0 no tower is solved and none is read, so none is stored
+    if (top > 0) then
+       allocate(w(b) % w(count, multiset_count(nd, top), top), source=0.0_dp)
+       call counted(storage, TOWER_ACCOUNT, int(size(w(b) % w), int64))
+    end if
     do k = 1, top
        call active % account % order(k)
        call active % account % enter(at_horizon)
@@ -5663,7 +5988,6 @@ contains
     class(field), allocatable, intent(inout) :: output
     class(field), allocatable :: value
     type(block_state) :: state
-    type(typed_field_domain) :: states
     real(dp), allocatable :: transferred_values(:), one_datum(:)
     real(dp) :: achieved
     type(imbalance) :: final_imbalance
@@ -5720,10 +6044,7 @@ contains
     ! THE DATUM'S DOMAIN IS THE BLOCK RESIDUAL'S U, NOT THE SCHEDULE'S.
     ! The graph a driver evaluates over specifies which rule runs when;
     ! it specifies nothing about how many unknowns a state stores.
-    states = this % chain(this % vertex) % rows % state_fields()
-    state % stored_field = states % state(this % chain(this % vertex) % state)
-    state % at     = this % vertex
-    state % layout = this % chain(this % vertex) % block_layout
+    state = state_datum(this % chain, this % vertex)
     call emit(state, output)
     ! THE PIPELINED DERIVATIVE. With a context attached, the block's
     ! tower is solved immediately after the block, and every datum
@@ -5732,6 +6053,21 @@ contains
        call taylor_block(this % taylor, this % chain, this % vertex, this % context)
     end if
   end subroutine block_rule_apply
+  !===================================================================!
+  ! THE DATUM OF ONE BLOCK: its state on its own domain, its number
+  ! and its layout. Emitted by the block rule, and placed in the data
+  ! branch a traversal resumes from.
+  !===================================================================!
+  function state_datum(chain, b) result(state)
+    type(chain_block), intent(in) :: chain(:)
+    integer          , intent(in) :: b
+    type(block_state) :: state
+    type(typed_field_domain) :: states
+    states = chain(b) % rows % state_fields()
+    state % stored_field = states % state(chain(b) % state)
+    state % at     = b
+    state % layout = chain(b) % block_layout
+  end function state_datum
 
   subroutine one_block(chain, b, tower, in_tower, scheme, physics, degrees, layout, &
        & dt, coarse_step, fraction, counted, design, initial, achieved, final_imbalance, &
@@ -5758,6 +6094,8 @@ contains
     chain(b) % given        = scheme % history_depth(degrees - 1)
     chain(b) % primary      = scheme % primary_degree(degrees - 1)
     chain(b) % width        = physics % num_components() * layout % nodes
+    ! a block computed again is rebuilt from its inputs
+    if (allocated(chain(b) % scheme)) deallocate(chain(b) % scheme)
     allocate(chain(b) % scheme, source=scheme)
     chain(b) % staged      = marches_by_stages(scheme, degrees)
     chain(b) % dt          = dt
@@ -5901,6 +6239,7 @@ contains
     integer          , intent(in)    :: b
     integer :: i, n, local, owner_block
     n = chain(b) % given * chain(b) % width
+    if (allocated(chain(b) % source_block)) deallocate(chain(b) % source_block, chain(b) % source_at)
     allocate(chain(b) % source_block(n), chain(b) % source_at(n), source=0)
     do i = 1, n
        call locate(chain(1:b - 1), chain(b) % first + ((i - 1) / chain(b) % width) * chain(b) % stride, &
@@ -5912,7 +6251,8 @@ contains
     end do
   end subroutine transfer_layout
   subroutine chain_derivative(chain, tower, versions, functionals, degrees, order, pass_kind, &
-       & table, node_measure, entries, designs, by_order, sinks, leibniz, tower_storage, context, outcome)
+       & table, node_measure, entries, designs, by_order, sinks, leibniz, tower_storage, storage, &
+       & context, outcome)
     class(march_context), optional, target, intent(inout) :: context
     ! THE OUTCOME OF THE PASS: converged, the primal result of a block
     ! that did not converge (no derivative is solved, the table is
@@ -5933,21 +6273,19 @@ contains
     real(dp), allocatable, intent(out), optional :: leibniz(:,:,:,:)
     ! the maximum live and the total tower sizes: the storage the pass used
     integer, intent(out), optional :: tower_storage(2)
+    ! every account of the pass, with the schedule's quantities
+    type(derivative_storage), intent(out), optional :: storage
     type(tangent_tower), allocatable, target :: w(:)
-    real(dp), allocatable, target :: lambda(:,:,:,:,:), u(:,:,:)
-    integer, target :: live, peak_storage, total
-    type(derivative_terms) :: l
-    type(derivative_terms), allocatable :: products(:,:,:)
-    real(dp), allocatable :: split(:)
-    integer :: m, rank_s, mask, from_size, to_size
-    logical, allocatable, target :: is_sink(:,:)
-    real(dp), allocatable, target :: diagonal(:,:)
-    real(dp), allocatable :: step_partials(:,:), every(:,:,:)
-    integer , allocatable :: s(:)
+    real(dp), allocatable, target :: u(:,:,:)
+    type(derivative_storage), target :: accounts
+    type(checkpointed_reverse) :: traversal
+    integer, allocatable, target :: tangent_versions(:)
+    integer :: from_size, to_size
+    real(dp), allocatable :: step_partials(:,:)
     type(expression) :: physics
     real(dp) :: design
     logical  :: forward
-    integer :: nf, nd, nb, top, widest, k, b, i, j, p, rank
+    integer :: nf, nd, nb, top, widest, b, p
     type(derivative_rule) :: rule
     type(driver) :: schedule
     type(rule_graph) :: rules
@@ -6019,9 +6357,6 @@ contains
     from_size = merge(0, order, present(by_order))
     to_size   = order
     if (.not. forward) to_size = merge(0, -1, present(by_order))
-    live         = 0
-    peak_storage = 0
-    total        = 0
     layouts = chain % block_layout
     incidence = dependency_incidence(layouts)
     domain = stored_directed_graph(nb, tails=[integer ::], heads=[integer ::])
@@ -6042,27 +6377,24 @@ contains
     rule % order = order
     rule % from_size = from_size
     rule % to_size = to_size
-    rule % live => live
-    rule % total => total
-    rule % peak_storage => peak_storage
+    rule % storage => accounts
     allocate(rules % at(nb), values % at(nb))
-    schedule = driver(rule, incidence, orientation=forward_pass)
-    call schedule % pair_with(rules % pair(values))
-    do while (.not. schedule % complete())
-       call schedule % advance_with(domain, rule)
-       if (forward) then
+    if (forward) then
+       schedule = driver(rule, incidence, orientation=forward_pass)
+       call schedule % pair_with(rules % pair(values))
+       do while (.not. schedule % complete())
+          call schedule % advance_with(domain, rule)
           released = schedule % expired_at(schedule % num_completed())
           do h = 1, size(released)
              p = released(h)
              if (.not. allocated(w(p) % w)) cycle
-             live = live - size(w(p) % w)
+             call counted(accounts, TOWER_ACCOUNT, -int(size(w(p) % w), int64))
              deallocate(w(p) % w)
           end do
-       end if
-    end do
-    call active % account % order(0)
-    if (present(tower_storage)) tower_storage = [peak_storage, total]
-    if (forward) then
+       end do
+       call active % account % order(0)
+       if (present(tower_storage)) tower_storage = int([accounts % tower % high, accounts % tower % total])
+       if (present(storage)) storage = accounts
        if (present(sinks)) then
           error stop 'gti_chain: the sinks are checked on the reverse pass'
        end if
@@ -6074,53 +6406,195 @@ contains
        allocate(sinks % fixed_rows(0:chain(1) % rows % num_degrees() - 1), source=0)
        allocate(sinks % last(0:chain(1) % rows % num_degrees() - 1), source=0)
        allocate(sinks % interior(0:chain(1) % rows % num_degrees() - 1), source=0)
-       allocate(is_sink(widest, nb), source=.false.)
-       allocate(diagonal(widest, nb), source=0.0_dp)
-       do b = 1, nb
-          call sinks_of(chain(b), degrees, design, is_sink(:, b), diagonal(:, b), sinks)
-       end do
-    end if
-    allocate(lambda(widest, nb, nf, multiset_count(nd, max(top, 1)), 0:top), source=0.0_dp)
-    incidence = dependency_incidence(layouts, transposed=.true.)
-    rule % transposed = .true.
-    rule % lambda => lambda
-    if (present(sinks)) then
        rule % sinks => sinks
-       rule % is_sink => is_sink
-       rule % diagonal => diagonal
     end if
-    schedule = driver(rule, incidence, orientation=forward_pass)
-    do k = 0, top
-       call active % account % order(k + 1)
-       call active % account % enter(at_horizon)
-       do rank = 1, multiset_count(nd, k)
-          s = multiset_of(rank, k, nd)
-          do i = 1, nf
-             rule % functional = i
-             rule % rank = rank
-             rule % degree = k
-             call schedule % pair_with(rules % pair(values))
-             do while (.not. schedule % complete())
-                call schedule % advance_with(domain, rule)
-             end do
-          end do
-       end do
-       call active % account % leave()
-    end do
-    call active % account % order(0)
+    ! THE REVERSE PASS: block outer, order inner. At a block, in the
+    ! transposed order, the costates of every order, multiset and
+    ! functional are solved in sequence - order k reads the block's
+    ! own lower orders and the child costates the bindings supply -
+    ! and the block's Lagrangian terms are evaluated at once from its
+    ! state, tower and costates. The costates leave the block as one
+    ! datum, released by the transposed driver after their final
+    ! reader; the terms are summed ascending over the blocks below,
+    ! coefficientwise, so the tables equal the order-outer sums. The
+    ! towers are solved by the forward traversal inside the schedule
+    ! of the checkpointed traversal: retained whole when the storage
+    ! limit admits it, otherwise recomputed from restart states.
+    traversal % chain => chain
+    traversal % w => w
+    traversal % storage => accounts
+    traversal % domain = domain
+    traversal % num_blocks = nb
+    traversal % unknowns = [(chain(b) % rows % num_unknowns(), b = 1, nb)]
+    traversal % share_to = to_size
+    allocate(traversal % evaluated(nb), source=.false.)
+    tangent_versions = versions
+    traversal % tangent = rule
+    traversal % tangent % versions => tangent_versions
+    traversal % forward_schedule = driver(rule, incidence, orientation=forward_pass)
+    call traversal % forward_schedule % pair_with(rules % pair(values))
+    rule % transposed = .true.
+    traversal % transposed_schedule = driver(rule, dependency_incidence(layouts, transposed=.true.), &
+         & orientation=forward_pass)
+    call traversal % transposed_schedule % pair_with(rules % pair(values))
+    traversal % rules = rules
+    call scheduled_within(traversal, active % reverse_limit(), nf, nd, top)
+    call reverse_tables(traversal, rule, order, table, entries, by_order, leibniz, tower_storage, storage)
+    call pass_outcome(active, outcome)
+  end subroutine chain_derivative
+  !===================================================================!
+  ! THE REVERSE PASS OF A STREAMED EXECUTION: the recursion over the
+  ! execution's own chain, towers and accounts, the forward step its
+  ! block rule (the primal recomputed with the tower, Newton solves
+  ! counted by the tally), the forward driver resumed at the final
+  ! position and the restart states of the march restored where the
+  ! recursion names them. The costates read the versions the towers
+  ! were first solved under, copied before any is recomputed; a
+  ! recomputed tower is solved under a version of its own by the
+  ! block rule. A later call finds no restart state stored and
+  ! recomputes from the initial state.
+  !===================================================================!
+  subroutine streamed_reverse(this, functionals, table, entries, by_order, sinks, leibniz, tower_storage, &
+       & storage, outcome)
+    type(chain_execution), target, intent(inout) :: this
+    type(expression), intent(in) :: functionals(:)
+    real(dp), allocatable, target, intent(out) :: table(:,:)
+    real(dp), allocatable, intent(out), optional :: entries(:,:,:)
+    real(dp), allocatable, target, intent(out), optional :: by_order(:,:,:)
+    type(sink_costates), target, intent(out), optional :: sinks
+    real(dp), allocatable, intent(out), optional :: leibniz(:,:,:,:)
+    integer, intent(out), optional :: tower_storage(2)
+    type(derivative_storage), intent(out), optional :: storage
+    ! THE OUTCOME OF THE PASS: converged, or the first linear solve of
+    ! the pass that did not converge. Absent, that failure stops the
+    ! program.
+    type(solve_result), intent(out), optional :: outcome
+    type(checkpointed_reverse) :: traversal
+    type(derivative_rule) :: rule
+    type(rule_graph) :: rules
+    type(data_graph) :: values
+    type(block_layout), allocatable :: layouts(:)
+    integer, allocatable, target :: costate_versions(:)
+    integer :: nb, nf, nd, top, order
+    nb = size(this % chain)
+    call this % context % reset_failure()
+    associate (taylor => this % taylor)
+      nf    = taylor % nf
+      nd    = taylor % nd
+      top   = taylor % top
+      order = taylor % order
+      if (present(by_order)) then
+         allocate(by_order(nf, multiset_count(nd, order), 0:order), source=0.0_dp)
+         by_order(:, :, 0) = taylor % by_order(:, :, 0)
+      end if
+      layouts = this % chain % block_layout
+      allocate(rules % at(nb), values % at(nb))
+      costate_versions = taylor % versions
+      rule % chain => this % chain
+      rule % w => taylor % w
+      rule % context => this % context
+      rule % u => taylor % u
+      rule % physics = taylor % physics
+      rule % functionals = functionals
+      rule % versions => costate_versions
+      rule % degrees = taylor % degrees
+      rule % design = taylor % design
+      rule % nd = nd
+      rule % top = top
+      rule % order = order
+      rule % storage => taylor % storage
+      rule % transposed = .true.
+      if (present(sinks)) then
+         allocate(sinks % fixed_rows(0:this % chain(1) % rows % num_degrees() - 1), source=0)
+         allocate(sinks % last(0:this % chain(1) % rows % num_degrees() - 1), source=0)
+         allocate(sinks % interior(0:this % chain(1) % rows % num_degrees() - 1), source=0)
+         rule % sinks => sinks
+      end if
+      traversal % chain => this % chain
+      traversal % w => taylor % w
+      traversal % storage => taylor % storage
+      traversal % domain = stored_directed_graph(nb, tails=[integer ::], heads=[integer ::])
+      traversal % num_blocks = nb
+      traversal % unknowns = taylor % unknowns
+      traversal % recomputes_primal = .true.
+      traversal % primal => this % rules
+      traversal % tower => this % tower
+      traversal % context => this % context
+      traversal % taylor => this % taylor
+      traversal % leaf = taylor % leaf
+      call move_alloc(taylor % stored, traversal % stored)
+      call move_alloc(taylor % evaluations, traversal % evaluations)
+      traversal % forward_schedule = driver(this % rules(1), dependency_incidence(layouts), orientation=forward)
+      call traversal % forward_schedule % pair_with(rules % pair(values), nb)
+      traversal % transposed_schedule = driver(rule, dependency_incidence(layouts, transposed=.true.), &
+           & orientation=forward)
+      call traversal % transposed_schedule % pair_with(rules % pair(values))
+      traversal % rules = rules
+      ! a recomputed block takes no functional share: the values were
+      ! taken by the march
+      taylor % to_size = -1
+      call reverse_tables(traversal, rule, order, table, entries, by_order, leibniz, tower_storage, storage)
+      call move_alloc(traversal % stored, taylor % stored)
+      call move_alloc(traversal % evaluations, taylor % evaluations)
+    end associate
+    call pass_outcome(this % context, outcome)
+  end subroutine streamed_reverse
+  !===================================================================!
+  ! THE TABLES OF A REVERSE PASS: the per-block Lagrangian terms and
+  ! Leibniz parts allocated and counted, the costate rule given them,
+  ! the recursion run over the scheduled traversal, and the ascending
+  ! coefficientwise sums over the blocks: the table of the order, the
+  ! entries by explicit design, the lower orders read from the same
+  ! products.
+  !===================================================================!
+  subroutine reverse_tables(traversal, rule, order, table, entries, by_order, leibniz, tower_storage, storage)
+    type(checkpointed_reverse), intent(inout) :: traversal
+    type(derivative_rule), intent(inout) :: rule
+    integer, intent(in) :: order
+    real(dp), allocatable, intent(out) :: table(:,:)
+    real(dp), allocatable, intent(out), optional :: entries(:,:,:)
+    real(dp), allocatable, intent(inout), optional :: by_order(:,:,:)
+    real(dp), allocatable, intent(out), optional :: leibniz(:,:,:,:)
+    integer, intent(out), optional :: tower_storage(2)
+    type(derivative_storage), intent(out), optional :: storage
+    type(derivative_terms) :: l
+    type(derivative_terms), allocatable :: products(:,:,:)
+    type(derivative_terms), allocatable, target :: term(:,:,:,:)
+    real(dp), allocatable, target :: parts(:,:,:,:,:)
+    real(dp), allocatable :: split(:), every(:,:,:)
+    integer , allocatable :: s(:)
+    integer :: nf, nd, nb, top, b, i, j, m, rank, rank_s, mask
+    nf  = size(rule % functionals)
+    nd  = rule % nd
+    top = rule % top
+    nb  = traversal % num_blocks
+    associate (accounts => traversal % storage)
+      allocate(term(nf, nd, multiset_count(nd, top), nb))
+      call counted(accounts, SCALARS_ACCOUNT, int(nb, int64) * nf * nd * multiset_count(nd, top) * 2**(top + 1))
+      if (present(leibniz)) then
+         allocate(parts(0:top + 1, nf, nd, multiset_count(nd, top), nb), source=0.0_dp)
+         call counted(accounts, SCALARS_ACCOUNT, int(size(parts), int64))
+         rule % parts => parts
+      end if
+      rule % term => term
+      traversal % costate = rule
+      call reversed(traversal, 1, nb, accounts % checkpoints)
+      call rule % context % account % order(0)
+      if (present(tower_storage)) tower_storage = int([accounts % tower % high, accounts % tower % total])
+      if (present(storage)) storage = accounts
+    end associate
     allocate(every(nf, nd, multiset_count(nd, top)), source=0.0_dp)
     if (present(leibniz))  allocate(leibniz(nf, nd, multiset_count(nd, top), 0:top + 1), source=0.0_dp)
     if (present(by_order)) allocate(products(nf, nd, multiset_count(nd, top)))
     allocate(split(0:top + 1))
     do rank = 1, multiset_count(nd, top)
-       s = multiset_of(rank, top, nd)
        do j = 1, nd
           do i = 1, nf
              l     = derivative_terms(0.0_dp, top + 1)
              split = 0.0_dp
              do b = 1, nb
-                l = l + lagrangian_term(chain, b, physics, functionals(i), degrees, design, s, j, &
-                     & w, lambda, u, nd, i, node_measure, split)
+                l = l + term(i, j, rank, b)
+                if (present(leibniz)) split = split + parts(:, i, j, rank, b)
              end do
              every(i, j, rank) = mixed_partial(l)
              if (present(leibniz))  leibniz(i, j, rank, :) = split
@@ -6149,8 +6623,10 @@ contains
           end do
        end do
     end if
-    call pass_outcome(active, outcome)
-  end subroutine chain_derivative
+    ! the terms and parts are released with this call
+    call counted(traversal % storage, SCALARS_ACCOUNT, -int(nb, int64) * nf * nd * multiset_count(nd, top) * 2**(top + 1))
+    if (present(leibniz)) call counted(traversal % storage, SCALARS_ACCOUNT, -int(size(parts), int64))
+  end subroutine reverse_tables
   !===================================================================!
   ! The outcome of a completed pass: the first linear solve that did
   ! not converge, or converged. Without an outcome argument that
@@ -6198,25 +6674,27 @@ contains
     type(block_state) :: costate
     class(field), allocatable :: value
     type(solve_result) :: completed
-    real(dp), allocatable :: one(:), rhs(:), child_costate(:)
+    type(costate_values), allocatable :: children(:)
+    real(dp), allocatable :: one(:), rhs(:), lam(:,:,:,:), split(:), diagonal(:)
+    logical , allocatable :: is_sink(:)
     integer, allocatable :: s(:), read_order(:)
-    integer :: b, n, p, child, i, j, index
+    integer :: b, n, p, child, i, j, index, nf, top, m, k, rank, nc, offset
     associate (unused_graph => input_graph); end associate
     b = this % vertex
     if (.not. this % transposed) then
        call forward_block(this % chain, b, this % physics, this % functionals, this % degrees, &
             & this % design, this % nd, this % top, this % order, this % from_size, this % to_size, &
-            & this % versions, this % u, this % w, this % live, this % total, this % peak_storage, &
+            & this % versions, this % u, this % w, this % storage, &
             & this % table, this % by_order, this % node_measure, this % context)
        return
     end if
-    call this % context % account % enter(at_block)
-    n = this % chain(b) % rows % num_unknowns()
-    s = multiset_of(this % rank, this % degree, this % nd)
-    call costate_rows(this % chain, b, this % physics, this % functionals(this % functional), &
-         & this % degrees, this % design, s, this % w, this % lambda, this % u, this % nd, &
-         & this % functional, this % node_measure, rhs)
-
+    n   = this % chain(b) % rows % num_unknowns()
+    nf  = size(this % functionals)
+    top = this % top
+    m   = multiset_count(this % nd, top)
+    allocate(lam(n, nf, m, 0:top), source=0.0_dp)
+    ! the block's costates: its own array now, the datum it emits after
+    call counted(this % storage, COSTATE_ACCOUNT, int(size(lam), int64))
     ! Read child costates in descending block order, reproducing the
     ! accumulation order of reverse substitution independently of how
     ! the incidence query orders its argument slots.
@@ -6235,6 +6713,7 @@ contains
     if (size(read_order) > 0 .and. .not. present(inputs)) then
        error stop 'gti_chain: every child costate is bound before reverse substitution'
     end if
+    allocate(children(size(read_order)))
     do i = 1, size(read_order)
        index = read_order(i)
        child = this % reads(index)
@@ -6245,35 +6724,519 @@ contains
        select type (child_state => value)
        type is (block_state)
           if (child_state % at /= child) error stop 'gti_chain: the bound costate belongs to its declared block'
-          call child_state % real_vector(child_costate)
+          call child_state % real_vector(children(i) % values)
        class default
           error stop 'gti_chain: a reverse dependency supplies a block costate'
        end select
-       if (size(child_costate) /= this % chain(child) % rows % num_unknowns()) then
-          error stop 'gti_chain: a child costate has one value per residual row'
+       if (size(children(i) % values) /= this % chain(child) % rows % num_unknowns() * nf * m * (top + 1)) then
+          error stop 'gti_chain: a child costate has one value per residual row, order, multiset and functional'
        end if
-       do p = 1, size(this % chain(child) % source_at)
-          if (this % chain(child) % source_block(p) /= b) cycle
-          rhs(this % chain(child) % source_at(p)) = rhs(this % chain(child) % source_at(p)) + child_costate(p)
+    end do
+    if (associated(this % sinks)) then
+       allocate(is_sink(n), diagonal(n))
+       call sinks_of(this % chain(b), this % degrees, this % design, is_sink, diagonal, this % sinks)
+    end if
+    call frozen_at(this % chain(b), this % design, frozen)
+    do k = 0, top
+       call this % context % account % order(k + 1)
+       call this % context % account % enter(at_horizon)
+       do rank = 1, multiset_count(this % nd, k)
+          s = multiset_of(rank, k, this % nd)
+          do i = 1, nf
+             call this % context % account % enter(at_block)
+             call costate_rows(this % chain, b, this % physics, this % functionals(i), &
+                  & this % degrees, this % design, s, this % w, lam, this % u, this % nd, &
+                  & i, this % node_measure, rhs)
+             do j = 1, size(read_order)
+                child = this % reads(read_order(j))
+                nc = this % chain(child) % rows % num_unknowns()
+                offset = nc * ((i - 1) + nf * ((rank - 1) + m * k))
+                do p = 1, size(this % chain(child) % source_at)
+                   if (this % chain(child) % source_block(p) /= b) cycle
+                   rhs(this % chain(child) % source_at(p)) = rhs(this % chain(child) % source_at(p)) &
+                        & + children(j) % values(offset + p)
+                end do
+             end do
+             call solve_linear(this % chain(b) % rows, frozen, rhs, .true., &
+                  & this % versions(b), one, outcome=completed, context=this % context)
+             if (.not. completed % converged()) call this % context % record_failure(completed)
+             lam(1:n, i, rank, k) = one
+             if (associated(this % sinks)) call sink_residual(is_sink, diagonal, rhs, one, this % sinks)
+             call this % context % account % leave()
+          end do
+       end do
+       call this % context % account % leave()
+    end do
+    ! the block's Lagrangian terms, from its own state, tower and costates
+    if (.not. associated(this % term)) error stop 'gti_chain: a costate rule stores its Lagrangian terms'
+    allocate(split(0:top + 1))
+    do rank = 1, multiset_count(this % nd, top)
+       s = multiset_of(rank, top, this % nd)
+       do j = 1, this % nd
+          do i = 1, nf
+             split = 0.0_dp
+             this % term(i, j, rank, b) = lagrangian_term(this % chain, b, this % physics, &
+                  & this % functionals(i), this % degrees, this % design, s, j, this % w, lam, &
+                  & this % u, this % nd, i, this % node_measure, split)
+             if (associated(this % parts)) this % parts(:, i, j, rank, b) = split
+          end do
        end do
     end do
-    call frozen_at(this % chain(b), this % design, frozen)
-    call solve_linear(this % chain(b) % rows, frozen, rhs, .true., &
-         & this % versions(b), one, outcome=completed, context=this % context)
-    if (.not. completed % converged()) call this % context % record_failure(completed)
-    this % lambda(1:n, b, this % functional, this % rank, this % degree) = one
-    if (associated(this % sinks)) then
-       call sink_residual(this % is_sink(1:n, b), this % diagonal(1:n, b), &
-            & rhs, one, this % sinks)
-    end if
-    call this % context % account % leave()
-    unknown_fields = this % chain(b) % rows % residual_fields()
-    costate % stored_field = unknown_fields % costate(one)
+    unknown_fields = typed_field_domain(this % chain(b) % rows % unknown_graph(), nf * m * (top + 1))
+    costate % stored_field = unknown_fields % costate(reshape(lam, [size(lam)]))
     costate % at = b
     costate % layout = this % chain(b) % block_layout
     call emit(costate, output)
   end subroutine derivative_rule_apply
 
+  !===================================================================!
+  ! THE FORWARD ENTRIES OF ONE BLOCK: its tower (and, when the primal
+  ! is recomputed, its state); the costate entries of one block.
+  !===================================================================!
+  integer(int64) function forward_entries(this, b, nd, top) result(n)
+    type(checkpointed_reverse), intent(in) :: this
+    integer, intent(in) :: b, nd, top
+    n = 0
+    if (top > 0) n = int(this % unknowns(b), int64) * multiset_count(nd, top) * top
+    if (this % recomputes_primal) n = n + int(this % unknowns(b), int64)
+  end function forward_entries
+  integer(int64) function costate_entries(this, b, nf, nd, top) result(n)
+    type(checkpointed_reverse), intent(in) :: this
+    integer, intent(in) :: b, nf, nd, top
+    n = int(this % unknowns(b), int64) * nf * multiset_count(nd, top) * (top + 1)
+  end function costate_entries
+  !===================================================================!
+  ! THE SCHEDULE WITHIN A STORAGE LIMIT. L = the largest sum of forward
+  ! entries live after a position; the window = the largest sum of
+  ! costate data live during a transposed step with that step's own;
+  ! the leaf = the largest block; the terms = the per-block Lagrangian
+  ! terms and Leibniz parts, declared. Retention stores every block:
+  ! sum F + window + terms. c stored restart states hold at most
+  ! c L, the working set of a traversal advancing from one at most L
+  ! (the driver releases at final readers), the block evaluated at
+  ! most F_max: peak <= (c + 1) L + F_max + window + terms, and the
+  ! limit admits c = floor((limit - L - F_max - window - terms) / L),
+  ! c = 0 recomputing every block from the initial state. A limit at
+  ! or above retention stores everything; the smallest admissible
+  ! limit is the smaller of retention and the bound at c = 0, and one
+  ! below it is refused here, with the accounts, before any tower is
+  ! solved. Restart states beyond N - 1 positions store nothing further.
+  !===================================================================!
+  subroutine scheduled_within(this, limit, nf, nd, top)
+    type(checkpointed_reverse), intent(inout) :: this
+    integer, intent(in) :: limit, nf, nd, top
+    integer, allocatable :: live(:), visiting(:)
+    integer(int64) :: at, fixed
+    integer :: p, q, e, n, c
+    n = this % num_blocks
+    associate (storage => this % storage)
+      storage % limit = limit
+      storage % restart = 0
+      storage % leaf = 0
+      storage % retained = 0
+      do p = 0, n - 1
+         live = this % forward_schedule % live_after(p)
+         at = 0
+         do e = 1, size(live)
+            at = at + forward_entries(this, live(e), nd, top)
+         end do
+         storage % restart = max(storage % restart, at)
+      end do
+      do e = 1, n
+         storage % leaf = max(storage % leaf, forward_entries(this, e, nd, top))
+         storage % retained = storage % retained + forward_entries(this, e, nd, top)
+      end do
+      visiting = this % transposed_schedule % visits()
+      storage % window = 0
+      do q = 1, n
+         live = this % transposed_schedule % live_after(q - 1)
+         at = costate_entries(this, visiting(q), nf, nd, top)
+         do e = 1, size(live)
+            at = at + costate_entries(this, live(e), nf, nd, top)
+         end do
+         storage % window = max(storage % window, at)
+      end do
+      storage % terms = int(n, int64) * nf * nd * multiset_count(nd, top) * (2**(top + 1) + top + 2)
+      fixed = storage % window + storage % terms
+      storage % retained = storage % retained + fixed
+      storage % minimum = min(storage % restart + storage % leaf + fixed, storage % retained)
+      if (limit >= storage % retained) then
+         c = 0
+         this % leaf = n
+      else if (limit < storage % minimum .or. storage % restart == 0) then
+         write(*, '(a,i0,a,i0,a,i0,a,i0,a,i0,a,i0,a,i0)') ' reverse storage limit ', limit, &
+              & ' entries; recomputation requires ', storage % minimum, ' (restart state ', &
+              & storage % restart, ', leaf ', storage % leaf, ', costate window ', storage % window, &
+              & ', Lagrangian terms ', storage % terms, '); retention requires ', storage % retained
+         error stop 'gti_chain: the reverse storage limit admits the working set of one recomputation at least'
+      else
+         c = int(min(int(n - 1, int64), (limit - storage % restart - storage % leaf - fixed) / storage % restart))
+         this % leaf = 1
+      end if
+      storage % checkpoints = c
+    end associate
+    allocate(this % stored(c))
+    call evaluation_table(n, c, this % leaf, this % evaluations)
+  end subroutine scheduled_within
+  !===================================================================!
+  ! t(n, c), the forward block evaluations reversing n blocks from a
+  ! base restart state with c further ones: n when n <= leaf (the
+  ! range retained whole); with c = 0 the last block is reached from
+  ! the base each time, n + t(n - 1, 0) = n (n + 1) / 2; otherwise the
+  ! minimum over the split m of m + t(n - m, c - 1) + t(m - 1, c): the
+  ! restart state stored after block m includes that block's own
+  ! forward data (it is live there), so block m is reversed from the
+  ! restart state without a further evaluation. Beside the binomial
+  ! count of Griewank and Walther, whose checkpoint is a state before
+  ! a step, this saves one evaluation per stored restart state used.
+  !===================================================================!
+  subroutine evaluation_table(n, c, leaf, t)
+    integer, intent(in) :: n, c, leaf
+    integer, allocatable, intent(out) :: t(:,:)
+    integer :: i, k, m, at
+    allocate(t(0:n, 0:c), source=ishft(huge(1), -2))
+    do k = 0, c
+       do i = 0, n
+          if (i <= leaf) then
+             t(i, k) = i
+          else if (k == 0) then
+             t(i, k) = i + t(i - 1, k)
+          else
+             do m = 1, i - 1
+                at = m + t(i - m, k - 1) + t(m - 1, k)
+                if (at < t(i, k)) t(i, k) = at
+             end do
+          end if
+       end do
+    end do
+  end subroutine evaluation_table
+  pure integer function split_at(this, n, c) result(m)
+    type(checkpointed_reverse), intent(in) :: this
+    integer, intent(in) :: n, c
+    integer :: k, at, least
+    m = 0
+    least = huge(1)
+    do k = 1, n - 1
+       at = k + this % evaluations(n - k, c - 1) + this % evaluations(k - 1, c)
+       if (at < least) then
+          least = at
+          m = k
+       end if
+    end do
+    if (m == 0) error stop 'gti_chain: a range longer than the leaf splits'
+  end function split_at
+  !===================================================================!
+  ! THE POSITIONS AT WHICH THE FIRST SWEEP STORES A RESTART STATE: the
+  ! recursion's right descent, t - 1 at every split until the count
+  ! is exhausted or the range is within the leaf.
+  !===================================================================!
+  function first_sweep_positions(this) result(positions)
+    type(checkpointed_reverse), intent(in) :: this
+    integer, allocatable :: positions(:)
+    integer :: first, last, c, t
+    positions = [integer ::]
+    first = 1
+    last  = this % num_blocks
+    c     = this % storage % checkpoints
+    do while (last - first + 1 > this % leaf .and. c > 0)
+       t = first + split_at(this, last - first + 1, c)
+       positions = [positions, t - 1]
+       first = t
+       c = c - 1
+    end do
+  end function first_sweep_positions
+  !===================================================================!
+  ! THE RECURSION. On entry the restart state of position first - 1
+  ! is stored (position 0 needs none) and every block after last is
+  ! reversed. A range within the leaf is advanced whole from the
+  ! restart state, reversed, and released. With no further restart
+  ! state the last block is reached from the base, the earlier ones
+  ! released as their readers pass, reversed, and the range before it
+  ! treated the same. Otherwise the range is advanced to its split,
+  ! whose restart state is stored, the right part is reversed with
+  ! one restart state fewer, the split's block is reversed from its
+  ! stored data, the state released, and the range before the split
+  ! reversed with the same count. A range whose blocks are present,
+  ! or whose split is stored, is not advanced again: that is how a
+  ! march that stored the states as it went is resumed without a
+  ! second sweep.
+  !===================================================================!
+  recursive subroutine reversed(this, first, last, c)
+    type(checkpointed_reverse), intent(inout) :: this
+    integer, intent(in) :: first, last, c
+    integer :: n, t, b
+    logical :: present_whole
+    n = last - first + 1
+    if (n < 1) return
+    if (n <= this % leaf) then
+       present_whole = this % forward_schedule % num_completed() == last
+       do b = first, last
+          present_whole = present_whole .and. forward_present(this, b)
+       end do
+       if (.not. present_whole) then
+          call restored(this, first - 1)
+          do b = first, last
+             call forward_step(this, retain=.true.)
+          end do
+       end if
+       do b = last, first, -1
+          call reverse_step(this, b)
+       end do
+       call released_forward(this, first, last)
+       return
+    end if
+    if (c == 0) then
+       if (.not. (this % forward_schedule % num_completed() == last .and. forward_present(this, last))) then
+          call restored(this, first - 1)
+          do b = first, last - 1
+             call forward_step(this, retain=.false.)
+          end do
+          call forward_step(this, retain=.true.)
+       end if
+       call reverse_step(this, last)
+       call released_forward(this, first, last)
+       call reversed(this, first, last - 1, 0)
+       return
+    end if
+    t = first + split_at(this, n, c)
+    if (.not. stored_at(this, t - 1)) then
+       call restored(this, first - 1)
+       do b = first, t - 1
+          call forward_step(this, retain=.false.)
+       end do
+       call store(this, t - 1)
+    end if
+    call reversed(this, t, last, c - 1)
+    call restored(this, t - 1)
+    if (.not. forward_present(this, t - 1)) then
+       error stop 'gti_chain: a restart state includes the block it is stored after'
+    end if
+    call reverse_step(this, t - 1)
+    call released_forward(this, first, t - 1)
+    call released_stored(this, t - 1)
+    call reversed(this, first, t - 2, c)
+  end subroutine reversed
+  logical function forward_present(this, b)
+    type(checkpointed_reverse), intent(in) :: this
+    integer, intent(in) :: b
+    forward_present = this % costate % top == 0 .or. allocated(this % w(b) % w)
+    if (this % recomputes_primal) forward_present = forward_present .and. allocated(this % chain(b) % state)
+  end function forward_present
+  logical function stored_at(this, position)
+    type(checkpointed_reverse), intent(in) :: this
+    integer, intent(in) :: position
+    stored_at = position == 0
+    if (allocated(this % stored)) stored_at = stored_at .or. any(this % stored % position == position)
+  end function stored_at
+  !===================================================================!
+  ! ONE FORWARD STEP: the tower of the next block in the stored order;
+  ! unless the block is retained, the towers whose lifetime ends at
+  ! the step are released.
+  !===================================================================!
+  subroutine forward_step(this, retain)
+    type(checkpointed_reverse), intent(inout) :: this
+    logical, intent(in) :: retain
+    type(block_rule) :: primal
+    integer, allocatable :: released(:)
+    integer :: h, b
+    b = this % forward_schedule % next_rule()
+    if (b < 1) error stop 'gti_chain: a forward step lies within the stored order'
+    if (this % recomputes_primal) then
+       ! the execution's own block rule: the block from the data the
+       ! driver binds, its datum emitted, its tower solved by the
+       ! Taylor state under a new version
+       primal = this % primal(b)
+       primal % chain => this % chain
+       primal % tower => this % tower
+       primal % context => this % context
+       primal % taylor => this % taylor
+       call this % context % account % enter(at_horizon)
+       call this % forward_schedule % advance_with(this % domain, primal)
+       call this % context % account % leave()
+    else
+       this % tangent % to_size = merge(-1, this % share_to, this % evaluated(b))
+       ! A RECOMPUTED TOWER IS SOLVED UNDER A VERSION OF ITS OWN. A
+       ! retained factorisation is reused for the same version in either
+       ! orientation, so the costate solve of a block reads the factors
+       ! of its own tower solve only when nothing was solved between the
+       ! two; in the retained pass that is the last block alone. A new
+       ! version at every recomputation keeps that pattern, and the
+       ! recomputed towers and costates equal the retained ones bitwise.
+       if (this % evaluated(b)) this % tangent % versions(b) = this % tangent % context % next_version()
+       this % evaluated(b) = .true.
+       call this % forward_schedule % advance_with(this % domain, this % tangent)
+    end if
+    this % storage % evaluations = this % storage % evaluations + 1
+    if (retain) return
+    released = this % forward_schedule % expired_at(this % forward_schedule % num_completed())
+    do h = 1, size(released)
+       call released_block(this, released(h))
+    end do
+  end subroutine forward_step
+  !===================================================================!
+  ! Release the forward data of one block: its tower, and its state
+  ! when the primal is recomputed.
+  !===================================================================!
+  subroutine released_block(this, b)
+    type(checkpointed_reverse), intent(inout) :: this
+    integer, intent(in) :: b
+    if (allocated(this % w(b) % w)) then
+       call counted(this % storage, TOWER_ACCOUNT, -int(size(this % w(b) % w), int64))
+       deallocate(this % w(b) % w)
+    end if
+    if (.not. this % recomputes_primal) return
+    if (allocated(this % chain(b) % state)) then
+       call counted(this % storage, STATE_ACCOUNT, -int(size(this % chain(b) % state), int64))
+       deallocate(this % chain(b) % state)
+    end if
+  end subroutine released_block
+  !===================================================================!
+  ! ONE REVERSE STEP: the costates of block b, which is the next of
+  ! the transposed order; the costate data whose lifetime ends at the
+  ! step - their final reader, or the step's own output nothing reads,
+  ! the last block reversed - are released by the driver and counted
+  ! off here.
+  !===================================================================!
+  subroutine reverse_step(this, b)
+    type(checkpointed_reverse), intent(inout) :: this
+    integer, intent(in) :: b
+    integer, allocatable :: released(:)
+    integer :: h
+    if (this % transposed_schedule % next_rule() /= b) then
+       error stop 'gti_chain: the transposed order is the reverse of the forward order'
+    end if
+    call this % transposed_schedule % advance_with(this % domain, this % costate)
+    released = this % transposed_schedule % expired_at(this % transposed_schedule % num_completed())
+    do h = 1, size(released)
+       call counted(this % storage, COSTATE_ACCOUNT, -costate_entries(this, released(h), &
+            & size(this % costate % functionals), this % costate % nd, this % costate % top))
+    end do
+  end subroutine reverse_step
+  !===================================================================!
+  ! Store the restart state of a completed position: copies of the
+  ! towers live after it, in a free slot.
+  !===================================================================!
+  subroutine store(this, position)
+    type(checkpointed_reverse), intent(inout) :: this
+    integer, intent(in) :: position
+    if (this % forward_schedule % num_completed() /= position) then
+       error stop 'gti_chain: a restart state is stored at the traversal''s own position'
+    end if
+    call stored_restart(this % stored, position, this % forward_schedule % live_after(position), &
+         & this % chain, this % w, this % storage, this % recomputes_primal)
+  end subroutine store
+  !===================================================================!
+  ! Copy the towers, and the states when with_states is set, of the blocks live
+  ! after a completed position into a free restart state, counted
+  ! under the checkpoint account. Called by the traversal and by the
+  ! march of a streamed reverse execution alike.
+  !===================================================================!
+  subroutine stored_restart(stored, position, live, chain, w, storage, with_states)
+    type(restart_state), intent(inout) :: stored(:)
+    integer, intent(in) :: position, live(:)
+    type(chain_block), intent(in) :: chain(:)
+    type(tangent_tower), intent(in) :: w(:)
+    type(derivative_storage), intent(inout) :: storage
+    logical, intent(in) :: with_states
+    integer :: k, e
+    k = 0
+    do e = 1, size(stored)
+       if (stored(e) % position < 0) then
+          k = e
+          exit
+       end if
+    end do
+    if (k == 0) error stop 'gti_chain: the schedule stores at most its checkpoints'
+    allocate(stored(k) % live(size(live)))
+    do e = 1, size(live)
+       stored(k) % live(e) % at = live(e)
+       if (allocated(w(live(e)) % w)) then
+          stored(k) % live(e) % w = w(live(e)) % w
+          call counted(storage, CHECKPOINT_ACCOUNT, int(size(w(live(e)) % w), int64))
+       end if
+       if (with_states) then
+          if (.not. allocated(chain(live(e)) % state)) error stop 'gti_chain: a restart state stores the live states'
+          stored(k) % live(e) % state = chain(live(e)) % state
+          call counted(storage, CHECKPOINT_ACCOUNT, int(size(chain(live(e)) % state), int64))
+       end if
+    end do
+    stored(k) % position = position
+  end subroutine stored_restart
+  subroutine released_stored(this, position)
+    type(checkpointed_reverse), intent(inout) :: this
+    integer, intent(in) :: position
+    integer :: k, e
+    do k = 1, size(this % stored)
+       if (this % stored(k) % position /= position) cycle
+       do e = 1, size(this % stored(k) % live)
+          if (allocated(this % stored(k) % live(e) % w)) &
+               & call counted(this % storage, CHECKPOINT_ACCOUNT, -int(size(this % stored(k) % live(e) % w), int64))
+          if (allocated(this % stored(k) % live(e) % state)) &
+               & call counted(this % storage, CHECKPOINT_ACCOUNT, -int(size(this % stored(k) % live(e) % state), int64))
+       end do
+       deallocate(this % stored(k) % live)
+       this % stored(k) % position = -1
+       return
+    end do
+    error stop 'gti_chain: a restart state is released once'
+  end subroutine released_stored
+  !===================================================================!
+  ! Resume the forward traversal at a position: the towers of the
+  ! stored restart state are restored where absent (a tower present
+  ! stores the values it was computed with, which a recomputation
+  ! reproduces) and the driver is paired at the position.
+  !===================================================================!
+  subroutine restored(this, position)
+    type(checkpointed_reverse), intent(inout) :: this
+    integer, intent(in) :: position
+    type(data_graph) :: values
+    integer, allocatable :: live(:)
+    integer :: k, e, b
+    k = 0
+    if (position > 0) then
+       do e = 1, size(this % stored)
+          if (this % stored(e) % position == position) k = e
+       end do
+       if (k == 0) error stop 'gti_chain: a restart state is stored before the traversal resumes at its position'
+       do e = 1, size(this % stored(k) % live)
+          b = this % stored(k) % live(e) % at
+          if (.not. allocated(this % w(b) % w) .and. allocated(this % stored(k) % live(e) % w)) then
+             this % w(b) % w = this % stored(k) % live(e) % w
+             call counted(this % storage, TOWER_ACCOUNT, int(size(this % w(b) % w), int64))
+          end if
+          if (.not. this % recomputes_primal) cycle
+          if (.not. allocated(this % chain(b) % state) .and. allocated(this % stored(k) % live(e) % state)) then
+             this % chain(b) % state = this % stored(k) % live(e) % state
+             call counted(this % storage, STATE_ACCOUNT, int(size(this % chain(b) % state), int64))
+          end if
+       end do
+    end if
+    allocate(values % at(this % num_blocks))
+    ! the data branch a primal traversal resumes from: the data of the
+    ! blocks live after the position, the driver's restart state
+    if (this % recomputes_primal) then
+       live = this % forward_schedule % live_after(position)
+       do e = 1, size(live)
+          if (.not. allocated(this % chain(live(e)) % state)) then
+             error stop 'gti_chain: the traversal resumes from the states live after its position'
+          end if
+          allocate(values % at(live(e)) % datum, source=state_datum(this % chain, live(e)))
+       end do
+    end if
+    call this % forward_schedule % pair_with(this % rules % pair(values), position)
+  end subroutine restored
+  !===================================================================!
+  ! Release the towers of a reversed range: nothing later reads them.
+  !===================================================================!
+  subroutine released_forward(this, first, last)
+    type(checkpointed_reverse), intent(inout) :: this
+    integer, intent(in) :: first, last
+    integer :: b
+    associate (unused => first); end associate
+    do b = 1, last
+       call released_block(this, b)
+    end do
+  end subroutine released_forward
   subroutine steps_along(tower, nd, max_size, u)
     type(expansion), intent(in) :: tower
     integer        , intent(in) :: nd, max_size
@@ -6503,20 +7466,22 @@ contains
        end do
     end do
   end subroutine forcing_of
-  subroutine costates_at(chain, b, s, lambda, nd, i, lam)
-    type(chain_block)   , intent(in) :: chain(:)
-    integer             , intent(in) :: b, s(:), nd, i
-    real(dp)            , intent(in) :: lambda(:,:,:,:,0:)
+  !===================================================================!
+  ! THE COSTATES OF ONE BLOCK ALONG THE SUBSETS OF s: lambda is the
+  ! block's own (unknown, functional, multiset, order) array.
+  !===================================================================!
+  subroutine costates_at(count, s, lambda, nd, i, lam)
+    integer             , intent(in) :: count, s(:), nd, i
+    real(dp)            , intent(in) :: lambda(:,:,:,0:)
     real(dp), allocatable, intent(out) :: lam(:,:)
     integer, allocatable :: t(:)
-    integer :: n, full, mask, count, k
+    integer :: n, full, mask, k
     n     = size(s)
     full  = 2**n - 1
-    count = chain(b) % rows % num_unknowns()
     allocate(lam(count, 0:full))
     do mask = 0, full
        t = pack(s, [(btest(mask, k - 1), k = 1, n)])
-       lam(:, mask) = lambda(1:count, b, i, multiset_rank(t, nd), size(t))
+       lam(:, mask) = lambda(1:count, i, multiset_rank(t, nd), size(t))
     end do
   end subroutine costates_at
   subroutine sinks_of(b, degrees, design, is_sink, diagonal, sinks)
@@ -6585,7 +7550,7 @@ contains
     type(expression)    , intent(in) :: physics, rule
     real(dp)            , intent(in) :: design
     type(tangent_tower), intent(in) :: w(:)
-    real(dp), intent(in) :: lambda(:,:,:,:,0:), u(:,:,:)
+    real(dp), intent(in) :: lambda(:,:,:,0:), u(:,:,:)
     real(dp), intent(in), optional   :: node_measure(:)
     real(dp), allocatable, intent(out) :: g(:)
     type(derivative_terms) :: t
@@ -6618,7 +7583,7 @@ contains
        end do
     end do
     if (n == 0) return
-    call costates_at(chain, b, s, lambda, nd, i, lam)
+    call costates_at(count, s, lambda, nd, i, lam)
     call chain(b) % rows % rows_terms(chain(b) % scheme, chain(b) % dt, step_seed, tr, tc, tw)
     fixed_rows = chain(b) % rows % fixed_indicator()
     at      = chain(b) % rows % points_at()
@@ -6668,7 +7633,7 @@ contains
     type(expression)    , intent(in) :: physics, rule
     real(dp)            , intent(in) :: design
     type(tangent_tower), intent(in) :: w(:)
-    real(dp), intent(in) :: lambda(:,:,:,:,0:), u(:,:,:)
+    real(dp), intent(in) :: lambda(:,:,:,0:), u(:,:,:)
     real(dp), intent(in), optional   :: node_measure(:)
     real(dp), intent(inout)          :: parts(0:)
     type(derivative_terms) :: l
@@ -6719,7 +7684,7 @@ contains
                & + point_terms(chain(b) % rows % rule_of(jj), stride, design, at(p), n + 1, 0, state_seed, nu_seed)
        end do
     end do
-    call costates_at(chain, b, s, lambda, nd, i, lam)
+    call costates_at(count, s, lambda, nd, i, lam)
     allocate(costate(count))
     do row = 1, count
        along          = 0.0_dp
@@ -10884,6 +11849,7 @@ program graph_time_integrator
   call context % set_rows(cfg % rows)
   call context % set_elimination(cfg % elimination)
   call context % set_storage_limit(cfg % elimination_entries)
+  call context % set_reverse_limit(cfg % reverse_entries)
   call context % set_predictor_order(cfg % predictor_order)
   call context % set_storage(cfg % storage)
   call context % set_multigrid(cfg % multigrid)

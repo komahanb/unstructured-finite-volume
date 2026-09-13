@@ -15,6 +15,8 @@ declare -A reason=(
     [unpaired_clear]='this driver is not paired with its data'
     [outside_set]='a vertex is one the pairing stores'
     [outside_clear]='a vertex is one the pairing stores'
+    [outside_position]='a position is a completed count of the stored order'
+    [outside_live]='a position is a completed count of the stored order'
 )
 refusal_output="$(mktemp)"
 trap 'rm -f "$refusal_output"' EXIT

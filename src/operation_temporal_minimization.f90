@@ -68,6 +68,7 @@ module operation_temporal_minimization
      procedure :: released_after
      procedure :: released_at
      procedure :: expired_at
+     procedure :: live_after
      procedure :: solve
 
   end type temporal_minimizer
@@ -134,13 +135,14 @@ contains
 
   end subroutine temporal_minimizer_state
 
-  subroutine pair_with(this, connection)
+  subroutine pair_with(this, connection, position)
 
     class(temporal_minimizer), intent(inout) :: this
     type(pairing)             , intent(in)    :: connection
+    integer                  , intent(in), optional :: position
 
     call require_schedule(this)
-    call this % schedule % pair_with(connection)
+    call this % schedule % pair_with(connection, position)
     call this % initialize_residual_history()
 
   end subroutine pair_with
@@ -344,6 +346,14 @@ contains
     call require_schedule(this)
     vertices = this % schedule % expired_at(step)
   end function expired_at
+
+  function live_after(this, step) result(vertices)
+    class(temporal_minimizer), intent(in) :: this
+    integer, intent(in) :: step
+    integer, allocatable :: vertices(:)
+    call require_schedule(this)
+    vertices = this % schedule % live_after(step)
+  end function live_after
 
   !===================================================================!
   ! SOLVE. Where a schedule is stated, solving is the traversal of that

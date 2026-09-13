@@ -311,7 +311,7 @@ module operation_driver
      ! The immutable incidence and orientation determine this schedule
      ! once. Release intervals contain each datum with a reader once;
      ! data without readers are outputs and remain available.
-     integer, allocatable :: visiting(:), last_reader(:)
+     integer, allocatable :: visiting(:), last_reader(:), written_at(:)
      integer, allocatable :: first_release(:), release_data(:)
      integer :: completed_steps = 0
 
@@ -333,6 +333,7 @@ module operation_driver
      procedure :: set_rule => driver_set_rule
      procedure :: clear_rule => driver_clear_rule
      procedure :: last_reader_of          ! the step a datum is last read at
+     procedure :: live_after              ! the data written by a step and read beyond it
      procedure :: released_after          ! the data releasable after a step
      procedure :: released_at             ! the data whose last reader is one step
      procedure :: expired_at              ! released_at with the step's outputs nothing reads
@@ -409,11 +410,17 @@ contains
        step_of_rule(this % visiting(k)) = k
     end do
     allocate(this % last_reader(this % over % order_of_part(SECOND_PART)), source=0)
+    allocate(this % written_at(size(this % last_reader)), source=0)
     allocate(this % first_release(n + 1), source=0)
     do d = 1, size(this % last_reader)
        call this % neighbourhood(SECOND_PART, d, .false., readers)
        do i = 1, size(readers)
           this % last_reader(d) = max(this % last_reader(d), step_of_rule(readers(i)))
+       end do
+       ! the step writing the datum: zero for a source nothing writes
+       call this % neighbourhood(SECOND_PART, d, .true., readers)
+       do i = 1, size(readers)
+          this % written_at(d) = max(this % written_at(d), step_of_rule(readers(i)))
        end do
        k = this % last_reader(d)
        if (k > 0) this % first_release(k + 1) = this % first_release(k + 1) + 1
@@ -592,18 +599,29 @@ contains
   !===================================================================!
   ! GIVE A DRIVER ITS CONNECTED BRANCHES. Until connected, a driver
   ! stores one rule for every vertex alike; connected, each vertex
-  ! stores its own rule and its own datum.
+  ! stores its own rule and its own datum. The position is the count
+  ! of completed steps the data branch corresponds to: zero, the
+  ! default, for data nothing has computed; a completed position when
+  ! the branch stores the data live after that step, so the traversal
+  ! resumes there. Invalid input: a position outside 0..the order.
   !===================================================================!
 
-  subroutine pair_with(this, connection)
+  subroutine pair_with(this, connection, position)
     class(driver), intent(inout) :: this
     type(pairing), intent(in)    :: connection
+    integer      , intent(in), optional :: position
     if (connection % paired_order(FIRST_PART) /= this % over % order_of_part(FIRST_PART) .or. &
         & connection % paired_order(SECOND_PART) /= this % over % order_of_part(SECOND_PART)) then
        error stop 'operation_driver: the pairing labels one vertex of each part'
     end if
     this % stored_pairing = connection
     this % completed_steps = 0
+    if (present(position)) then
+       if (position < 0 .or. position > size(this % visiting)) then
+          error stop 'operation_driver: a position is a completed count of the stored order'
+       end if
+       this % completed_steps = position
+    end if
   end subroutine pair_with
 
   subroutine driver_set_rule(this, vertex, rule)
@@ -862,6 +880,28 @@ contains
     end if
     last_reader_of = this % last_reader(datum)
   end function last_reader_of
+
+  !===================================================================!
+  ! THE DATA LIVE AFTER ONE STEP: written at that step or earlier
+  ! and read by a later step. With the rules' immutable inputs these
+  ! are what a traversal resumed at the step reads, so a caller
+  ! storing them stores a restart state of the traversal. A source
+  ! nothing writes is written at step zero. Ordered by datum number.
+  !===================================================================!
+
+  function live_after(this, step) result(vertices)
+    class(driver), intent(in) :: this
+    integer      , intent(in) :: step
+    integer, allocatable :: vertices(:)
+    integer :: d
+    vertices = [integer ::]
+    if (.not. allocated(this % last_reader)) return
+    if (step < 0 .or. step > size(this % visiting)) then
+       error stop 'operation_driver: a position is a completed count of the stored order'
+    end if
+    vertices = pack([(d, d = 1, size(this % last_reader))], &
+         & this % written_at <= step .and. this % last_reader > step)
+  end function live_after
 
   !===================================================================!
   ! THE DATA RELEASABLE AFTER ONE STEP: every vertex already visited

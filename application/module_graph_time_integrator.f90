@@ -2474,16 +2474,17 @@ module gti_block
   end interface block_residual
 contains
   function create(derived, physics, at, unknowns, degrees, primary, fixed_rows, fixed, &
-       & spatial_discretization_stencil) result(this)
+       & spatial_discretization_stencil, fixed_rate) result(this)
     type(stencil)         , intent(in) :: derived
     type(expression)      , intent(in) :: physics
     integer               , intent(in) :: at(:), unknowns, degrees, primary(:)
     integer               , intent(in) :: fixed_rows(:)
     real(dp)              , intent(in) :: fixed(:)
     type(stencil)         , intent(in), optional :: spatial_discretization_stencil
+    real(dp)              , intent(in), optional :: fixed_rate(:)
     type(block_residual) :: this
     this % residual_operator = residual_operator(derived, physics, at, unknowns, degrees, primary, &
-         & fixed_rows, fixed, spatial_discretization_stencil)
+         & fixed_rows, fixed, spatial_discretization_stencil, fixed_rate)
   end function create
   subroutine placed_on(this, tower, node)
     class(block_residual), intent(inout)     :: this
@@ -3068,13 +3069,14 @@ contains
     spacing_needed = real(target, real128) / real(max(weight * state_size, tiny(1.0_dp)), real128)
     least_kind     = least_kind_for(spacing_needed)
   end subroutine precision_needed
-  function consistent_state(physics, degrees, lower, design_value, context) result(q)
+  function consistent_state(physics, degrees, lower, design_value, rate, context) result(q)
     class(march_context), intent(inout), optional, target :: context
     type(march_context), target :: default_context
     class(march_context), pointer :: active_context
     type(expression)      , intent(in) :: physics
     integer               , intent(in) :: degrees
     real(dp)              , intent(in) :: lower(:), design_value
+    real(dp), allocatable, intent(out), optional :: rate(:)
     real(dp), allocatable :: q(:)
     if (present(context)) then
        active_context => context
@@ -3085,10 +3087,10 @@ contains
        error stop 'gti_march: the components below the highest are given, and no others'
     end if
     q = consistent_states(physics, degrees, reshape(lower, [degrees - 1, 1]), design_value, &
-         & context=active_context)
+         & rate=rate, context=active_context)
   end function consistent_state
   function consistent_states(physics, degrees, lower, design_value, spatial_discretization_stencil, &
-       & spatial_derivative_stencils, context) result(q)
+       & spatial_derivative_stencils, rate, context) result(q)
     class(march_context), intent(inout), optional, target :: context
     type(march_context), target :: default_context
     class(march_context), pointer :: active_context
@@ -3097,6 +3099,13 @@ contains
     real(dp)              , intent(in)           :: lower(:,:), design_value
     type(stencil)         , intent(in), optional :: spatial_discretization_stencil
     type(stencil)         , intent(in), optional :: spatial_derivative_stencils(:)
+    ! THE DESIGN RATE OF THE CLOSED COMPONENTS. The components below
+    ! each field's highest are given and do not move with the design;
+    ! the highest is closed by that field's rule, so it does. Implicit
+    ! differentiation of rule(Q, nu) = 0 in the closed components gives
+    ! slope * dQ_top/dnu = -dRule/dnu, the same linear system the
+    ! Newton step above uses, with the design partial on the right.
+    real(dp), allocatable, intent(out), optional :: rate(:)
     real(dp), allocatable :: q(:)
     type(stored_directed_graph) :: points
     type(stored_field) :: state, design_field, direction
@@ -3181,13 +3190,19 @@ contains
        end do
        r(:, 1) = r(:, 1) + below
        if (initial_residual_norm < 0.0_dp) initial_residual_norm = norm2(r)
-       if (norm2(r) == 0.0_dp) return
+       if (norm2(r) == 0.0_dp) then
+          call filled_rate()
+          return
+       end if
        if (active_context % stopping_criterion == relative) then
           target = active_context % stopping_tolerance * max(initial_residual_norm, tiny(1.0_dp))
        else
           target = active_context % stopping_tolerance
        end if
-       if (norm2(r) <= target) return
+       if (norm2(r) <= target) then
+          call filled_rate()
+          return
+       end if
        if (iteration == active_context % stopping_iterations) exit
        ! slope(i, j, f) is rule j's partial in field f's highest component at node i
        do f = 1, fields
@@ -3222,6 +3237,54 @@ contains
     end do
     write(*,'(a,es12.3)') ' the residual of the physics at the initial instant is ', norm2(r)
     error stop 'gti_march: the initial state is consistent with the physics'
+  contains
+    subroutine filled_rate()
+      real(dp), allocatable :: entry(:), matrix(:,:), right(:), closed(:)
+      type(stored_field) :: design_direction
+      integer :: node, field_index, rule_index
+      if (.not. present(rate)) return
+      allocate(rate(nodes * degrees), source=0.0_dp)
+      state            = point_states % state(q)
+      design_direction = point_scalars % direction(spread(1.0_dp, 1, nodes))
+      ! each rule's partial in the design at the converged state
+      do rule_index = 1, fields
+         call rules(rule_index) % partial_action(points, &
+              & rules(rule_index) % bind([state, design_field]), &
+              & [variation(rules(rule_index) % argument(2), design_direction)], out)
+         call out % real_vector(entry)
+         r(:, rule_index) = entry
+      end do
+      ! and its partial in each field's highest component there
+      do field_index = 1, fields
+         e = 0.0_dp
+         do node = 1, nodes
+            e((node - 1) * degrees + top(field_index) + 1) = 1.0_dp
+         end do
+         direction = point_states % direction(e)
+         do rule_index = 1, fields
+            call rules(rule_index) % partial_action(points, &
+                 & rules(rule_index) % bind([state, design_field]), &
+                 & [variation(rules(rule_index) % argument(1), direction)], out)
+            call out % real_vector(entry)
+            slope(:, rule_index, field_index) = entry
+         end do
+      end do
+      if (fields == 1) then
+         do node = 1, nodes
+            rate((node - 1) * degrees + top(1) + 1) = -r(node, 1) / slope(node, 1, 1)
+         end do
+      else
+         do node = 1, nodes
+            matrix = slope(node, :, :)
+            right  = -r(node, :)
+            call block_factor % factorise(matrix, 0.0_dp)
+            call block_factor % substitute(right, closed, .false.)
+            do field_index = 1, fields
+               rate((node - 1) * degrees + top(field_index) + 1) = closed(field_index)
+            end do
+         end do
+      end if
+    end subroutine filled_rate
   end function consistent_states
   !===================================================================!
   ! The spatial components of every field at every node: the k-th
@@ -3318,7 +3381,7 @@ contains
 
   end function instants_at_of
 
-  subroutine block_from(tower, b, scheme, physics, fixed, rows, instants_at, context)
+  subroutine block_from(tower, b, scheme, physics, fixed, rows, instants_at, fixed_rate, context)
     class(march_context), intent(inout), optional, target :: context
     type(march_context), target :: default_context
     class(march_context), pointer :: active_context
@@ -3327,6 +3390,7 @@ contains
     class(family)         , intent(in)  :: scheme
     type(expression)      , intent(in)  :: physics
     real(dp)              , intent(in)  :: fixed(:)
+    real(dp)              , intent(in), optional :: fixed_rate(:)
     type(block_residual)  , intent(out) :: rows
     integer, allocatable  , intent(out) :: instants_at(:)
     type(graph), pointer :: block, slice, moment_node, component, below
@@ -3337,6 +3401,7 @@ contains
     integer , allocatable :: slice_of(:), member_of(:), members(:), at(:), fixed_rows(:)
     integer , allocatable :: r(:), c(:), table(:,:), rs(:), cs(:)
     real(dp), allocatable :: dt(:), w(:,:), seeds(:,:), spatial_weights(:), ws(:), appended(:,:), values(:)
+    real(dp), allocatable :: rates(:)
     integer :: ns, gauge_row
     logical , allocatable :: point(:)
     integer :: m, nd, stride, width, n, s, k, j, g, moments, i, d, count, npts, ncar
@@ -3407,6 +3472,15 @@ contains
        error stop 'gti_march: one fixed value per known component'
     end if
     values = fixed
+    ! every fixed value's design rate, in the order of the values: the
+    ! caller's where it gave one, zero for a gauge, which is a constant
+    allocate(rates(size(values)), source=0.0_dp)
+    if (present(fixed_rate)) then
+       if (size(fixed_rate) /= size(fixed)) then
+          error stop 'gti_march: one design rate per fixed value'
+       end if
+       rates = fixed_rate
+    end if
     ! the gauge: the gauged field's value at the first node fixed to
     ! zero at every moment where it is not known already
     if (tower % gauged_field() > 0) then
@@ -3416,6 +3490,7 @@ contains
           ncar = ncar + 1
           fixed_rows(ncar) = gauge_row
           values = [values, 0.0_dp]
+          rates  = [rates, 0.0_dp]
        end do
     end if
     embedding % tower => tower
@@ -3448,7 +3523,7 @@ contains
     end if
     rows = block_residual(derived_constraints(r, c, -w(:, 0), moments * width, 'time discretization stencil'), &
          & physics, at(1:npts), moments * width, stride, layout % primary_rows(scheme), &
-         & fixed_rows(1:ncar), values)
+         & fixed_rows(1:ncar), values, fixed_rate=rates)
     call rows % placed_on(tower, block)
     call rows % with_connectivity(connectivity)
     if (ns > 0) call rows % with_spatial_rows(rs, cs, ws)
@@ -4690,7 +4765,7 @@ contains
     op = stencil(r, c, w, fixed, 'spatial discretization stencil')
   end function spatial_discretization_stencil_of
   function initial_field(physics, degrees, kind, initial_state, design, spatial_discretization_stencil, space, &
-       & spatial_derivative_stencils, context) result(q)
+       & spatial_derivative_stencils, rate, context) result(q)
     type(expression)      , intent(in)           :: physics
     integer               , intent(in)           :: degrees
     character(len=*)      , intent(in)           :: kind, initial_state
@@ -4698,6 +4773,8 @@ contains
     type(stencil)         , intent(in), optional :: spatial_discretization_stencil
     type(stencil)         , intent(in), optional :: spatial_derivative_stencils(:)
     type(spatial_domain)            , intent(in), optional :: space
+    ! the design rate of the components the law closes
+    real(dp), allocatable, intent(out), optional :: rate(:)
     type(march_context), intent(inout), optional :: context
     real(dp), allocatable :: q(:)
     character(len=32), allocatable :: given(:)
@@ -4722,6 +4799,8 @@ contains
           error stop 'gti_field: the exact field stores the spatial derivatives as rows of the jet'
        end if
        call taylor_green_state(space, physics, 0.0_dp, design, q, spatial_derivative_stencils)
+       ! the exact vortex states every component, so the law closes none
+       if (present(rate)) allocate(rate(size(q)), source=0.0_dp)
        return
     case ('constant')
        given = words_of(initial_state)
@@ -4750,7 +4829,7 @@ contains
        error stop 'gti_field: an initial field is constant, the mode, or the bump'
     end select
     q = consistent_states(physics, degrees, lower, design, spatial_discretization_stencil, &
-         & spatial_derivative_stencils, context=context)
+         & spatial_derivative_stencils, rate=rate, context=context)
   end function initial_field
   !===================================================================!
   ! THE TAYLOR-GREEN VORTEX AT AN INSTANT, on the periodic box of side
@@ -5340,7 +5419,7 @@ module gti_chain
 
      class(family)   , allocatable :: scheme
      type(expression), allocatable :: physics
-     real(dp)        , allocatable :: dt(:), initial(:)
+     real(dp)        , allocatable :: dt(:), initial(:), initial_rate(:)
      integer         , allocatable :: coarse_step(:)
 
      ! the instants, stride and node count of the block; the given
@@ -5531,21 +5610,23 @@ contains
        fixed((i - 1) * width + 1:i * width) = fine_components(earlier, first + (i - 1) * stride)
     end do
   end function transferred
-  subroutine built(tower, b, scheme, physics, fixed, rows, instants_at, context)
+  subroutine built(tower, b, scheme, physics, fixed, rows, instants_at, fixed_rate, context)
     class(march_context), optional, target, intent(inout) :: context
     type(expansion)       , intent(in), target :: tower
     integer               , intent(in)  :: b
     class(family)         , intent(in)  :: scheme
     type(expression)      , intent(in)  :: physics
     real(dp)              , intent(in)  :: fixed(:)
+    real(dp)              , intent(in), optional :: fixed_rate(:)
     type(block_residual)  , intent(out) :: rows
     integer, allocatable  , intent(out) :: instants_at(:)
-    call block_from(tower, b, scheme, physics, fixed, rows, instants_at, context=context)
+    call block_from(tower, b, scheme, physics, fixed, rows, instants_at, fixed_rate=fixed_rate, &
+         & context=context)
   end subroutine built
   subroutine march_chain(schemes, added, physics, degrees, steps, &
        & design, initial, chain, tower, dt, t, achieved, grid_design, final_imbalance, nodes, spatial_discretization_stencil, &
        & startup, functionals, derivative_order, f, tower_storage, state_storage, spatial_derivative_stencils, &
-       & gauge_field, context)
+       & gauge_field, initial_rate, context)
     type(family_container)   , intent(in) :: schemes(:)
     integer               , intent(in) :: added(:), degrees
     type(expression)      , intent(in) :: physics
@@ -5561,6 +5642,8 @@ contains
     type(stencil)  , intent(in) , optional :: spatial_discretization_stencil
     type(stencil)  , intent(in) , optional :: spatial_derivative_stencils(:)
     integer        , intent(in) , optional :: gauge_field
+    ! the design rate of the initial tuple's closed components
+    real(dp)       , intent(in) , optional :: initial_rate(:)
     integer        , intent(in) , optional :: startup
     ! THE PIPELINED DERIVATIVE. With functionals and an order given,
     ! every block's tangent tower is solved immediately after the block,
@@ -5576,7 +5659,7 @@ contains
     type(chain_execution) :: execution
     call execution % initialize(schemes, added, physics, degrees, steps, design, initial, &
          & grid_design, nodes, spatial_discretization_stencil, startup, functionals, derivative_order, &
-         & spatial_derivative_stencils, gauge_field, context)
+         & spatial_derivative_stencils, gauge_field, initial_rate, context)
     do while (.not. execution % complete())
        call execution % advance()
     end do
@@ -5586,13 +5669,15 @@ contains
 
   subroutine execution_initialize(this, schemes, added, physics, degrees, steps, design, initial, &
        & grid_design, nodes, spatial_discretization_stencil, startup, functionals, derivative_order, &
-       & spatial_derivative_stencils, gauge_field, context, pass_kind, designs)
+       & spatial_derivative_stencils, gauge_field, initial_rate, context, pass_kind, designs)
     class(chain_execution), intent(out) :: this
     type(family_container), intent(in) :: schemes(:)
     integer, intent(in) :: added(:), degrees
     type(expression), intent(in) :: physics
     class(grid), intent(in) :: steps
     real(dp), intent(in) :: design, initial(:)
+    ! the design rate of the initial tuple's closed components
+    real(dp), intent(in), optional :: initial_rate(:)
     real(dp), intent(in), optional :: grid_design(:)
     integer, intent(in), optional :: nodes, startup, derivative_order, gauge_field
     type(stencil), intent(in), optional :: spatial_discretization_stencil, spatial_derivative_stencils(:)
@@ -5682,6 +5767,14 @@ contains
        allocate(this % rules(b) % physics, source=physics)
        this % rules(b) % design = design
        this % rules(b) % initial = initial
+       if (present(initial_rate)) then
+          if (size(initial_rate) /= size(initial)) then
+             error stop 'gti_chain: one design rate per initial component'
+          end if
+          this % rules(b) % initial_rate = initial_rate
+       else
+          allocate(this % rules(b) % initial_rate(size(initial)), source=0.0_dp)
+       end if
        call incidence % in_neighbourhood(BLOCKS, b, reads)
        allocate(contracts(size(reads)), source=contract(FIELD_REAL, 1))
        call this % rules(b) % declare_arguments(size(reads), contracts)
@@ -6266,7 +6359,7 @@ contains
     ! an unallocated transfer is an absent argument
     call one_block(this % chain, this % vertex, this % tower, this % in_tower, this % scheme, &
          & this % physics, this % degrees, this % layout, this % dt, this % coarse_step, &
-         & this % fraction, this % counted, this % design, this % initial, achieved, &
+         & this % fraction, this % counted, this % design, this % initial, this % initial_rate, achieved, &
          & final_imbalance, transferred_values, context=this % context)
     ! THE DATUM'S DOMAIN IS THE BLOCK RESIDUAL'S U, NOT THE SCHEDULE'S.
     ! The graph a driver evaluates over specifies which rule runs when;
@@ -6297,7 +6390,7 @@ contains
   end function state_datum
 
   subroutine one_block(chain, b, tower, in_tower, scheme, physics, degrees, layout, &
-       & dt, coarse_step, fraction, counted, design, initial, achieved, final_imbalance, &
+       & dt, coarse_step, fraction, counted, design, initial, initial_rate, achieved, final_imbalance, &
        & transferred_values, context)
     class(march_context), optional, target, intent(inout) :: context
     type(chain_block)     , intent(inout) :: chain(:)
@@ -6308,11 +6401,12 @@ contains
     class(family)         , intent(in)    :: scheme
     type(expression)      , intent(in)    :: physics
     real(dp)              , intent(in)    :: dt(:), fraction, design, initial(:)
+    real(dp)              , intent(in)    :: initial_rate(:)
     logical               , intent(in)    :: counted
     real(dp)              , intent(out)   :: achieved
     type(imbalance)       , intent(out)   :: final_imbalance
     real(dp)     , intent(in), optional   :: transferred_values(:)
-    real(dp), allocatable :: fixed(:)
+    real(dp), allocatable :: fixed(:), rate(:)
     type(march_context), target :: local_context
     class(march_context), pointer :: active
     active => local_context
@@ -6336,15 +6430,25 @@ contains
     ! each. A caller that already has the transfer passes it, and then
     ! nothing here reads the chain - that argument is the separation
     ! between the data and the rule, and on this side it is incomplete.
+    ! THE DESIGN RATE OF WHAT IS PASSED IN. Only the first block's
+    ! values are data of the problem: its given instants are the
+    ! initial tuple, whose highest components the law closes, so they
+    ! move with the design. Every later block's are an earlier block's
+    ! solved state, whose sensitivity the chain's own transfer states,
+    ! and a rate here would count it twice.
     if (present(transferred_values)) then
        fixed = transferred_values
+       allocate(rate(size(fixed)), source=0.0_dp)
+       if (b == 1) rate = initial_rate
     else if (b == 1) then
        if (size(initial) /= chain(b) % given * chain(b) % width) then
           error stop 'gti_chain: the initial state contains the first block''s given instants'
        end if
        fixed = initial
+       rate  = initial_rate
     else
        fixed = transferred(chain(1:b - 1), layout % first, layout % stride, chain(b) % given)
+       allocate(rate(size(fixed)), source=0.0_dp)
     end if
     if (scheme % num_stages() > 1) then
        call active % account % enter(at_stage)
@@ -6352,7 +6456,7 @@ contains
        call active % account % enter(at_block)
     end if
     call built(tower, in_tower, scheme, physics, fixed, chain(b) % rows, &
-         & chain(b) % instants_at, context=context)
+         & chain(b) % instants_at, fixed_rate=rate, context=context)
     call swept(chain(b) % rows, design, chain(b) % state, achieved, final_imbalance, context=context)
     chain(b) % final_imbalance = final_imbalance
     call active % account % leave()
@@ -7692,7 +7796,38 @@ contains
                & state_seed, nu_seed), full)
        end do
     end do
+    ! A FIXED ROW READS x(row) - h(row), and h moves with the design
+    ! where the law closes it: the row's design partial is -dh/dnu,
+    ! stated on the first design alone, h being affine in it.
+    call fixed_design_rows(chain(b) % rows, nu_seed(full), s, r)
   end subroutine forcing_of
+
+  !===================================================================!
+  ! The design partial of every fixed row, placed where the physics
+  ! rows leave the vector at zero. A repeated partial in the physics
+  ! design would read d^m h/dnu^m, of which the first rate alone is
+  ! stated: refused rather than reported as zero.
+  !===================================================================!
+
+  subroutine fixed_design_rows(rows, seed, s, r)
+    type(block_residual), intent(in)    :: rows
+    real(dp)            , intent(in)    :: seed
+    integer             , intent(in)    :: s(:)
+    real(dp)            , intent(inout) :: r(:)
+    integer , allocatable :: which(:)
+    real(dp), allocatable :: rate(:)
+    integer :: i
+    which = rows % fixed_unknowns()
+    rate  = rows % fixed_rates()
+    if (all(rate == 0.0_dp)) return
+    if (count(s == 1) > 1) then
+       error stop 'gti_chain: a fixed value''s design rate is stated to first order only; &
+            &a repeated derivative in the physics design of a closed initial component is not stated'
+    end if
+    do i = 1, size(which)
+       r(which(i)) = -rate(i) * seed
+    end do
+  end subroutine fixed_design_rows
   !===================================================================!
   ! THE COSTATES OF ONE BLOCK ALONG THE SUBSETS OF s: lambda is the
   ! block's own (unknown, functional, multiset, order) array.
@@ -7911,6 +8046,11 @@ contains
                & + point_terms(chain(b) % rows % rule_of(jj), stride, design, at(p), n + 1, 0, state_seed, nu_seed)
        end do
     end do
+    ! A FIXED ROW READS x(row) - h(row): the identity in the state and
+    ! -dh/dnu in the design, so the row pairs with its costate like any
+    ! other once h moves with the design. Where h is data of the problem
+    ! both parts are zero and the row stays out of the pairing.
+    call fixed_lagrangian_rows(chain(b) % rows, state_seed, nu_seed, s, residual, fixed_rows)
     call costates_at(count, s, lambda, nd, i, lam)
     allocate(costate(count))
     do row = 1, count
@@ -7926,6 +8066,41 @@ contains
        parts(0:n) = parts(0:n) - split(0:n)
     end do
   end function lagrangian_term
+
+  !===================================================================!
+  ! The terms of every fixed row whose value moves with the design:
+  ! x(row) - h(row), the state's own seed less h's design rate. The
+  ! row then pairs with its costate, so its flag is cleared. A row
+  ! whose value is data of the problem keeps a zero rate, a zero state
+  ! seed and its flag, and the pairing is unchanged.
+  !===================================================================!
+
+  subroutine fixed_lagrangian_rows(rows, state_seed, nu_seed, s, residual, fixed_rows)
+    type(block_residual)  , intent(in)    :: rows
+    real(dp)              , intent(in)    :: state_seed(:, 0:), nu_seed(:)
+    integer               , intent(in)    :: s(:)
+    type(derivative_terms), intent(inout) :: residual(:)
+    logical               , intent(inout) :: fixed_rows(:)
+    integer , allocatable :: which(:)
+    real(dp), allocatable :: rate(:), along(:)
+    integer :: i, mask
+    which = rows % fixed_unknowns()
+    rate  = rows % fixed_rates()
+    if (all(rate == 0.0_dp)) return
+    if (count(s == 1) > 1) then
+       error stop 'gti_chain: a fixed value''s design rate is stated to first order only; &
+            &a repeated derivative in the physics design of a closed initial component is not stated'
+    end if
+    allocate(along(0:size(nu_seed)))
+    do i = 1, size(which)
+       along(0) = 0.0_dp
+       do mask = 1, size(nu_seed)
+          along(mask) = state_seed(which(i), mask) - rate(i) * nu_seed(mask)
+       end do
+       residual(which(i)) = derivative_terms(along)
+       fixed_rows(which(i)) = .false.
+    end do
+  end subroutine fixed_lagrangian_rows
   real(dp) function functional_along(chain, b, rule, degrees, design, s, open, w, u, nd, &
        & node_measure) result(part)
     type(chain_block)   , intent(in) :: chain(:)
@@ -12055,7 +12230,7 @@ program graph_time_integrator
   type(spatial_domain)   , allocatable :: space
   type(stencil), allocatable :: spatial_discretization_stencil
   type(stencil), allocatable :: derivative_stencils(:)
-  real(dp)     , allocatable :: volume(:), q0(:)
+  real(dp)     , allocatable :: volume(:), q0(:), q0_rate(:)
   real(dp), allocatable :: extents(:)
   integer , allocatable :: counts(:)
   integer  :: nodes = 1
@@ -12365,18 +12540,21 @@ contains
        call march_chain(schemes, added, physics_of(cfg), nd, &
             & designed_grid(cfg % time_duration), cfg % design, q0, chain, tower, dt, t, &
             & achieved, grid_design=weights, final_imbalance=final_imbalance, nodes=nodes, spatial_discretization_stencil=spatial_discretization_stencil, &
+            & initial_rate=q0_rate, &
             & spatial_derivative_stencils=derivative_stencils, gauge_field=gauge_of(cfg), &
             & startup=cfg % startup_refinement, context=context)
     else if (grid_adaptive) then
        call march_chain(schemes, added, physics_of(cfg), nd, &
             & fixed_grid(adaptive_weights), cfg % design, q0, chain, tower, dt, t, achieved, &
             & final_imbalance=final_imbalance, nodes=nodes, spatial_discretization_stencil=spatial_discretization_stencil, &
+            & initial_rate=q0_rate, &
             & spatial_derivative_stencils=derivative_stencils, gauge_field=gauge_of(cfg), &
             & startup=cfg % startup_refinement, context=context)
     else
        call march_chain(schemes, added, physics_of(cfg), nd, &
             & chosen_grid(cfg), cfg % design, q0, chain, tower, dt, t, achieved, final_imbalance=final_imbalance, &
             & nodes=nodes, spatial_discretization_stencil=spatial_discretization_stencil, startup=cfg % startup_refinement, &
+            & initial_rate=q0_rate, &
             & spatial_derivative_stencils=derivative_stencils, gauge_field=gauge_of(cfg), context=context)
     end if
     if (.not. final_imbalance % converged) then
@@ -12640,7 +12818,7 @@ contains
     q0 = initial_field(law, continuous % num_components(), &
          & cfg % initial_field, cfg % initial_state, cfg % design, &
          & spatial_discretization_stencil=spatial_discretization_stencil, space=space, &
-         & spatial_derivative_stencils=derivative_stencils, context=context)
+         & spatial_derivative_stencils=derivative_stencils, rate=q0_rate, context=context)
   end subroutine field_context
   !===================================================================!
   ! The numbers a setting lists, one per spatial coordinate.

@@ -649,12 +649,12 @@ F_2 = (1 + nu) T/2 + (1 - nu) sin 2T/4 and dF_2/dnu = T/2 - sin 2T/4.
 At nu = 2 over [0, 2] with 321 uniform instants, bdf4 reads
 q(T) = 1.3515997164 against 1.3515997227, F_2 = 3.18920065853 against
 3.18920062383 and dF_2/dnu = 1.18920064584 against 1.18920062383;
-tangent against adjoint 4.3e-15. The accuracy cases E01-E13 and
-G01-G04 measure every family's order and the invariant's drift. The
-design derivative of a functional is first order for Adams-Moulton and
-Newmark, whose rows read the acceleration at the initial instant, whose
-design dependence the derivative pass omits: E11, E12 and E13 declare
-that limitation.
+tangent against adjoint 4.3e-15. The accuracy cases E01-E10 and
+G01-G04 measure every family's order and the invariant's drift. The law
+closes q''(0) = nu/q(0)^3 - q(0), which moves with the design, and
+every family whose rows read that acceleration now carries its rate:
+`consistent_states` returns it and a fixed row's design partial is
+-dh/dnu.
 
 **The Taylor-Green vortex.** `physics = taylor_green` states
 incompressible flow on the periodic box of side 2 pi as a Lagrangian

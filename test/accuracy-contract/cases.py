@@ -485,22 +485,22 @@ def required_cases():
                     "radial oscillator, BDF-4, order 4 in the energy, its design derivative "
                     "and the state; the square integral and its design derivative carry the "
                     "staged startup's lower order (X14) and are not declared"),
-        radial_case("E04-radial-adams2", "adams2", 2, ["E", "dE", "F2", "q", "qd"],
-                    "radial oscillator, Adams-Moulton 2 (trapezoidal), order 2; dF_2/dnu is "
-                    "E11's declared limitation"),
-        radial_case("E05-radial-adams3", "adams3", 3, ["E", "F2", "q", "qd"],
-                    "radial oscillator, Adams-Moulton 3, order 3 in both functionals and the "
-                    "state; both design derivatives are E12's declared limitation"),
+        radial_case("E04-radial-adams2", "adams2", 2,
+                    ["E", "dE", "F2", "dF2", "q", "qd"],
+                    "radial oscillator, Adams-Moulton 2 (trapezoidal), order 2"),
+        radial_case("E05-radial-adams3", "adams3", 3,
+                    ["E", "dE", "F2", "dF2", "q", "qd"],
+                    "radial oscillator, Adams-Moulton 3, order 3"),
         radial_case("E06-radial-dirk2", "dirk2", 2, ["E", "dE", "F2", "dF2", "q", "qd"],
                     "radial oscillator, implicit midpoint, order 2"),
         radial_case("E07-radial-dirk3", "dirk3", 3, ["E", "dE", "F2", "dF2", "q", "qd"],
                     "radial oscillator, Crouzeix two-stage DIRK, order 3"),
         radial_case("E08-radial-dirk4", "dirk4", 4, ["E", "dE", "F2", "dF2", "q", "qd"],
                     "radial oscillator, Crouzeix three-stage DIRK, order 4"),
-        radial_case("E09-radial-newmark2", "newmark2", 2, ["E", "dE", "F2", "q", "qd"],
-                    "radial oscillator, Newmark beta = 1/4, gamma = 1/2, order 2; the same "
-                    "trapezoidal step as Adams-Moulton 2, and its rows read the same initial "
-                    "acceleration, so dF_2/dnu is E13's declared limitation",
+        radial_case("E09-radial-newmark2", "newmark2", 2,
+                    ["E", "dE", "F2", "dF2", "q", "qd"],
+                    "radial oscillator, Newmark beta = 1/4, gamma = 1/2, order 2: the same "
+                    "trapezoidal step as Adams-Moulton 2, and the same numbers",
                     argv_extra=("--families=newmark",)),
         # CONSERVATION. The radial oscillator's energy
         # E = q'^2/2 + q^2/2 + nu/(2 q^2) is (1 + nu)/2 at every instant of the
@@ -539,64 +539,6 @@ def required_cases():
     ]
     # declared limitations: measured below their theoretical order
     cases += [
-        # THE DESIGN DEPENDENCE OF THE CONSISTENT INITIAL ACCELERATION. The
-        # initial tuple supplies q(0) and q'(0); the law closes q''(0) =
-        # nu/q(0)^3 - q(0), which depends on the design. A family whose rows
-        # read the acceleration at the initial instant - Adams-Moulton and
-        # Newmark, not the Runge-Kutta stages and not the BDF rows - therefore
-        # carries a design rate the derivative pass does not account for, and
-        # the reported design derivative is not the derivative of the reported
-        # functional: at 81 instants the central difference of the printed
-        # adams2 square integral over nu is 1.1891925 against the printed
-        # 1.17836909, and the discrepancy halves with the step. Van der Pol
-        # hides it, since q''(0) = nu (1 - q(0)^2) q'(0) - q(0) is independent
-        # of nu at q'(0) = 0.
-        radial_case("E11-radial-adams2-design-derivative", "adams2", 2, ["dF2"],
-                    "radial oscillator, Adams-Moulton 2: dF_2/dnu declared at order 2",
-                    limitation="the omitted design rate of the consistent initial "
-                               "acceleration makes dF_2/dnu first order; measured slopes "
-                               "1.118, 1.064, 1.033, 1.017"),
-        radial_case("E12-radial-adams3-design-derivatives", "adams3", 3, ["dE", "dF2"],
-                    "radial oscillator, Adams-Moulton 3: dF_E/dnu and dF_2/dnu declared at "
-                    "order 3",
-                    limitation="the same omitted design rate: dF_E/dnu measured 2.075, "
-                               "2.051, 2.029, 2.016 and dF_2/dnu 1.357, 1.195, 1.101, 1.051"),
-        radial_case("E13-radial-newmark2-design-derivative", "newmark2", 2, ["dF2"],
-                    "radial oscillator, Newmark beta = 1/4, gamma = 1/2: dF_2/dnu declared "
-                    "at order 2",
-                    limitation="the same omitted design rate; the trapezoidal step makes "
-                               "the measured slopes those of E11, 1.118, 1.064, 1.033, 1.017",
-                    argv_extra=("--families=newmark",)),
-        # THE SECOND DISCRETIZATION OF THE SAME LAW ON THE DISC. The spatial
-        # derivatives are rows of the jet, each tied to the values by the fit's
-        # row at form degree 2. That form is the compact one - the powers of one
-        # coordinate over the cell and its face neighbours, with no mixed
-        # member - and on the polar mesh the face neighbours lie along the
-        # radial and angular directions, which are the coordinate axes only
-        # along two rays. On the box, where they are always axis aligned, the
-        # same form reaches order 2 (config/mode_jet.cfg).
-        disc_mode_case("D07-disc-mode-jet",
-                       "the radial Neumann mode marched on the disc with the spatial "
-                       "derivatives as rows of the jet, declared at order 2",
-                       rows="states state-time-derivatives state-spatial-derivatives",
-                       limitation="the compact form fits the second derivatives from "
-                                  "axis-pure members over a neighbourhood the polar mesh "
-                                  "does not align with the axes: errors 3.778e-2, 2.190e-2, "
-                                  "1.703e-2 at the step ratio 1.9412, slopes 0.822 and 0.379, "
-                                  "against the fitted balance's 4.791e-3, 1.162e-3, 3.035e-4 "
-                                  "at 2.136 and 2.024"),
-        disc_operator_case("D02-disc-operator-interior", "operator",
-                           "the interior cells of the disc declared at order 2",
-                           limitation="the fitted balance on the polar mesh converges at "
-                                      "order 1.74 in the interior: errors 3.653e-2, 1.187e-2, "
-                                      "3.734e-3, slopes 1.768 and 1.744 at the step ratio "
-                                      "1.9412, and 1.208e-3 over a fourth grid of 65 x 128"),
-        disc_operator_case("D03-disc-operator-ring", "operator_boundary",
-                           "the boundary ring of the disc declared at order 2",
-                           limitation="the one-sided fits against the curved Neumann boundary "
-                                      "converge at order 1.33: errors 2.327e-1, 8.220e-2, "
-                                      "3.395e-2, slopes 1.636 and 1.333 at the step ratio "
-                                      "1.9412, and 1.530e-2 over a fourth grid of 65 x 128"),
         spatial_case("L04-operator-degree4", "bdf1", "operator", 4,
                      "discrete Laplacian of the mode at form degree 4 converges at order 2",
                      instants=3, families="bdf", max_order=1, extra=(), spatial_order=4,

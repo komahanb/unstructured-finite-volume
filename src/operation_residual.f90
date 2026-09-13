@@ -11,7 +11,11 @@
 ! with k multipliers governs k rows, its stationarity in the j-th
 ! multiplier on primary(j); a plain rule governs one, at every point.
 ! A row named fixed instead reads x(row) - fixed(row): the identity,
-! not the physics.
+! not the physics. A fixed value may itself depend on the design -
+! the law closes the highest component of the initial tuple - so each
+! one states its design rate dh/dnu, and the row's design partial is
+! -dh(row)/dnu, not zero. A rate left out is zero, the value being
+! data of the problem rather than a function of the design.
 !
 ! apply, explicit_tangent and partial_action are composed once here
 ! from the two stencils' own apply/explicit_tangent/partial_action
@@ -68,6 +72,7 @@ module operation_residual
      integer , allocatable, private :: at(:)
      integer , allocatable, private :: fixed_rows(:)
      real(dp), allocatable, private :: fixed(:)
+     real(dp), allocatable, private :: fixed_rate(:)
      integer                , private :: degrees  = 0
      integer                , private :: connected_degrees = 0
      integer                , private :: unknowns = 0
@@ -87,6 +92,7 @@ module operation_residual
      procedure :: fixed_unknowns
      procedure :: fixed_indicator
      procedure :: fixed_values
+     procedure :: fixed_rates
      procedure :: num_fixed
      procedure :: first_fixed
      procedure :: stride
@@ -133,7 +139,7 @@ contains
   !===================================================================!
 
   function create(primary_law, rule, at, unknowns, degrees, primary, fixed_rows, fixed, &
-       & connected_law) result(this)
+       & connected_law, fixed_rate) result(this)
 
     type(stencil)         , intent(in) :: primary_law
     type(expression)      , intent(in) :: rule
@@ -141,12 +147,18 @@ contains
     integer               , intent(in) :: fixed_rows(:)
     real(dp)              , intent(in) :: fixed(:)
     type(stencil)         , intent(in), optional :: connected_law
+    real(dp)              , intent(in), optional :: fixed_rate(:)
     type(residual_operator) :: this
     type(continuous_domain) :: domain
     integer :: j
 
     if (size(fixed_rows) /= size(fixed)) then
        error stop 'operation_residual: one value per fixed component'
+    end if
+    if (present(fixed_rate)) then
+       if (size(fixed_rate) /= size(fixed)) then
+          error stop 'operation_residual: one design rate per fixed value'
+       end if
     end if
     if (any(fixed_rows < 1) .or. any(fixed_rows > unknowns)) then
        error stop 'operation_residual: every fixed row names an unknown'
@@ -186,6 +198,9 @@ contains
     this % primary   = primary
     this % fixed_rows = fixed_rows
     this % fixed      = fixed
+    ! a fixed value that is data of the problem has a zero design rate
+    allocate(this % fixed_rate(size(fixed)), source=0.0_dp)
+    if (present(fixed_rate)) this % fixed_rate = fixed_rate
     this % points = stored_directed_graph(size(at), tails=[integer ::], heads=[integer ::])
     this % unknown_vertices = stored_directed_graph(unknowns, tails=[integer ::], heads=[integer ::])
     call this % declare_arguments(2, [contract(FIELD_REAL, 1), contract(FIELD_REAL, 1)])
@@ -266,6 +281,12 @@ contains
     allocate(x(this % degrees), source=0.0_dp)
     if (size(this % fixed) >= this % degrees) x = this % fixed(1:this % degrees)
   end function first_fixed
+
+  pure function fixed_rates(this) result(rate)
+    class(residual_operator), intent(in) :: this
+    real(dp), allocatable :: rate(:)
+    rate = this % fixed_rate
+  end function fixed_rates
 
   pure integer function num_fixed(this)
     class(residual_operator), intent(in) :: this
@@ -570,6 +591,41 @@ contains
     end do
   end subroutine accumulate_direction
 
+  !===================================================================!
+  ! THE DESIGN PARTIAL OF A FIXED ROW. The row states x(row) - h(row)
+  ! with h a function of the design, so its partial along a design
+  ! direction v is -dh(row)/dnu times v at the point whose tuple contains
+  ! the row. A value that is data of the problem has a zero rate and
+  ! the row reads zero, as it did before rates were stated.
+  !===================================================================!
+
+  pure subroutine design_of_fixed_rows(this, v, r)
+    class(residual_operator), intent(in)    :: this
+    real(dp)                 , intent(in)    :: v(:)
+    real(dp)                 , intent(inout) :: r(:)
+    integer :: i
+    do i = 1, size(this % fixed_rows)
+       r(this % fixed_rows(i)) = -this % fixed_rate(i) * v(point_of(this, this % fixed_rows(i)))
+    end do
+  end subroutine design_of_fixed_rows
+
+  ! the point whose tuple contains an unknown: the last point whose
+  ! offset lies below it, the tuples being placed in order
+  pure integer function point_of(this, row) result(p)
+    class(residual_operator), intent(in) :: this
+    integer                 , intent(in) :: row
+    integer :: q
+    p = 1
+    do q = 1, size(this % at)
+       if (this % at(q) < row .and. row <= this % at(q) + this % stride()) p = q
+    end do
+  end function point_of
+
+  pure logical function any_fixed_rate(this) result(yes)
+    class(residual_operator), intent(in) :: this
+    yes = any(this % fixed_rate /= 0.0_dp)
+  end function any_fixed_rate
+
   pure subroutine zero_fixed_rows(this, r)
     class(residual_operator), intent(in)    :: this
     real(dp)                 , intent(inout) :: r(:)
@@ -806,6 +862,17 @@ contains
     end do
     call state_of(this, inputs, x, state)
     if (size(variations) >= 2) then
+       ! A mixed or repeated partial of x(row) - h(nu) in the state is
+       ! zero at every order above the first. A repeated partial in the
+       ! design alone is -d^m h/dnu^m, of which only the first rate is
+       ! stated: refuse rather than report zero for a value whose rate
+       ! is not zero.
+       if (any_fixed_rate(this)) then
+          if (all([(variations(i) % argument_is(this % argument(2)), i = 1, size(variations))])) then
+             error stop 'operation_residual: a fixed value''s design rate is stated to first order &
+                  &only; a repeated design partial of a fixed row is not stated'
+          end if
+       end if
        call second_tangent(this, inputs, variations, x, governing)
        allocate(r(this % num_unknowns()), source=0.0_dp)
        call placed(this, governing, r)
@@ -821,7 +888,7 @@ contains
     else
        call design_tangent(this, inputs, variations, x, r, governing)
        call placed(this, governing, r)
-       call zero_fixed_rows(this, r)
+       call design_of_fixed_rows(this, v, r)
     end if
     call placed_output(this, r, output)
   end subroutine residual_partial_action
@@ -896,7 +963,7 @@ contains
     type(stencil), allocatable :: secondary
     type(stencil) :: derived
     integer , allocatable :: sub_of(:), at(:), fixed_rows(:), points(:)
-    real(dp), allocatable :: fixed(:)
+    real(dp), allocatable :: fixed(:), rate(:)
     integer :: e, p, npts, ncar
 
     allocate(sub_of(this % unknowns), source=0)
@@ -912,22 +979,26 @@ contains
     end do
 
     ncar = 0
-    allocate(fixed_rows(size(this % fixed_rows)), fixed(size(this % fixed_rows)))
+    allocate(fixed_rows(size(this % fixed_rows)), fixed(size(this % fixed_rows)), &
+         &   rate(size(this % fixed_rows)))
     do e = 1, size(this % fixed_rows)
        if (sub_of(this % fixed_rows(e)) == 0) cycle
        ncar             = ncar + 1
        fixed_rows(ncar) = sub_of(this % fixed_rows(e))
        fixed(ncar)      = this % fixed(e)
+       rate(ncar)       = this % fixed_rate(e)
     end do
 
     derived = this % primary_law % restricted(free, values)
     if (allocated(this % connected_law)) then
        secondary = this % connected_law % restricted(free, values)
        sub = residual_operator(derived, this % physics, at, size(free), &
-            & this % degrees, this % primary, fixed_rows(1:ncar), fixed(1:ncar), connected_law=secondary)
+            & this % degrees, this % primary, fixed_rows(1:ncar), fixed(1:ncar), &
+            & connected_law=secondary, fixed_rate=rate(1:ncar))
     else
        sub = residual_operator(derived, this % physics, at, size(free), &
-            & this % degrees, this % primary, fixed_rows(1:ncar), fixed(1:ncar))
+            & this % degrees, this % primary, fixed_rows(1:ncar), fixed(1:ncar), &
+            & fixed_rate=rate(1:ncar))
     end if
 
   end function constrain

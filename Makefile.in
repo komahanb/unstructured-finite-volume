@@ -8,9 +8,9 @@ F2008    = yes
 COMPLEX  = no
 
 # optimization level
-DEBUG    = yes
+DEBUG    = no
 PROFILE  = no
-OPTIMIZE = no
+OPTIMIZE = yes
 
 # OpenMP: compiles the !$omp directives and !$ sentinel lines and links
 # libgomp. Read from the environment so that every suite Makefile that

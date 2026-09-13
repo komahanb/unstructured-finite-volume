@@ -157,6 +157,12 @@ descriptions). On the 16 x 16 periodic mode `effectivity:energy` with
 `functional_reference = semi_energy` reads the semi-discrete mode energy
 the application prints (17 digits, its print resolution added to the
 floor), the temporal part of the error on the fixed mesh (G13; X19-X21).
+The derivative cases G14, G15 read `derivative_effectivity:<f>` and
+`derivative_estimate:<f>`, the same identity applied to the order-1
+Lagrangian, against the analytic dE/dnu and dD/dnu; G16 is the near-zero
+functional `mean` over one period, whose scale S is declared against
+int |q| dt = 4, and G17 the identically zero integrand, whose scale and
+estimate are exactly zero.
 The adaptive cases A01, A02 (`adaptive_check = functional_error`) check
 |E - E_h| <= tolerance x S on the accepted grid, the loop's own
 criterion, and record the estimator/error ratio (check

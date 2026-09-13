@@ -26,6 +26,10 @@ A quantity is read from one row of the record:
                  criterion, the transfer defect, and log2 of the sum of the
                  step indicators |eta_k| over an interval against the same
                  sum on the paired uniform grid (check = indicators)
+  derivative_estimate:<f>, derivative_effectivity:<f>
+                 the same estimate for the design derivative G_h = dF_h/dnu:
+                 eta_G and eta_G / (G - G_h) with G the declared derivative
+                 reference (max_derivative_degree >= 1)
 """
 
 import math
@@ -41,8 +45,17 @@ DD_REF = 3 * DURATION / 8 - math.sin(2 * DURATION) / 4 + math.sin(4 * DURATION) 
 Q_REF = math.cos(DURATION)
 QD_REF = -math.sin(DURATION)
 INVARIANT_REF = 0.5
-# the exact value of each functional word at nu = 0: E = T/2; D = 0 identically
-FUNCTIONAL_REFERENCES = {"energy": E_REF, "dissipation": 0.0}
+# the exact value of each functional word at nu = 0: over T = 2, E = T/2 and
+# D = 0 identically; the mean int q dt over one period T = 2 pi is 0 by
+# cancellation, where int |q| dt = 4 keeps the criterion's scale finite
+PERIOD = 2 * math.pi
+MEAN_REF = 0.0
+MEAN_SCALE = 4.0
+FUNCTIONAL_REFERENCES = {"energy": E_REF, "dissipation": 0.0, "mean": MEAN_REF}
+# the design derivatives at nu = 0: dE/dnu and dD/dnu of README; the mean's
+# tangent w'' + w = -sin^3 t, w(0) = w'(0) = 0, is w = 3/8 t cos t - 1/32 sin 3t
+# - 9/32 sin t, whose integral over [0, 2 pi] is 0 term by term
+FUNCTIONAL_DERIVATIVE_REFERENCES = {"energy": DE_REF, "dissipation": DD_REF, "mean": 0.0}
 
 # the configured Newton stopping rule of every run: relative 1e-12
 TOLERANCE = 1.0e-12
@@ -54,19 +67,20 @@ THETA_TEXT = ("window from the two-term expansion e = C h^p (1 + a h) with |a h|
 
 
 def ode_argv(instants, families="bdf adams dirk", max_order=4, derivative=1,
-             physics="vanderpol", chain=None, extra=(), check="state passes"):
+             physics="vanderpol", chain=None, extra=(), check="state passes",
+             duration=DURATION, functionals="energy dissipation"):
     argv = [APPLICATION, f"--physics={physics}", "--design=0.0", "--initial_state=1.0",
-            f"--time_duration={DURATION}", f"--instants={instants}", "--grid=uniform",
+            f"--time_duration={duration}", f"--instants={instants}", "--grid=uniform",
             f"--families={families}", f"--max_discretization_order={max_order}",
-            f"--max_derivative_degree={derivative}", "--functionals=energy dissipation",
+            f"--max_derivative_degree={derivative}", f"--functionals={functionals}",
             "--combinations=1", f"--check={check}"]
     if chain:
         argv.append(f"--chain={chain}")
     return argv + list(extra)
 
 
-def ode_grids(instants=INSTANTS):
-    return [(f"instants={n}", DURATION / (n - 1), n * STATE_COMPONENTS) for n in instants]
+def ode_grids(instants=INSTANTS, duration=DURATION):
+    return [(f"instants={n}", duration / (n - 1), n * STATE_COMPONENTS) for n in instants]
 
 
 def field_argv(cells, instants, families="dirk bdf", max_order=4, extra=(), check="mode state"):
@@ -215,10 +229,24 @@ EFFECTIVITY_TEXT = ("effectivity eta / (F - F_h) of the functional-error estimat
                     "at its local order p + 1, so |I - 1| converges at order 1; " + THETA_TEXT)
 
 
-TRANSFER = floor_check("transfer:energy", 0.0, TABLE_DIGITS,
-                       "the fixed-row residual of every enriched block, Q+_i - Q_j at P Q_h, "
-                       "vanishes under the identity prolongation: zero within gamma_N |Q|, "
-                       "|Q| <= 1 on the oscillator", scale=1.0)
+TRANSFER_TEXT = ("the fixed-row residual of every enriched block, Q+_i - Q_j at P Q_h, "
+                 "vanishes under the identity prolongation: zero within gamma_N |Q|, "
+                 "|Q| <= 1 on the oscillator")
+
+TRANSFER = floor_check("transfer:energy", 0.0, TABLE_DIGITS, TRANSFER_TEXT, scale=1.0)
+
+
+def transfer_check(word):
+    """The transfer identity on the enriched chain of one functional's estimate."""
+    return floor_check(f"transfer:{word}", 0.0, TABLE_DIGITS, TRANSFER_TEXT, scale=1.0)
+
+
+DERIVATIVE_EFFECTIVITY_TEXT = (
+    "effectivity eta_G / (G - G_h) of the derivative-functional estimate against 1, "
+    "G = dF/dnu: eta_G is the derivative of the estimate, d/dnu[L+(P Q_h, lambda+) - F_h] "
+    "= -lambda+'^T R+(P Q_h) + [F+_nu - lambda+^T R+_nu](P Q_h) - G_h, so it is the "
+    "derivative of an asymptotically exact estimate and |I - 1| = O(h) where that O(h) "
+    "term is smooth in nu; " + THETA_TEXT)
 
 
 def estimator_case(identifier, row, order, description, families="bdf adams", max_order=4,
@@ -270,6 +298,55 @@ def field_estimator_case(identifier, row, order, description, families="dirk bdf
     checks += [TRANSFER, residual_check()]
     return {"id": identifier, "set": set_name, "description": description, "row": row,
             "grids": grids, "runs": runs, "checks": checks, "limitation": None, "timeout": 300}
+
+
+def derivative_estimator_case(identifier, row, word, order, description, families="bdf",
+                              max_order=3, instants=(21, 41, 81, 161, 321),
+                              set_name="required", effectivity=True):
+    """The estimate of the discretization error of a design derivative G_h =
+    dF_h/dnu (the order-1 Lagrangian), through the enriched costate rate
+    lambda+' of the derivative Lagrangian: its effectivity at order 1 and the
+    estimate itself at the order of G_h - G."""
+    grids = ode_grids(instants)
+    runs = {label: ode_argv(n, families=families, max_order=max_order,
+                            check="state functional_error")
+            for (label, _, _), n in zip(grids, instants)}
+    checks = []
+    if effectivity:
+        checks.append(order_check(f"derivative_effectivity:{word}", 1, 1.0, TABLE_DIGITS,
+                                  DERIVATIVE_EFFECTIVITY_TEXT))
+    checks.append(order_check(f"derivative_estimate:{word}", order, 0.0, TABLE_DIGITS,
+                              "the estimate eta_G converges to zero at the order of G_h - G; "
+                              + THETA_TEXT))
+    checks += [transfer_check(word), LAW, residual_check()]
+    return {"id": identifier, "set": set_name, "description": description, "row": row,
+            "grids": grids, "runs": runs, "checks": checks, "limitation": None,
+            "timeout": 300}
+
+
+def mean_case(identifier, row, order, description, families="bdf", max_order=2,
+              instants=(21, 41, 81, 161), set_name="required"):
+    """The near-zero functional: mean = int q dt over one period, whose exact value
+    is 0 by cancellation. The criterion divides by the scale S = sum |w_kj f(Q_j)|,
+    never by |F_h|; S converges to int |q| dt = 4 at the family's order where the
+    quadrature weights are non-negative (the two-instant rule of BDF-2)."""
+    grids = ode_grids(instants, duration=PERIOD)
+    runs = {label: ode_argv(n, families=families, max_order=max_order, duration=PERIOD,
+                            functionals="mean", check="state functional_error")
+            for (label, _, _), n in zip(grids, instants)}
+    checks = [order_check("estimate:mean", order, MEAN_REF, TABLE_DIGITS,
+                          "the estimate eta of a functional whose exact value is zero "
+                          "converges to zero at the order of F_h - F, its floor gamma_N S "
+                          "rather than gamma_N |F_h|; " + THETA_TEXT),
+              order_check("scale:mean", order, MEAN_SCALE, TABLE_DIGITS,
+                          "the scale of the relative criterion converges to int |q| dt = 4 "
+                          "at the family's order: the two-instant rule of BDF-2 has "
+                          "non-negative weights, so sum |w_kj f(Q_j)| tends to int |f|; "
+                          + THETA_TEXT),
+              transfer_check("mean"), residual_check()]
+    return {"id": identifier, "set": set_name, "description": description, "row": row,
+            "grids": grids, "runs": runs, "checks": checks, "limitation": None,
+            "timeout": 120}
 
 
 def localized_case(identifier, row, order, interval, description, instants=(41, 81, 161),
@@ -494,6 +571,40 @@ def required_cases():
                              "estimated by BDF-4 against the semi-discrete mode energy; "
                              "effectivity at order 1 (measured 0.38, 0.65, 0.81, 0.90 on 6, 11, "
                              "21, 41 instants, slopes 0.82, 0.93, 0.95), estimate at order 3"),
+        derivative_estimator_case("G14-derivative-bdf3-energy", "bdf3", "energy", 3,
+                                  "the error of the design derivative dE/dnu of BDF-3, "
+                                  "estimated through the enriched costate rate of the "
+                                  "order-1 Lagrangian: effectivity at order 1 (measured "
+                                  "0.951, 0.985, 0.995, 0.998, 0.9991 on 21 to 321 "
+                                  "instants, slopes 1.73, 1.53, 1.35, 1.22 falling to 1 "
+                                  "from above), estimate at order 3"),
+        derivative_estimator_case("G15-derivative-bdf3-dissipation", "bdf3", "dissipation", 3,
+                                  "the error of dD/dnu of BDF-3 by the same identity: "
+                                  "effectivity at order 1 (measured 0.832, 0.922, 0.963, "
+                                  "0.982, 0.991, slopes 1.11, 1.06, 1.03, 1.015), estimate "
+                                  "at order 3"),
+        mean_case("G16-mean-bdf2", "bdf2", 2,
+                  "the near-zero functional mean = int q dt over one period, exact value 0 "
+                  "by cancellation: BDF-2 estimated by BDF-3 gives eta at order 2 (measured "
+                  "slopes 1.75, 1.94, 1.99) and the scale S at order 2 against int |q| = 4 "
+                  "(measured 3.877, 3.970, 3.993, 3.998, slopes 2.02, 2.07, 2.05); its "
+                  "effectivity 0.902, 0.978, 0.994, 0.9986 falls at order 2, above the "
+                  "order 1 the class declares, and is not declared here"),
+        dict(estimator_case("G17-zero-scale-bdf3", "bdf3", 3,
+                            "the dissipation functional at nu = 0: its integrand "
+                            "nu (1 - q^2) q'^2 vanishes identically, so the scale S of the "
+                            "relative criterion is zero, the costate right side is zero and "
+                            "the estimate is exactly zero on every grid - the criterion is "
+                            "met without dividing by a functional value",
+                            effectivity=False),
+             checks=[floor_check("estimate:dissipation", 0.0, TABLE_DIGITS,
+                                 "a functional whose integrand is identically zero has "
+                                 "F = F_h = 0, lambda+ = 0 and both parts of eta exactly "
+                                 "zero: within the print resolution plus gamma_N", scale=1.0),
+                     floor_check("scale:dissipation", 0.0, TABLE_DIGITS,
+                                 "the scale S = sum |w_kj f(Q_j)| of an identically zero "
+                                 "integrand is exactly zero", scale=1.0),
+                     residual_check()]),
         adaptation_case("A02-adaptive-bdf3", "bdf3", 1.0e-4,
                         "BDF-3 from 21 instants at the relative tolerance 1e-4: eta = -3.3e-4 "
                         "rejects the seed; its indicators vary along t, so the marking divides "
@@ -554,9 +665,10 @@ def exploratory_cases():
                        "1.006, 1.003)", families="newmark", max_order=3),
         field_estimator_case("X19-field-estimate-bdf3", "bdf3", 3,
                              "BDF-3 on the 16 x 16 mode by BDF-4: effectivity 0.37, 0.72, 0.88, "
-                             "0.94 (order 1, slopes 1.15, 1.19, 1.10); the estimate's slopes "
-                             "0.99, 2.29, 2.71 are below 3 on these grids (omega_h h from 0.75 "
-                             "to 0.09) and are not declared", set_name="exploratory"),
+                             "0.94 (order 1, slopes 1.15, 1.19, 1.10); the estimate is "
+                             "declared at the family's order 3 and measured 0.99, 2.29, 2.71 "
+                             "below it on these grids (omega_h h from 0.75 to 0.09), the "
+                             "recorded shortfall", set_name="exploratory"),
         dict(field_estimator_case("X20-field-estimate-dirk2", "dirk2", 2,
                                   "implicit midpoint on the 16 x 16 mode by BDF-3: effectivity "
                                   "0.79, 0.94, 0.99, 1.0006 converges faster than O(h) and "

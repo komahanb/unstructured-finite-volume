@@ -113,9 +113,17 @@ def parse_table(text):
             continue
         if current is None:
             continue
-        m = re.match(r"^      van der pol dissipation\s+(.*?)\s*$", line)
+        m = re.match(r"^      van der pol (\S+)\s+(.*?)\s*$", line)
         if m:
-            current["dissipation"] = [number(t) for t in m.group(1).split()]
+            # every functional after the first prints its own line of values
+            current[m.group(1)] = [number(t) for t in m.group(2).split()]
+            continue
+        m = re.match(r"^      functional error, (\S+), derivative: estimate\s+(\S+) costate\s+(\S+)"
+                     r" partial\s+(\S+) value\s+(\S+)", line)
+        if m:
+            current["functional_error"].setdefault(m.group(1), {})["derivative"] = {
+                "estimate": number(m.group(2)), "costate": number(m.group(3)),
+                "partial": number(m.group(4)), "value": number(m.group(5))}
             continue
         m = re.match(r"^      state at the last instant, node 1:\s*(.*?)\s*$", line)
         if m:
@@ -216,14 +224,13 @@ def functional_reference(row, word, check=None):
     return declared.FUNCTIONAL_REFERENCES[word]
 
 
-def functional_value(row, word):
-    """The value F_h of the functional a configured word names, or None."""
-    if word == "energy":
-        return row["f"][0] if row.get("f") else None
-    if word == "dissipation":
-        return row["dissipation"][0] if row.get("dissipation") else None
-    values = row.get(word)
-    return values[0] if values else None
+def functional_value(row, word, derivative=False):
+    """The value F_h of the functional a configured word names, or its design
+    derivative dF_h/dnu (the second column of the same line), or None. The first
+    configured word is the table column; every later word prints its own line."""
+    index = 1 if derivative else 0
+    values = row.get("f") if word == "energy" else row.get(word)
+    return values[index] if values and len(values) > index else None
 
 
 def interval_sum(indicators, a, b):
@@ -249,6 +256,17 @@ def quantity_of(row, record, quantity, check=None, paired=None):
             return None
         if kind in ("estimate", "scale", "transfer"):
             return estimate[kind]
+        if kind in ("derivative_estimate", "derivative_effectivity"):
+            rate = estimate.get("derivative")
+            if rate is None:
+                return None
+            if kind == "derivative_estimate":
+                return rate["estimate"]
+            value = functional_value(row, word, derivative=True)
+            if value is None:
+                return None
+            error = declared.FUNCTIONAL_DERIVATIVE_REFERENCES[word] - value
+            return rate["estimate"] / error if error != 0.0 else math.inf
         if kind == "effectivity":
             value = functional_value(row, word)
             reference = functional_reference(row, word, check)
@@ -341,6 +359,15 @@ def resolution_of(check, row, value):
     the quotient for an effectivity, eta / (F - F_h), whose two operands are
     printed; the quantity's own print resolution otherwise."""
     quantity = check["quantity"]
+    if quantity.startswith("derivative_effectivity:"):
+        word = quantity.split(":", 1)[1]
+        estimate = row["functional_error"][word]["derivative"]["estimate"]
+        f = functional_value(row, word, derivative=True)
+        error = abs(declared.FUNCTIONAL_DERIVATIVE_REFERENCES[word] - f)
+        if error == 0.0:
+            return math.inf
+        return (print_resolution(estimate, check["digits"])
+                + abs(value) * print_resolution(f, check["digits"])) / error
     if quantity.startswith("effectivity:"):
         word = quantity.split(":", 1)[1]
         estimate = row["functional_error"][word]["estimate"]

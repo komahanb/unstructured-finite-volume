@@ -948,7 +948,7 @@ by a stage block over steps refined by `startup_refinement`, so every
 row integrates the same initial-value problem.
 
 **The functionals and their derivatives.**
-`functionals = energy dissipation`, `designs = physics [grid]`,
+`functionals = energy dissipation | mean`, `designs = physics [grid]`,
 `max_derivative_degree = m`. The derivatives are computed by a forward
 expansion in the design; with several designs the tangent and adjoint
 passes are chosen by counting sources against sinks - the tangent
@@ -1034,7 +1034,38 @@ space) is not estimated: the prolongation of cell values onto the refined
 mesh must be exact to O(H^6) for the fine Laplacian of P Q_h to fall
 below the O(H^2) truncation error, and no such tensor interpolant is
 implemented; a localized spatial error is not supported either (uniform
-periodic box only). A derivative functional (dF/dnu) is not estimated.
+periodic box only).
+
+**The derivative functional.** With `max_derivative_degree >= 1` the same
+line is printed for G_h = dF_h/dnu, the order-1 Lagrangian. The coarse
+costate has no prolongation onto the enriched rows (a BDF row and an
+Adams row are differently scaled equations), so the estimate of G - G_h
+is the derivative of the estimate: with eta(nu) = L+(P Q_h(nu),
+lambda+(nu)) - F_h(Q_h(nu)) and L+_Q = 0 by the costate equation,
+
+    eta_G = - lambda+'^T R+(P Q_h) + [F+_nu - lambda+^T R+_nu](P Q_h) - G_h,
+
+the costate rate lambda+' solving J+^T lambda+' = d/dnu[F+_Q - J+^T
+lambda+] along the prolonged coarse tangent P w_h, and the bracket the
+order-1 Lagrangian on the enriched chain. It is the derivative of an
+asymptotically exact estimate: measured effectivities 0.951, 0.985,
+0.995, 0.998, 0.9991 for dE/dnu and 0.832, 0.922, 0.963, 0.982, 0.991
+for dD/dnu (bdf3 by bdf4, instants 21 to 321), |I - 1| at order 1 with
+the estimates at order 3 (G14, G15). No per-step indicator of a
+derivative functional is produced, and adaptation marks by the value
+functional.
+
+**The near-zero functional.** `functionals = mean` integrates int q dt,
+zero by cancellation over one period. The criterion divides by S, never
+by |F_h|: S = sum_k |w_k f(Q_k)| stays finite where F_h cancels, and it
+tends to int |f| dt exactly where the rule's weights are non-negative
+(BDF-2: measured 3.877, 3.970, 3.993, 3.998 against int |q| = 4 at
+order 2), while a rule with a negative weight keeps its own limit (the
+three-instant rule of BDF-3 has weights (-1, 8, 5)/12, so S tends to
+7/6 times int |f|, 4.66 against 4; G16). Where the integrand vanishes
+identically, S = 0, lambda+ = 0 and eta = 0 exactly: the dissipation at
+nu = 0 meets the criterion without dividing by a functional value
+(G17).
 
 **The solvers.** Newton drives every block; `linear_solver` is
 `direct` or `iterative` (GMRES), refined by `assembly`, `storage`,

@@ -636,6 +636,15 @@ contains
     f = nu * (1.0_dp - derivative(q, 0)**2) * derivative(q, 1) * derivative(q, 1)
   end function dissipation_rule
   !===================================================================!
+  ! The mean of the state, int q dt: zero by cancellation on the
+  ! oscillator over T = 2 pi, where the scale S = int |q| dt = 4 of the
+  ! functional-error criterion stays finite.
+  !===================================================================!
+  function mean_rule() result(f)
+    type(expression) :: f
+    f = derivative(unknown(STATE), 0)
+  end function mean_rule
+  !===================================================================!
   ! The physics by name: the residual of the named Lagrangian, its
   ! stationarity in the first multiplier. An unknown name is refused
   ! by the caller.
@@ -777,6 +786,9 @@ contains
     case ('dissipation')
        f = at_zero(lagrangian(dissipation_rule(), degree, 'van der pol lagrangian', algebraic_named(physics_name)), &
             & 'van der pol dissipation')
+    case ('mean')
+       f = at_zero(lagrangian(mean_rule(), degree, 'van der pol lagrangian', algebraic_named(physics_name)), &
+            & 'van der pol mean')
     case default
        admissible = .false.
     end select
@@ -4936,6 +4948,14 @@ module gti_chain
      real(dp) :: enriched_value  = 0.0_dp
      real(dp) :: transfer_defect = 0.0_dp
      real(dp), allocatable :: by_step(:)
+     ! the estimate of the error of the design derivative dF_h/dnu
+     ! (with_derivative): eta_G = - lambda+'^T R+(P Q_h) (the costate
+     ! part) + [F+_nu - lambda+^T R+_nu](P Q_h) - dF_h/dnu (the partial
+     ! part), and the value dF_h/dnu itself
+     real(dp) :: derivative_estimate     = 0.0_dp
+     real(dp) :: derivative_costate_part = 0.0_dp
+     real(dp) :: derivative_partial_part = 0.0_dp
+     real(dp) :: derivative_value        = 0.0_dp
   end type functional_error_estimate
   !===================================================================!
   ! THE OUTCOME OF AN ADAPTIVE GRID (functional_error_partition,
@@ -7205,11 +7225,29 @@ contains
   ! (the identity prolongation), an enriched family reaching back over
   ! more instants than the block covers, a staged enriched family on a
   ! configured block, or one enriched family per block not supplied.
+  !
+  ! THE DERIVATIVE FUNCTIONAL (with_derivative). G_h = dF_h/dnu is the
+  ! order-1 Lagrangian; the coarse costate has no prolongation onto the
+  ! enriched rows (differently scaled equations), so the estimate of
+  ! G(Q_exact) - G_h is the derivative of the estimate: with eta(nu) =
+  ! L+(P Q_h(nu), lambda+(nu)) - F_h(Q_h(nu)) and L+_Q = 0 by the costate
+  ! equation,
+  !
+  !    eta_G = - lambda+'^T R+(P Q_h) + [F+_nu - lambda+^T R+_nu](P Q_h) - G_h,
+  !
+  ! lambda+' from J+^T lambda+' = d/dnu [F+_Q - J+^T lambda+] along
+  ! P w_h, w_h the coarse tangent dQ_h/dnu (forward_block on the
+  ! coarse chain), the right side by costate_rows at the multiset [1],
+  ! the bracket by lagrangian_term at s = [], j = 1 on the enriched
+  ! chain, G_h by functional_along at [1]. Class: the derivative of an
+  ! asymptotically exact estimate, measured before it is declared
+  ! (test/accuracy-contract). No per-step indicator of a derivative
+  ! functional is produced.
   !===================================================================!
 
   subroutine functional_error(chain, tower, enriched, physics, degrees, steps, design, functionals, &
        & estimates, nodes, spatial_discretization_stencil, spatial_derivative_stencils, gauge_field, &
-       & node_measure, context)
+       & node_measure, with_derivative, context)
 
     class(march_context), optional, target, intent(inout) :: context
     type(chain_block)     , intent(in) :: chain(:)
@@ -7224,25 +7262,31 @@ contains
     type(stencil)  , intent(in), optional :: spatial_discretization_stencil
     type(stencil)  , intent(in), optional :: spatial_derivative_stencils(:)
     real(dp)       , intent(in), optional :: node_measure(:)
+    logical        , intent(in), optional :: with_derivative
 
     type(march_context), target :: local_context
     class(march_context), pointer :: active
     type(expansion) :: enriched_tower
     type(family_container), allocatable :: every(:)
     type(chain_block), allocatable :: plus(:)
-    type(tangent_tower), allocatable :: w(:), costate(:)
+    type(tangent_tower), allocatable :: w(:), costate(:), tangent(:), plus_tangent(:), costate_rate(:)
     type(stored_field), allocatable :: frozen(:)
     class(field), allocatable :: out
     type(graph), pointer :: horizon
+    type(derivative_terms) :: l
     real(dp), allocatable :: block_steps(:), one(:), fixed(:), rhs(:), r(:), u(:,:,:)
-    real(dp), allocatable :: lambda(:,:,:,:,:), share(:), magnitude(:)
-    integer , allocatable :: spans(:), versions(:), origin(:)
+    real(dp), allocatable :: lambda(:,:,:,:,:), share(:), magnitude(:), rate(:,:), parts(:)
+    integer , allocatable :: spans(:), versions(:), origin(:), coarse_versions(:)
     logical , allocatable :: fixed_rows(:), short(:)
     real(dp) :: part
-    integer :: nb, np, before, b, c, i, j, k, n, p, from, to, lo, hi, num_steps, step, plus_given
+    integer :: nb, np, before, b, c, i, j, k, n, p, from, to, lo, hi, num_steps, step, plus_given, widest
+    integer :: live, total, peak_storage
+    logical :: derivative
 
     active => local_context
     if (present(context)) active => context
+    derivative = .false.
+    if (present(with_derivative)) derivative = with_derivative
     nb     = size(chain)
     before = merge(1, 0, .not. chain(1) % counted)
     if (size(enriched) /= nb - before) then
@@ -7332,7 +7376,6 @@ contains
           if (any(plus(j) % instants_at /= chain(b) % instants_at(1:spans(j)))) then
              error stop 'gti_chain: a block of the coarse family stores the leading part of the coarse state'
           end if
-          plus(j) % state = chain(b) % state(1:n)
        else
           ! P: the identity on the instant jets; a staged coarse
           ! block's stages lie between its instants and are not read
@@ -7342,14 +7385,38 @@ contains
           if (n /= spans(j) * plus(j) % width) then
              error stop 'gti_chain: an enriched block stores one jet per instant'
           end if
-          allocate(plus(j) % state(n))
-          do k = 1, spans(j)
-             plus(j) % state(plus(j) % instants_at(k) + 1:plus(j) % instants_at(k) + plus(j) % width) = &
-                  & chain(b) % state(chain(b) % instants_at(k) + 1:chain(b) % instants_at(k) + chain(b) % width)
-          end do
        end if
+       plus(j) % state = prolonged(j, chain(b) % state)
        versions(j) = active % next_version()
     end do
+    ! the coarse tangents dQ_h/dnu and G_h = dF_h/dnu for the derivative
+    ! functional, by the forward pass on the coarse chain
+    widest = 0
+    do j = 1, np
+       widest = max(widest, plus(j) % rows % num_unknowns())
+    end do
+    allocate(u(1, 1, 1), source=0.0_dp)
+    if (derivative) then
+       allocate(tangent(nb), plus_tangent(np), costate_rate(np), coarse_versions(nb))
+       allocate(rate(size(functionals), 1), source=0.0_dp)
+       live = 0
+       total = 0
+       peak_storage = 0
+       do b = 1, nb
+          coarse_versions(b) = active % next_version()
+       end do
+       do b = 1, nb
+          call forward_block(chain, b, physics, functionals, degrees, design, 1, 1, 1, 1, 1, coarse_versions, &
+               & u, tangent, live, total, peak_storage, table=rate, node_measure=node_measure, context=active)
+       end do
+       do j = 1, np
+          allocate(plus_tangent(j) % w(plus(j) % rows % num_unknowns(), 1, 1))
+          plus_tangent(j) % w(:, 1, 1) = prolonged(j, tangent(origin(j)) % w(:, 1, 1))
+       end do
+       allocate(lambda(widest, np, size(functionals), 1, 0:1), source=0.0_dp)
+    else
+       allocate(lambda(1, 1, 1, 1, 0:0), source=0.0_dp)
+    end if
     ! the coarse instants: one indicator per coarse step, indexed by
     ! the arriving instant (the first instant has no step)
     num_steps = (chain(nb) % last - 1) / chain(nb) % stride + 1
@@ -7357,8 +7424,6 @@ contains
     do i = 1, size(functionals)
        allocate(estimates(i) % by_step(num_steps), source=0.0_dp)
     end do
-    allocate(u(1, 1, 1), source=0.0_dp)
-    allocate(lambda(1, 1, 1, 1, 0:0), source=0.0_dp)
     do i = 1, size(functionals)
        do j = np, 1, -1
           n = plus(j) % rows % num_unknowns()
@@ -7416,7 +7481,73 @@ contains
        end do
        estimates(i) % quadrature_part = estimates(i) % enriched_value - estimates(i) % value
        estimates(i) % estimate        = estimates(i) % residual_part + estimates(i) % quadrature_part
+       if (.not. derivative) cycle
+       ! the costate rate lambda+' in descending block order, the child
+       ! rates on the transfer rows added as for lambda+
+       do j = 1, np
+          n = plus(j) % rows % num_unknowns()
+          lambda(1:n, j, i, 1, 0) = costate(j) % w(:, 1, 1)
+       end do
+       do j = np, 1, -1
+          n = plus(j) % rows % num_unknowns()
+          call costate_rows(plus, j, physics, functionals(i), degrees, design, [1], plus_tangent, lambda, u, 1, i, &
+               & node_measure, rhs)
+          do c = np, j + 1, -1
+             do p = 1, size(plus(c) % source_at)
+                if (plus(c) % source_block(p) /= j) cycle
+                rhs(plus(c) % source_at(p)) = rhs(plus(c) % source_at(p)) + costate_rate(c) % w(p, 1, 1)
+             end do
+          end do
+          call frozen_at(plus(j), design, frozen)
+          call solve_linear(plus(j) % rows, frozen, rhs, .true., versions(j), one, context=active)
+          if (allocated(costate_rate(j) % w)) deallocate(costate_rate(j) % w)
+          allocate(costate_rate(j) % w(n, 1, 1))
+          costate_rate(j) % w(:, 1, 1) = one
+          lambda(1:n, j, i, 1, 1) = one
+       end do
+       estimates(i) % derivative_value = rate(i, 1)
+       do j = 1, np
+          call frozen_at(plus(j), design, frozen)
+          call plus(j) % rows % apply(plus(j) % rows % unknown_graph(), plus(j) % rows % bind(frozen), out)
+          call out % real_vector(r)
+          fixed_rows = plus(j) % rows % fixed_indicator()
+          estimates(i) % derivative_costate_part = estimates(i) % derivative_costate_part &
+               & - sum(costate_rate(j) % w(:, 1, 1) * r, mask=.not. fixed_rows)
+          allocate(parts(0:1), source=0.0_dp)
+          l = lagrangian_term(plus, j, physics, functionals(i), degrees, design, [integer ::], 1, plus_tangent, &
+               & lambda, u, 1, i, node_measure, parts)
+          estimates(i) % derivative_partial_part = estimates(i) % derivative_partial_part + mixed_partial(l)
+          deallocate(parts)
+       end do
+       estimates(i) % derivative_partial_part = estimates(i) % derivative_partial_part - rate(i, 1)
+       estimates(i) % derivative_estimate = estimates(i) % derivative_costate_part &
+            & + estimates(i) % derivative_partial_part
     end do
+
+  contains
+
+    !=================================================================!
+    ! P: a block of the coarse family (the startup, the short block)
+    ! takes the leading part of the coarse values, stages included;
+    ! an enriched block the jets at its instants.
+    !=================================================================!
+    function prolonged(j, x) result(y)
+      integer , intent(in) :: j
+      real(dp), intent(in) :: x(:)
+      real(dp), allocatable :: y(:)
+      integer :: b, k, n
+      b = origin(j)
+      n = plus(j) % rows % num_unknowns()
+      if (short(j) .or. b <= before) then
+         y = x(1:n)
+         return
+      end if
+      allocate(y(n))
+      do k = 1, spans(j)
+         y(plus(j) % instants_at(k) + 1:plus(j) % instants_at(k) + plus(j) % width) = &
+              & x(chain(b) % instants_at(k) + 1:chain(b) % instants_at(k) + chain(b) % width)
+      end do
+    end function prolonged
 
   end subroutine functional_error
 
@@ -11748,13 +11879,18 @@ contains
     end do
     call functional_error(chain, tower, enriched, physics_of(cfg), cfg % state_degree + 1, steps, &
          & cfg % design, functionals, estimates, nodes, spatial_discretization_stencil, derivative_stencils, &
-         & gauge_of(cfg), volume, context)
+         & gauge_of(cfg), volume, with_derivative=cfg % max_derivative_degree >= 1, context=context)
     words = words_of(cfg % functionals)
     do i = 1, size(estimates)
        write(*,'(a,5(a,es20.11),a)') '      functional error, ' // trim(words(i)) // ':', &
             & ' estimate', estimates(i) % estimate, ' residual', estimates(i) % residual_part, &
             & ' quadrature', estimates(i) % quadrature_part, ' scale', estimates(i) % scale, &
             & ' transfer', estimates(i) % transfer_defect, ' enriched ' // plus
+       if (cfg % max_derivative_degree >= 1) then
+          write(*,'(a,4(a,es20.11))') '      functional error, ' // trim(words(i)) // ', derivative:', &
+               & ' estimate', estimates(i) % derivative_estimate, ' costate', estimates(i) % derivative_costate_part, &
+               & ' partial', estimates(i) % derivative_partial_part, ' value', estimates(i) % derivative_value
+       end if
        if (.not. lists(cfg % check, 'indicators')) cycle
        t = 0.0_dp
        do k = 2, size(estimates(i) % by_step)
@@ -11856,7 +11992,7 @@ contains
     logical :: admissible
     integer :: i
     call refuse_unknown(cfg % designs, ['physics', 'grid   '], 'designs')
-    call refuse_unknown(cfg % functionals, ['energy     ', 'dissipation'], 'functionals')
+    call refuse_unknown(cfg % functionals, ['energy     ', 'dissipation', 'mean       '], 'functionals')
     if (.not. lists(cfg % designs, 'physics')) then
        error stop 'graph_time_integrator: the physics'' parameter is the first design'
     end if

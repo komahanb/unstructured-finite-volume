@@ -362,6 +362,20 @@ enrichment in space (a refined mesh with a prolongation exact to O(H^6))
 and a localized spatial error are not implemented and are declared
 unsupported.
 
+With `with_derivative` the same object carries the estimate of the error
+of the design derivative G_h = dF_h/dnu, the order-1 Lagrangian:
+eta_G = - lambda+'^T R+(P Q_h) + [F+_nu - lambda+^T R+_nu](P Q_h) - G_h,
+the costate rate lambda+' from J+^T lambda+' = d/dnu[F+_Q - J+^T lambda+]
+along the prolonged coarse tangent P w_h (`forward_block` on the coarse
+chain, `costate_rows` at the multiset [1]) and the bracket from
+`lagrangian_term` at s = [], j = 1 on the enriched chain. It is the
+derivative of an asymptotically exact estimate, measured at order 1 in
+|I - 1| with its estimate at the order of G_h - G (G14, G15); no per-step
+indicator of a derivative functional is produced. The near-zero case is
+the functional `mean` = int q dt over one period: the criterion divides
+by S, never by |F_h| (G16), and an identically zero integrand gives
+S = 0, lambda+ = 0 and eta = 0 exactly (G17).
+
 `functional_error_partition` drives an adaptive grid by the estimate:
 accept at |eta| <= tol S, otherwise divide every step with |eta_k| >
 tol S / N into ceiling(h_k / h_k') equal steps, h_k' = h_k (tol S /

@@ -35,6 +35,30 @@ Q_REF = math.cos(DURATION)
 QD_REF = -math.sin(DURATION)
 INVARIANT_REF = 0.5
 
+# THE RADIAL OSCILLATOR q'' + q - nu / q^3 = 0 at nu = L^2, with q(0) = 1,
+# q'(0) = 0: q = sqrt(cos^2 t + nu sin^2 t) (with y = q^2 the equation reads
+# y y'' - y'^2/2 + 2 y^2 = 2 nu, which a cos^2 t + b sin^2 t satisfies when
+# a b = nu). Every reference below follows from that solution.
+RADIAL_DESIGN = 2.0
+
+
+def radial_state(t, nu):
+    """q, q' and q'' of the radial oscillator at time t."""
+    q = math.sqrt(math.cos(t) ** 2 + nu * math.sin(t) ** 2)
+    return q, (nu - 1.0) * math.sin(2 * t) / (2 * q), nu / q ** 3 - q
+
+
+RADIAL_Q_REF, RADIAL_QD_REF, _ = radial_state(DURATION, RADIAL_DESIGN)
+# E = q'^2/2 + q^2/2 + nu/(2 q^2) = (1 + nu)/2 at every instant, so the energy
+# functional is T E and its design derivative is T/2
+RADIAL_INVARIANT_REF = 0.5 * (1.0 + RADIAL_DESIGN)
+RADIAL_E_REF = DURATION * RADIAL_INVARIANT_REF
+RADIAL_DE_REF = DURATION / 2
+# F_2 = int_0^T q^2 dt = int (cos^2 t + nu sin^2 t) dt
+RADIAL_F2_REF = (1.0 + RADIAL_DESIGN) * DURATION / 2 \
+    + (1.0 - RADIAL_DESIGN) * math.sin(2 * DURATION) / 4
+RADIAL_DF2_REF = DURATION / 2 - math.sin(2 * DURATION) / 4
+
 # the configured Newton stopping rule of every run: relative 1e-12
 TOLERANCE = 1.0e-12
 STATE_COMPONENTS = 3
@@ -54,6 +78,14 @@ def ode_argv(instants, families="bdf adams dirk", max_order=4, derivative=1,
     if chain:
         argv.append(f"--chain={chain}")
     return argv + list(extra)
+
+
+def radial_argv(instants, families="bdf adams dirk", max_order=4, derivative=1, extra=()):
+    return [APPLICATION, "--physics=radial_oscillator", f"--design={RADIAL_DESIGN}",
+            "--initial_state=1.0", f"--time_duration={DURATION}", f"--instants={instants}",
+            "--grid=uniform", f"--families={families}", f"--max_discretization_order={max_order}",
+            f"--max_derivative_degree={derivative}", "--functionals=energy square_integral",
+            "--combinations=1", "--check=state passes"] + list(extra)
 
 
 def ode_grids(instants=INSTANTS):
@@ -76,14 +108,16 @@ def taylor_green_argv(cells, instants=6):
             "--families=bdf", "--max_discretization_order=2", "--check=exact state"]
 
 
-def order_check(quantity, order, reference, digits, justification):
+def order_check(quantity, order, reference, digits, justification, design=None):
     return {"kind": "order", "quantity": quantity, "order": order,
-            "reference": reference, "digits": digits, "justification": justification}
+            "reference": reference, "digits": digits, "justification": justification,
+            "design": design}
 
 
-def floor_check(quantity, reference, digits, justification, scale=None):
+def floor_check(quantity, reference, digits, justification, scale=None, design=None):
     return {"kind": "floor", "quantity": quantity, "reference": reference,
-            "digits": digits, "scale": scale, "justification": justification}
+            "digits": digits, "scale": scale, "justification": justification,
+            "design": design}
 
 
 def residual_check(tolerance=TOLERANCE):
@@ -149,6 +183,41 @@ def temporal_case(identifier, row, order, quantities, description, chain=None,
     return {"id": identifier, "set": set_name, "description": description, "row": row,
             "grids": grids, "runs": runs, "checks": checks, "limitation": limitation,
             "timeout": 120}
+
+
+RADIAL_LAW = floor_check("radial_law", 0.0, 17, "q'' + q - nu / q^3 at the last instant is a "
+                         "row of the solved residual: bounded by tolerance x initial residual "
+                         "norm of its block plus gamma_N |q|", scale="law", design=RADIAL_DESIGN)
+
+
+def radial_case(identifier, row, order, quantities, description, limitation=None,
+                argv_extra=(), instants=INSTANTS, set_name="required"):
+    """The radial oscillator at nu = 2 over the refined grids: the two
+    functionals, their design derivatives, the state and the law."""
+    grids = ode_grids(instants)
+    runs = {label: radial_argv(n, extra=argv_extra) for (label, _, _), n in zip(grids, instants)}
+    references = {"E": (RADIAL_E_REF, TABLE_DIGITS, "the energy functional against T (1 + nu)/2"),
+                  "dE": (RADIAL_DE_REF, TABLE_DIGITS, "dF_E/dnu against T/2"),
+                  "F2": (RADIAL_F2_REF, TABLE_DIGITS,
+                         "int q^2 against (1 + nu) T/2 + (1 - nu) sin 2T/4"),
+                  "dF2": (RADIAL_DF2_REF, TABLE_DIGITS,
+                          "dF_2/dnu against T/2 - sin 2T/4"),
+                  "q": (RADIAL_Q_REF, STATE_DIGITS,
+                        "q(T) against sqrt(cos^2 T + nu sin^2 T)"),
+                  "qd": (RADIAL_QD_REF, STATE_DIGITS,
+                         "q'(T) against (nu - 1) sin 2T / (2 q(T))"),
+                  "radial_invariant": (RADIAL_INVARIANT_REF, STATE_DIGITS,
+                                       "the invariant drift q'^2/2 + q^2/2 + nu/(2 q^2) - "
+                                       "(1 + nu)/2 at T")}
+    checks = []
+    for quantity in quantities:
+        reference, digits, text = references[quantity]
+        checks.append(order_check(quantity, order, reference, digits,
+                                  f"{text}; {THETA_TEXT}", design=RADIAL_DESIGN))
+    checks += [RADIAL_LAW, TRANSPOSE, residual_check()]
+    return {"id": identifier, "set": set_name, "description": description, "row": row,
+            "grids": grids, "runs": runs, "checks": checks, "limitation": limitation,
+            "timeout": 180}
 
 
 def field_temporal_case(identifier, row, order, description, limitation=None,
@@ -310,9 +379,73 @@ def required_cases():
                           "Taylor-Green vortex, BDF-2, cells 8 and 16: one pair, so the "
                           "asymptotic regime is not verified by a second pair"),
         sensitivity_case(),
+        # THE RADIAL OSCILLATOR, a law absent from the tested baseline: the
+        # residual is nonlinear through a negative integer power and its two
+        # functionals have closed forms, the square integral's depending on
+        # the trajectory in both its value and its design derivative.
+        radial_case("E01-radial-bdf2", "bdf2", 2, ["E", "dE", "F2", "q", "qd"],
+                    "radial oscillator q'' + q - nu/q^3 at nu = 2, BDF-2, order 2; its "
+                    "dF_2/dnu changes sign inside these grids (X13) and is not declared"),
+        radial_case("E02-radial-bdf3", "bdf3", 3, ["E", "dE", "F2", "dF2", "q", "qd"],
+                    "radial oscillator, BDF-3, order 3 in both functionals, both design "
+                    "derivatives and the state"),
+        radial_case("E03-radial-bdf4", "bdf4", 4, ["E", "dE", "q", "qd"],
+                    "radial oscillator, BDF-4, order 4 in the energy, its design derivative "
+                    "and the state; the square integral and its design derivative carry the "
+                    "staged startup's lower order (X14) and are not declared"),
+        radial_case("E04-radial-adams2", "adams2", 2, ["E", "dE", "F2", "q", "qd"],
+                    "radial oscillator, Adams-Moulton 2 (trapezoidal), order 2; dF_2/dnu is "
+                    "E11's declared limitation"),
+        radial_case("E05-radial-adams3", "adams3", 3, ["E", "F2", "q", "qd"],
+                    "radial oscillator, Adams-Moulton 3, order 3 in both functionals and the "
+                    "state; both design derivatives are E12's declared limitation"),
+        radial_case("E06-radial-dirk2", "dirk2", 2, ["E", "dE", "F2", "dF2", "q", "qd"],
+                    "radial oscillator, implicit midpoint, order 2"),
+        radial_case("E07-radial-dirk3", "dirk3", 3, ["E", "dE", "F2", "dF2", "q", "qd"],
+                    "radial oscillator, Crouzeix two-stage DIRK, order 3"),
+        radial_case("E08-radial-dirk4", "dirk4", 4, ["E", "dE", "F2", "dF2", "q", "qd"],
+                    "radial oscillator, Crouzeix three-stage DIRK, order 4"),
+        radial_case("E09-radial-newmark2", "newmark2", 2, ["E", "dE", "F2", "q", "qd"],
+                    "radial oscillator, Newmark beta = 1/4, gamma = 1/2, order 2; the same "
+                    "trapezoidal step as Adams-Moulton 2, and its rows read the same initial "
+                    "acceleration, so dF_2/dnu is E13's declared limitation",
+                    argv_extra=("--families=newmark",)),
+        radial_case("E10-radial-alexander2", "alexander2", 2,
+                    ["E", "dE", "F2", "dF2", "q", "qd"],
+                    "radial oscillator, Alexander's two-stage L-stable DIRK, order 2: a "
+                    "tableau registered by its data alone",
+                    argv_extra=("--families=alexander",)),
     ]
     # declared limitations: measured below their theoretical order
     cases += [
+        # THE DESIGN DEPENDENCE OF THE CONSISTENT INITIAL ACCELERATION. The
+        # initial tuple supplies q(0) and q'(0); the law closes q''(0) =
+        # nu/q(0)^3 - q(0), which depends on the design. A family whose rows
+        # read the acceleration at the initial instant - Adams-Moulton and
+        # Newmark, not the Runge-Kutta stages and not the BDF rows - therefore
+        # carries a design rate the derivative pass does not account for, and
+        # the reported design derivative is not the derivative of the reported
+        # functional: at 81 instants the central difference of the printed
+        # adams2 square integral over nu is 1.1891925 against the printed
+        # 1.17836909, and the discrepancy halves with the step. Van der Pol
+        # hides it, since q''(0) = nu (1 - q(0)^2) q'(0) - q(0) is independent
+        # of nu at q'(0) = 0.
+        radial_case("E11-radial-adams2-design-derivative", "adams2", 2, ["dF2"],
+                    "radial oscillator, Adams-Moulton 2: dF_2/dnu declared at order 2",
+                    limitation="the omitted design rate of the consistent initial "
+                               "acceleration makes dF_2/dnu first order; measured slopes "
+                               "1.118, 1.064, 1.033, 1.017"),
+        radial_case("E12-radial-adams3-design-derivatives", "adams3", 3, ["dE", "dF2"],
+                    "radial oscillator, Adams-Moulton 3: dF_E/dnu and dF_2/dnu declared at "
+                    "order 3",
+                    limitation="the same omitted design rate: dF_E/dnu measured 2.075, "
+                               "2.051, 2.029, 2.016 and dF_2/dnu 1.357, 1.195, 1.101, 1.051"),
+        radial_case("E13-radial-newmark2-design-derivative", "newmark2", 2, ["dF2"],
+                    "radial oscillator, Newmark beta = 1/4, gamma = 1/2: dF_2/dnu declared "
+                    "at order 2",
+                    limitation="the same omitted design rate; the trapezoidal step makes "
+                               "the measured slopes those of E11, 1.118, 1.064, 1.033, 1.017",
+                    argv_extra=("--families=newmark",)),
         spatial_case("L04-operator-degree4", "bdf1", "operator", 4,
                      "discrete Laplacian of the mode at form degree 4 converges at order 2",
                      instants=3, families="bdf", max_order=1, extra=(), spatial_order=4,
@@ -349,6 +482,14 @@ def exploratory_cases():
                       "BDF-4 invariant drift at order 5"),
         temporal_case("X04-bdf1-dE-crossing", "bdf1", 1, ["dE"],
                       "BDF-1 dE/dnu changes sign inside these grids"),
+        radial_case("X13-radial-bdf2-design-derivative", "bdf2", 2, ["dF2"],
+                    "radial oscillator, BDF-2: dF_2/dnu changes sign between 21 and 41 "
+                    "instants, the pairwise slopes 4.462, 0.595, 1.134, 1.687 contracting "
+                    "towards 2", set_name="exploratory"),
+        radial_case("X14-radial-bdf4-square-integral", "bdf4", 4, ["F2", "dF2"],
+                    "radial oscillator, BDF-4: the square integral converges at the measured "
+                    "2.72 and its design derivative changes sign between 161 and 321 instants",
+                    set_name="exploratory"),
         field_temporal_case("X05-field-bdf3", "bdf3", 3,
                             "temporal order on the 16 x 16 periodic mode, BDF-3"),
         spatial_case("X06-taylor-green-three-grids", "bdf2", "velocity", 2,

@@ -79,3 +79,28 @@ for case in dirk_stationary bdf_stationary dirk_doubling superseded_word two_fam
     fi
     echo "PASS: $case"
 done
+# The names a law brings with it are refused where the law does not admit them:
+# the radial oscillator is of second order in time, van der Pol admits no square
+# integral, and the radial oscillator admits no dissipation.
+radial='--physics=radial_oscillator --design=2.0 --time_duration=2 --instants=11 --max_derivative_degree=0'
+for case in radial_degree unadmitted_functional unadmitted_dissipation; do
+    case "$case" in
+        radial_degree)         arguments="$radial --state_degree=1 --functionals=energy"
+                               expected='the radial oscillator is of second order in time' ;;
+        unadmitted_functional) arguments='--physics=vanderpol --time_duration=2 --instants=11 --functionals=square_integral'
+                               expected='vanderpol admits no functional named square_integral' ;;
+        unadmitted_dissipation) arguments="$radial --functionals=dissipation"
+                               expected='radial_oscillator admits no functional named dissipation' ;;
+    esac
+    if (cd "$application" && ./graph_time_integrator $arguments) > "$work/$case.log" 2>&1; then
+        cat "$work/$case.log"
+        echo "FAIL: $case was accepted"
+        exit 1
+    fi
+    if ! grep -qF "$expected" "$work/$case.log"; then
+        cat "$work/$case.log"
+        echo "FAIL: $case does not report: $expected"
+        exit 1
+    fi
+    echo "PASS: $case"
+done

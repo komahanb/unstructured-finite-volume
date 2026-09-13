@@ -101,7 +101,7 @@ def parse_table(text):
                 status = tokens.pop()
             current = {"label": m.group(1), "solved": int(m.group(2)),
                        "f": [number(t) for t in tokens], "status": status,
-                       "dissipation": None, "state": None, "blocks": [], "transpose": None,
+                       "dissipation": None, "square_integral": None, "state": None, "blocks": [], "transpose": None,
                        "mode": None, "semi": None, "velocity": None, "pressure": None,
                        "divergence": None}
             rows[current["label"]] = current
@@ -111,6 +111,10 @@ def parse_table(text):
         m = re.match(r"^      van der pol dissipation\s+(.*?)\s*$", line)
         if m:
             current["dissipation"] = [number(t) for t in m.group(1).split()]
+            continue
+        m = re.match(r"^      radial oscillator square integral\s+(.*?)\s*$", line)
+        if m:
+            current["square_integral"] = [number(t) for t in m.group(1).split()]
             continue
         m = re.match(r"^      state at the last instant, node 1:\s*(.*?)\s*$", line)
         if m:
@@ -183,8 +187,23 @@ def parse_order_demo(text):
 PARSERS = {"table": parse_table, "sensitivity": parse_sensitivity, "order_demo": parse_order_demo}
 
 
-def quantity_of(row, record, quantity):
+def quantity_of(row, record, quantity, design=None):
     """The number a quantity names in one row, or None when it is absent."""
+    if quantity == "F2":
+        column = row.get("square_integral")
+        return column[0] if column else None
+    if quantity == "dF2":
+        column = row.get("square_integral")
+        return column[1] if column and len(column) > 1 else None
+    if quantity in ("radial_invariant", "radial_law"):
+        state = row.get("state")
+        if not state or len(state) < 3 or any(state[i] is None for i in range(3)):
+            return None
+        if state[0] == 0.0:
+            return None
+        if quantity == "radial_invariant":
+            return 0.5 * (state[0] ** 2 + state[1] ** 2) + 0.5 * design / state[0] ** 2
+        return state[2] + state[0] - design / state[0] ** 3
     if quantity == "E":
         return row["f"][0] if row.get("f") else None
     if quantity == "dE":
@@ -371,7 +390,7 @@ def evaluate_check(check, case, rows, records):
     values, terms, scales, references = [], [], [], []
     for label, _, n in grids:
         row = rows[label]
-        value = quantity_of(row, records[label], check["quantity"])
+        value = quantity_of(row, records[label], check["quantity"], check.get("design"))
         if value is None:
             outcome["status"] = "missing_result"
             outcome["message"] = f"{check['quantity']} absent from {label}"
@@ -385,7 +404,8 @@ def evaluate_check(check, case, rows, records):
         if kind == "order":
             reference = check["reference"]
             if isinstance(reference, dict):
-                reference = quantity_of(rows[reference["run"]], records[reference["run"]], check["quantity"])
+                reference = quantity_of(rows[reference["run"]], records[reference["run"]],
+                                        check["quantity"], check.get("design"))
                 if reference is None:
                     outcome["status"] = "missing_result"
                     outcome["message"] = "the reference run lacks the quantity"

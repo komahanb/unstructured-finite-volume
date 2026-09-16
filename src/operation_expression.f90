@@ -3,10 +3,10 @@
 ! whose vertices are typed operators and whose edges are the reads
 ! between them.
 !
-! The law itself has no point graph. A caller first states the
-! highest derivative degree for each coordinate, then a discrete
-! domain places that law on a directed graph when values are
-! evaluated.
+! The law itself has no point graph. Its domain is read from its
+! leaves: the fields, the highest derivative order of each field
+! along each coordinate, and the multipliers. A discrete domain
+! places the law on a directed graph when values are evaluated.
 !
 !      input graph     the points where the law is evaluated
 !      state argument  the state, one field over those points with
@@ -16,46 +16,46 @@
 !      output          one value per point
 !
 ! A leaf reads a component of an argument - the state's component of
-! degree d, or the design - or stores a constant. Every other vertex
-! is an arithmetic operation, a power, or an elementary function of
-! the vertices it reads. The vertices are stored in evaluation order,
-! every read before its reader, and the root is the last one.
+! degree d, or the design - or a multiplier, or stores a constant.
+! Every other vertex is an arithmetic operation, a power, or an
+! elementary function of the vertices it reads. The vertices are
+! stored in evaluation order, every read before its reader, and the
+! root is the last one.
 !
 ! A rule is built by the intrinsic operators on expressions, so it
 ! reads as it is written and the compiler checks it:
 !
 !      q  = unknown()
 !      nu = design()
-!      r  = stated(derivative(q, 2) + nu * derivative(q, 1) &
-!                + sin(derivative(q, 0)), 2, 'the residual')
+!      r  = derivative(q, 2) + nu * derivative(q, 1) + sin(derivative(q, 0))
 !
 ! derivative(q, d) is the component of degree d: along the instants
 ! the derivatives are unknowns the scheme relates, so the vertex
-! selects and does not differentiate.
+! selects and does not differentiate. The state r reads stores the
+! components of degree 0, 1 and 2: the highest degree any leaf names.
 !
 !             SEVERAL FIELDS
 !
 ! unknown(i) is the i-th zeroth-order field; unknown() is the first.
-! A rule that reads fields 1..m is stated over m fields, the highest
-! index read. Along the first coordinate each field stores its own
-! jet, to the degree given for it when the rule is stated (the
-! equation's degree for the first field, zero for a multiplier,
-! unless listed); along every later coordinate the fields share the
-! declared degrees. A point's tuple lists the fields in order, each
-! field's components together.
+! A rule that reads fields 1..m is over m fields, the highest index
+! read. Along the first coordinate each field stores its own jet, to
+! the highest degree the rule names for it; along every later
+! coordinate the fields share the highest degree named there. A
+! point's tuple lists the fields in order, each field's components
+! together.
 !
 !             THE LAGRANGIAN
 !
-! A rule stated with k multipliers is a Lagrangian: its last k fields
-! are the multipliers, paired in order with its first k fields, and
-! the rules it generates are its partials. euler_lagrange(l, j) is
-! the stationarity of l in its j-th multiplier, the coefficient of
-! one direction seeded on that field's component of order zero, and
-! at_zero(l) is l with every multiplier at zero. A multiplier is not
-! part of the tuple a rule reads, so the state contract excludes
-! it; it is supplied inside the evaluation, zero in value, with its
-! own direction when its stationarity is read. Nothing is rewritten:
-! the same vertices are evaluated with one more direction.
+! A rule that reads multiplier(j), j = 1..k, is a Lagrangian, its
+! j-th multiplier paired with its j-th field, and the rules it
+! generates are its partials. euler_lagrange(l, j) is the
+! stationarity of l in its j-th multiplier, the coefficient of one
+! direction seeded on that multiplier, and at_zero(l) is l with every
+! multiplier at zero. A multiplier is not part of the tuple a rule
+! reads, so the state contract excludes it; it is supplied inside the
+! evaluation, zero in value, with its own direction when its
+! stationarity is read. Nothing is rewritten: the same vertices are
+! evaluated with one more direction.
 !
 !             THE PARTIALS
 !
@@ -71,11 +71,11 @@
 !             WHAT IS REJECTED
 !
 ! A derivative of anything but the unknown, or of negative degree; a
-! rule stated at a degree below zero, or below the highest component
-! it reads; a state whose extent is not the instants times N+1; a
+! state whose extent is not the instants times the components; a
 ! design that is not one value per instant; a missing argument; a
 ! variation naming neither argument; a function index outside those
-! defined. Each stops the program.
+! defined; a stationarity in a multiplier the rule does not read.
+! Each stops the program.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -95,7 +95,7 @@ module operation_expression
 
   private
   public :: expression
-  public :: unknown, design, constant, derivative, derivative_along, stated, stated_over
+  public :: unknown, design, constant, multiplier, derivative, derivative_along
   public :: euler_lagrange, at_zero
   public :: operator(+), operator(-), operator(*), operator(/), operator(**)
   public :: sin, cos, exp, log, sqrt
@@ -111,36 +111,37 @@ module operation_expression
   integer, parameter :: VERTEX_REAL_POWER    = 8
   integer, parameter :: VERTEX_FUNCTION      = 9
 
-  ! the arguments a leaf reads, in the operation's order
   ! THE COORDINATE A DERIVATIVE FOLLOWS, named by its place among the
   ! coordinates the state is declared over. One is the first declared;
   ! nothing here specifies which that is, and nothing here limits how
   ! many there are.
   integer, parameter, public :: FIRST_COORDINATE = 1
 
-  integer, parameter :: ARGUMENT_STATE  = 1
-  integer, parameter :: ARGUMENT_DESIGN = 2
+  ! the arguments a leaf reads, in the operation's order; a multiplier
+  ! is read from no argument, and its position names it
+  integer, parameter :: ARGUMENT_STATE      = 1
+  integer, parameter :: ARGUMENT_DESIGN     = 2
+  integer, parameter :: ARGUMENT_MULTIPLIER = 3
 
   ! the elementary functions
   integer, parameter :: SINE        = 1
   integer, parameter :: COSINE      = 2
   integer, parameter :: EXPONENTIAL = 3
   integer, parameter :: LOGARITHM   = 4
-  integer, parameter :: ROOT        = 5
+  integer, parameter :: SQUARE_ROOT = 5
 
   type, extends(operation) :: expression
 
-     ! ONE DEGREE PER COORDINATE, in the order the coordinates are
-     ! declared. The first includes the component of order zero, which
-     ! is the state itself, so it stores degrees(1) + 1 components and
-     ! every later coordinate stores degrees(c), its orders running
-     ! from one.
+     ! THE DOMAIN, READ FROM THE LEAVES at every construction and
+     ! stored so that evaluation indexes the tuple without a pass over
+     ! the vertices: one degree per coordinate (the first includes the
+     ! component of order zero, the state itself, so it stores
+     ! degrees(1) + 1 components; every later coordinate stores
+     ! degrees(c), its orders running from one); the state fields,
+     ! each with its degree along the first coordinate; the
+     ! multipliers, absent from the tuple and zero in value; and
+     ! varied, the multiplier whose stationarity the rule is, or zero.
      integer, allocatable, private :: degrees(:)
-
-     ! the fields the rule is stated over, each with its degree along
-     ! the first coordinate; the last `multipliers` of them are absent
-     ! from the tuple and zero in value, and `varied` names the one
-     ! whose stationarity the rule is, or is zero
      integer, private :: fields      = 0
      integer, private :: multipliers = 0
      integer, private :: varied      = 0
@@ -149,7 +150,7 @@ module operation_expression
      integer , allocatable, private :: kind(:)
      integer , allocatable, private :: first(:), second(:)    ! the vertices read; 0 if none
      integer , allocatable, private :: position(:)            ! a leaf's argument
-     integer , allocatable, private :: field(:)               ! a state leaf's field
+     integer , allocatable, private :: field(:)               ! a state leaf's field, a multiplier's index
      integer , allocatable, private :: order(:)               ! a leaf's component, or a function index
      integer , allocatable, private :: along(:)               ! the coordinate a leaf's derivative follows
      real(dp), allocatable, private :: coefficient(:)         ! a constant, or an exponent
@@ -160,14 +161,13 @@ module operation_expression
      procedure :: defined_at_zero => expression_defined_at_zero
      procedure :: partial_action => expression_partial_action
      procedure :: at_instant     => expression_at_instant
-     procedure :: declared        => expression_declared
      procedure :: equation_degree
      procedure :: num_coordinates
      procedure :: num_components
      procedure :: component_at
-     procedure :: declare_degree
      procedure :: highest_degree_along
      procedure :: read_components
+     procedure :: root
      procedure :: num_vertices
      procedure :: num_fields
      procedure :: num_multipliers
@@ -178,7 +178,7 @@ module operation_expression
      procedure, private :: stored_at
      procedure, private :: order_at
      procedure, private :: evaluated_over
-     procedure, private :: restated
+     procedure, private :: derive_domain
 
   end type expression
 
@@ -246,6 +246,8 @@ contains
     if (present(along)) this % along = [along]
     if (present(field)) this % field = [field]
 
+    call this % derive_domain()
+
   end function vertex
 
   !===================================================================!
@@ -290,6 +292,27 @@ contains
   end function constant
 
   !===================================================================!
+  ! The j-th multiplier: read from no argument, zero in value unless
+  ! its stationarity is read. An index below one stops the program.
+  !===================================================================!
+
+  function multiplier(j) result(this)
+
+    integer, intent(in) :: j
+    type(expression) :: this
+
+    character(len=250) :: message
+
+    if (j < 1) then
+       write(message,'(a,i0)') 'operation_expression: a multiplier must be named by a positive index; j = ', j
+       error stop trim(message)
+    end if
+
+    this = vertex(VERTEX_LEAF, ARGUMENT_MULTIPLIER, 0, 0.0_dp, field=j)
+
+  end function multiplier
+
+  !===================================================================!
   ! The component of degree d of the unknown. Anything but a bare
   ! unknown, or a negative degree, stops the program: along the
   ! instants only the unknown has components.
@@ -301,11 +324,13 @@ contains
     integer         , intent(in) :: d
     type(expression) :: this
 
+    integer :: n
     character(len=250) :: message
 
-    if (size(x % kind) /= 1 .or. x % kind(1) /= VERTEX_LEAF .or. x % position(1) /= ARGUMENT_STATE) then
+    n = x % root()
+    if (n /= 1 .or. x % kind(1) /= VERTEX_LEAF .or. x % position(1) /= ARGUMENT_STATE) then
        write(message,'(a,i0,a,i0,a,i0)') 'operation_expression: derivative requires its &
-            &argument to be the unknown; size(x % kind) = ', size(x % kind), ', x % kind(1) = ', &
+            &argument to be the unknown; num_vertices = ', n, ', x % kind(1) = ', &
             & x % kind(1), ', x % position(1) = ', x % position(1)
        error stop trim(message)
     end if
@@ -331,11 +356,13 @@ contains
     integer         , intent(in) :: coordinate, d
     type(expression) :: this
 
+    integer :: n
     character(len=250) :: message
 
-    if (size(x % kind) /= 1 .or. x % kind(1) /= VERTEX_LEAF .or. x % position(1) /= ARGUMENT_STATE) then
+    n = x % root()
+    if (n /= 1 .or. x % kind(1) /= VERTEX_LEAF .or. x % position(1) /= ARGUMENT_STATE) then
        write(message,'(a,i0,a,i0,a,i0)') 'operation_expression: derivative_along requires its &
-            &argument to be the unknown; size(x % kind) = ', size(x % kind), ', x % kind(1) = ', &
+            &argument to be the unknown; num_vertices = ', n, ', x % kind(1) = ', &
             & x % kind(1), ', x % position(1) = ', x % position(1)
        error stop trim(message)
     end if
@@ -355,124 +382,9 @@ contains
   end function derivative_along
 
   !===================================================================!
-  ! A rule bound to the degree of the state it reads. A degree below
-  ! the highest component read stops the program: the state stores no
-  ! such component.
-  !===================================================================!
-
-  function stated(rule, degree, label, field_degrees, multipliers) result(this)
-
-    type(expression), intent(in) :: rule
-    integer         , intent(in) :: degree
-    character(len=*), intent(in) :: label
-    integer         , intent(in), optional :: field_degrees(:), multipliers
-    type(expression) :: this
-
-    this = stated_over(rule, [degree], label, field_degrees, multipliers)
-
-  end function stated
-
-  !===================================================================!
-  ! A rule bound to a degree along each coordinate the state is
-  ! declared over. The one-coordinate form is this with a list of
-  ! one, so a rule over time alone reads no differently than before.
-  !===================================================================!
-
-  function stated_over(rule, degrees, label, field_degrees, multipliers) result(this)
-
-    type(expression), intent(in) :: rule
-    integer         , intent(in) :: degrees(:)
-    character(len=*), intent(in) :: label
-    integer         , intent(in), optional :: field_degrees(:), multipliers
-    type(expression) :: this
-
-    integer :: c, f
-    character(len=250) :: message
-
-    ! a rule stated again keeps its fields' degrees, its multipliers
-    ! and the stationarity it is, unless these are given again
-    this = rule
-
-    ! An explicit field declaration may include fields this row does
-    ! not read: several residual rows then use the same state tuple.
-    this % fields = max(this % fields, 1, maxval(this % field))
-    if (present(field_degrees)) this % fields = max(this % fields, size(field_degrees))
-
-    if (present(multipliers)) then
-       this % multipliers = multipliers
-       this % varied      = 0
-    end if
-    if (this % multipliers < 0 .or. 2 * this % multipliers > this % fields) then
-       write(message,'(a,i0,a,i0)') 'operation_expression: the multipliers must be the last &
-            &fields, each paired with a state field; multipliers = ', this % multipliers, &
-            & ', fields = ', this % fields
-       error stop trim(message)
-    end if
-
-    if (size(degrees) < 1) then
-       write(message,'(a,i0)') 'operation_expression: a state must be declared over one &
-            &coordinate at least; size(degrees) = ', size(degrees)
-       error stop trim(message)
-    end if
-    if (.not. allocated(this % field_degree)) then
-       allocate(this % field_degree(this % fields))
-       this % field_degree = degrees(FIRST_COORDINATE)
-       if (this % multipliers > 0) this % field_degree(this % fields - this % multipliers + 1:) = 0
-    else if (size(this % field_degree) /= this % fields) then
-       write(message,'(a,i0,a,i0)') 'operation_expression: a rule stated again must read the &
-            &fields it was stated over; size(this % field_degree) = ', size(this % field_degree), &
-            & ', this % fields = ', this % fields
-       error stop trim(message)
-    end if
-    if (present(field_degrees)) then
-       if (size(field_degrees) /= this % fields) then
-          write(message,'(a,i0,a,i0)') 'operation_expression: one degree is required per field &
-               &the rule is stated over; size(field_degrees) = ', size(field_degrees), &
-               & ', this % fields = ', this % fields
-          error stop trim(message)
-       end if
-       this % field_degree = field_degrees
-    end if
-    if (this % field_degree(1) /= degrees(FIRST_COORDINATE)) then
-       write(message,'(a,i0,a,i0)') 'operation_expression: the first field must store the &
-            &equation''s degree; this % field_degree(1) = ', this % field_degree(1), &
-            & ', degrees(FIRST_COORDINATE) = ', degrees(FIRST_COORDINATE)
-       error stop trim(message)
-    end if
-
-    do f = 1, this % fields
-       if (this % highest_degree_along(FIRST_COORDINATE, f) > this % field_degree(f)) then
-          write(message,'(a,i0,a,i0,a,i0)') 'operation_expression: the rule reads a component &
-               &the state does not store, at field ', f, '; rule degree = ', &
-               & this % highest_degree_along(FIRST_COORDINATE, f), ', state degree = ', &
-               & this % field_degree(f)
-          error stop trim(message)
-       end if
-    end do
-    do c = FIRST_COORDINATE + 1, size(degrees)
-       if (this % highest_degree_along(c) > degrees(c)) then
-          write(message,'(a,i0,a,i0,a,i0)') 'operation_expression: the rule reads a component &
-               &the state does not store, along coordinate ', c, '; rule degree = ', &
-               & this % highest_degree_along(c), ', state degree = ', degrees(c)
-          error stop trim(message)
-       end if
-    end do
-    if (this % highest_degree_along(size(degrees) + 1) >= 0) then
-       write(message,'(a,i0,a,i0)') 'operation_expression: the rule reads a coordinate the &
-            &state is not declared over; coordinate = ', size(degrees) + 1, &
-            & ', rule degree there = ', this % highest_degree_along(size(degrees) + 1)
-       error stop trim(message)
-    end if
-
-    call this % declare_degree(degrees, label)
-
-  end function stated_over
-
-  !===================================================================!
   ! The stationarity of a Lagrangian in its j-th multiplier: the
-  ! partial of the rule along that field's component of order zero,
-  ! at zero. A rule not stated, or a multiplier it does not declare,
-  ! stops the program.
+  ! partial of the rule along that multiplier, at zero. A multiplier
+  ! the rule does not read stops the program.
   !===================================================================!
 
   function euler_lagrange(lagrangian, multiplier, label) result(this)
@@ -484,27 +396,23 @@ contains
 
     character(len=250) :: message
 
-    if (.not. lagrangian % declared()) then
-       error stop 'operation_expression: the stationarity of a Lagrangian was read before the &
-            &Lagrangian was stated'
-    end if
     if (multiplier < 1 .or. multiplier > lagrangian % multipliers) then
        write(message,'(a,i0,a,i0)') 'operation_expression: the stationarity must be in a &
-            &multiplier the Lagrangian declares; multiplier = ', multiplier, &
+            &multiplier the Lagrangian reads; multiplier = ', multiplier, &
             & ', lagrangian % multipliers = ', lagrangian % multipliers
        error stop trim(message)
     end if
 
     this = lagrangian
-    this % varied = lagrangian % fields - lagrangian % multipliers + multiplier
-    call this % restated(label)
+    this % varied = multiplier
+    call this % derive_domain(label)
 
   end function euler_lagrange
 
   !===================================================================!
   ! The Lagrangian with every multiplier at zero, which for a
   ! Lagrangian linear in them is the functional beside the
-  ! constraints. A rule not stated stops the program.
+  ! constraints.
   !===================================================================!
 
   function at_zero(lagrangian, label) result(this)
@@ -513,32 +421,11 @@ contains
     character(len=*), intent(in), optional :: label
     type(expression) :: this
 
-    if (.not. lagrangian % declared()) then
-       error stop 'operation_expression: the value at zero of a Lagrangian was read before the &
-            &Lagrangian was stated'
-    end if
-
     this = lagrangian
     this % varied = 0
-    call this % restated(label)
+    call this % derive_domain(label)
 
   end function at_zero
-
-  subroutine restated(this, label)
-
-    class(expression), intent(inout) :: this
-    character(len=*) , intent(in), optional :: label
-
-    integer, allocatable :: degrees(:)
-
-    degrees = this % degrees
-    if (present(label)) then
-       call this % declare_degree(degrees, label)
-    else
-       call this % declare_degree(degrees, this % name())
-    end if
-
-  end subroutine restated
 
   !===================================================================!
   ! COMPOSITION. A binary vertex reads two roots: the right operand's
@@ -554,8 +441,8 @@ contains
 
     integer :: na, nb
 
-    na = size(a % kind)
-    nb = size(b % kind)
+    na = a % root()
+    nb = b % root()
 
     this % kind        = [a % kind,        b % kind,        kind]
     this % first       = [a % first,       shifted(b % first,  na), na]
@@ -566,6 +453,8 @@ contains
     this % along       = [a % along,       b % along,       FIRST_COORDINATE]
     this % coefficient = [a % coefficient, b % coefficient, 0.0_dp]
 
+    call this % derive_domain()
+
   end function joined
 
   function applied(a, kind, order, coefficient) result(this)
@@ -575,14 +464,20 @@ contains
     real(dp)        , intent(in) :: coefficient
     type(expression) :: this
 
+    integer :: na
+
+    na = a % root()
+
     this % kind        = [a % kind,        kind]
-    this % first       = [a % first,       size(a % kind)]
+    this % first       = [a % first,       na]
     this % second      = [a % second,      0]
     this % position    = [a % position,    0]
     this % field       = [a % field,       0]
     this % order       = [a % order,       order]
     this % along       = [a % along,       FIRST_COORDINATE]
     this % coefficient = [a % coefficient, coefficient]
+
+    call this % derive_domain()
 
   end function applied
 
@@ -598,6 +493,48 @@ contains
     end where
 
   end function shifted
+
+  !===================================================================!
+  ! THE DOMAIN, READ FROM THE LEAVES: the fields are those any unknown
+  ! names, one at least; a field's degree along the first coordinate
+  ! is the highest order named for it, zero when only its value is
+  ! named; along a later coordinate the degree is the highest order
+  ! named there by any field; the multipliers are those any
+  ! multiplier leaf names. The argument contracts follow, with the
+  ! highest exact degree, one less for a stationarity.
+  !===================================================================!
+
+  subroutine derive_domain(this, label)
+
+    class(expression), intent(inout) :: this
+    character(len=*) , intent(in), optional :: label
+
+    integer :: i, f, c, coordinates
+
+    this % fields      = 1
+    this % multipliers = 0
+    coordinates        = FIRST_COORDINATE
+    do i = 1, this % num_vertices()
+       if (this % kind(i) /= VERTEX_LEAF) cycle
+       select case (this % position(i))
+       case (ARGUMENT_STATE)
+          this % fields = max(this % fields, this % field(i))
+          coordinates   = max(coordinates, this % along(i))
+       case (ARGUMENT_MULTIPLIER)
+          this % multipliers = max(this % multipliers, this % field(i))
+       end select
+    end do
+
+    this % field_degree = [(max(0, this % highest_degree_along(FIRST_COORDINATE, f)), f = 1, this % fields)]
+    this % degrees      = [this % field_degree(1), &
+         & (max(0, this % highest_degree_along(c)), c = FIRST_COORDINATE + 1, coordinates)]
+
+    call this % declare_arguments(2, [ &
+         & contract(FIELD_REAL, this % num_components()), &
+         & contract(FIELD_REAL, 1) ], label=label, &
+         & max_degree=max_subset_width() - merge(1, 0, this % varied > 0))
+
+  end subroutine derive_domain
 
   !===================================================================!
   ! THE OPERATORS.
@@ -730,7 +667,7 @@ contains
   function root_of(a) result(this)
     type(expression), intent(in) :: a
     type(expression) :: this
-    this = applied(a, VERTEX_FUNCTION, ROOT, 0.0_dp)
+    this = applied(a, VERTEX_FUNCTION, SQUARE_ROOT, 0.0_dp)
   end function root_of
 
   !===================================================================!
@@ -748,7 +685,7 @@ contains
 
     type(derivative_terms), allocatable :: stored(:)
     type(derivative_terms) :: design
-    integer :: per, f, n, j, at, given, total
+    integer :: n, j, given
 
     if (size(q) /= this % num_components()) then
        error stop 'operation_expression: the point does not store one component per law component'
@@ -758,41 +695,27 @@ contains
        return
     end if
 
-    ! the tuple evaluated stores every field; a multiplier, read from
-    ! no input, is zero, and the varied one has one more direction,
-    ! the highest, whose partial is returned over the caller's
+    ! the tuple evaluated stores the state and then the multipliers;
+    ! a multiplier, read from no input, is zero, and the varied one
+    ! has one more direction, the highest, whose partial is returned
+    ! over the caller's
     n = nu % num_directions()
     if (this % varied > 0) n = n + 1
     design = extend_directions(nu, n)
-    total = 0
-    do f = 1, this % fields
-       total = total + this % components_per_field(f)
+    given  = this % num_components()
+    allocate(stored(0:given + this % multipliers - 1))
+    do j = 0, given - 1
+       stored(j) = extend_directions(q(j), n)
     end do
-    allocate(stored(0:total - 1))
-    at    = 0
-    given = 0
-    do f = 1, this % fields
-       per = this % components_per_field(f)
-       if (f > this % fields - this % multipliers) then
-          stored(at:at + per - 1) = derivative_terms(0.0_dp, design)
-          if (f == this % varied) call stored(at) % set_direction(n, 1.0_dp)
-       else
-          do j = 0, per - 1
-             stored(at + j) = extend_directions(q(given + j), n)
-          end do
-          given = given + per
-       end if
-       at = at + per
+    do j = 1, this % multipliers
+       stored(given + j - 1) = derivative_terms(0.0_dp, design)
     end do
+    if (this % varied > 0) call stored(given + this % varied - 1) % set_direction(n, 1.0_dp)
 
     r = this % evaluated_over(stored, design)
     if (this % varied > 0) r = partial(r, n)
 
   end function expression_at_instant
-
-  !===================================================================!
-  ! The loop over the vertices, on the stored tuple.
-  !===================================================================!
 
   !===================================================================!
   ! WHETHER THE ZERO STATE LIES IN THE EXPRESSION'S DOMAIN. A vertex
@@ -812,10 +735,10 @@ contains
     logical, allocatable :: reads_state(:)
     integer :: i
 
-    allocate(reads_state(size(this % kind)), source=.false.)
+    allocate(reads_state(this % num_vertices()), source=.false.)
     defined = .true.
 
-    do i = 1, size(this % kind)
+    do i = 1, this % num_vertices()
        select case (this % kind(i))
        case (VERTEX_LEAF)
           reads_state(i) = this % position(i) == ARGUMENT_STATE
@@ -834,7 +757,7 @@ contains
           if (reads_state(i) .and. this % coefficient(i) < 1.0_dp) defined = .false.
        case (VERTEX_FUNCTION)
           reads_state(i) = reads_state(this % first(i))
-          if (reads_state(i) .and. (this % order(i) == LOGARITHM .or. this % order(i) == ROOT)) then
+          if (reads_state(i) .and. (this % order(i) == LOGARITHM .or. this % order(i) == SQUARE_ROOT)) then
              defined = .false.
           end if
        case default
@@ -843,6 +766,10 @@ contains
     end do
 
   end function expression_defined_at_zero
+
+  !===================================================================!
+  ! The loop over the vertices, on the stored tuple.
+  !===================================================================!
 
   pure function evaluated_over(this, q, nu) result(r)
 
@@ -859,22 +786,23 @@ contains
     type(derivative_terms), allocatable :: v(:)
     integer :: i, at
 
-    allocate(v(size(this % kind)))
+    allocate(v(this % num_vertices()))
 
-    do i = 1, size(this % kind)
+    do i = 1, this % num_vertices()
        select case (this % kind(i))
        case (VERTEX_LEAF)
-          if (this % position(i) == ARGUMENT_STATE) then
-             ! the tuple lists every field's components together; the
-             ! components run along time first, then along space
-             at = this % stored_at(this % field(i), this % along(i), this % order(i))
+          if (this % position(i) == ARGUMENT_DESIGN) then
+             v(i) = nu
+          else
+             ! the tuple lists every field's components together, the
+             ! components along time first, then along space, and the
+             ! multipliers after every field
+             at = this % stored_at(this % position(i), this % field(i), this % along(i), this % order(i))
              if (at > ubound(q, 1)) then
                 error stop 'operation_expression: the state does not store the component read, &
                      &beyond the end of the stored tuple'
              end if
              v(i) = q(at)
-          else
-             v(i) = nu
           end if
        case (VERTEX_CONSTANT)
           v(i) = derivative_terms(this % coefficient(i), nu)
@@ -896,7 +824,7 @@ contains
           case (COSINE);      v(i) = cos(v(this % first(i)))
           case (EXPONENTIAL); v(i) = exp(v(this % first(i)))
           case (LOGARITHM);   v(i) = log(v(this % first(i)))
-          case (ROOT);        v(i) = sqrt(v(this % first(i)))
+          case (SQUARE_ROOT); v(i) = sqrt(v(this % first(i)))
           case default
              error stop 'operation_expression: this vertex names a function that is not one of &
                   &those defined'
@@ -910,10 +838,6 @@ contains
     r = v(size(v))
 
   end function evaluated_over
-
-  !===================================================================!
-  ! The highest state component read; minus one when none is.
-  !===================================================================!
 
   !===================================================================!
   ! The highest order this rule names along one coordinate, and minus
@@ -930,7 +854,7 @@ contains
     integer :: i
 
     highest_degree_along = -1
-    do i = 1, size(this % kind)
+    do i = 1, this % num_vertices()
        if (this % kind(i) == VERTEX_LEAF .and. this % position(i) == ARGUMENT_STATE &
             & .and. this % along(i) == coordinate) then
           if (present(field)) then
@@ -957,9 +881,8 @@ contains
     integer :: i, at
 
     allocate(read(0:this % num_components() - 1), source=.false.)
-    do i = 1, size(this % kind)
+    do i = 1, this % num_vertices()
        if (this % kind(i) /= VERTEX_LEAF .or. this % position(i) /= ARGUMENT_STATE) cycle
-       if (this % field(i) > this % fields - this % multipliers) cycle
        at = this % component_at(this % along(i), this % order(i), this % field(i))
        read(at) = .true.
     end do
@@ -967,53 +890,40 @@ contains
 
   end subroutine read_components
 
+  !===================================================================!
+  ! Invalid input: a variable of type expression never assigned from
+  ! unknown, design, constant or an operator has no vertex, so no
+  ! root and no value. Every read of the vertex count passes through
+  ! here, so this is the one refusal; without it the compiled code
+  ! reads an array with no memory and faults in memmove with no
+  ! message.
+  !===================================================================!
+
   pure integer function num_vertices(this)
 
     class(expression), intent(in) :: this
 
+    if (.not. allocated(this % kind)) then
+       error stop 'operation_expression: the expression has no vertex, so no root and no value; &
+            &a variable of type expression never assigned from unknown(), design(), constant() &
+            &or an operator has no vertex'
+    end if
     num_vertices = size(this % kind)
 
   end function num_vertices
 
   !===================================================================!
-  ! The degree of the equation, declared when the rule is stated,
-  ! with the name the rule reports and the highest exact degree: the
-  ! width the subset masks can index. Degree zero declares algebraic
-  ! fields; a negative degree stops the program.
+  ! The vertices are stored in evaluation order, so the root, the
+  ! vertex whose value is the value of the expression, is the last.
   !===================================================================!
 
-  subroutine declare_degree(this, degrees, label)
+  pure integer function root(this)
 
-    class(expression)     , intent(inout) :: this
-    integer               , intent(in)    :: degrees(:)
-    character(len=*)      , intent(in), optional :: label
+    class(expression), intent(in) :: this
 
-    character(len=250) :: message
+    root = this % num_vertices()
 
-    if (size(degrees) < 1) then
-       write(message,'(a,i0)') 'operation_expression: a state must be declared over one &
-            &coordinate at least; size(degrees) = ', size(degrees)
-       error stop trim(message)
-    end if
-
-    if (any(degrees < 0)) then
-       write(message,'(a,i0,a,i0)') 'operation_expression: a degree along a coordinate must not &
-            &be negative; minval(degrees) = ', minval(degrees), &
-            & ' at coordinate ', minloc(degrees, dim=1)
-       error stop trim(message)
-    end if
-
-    this % degrees = degrees
-    if (this % fields < 1) then
-       this % fields = 1
-       this % field_degree = [degrees(FIRST_COORDINATE)]
-    end if
-    call this % declare_arguments(2, [ &
-         & contract(FIELD_REAL, this % num_components()), &
-         & contract(FIELD_REAL, 1) ], label=label, &
-         & max_degree=max_subset_width() - merge(1, 0, this % varied > 0))
-
-  end subroutine declare_degree
+  end function root
 
   !===================================================================!
   ! THE COMPONENT A COORDINATE AND AN ORDER NAME. The first
@@ -1047,10 +957,10 @@ contains
 
     integer :: f
 
-    if (field < 1 .or. field > this % fields) then
-       error stop 'operation_expression: this component names a field the rule is not stated over'
+    if (field < 1 .or. field > this % fields + this % multipliers) then
+       error stop 'operation_expression: this component names a field the rule does not read'
     end if
-    if (field > this % fields - this % multipliers) then
+    if (field > this % fields) then
        error stop 'operation_expression: this component names a multiplier, which is not stored &
             &in the tuple'
     end if
@@ -1063,16 +973,20 @@ contains
 
   !===================================================================!
   ! The same component in the tuple the rule evaluates, which stores
-  ! every field including the multipliers.
+  ! every state field and then the multipliers, one value each.
   !===================================================================!
 
-  pure integer function stored_at(this, field, coordinate, order) result(at)
+  pure integer function stored_at(this, position, field, coordinate, order) result(at)
 
     class(expression), intent(in) :: this
-    integer          , intent(in) :: field, coordinate, order
+    integer          , intent(in) :: position, field, coordinate, order
 
     integer :: f
 
+    if (position == ARGUMENT_MULTIPLIER) then
+       at = this % num_components() + field - 1
+       return
+    end if
     at = 0
     do f = 1, field - 1
        at = at + this % components_per_field(f)
@@ -1088,11 +1002,8 @@ contains
 
     integer :: c
 
-    if (.not. this % declared()) then
-       error stop 'operation_expression: a component was read before the law was stated'
-    end if
     if (coordinate < FIRST_COORDINATE .or. coordinate > this % num_coordinates()) then
-       error stop 'operation_expression: this component names a coordinate the law does not declare'
+       error stop 'operation_expression: this component names a coordinate the law does not read'
     end if
     if (coordinate > FIRST_COORDINATE .and. order < 1) then
        error stop 'operation_expression: this component names order zero away from the first &
@@ -1100,7 +1011,7 @@ contains
     end if
     if (order < 0 .or. order > merge(this % field_degree(field), this % degrees(coordinate), &
          & coordinate == FIRST_COORDINATE)) then
-       error stop 'operation_expression: this component names an order the coordinate does not declare'
+       error stop 'operation_expression: this component names an order the coordinate does not store'
     end if
 
     at = order
@@ -1124,10 +1035,6 @@ contains
     class(expression), intent(in) :: this
     integer          , intent(in) :: field
 
-    if (.not. this % declared()) then
-       error stop 'operation_expression: the component count was read before the law was stated'
-    end if
-
     components_per_field = this % field_degree(field) + 1
     if (size(this % degrees) > 1) components_per_field = components_per_field + sum(this % degrees(2:))
 
@@ -1145,23 +1052,27 @@ contains
     integer :: f
 
     num_components = 0
-    do f = 1, this % fields - this % multipliers
+    do f = 1, this % fields
        num_components = num_components + this % components_per_field(f)
     end do
 
   end function num_components
 
+  !===================================================================!
+  ! The fields of the rule: the state fields and then the multipliers.
+  !===================================================================!
+
   pure integer function num_fields(this)
 
     class(expression), intent(in) :: this
 
-    num_fields = this % fields
+    num_fields = this % fields + this % multipliers
 
   end function num_fields
 
   !===================================================================!
-  ! The declared degree along a coordinate: the first field's along
-  ! the first coordinate, every field's along a later one.
+  ! The degree along a coordinate: the first field's along the first
+  ! coordinate, every field's along a later one.
   !===================================================================!
 
   pure integer function degree_along(this, coordinate) result(degree)
@@ -1169,11 +1080,8 @@ contains
     class(expression), intent(in) :: this
     integer          , intent(in) :: coordinate
 
-    if (.not. this % declared()) then
-       error stop 'operation_expression: a degree was read before the law was stated'
-    end if
     if (coordinate < FIRST_COORDINATE .or. coordinate > size(this % degrees)) then
-       error stop 'operation_expression: this degree names a coordinate the law does not declare'
+       error stop 'operation_expression: this degree names a coordinate the law does not read'
     end if
     degree = this % degrees(coordinate)
 
@@ -1188,7 +1096,8 @@ contains
   end function num_multipliers
 
   !===================================================================!
-  ! A field's degree along the first coordinate.
+  ! A field's degree along the first coordinate; a multiplier's is
+  ! zero.
   !===================================================================!
 
   pure integer function degree_of_field(this, field) result(degree)
@@ -1196,31 +1105,18 @@ contains
     class(expression), intent(in) :: this
     integer          , intent(in) :: field
 
-    if (.not. this % declared()) then
-       error stop 'operation_expression: a field''s degree was read before the law was stated'
+    if (field < 1 .or. field > this % fields + this % multipliers) then
+       error stop 'operation_expression: this degree names a field the rule does not read'
     end if
-    if (field < 1 .or. field > this % fields) then
-       error stop 'operation_expression: this degree names a field the rule is not stated over'
-    end if
-    degree = this % field_degree(field)
+    degree = 0
+    if (field <= this % fields) degree = this % field_degree(field)
 
   end function degree_of_field
-
-  pure logical function expression_declared(this) result(is_declared)
-
-    class(expression), intent(in) :: this
-
-    is_declared = allocated(this % degrees)
-
-  end function expression_declared
 
   pure integer function num_coordinates(this)
 
     class(expression), intent(in) :: this
 
-    if (.not. this % declared()) then
-       error stop 'operation_expression: the coordinate count was read before the law was stated'
-    end if
     num_coordinates = size(this % degrees)
 
   end function num_coordinates
@@ -1229,9 +1125,6 @@ contains
 
     class(expression)     , intent(in) :: this
 
-    if (.not. this % declared()) then
-       error stop 'operation_expression: the equation degree was read before the law was stated'
-    end if
     equation_degree = this % degrees(FIRST_COORDINATE)
 
   end function equation_degree

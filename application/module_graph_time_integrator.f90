@@ -553,7 +553,7 @@ end module gti_configuration
 module gti_physics
   use util_precision      , only : dp
   use operation_expression, only : expression, unknown, design, derivative, derivative_along, &
-       & stated, stated_over, euler_lagrange, at_zero, &
+       & multiplier, euler_lagrange, at_zero, &
        & FIRST_COORDINATE, &
        & operator(+), operator(-), operator(*), operator(**)
   implicit none
@@ -562,9 +562,10 @@ module gti_physics
   public :: physics_named, functional_of_physics, gauge_field_of
   ! the van der pol Lagrangian over the state q and its costate; the
   ! algebraic form adds y = q**2 as a second state field with its own
-  ! multiplier, so the fields are q, y, lambda, mu
-  integer, parameter :: STATE = 1, COSTATE = 2
-  integer, parameter :: SQUARE = 2, LAMBDA = 3, MU = 4
+  ! multiplier, so the state fields are q, y and the multipliers
+  ! lambda, mu
+  integer, parameter :: STATE = 1, SQUARE = 2
+  integer, parameter :: COSTATE = 1, LAMBDA = 1, MU = 2
 contains
   !===================================================================!
   ! The van der pol residual in the state alone, unstated; in the
@@ -602,29 +603,20 @@ contains
   ! stationarities in the multipliers and F is the Lagrangian at zero
   ! multipliers.
   !===================================================================!
-  function lagrangian(functional, degree, label, algebraic, diffusion, dimension) result(l)
+  function lagrangian(functional, degree, algebraic, diffusion, dimension) result(l)
     type(expression), intent(in) :: functional
     integer         , intent(in) :: degree
-    character(len=*), intent(in) :: label
     logical         , intent(in) :: algebraic
     real(dp)        , intent(in), optional :: diffusion
     integer         , intent(in), optional :: dimension
     type(expression) :: l
-    type(expression) :: q, rule
-    integer, allocatable :: degrees(:)
-    integer :: j
+    type(expression) :: q
     q = unknown(STATE)
-    ! the state's degrees: the equation's along the instants, two
-    ! along each spatial coordinate the law reads
-    degrees = [degree]
-    if (present(dimension)) degrees = [degree, (2, j = 1, dimension)]
     if (algebraic) then
-       rule = functional + unknown(LAMBDA) * residual_rule(degree, algebraic, diffusion, dimension) &
-            & + unknown(MU) * (unknown(SQUARE) - derivative(q, 0)**2)
-       l = stated_over(rule, degrees, label, field_degrees=[degree, 0, 0, 0], multipliers=2)
+       l = functional + multiplier(LAMBDA) * residual_rule(degree, algebraic, diffusion, dimension) &
+            & + multiplier(MU) * (unknown(SQUARE) - derivative(q, 0)**2)
     else
-       rule = functional + unknown(COSTATE) * residual_rule(degree, algebraic, diffusion, dimension)
-       l = stated_over(rule, degrees, label, multipliers=1)
+       l = functional + multiplier(COSTATE) * residual_rule(degree, algebraic, diffusion, dimension)
     end if
   end function lagrangian
   function energy_rule() result(f)
@@ -657,14 +649,11 @@ contains
   ! state and its costate: the residual is its stationarity in the
   ! multiplier and F is the Lagrangian at a zero multiplier.
   !===================================================================!
-  function radial_lagrangian(functional, degree, label) result(l)
+  function radial_lagrangian(functional, degree) result(l)
     type(expression), intent(in) :: functional
     integer         , intent(in) :: degree
-    character(len=*), intent(in) :: label
     type(expression) :: l
-    type(expression) :: rule
-    rule = functional + unknown(COSTATE) * radial_rule(degree)
-    l    = stated_over(rule, [degree], label, multipliers=1)
+    l = functional + multiplier(COSTATE) * radial_rule(degree)
   end function radial_lagrangian
   ! the energy of the radial oscillator, conserved by its flow at the
   ! value (1 + nu)/2 on q(0) = 1, q'(0) = 0
@@ -717,7 +706,7 @@ contains
           write(message,'(a,i0)') 'gti_physics: taylor_green must be of first order in time; degree = ', degree
           error stop trim(message)
        end if
-       r = euler_lagrange(taylor_green(kinetic_energy_rule(dimension), dimension, 'taylor-green lagrangian'), 1, &
+       r = euler_lagrange(taylor_green(kinetic_energy_rule(dimension), dimension), 1, &
             & 'taylor-green momentum')
     else if (trim(name) == 'radial_oscillator') then
        if (degree /= 2) then
@@ -730,10 +719,10 @@ contains
                &dimension was passed; dimension = ', dimension
           error stop trim(message)
        end if
-       r = euler_lagrange(radial_lagrangian(radial_energy_rule(), degree, 'radial oscillator lagrangian'), 1, &
+       r = euler_lagrange(radial_lagrangian(radial_energy_rule(), degree), 1, &
             & 'radial oscillator residual')
     else
-       r = euler_lagrange(lagrangian(energy_rule(), degree, 'van der pol lagrangian', algebraic_named(name), &
+       r = euler_lagrange(lagrangian(energy_rule(), degree, algebraic_named(name), &
             & diffusion, dimension), 1, 'van der pol residual')
     end if
   end function physics_named
@@ -753,24 +742,22 @@ contains
   ! pressure is determined up to a constant: its gauge is the last
   ! state field, fixed at one node.
   !===================================================================!
-  function taylor_green(functional, dimension, label) result(l)
+  function taylor_green(functional, dimension) result(l)
     type(expression), intent(in) :: functional
     integer         , intent(in) :: dimension
-    character(len=*), intent(in) :: label
     type(expression) :: l
-    type(expression) :: rule, momentum, relation, nu
+    type(expression) :: momentum, relation, nu
     integer :: i, j, k, d
-    integer, allocatable :: field_degrees(:)
     d  = dimension
     nu = design()
-    rule = functional
+    l  = functional
     do i = 1, d
        momentum = derivative(unknown(i), 1) + derivative_along(unknown(d + 1), FIRST_COORDINATE + i, 1)
        do j = 1, d
           momentum = momentum + unknown(j) * derivative_along(unknown(i), FIRST_COORDINATE + j, 1) &
                & - nu * derivative_along(unknown(i), FIRST_COORDINATE + j, 2)
        end do
-       rule = rule + unknown(d + 1 + i) * momentum
+       l = l + multiplier(i) * momentum
     end do
     relation = derivative_along(unknown(d + 1), FIRST_COORDINATE + 1, 2)
     do j = 2, d
@@ -782,10 +769,7 @@ contains
                & * derivative_along(unknown(k), FIRST_COORDINATE + j, 1)
        end do
     end do
-    rule = rule + unknown(2 * d + 2) * relation
-    allocate(field_degrees(2 * d + 2), source=0)
-    field_degrees(1:d) = 1
-    l = stated_over(rule, [1, (2, j = 1, d)], label, field_degrees=field_degrees, multipliers=d + 1)
+    l = l + multiplier(d + 1) * relation
   end function taylor_green
   function kinetic_energy_rule(dimension) result(f)
     integer, intent(in) :: dimension
@@ -837,10 +821,10 @@ contains
        end if
        select case (name)
        case ('energy')
-          f = at_zero(taylor_green(kinetic_energy_rule(dimension), dimension, 'taylor-green lagrangian'), &
+          f = at_zero(taylor_green(kinetic_energy_rule(dimension), dimension), &
                & 'kinetic energy')
        case ('dissipation')
-          f = at_zero(taylor_green(viscous_dissipation_rule(dimension), dimension, 'taylor-green lagrangian'), &
+          f = at_zero(taylor_green(viscous_dissipation_rule(dimension), dimension), &
                & 'viscous dissipation')
        case default
           admissible = .false.
@@ -850,10 +834,10 @@ contains
     if (trim(physics_name) == 'radial_oscillator') then
        select case (name)
        case ('energy')
-          f = at_zero(radial_lagrangian(radial_energy_rule(), degree, 'radial oscillator lagrangian'), &
+          f = at_zero(radial_lagrangian(radial_energy_rule(), degree), &
                & 'radial oscillator energy')
        case ('square_integral')
-          f = at_zero(radial_lagrangian(square_integral_rule(), degree, 'radial oscillator lagrangian'), &
+          f = at_zero(radial_lagrangian(square_integral_rule(), degree), &
                & 'radial oscillator square integral')
        case default
           admissible = .false.
@@ -862,13 +846,13 @@ contains
     end if
     select case (name)
     case ('energy')
-       f = at_zero(lagrangian(energy_rule(), degree, 'van der pol lagrangian', algebraic_named(physics_name)), &
+       f = at_zero(lagrangian(energy_rule(), degree, algebraic_named(physics_name)), &
             & 'van der pol energy')
     case ('dissipation')
-       f = at_zero(lagrangian(dissipation_rule(), degree, 'van der pol lagrangian', algebraic_named(physics_name)), &
+       f = at_zero(lagrangian(dissipation_rule(), degree, algebraic_named(physics_name)), &
             & 'van der pol dissipation')
     case ('mean')
-       f = at_zero(lagrangian(mean_rule(), degree, 'van der pol lagrangian', algebraic_named(physics_name)), &
+       f = at_zero(lagrangian(mean_rule(), degree, algebraic_named(physics_name)), &
             & 'van der pol mean')
     case default
        admissible = .false.
@@ -13396,7 +13380,7 @@ program graph_time_integrator
   use operation_family      , only : bdf_family
   use operation_family      , only : adams_family
   use operation_grid        , only : uniform_grid, random_grid, designed_grid, fixed_grid, partitioned
-  use operation_expression  , only : expression, stated_over
+  use operation_expression  , only : expression
   use gti_physics           , only : van_der_pol, van_der_pol_energy, physics_named, functional_of_physics, gauge_field_of
   use operation_grid        , only : grid
   use gti_march, only : march_context, imbalance, weight_of, precision_needed
@@ -13697,20 +13681,6 @@ contains
        f = functional_of_physics(trim(cfg % physics), 'energy', cfg % state_degree, admissible)
     end if
   end function energy_of
-  !===================================================================!
-  ! The coordinates the run's state is declared over, read from the
-  ! law it marches. Every other rule the run evaluates - a functional,
-  ! a measure - is declared over the same, since all of them read the
-  ! same state.
-  !===================================================================!
-  function state_degrees_of(cfg) result(degrees)
-    type(configuration), intent(in) :: cfg
-    integer, allocatable :: degrees(:)
-    type(expression) :: law
-    integer :: c
-    law     = physics_of(cfg)
-    degrees = [(law % degree_along(c), c = 1, law % num_coordinates())]
-  end function state_degrees_of
   subroutine one_row(cfg, names, orders, printed)
     type(configuration), intent(in)    :: cfg
     character(len=*)   , intent(in)    :: names(:)
@@ -13984,7 +13954,6 @@ contains
           error stop 'graph_time_integrator: a functional must be one the physics admits; ' // &
                & trim(cfg % physics) // ' admits no functional named ' // trim(names(i))
        end if
-       functionals(i) = stated_over(functionals(i), state_degrees_of(cfg), functionals(i) % name())
     end do
   end subroutine chosen_functionals
   subroutine against_the_ode(cfg, schemes, added, f_field)

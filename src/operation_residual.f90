@@ -53,8 +53,9 @@ module operation_residual
   use field_calculus    , only : field, FIELD_REAL
   use field_stored      , only : stored_field, typed_field_domain
   use operation_stencil  , only : stencil, combine_triples
-  use operation_expression , only : expression, constant, stated, euler_lagrange
+  use operation_expression , only : expression, euler_lagrange
   use operation_domain     , only : continuous_domain, discrete_domain
+  use util_derivative_terms, only : max_subset_width
 
   implicit none
 
@@ -65,7 +66,7 @@ module operation_residual
 
      type(stencil)              , private :: primary_law
      type(stencil), allocatable , private :: connected_law
-     type(expression)           , private :: physics
+     type(expression), allocatable, private :: physics
      type(expression), allocatable, private :: rules(:)
      type(stored_directed_graph), private :: points
      type(stored_directed_graph), private :: unknown_vertices
@@ -132,17 +133,18 @@ contains
   ! Build from the two stencils, the physics, and the points the
   ! physics reads: at(p) is the offset of point p's tuple, whose
   ! components follow in order, and primary(j) the row within it the
-  ! j-th rule governs. Invalid input: a fixed row without a value to
-  ! match, an evaluation point whose components run past the
-  ! unknowns, a fixed row outside the unknowns, or a row count that
-  ! is not the rule count.
+  ! j-th rule governs. A residual without a rule is the linear map of
+  ! its stencils alone, the frozen linearization. Invalid input: a
+  ! fixed row without a value to match, an evaluation point whose
+  ! components run past the unknowns, a fixed row outside the
+  ! unknowns, or a row count that is not the rule count.
   !===================================================================!
 
   function create(primary_law, rule, at, unknowns, degrees, primary, fixed_rows, fixed, &
        & connected_law, fixed_rate) result(this)
 
     type(stencil)         , intent(in) :: primary_law
-    type(expression)      , intent(in) :: rule
+    type(expression)      , intent(in), optional :: rule
     integer               , intent(in) :: at(:), unknowns, degrees, primary(:)
     integer               , intent(in) :: fixed_rows(:)
     real(dp)              , intent(in) :: fixed(:)
@@ -150,7 +152,7 @@ contains
     real(dp)              , intent(in), optional :: fixed_rate(:)
     type(residual_operator) :: this
     type(continuous_domain) :: domain
-    integer :: j
+    integer :: j, components, governed
     character(len=250) :: message
 
     if (size(fixed_rows) /= size(fixed)) then
@@ -177,17 +179,27 @@ contains
             & minval(at), ', maxval(at) + degrees = ', maxval(at) + degrees
        error stop trim(message)
     end if
-    domain = continuous_domain(rule)
-    if (degrees < 1 .or. degrees > domain % num_components()) then
-       write(message,'(a,i0,a,i0)') 'operation_residual: the primary degree count must lie within &
-            &the law''s component count; degrees = ', degrees, ', num_components = ', &
-            & domain % num_components()
+    if (degrees < 1) then
+       write(message,'(a,i0)') 'operation_residual: the primary degree count must be positive; &
+            &degrees = ', degrees
        error stop trim(message)
     end if
-    if (size(primary) /= max(1, rule % num_multipliers())) then
+    components = degrees
+    governed   = 1
+    if (present(rule)) then
+       domain     = continuous_domain(rule)
+       components = domain % num_components()
+       governed   = max(1, rule % num_multipliers())
+       if (degrees > components) then
+          write(message,'(a,i0,a,i0)') 'operation_residual: the primary degree count must lie &
+               &within the law''s component count; degrees = ', degrees, ', num_components = ', &
+               & components
+          error stop trim(message)
+       end if
+    end if
+    if (size(primary) /= governed) then
        write(message,'(a,i0,a,i0)') 'operation_residual: one governed row is required per rule; &
-            &size(primary) = ', size(primary), ', max(1,num_multipliers) = ', &
-            & max(1, rule % num_multipliers())
+            &size(primary) = ', size(primary), ', rules = ', governed
        error stop trim(message)
     end if
     if (any(primary < 0) .or. any(primary >= degrees)) then
@@ -199,22 +211,27 @@ contains
 
     this % primary_law = primary_law
     if (present(connected_law)) this % connected_law = connected_law
-    this % physics    = rule
-    ! a Lagrangian's rules are its stationarities, one per multiplier
-    if (rule % num_multipliers() > 0) then
-       allocate(this % rules(rule % num_multipliers()))
-       do j = 1, rule % num_multipliers()
-          this % rules(j) = euler_lagrange(rule, j)
-       end do
+    ! a Lagrangian's rules are its stationarities, one per multiplier;
+    ! a residual without a rule governs no row
+    if (present(rule)) then
+       this % physics = rule
+       if (rule % num_multipliers() > 0) then
+          allocate(this % rules(rule % num_multipliers()))
+          do j = 1, rule % num_multipliers()
+             this % rules(j) = euler_lagrange(rule, j)
+          end do
+       else
+          this % rules = [rule]
+       end if
     else
-       this % rules = [rule]
+       allocate(this % rules(0))
     end if
     this % at      = at
     this % unknowns = unknowns
     this % degrees  = degrees
     ! the rule states how many components a point stores; the degrees
     ! given are the primary law's portion of them
-    this % connected_degrees = domain % num_components() - degrees
+    this % connected_degrees = components - degrees
     this % primary   = primary
     this % fixed_rows = fixed_rows
     this % fixed      = fixed
@@ -323,8 +340,10 @@ contains
   pure integer function residual_max_degree(this)
     class(residual_operator), intent(in) :: this
     ! the discretization stencils are linear in the state, so every
-    ! partial above the first is the physics expression's alone
-    residual_max_degree = this % physics % max_degree()
+    ! partial above the first is the physics expression's alone, and
+    ! is exact to every order when there is no physics
+    residual_max_degree = max_subset_width()
+    if (allocated(this % physics)) residual_max_degree = this % physics % max_degree()
   end function residual_max_degree
 
   !===================================================================!
@@ -346,6 +365,9 @@ contains
 
   type(expression) function rule(this) result(law)
     class(residual_operator), intent(in) :: this
+    if (.not. allocated(this % physics)) then
+       error stop 'operation_residual: rule was read from a residual without a rule, the frozen linearization'
+    end if
     law = this % physics
   end function rule
 
@@ -758,12 +780,16 @@ contains
     type(typed_field_domain) :: points
     class(field), allocatable :: half
     real(dp), allocatable :: coupled(:)
-    call point_inputs(this, inputs, x, point_data)
     call stencil_term(this % primary_law, r)
     if (allocated(this % connected_law)) then
        call stencil_term(this % connected_law, coupled)
        r = r + coupled
     end if
+    if (.not. allocated(this % physics)) then
+       allocate(governing(size(this % at), 0))
+       return
+    end if
+    call point_inputs(this, inputs, x, point_data)
     if (present(v)) then
        points    = typed_field_domain(this % points, this % stride())
        direction = points % direction(gathered(this, v))
@@ -813,7 +839,7 @@ contains
     npts = size(this % at)
     is_fixed = this % fixed_indicator()
     call state_of(this, inputs, x, state)
-    call point_inputs(this, inputs, x, point_data)
+    if (allocated(this % physics)) call point_inputs(this, inputs, x, point_data)
     count = this % primary_law % pattern % num_edges() + npts * this % degrees * size(this % rules) &
          & + size(this % fixed_rows)
     if (allocated(this % connected_law)) count = count + this % connected_law % pattern % num_edges()
@@ -936,6 +962,10 @@ contains
     type(stored_field), allocatable :: point_data(:)
     type(variation), allocatable :: at_points(:)
     integer :: i
+    if (.not. allocated(this % physics)) then
+       allocate(governing(size(this % at), 0))
+       return
+    end if
     call point_inputs(this, inputs, x, point_data)
     allocate(at_points(size(variations)))
     do i = 1, size(variations)
@@ -971,6 +1001,10 @@ contains
     real(dp), allocatable, intent(out) :: r(:), governing(:,:)
     type(stored_field), allocatable :: point_data(:)
     allocate(r(this % num_unknowns()), source=0.0_dp)
+    if (.not. allocated(this % physics)) then
+       allocate(governing(size(this % at), 0))
+       return
+    end if
     call point_inputs(this, inputs, x, point_data)
     call governed(this, point_data, governing, [variations(1) % with_argument(this % physics % argument(2))])
   end subroutine design_tangent
@@ -1093,8 +1127,8 @@ contains
   ! THE EXPLICIT TANGENT, FROZEN INTO A LINEAR RESIDUAL. Ch. 4.6.3 of
   ! the dissertation names this and constrain above the transpose-
   ! Jacobian-vector-product routines. The frozen matrix states the
-  ! whole linear map, so the returned residual has no physics of its
-  ! own (a zero rule) and no fixed rows. transposed states which of
+  ! whole linear map, so the returned residual has no rule and no
+  ! fixed rows. transposed states which of
   ! Jw = rhs or J^Tw = rhs the returned residual's own apply computes;
   ! version_number identifies the returned residual (versioned,
   ! this module's own procedure inherited from operation_action).
@@ -1132,8 +1166,8 @@ contains
     if (transposed) call a % reverse()
     call a % constants % set_real_vector(-rhs)
 
-    lin = residual_operator(a, stated(constant(0.0_dp), this % degrees - 1, 'zero'), this % at, &
-         & this % unknowns, this % degrees, this % primary(1:1), [integer ::], [real(dp) ::])
+    lin = residual_operator(a, at=this % at, unknowns=this % unknowns, degrees=this % degrees, &
+         & primary=this % primary(1:1), fixed_rows=[integer ::], fixed=[real(dp) ::])
     ! A = D_Q R maps U to Y = U: the frozen residual is on the same
     ! unknown and point domains as the residual it linearizes
     lin % unknown_vertices = this % unknown_vertices

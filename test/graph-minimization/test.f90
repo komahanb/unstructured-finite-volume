@@ -131,7 +131,7 @@ module restriction_fixture
   use operation_minimization, only : minimizer, state, restrict, solve_result, SOLVE_SINGULAR
   use operation_stencil, only : stencil
   use operation_residual, only : residual_operator
-  use operation_expression, only : unknown, derivative, constant, stated, design
+  use operation_expression, only : unknown, derivative, constant, design
   use operation_expression, only : operator(+), operator(*), operator(**)
 
   implicit none
@@ -238,7 +238,7 @@ contains
     end do
     tying = stencil(rows, columns, weights, spread(0.0_dp, 1, 2 * n), 'tying rows')
     residual = residual_operator(tying, &
-         & stated(derivative(unknown(), 1) + constant(c) * derivative(unknown(), 0) ** 3, 1, 'cubic decay'), &
+         & derivative(unknown(), 1) + constant(c) * derivative(unknown(), 0) ** 3, &
          & [(2 * (p - 1), p = 1, n)], 2 * n, 2, [0], [1, 2], [q0, -c * q0 ** 3])
   end function march_residual
 
@@ -268,8 +268,8 @@ contains
     end do
     tying = stencil(rows, columns, weights, spread(0.0_dp, 1, 2 * n), 'tying rows')
     residual = residual_operator(tying, &
-         & stated(derivative(unknown(), 1) + constant(c) * derivative(unknown(), 0) ** 3 &
-         &        + design() * derivative(unknown(), 0), 1, 'designed cubic decay'), &
+         & derivative(unknown(), 1) + constant(c) * derivative(unknown(), 0) ** 3 &
+         &        + design() * derivative(unknown(), 0), &
          & [(2 * (p - 1), p = 1, n)], 2 * n, 2, [0], [1, 2], [q0, -c * q0 ** 3 - nu_1 * q0])
   end function designed_march_residual
 
@@ -308,7 +308,7 @@ program test_graph_minimization
   use operation_temporal_minimization, only : temporal_minimizer
   use operation_residual, only : residual_operator
   use operation_domain, only : continuous_domain, discrete_domain
-  use operation_expression, only : expression, unknown, derivative, constant, stated, &
+  use operation_expression, only : expression, unknown, derivative, constant, &
        & operator(+), operator(*), operator(**)
   use field_stored, only : typed_field_domain
   use cubic_statement_fixture, only : cubic_statement
@@ -1778,7 +1778,7 @@ contains
     real(dp) :: tuple(2), value
     integer :: k, p
 
-    law_expression = stated(derivative(unknown(), 1) + constant(c) * derivative(unknown(), 0) ** 3, 1, 'cubic decay')
+    law_expression = derivative(unknown(), 1) + constant(c) * derivative(unknown(), 0) ** 3
     law      = continuous_domain(law_expression)
     instants = stored_directed_graph(5, tails=[integer ::], heads=[integer ::])
     cells    = stored_directed_graph(9, tails=[integer ::], heads=[integer ::])

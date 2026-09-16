@@ -21,7 +21,7 @@ program restriction_refusal
   use operation_temporal_minimization, only : temporal_minimizer
   use operation_residual, only : residual_operator
   use operation_domain, only : continuous_domain, discrete_domain
-  use operation_expression, only : unknown, derivative, constant, stated, operator(+), operator(*), operator(**)
+  use operation_expression, only : unknown, derivative, constant, operator(+), operator(*), operator(**)
   use operation_action, only : variation
   use view_directed_stored, only : stored_directed_graph
   use field_stored, only : stored_field, typed_field_domain
@@ -51,7 +51,7 @@ program restriction_refusal
   ! the implicit march q' = -q^3 over two instants, the first fixed
   tying    = stencil([4, 4, 4], [4, 3, 1], [1.0_dp, -10.0_dp, 10.0_dp], [0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp], 'tying rows')
   residual = residual_operator(tying, &
-       & stated(derivative(unknown(), 1) + constant(1.0_dp) * derivative(unknown(), 0) ** 3, 1, 'cubic decay'), &
+       & derivative(unknown(), 1) + constant(1.0_dp) * derivative(unknown(), 0) ** 3, &
        & [0, 2], 4, 2, [0], [1, 2], [1.0_dp, -1.0_dp])
   q      = [1.0_dp, -1.0_dp, 0.9_dp, -0.7_dp]
   frozen = residual % frozen_tuple(q, [0.0_dp, 0.0_dp])

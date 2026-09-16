@@ -1,8 +1,8 @@
 !=====================================================================!
 ! Continuous and discrete domains for an operation law.
 !
-! A continuous_domain is a stated expression before any graph is
-! chosen. It records the mathematical law and its coordinate degrees.
+! A continuous_domain is an expression before any graph is chosen. It
+! records the mathematical law and its coordinate degrees.
 !
 ! A discrete_domain is that continuous law placed on the vertex set of
 ! one directed graph. It records the same graph identity and point
@@ -39,7 +39,6 @@ module operation_domain
 
    contains
 
-     procedure :: declared             => continuous_domain_declared
      procedure :: equation_degree      => continuous_domain_equation_degree
      procedure :: num_coordinates      => continuous_domain_num_coordinates
      procedure :: num_components       => continuous_domain_num_components
@@ -83,21 +82,9 @@ contains
 
     type(expression), intent(in) :: law
 
-    if (.not. law % declared()) then
-       error stop 'operation_domain: create_continuous_domain requires a stated law, &
-            &but law % declared() is false'
-    end if
     this % law = law
 
   end function create_continuous_domain
-
-  pure logical function continuous_domain_declared(this) result(is_declared)
-
-    class(continuous_domain), intent(in) :: this
-
-    is_declared = this % law % declared()
-
-  end function continuous_domain_declared
 
   pure integer function continuous_domain_equation_degree(this) result(degree)
 

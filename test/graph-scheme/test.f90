@@ -60,14 +60,11 @@ program test_graph_algebra
   C(7) = W11 - W22
 
 
-  ! Collect the equations through the existing multiplier interface.
+  ! Lagrangian: each constraint C(i) paired with multiplier(i)
   L = constant(0.0_dp)
   do i = 1, 7
-     L = L + unknown(7+i)*C(i)
+     L = L + multiplier(i)*C(i)
   end do
-
-  L = stated(L, 0, 'coefficient constraints', &
-       field_degrees=spread(0, 1, 14), multipliers=7)
 
   ! Seven algebraic unknowns; no differential stencil contribution.
   zero_stencil = stencil( &

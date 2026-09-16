@@ -101,15 +101,15 @@ module operation_expression
   public :: sin, cos, exp, log, sqrt
 
   ! the vertex kinds
-  integer, parameter :: VERTEX_LEAF          = 1
-  integer, parameter :: VERTEX_CONSTANT      = 2
-  integer, parameter :: VERTEX_SUM           = 3
-  integer, parameter :: VERTEX_DIFFERENCE    = 4
-  integer, parameter :: VERTEX_PRODUCT       = 5
-  integer, parameter :: VERTEX_QUOTIENT      = 6
-  integer, parameter :: VERTEX_INTEGER_POWER = 7
-  integer, parameter :: VERTEX_REAL_POWER    = 8
-  integer, parameter :: VERTEX_FUNCTION      = 9
+  integer, parameter, public :: VERTEX_LEAF          = 1
+  integer, parameter, public :: VERTEX_CONSTANT      = 2
+  integer, parameter, public :: VERTEX_SUM           = 3
+  integer, parameter, public :: VERTEX_DIFFERENCE    = 4
+  integer, parameter, public :: VERTEX_PRODUCT       = 5
+  integer, parameter, public :: VERTEX_QUOTIENT      = 6
+  integer, parameter, public :: VERTEX_INTEGER_POWER = 7
+  integer, parameter, public :: VERTEX_REAL_POWER    = 8
+  integer, parameter, public :: VERTEX_FUNCTION      = 9
 
   ! THE COORDINATE A DERIVATIVE FOLLOWS, named by its place among the
   ! coordinates the state is declared over. One is the first declared;
@@ -119,16 +119,25 @@ module operation_expression
 
   ! the arguments a leaf reads, in the operation's order; a multiplier
   ! is read from no argument, and its position names it
-  integer, parameter :: ARGUMENT_STATE      = 1
-  integer, parameter :: ARGUMENT_DESIGN     = 2
-  integer, parameter :: ARGUMENT_MULTIPLIER = 3
+  integer, parameter, public :: ARGUMENT_STATE      = 1
+  integer, parameter, public :: ARGUMENT_DESIGN     = 2
+  integer, parameter, public :: ARGUMENT_MULTIPLIER = 3
 
   ! the elementary functions
-  integer, parameter :: SINE        = 1
-  integer, parameter :: COSINE      = 2
-  integer, parameter :: EXPONENTIAL = 3
-  integer, parameter :: LOGARITHM   = 4
-  integer, parameter :: SQUARE_ROOT = 5
+  integer, parameter, public :: SINE        = 1
+  integer, parameter, public :: COSINE      = 2
+  integer, parameter, public :: EXPONENTIAL = 3
+  integer, parameter, public :: LOGARITHM   = 4
+  integer, parameter, public :: SQUARE_ROOT = 5
+
+  ! ONE VERTEX AS A VALUE, for a view: the kind, the two vertices
+  ! read (0 if none), a leaf's argument, field, order and coordinate,
+  ! and a constant or an exponent.
+  type, public :: expression_vertex
+     integer  :: kind = 0, first = 0, second = 0
+     integer  :: position = 0, field = 0, order = 0, along = FIRST_COORDINATE
+     real(dp) :: coefficient = 0.0_dp
+  end type expression_vertex
 
   type, extends(operation) :: expression
 
@@ -168,6 +177,7 @@ module operation_expression
      procedure :: highest_degree_along
      procedure :: read_components
      procedure :: root
+     procedure :: vertices
      procedure :: num_vertices
      procedure :: num_fields
      procedure :: num_multipliers
@@ -924,6 +934,25 @@ contains
     root = this % num_vertices()
 
   end function root
+
+  !===================================================================!
+  ! The vertex table as values, in evaluation order, for a view.
+  !===================================================================!
+
+  function vertices(this) result(v)
+
+    class(expression), intent(in) :: this
+    type(expression_vertex), allocatable :: v(:)
+
+    integer :: i
+
+    allocate(v(this % num_vertices()))
+    do i = 1, size(v)
+       v(i) = expression_vertex(this % kind(i), this % first(i), this % second(i), this % position(i), &
+            & this % field(i), this % order(i), this % along(i), this % coefficient(i))
+    end do
+
+  end function vertices
 
   !===================================================================!
   ! THE COMPONENT A COORDINATE AND AN ORDER NAME. The first

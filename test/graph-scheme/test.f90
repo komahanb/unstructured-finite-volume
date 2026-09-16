@@ -15,6 +15,7 @@ program test_graph_algebra
 
   use util_precision
   use operation_expression
+  use view_expression,        only : expression_view
   use operation_residual,     only : residual_operator
   use operation_stencil,      only : stencil
   use operation_newton,       only : newton
@@ -35,6 +36,7 @@ program test_graph_algebra
   type(solve_result)          :: outcome
   type(stored_directed_graph) :: domain, parameter_domain
   type(stored_field)          :: step
+  type(expression_view)       :: view
 
   real(dp) :: theta(7), rhs(7), dt, achieved
   character(len=6), parameter :: names(7) = &
@@ -61,10 +63,17 @@ program test_graph_algebra
 
 
   ! Lagrangian: each constraint C(i) paired with multiplier(i)
-  L = constant(0.0_dp)
-  do i = 1, 7
+  L = multiplier(1)*C(1)
+  do i = 2, 7
      L = L + multiplier(i)*C(i)
   end do
+
+  view = expression_view(L)
+  print '(a)', view % tree()
+  print '(a)', view % diagram()
+  print '(a)', view % formula()
+  print '(a)', view % brackets()
+  print '(a)', view % digraph()
 
   ! Seven algebraic unknowns; no differential stencil contribution.
   zero_stencil = stencil( &

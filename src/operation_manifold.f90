@@ -1,0 +1,491 @@
+!=====================================================================!
+! THE MANIFOLD, CONTINUOUS AND DISCRETE.
+!
+! A continuous manifold is a product of coordinates with their
+! extents: a time interval, a region of space, either, or neither,
+! in which case the manifold is a point. Its coordinate functions
+! and its unknown functions are fields on it; a part of it - the
+! face at one instant, the time factor, the space factor - is a
+! manifold of its own that records its parent.
+!
+! Its discrete image is the product of the points chosen along each
+! coordinate: the instants of the interval, the cells of a mesh of
+! the region. Nothing else: the approximation of a derivative is a
+! property of the residual placed on the points, not of the points.
+!
+!      coordinate index   1 the time, then the space axes in order
+!      point index        instant outer, cell inner
+!      position(p)        the instant and the cell centre
+!      measure(p)         the instant's share of the interval times the cell's volume
+!
+! Author: Komahan Boopathy (komahan@gatech.edu)
+!=====================================================================!
+
+module operation_manifold
+
+  use util_precision      , only : dp
+  use token_identity      , only : token, next_token
+  use operation_field     , only : continuous_support, discrete_support, continuous_field
+  use operation_field     , only : unknown_field, coordinate_field
+  use view_mesh           , only : mesh, values_of
+  use view_mesh_builder   , only : mesh_from_gmsh
+
+  implicit none
+
+  private
+  public :: continuous_manifold, discrete_manifold
+  public :: interval, region, instants, mesh
+
+  ! the parts a manifold can be of another
+  integer, parameter :: WHOLE = 0, TIME_FACE = 1, TIME_FACTOR = 2, SPACE_FACTOR = 3
+  integer, parameter :: MAX_NAME = 32
+
+  type :: interval
+     real(dp) :: a = 0.0_dp, b = 0.0_dp
+  end type interval
+
+  interface interval
+     module procedure create_interval
+  end interface interval
+
+  ! the region of space, as the gmsh geometry file describes it
+  type :: region
+     character(len=:), allocatable :: geometry
+  end type region
+
+  interface region
+     module procedure create_region
+  end interface region
+
+  type :: instants
+     integer :: n = 0
+  end type instants
+
+  interface instants
+     module procedure create_instants
+  end interface instants
+
+  interface mesh
+     module procedure mesh_from_file
+  end interface mesh
+
+  type, extends(continuous_support) :: continuous_manifold
+
+     logical        :: with_time  = .false.
+     logical        :: with_space = .false.
+     type(interval) :: span
+     type(region)   :: geometry
+     integer        :: part      = WHOLE
+     real(dp)       :: face_time = 0.0_dp
+     type(token)    :: parent
+     integer        :: num_unknowns = 0
+     character(len=MAX_NAME), allocatable :: unknown_name(:)
+
+   contains
+
+     procedure :: unknown         => manifold_unknown
+     procedure :: coordinate      => manifold_coordinate
+     procedure :: boundary        => manifold_boundary
+     procedure :: time            => manifold_time
+     procedure :: space           => manifold_space
+     procedure :: discretize      => manifold_discretize
+     procedure :: num_coordinates => manifold_num_coordinates
+     procedure :: is_point
+     procedure :: is_face
+     procedure :: is_time_factor
+     procedure :: is_space_factor
+
+  end type continuous_manifold
+
+  interface continuous_manifold
+     module procedure create_manifold
+  end interface continuous_manifold
+
+  type, extends(discrete_support) :: discrete_manifold
+
+     logical :: with_time  = .false.
+     logical :: with_space = .false.
+     real(dp), allocatable :: instant(:)
+     type(mesh) :: cells
+     integer :: dimension = 0
+     real(dp), allocatable :: centre(:)
+     real(dp), allocatable :: volume(:)
+
+   contains
+
+     procedure :: num_points      => discrete_num_points
+     procedure :: num_coordinates => discrete_num_coordinates
+     procedure :: position        => discrete_position
+     procedure :: measure         => discrete_measure
+     procedure :: num_instants
+     procedure :: num_cells
+     procedure :: step
+     procedure :: point_of
+
+  end type discrete_manifold
+
+contains
+
+  !===================================================================!
+  ! THE CONSTRUCTORS. An interval with b below a, a count of instants
+  ! below two, stops the program.
+  !===================================================================!
+
+  function create_interval(a, b) result(this)
+
+    real(dp), intent(in) :: a, b
+    type(interval) :: this
+
+    character(len=250) :: message
+
+    if (b <= a) then
+       write(message,'(a,es12.5,a,es12.5)') 'operation_manifold: an interval requires b > a; a = ', &
+            & a, ', b = ', b
+       error stop trim(message)
+    end if
+    this % a = a
+    this % b = b
+
+  end function create_interval
+
+  function create_region(geometry) result(this)
+
+    character(len=*), intent(in) :: geometry
+    type(region) :: this
+
+    this % geometry = geometry
+
+  end function create_region
+
+  function create_instants(n) result(this)
+
+    integer, intent(in) :: n
+    type(instants) :: this
+
+    character(len=250) :: message
+
+    if (n < 2) then
+       write(message,'(a,i0)') 'operation_manifold: an interval is discretized by two instants at &
+            &least; n = ', n
+       error stop trim(message)
+    end if
+    this % n = n
+
+  end function create_instants
+
+  function mesh_from_file(filename) result(cells)
+
+    character(len=*), intent(in) :: filename
+    type(mesh) :: cells
+
+    cells = mesh_from_gmsh(filename)
+
+  end function mesh_from_file
+
+  function create_manifold(time, space) result(this)
+
+    type(interval), intent(in), optional :: time
+    type(region)  , intent(in), optional :: space
+    type(continuous_manifold) :: this
+
+    this % identity = next_token()
+    if (present(time)) then
+       this % with_time = .true.
+       this % span      = time
+    end if
+    if (present(space)) then
+       this % with_space = .true.
+       this % geometry   = space
+    end if
+    allocate(this % unknown_name(0))
+
+  end function create_manifold
+
+  pure logical function is_point(this)
+    class(continuous_manifold), intent(in) :: this
+    is_point = .not. (this % with_time .or. this % with_space)
+  end function is_point
+
+  pure logical function is_face(this)
+    class(continuous_manifold), intent(in) :: this
+    is_face = this % part == TIME_FACE
+  end function is_face
+
+  pure logical function is_time_factor(this)
+    class(continuous_manifold), intent(in) :: this
+    is_time_factor = this % part == TIME_FACTOR
+  end function is_time_factor
+
+  pure logical function is_space_factor(this)
+    class(continuous_manifold), intent(in) :: this
+    is_space_factor = this % part == SPACE_FACTOR
+  end function is_space_factor
+
+  !===================================================================!
+  ! The coordinates: the time first when present, then the space
+  ! axes. Their number is known once the space is discretized; before
+  ! that a name is enough to number them.
+  !===================================================================!
+
+  pure integer function manifold_num_coordinates(this)
+    class(continuous_manifold), intent(in) :: this
+    manifold_num_coordinates = merge(1, 0, this % with_time) + merge(3, 0, this % with_space)
+  end function manifold_num_coordinates
+
+  !===================================================================!
+  ! An unknown function of the manifold, numbered after those already
+  ! declared, one field per component. A name already declared stops
+  ! the program.
+  !===================================================================!
+
+  function manifold_unknown(this, name, components) result(u)
+
+    class(continuous_manifold), intent(inout) :: this
+    character(len=*)          , intent(in)    :: name
+    integer                   , intent(in), optional :: components
+    type(continuous_field) :: u
+
+    integer :: k, n
+    character(len=MAX_NAME) :: padded
+
+    n = 1
+    if (present(components)) n = components
+    do k = 1, size(this % unknown_name)
+       if (trim(this % unknown_name(k)) == trim(name)) then
+          error stop 'operation_manifold: an unknown named ' // trim(name) // ' is already declared'
+       end if
+    end do
+    u = unknown_field(this, name, this % num_unknowns + 1, n)
+    padded = name
+    this % unknown_name = [this % unknown_name, (padded, k = 1, n)]
+    this % num_unknowns = this % num_unknowns + n
+
+  end function manifold_unknown
+
+  !===================================================================!
+  ! The coordinate function named t, x, y or z. A name the manifold
+  ! has no coordinate for stops the program.
+  !===================================================================!
+
+  function manifold_coordinate(this, name) result(c)
+
+    class(continuous_manifold), intent(in) :: this
+    character(len=*)          , intent(in) :: name
+    type(continuous_field) :: c
+
+    integer :: axis, at
+
+    axis = 0
+    select case (trim(name))
+    case ('t')
+       if (this % with_time) axis = 1
+       at = 1
+    case ('x')
+       at = 1
+    case ('y')
+       at = 2
+    case ('z')
+       at = 3
+    case default
+       error stop 'operation_manifold: a coordinate is named t, x, y or z; the name given is ' // trim(name)
+    end select
+    if (trim(name) /= 't') then
+       if (this % with_space) axis = merge(1, 0, this % with_time) + at
+    end if
+    if (axis == 0) then
+       error stop 'operation_manifold: the manifold has no coordinate named ' // trim(name)
+    end if
+    c = coordinate_field(this, name, axis)
+
+  end function manifold_coordinate
+
+  !===================================================================!
+  ! THE PARTS: the face at one instant, a manifold of the space alone
+  ! that records its parent and the instant; the time factor; the
+  ! space factor. Each is a manifold with unknowns of its own.
+  !===================================================================!
+
+  function manifold_boundary(this, time) result(face)
+
+    class(continuous_manifold), intent(in) :: this
+    real(dp)                  , intent(in) :: time
+    type(continuous_manifold) :: face
+
+    character(len=250) :: message
+
+    if (.not. this % with_time) then
+       error stop 'operation_manifold: a face at an instant requires a manifold with a time coordinate'
+    end if
+    if (time /= this % span % a .and. time /= this % span % b) then
+       write(message,'(a,es12.5,a,es12.5,a,es12.5)') 'operation_manifold: the face must be at an end &
+            &of the interval; time = ', time, ', interval = [', this % span % a, ', ', this % span % b
+       error stop trim(message)
+    end if
+    face % identity   = next_token()
+    face % with_space = this % with_space
+    face % geometry   = this % geometry
+    face % part       = TIME_FACE
+    face % face_time  = time
+    face % parent     = this % identity
+    allocate(face % unknown_name(0))
+
+  end function manifold_boundary
+
+  function manifold_time(this) result(factor)
+
+    class(continuous_manifold), intent(in) :: this
+    type(continuous_manifold) :: factor
+
+    if (.not. this % with_time) then
+       error stop 'operation_manifold: the time factor requires a manifold with a time coordinate'
+    end if
+    factor % identity  = next_token()
+    factor % with_time = .true.
+    factor % span      = this % span
+    factor % part      = TIME_FACTOR
+    factor % parent    = this % identity
+    allocate(factor % unknown_name(0))
+
+  end function manifold_time
+
+  function manifold_space(this) result(factor)
+
+    class(continuous_manifold), intent(in) :: this
+    type(continuous_manifold) :: factor
+
+    if (.not. this % with_space) then
+       error stop 'operation_manifold: the space factor requires a manifold with a region'
+    end if
+    factor % identity   = next_token()
+    factor % with_space = .true.
+    factor % geometry   = this % geometry
+    factor % part       = SPACE_FACTOR
+    factor % parent     = this % identity
+    allocate(factor % unknown_name(0))
+
+  end function manifold_space
+
+  !===================================================================!
+  ! THE DISCRETE IMAGE: the instants of the interval, equally spaced,
+  ! and the cells of the mesh. A coordinate present without its
+  ! points, or points given for a coordinate absent, stops the
+  ! program.
+  !===================================================================!
+
+  function manifold_discretize(this, time, space) result(image)
+
+    class(continuous_manifold), intent(in) :: this
+    type(instants), intent(in), optional :: time
+    type(mesh)    , intent(in), optional :: space
+    type(discrete_manifold) :: image
+
+    integer :: k
+
+    if (this % with_time .neqv. present(time)) then
+       error stop 'operation_manifold: the time coordinate is discretized by its instants, and only it'
+    end if
+    if (this % with_space .neqv. present(space)) then
+       error stop 'operation_manifold: the region is discretized by a mesh, and only it'
+    end if
+    image % identity = this % identity
+    if (present(time)) then
+       image % with_time = .true.
+       image % instant = [(this % span % a + (this % span % b - this % span % a) * real(k - 1, dp) &
+            & / real(time % n - 1, dp), k = 1, time % n)]
+    end if
+    if (present(space)) then
+       image % with_space = .true.
+       image % cells      = space
+       image % dimension  = space % dimension
+       call values_of(space % cell_centre(), image % centre)
+       call values_of(space % cell_volume(), image % volume)
+    end if
+
+  end function manifold_discretize
+
+  pure integer function num_instants(this)
+    class(discrete_manifold), intent(in) :: this
+    num_instants = 1
+    if (this % with_time) num_instants = size(this % instant)
+  end function num_instants
+
+  pure integer function num_cells(this)
+    class(discrete_manifold), intent(in) :: this
+    num_cells = 1
+    if (this % with_space) num_cells = size(this % volume)
+  end function num_cells
+
+  pure integer function discrete_num_points(this)
+    class(discrete_manifold), intent(in) :: this
+    discrete_num_points = this % num_instants() * this % num_cells()
+  end function discrete_num_points
+
+  pure integer function discrete_num_coordinates(this)
+    class(discrete_manifold), intent(in) :: this
+    discrete_num_coordinates = merge(1, 0, this % with_time) + this % dimension
+  end function discrete_num_coordinates
+
+  ! the point of instant k and cell c: instant outer, cell inner
+  pure integer function point_of(this, k, c)
+    class(discrete_manifold), intent(in) :: this
+    integer                 , intent(in) :: k, c
+    point_of = (k - 1) * this % num_cells() + c
+  end function point_of
+
+  ! the step ending at instant k; the first instant has none
+  pure real(dp) function step(this, k)
+    class(discrete_manifold), intent(in) :: this
+    integer                 , intent(in) :: k
+    step = 0.0_dp
+    if (k > 1) step = this % instant(k) - this % instant(k - 1)
+  end function step
+
+  pure function discrete_position(this, p) result(x)
+
+    class(discrete_manifold), intent(in) :: this
+    integer                 , intent(in) :: p
+    real(dp), allocatable :: x(:)
+
+    integer :: k, c, d
+
+    k = (p - 1) / this % num_cells() + 1
+    c = p - (k - 1) * this % num_cells()
+    d = this % dimension
+    allocate(x(this % num_coordinates()))
+    if (this % with_time) x(1) = this % instant(k)
+    if (this % with_space) then
+       x(this % num_coordinates() - d + 1:) = this % centre(d * (c - 1) + 1:d * c)
+    end if
+
+  end function discrete_position
+
+  !===================================================================!
+  ! The measure at a point: the trapezoidal share of the interval at
+  ! the instant times the cell's volume; one at a point manifold.
+  !===================================================================!
+
+  pure real(dp) function discrete_measure(this, p)
+
+    class(discrete_manifold), intent(in) :: this
+    integer                 , intent(in) :: p
+
+    integer :: k, c, n
+
+    k = (p - 1) / this % num_cells() + 1
+    c = p - (k - 1) * this % num_cells()
+    discrete_measure = 1.0_dp
+    if (this % with_time) then
+       n = size(this % instant)
+       if (k == 1) then
+          discrete_measure = 0.5_dp * this % step(2)
+       else if (k == n) then
+          discrete_measure = 0.5_dp * this % step(n)
+       else
+          discrete_measure = 0.5_dp * (this % step(k) + this % step(k + 1))
+       end if
+    end if
+    if (this % with_space) discrete_measure = discrete_measure * this % volume(c)
+
+  end function discrete_measure
+
+end module operation_manifold

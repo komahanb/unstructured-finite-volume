@@ -32,6 +32,7 @@ field_stored.o \
 operation_action.o \
 operation_expression.o \
 view_expression.o \
+operation_field.o \
 operation_domain.o \
 operation_edge_function.o \
 operation_family.o \
@@ -45,7 +46,6 @@ view_mesh.o \
 operation_robin_condition.o \
 operation_conduction.o \
 operation_stencil.o \
-operation_residual.o \
 operation_scheme_stencil.o \
 operation_grid.o \
 operation_linearization.o \
@@ -64,6 +64,7 @@ operation_dense_direct.o \
 operation_conjugate_gradient.o \
 operation_fitting.o \
 operation_fitted_balance.o \
+operation_finite_difference.o \
 operation_diffusion.o \
 operation_gauss_seidel.o \
 operation_jacobi.o \
@@ -73,11 +74,13 @@ operation_newton.o \
 operation_multigrid.o \
 view_read_write.o \
 operation_driver.o \
-operation_temporal_minimization.o \
 util_verbosity.o \
 util_file.o \
 view_mesh_geometry.o \
 view_mesh_loader.o \
 view_gmsh_loader.o \
 view_mesh_builder.o \
+operation_manifold.o \
+operation_residual.o \
+operation_temporal_minimization.o \
 view_paraview_writer.o

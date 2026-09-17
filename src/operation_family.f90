@@ -47,6 +47,42 @@ module operation_family
   public :: implicit_midpoint, crouzeix_two_stage, crouzeix_three_stage, &
        & hairer_wanner_five_stage
   public :: slope_at_zero, integral_over_step
+  public :: adams, bdf, dirk, chain
+
+  ! the families by order: adams(p) and bdf(p) the multistep families
+  ! of order p, dirk(p) the tabulated tableau of order p
+  interface adams
+     module procedure adams_family
+  end interface adams
+
+  interface bdf
+     module procedure bdf_family
+  end interface bdf
+
+  interface dirk
+     module procedure dirk_of_order
+  end interface dirk
+
+  !===================================================================!
+  ! A CHAIN OF FAMILIES over the instants: scheme(k) approximates the
+  ! derivative from instant from(k) to the instant before from(k+1),
+  ! the last to the end. from(1) is one and the list rises.
+  !===================================================================!
+
+  type :: chain
+
+     type(family), allocatable :: scheme(:)
+     integer     , allocatable :: from(:)
+
+   contains
+
+     procedure :: num_blocks
+
+  end type chain
+
+  interface chain
+     module procedure create_chain
+  end interface chain
 
   ! The coupling geometries a family reads its edges by.
 
@@ -784,6 +820,68 @@ contains
          & [w, 1.0_dp - 2.0_dp * w, w])
 
   end function crouzeix_three_stage
+
+  !===================================================================!
+  ! The tabulated DIRK family of an order: the implicit midpoint rule
+  ! at two, Crouzeix's two stages at three, Crouzeix's three stages at
+  ! four. Another order stops the program.
+  !===================================================================!
+
+  function dirk_of_order(order) result(this)
+
+    integer, intent(in) :: order
+    type(family) :: this
+
+    character(len=250) :: message
+
+    select case (order)
+    case (2)
+       this = implicit_midpoint()
+    case (3)
+       this = crouzeix_two_stage()
+    case (4)
+       this = crouzeix_three_stage()
+    case default
+       write(message,'(a,i0)') 'operation_family: a DIRK tableau is tabulated at orders 2, 3 and 4; &
+            &order = ', order
+       error stop trim(message)
+    end select
+
+  end function dirk_of_order
+
+  function create_chain(schemes, from) result(this)
+
+    type(family), intent(in) :: schemes(:)
+    integer     , intent(in) :: from(:)
+    type(chain) :: this
+
+    integer :: k
+    character(len=250) :: message
+
+    if (size(schemes) /= size(from)) then
+       write(message,'(a,i0,a,i0)') 'operation_family: a chain requires one first instant per &
+            &scheme; size(schemes) = ', size(schemes), ', size(from) = ', size(from)
+       error stop trim(message)
+    end if
+    if (size(from) < 1 .or. from(1) /= 1) then
+       error stop 'operation_family: a chain begins at the first instant'
+    end if
+    do k = 2, size(from)
+       if (from(k) <= from(k - 1)) then
+          write(message,'(a,i0,a,i0,a,i0)') 'operation_family: the first instants of a chain rise; &
+               &from(', k - 1, ') = ', from(k - 1), ', from(k) = ', from(k)
+          error stop trim(message)
+       end if
+    end do
+    this % scheme = schemes
+    this % from   = from
+
+  end function create_chain
+
+  pure integer function num_blocks(this)
+    class(chain), intent(in) :: this
+    num_blocks = size(this % scheme)
+  end function num_blocks
 
   function hairer_wanner_five_stage() result(this)
 

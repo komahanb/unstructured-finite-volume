@@ -41,10 +41,10 @@ module view_gmsh_loader
   ! The sections the parser reads, in the order they are numbered.
   !-------------------------------------------------------------------!
 
-  integer, parameter :: num_sections = 5
-  integer, parameter :: MESH = 1, PHYSICAL_NAMES = 2, ENTITIES = 3, NODES = 4, ELEMENTS = 5
+  integer, parameter :: num_sections = 6
+  integer, parameter :: MESH = 1, PHYSICAL_NAMES = 2, ENTITIES = 3, NODES = 4, ELEMENTS = 5, PERIODIC = 6
   character(len=13), parameter :: sections(num_sections) = &
-       & [character(len=13) :: 'MeshFormat', 'PhysicalNames', 'Entities', 'Nodes', 'Elements']
+       & [character(len=13) :: 'MeshFormat', 'PhysicalNames', 'Entities', 'Nodes', 'Elements', 'Periodic']
 
   !-------------------------------------------------------------------!
   ! The interface to construct a mesh_loader for GMSH.
@@ -66,6 +66,7 @@ module view_gmsh_loader
 
      ! Implement the deferred procedure from the interface.
      procedure :: mesh_data
+     procedure :: periodic_links
 
   end type gmsh_loader
 
@@ -511,6 +512,111 @@ contains
     end subroutine record
 
   end subroutine mesh_data
+
+  !====================================================================!
+  ! THE PERIODIC LINKS of the file's $Periodic section, when present:
+  ! each link identifies one entity with a master entity under a
+  ! translation, master + translation = image, and lists the vertex
+  ! pairs (image, master) it identifies. The vertices are positions in
+  ! vertex_numbers, the array mesh_data returns. A link whose affine
+  ! transformation is not a translation is invalid input: the mesh
+  ! then identifies entities under a rotation, which the periodic
+  ! face shift does not represent.
+  !
+  !      first(l), last(l)   the pairs of link l, positions in image/master
+  !      translation(:, l)   the three components of the translation
+  !====================================================================!
+
+  impure subroutine periodic_links(this, vertex_numbers, first, last, image, master, translation)
+
+    class(gmsh_loader)  , intent(in)  :: this
+    integer             , intent(in)  :: vertex_numbers(:)
+    integer, allocatable, intent(out) :: first(:), last(:), image(:), master(:)
+    real(dp), allocatable, intent(out) :: translation(:,:)
+
+    type(string), allocatable :: lines(:), tokens(:)
+    integer :: section_start(num_sections), section_end(num_sections)
+    integer :: num_links, num_tokens, il, l, num_affine, num_pairs, i, at, tag_image, tag_master
+    real(dp), allocatable :: affine(:)
+    real(dp), parameter :: identity(16) = [1.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, &
+         &                                 0.0_dp, 1.0_dp, 0.0_dp, 0.0_dp, &
+         &                                 0.0_dp, 0.0_dp, 1.0_dp, 0.0_dp, &
+         &                                 0.0_dp, 0.0_dp, 0.0_dp, 1.0_dp]
+    character(len=250) :: message
+
+    call this % file % read_lines(lines)
+    call find_tags(lines, section_start, section_end)
+
+    if (section_start(PERIODIC) == 0) then
+       allocate(first(0), last(0), image(0), master(0), translation(3, 0))
+       return
+    end if
+
+    il = section_start(PERIODIC) + 1
+    read(lines(il) % str, *) num_links
+    allocate(first(num_links), last(num_links), translation(3, num_links))
+
+    ! one pass counts the pairs, the second records them
+    num_pairs = 0
+    il = il + 1
+    do l = 1, num_links
+       il = il + 1
+       read(lines(il) % str, *) num_affine
+       il = il + 1
+       read(lines(il) % str, *) i
+       num_pairs = num_pairs + i
+       il = il + 1 + i
+    end do
+    allocate(image(num_pairs), master(num_pairs))
+
+    at = 0
+    il = section_start(PERIODIC) + 2
+    do l = 1, num_links
+
+       ! the link's line reads: entityDim entityTag entityTagMaster
+       call lines(il) % tokenize(" ", num_tokens, tokens)
+       tag_image  = tokens(2) % as_integer()
+       tag_master = tokens(3) % as_integer()
+       il = il + 1
+
+       ! the affine line reads: numAffine, then the 4 x 4 matrix by rows
+       call lines(il) % tokenize(" ", num_tokens, tokens)
+       num_affine = tokens(1) % as_integer()
+       if (num_affine /= 16) then
+          write(message,'(a,i0,a,i0,a,i0)') 'view_gmsh_loader: a periodic link is a translation, &
+               &stated as a 4 x 4 affine matrix; entity ', tag_image, ' onto ', tag_master, &
+               & ' has affine values = ', num_affine
+          error stop trim(message)
+       end if
+       affine = tokens(2:17) % as_real()
+       translation(:, l) = affine([4, 8, 12])
+       affine([4, 8, 12]) = 0.0_dp
+       if (any(abs(affine - identity) > 1.0e-12_dp)) then
+          write(message,'(a,i0,a,i0)') 'view_gmsh_loader: a periodic link is a translation; entity ', &
+               & tag_image, ' onto ', tag_master, ' is identified under a rotation or a scaling'
+          error stop trim(message)
+       end if
+       il = il + 1
+
+       ! the pairs: nodeTag nodeTagMaster, one per line
+       read(lines(il) % str, *) num_pairs
+       il = il + 1
+       first(l) = at + 1
+       do i = 1, num_pairs
+          call lines(il) % tokenize(" ", num_tokens, tokens)
+          at = at + 1
+          image(at)  = findloc(vertex_numbers, tokens(1) % as_integer(), dim=1)
+          master(at) = findloc(vertex_numbers, tokens(2) % as_integer(), dim=1)
+          if (image(at) == 0 .or. master(at) == 0) then
+             error stop 'view_gmsh_loader: a periodic pair names a node absent from $Nodes'
+          end if
+          il = il + 1
+       end do
+       last(l) = at
+
+    end do
+
+  end subroutine periodic_links
 
   !====================================================================!
   ! Scan the file for the start and end line of each section the

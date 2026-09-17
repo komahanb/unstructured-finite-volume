@@ -21,7 +21,7 @@ module view_expression
   use operation_expression, only : VERTEX_LEAF, VERTEX_CONSTANT, VERTEX_SUM, VERTEX_DIFFERENCE
   use operation_expression, only : VERTEX_PRODUCT, VERTEX_QUOTIENT, VERTEX_INTEGER_POWER
   use operation_expression, only : VERTEX_REAL_POWER, VERTEX_FUNCTION
-  use operation_expression, only : ARGUMENT_DESIGN, ARGUMENT_MULTIPLIER
+  use operation_expression, only : ARGUMENT_DESIGN, ARGUMENT_MULTIPLIER, ARGUMENT_COORDINATE
   use operation_expression, only : SINE, COSINE, EXPONENTIAL, LOGARITHM, SQUARE_ROOT
 
   implicit none
@@ -77,6 +77,8 @@ contains
             text = 'nu'
          case (ARGUMENT_MULTIPLIER)
             text = 'lambda' // written(u % field)
+         case (ARGUMENT_COORDINATE)
+            text = axis(u % field)
          case default
             text = 'q' // written(u % field) // repeat(axis(u % along), u % order)
          end select

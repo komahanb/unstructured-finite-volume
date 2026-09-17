@@ -16,7 +16,8 @@
 !      output          one value per point
 !
 ! A leaf reads a component of an argument - the state's component of
-! degree d, or the design - or a multiplier, or stores a constant.
+! degree d, or the design - or a multiplier, or a coordinate of the
+! point's position, or stores a constant.
 ! Every other vertex is an arithmetic operation, a power, or an
 ! elementary function of the vertices it reads. The vertices are
 ! stored in evaluation order, every read before its reader, and the
@@ -95,7 +96,7 @@ module operation_expression
 
   private
   public :: expression
-  public :: unknown, design, constant, multiplier, derivative, derivative_along
+  public :: unknown, design, constant, multiplier, coordinate, derivative, derivative_along
   public :: euler_lagrange, at_zero
   public :: operator(+), operator(-), operator(*), operator(/), operator(**)
   public :: sin, cos, exp, log, sqrt
@@ -118,10 +119,12 @@ module operation_expression
   integer, parameter, public :: FIRST_COORDINATE = 1
 
   ! the arguments a leaf reads, in the operation's order; a multiplier
-  ! is read from no argument, and its position names it
+  ! is read from no argument, and a coordinate from the position of
+  ! the point, and the position names each
   integer, parameter, public :: ARGUMENT_STATE      = 1
   integer, parameter, public :: ARGUMENT_DESIGN     = 2
   integer, parameter, public :: ARGUMENT_MULTIPLIER = 3
+  integer, parameter, public :: ARGUMENT_COORDINATE = 4
 
   ! the elementary functions
   integer, parameter, public :: SINE        = 1
@@ -170,6 +173,8 @@ module operation_expression
      procedure :: defined_at_zero => expression_defined_at_zero
      procedure :: partial_action => expression_partial_action
      procedure :: at_instant     => expression_at_instant
+     procedure :: value_at
+     procedure :: reads_state
      procedure :: equation_degree
      procedure :: num_coordinates
      procedure :: num_components
@@ -321,6 +326,28 @@ contains
     this = vertex(VERTEX_LEAF, ARGUMENT_MULTIPLIER, 0, 0.0_dp, field=j)
 
   end function multiplier
+
+  !===================================================================!
+  ! The c-th coordinate function: read from the position of the point
+  ! the expression is evaluated at. An index below one stops the
+  ! program.
+  !===================================================================!
+
+  function coordinate(c) result(this)
+
+    integer, intent(in) :: c
+    type(expression) :: this
+
+    character(len=250) :: message
+
+    if (c < 1) then
+       write(message,'(a,i0)') 'operation_expression: a coordinate must be named by a positive index; c = ', c
+       error stop trim(message)
+    end if
+
+    this = vertex(VERTEX_LEAF, ARGUMENT_COORDINATE, 0, 0.0_dp, field=c)
+
+  end function coordinate
 
   !===================================================================!
   ! The component of degree d of the unknown. Anything but a bare
@@ -686,11 +713,12 @@ contains
   ! those defined, stops the program.
   !===================================================================!
 
-  pure function expression_at_instant(this, q, nu) result(r)
+  pure function expression_at_instant(this, q, nu, position) result(r)
 
     class(expression)     , intent(in) :: this
     type(derivative_terms), intent(in) :: q(0:)
     type(derivative_terms), intent(in) :: nu
+    real(dp)              , intent(in), optional :: position(:)
     type(derivative_terms) :: r
 
     type(derivative_terms), allocatable :: stored(:)
@@ -701,7 +729,7 @@ contains
        error stop 'operation_expression: the point does not store one component per law component'
     end if
     if (this % multipliers == 0) then
-       r = this % evaluated_over(q, nu)
+       r = this % evaluated_over(q, nu, position)
        return
     end if
 
@@ -722,10 +750,56 @@ contains
     end do
     if (this % varied > 0) call stored(given + this % varied - 1) % set_direction(n, 1.0_dp)
 
-    r = this % evaluated_over(stored, design)
+    r = this % evaluated_over(stored, design, position)
     if (this % varied > 0) r = partial(r, n)
 
   end function expression_at_instant
+
+  !===================================================================!
+  ! The value at a position of an expression that reads no state and
+  ! no multiplier: a function of the coordinates and of constants
+  ! alone. Invalid input: an expression with a state or multiplier
+  ! leaf, which has no value until the state is given.
+  !===================================================================!
+
+  pure real(dp) function value_at(this, position)
+
+    class(expression), intent(in) :: this
+    real(dp)         , intent(in) :: position(:)
+
+    type(derivative_terms), allocatable :: q(:)
+    type(derivative_terms) :: nu
+
+    if (this % reads_state()) then
+       error stop 'operation_expression: value_at requires an expression of the coordinates alone, &
+            &but the expression reads the state or a multiplier'
+    end if
+    nu = derivative_terms(0.0_dp, 0)
+    allocate(q(0:this % num_components() - 1), source=nu)
+    value_at = mixed_partial(this % evaluated_over(q, nu, position))
+
+  end function value_at
+
+  !===================================================================!
+  ! Whether any leaf reads the state or a multiplier.
+  !===================================================================!
+
+  pure logical function reads_state(this)
+
+    class(expression), intent(in) :: this
+
+    integer :: i
+
+    reads_state = .false.
+    do i = 1, this % num_vertices()
+       if (this % kind(i) /= VERTEX_LEAF) cycle
+       if (this % position(i) == ARGUMENT_STATE .or. this % position(i) == ARGUMENT_MULTIPLIER) then
+          reads_state = .true.
+          return
+       end if
+    end do
+
+  end function reads_state
 
   !===================================================================!
   ! WHETHER THE ZERO STATE LIES IN THE EXPRESSION'S DOMAIN. A vertex
@@ -781,7 +855,7 @@ contains
   ! The loop over the vertices, on the stored tuple.
   !===================================================================!
 
-  pure function evaluated_over(this, q, nu) result(r)
+  pure function evaluated_over(this, q, nu, position) result(r)
 
     ! the arithmetic over derivative_terms is read here alone, so the
     ! module's public operators are its own, on expressions
@@ -791,6 +865,7 @@ contains
     class(expression)     , intent(in) :: this
     type(derivative_terms), intent(in) :: q(0:)
     type(derivative_terms), intent(in) :: nu
+    real(dp)              , intent(in), optional :: position(:)
     type(derivative_terms) :: r
 
     type(derivative_terms), allocatable :: v(:)
@@ -803,6 +878,16 @@ contains
        case (VERTEX_LEAF)
           if (this % position(i) == ARGUMENT_DESIGN) then
              v(i) = nu
+          else if (this % position(i) == ARGUMENT_COORDINATE) then
+             ! a coordinate is read from the position of the point,
+             ! which an evaluation without a position does not have
+             if (.not. present(position)) then
+                error stop 'operation_expression: the expression reads a coordinate, but no position was given'
+             end if
+             if (this % field(i) > size(position)) then
+                error stop 'operation_expression: the expression reads a coordinate the position does not have'
+             end if
+             v(i) = derivative_terms(position(this % field(i)), nu)
           else
              ! the tuple lists every field's components together, the
              ! components along time first, then along space, and the

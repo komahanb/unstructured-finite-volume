@@ -74,6 +74,15 @@ module view_mesh
      ! period, every other face zero
      type(stored_field) :: shifts
 
+     ! the corners of the cells, when the mesh was built from
+     ! elements: three coordinates per corner, each cell's corners
+     ! padded to the widest element, the count per cell, and the
+     ! element type of each cell
+     real(dp), allocatable :: corners(:,:)
+     integer , allocatable :: cell_corners(:,:)
+     integer , allocatable :: num_cell_corners(:)
+     integer , allocatable :: cell_kinds(:)
+
    contains
 
      procedure :: cell_volume
@@ -85,6 +94,7 @@ module view_mesh
      procedure :: face_weights
      procedure :: face_shift
      procedure :: neighbourhood
+     procedure :: has_corners
 
   end type mesh
 
@@ -245,6 +255,11 @@ contains
     face_centre = this % face_centers_
 
   end function face_centre
+
+  pure logical function has_corners(this)
+    class(mesh), intent(in) :: this
+    has_corners = allocated(this % cell_kinds)
+  end function has_corners
 
   type(stored_field) function face_shift(this)
 

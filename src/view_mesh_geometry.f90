@@ -656,7 +656,7 @@ contains
 
   impure type(mesh) function mesh_from_incidence(spatial_dim, coordinates, &
        & cell_vertices, num_cell_vertices, face_vertices, num_face_vertices, &
-       & face_cells, num_face_cells, etags, face_shift) result(m)
+       & face_cells, num_face_cells, etags, face_shift, cell_types) result(m)
 
     integer         , intent(in) :: spatial_dim
     real(dp)        , intent(in) :: coordinates(:,:)
@@ -668,6 +668,7 @@ contains
     integer         , intent(in) :: num_face_cells(:)
     character(len=*), intent(in), optional :: etags(:)
     real(dp)        , intent(in), optional :: face_shift(:,:)
+    integer         , intent(in), optional :: cell_types(:)
 
     integer , allocatable :: cell_faces(:,:), num_cell_faces(:), tails(:), heads(:)
     real(dp), allocatable :: shift(:,:)
@@ -742,6 +743,21 @@ contains
          & etags        = etags, &
          & dimension    = d, &
          & shifts       = reshape(shift(1:d, :), [d * num_faces]))
+
+    ! the corners are stored when the element type of each cell is
+    ! given, the drawn form of the mesh
+    if (present(cell_types)) then
+       if (size(cell_types) /= num_cells) then
+          write(message,'(a,i0,a,i0)') 'view_mesh_geometry: one element type per cell; types = ', &
+               & size(cell_types), ', cells = ', num_cells
+          error stop trim(message)
+       end if
+       allocate(m % corners(3, size(coordinates, 2)), source=0.0_dp)
+       m % corners(1:size(coordinates, 1), :) = coordinates
+       m % cell_corners     = cell_vertices
+       m % num_cell_corners = num_cell_vertices
+       m % cell_kinds       = cell_types
+    end if
 
   end function mesh_from_incidence
 

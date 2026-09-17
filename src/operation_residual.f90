@@ -53,14 +53,31 @@ module operation_residual
   use field_calculus    , only : field, FIELD_REAL
   use field_stored      , only : stored_field, typed_field_domain
   use operation_stencil  , only : stencil, combine_triples
-  use operation_expression , only : expression, euler_lagrange
+  use operation_expression , only : expression, euler_lagrange, multiplier, constant
+  use operation_expression , only : operator(+), operator(*)
   use operation_domain     , only : continuous_domain, discrete_domain
-  use util_derivative_terms, only : max_subset_width
+  use util_derivative_terms, only : max_subset_width, derivative_terms, mixed_partial
+  use token_identity       , only : token
+  use operation_field      , only : continuous_field, discrete_field
+  use operation_manifold   , only : continuous_manifold, discrete_manifold
+  use operation_family     , only : family, chain
+  use operation_weight     , only : scheme_weight
+  use operation_coupling   , only : weights_of
+  use view_directed_connectivity, only : connectivity_graph
+  use operation_scheme_stencil  , only : derived_constraints
+  use operation_finite_difference, only : finite_difference
+  use operation_minimization, only : solve_result
+  use operation_newton      , only : newton
+  use operation_dense_direct, only : dense_direct
+  use operation_gmres       , only : gmres
+  use operation_gauss_seidel, only : gauss_seidel
 
   implicit none
 
   private
   public :: residual_operator
+  public :: continuous_residual, discrete_residual
+  public :: operator(+), operator(*)
 
   type, extends(operation) :: residual_operator
 
@@ -74,6 +91,10 @@ module operation_residual
      integer , allocatable, private :: fixed_rows(:)
      real(dp), allocatable, private :: fixed(:)
      real(dp), allocatable, private :: fixed_rate(:)
+     ! rows stated as affine relations of the state in place of the
+     ! residual's own: a fixed row is the case of one unknown
+     type(stencil), allocatable, private :: prescribed
+     logical      , allocatable, private :: prescribed_row(:)
      integer                , private :: degrees  = 0
      integer                , private :: connected_degrees = 0
      integer                , private :: unknowns = 0
@@ -127,6 +148,84 @@ module operation_residual
      module procedure create
   end interface residual_operator
 
+  !===================================================================!
+  ! THE CONTINUOUS RESIDUAL: a sum of terms. A term is a list of
+  ! equations, each a scalar field, on one manifold; paired with a
+  ! multiplier, an unknown of that manifold with one component per
+  ! equation, the term contributes to the Lagrangian the product of
+  ! the two. The equations of a term on a part of a manifold - a face
+  ! at an instant, the time factor - read the unknowns of the parent.
+  !===================================================================!
+
+  type :: residual_term
+
+     type(continuous_manifold) :: manifold
+     type(continuous_field), allocatable :: equation(:)
+     type(continuous_field) :: multiplier
+     logical :: paired = .false.
+
+  end type residual_term
+
+  type :: continuous_residual
+
+     type(residual_term), allocatable :: term(:)
+
+   contains
+
+     procedure :: discretize => residual_discretize
+     procedure :: num_terms
+
+  end type continuous_residual
+
+  interface continuous_residual
+     module procedure create_continuous
+  end interface continuous_residual
+
+  interface operator(+)
+     module procedure residual_sum
+  end interface operator(+)
+
+  interface operator(*)
+     module procedure paired_term
+  end interface operator(*)
+
+  !===================================================================!
+  ! THE DISCRETE RESIDUAL: the equations of the whole manifold as one
+  ! Lagrangian rule, the conditions on its parts, the points, and the
+  ! derivative approximations along time (a chain of families) and
+  ! along space (finite differences of a degree). minimize assembles
+  ! one residual_operator per block of the chain over the block's
+  ! instants, its stages and the cells, and solves the blocks in
+  ! order.
+  !
+  ! A condition on a face at an instant must be affine in one value
+  ! of a parent unknown with coefficient one, u - g = 0: it becomes the
+  ! fixed rows of that value at every cell of the instant, and its
+  ! multiplier, the reaction, is not stored. A condition on the time
+  ! factor must be the integral over the region of one parent unknown:
+  ! it becomes, at every moment, the prescribed row that the sum of
+  ! the cell volumes times the unknown vanishes, in place of that
+  ! unknown's own row at the first cell. Any other condition is
+  ! refused.
+  !===================================================================!
+
+  type :: discrete_residual
+
+     type(discrete_manifold)   :: points
+     type(continuous_manifold) :: manifold
+     type(expression)          :: rule
+     type(chain)               :: schemes
+     logical                   :: with_chain = .false.
+     type(finite_difference)   :: differences
+     logical                   :: with_differences = .false.
+     type(residual_term), allocatable :: condition(:)
+
+   contains
+
+     procedure :: minimize
+
+  end type discrete_residual
+
 contains
 
   !===================================================================!
@@ -141,7 +240,7 @@ contains
   !===================================================================!
 
   function create(primary_law, rule, at, unknowns, degrees, primary, fixed_rows, fixed, &
-       & connected_law, fixed_rate) result(this)
+       & connected_law, fixed_rate, prescribed) result(this)
 
     type(stencil)         , intent(in) :: primary_law
     type(expression)      , intent(in), optional :: rule
@@ -150,9 +249,10 @@ contains
     real(dp)              , intent(in) :: fixed(:)
     type(stencil)         , intent(in), optional :: connected_law
     real(dp)              , intent(in), optional :: fixed_rate(:)
+    type(stencil)         , intent(in), optional :: prescribed
     type(residual_operator) :: this
     type(continuous_domain) :: domain
-    integer :: j, components, governed
+    integer :: j, components, governed, e
     character(len=250) :: message
 
     if (size(fixed_rows) /= size(fixed)) then
@@ -240,6 +340,23 @@ contains
     if (present(fixed_rate)) this % fixed_rate = fixed_rate
     this % points = stored_directed_graph(size(at), tails=[integer ::], heads=[integer ::])
     this % unknown_vertices = stored_directed_graph(unknowns, tails=[integer ::], heads=[integer ::])
+    ! a prescribed row is one an edge of the prescribed stencil enters;
+    ! a row both prescribed and fixed is invalid input
+    if (present(prescribed)) then
+       this % prescribed = prescribed
+       allocate(this % prescribed_row(unknowns), source=.false.)
+       do e = 1, prescribed % pattern % num_edges()
+          if (prescribed % pattern % edge_head(e) < 1 .or. prescribed % pattern % edge_head(e) > unknowns) then
+             error stop 'operation_residual: a prescribed row must name an unknown'
+          end if
+          this % prescribed_row(prescribed % pattern % edge_head(e)) = .true.
+       end do
+       do j = 1, size(fixed_rows)
+          if (this % prescribed_row(fixed_rows(j))) then
+             error stop 'operation_residual: a row is both fixed and prescribed'
+          end if
+       end do
+    end if
     call this % declare_arguments(2, [contract(FIELD_REAL, 1), contract(FIELD_REAL, 1)])
 
   end function create
@@ -255,12 +372,50 @@ contains
     c = this % fixed_rows
   end function fixed_unknowns
 
+  ! the rows the residual's own terms do not occupy: fixed and prescribed
   pure function fixed_indicator(this) result(is_fixed)
     class(residual_operator), intent(in) :: this
     logical, allocatable :: is_fixed(:)
     allocate(is_fixed(this % unknowns), source=.false.)
     is_fixed(this % fixed_rows) = .true.
+    if (allocated(this % prescribed_row)) is_fixed = is_fixed .or. this % prescribed_row
   end function fixed_indicator
+
+  !===================================================================!
+  ! The prescribed rows written into r: the affine relation of the
+  ! state, or its partial along a direction, in place of the residual's
+  ! own terms on those rows.
+  !===================================================================!
+
+  subroutine write_prescribed(this, values, r, along)
+    class(residual_operator), intent(in)    :: this
+    real(dp)                , intent(in)    :: values(:)
+    real(dp)                , intent(inout) :: r(:)
+    logical                 , intent(in)    :: along
+    type(typed_field_domain) :: states
+    type(stored_field) :: given
+    class(field), allocatable :: half
+    real(dp), allocatable :: y(:)
+    if (.not. allocated(this % prescribed)) return
+    states = this % state_fields()
+    if (along) then
+       given = states % direction(values)
+       call this % prescribed % partial_action(this % unknown_vertices, this % prescribed % bind([given]), &
+            & [variation(this % prescribed % argument(1), given)], half)
+    else
+       given = states % state(values)
+       call this % prescribed % apply(this % unknown_vertices, this % prescribed % bind([given]), half)
+    end if
+    call half % real_vector(y)
+    where (this % prescribed_row) r = y
+  end subroutine write_prescribed
+
+  pure subroutine zero_prescribed_rows(this, r)
+    class(residual_operator), intent(in)    :: this
+    real(dp)                , intent(inout) :: r(:)
+    if (.not. allocated(this % prescribed_row)) return
+    where (this % prescribed_row) r = 0.0_dp
+  end subroutine zero_prescribed_rows
 
   pure function fixed_values(this) result(h)
     class(residual_operator), intent(in) :: this
@@ -758,6 +913,7 @@ contains
     call discretized(this, inputs, state, x, r, governing)
     call placed(this, governing, r)
     call accumulate_state(this, x, r)
+    call write_prescribed(this, x, r, along=.false.)
     call placed_output(this, r, output)
   end subroutine residual_apply
 
@@ -843,6 +999,7 @@ contains
     count = this % primary_law % pattern % num_edges() + npts * this % degrees * size(this % rules) &
          & + size(this % fixed_rows)
     if (allocated(this % connected_law)) count = count + this % connected_law % pattern % num_edges()
+    if (allocated(this % prescribed))    count = count + this % prescribed % pattern % num_edges()
     allocate(r(count), c(count), w(count))
     num_triples = 0
     call stencil_triples(this % primary_law, is_fixed, r, c, w, num_triples)
@@ -878,6 +1035,15 @@ contains
        c(num_triples) = this % fixed_rows(e)
        w(num_triples) = 1.0_dp
     end do
+    if (allocated(this % prescribed)) then
+       call this % prescribed % weights % real_vector(column)
+       do e = 1, this % prescribed % pattern % num_edges()
+          num_triples    = num_triples + 1
+          r(num_triples) = this % prescribed % pattern % edge_head(e)
+          c(num_triples) = this % prescribed % pattern % edge_tail(e)
+          w(num_triples) = column(e)
+       end do
+    end if
     call combine_triples(n, n, r(1:num_triples), c(1:num_triples), w(1:num_triples), rows, columns, weights)
   end subroutine residual_explicit_tangent
 
@@ -937,6 +1103,7 @@ contains
        allocate(r(this % num_unknowns()), source=0.0_dp)
        call placed(this, governing, r)
        call zero_fixed_rows(this, r)
+       call zero_prescribed_rows(this, r)
        call placed_output(this, r, output)
        return
     end if
@@ -945,10 +1112,12 @@ contains
        call discretized(this, inputs, state, x, r, governing, v)
        call placed(this, governing, r)
        call accumulate_direction(this, v, r)
+       call write_prescribed(this, v, r, along=.true.)
     else
        call design_tangent(this, inputs, variations, x, r, governing)
        call placed(this, governing, r)
        call design_of_fixed_rows(this, v, r)
+       call zero_prescribed_rows(this, r)
     end if
     call placed_output(this, r, output)
   end subroutine residual_partial_action
@@ -1058,6 +1227,10 @@ contains
     end do
 
     derived = this % primary_law % restricted(free, values)
+    if (allocated(this % prescribed)) then
+       error stop 'operation_residual: a residual with prescribed rows is not restricted; the &
+            &prescribed relation would lose its unknowns outside the selection'
+    end if
     if (allocated(this % connected_law)) then
        secondary = this % connected_law % restricted(free, values)
        sub = residual_operator(derived, this % physics, at, size(free), &
@@ -1175,5 +1348,779 @@ contains
     call lin % versioned(version_number, transposed=transposed)
 
   end function linearize
+
+  !===================================================================!
+  ! A term: the equations on a manifold. Invalid input: an equation
+  ! that is not a scalar field, or one on neither the manifold nor
+  ! its parent.
+  !===================================================================!
+
+  function create_continuous(manifold, equations) result(this)
+
+    type(continuous_manifold), intent(in) :: manifold
+    type(continuous_field)   , intent(in) :: equations(:)
+    type(continuous_residual) :: this
+
+    integer :: k
+    character(len=250) :: message
+
+    allocate(this % term(1))
+    this % term(1) % manifold = manifold
+    this % term(1) % equation = equations
+    do k = 1, size(equations)
+       if (equations(k) % num_components() /= 1) then
+          write(message,'(a,i0,a,i0)') 'operation_residual: an equation is a scalar field; equation ', &
+               & k, ' has components = ', equations(k) % num_components()
+          error stop trim(message)
+       end if
+       if (.not. (manifold % same_support(equations(k) % on) .or. manifold % parent % matches(equations(k) % on))) then
+          write(message,'(a,i0,a)') 'operation_residual: equation ', k, ' is a field on neither the &
+               &manifold given nor its parent'
+          error stop trim(message)
+       end if
+    end do
+
+  end function create_continuous
+
+  pure integer function num_terms(this)
+    class(continuous_residual), intent(in) :: this
+    num_terms = size(this % term)
+  end function num_terms
+
+  function residual_sum(a, b) result(this)
+
+    type(continuous_residual), intent(in) :: a, b
+    type(continuous_residual) :: this
+
+    this % term = [a % term, b % term]
+
+  end function residual_sum
+
+  !===================================================================!
+  ! The pairing lambda . g: the multiplier is an unknown of the term's
+  ! manifold with one component per equation. Invalid input: a
+  ! multiplier of another manifold, or one that is not an unknown, or
+  ! a residual of several terms, or a component count other than the
+  ! equation count.
+  !===================================================================!
+
+  function paired_term(lambda, g) result(this)
+
+    type(continuous_field)   , intent(in) :: lambda
+    type(continuous_residual), intent(in) :: g
+    type(continuous_residual) :: this
+
+    character(len=250) :: message
+
+    if (size(g % term) /= 1) then
+       error stop 'operation_residual: a multiplier pairs with one term; pair each term before summing'
+    end if
+    if (.not. lambda % is_unknown()) then
+       error stop 'operation_residual: a multiplier is an unknown of the term''s manifold'
+    end if
+    if (.not. g % term(1) % manifold % same_support(lambda % on)) then
+       error stop 'operation_residual: the multiplier is an unknown of another manifold than the term''s'
+    end if
+    if (lambda % num_components() /= size(g % term(1) % equation)) then
+       write(message,'(a,i0,a,i0)') 'operation_residual: a multiplier has one component per equation; &
+            &components = ', lambda % num_components(), ', equations = ', size(g % term(1) % equation)
+       error stop trim(message)
+    end if
+    this = g
+    this % term(1) % multiplier = lambda
+    this % term(1) % paired     = .true.
+
+  end function paired_term
+
+  !===================================================================!
+  ! THE DISCRETIZATION. Exactly one unpaired term on the whole
+  ! manifold gives the rule, one equation per unknown in order; every
+  ! other term is a paired condition on a part of that manifold. A
+  ! coordinate present without its approximation, or an approximation
+  ! given for a coordinate absent, is invalid input.
+  !===================================================================!
+
+  function residual_discretize(this, points, time, space) result(image)
+
+    class(continuous_residual), intent(in) :: this
+    type(discrete_manifold)   , intent(in) :: points
+    type(chain)               , intent(in), optional :: time
+    type(finite_difference)   , intent(in), optional :: space
+    type(discrete_residual) :: image
+
+    integer :: k, j, whole, num_conditions
+    character(len=250) :: message
+
+    whole = 0
+    num_conditions = 0
+    do k = 1, size(this % term)
+       associate (t => this % term(k))
+         if (t % manifold % part == 0) then
+            if (t % paired) then
+               error stop 'operation_residual: the equations on the whole manifold are not paired with a multiplier'
+            end if
+            if (whole /= 0) then
+               error stop 'operation_residual: one term states the equations on the whole manifold'
+            end if
+            whole = k
+         else
+            if (.not. t % paired) then
+               error stop 'operation_residual: a condition on a part of the manifold is paired with a multiplier'
+            end if
+            num_conditions = num_conditions + 1
+         end if
+       end associate
+    end do
+    if (whole == 0) then
+       error stop 'operation_residual: no term states the equations on the whole manifold'
+    end if
+
+    associate (t => this % term(whole))
+      if (.not. points % identity % matches(t % manifold % identity)) then
+         error stop 'operation_residual: the points discretize another manifold than the equations'' own'
+      end if
+      if (size(t % equation) /= t % manifold % num_unknowns) then
+         write(message,'(a,i0,a,i0)') 'operation_residual: one equation is required per unknown of the &
+              &manifold; equations = ', size(t % equation), ', unknowns = ', t % manifold % num_unknowns
+         error stop trim(message)
+      end if
+      image % manifold = t % manifold
+      ! the Lagrangian of the equations: its stationarity in the j-th
+      ! multiplier is the j-th equation, the row of the j-th unknown
+      image % rule = multiplier(1) * t % equation(1) % graph(1)
+      do j = 2, size(t % equation)
+         image % rule = image % rule + multiplier(j) * t % equation(j) % graph(1)
+      end do
+    end associate
+
+    allocate(image % condition(num_conditions))
+    j = 0
+    do k = 1, size(this % term)
+       if (k == whole) cycle
+       j = j + 1
+       image % condition(j) = this % term(k)
+       if (.not. image % condition(j) % manifold % parent % matches(image % manifold % identity)) then
+          error stop 'operation_residual: a condition is stated on a part of another manifold'
+       end if
+    end do
+
+    image % points = points
+    if (points % with_time .neqv. present(time)) then
+       error stop 'operation_residual: the derivatives along time are approximated by a chain of &
+            &families, given exactly when the manifold has a time coordinate'
+    end if
+    if (points % with_space .neqv. present(space)) then
+       error stop 'operation_residual: the derivatives along space are approximated by finite &
+            &differences, given exactly when the manifold has a region'
+    end if
+    if (present(time)) then
+       image % schemes    = time
+       image % with_chain = .true.
+       if (time % from(size(time % from)) > points % num_instants()) then
+          error stop 'operation_residual: a block of the chain begins after the last instant'
+       end if
+    end if
+    if (present(space)) then
+       image % differences      = space
+       image % with_differences = .true.
+    end if
+
+  end function residual_discretize
+
+  !===================================================================!
+  ! THE ZERO OF THE DISCRETE RESIDUAL from an estimate: one block of
+  ! the chain after another, each a residual_operator over the block's
+  ! moments (its instants, and the stages of a one-step family) and
+  ! the cells. The solution is a discrete field of the manifold's
+  ! unknowns at the instants.
+  !===================================================================!
+
+  subroutine minimize(this, estimate, solution)
+
+    class(discrete_residual), intent(in)  :: this
+    type(discrete_field)    , intent(in)  :: estimate
+    type(discrete_field)    , intent(out) :: solution
+
+    real(dp), allocatable :: tuple(:,:,:), value(:,:)
+    type(stencil), allocatable :: rows_along(:,:)
+    integer :: stride, nf, ncells, ninst, f, c, k, b, first, last, depth, nb, top, o
+    character(len=250) :: message
+
+    stride = this % rule % num_components()
+    nf     = this % manifold % num_unknowns
+    ncells = this % points % num_cells()
+    ninst  = this % points % num_instants()
+
+    if (.not. estimate % on % identity % matches(this % points % identity)) then
+       error stop 'operation_residual: the estimate is a field on another manifold than the residual''s'
+    end if
+    if (estimate % num_components() /= nf) then
+       write(message,'(a,i0,a,i0)') 'operation_residual: the estimate has one component per unknown; &
+            &components = ', estimate % num_components(), ', unknowns = ', nf
+       error stop trim(message)
+    end if
+
+    ! the tuples at every instant and cell: the values from the
+    ! estimate, every derivative component zero
+    allocate(tuple(stride, ncells, ninst), source=0.0_dp)
+    do k = 1, ninst
+       do c = 1, ncells
+          do f = 1, nf
+             tuple(this % rule % offset_of_field(f) + 1, c, k) = estimate % value(this % points % point_of(k, c), f)
+          end do
+       end do
+    end do
+
+    ! the finite-difference rows along each space axis and order, once
+    if (this % with_differences) then
+       top = 0
+       do c = 2, this % rule % num_coordinates()
+          top = max(top, this % rule % degree_along(c))
+       end do
+       allocate(rows_along(this % points % dimension, top))
+       do c = 1, this % points % dimension
+          do o = 1, top
+             if (c + 1 > this % rule % num_coordinates()) cycle
+             if (o > this % rule % degree_along(c + 1)) cycle
+             rows_along(c, o) = this % differences % derivative_rows(this % points % cells, c, o)
+          end do
+       end do
+    else
+       allocate(rows_along(0, 0))
+    end if
+
+    if (this % with_chain) then
+       nb = this % schemes % num_blocks()
+       do b = 1, nb
+          first = this % schemes % from(b)
+          last  = ninst
+          if (b < nb) last = this % schemes % from(b + 1) - 1
+          depth = 0
+          if (b > 1) depth = this % schemes % scheme(b) % history_depth(top_degree(this % rule, nf))
+          if (first - depth < 1) then
+             write(message,'(a,i0,a,i0,a,i0)') 'operation_residual: block ', b, ' reads ', depth, &
+                  & ' instants of history before instant ', first
+             error stop trim(message)
+          end if
+          call solve_block(this, this % schemes % scheme(b), first - depth, last, depth, rows_along, tuple)
+       end do
+    else
+       call solve_point(this, tuple)
+    end if
+
+    allocate(value(this % points % num_points(), nf))
+    do k = 1, ninst
+       do c = 1, ncells
+          do f = 1, nf
+             value(this % points % point_of(k, c), f) = tuple(this % rule % offset_of_field(f) + 1, c, k)
+          end do
+       end do
+    end do
+    solution = discrete_field(this % points, value, this % manifold % unknown_name(1:nf))
+
+  end subroutine minimize
+
+  pure integer function top_degree(rule, nf)
+    type(expression), intent(in) :: rule
+    integer         , intent(in) :: nf
+    integer :: f
+    top_degree = 0
+    do f = 1, nf
+       top_degree = max(top_degree, rule % degree_of_field(f))
+    end do
+  end function top_degree
+
+  !===================================================================!
+  ! Whether a family marches by stages: it does when no derived row of
+  ! its own determines a component below the top degree, so that the
+  ! tableau's stages determine the step.
+  !===================================================================!
+
+  logical function marches_by_stages(scheme, nd)
+    type(family), intent(in) :: scheme
+    integer     , intent(in) :: nd
+    integer, allocatable :: offset(:), degrees(:)
+    integer :: d
+    marches_by_stages = .true.
+    do d = 0, nd - 1
+       if (d == scheme % primary_degree(nd - 1)) cycle
+       call scheme % row_pattern(d, nd - 1, offset, degrees)
+       if (size(offset) > 0) marches_by_stages = .false.
+    end do
+  end function marches_by_stages
+
+  !===================================================================!
+  ! ONE BLOCK: the instants first..last, the first `depth` of them
+  ! known from the block before, the stages between consecutive
+  ! instants when the family marches by stages. The unknown vector
+  ! lists the moments in time order, each moment's cells in order,
+  ! each cell's tuple of stride components.
+  !===================================================================!
+
+  subroutine solve_block(this, scheme, first, last, depth, rows_along, tuple)
+
+    class(discrete_residual), intent(in)    :: this
+    type(family)            , intent(in)    :: scheme
+    integer                 , intent(in)    :: first, last, depth
+    type(stencil)           , intent(in)    :: rows_along(:,:)
+    real(dp)                , intent(inout) :: tuple(:,:,:)
+
+    type(residual_operator) :: rows
+    type(stencil) :: relations, gauge
+    type(connectivity_graph) :: connectivity
+    integer , allocatable :: instant_moment(:), stage_moment(:,:), at(:), primary(:), fixed_rows(:)
+    integer , allocatable :: determined(:), source(:), gauge_rows(:), gauge_columns(:)
+    real(dp), allocatable :: weight(:), fixed(:), w(:), steps(:), q(:), gauge_weights(:), zeros(:)
+    integer :: stride, nf, ncells, n, s, nm, m, k, i, f, c, e, count, nd, v, width, unknowns, npts, p
+    integer :: comp, axis, o, j, ne, history_last
+    logical :: staged
+
+    stride = this % rule % num_components()
+    nf     = this % manifold % num_unknowns
+    ncells = this % points % num_cells()
+    n      = last - first + 1
+    nd     = top_degree(this % rule, nf) + 1
+    staged = marches_by_stages(scheme, nd)
+    s      = 0
+    if (staged) s = scheme % num_stages()
+
+    ! the moments: instant k of the block at instant_moment(k), and
+    ! when staged, stage i of the step into instant k+1 at stage_moment(k, i)
+    allocate(instant_moment(n), stage_moment(max(n - 1, 1), max(s, 1)), source=0)
+    nm = 0
+    do k = 1, n
+       if (k > 1 .and. staged) then
+          do i = 1, s
+             nm = nm + 1
+             stage_moment(k - 1, i) = nm
+          end do
+       end if
+       nm = nm + 1
+       instant_moment(k) = nm
+    end do
+
+    width    = stride * ncells
+    unknowns = nm * width
+    npts     = nm * ncells
+    allocate(at(npts))
+    do m = 1, nm
+       do c = 1, ncells
+          at((m - 1) * ncells + c) = (m - 1) * width + (c - 1) * stride
+       end do
+    end do
+
+    ! THE ROWS ALONG TIME AND SPACE, as triples: the component
+    ! determined, the component it reads, the weight
+    count = 0
+    do f = 1, nf
+       if (this % rule % degree_of_field(f) < 1) cycle
+       if (staged) then
+          connectivity = scheme % stage_connectivity(this % rule % degree_of_field(f) + 1)
+          count = count + (n - 1) * connectivity % num_edges() * ncells
+       else
+          connectivity = scheme % block_connectivity(this % rule % degree_of_field(f) + 1, n)
+          count = count + connectivity % num_edges() * ncells
+       end if
+    end do
+    if (this % with_differences) then
+       do f = 1, nf
+          do c = 2, this % rule % num_coordinates()
+             do o = 1, this % rule % degree_along(c)
+                count = count + rows_along(c - 1, o) % pattern % num_edges() * nm
+             end do
+          end do
+       end do
+    end if
+    allocate(determined(count), source(count), weight(count))
+    e = 0
+
+    do f = 1, nf
+       if (this % rule % degree_of_field(f) < 1) cycle
+       if (staged) then
+          connectivity = scheme % stage_connectivity(this % rule % degree_of_field(f) + 1)
+          do k = 1, n - 1
+             steps = spread(this % points % step(first + k), 1, s + 2)
+             call weights_of(scheme_weight(scheme), connectivity, steps, w)
+             do j = 1, connectivity % num_edges()
+                do c = 1, ncells
+                   e = e + 1
+                   determined(e) = at_of(moment_of(connectivity % edge_head(j), k), c) &
+                        & + this % rule % offset_of_field(f) + connectivity % head_degree(j) + 1
+                   source(e)     = at_of(moment_of(connectivity % edge_tail(j), k), c) &
+                        & + this % rule % offset_of_field(f) + connectivity % tail_degree(j) + 1
+                   weight(e)     = w(j)
+                end do
+             end do
+          end do
+       else
+          connectivity = scheme % block_connectivity(this % rule % degree_of_field(f) + 1, n)
+          steps = [(this % points % step(first + k - 1), k = 1, n)]
+          call weights_of(scheme_weight(scheme), connectivity, steps, w)
+          do j = 1, connectivity % num_edges()
+             do c = 1, ncells
+                e = e + 1
+                determined(e) = at_of(instant_moment(connectivity % edge_head(j)), c) &
+                     & + this % rule % offset_of_field(f) + connectivity % head_degree(j) + 1
+                source(e)     = at_of(instant_moment(connectivity % edge_tail(j)), c) &
+                     & + this % rule % offset_of_field(f) + connectivity % tail_degree(j) + 1
+                weight(e)     = w(j)
+             end do
+          end do
+       end if
+    end do
+
+    if (this % with_differences) then
+       do f = 1, nf
+          do c = 2, this % rule % num_coordinates()
+             axis = c - 1
+             do o = 1, this % rule % degree_along(c)
+                comp = this % rule % component_at(c, o, f)
+                associate (op => rows_along(axis, o))
+                  call op % weights % real_vector(w)
+                  ne = op % pattern % num_edges()
+                  do m = 1, nm
+                     do j = 1, ne
+                        e = e + 1
+                        determined(e) = at_of(m, op % pattern % edge_head(j)) + comp + 1
+                        source(e)     = at_of(m, op % pattern % edge_tail(j)) + this % rule % offset_of_field(f) + 1
+                        weight(e)     = w(j)
+                     end do
+                  end do
+                end associate
+             end do
+          end do
+       end do
+    end if
+
+    relations = derived_constraints(determined(1:e), source(1:e), weight(1:e), unknowns, &
+         & 'rows along time and space')
+
+    ! the row of each equation within a point's tuple: the value row
+    ! for a family that determines the derivatives, the top derivative
+    ! row for one that determines the values
+    allocate(primary(nf))
+    do f = 1, nf
+       primary(f) = this % rule % offset_of_field(f) &
+            & + scheme % primary_degree(this % rule % degree_of_field(f))
+    end do
+
+    ! THE FIXED ROWS: every component of the history instants, and the
+    ! values a face condition states at the first or the last instant
+    call fixed_rows_of(this, first, last, depth, instant_moment, at, tuple, fixed_rows, fixed)
+
+    ! THE GAUGE ROWS: at every moment after the history, the mean of
+    ! the integrated unknown over the cells, in place of its own row at
+    ! the first cell
+    history_last = 0
+    if (depth > 0) history_last = instant_moment(depth)
+    call gauge_rows_of(this, nm, history_last, at, primary, gauge_rows, gauge_columns, gauge_weights)
+    allocate(zeros(unknowns), source=0.0_dp)
+    if (size(gauge_rows) > 0) then
+       gauge = stencil(gauge_rows, gauge_columns, gauge_weights, zeros, 'gauge')
+       rows  = residual_operator(relations, this % rule, at, unknowns, stride, primary, fixed_rows, fixed, &
+            & prescribed=gauge)
+    else
+       rows  = residual_operator(relations, this % rule, at, unknowns, stride, primary, fixed_rows, fixed)
+    end if
+
+    ! the estimate: the tuple at each instant, a stage's the instant before it
+    allocate(q(unknowns))
+    do k = 1, n
+       do c = 1, ncells
+          q(at_of(instant_moment(k), c) + 1:at_of(instant_moment(k), c) + stride) = tuple(:, c, first + k - 1)
+          if (k < n .and. staged) then
+             do i = 1, s
+                q(at_of(stage_moment(k, i), c) + 1:at_of(stage_moment(k, i), c) + stride) = tuple(:, c, first + k - 1)
+             end do
+          end if
+       end do
+    end do
+
+    call solved(this, rows, unknowns, stride, npts, q)
+
+    do k = depth + 1, n
+       do c = 1, ncells
+          tuple(:, c, first + k - 1) = q(at_of(instant_moment(k), c) + 1:at_of(instant_moment(k), c) + stride)
+       end do
+    end do
+
+  contains
+
+    pure integer function at_of(m, c)
+      integer, intent(in) :: m, c
+      at_of = (m - 1) * width + (c - 1) * stride
+    end function at_of
+
+    ! the moment of vertex v of a step's stage connectivity: 1 the
+    ! instant behind, 2..s+1 the stages, s+2 the instant ahead
+    pure integer function moment_of(v, k)
+      integer, intent(in) :: v, k
+      if (v == 1) then
+         moment_of = instant_moment(k)
+      else if (v == s + 2) then
+         moment_of = instant_moment(k + 1)
+      else
+         moment_of = stage_moment(k, v - 1)
+      end if
+    end function moment_of
+
+  end subroutine solve_block
+
+  !===================================================================!
+  ! The point manifold: one moment, one cell, no rows along any
+  ! coordinate; the equations alone.
+  !===================================================================!
+
+  subroutine solve_point(this, tuple)
+
+    class(discrete_residual), intent(in)    :: this
+    real(dp)                , intent(inout) :: tuple(:,:,:)
+
+    type(residual_operator) :: rows
+    type(stencil) :: relations
+    integer , allocatable :: primary(:)
+    real(dp), allocatable :: q(:)
+    integer :: stride, nf, f
+
+    stride = this % rule % num_components()
+    nf     = this % manifold % num_unknowns
+    allocate(primary(nf))
+    do f = 1, nf
+       primary(f) = this % rule % offset_of_field(f)
+    end do
+    relations = stencil([integer ::], [integer ::], [real(dp) ::], spread(0.0_dp, 1, stride), 'no relation')
+    rows = residual_operator(relations, this % rule, [0], stride, stride, primary, [integer ::], [real(dp) ::])
+    q = tuple(:, 1, 1)
+    call solved(this, rows, stride, stride, 1, q)
+    tuple(:, 1, 1) = q
+
+  end subroutine solve_point
+
+  !===================================================================!
+  ! Newton on one residual_operator: a direct inner solve on a point
+  ! manifold, GMRES preconditioned by block Gauss-Seidel over the
+  ! tuples elsewhere. A solve that does not converge stops the program
+  ! with the solver's description.
+  !===================================================================!
+
+  subroutine solved(this, rows, unknowns, stride, npts, q)
+
+    class(discrete_residual), intent(in)    :: this
+    type(residual_operator) , intent(in)    :: rows
+    integer                 , intent(in)    :: unknowns, stride, npts
+    real(dp)                , intent(inout) :: q(:)
+
+    type(newton)       :: solver
+    type(dense_direct) :: direct
+    type(gmres)        :: krylov
+    type(gauss_seidel) :: sweeps
+    type(solve_result) :: outcome
+    type(typed_field_domain) :: designs
+    type(stored_field) :: design
+    real(dp) :: achieved
+
+    if (this % points % with_space) then
+       sweeps % block_width    = stride
+       sweeps % max_iterations = 2
+       krylov % restart        = 60
+       allocate(krylov % preconditioner, source=sweeps)
+       allocate(solver % inner, source=krylov)
+    else
+       allocate(solver % inner, source=direct)
+    end if
+
+    designs = rows % design_fields()
+    design  = designs % design(spread(0.0_dp, 1, npts))
+    call solver % state(rows, rows % unknown_graph(), rows % unknown_domain(), unknowns, stored_inputs=[design])
+    call solver % solve(spread(0.0_dp, 1, unknowns), q, achieved)
+    outcome = solver % result()
+    if (.not. outcome % converged()) then
+       error stop 'operation_residual: minimize did not converge: ' // outcome % description()
+    end if
+
+  end subroutine solved
+
+  !===================================================================!
+  ! THE FIXED ROWS of a block: every component at the history instants,
+  ! from the tuples already solved; and, at the first or the last
+  ! instant of the manifold, the value each face condition states.
+  ! Invalid input: a face condition whose equation is not one parent
+  ! value minus a function of the position, with coefficient one.
+  !===================================================================!
+
+  subroutine fixed_rows_of(this, first, last, depth, instant_moment, at, tuple, fixed_rows, fixed)
+
+    class(discrete_residual), intent(in)  :: this
+    integer                 , intent(in)  :: first, last, depth, instant_moment(:), at(:)
+    real(dp)                , intent(in)  :: tuple(:,:,:)
+    integer , allocatable   , intent(out) :: fixed_rows(:)
+    real(dp), allocatable   , intent(out) :: fixed(:)
+
+    integer :: stride, ncells, ninst, count, k, c, i, j, f, m, e, instant, comp
+    real(dp) :: given, slope
+
+    stride = this % rule % num_components()
+    ncells = this % points % num_cells()
+    ninst  = this % points % num_instants()
+
+    count = depth * ncells * stride
+    do j = 1, size(this % condition)
+       if (.not. this % condition(j) % manifold % is_face()) cycle
+       instant = face_instant(this, this % condition(j) % manifold % face_time)
+       if (instant < first .or. instant > last) cycle
+       count = count + size(this % condition(j) % equation) * ncells
+    end do
+    allocate(fixed_rows(count), fixed(count))
+    e = 0
+
+    do k = 1, depth
+       m = instant_moment(k)
+       do c = 1, ncells
+          do i = 1, stride
+             e = e + 1
+             fixed_rows(e) = at((m - 1) * ncells + c) + i
+             fixed(e)      = tuple(i, c, first + k - 1)
+          end do
+       end do
+    end do
+
+    do j = 1, size(this % condition)
+       if (.not. this % condition(j) % manifold % is_face()) cycle
+       instant = face_instant(this, this % condition(j) % manifold % face_time)
+       if (instant < first .or. instant > last) cycle
+       m = instant_moment(instant - first + 1)
+       do i = 1, size(this % condition(j) % equation)
+          call stated_value(this % condition(j) % equation(i), f, comp)
+          do c = 1, ncells
+             call affine_value(this % condition(j) % equation(i), comp, &
+                  & this % points % position(this % points % point_of(instant, c)), given, slope)
+             if (abs(slope - 1.0_dp) > 1.0e-12_dp) then
+                error stop 'operation_residual: a condition on a face is stated as the value of an unknown &
+                     &minus a function of the position'
+             end if
+             e = e + 1
+             fixed_rows(e) = at((m - 1) * ncells + c) + this % rule % offset_of_field(f) + 1
+             fixed(e)      = given
+          end do
+       end do
+    end do
+
+  end subroutine fixed_rows_of
+
+  ! the instant of a face at a time of the interval
+  integer function face_instant(this, time)
+    class(discrete_residual), intent(in) :: this
+    real(dp)                , intent(in) :: time
+    integer :: k
+    face_instant = 0
+    do k = 1, this % points % num_instants()
+       if (abs(this % points % instant(k) - time) <= 1.0e-12_dp * max(1.0_dp, abs(time))) face_instant = k
+    end do
+    if (face_instant == 0) then
+       error stop 'operation_residual: a face condition is stated at a time that is not an instant'
+    end if
+  end function face_instant
+
+  !===================================================================!
+  ! The one parent unknown a face equation reads, at order zero: the
+  ! field f and its component in the equation's own tuple. Invalid
+  ! input: an equation reading no component, several, or a
+  ! derivative.
+  !===================================================================!
+
+  subroutine stated_value(equation, f, comp)
+    type(continuous_field), intent(in)  :: equation
+    integer               , intent(out) :: f, comp
+    type(expression) :: g
+    integer, allocatable :: reads(:)
+    integer :: k
+    g = equation % graph(1)
+    call g % read_components(reads)
+    if (size(reads) /= 1) then
+       error stop 'operation_residual: a condition on a face states the value of one unknown'
+    end if
+    comp = reads(1)
+    f = 0
+    do k = 1, g % num_fields() - g % num_multipliers()
+       if (g % offset_of_field(k) == comp) f = k
+    end do
+    if (f == 0) then
+       error stop 'operation_residual: a condition on a face states the value of an unknown, not a derivative'
+    end if
+  end subroutine stated_value
+
+  !===================================================================!
+  ! The equation g(u) at a position, evaluated at u = 0 and u = 1 on
+  ! the component named: given = -g(0), slope = g(1) - g(0), so that a
+  ! condition u - h(x) = 0 yields given = h(x), slope = 1.
+  !===================================================================!
+
+  subroutine affine_value(equation, comp, position, given, slope)
+    type(continuous_field), intent(in)  :: equation
+    integer               , intent(in)  :: comp
+    real(dp)              , intent(in)  :: position(:)
+    real(dp)              , intent(out) :: given, slope
+    type(expression) :: g
+    type(derivative_terms), allocatable :: q(:)
+    type(derivative_terms) :: nu
+    real(dp) :: at_zero_value, at_one_value
+    g  = equation % graph(1)
+    nu = derivative_terms(0.0_dp, 0)
+    allocate(q(0:g % num_components() - 1), source=nu)
+    at_zero_value = mixed_partial(g % at_instant(q, nu, position))
+    q(comp) = derivative_terms(1.0_dp, 0)
+    at_one_value  = mixed_partial(g % at_instant(q, nu, position))
+    given = -at_zero_value
+    slope = at_one_value - at_zero_value
+  end subroutine affine_value
+
+  !===================================================================!
+  ! THE GAUGE ROWS: for each condition on the time factor, the
+  ! integral of one parent unknown over the region, at every moment
+  ! after the history: the sum over the cells of the volume times the
+  ! unknown's value, in place of the unknown's own row at the first
+  ! cell. Invalid input: a condition on the time factor that is not
+  ! such an integral.
+  !===================================================================!
+
+  subroutine gauge_rows_of(this, nm, history_last, at, primary, rows, columns, weights)
+
+    class(discrete_residual), intent(in)  :: this
+    integer                 , intent(in)  :: nm, history_last, at(:), primary(:)
+    integer , allocatable   , intent(out) :: rows(:), columns(:)
+    real(dp), allocatable   , intent(out) :: weights(:)
+
+    integer :: ncells, count, j, i, m, c, e, f
+
+    ncells = this % points % num_cells()
+    count  = 0
+    do j = 1, size(this % condition)
+       if (.not. this % condition(j) % manifold % is_time_factor()) cycle
+       count = count + size(this % condition(j) % equation) * (nm - history_last) * ncells
+    end do
+    allocate(rows(count), columns(count), weights(count))
+    e = 0
+    do j = 1, size(this % condition)
+       if (.not. this % condition(j) % manifold % is_time_factor()) cycle
+       do i = 1, size(this % condition(j) % equation)
+          associate (g => this % condition(j) % equation(i))
+            if (.not. (g % is_integral() .and. g % is_unknown())) then
+               error stop 'operation_residual: a condition on the time factor is the integral of one &
+                    &unknown over the region'
+            end if
+            f = g % index(1)
+          end associate
+          do m = history_last + 1, nm
+             do c = 1, ncells
+                e = e + 1
+                rows(e)    = at((m - 1) * ncells + 1) + primary(f) + 1
+                columns(e) = at((m - 1) * ncells + c) + this % rule % offset_of_field(f) + 1
+                weights(e) = this % points % volume(c)
+             end do
+          end do
+       end do
+    end do
+
+  end subroutine gauge_rows_of
 
 end module operation_residual

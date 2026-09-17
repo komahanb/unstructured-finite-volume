@@ -106,12 +106,15 @@ module view_paraview_writer
   use field_stored   , only : stored_field
   use view_mesh      , only : mesh, require
   use relation_binary, only : ragged
+  use operation_field, only : discrete_field
+  use operation_manifold, only : discrete_manifold
 
   implicit none
 
   private
   public :: paraview_writer
   public :: polygon_cell, hypercube_cell
+  public :: paraview
 
   ! the writer's conventions, since gmsh defines no such elements
   integer, parameter :: polygon_cell   = -1  ! an agglomerated polygon
@@ -157,6 +160,57 @@ module view_paraview_writer
   end interface paraview_writer
 
 contains
+
+  !===================================================================!
+  ! A DISCRETE FIELD ON A MANIFOLD, one file per instant: the cells
+  ! of the mesh drawn from their corners, every component a cell
+  ! field named as the field names it, <name>_<instant>.vtu. Invalid
+  ! input: a field on a manifold without a region, or on a mesh built
+  ! without its corners.
+  !===================================================================!
+
+  impure subroutine paraview(field, name)
+
+    type(discrete_field), intent(in) :: field
+    character(len=*)    , intent(in) :: name
+
+    type(paraview_writer) :: writer
+    type(string), allocatable :: labels(:)
+    real(dp)    , allocatable :: value(:,:)
+    character(len=250) :: filename
+    integer :: k, c, f, ncells
+
+    select type (points => field % on)
+    type is (discrete_manifold)
+       if (.not. points % with_space) then
+          error stop 'view_paraview_writer: a field is drawn on the cells of a region; the manifold has none'
+       end if
+       if (.not. points % cells % has_corners()) then
+          error stop 'view_paraview_writer: the cells are drawn from their corners; the mesh keeps none'
+       end if
+       associate (m => points % cells)
+         writer = paraview_writer(m, m % corners(1:m % dimension, :), m % cell_corners, &
+              & m % num_cell_corners, m % cell_kinds)
+       end associate
+       ncells = points % num_cells()
+       allocate(labels(field % num_components()), value(ncells, field % num_components()))
+       do f = 1, field % num_components()
+          labels(f) = string(trim(field % name(f)))
+       end do
+       do k = 1, points % num_instants()
+          do c = 1, ncells
+             do f = 1, field % num_components()
+                value(c, f) = field % value(points % point_of(k, c), f)
+             end do
+          end do
+          write(filename,'(a,a,i4.4,a)') trim(name), '_', k, '.vtu'
+          call writer % write(trim(filename), value, labels)
+       end do
+    class default
+       error stop 'view_paraview_writer: a field is drawn on a discrete manifold'
+    end select
+
+  end subroutine paraview
 
   !===================================================================!
   ! The paraview cell type of a gmsh element number, read from the

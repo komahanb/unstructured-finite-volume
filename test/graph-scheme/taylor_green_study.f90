@@ -5,10 +5,14 @@
 ! three time families and the instants their blocks begin at read
 ! from the command line, and the convergence of every solve printed.
 !
-!      taylor_green_study [T] [instants] [degree] [dirk] [bdf] [adams] [from2] [from3] [mesh]
+!      taylor_green_study [T] [instants] [degree] [dirk] [bdf] [adams] [from2] [from3] [mesh] [length]
 !
 ! Every argument has the value of taylor_green_vortex.f90 when
-! absent: 1.0 10 2 2 2 2 5 8 box.msh.
+! absent: 1.0 10 2 2 2 2 5 8 box.msh 0. The last, when positive, is
+! the number of instants per Adams block: the Adams family is
+! repeated in blocks of that length from the third block's first
+! instant to the end, so that a long duration is solved block by
+! block rather than as one system.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -22,7 +26,7 @@ program taylor_green_study
   use operation_field            , only : continuous_field, discrete_field, integral, sin, cos, exp, &
        &                                  operator(+), operator(-), operator(*), operator(/), operator(**)
   use operation_residual         , only : continuous_residual, discrete_residual, operator(+), operator(*)
-  use operation_family           , only : dirk, bdf, adams, chain
+  use operation_family           , only : family, dirk, bdf, adams, chain
   use operation_finite_difference, only : finite_difference
 
   implicit none
@@ -31,7 +35,11 @@ program taylor_green_study
 
   real(dp) :: T_final = 1.0_dp
   integer  :: num_instants = 10, degree = 2, dirk_order = 2, bdf_order = 2, adams_order = 2, from2 = 5, from3 = 8
+  integer  :: length = 0
   character(len=256) :: mesh_file = 'box.msh'
+  type(family), allocatable :: schemes(:)
+  integer     , allocatable :: from(:)
+  integer :: k, num_adams
 
   type(continuous_manifold) :: omega, domega, tau
   type(discrete_manifold)   :: omega_h
@@ -44,9 +52,21 @@ program taylor_green_study
 
   call arguments()
 
-  print '(a,f6.2,a,i0,a,i0,a,i0,a,i0,a,i0,a,i0,a,i0,a,a)', 'study  T = ', T_final, '  instants = ', num_instants, &
+  ! the chain: dirk, bdf, then adams once to the end or in blocks of
+  ! the length given
+  num_adams = 1
+  if (length > 0) num_adams = max(1, (num_instants - from3) / length + 1)
+  allocate(schemes(2 + num_adams), from(2 + num_adams))
+  schemes(1) = dirk(dirk_order); from(1) = 1
+  schemes(2) = bdf(bdf_order);   from(2) = from2
+  do k = 1, num_adams
+     schemes(2 + k) = adams(adams_order)
+     from(2 + k)    = from3 + (k - 1) * length
+  end do
+
+  print '(a,f6.2,a,i0,a,i0,a,i0,a,i0,a,i0,a,a,a,*(i0,1x))', 'study  T = ', T_final, '  instants = ', num_instants, &
        & '  finite differences of degree ', degree, '  chain dirk(', dirk_order, ') bdf(', bdf_order, &
-       & ') adams(', adams_order, ') from 1, ', from2, ', ', from3, '  mesh ', trim(mesh_file)
+       & ') adams(', adams_order, ')  mesh ', trim(mesh_file), '  blocks from ', from
 
   omega   = continuous_manifold(time=interval(0.0_dp, T_final), space=region('box.geo'))
   domega  = omega % boundary(time=0.0_dp)
@@ -80,8 +100,7 @@ program taylor_green_study
   gauge = continuous_residual(tau,    [integral(p, over=omega % space())])
   L     = r + lambda*g + mu*gauge
 
-  L_h = L % discretize(omega_h, time=chain([dirk(dirk_order), bdf(bdf_order), adams(adams_order)], &
-       &                                   from=[1, from2, from3]), space=finite_difference(degree=degree))
+  L_h = L % discretize(omega_h, time=chain(schemes, from=from), space=finite_difference(degree=degree))
 
   call set_verbosity(1)
   estimate = exact % discretize(omega_h)
@@ -109,6 +128,7 @@ contains
     if (n >= 7) then; call get_command_argument(7, item); read(item, *) from2;        end if
     if (n >= 8) then; call get_command_argument(8, item); read(item, *) from3;        end if
     if (n >= 9) then; call get_command_argument(9, mesh_file);                        end if
+    if (n >= 10) then; call get_command_argument(10, item); read(item, *) length;     end if
   end subroutine arguments
 
 end program taylor_green_study

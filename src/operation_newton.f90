@@ -101,6 +101,10 @@ module operation_newton
   ! controls, one level down, passed one linear system per step.
   !===================================================================!
 
+  ! how many halvings of a Newton step the line search tries before
+  ! it takes the last trial
+  integer, parameter :: max_halvings = 8
+
   type, extends(minimizer) :: newton
 
      ! Whether the tangent is taken explicit where the statement
@@ -184,8 +188,9 @@ contains
     real(dp), allocatable :: weights(:)
     logical :: tangent_defined
     real(dp), allocatable :: residual(:), y(:), dq(:)
-    real(dp) :: linear_achieved, initial
-    integer :: it
+    real(dp) :: linear_achieved, initial, factor, previous
+    real(dp), allocatable :: trial(:)
+    integer :: it, halving
     type(solve_result) :: outcome
 
     call this % record_event(newton_solves)
@@ -265,14 +270,26 @@ contains
           end if
        end if
 
-       x = x + dq
-
+       ! THE STEP IS DAMPED where the full step does not decrease the
+       ! residual: the factor is halved until |F(x + factor dq)| is
+       ! below (1 - 1e-4 factor) |F(x)|, the Armijo condition, or the
+       ! halvings are exhausted, after which the last trial is taken.
        ! The reported residual and the next tangent use the same
        ! updated state. The count is the number of completed steps.
-       call this % evaluate(x, y, inputs)
-       residual = y - rhs
-       achieved = this % norm(residual)
-       if (verbosity >= 1 .and. this_image() == 1) call reported(this, it, achieved, initial, dq, tangent_defined, outcome)
+       previous = achieved
+       factor   = 1.0_dp
+       do halving = 0, max_halvings
+          trial = x + factor * dq
+          call this % evaluate(trial, y, inputs)
+          residual = y - rhs
+          achieved = this % norm(residual)
+          if (achieved <= (1.0_dp - 1.0e-4_dp * factor) * previous) exit
+          if (halving == max_halvings) exit
+          factor = 0.5_dp * factor
+       end do
+       x  = trial
+       dq = factor * dq
+       if (verbosity >= 1 .and. this_image() == 1) call reported(this, it, achieved, initial, dq, factor, tangent_defined, outcome)
        if (this % terminated(achieved, it)) return
 
     end do
@@ -281,7 +298,8 @@ contains
 
   !===================================================================!
   ! One line per Newton step at verbosity one: the residual after the
-  ! step, absolute and relative to the first, the step's norm, how
+  ! step, absolute and relative to the first, the step's norm and the
+  ! factor the line search took it by, how
   ! the tangent was obtained (formed as the explicit stencil at every
   ! step, or applied by directional derivatives), the Halley
   ! correction's order or its absence, and the inner solve's restart
@@ -289,11 +307,11 @@ contains
   ! outcome.
   !===================================================================!
 
-  subroutine reported(this, it, achieved, initial, dq, tangent_defined, outcome)
+  subroutine reported(this, it, achieved, initial, dq, factor, tangent_defined, outcome)
 
     class(newton)     , intent(in) :: this
     integer           , intent(in) :: it
-    real(dp)          , intent(in) :: achieved, initial, dq(:)
+    real(dp)          , intent(in) :: achieved, initial, dq(:), factor
     logical           , intent(in) :: tangent_defined
     type(solve_result), intent(in) :: outcome
 
@@ -310,8 +328,9 @@ contains
     if (initial > 0.0_dp) relative = achieved / initial
     linear_relative = 0.0_dp
     if (outcome % initial_residual > 0.0_dp) linear_relative = outcome % residual / outcome % initial_residual
-    print '(a,i3,a,es12.4,a,es12.4,a,es12.4,a,a,a,a)', 'newton  step ', it, '  |F| = ', achieved, &
-         & '  |F|/|F0| = ', relative, '  |dq| = ', this % norm(dq), '  ', trim(tangent), '  ', trim(halley)
+    print '(a,i3,a,es12.4,a,es12.4,a,es12.4,a,f7.4,a,a,a,a)', 'newton  step ', it, '  |F| = ', achieved, &
+         & '  |F|/|F0| = ', relative, '  |dq| = ', this % norm(dq), '  factor ', factor, '  ', trim(tangent), &
+         & '  ', trim(halley)
     print '(a,i4,a,es12.4,a,es12.4,a,a)', '        linear solve: restart cycles ', outcome % iterations, &
          & '  |r| = ', outcome % residual, '  |r|/|r0| = ', linear_relative, '  ', trim(outcome % description())
 

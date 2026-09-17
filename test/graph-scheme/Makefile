@@ -19,17 +19,17 @@ LDFLAGS += -L$(LIB)/ $(LIB)/libufvm.a
 
 all: dirk_coefficients taylor_green_vortex taylor_green_study run
 
-dirk_coefficients: dirk_coefficients.o
+dirk_coefficients: dirk_coefficients.o $(LIB)/libufvm.a
 	$(F90) $< -o $@ $(LDFLAGS)
 
-taylor_green_vortex: taylor_green_vortex.o
+taylor_green_vortex: taylor_green_vortex.o $(LIB)/libufvm.a
 	$(F90) $< -o $@ $(LDFLAGS)
 
 # the same statement under chosen parameters, convergence printed
-taylor_green_study: taylor_green_study.o
+taylor_green_study: taylor_green_study.o $(LIB)/libufvm.a
 	$(F90) $< -o $@ $(LDFLAGS)
 
-run: test.o
+run: test.o $(LIB)/libufvm.a
 	$(F90) test.o -o $@ $(LDFLAGS)
 
 # the periodic box, meshed by gmsh from its geometry

@@ -52,6 +52,7 @@ program taylor_green_vortex
   use operation_family           , only : dirk, bdf, adams, chain
   use operation_finite_difference, only : finite_difference
   use view_paraview_writer       , only : paraview
+  use view_expression            , only : expression_view
 
   implicit none
 
@@ -66,6 +67,8 @@ program taylor_green_vortex
 
   type(continuous_residual) :: r, g, gauge, L
   type(discrete_residual)   :: L_h
+  type(expression_view)     :: view
+  integer                   :: k, i
 
   ! Omega = [0, T] x B, B the region of box.geo; dOmega = {0} x B;
   ! tau = [0, T]; Omega_h = {t_0..t_n} x C, C the cells of box.msh
@@ -117,6 +120,21 @@ program taylor_green_vortex
   ! exact on polynomials of degree 2
   L_h = L % discretize(omega_h, time=chain([dirk(2), bdf(2), adams(2)], from=[1, 5, 8]), &
        &                        space=finite_difference(degree=2))
+
+  ! the abstract syntax trees: each equation of each term of L as a
+  ! formula, q_j the j-th unknown of the term's manifold with its
+  ! derivatives as suffixes (q1x = du/dx, q1xx = d^2u/dx^2); then the
+  ! rule of L_h, the sum over the equations of Omega weighted by the
+  ! row multipliers lambda_j, as a formula and as a tree
+  do k = 1, L % num_terms()
+     do i = 1, size(L % term(k) % equation)
+        view = expression_view(L % term(k) % equation(i) % graph(1))
+        print '(a, i0, a, i0, a, a)', 'L term ', k, ' equation ', i, ': ', view % formula()
+     end do
+  end do
+  view = expression_view(L_h % rule)
+  print '(a, a)', 'L_h rule: ', view % formula()
+  print '(a)', view % tree()
 
   ! (u, v, p, lambda, mu)_h = the zero of L_h, from the initial
   ! estimate (u*, v*, p*) restricted to Omega_h and lambda = mu = 0

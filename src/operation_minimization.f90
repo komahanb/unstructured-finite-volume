@@ -48,6 +48,7 @@ module operation_minimization
   use field_stored     , only : stored_field, typed_field_domain
   use operation_reduction , only : reduction, REDUCE_SUM, REDUCE_NORM
   use operation_traversal      , only : traversal, TRAVERSAL_COLOURING
+  use operation_stencil        , only : stencil
   use util_tally               , only : tally
 
   implicit none
@@ -1055,6 +1056,14 @@ contains
             & ', block_width = ', w
        error stop trim(message)
     end if
+
+    ! an explicit operator states its diagonal blocks on its edges;
+    ! any other is read by coloured indicator products
+    select type (a => this % action)
+    type is (stencil)
+       call a % diagonal_blocks(w, d)
+       return
+    end select
 
     allocate(d(w, w, nb), indicator(n))
     d = 0.0_dp

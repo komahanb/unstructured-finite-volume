@@ -27,6 +27,7 @@ module operation_gauss_seidel
   use iso_fortran_env , only : int64
   use util_precision  , only : dp
   use operation_minimization, only : minimizer
+  use operation_stencil     , only : stencil
   use util_factorisation    , only : dense_factorisation
   use util_tally, only : linear_solves, factorisations
 
@@ -115,16 +116,31 @@ contains
     real(dp), intent(inout) :: x(:)
     real(dp), intent(out)   :: achieved
 
-    real(dp), allocatable :: d(:,:,:), r(:), block_solution(:)
+    real(dp), allocatable :: d(:,:,:), r(:), block_solution(:), dx(:)
     type(dense_factorisation), allocatable :: block(:)
-    integer , allocatable :: colours(:)
-    integer :: it, col, b, w, nb, i
+    integer , allocatable :: colours(:), ordered(:), first(:)
+    integer :: it, col, b, w, nb, i, num_colours
+    logical :: explicit
     character(len=250) :: message
 
     call this % record_event(linear_solves)
 
+    ! an explicit operator keeps the residual current by the product
+    ! of the columns each colour class changes; any other recomputes
+    ! it by a full product before each class
+    explicit = .false.
+    select type (a => this % action)
+    type is (stencil)
+       explicit = .true.
+    end select
+
     call this % initialize_residual_history()
-    call this % imbalance(rhs, x, r)
+    ! the residual at the zero state is the right-hand side itself
+    if (all(x == 0.0_dp)) then
+       r = rhs
+    else
+       call this % imbalance(rhs, x, r)
+    end if
     achieved = this % norm(r)
     if (this % terminated(achieved, 0)) return
 
@@ -171,31 +187,94 @@ contains
        if (allocated(this % stored_block)) allocate(block, source=this % stored_block)
 
     end if
+    num_colours = maxval(colours)
+    allocate(block_solution(w))
+    if (explicit) then
+       allocate(dx(size(x)), source=0.0_dp)
+       call columns_by_colour(colours, w, num_colours, ordered, first)
+    end if
+
     do it = 1, this % max_iterations
 
-       do col = 1, maxval(colours)
-          if (col > 1) then
+       do col = 1, num_colours
+          if (col > 1 .and. .not. explicit) then
              call this % imbalance(rhs, x, r)
           end if
           do b = 1, nb
              if (colours(b) /= col) cycle
              if (w == 1) then
-                x(b) = x(b) + this % omega * r(b) / d(1, 1, b)
+                block_solution(1) = r(b) / d(1, 1, b)
              else
-                call block(b) % substitute(r((b - 1) * w + 1:b * w), block_solution, transposed=.false.)
-                do i = 1, w
-                   x((b - 1) * w + i) = x((b - 1) * w + i) + this % omega * block_solution(i)
-                end do
+                call block(b) % substituted(r((b - 1) * w + 1:b * w), block_solution, transposed=.false.)
              end if
+             do i = 1, w
+                x((b - 1) * w + i) = x((b - 1) * w + i) + this % omega * block_solution(i)
+                if (explicit) dx((b - 1) * w + i) = this % omega * block_solution(i)
+             end do
           end do
+          if (explicit) then
+             associate (columns => ordered(first(col):first(col + 1) - 1))
+               call subtracted_columns(this, columns, dx, r)
+               dx(columns) = 0.0_dp
+             end associate
+          end if
        end do
 
-       call this % imbalance(rhs, x, r)
+       if (.not. explicit) call this % imbalance(rhs, x, r)
        achieved = this % norm(r)
        if (this % terminated(achieved, it)) return
 
     end do
 
   end subroutine solve
+
+  ! the unknowns ordered by the colour of their block: those of colour
+  ! col are ordered(first(col):first(col+1)-1)
+  pure subroutine columns_by_colour(colours, w, num_colours, ordered, first)
+
+    integer, intent(in)  :: colours(:), w, num_colours
+    integer, allocatable, intent(out) :: ordered(:), first(:)
+
+    integer, allocatable :: at(:)
+    integer :: b, i, col
+
+    allocate(first(num_colours + 1), source=0)
+    do b = 1, size(colours)
+       first(colours(b) + 1) = first(colours(b) + 1) + w
+    end do
+    first(1) = 1
+    do col = 1, num_colours
+       first(col + 1) = first(col + 1) + first(col)
+    end do
+    at = first(1:num_colours)
+    allocate(ordered(size(colours) * w))
+    do b = 1, size(colours)
+       col = colours(b)
+       do i = 1, w
+          ordered(at(col)) = (b - 1) * w + i
+          at(col) = at(col) + 1
+       end do
+    end do
+
+  end subroutine columns_by_colour
+
+  ! r = r - A(:, columns) dx(columns), on the explicit operator
+  subroutine subtracted_columns(this, columns, dx, r)
+
+    class(gauss_seidel), intent(in)    :: this
+    integer            , intent(in)    :: columns(:)
+    real(dp)           , intent(in)    :: dx(:)
+    real(dp)           , intent(inout) :: r(:)
+
+    real(dp), allocatable :: y(:)
+
+    allocate(y(size(r)), source=0.0_dp)
+    select type (a => this % action)
+    type is (stencil)
+       call a % column_product(columns, dx, y)
+    end select
+    r = r - y
+
+  end subroutine subtracted_columns
 
 end module operation_gauss_seidel

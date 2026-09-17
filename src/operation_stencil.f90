@@ -72,6 +72,8 @@ module operation_stencil
      procedure :: reverse       => stencil_reverse
      procedure :: restricted    => stencil_restricted
      procedure :: partial_action => stencil_partial_action
+     procedure :: column_product
+     procedure :: diagonal_blocks
 
   end type stencil
 
@@ -455,6 +457,90 @@ contains
     end subroutine accumulate_rows
 
   end subroutine accumulate_edges
+
+  !===================================================================!
+  ! THE PRODUCT OF SOME COLUMNS with the values at those columns,
+  ! added to y: y = y + sum over c in columns of A(:, c) q(c). A
+  ! relaxation that changes the unknowns of one colour class updates
+  ! its residual through this, at the cost of the edges leaving those
+  ! columns rather than of a product over every edge.
+  !===================================================================!
+
+  subroutine column_product(this, columns, q, y)
+
+    class(stencil), intent(in)    :: this
+    integer       , intent(in)    :: columns(:)
+    real(dp)      , intent(in)    :: q(:)
+    real(dp)      , intent(inout) :: y(:)
+
+    real(dp), pointer :: w(:)
+
+    w => this % weights % real_values()
+    if (.not. associated(w)) return
+
+    call this % pattern % read_outgoing(accumulate_columns)
+
+  contains
+
+    subroutine accumulate_columns(offsets, indices, targets)
+
+      integer, intent(in) :: offsets(:), indices(:), targets(:)
+      integer :: k, c, p, e
+      real(dp) :: qc
+
+      do k = 1, size(columns)
+         c  = columns(k)
+         qc = q(c)
+         if (qc == 0.0_dp) cycle
+         do p = offsets(c), offsets(c + 1) - 1
+            e = indices(p)
+            y(targets(e)) = y(targets(e)) + w(e) * qc
+         end do
+      end do
+
+    end subroutine accumulate_columns
+
+  end subroutine column_product
+
+  !===================================================================!
+  ! THE DIAGONAL BLOCKS of a stated width, d(i, k, b) = A(row, column)
+  ! for row = (b-1) width + i and column = (b-1) width + k, read from
+  ! the edges whose two ends lie in one block. A vertex count that is
+  ! not a whole number of blocks is invalid input.
+  !===================================================================!
+
+  subroutine diagonal_blocks(this, width, d)
+
+    class(stencil), intent(in)  :: this
+    integer       , intent(in)  :: width
+    real(dp), allocatable, intent(out) :: d(:,:,:)
+
+    real(dp), pointer :: w(:)
+    integer :: n, nb, e, row, column, b
+    character(len=250) :: message
+
+    n  = this % pattern % num_vertices()
+    nb = n / width
+    if (nb * width /= n) then
+       write(message,'(a,i0,a,i0)') 'stencil: the diagonal blocks require a whole number of &
+            &blocks; vertices = ', n, ', width = ', width
+       error stop trim(message)
+    end if
+    allocate(d(width, width, nb), source=0.0_dp)
+
+    w => this % weights % real_values()
+    if (.not. associated(w)) return
+
+    do e = 1, this % pattern % num_edges()
+       row    = this % pattern % edge_head(e)
+       column = this % pattern % edge_tail(e)
+       b      = (row - 1) / width + 1
+       if ((column - 1) / width + 1 /= b) cycle
+       d(row - (b - 1) * width, column - (b - 1) * width, b) = &
+            & d(row - (b - 1) * width, column - (b - 1) * width, b) + w(e)
+    end do
+
+  end subroutine diagonal_blocks
 
   !===================================================================!
   ! A stencil is linear, so it is its own tangent: the first partial

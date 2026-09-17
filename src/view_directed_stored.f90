@@ -198,6 +198,7 @@ module view_directed_stored
      procedure :: outgoing_vertices
      procedure :: incoming_vertices
      procedure :: read_incoming
+     procedure :: read_outgoing
 
      !----------------------------------------------------------------!
      ! How a part relates to the whole: ONE accessor, returning the
@@ -997,6 +998,28 @@ contains
     end if
 
   end subroutine read_incoming
+
+  !===================================================================!
+  ! The outgoing compressed incidence, the transpose read: for vertex
+  ! v, indices(offsets(v):offsets(v+1)-1) lists the edges leaving it,
+  ! and targets(e) is edge e's head in the current orientation. The
+  ! reader has the same form as the incoming one.
+  !===================================================================!
+
+  subroutine read_outgoing(this, reader)
+
+    class(stored_directed_graph), intent(in) :: this
+    procedure(incoming_reader) :: reader
+
+    if (.not. allocated(this % xout)) then
+       call reader([1], [integer ::], [integer ::])
+    else if (this % reversed) then
+       call reader(this % xin, this % ein, this % tail)
+    else
+       call reader(this % xout, this % eout, this % head)
+    end if
+
+  end subroutine read_outgoing
 
   !===================================================================!
   ! The heads of the outgoing edges, and the tails of the incoming

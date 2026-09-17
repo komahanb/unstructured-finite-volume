@@ -18,9 +18,13 @@
 ! norm. This file states the iteration and nothing else.
 !
 ! A preconditioner, when stored, is a minimizer stated on the same
-! operator and applied to every direction the operator produces, so
-! the basis spans the Krylov directions of M^-1 A; the residual the
-! restarts measure is the operator's own.
+! operator and applied on the right: each basis direction is
+! preconditioned before the operator acts on it, so the basis spans
+! the Krylov directions of A M^-1, the quantity minimised is the
+! residual of the equations themselves, and the candidate is
+! x + M^-1 (the combination of the basis). A preconditioner applied
+! on the left minimises M^-1 r instead, whose reduction the restarts
+! cannot read as the residual's own.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -232,14 +236,12 @@ contains
 
     do outer = 1, this % max_iterations
 
-       ! the basis begins from the preconditioned residual
+       ! THE PRECONDITIONING IS ON THE RIGHT: the basis spans the
+       ! Krylov space of A M^-1 from the residual itself, so the
+       ! minimised quantity |s(j+1)| is the residual of the equations,
+       ! and the candidate is x + M^-1 (sum of y_i basis_i).
        unpreconditioned = achieved
-       call preconditioned(this, r, z, direction_admissible)
-       if (.not. direction_admissible) then
-          call this % record_result(achieved, outer - 1, SOLVE_INNER_FAILED)
-          return
-       end if
-       beta = this % norm(z)
+       beta = achieved
        if (.not. ieee_is_finite(beta)) then
           call this % record_result(achieved, outer - 1, SOLVE_INNER_FAILED)
           return
@@ -252,7 +254,7 @@ contains
        h  = 0.0_dp
        s  = 0.0_dp
        s(1) = beta
-       basis(:, 1) = z / beta
+       basis(:, 1) = r / beta
        breakdown = .false.
        invariant = .false.
        k = 0
@@ -263,13 +265,13 @@ contains
           ! The unrotated subdiagonal is retained separately: the
           ! rotations overwrite its entry, and both the next basis
           ! vector and the breakdown test need the unrotated value.
-          call this % matvec(basis(:, j), z)
-          call preconditioned(this, z, w, direction_admissible)
+          call preconditioned(this, basis(:, j), z, direction_admissible)
           if (.not. direction_admissible) then
              call this % record_result(unpreconditioned, outer - 1, SOLVE_INNER_FAILED)
              achieved = unpreconditioned
              return
           end if
+          call this % matvec(z, w)
           do i = 1, j
              h(i, j) = this % inner_product(w, basis(:, i))
              w = w - h(i, j) * basis(:, i)
@@ -304,10 +306,9 @@ contains
           s(j)     =  cs(j) * s(j)
 
           k = j
-          ! This estimate selects when to form a candidate. Scale its
-          ! reduction by the true residual at the start of this restart;
-          ! its acceptance below always measures rhs - A x directly.
-          achieved = (abs(s(j + 1)) / beta) * unpreconditioned
+          ! The residual of the candidate this basis expresses; its
+          ! acceptance below measures rhs - A x directly.
+          achieved = abs(s(j + 1))
           if (this % converged(achieved)) exit
           if (subdiag <= tiny(1.0_dp)) exit
 
@@ -322,10 +323,18 @@ contains
           end do
           y(i) = y(i) / h(i, i)
        end do
+       z = 0.0_dp
        do i = 1, k
-          x = x + y(i) * basis(:, i)
+          z = z + y(i) * basis(:, i)
        end do
        deallocate(y)
+       call preconditioned(this, z, w, direction_admissible)
+       if (.not. direction_admissible) then
+          call this % record_result(unpreconditioned, outer - 1, SOLVE_INNER_FAILED)
+          achieved = unpreconditioned
+          return
+       end if
+       x = x + w
 
        call this % imbalance(rhs, x, r)
        achieved = this % norm(r)

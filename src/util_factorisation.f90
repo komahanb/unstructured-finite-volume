@@ -43,6 +43,7 @@ module util_factorisation
 
      procedure :: factorise
      procedure :: substitute
+     procedure :: substituted
      procedure :: order
      procedure :: singular
 
@@ -125,6 +126,24 @@ contains
     real(dp), allocatable     , intent(out) :: x(:)
     logical                   , intent(in)  :: transposed
 
+    allocate(x(size(b)))
+    call this % substituted(b, x, transposed)
+
+  end subroutine substitute
+
+  !===================================================================!
+  ! The same substitution into a vector already of the order of the
+  ! matrix: a relaxation that solves one block per unknown block many
+  ! times allocates nothing per solve.
+  !===================================================================!
+
+  subroutine substituted(this, b, x, transposed)
+
+    class(dense_factorisation), intent(in)  :: this
+    real(dp)                  , intent(in)  :: b(:)
+    real(dp)                  , intent(out) :: x(:)
+    logical                   , intent(in)  :: transposed
+
     real(dp) :: stored
     integer  :: n, i, j, k
     character(len=150) :: message
@@ -138,9 +157,9 @@ contains
        error stop 'util_factorisation: substitute requires a non-singular factorisation, but &
             &this factorisation is singular'
     end if
-    if (size(b) /= n) then
-       write(message,'(a,i0,a,i0)') 'util_factorisation: substitute requires the right side to &
-            &match the matrix; size(b) = ', size(b), ', n = ', n
+    if (size(b) /= n .or. size(x) /= n) then
+       write(message,'(a,i0,a,i0,a,i0)') 'util_factorisation: substitute requires the right side and &
+            &the solution to match the matrix; size(b) = ', size(b), ', size(x) = ', size(x), ', n = ', n
        error stop trim(message)
     end if
 
@@ -189,7 +208,7 @@ contains
 
     end if
 
-  end subroutine substitute
+  end subroutine substituted
 
   pure integer function order(this) result(n)
 

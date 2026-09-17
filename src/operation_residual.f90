@@ -980,22 +980,28 @@ contains
     integer , allocatable, intent(out) :: rows(:), columns(:)
     real(dp), allocatable, intent(out) :: weights(:)
     logical              , intent(out) :: tangent_defined
-    type(stored_field) :: state, direction
-    type(stored_field), allocatable :: point_data(:)
-    type(typed_field_domain) :: points
-    class(field), allocatable :: out
-    real(dp), allocatable :: x(:), w(:), v(:), column(:)
+    type(stored_field) :: state
+    real(dp), allocatable :: x(:), w(:), column(:), xs(:), nu(:), g(:)
     integer , allocatable :: r(:), c(:), reads(:)
     logical , allocatable :: is_fixed(:)
-    integer :: e, d, p, npts, n, num_triples, count, j, k
+    integer :: e, d, p, npts, n, num_triples, count, j, k, deg
+    real(dp) :: value
     tangent_defined = which == 1
     if (.not. tangent_defined) return
     call require_host(this, input_graph)
     n    = this % unknowns
     npts = size(this % at)
+    deg  = this % degrees
     is_fixed = this % fixed_indicator()
     call state_of(this, inputs, x, state)
-    if (allocated(this % physics)) call point_inputs(this, inputs, x, point_data)
+    if (allocated(this % physics)) then
+       if (.not. bound_on(inputs, this % argument(2), this % design_domain(), npts)) then
+          error stop 'operation_residual: the design must be defined on the point domain with one value per point'
+       end if
+       call bound_real_vector(inputs, this % argument(2), nu)
+       xs = gathered(this, x)
+       allocate(g(0:deg - 1))
+    end if
     count = this % primary_law % pattern % num_edges() + npts * this % degrees * size(this % rules) &
          & + size(this % fixed_rows)
     if (allocated(this % connected_law)) count = count + this % connected_law % pattern % num_edges()
@@ -1004,28 +1010,20 @@ contains
     num_triples = 0
     call stencil_triples(this % primary_law, is_fixed, r, c, w, num_triples)
     if (allocated(this % connected_law)) call stencil_triples(this % connected_law, is_fixed, r, c, w, num_triples)
-    ! each rule's partials in the components it reads alone: a
-    ! component no leaf of the rule names has a zero column
-    allocate(v(npts * this % degrees))
-    points = typed_field_domain(this % points, this % degrees)
+    ! each rule's partials in the components it reads, by one reverse
+    ! pass per point: a component no leaf of the rule names has a zero
+    ! column
     do j = 1, size(this % rules)
        call this % rules(j) % read_components(reads)
-       do k = 1, size(reads)
-          d = reads(k)
-          v = 0.0_dp
-          do p = 1, npts
-             v((p - 1) * this % degrees + d + 1) = 1.0_dp
-          end do
-          direction = points % direction(v)
-          call this % rules(j) % partial_action(this % points, this % rules(j) % bind(point_data), &
-               & [variation(this % physics % argument(1), direction)], out)
-          call out % real_vector(column)
-          do p = 1, npts
-             if (is_fixed(this % at(p) + this % primary(j) + 1)) cycle
+       do p = 1, npts
+          if (is_fixed(this % at(p) + this % primary(j) + 1)) cycle
+          call this % rules(j) % gradient_at(xs((p - 1) * deg + 1:p * deg), nu(p), value, g)
+          do k = 1, size(reads)
+             d = reads(k)
              num_triples    = num_triples + 1
              r(num_triples) = this % at(p) + this % primary(j) + 1
              c(num_triples) = this % at(p) + d + 1
-             w(num_triples) = column(p)
+             w(num_triples) = g(d)
           end do
        end do
     end do

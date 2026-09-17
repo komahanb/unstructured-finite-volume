@@ -174,6 +174,8 @@ module operation_expression
      procedure :: partial_action => expression_partial_action
      procedure :: at_instant     => expression_at_instant
      procedure :: value_at
+     procedure :: gradient_at
+     procedure, private :: values_over
      procedure :: reads_state
      procedure :: equation_degree
      procedure :: num_coordinates
@@ -767,18 +769,219 @@ contains
     class(expression), intent(in) :: this
     real(dp)         , intent(in) :: position(:)
 
-    type(derivative_terms), allocatable :: q(:)
-    type(derivative_terms) :: nu
+    real(dp), allocatable :: q(:), v(:), dv(:)
 
     if (this % reads_state()) then
        error stop 'operation_expression: value_at requires an expression of the coordinates alone, &
             &but the expression reads the state or a multiplier'
     end if
-    nu = derivative_terms(0.0_dp, 0)
-    allocate(q(0:this % num_components() - 1), source=nu)
-    value_at = mixed_partial(this % evaluated_over(q, nu, position))
+    allocate(q(0:this % num_components() - 1), source=0.0_dp)
+    call this % values_over(q, 0.0_dp, position, v, dv)
+    value_at = v(size(v))
 
   end function value_at
+
+  !===================================================================!
+  ! THE VALUES AT EVERY VERTEX, from the leaves to the root, for one
+  ! state q, one design nu and, when a coordinate is read, one
+  ! position: the evaluation of the graph in real arithmetic, with
+  ! the derivative dv of every value in the varied multiplier (zero
+  ! throughout when none is varied). The multipliers are zero, as in
+  ! at_instant; the varied one has derivative one. The derivative
+  ! arithmetic of evaluated_over reads the same leaves.
+  !===================================================================!
+
+  pure subroutine values_over(this, q, nu, position, v, dv)
+
+    class(expression), intent(in) :: this
+    real(dp)         , intent(in) :: q(0:)
+    real(dp)         , intent(in) :: nu
+    real(dp)         , intent(in), optional :: position(:)
+    real(dp), allocatable, intent(out) :: v(:), dv(:)
+
+    integer :: i, at, f, s, n
+    real(dp) :: d
+
+    allocate(v(this % num_vertices()), dv(this % num_vertices()))
+    dv = 0.0_dp
+
+    do i = 1, this % num_vertices()
+       f = this % first(i)
+       s = this % second(i)
+       select case (this % kind(i))
+       case (VERTEX_LEAF)
+          if (this % position(i) == ARGUMENT_DESIGN) then
+             v(i) = nu
+          else if (this % position(i) == ARGUMENT_COORDINATE) then
+             if (.not. present(position)) then
+                error stop 'operation_expression: the expression reads a coordinate, but no position was given'
+             end if
+             if (this % field(i) > size(position)) then
+                error stop 'operation_expression: the expression reads a coordinate the position does not have'
+             end if
+             v(i) = position(this % field(i))
+          else if (this % position(i) == ARGUMENT_MULTIPLIER) then
+             v(i) = 0.0_dp
+             if (this % field(i) == this % varied) dv(i) = 1.0_dp
+          else
+             at = this % stored_at(this % position(i), this % field(i), this % along(i), this % order(i))
+             if (at > ubound(q, 1)) then
+                error stop 'operation_expression: the state does not store the component read, &
+                     &beyond the end of the stored tuple'
+             end if
+             v(i) = q(at)
+          end if
+       case (VERTEX_CONSTANT)
+          v(i) = this % coefficient(i)
+       case (VERTEX_SUM)
+          v(i)  = v(f) + v(s)
+          dv(i) = dv(f) + dv(s)
+       case (VERTEX_DIFFERENCE)
+          v(i)  = v(f) - v(s)
+          dv(i) = dv(f) - dv(s)
+       case (VERTEX_PRODUCT)
+          v(i)  = v(f) * v(s)
+          dv(i) = dv(f) * v(s) + v(f) * dv(s)
+       case (VERTEX_QUOTIENT)
+          v(i)  = v(f) / v(s)
+          dv(i) = (dv(f) - v(i) * dv(s)) / v(s)
+       case (VERTEX_INTEGER_POWER)
+          n = nint(this % coefficient(i))
+          v(i) = v(f) ** n
+          d = 0.0_dp
+          if (n /= 0) d = n * v(f) ** (n - 1)
+          dv(i) = d * dv(f)
+       case (VERTEX_REAL_POWER)
+          v(i)  = v(f) ** this % coefficient(i)
+          dv(i) = this % coefficient(i) * v(f) ** (this % coefficient(i) - 1.0_dp) * dv(f)
+       case (VERTEX_FUNCTION)
+          select case (this % order(i))
+          case (SINE);        v(i) = sin(v(f));  dv(i) =  cos(v(f)) * dv(f)
+          case (COSINE);      v(i) = cos(v(f));  dv(i) = -sin(v(f)) * dv(f)
+          case (EXPONENTIAL); v(i) = exp(v(f));  dv(i) =  v(i) * dv(f)
+          case (LOGARITHM);   v(i) = log(v(f));  dv(i) =  dv(f) / v(f)
+          case (SQUARE_ROOT); v(i) = sqrt(v(f)); dv(i) =  dv(f) / (2.0_dp * v(i))
+          case default
+             error stop 'operation_expression: this vertex names a function that is not one of &
+                  &those defined'
+          end select
+       case default
+          error stop 'operation_expression: this vertex names a kind that is not one of those &
+               &defined'
+       end select
+    end do
+
+  end subroutine values_over
+
+  !===================================================================!
+  ! THE RULE'S VALUE AND ITS GRADIENT IN THE STATE by one reverse
+  ! pass: for a rule that is the stationarity in multiplier j, the
+  ! value is d(root)/d(lambda_j) and g(k) = d^2(root)/d(lambda_j)
+  ! d(q(k)); for a rule without a varied multiplier, the value is the
+  ! root and g(k) = d(root)/d(q(k)). The forward pass has every
+  ! value with its derivative in lambda_j; the adjoint of each vertex
+  ! is formed the same way from the root down, so that the
+  ! derivative part of the adjoint at a state leaf is the mixed
+  ! partial. The vertices are in evaluation order with the root last,
+  ! so the pass from the last vertex to the first visits every vertex
+  ! after all that read it. One pass gives every partial the tangent
+  ! of a rule needs, where the derivative arithmetic gives one
+  ! direction per pass.
+  !===================================================================!
+
+  pure subroutine gradient_at(this, q, nu, value, g, position)
+
+    class(expression), intent(in)  :: this
+    real(dp)         , intent(in)  :: q(0:)
+    real(dp)         , intent(in)  :: nu
+    real(dp)         , intent(out) :: value
+    real(dp)         , intent(out) :: g(0:)
+    real(dp)         , intent(in), optional :: position(:)
+
+    real(dp), allocatable :: v(:), dv(:), a(:), da(:)
+    integer :: i, f, s, at, n
+    real(dp) :: d, dd, c, dc
+
+    call this % values_over(q, nu, position, v, dv)
+    if (this % varied > 0) then
+       value = dv(size(v))
+    else
+       value = v(size(v))
+    end if
+
+    allocate(a(size(v)), da(size(v)), source=0.0_dp)
+    a(size(v)) = 1.0_dp
+    g = 0.0_dp
+
+    do i = this % num_vertices(), 1, -1
+       if (a(i) == 0.0_dp .and. da(i) == 0.0_dp) cycle
+       f = this % first(i)
+       s = this % second(i)
+       select case (this % kind(i))
+       case (VERTEX_LEAF)
+          if (this % position(i) == ARGUMENT_STATE) then
+             at = this % stored_at(this % position(i), this % field(i), this % along(i), this % order(i))
+             if (this % varied > 0) then
+                g(at) = g(at) + da(i)
+             else
+                g(at) = g(at) + a(i)
+             end if
+          end if
+       case (VERTEX_CONSTANT)
+          continue
+       case (VERTEX_SUM)
+          a(f)  = a(f)  + a(i)
+          a(s)  = a(s)  + a(i)
+          da(f) = da(f) + da(i)
+          da(s) = da(s) + da(i)
+       case (VERTEX_DIFFERENCE)
+          a(f)  = a(f)  + a(i)
+          a(s)  = a(s)  - a(i)
+          da(f) = da(f) + da(i)
+          da(s) = da(s) - da(i)
+       case (VERTEX_PRODUCT)
+          a(f)  = a(f)  + a(i) * v(s)
+          da(f) = da(f) + da(i) * v(s) + a(i) * dv(s)
+          a(s)  = a(s)  + a(i) * v(f)
+          da(s) = da(s) + da(i) * v(f) + a(i) * dv(f)
+       case (VERTEX_QUOTIENT)
+          ! d(root)/d(first) = a / second, d(root)/d(second) = -a v / second
+          c  = 1.0_dp / v(s)
+          dc = -dv(s) * c * c
+          a(f)  = a(f)  + a(i) * c
+          da(f) = da(f) + da(i) * c + a(i) * dc
+          a(s)  = a(s)  - a(i) * v(i) * c
+          da(s) = da(s) - (da(i) * v(i) * c + a(i) * dv(i) * c + a(i) * v(i) * dc)
+       case (VERTEX_INTEGER_POWER)
+          n = nint(this % coefficient(i))
+          d  = 0.0_dp
+          dd = 0.0_dp
+          if (n /= 0) d = n * v(f) ** (n - 1)
+          if (n /= 0 .and. n /= 1) dd = n * (n - 1) * v(f) ** (n - 2) * dv(f)
+          a(f)  = a(f)  + a(i) * d
+          da(f) = da(f) + da(i) * d + a(i) * dd
+       case (VERTEX_REAL_POWER)
+          d  = this % coefficient(i) * v(f) ** (this % coefficient(i) - 1.0_dp)
+          dd = this % coefficient(i) * (this % coefficient(i) - 1.0_dp) * v(f) ** (this % coefficient(i) - 2.0_dp) * dv(f)
+          a(f)  = a(f)  + a(i) * d
+          da(f) = da(f) + da(i) * d + a(i) * dd
+       case (VERTEX_FUNCTION)
+          select case (this % order(i))
+          case (SINE);        d =  cos(v(f));          dd = -sin(v(f)) * dv(f)
+          case (COSINE);      d = -sin(v(f));          dd = -cos(v(f)) * dv(f)
+          case (EXPONENTIAL); d =  v(i);               dd =  dv(i)
+          case (LOGARITHM);   d =  1.0_dp / v(f);      dd = -dv(f) / (v(f) * v(f))
+          case (SQUARE_ROOT); d =  0.5_dp / v(i);      dd = -0.5_dp * dv(i) / (v(i) * v(i))
+          case default
+             d  = 0.0_dp
+             dd = 0.0_dp
+          end select
+          a(f)  = a(f)  + a(i) * d
+          da(f) = da(f) + da(i) * d + a(i) * dd
+       end select
+    end do
+
+  end subroutine gradient_at
 
   !===================================================================!
   ! Whether any leaf reads the state or a multiplier.

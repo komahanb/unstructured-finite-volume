@@ -85,6 +85,7 @@ module operation_newton
   use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
   use operation_stencil     , only : stencil
   use util_tally, only : newton_solves, primal_loops, tally
+  use util_verbosity, only : verbosity
   use field_stored  , only : stored_field
   use field_calculus, only : field
   use operation_linearization, only : linearization, tangent_of
@@ -183,7 +184,7 @@ contains
     real(dp), allocatable :: weights(:)
     logical :: tangent_defined
     real(dp), allocatable :: residual(:), y(:), dq(:)
-    real(dp) :: linear_achieved
+    real(dp) :: linear_achieved, initial
     integer :: it
     type(solve_result) :: outcome
 
@@ -196,6 +197,10 @@ contains
     call this % evaluate(x, y, inputs)
     residual = y - rhs
     achieved = this % norm(residual)
+    initial  = achieved
+    if (verbosity >= 1 .and. this_image() == 1) then
+       print '(a,i3,a,es12.4)', 'newton  step ', 0, '  |F| = ', achieved
+    end if
     if (this % terminated(achieved, 0)) return
 
     ! the tangent in the unknown's argument; which mode it uses is
@@ -267,11 +272,50 @@ contains
        call this % evaluate(x, y, inputs)
        residual = y - rhs
        achieved = this % norm(residual)
+       if (verbosity >= 1 .and. this_image() == 1) call reported(this, it, achieved, initial, dq, tangent_defined, outcome)
        if (this % terminated(achieved, it)) return
 
     end do
 
   end subroutine solve
+
+  !===================================================================!
+  ! One line per Newton step at verbosity one: the residual after the
+  ! step, absolute and relative to the first, the step's norm, how
+  ! the tangent was obtained (formed as the explicit stencil at every
+  ! step, or applied by directional derivatives), the Halley
+  ! correction's order or its absence, and the inner solve's restart
+  ! cycles, residual absolute and relative to its own first, and
+  ! outcome.
+  !===================================================================!
+
+  subroutine reported(this, it, achieved, initial, dq, tangent_defined, outcome)
+
+    class(newton)     , intent(in) :: this
+    integer           , intent(in) :: it
+    real(dp)          , intent(in) :: achieved, initial, dq(:)
+    logical           , intent(in) :: tangent_defined
+    type(solve_result), intent(in) :: outcome
+
+    character(len=40) :: tangent, halley
+    real(dp) :: relative, linear_relative
+
+    tangent = 'tangent by directional derivatives'
+    if (tangent_defined) tangent = 'tangent formed'
+    halley = 'no halley correction'
+    if (this % higher_order_jacobian_product > 1) then
+       write(halley,'(a,i0)') 'halley correction of order ', this % higher_order_jacobian_product
+    end if
+    relative = 0.0_dp
+    if (initial > 0.0_dp) relative = achieved / initial
+    linear_relative = 0.0_dp
+    if (outcome % initial_residual > 0.0_dp) linear_relative = outcome % residual / outcome % initial_residual
+    print '(a,i3,a,es12.4,a,es12.4,a,es12.4,a,a,a,a)', 'newton  step ', it, '  |F| = ', achieved, &
+         & '  |F|/|F0| = ', relative, '  |dq| = ', this % norm(dq), '  ', trim(tangent), '  ', trim(halley)
+    print '(a,i4,a,es12.4,a,es12.4,a,a)', '        linear solve: restart cycles ', outcome % iterations, &
+         & '  |r| = ', outcome % residual, '  |r|/|r0| = ', linear_relative, '  ', trim(outcome % description())
+
+  end subroutine reported
 
   !===================================================================!
   ! Add delta_2, ..., delta_p to the Newton step delta already

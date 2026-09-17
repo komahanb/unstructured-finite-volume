@@ -17,12 +17,16 @@ endif
 F90FLAGS += -I$(LIB)/ -Wtarget-lifetime
 LDFLAGS += -L$(LIB)/ $(LIB)/libufvm.a
 
-all: dirk_coefficients taylor_green_vortex run
+all: dirk_coefficients taylor_green_vortex taylor_green_study run
 
 dirk_coefficients: dirk_coefficients.o
 	$(F90) $< -o $@ $(LDFLAGS)
 
 taylor_green_vortex: taylor_green_vortex.o
+	$(F90) $< -o $@ $(LDFLAGS)
+
+# the same statement under chosen parameters, convergence printed
+taylor_green_study: taylor_green_study.o
 	$(F90) $< -o $@ $(LDFLAGS)
 
 run: test.o
@@ -33,7 +37,7 @@ box.msh: box.geo
 	gmsh -2 box.geo -o box.msh > gmsh.log
 
 clean:
-	@rm -f *.o *.mod *.so run dirk_coefficients taylor_green_vortex *.vtu gmsh.log
+	@rm -f *.o *.mod *.so run dirk_coefficients taylor_green_vortex taylor_green_study *.vtu gmsh.log
 
 .SUFFIXES: .f90 .o
 .PHONY: all clean

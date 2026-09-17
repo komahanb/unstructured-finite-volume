@@ -32,6 +32,7 @@
 module operation_gmres
 
   use iso_fortran_env , only : int64
+  use util_verbosity  , only : verbosity
   use util_precision  , only : dp
   use operation_minimization, only : minimizer, state, restrict, solve_result, SOLVE_BREAKDOWN, SOLVE_INNER_FAILED, SOLVE_STAGNATED
   use operation_minimization, only : saturated_sum
@@ -220,7 +221,7 @@ contains
 
     real(dp), allocatable :: basis(:,:), h(:,:), cs(:), sn(:), s(:)
     real(dp), allocatable :: r(:), w(:), y(:), z(:)
-    real(dp) :: beta, hik, radius, subdiag, unpreconditioned
+    real(dp) :: beta, hik, radius, subdiag, unpreconditioned, first_residual
     integer :: n, m, outer, i, j, k
     logical :: direction_admissible, breakdown, invariant
 
@@ -234,6 +235,7 @@ contains
     call this % initialize_residual_history()
     call this % imbalance(rhs, x, r)
     achieved = this % norm(r)
+    first_residual = achieved
     if (this % terminated(achieved, 0)) return
 
     do outer = 1, this % max_iterations
@@ -354,6 +356,11 @@ contains
 
        call this % imbalance(rhs, x, r)
        achieved = this % norm(r)
+       ! one line per restart cycle at verbosity two
+       if (verbosity >= 2 .and. this_image() == 1) then
+          print '(a,i4,a,i3,a,es12.4,a,es12.4)', '        gmres cycle ', outer, '  directions ', k, &
+               & '  |r| = ', achieved, '  |r|/|r0| = ', achieved / max(first_residual, tiny(1.0_dp))
+       end if
        if (breakdown .and. .not. this % converged(achieved)) then
           call this % record_residual_norm(achieved)
           call this % record_result(achieved, outer, SOLVE_BREAKDOWN)

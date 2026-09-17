@@ -1,5 +1,6 @@
 objects= \
 util_precision.o \
+util_verbosity.o \
 util_counted_storage.o \
 util_norm.o \
 util_derivative_terms.o \
@@ -75,7 +76,6 @@ operation_newton.o \
 operation_multigrid.o \
 view_read_write.o \
 operation_driver.o \
-util_verbosity.o \
 util_file.o \
 view_mesh_geometry.o \
 view_mesh_loader.o \

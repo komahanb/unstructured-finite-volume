@@ -67,6 +67,7 @@ module operation_residual
   use operation_scheme_stencil  , only : derived_constraints
   use operation_finite_difference, only : finite_difference
   use operation_exchange       , only : exchange
+  use util_verbosity           , only : verbosity
   use transform_partitioner    , only : partitioner, PARTITION_BREADTH_FIRST
   use relation_partition       , only : partition_relation
   use operation_minimization, only : solve_result
@@ -1680,6 +1681,11 @@ contains
     nf     = this % manifold % num_unknowns
     ncells = this % points % num_cells()
     n      = last - first + 1
+    if (verbosity >= 1 .and. this_image() == 1) then
+       print '(a,a,a,i0,a,i0,a,es12.4,a,es12.4,a,i0,a)', 'block  ', trim(scheme % name()), '  instants ', first, &
+            & '..', last, '  t = ', this % points % instant(first), ' .. ', this % points % instant(last), &
+            & '  history ', depth, ' instants'
+    end if
     nd     = top_degree(this % rule, nf) + 1
     staged = marches_by_stages(scheme, nd)
     s      = 0

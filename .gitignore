@@ -77,8 +77,6 @@ application/marched_horizon
 application/expansion_check
 application/marched_stages
 application/graph_time_integrator
-application/dirk_coefficients
-application/taylor_green_vortex
 application/chained_horizon
 application/randomized_checks
 application/jacobian_shape

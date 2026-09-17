@@ -311,32 +311,41 @@ contains
 
   end function formula
 
+  ! the operands are written into locals before the concatenation:
+  ! gfortran overwrites the result of a nested call to a recursive
+  ! function of deferred length within one expression
   recursive function infix(this, i, above) result(text)
 
     class(expression_view), intent(in) :: this
     integer               , intent(in) :: i, above
     character(len=:), allocatable :: text
 
+    character(len=:), allocatable :: first, second, operator
     integer :: level
 
+    operator = this % label(i)
     select case (this % v(i) % kind)
     case (VERTEX_LEAF, VERTEX_CONSTANT)
        level = 5
-       text  = this % label(i)
+       text  = operator
     case (VERTEX_FUNCTION)
        level = 4
-       text  = this % label(i) // '(' // infix(this, this % v(i) % first, 0) // ')'
+       first = infix(this, this % v(i) % first, 0)
+       text  = operator // '(' // first // ')'
     case (VERTEX_INTEGER_POWER, VERTEX_REAL_POWER)
        level = 3
-       text  = infix(this, this % v(i) % first, 4) // this % label(i)
+       first = infix(this, this % v(i) % first, 4)
+       text  = first // operator
     case (VERTEX_PRODUCT, VERTEX_QUOTIENT)
-       level = 2
-       text  = infix(this, this % v(i) % first, 2) // this % label(i) // &
-            & infix(this, this % v(i) % second, merge(3, 2, this % v(i) % kind == VERTEX_QUOTIENT))
+       level  = 2
+       first  = infix(this, this % v(i) % first, 2)
+       second = infix(this, this % v(i) % second, merge(3, 2, this % v(i) % kind == VERTEX_QUOTIENT))
+       text   = first // operator // second
     case default
-       level = 1
-       text  = infix(this, this % v(i) % first, 1) // ' ' // this % label(i) // ' ' // &
-            & infix(this, this % v(i) % second, merge(2, 1, this % v(i) % kind == VERTEX_DIFFERENCE))
+       level  = 1
+       first  = infix(this, this % v(i) % first, 1)
+       second = infix(this, this % v(i) % second, merge(2, 1, this % v(i) % kind == VERTEX_DIFFERENCE))
+       text   = first // ' ' // operator // ' ' // second
     end select
     if (level < above) text = '(' // text // ')'
 
@@ -362,9 +371,17 @@ contains
     integer               , intent(in) :: i
     character(len=:), allocatable :: text
 
+    character(len=:), allocatable :: operand
+
     text = '[' // this % label(i)
-    if (this % v(i) % first  > 0) text = text // ' ' // bracketed(this, this % v(i) % first)
-    if (this % v(i) % second > 0) text = text // ' ' // bracketed(this, this % v(i) % second)
+    if (this % v(i) % first > 0) then
+       operand = bracketed(this, this % v(i) % first)
+       text = text // ' ' // operand
+    end if
+    if (this % v(i) % second > 0) then
+       operand = bracketed(this, this % v(i) % second)
+       text = text // ' ' // operand
+    end if
     text = text // ']'
 
   end function bracketed

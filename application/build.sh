@@ -37,12 +37,3 @@ PROGRAM=graph_time_integrator
 $F90 $FLAGS -I$LIB -J$OBJ -o $OUT/$PROGRAM $SOURCE $LIB/*.o
 
 echo "built: $PROGRAM"
-
-# The two programs on the continuous/discrete residual interface: the
-# SDIRK tableau of order three and the Taylor-Green vortex, whose
-# periodic box is meshed from box.geo by gmsh when box.msh is absent.
-[ -f box.msh ] || gmsh -2 box.geo -o box.msh > gmsh.log
-for PROGRAM in dirk_coefficients taylor_green_vortex; do
-   $F90 $FLAGS -I$LIB -J$OBJ -o $OUT/$PROGRAM $PROGRAM.f90 $LIB/*.o
-   echo "built: $PROGRAM"
-done

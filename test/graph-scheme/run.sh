@@ -1,5 +1,19 @@
 #!/bin/bash
-# Build the library and run the SDIRK coefficient example.
+# Build the library and run the three programs of this suite:
+#
+#   dirk_coefficients    the two-stage third-order SDIRK tableau as the
+#                        zero of a continuous_residual on a point
+#                        manifold; W11 = h (3 + sqrt 3)/6 = 0.078867...
+#   taylor_green_vortex  the Navier-Stokes Taylor-Green vortex on the
+#                        periodic box of box.geo, 16 x 16 cells, ten
+#                        instants, the chain dirk(2), bdf(2), adams(2);
+#                        the error against the exact solution, second
+#                        order in the cell width (8.93e-2 at 8 x 8,
+#                        2.33e-2 at 16 x 16)
+#   run                  the same tableau on the expression and the
+#                        residual_operator directly
+#
+# gmsh meshes box.geo into box.msh when the mesh is absent.
 set -e
 
 suite_dir="$(cd "$(dirname "$0")" && pwd)"
@@ -10,5 +24,12 @@ fi
 
 make -C "$suite_dir" clean >/dev/null 2>&1 || true
 make -C "$suite_dir" >/dev/null
+make -C "$suite_dir" box.msh >/dev/null
 
-cd "$suite_dir" && ./run
+cd "$suite_dir"
+echo "== dirk_coefficients"
+./dirk_coefficients
+echo "== taylor_green_vortex"
+./taylor_green_vortex
+echo "== run"
+./run

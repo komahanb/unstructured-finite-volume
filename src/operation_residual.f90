@@ -1921,9 +1921,20 @@ contains
     real(dp) :: achieved
 
     if (this % points % with_space) then
+       ! THE INNER SOLVE is inexact: each Newton step's linear system
+       ! is solved to a relative residual of 1e-3, the constant forcing
+       ! term of Dembo, Eisenstat and Steihaug, while Newton's own test
+       ! decides the solution; the step count stays at five or six where
+       ! a solve to 1e-8 needed the same, at a third of the linear
+       ! work. The preconditioner is four block Gauss-Seidel sweeps:
+       ! with two, restarted GMRES(60) stagnates on the 32 x 32 box
+       ! (the residual unchanged over forty restarts) and never ends,
+       ! where four sweeps end it in 26 s and a restart of 120 with two
+       ! sweeps in 27 s at twice the basis storage.
        sweeps % block_width    = stride
-       sweeps % max_iterations = 2
+       sweeps % max_iterations = 4
        krylov % restart        = 60
+       krylov % tolerance      = 1.0e-3_dp
        allocate(krylov % preconditioner, source=sweeps)
        allocate(solver % inner, source=krylov)
        ! over several images, the cells are distributed and the

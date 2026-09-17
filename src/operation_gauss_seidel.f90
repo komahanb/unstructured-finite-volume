@@ -119,8 +119,9 @@ contains
     real(dp), allocatable :: d(:,:,:), r(:), block_solution(:), dx(:)
     type(dense_factorisation), allocatable :: block(:)
     integer , allocatable :: colours(:), ordered(:), first(:)
+    logical , allocatable :: active(:)
     integer :: it, col, b, w, nb, i, num_colours
-    logical :: explicit
+    logical :: explicit, distributed
     character(len=250) :: message
 
     call this % record_event(linear_solves)
@@ -172,26 +173,29 @@ contains
 
        call this % colouring(nb, colours)
 
-       this % stored_diagonal = d
-       if (allocated(block)) then
-          if (allocated(this % stored_block)) deallocate(this % stored_block)
-          allocate(this % stored_block, source=block)
-       end if
-       this % stored_colours   = colours
+       ! the diagonal, its factorisation and the colouring are stored
+       ! for the operator and read in place by every solve on it
+       call move_alloc(d, this % stored_diagonal)
+       if (allocated(this % stored_block)) deallocate(this % stored_block)
+       if (allocated(block)) call move_alloc(block, this % stored_block)
+       call move_alloc(colours, this % stored_colours)
        this % diagonal_valid = .true.
 
-    else
-
-       d       = this % stored_diagonal
-       colours = this % stored_colours
-       if (allocated(this % stored_block)) allocate(block, source=this % stored_block)
-
     end if
-    num_colours = maxval(colours)
+    num_colours = maxval(this % stored_colours)
     allocate(block_solution(w))
+    distributed = allocated(this % distribution)
     if (explicit) then
        allocate(dx(size(x)), source=0.0_dp)
-       call columns_by_colour(colours, w, num_colours, ordered, first)
+       ! the columns whose change reaches an owned row, by colour:
+       ! every column on one image, the owned and the halo over
+       ! several
+       allocate(active(size(x)), source=.true.)
+       if (distributed) then
+          active = this % distribution % is_owned
+          active(this % distribution % halo) = .true.
+       end if
+       call columns_by_colour(this % stored_colours, w, num_colours, active, ordered, first)
     end if
 
     do it = 1, this % max_iterations
@@ -201,11 +205,15 @@ contains
              call this % imbalance(rhs, x, r)
           end if
           do b = 1, nb
-             if (colours(b) /= col) cycle
+             if (this % stored_colours(b) /= col) cycle
+             if (distributed) then
+                if (.not. this % distribution % is_owned((b - 1) * w + 1)) cycle
+             end if
              if (w == 1) then
-                block_solution(1) = r(b) / d(1, 1, b)
+                block_solution(1) = r(b) / this % stored_diagonal(1, 1, b)
              else
-                call block(b) % substituted(r((b - 1) * w + 1:b * w), block_solution, transposed=.false.)
+                call this % stored_block(b) % substituted(r((b - 1) * w + 1:b * w), block_solution, &
+                     & transposed=.false.)
              end if
              do i = 1, w
                 x((b - 1) * w + i) = x((b - 1) * w + i) + this % omega * block_solution(i)
@@ -213,6 +221,7 @@ contains
              end do
           end do
           if (explicit) then
+             if (distributed) call this % distribution % update(dx)
              associate (columns => ordered(first(col):first(col + 1) - 1))
                call subtracted_columns(this, columns, dx, r)
                dx(columns) = 0.0_dp
@@ -228,11 +237,12 @@ contains
 
   end subroutine solve
 
-  ! the unknowns ordered by the colour of their block: those of colour
-  ! col are ordered(first(col):first(col+1)-1)
-  pure subroutine columns_by_colour(colours, w, num_colours, ordered, first)
+  ! the active unknowns ordered by the colour of their block: those of
+  ! colour col are ordered(first(col):first(col+1)-1)
+  pure subroutine columns_by_colour(colours, w, num_colours, active, ordered, first)
 
     integer, intent(in)  :: colours(:), w, num_colours
+    logical, intent(in)  :: active(:)
     integer, allocatable, intent(out) :: ordered(:), first(:)
 
     integer, allocatable :: at(:)
@@ -240,17 +250,20 @@ contains
 
     allocate(first(num_colours + 1), source=0)
     do b = 1, size(colours)
-       first(colours(b) + 1) = first(colours(b) + 1) + w
+       do i = 1, w
+          if (active((b - 1) * w + i)) first(colours(b) + 1) = first(colours(b) + 1) + 1
+       end do
     end do
     first(1) = 1
     do col = 1, num_colours
        first(col + 1) = first(col + 1) + first(col)
     end do
     at = first(1:num_colours)
-    allocate(ordered(size(colours) * w))
+    allocate(ordered(first(num_colours + 1) - 1))
     do b = 1, size(colours)
        col = colours(b)
        do i = 1, w
+          if (.not. active((b - 1) * w + i)) cycle
           ordered(at(col)) = (b - 1) * w + i
           at(col) = at(col) + 1
        end do
@@ -266,14 +279,14 @@ contains
     real(dp)           , intent(in)    :: dx(:)
     real(dp)           , intent(inout) :: r(:)
 
-    real(dp), allocatable :: y(:)
-
-    allocate(y(size(r)), source=0.0_dp)
     select type (a => this % action)
     type is (stencil)
-       call a % column_product(columns, dx, y)
+       if (allocated(this % distribution)) then
+          call a % column_product(columns, dx, r, factor=-1.0_dp, rows=this % distribution % is_owned)
+       else
+          call a % column_product(columns, dx, r, factor=-1.0_dp)
+       end if
     end select
-    r = r - y
 
   end subroutine subtracted_columns
 

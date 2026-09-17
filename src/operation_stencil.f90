@@ -73,6 +73,7 @@ module operation_stencil
      procedure :: restricted    => stencil_restricted
      procedure :: partial_action => stencil_partial_action
      procedure :: column_product
+     procedure :: row_product
      procedure :: diagonal_blocks
 
   end type stencil
@@ -460,25 +461,37 @@ contains
 
   !===================================================================!
   ! THE PRODUCT OF SOME COLUMNS with the values at those columns,
-  ! added to y: y = y + sum over c in columns of A(:, c) q(c). A
-  ! relaxation that changes the unknowns of one colour class updates
-  ! its residual through this, at the cost of the edges leaving those
-  ! columns rather than of a product over every edge.
+  ! added to y with a factor: y = y + factor sum over c in columns of
+  ! A(:, c) q(c). A relaxation that changes the unknowns of one colour
+  ! class updates its residual through this with the factor -1, at
+  ! the cost of the edges leaving those columns rather than of a
+  ! product over every edge.
   !===================================================================!
 
-  subroutine column_product(this, columns, q, y)
+  subroutine column_product(this, columns, q, y, factor, rows)
 
     class(stencil), intent(in)    :: this
     integer       , intent(in)    :: columns(:)
     real(dp)      , intent(in)    :: q(:)
     real(dp)      , intent(inout) :: y(:)
+    real(dp)      , intent(in), optional :: factor
+    ! the rows accumulated, when not every row is: an image forms its
+    ! own rows alone
+    logical       , intent(in), optional :: rows(:)
 
     real(dp), pointer :: w(:)
+    real(dp) :: scale
 
+    scale = 1.0_dp
+    if (present(factor)) scale = factor
     w => this % weights % real_values()
     if (.not. associated(w)) return
 
-    call this % pattern % read_outgoing(accumulate_columns)
+    if (present(rows)) then
+       call this % pattern % read_outgoing(accumulate_some_rows)
+    else
+       call this % pattern % read_outgoing(accumulate_columns)
+    end if
 
   contains
 
@@ -490,7 +503,7 @@ contains
 
       do k = 1, size(columns)
          c  = columns(k)
-         qc = q(c)
+         qc = scale * q(c)
          if (qc == 0.0_dp) cycle
          do p = offsets(c), offsets(c + 1) - 1
             e = indices(p)
@@ -500,7 +513,72 @@ contains
 
     end subroutine accumulate_columns
 
+    subroutine accumulate_some_rows(offsets, indices, targets)
+
+      integer, intent(in) :: offsets(:), indices(:), targets(:)
+      integer :: k, c, p, e
+      real(dp) :: qc
+
+      do k = 1, size(columns)
+         c  = columns(k)
+         qc = scale * q(c)
+         if (qc == 0.0_dp) cycle
+         do p = offsets(c), offsets(c + 1) - 1
+            e = indices(p)
+            if (.not. rows(targets(e))) cycle
+            y(targets(e)) = y(targets(e)) + w(e) * qc
+         end do
+      end do
+
+    end subroutine accumulate_some_rows
+
   end subroutine column_product
+
+  !===================================================================!
+  ! THE PRODUCT OF SOME ROWS: y(r) = sum over the edges entering r of
+  ! the weight times q at the tail, for each r in rows, without the
+  ! constants; y elsewhere is left as given. An image that owns some
+  ! rows of a distributed system forms its rows of A q through this.
+  !===================================================================!
+
+  subroutine row_product(this, rows, q, y)
+
+    class(stencil), intent(in)    :: this
+    integer       , intent(in)    :: rows(:)
+    real(dp)      , intent(in)    :: q(:)
+    real(dp)      , intent(inout) :: y(:)
+
+    real(dp), pointer :: w(:)
+
+    w => this % weights % real_values()
+    if (.not. associated(w)) then
+       y(rows) = 0.0_dp
+       return
+    end if
+
+    call this % pattern % read_incoming(accumulate_some_rows)
+
+  contains
+
+    subroutine accumulate_some_rows(offsets, indices, sources)
+
+      integer, intent(in) :: offsets(:), indices(:), sources(:)
+      real(dp) :: acc
+      integer :: k, v, p, e
+
+      do k = 1, size(rows)
+         v   = rows(k)
+         acc = 0.0_dp
+         do p = offsets(v), offsets(v + 1) - 1
+            e   = indices(p)
+            acc = acc + w(e) * q(sources(e))
+         end do
+         y(v) = acc
+      end do
+
+    end subroutine accumulate_some_rows
+
+  end subroutine row_product
 
   !===================================================================!
   ! THE DIAGONAL BLOCKS of a stated width, d(i, k, b) = A(row, column)

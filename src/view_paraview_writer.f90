@@ -180,6 +180,9 @@ contains
     character(len=250) :: filename
     integer :: k, c, f, ncells
 
+    ! every image has the whole field; one writes it
+    if (this_image() /= 1) return
+
     select type (points => field % on)
     type is (discrete_manifold)
        if (.not. points % with_space) then

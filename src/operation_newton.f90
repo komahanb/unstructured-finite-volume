@@ -225,6 +225,7 @@ contains
           tangent = stencil(rows, columns, weights, &
                & spread(0.0_dp, 1, this % num_unknowns), 'explicit tangent')
           call tangent % versioned(this % action % version(), this % action % transpose_version())
+          if (allocated(this % distribution)) this % inner % distribution = this % distribution
           call this % inner % state(tangent, tangent % pattern, this % unknown_domain, &
                & this % num_unknowns, num_components = this % num_components, &
                & coupling = tangent % pattern)
@@ -234,6 +235,9 @@ contains
        end if
        dq = 0.0_dp
        call this % inner % solve(-residual, dq, linear_achieved)
+       ! the step of a distributed solve is owned in parts: every
+       ! image gathers the whole before the residual is evaluated
+       if (allocated(this % distribution)) call this % distribution % gather(dq)
 
        ! An inner minimizer that encountered a singular tangent reports
        ! a residual no completed solve produces, and one that

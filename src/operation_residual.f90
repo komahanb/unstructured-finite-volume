@@ -66,6 +66,9 @@ module operation_residual
   use view_directed_connectivity, only : connectivity_graph
   use operation_scheme_stencil  , only : derived_constraints
   use operation_finite_difference, only : finite_difference
+  use operation_exchange       , only : exchange
+  use transform_partitioner    , only : partitioner, PARTITION_BREADTH_FIRST
+  use relation_partition       , only : partition_relation
   use operation_minimization, only : solve_result
   use operation_newton      , only : newton
   use operation_dense_direct, only : dense_direct
@@ -1923,6 +1926,9 @@ contains
        krylov % restart        = 60
        allocate(krylov % preconditioner, source=sweeps)
        allocate(solver % inner, source=krylov)
+       ! over several images, the cells are distributed and the
+       ! linear solve with them
+       if (num_images() > 1) solver % distribution = exchange(owners_of_unknowns(this, unknowns, stride, npts))
     else
        allocate(solver % inner, source=direct)
     end if
@@ -1937,6 +1943,52 @@ contains
     end if
 
   end subroutine solved
+
+  !===================================================================!
+  ! THE OWNER OF EVERY UNKNOWN of a block: the cells are partitioned
+  ! over the images by the partitioner's breadth-first rule on the
+  ! mesh, each part connected, and every unknown at a cell, at every
+  ! moment, is owned by the cell's image.
+  !===================================================================!
+
+  function owners_of_unknowns(this, unknowns, stride, npts) result(owner)
+
+    class(discrete_residual), intent(in) :: this
+    integer                 , intent(in) :: unknowns, stride, npts
+    integer, allocatable :: owner(:)
+
+    type(partitioner) :: cut
+    class(directed_graph), allocatable :: part
+    type(partition_relation) :: relation
+    integer, allocatable :: cell_owner(:)
+    integer :: ncells, k, v, p, c, m, at, width
+
+    ncells = this % points % num_cells()
+    allocate(cell_owner(ncells), source=0)
+    do k = 1, num_images()
+       cut = partitioner(PARTITION_BREADTH_FIRST, num_images(), part=k)
+       call cut % partition_graph(this % points % cells, part, relation)
+       do v = 1, part % num_vertices()
+          if (relation % vertex_owner_part(v) == k) cell_owner(relation % global_vertex_index(v)) = k
+       end do
+    end do
+    if (any(cell_owner == 0)) then
+       error stop 'operation_residual: the partition of the cells over the images leaves a cell unowned'
+    end if
+
+    width = stride * ncells
+    allocate(owner(unknowns), source=0)
+    do p = 1, npts
+       m  = (p - 1) / ncells + 1
+       c  = p - (m - 1) * ncells
+       at = (m - 1) * width + (c - 1) * stride
+       owner(at + 1:at + stride) = cell_owner(c)
+    end do
+    if (any(owner == 0)) then
+       error stop 'operation_residual: an unknown of the block lies at no point of the manifold'
+    end if
+
+  end function owners_of_unknowns
 
   !===================================================================!
   ! THE FIXED ROWS of a block: every component at the history instants,

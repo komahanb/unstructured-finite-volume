@@ -49,6 +49,7 @@ module operation_minimization
   use operation_reduction , only : reduction, REDUCE_SUM, REDUCE_NORM
   use operation_traversal      , only : traversal, TRAVERSAL_COLOURING
   use operation_stencil        , only : stencil
+  use operation_exchange       , only : exchange
   use util_tally               , only : tally
 
   implicit none
@@ -201,6 +202,12 @@ module operation_minimization
      ! between solves, so a stored minimizer copied with an execution
      ! references no other execution's tally.
      type(tally), pointer :: account => null()
+
+     ! the distribution of the unknowns over the images, when the
+     ! solve is distributed: products of an explicit operator are
+     ! formed on the owned rows after a halo update, and every inner
+     ! product and norm is reduced over the images
+     type(exchange), allocatable :: distribution
 
    contains
 
@@ -640,6 +647,12 @@ contains
     ! the coupling, rather than colouring the execution context.
     if (allocated(this % coupling)) deallocate(this % coupling)
     if (present(coupling)) allocate(this % coupling, source=coupling)
+    ! the halo of a distributed solve is read from a coupling over the
+    ! unknowns themselves; a coupling over blocks of them leaves the
+    ! halo already stated
+    if (allocated(this % distribution) .and. present(coupling)) then
+       if (coupling % num_vertices() == num_unknowns) call this % distribution % halo_from(coupling)
+    end if
 
     this % num_components = 1
     if (present(num_components)) this % num_components = max(num_components, 1)
@@ -948,6 +961,21 @@ contains
     real(dp), allocatable, intent(out) :: y(:)
     character(len=250) :: message
 
+    real(dp), allocatable :: xh(:)
+
+    ! a distributed explicit operator: the owned rows of A x from the
+    ! state with its halo updated, zero elsewhere
+    if (allocated(this % distribution)) then
+       select type (a => this % action)
+       type is (stencil)
+          xh = x
+          call this % distribution % update(xh)
+          allocate(y(size(x)), source=0.0_dp)
+          call a % row_product(this % distribution % owned, xh, y)
+          return
+       end select
+    end if
+
     call evaluate(this, x, y)
 
     ! A x is the statement less its value at the zero state, which a
@@ -986,7 +1014,14 @@ contains
     real(dp), intent(in) :: u(:), v(:)
 
     ! a sum reduction of u weighted by v is the sum of the products,
-    ! taken here without a field allocated to store one number
+    ! taken here without a field allocated to store one number; over
+    ! the images, the sum of the owned products, reduced
+    if (allocated(this % distribution)) then
+       associate (owned => this % distribution % owned)
+         prod = this % distribution % total(sum(u(owned) * v(owned)))
+       end associate
+       return
+    end if
     prod = sum(u * v)
 
   end function inner_product
@@ -995,6 +1030,20 @@ contains
 
     class(minimizer), intent(in) :: this
     real(dp), intent(in) :: u(:)
+
+    real(dp) :: own, largest
+
+    ! over the images: each image's norm of its owned entries, then
+    ! the norm of those, scaled by the largest so that the squares
+    ! neither overflow nor underflow
+    if (allocated(this % distribution)) then
+       own     = euclidean_norm(u(this % distribution % owned))
+       largest = this % distribution % maximum(own)
+       length  = 0.0_dp
+       if (largest == 0.0_dp) return
+       length = largest * sqrt(this % distribution % total((own / largest) ** 2))
+       return
+    end if
 
     length = euclidean_norm(u)
 

@@ -97,8 +97,10 @@ contains
     call state(this, action, context, unknown_domain, num_unknowns, &
          & num_components, coupling, stored_inputs)
     ! a blocked preconditioner is stated with the coupling of the
-    ! blocks, the unknowns' coupling read through them
+    ! blocks, the unknowns' coupling read through them; it shares the
+    ! distribution over the images with its halo
     if (allocated(this % preconditioner)) then
+       if (allocated(this % distribution)) this % preconditioner % distribution = this % distribution
        if (this % preconditioner % block_width > 1) then
           if (present(coupling)) then
              call this % preconditioner % state(action, context, unknown_domain, num_unknowns, &
@@ -272,9 +274,17 @@ contains
              return
           end if
           call this % matvec(z, w)
+          ! over the images, the orthogonalisation runs on the owned
+          ! entries; every other entry of w is zero and stays so
           do i = 1, j
              h(i, j) = this % inner_product(w, basis(:, i))
-             w = w - h(i, j) * basis(:, i)
+             if (allocated(this % distribution)) then
+                associate (own => this % distribution % owned)
+                  w(own) = w(own) - h(i, j) * basis(own, i)
+                end associate
+             else
+                w = w - h(i, j) * basis(:, i)
+             end if
           end do
           subdiag     = this % norm(w)
           h(j + 1, j) = subdiag
@@ -325,7 +335,13 @@ contains
        end do
        z = 0.0_dp
        do i = 1, k
-          z = z + y(i) * basis(:, i)
+          if (allocated(this % distribution)) then
+             associate (own => this % distribution % owned)
+               z(own) = z(own) + y(i) * basis(own, i)
+             end associate
+          else
+             z = z + y(i) * basis(:, i)
+          end if
        end do
        deallocate(y)
        call preconditioned(this, z, w, direction_admissible)

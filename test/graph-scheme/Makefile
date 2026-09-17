@@ -8,9 +8,14 @@ include ../../Makefile.in
 # -Wtarget-lifetime checks pointer target lifetimes at compile time.
 #=====================================================================#
 
-# Ufvm (-I../../lib for the .mod files)
-F90FLAGS += -I../../lib/ -I../../src/ -Wtarget-lifetime
-LDFLAGS += -L../../lib/ ../../lib/libufvm.a
+# Ufvm (-I../../lib for the .mod files; lib_par for COARRAY=lib,
+# whose link line Makefile.in supplies)
+LIB = ../../lib
+ifeq ($(COARRAY),lib)
+  LIB = ../../lib_par
+endif
+F90FLAGS += -I$(LIB)/ -Wtarget-lifetime
+LDFLAGS += -L$(LIB)/ $(LIB)/libufvm.a
 
 all: dirk_coefficients taylor_green_vortex run
 

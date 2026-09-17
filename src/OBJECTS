@@ -59,6 +59,7 @@ transform_coarsener.o \
 transform_refiner.o \
 operation_differential.o \
 operation_balance.o \
+operation_exchange.o \
 operation_minimization.o \
 operation_dense_direct.o \
 operation_conjugate_gradient.o \

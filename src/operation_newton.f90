@@ -190,6 +190,7 @@ contains
     logical :: jacobian_defined
     real(dp), allocatable :: residual(:), y(:), dq(:)
     real(dp) :: linear_achieved, initial, factor, previous, step_norm
+    integer :: nonzeros
     real(dp), allocatable :: trial(:)
     integer :: it, halving
     type(solve_result) :: outcome
@@ -205,8 +206,8 @@ contains
     achieved = this % norm(residual)
     initial  = achieved
     if (verbosity >= 1) then
-       print '(a)', ' step          |F|     |F|/|F0|          |dq|   factor  jacobian     halley   cycles' // &
-            & '          |r|     |r|/|r0|  linear solve'
+       print '(a)', ' step          |F|     |F|/|F0|          |dq|   factor    rows  nonzeros  jacobian  halley' // &
+            & '   cycles          |r|     |r|/|r0|  linear solve'
        print '(i5,es13.4)', 0, achieved
     end if
     if (this % terminated(achieved, 0)) return
@@ -234,7 +235,8 @@ contains
                & 1, rows, columns, &
                & weights, jacobian_defined)
        end if
-       if (verbosity >= 1 .and. it == 1) call described(this, jacobian_defined, size(rows))
+       nonzeros = 0
+       if (jacobian_defined) nonzeros = size(rows)
        if (jacobian_defined) then
           jacobian = stencil(rows, columns, weights, &
                & spread(0.0_dp, 1, this % num_unknowns), 'explicit jacobian')
@@ -296,7 +298,7 @@ contains
        ! the norm of the step is a reduction over the images, taken by
        ! every image whether or not it prints
        step_norm = this % norm(dq)
-       if (verbosity >= 1) call reported(this, it, achieved, initial, step_norm, factor, jacobian_defined, outcome)
+       if (verbosity >= 1) call reported(this, it, achieved, initial, step_norm, factor, jacobian_defined, nonzeros, outcome)
        if (this % terminated(achieved, it)) return
 
     end do
@@ -304,64 +306,38 @@ contains
   end subroutine solve
 
   !===================================================================!
-  ! The jacobian described once per solve, when first formed: its
-  ! order (rows and columns, one per unknown), its nonzeros, and its
-  ! representation - sparse, the explicit stencil applied as such;
-  ! dense, that stencil compiled to a full matrix by a direct inner
-  ! solver; free, no matrix, the directional derivatives of the
-  ! linearization.
-  !===================================================================!
-
-  subroutine described(this, jacobian_defined, nonzeros)
-
-    class(newton), intent(in) :: this
-    logical      , intent(in) :: jacobian_defined
-    integer      , intent(in) :: nonzeros
-
-    character(len=32) :: representation
-
-    representation = 'free (directional derivatives)'
-    if (jacobian_defined) then
-       representation = 'sparse'
-       select type (inner => this % inner)
-       type is (dense_direct)
-          representation = 'dense'
-       end select
-    end if
-    if (jacobian_defined) then
-       print '(a,i0,a,i0,a,a,a,a)', ' jacobian  rows ', this % num_unknowns * this % num_components, &
-            & '  nonzeros ', nonzeros, '  ', trim(representation), '  inner solver ', trim(this % inner % name())
-    else
-       print '(a,i0,a,a,a,a)', ' jacobian  rows ', this % num_unknowns * this % num_components, &
-            & '  ', trim(representation), '  inner solver ', trim(this % inner % name())
-    end if
-
-  end subroutine described
-
-  !===================================================================!
   ! One row per Newton step at verbosity one, under a header printed
   ! with step zero: the residual after the step, absolute and relative
   ! to the first, the step's norm and the factor the line search took
-  ! it by, how the jacobian was obtained (formed as the explicit
-  ! stencil at every step, or applied by directional derivatives), the
-  ! Halley correction's order or its absence, and the inner solve's
-  ! restart cycles, residual absolute and relative to its own first,
-  ! and outcome.
+  ! it by, the jacobian's order (rows, one per unknown), its nonzeros
+  ! and its representation - sparse, the explicit stencil formed at
+  ! this step; dense, that stencil compiled to a full matrix by a
+  ! direct inner solver; free, no matrix, the directional derivatives
+  ! of the linearization - the Halley correction's order or its
+  ! absence, and the inner solve's restart cycles, residual absolute
+  ! and relative to its own first, and outcome.
   !===================================================================!
 
-  subroutine reported(this, it, achieved, initial, step_norm, factor, jacobian_defined, outcome)
+  subroutine reported(this, it, achieved, initial, step_norm, factor, jacobian_defined, nonzeros, outcome)
 
     class(newton)     , intent(in) :: this
     integer           , intent(in) :: it
     real(dp)          , intent(in) :: achieved, initial, step_norm, factor
     logical           , intent(in) :: jacobian_defined
+    integer           , intent(in) :: nonzeros
     type(solve_result), intent(in) :: outcome
 
     character(len=12) :: jacobian, halley
     real(dp) :: relative, linear_relative
 
-    jacobian = 'directional'
-    if (jacobian_defined) jacobian = 'formed'
+    jacobian = 'free'
+    if (jacobian_defined) then
+       jacobian = 'sparse'
+       select type (inner => this % inner)
+       type is (dense_direct)
+          jacobian = 'dense'
+       end select
+    end if
     halley = 'none'
     if (this % higher_order_jacobian_product > 1) then
        write(halley,'(a,i0)') 'order ', this % higher_order_jacobian_product
@@ -370,8 +346,9 @@ contains
     if (initial > 0.0_dp) relative = achieved / initial
     linear_relative = 0.0_dp
     if (outcome % initial_residual > 0.0_dp) linear_relative = outcome % residual / outcome % initial_residual
-    print '(i5,3es13.4,f9.4,2x,a11,2x,a8,i7,2es13.4,2x,a)', it, achieved, relative, step_norm, factor, &
-         & jacobian, halley, outcome % iterations, outcome % residual, linear_relative, trim(outcome % description())
+    print '(i5,3es13.4,f9.4,i8,i10,2x,a8,2x,a6,i7,2es13.4,2x,a)', it, achieved, relative, step_norm, factor, &
+         & this % num_unknowns * this % num_components, nonzeros, jacobian, halley, outcome % iterations, &
+         & outcome % residual, linear_relative, trim(outcome % description())
 
   end subroutine reported
 

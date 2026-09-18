@@ -122,6 +122,22 @@ program taylor_green_vortex
   L_h = L % discretize(omega_h, time=chain([dirk(2), bdf(2), adams(2)], from=[1, 5, 8]), &
        &                        space=finite_difference(degree=2))
 
+  ! ONE NEWTON SOLVE PER INSTANT instead of per block: every block
+  ! holds one new instant and the history its family reads. The
+  ! smallest system is BDF's, one moment of unknowns (the history
+  ! instants enter as fixed rows); a DIRK block of one step holds its
+  ! stages beside the instant. Both were run on this case: the first
+  ! gives 2.3264E-02 in nine solves, the second 2.3266E-02 in ten.
+  !
+  !   L_h = L % discretize(omega_h, time=chain([dirk(2), (bdf(2), k = 3, 10)], from=[1, (k, k = 3, 10)]), &
+  !        &                        space=finite_difference(degree=2))
+  !
+  !   L_h = L % discretize(omega_h, time=chain([(dirk(2), k = 1, 10)], from=[(k, k = 1, 10)]), &
+  !        &                        space=finite_difference(degree=2))
+  !
+  ! One solve per DIRK stage is not a chain: a block is bounded by
+  ! instants, and the stages of a step are solved with it.
+
   ! the abstract syntax trees: each equation of each term of L as a
   ! formula, q_j the j-th unknown of the term's manifold with its
   ! derivatives as suffixes (q1x = du/dx, q1xx = d^2u/dx^2); then the

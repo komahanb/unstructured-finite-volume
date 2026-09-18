@@ -204,7 +204,9 @@ contains
     achieved = this % norm(residual)
     initial  = achieved
     if (verbosity >= 1 .and. this_image() == 1) then
-       print '(a,i3,a,es12.4)', 'newton  step ', 0, '  |F| = ', achieved
+       print '(a)', ' step          |F|     |F|/|F0|          |dq|   factor  jacobian     halley   cycles' // &
+            & '          |r|     |r|/|r0|  linear solve'
+       print '(i5,es13.4)', 0, achieved
     end if
     if (this % terminated(achieved, 0)) return
 
@@ -297,14 +299,14 @@ contains
   end subroutine solve
 
   !===================================================================!
-  ! One line per Newton step at verbosity one: the residual after the
-  ! step, absolute and relative to the first, the step's norm and the
-  ! factor the line search took it by, how
-  ! the jacobian was obtained (formed as the explicit stencil at every
-  ! step, or applied by directional derivatives), the Halley
-  ! correction's order or its absence, and the inner solve's restart
-  ! cycles, residual absolute and relative to its own first, and
-  ! outcome.
+  ! One row per Newton step at verbosity one, under a header printed
+  ! with step zero: the residual after the step, absolute and relative
+  ! to the first, the step's norm and the factor the line search took
+  ! it by, how the jacobian was obtained (formed as the explicit
+  ! stencil at every step, or applied by directional derivatives), the
+  ! Halley correction's order or its absence, and the inner solve's
+  ! restart cycles, residual absolute and relative to its own first,
+  ! and outcome.
   !===================================================================!
 
   subroutine reported(this, it, achieved, initial, dq, factor, jacobian_defined, outcome)
@@ -315,24 +317,21 @@ contains
     logical           , intent(in) :: jacobian_defined
     type(solve_result), intent(in) :: outcome
 
-    character(len=40) :: jacobian, halley
+    character(len=12) :: jacobian, halley
     real(dp) :: relative, linear_relative
 
-    jacobian = 'jacobian by directional derivatives'
-    if (jacobian_defined) jacobian = 'jacobian formed'
-    halley = 'no halley correction'
+    jacobian = 'directional'
+    if (jacobian_defined) jacobian = 'formed'
+    halley = 'none'
     if (this % higher_order_jacobian_product > 1) then
-       write(halley,'(a,i0)') 'halley correction of order ', this % higher_order_jacobian_product
+       write(halley,'(a,i0)') 'order ', this % higher_order_jacobian_product
     end if
     relative = 0.0_dp
     if (initial > 0.0_dp) relative = achieved / initial
     linear_relative = 0.0_dp
     if (outcome % initial_residual > 0.0_dp) linear_relative = outcome % residual / outcome % initial_residual
-    print '(a,i3,a,es12.4,a,es12.4,a,es12.4,a,f7.4,a,a,a,a)', 'newton  step ', it, '  |F| = ', achieved, &
-         & '  |F|/|F0| = ', relative, '  |dq| = ', this % norm(dq), '  factor ', factor, '  ', trim(jacobian), &
-         & '  ', trim(halley)
-    print '(a,i4,a,es12.4,a,es12.4,a,a)', '        linear solve: restart cycles ', outcome % iterations, &
-         & '  |r| = ', outcome % residual, '  |r|/|r0| = ', linear_relative, '  ', trim(outcome % description())
+    print '(i5,3es13.4,f9.4,2x,a11,2x,a8,i7,2es13.4,2x,a)', it, achieved, relative, this % norm(dq), factor, &
+         & jacobian, halley, outcome % iterations, outcome % residual, linear_relative, trim(outcome % description())
 
   end subroutine reported
 

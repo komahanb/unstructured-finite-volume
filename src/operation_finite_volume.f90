@@ -77,10 +77,9 @@ contains
     character(len=250) :: message
 
     if (order /= 2) then
-       write(message,'(a,i0,a)') 'operation_finite_volume: the finite-volume derivative on values at the &
-            &cell centres is of order two; an order above two returns the mean of the derivative over &
-            &the cell, not its value at the centre, and is what finite_difference provides; order = ', &
-            & order, ' is refused'
+       write(message,'(a,i0)') 'operation_finite_volume: on values at the cell centres the finite-volume &
+            &derivative is of order two; a higher order returns the mean of the derivative over the cell, &
+            &and is what finite_difference provides; order = ', order
        error stop trim(message)
     end if
     this % order = order

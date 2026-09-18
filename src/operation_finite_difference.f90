@@ -7,15 +7,21 @@
 ! ring by ring until the form's members are independent on it; this
 ! module names the method and its order p.
 !
-! THE ORDER OF ACCURACY. A derivative of order m read from the fit of
-! degree p has a truncation error O(h^(p + 1 - m)): O(h^p) for a first
-! derivative, O(h^(p - 1)) for a second. On a neighbourhood symmetric
-! about the cell the odd and even members are orthogonal, so an even
-! p gives O(h^p) for both, and an odd p gives the second derivatives
-! of p - 1 on the wider neighbourhood p needs. Any p from 2 is
-! admitted; the cost and the accuracy follow from this statement.
+! THE ORDER OF ACCURACY p, and the degree of the fit each derivative
+! reads. A derivative of order m from a fit of degree d has a
+! truncation error O(h^(d + 1 - m)), and on a neighbourhood symmetric
+! about the cell the odd and even members are orthogonal, so that an
+! even d gives O(h^d) for the first and the second derivative alike.
+! A first derivative therefore reads the fit of degree p, and a
+! second derivative the fit of degree p rounded up to even: with
+! that, every order from two is O(h^p) in both, and the second
+! derivatives never come from an odd degree - whose laplacian on the
+! quadrilateral box has the odd-even grid mode in its kernel, so that
+! the discrete equations are singular (measured: at order 3 as a
+! plain cubic fit every linear solve reaches its cycle limit with the
+! residual unreduced).
 !
-! At order two the form is restricted to the pure powers 1, x, x^2,
+! At degree two the form is restricted to the pure powers 1, x, x^2,
 ! y, y^2: on a cell and its face neighbours their second derivatives
 ! are the central differences and the laplacian's kernel is the
 ! constants alone, whereas the form with the mixed member over two
@@ -31,15 +37,14 @@ module operation_finite_difference
   use view_mesh               , only : mesh
   use operation_stencil       , only : stencil
   use operation_fitted_balance, only : fitted_derivative_stencil
+  use operation_derivative_approximation, only : derivative_approximation
 
   implicit none
 
   private
   public :: finite_difference
 
-  type :: finite_difference
-
-     integer :: order = 2
+  type, extends(derivative_approximation) :: finite_difference
 
    contains
 
@@ -85,6 +90,7 @@ contains
 
     type(polynomial_form) :: shape
     integer, allocatable :: orders(:), pure(:)
+    integer :: degree
     character(len=250) :: message
 
     if (axis < 1 .or. axis > cells % dimension) then
@@ -98,8 +104,13 @@ contains
        error stop trim(message)
     end if
 
-    shape = polynomial_form(this % order, cells % dimension)
-    if (this % order == 2) then
+    ! the degree read: the order for a first derivative, the order
+    ! rounded up to even for a second
+    degree = this % order
+    if (derivative >= 2) degree = degree + mod(degree, 2)
+
+    shape = polynomial_form(degree, cells % dimension)
+    if (degree == 2) then
        call shape % pure_members(pure)
        call shape % restrict(pure)
     end if

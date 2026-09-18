@@ -42,5 +42,7 @@ clean:
 .SUFFIXES: .f90 .o
 .PHONY: all clean
 
-%.o: %.f90
+# an object depends on the library too: a rebuilt library may have
+# changed a module interface the program compiled against
+%.o: %.f90 $(LIB)/libufvm.a
 	$(F90) $(F90FLAGS) -c $<

@@ -65,7 +65,7 @@ module operation_residual
   use operation_coupling   , only : weights_of
   use view_directed_connectivity, only : connectivity_graph
   use operation_scheme_stencil  , only : derived_constraints
-  use operation_finite_difference, only : finite_difference
+  use operation_derivative_approximation, only : derivative_approximation
   use operation_exchange       , only : exchange
   use util_verbosity           , only : verbosity
   use transform_partitioner    , only : partitioner, PARTITION_BREADTH_FIRST
@@ -197,7 +197,8 @@ module operation_residual
   ! THE DISCRETE RESIDUAL: the equations of the whole manifold as one
   ! Lagrangian rule, the conditions on its parts, the points, and the
   ! derivative approximations along time (a chain of families) and
-  ! along space (finite differences of a degree). minimize assembles
+  ! along space (a derivative_approximation of an order: finite
+  ! differences or finite volumes). minimize assembles
   ! one residual_operator per block of the chain over the block's
   ! instants, its stages and the cells, and solves the blocks in
   ! order.
@@ -220,7 +221,7 @@ module operation_residual
      type(expression)          :: rule
      type(chain)               :: schemes
      logical                   :: with_chain = .false.
-     type(finite_difference)   :: differences
+     class(derivative_approximation), allocatable :: differences
      logical                   :: with_differences = .false.
      type(residual_term), allocatable :: condition(:)
 
@@ -1458,7 +1459,7 @@ contains
     class(continuous_residual), intent(in) :: this
     type(discrete_manifold)   , intent(in) :: points
     type(chain)               , intent(in), optional :: time
-    type(finite_difference)   , intent(in), optional :: space
+    class(derivative_approximation), intent(in), optional :: space
     type(discrete_residual) :: image
 
     integer :: k, j, whole, num_conditions
@@ -1523,8 +1524,8 @@ contains
             &families, given exactly when the manifold has a time coordinate'
     end if
     if (points % with_space .neqv. present(space)) then
-       error stop 'operation_residual: the derivatives along space are approximated by finite &
-            &differences, given exactly when the manifold has a region'
+       error stop 'operation_residual: the derivatives along space are approximated by a method of an &
+            &order, finite differences or finite volumes, given exactly when the manifold has a region'
     end if
     if (present(time)) then
        image % schemes    = time
@@ -1534,7 +1535,7 @@ contains
        end if
     end if
     if (present(space)) then
-       image % differences      = space
+       allocate(image % differences, source=space)
        image % with_differences = .true.
     end if
 

@@ -66,7 +66,9 @@ operation_dense_direct.o \
 operation_conjugate_gradient.o \
 operation_fitting.o \
 operation_fitted_balance.o \
+operation_derivative_approximation.o \
 operation_finite_difference.o \
+operation_finite_volume.o \
 operation_diffusion.o \
 operation_gauss_seidel.o \
 operation_jacobi.o \

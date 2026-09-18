@@ -30,7 +30,7 @@ module march_rules_fixture
   use field_stored          , only : stored_field
   use operation_newton      , only : newton
   use operation_gmres       , only : gmres
-  use operation_linearization, only : linearization, tangent_of
+  use operation_linearization, only : linearization, jacobian_of
   use operation_stencil     , only : stencil
   use operation_family      , only : slope_at_zero
   use util_derivative_terms , only : derivative_terms, value
@@ -311,7 +311,7 @@ contains
     call bound_real_vector(inputs, this % argument(1), lambda)
     call bound_real_vector(inputs, this % argument(2), q)
 
-    tangent = tangent_of(this % law)
+    tangent = jacobian_of(this % law)
     call tangent % freeze([state_field(input_graph, 'state', q)])
     compiled   = stencil(tangent, input_graph, size(q))
     transposed = compiled % transpose()

@@ -297,7 +297,7 @@ program test_graph_minimization
   use operation_newton   , only : newton
   use operation_minimization, only : minimizer, solve_result, absolute, SOLVE_EXHAUSTED, SOLVE_BREAKDOWN, &
        & SOLVE_INNER_FAILED, SOLVE_NOT_STARTED, SOLVE_STAGNATED, state_tuple
-  use operation_linearization, only : linearization, tangent_of
+  use operation_linearization, only : linearization, jacobian_of
   use operation_action, only : varied, variation, dense_of_triples
   use, intrinsic :: ieee_arithmetic, only : ieee_value, ieee_positive_inf, ieee_is_finite, ieee_is_nan
   use operation_dense_direct, only : dense_direct
@@ -531,7 +531,7 @@ contains
     action % linear_part = differential_operator(SIDE_VERTEX, 0, coefficient=2.0_dp)
     state = stored_field('state', single_vertex % vertex_set(), 1)
     call state % set_real_vector([1.0_dp])
-    tangent = tangent_of(action, action % argument(1))
+    tangent = jacobian_of(action, action % argument(1))
     call tangent % freeze([state])
     direction = stored_field('direction', single_vertex % vertex_set(), 1)
     call direction % set_real_vector([1.0_dp])
@@ -555,7 +555,7 @@ contains
     ! truncation scale. Exhausting the one-dimensional Krylov space
     ! reports that mismatch without accepting its estimated residual.
     action % strength = 1.0_dp
-    tangent = tangent_of(action, action % argument(1))
+    tangent = jacobian_of(action, action % argument(1))
     call tangent % freeze([state])
     call solver % state(tangent, single_vertex, single_vertex % vertex_set(), 1)
     solver % tolerance = 1.0e-14_dp
@@ -1189,7 +1189,7 @@ contains
   !===================================================================!
   ! The operator on a selection: the residual constrained to instants
   ! 4, 2 and 6 with the exterior fixed at the state agrees with the
-  ! whole residual on those rows, its explicit tangent is the whole
+  ! whole residual on those rows, its explicit jacobian is the whole
   ! tangent's submatrix, the linearization action reproduces that
   ! assembled tangent, and the transposed stencil's action is its
   ! adjoint under the Euclidean pairing.
@@ -1213,7 +1213,7 @@ contains
     real(dp), allocatable :: weights(:), x(:), r_whole(:), r_sub(:), j_whole(:,:), j_sub(:,:), y(:)
     real(dp), allocatable :: basis(:), u(:), v(:), ju(:), jtv(:)
     real(dp) :: scale, difference
-    logical :: tangent_defined
+    logical :: jacobian_defined
     integer :: p, i, j
 
     residual = march_residual(n, h, c, q0)
@@ -1227,8 +1227,8 @@ contains
 
     call residual % apply(unknowns, residual % bind(inputs), image)
     call image % real_vector(r_whole)
-    call residual % explicit_tangent(unknowns, residual % bind(inputs), 1, rows, columns, weights, tangent_defined)
-    call report(tangent_defined, 'the march residual states an explicit tangent', num_failures)
+    call residual % explicit_jacobian(unknowns, residual % bind(inputs), 1, rows, columns, weights, jacobian_defined)
+    call report(jacobian_defined, 'the march residual states an explicit jacobian', num_failures)
     allocate(j_whole(2 * n, 2 * n), source=0.0_dp)
     do i = 1, size(rows)
        j_whole(rows(i), columns(i)) = j_whole(rows(i), columns(i)) + weights(i)
@@ -1246,7 +1246,7 @@ contains
          & 'the constrained residual with the exterior fixed equals the whole residual on the selected rows', &
          & num_failures)
 
-    call sub % explicit_tangent(members, sub % bind(inputs_sub), 1, rows, columns, weights, tangent_defined)
+    call sub % explicit_jacobian(members, sub % bind(inputs_sub), 1, rows, columns, weights, jacobian_defined)
     allocate(j_sub(k, k), source=0.0_dp)
     do i = 1, size(rows)
        j_sub(rows(i), columns(i)) = j_sub(rows(i), columns(i)) + weights(i)
@@ -1258,12 +1258,12 @@ contains
        end do
     end do
     scale = max(1.0_dp, maxval(abs(j_whole)))
-    call report(tangent_defined .and. difference <= 1.0e-13_dp * scale, &
+    call report(jacobian_defined .and. difference <= 1.0e-13_dp * scale, &
          & 'the assembled tangent of the constrained residual is the whole tangent''s submatrix', num_failures)
 
     ! the linearization action, column by column, against the
     ! assembled tangent
-    tangent = tangent_of(sub, sub % argument(1))
+    tangent = jacobian_of(sub, sub % argument(1))
     call tangent % freeze(inputs_sub)
     call action % state(tangent, members, sub % unknown_domain(), k)
     allocate(basis(k))
@@ -1422,7 +1422,7 @@ contains
 
   !===================================================================!
   ! THE RESIDUAL BOUNDARY. One frozen tuple (Q, nu) on U x P is read
-  ! by every consumer: the value, the explicit tangent, the tangent
+  ! by every consumer: the value, the explicit jacobian, the tangent
   ! action, the frozen linearization and its transpose, the design
   ! tangent, the mixed and third partials, and Newton by the explicit
   ! and by the tangent action. On the fixed rows F: R_i = Q_i - h_i,
@@ -1459,7 +1459,7 @@ contains
     real(dp), allocatable :: y123(:), rhs(:), mm(:), u(:), vv(:), g(:), lambda(:), b(:), q(:), q2(:)
     real(dp), allocatable :: expected(:), zeros(:)
     real(dp) :: scale, difference, achieved, left, right, violation, exact_violation, df_t, df_a, df_d
-    logical :: tangent_defined, on_domain
+    logical :: jacobian_defined, on_domain
     integer :: p, i, k
 
     allocate(x(m), nu(n), zeros(m))
@@ -1495,8 +1495,8 @@ contains
     call report(on_domain .and. maxval(abs(r - expected)) <= 1.0e-13_dp * scale, &
          & 'the residual on U: the physics with the point design, the tying rows, and Q_i - h_i on F', num_failures)
 
-    ! the explicit tangent: entries, unit rows on F
-    call residual % explicit_tangent(unknowns, residual % bind(inputs), 1, rows, columns, weights, tangent_defined)
+    ! the explicit jacobian: entries, unit rows on F
+    call residual % explicit_jacobian(unknowns, residual % bind(inputs), 1, rows, columns, weights, jacobian_defined)
     call dense_of_triples(m, rows, columns, weights, j)
     difference = 0.0_dp
     do p = 2, n
@@ -1505,10 +1505,10 @@ contains
             & abs(j(2 * p, 2 * p - 1) + 1.0_dp / h), abs(j(2 * p, 2 * p - 3) - 1.0_dp / h))
     end do
     scale = max(1.0_dp, maxval(abs(j)))
-    call report(tangent_defined .and. difference <= 1.0e-13_dp * scale .and. &
+    call report(jacobian_defined .and. difference <= 1.0e-13_dp * scale .and. &
          & maxval(abs(j(1, :) - [(merge(1.0_dp, 0.0_dp, k == 1), k = 1, m)])) == 0.0_dp .and. &
          & maxval(abs(j(2, :) - [(merge(1.0_dp, 0.0_dp, k == 2), k = 1, m)])) == 0.0_dp, &
-         & 'the explicit tangent: the physics and design partials, the tying weights, unit rows on F', num_failures)
+         & 'the explicit jacobian: the physics and design partials, the tying weights, unit rows on F', num_failures)
 
     ! the tangent action column by column against the explicit entries
     allocate(basis(m))
@@ -1520,7 +1520,7 @@ contains
        difference = max(difference, maxval(abs(y - j(:, k))))
     end do
     call report(difference <= 1.0e-13_dp * scale, &
-         & 'the tangent action D_Q R[e_k] is the k-th column of the explicit tangent, F rows included', num_failures)
+         & 'the tangent action D_Q R[e_k] is the k-th column of the explicit jacobian, F rows included', num_failures)
 
     ! the frozen linearization and its transpose on the same U and P
     rhs = [(0.1_dp * real(k, dp) - 0.4_dp, k = 1, m)]

@@ -13,7 +13,7 @@
 ! join the family the same way: another concrete type of the one
 ! interface.
 !
-! Newton contains no derivative mathematics. The tangent is a level-1
+! Newton contains no derivative mathematics. The jacobian is a level-1
 ! member - the linearisation operator - and newton only controls the
 ! iteration: freeze the linearisation at the current iterate, pass
 ! the linear system to the inner minimizer, step. The linearisation
@@ -25,7 +25,7 @@
 !                  THE HALLEY-CHEBYSHEV FAMILY
 !
 ! A statement that reports max_degree above one can return more than
-! its tangent, and higher_order_jacobian_product is the order a run
+! its jacobian, and higher_order_jacobian_product is the order a run
 ! requests. Above the plain Newton step delta_1, solving
 ! J delta_1 = -R, each further order s = 2, ..., p adds
 !
@@ -88,7 +88,7 @@ module operation_newton
   use util_verbosity, only : verbosity
   use field_stored  , only : stored_field
   use field_calculus, only : field
-  use operation_linearization, only : linearization, tangent_of
+  use operation_linearization, only : linearization, jacobian_of
   use operation_chain_rule   , only : total_derivative, derivative_of, argument_path
 
   implicit none
@@ -107,7 +107,7 @@ module operation_newton
 
   type, extends(minimizer) :: newton
 
-     ! Whether the tangent is taken explicit where the statement
+     ! Whether the jacobian is taken explicit where the statement
      ! provides it. When false, the linearization is stated - a
      ! matrix-vector product, no stored matrix - and the inner
      ! minimizer must iterate.
@@ -181,12 +181,12 @@ contains
     real(dp), intent(inout) :: x(:)
     real(dp), intent(out)   :: achieved
 
-    type(linearization) :: jacobian
-    type(stencil) :: tangent
+    type(linearization) :: linearized
+    type(stencil) :: jacobian
     type(stored_field), allocatable :: inputs(:)
     integer , allocatable :: rows(:), columns(:)
     real(dp), allocatable :: weights(:)
-    logical :: tangent_defined
+    logical :: jacobian_defined
     real(dp), allocatable :: residual(:), y(:), dq(:)
     real(dp) :: linear_achieved, initial, factor, previous
     real(dp), allocatable :: trial(:)
@@ -208,9 +208,9 @@ contains
     end if
     if (this % terminated(achieved, 0)) return
 
-    ! the tangent in the unknown's argument; which mode it uses is
+    ! the jacobian in the unknown's argument; which mode it uses is
     ! determined by the statement, and no dispatch is defined here
-    jacobian = tangent_of(this % action, this % action % argument(1))
+    linearized = jacobian_of(this % action, this % action % argument(1))
 
     do it = 1, this % max_iterations
 
@@ -219,28 +219,28 @@ contains
        ! The linear system at this iterate, solved by the inner
        ! minimizer: the Jacobian is frozen at the same input tuple the
        ! residual was evaluated on, stored inputs included.
-       call jacobian % freeze(inputs, base=y)
+       call linearized % freeze(inputs, base=y)
 
-       ! A statement whose tangent is explicit passes the inner
+       ! A statement whose jacobian is explicit passes the inner
        ! minimizer a stencil, whose pattern is then the coupling a
        ! structured minimizer sweeps by; any other is passed the
        ! linearization, a matrix-vector product.
-       tangent_defined = .false.
+       jacobian_defined = .false.
        if (this % explicit) then
-          call this % action % explicit_tangent(this % graph, this % action % bind(inputs), &
+          call this % action % explicit_jacobian(this % graph, this % action % bind(inputs), &
                & 1, rows, columns, &
-               & weights, tangent_defined)
+               & weights, jacobian_defined)
        end if
-       if (tangent_defined) then
-          tangent = stencil(rows, columns, weights, &
-               & spread(0.0_dp, 1, this % num_unknowns), 'explicit tangent')
-          call tangent % versioned(this % action % version(), this % action % transpose_version())
+       if (jacobian_defined) then
+          jacobian = stencil(rows, columns, weights, &
+               & spread(0.0_dp, 1, this % num_unknowns), 'explicit jacobian')
+          call jacobian % versioned(this % action % version(), this % action % transpose_version())
           if (allocated(this % distribution)) this % inner % distribution = this % distribution
-          call this % inner % state(tangent, tangent % pattern, this % unknown_domain, &
+          call this % inner % state(jacobian, jacobian % pattern, this % unknown_domain, &
                & this % num_unknowns, num_components = this % num_components, &
-               & coupling = tangent % pattern)
+               & coupling = jacobian % pattern)
        else
-          call this % inner % state(jacobian, this % graph, this % unknown_domain, &
+          call this % inner % state(linearized, this % graph, this % unknown_domain, &
                & this % num_unknowns, num_components = this % num_components)
        end if
        dq = 0.0_dp
@@ -249,7 +249,7 @@ contains
        ! image gathers the whole before the residual is evaluated
        if (allocated(this % distribution)) call this % distribution % gather(dq)
 
-       ! An inner minimizer that encountered a singular tangent reports
+       ! An inner minimizer that encountered a singular jacobian reports
        ! a residual no completed solve produces, and one that
        ! overflowed reports a value that is not a number. Neither
        ! yields a step.
@@ -274,7 +274,7 @@ contains
        ! residual: the factor is halved until |F(x + factor dq)| is
        ! below (1 - 1e-4 factor) |F(x)|, the Armijo condition, or the
        ! halvings are exhausted, after which the last trial is taken.
-       ! The reported residual and the next tangent use the same
+       ! The reported residual and the next jacobian use the same
        ! updated state. The count is the number of completed steps.
        previous = achieved
        factor   = 1.0_dp
@@ -289,7 +289,7 @@ contains
        end do
        x  = trial
        dq = factor * dq
-       if (verbosity >= 1 .and. this_image() == 1) call reported(this, it, achieved, initial, dq, factor, tangent_defined, outcome)
+       if (verbosity >= 1 .and. this_image() == 1) call reported(this, it, achieved, initial, dq, factor, jacobian_defined, outcome)
        if (this % terminated(achieved, it)) return
 
     end do
@@ -300,26 +300,26 @@ contains
   ! One line per Newton step at verbosity one: the residual after the
   ! step, absolute and relative to the first, the step's norm and the
   ! factor the line search took it by, how
-  ! the tangent was obtained (formed as the explicit stencil at every
+  ! the jacobian was obtained (formed as the explicit stencil at every
   ! step, or applied by directional derivatives), the Halley
   ! correction's order or its absence, and the inner solve's restart
   ! cycles, residual absolute and relative to its own first, and
   ! outcome.
   !===================================================================!
 
-  subroutine reported(this, it, achieved, initial, dq, factor, tangent_defined, outcome)
+  subroutine reported(this, it, achieved, initial, dq, factor, jacobian_defined, outcome)
 
     class(newton)     , intent(in) :: this
     integer           , intent(in) :: it
     real(dp)          , intent(in) :: achieved, initial, dq(:), factor
-    logical           , intent(in) :: tangent_defined
+    logical           , intent(in) :: jacobian_defined
     type(solve_result), intent(in) :: outcome
 
-    character(len=40) :: tangent, halley
+    character(len=40) :: jacobian, halley
     real(dp) :: relative, linear_relative
 
-    tangent = 'tangent by directional derivatives'
-    if (tangent_defined) tangent = 'tangent formed'
+    jacobian = 'jacobian by directional derivatives'
+    if (jacobian_defined) jacobian = 'jacobian formed'
     halley = 'no halley correction'
     if (this % higher_order_jacobian_product > 1) then
        write(halley,'(a,i0)') 'halley correction of order ', this % higher_order_jacobian_product
@@ -329,7 +329,7 @@ contains
     linear_relative = 0.0_dp
     if (outcome % initial_residual > 0.0_dp) linear_relative = outcome % residual / outcome % initial_residual
     print '(a,i3,a,es12.4,a,es12.4,a,es12.4,a,f7.4,a,a,a,a)', 'newton  step ', it, '  |F| = ', achieved, &
-         & '  |F|/|F0| = ', relative, '  |dq| = ', this % norm(dq), '  factor ', factor, '  ', trim(tangent), &
+         & '  |F|/|F0| = ', relative, '  |dq| = ', this % norm(dq), '  factor ', factor, '  ', trim(jacobian), &
          & '  ', trim(halley)
     print '(a,i4,a,es12.4,a,es12.4,a,a)', '        linear solve: restart cycles ', outcome % iterations, &
          & '  |r| = ', outcome % residual, '  |r|/|r0| = ', linear_relative, '  ', trim(outcome % description())

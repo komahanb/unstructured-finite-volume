@@ -22,7 +22,7 @@
 !      (J_KK - J_KE M) x_K = b_K - J_KE (I + N)^-1 b_E ,   M = (I + N)^-1 J_EK ,
 !
 ! M assembled row by row in the order, each row the row of J_EK less
-! the rows it reads. The complement is a stencil from the tangent's
+! the rows it reads. The complement is a stencil from the jacobian's
 ! own triples and is passed to the inner minimizer, which never sees
 ! the eliminated rows: its vectors, its blocks and its Krylov basis
 ! are over K alone. The solution is the solution of the whole system,
@@ -275,7 +275,7 @@ contains
     type is (stencil)
        m = action % pattern % num_edges()
     class default
-       error stop 'elimination: the complement is read from the explicit tangent, but the &
+       error stop 'elimination: the complement is read from the explicit jacobian, but the &
             &statement passed is a matrix-vector product without one'
     end select
 

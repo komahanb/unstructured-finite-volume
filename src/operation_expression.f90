@@ -884,7 +884,7 @@ contains
   ! derivative part of the adjoint at a state leaf is the mixed
   ! partial. The vertices are in evaluation order with the root last,
   ! so the pass from the last vertex to the first visits every vertex
-  ! after all that read it. One pass gives every partial the tangent
+  ! after all that read it. One pass gives every partial the jacobian
   ! of a rule needs, where the derivative arithmetic gives one
   ! direction per pass.
   !===================================================================!

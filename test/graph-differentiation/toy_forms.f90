@@ -9,7 +9,7 @@
 !      equilibrium_law  S_i(q, xi) = q_i^2 - xi,     max_degree 8;
 !                       every partial of order 3 or higher is zero
 !      linear_law       S(q) = q; keeps the default max_degree 0,
-!                       so tangent_of must select the difference
+!                       so jacobian_of must select the difference
 !                       linearization for it
 !
 ! Each is built by its constructor, which declares its arguments:
@@ -107,7 +107,7 @@ module toy_differentiable_forms
 
   !===================================================================!
   ! S(q) = q, overriding neither max_degree nor partial_action.
-  ! Used to check that tangent_of selects the difference
+  ! Used to check that jacobian_of selects the difference
   ! linearization for an operation without partial actions.
   !===================================================================!
 

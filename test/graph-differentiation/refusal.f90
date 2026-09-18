@@ -33,7 +33,7 @@ program refusal
   use field_stored   , only : stored_field
   use operation_action  , only : variation
   use operation_chain_rule, only : total_derivative, argument_path
-  use operation_linearization, only : linearization, tangent_of
+  use operation_linearization, only : linearization, jacobian_of
   use toy_differentiable_forms, only : quartic_form, equilibrium_law, &
        & linear_law, scalar_pair, fill_path
 
@@ -122,7 +122,7 @@ program refusal
 
   case ('unfrozen')
 
-     tangent = tangent_of(quartic)
+     tangent = jacobian_of(quartic)
      direction = stored_field('v', cells, 1, num_components=1)
      call direction % set_real_vector([1.0_dp])
      call tangent % apply(lone, tangent % bind([direction]), output)

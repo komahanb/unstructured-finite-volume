@@ -4,7 +4,7 @@
 !      slope_at_zero      the nonuniform and uniform order-2 BDF
 !                         coefficients and the order-1 coefficients,
 !                         read from the family's Lagrange slopes
-!      tangent_of         exact/difference dispatch, and the value
+!      jacobian_of         exact/difference dispatch, and the value
 !                         of the exact tangent
 !      total_derivative   total derivatives to degree 8
 !      the pairing law    <J v, lambda> = <v, J^T lambda> with J^T
@@ -27,7 +27,7 @@ program test_graph_differentiation
   use view_directed_stored         , only : stored_directed_graph
   use field_stored   , only : stored_field
   use operation_chain_rule, only : total_derivative, derivative_of, argument_path
-  use operation_linearization, only : linearization, tangent_of
+  use operation_linearization, only : linearization, jacobian_of
   use operation_stencil , only : stencil
   use operation_family  , only : slope_at_zero
   use util_derivative_terms, only : derivative_terms, value
@@ -131,7 +131,7 @@ contains
   end subroutine check_the_bdf_coefficients
 
   !===================================================================!
-  ! tangent_of must take the exact mode when the operation's
+  ! jacobian_of must take the exact mode when the operation's
   ! max_degree is at least one and the difference mode otherwise;
   ! the two are distinguished here by their name() prefixes. The
   ! exact tangent of the quartic frozen at
@@ -148,17 +148,17 @@ contains
     type(stored_field) :: direction, state
     real(dp), allocatable :: rv(:)
 
-    tangent = tangent_of(quartic)
-    slow    = tangent_of(lin)
+    tangent = jacobian_of(quartic)
+    slow    = jacobian_of(lin)
 
     call report(lin % max_degree() == 0 .and. quartic % max_degree() == 4, &
          & "max_degree is 0 unless the operation differentiates itself", nfail)
     call report(index(tangent % name(), 'exact derivative of') == 1, &
-         & "tangent_of picks the exact linearization when differentiable", &
+         & "jacobian_of picks the exact linearization when differentiable", &
          & nfail)
     call report(index(slow % name(), 'derivative of') == 1 .and. &
          & index(slow % name(), 'exact') == 0, &
-         & "tangent_of picks the difference linearization otherwise", nfail)
+         & "jacobian_of picks the difference linearization otherwise", nfail)
 
     state = stored_field('q', cells, 1, num_components=1)
     call state % set_real_vector([1.0_dp])
@@ -371,7 +371,7 @@ contains
     call lf % set_real_vector(lambda)
 
     ! the state block, square: the compiled transpose of the tangent
-    tangent_q = tangent_of(equil, equil % argument(1))
+    tangent_q = jacobian_of(equil, equil % argument(1))
     call tangent_q % freeze([qf, xif])
     call tangent_q % apply(three, tangent_q % bind([vf]), output)
     call output % real_vector(jv)
@@ -387,7 +387,7 @@ contains
          &transpose returns J^T lambda = 2 q lambda", nfail)
 
     ! the auxiliary block, rectangular: three residuals, one parameter
-    tangent_xi = tangent_of(equil, equil % argument(2))
+    tangent_xi = jacobian_of(equil, equil % argument(2))
     call tangent_xi % freeze([qf, xif])
     call tangent_xi % apply(three, tangent_xi % bind([wf]), output)
     call output % real_vector(jv)
@@ -433,7 +433,7 @@ contains
     call solver % state(quartic, lone, cells, 1, stored_inputs=stored)
 
     call solver % evaluate([1.0_dp], y0, inputs)
-    jacobian = tangent_of(quartic, quartic % argument(1))
+    jacobian = jacobian_of(quartic, quartic % argument(1))
     call jacobian % freeze(inputs)
     call jacobian % apply(lone, jacobian % bind([v]), output)
     call output % real_vector(rv)

@@ -17,8 +17,8 @@
 ! -dh(row)/dnu, not zero. A rate left out is zero, the value being
 ! data of the problem rather than a function of the design.
 !
-! apply, explicit_tangent and partial_action are composed once here
-! from the two stencils' own apply/explicit_tangent/partial_action
+! apply, explicit_jacobian and partial_action are composed once here
+! from the two stencils' own apply/explicit_jacobian/partial_action
 ! and the physics expression's - a residual never differentiates
 ! anything itself, it only assembles what the two composed objects
 ! already differentiate.
@@ -35,7 +35,7 @@
 ! on P with one value per point; the residual, its tangents and its
 ! partials are fields on Y = U. A field of equal length on another
 ! domain, and a host graph of another identity, are refused: every
-! consumer - value, explicit tangent, tangent and adjoint actions,
+! consumer - value, explicit jacobian, tangent and adjoint actions,
 ! higher partials, the frozen linearization and the constrained
 ! residual - reads one frozen tuple (Q, nu) on U x P.
 !
@@ -112,7 +112,7 @@ module operation_residual
      procedure :: max_degree     => residual_max_degree
      procedure :: defined_at_zero => residual_defined_at_zero
      procedure :: partial_action => residual_partial_action
-     procedure :: explicit_tangent => residual_explicit_tangent
+     procedure :: explicit_jacobian => residual_explicit_jacobian
 
      procedure :: num_unknowns
      procedure :: fixed_unknowns
@@ -616,7 +616,7 @@ contains
   !===================================================================!
   ! THE FROZEN TUPLE (Q, nu) on U x P: the state x, one value per
   ! unknown, and the design nu, one value per point. Every consumer -
-  ! the value, the explicit tangent, the tangent and adjoint actions,
+  ! the value, the explicit jacobian, the tangent and adjoint actions,
   ! the higher partials - reads a tuple built here, so each
   ! linearizes the same function at the same point. Invalid input: a
   ! state or a design of another length.
@@ -975,23 +975,23 @@ contains
     end subroutine stencil_term
   end subroutine discretized
 
-  subroutine residual_explicit_tangent(this, input_graph, inputs, which, &
-       & rows, columns, weights, tangent_defined)
+  subroutine residual_explicit_jacobian(this, input_graph, inputs, which, &
+       & rows, columns, weights, jacobian_defined)
     class(residual_operator), intent(in)  :: this
     class(directed_graph)    , intent(in)  :: input_graph
     type(binding)             , intent(in)  :: inputs(:)
     integer              , intent(in)  :: which
     integer , allocatable, intent(out) :: rows(:), columns(:)
     real(dp), allocatable, intent(out) :: weights(:)
-    logical              , intent(out) :: tangent_defined
+    logical              , intent(out) :: jacobian_defined
     type(stored_field) :: state
     real(dp), allocatable :: x(:), w(:), column(:), xs(:), nu(:), g(:)
     integer , allocatable :: r(:), c(:), reads(:)
     logical , allocatable :: is_fixed(:)
     integer :: e, d, p, npts, n, num_triples, count, j, k, deg
     real(dp) :: value
-    tangent_defined = which == 1
-    if (.not. tangent_defined) return
+    jacobian_defined = which == 1
+    if (.not. jacobian_defined) return
     call require_host(this, input_graph)
     n    = this % unknowns
     npts = size(this % at)
@@ -1047,7 +1047,7 @@ contains
        end do
     end if
     call combine_triples(n, n, r(1:num_triples), c(1:num_triples), w(1:num_triples), rows, columns, weights)
-  end subroutine residual_explicit_tangent
+  end subroutine residual_explicit_jacobian
 
   subroutine stencil_triples(op, is_fixed, r, c, w, num_triples)
     type(stencil), intent(in)    :: op
@@ -1322,7 +1322,7 @@ contains
     type(stencil) :: a
     integer , allocatable :: r(:), c(:)
     real(dp), allocatable :: w(:)
-    logical :: tangent_defined
+    logical :: jacobian_defined
     character(len=250) :: message
 
     if (size(rhs) /= this % unknowns) then
@@ -1331,13 +1331,13 @@ contains
        error stop trim(message)
     end if
 
-    call this % explicit_tangent(input_graph, inputs, 1, r, c, w, tangent_defined)
-    if (.not. tangent_defined) then
-       error stop 'operation_residual: linearize requires the tangent in the state to be &
-            &explicit, but explicit_tangent() reported none'
+    call this % explicit_jacobian(input_graph, inputs, 1, r, c, w, jacobian_defined)
+    if (.not. jacobian_defined) then
+       error stop 'operation_residual: linearize requires the jacobian in the state to be &
+            &explicit, but explicit_jacobian() reported none'
     end if
 
-    a = stencil(r, c, w, spread(0.0_dp, 1, this % unknowns), 'explicit tangent')
+    a = stencil(r, c, w, spread(0.0_dp, 1, this % unknowns), 'explicit jacobian')
     if (transposed) call a % reverse()
     call a % constants % set_real_vector(-rhs)
 

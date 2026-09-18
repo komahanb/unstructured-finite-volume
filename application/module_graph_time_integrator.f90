@@ -1453,7 +1453,7 @@ contains
        end if
     end do
     if (trim(this % jacobian_kind) == 'free') then
-       error stop 'gti_sweeps: the eliminated rows are read from the explicit tangent, which a &
+       error stop 'gti_sweeps: the eliminated rows are read from the explicit jacobian, which a &
             &matrix-free jacobian does not store; jacobian_kind = ' // trim(this % jacobian_kind)
     end if
     complement % eliminated = eliminated
@@ -8347,13 +8347,13 @@ contains
     integer , allocatable :: r(:), c(:), reads(:)
     real(dp), allocatable :: w(:)
     logical , allocatable :: has_diagonal(:), fixed_rows(:)
-    logical :: tangent_defined
+    logical :: jacobian_defined
     integer :: n, e, p, d, stride
     call frozen_at(b, design, inputs)
-    call b % rows % explicit_tangent(b % rows % unknown_graph(), b % rows % bind(inputs), 1, r, c, w, tangent_defined)
-    if (.not. tangent_defined) then
+    call b % rows % explicit_jacobian(b % rows % unknown_graph(), b % rows % bind(inputs), 1, r, c, w, jacobian_defined)
+    if (.not. jacobian_defined) then
        error stop 'gti_chain: the block tangent in the state must be explicit, but &
-            &explicit_tangent reports tangent_defined = .false.'
+            &explicit_jacobian reports jacobian_defined = .false.'
     end if
     n = b % rows % num_unknowns()
     allocate(reads(n), source=0)

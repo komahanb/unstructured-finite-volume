@@ -22,7 +22,7 @@
 ! that stops the program, the matrix being singular where the caller
 ! expected it not to be.
 !
-! A caller whose matrix is a tangent frozen at an intermediate
+! A caller whose matrix is a jacobian frozen at an intermediate
 ! iterate does not expect that, since singularity there is a property
 ! of the iterate and not a fault. Such a caller sets
 ! singular_reported, and a singular pivot then leaves the unknown

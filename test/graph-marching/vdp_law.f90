@@ -162,7 +162,7 @@ contains
   end function law_max_degree
 
   ! Minus J dq at the state, the one argument: the velocity jacobian,
-  ! written once; tangent_of reads it and the reverse traversal
+  ! written once; jacobian_of reads it and the reverse traversal
   ! transposes it.
   subroutine law_partial_action(this, input_graph, inputs, &
        & variations, output)

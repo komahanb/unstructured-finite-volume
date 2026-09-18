@@ -906,7 +906,7 @@ contains
   !===================================================================!
   ! The operation applied unmodified, affine part included. The
   ! input tuple the operation was applied on is returned when
-  ! requested, so that a tangent frozen on that tuple linearizes the
+  ! requested, so that a jacobian frozen on that tuple linearizes the
   ! function that was evaluated.
   !===================================================================!
 

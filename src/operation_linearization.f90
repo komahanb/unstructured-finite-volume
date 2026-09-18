@@ -1,5 +1,5 @@
 !=====================================================================!
-! The linearization: the tangent of a statement S in one of its
+! The linearization: the jacobian of a statement S in one of its
 ! arguments, at a frozen input tuple, behind the operation interface,
 ! so a minimizer reads an ordinary linear operation. The primal S is
 ! written once; its tangent is this derived operation, evaluated by
@@ -34,7 +34,7 @@ module operation_linearization
 
   private
   public :: linearization
-  public :: tangent_of
+  public :: jacobian_of
 
   type, extends(operation) :: linearization
 
@@ -66,7 +66,7 @@ contains
   ! argument the statement does not own stops the program.
   !===================================================================!
 
-  function tangent_of(of, wrt) result(this)
+  function jacobian_of(of, wrt) result(this)
 
     class(operation), intent(in)             :: of
     type(argument), intent(in), optional     :: wrt
@@ -87,10 +87,10 @@ contains
        this % wrt = of % argument(1)
     end if
 
-    ! the tangent reads one direction, shaped as the argument differentiated
+    ! the jacobian reads one direction, shaped as the argument differentiated
     call this % declare_arguments(1, [this % wrt % contract()])
 
-  end function tangent_of
+  end function jacobian_of
 
   !===================================================================!
   ! The exact mode is available when the statement computes at least
@@ -173,7 +173,7 @@ contains
     character(len=250) :: message
 
     if (.not. allocated(this % at)) then
-       error stop 'linearization: the tangent was requested before freeze_inputs was called'
+       error stop 'linearization: the jacobian was requested before freeze_inputs was called'
     end if
     tuple = this % at
 

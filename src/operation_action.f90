@@ -190,7 +190,7 @@ module operation_action
      procedure :: defined_at_zero  => operation_defined_at_zero
      procedure :: partial_action   => operation_partial_action
      procedure :: value_by_partial_action
-     procedure :: explicit_tangent => operation_explicit_tangent
+     procedure :: explicit_jacobian => operation_explicit_jacobian
 
      procedure :: declare_arguments
      procedure :: versioned
@@ -694,14 +694,14 @@ contains
   ! THE EXPLICIT TANGENT. A statement that can express its own
   ! tangent in one argument as triples - row, column, weight -
   ! reports so here, and a minimizer governing it may then state the
-  ! explicit operator instead of forming the tangent by matvecs. The
-  ! default tangent_defined is false; the arrays
+  ! explicit operator instead of forming the jacobian by matvecs. The
+  ! default jacobian_defined is false; the arrays
   ! are then not assigned. Nothing here is a matvec: a statement that
   ! reports its tangent explicitly stores its own structure.
   !===================================================================!
 
-  subroutine operation_explicit_tangent(this, input_graph, inputs, which, &
-       & rows, columns, weights, tangent_defined)
+  subroutine operation_explicit_jacobian(this, input_graph, inputs, which, &
+       & rows, columns, weights, jacobian_defined)
 
     class(operation)     , intent(in)  :: this
     class(directed_graph), intent(in)  :: input_graph
@@ -709,13 +709,13 @@ contains
     integer              , intent(in)  :: which
     integer , allocatable, intent(out) :: rows(:), columns(:)
     real(dp), allocatable, intent(out) :: weights(:)
-    logical              , intent(out) :: tangent_defined
+    logical              , intent(out) :: jacobian_defined
 
     associate (u1 => this, u2 => input_graph, u3 => inputs, u4 => which); end associate
     allocate(rows(0), columns(0), weights(0))
-    tangent_defined = .false.
+    jacobian_defined = .false.
 
-  end subroutine operation_explicit_tangent
+  end subroutine operation_explicit_jacobian
 
   subroutine operation_partial_action(this, input_graph, inputs, &
        & variations, output)
@@ -830,11 +830,11 @@ contains
 
     real(dp), allocatable :: v(:), column(:), w(:)
     integer , allocatable :: r(:), c(:)
-    logical :: tangent_defined
+    logical :: jacobian_defined
     integer :: j
 
-    call rows % explicit_tangent(unknowns, rows % bind(inputs), 1, r, c, w, tangent_defined)
-    if (tangent_defined) then
+    call rows % explicit_jacobian(unknowns, rows % bind(inputs), 1, r, c, w, jacobian_defined)
+    if (jacobian_defined) then
        call dense_of_triples(num_unknowns, r, c, w, a)
        return
     end if

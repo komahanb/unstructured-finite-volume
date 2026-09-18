@@ -92,3 +92,6 @@ application/spatio_temporal
 # Python source checks
 __pycache__/
 *.py[cod]
+test/graph-scheme/dirk_coefficients
+test/graph-scheme/taylor_green_vortex
+test/graph-scheme/taylor_green_study

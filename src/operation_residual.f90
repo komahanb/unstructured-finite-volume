@@ -1681,7 +1681,7 @@ contains
     nf     = this % manifold % num_unknowns
     ncells = this % points % num_cells()
     n      = last - first + 1
-    if (verbosity >= 1 .and. this_image() == 1) then
+    if (verbosity >= 1) then
        print '(a,a,a,i0,a,i0,a,es12.4,a,es12.4,a,i0,a)', 'block  ', trim(scheme % name()), '  instants ', first, &
             & '..', last, '  t = ', this % points % instant(first), ' .. ', this % points % instant(last), &
             & '  history ', depth, ' instants'
@@ -1944,7 +1944,10 @@ contains
        allocate(krylov % preconditioner, source=sweeps)
        allocate(solver % inner, source=krylov)
        ! over several images, the cells are distributed and the
-       ! linear solve with them
+       ! linear solve with them; a build of one image under a
+       ! launcher of several would run the whole problem once per
+       ! process, and is refused
+       call require_images()
        if (num_images() > 1) solver % distribution = exchange(owners_of_unknowns(this, unknowns, stride, npts))
     else
        allocate(solver % inner, source=direct)
@@ -1960,6 +1963,30 @@ contains
     end if
 
   end subroutine solved
+
+  !===================================================================!
+  ! A build of one image (-fcoarray=single) started by an MPI
+  ! launcher with several processes is invalid: every process would
+  ! solve the whole problem and print as image 1. The launcher's
+  ! process count is read from the environment (OpenMPI, MPICH).
+  !===================================================================!
+
+  subroutine require_images()
+
+    character(len=32) :: value
+    integer :: status, ranks
+
+    if (num_images() > 1) return
+    ranks = 1
+    call get_environment_variable('OMPI_COMM_WORLD_SIZE', value, status=status)
+    if (status /= 0) call get_environment_variable('PMI_SIZE', value, status=status)
+    if (status == 0) read(value, *, iostat=status) ranks
+    if (ranks > 1) then
+       error stop 'operation_residual: this program was built for one image, but the launcher &
+            &started several processes; run it without mpirun, or build it with COARRAY=lib'
+    end if
+
+  end subroutine require_images
 
   !===================================================================!
   ! THE OWNER OF EVERY UNKNOWN of a block: the cells are partitioned

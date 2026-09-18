@@ -86,6 +86,7 @@ module operation_newton
   use operation_stencil     , only : stencil
   use util_tally, only : newton_solves, primal_loops, tally
   use util_verbosity, only : verbosity
+  use operation_dense_direct, only : dense_direct
   use field_stored  , only : stored_field
   use field_calculus, only : field
   use operation_linearization, only : linearization, jacobian_of
@@ -233,6 +234,7 @@ contains
                & 1, rows, columns, &
                & weights, jacobian_defined)
        end if
+       if (verbosity >= 1 .and. it == 1) call described(this, jacobian_defined, size(rows))
        if (jacobian_defined) then
           jacobian = stencil(rows, columns, weights, &
                & spread(0.0_dp, 1, this % num_unknowns), 'explicit jacobian')
@@ -300,6 +302,41 @@ contains
     end do
 
   end subroutine solve
+
+  !===================================================================!
+  ! The jacobian described once per solve, when first formed: its
+  ! order (rows and columns, one per unknown), its nonzeros, and its
+  ! representation - sparse, the explicit stencil applied as such;
+  ! dense, that stencil compiled to a full matrix by a direct inner
+  ! solver; free, no matrix, the directional derivatives of the
+  ! linearization.
+  !===================================================================!
+
+  subroutine described(this, jacobian_defined, nonzeros)
+
+    class(newton), intent(in) :: this
+    logical      , intent(in) :: jacobian_defined
+    integer      , intent(in) :: nonzeros
+
+    character(len=32) :: representation
+
+    representation = 'free (directional derivatives)'
+    if (jacobian_defined) then
+       representation = 'sparse'
+       select type (inner => this % inner)
+       type is (dense_direct)
+          representation = 'dense'
+       end select
+    end if
+    if (jacobian_defined) then
+       print '(a,i0,a,i0,a,a,a,a)', ' jacobian  rows ', this % num_unknowns * this % num_components, &
+            & '  nonzeros ', nonzeros, '  ', trim(representation), '  inner solver ', trim(this % inner % name())
+    else
+       print '(a,i0,a,a,a,a)', ' jacobian  rows ', this % num_unknowns * this % num_components, &
+            & '  ', trim(representation), '  inner solver ', trim(this % inner % name())
+    end if
+
+  end subroutine described
 
   !===================================================================!
   ! One row per Newton step at verbosity one, under a header printed

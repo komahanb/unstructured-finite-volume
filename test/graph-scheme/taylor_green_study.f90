@@ -1,11 +1,11 @@
 !=====================================================================!
 ! THE TAYLOR-GREEN VORTEX under chosen parameters: the same statement
 ! as taylor_green_vortex.f90, with the duration, the number of
-! instants, the degree of the finite differences, the orders of the
+! instants, the order of the finite differences, the orders of the
 ! three time families and the instants their blocks begin at read
 ! from the command line, and the convergence of every solve printed.
 !
-!      taylor_green_study [T] [instants] [degree] [dirk] [bdf] [adams] [from2] [from3] [mesh] [length]
+!      taylor_green_study [T] [instants] [order] [dirk] [bdf] [adams] [from2] [from3] [mesh] [length]
 !
 ! Every argument has the value of taylor_green_vortex.f90 when
 ! absent: 1.0 10 2 2 2 2 5 8 box.msh 0. The last, when positive, is
@@ -34,7 +34,7 @@ program taylor_green_study
   real(dp), parameter :: nu = 0.01_dp
 
   real(dp) :: T_final = 1.0_dp
-  integer  :: num_instants = 10, degree = 2, dirk_order = 2, bdf_order = 2, adams_order = 2, from2 = 5, from3 = 8
+  integer  :: num_instants = 10, order = 2, dirk_order = 2, bdf_order = 2, adams_order = 2, from2 = 5, from3 = 8
   integer  :: length = 0
   character(len=256) :: mesh_file = 'box.msh'
   type(family), allocatable :: schemes(:)
@@ -65,7 +65,7 @@ program taylor_green_study
   end do
 
   print '(a,f6.2,a,i0,a,i0,a,i0,a,i0,a,i0,a,a,a,*(i0,1x))', 'study  T = ', T_final, '  instants = ', num_instants, &
-       & '  finite differences of degree ', degree, '  chain dirk(', dirk_order, ') bdf(', bdf_order, &
+       & '  finite differences of order ', order, '  chain dirk(', dirk_order, ') bdf(', bdf_order, &
        & ') adams(', adams_order, ')  mesh ', trim(mesh_file), '  blocks from ', from
 
   omega   = continuous_manifold(time=interval(0.0_dp, T_final), space=region('box.geo'))
@@ -100,7 +100,7 @@ program taylor_green_study
   gauge = continuous_residual(tau,    [integral(p, over=omega % space())])
   L     = r + lambda*g + mu*gauge
 
-  L_h = L % discretize(omega_h, time=chain(schemes, from=from), space=finite_difference(degree=degree))
+  L_h = L % discretize(omega_h, time=chain(schemes, from=from), space=finite_difference(order=order))
 
   if (this_image() == 1) call set_verbosity(1)
   estimate = exact % discretize(omega_h)
@@ -121,7 +121,7 @@ contains
     n = command_argument_count()
     if (n >= 1) then; call get_command_argument(1, item); read(item, *) T_final;      end if
     if (n >= 2) then; call get_command_argument(2, item); read(item, *) num_instants; end if
-    if (n >= 3) then; call get_command_argument(3, item); read(item, *) degree;       end if
+    if (n >= 3) then; call get_command_argument(3, item); read(item, *) order;        end if
     if (n >= 4) then; call get_command_argument(4, item); read(item, *) dirk_order;   end if
     if (n >= 5) then; call get_command_argument(5, item); read(item, *) bdf_order;    end if
     if (n >= 6) then; call get_command_argument(6, item); read(item, *) adams_order;  end if

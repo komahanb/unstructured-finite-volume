@@ -119,9 +119,9 @@ program taylor_green_vortex
   ! four, bdf(2) at the next three, adams(2) at the last three, each
   ! block reading the instants before it - so that Newton solves one
   ! instant at a time; d/dx, d/dy and their second derivatives by
-  ! finite differences exact on polynomials of degree 2
+  ! finite differences of order 2, exact on polynomials of degree 2
   L_h = L % discretize(omega_h, time=chain([(dirk(2), k = 1, 4), (bdf(2), k = 5, 7), (adams(2), k = 8, 10)], &
-       &                                   from=[(k, k = 1, 10)]), space=finite_difference(degree=2))
+       &                                   from=[(k, k = 1, 10)]), space=finite_difference(order=2))
 
   ! THE SAME FAMILIES IN THREE BLOCKS, dirk(2) from the first instant,
   ! bdf(2) from the fifth, adams(2) from the eighth, each block one
@@ -133,7 +133,7 @@ program taylor_green_vortex
   ! forward solve.
   !
   !   L_h = L % discretize(omega_h, time=chain([dirk(2), bdf(2), adams(2)], from=[1, 5, 8]), &
-  !        &                        space=finite_difference(degree=2))
+  !        &                        space=finite_difference(order=2))
   !
   ! One solve per DIRK stage is not a chain: a block is bounded by
   ! instants, and the stages of a step are solved with it.

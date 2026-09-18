@@ -357,7 +357,7 @@ contains
        call this % imbalance(rhs, x, r)
        achieved = this % norm(r)
        ! one line per restart cycle at verbosity two
-       if (verbosity >= 2 .and. this_image() == 1) then
+       if (verbosity >= 2) then
           print '(a,i4,a,i3,a,es12.4,a,es12.4)', '        gmres cycle ', outer, '  directions ', k, &
                & '  |r| = ', achieved, '  |r|/|r0| = ', achieved / max(first_residual, tiny(1.0_dp))
        end if

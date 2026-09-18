@@ -397,18 +397,22 @@ contains
     real(dp)                , intent(inout) :: r(:)
     logical                 , intent(in)    :: along
     type(typed_field_domain) :: states
-    type(stored_field) :: given
+    type(stored_field) :: given(1)
+    type(variation) :: varied(1)
     class(field), allocatable :: half
     real(dp), allocatable :: y(:)
     if (.not. allocated(this % prescribed)) return
     states = this % state_fields()
+    ! the bound field and the variation are array variables, not
+    ! array constructors: the compiler in use does not release the
+    ! allocatable components of a constructor's temporary
     if (along) then
-       given = states % direction(values)
-       call this % prescribed % partial_action(this % unknown_vertices, this % prescribed % bind([given]), &
-            & [variation(this % prescribed % argument(1), given)], half)
+       given(1)  = states % direction(values)
+       varied(1) = variation(this % prescribed % argument(1), given(1))
+       call this % prescribed % partial_action(this % unknown_vertices, this % prescribed % bind(given), varied, half)
     else
-       given = states % state(values)
-       call this % prescribed % apply(this % unknown_vertices, this % prescribed % bind([given]), half)
+       given(1) = states % state(values)
+       call this % prescribed % apply(this % unknown_vertices, this % prescribed % bind(given), half)
     end if
     call half % real_vector(y)
     where (this % prescribed_row) r = y
@@ -938,6 +942,7 @@ contains
     type(stored_field) :: direction
     type(stored_field), allocatable :: point_data(:)
     type(typed_field_domain) :: points
+    type(variation) :: varied(1)
     class(field), allocatable :: half
     real(dp), allocatable :: coupled(:)
     call stencil_term(this % primary_law, r)
@@ -953,7 +958,8 @@ contains
     if (present(v)) then
        points    = typed_field_domain(this % points, this % stride())
        direction = points % direction(gathered(this, v))
-       call governed(this, point_data, governing, [variation(this % physics % argument(1), direction)])
+       varied(1) = variation(this % physics % argument(1), direction)
+       call governed(this, point_data, governing, varied)
     else
        call governed(this, point_data, governing)
     end if
@@ -961,15 +967,20 @@ contains
     subroutine stencil_term(op, y)
       type(stencil), intent(in) :: op
       real(dp), allocatable, intent(out) :: y(:)
-      type(stored_field) :: along
+      type(stored_field) :: along(1), bound(1)
+      type(variation) :: varied(1)
       type(typed_field_domain) :: domain
+      ! array variables, not array constructors: the compiler in use
+      ! does not release the allocatable components of a constructor's
+      ! temporary
+      bound(1) = state
       if (present(v)) then
-         domain = this % state_fields()
-         along  = domain % direction(v)
-         call op % partial_action(this % unknown_vertices, op % bind([state]), &
-              & [variation(op % argument(1), along)], half)
+         domain    = this % state_fields()
+         along(1)  = domain % direction(v)
+         varied(1) = variation(op % argument(1), along(1))
+         call op % partial_action(this % unknown_vertices, op % bind(bound), varied, half)
       else
-         call op % apply(this % unknown_vertices, op % bind([state]), half)
+         call op % apply(this % unknown_vertices, op % bind(bound), half)
       end if
       call half % real_vector(y)
     end subroutine stencil_term

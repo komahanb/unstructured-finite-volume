@@ -52,6 +52,7 @@ program taylor_green_vortex
   use operation_family           , only : dirk, bdf, adams, chain
   use operation_finite_difference, only : finite_difference
   use view_paraview_writer       , only : paraview
+  use util_verbosity             , only : set_verbosity
   use view_expression            , only : expression_view
 
   implicit none
@@ -137,8 +138,10 @@ program taylor_green_vortex
   print '(a)', view % tree()
 
   ! (u, v, p, lambda, mu)_h = the zero of L_h, from the initial
-  ! estimate (u*, v*, p*) restricted to Omega_h and lambda = mu = 0
+  ! estimate (u*, v*, p*) restricted to Omega_h and lambda = mu = 0;
+  ! the convergence of every Newton step and linear solve is printed
   estimate = exact % discretize(omega_h)
+  call set_verbosity(1)
   call L_h % minimize(estimate, solution)
 
   ! || (u, v, p)_h - (u*, v*, p*)|Omega_h ||

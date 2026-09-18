@@ -30,6 +30,7 @@ program dirk_coefficients
   use operation_field   , only : continuous_field, discrete_field
   use operation_field   , only : operator(+), operator(-), operator(*), operator(/), operator(**)
   use operation_residual, only : continuous_residual, discrete_residual
+  use util_verbosity    , only : set_verbosity
 
   implicit none
 
@@ -79,6 +80,8 @@ program dirk_coefficients
   ! and the zero of R_h from it
   crouzeix = continuous_field(omega, h * [0.8_dp, -0.6_dp, 0.8_dp, 0.5_dp, 0.5_dp, 0.8_dp, 0.2_dp])
   estimate = crouzeix % discretize(omega_h)
+  ! the convergence of every Newton step and linear solve is printed
+  call set_verbosity(1)
   call r_h % minimize(estimate, solution)
 
   call solution % values(values)

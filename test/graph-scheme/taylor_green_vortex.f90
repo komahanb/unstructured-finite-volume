@@ -114,25 +114,25 @@ program taylor_green_vortex
   gauge = continuous_residual(tau,    [integral(p, over=omega % space())])
   L     = r + lambda*g + mu*gauge
 
-  ! L_h on Omega_h and dOmega_h: d/dt by the chain of schemes over the
-  ! instants of Omega_h, dirk(2) from the first, bdf(2) from the fifth,
-  ! adams(2) from the eighth, each reading the instants before it;
-  ! d/dx, d/dy and their second derivatives by finite differences
-  ! exact on polynomials of degree 2
-  L_h = L % discretize(omega_h, time=chain([dirk(2), bdf(2), adams(2)], from=[1, 5, 8]), &
-       &                        space=finite_difference(degree=2))
+  ! L_h on Omega_h and dOmega_h: d/dt by a chain of schemes over the
+  ! instants of Omega_h, one block per instant - dirk(2) at the first
+  ! four, bdf(2) at the next three, adams(2) at the last three, each
+  ! block reading the instants before it - so that Newton solves one
+  ! instant at a time; d/dx, d/dy and their second derivatives by
+  ! finite differences exact on polynomials of degree 2
+  L_h = L % discretize(omega_h, time=chain([(dirk(2), k = 1, 4), (bdf(2), k = 5, 7), (adams(2), k = 8, 10)], &
+       &                                   from=[(k, k = 1, 10)]), space=finite_difference(degree=2))
 
-  ! ONE NEWTON SOLVE PER INSTANT instead of per block: every block
-  ! holds one new instant and the history its family reads. The
-  ! smallest system is BDF's, one moment of unknowns (the history
-  ! instants enter as fixed rows); a DIRK block of one step holds its
-  ! stages beside the instant. Both were run on this case: the first
-  ! gives 2.3264E-02 in nine solves, the second 2.3266E-02 in ten.
+  ! THE SAME FAMILIES IN THREE BLOCKS, dirk(2) from the first instant,
+  ! bdf(2) from the fifth, adams(2) from the eighth, each block one
+  ! system over all its instants: the same discrete relations and the
+  ! same answer, 2.3266E-02, in 15 Newton solves of up to 30 464 rows
+  ! instead of 37 of up to 13 056, at 2.9 s instead of 1.7 s. A block
+  ! over many instants is the form a parallel-in-time solve and the
+  ! derivatives over the whole interval need; it is not the faster
+  ! forward solve.
   !
-  !   L_h = L % discretize(omega_h, time=chain([dirk(2), (bdf(2), k = 3, 10)], from=[1, (k, k = 3, 10)]), &
-  !        &                        space=finite_difference(degree=2))
-  !
-  !   L_h = L % discretize(omega_h, time=chain([(dirk(2), k = 1, 10)], from=[(k, k = 1, 10)]), &
+  !   L_h = L % discretize(omega_h, time=chain([dirk(2), bdf(2), adams(2)], from=[1, 5, 8]), &
   !        &                        space=finite_difference(degree=2))
   !
   ! One solve per DIRK stage is not a chain: a block is bounded by

@@ -102,7 +102,7 @@ program taylor_green_study
 
   L_h = L % discretize(omega_h, time=chain(schemes, from=from), space=finite_difference(degree=degree))
 
-  call set_verbosity(1)
+  if (this_image() == 1) call set_verbosity(1)
   estimate = exact % discretize(omega_h)
   call system_clock(t0, rate)
   call L_h % minimize(estimate, solution)

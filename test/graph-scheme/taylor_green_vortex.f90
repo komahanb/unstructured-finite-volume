@@ -141,7 +141,11 @@ program taylor_green_vortex
   ! estimate (u*, v*, p*) restricted to Omega_h and lambda = mu = 0;
   ! the convergence of every Newton step and linear solve is printed
   estimate = exact % discretize(omega_h)
-  call set_verbosity(1)
+
+  if (this_image() .eq. 1) then
+     call set_verbosity(1)
+  end if
+
   call L_h % minimize(estimate, solution)
 
   ! || (u, v, p)_h - (u*, v*, p*)|Omega_h ||

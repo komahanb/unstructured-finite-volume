@@ -188,7 +188,7 @@ contains
     real(dp), allocatable :: weights(:)
     logical :: jacobian_defined
     real(dp), allocatable :: residual(:), y(:), dq(:)
-    real(dp) :: linear_achieved, initial, factor, previous
+    real(dp) :: linear_achieved, initial, factor, previous, step_norm
     real(dp), allocatable :: trial(:)
     integer :: it, halving
     type(solve_result) :: outcome
@@ -203,7 +203,7 @@ contains
     residual = y - rhs
     achieved = this % norm(residual)
     initial  = achieved
-    if (verbosity >= 1 .and. this_image() == 1) then
+    if (verbosity >= 1) then
        print '(a)', ' step          |F|     |F|/|F0|          |dq|   factor  jacobian     halley   cycles' // &
             & '          |r|     |r|/|r0|  linear solve'
        print '(i5,es13.4)', 0, achieved
@@ -291,7 +291,10 @@ contains
        end do
        x  = trial
        dq = factor * dq
-       if (verbosity >= 1 .and. this_image() == 1) call reported(this, it, achieved, initial, dq, factor, jacobian_defined, outcome)
+       ! the norm of the step is a reduction over the images, taken by
+       ! every image whether or not it prints
+       step_norm = this % norm(dq)
+       if (verbosity >= 1) call reported(this, it, achieved, initial, step_norm, factor, jacobian_defined, outcome)
        if (this % terminated(achieved, it)) return
 
     end do
@@ -309,11 +312,11 @@ contains
   ! and outcome.
   !===================================================================!
 
-  subroutine reported(this, it, achieved, initial, dq, factor, jacobian_defined, outcome)
+  subroutine reported(this, it, achieved, initial, step_norm, factor, jacobian_defined, outcome)
 
     class(newton)     , intent(in) :: this
     integer           , intent(in) :: it
-    real(dp)          , intent(in) :: achieved, initial, dq(:), factor
+    real(dp)          , intent(in) :: achieved, initial, step_norm, factor
     logical           , intent(in) :: jacobian_defined
     type(solve_result), intent(in) :: outcome
 
@@ -330,7 +333,7 @@ contains
     if (initial > 0.0_dp) relative = achieved / initial
     linear_relative = 0.0_dp
     if (outcome % initial_residual > 0.0_dp) linear_relative = outcome % residual / outcome % initial_residual
-    print '(i5,3es13.4,f9.4,2x,a11,2x,a8,i7,2es13.4,2x,a)', it, achieved, relative, this % norm(dq), factor, &
+    print '(i5,3es13.4,f9.4,2x,a11,2x,a8,i7,2es13.4,2x,a)', it, achieved, relative, step_norm, factor, &
          & jacobian, halley, outcome % iterations, outcome % residual, linear_relative, trim(outcome % description())
 
   end subroutine reported

@@ -81,7 +81,8 @@ program dirk_coefficients
   crouzeix = continuous_field(omega, h * [0.8_dp, -0.6_dp, 0.8_dp, 0.5_dp, 0.5_dp, 0.8_dp, 0.2_dp])
   estimate = crouzeix % discretize(omega_h)
   ! the convergence of every Newton step and linear solve is printed
-  call set_verbosity(1)
+  ! by image 1
+  if (this_image() == 1) call set_verbosity(1)
   call r_h % minimize(estimate, solution)
 
   call solution % values(values)

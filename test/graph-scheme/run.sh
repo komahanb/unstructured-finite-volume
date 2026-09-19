@@ -14,6 +14,9 @@
 #                        the vortex extended along z on the periodic
 #                        8 x 8 x 8 box of box_3d.py, five instants,
 #                        finite volumes of order 2
+#   van_der_pol          the van der Pol oscillator on [0, 2] by the
+#                        chain dirk(2), bdf(2), adams(2) over eleven
+#                        instants; u(2) = 0.2912 (0.3233 converged)
 #   run                  the same tableau on the expression and the
 #                        residual_operator directly
 #
@@ -37,5 +40,7 @@ echo "== taylor_green_vortex"
 ./taylor_green_vortex
 echo "== taylor_green_vortex_3d"
 ./taylor_green_vortex_3d
+echo "== van_der_pol"
+./van_der_pol
 echo "== run"
 ./run

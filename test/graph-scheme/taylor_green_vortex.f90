@@ -36,8 +36,8 @@
 ! evaluated at every point of Omega_h and dOmega_h with d/dt
 ! approximated by a chain of schemes over the instants, dirk(2) from
 ! the first, bdf(2) from the fifth, adams(2) from the eighth, and
-! d/dx, d/dy, d^2/dx^2, ... by finite differences on each cell's
-! neighbourhood, exact on polynomials of degree 2.
+! d/dx, d/dy, d^2/dx^2, ... by finite volumes, the face integrals
+! over each cell divided by its volume, of order 2.
 ! The discrete solution is the zero of L_h; the printed number is
 ! || (u, v, p)_h - (u*, v*, p*)|Omega_h ||.
 !=====================================================================!
@@ -50,7 +50,7 @@ program taylor_green_vortex
   use operation_field            , only : sin, cos, exp, operator(+), operator(-), operator(*), operator(/), operator(**)
   use operation_residual         , only : continuous_residual, discrete_residual, operator(+), operator(*)
   use operation_family           , only : dirk, bdf, adams, chain
-  use operation_finite_difference, only : finite_difference
+  use operation_finite_volume    , only : finite_volume
   use view_paraview_writer       , only : paraview
   use util_verbosity             , only : set_verbosity
   use view_expression            , only : expression_view
@@ -119,9 +119,22 @@ program taylor_green_vortex
   ! four, bdf(2) at the next three, adams(2) at the last three, each
   ! block reading the instants before it - so that Newton solves one
   ! instant at a time; d/dx, d/dy and their second derivatives by
-  ! finite differences of order 2, exact on polynomials of degree 2
+  ! finite volumes of order 2: the face values interpolated between
+  ! the cells, the face gradients fitted over their neighbourhoods,
+  ! integrated over the faces of each cell - conservative, the fluxes
+  ! of a face cancelling between its two cells
   L_h = L % discretize(omega_h, time=chain([(dirk(2), k = 1, 4), (bdf(2), k = 5, 7), (adams(2), k = 8, 10)], &
-       &                                   from=[(k, k = 1, 10)]), space=finite_difference(order=2))
+       &                                   from=[(k, k = 1, 10)]), space=finite_volume(order=2))
+
+  ! THE SAME BY FINITE DIFFERENCES, the fit of degree p at each cell
+  ! over its neighbourhood, of any order p from 2 (use
+  ! operation_finite_difference, only : finite_difference): order 2
+  ! gives 2.3266E-02 against 2.2235E-02 by finite volumes, both of
+  ! second order; an order above 2 is what finite differences alone
+  ! provide on values at the cell centres.
+  !
+  !   L_h = L % discretize(omega_h, time=chain([(dirk(2), k = 1, 4), (bdf(2), k = 5, 7), (adams(2), k = 8, 10)], &
+  !        &                                   from=[(k, k = 1, 10)]), space=finite_difference(order=2))
 
   ! THE SAME FAMILIES IN THREE BLOCKS, dirk(2) from the first instant,
   ! bdf(2) from the fifth, adams(2) from the eighth, each block one
@@ -133,7 +146,7 @@ program taylor_green_vortex
   ! forward solve.
   !
   !   L_h = L % discretize(omega_h, time=chain([dirk(2), bdf(2), adams(2)], from=[1, 5, 8]), &
-  !        &                        space=finite_difference(order=2))
+  !        &                        space=finite_volume(order=2))
   !
   ! One solve per DIRK stage is not a chain: a block is bounded by
   ! instants, and the stages of a step are solved with it.

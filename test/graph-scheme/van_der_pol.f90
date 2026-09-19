@@ -53,11 +53,12 @@ program van_der_pol
   domega  = omega % boundary(time=0.0_dp)
   omega_h = omega % discretize(time=instants(num_instants))
 
-  ! the coordinate function t and the unknown functions u, v : Omega -> R;
-  ! the multiplier lambda : dOmega -> R^2 of the initial data
+  ! the coordinate function t and the unknown functions u(t), v(t) :
+  ! Omega -> R; the multiplier lambda : dOmega -> R^2 of the initial
+  ! data, a function on a point
   t      = omega % coordinate('t')
-  u      = omega % unknown('u')
-  v      = omega % unknown('v')
+  u      = omega % unknown('u', [t])
+  v      = omega % unknown('v', [t])
   lambda = domega % unknown('lambda', components=2)
 
   ! the two equations as functions Omega -> R of the jet of (u, v)

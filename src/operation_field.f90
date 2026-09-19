@@ -92,14 +92,17 @@ module operation_field
   !===================================================================!
   ! THE CONTINUOUS FIELD: one expression per component, on one
   ! support. An unknown has the field number of each component
-  ! on its manifold; a coordinate function has the coordinate it
-  ! is; an integral has the identity of the factor it runs over.
+  ! on its manifold and its arguments, the names of the coordinates
+  ! it is a function of; a coordinate function has the coordinate it
+  ! is, and is its own argument; an integral has the identity of the
+  ! factor it runs over.
   !===================================================================!
 
   type :: continuous_field
 
      type(token) :: on
      character(len=:), allocatable :: name
+     character(len=8), allocatable :: argument(:)
      type(expression), allocatable :: component(:)
      integer, allocatable :: index(:)
      integer :: coordinate = 0
@@ -200,16 +203,18 @@ contains
 
   !===================================================================!
   ! THE CONSTRUCTORS. An unknown of a manifold: one expression leaf
-  ! per component, numbered from first. A coordinate function. A tuple
-  ! of fields on one support, each of one component. Constants, one
-  ! per component.
+  ! per component, numbered from first, a function of the coordinates
+  ! named by its arguments. A coordinate function. A tuple of fields
+  ! on one support, each of one component. Constants, one per
+  ! component.
   !===================================================================!
 
-  function unknown_field(on, name, first, components) result(this)
+  function unknown_field(on, name, first, components, arguments) result(this)
 
     class(continuous_support), intent(in) :: on
     character(len=*)         , intent(in) :: name
     integer                  , intent(in) :: first, components
+    character(len=*)         , intent(in) :: arguments(:)
     type(continuous_field) :: this
 
     integer :: k
@@ -220,6 +225,10 @@ contains
     do k = 1, components
        this % index(k)     = first + k - 1
        this % component(k) = unknown(first + k - 1)
+    end do
+    allocate(this % argument(size(arguments)))
+    do k = 1, size(arguments)
+       this % argument(k) = arguments(k)
     end do
 
   end function unknown_field
@@ -236,6 +245,8 @@ contains
     this % coordinate = c
     this % component  = [coordinate(c)]
     this % index      = [0]
+    allocate(this % argument(1))
+    this % argument(1) = name
 
   end function coordinate_field
 
@@ -332,10 +343,12 @@ contains
 
   !===================================================================!
   ! THE DERIVATIVE along a multi-index of coordinate functions: each
-  ! entry one order along that coordinate. Invalid input: a field that
-  ! is not a scalar unknown, an entry that is not a coordinate of the
-  ! same manifold, or two distinct coordinates, since the jet stores
-  ! no mixed component.
+  ! entry one order along that coordinate. Along a coordinate the
+  ! unknown is not a function of, one outside its arguments, the
+  ! derivative is the zero field. Invalid input: a field that is not
+  ! a scalar unknown, an entry that is not a coordinate of the same
+  ! manifold, or two distinct coordinates, since the jet stores no
+  ! mixed component.
   !===================================================================!
 
   function field_derivative(this, along) result(d)
@@ -373,6 +386,12 @@ contains
     d % on    = this % on
     d % name  = this % name
     d % index = [0]
+    if (allocated(this % argument)) then
+       if (.not. any(this % argument == along(1) % name)) then
+          d % component = [constant(0.0_dp)]
+          return
+       end if
+    end if
     if (c == FIRST_COORDINATE) then
        d % component = [derivative(this % component(1), size(along))]
     else

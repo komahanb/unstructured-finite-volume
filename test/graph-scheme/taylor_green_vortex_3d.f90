@@ -69,15 +69,15 @@ program taylor_green_vortex_3d
   p_exact = (cos(2.0_dp*x) + cos(2.0_dp*y))*exp(-4.0_dp*nu*t)/4.0_dp
   exact   = continuous_field(omega, [u_exact, v_exact, w_exact, p_exact])
 
-  ! the unknown functions u, v, w, p : Omega -> R; the multipliers
-  ! lambda : dOmega -> R^3 of the initial data and mu : [0, T] -> R
-  ! of the gauge
-  u      = omega % unknown('u')
-  v      = omega % unknown('v')
-  w      = omega % unknown('w')
-  p      = omega % unknown('p')
-  lambda = domega % unknown('lambda', components=3)
-  mu     = tau % unknown('mu')
+  ! the unknown functions u, v, w, p : Omega -> R, each a function of
+  ! (t, x, y, z); the multipliers lambda(x, y, z) : dOmega -> R^3 of
+  ! the initial data and mu(t) : [0, T] -> R of the gauge
+  u      = omega % unknown('u', [t, x, y, z])
+  v      = omega % unknown('v', [t, x, y, z])
+  w      = omega % unknown('w', [t, x, y, z])
+  p      = omega % unknown('p', [t, x, y, z])
+  lambda = domega % unknown('lambda', [x, y, z], components=3)
+  mu     = tau % unknown('mu', [t])
 
   ! the four equations as functions Omega -> R of the jet of (u, v, w, p)
   momentum_x = u % derivative([t]) + u*u % derivative([x]) + v*u % derivative([y]) + w*u % derivative([z]) &

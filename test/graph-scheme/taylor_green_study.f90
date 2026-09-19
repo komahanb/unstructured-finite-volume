@@ -85,11 +85,11 @@ program taylor_green_study
   p_exact = (cos(2.0_dp*x) + cos(2.0_dp*y))*exp(-4.0_dp*nu*t)/4.0_dp
   exact   = continuous_field(omega, [u_exact, v_exact, p_exact])
 
-  u      = omega % unknown('u')
-  v      = omega % unknown('v')
-  p      = omega % unknown('p')
-  lambda = domega % unknown('lambda', components=2)
-  mu     = tau % unknown('mu')
+  u      = omega % unknown('u', [t, x, y])
+  v      = omega % unknown('v', [t, x, y])
+  p      = omega % unknown('p', [t, x, y])
+  lambda = domega % unknown('lambda', [x, y], components=2)
+  mu     = tau % unknown('mu', [t])
 
   momentum_x = u % derivative([t]) + u*u % derivative([x]) + v*u % derivative([y]) + p % derivative([x]) &
        &     - nu*(u % derivative([x, x]) + u % derivative([y, y]))

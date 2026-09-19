@@ -234,19 +234,28 @@ contains
 
   !===================================================================!
   ! An unknown function of the manifold, numbered after those already
-  ! declared, one field per component. A name already declared stops
-  ! the program.
+  ! declared, one field per component, a function of the coordinates
+  ! given as its arguments: a function of every coordinate of the
+  ! manifold when none are given, of those alone otherwise, so that
+  ! its derivative along any other coordinate is zero. An argument
+  ! may be a coordinate of the manifold or of its parent, since the
+  ! equations on a part are written in the parent's coordinates.
+  ! Invalid input: a name already declared, an argument that is not
+  ! a coordinate function, one of another manifold, or one repeated.
   !===================================================================!
 
-  function manifold_unknown(this, name, components) result(u)
+  function manifold_unknown(this, name, arguments, components) result(u)
 
     class(continuous_manifold), intent(inout) :: this
     character(len=*)          , intent(in)    :: name
+    type(continuous_field)    , intent(in), optional :: arguments(:)
     integer                   , intent(in), optional :: components
     type(continuous_field) :: u
 
     integer :: k, n
     character(len=MAX_NAME) :: padded
+    character(len=8), allocatable :: names(:)
+    character(len=250) :: message
 
     n = 1
     if (present(components)) n = components
@@ -255,7 +264,34 @@ contains
           error stop 'operation_manifold: an unknown named ' // trim(name) // ' is already declared'
        end if
     end do
-    u = unknown_field(this, name, this % num_unknowns + 1, n)
+
+    if (present(arguments)) then
+       allocate(names(size(arguments)))
+       do k = 1, size(arguments)
+          if (arguments(k) % coordinate < 1) then
+             write(message,'(a,i0,a,a,a)') 'operation_manifold: argument ', k, ' of the unknown ', trim(name), &
+                  & ' is not a coordinate function'
+             error stop trim(message)
+          end if
+          if (.not. (arguments(k) % on % matches(this % identity) .or. arguments(k) % on % matches(this % parent))) then
+             write(message,'(a,i0,a,a,a)') 'operation_manifold: argument ', k, ' of the unknown ', trim(name), &
+                  & ' is a coordinate of neither the manifold nor its parent'
+             error stop trim(message)
+          end if
+          if (any(names(1:k - 1) == arguments(k) % name)) then
+             write(message,'(a,i0,a,a,a)') 'operation_manifold: argument ', k, ' of the unknown ', trim(name), &
+                  & ' repeats a coordinate'
+             error stop trim(message)
+          end if
+          names(k) = arguments(k) % name
+       end do
+    else
+       allocate(names(0))
+       if (this % with_time)  names = [character(len=8) :: names, 't']
+       if (this % with_space) names = [character(len=8) :: names, 'x', 'y', 'z']
+    end if
+
+    u = unknown_field(this, name, this % num_unknowns + 1, n, names)
     padded = name
     this % unknown_name = [this % unknown_name, (padded, k = 1, n)]
     this % num_unknowns = this % num_unknowns + n

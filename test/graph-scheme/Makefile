@@ -19,12 +19,16 @@ endif
 F90FLAGS += -I$(LIB)/ -Wtarget-lifetime
 LDFLAGS += -L$(LIB)/ $(LIB)/libufvm.a
 
-all: dirk_coefficients taylor_green_vortex taylor_green_study run
+all: dirk_coefficients taylor_green_vortex taylor_green_vortex_3d taylor_green_study run
 
 dirk_coefficients: dirk_coefficients.o $(LIB)/libufvm.a
 	$(F90) $< -o $@ $(LDFLAGS)
 
 taylor_green_vortex: taylor_green_vortex.o $(LIB)/libufvm.a
+	$(F90) $< -o $@ $(LDFLAGS)
+
+# the vortex in three dimensions on the periodic 8 x 8 x 8 box
+taylor_green_vortex_3d: taylor_green_vortex_3d.o $(LIB)/libufvm.a
 	$(F90) $< -o $@ $(LDFLAGS)
 
 # the same statement under chosen parameters, convergence printed
@@ -34,12 +38,18 @@ taylor_green_study: taylor_green_study.o $(LIB)/libufvm.a
 run: test.o $(LIB)/libufvm.a
 	$(F90) test.o -o $@ $(LDFLAGS)
 
-# the periodic box, meshed by gmsh from its geometry
+# the periodic boxes, meshed by gmsh from their geometries
 box.msh: box.geo
 	gmsh -2 box.geo -o box.msh > gmsh.log
 
+# the box in three dimensions is written by box_3d.py: gmsh's
+# transfinite volume does not accept a face copied from its periodic
+# master
+box_3d.msh: box_3d.py
+	python3 box_3d.py 8
+
 clean:
-	@rm -f *.o *.mod *.so run dirk_coefficients taylor_green_vortex taylor_green_study *.vtu gmsh.log variant.stamp
+	@rm -f *.o *.mod *.so run dirk_coefficients taylor_green_vortex taylor_green_vortex_3d taylor_green_study *.vtu gmsh.log variant.stamp
 
 .SUFFIXES: .f90 .o
 .PHONY: all clean FORCE

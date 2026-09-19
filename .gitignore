@@ -95,3 +95,5 @@ __pycache__/
 test/graph-scheme/dirk_coefficients
 test/graph-scheme/taylor_green_vortex
 test/graph-scheme/taylor_green_study
+test/graph-scheme/taylor_green_vortex_3d
+test/graph-scheme/variant.stamp

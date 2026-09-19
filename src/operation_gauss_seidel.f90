@@ -164,7 +164,7 @@ contains
              call this % record_event(factorisations)
              call block(b) % factorise(d(:, :, b), tiny(1.0_dp))
              if (block(b) % singular()) then
-                write(message,'(a,i0,a,i0)') 'gauss_seidel: the diagonal block at position ', b, &
+                write(message,'(a,i0,a,i0,a)') 'gauss_seidel: the diagonal block at position ', b, &
                      & ' of ', nb, ' is singular'
                 error stop trim(message)
              end if

@@ -69,3 +69,13 @@ FORCE:
 
 %.o: %.f90 $(LIB)/libufvm.a variant.stamp
 	$(F90) $(F90FLAGS) -c $<
+
+# the library depends on the sources of src: a changed source
+# rebuilds and installs the library of this variant before the
+# programs compile against it, so that a build here never reads a
+# module interface older than the sources (COARRAY is read from the
+# environment by src/Makefile through Makefile.in)
+$(LIB)/libufvm.a: $(wildcard ../../src/*.f90) ../../src/OBJECTS
+	$(MAKE) -C ../../src clean
+	$(MAKE) -C ../../src
+	$(MAKE) -C ../../src install

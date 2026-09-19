@@ -11,8 +11,10 @@ include ../../Makefile.in
 # Ufvm (-I../../lib for the .mod files; lib_par for COARRAY=lib,
 # whose link line Makefile.in supplies)
 LIB = ../../lib
+VARIANT = serial
 ifeq ($(COARRAY),lib)
   LIB = ../../lib_par
+  VARIANT = coarray
 endif
 F90FLAGS += -I$(LIB)/ -Wtarget-lifetime
 LDFLAGS += -L$(LIB)/ $(LIB)/libufvm.a
@@ -37,12 +39,19 @@ box.msh: box.geo
 	gmsh -2 box.geo -o box.msh > gmsh.log
 
 clean:
-	@rm -f *.o *.mod *.so run dirk_coefficients taylor_green_vortex taylor_green_study *.vtu gmsh.log
+	@rm -f *.o *.mod *.so run dirk_coefficients taylor_green_vortex taylor_green_study *.vtu gmsh.log variant.stamp
 
 .SUFFIXES: .f90 .o
-.PHONY: all clean
+.PHONY: all clean FORCE
 
 # an object depends on the library too: a rebuilt library may have
-# changed a module interface the program compiled against
-%.o: %.f90 $(LIB)/libufvm.a
+# changed a module interface the program compiled against; and on
+# the build variant, so that a serial build after a coarray one (or
+# the reverse) recompiles rather than relinks the other's objects
+variant.stamp: FORCE
+	@if [ "$$(cat variant.stamp 2>/dev/null)" != "$(VARIANT)" ]; then echo $(VARIANT) > variant.stamp; fi
+
+FORCE:
+
+%.o: %.f90 $(LIB)/libufvm.a variant.stamp
 	$(F90) $(F90FLAGS) -c $<

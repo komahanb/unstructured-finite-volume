@@ -1,10 +1,9 @@
 !=====================================================================!
-! THE VAN DER POL OSCILLATOR, u'' - mu (1 - u^2) u' + u = 0, as the
-! first-order system
+! THE VAN DER POL OSCILLATOR, the second-order equation
 !
-!      u' = v            v' = mu (1 - u^2) v - u,
+!      u'' - mu (1 - u^2) u' + u = 0
 !
-! on the interval [0, T] with u(0) = 2, v(0) = 0 and mu = 1, stated
+! on the interval [0, T] with u(0) = 2, u'(0) = 0 and mu = 1, stated
 ! on a manifold of time alone: the residual r on [0, T], the initial
 ! data g on its boundary {0} paired with a multiplier of two
 ! components, the Lagrangian L = r + lambda . g discretized by a
@@ -34,7 +33,7 @@ program van_der_pol
 
   type(continuous_manifold) :: omega, domega
   type(discrete_manifold)   :: omega_h
-  type(continuous_field)    :: t, u, v, lambda, first, second, u0, v0, rest
+  type(continuous_field)    :: t, u, lambda, oscillator, u0, v0, rest
   type(discrete_field)      :: estimate, solution
   type(continuous_residual) :: r, g, L
   type(discrete_residual)   :: L_h
@@ -53,24 +52,24 @@ program van_der_pol
   domega  = omega % boundary(time=0.0_dp)
   omega_h = omega % discretize(time=instants(num_instants))
 
-  ! the coordinate function t and the unknown functions u(t), v(t) :
+  ! the coordinate function t and the unknown function u(t) :
   ! Omega -> R; the multiplier lambda : dOmega -> R^2 of the initial
   ! data, a function on a point
   t      = omega % coordinate('t')
   u      = omega % unknown('u', [t])
-  v      = omega % unknown('v', [t])
   lambda = domega % unknown('lambda', components=2)
 
-  ! the two equations as functions Omega -> R of the jet of (u, v)
-  first  = u % derivative([t]) - v
-  second = v % derivative([t]) - (mu*(1.0_dp - u*u)*v - u)
+  ! the equation as a function Omega -> R of the jet of u to order
+  ! two along t
+  oscillator = u % derivative([t, t]) - mu*(1.0_dp - u*u)*u % derivative([t]) + u
 
-  ! the initial data, functions dOmega -> R
+  ! the initial data, functions dOmega -> R: the value and the first
+  ! derivative of u at t = 0
   u0 = u - u_initial
-  v0 = v - v_initial
+  v0 = u % derivative([t]) - v_initial
 
   ! r on Omega, g on dOmega, and the Lagrangian L = r + lambda . g
-  r = continuous_residual(omega,  [first, second])
+  r = continuous_residual(omega,  [oscillator])
   g = continuous_residual(domega, [u0, v0])
   L = r + lambda*g
 
@@ -79,20 +78,20 @@ program van_der_pol
   L_h = L % discretize(omega_h, time=chain([(dirk(2), k = 1, 3), (bdf(2), k = 4, 7), &
        &                                    (adams(2), k = 8, num_instants)], from=[(k, k = 1, num_instants)]))
 
-  ! (u, v, lambda)_h = the zero of L_h, from the estimate (u(0), v(0))
-  ! at every instant; the convergence of every solve is printed by
-  ! image 1 where the instants are few
-  rest     = continuous_field(omega, [u_initial, v_initial])
+  ! (u, lambda)_h = the zero of L_h, from the estimate u(0) at every
+  ! instant; the convergence of every solve is printed by image 1
+  ! where the instants are few
+  rest     = continuous_field(omega, [u_initial])
   estimate = rest % discretize(omega_h)
   if (this_image() == 1 .and. num_instants <= 21) call set_verbosity(1)
   call L_h % minimize(estimate, solution)
 
   ! the solution at every tenth of the interval
-  allocate(values(2 * num_instants))
+  allocate(values(num_instants))
   call solution % values(values)
   do k = 1, num_instants
      if (mod(k - 1, max(1, (num_instants - 1) / 10)) == 0) then
-        print '(a, f8.4, a, 2es16.8)', 't = ', omega_h % instant(k), '   u, v = ', values(2*k-1), values(2*k)
+        print '(a, f8.4, a, es16.8)', 't = ', omega_h % instant(k), '   u = ', values(k)
      end if
   end do
 

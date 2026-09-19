@@ -2049,9 +2049,12 @@ contains
   !===================================================================!
   ! THE FIXED ROWS of a block: every component at the history instants,
   ! from the tuples already solved; and, at the first or the last
-  ! instant of the manifold, the value each face condition states.
-  ! Invalid input: a face condition whose equation is not one parent
-  ! value minus a function of the position, with coefficient one.
+  ! instant of the manifold, the value each face condition states,
+  ! of an unknown or of one of its derivatives along time - the
+  ! initial slope of a second-order equation is a condition on the
+  ! first derivative component of the jet. Invalid input: a face
+  ! condition whose equation is not one parent component minus a
+  ! function of the position, with coefficient one.
   !===================================================================!
 
   subroutine fixed_rows_of(this, first, last, depth, instant_moment, at, tuple, fixed_rows, fixed)
@@ -2062,7 +2065,7 @@ contains
     integer , allocatable   , intent(out) :: fixed_rows(:)
     real(dp), allocatable   , intent(out) :: fixed(:)
 
-    integer :: stride, ncells, ninst, count, k, c, i, j, f, m, e, instant, comp
+    integer :: stride, ncells, ninst, count, k, c, i, j, f, m, e, instant, comp, degree
     real(dp) :: given, slope
 
     stride = this % rule % num_components()
@@ -2096,7 +2099,7 @@ contains
        if (instant < first .or. instant > last) cycle
        m = instant_moment(instant - first + 1)
        do i = 1, size(this % condition(j) % equation)
-          call stated_value(this % condition(j) % equation(i), f, comp)
+          call stated_value(this % condition(j) % equation(i), f, comp, degree)
           do c = 1, ncells
              call affine_value(this % condition(j) % equation(i), comp, &
                   & this % points % position(this % points % point_of(instant, c)), given, slope)
@@ -2105,7 +2108,7 @@ contains
                      &minus a function of the position'
              end if
              e = e + 1
-             fixed_rows(e) = at((m - 1) * ncells + c) + this % rule % offset_of_field(f) + 1
+             fixed_rows(e) = at((m - 1) * ncells + c) + this % rule % offset_of_field(f) + degree + 1
              fixed(e)      = given
           end do
        end do
@@ -2128,31 +2131,35 @@ contains
   end function face_instant
 
   !===================================================================!
-  ! The one parent unknown a face equation reads, at order zero: the
-  ! field f and its component in the equation's own tuple. Invalid
-  ! input: an equation reading no component, several, or a
-  ! derivative.
+  ! The one parent component a face equation reads: the field f, the
+  ! component in the equation's own tuple, and the degree of the
+  ! derivative along time it is - zero for the value of f, one for
+  ! its first derivative - since the equation's tuple and the rule's
+  ! lay the jets out differently. Invalid input: an equation reading
+  ! no component, several, or one outside the jets of the unknowns.
   !===================================================================!
 
-  subroutine stated_value(equation, f, comp)
+  subroutine stated_value(equation, f, comp, degree)
     type(continuous_field), intent(in)  :: equation
-    integer               , intent(out) :: f, comp
+    integer               , intent(out) :: f, comp, degree
     type(expression) :: g
     integer, allocatable :: reads(:)
     integer :: k
     g = equation % graph(1)
     call g % read_components(reads)
     if (size(reads) /= 1) then
-       error stop 'operation_residual: a condition on a face states the value of one unknown'
+       error stop 'operation_residual: a condition on a face states the value of one component'
     end if
     comp = reads(1)
     f = 0
     do k = 1, g % num_fields() - g % num_multipliers()
-       if (g % offset_of_field(k) == comp) f = k
+       if (comp >= g % offset_of_field(k) .and. comp <= g % offset_of_field(k) + g % degree_of_field(k)) f = k
     end do
     if (f == 0) then
-       error stop 'operation_residual: a condition on a face states the value of an unknown, not a derivative'
+       error stop 'operation_residual: a condition on a face states the value of an unknown or of one of &
+            &its derivatives along time'
     end if
+    degree = comp - g % offset_of_field(f)
   end subroutine stated_value
 
   !===================================================================!

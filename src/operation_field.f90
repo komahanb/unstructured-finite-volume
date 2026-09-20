@@ -77,6 +77,8 @@ module operation_field
      procedure(count_interface)   , deferred :: design_order
      procedure(count_interface)   , deferred :: num_designs
      procedure(values_interface)  , deferred :: design_values
+     procedure(count_interface)   , deferred :: num_expansions
+     procedure(seed_interface)    , deferred :: expansion_seed
      procedure(face_measure_interface), deferred :: measure_on_face
 
   end type discrete_support
@@ -99,6 +101,15 @@ module operation_field
        class(discrete_support), intent(in) :: this
        real(dp), allocatable :: v(:)
      end function values_interface
+
+     ! the seed of the e-th expansion: the derivative of every design
+     ! coordinate along it
+     pure function seed_interface(this, e) result(seed)
+       import :: discrete_support, dp
+       class(discrete_support), intent(in) :: this
+       integer                , intent(in) :: e
+       real(dp), allocatable :: seed(:)
+     end function seed_interface
 
      ! the measure of point p within the face at the instant given:
      ! zero for a point not on the face
@@ -151,6 +162,8 @@ module operation_field
      integer, allocatable :: index(:)
      integer :: coordinate = 0
      logical :: design_coordinate = .false.
+     ! a direction in the design: its vector over the design coordinates
+     real(dp), allocatable :: direction(:)
      type(token) :: integrated_over
      integer     :: integrated_part = WHOLE
      type(token) :: integrated_parent
@@ -312,7 +325,8 @@ contains
     this % index      = [0]
     if (present(of_design)) this % design_coordinate = of_design
     if (this % design_coordinate) then
-       this % component = [design(c)]
+       ! a direction, of index zero, is no leaf of an expression
+       this % component = [design(max(c, 1))]
     else
        this % component = [coordinate(c)]
     end if
@@ -419,7 +433,7 @@ contains
     do d = 1, nd
        do o = 1, order
           k = k + 1
-          write(names(k), '(a,i0,a,i0)') 'design ', d, ' order ', o
+          write(names(k), '(a,i0,a,i0)') 'expansion ', d, ' order ', o
        end do
     end do
     functional = discrete_field(solution % on % design_factor(), reshape(total, [1, size(total)]), names)
@@ -465,7 +479,7 @@ contains
     real(dp), allocatable  , intent(out) :: gradient(:,:,:,:)
     real(dp), allocatable  , intent(out) :: partial(:,:,:)
 
-    real(dp), allocatable :: q(:), g(:), gd(:), values(:), unit(:)
+    real(dp), allocatable :: q(:), g(:), gd(:), values(:), unit(:), seed(:)
     integer , allocatable :: slot(:)
     type(derivative_terms), allocatable :: jets(:), varied(:), nu(:), along(:), design(:)
     type(derivative_terms) :: r
@@ -521,13 +535,10 @@ contains
        ! directions, and over one more, the last, seeded on a
        ! component or on a coordinate
        do d = 1, nd
+          seed = solution % on % expansion_seed(d)
           do i = 1, size(values)
-             nu(i)     = derivative_terms(values(i), order)
-             along(i)  = derivative_terms(values(i), order + 1)
-             if (i == d) then
-                nu(i)    = symmetric_terms(values(i), unit, order)
-                along(i) = symmetric_terms(values(i), unit, order + 1)
-             end if
+             nu(i)    = symmetric_terms(values(i), seed(i) * unit, order)
+             along(i) = symmetric_terms(values(i), seed(i) * unit, order + 1)
           end do
           do k = 0, ns - 1
              jets(k)   = symmetric_terms(q(k), solution % jet(slot(k), p, 2:order + 1, d), order)
@@ -559,14 +570,21 @@ contains
   end subroutine functional_over
 
   !===================================================================!
-  ! THE DERIVATIVE OF A DISCRETE FIELD along a design coordinate, one
-  ! order per entry of the multi-index, every entry the same
-  ! coordinate: the field whose values are the next coefficients of
-  ! the jet along it, with the rest of that jet after them and the
-  ! jets along the other coordinates dropped. Invalid input: an entry
-  ! that is not a design coordinate, two coordinates, a coordinate
-  ! other than the one the field is already a derivative along, an
-  ! order past the expansion's, or a component with no jet.
+  ! THE DERIVATIVE OF A DISCRETE FIELD along the design: the
+  ! multi-index names design coordinates or directions, and the
+  ! derivative is read from the jets stored - along the expansion
+  ! whose seed is the coordinate's unit vector or the direction's
+  ! vector, for a multi-index repeating one entry: the field whose
+  ! values are the next coefficients, with the rest of that jet after
+  ! them and the jets along the other expansions dropped. A mixed
+  ! derivative along two coordinates, [nu, mu], is the polarization
+  ! (u_ww - u_nunu - u_mumu) / 2 of the second derivatives along nu,
+  ! mu and w = nu + mu, and requires the expansions along all three;
+  ! it stores no jet of its own. Invalid input: an entry that is not
+  ! a design coordinate or direction, an expansion not stored, a
+  ! coordinate other than the one the field is already a derivative
+  ! along, an order past the expansion's, a mixed derivative of an
+  ! order other than two, or a component with no jet.
   !===================================================================!
 
   function discrete_derivative(this, along) result(d)
@@ -575,57 +593,145 @@ contains
     type(continuous_field) , intent(in) :: along(:)
     type(discrete_field) :: d
 
-    integer :: n, k, order, npts, c, column
+    real(dp), allocatable :: seed(:), other(:), both(:)
+    integer :: n, k, order, npts, column, second, third
+    logical :: mixed
     character(len=250) :: message
 
     n = size(along)
     do k = 1, n
        if (.not. along(k) % design_coordinate) then
-          error stop 'operation_field: a discrete field is differentiated along a design coordinate; &
-               &its derivatives along time and space are the residual''s to form'
-       end if
-       if (along(k) % coordinate /= along(1) % coordinate) then
-          error stop 'operation_field: a mixed derivative along two design coordinates is not stored; &
-               &the multi-index repeats one coordinate'
+          error stop 'operation_field: a discrete field is differentiated along a design coordinate or a &
+               &direction in the design; its derivatives along time and space are the residual''s to form'
        end if
     end do
     if (.not. (allocated(this % jet) .and. allocated(this % slot))) then
        error stop 'operation_field: the derivative along the design is read from the solution of a &
             &residual discretized with an expansion along the design'
     end if
-    c = along(1) % coordinate
-    if (this % along /= 0 .and. this % along /= c) then
-       error stop 'operation_field: the field is a derivative along one design coordinate, and its jet &
-            &along another is not stored'
-    end if
-    column = c
-    if (this % along /= 0) column = 1
-    if (column > size(this % jet, 4)) then
-       write(message,'(a,i0,a,i0)') 'operation_field: the design coordinate ', c, ' is beyond the jets stored, ', &
-            & size(this % jet, 4)
-       error stop trim(message)
-    end if
     order = size(this % jet, 3) - 1
+    npts  = size(this % value, 1)
+    seed  = seed_of(along(1))
+
+    ! the mixed derivative along two coordinates, by polarization
+    mixed = .false.
+    if (n == 2) mixed = .not. same_seed(seed, seed_of(along(2)))
+    if (mixed) then
+       if (this % along /= 0) then
+          error stop 'operation_field: a mixed derivative is read from the solution, not from a derivative of it'
+       end if
+       if (order < 2) then
+          error stop 'operation_field: a mixed derivative along two coordinates requires an expansion of order two'
+       end if
+       other  = seed_of(along(2))
+       both   = seed + other
+       column = expansion_of(seed)
+       second = expansion_of(other)
+       third  = expansion_of(both)
+       call require_columns(column, second, third)
+       allocate(d % on, source=this % on)
+       d % name  = this % name
+       d % slot  = this % slot
+       d % along = 0
+       allocate(d % value(npts, size(this % value, 2)))
+       do k = 1, size(this % value, 2)
+          call require_jet(k)
+          d % value(:, k) = (this % jet(this % slot(k), :, 3, third) - this % jet(this % slot(k), :, 3, column) &
+               & - this % jet(this % slot(k), :, 3, second)) / 2.0_dp
+       end do
+       allocate(d % jet(size(this % jet, 1), npts, 1, 1))
+       d % jet(:, :, 1, 1) = (this % jet(:, :, 3, third) - this % jet(:, :, 3, column) - this % jet(:, :, 3, second)) / 2.0_dp
+       if (allocated(this % rule)) d % rule = this % rule
+       return
+    end if
+
+    do k = 2, n
+       if (.not. same_seed(seed, seed_of(along(k)))) then
+          error stop 'operation_field: a mixed derivative is along two coordinates, of order two; the &
+               &multi-index otherwise repeats one coordinate or direction'
+       end if
+    end do
+    if (this % along /= 0) then
+       if (.not. same_seed(seed, this % on % expansion_seed(this % along))) then
+          error stop 'operation_field: the field is a derivative along one expansion, and its jet along &
+               &another is not stored'
+       end if
+       column = 1
+    else
+       column = expansion_of(seed)
+       if (column == 0) then
+          error stop 'operation_field: no expansion of the solution is along the coordinate or direction named; &
+               &state it in expansion(order, along=...)'
+       end if
+    end if
     if (n > order) then
        write(message,'(a,i0,a,i0)') 'operation_field: the derivative of order ', n, ' along the design &
             &exceeds the order of the expansion, ', order
        error stop trim(message)
     end if
-    npts = size(this % value, 1)
     allocate(d % on, source=this % on)
     d % name  = this % name
     d % slot  = this % slot
-    d % along = c
+    d % along = merge(this % along, column, this % along /= 0)
     allocate(d % value(npts, size(this % value, 2)))
     do k = 1, size(this % value, 2)
-       if (this % slot(k) == 0) then
-          error stop 'operation_field: component ' // trim(this % name(k)) // ' has no jet along the design'
-       end if
+       call require_jet(k)
        d % value(:, k) = this % jet(this % slot(k), :, n + 1, column)
     end do
     allocate(d % jet(size(this % jet, 1), npts, order - n + 1, 1))
     d % jet(:, :, :, 1) = this % jet(:, :, n + 1:order + 1, column)
     if (allocated(this % rule)) d % rule = this % rule
+
+  contains
+
+    ! the seed a coordinate or a direction names: the unit vector of
+    ! the coordinate over the design coordinates, or the vector
+    function seed_of(entry) result(s)
+      type(continuous_field), intent(in) :: entry
+      real(dp), allocatable :: s(:)
+      integer :: nd
+      if (allocated(entry % direction)) then
+         s = entry % direction
+         return
+      end if
+      nd = this % on % num_designs()
+      allocate(s(nd), source=0.0_dp)
+      if (entry % coordinate < 1 .or. entry % coordinate > nd) then
+         error stop 'operation_field: the design coordinate named is not one of the solution''s manifold'
+      end if
+      s(entry % coordinate) = 1.0_dp
+    end function seed_of
+
+    pure logical function same_seed(a, b)
+      real(dp), intent(in) :: a(:), b(:)
+      same_seed = size(a) == size(b)
+      if (same_seed) same_seed = all(abs(a - b) <= 1.0e-12_dp * max(1.0_dp, maxval(abs(a))))
+    end function same_seed
+
+    ! the expansion stored along a seed, zero when none is
+    integer function expansion_of(s)
+      real(dp), intent(in) :: s(:)
+      integer :: e
+      expansion_of = 0
+      do e = 1, this % on % num_expansions()
+         if (same_seed(s, this % on % expansion_seed(e))) expansion_of = e
+      end do
+    end function expansion_of
+
+    subroutine require_columns(a, b, c)
+      integer, intent(in) :: a, b, c
+      if (a == 0 .or. b == 0 .or. c == 0) then
+         error stop 'operation_field: a mixed derivative along nu and mu requires the expansions along nu, &
+              &along mu and along nu + mu: expansion(order=2, along=[e_nu, e_mu, e_nu + e_mu])'
+      end if
+    end subroutine require_columns
+
+    subroutine require_jet(k)
+      integer, intent(in) :: k
+      if (this % slot(k) == 0) then
+         error stop 'operation_field: component ' // trim(this % name(k)) // ' has no jet along the design'
+      end if
+    end subroutine require_jet
 
   end function discrete_derivative
 

@@ -117,12 +117,19 @@ module operation_manifold
      module procedure create_parameter
   end interface parameter
 
+  ! the expansion along the design: of an order, along each design
+  ! coordinate when no direction is given, along the directions
+  ! given otherwise, one per column, each a vector over the design
+  ! coordinates
   type :: expansion
      integer :: order = 0
+     real(dp), allocatable :: along(:,:)
   end type expansion
 
   interface expansion
      module procedure create_expansion
+     module procedure create_expansion_along
+     module procedure create_expansion_along_several
   end interface expansion
 
   type, extends(continuous_support) :: continuous_manifold
@@ -144,6 +151,7 @@ module operation_manifold
      procedure :: time            => manifold_time
      procedure :: space           => manifold_space
      procedure :: design          => manifold_design
+     procedure :: direction       => manifold_direction
      procedure :: discretize      => manifold_discretize
      procedure :: num_coordinates => manifold_num_coordinates
      procedure :: is_point
@@ -171,6 +179,10 @@ module operation_manifold
      real(dp), allocatable :: volume(:)
      type(parameter), allocatable :: design_parameter(:)
      integer :: order = 0
+     ! the seeds of the expansions: one column per expansion, the
+     ! derivative of each design coordinate along it - the identity
+     ! for the expansion along each coordinate
+     real(dp), allocatable :: along(:,:)
 
    contains
 
@@ -182,6 +194,8 @@ module operation_manifold
      procedure :: design_order    => discrete_design_order
      procedure :: num_designs     => discrete_num_designs
      procedure :: design_values   => discrete_design_values
+     procedure :: num_expansions  => discrete_num_expansions
+     procedure :: expansion_seed  => discrete_expansion_seed
      procedure :: measure_on_face => discrete_measure_on_face
      procedure :: num_instants
      procedure :: num_cells
@@ -283,6 +297,37 @@ contains
     this % order = order
 
   end function create_expansion
+
+  function create_expansion_along(order, along) result(this)
+
+    integer , intent(in) :: order
+    real(dp), intent(in) :: along(:)
+    type(expansion) :: this
+
+    this = create_expansion_along_several(order, reshape(along, [size(along), 1]))
+
+  end function create_expansion_along
+
+  function create_expansion_along_several(order, along) result(this)
+
+    integer , intent(in) :: order
+    real(dp), intent(in) :: along(:,:)
+    type(expansion) :: this
+
+    integer :: e
+
+    this = create_expansion(order)
+    if (size(along, 2) < 1) then
+       error stop 'operation_manifold: an expansion along directions names one direction at least'
+    end if
+    do e = 1, size(along, 2)
+       if (all(along(:, e) == 0.0_dp)) then
+          error stop 'operation_manifold: a direction of the expansion is a nonzero vector over the design coordinates'
+       end if
+    end do
+    this % along = along
+
+  end function create_expansion_along_several
 
   function create_manifold(time, space, design) result(this)
 
@@ -407,7 +452,8 @@ contains
     if (present(arguments)) then
        allocate(names(size(arguments)))
        do k = 1, size(arguments)
-          if (arguments(k) % coordinate < 1 .and. .not. arguments(k) % design_coordinate) then
+          if ((arguments(k) % coordinate < 1 .and. .not. arguments(k) % design_coordinate) &
+               & .or. allocated(arguments(k) % direction)) then
              write(message,'(a,i0,a,a,a)') 'operation_manifold: argument ', k, ' of the unknown ', trim(name), &
                   & ' is not a coordinate function'
              error stop trim(message)
@@ -561,6 +607,34 @@ contains
   end function manifold_space
 
   !===================================================================!
+  ! A DIRECTION IN THE DESIGN: a vector over the design coordinates,
+  ! as a field of the manifold, so that the derivative of a discrete
+  ! field along it - the expansion having been stated along it - is
+  ! read as along a coordinate: derivative([w]). A vector of another
+  ! length than the design coordinates, or zero, is invalid input.
+  !===================================================================!
+
+  function manifold_direction(this, along) result(w)
+
+    class(continuous_manifold), intent(in) :: this
+    real(dp)                  , intent(in) :: along(:)
+    type(continuous_field) :: w
+
+    if (.not. this % with_design) then
+       error stop 'operation_manifold: a direction in the design requires a manifold with a design coordinate'
+    end if
+    if (size(along) /= size(this % design_parameter)) then
+       error stop 'operation_manifold: a direction in the design has one entry per design coordinate'
+    end if
+    if (all(along == 0.0_dp)) then
+       error stop 'operation_manifold: a direction in the design is a nonzero vector'
+    end if
+    w = coordinate_field(this, 'direction', 0, of_design=.true.)
+    w % direction = along
+
+  end function manifold_direction
+
+  !===================================================================!
   ! THE DESIGN FACTOR: the point {nu} of the design space, a manifold
   ! of the design coordinate alone, on which the condition fixing the
   ! design is stated and paired with its multiplier, the sensitivity
@@ -616,6 +690,17 @@ contains
        image % with_design = .true.
        image % design_parameter = this % design_parameter
        image % order       = design % order
+       if (allocated(design % along)) then
+          if (size(design % along, 1) /= size(this % design_parameter)) then
+             error stop 'operation_manifold: a direction of the expansion has one entry per design coordinate'
+          end if
+          image % along = design % along
+       else
+          allocate(image % along(size(this % design_parameter), size(this % design_parameter)), source=0.0_dp)
+          do k = 1, size(this % design_parameter)
+             image % along(k, k) = 1.0_dp
+          end do
+       end if
     end if
     if (present(time)) then
        image % with_time = .true.
@@ -668,6 +753,7 @@ contains
     point % with_design = this % with_design
     if (allocated(this % design_parameter)) point % design_parameter = this % design_parameter
     point % order       = this % order
+    if (allocated(this % along)) point % along = this % along
     allocate(factor, source=point)
   end function discrete_design_factor
 
@@ -681,6 +767,28 @@ contains
     discrete_num_designs = 0
     if (this % with_design) discrete_num_designs = size(this % design_parameter)
   end function discrete_num_designs
+
+  ! the expansions: their number, and the seed of each, the
+  ! derivative of every design coordinate along it
+  pure integer function discrete_num_expansions(this)
+    class(discrete_manifold), intent(in) :: this
+    discrete_num_expansions = 0
+    if (allocated(this % along)) discrete_num_expansions = size(this % along, 2)
+  end function discrete_num_expansions
+
+  pure function discrete_expansion_seed(this, e) result(seed)
+    class(discrete_manifold), intent(in) :: this
+    integer                 , intent(in) :: e
+    real(dp), allocatable :: seed(:)
+    if (.not. allocated(this % along)) then
+       allocate(seed(1), source=0.0_dp)
+       return
+    end if
+    if (e < 1 .or. e > size(this % along, 2)) then
+       error stop 'operation_manifold: the expansion named does not exist'
+    end if
+    seed = this % along(:, e)
+  end function discrete_expansion_seed
 
   ! the design vector: the value of every design coordinate, or the
   ! one value zero without a design, which no expression reads

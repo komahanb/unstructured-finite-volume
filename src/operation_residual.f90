@@ -1742,7 +1742,7 @@ contains
     ! estimate, every derivative component zero; and their
     ! derivatives along the design to the order of the expansion
     order = this % points % design_order()
-    nd    = max(1, this % points % num_designs())
+    nd    = max(1, this % points % num_expansions())
     allocate(tuple(stride, ncells, ninst), source=0.0_dp)
     allocate(tjet(stride, ncells, ninst, order, nd), source=0.0_dp)
     do k = 1, ninst
@@ -1956,7 +1956,7 @@ contains
     ncells = this % points % num_cells()
     ninst  = this % points % num_instants()
     order  = this % points % design_order()
-    nd     = max(1, this % points % num_designs())
+    nd     = max(1, this % points % num_expansions())
     ni     = size(this % points % design_values())
 
     if (allocated(this % objective)) then
@@ -2347,7 +2347,7 @@ contains
     type(residual_operator) :: lin
     type(newton) :: solver
     type(stored_field), allocatable :: inputs(:)
-    real(dp), allocatable :: jets(:,:), b(:), x(:), y(:), values(:)
+    real(dp), allocatable :: jets(:,:), b(:), x(:), y(:), values(:), seed(:)
     integer :: stride, ncells, n, order, unknowns, npts, m, k, c, base, j, i, instant, f, comp, degree, d, nd
     logical :: staged
 
@@ -2355,7 +2355,7 @@ contains
     ncells   = this % points % num_cells()
     n        = last - first + 1
     order    = this % points % design_order()
-    nd       = this % points % num_designs()
+    nd       = this % points % num_expansions()
     values   = this % points % design_values()
     unknowns = size(q)
     npts     = size(at)
@@ -2366,6 +2366,7 @@ contains
     call solver % evaluate(q, y, inputs)
 
     do d = 1, nd
+       seed = this % points % expansion_seed(d)
        allocate(jets(unknowns, 0:order), source=0.0_dp)
        jets(:, 0) = q
        do k = 1, depth
@@ -2376,9 +2377,9 @@ contains
        end do
 
        do m = 1, order
-          if (verbosity >= 1) print '(a,i0,a,i0)', 'expansion along design coordinate ', d, ', order ', m
+          if (verbosity >= 1) print '(a,i0,a,i0)', 'expansion ', d, ' along the design, order ', m
           allocate(b(unknowns), source=0.0_dp)
-          call design_source(rows, jets(:, 0:m - 1), m, values, d, b)
+          call design_source(rows, jets(:, 0:m - 1), m, values, seed, b)
           do k = 1, depth
              do c = 1, ncells
                 base = at((instant_moment(k) - 1) * ncells + c)
@@ -2394,7 +2395,7 @@ contains
                 do c = 1, ncells
                    base = at((instant_moment(instant - first + 1) - 1) * ncells + c)
                    b(base + this % rule % offset_of_field(f) + degree + 1) = stated_derivative( &
-                        & this % condition(j) % equation(i), m, values, d, &
+                        & this % condition(j) % equation(i), m, values, seed, &
                         & this % points % position(this % points % point_of(instant, c)))
                 end do
              end do
@@ -2439,13 +2440,12 @@ contains
   ! subsets.
   !===================================================================!
 
-  subroutine design_source(rows, jets, m, values, d, b)
+  subroutine design_source(rows, jets, m, values, seed, b)
 
     type(residual_operator), intent(in)    :: rows
     real(dp)               , intent(in)    :: jets(:,0:)
     integer                , intent(in)    :: m
-    real(dp)               , intent(in)    :: values(:)
-    integer                , intent(in)    :: d
+    real(dp)               , intent(in)    :: values(:), seed(:)
     real(dp)               , intent(inout) :: b(:)
 
     type(derivative_terms), allocatable :: q(:), design(:)
@@ -2456,7 +2456,7 @@ contains
     is_fixed = rows % fixed_indicator()
     deg      = rows % degrees
     npts     = size(rows % at)
-    design   = design_terms(values, d, m, m)
+    design   = design_terms(values, seed, m, m)
     allocate(q(0:deg - 1))
     do j = 1, size(rows % rules)
        do p = 1, npts
@@ -2482,12 +2482,11 @@ contains
   ! coefficient is -h^(m), negated.
   !===================================================================!
 
-  real(dp) function stated_derivative(equation, m, values, d, position)
+  real(dp) function stated_derivative(equation, m, values, seed, position)
 
     type(continuous_field), intent(in) :: equation
     integer               , intent(in) :: m
-    real(dp)              , intent(in) :: values(:)
-    integer               , intent(in) :: d
+    real(dp)              , intent(in) :: values(:), seed(:)
     real(dp)              , intent(in) :: position(:)
 
     type(expression) :: g
@@ -2495,7 +2494,7 @@ contains
 
     g = equation % graph(1)
     allocate(q(0:g % num_components() - 1), source=derivative_terms(0.0_dp, m))
-    stated_derivative = -mixed_partial(g % at_instant(q, design_terms(values, d, m, m), position))
+    stated_derivative = -mixed_partial(g % at_instant(q, design_terms(values, seed, m, m), position))
 
   end function stated_derivative
 
@@ -2506,11 +2505,11 @@ contains
   ! evaluation over o + 1 directions, the last seeded on i.
   !===================================================================!
 
-  function stated_partial_jet(equation, i, d, o, values, position) result(slope)
+  function stated_partial_jet(equation, i, seed, o, values, position) result(slope)
 
     type(continuous_field), intent(in) :: equation
-    integer               , intent(in) :: i, d, o
-    real(dp)              , intent(in) :: values(:)
+    integer               , intent(in) :: i, o
+    real(dp)              , intent(in) :: seed(:), values(:)
     real(dp)              , intent(in) :: position(:)
     real(dp), allocatable :: slope(:)
 
@@ -2520,7 +2519,7 @@ contains
     integer :: k
 
     g  = equation % graph(1)
-    nu = design_terms(values, d, o, o + 1)
+    nu = design_terms(values, seed, o, o + 1)
     call nu(i) % set_coefficient(2**o, 1.0_dp)
     allocate(q(0:g % num_components() - 1), source=derivative_terms(0.0_dp, o + 1))
     r = g % at_instant(q, nu, position)
@@ -2613,7 +2612,7 @@ contains
     ncells = this % points % num_cells()
     n      = last - first + 1
     order  = this % points % design_order()
-    nd     = max(1, this % points % num_designs())
+    nd     = max(1, this % points % num_expansions())
     values = this % points % design_values()
     ni     = size(values)
     unknowns = size(q)
@@ -2660,8 +2659,7 @@ contains
        first_order = 0
        if (d > 1) first_order = 1
        do o = first_order, order
-          if (verbosity >= 1 .and. o > 0) print '(a,i0,a,i0)', 'adjoint expansion along design coordinate ', d, &
-               & ', order ', o
+          if (verbosity >= 1 .and. o > 0) print '(a,i0,a,i0)', 'adjoint expansion ', d, ' along the design, order ', o
           allocate(rhs(unknowns), source=0.0_dp)
           do k = depth + 1, n
              do c = 1, ncells
@@ -2670,7 +2668,8 @@ contains
                      & + incoming(:, c, first + k - 1, o, d)
              end do
           end do
-          if (o > 0) call adjoint_source(rows, jets(:, 0:o, d), mu(:, 0:o - 1, d), o, values, d, rhs)
+          if (o > 0) call adjoint_source(rows, jets(:, 0:o, d), mu(:, 0:o - 1, d), o, values, &
+               & this % points % expansion_seed(d), rhs)
 
           lin = rows % linearize(rows % unknown_graph(), rows % bind(inputs), rhs, transposed=.true., &
                & version_number=rows % version())
@@ -2760,7 +2759,8 @@ contains
     if (this % points % with_design) then
        do d = 1, nd
           do o = 0, order
-             products = design_products(rows, jets(:, 0:o, d), mu(:, 0:o, d), o, values, d)
+             products = design_products(rows, jets(:, 0:o, d), mu(:, 0:o, d), o, values, &
+                  & this % points % expansion_seed(d))
              in_design(:, o, d) = in_design(:, o, d) - products
           end do
        end do
@@ -2775,7 +2775,8 @@ contains
                 do d = 1, nd
                    do o = 0, order
                       do k = 1, ni
-                         slope = stated_partial_jet(this % condition(j) % equation(i), k, d, o, values, &
+                         slope = stated_partial_jet(this % condition(j) % equation(i), k, &
+                              & this % points % expansion_seed(d), o, values, &
                               & this % points % position(this % points % point_of(instant, c)))
                          ! the row x - h(nu): its partial in nu_k is -dh/dnu_k
                          in_design(k, o, d) = in_design(k, o, d) + mixed_partial( &
@@ -2803,13 +2804,12 @@ contains
   ! last are the k-th derivatives of the partial.
   !===================================================================!
 
-  subroutine adjoint_source(rows, jets, mu, o, values, d, rhs)
+  subroutine adjoint_source(rows, jets, mu, o, values, seed, rhs)
 
     type(residual_operator), intent(in)    :: rows
     real(dp)               , intent(in)    :: jets(:,0:), mu(:,0:)
     integer                , intent(in)    :: o
-    real(dp)               , intent(in)    :: values(:)
-    integer                , intent(in)    :: d
+    real(dp)               , intent(in)    :: values(:), seed(:)
     real(dp)               , intent(inout) :: rhs(:)
 
     type(derivative_terms), allocatable :: q(:), design(:)
@@ -2822,7 +2822,7 @@ contains
     deg      = rows % degrees
     npts     = size(rows % at)
     allocate(lower(o), partial(0:o), source=0.0_dp)
-    design = design_terms(values, d, o, o + 1)
+    design = design_terms(values, seed, o, o + 1)
     allocate(q(0:deg - 1))
     do j = 1, size(rows % rules)
        do p = 1, npts
@@ -2859,13 +2859,12 @@ contains
   ! the coordinate i.
   !===================================================================!
 
-  function design_products(rows, jets, mu, o, values, d) result(total)
+  function design_products(rows, jets, mu, o, values, seed) result(total)
 
     type(residual_operator), intent(in) :: rows
     real(dp)               , intent(in) :: jets(:,0:), mu(:,0:)
     integer                , intent(in) :: o
-    real(dp)               , intent(in) :: values(:)
-    integer                , intent(in) :: d
+    real(dp)               , intent(in) :: values(:), seed(:)
     real(dp), allocatable :: total(:)
 
     type(derivative_terms), allocatable :: q(:), design(:)
@@ -2894,7 +2893,7 @@ contains
     end if
     allocate(partial(0:o), q(0:deg - 1))
     do i = 1, size(values)
-       design = design_terms(values, d, o, o + 1)
+       design = design_terms(values, seed, o, o + 1)
        call design(i) % set_coefficient(2**o, 1.0_dp)
        do j = 1, size(rows % rules)
           do p = 1, npts
@@ -3048,29 +3047,30 @@ contains
   end function design_at_points
 
   !===================================================================!
-  ! The jets of the design vector over a width of directions, the
-  ! coordinate d the quantity with derivative one on the first
-  ! direction (symmetric over the expansion's), every other constant.
+  ! The jets of the design vector over a width of directions: each
+  ! coordinate the quantity whose derivative on the first direction
+  ! (symmetric over the expansion's) is its entry of the seed, the
+  ! seed being the unit vector of a coordinate or a direction in the
+  ! design.
   !===================================================================!
 
-  function design_terms(values, d, order, width) result(nu)
+  function design_terms(values, seed, order, width) result(nu)
 
-    real(dp), intent(in) :: values(:)
-    integer , intent(in) :: d, order, width
+    real(dp), intent(in) :: values(:), seed(:)
+    integer , intent(in) :: order, width
     type(derivative_terms), allocatable :: nu(:)
 
     real(dp), allocatable :: unit(:)
     integer :: i
 
+    if (size(seed) /= size(values)) then
+       error stop 'operation_residual: a seed of the expansion has one entry per design coordinate'
+    end if
     allocate(unit(order), source=0.0_dp)
     if (order > 0) unit(1) = 1.0_dp
     allocate(nu(size(values)))
     do i = 1, size(values)
-       if (i == d) then
-          nu(i) = symmetric_terms(values(i), unit, width)
-       else
-          nu(i) = derivative_terms(values(i), width)
-       end if
+       nu(i) = symmetric_terms(values(i), seed(i) * unit, width)
     end do
 
   end function design_terms

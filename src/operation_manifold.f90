@@ -35,7 +35,7 @@ module operation_manifold
 
   private
   public :: continuous_manifold, discrete_manifold
-  public :: interval, region, instants, mesh
+  public :: interval, region, instants, mesh, parameter, expansion
 
   integer, parameter :: MAX_NAME = 32
 
@@ -68,12 +68,35 @@ module operation_manifold
      module procedure mesh_from_file
   end interface mesh
 
+  ! the design: a coordinate fixed at a value, a point of the design
+  ! space; its discretization is the Taylor expansion of an order at
+  ! that value, so that the discrete solution stores its derivatives
+  ! along the design to the order
+  type :: parameter
+     character(len=MAX_NAME) :: name = ''
+     real(dp) :: value = 0.0_dp
+  end type parameter
+
+  interface parameter
+     module procedure create_parameter
+  end interface parameter
+
+  type :: expansion
+     integer :: order = 0
+  end type expansion
+
+  interface expansion
+     module procedure create_expansion
+  end interface expansion
+
   type, extends(continuous_support) :: continuous_manifold
 
      logical        :: with_time  = .false.
      logical        :: with_space = .false.
+     logical        :: with_design = .false.
      type(interval) :: span
      type(region)   :: geometry
+     type(parameter) :: design
      real(dp)       :: face_time = 0.0_dp
      integer        :: num_unknowns = 0
      character(len=MAX_NAME), allocatable :: unknown_name(:)
@@ -102,11 +125,14 @@ module operation_manifold
 
      logical :: with_time  = .false.
      logical :: with_space = .false.
+     logical :: with_design = .false.
      real(dp), allocatable :: instant(:)
      type(mesh) :: cells
      integer :: dimension = 0
      real(dp), allocatable :: centre(:)
      real(dp), allocatable :: volume(:)
+     type(parameter) :: design
+     integer :: order = 0
 
    contains
 
@@ -115,6 +141,8 @@ module operation_manifold
      procedure :: position        => discrete_position
      procedure :: measure         => discrete_measure
      procedure :: design_factor   => discrete_design_factor
+     procedure :: design_order    => discrete_design_order
+     procedure :: design_value    => discrete_design_value
      procedure :: num_instants
      procedure :: num_cells
      procedure :: step
@@ -180,10 +208,47 @@ contains
 
   end function mesh_from_file
 
-  function create_manifold(time, space) result(this)
+  ! a design parameter named as a coordinate is, other than t, x, y, z
+  function create_parameter(name, value) result(this)
 
-    type(interval), intent(in), optional :: time
-    type(region)  , intent(in), optional :: space
+    character(len=*), intent(in) :: name
+    real(dp)        , intent(in) :: value
+    type(parameter) :: this
+
+    select case (trim(name))
+    case ('t', 'x', 'y', 'z')
+       error stop 'operation_manifold: the design coordinate is named other than t, x, y, z; the name given is ' &
+            & // trim(name)
+    end select
+    if (len_trim(name) < 1 .or. len_trim(name) > MAX_NAME) then
+       error stop 'operation_manifold: the design coordinate is named by one to 32 characters'
+    end if
+    this % name  = name
+    this % value = value
+
+  end function create_parameter
+
+  function create_expansion(order) result(this)
+
+    integer, intent(in) :: order
+    type(expansion) :: this
+
+    character(len=250) :: message
+
+    if (order < 0) then
+       write(message,'(a,i0)') 'operation_manifold: the expansion along the design is of order zero at &
+            &least; order = ', order
+       error stop trim(message)
+    end if
+    this % order = order
+
+  end function create_expansion
+
+  function create_manifold(time, space, design) result(this)
+
+    type(interval) , intent(in), optional :: time
+    type(region)   , intent(in), optional :: space
+    type(parameter), intent(in), optional :: design
     type(continuous_manifold) :: this
 
     this % identity = next_token()
@@ -194,6 +259,10 @@ contains
     if (present(space)) then
        this % with_space = .true.
        this % geometry   = space
+    end if
+    if (present(design)) then
+       this % with_design = .true.
+       this % design      = design
     end if
     allocate(this % unknown_name(0))
 
@@ -266,7 +335,7 @@ contains
     if (present(arguments)) then
        allocate(names(size(arguments)))
        do k = 1, size(arguments)
-          if (arguments(k) % coordinate < 1) then
+          if (arguments(k) % coordinate < 1 .and. .not. arguments(k) % design_coordinate) then
              write(message,'(a,i0,a,a,a)') 'operation_manifold: argument ', k, ' of the unknown ', trim(name), &
                   & ' is not a coordinate function'
              error stop trim(message)
@@ -285,8 +354,9 @@ contains
        end do
     else
        allocate(names(0))
-       if (this % with_time)  names = [character(len=8) :: names, 't']
-       if (this % with_space) names = [character(len=8) :: names, 'x', 'y', 'z']
+       if (this % with_time)   names = [character(len=8) :: names, 't']
+       if (this % with_space)  names = [character(len=8) :: names, 'x', 'y', 'z']
+       if (this % with_design) names = [character(len=8) :: names, this % design % name(1:8)]
     end if
 
     u = unknown_field(this, name, this % num_unknowns + 1, n, names)
@@ -297,8 +367,9 @@ contains
   end function manifold_unknown
 
   !===================================================================!
-  ! The coordinate function named t, x, y or z. A name the manifold
-  ! has no coordinate for stops the program.
+  ! The coordinate function named t, x, y or z, or the design
+  ! coordinate by its name. A name the manifold has no coordinate for
+  ! stops the program.
   !===================================================================!
 
   function manifold_coordinate(this, name) result(c)
@@ -309,6 +380,12 @@ contains
 
     integer :: axis, at
 
+    if (this % with_design) then
+       if (trim(name) == trim(this % design % name)) then
+          c = coordinate_field(this, name, 0, of_design=.true.)
+          return
+       end if
+    end if
     axis = 0
     select case (trim(name))
     case ('t')
@@ -358,6 +435,8 @@ contains
     face % identity   = next_token()
     face % with_space = this % with_space
     face % geometry   = this % geometry
+    face % with_design = this % with_design
+    face % design     = this % design
     face % part       = TIME_FACE
     face % face_time  = time
     face % parent     = this % identity
@@ -376,6 +455,8 @@ contains
     factor % identity  = next_token()
     factor % with_time = .true.
     factor % span      = this % span
+    factor % with_design = this % with_design
+    factor % design    = this % design
     factor % part      = TIME_FACTOR
     factor % parent    = this % identity
     allocate(factor % unknown_name(0))
@@ -393,6 +474,8 @@ contains
     factor % identity   = next_token()
     factor % with_space = .true.
     factor % geometry   = this % geometry
+    factor % with_design = this % with_design
+    factor % design     = this % design
     factor % part       = SPACE_FACTOR
     factor % parent     = this % identity
     allocate(factor % unknown_name(0))
@@ -401,16 +484,17 @@ contains
 
   !===================================================================!
   ! THE DISCRETE IMAGE: the instants of the interval, equally spaced,
-  ! and the cells of the mesh. A coordinate present without its
-  ! points, or points given for a coordinate absent, stops the
-  ! program.
+  ! the cells of the mesh, and the expansion of an order along the
+  ! design. A coordinate present without its points, or points given
+  ! for a coordinate absent, stops the program.
   !===================================================================!
 
-  function manifold_discretize(this, time, space) result(image)
+  function manifold_discretize(this, time, space, design) result(image)
 
     class(continuous_manifold), intent(in) :: this
-    type(instants), intent(in), optional :: time
-    type(mesh)    , intent(in), optional :: space
+    type(instants) , intent(in), optional :: time
+    type(mesh)     , intent(in), optional :: space
+    type(expansion), intent(in), optional :: design
     type(discrete_manifold) :: image
 
     integer :: k
@@ -421,7 +505,16 @@ contains
     if (this % with_space .neqv. present(space)) then
        error stop 'operation_manifold: the region is discretized by a mesh, and only it'
     end if
+    if (this % with_design .neqv. present(design)) then
+       error stop 'operation_manifold: the design coordinate is discretized by an expansion of an order, &
+            &and only it'
+    end if
     image % identity = this % identity
+    if (present(design)) then
+       image % with_design = .true.
+       image % design      = this % design
+       image % order       = design % order
+    end if
     if (present(time)) then
        image % with_time = .true.
        image % instant = [(this % span % a + (this % span % b - this % span % a) * real(k - 1, dp) &
@@ -460,19 +553,31 @@ contains
   end function discrete_num_coordinates
 
   !===================================================================!
-  ! The discretization of the design factor: without a design
-  ! coordinate, the one point of measure one, on which a functional
-  ! of the solution takes its value.
+  ! The discretization of the design factor: the one point of measure
+  ! one, on which a functional of the solution takes its value and
+  ! its derivatives along the design to the order of the expansion.
   !===================================================================!
 
   function discrete_design_factor(this) result(factor)
     class(discrete_manifold), intent(in) :: this
     class(discrete_support), allocatable :: factor
     type(discrete_manifold) :: point
-    associate (u1 => this); end associate
-    point % identity = next_token()
+    point % identity    = next_token()
+    point % with_design = this % with_design
+    point % design      = this % design
+    point % order       = this % order
     allocate(factor, source=point)
   end function discrete_design_factor
+
+  pure integer function discrete_design_order(this)
+    class(discrete_manifold), intent(in) :: this
+    discrete_design_order = this % order
+  end function discrete_design_order
+
+  pure real(dp) function discrete_design_value(this)
+    class(discrete_manifold), intent(in) :: this
+    discrete_design_value = this % design % value
+  end function discrete_design_value
 
   ! the point of instant k and cell c: instant outer, cell inner
   pure integer function point_of(this, k, c)

@@ -17,6 +17,12 @@
 #   van_der_pol          the van der Pol oscillator on [0, 2] by the
 #                        chain dirk(2), bdf(2), adams(2) over eleven
 #                        instants; u(2) = 0.2912 (0.3233 converged)
+#   van_der_pol_sensitivity
+#                        the oscillator with nu as a design coordinate,
+#                        the energy as the objective, the adjoint and
+#                        the reactions of the initial data, and the
+#                        derivatives of u(T) and of the energy along nu
+#                        to order 3 by the expansion along the design
 #   run                  the same tableau on the expression and the
 #                        residual_operator directly
 #
@@ -42,5 +48,7 @@ echo "== taylor_green_vortex_3d"
 ./taylor_green_vortex_3d
 echo "== van_der_pol"
 ./van_der_pol
+echo "== van_der_pol_sensitivity"
+./van_der_pol_sensitivity
 echo "== run"
 ./run

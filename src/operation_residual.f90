@@ -56,7 +56,7 @@ module operation_residual
   use operation_expression , only : expression, euler_lagrange, multiplier, constant
   use operation_expression , only : operator(+), operator(*)
   use operation_domain     , only : continuous_domain, discrete_domain
-  use util_derivative_terms, only : max_subset_width, derivative_terms, mixed_partial
+  use util_derivative_terms, only : max_subset_width, derivative_terms, mixed_partial, coefficient
   use token_identity       , only : token
   use operation_field      , only : continuous_field, discrete_field, WHOLE, TIME_FACTOR, SPACE_FACTOR
   use operation_manifold   , only : continuous_manifold, discrete_manifold
@@ -1665,7 +1665,10 @@ contains
     type(discrete_field)    , intent(in)  :: estimate
     type(discrete_field)    , intent(out) :: solution
 
-    real(dp), allocatable :: tuple(:,:,:), stages(:,:,:,:), value(:,:), jet(:,:), adjoint(:,:,:), reaction(:,:)
+    real(dp), allocatable :: tuple(:,:,:), stages(:,:,:,:), tjet(:,:,:,:), value(:,:), jet(:,:,:)
+    real(dp), allocatable :: adjoint(:,:,:), reaction(:,:)
+    integer , allocatable :: slot(:)
+    integer :: order
     character(len=32), allocatable :: names(:)
     type(stencil), allocatable :: rows_along(:,:)
     integer :: stride, nf, ncells, ninst, f, c, k, b, first, last, depth, nb, top, o, npts, nc, j
@@ -1686,8 +1689,11 @@ contains
     end if
 
     ! the tuples at every instant and cell: the values from the
-    ! estimate, every derivative component zero
+    ! estimate, every derivative component zero; and their
+    ! derivatives along the design to the order of the expansion
+    order = this % points % design_order()
     allocate(tuple(stride, ncells, ninst), source=0.0_dp)
+    allocate(tjet(stride, ncells, ninst, order), source=0.0_dp)
     do k = 1, ninst
        do c = 1, ncells
           do f = 1, nf
@@ -1734,9 +1740,14 @@ contains
                   & ' instants of history before instant ', first
              error stop trim(message)
           end if
-          call solve_block(this, this % schemes % scheme(b), first - depth, last, depth, rows_along, tuple, stages)
+          call solve_block(this, this % schemes % scheme(b), first - depth, last, depth, rows_along, tuple, &
+               & stages, tjet)
        end do
     else
+       if (order > 0) then
+          error stop 'operation_residual: the expansion along the design is formed block by block over a &
+               &chain; a manifold without a time coordinate has none'
+       end if
        call solve_point(this, tuple)
     end if
 
@@ -1753,20 +1764,28 @@ contains
        end do
     end if
     allocate(value(npts, nf + merge(nf + nc, 0, this % with_adjoint)), source=0.0_dp)
-    allocate(names(size(value, 2)), jet(stride, npts))
+    allocate(names(size(value, 2)), jet(stride, npts, order + 1))
+    allocate(slot(size(value, 2)), source=0)
     names(1:nf) = this % manifold % unknown_name(1:nf)
+    do f = 1, nf
+       slot(f) = this % rule % offset_of_field(f) + 1
+    end do
     do k = 1, ninst
        do c = 1, ncells
           do f = 1, nf
              value(this % points % point_of(k, c), f) = tuple(this % rule % offset_of_field(f) + 1, c, k)
           end do
-          jet(:, this % points % point_of(k, c)) = tuple(:, c, k)
+          jet(:, this % points % point_of(k, c), 1) = tuple(:, c, k)
+          do o = 1, order
+             jet(:, this % points % point_of(k, c), o + 1) = tjet(:, c, k, o)
+          end do
        end do
     end do
 
     if (this % with_adjoint) then
        solution = discrete_field(this % points, value(:, 1:nf), names(1:nf))
        solution % jet  = jet
+       solution % slot = slot(1:nf)
        solution % rule = this % rule
        call adjoint_sweep(this, rows_along, tuple, stages, solution, adjoint, reaction)
        names(nf + 1:2 * nf) = this % adjoint_name
@@ -1791,6 +1810,7 @@ contains
 
     solution = discrete_field(this % points, value, names)
     solution % jet  = jet
+    solution % slot = slot
     solution % rule = this % rule
 
   end subroutine minimize
@@ -2113,13 +2133,13 @@ contains
   ! estimate, the block's own instants written back.
   !===================================================================!
 
-  subroutine solve_block(this, scheme, first, last, depth, rows_along, tuple, stages)
+  subroutine solve_block(this, scheme, first, last, depth, rows_along, tuple, stages, tjet)
 
     class(discrete_residual), intent(in)    :: this
     type(family)            , intent(in)    :: scheme
     integer                 , intent(in)    :: first, last, depth
     type(stencil)           , intent(in)    :: rows_along(:,:)
-    real(dp)                , intent(inout) :: tuple(:,:,:), stages(:,:,:,:)
+    real(dp)                , intent(inout) :: tuple(:,:,:), stages(:,:,:,:), tjet(:,:,:,:)
 
     type(residual_operator) :: rows
     real(dp), allocatable :: q(:)
@@ -2161,7 +2181,176 @@ contains
        end do
     end if
 
+    if (this % points % design_order() > 0) then
+       call design_jets(this, rows, q, at, instant_moment, first, last, depth, tjet)
+    end if
+
   end subroutine solve_block
+
+  !===================================================================!
+  ! THE JETS ALONG THE DESIGN of one block, order by order: the m-th
+  ! derivative of the block's unknowns along the design is the
+  ! solution of A x = b, A the block's jacobian at its solution and b
+  ! the m-th derivative of the rows with the m-th derivative of the
+  ! state left out - at the row of an equation, by the jet arithmetic
+  ! on the derivatives of lower order and the design; at the fixed
+  ! row of a history instant, the derivative solved before; at the
+  ! fixed row of a face condition, the m-th derivative of the value
+  ! it states; zero at the rows along time and space, which are
+  ! linear in the state. Every derivative of the block's own instants
+  ! is stored at tjet(:, c, k, m).
+  !===================================================================!
+
+  subroutine design_jets(this, rows, q, at, instant_moment, first, last, depth, tjet)
+
+    class(discrete_residual), intent(in)    :: this
+    type(residual_operator) , intent(in)    :: rows
+    real(dp)                , intent(in)    :: q(:)
+    integer                 , intent(in)    :: at(:), instant_moment(:), first, last, depth
+    real(dp)                , intent(inout) :: tjet(:,:,:,:)
+
+    type(residual_operator) :: lin
+    type(newton) :: solver
+    type(stored_field), allocatable :: inputs(:)
+    real(dp), allocatable :: jets(:,:), b(:), x(:), y(:)
+    integer , allocatable :: fixed_rows(:)
+    real(dp), allocatable :: fixed(:)
+    integer :: stride, ncells, n, order, unknowns, npts, m, k, c, base, j, i, instant, f, comp, degree, e
+
+    stride   = this % rule % num_components()
+    ncells   = this % points % num_cells()
+    n        = last - first + 1
+    order    = this % points % design_order()
+    unknowns = size(q)
+    npts     = size(at)
+
+    allocate(jets(unknowns, 0:order), source=0.0_dp)
+    jets(:, 0) = q
+    do k = 1, depth
+       do c = 1, ncells
+          base = at((instant_moment(k) - 1) * ncells + c)
+          jets(base + 1:base + stride, 1:order) = tjet(:, c, first + k - 1, 1:order)
+       end do
+    end do
+
+    solver = solver_for(this, rows, unknowns, stride, npts)
+    call solver % evaluate(q, y, inputs)
+
+    do m = 1, order
+       if (verbosity >= 1) print '(a,i0)', 'expansion along the design, order ', m
+       allocate(b(unknowns), source=0.0_dp)
+       call design_source(rows, jets(:, 0:m - 1), m, this % points % design_value(), b)
+       do k = 1, depth
+          do c = 1, ncells
+             base = at((instant_moment(k) - 1) * ncells + c)
+             b(base + 1:base + stride) = jets(base + 1:base + stride, m)
+          end do
+       end do
+       e = 0
+       do j = 1, size(this % condition)
+          if (.not. this % condition(j) % manifold % is_face()) cycle
+          instant = face_instant(this, this % condition(j) % manifold % face_time)
+          if (instant < first + depth .or. instant > last) cycle
+          do i = 1, size(this % condition(j) % equation)
+             call stated_value(this % condition(j) % equation(i), f, comp, degree)
+             do c = 1, ncells
+                base = at((instant_moment(instant - first + 1) - 1) * ncells + c)
+                b(base + this % rule % offset_of_field(f) + degree + 1) = stated_derivative( &
+                     & this % condition(j) % equation(i), m, this % points % design_value(), &
+                     & this % points % position(this % points % point_of(instant, c)))
+             end do
+          end do
+       end do
+       lin = rows % linearize(rows % unknown_graph(), rows % bind(inputs), b, transposed=.false., &
+            & version_number=rows % version())
+       allocate(x(unknowns), source=0.0_dp)
+       call solved(this, lin, unknowns, stride, npts, x)
+       jets(:, m) = x
+       deallocate(b, x)
+    end do
+
+    do k = depth + 1, n
+       do c = 1, ncells
+          base = at((instant_moment(k) - 1) * ncells + c)
+          tjet(:, c, first + k - 1, 1:order) = jets(base + 1:base + stride, 1:order)
+       end do
+    end do
+    if (allocated(fixed_rows)) deallocate(fixed_rows)
+    if (allocated(fixed)) deallocate(fixed)
+
+  end subroutine design_jets
+
+  !===================================================================!
+  ! The m-th derivative along the design of every equation row at the
+  ! points not fixed, with the m-th derivative of the state left out,
+  ! negated: each component of a point's tuple enters as the quantity
+  ! whose k-th derivative is the k-th jet coefficient for k below m
+  ! and zero at m, the design as the quantity with derivative one;
+  ! the coefficient of the full subset of m directions is the m-th
+  ! derivative by the product rule on subsets.
+  !===================================================================!
+
+  subroutine design_source(rows, jets, m, nu, b)
+
+    type(residual_operator), intent(in)    :: rows
+    real(dp)               , intent(in)    :: jets(:,0:)
+    integer                , intent(in)    :: m
+    real(dp)               , intent(in)    :: nu
+    real(dp)               , intent(inout) :: b(:)
+
+    type(derivative_terms), allocatable :: q(:)
+    type(derivative_terms) :: design, r
+    logical, allocatable :: is_fixed(:)
+    integer :: deg, npts, j, p, d, k, row
+
+    is_fixed = rows % fixed_indicator()
+    deg      = rows % degrees
+    npts     = size(rows % at)
+    design   = derivative_terms(nu, m)
+    call design % set_symmetric(1, 1.0_dp)
+    allocate(q(0:deg - 1))
+    do j = 1, size(rows % rules)
+       do p = 1, npts
+          row = rows % at(p) + rows % primary(j) + 1
+          if (is_fixed(row)) cycle
+          do d = 0, deg - 1
+             q(d) = derivative_terms(jets(rows % at(p) + d + 1, 0), m)
+             do k = 1, m - 1
+                call q(d) % set_symmetric(k, jets(rows % at(p) + d + 1, k))
+             end do
+          end do
+          r = rows % rules(j) % at_instant(q, design)
+          b(row) = -mixed_partial(r)
+       end do
+    end do
+
+  end subroutine design_source
+
+  !===================================================================!
+  ! The m-th derivative along the design of the value a face
+  ! condition states: the condition g(u) = u - h(x, nu) evaluated on
+  ! a state without derivatives, so that the m-th coefficient is
+  ! -h^(m), negated.
+  !===================================================================!
+
+  real(dp) function stated_derivative(equation, m, nu, position)
+
+    type(continuous_field), intent(in) :: equation
+    integer               , intent(in) :: m
+    real(dp)              , intent(in) :: nu
+    real(dp)              , intent(in) :: position(:)
+
+    type(expression) :: g
+    type(derivative_terms), allocatable :: q(:)
+    type(derivative_terms) :: design
+
+    g      = equation % graph(1)
+    design = derivative_terms(nu, m)
+    call design % set_symmetric(1, 1.0_dp)
+    allocate(q(0:g % num_components() - 1), source=derivative_terms(0.0_dp, m))
+    stated_derivative = -mixed_partial(g % at_instant(q, design, position))
+
+  end function stated_derivative
 
   !===================================================================!
   ! ONE BLOCK'S ADJOINT: the transposed linear system A^T mu = rhs at
@@ -2365,7 +2554,7 @@ contains
     end if
 
     designs = rows % design_fields()
-    design  = designs % design(spread(0.0_dp, 1, npts))
+    design  = designs % design(spread(this % points % design_value(), 1, npts))
     call solver % state(rows, rows % unknown_graph(), rows % unknown_domain(), unknowns, stored_inputs=[design])
 
   end function solver_for

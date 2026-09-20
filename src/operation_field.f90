@@ -23,7 +23,8 @@ module operation_field
 
   use util_precision      , only : dp
   use token_identity      , only : token
-  use operation_expression, only : expression, unknown, constant, coordinate, derivative, derivative_along
+  use util_derivative_terms, only : derivative_terms, coefficient
+  use operation_expression, only : expression, unknown, constant, coordinate, derivative, derivative_along, design
   use operation_expression, only : FIRST_COORDINATE
   use operation_expression, only : operator(+), operator(-), operator(*), operator(/), operator(**)
   use operation_expression, only : sin, cos, exp, log, sqrt
@@ -72,18 +73,27 @@ module operation_field
      procedure(position_interface), deferred :: position
      procedure(measure_interface) , deferred :: measure
      procedure(factor_interface)  , deferred :: design_factor
+     procedure(count_interface)   , deferred :: design_order
+     procedure(real_interface)    , deferred :: design_value
 
   end type discrete_support
 
   abstract interface
 
      ! the discretization of the design factor of the support: the
-     ! points a functional of the solution takes its values on
+     ! point a functional of the solution takes its values on, with
+     ! the order of the expansion along the design and the design's
+     ! value
      function factor_interface(this) result(factor)
        import :: discrete_support
        class(discrete_support), intent(in) :: this
        class(discrete_support), allocatable :: factor
      end function factor_interface
+
+     pure real(dp) function real_interface(this)
+       import :: discrete_support, dp
+       class(discrete_support), intent(in) :: this
+     end function real_interface
 
      pure integer function count_interface(this)
        import :: discrete_support
@@ -112,9 +122,10 @@ module operation_field
   ! support. An unknown has the field number of each component
   ! on its manifold and its arguments, the names of the coordinates
   ! it is a function of; a coordinate function has the coordinate it
-  ! is, and is its own argument; an integral has the identity of the
-  ! factor it runs over, which part of its parent that factor is, and
-  ! the parent's identity.
+  ! is, and is its own argument - the design coordinate reads the
+  ! design of the point rather than a position; an integral has the
+  ! identity of the factor it runs over, which part of its parent
+  ! that factor is, and the parent's identity.
   !===================================================================!
 
   type :: continuous_field
@@ -125,6 +136,7 @@ module operation_field
      type(expression), allocatable :: component(:)
      integer, allocatable :: index(:)
      integer :: coordinate = 0
+     logical :: design_coordinate = .false.
      type(token) :: integrated_over
      integer     :: integrated_part = WHOLE
      type(token) :: integrated_parent
@@ -152,8 +164,13 @@ module operation_field
   ! THE DISCRETE FIELD: its support, and one value per point and
   ! component. The solution of a residual also stores the jet at
   ! every point - the value and the derivatives of every unknown, as
-  ! the residual's rule lays them out - so that a functional of the
-  ! solution reads the derivatives the residual formed.
+  ! the residual's rule lays them out, at jet(:, p, 1), and its
+  ! derivatives along the design to the order of the expansion at
+  ! jet(:, p, k + 1) - so that a functional of the solution reads the
+  ! derivatives the residual formed; slot(j) is the row of the jet
+  ! component j reads, zero for a component with no jet. The
+  ! derivative along the design is the field of the next
+  ! coefficients.
   !===================================================================!
 
   type :: discrete_field
@@ -161,13 +178,15 @@ module operation_field
      class(discrete_support), allocatable :: on
      character(len=32), allocatable :: name(:)
      real(dp), allocatable :: value(:,:)
-     real(dp), allocatable :: jet(:,:)
+     real(dp), allocatable :: jet(:,:,:)
+     integer , allocatable :: slot(:)
      type(expression), allocatable :: rule
 
    contains
 
      procedure :: values
      procedure :: fields
+     procedure :: derivative      => discrete_derivative
      procedure :: norm
      procedure :: num_points     => discrete_num_points
      procedure :: num_components => discrete_num_components
@@ -261,18 +280,24 @@ contains
 
   end function unknown_field
 
-  function coordinate_field(on, name, c) result(this)
+  function coordinate_field(on, name, c, of_design) result(this)
 
     class(continuous_support), intent(in) :: on
     character(len=*)         , intent(in) :: name
     integer                  , intent(in) :: c
+    logical                  , intent(in), optional :: of_design
     type(continuous_field) :: this
 
     this % on         = on % identity
     this % name       = name
     this % coordinate = c
-    this % component  = [coordinate(c)]
     this % index      = [0]
+    if (present(of_design)) this % design_coordinate = of_design
+    if (this % design_coordinate) then
+       this % component = [design()]
+    else
+       this % component = [coordinate(c)]
+    end if
     allocate(this % argument(1))
     this % argument(1) = name
 
@@ -361,12 +386,18 @@ contains
     type(discrete_field)   , intent(in) :: solution
     type(discrete_field) :: functional
 
-    real(dp) :: total
-    real(dp), allocatable :: gradient(:,:)
+    real(dp), allocatable :: total(:), gradient(:,:)
+    character(len=32), allocatable :: names(:)
+    integer :: k
 
     call functional_over(this, solution, total, gradient)
-    functional = discrete_field(solution % on % design_factor(), reshape([total], [1, 1]), &
-         & [character(len=1) :: ''])
+    allocate(names(size(total)))
+    names(1) = ''
+    if (allocated(this % name)) names(1) = this % name
+    do k = 2, size(total)
+       write(names(k), '(a,i0)') 'derivative ', k - 1
+    end do
+    functional = discrete_field(solution % on % design_factor(), reshape(total, [1, size(total)]), names)
 
   end function field_at
 
@@ -376,23 +407,34 @@ contains
     type(discrete_field)   , intent(in)  :: solution
     real(dp), allocatable  , intent(out) :: gradient(:,:)
 
-    real(dp) :: total
+    real(dp), allocatable :: total(:)
 
     call functional_over(this, solution, total, gradient)
 
   end subroutine field_differential
 
+  !===================================================================!
+  ! The value of the functional and its derivatives along the design
+  ! to the order of the expansion, total(1:order+1), by the jet
+  ! arithmetic: each component of the point's tuple enters as the
+  ! quantity whose k-th derivative along the design is the solution's
+  ! k-th coefficient, the design as the quantity with derivative one;
+  ! and the gradient of the value in the jet at every point.
+  !===================================================================!
+
   subroutine functional_over(this, solution, total, gradient)
 
     class(continuous_field), intent(in)  :: this
     type(discrete_field)   , intent(in)  :: solution
-    real(dp)               , intent(out) :: total
+    real(dp), allocatable  , intent(out) :: total(:)
     real(dp), allocatable  , intent(out) :: gradient(:,:)
 
     real(dp), allocatable :: q(:), g(:)
     integer , allocatable :: slot(:)
+    type(derivative_terms), allocatable :: jets(:)
+    type(derivative_terms) :: nu, r
     real(dp) :: value, measure
-    integer :: p, k
+    integer :: p, k, o, order
 
     if (.not. this % is_integral()) then
        error stop 'operation_field: a functional is the integral of a field over its manifold'
@@ -404,23 +446,86 @@ contains
        error stop 'operation_field: a functional is evaluated on the solution of a residual, which &
             &stores the jet at every point'
     end if
+    order = size(solution % jet, 3) - 1
     call jet_slots(this % component(1), solution % rule, slot)
-    allocate(q(0:size(slot) - 1), g(0:size(slot) - 1))
+    allocate(q(0:size(slot) - 1), g(0:size(slot) - 1), jets(0:size(slot) - 1))
     allocate(gradient(size(solution % jet, 1), size(solution % jet, 2)), source=0.0_dp)
-    total = 0.0_dp
+    allocate(total(order + 1), source=0.0_dp)
+    nu = derivative_terms(solution % on % design_value(), order)
+    if (order > 0) call nu % set_symmetric(1, 1.0_dp)
     do p = 1, size(solution % jet, 2)
        do k = 0, size(slot) - 1
-          q(k) = solution % jet(slot(k), p)
+          q(k)    = solution % jet(slot(k), p, 1)
+          jets(k) = derivative_terms(q(k), order)
+          do o = 1, order
+             call jets(k) % set_symmetric(o, solution % jet(slot(k), p, o + 1))
+          end do
        end do
-       call this % component(1) % gradient_at(q, 0.0_dp, value, g, solution % on % position(p))
        measure = solution % on % measure(p)
-       total   = total + measure * value
+       call this % component(1) % gradient_at(q, solution % on % design_value(), value, g, &
+            & solution % on % position(p))
+       r = this % component(1) % at_instant(jets, nu, solution % on % position(p))
+       do o = 0, order
+          total(o + 1) = total(o + 1) + measure * coefficient(r, 2**o - 1)
+       end do
        do k = 0, size(slot) - 1
           gradient(slot(k), p) = gradient(slot(k), p) + measure * g(k)
        end do
     end do
 
   end subroutine functional_over
+
+  !===================================================================!
+  ! THE DERIVATIVE OF A DISCRETE FIELD along the design coordinate,
+  ! one order per entry of the multi-index: the field whose values
+  ! are the next coefficients of the jet along the design, with the
+  ! rest of the jet after them. Invalid input: an entry that is not
+  ! the design coordinate, an order past the expansion's, or a
+  ! component with no jet, a multiplier's.
+  !===================================================================!
+
+  function discrete_derivative(this, along) result(d)
+
+    class(discrete_field)  , intent(in) :: this
+    type(continuous_field) , intent(in) :: along(:)
+    type(discrete_field) :: d
+
+    integer :: n, k, order, npts
+    character(len=250) :: message
+
+    n = size(along)
+    do k = 1, n
+       if (.not. along(k) % design_coordinate) then
+          error stop 'operation_field: a discrete field is differentiated along the design coordinate; &
+               &its derivatives along time and space are the residual''s to form'
+       end if
+    end do
+    if (.not. (allocated(this % jet) .and. allocated(this % slot))) then
+       error stop 'operation_field: the derivative along the design is read from the solution of a &
+            &residual discretized with an expansion along the design'
+    end if
+    order = size(this % jet, 3) - 1
+    if (n > order) then
+       write(message,'(a,i0,a,i0)') 'operation_field: the derivative of order ', n, ' along the design &
+            &exceeds the order of the expansion, ', order
+       error stop trim(message)
+    end if
+    npts = size(this % value, 1)
+    allocate(d % on, source=this % on)
+    d % name = this % name
+    d % slot = this % slot
+    allocate(d % value(npts, size(this % value, 2)))
+    do k = 1, size(this % value, 2)
+       if (this % slot(k) == 0) then
+          error stop 'operation_field: component ' // trim(this % name(k)) // ' has no jet along the design'
+       end if
+       d % value(:, k) = this % jet(this % slot(k), :, n + 1)
+    end do
+    allocate(d % jet(size(this % jet, 1), npts, order - n + 1))
+    d % jet = this % jet(:, :, n + 1:order + 1)
+    if (allocated(this % rule)) d % rule = this % rule
+
+  end function discrete_derivative
 
   !===================================================================!
   ! The slot in the rule's jet of each component an expression reads:
@@ -529,6 +634,11 @@ contains
     end if
     c = along(1) % coordinate
     do k = 1, size(along)
+       if (along(k) % design_coordinate) then
+          error stop 'operation_field: the derivative of a continuous field along the design coordinate &
+               &is not stated; the derivatives along the design are read from the discrete solution, &
+               &derivative([nu]) on a discrete field'
+       end if
        if (along(k) % coordinate < 1) then
           write(message,'(a,i0,a)') 'operation_field: entry ', k, ' of the multi-index is not a coordinate'
           error stop trim(message)
@@ -691,6 +801,18 @@ contains
     end do
     if (allocated(this % jet))  chosen % jet  = this % jet
     if (allocated(this % rule)) chosen % rule = this % rule
+    if (allocated(this % slot)) then
+       allocate(chosen % slot(count))
+       count = 0
+       do k = 1, size(names)
+          do j = 1, size(this % name)
+             if (trim(this % name(j)) == trim(names(k))) then
+                count = count + 1
+                chosen % slot(count) = this % slot(j)
+             end if
+          end do
+       end do
+    end if
 
   contains
 

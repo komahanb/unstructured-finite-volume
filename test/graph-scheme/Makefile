@@ -19,7 +19,7 @@ endif
 F90FLAGS += -I$(LIB)/ -Wtarget-lifetime
 LDFLAGS += -L$(LIB)/ $(LIB)/libufvm.a
 
-all: dirk_coefficients taylor_green_vortex taylor_green_vortex_3d taylor_green_study van_der_pol run
+all: dirk_coefficients taylor_green_vortex taylor_green_vortex_3d taylor_green_study van_der_pol van_der_pol_sensitivity run
 
 dirk_coefficients: dirk_coefficients.o $(LIB)/libufvm.a
 	$(F90) $< -o $@ $(LDFLAGS)
@@ -33,6 +33,9 @@ taylor_green_vortex_3d: taylor_green_vortex_3d.o $(LIB)/libufvm.a
 
 # the van der Pol oscillator on a manifold of time alone
 van_der_pol: van_der_pol.o $(LIB)/libufvm.a
+	$(F90) $< -o $@ $(LDFLAGS)
+
+van_der_pol_sensitivity: van_der_pol_sensitivity.o $(LIB)/libufvm.a
 	$(F90) $< -o $@ $(LDFLAGS)
 
 # the same statement under chosen parameters, convergence printed
@@ -53,7 +56,7 @@ box_3d.msh: box_3d.py
 	python3 box_3d.py 8
 
 clean:
-	@rm -f *.o *.mod *.so run dirk_coefficients taylor_green_vortex taylor_green_vortex_3d taylor_green_study van_der_pol *.vtu gmsh.log variant.stamp
+	@rm -f *.o *.mod *.so run dirk_coefficients taylor_green_vortex taylor_green_vortex_3d taylor_green_study van_der_pol van_der_pol_sensitivity *.vtu gmsh.log variant.stamp
 
 .SUFFIXES: .f90 .o
 .PHONY: all clean FORCE

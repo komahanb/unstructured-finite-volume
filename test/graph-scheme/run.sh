@@ -26,6 +26,11 @@
 #                        its Hessian, and the derivatives of u(T) and
 #                        of the energy along each coordinate to order
 #                        3 by the expansion along the design
+#   van_der_pol_continuous_adjoint
+#                        the continuous adjoint of the oscillator,
+#                        formed as the stationarity of the Lagrangian
+#                        density and solved with the state as one
+#                        two-point block, against the discrete adjoint
 #   run                  the same tableau on the expression and the
 #                        residual_operator directly
 #
@@ -53,5 +58,7 @@ echo "== van_der_pol"
 ./van_der_pol
 echo "== van_der_pol_sensitivity"
 ./van_der_pol_sensitivity
+echo "== van_der_pol_continuous_adjoint"
+./van_der_pol_continuous_adjoint
 echo "== run"
 ./run

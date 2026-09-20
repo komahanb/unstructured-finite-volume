@@ -2406,7 +2406,7 @@ contains
                    call face_relation(this % condition(j) % equation(i), values, &
                         & this % points % position(this % points % point_of(instant, c)), fields, degrees, slopes, &
                         & given, f, degree)
-                   base = at((instant_moment(instant - first + 1) - 1) * ncells + c)
+                   base = at((face_row_moment(this, instant, first, last, depth, instant_moment) - 1) * ncells + c)
                    b(base + this % rule % offset_of_field(f) + degree + 1) = stated_derivative( &
                         & this % condition(j) % equation(i), m, values, seed, &
                         & this % points % position(this % points % point_of(instant, c)))
@@ -2753,7 +2753,7 @@ contains
              do i = 1, size(this % condition(j) % equation)
                 e = e + 1
                 if (instant < first + depth .or. instant > last) cycle
-                m = instant_moment(instant - first + 1)
+                m = face_row_moment(this, instant, first, last, depth, instant_moment)
                 do c = 1, ncells
                    call face_relation(this % condition(j) % equation(i), values, &
                         & this % points % position(this % points % point_of(instant, c)), fields, degrees, slopes, &
@@ -3293,16 +3293,17 @@ contains
        if (.not. this % condition(j) % manifold % is_face()) cycle
        instant = face_instant(this, this % condition(j) % manifold % face_time)
        if (instant < first + depth .or. instant > last) cycle
-       m = instant_moment(instant - first + 1)
+       m = face_row_moment(this, instant, first, last, depth, instant_moment)
        do i = 1, size(this % condition(j) % equation)
           do c = 1, ncells
              call face_relation(this % condition(j) % equation(i), this % points % design_values(), &
                   & this % points % position(this % points % point_of(instant, c)), fields, degrees, slopes, given, &
                   & row_field, row_degree)
-             base = at((m - 1) * ncells + c)
+             ! the row at the moment the condition occupies, the columns at the face's
+             base = at((instant_moment(instant - first + 1) - 1) * ncells + c)
              do k = 1, size(fields)
                 e = e + 1
-                rows(e)      = base + this % rule % offset_of_field(row_field) + row_degree + 1
+                rows(e)      = at((m - 1) * ncells + c) + this % rule % offset_of_field(row_field) + row_degree + 1
                 columns(e)   = base + this % rule % offset_of_field(fields(k)) + degrees(k) + 1
                 weights(e)   = slopes(k)
                 constants(e) = -given
@@ -3314,15 +3315,48 @@ contains
   end subroutine face_rows_of
 
   !===================================================================!
+  ! THE MOMENT WHOSE ROWS A FACE CONDITION OCCUPIES. At the block's
+  ! first instant the components of a field are determined by nothing
+  ! - no family reads back past the first instant - so a condition at
+  ! the manifold's first instant occupies the rows there. A condition
+  ! at the manifold's last instant, whose components the family's
+  ! relations determine from the instants before, occupies the free
+  ! rows at the block's first instant instead: the two-point problem,
+  ! the rows at one end and the columns at the other. It therefore
+  ! requires a block without history whose instants reach the last
+  ! instant; a chain of several blocks cannot satisfy it, and is
+  ! refused.
+  !===================================================================!
+
+  integer function face_row_moment(this, instant, first, last, depth, instant_moment) result(m)
+
+    class(discrete_residual), intent(in) :: this
+    integer                 , intent(in) :: instant, first, last, depth, instant_moment(:)
+
+    if (instant == 1) then
+       m = instant_moment(instant - first + 1)
+    else if (instant == this % points % num_instants()) then
+       if (depth > 0 .or. first > 1 .or. last < instant) then
+          error stop 'operation_residual: a condition at the last instant is satisfied by one block over every &
+               &instant, its rows at the first instant; a chain of several blocks marches past it'
+       end if
+       m = instant_moment(1)
+    else
+       error stop 'operation_residual: a face is at the first or the last instant'
+    end if
+
+  end function face_row_moment
+
+  !===================================================================!
   ! A face condition as an affine relation: the parent fields and the
   ! degrees along time of the components it reads, the coefficient of
   ! each, given = -g at zero state so that the relation is sum of
   ! slopes times components = given, and the field and degree of the
-  ! component it determines: the one of coefficient +1 or -1 of the
-  ! last field declared among those with such a coefficient - the
-  ! adjoint's, declared after the state, at the far face - the
-  ! relation negated when the coefficient is -1. Invalid input: no
-  ! component of coefficient +1 or -1, or several of the same field.
+  ! component it determines: of the last field declared among those
+  ! read with coefficient +1 or -1 - the adjoint's, declared after
+  ! the state, at the far face - the component of highest order, the
+  ! relation negated when its coefficient is -1. Invalid input: no
+  ! component of coefficient +1 or -1.
   !===================================================================!
 
   subroutine face_relation(equation, values, position, fields, degrees, slopes, given, row_field, row_degree)
@@ -3349,8 +3383,9 @@ contains
     call g % gradient_at(q, values, value, grad, position)
     given = -value
     allocate(fields(size(reads)), degrees(size(reads)), slopes(size(reads)))
-    units     = 0
-    row_field = 0
+    units      = 0
+    row_field  = 0
+    row_degree = -1
     do k = 1, size(reads)
        comp = reads(k)
        f = 0
@@ -3365,19 +3400,17 @@ contains
        degrees(k) = comp - g % offset_of_field(f)
        slopes(k)  = grad(comp)
        if (abs(abs(slopes(k)) - 1.0_dp) <= 1.0e-12_dp) then
-          if (f > row_field) then
+          if (f > row_field .or. (f == row_field .and. degrees(k) > row_degree)) then
              row_field  = f
              row_degree = degrees(k)
              sign       = slopes(k)
              units      = 1
-          else if (f == row_field) then
-             units = units + 1
           end if
        end if
     end do
-    if (row_field == 0 .or. units /= 1) then
+    if (row_field == 0) then
        error stop 'operation_residual: a condition on a face determines one component, read with coefficient &
-            &+1 or -1, of the last field declared among those so read'
+            &+1 or -1: of the last field declared among those so read, the one of highest order'
     end if
     slopes = slopes / sign
     given  = given / sign

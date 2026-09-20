@@ -51,10 +51,11 @@ module operation_field
 
      type(token) :: identity
      ! the part of another support this one is - the whole, the face
-     ! at an instant, the time factor, the space factor - and the
-     ! identity of that parent
+     ! at an instant, the time factor, the space factor, the design
+     ! factor - the identity of that parent, and the instant of a face
      integer     :: part = WHOLE
      type(token) :: parent
+     real(dp)    :: face_time = 0.0_dp
 
    contains
 
@@ -75,6 +76,7 @@ module operation_field
      procedure(factor_interface)  , deferred :: design_factor
      procedure(count_interface)   , deferred :: design_order
      procedure(real_interface)    , deferred :: design_value
+     procedure(face_measure_interface), deferred :: measure_on_face
 
   end type discrete_support
 
@@ -94,6 +96,15 @@ module operation_field
        import :: discrete_support, dp
        class(discrete_support), intent(in) :: this
      end function real_interface
+
+     ! the measure of point p within the face at the instant given:
+     ! zero for a point not on the face
+     pure real(dp) function face_measure_interface(this, p, time)
+       import :: discrete_support, dp
+       class(discrete_support), intent(in) :: this
+       integer                , intent(in) :: p
+       real(dp)               , intent(in) :: time
+     end function face_measure_interface
 
      pure integer function count_interface(this)
        import :: discrete_support
@@ -140,6 +151,7 @@ module operation_field
      type(token) :: integrated_over
      integer     :: integrated_part = WHOLE
      type(token) :: integrated_parent
+     real(dp)    :: integrated_time = 0.0_dp
 
    contains
 
@@ -366,6 +378,7 @@ contains
     this % integrated_over   = over % identity
     this % integrated_part   = over % part
     this % integrated_parent = over % parent
+    this % integrated_time   = over % face_time
 
   end function integral
 
@@ -425,6 +438,9 @@ contains
   ! k-th coefficient, the design as the quantity with derivative one;
   ! the gradient of the value in the jet at every point; and the
   ! partial derivative of the value in the design at fixed state.
+  ! Over a face at an instant the measure is the point's within the
+  ! face, zero off it: J = u(T)^2 / 2 is the integral of that field
+  ! over the face at T.
   !===================================================================!
 
   subroutine functional_over(this, solution, total, gradient, partial)
@@ -471,7 +487,12 @@ contains
              call jets(k) % set_symmetric(o, solution % jet(slot(k), p, o + 1))
           end do
        end do
-       measure = solution % on % measure(p)
+       if (this % integrated_part == TIME_FACE) then
+          measure = solution % on % measure_on_face(p, this % integrated_time)
+          if (measure == 0.0_dp) cycle
+       else
+          measure = solution % on % measure(p)
+       end if
        call this % component(1) % gradient_at(q, solution % on % design_value(), value, g, &
             & solution % on % position(p))
        r = this % component(1) % at_instant(jets, nu, solution % on % position(p))

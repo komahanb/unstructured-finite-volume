@@ -97,7 +97,6 @@ module operation_manifold
      type(interval) :: span
      type(region)   :: geometry
      type(parameter) :: design_parameter
-     real(dp)       :: face_time = 0.0_dp
      integer        :: num_unknowns = 0
      character(len=MAX_NAME), allocatable :: unknown_name(:)
 
@@ -145,6 +144,7 @@ module operation_manifold
      procedure :: design_factor   => discrete_design_factor
      procedure :: design_order    => discrete_design_order
      procedure :: design_value    => discrete_design_value
+     procedure :: measure_on_face => discrete_measure_on_face
      procedure :: num_instants
      procedure :: num_cells
      procedure :: step
@@ -609,6 +609,26 @@ contains
     class(discrete_manifold), intent(in) :: this
     discrete_design_value = this % design_parameter % value
   end function discrete_design_value
+
+  !===================================================================!
+  ! The measure of a point within the face at an instant: the cell's
+  ! volume for a point at that instant, one without a region, zero
+  ! for a point at another instant.
+  !===================================================================!
+
+  pure real(dp) function discrete_measure_on_face(this, p, time)
+    class(discrete_manifold), intent(in) :: this
+    integer                 , intent(in) :: p
+    real(dp)                , intent(in) :: time
+    integer :: k, c
+    discrete_measure_on_face = 0.0_dp
+    if (.not. this % with_time) return
+    k = (p - 1) / this % num_cells() + 1
+    c = p - (k - 1) * this % num_cells()
+    if (abs(this % instant(k) - time) > 1.0e-12_dp * max(1.0_dp, abs(time))) return
+    discrete_measure_on_face = 1.0_dp
+    if (this % with_space) discrete_measure_on_face = this % volume(c)
+  end function discrete_measure_on_face
 
   ! the point of instant k and cell c: instant outer, cell inner
   pure integer function point_of(this, k, c)

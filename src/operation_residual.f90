@@ -58,7 +58,7 @@ module operation_residual
   use operation_domain     , only : continuous_domain, discrete_domain
   use util_derivative_terms, only : max_subset_width, derivative_terms, mixed_partial, coefficient
   use token_identity       , only : token
-  use operation_field      , only : continuous_field, discrete_field, WHOLE, TIME_FACTOR, SPACE_FACTOR
+  use operation_field      , only : continuous_field, discrete_field, WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR
   use operation_manifold   , only : continuous_manifold, discrete_manifold
   use operation_family     , only : family, chain
   use operation_weight     , only : scheme_weight
@@ -1615,13 +1615,15 @@ contains
     end do
 
     ! the objective covers the points: the integral over the whole
-    ! manifold, or over the one factor of a manifold of time or of
-    ! space alone
+    ! manifold, over the one factor of a manifold of time or of space
+    ! alone, or over the face at an instant
     if (allocated(this % objective)) then
        covering = .false.
        select case (this % objective % integrated_part)
        case (WHOLE)
           covering = this % objective % integrated_over % matches(image % manifold % identity)
+       case (TIME_FACE)
+          covering = this % objective % integrated_parent % matches(image % manifold % identity)
        case (TIME_FACTOR)
           covering = this % objective % integrated_parent % matches(image % manifold % identity) &
                & .and. .not. points % with_space
@@ -1630,9 +1632,9 @@ contains
                & .and. .not. points % with_time
        end select
        if (.not. covering) then
-          error stop 'operation_residual: the objective is integrated over the whole manifold, or over the &
-               &one factor of a manifold of time or of space alone; a face, or a factor of a product, &
-               &does not cover the points'
+          error stop 'operation_residual: the objective is integrated over the whole manifold, over the &
+               &one factor of a manifold of time or of space alone, or over the face at an instant; a &
+               &factor of a product does not cover the points'
        end if
        if (.not. image % with_adjoint) then
           error stop 'operation_residual: an objective requires the equations paired with a multiplier, &

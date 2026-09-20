@@ -238,7 +238,13 @@ module operation_residual
   ! name at the face's points, the multiplier of each condition on
   ! the time factor under its name at every cell of the instant, and
   ! the multiplier of the design condition under its name at every
-  ! point. A design field is an unknown with a paired equation
+  ! point. Every multiplier returned is that of a discrete row: the
+  ! sensitivity of the objective to a unit perturbation of that row.
+  ! The row of an equation at an instant is the equation times the
+  ! instant's step, so the multiplier is the continuous adjoint at
+  ! the instant times the step; the multiplier of a datum's row is the
+  ! sensitivity to the datum itself. A design field is an unknown
+  ! with a paired equation
   ! f - f_0 = 0 among the equations of the manifold: the multiplier
   ! of that equation at each instant is the sensitivity of the
   ! objective to the datum there, the functional derivative.
@@ -1710,6 +1716,8 @@ contains
     real(dp), allocatable :: jet(:,:,:,:), adjoint(:,:,:,:,:), reaction(:,:,:,:), gauge(:,:,:,:)
     real(dp), allocatable :: design_multiplier(:,:,:)
     integer , allocatable :: slot(:)
+    type(residual_operator) :: rows
+    real(dp), allocatable :: q(:)
     integer :: order, e, g, nm, col, nd, d
     character(len=32), allocatable :: names(:)
     type(stencil), allocatable :: rows_along(:,:)
@@ -1787,11 +1795,10 @@ contains
                & stages, tjet, sjet)
        end do
     else
-       if (order > 0) then
-          error stop 'operation_residual: the expansion along the design is formed block by block over a &
-               &chain; a manifold without a time coordinate has none'
-       end if
-       call solve_point(this, tuple)
+       ! the point manifold: one system, its jets along the design
+       allocate(stages(stride, 1, 1, 1), sjet(stride, 1, 1, 1, order, nd), source=0.0_dp)
+       call solve_point(this, tuple, rows, q)
+       if (order > 0) call design_jets(this, rows, q, [0], [1], 1, 1, 0, tjet, sjet)
     end if
 
     ! THE SOLUTION: the state at every point, with the jet the rule
@@ -1939,7 +1946,9 @@ contains
     real(dp), allocatable   , intent(out) :: adjoint(:,:,:,:,:), reaction(:,:,:,:), gauge(:,:,:,:)
     real(dp), allocatable   , intent(out) :: design_multiplier(:,:,:)
 
-    real(dp), allocatable :: gradient(:,:,:,:), partial(:,:,:), incoming(:,:,:,:,:)
+    real(dp), allocatable :: gradient(:,:,:,:), partial(:,:,:), incoming(:,:,:,:,:), q(:)
+    type(residual_operator) :: rows
+    integer , allocatable :: primary(:)
     integer :: stride, nf, ncells, ninst, nc, ng, j, b, nb, first, last, depth, order, nd, ni
 
     stride = this % rule % num_components()
@@ -1949,11 +1958,6 @@ contains
     order  = this % points % design_order()
     nd     = max(1, this % points % num_designs())
     ni     = size(this % points % design_values())
-
-    if (.not. this % with_chain) then
-       error stop 'operation_residual: the adjoint is formed by a reverse sweep over the blocks of a &
-            &chain; a manifold without a time coordinate has none'
-    end if
 
     if (allocated(this % objective)) then
        call this % objective % differential(solution, gradient, partial)
@@ -1978,6 +1982,14 @@ contains
     ! total derivative by the adjoint; the partial in nu_i here, the
     ! rows' sums by the blocks
     design_multiplier = -partial
+
+    if (.not. this % with_chain) then
+       ! the point manifold: one system, its transposed solve
+       call point_rows(this, tuple, rows, q, primary)
+       call adjoint_rows(this, 1, 1, 0, rows, q, [0], [1], primary, tjet, sjet, gradient, &
+            & adjoint, incoming, reaction, gauge, design_multiplier)
+       return
+    end if
 
     nb = this % schemes % num_blocks()
     do b = nb, 1, -1
@@ -2302,7 +2314,7 @@ contains
     end if
 
     if (this % points % design_order() > 0) then
-       call design_jets(this, scheme, rows, q, at, instant_moment, first, last, depth, tjet, sjet)
+       call design_jets(this, rows, q, at, instant_moment, first, last, depth, tjet, sjet, scheme)
     end if
 
   end subroutine solve_block
@@ -2323,14 +2335,14 @@ contains
   ! at sjet(:, c, i, k, m, d).
   !===================================================================!
 
-  subroutine design_jets(this, scheme, rows, q, at, instant_moment, first, last, depth, tjet, sjet)
+  subroutine design_jets(this, rows, q, at, instant_moment, first, last, depth, tjet, sjet, scheme)
 
     class(discrete_residual), intent(in)    :: this
-    type(family)            , intent(in)    :: scheme
     type(residual_operator) , intent(in)    :: rows
     real(dp)                , intent(in)    :: q(:)
     integer                 , intent(in)    :: at(:), instant_moment(:), first, last, depth
     real(dp)                , intent(inout) :: tjet(:,:,:,:,:), sjet(:,:,:,:,:,:)
+    type(family)            , intent(in), optional :: scheme
 
     type(residual_operator) :: lin
     type(newton) :: solver
@@ -2347,7 +2359,8 @@ contains
     values   = this % points % design_values()
     unknowns = size(q)
     npts     = size(at)
-    staged   = marches_by_stages(scheme, top_degree(this % rule, this % manifold % num_unknowns) + 1)
+    staged   = .false.
+    if (present(scheme)) staged = marches_by_stages(scheme, top_degree(this % rule, this % manifold % num_unknowns) + 1)
 
     solver = solver_for(this, rows, unknowns, stride, npts)
     call solver % evaluate(q, y, inputs)
@@ -2550,11 +2563,46 @@ contains
     real(dp)                , intent(inout) :: adjoint(:,:,:,0:,:), incoming(:,:,:,0:,:), reaction(:,:,0:,:)
     real(dp)                , intent(inout) :: gauge(:,:,0:,:), in_design(:,0:,:)
 
-    type(residual_operator) :: rows, lin
+    type(residual_operator) :: rows
+    real(dp), allocatable :: q(:)
+    integer , allocatable :: at(:), instant_moment(:), primary(:)
+
+    if (verbosity >= 1) then
+       print '(a,a,a,i0,a,i0,a,es12.4,a,es12.4)', 'adjoint  ', trim(scheme % name()), '  instants ', &
+            & first + depth, '..', last, '  t = ', this % points % instant(first + depth), ' .. ', &
+            & this % points % instant(last)
+    end if
+    call block_rows(this, scheme, first, last, depth, rows_along, tuple, stages, .true., &
+         & rows, q, at, instant_moment, primary)
+    call adjoint_rows(this, first, last, depth, rows, q, at, instant_moment, primary, tjet, sjet, gradient, &
+         & adjoint, incoming, reaction, gauge, in_design, scheme)
+
+  end subroutine adjoint_block
+
+  !===================================================================!
+  ! THE ADJOINT OF ONE SYSTEM OF ROWS - a block's, or the point
+  ! manifold's, which has one moment, no history and no stages - as
+  ! described above.
+  !===================================================================!
+
+  subroutine adjoint_rows(this, first, last, depth, rows, q, at, instant_moment, primary, tjet, sjet, gradient, &
+       & adjoint, incoming, reaction, gauge, in_design, scheme)
+
+    class(discrete_residual), intent(in)    :: this
+    integer                 , intent(in)    :: first, last, depth
+    type(residual_operator) , intent(in)    :: rows
+    real(dp)                , intent(in)    :: q(:)
+    integer                 , intent(in)    :: at(:), instant_moment(:), primary(:)
+    real(dp)                , intent(in)    :: tjet(:,:,:,:,:), sjet(:,:,:,:,:,:)
+    real(dp)                , intent(in)    :: gradient(:,:,0:,:)
+    real(dp)                , intent(inout) :: adjoint(:,:,:,0:,:), incoming(:,:,:,0:,:), reaction(:,:,0:,:)
+    real(dp)                , intent(inout) :: gauge(:,:,0:,:), in_design(:,0:,:)
+    type(family)            , intent(in), optional :: scheme
+
+    type(residual_operator) :: lin
     type(newton) :: solver
     type(stored_field), allocatable :: inputs(:)
-    real(dp), allocatable :: q(:), y(:), rhs(:), mu(:,:,:), x(:), jets(:,:,:), slope(:), values(:), products(:)
-    integer , allocatable :: at(:), instant_moment(:), primary(:)
+    real(dp), allocatable :: y(:), rhs(:), mu(:,:,:), x(:), jets(:,:,:), slope(:), values(:), products(:)
     logical , allocatable :: gauged(:)
     integer :: stride, nf, ncells, n, k, c, f, base, unknowns, npts, m, j, i, instant, comp, degree, e, s, g, o
     integer :: order, d, nd, ni, first_order
@@ -2568,17 +2616,10 @@ contains
     nd     = max(1, this % points % num_designs())
     values = this % points % design_values()
     ni     = size(values)
-    if (verbosity >= 1) then
-       print '(a,a,a,i0,a,i0,a,es12.4,a,es12.4)', 'adjoint  ', trim(scheme % name()), '  instants ', &
-            & first + depth, '..', last, '  t = ', this % points % instant(first + depth), ' .. ', &
-            & this % points % instant(last)
-    end if
-
-    call block_rows(this, scheme, first, last, depth, rows_along, tuple, stages, .true., &
-         & rows, q, at, instant_moment, primary)
     unknowns = size(q)
     npts     = size(at)
-    staged   = marches_by_stages(scheme, top_degree(this % rule, nf) + 1)
+    staged   = .false.
+    if (present(scheme)) staged = marches_by_stages(scheme, top_degree(this % rule, nf) + 1)
     s        = 0
     if (staged) s = scheme % num_stages()
 
@@ -2748,7 +2789,7 @@ contains
        end do
     end if
 
-  end subroutine adjoint_block
+  end subroutine adjoint_rows
 
   !===================================================================!
   ! THE SOURCE OF THE ADJOINT EXPANSION at order o along the design
@@ -2914,15 +2955,15 @@ contains
   ! coordinate; the equations alone.
   !===================================================================!
 
-  subroutine solve_point(this, tuple)
+  subroutine point_rows(this, tuple, rows, q, primary)
 
-    class(discrete_residual), intent(in)    :: this
-    real(dp)                , intent(inout) :: tuple(:,:,:)
+    class(discrete_residual), intent(in)  :: this
+    real(dp)                , intent(in)  :: tuple(:,:,:)
+    type(residual_operator) , intent(out) :: rows
+    real(dp), allocatable   , intent(out) :: q(:)
+    integer , allocatable   , intent(out) :: primary(:)
 
-    type(residual_operator) :: rows
     type(stencil) :: relations
-    integer , allocatable :: primary(:)
-    real(dp), allocatable :: q(:)
     integer :: stride, nf, f
 
     stride = this % rule % num_components()
@@ -2934,6 +2975,21 @@ contains
     relations = stencil([integer ::], [integer ::], [real(dp) ::], spread(0.0_dp, 1, stride), 'no relation')
     rows = residual_operator(relations, this % rule, [0], stride, stride, primary, [integer ::], [real(dp) ::])
     q = tuple(:, 1, 1)
+
+  end subroutine point_rows
+
+  subroutine solve_point(this, tuple, rows, q)
+
+    class(discrete_residual), intent(in)    :: this
+    real(dp)                , intent(inout) :: tuple(:,:,:)
+    type(residual_operator) , intent(out)   :: rows
+    real(dp), allocatable   , intent(out)   :: q(:)
+
+    integer , allocatable :: primary(:)
+    integer :: stride
+
+    stride = this % rule % num_components()
+    call point_rows(this, tuple, rows, q, primary)
     call solved(this, rows, stride, stride, 1, q)
     tuple(:, 1, 1) = q
 

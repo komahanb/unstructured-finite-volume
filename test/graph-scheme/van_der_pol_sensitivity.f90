@@ -45,7 +45,11 @@
 ! kappa = -dJ/dnu by the adjoint applied to the
 ! partial derivative of the equations in nu, which the expansion's
 ! dJ/dnu must equal: kappa = 0.65683913482447476 against dJ/dnu =
-! -0.65683913482447487 at 21 instants, order 3.
+! -0.65683913482447487 at 21 instants, order 3. The derivatives of
+! kappa along nu, the adjoint's own expansion, give the higher
+! derivatives of J by the adjoint: -1.5485964513054384 and
+! -1.0209571320096991 against d^2J/dnu^2 = 1.5485964513054380 and
+! d^3J/dnu^3 = 1.0209571320096964 by the expansion of the state.
 !
 ! At 21 instants the jets agree with central differences of the
 ! program run at nu = 1 +- 0.01, +- 0.02, to the differences' own
@@ -149,13 +153,19 @@ program van_der_pol_sensitivity
 
   ! the multiplier of the initial data: the sensitivities of J to the
   ! initial position and the initial velocity; and the multiplier of
-  ! the design condition: -dJ/dnu by the adjoint, against
-  ! dJ/dnu by the expansion below
+  ! the design condition with its derivatives along nu: -dJ/dnu,
+  ! -d^2J/dnu^2, ... by the adjoint and its expansion, against the
+  ! derivatives of J by the expansion below
   lambda_h = solution % fields(['lambda'])
   kappa_h  = solution % fields(['kappa'])
   print '(a, es24.16)', '-dJ / du(0)          = ', lambda_h % value(1, 1)
   print '(a, es24.16)', '-dJ / du_t(0)        = ', lambda_h % value(1, 2)
   print '(a, es24.16)', 'kappa = -dJ / d nu   = ', kappa_h % value(1, 1)
+  do k = 1, order - 1
+     kappa_h = kappa_h % derivative([nu])
+     print '(a, i0, a, i0, a, i0, a, es24.16)', 'd^', k, ' kappa / d nu^', k, ' = -d^', k + 1, ' J / d nu = ', &
+          & kappa_h % value(1, 1)
+  end do
 
   ! the energy and its derivatives along nu: the discrete energy of
   ! the discrete solution, a field on the design coordinate alone

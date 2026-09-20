@@ -100,7 +100,7 @@ module util_derivative_terms
   implicit none
 
   private
-  public :: derivative_terms, value, mixed_partial, coefficient, max_subset_width
+  public :: derivative_terms, value, mixed_partial, coefficient, max_subset_width, symmetric_terms
   public :: extend_directions, partial
   public :: integer_power, composed, leibniz_parts, inner_product
   public :: operator(+), operator(-), operator(*), operator(/), operator(**)
@@ -365,6 +365,36 @@ contains
     this % terms(m + 1) = x
 
   end subroutine set_coefficient
+
+  !===================================================================!
+  ! The quantity whose k-th derivative along one parameter is d(k),
+  ! k = 1 .. size(d), seeded on every subset of the first size(d)
+  ! directions of the width given, symmetric seeding over the
+  ! parameter; every subset containing a later direction stores zero,
+  ! so that a later direction can be seeded on one quantity alone as
+  ! a perturbation whose mixed coefficients with the parameter's
+  ! subsets are the derivatives along the parameter of the partial
+  ! derivative in that quantity. More derivatives than directions
+  ! stops the program.
+  !===================================================================!
+
+  pure function symmetric_terms(x, d, width) result(this)
+
+    real(dp), intent(in) :: x, d(:)
+    integer , intent(in) :: width
+    type(derivative_terms) :: this
+
+    integer :: m
+
+    if (size(d) > width) then
+       error stop 'util_derivative_terms: symmetric_terms was given more derivatives than directions'
+    end if
+    this = create_constant(x, width)
+    do m = 1, 2**size(d) - 1
+       this % terms(m + 1) = d(popcnt(m))
+    end do
+
+  end function symmetric_terms
 
   pure real(dp) function value(x)
 

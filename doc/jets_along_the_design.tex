@@ -1,0 +1,82 @@
+% The jet along the design: a section for the mathematics of the
+% contract programs. \input this file from a document that loads
+% amsmath and amssymb; it defines no macros of its own.
+
+\section{The jet along the design}
+
+A \emph{jet} is the list of the derivatives of a quantity along a
+coordinate at one point, to some order: the coefficients of its
+Taylor expansion there, the expansion not summed. For the unknown
+$u(t, \nu)$ at a fixed instant $t_k$ and the design value $\nu_0$, the
+jet along $\nu$ of order three is
+\[
+  \Bigl( u,\; \frac{\partial u}{\partial \nu},\;
+         \frac{\partial^2 u}{\partial \nu^2},\;
+         \frac{\partial^3 u}{\partial \nu^3} \Bigr)(t_k, \nu_0),
+\]
+and it represents $u(t_k, \nu)$ near $\nu_0$ through
+\[
+  u(t_k, \nu) = u + \frac{\partial u}{\partial \nu}(\nu - \nu_0)
+  + \frac{\partial^2 u}{\partial \nu^2}\frac{(\nu - \nu_0)^2}{2}
+  + \frac{\partial^3 u}{\partial \nu^3}\frac{(\nu - \nu_0)^3}{6} + \cdots
+\]
+
+The word is the one used along time. The discrete residual stores, at
+every instant, the jet of $u$ along $t$, $(u, u_t, u_{tt})$, which the
+time families connect. The design coordinate $\nu$ is a point of the
+design space, fixed at $\nu_0$; its discretization is the expansion of
+an order at that value, so that the discrete manifold
+$\Omega_h = \{t_1, \ldots, t_n\} \times \mathrm{expansion}(3)$ is the
+grid
+\[
+\begin{array}{c|cccc}
+       & \text{order } 0 & \text{order } 1 & \text{order } 2 & \text{order } 3 \\
+       & \text{(the state)} & \dfrac{d}{d\nu} & \dfrac{d^2}{d\nu^2} & \dfrac{d^3}{d\nu^3} \\[1ex]
+\hline
+  t_n  & [u, u_t, u_{tt}] & [u, u_t, u_{tt}]' & [u, u_t, u_{tt}]'' & [u, u_t, u_{tt}]''' \\
+  \vdots & \vdots & \vdots & \vdots & \vdots \\
+  t_2  & [u, u_t, u_{tt}] & [u, u_t, u_{tt}]' & [u, u_t, u_{tt}]'' & [u, u_t, u_{tt}]''' \\
+  t_1  & [u, u_t, u_{tt}] & [u, u_t, u_{tt}]' & [u, u_t, u_{tt}]'' & [u, u_t, u_{tt}]'''
+\end{array}
+\]
+Column $0$ is the solution. Column $1$ is $du/d\nu$ at every instant,
+column $2$ is $d^2u/d\nu^2$, and so on. The derivative of a discrete
+field along $\nu$ is the field of the next column, with the columns
+after it as its jet; in the programs, \texttt{u\_h \% derivative([nu])}.
+
+The multipliers have the same columns. The adjoint $\lambda_r(t)$ at
+every instant has its jet along $\nu$ beside it, and $\kappa$, the
+multiplier of the condition $\nu - \nu_0 = 0$, a single number, has a
+jet of four numbers. Since $\kappa = -dJ/d\nu$, that jet is
+\[
+  \Bigl( -\frac{dJ}{d\nu},\; -\frac{d^2J}{d\nu^2},\;
+         -\frac{d^3J}{d\nu^3},\; -\frac{d^4J}{d\nu^4} \Bigr),
+\]
+the sensitivities of the objective by the adjoint, which the expansion
+of the state computes independently.
+
+The columns follow from the equations holding at every $\nu$. Let
+$F(u(\nu), \nu) = 0$ be the discrete residual over a block and
+$A = \partial F / \partial u$ its Jacobian. Differentiating once along
+$\nu$,
+\[
+  A\, u' + \frac{\partial F}{\partial \nu} = 0,
+\]
+so column $1$ is one linear solve with $A$. Differentiating twice,
+\[
+  A\, u'' + \frac{d}{d\nu}\Bigl(\frac{\partial F}{\partial u}\Bigr) u'
+          + \frac{d}{d\nu}\Bigl(\frac{\partial F}{\partial \nu}\Bigr) = 0,
+\]
+so column $2$ is one more solve with the same $A$, its right side in
+$u$ and $u'$; and so on to the order. The jet arithmetic of the type
+\texttt{derivative\_terms} evaluates $F$ on the jets of $u$ and $\nu$,
+with the coefficient of order $m$ of $u$ set to zero, and returns the
+jet of $F$, whose coefficient at order $m$ is exactly the right side of
+the $m$-th solve. Nothing is differentiated by hand and nothing is
+approximated by differences.
+
+The adjoint's columns follow the same way from the adjoint equation
+$A^{\mathsf T} \mu = -\partial J / \partial u$: differentiating along
+$\nu$ leaves $A^{\mathsf T}$ on the left, so each order is one more
+transposed solve per block, its right side formed from the jets of the
+state and the lower columns of $\mu$.

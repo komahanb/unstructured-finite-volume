@@ -18,6 +18,42 @@
 !      position(p)        the instant and the cell centre
 !      measure(p)         the instant's share of the interval times the cell's volume
 !
+! THE JET ALONG THE DESIGN. A jet is the derivatives of a quantity
+! along a coordinate at one point, to an order: the coefficients of
+! its Taylor expansion there, the expansion not summed. The design
+! coordinate nu is a point of the design space, fixed at a value
+! nu_0, and its discretization is the expansion of an order at that
+! value, so that the discrete manifold is the instants (and cells)
+! times the orders of the expansion:
+!
+!             nu_0 ------>  nu  (the design, one point, expanded to order 3)
+!
+!   t_n  |  [u, u_t, u_tt]  [u, u_t, u_tt]'  [u, u_t, u_tt]''  [u, u_t, u_tt]'''
+!    :   |        :
+!   t_2  |  [u, u_t, u_tt]  [u, u_t, u_tt]'  [u, u_t, u_tt]''  [u, u_t, u_tt]'''
+!   t_1  |  [u, u_t, u_tt]  [u, u_t, u_tt]'  [u, u_t, u_tt]''  [u, u_t, u_tt]'''
+!        |
+!   time v      order 0          order 1          order 2           order 3
+!              (the state)     (d/dnu)          (d^2/dnu^2)       (d^3/dnu^3)
+!
+! Every point stores the jet of the unknowns along time, which the
+! families connect; column 0 is the solution, column 1 its
+! derivative along nu at every instant, column 2 the second
+! derivative, and so on. The derivative of a discrete field along nu
+! is the columns from the next on. The multipliers have the same
+! columns: the equations' at every instant, the reactions', the
+! gauges', and the design condition's, whose column m is minus the
+! (m + 1)-th derivative of the objective.
+!
+! The columns follow from the equations holding at every nu: with
+! F(u(nu), nu) = 0 and A the jacobian of F in u, A u' + dF/dnu = 0
+! gives column 1 by one linear solve with A, A u'' + (terms in u',
+! u) = 0 gives column 2 by one more solve with the same A, and so
+! on; the jet arithmetic of util_derivative_terms evaluates F on the
+! jets of u and nu and returns the jet of F, whose coefficient at
+! order m is the right side of the m-th solve. Nothing is
+! differentiated by hand and nothing is approximated by differences.
+!
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 

@@ -70,14 +70,11 @@ program taylor_green_vortex_3d
   exact   = continuous_field(omega, [u_exact, v_exact, w_exact, p_exact])
 
   ! the unknown functions u, v, w, p : Omega -> R, each a function of
-  ! (t, x, y, z); the multipliers lambda(x, y, z) : dOmega -> R^3 of
-  ! the initial data and mu(t) : [0, T] -> R of the gauge
-  u      = omega % unknown('u', [t, x, y, z])
-  v      = omega % unknown('v', [t, x, y, z])
-  w      = omega % unknown('w', [t, x, y, z])
-  p      = omega % unknown('p', [t, x, y, z])
-  lambda = domega % unknown('lambda', [x, y, z], components=3)
-  mu     = tau % unknown('mu', [t])
+  ! (t, x, y, z)
+  u = omega % unknown('u', [t, x, y, z])
+  v = omega % unknown('v', [t, x, y, z])
+  w = omega % unknown('w', [t, x, y, z])
+  p = omega % unknown('p', [t, x, y, z])
 
   ! the four equations as functions Omega -> R of the jet of (u, v, w, p)
   momentum_x = u % derivative([t]) + u*u % derivative([x]) + v*u % derivative([y]) + w*u % derivative([z]) &
@@ -91,12 +88,15 @@ program taylor_green_vortex_3d
        &     + 2.0_dp*(u % derivative([y])*v % derivative([x]) + u % derivative([z])*w % derivative([x]) &
        &             + v % derivative([z])*w % derivative([y]))
 
-  ! r on Omega, g on dOmega, the gauge on tau, and the Lagrangian
-  ! L = r + lambda . g + mu gauge
-  r     = continuous_residual(omega,  [momentum_x, momentum_y, momentum_z, pressure])
-  g     = continuous_residual(domega, [u - u_exact, v - v_exact, w - w_exact])
-  gauge = continuous_residual(tau,    [integral(p, over=omega % space())])
-  L     = r + lambda*g + mu*gauge
+  ! r on Omega; g on dOmega with its multiplier lambda(x, y, z) : dOmega -> R^3,
+  ! one component per condition; the gauge on tau with its multiplier
+  ! mu(t) : [0, T] -> R; and the Lagrangian L = r + lambda . g + mu gauge
+  r      = continuous_residual(omega,  [momentum_x, momentum_y, momentum_z, pressure])
+  g      = continuous_residual(domega, [u - u_exact, v - v_exact, w - w_exact])
+  gauge  = continuous_residual(tau,    [integral(p, over=omega % space())])
+  lambda = g % multiplier('lambda', [x, y, z])
+  mu     = gauge % multiplier('mu', [t])
+  L      = r + lambda*g + mu*gauge
 
   ! L_h on Omega_h and dOmega_h: d/dt by dirk(2), one block per
   ! instant, each block reading the instant before it; d/dx, d/dy,

@@ -88,8 +88,6 @@ program taylor_green_study
   u      = omega % unknown('u', [t, x, y])
   v      = omega % unknown('v', [t, x, y])
   p      = omega % unknown('p', [t, x, y])
-  lambda = domega % unknown('lambda', [x, y], components=2)
-  mu     = tau % unknown('mu', [t])
 
   momentum_x = u % derivative([t]) + u*u % derivative([x]) + v*u % derivative([y]) + p % derivative([x]) &
        &     - nu*(u % derivative([x, x]) + u % derivative([y, y]))
@@ -98,10 +96,12 @@ program taylor_green_study
   pressure   = p % derivative([x, x]) + p % derivative([y, y]) &
        &     + u % derivative([x])**2 + 2.0_dp*u % derivative([y])*v % derivative([x]) + v % derivative([y])**2
 
-  r     = continuous_residual(omega,  [momentum_x, momentum_y, pressure])
-  g     = continuous_residual(domega, [u - u_exact, v - v_exact])
-  gauge = continuous_residual(tau,    [integral(p, over=omega % space())])
-  L     = r + lambda*g + mu*gauge
+  r      = continuous_residual(omega,  [momentum_x, momentum_y, pressure])
+  g      = continuous_residual(domega, [u - u_exact, v - v_exact])
+  gauge  = continuous_residual(tau,    [integral(p, over=omega % space())])
+  lambda = g % multiplier('lambda', [x, y])
+  mu     = gauge % multiplier('mu', [t])
+  L      = r + lambda*g + mu*gauge
 
   select case (trim(method))
   case ('difference')

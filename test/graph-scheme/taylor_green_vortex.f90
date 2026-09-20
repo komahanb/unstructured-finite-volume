@@ -90,13 +90,10 @@ program taylor_green_vortex
   exact   = continuous_field(omega, [u_exact, v_exact, p_exact])
 
   ! the unknown functions u, v, p : Omega -> R, each a function of
-  ! (t, x, y); the multipliers lambda(x, y) : dOmega -> R^2 of the
-  ! initial data and mu(t) : [0, T] -> R of the gauge
-  u      = omega % unknown('u', [t, x, y])
-  v      = omega % unknown('v', [t, x, y])
-  p      = omega % unknown('p', [t, x, y])
-  lambda = domega % unknown('lambda', [x, y], components=2)
-  mu     = tau % unknown('mu', [t])
+  ! (t, x, y)
+  u = omega % unknown('u', [t, x, y])
+  v = omega % unknown('v', [t, x, y])
+  p = omega % unknown('p', [t, x, y])
 
   ! the three equations as functions Omega -> R of the jet of (u, v, p);
   ! derivative([x, x]) is d^2/dx^2, derivative([x, y]) is d^2/dx dy
@@ -107,12 +104,15 @@ program taylor_green_vortex
   pressure   = p % derivative([x, x]) + p % derivative([y, y]) &
        &     + u % derivative([x])**2 + 2.0_dp*u % derivative([y])*v % derivative([x]) + v % derivative([y])**2
 
-  ! r on Omega, g on dOmega, the gauge on tau, and the Lagrangian
-  ! L = r + lambda . g + mu gauge
-  r     = continuous_residual(omega,  [momentum_x, momentum_y, pressure])
-  g     = continuous_residual(domega, [u - u_exact, v - v_exact])
-  gauge = continuous_residual(tau,    [integral(p, over=omega % space())])
-  L     = r + lambda*g + mu*gauge
+  ! r on Omega; g on dOmega with its multiplier lambda(x, y) : dOmega -> R^2,
+  ! one component per condition; the gauge on tau with its multiplier
+  ! mu(t) : [0, T] -> R; and the Lagrangian L = r + lambda . g + mu gauge
+  r      = continuous_residual(omega,  [momentum_x, momentum_y, pressure])
+  g      = continuous_residual(domega, [u - u_exact, v - v_exact])
+  gauge  = continuous_residual(tau,    [integral(p, over=omega % space())])
+  lambda = g % multiplier('lambda', [x, y])
+  mu     = gauge % multiplier('mu', [t])
+  L      = r + lambda*g + mu*gauge
 
   ! L_h on Omega_h and dOmega_h: d/dt by a chain of schemes over the
   ! instants of Omega_h, one block per instant - dirk(2) at the first

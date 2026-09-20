@@ -156,9 +156,10 @@ module operation_residual
   ! THE CONTINUOUS RESIDUAL: a sum of terms. A term is a list of
   ! equations, each a scalar field, on one manifold; paired with a
   ! multiplier, an unknown of that manifold with one component per
-  ! equation, the term contributes to the Lagrangian the product of
-  ! the two. The equations of a term on a part of a manifold - a face
-  ! at an instant, the time factor - read the unknowns of the parent.
+  ! equation, declared by the term itself, the term contributes to
+  ! the Lagrangian the product of the two. The equations of a term on
+  ! a part of a manifold - a face at an instant, the time factor -
+  ! read the unknowns of the parent.
   !===================================================================!
 
   type :: residual_term
@@ -177,6 +178,7 @@ module operation_residual
    contains
 
      procedure :: discretize => residual_discretize
+     procedure :: multiplier => residual_multiplier
      procedure :: num_terms
 
   end type continuous_residual
@@ -1409,6 +1411,29 @@ contains
     this % term = [a % term, b % term]
 
   end function residual_sum
+
+  !===================================================================!
+  ! THE MULTIPLIER of a term: an unknown of the term's manifold with
+  ! one component per equation, the count read from the term - the
+  ! initial data of an equation of order n are n conditions, and
+  ! their multiplier has n components - a function of the coordinates
+  ! given as its arguments. Invalid input: a residual of several
+  ! terms.
+  !===================================================================!
+
+  function residual_multiplier(this, name, arguments) result(lambda)
+
+    class(continuous_residual), intent(inout) :: this
+    character(len=*)          , intent(in)    :: name
+    type(continuous_field)    , intent(in), optional :: arguments(:)
+    type(continuous_field) :: lambda
+
+    if (size(this % term) /= 1) then
+       error stop 'operation_residual: a multiplier is declared by one term; declare it before summing'
+    end if
+    lambda = this % term(1) % manifold % unknown(name, arguments, components=size(this % term(1) % equation))
+
+  end function residual_multiplier
 
   !===================================================================!
   ! The pairing lambda . g: the multiplier is an unknown of the term's

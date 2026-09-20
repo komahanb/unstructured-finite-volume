@@ -5,8 +5,9 @@
 !
 ! on the interval [0, T] with u(0) = 2, u'(0) = 0 and mu = 1, stated
 ! on a manifold of time alone: the residual r on [0, T], the initial
-! data g on its boundary {0} paired with a multiplier of two
-! components, the Lagrangian L = r + lambda . g discretized by a
+! data g on its boundary {0} paired with a multiplier of one
+! component per condition, the Lagrangian L = r + lambda . g
+! discretized by a
 ! heterogeneous chain of families over the instants - dirk(2) over
 ! the first three, bdf(2) over the next four, adams(2) to the end,
 ! one block per instant - and minimised block by block. The instant
@@ -52,12 +53,9 @@ program van_der_pol
   domega  = omega % boundary(time=0.0_dp)
   omega_h = omega % discretize(time=instants(num_instants))
 
-  ! the coordinate function t and the unknown function u(t) :
-  ! Omega -> R; the multiplier lambda : dOmega -> R^2 of the initial
-  ! data, a function on a point
-  t      = omega % coordinate('t')
-  u      = omega % unknown('u', [t])
-  lambda = domega % unknown('lambda', components=2)
+  ! the coordinate function t and the unknown function u(t) : Omega -> R
+  t = omega % coordinate('t')
+  u = omega % unknown('u', [t])
 
   ! the equation as a function Omega -> R of the jet of u to order
   ! two along t
@@ -68,10 +66,13 @@ program van_der_pol
   u0 = u - u_initial
   v0 = u % derivative([t]) - v_initial
 
-  ! r on Omega, g on dOmega, and the Lagrangian L = r + lambda . g
-  r = continuous_residual(omega,  [oscillator])
-  g = continuous_residual(domega, [u0, v0])
-  L = r + lambda*g
+  ! r on Omega; g on dOmega with its multiplier lambda : dOmega -> R^2,
+  ! one component per condition, a function on a point; and the
+  ! Lagrangian L = r + lambda . g
+  r      = continuous_residual(omega,  [oscillator])
+  g      = continuous_residual(domega, [u0, v0])
+  lambda = g % multiplier('lambda')
+  L      = r + lambda*g
 
   ! L_h on Omega_h: d/dt by the chain, one block per instant, each
   ! block reading the instants before it

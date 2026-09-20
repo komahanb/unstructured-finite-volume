@@ -25,6 +25,7 @@ module operation_field
   use token_identity      , only : token
   use util_derivative_terms, only : derivative_terms, coefficient, symmetric_terms
   use operation_expression, only : expression, unknown, constant, coordinate, derivative, derivative_along, design
+  use operation_expression, only : partial_derivative, partial_in_design, total_derivative, stationarity
   use operation_expression, only : FIRST_COORDINATE
   use operation_expression, only : operator(+), operator(-), operator(*), operator(/), operator(**)
   use operation_expression, only : sin, cos, exp, log, sqrt
@@ -172,6 +173,8 @@ module operation_field
    contains
 
      procedure :: derivative     => field_derivative
+     procedure :: partial        => field_partial
+     procedure :: stationarity   => field_stationarity
      procedure :: discretize     => field_discretize
      procedure :: at             => field_at
      procedure :: differential   => field_differential
@@ -834,11 +837,27 @@ contains
     integer :: k, c
     character(len=250) :: message
 
-    if (size(this % component) /= 1 .or. this % index(1) < 1) then
-       error stop 'operation_field: derivative requires a scalar unknown of the manifold'
+    if (size(this % component) /= 1) then
+       error stop 'operation_field: derivative requires a scalar field'
     end if
     if (size(along) < 1) then
        error stop 'operation_field: derivative requires one coordinate at least'
+    end if
+    ! a field that is not an unknown: its total derivative along the
+    ! coordinates, by the chain rule over the jets it reads
+    if (this % index(1) < 1) then
+       d = this
+       d % index = [0]
+       do k = 1, size(along)
+          if (along(k) % design_coordinate .or. along(k) % coordinate < 1) then
+             error stop 'operation_field: the total derivative of a field is along a coordinate of time or space'
+          end if
+          if (.not. along(k) % on % matches(this % on)) then
+             error stop 'operation_field: the total derivative is along a coordinate of the field''s manifold'
+          end if
+          d % component = [total_derivative(d % component(1), along(k) % coordinate)]
+       end do
+       return
     end if
     c = along(1) % coordinate
     do k = 1, size(along)
@@ -878,6 +897,78 @@ contains
     end if
 
   end function field_derivative
+
+  !===================================================================!
+  ! THE PARTIAL DERIVATIVE of a scalar field in a component of the
+  ! jet of an unknown - u, or u % derivative([t]) - or in a design
+  ! coordinate, every other leaf unchanged: the symbolic derivative as a
+  ! field on the same manifold. Invalid input: a field of several
+  ! components, or an argument that is neither a jet component of an
+  ! unknown nor a design coordinate.
+  !===================================================================!
+
+  function field_partial(this, in) result(d)
+
+    class(continuous_field), intent(in) :: this
+    type(continuous_field) , intent(in) :: in
+    type(continuous_field) :: d
+
+    type(expression) :: leaf
+
+    if (size(this % component) /= 1 .or. size(in % component) /= 1) then
+       error stop 'operation_field: the partial derivative is of a scalar field in a scalar component'
+    end if
+    d = this
+    d % index = [0]
+    if (in % design_coordinate) then
+       if (allocated(in % direction)) then
+          error stop 'operation_field: the partial derivative is in a design coordinate, not a direction'
+       end if
+       d % component = [partial_in_design(this % component(1), in % coordinate)]
+       return
+    end if
+    leaf = in % component(1)
+    if (leaf % num_vertices() /= 1 .or. .not. leaf % reads_state()) then
+       error stop 'operation_field: the partial derivative is in a component of the jet of an unknown, &
+            &u or u % derivative([t]), or in a design coordinate'
+    end if
+    d % component = [partial_derivative(this % component(1), leaf % leaf_field(), leaf % leaf_order(), &
+         & leaf % leaf_along())]
+
+  end function field_partial
+
+  !===================================================================!
+  ! THE STATIONARITY of a scalar field in an unknown along a
+  ! coordinate: the Euler-Lagrange derivative, the sum over the
+  ! orders o of (-1)^o times the o-th total derivative along the
+  ! coordinate of the partial in the component of order o - the
+  ! interior equation of the stationarity of the integral of the
+  ! field, the boundary terms of the integration by parts aside.
+  ! Invalid input: a field of several components, an argument that
+  ! is not a scalar unknown, or a coordinate that is not of the
+  ! manifold.
+  !===================================================================!
+
+  function field_stationarity(this, in, along) result(d)
+
+    class(continuous_field), intent(in) :: this
+    type(continuous_field) , intent(in) :: in, along
+    type(continuous_field) :: d
+
+    if (size(this % component) /= 1) then
+       error stop 'operation_field: the stationarity is of a scalar field'
+    end if
+    if (size(in % component) /= 1 .or. in % index(1) < 1) then
+       error stop 'operation_field: the stationarity is in a scalar unknown of the manifold'
+    end if
+    if (along % design_coordinate .or. along % coordinate < 1) then
+       error stop 'operation_field: the stationarity integrates by parts along a coordinate of time or space'
+    end if
+    d = this
+    d % index = [0]
+    d % component = [stationarity(this % component(1), in % index(1), along % coordinate)]
+
+  end function field_stationarity
 
   !===================================================================!
   ! THE DISCRETE IMAGE: the field sampled at the points. Invalid

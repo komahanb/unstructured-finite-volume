@@ -98,6 +98,7 @@ module operation_expression
   public :: expression
   public :: unknown, design, constant, multiplier, coordinate, derivative, derivative_along
   public :: euler_lagrange, at_zero
+  public :: partial_derivative, partial_in_design, total_derivative, stationarity
   public :: operator(+), operator(-), operator(*), operator(/), operator(**)
   public :: sin, cos, exp, log, sqrt
 
@@ -192,6 +193,9 @@ module operation_expression
      procedure :: num_fields
      procedure :: num_multipliers
      procedure :: num_designs
+     procedure :: leaf_field
+     procedure :: leaf_order
+     procedure :: leaf_along
      procedure :: degree_along
      procedure :: degree_of_field
      procedure :: offset_of_field
@@ -516,6 +520,275 @@ contains
     call this % derive_domain()
 
   end function joined
+
+  !===================================================================!
+  ! SYMBOLIC DIFFERENTIATION: new expressions over the same leaves, by
+  ! recursion over the tree with the operators above, a zero or a one
+  ! met on the way absorbed.
+  !
+  !   partial_derivative(x, field, order, along)  the partial in the
+  !       state component of the field of that order along the
+  !       coordinate, every other leaf unchanged
+  !   partial_in_design(x, i)   the partial in the i-th design
+  !   total_derivative(x, along)   the total derivative along a
+  !       coordinate by the chain rule over every leaf: a state
+  !       component of order o along it becomes the component of
+  !       order o + 1, a component of order zero the first derivative
+  !       along it, the coordinate itself one, a design, a multiplier
+  !       or another coordinate zero; a component of positive order
+  !       along another coordinate is refused, a mixed derivative not
+  !       being a component of the jet
+  !   stationarity(x, field, along)   the Euler-Lagrange derivative in
+  !       the field: the sum over the orders o of (-1)^o times the
+  !       o-th total derivative along the coordinate of the partial
+  !       in the component of order o - the interior equation of the
+  !       stationarity of the integral of x, the boundary terms of the
+  !       integration by parts aside
+  !===================================================================!
+
+  recursive function subtree(x, i) result(this)
+
+    type(expression), intent(in) :: x
+    integer         , intent(in) :: i
+    type(expression) :: this
+
+    select case (x % kind(i))
+    case (VERTEX_LEAF)
+       this = vertex(VERTEX_LEAF, x % position(i), x % order(i), 0.0_dp, x % along(i), x % field(i))
+    case (VERTEX_CONSTANT)
+       this = constant(x % coefficient(i))
+    case (VERTEX_SUM, VERTEX_DIFFERENCE, VERTEX_PRODUCT, VERTEX_QUOTIENT)
+       this = joined(subtree(x, x % first(i)), subtree(x, x % second(i)), x % kind(i))
+    case default
+       this = applied(subtree(x, x % first(i)), x % kind(i), x % order(i), x % coefficient(i))
+    end select
+
+  end function subtree
+
+  pure logical function is_constant(x, c)
+    type(expression), intent(in) :: x
+    real(dp)        , intent(in) :: c
+    is_constant = .false.
+    if (x % root() == 1) then
+       if (x % kind(1) == VERTEX_CONSTANT) is_constant = x % coefficient(1) == c
+    end if
+  end function is_constant
+
+  ! a b with a zero or a one absorbed
+  function product_of(a, b) result(this)
+    type(expression), intent(in) :: a, b
+    type(expression) :: this
+    if (is_constant(a, 0.0_dp) .or. is_constant(b, 0.0_dp)) then
+       this = constant(0.0_dp)
+    else if (is_constant(a, 1.0_dp)) then
+       this = b
+    else if (is_constant(b, 1.0_dp)) then
+       this = a
+    else
+       this = a * b
+    end if
+  end function product_of
+
+  function sum_of(a, b) result(this)
+    type(expression), intent(in) :: a, b
+    type(expression) :: this
+    if (is_constant(a, 0.0_dp)) then
+       this = b
+    else if (is_constant(b, 0.0_dp)) then
+       this = a
+    else
+       this = a + b
+    end if
+  end function sum_of
+
+  function difference_of(a, b) result(this)
+    type(expression), intent(in) :: a, b
+    type(expression) :: this
+    if (is_constant(b, 0.0_dp)) then
+       this = a
+    else if (is_constant(a, 0.0_dp)) then
+       this = -b
+    else
+       this = a - b
+    end if
+  end function difference_of
+
+  ! the derivative of the subtree at i, the leaves differentiated by
+  ! the mode: 1 the partial in the state component (field, order,
+  ! along), 2 the partial in the design field, 3 the total derivative
+  ! along the coordinate along
+  recursive function differentiated(x, i, mode, field, order, along) result(this)
+
+    type(expression), intent(in) :: x
+    integer         , intent(in) :: i, mode, field, order, along
+    type(expression) :: this
+
+    type(expression) :: a, b, da, db
+    integer :: n
+    character(len=250) :: message
+
+    select case (x % kind(i))
+    case (VERTEX_LEAF)
+       this = constant(0.0_dp)
+       select case (mode)
+       case (1)
+          if (x % position(i) == ARGUMENT_STATE) then
+             if (x % field(i) == field .and. x % order(i) == order .and. &
+                  & (x % along(i) == along .or. order == 0)) this = constant(1.0_dp)
+          end if
+       case (2)
+          if (x % position(i) == ARGUMENT_DESIGN) then
+             if (x % field(i) == field) this = constant(1.0_dp)
+          end if
+       case (3)
+          if (x % position(i) == ARGUMENT_STATE) then
+             if (x % order(i) == 0) then
+                this = vertex(VERTEX_LEAF, ARGUMENT_STATE, 1, 0.0_dp, along, x % field(i))
+             else if (x % along(i) == along) then
+                this = vertex(VERTEX_LEAF, ARGUMENT_STATE, x % order(i) + 1, 0.0_dp, along, x % field(i))
+             else
+                write(message,'(a,i0,a,i0)') 'operation_expression: the total derivative along coordinate ', &
+                     & along, ' of a component along coordinate ', x % along(i)
+                error stop trim(message) // ' is a mixed derivative, which is not a component of the jet'
+             end if
+          else if (x % position(i) == ARGUMENT_COORDINATE) then
+             if (x % field(i) == along) this = constant(1.0_dp)
+          end if
+       end select
+    case (VERTEX_CONSTANT)
+       this = constant(0.0_dp)
+    case (VERTEX_SUM)
+       this = sum_of(differentiated(x, x % first(i), mode, field, order, along), &
+            &        differentiated(x, x % second(i), mode, field, order, along))
+    case (VERTEX_DIFFERENCE)
+       this = difference_of(differentiated(x, x % first(i), mode, field, order, along), &
+            &               differentiated(x, x % second(i), mode, field, order, along))
+    case (VERTEX_PRODUCT)
+       da = differentiated(x, x % first(i), mode, field, order, along)
+       db = differentiated(x, x % second(i), mode, field, order, along)
+       a  = subtree(x, x % first(i))
+       b  = subtree(x, x % second(i))
+       this = sum_of(product_of(da, b), product_of(a, db))
+    case (VERTEX_QUOTIENT)
+       da = differentiated(x, x % first(i), mode, field, order, along)
+       db = differentiated(x, x % second(i), mode, field, order, along)
+       a  = subtree(x, x % first(i))
+       b  = subtree(x, x % second(i))
+       this = difference_of(product_of(da, b), product_of(a, db))
+       if (.not. is_constant(this, 0.0_dp)) this = this / (b * b)
+    case (VERTEX_INTEGER_POWER)
+       n  = nint(x % coefficient(i))
+       da = differentiated(x, x % first(i), mode, field, order, along)
+       a  = subtree(x, x % first(i))
+       if (n == 0) then
+          this = constant(0.0_dp)
+       else if (n == 1) then
+          this = da
+       else if (n == 2) then
+          this = product_of(product_of(constant(2.0_dp), a), da)
+       else
+          this = product_of(product_of(constant(real(n, dp)), a ** (n - 1)), da)
+       end if
+    case (VERTEX_REAL_POWER)
+       da = differentiated(x, x % first(i), mode, field, order, along)
+       a  = subtree(x, x % first(i))
+       this = product_of(product_of(constant(x % coefficient(i)), a ** (x % coefficient(i) - 1.0_dp)), da)
+    case (VERTEX_FUNCTION)
+       da = differentiated(x, x % first(i), mode, field, order, along)
+       a  = subtree(x, x % first(i))
+       select case (x % order(i))
+       case (SINE)
+          this = product_of(cos(a), da)
+       case (COSINE)
+          this = product_of(-sin(a), da)
+       case (EXPONENTIAL)
+          this = product_of(exp(a), da)
+       case (LOGARITHM)
+          if (is_constant(da, 0.0_dp)) then
+             this = constant(0.0_dp)
+          else
+             this = da / a
+          end if
+       case (SQUARE_ROOT)
+          if (is_constant(da, 0.0_dp)) then
+             this = constant(0.0_dp)
+          else
+             this = da / (constant(2.0_dp) * sqrt(a))
+          end if
+       case default
+          error stop 'operation_expression: the function is not one this module differentiates'
+       end select
+    case default
+       error stop 'operation_expression: the vertex kind is not one this module differentiates'
+    end select
+
+  end function differentiated
+
+  function partial_derivative(x, field, order, along) result(this)
+
+    type(expression), intent(in) :: x
+    integer         , intent(in) :: field, order
+    integer         , intent(in), optional :: along
+    type(expression) :: this
+
+    integer :: c
+
+    c = FIRST_COORDINATE
+    if (present(along)) c = along
+    this = differentiated(x, x % root(), 1, field, order, c)
+
+  end function partial_derivative
+
+  function partial_in_design(x, field) result(this)
+
+    type(expression), intent(in) :: x
+    integer         , intent(in) :: field
+    type(expression) :: this
+
+    this = differentiated(x, x % root(), 2, field, 0, FIRST_COORDINATE)
+
+  end function partial_in_design
+
+  function total_derivative(x, along) result(this)
+
+    type(expression), intent(in) :: x
+    integer         , intent(in) :: along
+    type(expression) :: this
+
+    this = differentiated(x, x % root(), 3, 0, 0, along)
+
+  end function total_derivative
+
+  function stationarity(x, field, along) result(this)
+
+    type(expression), intent(in) :: x
+    integer         , intent(in) :: field
+    integer         , intent(in), optional :: along
+    type(expression) :: this
+
+    type(expression) :: term
+    integer :: c, o, k, top
+
+    c = FIRST_COORDINATE
+    if (present(along)) c = along
+    if (field < 1 .or. field > x % fields) then
+       error stop 'operation_expression: the stationarity is in a field the expression reads'
+    end if
+    top = max(0, x % highest_degree_along(c, field))
+    this = constant(0.0_dp)
+    do o = 0, top
+       term = partial_derivative(x, field, o, c)
+       do k = 1, o
+          term = total_derivative(term, c)
+       end do
+       if (mod(o, 2) == 0) then
+          this = sum_of(this, term)
+       else
+          this = difference_of(this, term)
+       end if
+    end do
+
+  end function stationarity
 
   function applied(a, kind, order, coefficient) result(this)
 
@@ -1460,6 +1733,34 @@ contains
     num_designs = this % designs
 
   end function num_designs
+
+  !===================================================================!
+  ! THE ONE LEAF of an expression that is a leaf alone - u, or u %
+  ! derivative([t]) - by its field, its order and the coordinate its
+  ! derivative follows. An expression of several vertices, or one
+  ! whose vertex is not a leaf, stops the program.
+  !===================================================================!
+
+  pure integer function leaf_field(this)
+    class(expression), intent(in) :: this
+    if (this % root() /= 1) error stop 'operation_expression: the leaf named is an expression of several vertices'
+    if (this % kind(1) /= VERTEX_LEAF) error stop 'operation_expression: the vertex named is not a leaf'
+    leaf_field = this % field(1)
+  end function leaf_field
+
+  pure integer function leaf_order(this)
+    class(expression), intent(in) :: this
+    if (this % root() /= 1) error stop 'operation_expression: the leaf named is an expression of several vertices'
+    if (this % kind(1) /= VERTEX_LEAF) error stop 'operation_expression: the vertex named is not a leaf'
+    leaf_order = this % order(1)
+  end function leaf_order
+
+  pure integer function leaf_along(this)
+    class(expression), intent(in) :: this
+    if (this % root() /= 1) error stop 'operation_expression: the leaf named is an expression of several vertices'
+    if (this % kind(1) /= VERTEX_LEAF) error stop 'operation_expression: the vertex named is not a leaf'
+    leaf_along = this % along(1)
+  end function leaf_along
 
   !===================================================================!
   ! A field's degree along the first coordinate; a multiplier's is

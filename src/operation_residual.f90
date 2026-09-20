@@ -226,10 +226,18 @@ module operation_residual
   ! multipliers of the block's rows from the differential of the
   ! objective and the multipliers the later blocks pass back through
   ! the block's history instants. The multiplier of each equation at
-  ! each instant is returned under the name the term declared, and
-  ! the multiplier of each face condition, the reaction, under its
-  ! own name at the face's points; the multiplier of a condition on
-  ! the time factor is not returned.
+  ! each instant is returned under the name the term declared - for
+  ! a family marching by stages, the sum over the stages of the step
+  ! into the instant of their multipliers, the sensitivity of the
+  ! objective to a forcing of the equation over the step - the
+  ! multiplier of each face condition, the reaction, under its own
+  ! name at the face's points, the multiplier of each condition on
+  ! the time factor under its name at every cell of the instant, and
+  ! the multiplier of the design condition under its name at every
+  ! point. A design field is an unknown with a paired equation
+  ! f - f_0 = 0 among the equations of the manifold: the multiplier
+  ! of that equation at each instant is the sensitivity of the
+  ! objective to the datum there, the functional derivative.
   !===================================================================!
 
   type :: discrete_residual
@@ -1681,9 +1689,9 @@ contains
     type(discrete_field)    , intent(out) :: solution
 
     real(dp), allocatable :: tuple(:,:,:), stages(:,:,:,:), tjet(:,:,:,:), value(:,:), jet(:,:,:)
-    real(dp), allocatable :: adjoint(:,:,:), reaction(:,:)
+    real(dp), allocatable :: adjoint(:,:,:), reaction(:,:), gauge(:,:)
     integer , allocatable :: slot(:)
-    integer :: order, e
+    integer :: order, e, g
     real(dp) :: design_multiplier
     character(len=32), allocatable :: names(:)
     type(stencil), allocatable :: rows_along(:,:)
@@ -1776,7 +1784,8 @@ contains
     nc = 0
     if (this % with_adjoint) then
        do j = 1, size(this % condition)
-          if (this % condition(j) % manifold % is_face()) nc = nc + size(this % condition(j) % equation)
+          if (this % condition(j) % manifold % is_face())          nc = nc + size(this % condition(j) % equation)
+          if (this % condition(j) % manifold % is_time_factor())   nc = nc + size(this % condition(j) % equation)
           if (this % condition(j) % manifold % is_design_factor()) nc = nc + 1
        end do
     end if
@@ -1804,7 +1813,7 @@ contains
        solution % jet  = jet
        solution % slot = slot(1:nf)
        solution % rule = this % rule
-       call adjoint_sweep(this, rows_along, tuple, stages, solution, adjoint, reaction, design_multiplier)
+       call adjoint_sweep(this, rows_along, tuple, stages, solution, adjoint, reaction, gauge, design_multiplier)
        names(nf + 1:2 * nf) = this % adjoint_name
        do k = 1, ninst
           do c = 1, ncells
@@ -1813,6 +1822,7 @@ contains
        end do
        nc = 0
        e  = 0
+       g  = 0
        do j = 1, size(this % condition)
           if (this % condition(j) % manifold % is_design_factor()) then
              ! the multiplier of the design condition, a function on
@@ -1820,6 +1830,20 @@ contains
              nc = nc + 1
              names(2 * nf + nc)  = this % condition(j) % multiplier % name
              value(:, 2 * nf + nc) = design_multiplier
+          end if
+          if (this % condition(j) % manifold % is_time_factor()) then
+             ! the multiplier of a time-factor condition, a function
+             ! of time alone: its value at every cell of the instant
+             do f = 1, size(this % condition(j) % equation)
+                nc = nc + 1
+                g  = g + 1
+                names(2 * nf + nc) = this % condition(j) % multiplier % name
+                do k = 1, ninst
+                   do c = 1, ncells
+                      value(this % points % point_of(k, c), 2 * nf + nc) = gauge(k, g)
+                   end do
+                end do
+             end do
           end if
           if (.not. this % condition(j) % manifold % is_face()) cycle
           k = face_instant(this, this % condition(j) % manifold % face_time)
@@ -1851,18 +1875,18 @@ contains
   ! blocks to sweep, and is refused.
   !===================================================================!
 
-  subroutine adjoint_sweep(this, rows_along, tuple, stages, solution, adjoint, reaction, design_multiplier)
+  subroutine adjoint_sweep(this, rows_along, tuple, stages, solution, adjoint, reaction, gauge, design_multiplier)
 
     class(discrete_residual), intent(in)  :: this
     type(stencil)           , intent(in)  :: rows_along(:,:)
     real(dp)                , intent(in)  :: tuple(:,:,:), stages(:,:,:,:)
     type(discrete_field)    , intent(in)  :: solution
-    real(dp), allocatable   , intent(out) :: adjoint(:,:,:), reaction(:,:)
+    real(dp), allocatable   , intent(out) :: adjoint(:,:,:), reaction(:,:), gauge(:,:)
     real(dp)                , intent(out) :: design_multiplier
 
     real(dp), allocatable :: gradient(:,:), incoming(:,:,:)
     real(dp) :: partial
-    integer :: stride, nf, ncells, ninst, nc, j, b, nb, first, last, depth
+    integer :: stride, nf, ncells, ninst, nc, ng, j, b, nb, first, last, depth
 
     stride = this % rule % num_components()
     nf     = this % manifold % num_unknowns
@@ -1882,11 +1906,13 @@ contains
     end if
 
     nc = 0
+    ng = 0
     do j = 1, size(this % condition)
-       if (this % condition(j) % manifold % is_face()) nc = nc + size(this % condition(j) % equation)
+       if (this % condition(j) % manifold % is_face())        nc = nc + size(this % condition(j) % equation)
+       if (this % condition(j) % manifold % is_time_factor()) ng = ng + size(this % condition(j) % equation)
     end do
     allocate(adjoint(nf, ncells, ninst), incoming(stride, ncells, ninst), source=0.0_dp)
-    allocate(reaction(ncells, nc), source=0.0_dp)
+    allocate(reaction(ncells, nc), gauge(ninst, ng), source=0.0_dp)
 
     nb = this % schemes % num_blocks()
     do b = nb, 1, -1
@@ -1896,7 +1922,7 @@ contains
        depth = 0
        if (b > 1) depth = this % schemes % scheme(b) % history_depth(top_degree(this % rule, nf))
        call adjoint_block(this, this % schemes % scheme(b), first - depth, last, depth, rows_along, tuple, &
-            & stages, gradient, adjoint, incoming, reaction, partial)
+            & stages, gradient, adjoint, incoming, reaction, gauge, partial)
     end do
 
     ! THE MULTIPLIER OF THE DESIGN CONDITION nu - nu_0 = 0: the
@@ -2401,21 +2427,23 @@ contains
   !===================================================================!
 
   subroutine adjoint_block(this, scheme, first, last, depth, rows_along, tuple, stages, gradient, adjoint, &
-       & incoming, reaction, in_design)
+       & incoming, reaction, gauge, in_design)
 
     class(discrete_residual), intent(in)    :: this
     type(family)            , intent(in)    :: scheme
     integer                 , intent(in)    :: first, last, depth
     type(stencil)           , intent(in)    :: rows_along(:,:)
     real(dp)                , intent(in)    :: tuple(:,:,:), stages(:,:,:,:), gradient(:,:)
-    real(dp)                , intent(inout) :: adjoint(:,:,:), incoming(:,:,:), reaction(:,:), in_design
+    real(dp)                , intent(inout) :: adjoint(:,:,:), incoming(:,:,:), reaction(:,:), gauge(:,:), in_design
 
     type(residual_operator) :: rows, lin
     type(newton) :: solver
     type(stored_field), allocatable :: inputs(:)
     real(dp), allocatable :: q(:), y(:), rhs(:), mu(:), b(:), jets(:,:)
     integer , allocatable :: at(:), instant_moment(:), primary(:)
-    integer :: stride, nf, ncells, n, k, c, f, base, unknowns, npts, m, j, i, instant, comp, degree, e
+    logical , allocatable :: gauged(:)
+    integer :: stride, nf, ncells, n, k, c, f, base, unknowns, npts, m, j, i, instant, comp, degree, e, s, g
+    logical :: staged
 
     stride = this % rule % num_components()
     nf     = this % manifold % num_unknowns
@@ -2456,11 +2484,45 @@ contains
           incoming(:, c, first + k - 1) = incoming(:, c, first + k - 1) + mu(base + 1:base + stride)
        end do
     end do
+    ! THE MULTIPLIERS OF THE EQUATIONS at the block's own instants:
+    ! the multiplier at the equation's row at the instant and, for a
+    ! family marching by stages, at the stages of the step into it;
+    ! a row the gauge of a time-factor condition replaces, the first
+    ! cell's row of the integrated unknown, stores the gauge's
+    ! multiplier instead, which is returned as the condition's
+    staged = marches_by_stages(scheme, top_degree(this % rule, nf) + 1)
+    s = 0
+    if (staged) s = scheme % num_stages()
+    allocate(gauged(nf), source=.false.)
+    do j = 1, size(this % condition)
+       if (.not. this % condition(j) % manifold % is_time_factor()) cycle
+       do i = 1, size(this % condition(j) % equation)
+          gauged(this % condition(j) % equation(i) % index(1)) = .true.
+       end do
+    end do
     do k = depth + 1, n
        do c = 1, ncells
-          base = at((instant_moment(k) - 1) * ncells + c)
           do f = 1, nf
-             adjoint(f, c, first + k - 1) = mu(base + primary(f) + 1)
+             adjoint(f, c, first + k - 1) = 0.0_dp
+             do m = instant_moment(k) - merge(s, 0, k > 1), instant_moment(k)
+                if (c == 1 .and. gauged(f)) cycle
+                base = at((m - 1) * ncells + c)
+                adjoint(f, c, first + k - 1) = adjoint(f, c, first + k - 1) + mu(base + primary(f) + 1)
+             end do
+          end do
+       end do
+    end do
+    g = 0
+    do j = 1, size(this % condition)
+       if (.not. this % condition(j) % manifold % is_time_factor()) cycle
+       do i = 1, size(this % condition(j) % equation)
+          g = g + 1
+          f = this % condition(j) % equation(i) % index(1)
+          do k = depth + 1, n
+             do m = instant_moment(k) - merge(s, 0, k > 1), instant_moment(k)
+                base = at((m - 1) * ncells + 1)
+                gauge(first + k - 1, g) = gauge(first + k - 1, g) + mu(base + primary(f) + 1)
+             end do
           end do
        end do
     end do

@@ -215,14 +215,16 @@ module operation_residual
   ! instants, its stages and the cells, and solves the blocks in
   ! order.
   !
-  ! A condition on a face at an instant must be affine in one value
-  ! of a parent unknown with coefficient one, u - g = 0: it becomes the
-  ! fixed rows of that value at every cell of the instant. A condition
-  ! on the time factor must be the integral over the region of one
-  ! parent unknown: it becomes, at every moment, the prescribed row
-  ! that the sum of the cell volumes times the unknown vanishes, in
-  ! place of that unknown's own row at the first cell. Any other
-  ! condition is refused.
+  ! A condition on a face at an instant is affine in the components
+  ! of the parent unknowns' jets, with coefficient one on exactly one
+  ! of them, the component it determines: u - g = 0, or lambda_t -
+  ! u_t = 0. It becomes, at every cell of the instant, the prescribed
+  ! row of that component, the affine relation in place of the
+  ! component's own row. A condition on the time factor must be the
+  ! integral over the region of one parent unknown: it becomes, at
+  ! every moment, the prescribed row that the sum of the cell volumes
+  ! times the unknown vanishes, in place of that unknown's own row at
+  ! the first cell. Any other condition is refused.
   !
   ! THE ADJOINT. With the equations paired with a multiplier, minimize
   ! follows the forward sweep over the blocks by a reverse sweep: each
@@ -2063,8 +2065,9 @@ contains
     type(stencil) :: relations, gauge
     type(connectivity_graph) :: connectivity
     integer , allocatable :: stage_moment(:,:), fixed_rows(:)
-    integer , allocatable :: determined(:), source(:), gauge_rows(:), gauge_columns(:)
-    real(dp), allocatable :: weight(:), fixed(:), w(:), steps(:), gauge_weights(:), zeros(:)
+    integer , allocatable :: determined(:), source(:), gauge_rows(:), gauge_columns(:), face_rows(:), face_columns(:)
+    real(dp), allocatable :: weight(:), fixed(:), w(:), steps(:), gauge_weights(:), zeros(:), face_weights(:)
+    real(dp), allocatable :: face_constants(:)
     integer :: stride, nf, ncells, n, s, nm, m, k, i, f, c, e, count, nd, width, unknowns, npts
     integer :: comp, axis, o, j, ne, history_last
     logical :: staged
@@ -2202,15 +2205,21 @@ contains
     ! values a face condition states at the first or the last instant
     call fixed_rows_of(this, first, last, depth, instant_moment, at, tuple, fixed_rows, fixed)
 
-    ! THE GAUGE ROWS: at every moment after the history, the mean of
-    ! the integrated unknown over the cells, in place of its own row at
-    ! the first cell
+    ! THE PRESCRIBED ROWS: the gauge rows - at every moment after the
+    ! history, the mean of the integrated unknown over the cells, in
+    ! place of its own row at the first cell - and the face rows at
+    ! the block's own instants, one stencil with the faces' constants
     history_last = 0
     if (depth > 0) history_last = instant_moment(depth)
     call gauge_rows_of(this, nm, history_last, at, primary, gauge_rows, gauge_columns, gauge_weights)
+    call face_rows_of(this, first, last, depth, instant_moment, at, face_rows, face_columns, face_weights, face_constants)
     allocate(zeros(unknowns), source=0.0_dp)
-    if (size(gauge_rows) > 0) then
-       gauge = stencil(gauge_rows, gauge_columns, gauge_weights, zeros, 'gauge')
+    do e = 1, size(face_rows)
+       zeros(face_rows(e)) = face_constants(e)
+    end do
+    if (size(gauge_rows) + size(face_rows) > 0) then
+       gauge = stencil([gauge_rows, face_rows], [gauge_columns, face_columns], [gauge_weights, face_weights], &
+            & zeros, 'prescribed')
        rows  = residual_operator(relations, this % rule, at, unknowns, stride, primary, fixed_rows, fixed, &
             & prescribed=gauge)
     else
@@ -2347,8 +2356,10 @@ contains
     type(residual_operator) :: lin
     type(newton) :: solver
     type(stored_field), allocatable :: inputs(:)
-    real(dp), allocatable :: jets(:,:), b(:), x(:), y(:), values(:), seed(:)
-    integer :: stride, ncells, n, order, unknowns, npts, m, k, c, base, j, i, instant, f, comp, degree, d, nd
+    real(dp), allocatable :: jets(:,:), b(:), x(:), y(:), values(:), seed(:), slopes(:)
+    integer , allocatable :: fields(:), degrees(:)
+    real(dp) :: given
+    integer :: stride, ncells, n, order, unknowns, npts, m, k, c, base, j, i, instant, f, degree, d, nd
     logical :: staged
 
     stride   = this % rule % num_components()
@@ -2391,8 +2402,10 @@ contains
              instant = face_instant(this, this % condition(j) % manifold % face_time)
              if (instant < first + depth .or. instant > last) cycle
              do i = 1, size(this % condition(j) % equation)
-                call stated_value(this % condition(j) % equation(i), f, comp, degree)
                 do c = 1, ncells
+                   call face_relation(this % condition(j) % equation(i), values, &
+                        & this % points % position(this % points % point_of(instant, c)), fields, degrees, slopes, &
+                        & given, f, degree)
                    base = at((instant_moment(instant - first + 1) - 1) * ncells + c)
                    b(base + this % rule % offset_of_field(f) + degree + 1) = stated_derivative( &
                         & this % condition(j) % equation(i), m, values, seed, &
@@ -2601,9 +2614,11 @@ contains
     type(residual_operator) :: lin
     type(newton) :: solver
     type(stored_field), allocatable :: inputs(:)
-    real(dp), allocatable :: y(:), rhs(:), mu(:,:,:), x(:), jets(:,:,:), slope(:), values(:), products(:)
+    real(dp), allocatable :: y(:), rhs(:), mu(:,:,:), x(:), jets(:,:,:), slope(:), values(:), products(:), slopes(:)
+    integer , allocatable :: fields(:), degrees(:)
+    real(dp) :: given
     logical , allocatable :: gauged(:)
-    integer :: stride, nf, ncells, n, k, c, f, base, unknowns, npts, m, j, i, instant, comp, degree, e, s, g, o
+    integer :: stride, nf, ncells, n, k, c, f, base, unknowns, npts, m, j, i, instant, degree, e, s, g, o
     integer :: order, d, nd, ni, first_order
     logical :: staged
 
@@ -2739,8 +2754,10 @@ contains
                 e = e + 1
                 if (instant < first + depth .or. instant > last) cycle
                 m = instant_moment(instant - first + 1)
-                call stated_value(this % condition(j) % equation(i), f, comp, degree)
                 do c = 1, ncells
+                   call face_relation(this % condition(j) % equation(i), values, &
+                        & this % points % position(this % points % point_of(instant, c)), fields, degrees, slopes, &
+                        & given, f, degree)
                    base = at((m - 1) * ncells + c)
                    reaction(c, e, o, d) = mu(base + this % rule % offset_of_field(f) + degree + 1, o, d)
                 end do
@@ -3199,16 +3216,7 @@ contains
 
   !===================================================================!
   ! THE FIXED ROWS of a block: every component at the history instants,
-  ! from the tuples already solved; and, at the first or the last
-  ! instant of the manifold when it is one of the block's own, the
-  ! value each face condition states, of an unknown or of one of its
-  ! derivatives along time - the initial slope of a second-order
-  ! equation is a condition on the first derivative component of the
-  ! jet. A face at a history instant is fixed by the history already,
-  ! and a second row on the same component would double its entry in
-  ! the explicit jacobian. Invalid input: a face condition whose
-  ! equation is not one parent component minus a function of the
-  ! position, with coefficient one.
+  ! from the tuples already solved.
   !===================================================================!
 
   subroutine fixed_rows_of(this, first, last, depth, instant_moment, at, tuple, fixed_rows, fixed)
@@ -3227,12 +3235,6 @@ contains
     ninst  = this % points % num_instants()
 
     count = depth * ncells * stride
-    do j = 1, size(this % condition)
-       if (.not. this % condition(j) % manifold % is_face()) cycle
-       instant = face_instant(this, this % condition(j) % manifold % face_time)
-       if (instant < first + depth .or. instant > last) cycle
-       count = count + size(this % condition(j) % equation) * ncells
-    end do
     allocate(fixed_rows(count), fixed(count))
     e = 0
 
@@ -3247,28 +3249,140 @@ contains
        end do
     end do
 
+  end subroutine fixed_rows_of
+
+  !===================================================================!
+  ! THE FACE ROWS of a block: at the first or the last instant of the
+  ! manifold when it is one of the block's own, each face condition
+  ! at every cell as a prescribed row - the affine relation of the
+  ! components it reads, in place of the row of the component it
+  ! determines, the one with coefficient one - with the relation's
+  ! value at zero state as the row's constant. A face at a history
+  ! instant is fixed by the history already. Invalid input: a face
+  ! condition with no component of coefficient one, or several.
+  !===================================================================!
+
+  subroutine face_rows_of(this, first, last, depth, instant_moment, at, rows, columns, weights, constants)
+
+    class(discrete_residual), intent(in)  :: this
+    integer                 , intent(in)  :: first, last, depth, instant_moment(:), at(:)
+    integer , allocatable   , intent(out) :: rows(:), columns(:)
+    real(dp), allocatable   , intent(out) :: weights(:), constants(:)
+
+    integer , allocatable :: fields(:), degrees(:)
+    real(dp), allocatable :: slopes(:)
+    real(dp) :: given
+    integer :: ncells, count, j, i, m, c, e, k, instant, base, row_field, row_degree
+
+    ncells = this % points % num_cells()
+    count  = 0
+    do j = 1, size(this % condition)
+       if (.not. this % condition(j) % manifold % is_face()) cycle
+       instant = face_instant(this, this % condition(j) % manifold % face_time)
+       if (instant < first + depth .or. instant > last) cycle
+       do i = 1, size(this % condition(j) % equation)
+          call face_relation(this % condition(j) % equation(i), this % points % design_values(), &
+               & this % points % position(this % points % point_of(instant, 1)), fields, degrees, slopes, given, &
+               & row_field, row_degree)
+          count = count + size(fields) * ncells
+       end do
+    end do
+    allocate(rows(count), columns(count), weights(count), constants(count))
+    e = 0
     do j = 1, size(this % condition)
        if (.not. this % condition(j) % manifold % is_face()) cycle
        instant = face_instant(this, this % condition(j) % manifold % face_time)
        if (instant < first + depth .or. instant > last) cycle
        m = instant_moment(instant - first + 1)
        do i = 1, size(this % condition(j) % equation)
-          call stated_value(this % condition(j) % equation(i), f, comp, degree)
           do c = 1, ncells
-             call affine_value(this % condition(j) % equation(i), comp, &
-                  & this % points % position(this % points % point_of(instant, c)), given, slope)
-             if (abs(slope - 1.0_dp) > 1.0e-12_dp) then
-                error stop 'operation_residual: a condition on a face is stated as the value of an unknown &
-                     &minus a function of the position'
-             end if
-             e = e + 1
-             fixed_rows(e) = at((m - 1) * ncells + c) + this % rule % offset_of_field(f) + degree + 1
-             fixed(e)      = given
+             call face_relation(this % condition(j) % equation(i), this % points % design_values(), &
+                  & this % points % position(this % points % point_of(instant, c)), fields, degrees, slopes, given, &
+                  & row_field, row_degree)
+             base = at((m - 1) * ncells + c)
+             do k = 1, size(fields)
+                e = e + 1
+                rows(e)      = base + this % rule % offset_of_field(row_field) + row_degree + 1
+                columns(e)   = base + this % rule % offset_of_field(fields(k)) + degrees(k) + 1
+                weights(e)   = slopes(k)
+                constants(e) = -given
+             end do
           end do
        end do
     end do
 
-  end subroutine fixed_rows_of
+  end subroutine face_rows_of
+
+  !===================================================================!
+  ! A face condition as an affine relation: the parent fields and the
+  ! degrees along time of the components it reads, the coefficient of
+  ! each, given = -g at zero state so that the relation is sum of
+  ! slopes times components = given, and the field and degree of the
+  ! component it determines: the one of coefficient +1 or -1 of the
+  ! last field declared among those with such a coefficient - the
+  ! adjoint's, declared after the state, at the far face - the
+  ! relation negated when the coefficient is -1. Invalid input: no
+  ! component of coefficient +1 or -1, or several of the same field.
+  !===================================================================!
+
+  subroutine face_relation(equation, values, position, fields, degrees, slopes, given, row_field, row_degree)
+
+    type(continuous_field), intent(in)  :: equation
+    real(dp)              , intent(in)  :: values(:), position(:)
+    integer , allocatable , intent(out) :: fields(:), degrees(:)
+    real(dp), allocatable , intent(out) :: slopes(:)
+    real(dp)              , intent(out) :: given
+    integer               , intent(out) :: row_field, row_degree
+
+    type(expression) :: g
+    integer , allocatable :: reads(:)
+    real(dp), allocatable :: q(:), grad(:)
+    real(dp) :: value, sign
+    integer :: k, f, i, comp, units
+
+    g = equation % graph(1)
+    call g % read_components(reads)
+    if (size(reads) < 1) then
+       error stop 'operation_residual: a condition on a face reads a component of the parent unknowns'
+    end if
+    allocate(q(0:g % num_components() - 1), grad(0:g % num_components() - 1), source=0.0_dp)
+    call g % gradient_at(q, values, value, grad, position)
+    given = -value
+    allocate(fields(size(reads)), degrees(size(reads)), slopes(size(reads)))
+    units     = 0
+    row_field = 0
+    do k = 1, size(reads)
+       comp = reads(k)
+       f = 0
+       do i = 1, g % num_fields() - g % num_multipliers()
+          if (comp >= g % offset_of_field(i) .and. comp <= g % offset_of_field(i) + g % degree_of_field(i)) f = i
+       end do
+       if (f == 0) then
+          error stop 'operation_residual: a condition on a face reads the values of the unknowns and their &
+               &derivatives along time'
+       end if
+       fields(k)  = f
+       degrees(k) = comp - g % offset_of_field(f)
+       slopes(k)  = grad(comp)
+       if (abs(abs(slopes(k)) - 1.0_dp) <= 1.0e-12_dp) then
+          if (f > row_field) then
+             row_field  = f
+             row_degree = degrees(k)
+             sign       = slopes(k)
+             units      = 1
+          else if (f == row_field) then
+             units = units + 1
+          end if
+       end if
+    end do
+    if (row_field == 0 .or. units /= 1) then
+       error stop 'operation_residual: a condition on a face determines one component, read with coefficient &
+            &+1 or -1, of the last field declared among those so read'
+    end if
+    slopes = slopes / sign
+    given  = given / sign
+
+  end subroutine face_relation
 
   ! the instant of a face at a time of the interval
   integer function face_instant(this, time)

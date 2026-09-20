@@ -26,6 +26,7 @@ module operation_field
   use util_derivative_terms, only : derivative_terms, coefficient, symmetric_terms
   use operation_expression, only : expression, unknown, constant, coordinate, derivative, derivative_along, design
   use operation_expression, only : partial_derivative, partial_in_design, total_derivative, stationarity
+  use operation_expression, only : boundary_terms
   use operation_expression, only : FIRST_COORDINATE
   use operation_expression, only : operator(+), operator(-), operator(*), operator(/), operator(**)
   use operation_expression, only : sin, cos, exp, log, sqrt
@@ -175,6 +176,7 @@ module operation_field
      procedure :: derivative     => field_derivative
      procedure :: partial        => field_partial
      procedure :: stationarity   => field_stationarity
+     procedure :: boundary_terms => field_boundary_terms
      procedure :: discretize     => field_discretize
      procedure :: at             => field_at
      procedure :: differential   => field_differential
@@ -969,6 +971,43 @@ contains
     d % component = [stationarity(this % component(1), in % index(1), along % coordinate)]
 
   end function field_stationarity
+
+  !===================================================================!
+  ! THE BOUNDARY TERMS of the stationarity of a scalar field in an
+  ! unknown along a coordinate: the fields whose vanishing at the far
+  ! end of the coordinate are the natural conditions of the
+  ! stationarity of the integral, one per order of the unknown below
+  ! the highest, terms(k + 1) the coefficient of the variation of the
+  ! k-th derivative. Invalid input as for the stationarity.
+  !===================================================================!
+
+  function field_boundary_terms(this, in, along) result(terms)
+
+    class(continuous_field), intent(in) :: this
+    type(continuous_field) , intent(in) :: in, along
+    type(continuous_field), allocatable :: terms(:)
+
+    type(expression), allocatable :: graphs(:)
+    integer :: k
+
+    if (size(this % component) /= 1) then
+       error stop 'operation_field: the boundary terms are of a scalar field'
+    end if
+    if (size(in % component) /= 1 .or. in % index(1) < 1) then
+       error stop 'operation_field: the boundary terms are in a scalar unknown of the manifold'
+    end if
+    if (along % design_coordinate .or. along % coordinate < 1) then
+       error stop 'operation_field: the boundary terms are along a coordinate of time or space'
+    end if
+    graphs = boundary_terms(this % component(1), in % index(1), along % coordinate)
+    allocate(terms(size(graphs)))
+    do k = 1, size(graphs)
+       terms(k) = this
+       terms(k) % index = [0]
+       terms(k) % component = [graphs(k)]
+    end do
+
+  end function field_boundary_terms
 
   !===================================================================!
   ! THE DISCRETE IMAGE: the field sampled at the points. Invalid

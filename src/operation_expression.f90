@@ -98,7 +98,7 @@ module operation_expression
   public :: expression
   public :: unknown, design, constant, multiplier, coordinate, derivative, derivative_along
   public :: euler_lagrange, at_zero
-  public :: partial_derivative, partial_in_design, total_derivative, stationarity
+  public :: partial_derivative, partial_in_design, total_derivative, stationarity, boundary_terms
   public :: operator(+), operator(-), operator(*), operator(/), operator(**)
   public :: sin, cos, exp, log, sqrt
 
@@ -789,6 +789,52 @@ contains
     end do
 
   end function stationarity
+
+  !===================================================================!
+  ! THE BOUNDARY TERMS of the stationarity of the integral of x in
+  ! the field along a coordinate: the first variation, integrated by
+  ! parts, leaves at the far end of the coordinate the sum over k of
+  ! terms(k + 1) times the variation of the k-th derivative of the
+  ! field, terms(k + 1) = sum over o > k of (-1)^(o - k - 1) times the
+  ! (o - k - 1)-th total derivative of the partial in the component
+  ! of order o. At the near end the same terms enter with the
+  ! opposite sign. Where no datum fixes the field's k-th derivative,
+  ! terms(k + 1) = 0 is the natural condition there.
+  !===================================================================!
+
+  function boundary_terms(x, field, along) result(terms)
+
+    type(expression), intent(in) :: x
+    integer         , intent(in) :: field
+    integer         , intent(in), optional :: along
+    type(expression), allocatable :: terms(:)
+
+    type(expression) :: term
+    integer :: c, o, k, i, top
+
+    c = FIRST_COORDINATE
+    if (present(along)) c = along
+    if (field < 1 .or. field > x % fields) then
+       error stop 'operation_expression: the boundary terms are in a field the expression reads'
+    end if
+    top = max(0, x % highest_degree_along(c, field))
+    allocate(terms(top))
+    do k = 0, top - 1
+       terms(k + 1) = constant(0.0_dp)
+       do o = k + 1, top
+          term = partial_derivative(x, field, o, c)
+          do i = 1, o - k - 1
+             term = total_derivative(term, c)
+          end do
+          if (mod(o - k - 1, 2) == 0) then
+             terms(k + 1) = sum_of(terms(k + 1), term)
+          else
+             terms(k + 1) = difference_of(terms(k + 1), term)
+          end if
+       end do
+    end do
+
+  end function boundary_terms
 
   function applied(a, kind, order, coefficient) result(this)
 

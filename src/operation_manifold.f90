@@ -27,6 +27,7 @@ module operation_manifold
   use token_identity      , only : token, next_token
   use operation_field     , only : continuous_support, discrete_support, continuous_field
   use operation_field     , only : unknown_field, coordinate_field
+  use operation_field     , only : WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR
   use view_mesh           , only : mesh, values_of
   use view_mesh_builder   , only : mesh_from_gmsh
 
@@ -36,8 +37,6 @@ module operation_manifold
   public :: continuous_manifold, discrete_manifold
   public :: interval, region, instants, mesh
 
-  ! the parts a manifold can be of another
-  integer, parameter :: WHOLE = 0, TIME_FACE = 1, TIME_FACTOR = 2, SPACE_FACTOR = 3
   integer, parameter :: MAX_NAME = 32
 
   type :: interval
@@ -75,9 +74,7 @@ module operation_manifold
      logical        :: with_space = .false.
      type(interval) :: span
      type(region)   :: geometry
-     integer        :: part      = WHOLE
      real(dp)       :: face_time = 0.0_dp
-     type(token)    :: parent
      integer        :: num_unknowns = 0
      character(len=MAX_NAME), allocatable :: unknown_name(:)
 
@@ -117,6 +114,7 @@ module operation_manifold
      procedure :: num_coordinates => discrete_num_coordinates
      procedure :: position        => discrete_position
      procedure :: measure         => discrete_measure
+     procedure :: design_factor   => discrete_design_factor
      procedure :: num_instants
      procedure :: num_cells
      procedure :: step
@@ -460,6 +458,21 @@ contains
     class(discrete_manifold), intent(in) :: this
     discrete_num_coordinates = merge(1, 0, this % with_time) + this % dimension
   end function discrete_num_coordinates
+
+  !===================================================================!
+  ! The discretization of the design factor: without a design
+  ! coordinate, the one point of measure one, on which a functional
+  ! of the solution takes its value.
+  !===================================================================!
+
+  function discrete_design_factor(this) result(factor)
+    class(discrete_manifold), intent(in) :: this
+    class(discrete_support), allocatable :: factor
+    type(discrete_manifold) :: point
+    associate (u1 => this); end associate
+    point % identity = next_token()
+    allocate(factor, source=point)
+  end function discrete_design_factor
 
   ! the point of instant k and cell c: instant outer, cell inner
   pure integer function point_of(this, k, c)

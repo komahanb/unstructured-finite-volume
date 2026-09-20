@@ -34,6 +34,10 @@ module operation_field
   public :: continuous_support, discrete_support
   public :: continuous_field, discrete_field
   public :: unknown_field, coordinate_field, integral
+  public :: WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR
+
+  ! the parts a support can be of another
+  integer, parameter :: WHOLE = 0, TIME_FACE = 1, TIME_FACTOR = 2, SPACE_FACTOR = 3
   public :: operator(+), operator(-), operator(*), operator(/), operator(**)
   public :: sin, cos, exp, log, sqrt
 
@@ -45,6 +49,11 @@ module operation_field
   type, abstract :: continuous_support
 
      type(token) :: identity
+     ! the part of another support this one is - the whole, the face
+     ! at an instant, the time factor, the space factor - and the
+     ! identity of that parent
+     integer     :: part = WHOLE
+     type(token) :: parent
 
    contains
 
@@ -62,10 +71,19 @@ module operation_field
      procedure(count_interface)   , deferred :: num_coordinates
      procedure(position_interface), deferred :: position
      procedure(measure_interface) , deferred :: measure
+     procedure(factor_interface)  , deferred :: design_factor
 
   end type discrete_support
 
   abstract interface
+
+     ! the discretization of the design factor of the support: the
+     ! points a functional of the solution takes its values on
+     function factor_interface(this) result(factor)
+       import :: discrete_support
+       class(discrete_support), intent(in) :: this
+       class(discrete_support), allocatable :: factor
+     end function factor_interface
 
      pure integer function count_interface(this)
        import :: discrete_support
@@ -95,7 +113,8 @@ module operation_field
   ! on its manifold and its arguments, the names of the coordinates
   ! it is a function of; a coordinate function has the coordinate it
   ! is, and is its own argument; an integral has the identity of the
-  ! factor it runs over.
+  ! factor it runs over, which part of its parent that factor is, and
+  ! the parent's identity.
   !===================================================================!
 
   type :: continuous_field
@@ -107,11 +126,15 @@ module operation_field
      integer, allocatable :: index(:)
      integer :: coordinate = 0
      type(token) :: integrated_over
+     integer     :: integrated_part = WHOLE
+     type(token) :: integrated_parent
 
    contains
 
      procedure :: derivative     => field_derivative
      procedure :: discretize     => field_discretize
+     procedure :: at             => field_at
+     procedure :: differential   => field_differential
      procedure :: num_components => field_num_components
      procedure :: graph          => field_graph
      procedure :: is_unknown
@@ -127,7 +150,10 @@ module operation_field
 
   !===================================================================!
   ! THE DISCRETE FIELD: its support, and one value per point and
-  ! component.
+  ! component. The solution of a residual also stores the jet at
+  ! every point - the value and the derivatives of every unknown, as
+  ! the residual's rule lays them out - so that a functional of the
+  ! solution reads the derivatives the residual formed.
   !===================================================================!
 
   type :: discrete_field
@@ -135,6 +161,8 @@ module operation_field
      class(discrete_support), allocatable :: on
      character(len=32), allocatable :: name(:)
      real(dp), allocatable :: value(:,:)
+     real(dp), allocatable :: jet(:,:)
+     type(expression), allocatable :: rule
 
    contains
 
@@ -299,8 +327,8 @@ contains
 
   !===================================================================!
   ! The integral of a field over a factor of its manifold: the field,
-  ! marked with the factor's identity. The discrete residual sums it
-  ! over the points of that factor.
+  ! marked with the factor's identity, its part and its parent. The
+  ! discrete residual sums it over the points of that factor.
   !===================================================================!
 
   function integral(f, over) result(this)
@@ -310,9 +338,142 @@ contains
     type(continuous_field) :: this
 
     this = f
-    this % integrated_over = over % identity
+    this % integrated_over   = over % identity
+    this % integrated_part   = over % part
+    this % integrated_parent = over % parent
 
   end function integral
+
+  !===================================================================!
+  ! THE VALUE OF A FUNCTIONAL ON A SOLUTION: the integral over the
+  ! points of the support, with their measure, of the integrand
+  ! evaluated on the jet at each point; a field on the design factor
+  ! of the support. The differential is its gradient in the jet at
+  ! every point, in the layout of the solution's rule: the source of
+  ! the adjoint equation. Invalid input: a field that is not a scalar
+  ! integral, a solution without a jet, or an integrand reading a
+  ! derivative the rule does not store.
+  !===================================================================!
+
+  function field_at(this, solution) result(functional)
+
+    class(continuous_field), intent(in) :: this
+    type(discrete_field)   , intent(in) :: solution
+    type(discrete_field) :: functional
+
+    real(dp) :: total
+    real(dp), allocatable :: gradient(:,:)
+
+    call functional_over(this, solution, total, gradient)
+    functional = discrete_field(solution % on % design_factor(), reshape([total], [1, 1]), &
+         & [character(len=1) :: ''])
+
+  end function field_at
+
+  subroutine field_differential(this, solution, gradient)
+
+    class(continuous_field), intent(in)  :: this
+    type(discrete_field)   , intent(in)  :: solution
+    real(dp), allocatable  , intent(out) :: gradient(:,:)
+
+    real(dp) :: total
+
+    call functional_over(this, solution, total, gradient)
+
+  end subroutine field_differential
+
+  subroutine functional_over(this, solution, total, gradient)
+
+    class(continuous_field), intent(in)  :: this
+    type(discrete_field)   , intent(in)  :: solution
+    real(dp)               , intent(out) :: total
+    real(dp), allocatable  , intent(out) :: gradient(:,:)
+
+    real(dp), allocatable :: q(:), g(:)
+    integer , allocatable :: slot(:)
+    real(dp) :: value, measure
+    integer :: p, k
+
+    if (.not. this % is_integral()) then
+       error stop 'operation_field: a functional is the integral of a field over its manifold'
+    end if
+    if (size(this % component) /= 1) then
+       error stop 'operation_field: a functional is a scalar field'
+    end if
+    if (.not. (allocated(solution % jet) .and. allocated(solution % rule))) then
+       error stop 'operation_field: a functional is evaluated on the solution of a residual, which &
+            &stores the jet at every point'
+    end if
+    call jet_slots(this % component(1), solution % rule, slot)
+    allocate(q(0:size(slot) - 1), g(0:size(slot) - 1))
+    allocate(gradient(size(solution % jet, 1), size(solution % jet, 2)), source=0.0_dp)
+    total = 0.0_dp
+    do p = 1, size(solution % jet, 2)
+       do k = 0, size(slot) - 1
+          q(k) = solution % jet(slot(k), p)
+       end do
+       call this % component(1) % gradient_at(q, 0.0_dp, value, g, solution % on % position(p))
+       measure = solution % on % measure(p)
+       total   = total + measure * value
+       do k = 0, size(slot) - 1
+          gradient(slot(k), p) = gradient(slot(k), p) + measure * g(k)
+       end do
+    end do
+
+  end subroutine functional_over
+
+  !===================================================================!
+  ! The slot in the rule's jet of each component an expression reads:
+  ! the value and the derivatives along the first coordinate of each
+  ! field, then its derivatives along each later coordinate, the two
+  ! expressions laying their tuples out by their own degrees. A field
+  ! or a derivative the expression reads and the rule does not store
+  ! is invalid input.
+  !===================================================================!
+
+  subroutine jet_slots(g, rule, slot)
+
+    type(expression), intent(in)  :: g, rule
+    integer, allocatable, intent(out) :: slot(:)
+
+    integer :: f, d, c, o, fields
+    character(len=250) :: message
+
+    allocate(slot(0:g % num_components() - 1), source=0)
+    fields = rule % num_fields() - rule % num_multipliers()
+    do f = 1, g % num_fields() - g % num_multipliers()
+       if (f > fields) then
+          write(message,'(a,i0,a,i0)') 'operation_field: the functional reads unknown ', f, &
+               & ' and the rule stores ', fields
+          error stop trim(message)
+       end if
+       if (g % degree_of_field(f) > rule % degree_of_field(f)) then
+          write(message,'(a,i0,a,i0,a,i0)') 'operation_field: the functional reads the derivative of order ', &
+               & g % degree_of_field(f), ' of unknown ', f, ' along the first coordinate, and the rule &
+               &stores the order ', rule % degree_of_field(f)
+          error stop trim(message)
+       end if
+       do d = 0, g % degree_of_field(f)
+          slot(g % offset_of_field(f) + d) = rule % offset_of_field(f) + d + 1
+       end do
+       do c = FIRST_COORDINATE + 1, g % num_coordinates()
+          if (c > rule % num_coordinates()) then
+             write(message,'(a,i0)') 'operation_field: the functional reads a derivative along coordinate ', c
+             error stop trim(message) // ', which the rule does not read'
+          end if
+          if (g % degree_along(c) > rule % degree_along(c)) then
+             write(message,'(a,i0,a,i0,a,i0)') 'operation_field: the functional reads the derivative of order ', &
+                  & g % degree_along(c), ' along coordinate ', c, ', and the rule stores the order ', &
+                  & rule % degree_along(c)
+             error stop trim(message)
+          end if
+          do o = 1, g % degree_along(c)
+             slot(g % component_at(c, o, f)) = rule % component_at(c, o, f) + 1
+          end do
+       end do
+    end do
+
+  end subroutine jet_slots
 
   pure integer function field_num_components(this)
     class(continuous_field), intent(in) :: this
@@ -495,8 +656,10 @@ contains
   end subroutine values
 
   !===================================================================!
-  ! The components named, in the order named. A name not present
-  ! stops the program.
+  ! The components named, in the order named, every component of a
+  ! name in its order - the components of a multiplier share its
+  ! name. The jet is retained. A name not present stops the
+  ! program.
   !===================================================================!
 
   function fields(this, names) result(chosen)
@@ -505,21 +668,40 @@ contains
     character(len=*)     , intent(in) :: names(:)
     type(discrete_field) :: chosen
 
-    integer :: k, j, at
+    integer :: k, j, count
 
     allocate(chosen % on, source=this % on)
-    allocate(chosen % name(size(names)), chosen % value(size(this % value, 1), size(names)))
+    count = 0
     do k = 1, size(names)
-       at = 0
-       do j = 1, size(this % name)
-          if (trim(this % name(j)) == trim(names(k))) at = j
-       end do
-       if (at == 0) then
+       count = count + count_named(names(k))
+    end do
+    allocate(chosen % name(count), chosen % value(size(this % value, 1), count))
+    count = 0
+    do k = 1, size(names)
+       if (count_named(names(k)) == 0) then
           error stop 'operation_field: fields names a component the field does not have: ' // trim(names(k))
        end if
-       chosen % name(k)     = this % name(at)
-       chosen % value(:, k) = this % value(:, at)
+       do j = 1, size(this % name)
+          if (trim(this % name(j)) == trim(names(k))) then
+             count = count + 1
+             chosen % name(count)     = this % name(j)
+             chosen % value(:, count) = this % value(:, j)
+          end if
+       end do
     end do
+    if (allocated(this % jet))  chosen % jet  = this % jet
+    if (allocated(this % rule)) chosen % rule = this % rule
+
+  contains
+
+    pure integer function count_named(name)
+      character(len=*), intent(in) :: name
+      integer :: j
+      count_named = 0
+      do j = 1, size(this % name)
+         if (trim(this % name(j)) == trim(name)) count_named = count_named + 1
+      end do
+    end function count_named
 
   end function fields
 

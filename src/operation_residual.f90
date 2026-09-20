@@ -58,7 +58,7 @@ module operation_residual
   use operation_domain     , only : continuous_domain, discrete_domain
   use util_derivative_terms, only : max_subset_width, derivative_terms, mixed_partial
   use token_identity       , only : token
-  use operation_field      , only : continuous_field, discrete_field
+  use operation_field      , only : continuous_field, discrete_field, WHOLE, TIME_FACTOR, SPACE_FACTOR
   use operation_manifold   , only : continuous_manifold, discrete_manifold
   use operation_family     , only : family, chain
   use operation_weight     , only : scheme_weight
@@ -153,13 +153,17 @@ module operation_residual
   end interface residual_operator
 
   !===================================================================!
-  ! THE CONTINUOUS RESIDUAL: a sum of terms. A term is a list of
-  ! equations, each a scalar field, on one manifold; paired with a
-  ! multiplier, an unknown of that manifold with one component per
-  ! equation, declared by the term itself, the term contributes to
-  ! the Lagrangian the product of the two. The equations of a term on
-  ! a part of a manifold - a face at an instant, the time factor -
-  ! read the unknowns of the parent.
+  ! THE CONTINUOUS RESIDUAL: a sum of terms, and an objective. A term
+  ! is a list of equations, each a scalar field, on one manifold;
+  ! paired with a multiplier, an unknown of that manifold with one
+  ! component per equation, declared by the term itself, the term
+  ! contributes to the Lagrangian the product of the two. The
+  ! equations of a term on a part of a manifold - a face at an
+  ! instant, the time factor - read the unknowns of the parent. The
+  ! objective J, a scalar integral over the manifold, enters the
+  ! Lagrangian as a term of its own, L = J + lambda_r . r + lambda . g:
+  ! its stationarity in the state is the adjoint equation, and the
+  ! multipliers are the sensitivities of J to their equalities.
   !===================================================================!
 
   type :: residual_term
@@ -174,6 +178,7 @@ module operation_residual
   type :: continuous_residual
 
      type(residual_term), allocatable :: term(:)
+     type(continuous_field), allocatable :: objective
 
    contains
 
@@ -189,6 +194,7 @@ module operation_residual
 
   interface operator(+)
      module procedure residual_sum
+     module procedure objective_sum
   end interface operator(+)
 
   interface operator(*)
@@ -207,13 +213,23 @@ module operation_residual
   !
   ! A condition on a face at an instant must be affine in one value
   ! of a parent unknown with coefficient one, u - g = 0: it becomes the
-  ! fixed rows of that value at every cell of the instant, and its
-  ! multiplier, the reaction, is not stored. A condition on the time
-  ! factor must be the integral over the region of one parent unknown:
-  ! it becomes, at every moment, the prescribed row that the sum of
-  ! the cell volumes times the unknown vanishes, in place of that
-  ! unknown's own row at the first cell. Any other condition is
-  ! refused.
+  ! fixed rows of that value at every cell of the instant. A condition
+  ! on the time factor must be the integral over the region of one
+  ! parent unknown: it becomes, at every moment, the prescribed row
+  ! that the sum of the cell volumes times the unknown vanishes, in
+  ! place of that unknown's own row at the first cell. Any other
+  ! condition is refused.
+  !
+  ! THE ADJOINT. With the equations paired with a multiplier, minimize
+  ! follows the forward sweep over the blocks by a reverse sweep: each
+  ! block's jacobian at its solution, transposed, determines the
+  ! multipliers of the block's rows from the differential of the
+  ! objective and the multipliers the later blocks pass back through
+  ! the block's history instants. The multiplier of each equation at
+  ! each instant is returned under the name the term declared, and
+  ! the multiplier of each face condition, the reaction, under its
+  ! own name at the face's points; the multiplier of a condition on
+  ! the time factor is not returned.
   !===================================================================!
 
   type :: discrete_residual
@@ -226,6 +242,9 @@ module operation_residual
      class(derivative_approximation), allocatable :: differences
      logical                   :: with_differences = .false.
      type(residual_term), allocatable :: condition(:)
+     type(continuous_field), allocatable :: objective
+     logical                   :: with_adjoint = .false.
+     character(len=32)         :: adjoint_name = ''
 
    contains
 
@@ -1409,8 +1428,40 @@ contains
     type(continuous_residual) :: this
 
     this % term = [a % term, b % term]
+    if (allocated(a % objective) .and. allocated(b % objective)) then
+       error stop 'operation_residual: one objective enters the Lagrangian'
+    end if
+    if (allocated(a % objective)) this % objective = a % objective
+    if (allocated(b % objective)) this % objective = b % objective
 
   end function residual_sum
+
+  !===================================================================!
+  ! The objective added to a residual, J + lambda . r: a scalar
+  ! field, the integral of a function of the state over the
+  ! manifold. Invalid input: a field that is not an integral or not
+  ! scalar, or a residual with an objective already.
+  !===================================================================!
+
+  function objective_sum(objective, residual) result(this)
+
+    type(continuous_field)   , intent(in) :: objective
+    type(continuous_residual), intent(in) :: residual
+    type(continuous_residual) :: this
+
+    if (.not. objective % is_integral()) then
+       error stop 'operation_residual: the objective is the integral of a field over the manifold'
+    end if
+    if (objective % num_components() /= 1) then
+       error stop 'operation_residual: the objective is a scalar field'
+    end if
+    if (allocated(residual % objective)) then
+       error stop 'operation_residual: one objective enters the Lagrangian'
+    end if
+    this = residual
+    this % objective = objective
+
+  end function objective_sum
 
   !===================================================================!
   ! THE MULTIPLIER of a term: an unknown of the term's manifold with
@@ -1487,21 +1538,19 @@ contains
     class(derivative_approximation), intent(in), optional :: space
     type(discrete_residual) :: image
 
-    integer :: k, j, whole, num_conditions
+    integer :: k, j, whole_term, num_conditions, nf
+    logical :: covering
     character(len=250) :: message
 
-    whole = 0
+    whole_term = 0
     num_conditions = 0
     do k = 1, size(this % term)
        associate (t => this % term(k))
-         if (t % manifold % part == 0) then
-            if (t % paired) then
-               error stop 'operation_residual: the equations on the whole manifold are not paired with a multiplier'
-            end if
-            if (whole /= 0) then
+         if (t % manifold % part == WHOLE) then
+            if (whole_term /= 0) then
                error stop 'operation_residual: one term states the equations on the whole manifold'
             end if
-            whole = k
+            whole_term = k
          else
             if (.not. t % paired) then
                error stop 'operation_residual: a condition on a part of the manifold is paired with a multiplier'
@@ -1510,20 +1559,29 @@ contains
          end if
        end associate
     end do
-    if (whole == 0) then
+    if (whole_term == 0) then
        error stop 'operation_residual: no term states the equations on the whole manifold'
     end if
 
-    associate (t => this % term(whole))
+    associate (t => this % term(whole_term))
       if (.not. points % identity % matches(t % manifold % identity)) then
          error stop 'operation_residual: the points discretize another manifold than the equations'' own'
       end if
-      if (size(t % equation) /= t % manifold % num_unknowns) then
+      ! the unknowns of the state: every unknown of the manifold but
+      ! the multiplier of the equations, declared after them
+      nf = t % manifold % num_unknowns
+      if (t % paired) nf = nf - t % multiplier % num_components()
+      if (size(t % equation) /= nf) then
          write(message,'(a,i0,a,i0)') 'operation_residual: one equation is required per unknown of the &
-              &manifold; equations = ', size(t % equation), ', unknowns = ', t % manifold % num_unknowns
+              &manifold, its multiplier aside; equations = ', size(t % equation), ', unknowns = ', nf
          error stop trim(message)
       end if
       image % manifold = t % manifold
+      image % manifold % num_unknowns = nf
+      if (t % paired) then
+         image % with_adjoint = .true.
+         image % adjoint_name = t % multiplier % name
+      end if
       ! the Lagrangian of the equations: its stationarity in the j-th
       ! multiplier is the j-th equation, the row of the j-th unknown
       image % rule = multiplier(1) * t % equation(1) % graph(1)
@@ -1535,13 +1593,40 @@ contains
     allocate(image % condition(num_conditions))
     j = 0
     do k = 1, size(this % term)
-       if (k == whole) cycle
+       if (k == whole_term) cycle
        j = j + 1
        image % condition(j) = this % term(k)
        if (.not. image % condition(j) % manifold % parent % matches(image % manifold % identity)) then
           error stop 'operation_residual: a condition is stated on a part of another manifold'
        end if
     end do
+
+    ! the objective covers the points: the integral over the whole
+    ! manifold, or over the one factor of a manifold of time or of
+    ! space alone
+    if (allocated(this % objective)) then
+       covering = .false.
+       select case (this % objective % integrated_part)
+       case (WHOLE)
+          covering = this % objective % integrated_over % matches(image % manifold % identity)
+       case (TIME_FACTOR)
+          covering = this % objective % integrated_parent % matches(image % manifold % identity) &
+               & .and. .not. points % with_space
+       case (SPACE_FACTOR)
+          covering = this % objective % integrated_parent % matches(image % manifold % identity) &
+               & .and. .not. points % with_time
+       end select
+       if (.not. covering) then
+          error stop 'operation_residual: the objective is integrated over the whole manifold, or over the &
+               &one factor of a manifold of time or of space alone; a face, or a factor of a product, &
+               &does not cover the points'
+       end if
+       if (.not. image % with_adjoint) then
+          error stop 'operation_residual: an objective requires the equations paired with a multiplier, &
+               &the adjoint, whose equation is the stationarity of the Lagrangian in the state'
+       end if
+       image % objective = this % objective
+    end if
 
     image % points = points
     if (points % with_time .neqv. present(time)) then
@@ -1580,9 +1665,10 @@ contains
     type(discrete_field)    , intent(in)  :: estimate
     type(discrete_field)    , intent(out) :: solution
 
-    real(dp), allocatable :: tuple(:,:,:), value(:,:)
+    real(dp), allocatable :: tuple(:,:,:), stages(:,:,:,:), value(:,:), jet(:,:), adjoint(:,:,:), reaction(:,:)
+    character(len=32), allocatable :: names(:)
     type(stencil), allocatable :: rows_along(:,:)
-    integer :: stride, nf, ncells, ninst, f, c, k, b, first, last, depth, nb, top, o
+    integer :: stride, nf, ncells, ninst, f, c, k, b, first, last, depth, nb, top, o, npts, nc, j
     character(len=250) :: message
 
     stride = this % rule % num_components()
@@ -1630,6 +1716,13 @@ contains
 
     if (this % with_chain) then
        nb = this % schemes % num_blocks()
+       ! the stages of the step into each instant, one set per family
+       ! that marches by stages, retained for the adjoint
+       top = 1
+       do b = 1, nb
+          top = max(top, this % schemes % scheme(b) % num_stages())
+       end do
+       allocate(stages(stride, ncells, top, ninst), source=0.0_dp)
        do b = 1, nb
           first = this % schemes % from(b)
           last  = ninst
@@ -1641,23 +1734,123 @@ contains
                   & ' instants of history before instant ', first
              error stop trim(message)
           end if
-          call solve_block(this, this % schemes % scheme(b), first - depth, last, depth, rows_along, tuple)
+          call solve_block(this, this % schemes % scheme(b), first - depth, last, depth, rows_along, tuple, stages)
        end do
     else
        call solve_point(this, tuple)
     end if
 
-    allocate(value(this % points % num_points(), nf))
+    ! THE SOLUTION: the state at every point, with the jet the rule
+    ! lays out; with the equations paired, the multipliers of every
+    ! equality of L_h by the reverse sweep - each equation's under
+    ! the name its term declared, each face condition's under its
+    ! multiplier's name at the face's points
+    npts = this % points % num_points()
+    nc = 0
+    if (this % with_adjoint) then
+       do j = 1, size(this % condition)
+          if (this % condition(j) % manifold % is_face()) nc = nc + size(this % condition(j) % equation)
+       end do
+    end if
+    allocate(value(npts, nf + merge(nf + nc, 0, this % with_adjoint)), source=0.0_dp)
+    allocate(names(size(value, 2)), jet(stride, npts))
+    names(1:nf) = this % manifold % unknown_name(1:nf)
     do k = 1, ninst
        do c = 1, ncells
           do f = 1, nf
              value(this % points % point_of(k, c), f) = tuple(this % rule % offset_of_field(f) + 1, c, k)
           end do
+          jet(:, this % points % point_of(k, c)) = tuple(:, c, k)
        end do
     end do
-    solution = discrete_field(this % points, value, this % manifold % unknown_name(1:nf))
+
+    if (this % with_adjoint) then
+       solution = discrete_field(this % points, value(:, 1:nf), names(1:nf))
+       solution % jet  = jet
+       solution % rule = this % rule
+       call adjoint_sweep(this, rows_along, tuple, stages, solution, adjoint, reaction)
+       names(nf + 1:2 * nf) = this % adjoint_name
+       do k = 1, ninst
+          do c = 1, ncells
+             value(this % points % point_of(k, c), nf + 1:2 * nf) = adjoint(:, c, k)
+          end do
+       end do
+       nc = 0
+       do j = 1, size(this % condition)
+          if (.not. this % condition(j) % manifold % is_face()) cycle
+          k = face_instant(this, this % condition(j) % manifold % face_time)
+          do f = 1, size(this % condition(j) % equation)
+             nc = nc + 1
+             names(2 * nf + nc) = this % condition(j) % multiplier % name
+             do c = 1, ncells
+                value(this % points % point_of(k, c), 2 * nf + nc) = reaction(c, nc)
+             end do
+          end do
+       end do
+    end if
+
+    solution = discrete_field(this % points, value, names)
+    solution % jet  = jet
+    solution % rule = this % rule
 
   end subroutine minimize
+
+  !===================================================================!
+  ! THE REVERSE SWEEP: the multipliers of every row of L_h, block by
+  ! block from the last, each block's transposed jacobian at its
+  ! solution; the differential of the objective in the jet is the
+  ! source. adjoint(f, c, k) is the multiplier of equation f at cell
+  ! c and instant k; reaction(c, e) the multiplier of the e-th face
+  ! condition equation at cell c. A residual without a chain has no
+  ! blocks to sweep, and is refused.
+  !===================================================================!
+
+  subroutine adjoint_sweep(this, rows_along, tuple, stages, solution, adjoint, reaction)
+
+    class(discrete_residual), intent(in)  :: this
+    type(stencil)           , intent(in)  :: rows_along(:,:)
+    real(dp)                , intent(in)  :: tuple(:,:,:), stages(:,:,:,:)
+    type(discrete_field)    , intent(in)  :: solution
+    real(dp), allocatable   , intent(out) :: adjoint(:,:,:), reaction(:,:)
+
+    real(dp), allocatable :: gradient(:,:), incoming(:,:,:)
+    integer :: stride, nf, ncells, ninst, nc, j, b, nb, first, last, depth
+
+    stride = this % rule % num_components()
+    nf     = this % manifold % num_unknowns
+    ncells = this % points % num_cells()
+    ninst  = this % points % num_instants()
+
+    if (.not. this % with_chain) then
+       error stop 'operation_residual: the adjoint is formed by a reverse sweep over the blocks of a &
+            &chain; a manifold without a time coordinate has none'
+    end if
+
+    if (allocated(this % objective)) then
+       call this % objective % differential(solution, gradient)
+    else
+       allocate(gradient(stride, this % points % num_points()), source=0.0_dp)
+    end if
+
+    nc = 0
+    do j = 1, size(this % condition)
+       if (this % condition(j) % manifold % is_face()) nc = nc + size(this % condition(j) % equation)
+    end do
+    allocate(adjoint(nf, ncells, ninst), incoming(stride, ncells, ninst), source=0.0_dp)
+    allocate(reaction(ncells, nc), source=0.0_dp)
+
+    nb = this % schemes % num_blocks()
+    do b = nb, 1, -1
+       first = this % schemes % from(b)
+       last  = ninst
+       if (b < nb) last = this % schemes % from(b + 1) - 1
+       depth = 0
+       if (b > 1) depth = this % schemes % scheme(b) % history_depth(top_degree(this % rule, nf))
+       call adjoint_block(this, this % schemes % scheme(b), first - depth, last, depth, rows_along, tuple, &
+            & stages, gradient, adjoint, incoming, reaction)
+    end do
+
+  end subroutine adjoint_sweep
 
   pure integer function top_degree(rule, nf)
     type(expression), intent(in) :: rule
@@ -1689,28 +1882,38 @@ contains
   end function marches_by_stages
 
   !===================================================================!
-  ! ONE BLOCK: the instants first..last, the first `depth` of them
-  ! known from the block before, the stages between consecutive
+  ! ONE BLOCK'S ROWS: the instants first..last, the first `depth` of
+  ! them known from the block before, the stages between consecutive
   ! instants when the family marches by stages. The unknown vector
   ! lists the moments in time order, each moment's cells in order,
-  ! each cell's tuple of stride components.
+  ! each cell's tuple of stride components: at((m - 1) ncells + c) is
+  ! the offset of the tuple of moment m and cell c, instant_moment(k)
+  ! the moment of the block's k-th instant, primary(f) the row of
+  ! equation f within a tuple, and q the estimate - each instant's
+  ! tuple and, at a stage of the step into instant k + 1, the stage
+  ! stored at stages(:, c, i, k + 1) when the block was solved before,
+  ! the tuple of instant k otherwise.
   !===================================================================!
 
-  subroutine solve_block(this, scheme, first, last, depth, rows_along, tuple)
+  subroutine block_rows(this, scheme, first, last, depth, rows_along, tuple, stages, solved_stages, &
+       & rows, q, at, instant_moment, primary)
 
-    class(discrete_residual), intent(in)    :: this
-    type(family)            , intent(in)    :: scheme
-    integer                 , intent(in)    :: first, last, depth
-    type(stencil)           , intent(in)    :: rows_along(:,:)
-    real(dp)                , intent(inout) :: tuple(:,:,:)
+    class(discrete_residual), intent(in)  :: this
+    type(family)            , intent(in)  :: scheme
+    integer                 , intent(in)  :: first, last, depth
+    type(stencil)           , intent(in)  :: rows_along(:,:)
+    real(dp)                , intent(in)  :: tuple(:,:,:), stages(:,:,:,:)
+    logical                 , intent(in)  :: solved_stages
+    type(residual_operator) , intent(out) :: rows
+    real(dp), allocatable   , intent(out) :: q(:)
+    integer , allocatable   , intent(out) :: at(:), instant_moment(:), primary(:)
 
-    type(residual_operator) :: rows
     type(stencil) :: relations, gauge
     type(connectivity_graph) :: connectivity
-    integer , allocatable :: instant_moment(:), stage_moment(:,:), at(:), primary(:), fixed_rows(:)
+    integer , allocatable :: stage_moment(:,:), fixed_rows(:)
     integer , allocatable :: determined(:), source(:), gauge_rows(:), gauge_columns(:)
-    real(dp), allocatable :: weight(:), fixed(:), w(:), steps(:), q(:), gauge_weights(:), zeros(:)
-    integer :: stride, nf, ncells, n, s, nm, m, k, i, f, c, e, count, nd, v, width, unknowns, npts, p
+    real(dp), allocatable :: weight(:), fixed(:), w(:), steps(:), gauge_weights(:), zeros(:)
+    integer :: stride, nf, ncells, n, s, nm, m, k, i, f, c, e, count, nd, width, unknowns, npts
     integer :: comp, axis, o, j, ne, history_last
     logical :: staged
 
@@ -1718,11 +1921,6 @@ contains
     nf     = this % manifold % num_unknowns
     ncells = this % points % num_cells()
     n      = last - first + 1
-    if (verbosity >= 1) then
-       print '(a,a,a,i0,a,i0,a,es12.4,a,es12.4,a,i0,a)', 'block  ', trim(scheme % name()), '  instants ', first, &
-            & '..', last, '  t = ', this % points % instant(first), ' .. ', this % points % instant(last), &
-            & '  history ', depth, ' instants'
-    end if
     nd     = top_degree(this % rule, nf) + 1
     staged = marches_by_stages(scheme, nd)
     s      = 0
@@ -1867,24 +2065,24 @@ contains
        rows  = residual_operator(relations, this % rule, at, unknowns, stride, primary, fixed_rows, fixed)
     end if
 
-    ! the estimate: the tuple at each instant, a stage's the instant before it
+    ! the estimate: the tuple at each instant; at a stage of the step
+    ! into instant k + 1, the stage solved before when solved_stages,
+    ! the tuple of instant k otherwise
     allocate(q(unknowns))
     do k = 1, n
        do c = 1, ncells
           q(at_of(instant_moment(k), c) + 1:at_of(instant_moment(k), c) + stride) = tuple(:, c, first + k - 1)
           if (k < n .and. staged) then
              do i = 1, s
-                q(at_of(stage_moment(k, i), c) + 1:at_of(stage_moment(k, i), c) + stride) = tuple(:, c, first + k - 1)
+                if (solved_stages) then
+                   q(at_of(stage_moment(k, i), c) + 1:at_of(stage_moment(k, i), c) + stride) = &
+                        & stages(:, c, i, first + k)
+                else
+                   q(at_of(stage_moment(k, i), c) + 1:at_of(stage_moment(k, i), c) + stride) = &
+                        & tuple(:, c, first + k - 1)
+                end if
              end do
           end if
-       end do
-    end do
-
-    call solved(this, rows, unknowns, stride, npts, q)
-
-    do k = depth + 1, n
-       do c = 1, ncells
-          tuple(:, c, first + k - 1) = q(at_of(instant_moment(k), c) + 1:at_of(instant_moment(k), c) + stride)
        end do
     end do
 
@@ -1908,7 +2106,160 @@ contains
       end if
     end function moment_of
 
+  end subroutine block_rows
+
+  !===================================================================!
+  ! ONE BLOCK SOLVED: its rows formed at the tuples, Newton from the
+  ! estimate, the block's own instants written back.
+  !===================================================================!
+
+  subroutine solve_block(this, scheme, first, last, depth, rows_along, tuple, stages)
+
+    class(discrete_residual), intent(in)    :: this
+    type(family)            , intent(in)    :: scheme
+    integer                 , intent(in)    :: first, last, depth
+    type(stencil)           , intent(in)    :: rows_along(:,:)
+    real(dp)                , intent(inout) :: tuple(:,:,:), stages(:,:,:,:)
+
+    type(residual_operator) :: rows
+    real(dp), allocatable :: q(:)
+    integer , allocatable :: at(:), instant_moment(:), primary(:)
+    integer :: stride, ncells, n, k, c, base, i, s, width
+
+    stride = this % rule % num_components()
+    ncells = this % points % num_cells()
+    n      = last - first + 1
+    if (verbosity >= 1) then
+       print '(a,a,a,i0,a,i0,a,es12.4,a,es12.4,a,i0,a)', 'block  ', trim(scheme % name()), '  instants ', first, &
+            & '..', last, '  t = ', this % points % instant(first), ' .. ', this % points % instant(last), &
+            & '  history ', depth, ' instants'
+    end if
+
+    call block_rows(this, scheme, first, last, depth, rows_along, tuple, stages, .false., &
+         & rows, q, at, instant_moment, primary)
+    call solved(this, rows, size(q), stride, size(at), q)
+
+    ! the block's own instants, and the stages of every step, retained
+    ! for the adjoint, which linearizes the block at its solution
+    do k = depth + 1, n
+       do c = 1, ncells
+          base = at((instant_moment(k) - 1) * ncells + c)
+          tuple(:, c, first + k - 1) = q(base + 1:base + stride)
+       end do
+    end do
+    if (marches_by_stages(scheme, top_degree(this % rule, this % manifold % num_unknowns) + 1)) then
+       s     = scheme % num_stages()
+       width = stride * ncells
+       do k = 1, n - 1
+          do i = 1, s
+             ! the moments run instant, then the stages of the step, then the instant ahead
+             do c = 1, ncells
+                base = (instant_moment(k) + i - 1) * width + (c - 1) * stride
+                stages(:, c, i, first + k) = q(base + 1:base + stride)
+             end do
+          end do
+       end do
+    end if
+
   end subroutine solve_block
+
+  !===================================================================!
+  ! ONE BLOCK'S ADJOINT: the transposed linear system A^T mu = rhs at
+  ! the block's solution, A the block's jacobian; rhs at every
+  ! component of the block's own instants is the negative of the
+  ! objective's differential there plus the multipliers the later
+  ! blocks passed to the instant, and zero at the history instants.
+  ! mu at the row of an equation is the multiplier of that equation
+  ! at the instant; mu at the fixed row of a history instant is what
+  ! this block passes to the block that determines the instant; mu
+  ! at the fixed row of a face condition is the condition's
+  ! multiplier, the reaction.
+  !===================================================================!
+
+  subroutine adjoint_block(this, scheme, first, last, depth, rows_along, tuple, stages, gradient, adjoint, &
+       & incoming, reaction)
+
+    class(discrete_residual), intent(in)    :: this
+    type(family)            , intent(in)    :: scheme
+    integer                 , intent(in)    :: first, last, depth
+    type(stencil)           , intent(in)    :: rows_along(:,:)
+    real(dp)                , intent(in)    :: tuple(:,:,:), stages(:,:,:,:), gradient(:,:)
+    real(dp)                , intent(inout) :: adjoint(:,:,:), incoming(:,:,:), reaction(:,:)
+
+    type(residual_operator) :: rows, lin
+    type(newton) :: solver
+    type(stored_field), allocatable :: inputs(:)
+    real(dp), allocatable :: q(:), y(:), rhs(:), mu(:)
+    integer , allocatable :: at(:), instant_moment(:), primary(:)
+    integer :: stride, nf, ncells, n, k, c, f, base, unknowns, npts, m, j, i, instant, comp, degree, e
+
+    stride = this % rule % num_components()
+    nf     = this % manifold % num_unknowns
+    ncells = this % points % num_cells()
+    n      = last - first + 1
+    if (verbosity >= 1) then
+       print '(a,a,a,i0,a,i0,a,es12.4,a,es12.4)', 'adjoint  ', trim(scheme % name()), '  instants ', &
+            & first + depth, '..', last, '  t = ', this % points % instant(first + depth), ' .. ', &
+            & this % points % instant(last)
+    end if
+
+    call block_rows(this, scheme, first, last, depth, rows_along, tuple, stages, .true., &
+         & rows, q, at, instant_moment, primary)
+    unknowns = size(q)
+    npts     = size(at)
+
+    allocate(rhs(unknowns), source=0.0_dp)
+    do k = depth + 1, n
+       do c = 1, ncells
+          base = at((instant_moment(k) - 1) * ncells + c)
+          rhs(base + 1:base + stride) = -gradient(:, this % points % point_of(first + k - 1, c)) &
+               & + incoming(:, c, first + k - 1)
+       end do
+    end do
+
+    ! the jacobian at the block's solution, transposed, as the linear
+    ! residual A^T mu - rhs, its zero by the same solver
+    solver = solver_for(this, rows, unknowns, stride, npts)
+    call solver % evaluate(q, y, inputs)
+    lin = rows % linearize(rows % unknown_graph(), rows % bind(inputs), rhs, transposed=.true., &
+         & version_number=rows % version())
+    allocate(mu(unknowns), source=0.0_dp)
+    call solved(this, lin, unknowns, stride, npts, mu)
+
+    do k = 1, depth
+       do c = 1, ncells
+          base = at((instant_moment(k) - 1) * ncells + c)
+          incoming(:, c, first + k - 1) = incoming(:, c, first + k - 1) + mu(base + 1:base + stride)
+       end do
+    end do
+    do k = depth + 1, n
+       do c = 1, ncells
+          base = at((instant_moment(k) - 1) * ncells + c)
+          do f = 1, nf
+             adjoint(f, c, first + k - 1) = mu(base + primary(f) + 1)
+          end do
+       end do
+    end do
+
+    ! the reactions: the multipliers at the fixed rows of the face
+    ! conditions at the block's own instants
+    e = 0
+    do j = 1, size(this % condition)
+       if (.not. this % condition(j) % manifold % is_face()) cycle
+       instant = face_instant(this, this % condition(j) % manifold % face_time)
+       do i = 1, size(this % condition(j) % equation)
+          e = e + 1
+          if (instant < first + depth .or. instant > last) cycle
+          m = instant_moment(instant - first + 1)
+          call stated_value(this % condition(j) % equation(i), f, comp, degree)
+          do c = 1, ncells
+             base = at((m - 1) * ncells + c)
+             reaction(c, e) = mu(base + this % rule % offset_of_field(f) + degree + 1)
+          end do
+       end do
+    end do
+
+  end subroutine adjoint_block
 
   !===================================================================!
   ! The point manifold: one moment, one cell, no rows along any
@@ -1955,13 +2306,36 @@ contains
     real(dp)                , intent(inout) :: q(:)
 
     type(newton)       :: solver
+    type(solve_result) :: outcome
+    real(dp) :: achieved
+
+    solver = solver_for(this, rows, unknowns, stride, npts)
+    call solver % solve(spread(0.0_dp, 1, unknowns), q, achieved)
+    outcome = solver % result()
+    if (.not. outcome % converged()) then
+       error stop 'operation_residual: minimize did not converge: ' // outcome % description()
+    end if
+
+  end subroutine solved
+
+  !===================================================================!
+  ! The Newton solver stated on one residual_operator, its inner
+  ! minimizer chosen by the manifold and its state set, so that the
+  ! operator's jacobian can be formed at any q through it.
+  !===================================================================!
+
+  function solver_for(this, rows, unknowns, stride, npts) result(solver)
+
+    class(discrete_residual), intent(in) :: this
+    type(residual_operator) , intent(in) :: rows
+    integer                 , intent(in) :: unknowns, stride, npts
+    type(newton) :: solver
+
     type(dense_direct) :: direct
     type(gmres)        :: krylov
     type(gauss_seidel) :: sweeps
-    type(solve_result) :: outcome
     type(typed_field_domain) :: designs
     type(stored_field) :: design
-    real(dp) :: achieved
 
     if (this % points % with_space) then
        ! THE INNER SOLVE is inexact: each Newton step's linear system
@@ -1993,13 +2367,8 @@ contains
     designs = rows % design_fields()
     design  = designs % design(spread(0.0_dp, 1, npts))
     call solver % state(rows, rows % unknown_graph(), rows % unknown_domain(), unknowns, stored_inputs=[design])
-    call solver % solve(spread(0.0_dp, 1, unknowns), q, achieved)
-    outcome = solver % result()
-    if (.not. outcome % converged()) then
-       error stop 'operation_residual: minimize did not converge: ' // outcome % description()
-    end if
 
-  end subroutine solved
+  end function solver_for
 
   !===================================================================!
   ! A build of one image (-fcoarray=single) started by an MPI
@@ -2074,12 +2443,15 @@ contains
   !===================================================================!
   ! THE FIXED ROWS of a block: every component at the history instants,
   ! from the tuples already solved; and, at the first or the last
-  ! instant of the manifold, the value each face condition states,
-  ! of an unknown or of one of its derivatives along time - the
-  ! initial slope of a second-order equation is a condition on the
-  ! first derivative component of the jet. Invalid input: a face
-  ! condition whose equation is not one parent component minus a
-  ! function of the position, with coefficient one.
+  ! instant of the manifold when it is one of the block's own, the
+  ! value each face condition states, of an unknown or of one of its
+  ! derivatives along time - the initial slope of a second-order
+  ! equation is a condition on the first derivative component of the
+  ! jet. A face at a history instant is fixed by the history already,
+  ! and a second row on the same component would double its entry in
+  ! the explicit jacobian. Invalid input: a face condition whose
+  ! equation is not one parent component minus a function of the
+  ! position, with coefficient one.
   !===================================================================!
 
   subroutine fixed_rows_of(this, first, last, depth, instant_moment, at, tuple, fixed_rows, fixed)
@@ -2101,7 +2473,7 @@ contains
     do j = 1, size(this % condition)
        if (.not. this % condition(j) % manifold % is_face()) cycle
        instant = face_instant(this, this % condition(j) % manifold % face_time)
-       if (instant < first .or. instant > last) cycle
+       if (instant < first + depth .or. instant > last) cycle
        count = count + size(this % condition(j) % equation) * ncells
     end do
     allocate(fixed_rows(count), fixed(count))
@@ -2121,7 +2493,7 @@ contains
     do j = 1, size(this % condition)
        if (.not. this % condition(j) % manifold % is_face()) cycle
        instant = face_instant(this, this % condition(j) % manifold % face_time)
-       if (instant < first .or. instant > last) cycle
+       if (instant < first + depth .or. instant > last) cycle
        m = instant_moment(instant - first + 1)
        do i = 1, size(this % condition(j) % equation)
           call stated_value(this % condition(j) % equation(i), f, comp, degree)

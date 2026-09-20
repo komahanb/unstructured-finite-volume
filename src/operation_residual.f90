@@ -1555,9 +1555,10 @@ contains
     class(derivative_approximation), intent(in), optional :: space
     type(discrete_residual) :: image
 
-    integer :: k, j, whole_term, num_conditions, nf
+    integer :: k, j, i, whole_term, num_conditions, nf
     logical :: covering
-    real(dp) :: given, slope
+    real(dp) :: given
+    real(dp), allocatable :: slope(:)
     character(len=250) :: message
 
     whole_term = 0
@@ -1620,14 +1621,22 @@ contains
        ! a condition on the design factor fixes the design coordinate
        ! at the value the manifold states: nu - nu_0 = 0, one equation
        if (image % condition(j) % manifold % is_design_factor()) then
-          if (size(image % condition(j) % equation) /= 1) then
-             error stop 'operation_residual: one condition fixes the design coordinate'
+          if (size(image % condition(j) % equation) /= points % num_designs()) then
+             error stop 'operation_residual: the condition on the design factor fixes every design coordinate, &
+                  &one equation per coordinate in the order of the coordinates'
           end if
-          call design_condition(image % condition(j) % equation(1), points % design_value(), given, slope)
-          if (abs(slope - 1.0_dp) > 1.0e-12_dp .or. abs(given) > 1.0e-12_dp * max(1.0_dp, abs(points % design_value()))) then
-             error stop 'operation_residual: the condition on the design factor is the design coordinate minus &
-                  &the value the manifold fixes it at, nu - nu_0'
-          end if
+          do i = 1, points % num_designs()
+             call design_condition(image % condition(j) % equation(i), points % design_values(), given, slope)
+             if (abs(given) > 1.0e-12_dp * max(1.0_dp, maxval(abs(points % design_values())))) then
+                error stop 'operation_residual: the condition on the design factor is each design coordinate &
+                     &minus the value the manifold fixes it at, nu - nu_0'
+             end if
+             slope(i) = slope(i) - 1.0_dp
+             if (any(abs(slope) > 1.0e-12_dp)) then
+                error stop 'operation_residual: the condition on the design factor is each design coordinate &
+                     &minus its value, equation k the k-th coordinate'
+             end if
+          end do
        end if
     end do
 
@@ -1697,10 +1706,11 @@ contains
     type(discrete_field)    , intent(in)  :: estimate
     type(discrete_field)    , intent(out) :: solution
 
-    real(dp), allocatable :: tuple(:,:,:), stages(:,:,:,:), tjet(:,:,:,:), sjet(:,:,:,:,:), value(:,:), jet(:,:,:)
-    real(dp), allocatable :: adjoint(:,:,:,:), reaction(:,:,:), gauge(:,:,:), design_multiplier(:)
+    real(dp), allocatable :: tuple(:,:,:), stages(:,:,:,:), tjet(:,:,:,:,:), sjet(:,:,:,:,:,:), value(:,:)
+    real(dp), allocatable :: jet(:,:,:,:), adjoint(:,:,:,:,:), reaction(:,:,:,:), gauge(:,:,:,:)
+    real(dp), allocatable :: design_multiplier(:,:,:)
     integer , allocatable :: slot(:)
-    integer :: order, e, g, nm, col
+    integer :: order, e, g, nm, col, nd, d
     character(len=32), allocatable :: names(:)
     type(stencil), allocatable :: rows_along(:,:)
     integer :: stride, nf, ncells, ninst, f, c, k, b, first, last, depth, nb, top, o, npts, nc, j
@@ -1724,8 +1734,9 @@ contains
     ! estimate, every derivative component zero; and their
     ! derivatives along the design to the order of the expansion
     order = this % points % design_order()
+    nd    = max(1, this % points % num_designs())
     allocate(tuple(stride, ncells, ninst), source=0.0_dp)
-    allocate(tjet(stride, ncells, ninst, order), source=0.0_dp)
+    allocate(tjet(stride, ncells, ninst, order, nd), source=0.0_dp)
     do k = 1, ninst
        do c = 1, ncells
           do f = 1, nf
@@ -1760,7 +1771,7 @@ contains
        do b = 1, nb
           top = max(top, this % schemes % scheme(b) % num_stages())
        end do
-       allocate(stages(stride, ncells, top, ninst), sjet(stride, ncells, top, ninst, order), source=0.0_dp)
+       allocate(stages(stride, ncells, top, ninst), sjet(stride, ncells, top, ninst, order, nd), source=0.0_dp)
        do b = 1, nb
           first = this % schemes % from(b)
           last  = ninst
@@ -1794,13 +1805,13 @@ contains
        do j = 1, size(this % condition)
           if (this % condition(j) % manifold % is_face())          nc = nc + size(this % condition(j) % equation)
           if (this % condition(j) % manifold % is_time_factor())   nc = nc + size(this % condition(j) % equation)
-          if (this % condition(j) % manifold % is_design_factor()) nc = nc + 1
+          if (this % condition(j) % manifold % is_design_factor()) nc = nc + size(this % condition(j) % equation)
        end do
     end if
     ! the multiplier columns: the equations', then the conditions'
     nm = merge(nf + nc, 0, this % with_adjoint)
     allocate(value(npts, nf + nm), source=0.0_dp)
-    allocate(names(size(value, 2)), jet(stride + nm, npts, order + 1))
+    allocate(names(size(value, 2)), jet(stride + nm, npts, order + 1, nd))
     allocate(slot(size(value, 2)), source=0)
     jet = 0.0_dp
     names(1:nf) = this % manifold % unknown_name(1:nf)
@@ -1812,9 +1823,11 @@ contains
           do f = 1, nf
              value(this % points % point_of(k, c), f) = tuple(this % rule % offset_of_field(f) + 1, c, k)
           end do
-          jet(:, this % points % point_of(k, c), 1) = tuple(:, c, k)
-          do o = 1, order
-             jet(:, this % points % point_of(k, c), o + 1) = tjet(:, c, k, o)
+          do d = 1, nd
+             jet(1:stride, this % points % point_of(k, c), 1, d) = tuple(:, c, k)
+             do o = 1, order
+                jet(1:stride, this % points % point_of(k, c), o + 1, d) = tjet(:, c, k, o, d)
+             end do
           end do
        end do
     end do
@@ -1832,7 +1845,7 @@ contains
        do k = 1, ninst
           do c = 1, ncells
              do o = 0, order
-                jet(stride + 1:stride + nf, this % points % point_of(k, c), o + 1) = adjoint(:, c, k, o)
+                jet(stride + 1:stride + nf, this % points % point_of(k, c), o + 1, :) = adjoint(:, c, k, o, :)
              end do
           end do
        end do
@@ -1841,12 +1854,17 @@ contains
        g  = 0
        do j = 1, size(this % condition)
           if (this % condition(j) % manifold % is_design_factor()) then
-             ! the multiplier of the design condition, a function on
-             ! the design factor: one value, at every point
-             nc = nc + 1
-             names(2 * nf + nc) = this % condition(j) % multiplier % name
-             do o = 0, order
-                jet(stride + nf + nc, :, o + 1) = design_multiplier(o)
+             ! the multipliers of the design conditions, one per design
+             ! coordinate, functions on the design factor: one value
+             ! each, at every point
+             do f = 1, size(this % condition(j) % equation)
+                nc = nc + 1
+                names(2 * nf + nc) = this % condition(j) % multiplier % name
+                do o = 0, order
+                   do d = 1, nd
+                      jet(stride + nf + nc, :, o + 1, d) = design_multiplier(f, o, d)
+                   end do
+                end do
              end do
           end if
           if (this % condition(j) % manifold % is_time_factor()) then
@@ -1859,7 +1877,7 @@ contains
                 do k = 1, ninst
                    do c = 1, ncells
                       do o = 0, order
-                         jet(stride + nf + nc, this % points % point_of(k, c), o + 1) = gauge(k, g, o)
+                         jet(stride + nf + nc, this % points % point_of(k, c), o + 1, :) = gauge(k, g, o, :)
                       end do
                    end do
                 end do
@@ -1873,14 +1891,14 @@ contains
              names(2 * nf + nc) = this % condition(j) % multiplier % name
              do c = 1, ncells
                 do o = 0, order
-                   jet(stride + nf + nc, this % points % point_of(k, c), o + 1) = reaction(c, e, o)
+                   jet(stride + nf + nc, this % points % point_of(k, c), o + 1, :) = reaction(c, e, o, :)
                 end do
              end do
           end do
        end do
        do col = 1, nm
           slot(nf + col)     = stride + col
-          value(:, nf + col) = jet(stride + col, :, 1)
+          value(:, nf + col) = jet(stride + col, :, 1, 1)
        end do
     end if
 
@@ -1893,19 +1911,22 @@ contains
 
   !===================================================================!
   ! THE REVERSE SWEEP: the multipliers of every row of L_h and their
-  ! derivatives along the design to the order of the expansion, block
-  ! by block from the last, each block's transposed jacobian at its
-  ! solution once per order. The differential of the objective in the
-  ! jet is the source at order zero; above it, the derivatives along
-  ! the design of that differential and of the product of the
-  ! multipliers with the equations' jacobian, the multiplier's own
-  ! derivative of that order left out. adjoint(f, c, k, o) is the o-th
-  ! derivative of the multiplier of equation f at cell c and instant
-  ! k, reaction(c, e, o) of the e-th face condition equation at cell
-  ! c, gauge(k, g, o) of the g-th time-factor condition equation at
-  ! instant k, and design_multiplier(o) of the multiplier of the
-  ! design condition, -d^(o+1) J / d nu^(o+1). A residual without a
-  ! chain has no blocks to sweep, and is refused.
+  ! derivatives along each design coordinate to the order of the
+  ! expansion, block by block from the last, each block's transposed
+  ! jacobian at its solution once at order zero and once per
+  ! coordinate and order above. The differential of the objective in
+  ! the jet is the source at order zero; above it, the derivatives
+  ! along the coordinate of that differential and of the product of
+  ! the multipliers with the equations' jacobian, the multiplier's own
+  ! derivative of that order left out. adjoint(f, c, k, o, d) is the
+  ! o-th derivative along the coordinate d of the multiplier of
+  ! equation f at cell c and instant k, reaction(c, e, o, d) of the
+  ! e-th face condition equation at cell c, gauge(k, g, o, d) of the
+  ! g-th time-factor condition equation at instant k, and
+  ! design_multiplier(i, o, d) of the multiplier of the design
+  ! condition on the coordinate i, kappa_i = -dJ/dnu_i, so that
+  ! design_multiplier(i, o, d) = -d^(o+1) J / (dnu_i dnu_d^o). A
+  ! residual without a chain has no blocks to sweep, and is refused.
   !===================================================================!
 
   subroutine adjoint_sweep(this, rows_along, tuple, stages, tjet, sjet, solution, adjoint, reaction, gauge, &
@@ -1913,18 +1934,21 @@ contains
 
     class(discrete_residual), intent(in)  :: this
     type(stencil)           , intent(in)  :: rows_along(:,:)
-    real(dp)                , intent(in)  :: tuple(:,:,:), stages(:,:,:,:), tjet(:,:,:,:), sjet(:,:,:,:,:)
+    real(dp)                , intent(in)  :: tuple(:,:,:), stages(:,:,:,:), tjet(:,:,:,:,:), sjet(:,:,:,:,:,:)
     type(discrete_field)    , intent(in)  :: solution
-    real(dp), allocatable   , intent(out) :: adjoint(:,:,:,:), reaction(:,:,:), gauge(:,:,:), design_multiplier(:)
+    real(dp), allocatable   , intent(out) :: adjoint(:,:,:,:,:), reaction(:,:,:,:), gauge(:,:,:,:)
+    real(dp), allocatable   , intent(out) :: design_multiplier(:,:,:)
 
-    real(dp), allocatable :: gradient(:,:,:), partial(:), incoming(:,:,:,:)
-    integer :: stride, nf, ncells, ninst, nc, ng, j, b, nb, first, last, depth, order
+    real(dp), allocatable :: gradient(:,:,:,:), partial(:,:,:), incoming(:,:,:,:,:)
+    integer :: stride, nf, ncells, ninst, nc, ng, j, b, nb, first, last, depth, order, nd, ni
 
     stride = this % rule % num_components()
     nf     = this % manifold % num_unknowns
     ncells = this % points % num_cells()
     ninst  = this % points % num_instants()
     order  = this % points % design_order()
+    nd     = max(1, this % points % num_designs())
+    ni     = size(this % points % design_values())
 
     if (.not. this % with_chain) then
        error stop 'operation_residual: the adjoint is formed by a reverse sweep over the blocks of a &
@@ -1934,7 +1958,7 @@ contains
     if (allocated(this % objective)) then
        call this % objective % differential(solution, gradient, partial)
     else
-       allocate(gradient(stride, this % points % num_points(), 0:order), partial(0:order), source=0.0_dp)
+       allocate(gradient(stride, this % points % num_points(), 0:order, nd), partial(ni, 0:order, nd), source=0.0_dp)
     end if
 
     nc = 0
@@ -1943,14 +1967,16 @@ contains
        if (this % condition(j) % manifold % is_face())        nc = nc + size(this % condition(j) % equation)
        if (this % condition(j) % manifold % is_time_factor()) ng = ng + size(this % condition(j) % equation)
     end do
-    allocate(adjoint(nf, ncells, ninst, 0:order), incoming(stride, ncells, ninst, 0:order), source=0.0_dp)
-    allocate(reaction(ncells, nc, 0:order), gauge(ninst, ng, 0:order), design_multiplier(0:order), source=0.0_dp)
+    allocate(adjoint(nf, ncells, ninst, 0:order, nd), incoming(stride, ncells, ninst, 0:order, nd), source=0.0_dp)
+    allocate(reaction(ncells, nc, 0:order, nd), gauge(ninst, ng, 0:order, nd), source=0.0_dp)
+    allocate(design_multiplier(ni, 0:order, nd), source=0.0_dp)
 
-    ! THE MULTIPLIER OF THE DESIGN CONDITION nu - nu_0 = 0 and its
-    ! derivatives: the stationarity of L in nu, kappa = -(dJ/dnu at
-    ! fixed state + the sum over every row of its multiplier times the
-    ! row's partial in nu) = -dJ/dnu, the total derivative by the
-    ! adjoint; the partial in nu here, the rows' sums by the blocks
+    ! THE MULTIPLIERS OF THE DESIGN CONDITIONS nu_i - nu_i0 = 0 and
+    ! their derivatives: the stationarity of L in nu_i, kappa_i =
+    ! -(dJ/dnu_i at fixed state + the sum over every row of its
+    ! multiplier times the row's partial in nu_i) = -dJ/dnu_i, the
+    ! total derivative by the adjoint; the partial in nu_i here, the
+    ! rows' sums by the blocks
     design_multiplier = -partial
 
     nb = this % schemes % num_blocks()
@@ -2233,7 +2259,7 @@ contains
     type(family)            , intent(in)    :: scheme
     integer                 , intent(in)    :: first, last, depth
     type(stencil)           , intent(in)    :: rows_along(:,:)
-    real(dp)                , intent(inout) :: tuple(:,:,:), stages(:,:,:,:), tjet(:,:,:,:), sjet(:,:,:,:,:)
+    real(dp)                , intent(inout) :: tuple(:,:,:), stages(:,:,:,:), tjet(:,:,:,:,:), sjet(:,:,:,:,:,:)
 
     type(residual_operator) :: rows
     real(dp), allocatable :: q(:)
@@ -2282,18 +2308,19 @@ contains
   end subroutine solve_block
 
   !===================================================================!
-  ! THE JETS ALONG THE DESIGN of one block, order by order: the m-th
-  ! derivative of the block's unknowns along the design is the
-  ! solution of A x = b, A the block's jacobian at its solution and b
-  ! the m-th derivative of the rows with the m-th derivative of the
-  ! state left out - at the row of an equation, by the jet arithmetic
-  ! on the derivatives of lower order and the design; at the fixed
-  ! row of a history instant, the derivative solved before; at the
-  ! fixed row of a face condition, the m-th derivative of the value
-  ! it states; zero at the rows along time and space, which are
-  ! linear in the state. Every derivative of the block's own instants
-  ! is stored at tjet(:, c, k, m), and of the stages of the step into
-  ! instant k at sjet(:, c, i, k, m).
+  ! THE JETS ALONG THE DESIGN of one block, coordinate by coordinate
+  ! and order by order: the m-th derivative of the block's unknowns
+  ! along the design coordinate d is the solution of A x = b, A the
+  ! block's jacobian at its solution and b the m-th derivative along d
+  ! of the rows with the m-th derivative of the state left out - at
+  ! the row of an equation, by the jet arithmetic on the derivatives
+  ! of lower order and the design; at the fixed row of a history
+  ! instant, the derivative solved before; at the fixed row of a face
+  ! condition, the m-th derivative of the value it states; zero at
+  ! the rows along time and space, which are linear in the state.
+  ! Every derivative of the block's own instants is stored at
+  ! tjet(:, c, k, m, d), and of the stages of the step into instant k
+  ! at sjet(:, c, i, k, m, d).
   !===================================================================!
 
   subroutine design_jets(this, scheme, rows, q, at, instant_moment, first, last, depth, tjet, sjet)
@@ -2303,125 +2330,132 @@ contains
     type(residual_operator) , intent(in)    :: rows
     real(dp)                , intent(in)    :: q(:)
     integer                 , intent(in)    :: at(:), instant_moment(:), first, last, depth
-    real(dp)                , intent(inout) :: tjet(:,:,:,:), sjet(:,:,:,:,:)
+    real(dp)                , intent(inout) :: tjet(:,:,:,:,:), sjet(:,:,:,:,:,:)
 
     type(residual_operator) :: lin
     type(newton) :: solver
     type(stored_field), allocatable :: inputs(:)
-    real(dp), allocatable :: jets(:,:), b(:), x(:), y(:)
-    integer :: stride, ncells, n, order, unknowns, npts, m, k, c, base, j, i, instant, f, comp, degree, e
+    real(dp), allocatable :: jets(:,:), b(:), x(:), y(:), values(:)
+    integer :: stride, ncells, n, order, unknowns, npts, m, k, c, base, j, i, instant, f, comp, degree, d, nd
+    logical :: staged
 
     stride   = this % rule % num_components()
     ncells   = this % points % num_cells()
     n        = last - first + 1
     order    = this % points % design_order()
+    nd       = this % points % num_designs()
+    values   = this % points % design_values()
     unknowns = size(q)
     npts     = size(at)
-
-    allocate(jets(unknowns, 0:order), source=0.0_dp)
-    jets(:, 0) = q
-    do k = 1, depth
-       do c = 1, ncells
-          base = at((instant_moment(k) - 1) * ncells + c)
-          jets(base + 1:base + stride, 1:order) = tjet(:, c, first + k - 1, 1:order)
-       end do
-    end do
+    staged   = marches_by_stages(scheme, top_degree(this % rule, this % manifold % num_unknowns) + 1)
 
     solver = solver_for(this, rows, unknowns, stride, npts)
     call solver % evaluate(q, y, inputs)
 
-    do m = 1, order
-       if (verbosity >= 1) print '(a,i0)', 'expansion along the design, order ', m
-       allocate(b(unknowns), source=0.0_dp)
-       call design_source(rows, jets(:, 0:m - 1), m, this % points % design_value(), b)
+    do d = 1, nd
+       allocate(jets(unknowns, 0:order), source=0.0_dp)
+       jets(:, 0) = q
        do k = 1, depth
           do c = 1, ncells
              base = at((instant_moment(k) - 1) * ncells + c)
-             b(base + 1:base + stride) = jets(base + 1:base + stride, m)
+             jets(base + 1:base + stride, 1:order) = tjet(:, c, first + k - 1, 1:order, d)
           end do
        end do
-       e = 0
-       do j = 1, size(this % condition)
-          if (.not. this % condition(j) % manifold % is_face()) cycle
-          instant = face_instant(this, this % condition(j) % manifold % face_time)
-          if (instant < first + depth .or. instant > last) cycle
-          do i = 1, size(this % condition(j) % equation)
-             call stated_value(this % condition(j) % equation(i), f, comp, degree)
-             do c = 1, ncells
-                base = at((instant_moment(instant - first + 1) - 1) * ncells + c)
-                b(base + this % rule % offset_of_field(f) + degree + 1) = stated_derivative( &
-                     & this % condition(j) % equation(i), m, this % points % design_value(), &
-                     & this % points % position(this % points % point_of(instant, c)))
-             end do
-          end do
-       end do
-       lin = rows % linearize(rows % unknown_graph(), rows % bind(inputs), b, transposed=.false., &
-            & version_number=rows % version())
-       allocate(x(unknowns), source=0.0_dp)
-       call solved(this, lin, unknowns, stride, npts, x)
-       jets(:, m) = x
-       deallocate(b, x)
-    end do
 
-    do k = depth + 1, n
-       do c = 1, ncells
-          base = at((instant_moment(k) - 1) * ncells + c)
-          tjet(:, c, first + k - 1, 1:order) = jets(base + 1:base + stride, 1:order)
-       end do
-    end do
-    if (marches_by_stages(scheme, top_degree(this % rule, this % manifold % num_unknowns) + 1)) then
-       do k = 1, n - 1
-          do i = 1, scheme % num_stages()
+       do m = 1, order
+          if (verbosity >= 1) print '(a,i0,a,i0)', 'expansion along design coordinate ', d, ', order ', m
+          allocate(b(unknowns), source=0.0_dp)
+          call design_source(rows, jets(:, 0:m - 1), m, values, d, b)
+          do k = 1, depth
              do c = 1, ncells
-                base = at((instant_moment(k) + i - 1) * ncells + c)
-                sjet(:, c, i, first + k, 1:order) = jets(base + 1:base + stride, 1:order)
+                base = at((instant_moment(k) - 1) * ncells + c)
+                b(base + 1:base + stride) = jets(base + 1:base + stride, m)
              end do
           end do
+          do j = 1, size(this % condition)
+             if (.not. this % condition(j) % manifold % is_face()) cycle
+             instant = face_instant(this, this % condition(j) % manifold % face_time)
+             if (instant < first + depth .or. instant > last) cycle
+             do i = 1, size(this % condition(j) % equation)
+                call stated_value(this % condition(j) % equation(i), f, comp, degree)
+                do c = 1, ncells
+                   base = at((instant_moment(instant - first + 1) - 1) * ncells + c)
+                   b(base + this % rule % offset_of_field(f) + degree + 1) = stated_derivative( &
+                        & this % condition(j) % equation(i), m, values, d, &
+                        & this % points % position(this % points % point_of(instant, c)))
+                end do
+             end do
+          end do
+          lin = rows % linearize(rows % unknown_graph(), rows % bind(inputs), b, transposed=.false., &
+               & version_number=rows % version())
+          allocate(x(unknowns), source=0.0_dp)
+          call solved(this, lin, unknowns, stride, npts, x)
+          jets(:, m) = x
+          deallocate(b, x)
        end do
-    end if
+
+       do k = depth + 1, n
+          do c = 1, ncells
+             base = at((instant_moment(k) - 1) * ncells + c)
+             tjet(:, c, first + k - 1, 1:order, d) = jets(base + 1:base + stride, 1:order)
+          end do
+       end do
+       if (staged) then
+          do k = 1, n - 1
+             do i = 1, scheme % num_stages()
+                do c = 1, ncells
+                   base = at((instant_moment(k) + i - 1) * ncells + c)
+                   sjet(:, c, i, first + k, 1:order, d) = jets(base + 1:base + stride, 1:order)
+                end do
+             end do
+          end do
+       end if
+       deallocate(jets)
+    end do
 
   end subroutine design_jets
 
   !===================================================================!
-  ! The m-th derivative along the design of every equation row at the
-  ! points not fixed, with the m-th derivative of the state left out,
-  ! negated: each component of a point's tuple enters as the quantity
-  ! whose k-th derivative is the k-th jet coefficient for k below m
-  ! and zero at m, the design as the quantity with derivative one;
-  ! the coefficient of the full subset of m directions is the m-th
-  ! derivative by the product rule on subsets.
+  ! The m-th derivative along the design coordinate d of every
+  ! equation row at the points not fixed, with the m-th derivative of
+  ! the state left out, negated: each component of a point's tuple
+  ! enters as the quantity whose k-th derivative is the k-th jet
+  ! coefficient for k below m and zero at m, the coordinate d as the
+  ! quantity with derivative one; the coefficient of the full subset
+  ! of m directions is the m-th derivative by the product rule on
+  ! subsets.
   !===================================================================!
 
-  subroutine design_source(rows, jets, m, nu, b)
+  subroutine design_source(rows, jets, m, values, d, b)
 
     type(residual_operator), intent(in)    :: rows
     real(dp)               , intent(in)    :: jets(:,0:)
     integer                , intent(in)    :: m
-    real(dp)               , intent(in)    :: nu
+    real(dp)               , intent(in)    :: values(:)
+    integer                , intent(in)    :: d
     real(dp)               , intent(inout) :: b(:)
 
-    type(derivative_terms), allocatable :: q(:)
-    type(derivative_terms) :: design, r
+    type(derivative_terms), allocatable :: q(:), design(:)
+    type(derivative_terms) :: r
     logical, allocatable :: is_fixed(:)
-    integer :: deg, npts, j, p, d, k, row
+    integer :: deg, npts, j, p, c, k, row
 
     is_fixed = rows % fixed_indicator()
     deg      = rows % degrees
     npts     = size(rows % at)
-    design   = derivative_terms(nu, m)
-    call design % set_symmetric(1, 1.0_dp)
+    design   = design_terms(values, d, m, m)
     allocate(q(0:deg - 1))
     do j = 1, size(rows % rules)
        do p = 1, npts
           row = rows % at(p) + rows % primary(j) + 1
           if (is_fixed(row)) cycle
-          do d = 0, deg - 1
-             q(d) = derivative_terms(jets(rows % at(p) + d + 1, 0), m)
+          do c = 0, deg - 1
+             q(c) = derivative_terms(jets(rows % at(p) + c + 1, 0), m)
              do k = 1, m - 1
-                call q(d) % set_symmetric(k, jets(rows % at(p) + d + 1, k))
+                call q(c) % set_symmetric(k, jets(rows % at(p) + c + 1, k))
              end do
           end do
-          r = rows % rules(j) % at_instant(q, spread(design, 1, rows % designs))
+          r = rows % rules(j) % at_instant(q, design)
           b(row) = -mixed_partial(r)
        end do
     end do
@@ -2429,48 +2463,79 @@ contains
   end subroutine design_source
 
   !===================================================================!
-  ! The m-th derivative along the design of the value a face
-  ! condition states: the condition g(u) = u - h(x, nu) evaluated on
-  ! a state without derivatives, so that the m-th coefficient is
-  ! -h^(m), negated.
+  ! The m-th derivative along the design coordinate d of the value a
+  ! face condition states: the condition g(u) = u - h(x, nu)
+  ! evaluated on a state without derivatives, so that the m-th
+  ! coefficient is -h^(m), negated.
   !===================================================================!
 
-  real(dp) function stated_derivative(equation, m, nu, position)
+  real(dp) function stated_derivative(equation, m, values, d, position)
 
     type(continuous_field), intent(in) :: equation
     integer               , intent(in) :: m
-    real(dp)              , intent(in) :: nu
+    real(dp)              , intent(in) :: values(:)
+    integer               , intent(in) :: d
     real(dp)              , intent(in) :: position(:)
 
     type(expression) :: g
     type(derivative_terms), allocatable :: q(:)
-    type(derivative_terms) :: design
 
-    g      = equation % graph(1)
-    design = derivative_terms(nu, m)
-    call design % set_symmetric(1, 1.0_dp)
+    g = equation % graph(1)
     allocate(q(0:g % num_components() - 1), source=derivative_terms(0.0_dp, m))
-    stated_derivative = -mixed_partial(g % at_instant(q, spread(design, 1, g % num_designs()), position))
+    stated_derivative = -mixed_partial(g % at_instant(q, design_terms(values, d, m, m), position))
 
   end function stated_derivative
 
   !===================================================================!
-  ! ONE BLOCK'S ADJOINT, order by order along the design: the
-  ! transposed linear system A^T mu = rhs at the block's solution, A
-  ! the block's jacobian; rhs at every component of the block's own
-  ! instants is the negative of the objective's differential there
-  ! (its o-th derivative along the design at order o) plus the
-  ! multipliers the later blocks passed to the instant, less, above
-  ! order zero, the o-th derivative of the product of the multipliers
-  ! with the equations' jacobian with the o-th derivative of the
-  ! multipliers left out; zero at the history instants. mu at the row
-  ! of an equation is the multiplier of that equation at the instant;
-  ! mu at the fixed row of a history instant is what this block
-  ! passes to the block that determines the instant; mu at the fixed
-  ! row of a face condition is the condition's multiplier, the
-  ! reaction. The block's rows' partial derivatives in the design,
-  ! each times its multiplier and differentiated along the design,
-  ! are subtracted from the design condition's multiplier.
+  ! The derivatives along the design coordinate d, to order o, of the
+  ! partial derivative in the coordinate i of the value a face
+  ! condition states: slope(k) = d^k/dnu_d^k (dh/dnu_i), from one
+  ! evaluation over o + 1 directions, the last seeded on i.
+  !===================================================================!
+
+  function stated_partial_jet(equation, i, d, o, values, position) result(slope)
+
+    type(continuous_field), intent(in) :: equation
+    integer               , intent(in) :: i, d, o
+    real(dp)              , intent(in) :: values(:)
+    real(dp)              , intent(in) :: position(:)
+    real(dp), allocatable :: slope(:)
+
+    type(expression) :: g
+    type(derivative_terms), allocatable :: q(:), nu(:)
+    type(derivative_terms) :: r
+    integer :: k
+
+    g  = equation % graph(1)
+    nu = design_terms(values, d, o, o + 1)
+    call nu(i) % set_coefficient(2**o, 1.0_dp)
+    allocate(q(0:g % num_components() - 1), source=derivative_terms(0.0_dp, o + 1))
+    r = g % at_instant(q, nu, position)
+    allocate(slope(0:o))
+    do k = 0, o
+       slope(k) = -coefficient(r, 2**k - 1 + 2**o)
+    end do
+
+  end function stated_partial_jet
+
+  !===================================================================!
+  ! ONE BLOCK'S ADJOINT, at order zero and then order by order along
+  ! each design coordinate: the transposed linear system A^T mu = rhs
+  ! at the block's solution, A the block's jacobian; rhs at every
+  ! component of the block's own instants is the negative of the
+  ! objective's differential there (its o-th derivative along the
+  ! coordinate at order o) plus the multipliers the later blocks
+  ! passed to the instant, less, above order zero, the o-th derivative
+  ! of the product of the multipliers with the equations' jacobian
+  ! with the o-th derivative of the multipliers left out; zero at the
+  ! history instants. mu at the row of an equation is the multiplier
+  ! of that equation at the instant; mu at the fixed row of a history
+  ! instant is what this block passes to the block that determines
+  ! the instant; mu at the fixed row of a face condition is the
+  ! condition's multiplier, the reaction. The block's rows' partial
+  ! derivatives in each design coordinate, each times its multiplier
+  ! and differentiated along the coordinate of the expansion, are
+  ! subtracted from the design conditions' multipliers.
   !===================================================================!
 
   subroutine adjoint_block(this, scheme, first, last, depth, rows_along, tuple, stages, tjet, sjet, gradient, &
@@ -2480,27 +2545,29 @@ contains
     type(family)            , intent(in)    :: scheme
     integer                 , intent(in)    :: first, last, depth
     type(stencil)           , intent(in)    :: rows_along(:,:)
-    real(dp)                , intent(in)    :: tuple(:,:,:), stages(:,:,:,:), tjet(:,:,:,:), sjet(:,:,:,:,:)
-    real(dp)                , intent(in)    :: gradient(:,:,0:)
-    real(dp)                , intent(inout) :: adjoint(:,:,:,0:), incoming(:,:,:,0:), reaction(:,:,0:), gauge(:,:,0:)
-    real(dp)                , intent(inout) :: in_design(0:)
+    real(dp)                , intent(in)    :: tuple(:,:,:), stages(:,:,:,:), tjet(:,:,:,:,:), sjet(:,:,:,:,:,:)
+    real(dp)                , intent(in)    :: gradient(:,:,0:,:)
+    real(dp)                , intent(inout) :: adjoint(:,:,:,0:,:), incoming(:,:,:,0:,:), reaction(:,:,0:,:)
+    real(dp)                , intent(inout) :: gauge(:,:,0:,:), in_design(:,0:,:)
 
     type(residual_operator) :: rows, lin
     type(newton) :: solver
     type(stored_field), allocatable :: inputs(:)
-    real(dp), allocatable :: q(:), y(:), rhs(:), mu(:,:), x(:), jets(:,:), slope(:)
+    real(dp), allocatable :: q(:), y(:), rhs(:), mu(:,:,:), x(:), jets(:,:,:), slope(:), values(:), products(:)
     integer , allocatable :: at(:), instant_moment(:), primary(:)
     logical , allocatable :: gauged(:)
-    integer :: stride, nf, ncells, n, k, c, f, base, unknowns, npts, m, j, i, instant, comp, degree, e, s, g, o, order
+    integer :: stride, nf, ncells, n, k, c, f, base, unknowns, npts, m, j, i, instant, comp, degree, e, s, g, o
+    integer :: order, d, nd, ni, first_order
     logical :: staged
-    real(dp) :: nu
 
     stride = this % rule % num_components()
     nf     = this % manifold % num_unknowns
     ncells = this % points % num_cells()
     n      = last - first + 1
     order  = this % points % design_order()
-    nu     = this % points % design_value()
+    nd     = max(1, this % points % num_designs())
+    values = this % points % design_values()
+    ni     = size(values)
     if (verbosity >= 1) then
        print '(a,a,a,i0,a,i0,a,es12.4,a,es12.4)', 'adjoint  ', trim(scheme % name()), '  instants ', &
             & first + depth, '..', last, '  t = ', this % points % instant(first + depth), ' .. ', &
@@ -2515,20 +2582,23 @@ contains
     s        = 0
     if (staged) s = scheme % num_stages()
 
-    ! the jets of the state along the design at every unknown of the
-    ! block: at the instants from tjet, at the stages from sjet
-    allocate(jets(unknowns, 0:order), source=0.0_dp)
-    jets(:, 0) = q
-    do k = 1, n
-       do c = 1, ncells
-          base = at((instant_moment(k) - 1) * ncells + c)
-          jets(base + 1:base + stride, 1:order) = tjet(:, c, first + k - 1, 1:order)
-          if (k < n .and. staged) then
-             do i = 1, s
-                base = at((instant_moment(k) + i - 1) * ncells + c)
-                jets(base + 1:base + stride, 1:order) = sjet(:, c, i, first + k, 1:order)
-             end do
-          end if
+    ! the jets of the state along each design coordinate at every
+    ! unknown of the block: at the instants from tjet, at the stages
+    ! from sjet
+    allocate(jets(unknowns, 0:order, nd), source=0.0_dp)
+    do d = 1, nd
+       jets(:, 0, d) = q
+       do k = 1, n
+          do c = 1, ncells
+             base = at((instant_moment(k) - 1) * ncells + c)
+             jets(base + 1:base + stride, 1:order, d) = tjet(:, c, first + k - 1, 1:order, d)
+             if (k < n .and. staged) then
+                do i = 1, s
+                   base = at((instant_moment(k) + i - 1) * ncells + c)
+                   jets(base + 1:base + stride, 1:order, d) = sjet(:, c, i, first + k, 1:order, d)
+                end do
+             end if
+          end do
        end do
     end do
 
@@ -2543,95 +2613,115 @@ contains
 
     solver = solver_for(this, rows, unknowns, stride, npts)
     call solver % evaluate(q, y, inputs)
-    allocate(mu(unknowns, 0:order), source=0.0_dp)
+    allocate(mu(unknowns, 0:order, nd), source=0.0_dp)
 
-    do o = 0, order
-       if (verbosity >= 1 .and. o > 0) print '(a,i0)', 'adjoint expansion along the design, order ', o
-       allocate(rhs(unknowns), source=0.0_dp)
-       do k = depth + 1, n
-          do c = 1, ncells
-             base = at((instant_moment(k) - 1) * ncells + c)
-             rhs(base + 1:base + stride) = -gradient(1:stride, this % points % point_of(first + k - 1, c), o) &
-                  & + incoming(:, c, first + k - 1, o)
-          end do
-       end do
-       if (o > 0) call adjoint_source(rows, jets(:, 0:o), mu(:, 0:o - 1), o, nu, rhs)
-
-       lin = rows % linearize(rows % unknown_graph(), rows % bind(inputs), rhs, transposed=.true., &
-            & version_number=rows % version())
-       allocate(x(unknowns), source=0.0_dp)
-       call solved(this, lin, unknowns, stride, npts, x)
-       mu(:, o) = x
-       deallocate(rhs, x)
-
-       do k = 1, depth
-          do c = 1, ncells
-             base = at((instant_moment(k) - 1) * ncells + c)
-             incoming(:, c, first + k - 1, o) = incoming(:, c, first + k - 1, o) + mu(base + 1:base + stride, o)
-          end do
-       end do
-
-       ! THE MULTIPLIERS OF THE EQUATIONS at the block's own instants:
-       ! the multiplier at the equation's row at the instant and, for a
-       ! family marching by stages, at the stages of the step into it;
-       ! a row the gauge of a time-factor condition replaces, the first
-       ! cell's row of the integrated unknown, stores the gauge's
-       ! multiplier instead, which is returned as the condition's
-       do k = depth + 1, n
-          do c = 1, ncells
-             do f = 1, nf
-                adjoint(f, c, first + k - 1, o) = 0.0_dp
-                do m = instant_moment(k) - merge(s, 0, k > 1), instant_moment(k)
-                   if (c == 1 .and. gauged(f)) cycle
-                   base = at((m - 1) * ncells + c)
-                   adjoint(f, c, first + k - 1, o) = adjoint(f, c, first + k - 1, o) + mu(base + primary(f) + 1, o)
-                end do
-             end do
-          end do
-       end do
-       g = 0
-       do j = 1, size(this % condition)
-          if (.not. this % condition(j) % manifold % is_time_factor()) cycle
-          do i = 1, size(this % condition(j) % equation)
-             g = g + 1
-             f = this % condition(j) % equation(i) % index(1)
-             do k = depth + 1, n
-                do m = instant_moment(k) - merge(s, 0, k > 1), instant_moment(k)
-                   base = at((m - 1) * ncells + 1)
-                   gauge(first + k - 1, g, o) = gauge(first + k - 1, g, o) + mu(base + primary(f) + 1, o)
-                end do
-             end do
-          end do
-       end do
-
-       ! the reactions: the multipliers at the fixed rows of the face
-       ! conditions at the block's own instants
-       e = 0
-       do j = 1, size(this % condition)
-          if (.not. this % condition(j) % manifold % is_face()) cycle
-          instant = face_instant(this, this % condition(j) % manifold % face_time)
-          do i = 1, size(this % condition(j) % equation)
-             e = e + 1
-             if (instant < first + depth .or. instant > last) cycle
-             m = instant_moment(instant - first + 1)
-             call stated_value(this % condition(j) % equation(i), f, comp, degree)
+    do d = 1, nd
+       first_order = 0
+       if (d > 1) first_order = 1
+       do o = first_order, order
+          if (verbosity >= 1 .and. o > 0) print '(a,i0,a,i0)', 'adjoint expansion along design coordinate ', d, &
+               & ', order ', o
+          allocate(rhs(unknowns), source=0.0_dp)
+          do k = depth + 1, n
              do c = 1, ncells
-                base = at((m - 1) * ncells + c)
-                reaction(c, e, o) = mu(base + this % rule % offset_of_field(f) + degree + 1, o)
+                base = at((instant_moment(k) - 1) * ncells + c)
+                rhs(base + 1:base + stride) = -gradient(1:stride, this % points % point_of(first + k - 1, c), o, d) &
+                     & + incoming(:, c, first + k - 1, o, d)
+             end do
+          end do
+          if (o > 0) call adjoint_source(rows, jets(:, 0:o, d), mu(:, 0:o - 1, d), o, values, d, rhs)
+
+          lin = rows % linearize(rows % unknown_graph(), rows % bind(inputs), rhs, transposed=.true., &
+               & version_number=rows % version())
+          allocate(x(unknowns), source=0.0_dp)
+          call solved(this, lin, unknowns, stride, npts, x)
+          if (o == 0) then
+             mu(:, 0, :) = spread(x, 2, nd)
+          else
+             mu(:, o, d) = x
+          end if
+          deallocate(rhs, x)
+
+          do k = 1, depth
+             do c = 1, ncells
+                base = at((instant_moment(k) - 1) * ncells + c)
+                if (o == 0) then
+                   incoming(:, c, first + k - 1, 0, :) = incoming(:, c, first + k - 1, 0, :) &
+                        & + spread(mu(base + 1:base + stride, 0, d), 2, nd)
+                else
+                   incoming(:, c, first + k - 1, o, d) = incoming(:, c, first + k - 1, o, d) + mu(base + 1:base + stride, o, d)
+                end if
              end do
           end do
        end do
     end do
 
-    ! THE DESIGN CONDITION'S MULTIPLIER: minus the o-th derivative along
-    ! the design of the sum over the block's own rows of the multiplier
-    ! times the row's partial in the design - at the equation rows the
-    ! partial of the equation, at the fixed rows of the face conditions
-    ! minus the derivative of the datum; the rows along time and space,
-    ! and the history rows, which the block does not own, add nothing
-    if (this % points % with_design) then
+    ! THE MULTIPLIERS OF THE EQUATIONS at the block's own instants: the
+    ! multiplier at the equation's row at the instant and, for a
+    ! family marching by stages, at the stages of the step into it; a
+    ! row the gauge of a time-factor condition replaces, the first
+    ! cell's row of the integrated unknown, stores the gauge's
+    ! multiplier instead, which is returned as the condition's
+    do d = 1, nd
        do o = 0, order
-          in_design(o) = in_design(o) - design_products(rows, jets(:, 0:o), mu(:, 0:o), o, nu)
+          do k = depth + 1, n
+             do c = 1, ncells
+                do f = 1, nf
+                   adjoint(f, c, first + k - 1, o, d) = 0.0_dp
+                   do m = instant_moment(k) - merge(s, 0, k > 1), instant_moment(k)
+                      if (c == 1 .and. gauged(f)) cycle
+                      base = at((m - 1) * ncells + c)
+                      adjoint(f, c, first + k - 1, o, d) = adjoint(f, c, first + k - 1, o, d) &
+                           & + mu(base + primary(f) + 1, o, d)
+                   end do
+                end do
+             end do
+          end do
+          g = 0
+          do j = 1, size(this % condition)
+             if (.not. this % condition(j) % manifold % is_time_factor()) cycle
+             do i = 1, size(this % condition(j) % equation)
+                g = g + 1
+                f = this % condition(j) % equation(i) % index(1)
+                do k = depth + 1, n
+                   do m = instant_moment(k) - merge(s, 0, k > 1), instant_moment(k)
+                      base = at((m - 1) * ncells + 1)
+                      gauge(first + k - 1, g, o, d) = gauge(first + k - 1, g, o, d) + mu(base + primary(f) + 1, o, d)
+                   end do
+                end do
+             end do
+          end do
+          e = 0
+          do j = 1, size(this % condition)
+             if (.not. this % condition(j) % manifold % is_face()) cycle
+             instant = face_instant(this, this % condition(j) % manifold % face_time)
+             do i = 1, size(this % condition(j) % equation)
+                e = e + 1
+                if (instant < first + depth .or. instant > last) cycle
+                m = instant_moment(instant - first + 1)
+                call stated_value(this % condition(j) % equation(i), f, comp, degree)
+                do c = 1, ncells
+                   base = at((m - 1) * ncells + c)
+                   reaction(c, e, o, d) = mu(base + this % rule % offset_of_field(f) + degree + 1, o, d)
+                end do
+             end do
+          end do
+       end do
+    end do
+
+    ! THE DESIGN CONDITIONS' MULTIPLIERS: minus the o-th derivative
+    ! along the coordinate d of the sum over the block's own rows of
+    ! the multiplier times the row's partial in the coordinate i - at
+    ! the equation rows the partial of the equation, at the fixed rows
+    ! of the face conditions minus the derivative of the datum; the
+    ! rows along time and space, and the history rows, which the block
+    ! does not own, add nothing
+    if (this % points % with_design) then
+       do d = 1, nd
+          do o = 0, order
+             products = design_products(rows, jets(:, 0:o, d), mu(:, 0:o, d), o, values, d)
+             in_design(:, o, d) = in_design(:, o, d) - products
+          end do
        end do
        e = 0
        do j = 1, size(this % condition)
@@ -2640,19 +2730,20 @@ contains
           do i = 1, size(this % condition(j) % equation)
              e = e + 1
              if (instant < first + depth .or. instant > last) cycle
-             allocate(slope(0:order))
              do c = 1, ncells
-                do o = 0, order
-                   slope(o) = stated_derivative(this % condition(j) % equation(i), o + 1, nu, &
-                        & this % points % position(this % points % point_of(instant, c)))
-                end do
-                do o = 0, order
-                   in_design(o) = in_design(o) + mixed_partial( &
-                        & symmetric_terms(reaction(c, e, 0), reaction(c, e, 1:o), o) &
-                        & * symmetric_terms(slope(0), slope(1:o), o))
+                do d = 1, nd
+                   do o = 0, order
+                      do k = 1, ni
+                         slope = stated_partial_jet(this % condition(j) % equation(i), k, d, o, values, &
+                              & this % points % position(this % points % point_of(instant, c)))
+                         ! the row x - h(nu): its partial in nu_k is -dh/dnu_k
+                         in_design(k, o, d) = in_design(k, o, d) + mixed_partial( &
+                              & symmetric_terms(reaction(c, e, 0, d), reaction(c, e, 1:o, d), o) &
+                              & * symmetric_terms(-slope(0), -slope(1:o), o))
+                      end do
+                   end do
                 end do
              end do
-             deallocate(slope)
           end do
        end do
     end if
@@ -2660,56 +2751,56 @@ contains
   end subroutine adjoint_block
 
   !===================================================================!
-  ! THE SOURCE OF THE ADJOINT EXPANSION at order o: for every equation
-  ! row not fixed and every component of its point, the o-th derivative
-  ! along the design of the multiplier times the partial of the
-  ! equation in the component, the multiplier's o-th derivative left
-  ! out, subtracted from rhs at the component. The partial's
-  ! derivatives along the design come from one evaluation of the
+  ! THE SOURCE OF THE ADJOINT EXPANSION at order o along the design
+  ! coordinate d: for every equation row not fixed and every component
+  ! of its point, the o-th derivative along d of the multiplier times
+  ! the partial of the equation in the component, the multiplier's
+  ! o-th derivative left out, subtracted from rhs at the component.
+  ! The partial's derivatives along d come from one evaluation of the
   ! equation on the jets over o + 1 directions, the last seeded on the
   ! component: its coefficients on the first k directions with the
   ! last are the k-th derivatives of the partial.
   !===================================================================!
 
-  subroutine adjoint_source(rows, jets, mu, o, nu, rhs)
+  subroutine adjoint_source(rows, jets, mu, o, values, d, rhs)
 
     type(residual_operator), intent(in)    :: rows
     real(dp)               , intent(in)    :: jets(:,0:), mu(:,0:)
     integer                , intent(in)    :: o
-    real(dp)               , intent(in)    :: nu
+    real(dp)               , intent(in)    :: values(:)
+    integer                , intent(in)    :: d
     real(dp)               , intent(inout) :: rhs(:)
 
-    type(derivative_terms), allocatable :: q(:)
-    type(derivative_terms) :: design, r, along
-    real(dp), allocatable :: partial(:), unit(:), lower(:)
+    type(derivative_terms), allocatable :: q(:), design(:)
+    type(derivative_terms) :: r, along
+    real(dp), allocatable :: partial(:), lower(:)
     logical, allocatable :: is_fixed(:)
-    integer :: deg, npts, j, p, d, k, row
+    integer :: deg, npts, j, p, c, k, row
 
     is_fixed = rows % fixed_indicator()
     deg      = rows % degrees
     npts     = size(rows % at)
-    allocate(unit(o), lower(o), partial(0:o), source=0.0_dp)
-    unit(1) = 1.0_dp
-    design  = symmetric_terms(nu, unit, o + 1)
+    allocate(lower(o), partial(0:o), source=0.0_dp)
+    design = design_terms(values, d, o, o + 1)
     allocate(q(0:deg - 1))
     do j = 1, size(rows % rules)
        do p = 1, npts
           row = rows % at(p) + rows % primary(j) + 1
           if (is_fixed(row)) cycle
-          do d = 0, deg - 1
-             q(d) = symmetric_terms(jets(rows % at(p) + d + 1, 0), jets(rows % at(p) + d + 1, 1:o), o + 1)
+          do c = 0, deg - 1
+             q(c) = symmetric_terms(jets(rows % at(p) + c + 1, 0), jets(rows % at(p) + c + 1, 1:o), o + 1)
           end do
           lower(1:o - 1) = mu(row, 1:o - 1)
           lower(o)       = 0.0_dp
           along = symmetric_terms(mu(row, 0), lower, o)
-          do d = 0, deg - 1
-             call q(d) % set_coefficient(2**o, 1.0_dp)
-             r = rows % rules(j) % at_instant(q, spread(design, 1, rows % designs))
-             call q(d) % set_coefficient(2**o, 0.0_dp)
+          do c = 0, deg - 1
+             call q(c) % set_coefficient(2**o, 1.0_dp)
+             r = rows % rules(j) % at_instant(q, design)
+             call q(c) % set_coefficient(2**o, 0.0_dp)
              do k = 0, o
                 partial(k) = coefficient(r, 2**k - 1 + 2**o)
              end do
-             rhs(rows % at(p) + d + 1) = rhs(rows % at(p) + d + 1) &
+             rhs(rows % at(p) + c + 1) = rhs(rows % at(p) + c + 1) &
                   & - mixed_partial(along * symmetric_terms(partial(0), partial(1:o), o))
           end do
        end do
@@ -2718,76 +2809,103 @@ contains
   end subroutine adjoint_source
 
   !===================================================================!
-  ! The o-th derivative along the design of the sum over the equation
-  ! rows not fixed of the multiplier times the partial of the equation
-  ! in the design, every jet complete to order o: the partial's
-  ! derivatives from one evaluation on the jets over o + 1 directions,
-  ! the last seeded on the design.
+  ! The o-th derivative along the design coordinate d of the sum over
+  ! the equation rows not fixed of the multiplier times the partial
+  ! of the equation in the design coordinate i, every jet complete to
+  ! order o: at order zero by the reverse pass of every rule, all
+  ! coordinates at once; above, the partial's derivatives from one
+  ! evaluation on the jets over o + 1 directions, the last seeded on
+  ! the coordinate i.
   !===================================================================!
 
-  real(dp) function design_products(rows, jets, mu, o, nu) result(total)
+  function design_products(rows, jets, mu, o, values, d) result(total)
 
     type(residual_operator), intent(in) :: rows
     real(dp)               , intent(in) :: jets(:,0:), mu(:,0:)
     integer                , intent(in) :: o
-    real(dp)               , intent(in) :: nu
+    real(dp)               , intent(in) :: values(:)
+    integer                , intent(in) :: d
+    real(dp), allocatable :: total(:)
 
-    type(derivative_terms), allocatable :: q(:)
-    type(derivative_terms) :: design, r
-    real(dp), allocatable :: partial(:), unit(:)
+    type(derivative_terms), allocatable :: q(:), design(:)
+    type(derivative_terms) :: r
+    real(dp), allocatable :: partial(:), g(:), gd(:), x(:)
     logical, allocatable :: is_fixed(:)
-    integer :: deg, npts, j, p, d, k, row
+    real(dp) :: value
+    integer :: deg, npts, j, p, c, k, i, row
 
     is_fixed = rows % fixed_indicator()
     deg      = rows % degrees
     npts     = size(rows % at)
-    allocate(unit(o), partial(0:o), source=0.0_dp)
-    if (o > 0) unit(1) = 1.0_dp
-    design = symmetric_terms(nu, unit, o + 1)
-    call design % set_coefficient(2**o, 1.0_dp)
-    allocate(q(0:deg - 1))
-    total = 0.0_dp
-    do j = 1, size(rows % rules)
-       do p = 1, npts
-          row = rows % at(p) + rows % primary(j) + 1
-          if (is_fixed(row)) cycle
-          do d = 0, deg - 1
-             q(d) = symmetric_terms(jets(rows % at(p) + d + 1, 0), jets(rows % at(p) + d + 1, 1:o), o + 1)
+    allocate(total(size(values)), source=0.0_dp)
+    if (o == 0) then
+       allocate(g(0:deg - 1), gd(size(values)), x(0:deg - 1))
+       do j = 1, size(rows % rules)
+          do p = 1, npts
+             row = rows % at(p) + rows % primary(j) + 1
+             if (is_fixed(row)) cycle
+             x = jets(rows % at(p) + 1:rows % at(p) + deg, 0)
+             call rows % rules(j) % gradient_at(x, values, value, g, g_design=gd)
+             total = total + mu(row, 0) * gd
           end do
-          r = rows % rules(j) % at_instant(q, spread(design, 1, rows % designs))
-          do k = 0, o
-             partial(k) = coefficient(r, 2**k - 1 + 2**o)
+       end do
+       return
+    end if
+    allocate(partial(0:o), q(0:deg - 1))
+    do i = 1, size(values)
+       design = design_terms(values, d, o, o + 1)
+       call design(i) % set_coefficient(2**o, 1.0_dp)
+       do j = 1, size(rows % rules)
+          do p = 1, npts
+             row = rows % at(p) + rows % primary(j) + 1
+             if (is_fixed(row)) cycle
+             do c = 0, deg - 1
+                q(c) = symmetric_terms(jets(rows % at(p) + c + 1, 0), jets(rows % at(p) + c + 1, 1:o), o + 1)
+             end do
+             r = rows % rules(j) % at_instant(q, design)
+             do k = 0, o
+                partial(k) = coefficient(r, 2**k - 1 + 2**o)
+             end do
+             total(i) = total(i) + mixed_partial(symmetric_terms(mu(row, 0), mu(row, 1:o), o) &
+                  & * symmetric_terms(partial(0), partial(1:o), o))
           end do
-          total = total + mixed_partial(symmetric_terms(mu(row, 0), mu(row, 1:o), o) &
-               & * symmetric_terms(partial(0), partial(1:o), o))
        end do
     end do
 
   end function design_products
 
   !===================================================================!
-  ! The condition on the design factor at the design value: given
-  ! = -g(nu_0) and slope = dg/dnu, so that nu - nu_0 = 0 gives zero
-  ! and one.
+  ! The condition on the design factor at the design values: given =
+  ! -g(nu_0) and slope(i) = dg/dnu_i, so that nu_k - nu_k0 = 0 gives
+  ! zero and the k-th unit vector.
   !===================================================================!
 
-  subroutine design_condition(equation, nu, given, slope)
+  subroutine design_condition(equation, values, given, slope)
 
     type(continuous_field), intent(in)  :: equation
-    real(dp)              , intent(in)  :: nu
-    real(dp)              , intent(out) :: given, slope
+    real(dp)              , intent(in)  :: values(:)
+    real(dp)              , intent(out) :: given
+    real(dp), allocatable , intent(out) :: slope(:)
 
     type(expression) :: g
-    type(derivative_terms), allocatable :: q(:)
-    type(derivative_terms) :: design, r
+    type(derivative_terms), allocatable :: q(:), nu(:)
+    type(derivative_terms) :: r
+    integer :: i, nd
 
-    g      = equation % graph(1)
-    design = derivative_terms(nu, 1)
-    call design % set_symmetric(1, 1.0_dp)
-    allocate(q(0:g % num_components() - 1), source=derivative_terms(0.0_dp, 1))
-    r     = g % at_instant(q, spread(design, 1, g % num_designs()))
+    g  = equation % graph(1)
+    nd = size(values)
+    allocate(nu(nd))
+    do i = 1, nd
+       nu(i) = derivative_terms(values(i), nd)
+       call nu(i) % set_direction(i, 1.0_dp)
+    end do
+    allocate(q(0:g % num_components() - 1), source=derivative_terms(0.0_dp, nd))
+    r     = g % at_instant(q, nu)
     given = -coefficient(r, 0)
-    slope = coefficient(r, 1)
+    allocate(slope(nd))
+    do i = 1, nd
+       slope(i) = coefficient(r, 2**(i - 1))
+    end do
 
   end subroutine design_condition
 
@@ -2849,6 +2967,59 @@ contains
   end subroutine solved
 
   !===================================================================!
+  ! The design vector at every point, in the point order: the
+  ! manifold's values, as many as the rules read, repeated per point.
+  ! A rule reading a design the manifold does not have is invalid
+  ! input.
+  !===================================================================!
+
+  function design_at_points(values, designs, npts) result(v)
+
+    real(dp), intent(in) :: values(:)
+    integer , intent(in) :: designs, npts
+    real(dp), allocatable :: v(:)
+
+    integer :: p
+
+    if (designs > size(values)) then
+       error stop 'operation_residual: the equations read a design coordinate the manifold does not have'
+    end if
+    allocate(v(designs * npts))
+    do p = 1, npts
+       v((p - 1) * designs + 1:p * designs) = values(1:designs)
+    end do
+
+  end function design_at_points
+
+  !===================================================================!
+  ! The jets of the design vector over a width of directions, the
+  ! coordinate d the quantity with derivative one on the first
+  ! direction (symmetric over the expansion's), every other constant.
+  !===================================================================!
+
+  function design_terms(values, d, order, width) result(nu)
+
+    real(dp), intent(in) :: values(:)
+    integer , intent(in) :: d, order, width
+    type(derivative_terms), allocatable :: nu(:)
+
+    real(dp), allocatable :: unit(:)
+    integer :: i
+
+    allocate(unit(order), source=0.0_dp)
+    if (order > 0) unit(1) = 1.0_dp
+    allocate(nu(size(values)))
+    do i = 1, size(values)
+       if (i == d) then
+          nu(i) = symmetric_terms(values(i), unit, width)
+       else
+          nu(i) = derivative_terms(values(i), width)
+       end if
+    end do
+
+  end function design_terms
+
+  !===================================================================!
   ! The Newton solver stated on one residual_operator, its inner
   ! minimizer chosen by the manifold and its state set, so that the
   ! operator's jacobian can be formed at any q through it.
@@ -2895,7 +3066,7 @@ contains
     end if
 
     designs = rows % design_fields()
-    design  = designs % design(spread(this % points % design_value(), 1, npts * rows % designs))
+    design  = designs % design(design_at_points(this % points % design_values(), rows % designs, npts))
     call solver % state(rows, rows % unknown_graph(), rows % unknown_domain(), unknowns, stored_inputs=[design])
 
   end function solver_for

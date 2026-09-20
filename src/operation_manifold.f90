@@ -132,7 +132,7 @@ module operation_manifold
      logical        :: with_design = .false.
      type(interval) :: span
      type(region)   :: geometry
-     type(parameter) :: design_parameter
+     type(parameter), allocatable :: design_parameter(:)
      integer        :: num_unknowns = 0
      character(len=MAX_NAME), allocatable :: unknown_name(:)
 
@@ -156,6 +156,7 @@ module operation_manifold
 
   interface continuous_manifold
      module procedure create_manifold
+     module procedure create_manifold_of_designs
   end interface continuous_manifold
 
   type, extends(discrete_support) :: discrete_manifold
@@ -168,7 +169,7 @@ module operation_manifold
      integer :: dimension = 0
      real(dp), allocatable :: centre(:)
      real(dp), allocatable :: volume(:)
-     type(parameter) :: design_parameter
+     type(parameter), allocatable :: design_parameter(:)
      integer :: order = 0
 
    contains
@@ -179,7 +180,8 @@ module operation_manifold
      procedure :: measure         => discrete_measure
      procedure :: design_factor   => discrete_design_factor
      procedure :: design_order    => discrete_design_order
-     procedure :: design_value    => discrete_design_value
+     procedure :: num_designs     => discrete_num_designs
+     procedure :: design_values   => discrete_design_values
      procedure :: measure_on_face => discrete_measure_on_face
      procedure :: num_instants
      procedure :: num_cells
@@ -300,11 +302,38 @@ contains
     end if
     if (present(design)) then
        this % with_design = .true.
-       this % design_parameter = design
+       this % design_parameter = [design]
     end if
     allocate(this % unknown_name(0))
 
   end function create_manifold
+
+  ! the same with several design coordinates, each named once
+  function create_manifold_of_designs(time, space, design) result(this)
+
+    type(interval) , intent(in), optional :: time
+    type(region)   , intent(in), optional :: space
+    type(parameter), intent(in) :: design(:)
+    type(continuous_manifold) :: this
+
+    integer :: i, j
+
+    this = create_manifold(time, space)
+    if (size(design) < 1) then
+       error stop 'operation_manifold: a manifold of designs names one design coordinate at least'
+    end if
+    do i = 2, size(design)
+       do j = 1, i - 1
+          if (trim(design(i) % name) == trim(design(j) % name)) then
+             error stop 'operation_manifold: a design coordinate is named once; the name repeated is ' &
+                  & // trim(design(i) % name)
+          end if
+       end do
+    end do
+    this % with_design = .true.
+    this % design_parameter = design
+
+  end function create_manifold_of_designs
 
   pure logical function is_point(this)
     class(continuous_manifold), intent(in) :: this
@@ -399,7 +428,11 @@ contains
        allocate(names(0))
        if (this % with_time)   names = [character(len=8) :: names, 't']
        if (this % with_space)  names = [character(len=8) :: names, 'x', 'y', 'z']
-       if (this % with_design) names = [character(len=8) :: names, this % design_parameter % name(1:8)]
+       if (this % with_design) then
+          do k = 1, size(this % design_parameter)
+             names = [character(len=8) :: names, this % design_parameter(k) % name(1:8)]
+          end do
+       end if
     end if
 
     u = unknown_field(this, name, this % num_unknowns + 1, n, names)
@@ -424,10 +457,12 @@ contains
     integer :: axis, at
 
     if (this % with_design) then
-       if (trim(name) == trim(this % design_parameter % name)) then
-          c = coordinate_field(this, name, 0, of_design=.true.)
-          return
-       end if
+       do at = 1, size(this % design_parameter)
+          if (trim(name) == trim(this % design_parameter(at) % name)) then
+             c = coordinate_field(this, name, at, of_design=.true.)
+             return
+          end if
+       end do
     end if
     axis = 0
     select case (trim(name))
@@ -479,7 +514,7 @@ contains
     face % with_space = this % with_space
     face % geometry   = this % geometry
     face % with_design = this % with_design
-    face % design_parameter = this % design_parameter
+    if (allocated(this % design_parameter)) face % design_parameter = this % design_parameter
     face % part       = TIME_FACE
     face % face_time  = time
     face % parent     = this % identity
@@ -499,7 +534,7 @@ contains
     factor % with_time = .true.
     factor % span      = this % span
     factor % with_design = this % with_design
-    factor % design_parameter = this % design_parameter
+    if (allocated(this % design_parameter)) factor % design_parameter = this % design_parameter
     factor % part      = TIME_FACTOR
     factor % parent    = this % identity
     allocate(factor % unknown_name(0))
@@ -518,7 +553,7 @@ contains
     factor % with_space = .true.
     factor % geometry   = this % geometry
     factor % with_design = this % with_design
-    factor % design_parameter = this % design_parameter
+    if (allocated(this % design_parameter)) factor % design_parameter = this % design_parameter
     factor % part       = SPACE_FACTOR
     factor % parent     = this % identity
     allocate(factor % unknown_name(0))
@@ -542,7 +577,7 @@ contains
     end if
     factor % identity    = next_token()
     factor % with_design = .true.
-    factor % design_parameter = this % design_parameter
+    if (allocated(this % design_parameter)) factor % design_parameter = this % design_parameter
     factor % part        = DESIGN_FACTOR
     factor % parent      = this % identity
     allocate(factor % unknown_name(0))
@@ -631,7 +666,7 @@ contains
     type(discrete_manifold) :: point
     point % identity    = next_token()
     point % with_design = this % with_design
-    point % design_parameter = this % design_parameter
+    if (allocated(this % design_parameter)) point % design_parameter = this % design_parameter
     point % order       = this % order
     allocate(factor, source=point)
   end function discrete_design_factor
@@ -641,10 +676,27 @@ contains
     discrete_design_order = this % order
   end function discrete_design_order
 
-  pure real(dp) function discrete_design_value(this)
+  pure integer function discrete_num_designs(this)
     class(discrete_manifold), intent(in) :: this
-    discrete_design_value = this % design_parameter % value
-  end function discrete_design_value
+    discrete_num_designs = 0
+    if (this % with_design) discrete_num_designs = size(this % design_parameter)
+  end function discrete_num_designs
+
+  ! the design vector: the value of every design coordinate, or the
+  ! one value zero without a design, which no expression reads
+  pure function discrete_design_values(this) result(v)
+    class(discrete_manifold), intent(in) :: this
+    real(dp), allocatable :: v(:)
+    integer :: i
+    if (.not. this % with_design) then
+       allocate(v(1), source=0.0_dp)
+       return
+    end if
+    allocate(v(size(this % design_parameter)))
+    do i = 1, size(v)
+       v(i) = this % design_parameter(i) % value
+    end do
+  end function discrete_design_values
 
   !===================================================================!
   ! The measure of a point within the face at an instant: the cell's

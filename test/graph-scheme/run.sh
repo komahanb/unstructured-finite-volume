@@ -18,11 +18,14 @@
 #                        chain dirk(2), bdf(2), adams(2) over eleven
 #                        instants; u(2) = 0.2912 (0.3233 converged)
 #   van_der_pol_sensitivity
-#                        the oscillator with nu as a design coordinate,
-#                        the energy as the objective, the adjoint and
-#                        the reactions of the initial data, and the
-#                        derivatives of u(T) and of the energy along nu
-#                        to order 3 by the expansion along the design
+#                        the oscillator with nu and mu as design
+#                        coordinates, the energy as the objective, the
+#                        adjoint, the reactions of the initial data,
+#                        the multipliers of the design conditions
+#                        (the gradient of the energy) with a row of
+#                        its Hessian, and the derivatives of u(T) and
+#                        of the energy along each coordinate to order
+#                        3 by the expansion along the design
 #   run                  the same tableau on the expression and the
 #                        residual_operator directly
 #

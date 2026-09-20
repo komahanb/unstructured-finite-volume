@@ -1540,6 +1540,7 @@ contains
 
     integer :: k, j, whole_term, num_conditions, nf
     logical :: covering
+    real(dp) :: given, slope
     character(len=250) :: message
 
     whole_term = 0
@@ -1598,6 +1599,18 @@ contains
        image % condition(j) = this % term(k)
        if (.not. image % condition(j) % manifold % parent % matches(image % manifold % identity)) then
           error stop 'operation_residual: a condition is stated on a part of another manifold'
+       end if
+       ! a condition on the design factor fixes the design coordinate
+       ! at the value the manifold states: nu - nu_0 = 0, one equation
+       if (image % condition(j) % manifold % is_design_factor()) then
+          if (size(image % condition(j) % equation) /= 1) then
+             error stop 'operation_residual: one condition fixes the design coordinate'
+          end if
+          call design_condition(image % condition(j) % equation(1), points % design_value(), given, slope)
+          if (abs(slope - 1.0_dp) > 1.0e-12_dp .or. abs(given) > 1.0e-12_dp * max(1.0_dp, abs(points % design_value()))) then
+             error stop 'operation_residual: the condition on the design factor is the design coordinate minus &
+                  &the value the manifold fixes it at, nu - nu_0'
+          end if
        end if
     end do
 
@@ -1668,7 +1681,8 @@ contains
     real(dp), allocatable :: tuple(:,:,:), stages(:,:,:,:), tjet(:,:,:,:), value(:,:), jet(:,:,:)
     real(dp), allocatable :: adjoint(:,:,:), reaction(:,:)
     integer , allocatable :: slot(:)
-    integer :: order
+    integer :: order, e
+    real(dp) :: design_multiplier
     character(len=32), allocatable :: names(:)
     type(stencil), allocatable :: rows_along(:,:)
     integer :: stride, nf, ncells, ninst, f, c, k, b, first, last, depth, nb, top, o, npts, nc, j
@@ -1761,6 +1775,7 @@ contains
     if (this % with_adjoint) then
        do j = 1, size(this % condition)
           if (this % condition(j) % manifold % is_face()) nc = nc + size(this % condition(j) % equation)
+          if (this % condition(j) % manifold % is_design_factor()) nc = nc + 1
        end do
     end if
     allocate(value(npts, nf + merge(nf + nc, 0, this % with_adjoint)), source=0.0_dp)
@@ -1787,7 +1802,7 @@ contains
        solution % jet  = jet
        solution % slot = slot(1:nf)
        solution % rule = this % rule
-       call adjoint_sweep(this, rows_along, tuple, stages, solution, adjoint, reaction)
+       call adjoint_sweep(this, rows_along, tuple, stages, solution, adjoint, reaction, design_multiplier)
        names(nf + 1:2 * nf) = this % adjoint_name
        do k = 1, ninst
           do c = 1, ncells
@@ -1795,14 +1810,23 @@ contains
           end do
        end do
        nc = 0
+       e  = 0
        do j = 1, size(this % condition)
+          if (this % condition(j) % manifold % is_design_factor()) then
+             ! the multiplier of the design condition, a function on
+             ! the design factor: one value, at every point
+             nc = nc + 1
+             names(2 * nf + nc)  = this % condition(j) % multiplier % name
+             value(:, 2 * nf + nc) = design_multiplier
+          end if
           if (.not. this % condition(j) % manifold % is_face()) cycle
           k = face_instant(this, this % condition(j) % manifold % face_time)
           do f = 1, size(this % condition(j) % equation)
              nc = nc + 1
+             e  = e + 1
              names(2 * nf + nc) = this % condition(j) % multiplier % name
              do c = 1, ncells
-                value(this % points % point_of(k, c), 2 * nf + nc) = reaction(c, nc)
+                value(this % points % point_of(k, c), 2 * nf + nc) = reaction(c, e)
              end do
           end do
        end do
@@ -1825,15 +1849,17 @@ contains
   ! blocks to sweep, and is refused.
   !===================================================================!
 
-  subroutine adjoint_sweep(this, rows_along, tuple, stages, solution, adjoint, reaction)
+  subroutine adjoint_sweep(this, rows_along, tuple, stages, solution, adjoint, reaction, design_multiplier)
 
     class(discrete_residual), intent(in)  :: this
     type(stencil)           , intent(in)  :: rows_along(:,:)
     real(dp)                , intent(in)  :: tuple(:,:,:), stages(:,:,:,:)
     type(discrete_field)    , intent(in)  :: solution
     real(dp), allocatable   , intent(out) :: adjoint(:,:,:), reaction(:,:)
+    real(dp)                , intent(out) :: design_multiplier
 
     real(dp), allocatable :: gradient(:,:), incoming(:,:,:)
+    real(dp) :: partial
     integer :: stride, nf, ncells, ninst, nc, j, b, nb, first, last, depth
 
     stride = this % rule % num_components()
@@ -1846,8 +1872,9 @@ contains
             &chain; a manifold without a time coordinate has none'
     end if
 
+    partial = 0.0_dp
     if (allocated(this % objective)) then
-       call this % objective % differential(solution, gradient)
+       call this % objective % differential(solution, gradient, partial)
     else
        allocate(gradient(stride, this % points % num_points()), source=0.0_dp)
     end if
@@ -1867,8 +1894,14 @@ contains
        depth = 0
        if (b > 1) depth = this % schemes % scheme(b) % history_depth(top_degree(this % rule, nf))
        call adjoint_block(this, this % schemes % scheme(b), first - depth, last, depth, rows_along, tuple, &
-            & stages, gradient, adjoint, incoming, reaction)
+            & stages, gradient, adjoint, incoming, reaction, partial)
     end do
+
+    ! THE MULTIPLIER OF THE DESIGN CONDITION nu - nu_0 = 0: the
+    ! stationarity of L in nu, kappa = -(dJ/dnu at fixed state + the
+    ! sum over every row of its multiplier times the row's partial in
+    ! nu) = -dJ/dnu, the total derivative by the adjoint
+    design_multiplier = -partial
 
   end subroutine adjoint_sweep
 
@@ -2366,19 +2399,19 @@ contains
   !===================================================================!
 
   subroutine adjoint_block(this, scheme, first, last, depth, rows_along, tuple, stages, gradient, adjoint, &
-       & incoming, reaction)
+       & incoming, reaction, in_design)
 
     class(discrete_residual), intent(in)    :: this
     type(family)            , intent(in)    :: scheme
     integer                 , intent(in)    :: first, last, depth
     type(stencil)           , intent(in)    :: rows_along(:,:)
     real(dp)                , intent(in)    :: tuple(:,:,:), stages(:,:,:,:), gradient(:,:)
-    real(dp)                , intent(inout) :: adjoint(:,:,:), incoming(:,:,:), reaction(:,:)
+    real(dp)                , intent(inout) :: adjoint(:,:,:), incoming(:,:,:), reaction(:,:), in_design
 
     type(residual_operator) :: rows, lin
     type(newton) :: solver
     type(stored_field), allocatable :: inputs(:)
-    real(dp), allocatable :: q(:), y(:), rhs(:), mu(:)
+    real(dp), allocatable :: q(:), y(:), rhs(:), mu(:), b(:), jets(:,:)
     integer , allocatable :: at(:), instant_moment(:), primary(:)
     integer :: stride, nf, ncells, n, k, c, f, base, unknowns, npts, m, j, i, instant, comp, degree, e
 
@@ -2430,6 +2463,20 @@ contains
        end do
     end do
 
+    ! the partial derivative of the block's own rows in the design,
+    ! each times its multiplier, summed into in_design: at the
+    ! equation rows the first design derivative with the state fixed,
+    ! at the fixed rows of the face conditions minus the derivative
+    ! of the datum; the rows along time and space, and the history
+    ! rows, which the block does not own, add nothing
+    if (this % points % with_design) then
+       allocate(b(unknowns), source=0.0_dp)
+       allocate(jets(unknowns, 0:0))
+       jets(:, 0) = q
+       call design_source(rows, jets, 1, this % points % design_value(), b)
+       in_design = in_design - dot_product(mu, b)
+    end if
+
     ! the reactions: the multipliers at the fixed rows of the face
     ! conditions at the block's own instants
     e = 0
@@ -2444,11 +2491,41 @@ contains
           do c = 1, ncells
              base = at((m - 1) * ncells + c)
              reaction(c, e) = mu(base + this % rule % offset_of_field(f) + degree + 1)
+             if (this % points % with_design) then
+                in_design = in_design - reaction(c, e) * stated_derivative(this % condition(j) % equation(i), 1, &
+                     & this % points % design_value(), this % points % position(this % points % point_of(instant, c)))
+             end if
           end do
        end do
     end do
 
   end subroutine adjoint_block
+
+  !===================================================================!
+  ! The condition on the design factor at the design value: given
+  ! = -g(nu_0) and slope = dg/dnu, so that nu - nu_0 = 0 gives zero
+  ! and one.
+  !===================================================================!
+
+  subroutine design_condition(equation, nu, given, slope)
+
+    type(continuous_field), intent(in)  :: equation
+    real(dp)              , intent(in)  :: nu
+    real(dp)              , intent(out) :: given, slope
+
+    type(expression) :: g
+    type(derivative_terms), allocatable :: q(:)
+    type(derivative_terms) :: design, r
+
+    g      = equation % graph(1)
+    design = derivative_terms(nu, 1)
+    call design % set_symmetric(1, 1.0_dp)
+    allocate(q(0:g % num_components() - 1), source=derivative_terms(0.0_dp, 1))
+    r     = g % at_instant(q, design)
+    given = -coefficient(r, 0)
+    slope = coefficient(r, 1)
+
+  end subroutine design_condition
 
   !===================================================================!
   ! The point manifold: one moment, one cell, no rows along any

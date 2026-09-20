@@ -35,10 +35,10 @@ module operation_field
   public :: continuous_support, discrete_support
   public :: continuous_field, discrete_field
   public :: unknown_field, coordinate_field, integral
-  public :: WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR
+  public :: WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR, DESIGN_FACTOR
 
   ! the parts a support can be of another
-  integer, parameter :: WHOLE = 0, TIME_FACE = 1, TIME_FACTOR = 2, SPACE_FACTOR = 3
+  integer, parameter :: WHOLE = 0, TIME_FACE = 1, TIME_FACTOR = 2, SPACE_FACTOR = 3, DESIGN_FACTOR = 4
   public :: operator(+), operator(-), operator(*), operator(/), operator(**)
   public :: sin, cos, exp, log, sqrt
 
@@ -388,9 +388,10 @@ contains
 
     real(dp), allocatable :: total(:), gradient(:,:)
     character(len=32), allocatable :: names(:)
+    real(dp) :: partial
     integer :: k
 
-    call functional_over(this, solution, total, gradient)
+    call functional_over(this, solution, total, gradient, partial)
     allocate(names(size(total)))
     names(1) = ''
     if (allocated(this % name)) names(1) = this % name
@@ -401,15 +402,18 @@ contains
 
   end function field_at
 
-  subroutine field_differential(this, solution, gradient)
+  subroutine field_differential(this, solution, gradient, partial)
 
     class(continuous_field), intent(in)  :: this
     type(discrete_field)   , intent(in)  :: solution
     real(dp), allocatable  , intent(out) :: gradient(:,:)
+    real(dp), optional     , intent(out) :: partial
 
     real(dp), allocatable :: total(:)
+    real(dp) :: in_design
 
-    call functional_over(this, solution, total, gradient)
+    call functional_over(this, solution, total, gradient, in_design)
+    if (present(partial)) partial = in_design
 
   end subroutine field_differential
 
@@ -419,20 +423,22 @@ contains
   ! arithmetic: each component of the point's tuple enters as the
   ! quantity whose k-th derivative along the design is the solution's
   ! k-th coefficient, the design as the quantity with derivative one;
-  ! and the gradient of the value in the jet at every point.
+  ! the gradient of the value in the jet at every point; and the
+  ! partial derivative of the value in the design at fixed state.
   !===================================================================!
 
-  subroutine functional_over(this, solution, total, gradient)
+  subroutine functional_over(this, solution, total, gradient, partial)
 
     class(continuous_field), intent(in)  :: this
     type(discrete_field)   , intent(in)  :: solution
     real(dp), allocatable  , intent(out) :: total(:)
     real(dp), allocatable  , intent(out) :: gradient(:,:)
+    real(dp)               , intent(out) :: partial
 
     real(dp), allocatable :: q(:), g(:)
     integer , allocatable :: slot(:)
-    type(derivative_terms), allocatable :: jets(:)
-    type(derivative_terms) :: nu, r
+    type(derivative_terms), allocatable :: jets(:), fixed(:)
+    type(derivative_terms) :: nu, r, design
     real(dp) :: value, measure
     integer :: p, k, o, order
 
@@ -448,15 +454,19 @@ contains
     end if
     order = size(solution % jet, 3) - 1
     call jet_slots(this % component(1), solution % rule, slot)
-    allocate(q(0:size(slot) - 1), g(0:size(slot) - 1), jets(0:size(slot) - 1))
+    allocate(q(0:size(slot) - 1), g(0:size(slot) - 1), jets(0:size(slot) - 1), fixed(0:size(slot) - 1))
     allocate(gradient(size(solution % jet, 1), size(solution % jet, 2)), source=0.0_dp)
     allocate(total(order + 1), source=0.0_dp)
+    partial = 0.0_dp
     nu = derivative_terms(solution % on % design_value(), order)
     if (order > 0) call nu % set_symmetric(1, 1.0_dp)
+    design = derivative_terms(solution % on % design_value(), 1)
+    call design % set_symmetric(1, 1.0_dp)
     do p = 1, size(solution % jet, 2)
        do k = 0, size(slot) - 1
-          q(k)    = solution % jet(slot(k), p, 1)
-          jets(k) = derivative_terms(q(k), order)
+          q(k)     = solution % jet(slot(k), p, 1)
+          jets(k)  = derivative_terms(q(k), order)
+          fixed(k) = derivative_terms(q(k), 1)
           do o = 1, order
              call jets(k) % set_symmetric(o, solution % jet(slot(k), p, o + 1))
           end do
@@ -468,6 +478,8 @@ contains
        do o = 0, order
           total(o + 1) = total(o + 1) + measure * coefficient(r, 2**o - 1)
        end do
+       r = this % component(1) % at_instant(fixed, design, solution % on % position(p))
+       partial = partial + measure * coefficient(r, 1)
        do k = 0, size(slot) - 1
           gradient(slot(k), p) = gradient(slot(k), p) + measure * g(k)
        end do

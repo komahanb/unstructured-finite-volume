@@ -27,7 +27,7 @@ module operation_manifold
   use token_identity      , only : token, next_token
   use operation_field     , only : continuous_support, discrete_support, continuous_field
   use operation_field     , only : unknown_field, coordinate_field
-  use operation_field     , only : WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR
+  use operation_field     , only : WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR, DESIGN_FACTOR
   use view_mesh           , only : mesh, values_of
   use view_mesh_builder   , only : mesh_from_gmsh
 
@@ -96,7 +96,7 @@ module operation_manifold
      logical        :: with_design = .false.
      type(interval) :: span
      type(region)   :: geometry
-     type(parameter) :: design
+     type(parameter) :: design_parameter
      real(dp)       :: face_time = 0.0_dp
      integer        :: num_unknowns = 0
      character(len=MAX_NAME), allocatable :: unknown_name(:)
@@ -108,12 +108,14 @@ module operation_manifold
      procedure :: boundary        => manifold_boundary
      procedure :: time            => manifold_time
      procedure :: space           => manifold_space
+     procedure :: design          => manifold_design
      procedure :: discretize      => manifold_discretize
      procedure :: num_coordinates => manifold_num_coordinates
      procedure :: is_point
      procedure :: is_face
      procedure :: is_time_factor
      procedure :: is_space_factor
+     procedure :: is_design_factor
 
   end type continuous_manifold
 
@@ -131,7 +133,7 @@ module operation_manifold
      integer :: dimension = 0
      real(dp), allocatable :: centre(:)
      real(dp), allocatable :: volume(:)
-     type(parameter) :: design
+     type(parameter) :: design_parameter
      integer :: order = 0
 
    contains
@@ -262,7 +264,7 @@ contains
     end if
     if (present(design)) then
        this % with_design = .true.
-       this % design      = design
+       this % design_parameter = design
     end if
     allocate(this % unknown_name(0))
 
@@ -287,6 +289,11 @@ contains
     class(continuous_manifold), intent(in) :: this
     is_space_factor = this % part == SPACE_FACTOR
   end function is_space_factor
+
+  pure logical function is_design_factor(this)
+    class(continuous_manifold), intent(in) :: this
+    is_design_factor = this % part == DESIGN_FACTOR
+  end function is_design_factor
 
   !===================================================================!
   ! The coordinates: the time first when present, then the space
@@ -356,7 +363,7 @@ contains
        allocate(names(0))
        if (this % with_time)   names = [character(len=8) :: names, 't']
        if (this % with_space)  names = [character(len=8) :: names, 'x', 'y', 'z']
-       if (this % with_design) names = [character(len=8) :: names, this % design % name(1:8)]
+       if (this % with_design) names = [character(len=8) :: names, this % design_parameter % name(1:8)]
     end if
 
     u = unknown_field(this, name, this % num_unknowns + 1, n, names)
@@ -381,7 +388,7 @@ contains
     integer :: axis, at
 
     if (this % with_design) then
-       if (trim(name) == trim(this % design % name)) then
+       if (trim(name) == trim(this % design_parameter % name)) then
           c = coordinate_field(this, name, 0, of_design=.true.)
           return
        end if
@@ -436,7 +443,7 @@ contains
     face % with_space = this % with_space
     face % geometry   = this % geometry
     face % with_design = this % with_design
-    face % design     = this % design
+    face % design_parameter = this % design_parameter
     face % part       = TIME_FACE
     face % face_time  = time
     face % parent     = this % identity
@@ -456,7 +463,7 @@ contains
     factor % with_time = .true.
     factor % span      = this % span
     factor % with_design = this % with_design
-    factor % design    = this % design
+    factor % design_parameter = this % design_parameter
     factor % part      = TIME_FACTOR
     factor % parent    = this % identity
     allocate(factor % unknown_name(0))
@@ -475,12 +482,36 @@ contains
     factor % with_space = .true.
     factor % geometry   = this % geometry
     factor % with_design = this % with_design
-    factor % design     = this % design
+    factor % design_parameter = this % design_parameter
     factor % part       = SPACE_FACTOR
     factor % parent     = this % identity
     allocate(factor % unknown_name(0))
 
   end function manifold_space
+
+  !===================================================================!
+  ! THE DESIGN FACTOR: the point {nu} of the design space, a manifold
+  ! of the design coordinate alone, on which the condition fixing the
+  ! design is stated and paired with its multiplier, the sensitivity
+  ! of the objective to the design.
+  !===================================================================!
+
+  function manifold_design(this) result(factor)
+
+    class(continuous_manifold), intent(in) :: this
+    type(continuous_manifold) :: factor
+
+    if (.not. this % with_design) then
+       error stop 'operation_manifold: the design factor requires a manifold with a design coordinate'
+    end if
+    factor % identity    = next_token()
+    factor % with_design = .true.
+    factor % design_parameter = this % design_parameter
+    factor % part        = DESIGN_FACTOR
+    factor % parent      = this % identity
+    allocate(factor % unknown_name(0))
+
+  end function manifold_design
 
   !===================================================================!
   ! THE DISCRETE IMAGE: the instants of the interval, equally spaced,
@@ -512,7 +543,7 @@ contains
     image % identity = this % identity
     if (present(design)) then
        image % with_design = .true.
-       image % design      = this % design
+       image % design_parameter = this % design_parameter
        image % order       = design % order
     end if
     if (present(time)) then
@@ -564,7 +595,7 @@ contains
     type(discrete_manifold) :: point
     point % identity    = next_token()
     point % with_design = this % with_design
-    point % design      = this % design
+    point % design_parameter = this % design_parameter
     point % order       = this % order
     allocate(factor, source=point)
   end function discrete_design_factor
@@ -576,7 +607,7 @@ contains
 
   pure real(dp) function discrete_design_value(this)
     class(discrete_manifold), intent(in) :: this
-    discrete_design_value = this % design % value
+    discrete_design_value = this % design_parameter % value
   end function discrete_design_value
 
   ! the point of instant k and cell c: instant outer, cell inner

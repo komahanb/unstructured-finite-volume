@@ -40,6 +40,13 @@
 ! declared by the term it pairs with, one component per equation, its
 ! arguments the coordinates of the term's manifold.
 !
+! The condition nu - nu_design = 0 on the design factor is paired
+! too, with the multiplier kappa: the stationarity of L in nu gives
+! kappa = -dJ/dnu by the adjoint applied to the
+! partial derivative of the equations in nu, which the expansion's
+! dJ/dnu must equal: kappa = 0.65683913482447476 against dJ/dnu =
+! -0.65683913482447487 at 21 instants, order 3.
+!
 ! At 21 instants the jets agree with central differences of the
 ! program run at nu = 1 +- 0.01, +- 0.02, to the differences' own
 ! truncation error: du(T)/dnu = 1.2502856 against 1.2502527,
@@ -68,9 +75,9 @@ program van_der_pol_sensitivity
 
   type(continuous_manifold) :: omega, domega
   type(discrete_manifold)   :: omega_h
-  type(continuous_field)    :: t, nu, u, lambda_r, lambda, oscillator, u0, v0, energy, rest
-  type(discrete_field)      :: estimate, solution, u_h, lambda_h, sensitivity
-  type(continuous_residual) :: r, g, L
+  type(continuous_field)    :: t, nu, u, lambda_r, lambda, kappa, oscillator, u0, v0, energy, rest
+  type(discrete_field)      :: estimate, solution, u_h, lambda_h, kappa_h, sensitivity
+  type(continuous_residual) :: r, g, d, L
   type(discrete_residual)   :: L_h
   real(dp)                  :: values(0:order)
   integer                   :: k
@@ -104,13 +111,17 @@ program van_der_pol_sensitivity
 
   ! r on Omega with its multiplier lambda_r(t, nu) : Omega -> R, the
   ! adjoint; g on dOmega with its multiplier lambda(nu) : dOmega -> R^2,
-  ! one component per condition, a function of the design alone; and
-  ! the Lagrangian L = J + lambda_r . r + lambda . g
+  ! one component per condition, a function of the design alone; the
+  ! condition d on the design factor {nu} fixing the design at its
+  ! value, with its multiplier kappa, a number; and the Lagrangian
+  ! L = J + lambda_r . r + lambda . g + kappa d, every equality paired
   r        = continuous_residual(omega,  [oscillator])
   g        = continuous_residual(domega, [u0, v0])
+  d        = continuous_residual(omega % design(), [nu - nu_design])
   lambda_r = r % multiplier('adjoint', [t, nu])
   lambda   = g % multiplier('lambda', [nu])
-  L        = energy + lambda_r*r + lambda*g
+  kappa    = d % multiplier('kappa')
+  L        = energy + lambda_r*r + lambda*g + kappa*d
 
   ! L_h on Omega_h: d/dt by the chain dirk(2), bdf(2), adams(2), one
   ! block per instant, each reading the instants before it; along nu
@@ -137,10 +148,14 @@ program van_der_pol_sensitivity
   end do
 
   ! the multiplier of the initial data: the sensitivities of J to the
-  ! initial position and the initial velocity
+  ! initial position and the initial velocity; and the multiplier of
+  ! the design condition: -dJ/dnu by the adjoint, against
+  ! dJ/dnu by the expansion below
   lambda_h = solution % fields(['lambda'])
+  kappa_h  = solution % fields(['kappa'])
   print '(a, es24.16)', '-dJ / du(0)          = ', lambda_h % value(1, 1)
   print '(a, es24.16)', '-dJ / du_t(0)        = ', lambda_h % value(1, 2)
+  print '(a, es24.16)', 'kappa = -dJ / d nu   = ', kappa_h % value(1, 1)
 
   ! the energy and its derivatives along nu: the discrete energy of
   ! the discrete solution, a field on the design coordinate alone

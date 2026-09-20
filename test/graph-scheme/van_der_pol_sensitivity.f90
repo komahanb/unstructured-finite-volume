@@ -52,17 +52,17 @@
 ! too, with the multiplier kappa: the stationarity of L in nu gives
 ! kappa = -dJ/dnu by the adjoint applied to the
 ! partial derivative of the equations in nu, which the expansion's
-! dJ/dnu must equal: kappa = 0.65656201890910182 against dJ/dnu =
-! -0.65656201890910193 at 21 instants, order 3. The derivatives of
+! dJ/dnu must equal: kappa = 0.65656201984799478 against dJ/dnu =
+! -0.65656201984799489 at 21 instants, order 3. The derivatives of
 ! kappa along nu, the adjoint's own expansion, give the higher
-! derivatives of J by the adjoint: -1.5484062327261616 and
-! -1.0211138662230166 against d^2J/dnu^2 = 1.5484062327261614 and
-! d^3J/dnu^3 = 1.0211138662230137 by the expansion of the state.
+! derivatives of J by the adjoint: -1.5484062330664192 and
+! -1.0211138729502853 against d^2J/dnu^2 = 1.5484062330664188 and
+! d^3J/dnu^3 = 1.0211138729502878 by the expansion of the state.
 !
-! With mu the second coordinate, kappa_mu = -1.4383847600018345
-! against dJ/dmu = 1.4383847600018 by the expansion; the mixed
-! derivative -d^2J/dnu dmu read as d(kappa_nu)/dmu = 3.5336347332127840
-! and as d(kappa_mu)/dnu = 3.5336347332127782.
+! With mu the second coordinate, kappa_mu = -1.4383847623474970
+! against dJ/dmu = 1.4383847623474963 by the expansion; the mixed
+! derivative -d^2J/dnu dmu read as d(kappa_nu)/dmu = 3.5336347345361871
+! and as d(kappa_mu)/dnu = 3.5336347345361867.
 !
 ! The energy is integrated by the schemes' own quadrature: the
 ! tableau's weights at the stages of a DIRK step, the interpolatory

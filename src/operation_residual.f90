@@ -3313,7 +3313,11 @@ contains
        call require_images()
        if (num_images() > 1) solver % distribution = exchange(owners_of_unknowns(this, unknowns, stride, npts))
     else
+       ! a direct inner solve converges Newton quadratically to
+       ! round-off at the cost of a step, and the sensitivities read
+       ! the converged state: the tolerance is tight here
        allocate(solver % inner, source=direct)
+       solver % tolerance = 1.0e-13_dp
     end if
 
     designs = rows % design_fields()

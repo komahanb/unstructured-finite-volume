@@ -843,13 +843,23 @@ contains
   ! four. Another order stops the program.
   !===================================================================!
 
-  function dirk_of_order(order) result(this)
+  function dirk_of_order(order, stages) result(this)
 
     integer, intent(in) :: order
+    integer, intent(in), optional :: stages
     type(family) :: this
 
     character(len=250) :: message
 
+    if (present(stages)) then
+       if (order == 4 .and. stages == 5) then
+          this = hairer_wanner_five_stage()
+          return
+       end if
+       write(message,'(a,i0,a,i0)') 'operation_family: a DIRK tableau of a stage count is tabulated at &
+            &order 4 with 5 stages, the L-stable SDIRK of Hairer and Wanner; order = ', order, ', stages = ', stages
+       error stop trim(message)
+    end if
     select case (order)
     case (2)
        this = implicit_midpoint()

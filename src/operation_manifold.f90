@@ -92,12 +92,16 @@ module operation_manifold
      module procedure create_region
   end interface region
 
+  ! the instants of the interval: n equally spaced, or the list given,
+  ! ascending from one end of the interval to the other
   type :: instants
      integer :: n = 0
+     real(dp), allocatable :: time(:)
   end type instants
 
   interface instants
      module procedure create_instants
+     module procedure create_instants_at
   end interface instants
 
   interface mesh
@@ -252,6 +256,30 @@ contains
     this % n = n
 
   end function create_instants
+
+  function create_instants_at(time) result(this)
+
+    real(dp), intent(in) :: time(:)
+    type(instants) :: this
+
+    integer :: k
+    character(len=250) :: message
+
+    if (size(time) < 2) then
+       write(message,'(a,i0)') 'operation_manifold: an interval is discretized by two instants at &
+            &least; size(time) = ', size(time)
+       error stop trim(message)
+    end if
+    do k = 2, size(time)
+       if (time(k) <= time(k - 1)) then
+          write(message,'(a,i0)') 'operation_manifold: the instants ascend; instant ', k
+          error stop trim(message) // ' does not follow the one before it'
+       end if
+    end do
+    this % n    = size(time)
+    this % time = time
+
+  end function create_instants_at
 
   function mesh_from_file(filename) result(cells)
 
@@ -704,8 +732,16 @@ contains
     end if
     if (present(time)) then
        image % with_time = .true.
-       image % instant = [(this % span % a + (this % span % b - this % span % a) * real(k - 1, dp) &
-            & / real(time % n - 1, dp), k = 1, time % n)]
+       if (allocated(time % time)) then
+          if (abs(time % time(1) - this % span % a) > 1.0e-12_dp * max(1.0_dp, abs(this % span % a)) .or. &
+               & abs(time % time(time % n) - this % span % b) > 1.0e-12_dp * max(1.0_dp, abs(this % span % b))) then
+             error stop 'operation_manifold: the instants listed run from one end of the interval to the other'
+          end if
+          image % instant = time % time
+       else
+          image % instant = [(this % span % a + (this % span % b - this % span % a) * real(k - 1, dp) &
+               & / real(time % n - 1, dp), k = 1, time % n)]
+       end if
     end if
     if (present(space)) then
        image % with_space = .true.

@@ -31,6 +31,9 @@
 #                        formed as the stationarity of the Lagrangian
 #                        density and solved with the state as one
 #                        two-point block, against the discrete adjoint
+#   van_der_pol_study    the Van der Pol case of the graph time
+#                        integrators paper: its Table 4 to degree four
+#                        at h = 0.02, and its three-window chain
 #   run                  the same tableau on the expression and the
 #                        residual_operator directly
 #
@@ -60,5 +63,7 @@ echo "== van_der_pol_sensitivity"
 ./van_der_pol_sensitivity
 echo "== van_der_pol_continuous_adjoint"
 ./van_der_pol_continuous_adjoint
+echo "== van_der_pol_study"
+./van_der_pol_study
 echo "== run"
 ./run

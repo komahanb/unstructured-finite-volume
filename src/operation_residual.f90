@@ -1803,6 +1803,11 @@ contains
        call solve_point(this, tuple, rows, q)
        if (order > 0) call design_jets(this, rows, q, [0], [1], 1, 1, 0, tjet, sjet)
     end if
+    ! the expansions shared among the images: their jets summed once
+    if (order > 0 .and. num_images() > 1 .and. .not. this % points % with_space) then
+       call co_sum(tjet)
+       call co_sum(sjet)
+    end if
 
     ! THE SOLUTION: the state at every point, with the jet the rule
     ! lays out; with the equations paired, the multipliers of every
@@ -1925,6 +1930,7 @@ contains
       solution % node_weight   = with_nodes % node_weight
       solution % node_position = with_nodes % node_position
       solution % node_point    = with_nodes % node_point
+      solution % node_image    = with_nodes % node_image
     end block estimate_nodes
 
   end subroutine minimize
@@ -1953,7 +1959,7 @@ contains
     integer , allocatable   , intent(out)   :: stage_node(:,:,:)
 
     type(derivative_terms), allocatable :: dt(:), weight(:)
-    integer , allocatable :: instant(:)
+    integer , allocatable :: instant(:), cell_owner(:)
     real(dp), allocatable :: position(:)
     integer :: stride, ncells, ninst, npts, order, nd, nb, b, first, last, depth, n, s, smax, k, i, c, j
     integer :: nnodes, nn, nf, d, o
@@ -1986,12 +1992,15 @@ contains
     allocate(solution % node_weight(nnodes), source=0.0_dp)
     allocate(solution % node_position(this % points % num_coordinates(), nnodes), source=0.0_dp)
     allocate(solution % node_point(nnodes), source=0)
+    allocate(solution % node_image(nnodes), source=1)
+    cell_owner = cell_owners(this)
 
     ! the points as nodes, their jets those of the solution
     do k = 1, ninst
        do c = 1, ncells
           nn = this % points % point_of(k, c)
           solution % node_point(nn)       = nn
+          solution % node_image(nn)       = cell_owner(c)
           solution % node_position(:, nn) = this % points % position(nn)
           do d = 1, nd
              solution % node_jet(:, nn, 1, d) = tuple(:, c, k)
@@ -2021,6 +2030,7 @@ contains
                   do c = 1, ncells
                      nn = nn + 1
                      stage_node(first + k, i, c) = nn
+                     solution % node_image(nn)   = cell_owner(c)
                      solution % node_weight(nn)  = h * scheme % stage_weight(i) * cell_volume(c)
                      position = this % points % position(this % points % point_of(first + k - 1, c))
                      position(1) = position(1) + scheme % stage_abscissa(i) * h
@@ -2115,7 +2125,7 @@ contains
     real(dp), allocatable :: gradient(:,:,:,:), partial(:,:,:), incoming(:,:,:,:,:), q(:)
     type(residual_operator) :: rows
     integer , allocatable :: primary(:)
-    integer :: stride, nf, ncells, ninst, nc, ng, j, b, nb, first, last, depth, order, nd, ni
+    integer :: stride, nf, ncells, ninst, nc, ng, j, b, nb, first, last, depth, order, nd, ni, d
 
     stride = this % rule % num_components()
     nf     = this % manifold % num_unknowns
@@ -2148,6 +2158,11 @@ contains
     ! total derivative by the adjoint; the partial in nu_i here, the
     ! rows' sums by the blocks
     design_multiplier = -partial
+    ! an expansion another image owns: its derivatives above order
+    ! zero are left zero here, and summed over the images at the end
+    do d = 1, nd
+       if (.not. expansion_owned(this, d)) design_multiplier(:, 1:, d) = 0.0_dp
+    end do
 
     if (.not. this % with_chain) then
        ! the point manifold: one system, its transposed solve
@@ -2167,8 +2182,37 @@ contains
        call adjoint_block(this, this % schemes % scheme(b), first - depth, last, depth, rows_along, tuple, &
             & stages, tjet, sjet, gradient, stage_node, adjoint, incoming, reaction, gauge, design_multiplier)
     end do
+    call shared_expansions_summed(this, adjoint, reaction, gauge, design_multiplier)
 
   end subroutine adjoint_sweep
+
+  ! the derivatives along the expansions the images shared, summed
+  ! once: order zero is complete on every image and is left alone
+  subroutine shared_expansions_summed(this, adjoint, reaction, gauge, design_multiplier)
+
+    class(discrete_residual), intent(in)    :: this
+    real(dp)                , intent(inout) :: adjoint(:,:,:,0:,:), reaction(:,:,0:,:), gauge(:,:,0:,:)
+    real(dp)                , intent(inout) :: design_multiplier(:,0:,:)
+
+    real(dp), allocatable :: above(:,:,:,:,:), above4(:,:,:,:), above3(:,:,:)
+    integer :: order
+
+    order = ubound(adjoint, 4)
+    if (order < 1 .or. num_images() == 1 .or. this % points % with_space) return
+    above = adjoint(:, :, :, 1:order, :)
+    call co_sum(above)
+    adjoint(:, :, :, 1:order, :) = above
+    above4 = reaction(:, :, 1:order, :)
+    call co_sum(above4)
+    reaction(:, :, 1:order, :) = above4
+    above4 = gauge(:, :, 1:order, :)
+    call co_sum(above4)
+    gauge(:, :, 1:order, :) = above4
+    above3 = design_multiplier(:, 1:order, :)
+    call co_sum(above3)
+    design_multiplier(:, 1:order, :) = above3
+
+  end subroutine shared_expansions_summed
 
   pure integer function top_degree(rule, nf)
     type(expression), intent(in) :: rule
@@ -2521,7 +2565,7 @@ contains
     type(newton) :: solver
     type(stored_field), allocatable :: inputs(:)
     real(dp), allocatable :: jets(:,:), b(:), x(:), y(:), values(:), seed(:), slopes(:)
-    integer , allocatable :: fields(:), degrees(:)
+    integer , allocatable :: fields(:), degrees(:), owner(:)
     real(dp) :: given
     integer :: stride, ncells, n, order, unknowns, npts, m, k, c, base, j, i, instant, f, degree, d, nd
     logical :: staged
@@ -2539,8 +2583,10 @@ contains
 
     solver = solver_for(this, rows, unknowns, stride, npts)
     call solver % evaluate(q, y, inputs)
+    owner = point_owners(this, npts)
 
     do d = 1, nd
+       if (.not. expansion_owned(this, d)) cycle
        seed = this % points % expansion_seed(d)
        allocate(jets(unknowns, 0:order), source=0.0_dp)
        jets(:, 0) = q
@@ -2554,7 +2600,7 @@ contains
        do m = 1, order
           if (verbosity >= 1) print '(a,i0,a,i0)', 'expansion ', d, ' along the design, order ', m
           allocate(b(unknowns), source=0.0_dp)
-          call design_source(rows, jets(:, 0:m - 1), m, values, seed, b)
+          call design_source(rows, jets(:, 0:m - 1), m, values, seed, owner, b)
           do k = 1, depth
              do c = 1, ncells
                 base = at((instant_moment(k) - 1) * ncells + c)
@@ -2617,17 +2663,19 @@ contains
   ! subsets.
   !===================================================================!
 
-  subroutine design_source(rows, jets, m, values, seed, b)
+  subroutine design_source(rows, jets, m, values, seed, owner, b)
 
     type(residual_operator), intent(in)    :: rows
     real(dp)               , intent(in)    :: jets(:,0:)
     integer                , intent(in)    :: m
     real(dp)               , intent(in)    :: values(:), seed(:)
+    integer                , intent(in)    :: owner(:)
     real(dp)               , intent(inout) :: b(:)
 
     type(derivative_terms), allocatable :: q(:), design(:)
     type(derivative_terms) :: r
     logical, allocatable :: is_fixed(:)
+    real(dp), allocatable :: source(:)
     integer :: deg, npts, j, p, c, k, row
 
     is_fixed = rows % fixed_indicator()
@@ -2635,8 +2683,10 @@ contains
     npts     = size(rows % at)
     design   = design_terms(values, seed, m, m)
     allocate(q(0:deg - 1))
+    allocate(source(size(b)), source=0.0_dp)
     do j = 1, size(rows % rules)
        do p = 1, npts
+          if (owner(p) /= this_image()) cycle
           row = rows % at(p) + rows % primary(j) + 1
           if (is_fixed(row)) cycle
           do c = 0, deg - 1
@@ -2646,9 +2696,11 @@ contains
              end do
           end do
           r = rows % rules(j) % at_instant(q, design)
-          b(row) = -mixed_partial(r)
+          source(row) = -mixed_partial(r)
        end do
     end do
+    if (any(owner /= this_image())) call co_sum(source)
+    b = b + source
 
   end subroutine design_source
 
@@ -2781,7 +2833,7 @@ contains
     type(newton) :: solver
     type(stored_field), allocatable :: inputs(:)
     real(dp), allocatable :: y(:), rhs(:), mu(:,:,:), x(:), jets(:,:,:), slope(:), values(:), products(:), slopes(:)
-    integer , allocatable :: fields(:), degrees(:)
+    integer , allocatable :: fields(:), degrees(:), owner(:)
     real(dp) :: given
     logical , allocatable :: gauged(:)
     integer :: stride, nf, ncells, n, k, c, f, base, unknowns, npts, m, j, i, instant, degree, e, s, g, o
@@ -2834,12 +2886,14 @@ contains
 
     solver = solver_for(this, rows, unknowns, stride, npts)
     call solver % evaluate(q, y, inputs)
+    owner = point_owners(this, npts)
     allocate(mu(unknowns, 0:order, nd), source=0.0_dp)
 
     do d = 1, nd
        first_order = 0
        if (d > 1) first_order = 1
        do o = first_order, order
+          if (o > 0 .and. .not. expansion_owned(this, d)) cycle
           if (verbosity >= 1 .and. o > 0) print '(a,i0,a,i0)', 'adjoint expansion ', d, ' along the design, order ', o
           allocate(rhs(unknowns), source=0.0_dp)
           do k = depth + 1, n
@@ -2862,7 +2916,7 @@ contains
              end do
           end if
           if (o > 0) call adjoint_source(rows, jets(:, 0:o, d), mu(:, 0:o - 1, d), o, values, &
-               & this % points % expansion_seed(d), rhs)
+               & this % points % expansion_seed(d), owner, rhs)
 
           lin = rows % linearize(rows % unknown_graph(), rows % bind(inputs), rhs, transposed=.true., &
                & version_number=rows % version())
@@ -2954,8 +3008,9 @@ contains
     if (this % points % with_design) then
        do d = 1, nd
           do o = 0, order
+             if (o > 0 .and. .not. expansion_owned(this, d)) cycle
              products = design_products(rows, jets(:, 0:o, d), mu(:, 0:o, d), o, values, &
-                  & this % points % expansion_seed(d))
+                  & this % points % expansion_seed(d), owner)
              in_design(:, o, d) = in_design(:, o, d) - products
           end do
        end do
@@ -2999,17 +3054,18 @@ contains
   ! last are the k-th derivatives of the partial.
   !===================================================================!
 
-  subroutine adjoint_source(rows, jets, mu, o, values, seed, rhs)
+  subroutine adjoint_source(rows, jets, mu, o, values, seed, owner, rhs)
 
     type(residual_operator), intent(in)    :: rows
     real(dp)               , intent(in)    :: jets(:,0:), mu(:,0:)
     integer                , intent(in)    :: o
     real(dp)               , intent(in)    :: values(:), seed(:)
+    integer                , intent(in)    :: owner(:)
     real(dp)               , intent(inout) :: rhs(:)
 
     type(derivative_terms), allocatable :: q(:), design(:)
     type(derivative_terms) :: r, along
-    real(dp), allocatable :: partial(:), lower(:)
+    real(dp), allocatable :: partial(:), lower(:), source(:)
     logical, allocatable :: is_fixed(:)
     integer :: deg, npts, j, p, c, k, row
 
@@ -3017,10 +3073,12 @@ contains
     deg      = rows % degrees
     npts     = size(rows % at)
     allocate(lower(o), partial(0:o), source=0.0_dp)
+    allocate(source(size(rhs)), source=0.0_dp)
     design = design_terms(values, seed, o, o + 1)
     allocate(q(0:deg - 1))
     do j = 1, size(rows % rules)
        do p = 1, npts
+          if (owner(p) /= this_image()) cycle
           row = rows % at(p) + rows % primary(j) + 1
           if (is_fixed(row)) cycle
           do c = 0, deg - 1
@@ -3036,11 +3094,13 @@ contains
              do k = 0, o
                 partial(k) = coefficient(r, 2**k - 1 + 2**o)
              end do
-             rhs(rows % at(p) + c + 1) = rhs(rows % at(p) + c + 1) &
+             source(rows % at(p) + c + 1) = source(rows % at(p) + c + 1) &
                   & - mixed_partial(along * symmetric_terms(partial(0), partial(1:o), o))
           end do
        end do
     end do
+    if (any(owner /= this_image())) call co_sum(source)
+    rhs = rhs + source
 
   end subroutine adjoint_source
 
@@ -3054,12 +3114,13 @@ contains
   ! the coordinate i.
   !===================================================================!
 
-  function design_products(rows, jets, mu, o, values, seed) result(total)
+  function design_products(rows, jets, mu, o, values, seed, owner) result(total)
 
     type(residual_operator), intent(in) :: rows
     real(dp)               , intent(in) :: jets(:,0:), mu(:,0:)
     integer                , intent(in) :: o
     real(dp)               , intent(in) :: values(:), seed(:)
+    integer                , intent(in) :: owner(:)
     real(dp), allocatable :: total(:)
 
     type(derivative_terms), allocatable :: q(:), design(:)
@@ -3077,6 +3138,7 @@ contains
        allocate(g(0:deg - 1), gd(size(values)), x(0:deg - 1))
        do j = 1, size(rows % rules)
           do p = 1, npts
+             if (owner(p) /= this_image()) cycle
              row = rows % at(p) + rows % primary(j) + 1
              if (is_fixed(row)) cycle
              x = jets(rows % at(p) + 1:rows % at(p) + deg, 0)
@@ -3084,6 +3146,7 @@ contains
              total = total + mu(row, 0) * gd
           end do
        end do
+       if (any(owner /= this_image())) call co_sum(total)
        return
     end if
     allocate(partial(0:o), q(0:deg - 1))
@@ -3092,6 +3155,7 @@ contains
        call design(i) % set_coefficient(2**o, 1.0_dp)
        do j = 1, size(rows % rules)
           do p = 1, npts
+             if (owner(p) /= this_image()) cycle
              row = rows % at(p) + rows % primary(j) + 1
              if (is_fixed(row)) cycle
              do c = 0, deg - 1
@@ -3106,6 +3170,7 @@ contains
           end do
        end do
     end do
+    if (any(owner /= this_image())) call co_sum(total)
 
   end function design_products
 
@@ -3357,20 +3422,33 @@ contains
   ! moment, is owned by the cell's image.
   !===================================================================!
 
-  function owners_of_unknowns(this, unknowns, stride, npts) result(owner)
+  !===================================================================!
+  ! THE OWNER OF EVERY CELL: image 1 of everything on one image; over
+  ! several, the partitioner's breadth-first rule on the mesh, each
+  ! part connected. The points of a block, moment outer and cell
+  ! inner, are owned by their cell's image, and every loop of the
+  ! sensitivity work over the points - the sources of the expansions,
+  ! the adjoint's, the design products, the functional over its nodes
+  ! - runs over the owned points alone and sums its result over the
+  ! images once.
+  !===================================================================!
+
+  function cell_owners(this) result(cell_owner)
 
     class(discrete_residual), intent(in) :: this
-    integer                 , intent(in) :: unknowns, stride, npts
-    integer, allocatable :: owner(:)
+    integer, allocatable :: cell_owner(:)
 
     type(partitioner) :: cut
     class(directed_graph), allocatable :: part
     type(partition_relation) :: relation
-    integer, allocatable :: cell_owner(:)
-    integer :: ncells, k, v, p, c, m, at, width
+    integer :: ncells, k, v
 
     ncells = this % points % num_cells()
-    allocate(cell_owner(ncells), source=0)
+    ! without a region nothing is shared: every image owns every cell
+    ! of its own, and no sum over the images is taken
+    allocate(cell_owner(ncells), source=this_image())
+    if (num_images() == 1 .or. .not. this % points % with_space) return
+    cell_owner = 0
     do k = 1, num_images()
        cut = partitioner(PARTITION_BREADTH_FIRST, num_images(), part=k)
        call cut % partition_graph(this % points % cells, part, relation)
@@ -3381,6 +3459,62 @@ contains
     if (any(cell_owner == 0)) then
        error stop 'operation_residual: the partition of the cells over the images leaves a cell unowned'
     end if
+
+  end function cell_owners
+
+  !===================================================================!
+  ! THE IMAGE OF AN EXPANSION. On a manifold with a region the images
+  ! share the cells, and every expansion runs on every image over its
+  ! owned points. On a manifold of time alone there are no cells to
+  ! share, and the expansions are shared instead: expansion d runs on
+  ! image mod(d - 1, images) + 1 alone, its jets and its multipliers'
+  ! derivatives summed over the images once at the end, the other
+  ! images having left them zero. The expansions never read each
+  ! other, so nothing else is exchanged.
+  !===================================================================!
+
+  logical function expansion_owned(this, d)
+
+    class(discrete_residual), intent(in) :: this
+    integer                 , intent(in) :: d
+
+    expansion_owned = .true.
+    if (this % points % with_space .or. num_images() == 1) return
+    expansion_owned = mod(d - 1, num_images()) + 1 == this_image()
+
+  end function expansion_owned
+
+  ! the owner of every point of a block, moment outer and cell inner
+  function point_owners(this, npts) result(owner)
+
+    class(discrete_residual), intent(in) :: this
+    integer                 , intent(in) :: npts
+    integer, allocatable :: owner(:)
+
+    integer, allocatable :: cell_owner(:)
+    integer :: ncells, p, m
+
+    cell_owner = cell_owners(this)
+    ncells     = this % points % num_cells()
+    allocate(owner(npts))
+    do p = 1, npts
+       m = (p - 1) / ncells + 1
+       owner(p) = cell_owner(p - (m - 1) * ncells)
+    end do
+
+  end function point_owners
+
+  function owners_of_unknowns(this, unknowns, stride, npts) result(owner)
+
+    class(discrete_residual), intent(in) :: this
+    integer                 , intent(in) :: unknowns, stride, npts
+    integer, allocatable :: owner(:)
+
+    integer, allocatable :: cell_owner(:)
+    integer :: ncells, p, c, m, at, width
+
+    ncells     = this % points % num_cells()
+    cell_owner = cell_owners(this)
 
     width = stride * ncells
     allocate(owner(unknowns), source=0)

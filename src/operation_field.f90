@@ -231,6 +231,9 @@ module operation_field
      real(dp), allocatable :: node_weight(:)
      real(dp), allocatable :: node_position(:,:)
      integer , allocatable :: node_point(:)
+     ! the image that owns the node: a functional sums its owned nodes
+     ! and the images' sums once
+     integer , allocatable :: node_image(:)
 
    contains
 
@@ -539,6 +542,7 @@ contains
 
     do p = 1, nnodes
        if (over_nodes) then
+          if (solution % node_image(p) /= this_image()) cycle
           measure  = solution % node_weight(p)
           position = solution % node_position(:, p)
           if (this % integrated_part == TIME_FACE) then
@@ -601,6 +605,14 @@ contains
           end do
        end do
     end do
+    ! the sums over the owned nodes, summed over the images once
+    if (over_nodes) then
+       if (any(solution % node_image /= this_image())) then
+          call co_sum(total)
+          call co_sum(gradient)
+          call co_sum(partial)
+       end if
+    end if
 
   contains
 
@@ -625,6 +637,7 @@ contains
        to % node_weight   = from % node_weight
        to % node_position = from % node_position
        to % node_point    = from % node_point
+       to % node_image    = from % node_image
     end if
   end subroutine nodes_copied
 

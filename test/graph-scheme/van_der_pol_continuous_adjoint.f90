@@ -37,12 +37,12 @@
 ! condition the row is exact.
 !
 !      instants   continuous adjoint   discrete adjoint  -kappa
-!         21        -0.6495986           -0.6568391
-!         81        -0.6435874           -0.6437486
-!        321        -0.6432127           -0.6432196
+!         21        -0.6411274           -0.6565620
+!         81        -0.6430595           -0.6437467
+!        321        -0.6431797           -0.6432196
 !
-! and lambda(t_k) against mu_k / h at the instants of the multistep
-! families agree to 2 per cent at 21 instants.
+! the energy integrated by the schemes' own quadrature, the midpoint
+! rule of dirk(2) at the stages for the continuous route.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!

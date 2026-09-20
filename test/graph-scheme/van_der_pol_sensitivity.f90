@@ -52,27 +52,27 @@
 ! too, with the multiplier kappa: the stationarity of L in nu gives
 ! kappa = -dJ/dnu by the adjoint applied to the
 ! partial derivative of the equations in nu, which the expansion's
-! dJ/dnu must equal: kappa = 0.65683913482447476 against dJ/dnu =
-! -0.65683913482447487 at 21 instants, order 3. The derivatives of
+! dJ/dnu must equal: kappa = 0.65656201890910182 against dJ/dnu =
+! -0.65656201890910193 at 21 instants, order 3. The derivatives of
 ! kappa along nu, the adjoint's own expansion, give the higher
-! derivatives of J by the adjoint: -1.5485964513054384 and
-! -1.0209571320096991 against d^2J/dnu^2 = 1.5485964513054380 and
-! d^3J/dnu^3 = 1.0209571320096964 by the expansion of the state.
+! derivatives of J by the adjoint: -1.5484062327261616 and
+! -1.0211138662230166 against d^2J/dnu^2 = 1.5484062327261614 and
+! d^3J/dnu^3 = 1.0211138662230137 by the expansion of the state.
 !
-! With mu the second coordinate, kappa_mu = -1.4395664693457804
-! against dJ/dmu = 1.4395664693457797 by the expansion and 1.4396924
-! by central differences at mu = 1 +- 0.01 (h^2 f'''/6 = 1.3e-4 with
-! d^3J/dmu^3 = 7.558); the mixed derivative -d^2J/dnu dmu read as
-! d(kappa_nu)/dmu = 3.5341835097650871 and as d(kappa_mu)/dnu =
-! 3.5341835097650809.
+! With mu the second coordinate, kappa_mu = -1.4383847600018345
+! against dJ/dmu = 1.4383847600018 by the expansion; the mixed
+! derivative -d^2J/dnu dmu read as d(kappa_nu)/dmu = 3.5336347332127840
+! and as d(kappa_mu)/dnu = 3.5336347332127782.
 !
-! At 21 instants the jets agree with central differences of the
-! program run at nu = 1 +- 0.01, +- 0.02, to the differences' own
-! truncation error: du(T)/dnu = 1.2502856 against 1.2502527,
-! d^2u/dnu^2 = -0.598952 against -0.598900, d^3u/dnu^3 = -1.9712
-! against -1.9710; dJ/dnu = -0.6568391 against -0.6568221,
-! d^2J/dnu^2 = 1.548596 against 1.548462, d^3J/dnu^3 = 1.0210
-! against 1.0213.
+! The energy is integrated by the schemes' own quadrature: the
+! tableau's weights at the stages of a DIRK step, the interpolatory
+! rule over the instants of a multistep step. At 21 instants the jets
+! agree with central differences of the program run at nu = 1 +-
+! 0.01, +- 0.02, to the differences' own truncation error: du(T)/dnu
+! = 1.2502856 against 1.2502527, d^2u/dnu^2 = -0.598952 against
+! -0.598900, d^3u/dnu^3 = -1.9712 against -1.9710; dJ/dnu =
+! -0.6565620 against -0.6565450, d^2J/dnu^2 = 1.548406 against
+! 1.548272, d^3J/dnu^3 = 1.0211 against 1.0215.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!

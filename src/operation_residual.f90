@@ -57,6 +57,7 @@ module operation_residual
   use operation_expression , only : operator(+), operator(*)
   use operation_domain     , only : continuous_domain, discrete_domain
   use util_derivative_terms, only : max_subset_width, derivative_terms, mixed_partial, coefficient, symmetric_terms
+  use util_derivative_terms, only : value
   use util_derivative_terms, only : operator(*)
   use token_identity       , only : token
   use operation_field      , only : continuous_field, discrete_field, WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR
@@ -1717,7 +1718,7 @@ contains
     real(dp), allocatable :: tuple(:,:,:), stages(:,:,:,:), tjet(:,:,:,:,:), sjet(:,:,:,:,:,:), value(:,:)
     real(dp), allocatable :: jet(:,:,:,:), adjoint(:,:,:,:,:), reaction(:,:,:,:), gauge(:,:,:,:)
     real(dp), allocatable :: design_multiplier(:,:,:)
-    integer , allocatable :: slot(:)
+    integer , allocatable :: slot(:), stage_node(:,:,:)
     type(residual_operator) :: rows
     real(dp), allocatable :: q(:)
     integer :: order, e, g, nm, col, nd, d
@@ -1841,13 +1842,15 @@ contains
        end do
     end do
 
+    solution = discrete_field(this % points, value(:, 1:nf), names(1:nf))
+    solution % jet  = jet
+    solution % slot = slot(1:nf)
+    solution % rule = this % rule
+    call quadrature_nodes(this, tuple, stages, tjet, sjet, solution, stage_node)
+
     if (this % with_adjoint) then
-       solution = discrete_field(this % points, value(:, 1:nf), names(1:nf))
-       solution % jet  = jet
-       solution % slot = slot(1:nf)
-       solution % rule = this % rule
-       call adjoint_sweep(this, rows_along, tuple, stages, tjet, sjet, solution, adjoint, reaction, gauge, &
-            & design_multiplier)
+       call adjoint_sweep(this, rows_along, tuple, stages, tjet, sjet, solution, stage_node, adjoint, reaction, &
+            & gauge, design_multiplier)
        ! every multiplier and its derivatives along the design as a
        ! column with a row of the jet of its own
        names(nf + 1:2 * nf) = this % adjoint_name
@@ -1911,12 +1914,172 @@ contains
        end do
     end if
 
-    solution = discrete_field(this % points, value, names)
-    solution % jet  = jet
-    solution % slot = slot
-    solution % rule = this % rule
+    estimate_nodes: block
+      type(discrete_field) :: with_nodes
+      with_nodes = solution
+      solution = discrete_field(this % points, value, names)
+      solution % jet  = jet
+      solution % slot = slot
+      solution % rule = this % rule
+      solution % node_jet      = with_nodes % node_jet
+      solution % node_weight   = with_nodes % node_weight
+      solution % node_position = with_nodes % node_position
+      solution % node_point    = with_nodes % node_point
+    end block estimate_nodes
 
   end subroutine minimize
+
+  !===================================================================!
+  ! THE QUADRATURE NODES of a solution: the families' own rule for the
+  ! integral of a functional over the manifold. Every point is a node
+  ! - an instant at a cell - with the weight the multistep families'
+  ! interpolatory rules over their steps give it, accumulated from
+  ! every step whose rule reads the instant, the step times the
+  ! weight over the unit step, and the cell's volume; every stage of a
+  ! staged family's steps is a node with the tableau's weight times
+  ! the step and the cell's volume, at the time
+  ! the instant behind plus the abscissa times the step, its jet from
+  ! the stages solved and their jets along the design; a point
+  ! manifold's one point has weight one. stage_node(k, i, c) is the
+  ! node of stage i of the step into instant k at cell c, zero where
+  ! there is none.
+  !===================================================================!
+
+  subroutine quadrature_nodes(this, tuple, stages, tjet, sjet, solution, stage_node)
+
+    class(discrete_residual), intent(in)    :: this
+    real(dp)                , intent(in)    :: tuple(:,:,:), stages(:,:,:,:), tjet(:,:,:,:,:), sjet(:,:,:,:,:,:)
+    type(discrete_field)    , intent(inout) :: solution
+    integer , allocatable   , intent(out)   :: stage_node(:,:,:)
+
+    type(derivative_terms), allocatable :: dt(:), weight(:)
+    integer , allocatable :: instant(:)
+    real(dp), allocatable :: position(:)
+    integer :: stride, ncells, ninst, npts, order, nd, nb, b, first, last, depth, n, s, smax, k, i, c, j
+    integer :: nnodes, nn, nf, d, o
+    logical :: staged
+    real(dp) :: h
+
+    stride = this % rule % num_components()
+    nf     = this % manifold % num_unknowns
+    ncells = this % points % num_cells()
+    ninst  = this % points % num_instants()
+    npts   = this % points % num_points()
+    order  = this % points % design_order()
+    nd     = max(1, this % points % num_expansions())
+
+    smax   = 1
+    nnodes = npts
+    nb     = 0
+    if (this % with_chain) then
+       nb = this % schemes % num_blocks()
+       do b = 1, nb
+          smax = max(smax, this % schemes % scheme(b) % num_stages())
+          call block_extent(this, b, first, last, depth)
+          if (marches_by_stages(this % schemes % scheme(b), top_degree(this % rule, nf) + 1)) then
+             nnodes = nnodes + (last - first) * this % schemes % scheme(b) % num_stages() * ncells
+          end if
+       end do
+    end if
+    allocate(stage_node(ninst, smax, ncells), source=0)
+    allocate(solution % node_jet(stride, nnodes, order + 1, nd), source=0.0_dp)
+    allocate(solution % node_weight(nnodes), source=0.0_dp)
+    allocate(solution % node_position(this % points % num_coordinates(), nnodes), source=0.0_dp)
+    allocate(solution % node_point(nnodes), source=0)
+
+    ! the points as nodes, their jets those of the solution
+    do k = 1, ninst
+       do c = 1, ncells
+          nn = this % points % point_of(k, c)
+          solution % node_point(nn)       = nn
+          solution % node_position(:, nn) = this % points % position(nn)
+          do d = 1, nd
+             solution % node_jet(:, nn, 1, d) = tuple(:, c, k)
+             do o = 1, order
+                solution % node_jet(:, nn, o + 1, d) = tjet(:, c, k, o, d)
+             end do
+          end do
+       end do
+    end do
+
+    if (.not. this % with_chain) then
+       solution % node_weight = 1.0_dp
+       return
+    end if
+
+    nn = npts
+    do b = 1, nb
+       call block_extent(this, b, first, last, depth)
+       n      = last - first + 1
+       staged = marches_by_stages(this % schemes % scheme(b), top_degree(this % rule, nf) + 1)
+       associate (scheme => this % schemes % scheme(b))
+         if (staged) then
+            s = scheme % num_stages()
+            do k = 1, n - 1
+               h = this % points % step(first + k)
+               do i = 1, s
+                  do c = 1, ncells
+                     nn = nn + 1
+                     stage_node(first + k, i, c) = nn
+                     solution % node_weight(nn)  = h * scheme % stage_weight(i) * cell_volume(c)
+                     position = this % points % position(this % points % point_of(first + k - 1, c))
+                     position(1) = position(1) + scheme % stage_abscissa(i) * h
+                     solution % node_position(:, nn) = position
+                     do d = 1, nd
+                        solution % node_jet(:, nn, 1, d) = stages(:, c, i, first + k)
+                        do o = 1, order
+                           solution % node_jet(:, nn, o + 1, d) = sjet(:, c, i, first + k, o, d)
+                        end do
+                     end do
+                  end do
+               end do
+            end do
+         else
+            allocate(dt(n))
+            do j = 1, n
+               dt(j) = derivative_terms(this % points % step(first + j - 1), 0)
+            end do
+            do k = depth + 1, n
+               call scheme % step_quadrature(dt, k, weight, instant=instant)
+               h = this % points % step(first + k - 1)
+               do j = 1, size(weight)
+                  do c = 1, ncells
+                     solution % node_weight(this % points % point_of(first + instant(j) - 1, c)) = &
+                          & solution % node_weight(this % points % point_of(first + instant(j) - 1, c)) &
+                          & + h * value(weight(j)) * cell_volume(c)
+                  end do
+               end do
+            end do
+            deallocate(dt)
+         end if
+       end associate
+    end do
+
+  contains
+
+    ! the cell's volume, one without a region
+    pure real(dp) function cell_volume(c)
+      integer, intent(in) :: c
+      cell_volume = 1.0_dp
+      if (this % points % with_space) cell_volume = this % points % volume(c)
+    end function cell_volume
+
+  end subroutine quadrature_nodes
+
+  ! the instants of block b: first - depth .. last, depth of history
+  subroutine block_extent(this, b, first, last, depth)
+    class(discrete_residual), intent(in)  :: this
+    integer                 , intent(in)  :: b
+    integer                 , intent(out) :: first, last, depth
+    integer :: nb
+    nb    = this % schemes % num_blocks()
+    first = this % schemes % from(b)
+    last  = this % points % num_instants()
+    if (b < nb) last = this % schemes % from(b + 1) - 1
+    depth = 0
+    if (b > 1) depth = this % schemes % scheme(b) % history_depth(top_degree(this % rule, this % manifold % num_unknowns))
+    first = first - depth
+  end subroutine block_extent
 
   !===================================================================!
   ! THE REVERSE SWEEP: the multipliers of every row of L_h and their
@@ -1938,13 +2101,14 @@ contains
   ! residual without a chain has no blocks to sweep, and is refused.
   !===================================================================!
 
-  subroutine adjoint_sweep(this, rows_along, tuple, stages, tjet, sjet, solution, adjoint, reaction, gauge, &
-       & design_multiplier)
+  subroutine adjoint_sweep(this, rows_along, tuple, stages, tjet, sjet, solution, stage_node, adjoint, reaction, &
+       & gauge, design_multiplier)
 
     class(discrete_residual), intent(in)  :: this
     type(stencil)           , intent(in)  :: rows_along(:,:)
     real(dp)                , intent(in)  :: tuple(:,:,:), stages(:,:,:,:), tjet(:,:,:,:,:), sjet(:,:,:,:,:,:)
     type(discrete_field)    , intent(in)  :: solution
+    integer                 , intent(in)  :: stage_node(:,:,:)
     real(dp), allocatable   , intent(out) :: adjoint(:,:,:,:,:), reaction(:,:,:,:), gauge(:,:,:,:)
     real(dp), allocatable   , intent(out) :: design_multiplier(:,:,:)
 
@@ -1964,7 +2128,7 @@ contains
     if (allocated(this % objective)) then
        call this % objective % differential(solution, gradient, partial)
     else
-       allocate(gradient(stride, this % points % num_points(), 0:order, nd), partial(ni, 0:order, nd), source=0.0_dp)
+       allocate(gradient(stride, size(solution % node_weight), 0:order, nd), partial(ni, 0:order, nd), source=0.0_dp)
     end if
 
     nc = 0
@@ -1988,7 +2152,7 @@ contains
     if (.not. this % with_chain) then
        ! the point manifold: one system, its transposed solve
        call point_rows(this, tuple, rows, q, primary)
-       call adjoint_rows(this, 1, 1, 0, rows, q, [0], [1], primary, tjet, sjet, gradient, &
+       call adjoint_rows(this, 1, 1, 0, rows, q, [0], [1], primary, tjet, sjet, gradient, stage_node, &
             & adjoint, incoming, reaction, gauge, design_multiplier)
        return
     end if
@@ -2001,7 +2165,7 @@ contains
        depth = 0
        if (b > 1) depth = this % schemes % scheme(b) % history_depth(top_degree(this % rule, nf))
        call adjoint_block(this, this % schemes % scheme(b), first - depth, last, depth, rows_along, tuple, &
-            & stages, tjet, sjet, gradient, adjoint, incoming, reaction, gauge, design_multiplier)
+            & stages, tjet, sjet, gradient, stage_node, adjoint, incoming, reaction, gauge, design_multiplier)
     end do
 
   end subroutine adjoint_sweep
@@ -2564,7 +2728,7 @@ contains
   !===================================================================!
 
   subroutine adjoint_block(this, scheme, first, last, depth, rows_along, tuple, stages, tjet, sjet, gradient, &
-       & adjoint, incoming, reaction, gauge, in_design)
+       & stage_node, adjoint, incoming, reaction, gauge, in_design)
 
     class(discrete_residual), intent(in)    :: this
     type(family)            , intent(in)    :: scheme
@@ -2572,6 +2736,7 @@ contains
     type(stencil)           , intent(in)    :: rows_along(:,:)
     real(dp)                , intent(in)    :: tuple(:,:,:), stages(:,:,:,:), tjet(:,:,:,:,:), sjet(:,:,:,:,:,:)
     real(dp)                , intent(in)    :: gradient(:,:,0:,:)
+    integer                 , intent(in)    :: stage_node(:,:,:)
     real(dp)                , intent(inout) :: adjoint(:,:,:,0:,:), incoming(:,:,:,0:,:), reaction(:,:,0:,:)
     real(dp)                , intent(inout) :: gauge(:,:,0:,:), in_design(:,0:,:)
 
@@ -2587,7 +2752,7 @@ contains
     call block_rows(this, scheme, first, last, depth, rows_along, tuple, stages, .true., &
          & rows, q, at, instant_moment, primary)
     call adjoint_rows(this, first, last, depth, rows, q, at, instant_moment, primary, tjet, sjet, gradient, &
-         & adjoint, incoming, reaction, gauge, in_design, scheme)
+         & stage_node, adjoint, incoming, reaction, gauge, in_design, scheme)
 
   end subroutine adjoint_block
 
@@ -2598,7 +2763,7 @@ contains
   !===================================================================!
 
   subroutine adjoint_rows(this, first, last, depth, rows, q, at, instant_moment, primary, tjet, sjet, gradient, &
-       & adjoint, incoming, reaction, gauge, in_design, scheme)
+       & stage_node, adjoint, incoming, reaction, gauge, in_design, scheme)
 
     class(discrete_residual), intent(in)    :: this
     integer                 , intent(in)    :: first, last, depth
@@ -2607,6 +2772,7 @@ contains
     integer                 , intent(in)    :: at(:), instant_moment(:), primary(:)
     real(dp)                , intent(in)    :: tjet(:,:,:,:,:), sjet(:,:,:,:,:,:)
     real(dp)                , intent(in)    :: gradient(:,:,0:,:)
+    integer                 , intent(in)    :: stage_node(:,:,:)
     real(dp)                , intent(inout) :: adjoint(:,:,:,0:,:), incoming(:,:,:,0:,:), reaction(:,:,0:,:)
     real(dp)                , intent(inout) :: gauge(:,:,0:,:), in_design(:,0:,:)
     type(family)            , intent(in), optional :: scheme
@@ -2683,6 +2849,18 @@ contains
                      & + incoming(:, c, first + k - 1, o, d)
              end do
           end do
+          ! the objective's differential at the stages, the seeds of
+          ! the stage quadrature
+          if (staged) then
+             do k = 1, n - 1
+                do i = 1, s
+                   do c = 1, ncells
+                      base = at((instant_moment(k) + i - 1) * ncells + c)
+                      rhs(base + 1:base + stride) = -gradient(1:stride, stage_node(first + k, i, c), o, d)
+                   end do
+                end do
+             end do
+          end if
           if (o > 0) call adjoint_source(rows, jets(:, 0:o, d), mu(:, 0:o - 1, d), o, values, &
                & this % points % expansion_seed(d), rhs)
 

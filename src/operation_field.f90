@@ -206,6 +206,16 @@ module operation_field
   ! the next coefficients along it, which retains the jet along that
   ! coordinate alone, recorded in along: a mixed derivative along two
   ! coordinates is not stored.
+  !
+  ! THE QUADRATURE NODES. The solution of a residual stores, beside
+  ! its points, the nodes of the families' own quadrature: every
+  ! instant at every cell with the weight the multistep rules give
+  ! it, and every stage of a staged family's steps with the tableau's
+  ! weight - node_jet(:, n, k + 1, d) the jet at the node, node_weight
+  ! its weight, node_position its position, node_point the point it
+  ! is (zero for a stage). A functional of the solution is the sum
+  ! over the nodes, so that the objective is discretized by the
+  ! scheme that marches the state, not by a rule of the points.
   !===================================================================!
 
   type :: discrete_field
@@ -217,6 +227,10 @@ module operation_field
      integer , allocatable :: slot(:)
      integer :: along = 0
      type(expression), allocatable :: rule
+     real(dp), allocatable :: node_jet(:,:,:,:)
+     real(dp), allocatable :: node_weight(:)
+     real(dp), allocatable :: node_position(:,:)
+     integer , allocatable :: node_point(:)
 
    contains
 
@@ -484,12 +498,13 @@ contains
     real(dp), allocatable  , intent(out) :: gradient(:,:,:,:)
     real(dp), allocatable  , intent(out) :: partial(:,:,:)
 
-    real(dp), allocatable :: q(:), g(:), gd(:), values(:), unit(:), seed(:)
+    real(dp), allocatable :: q(:), g(:), gd(:), values(:), unit(:), seed(:), position(:)
     integer , allocatable :: slot(:)
     type(derivative_terms), allocatable :: jets(:), varied(:), nu(:), along(:), design(:)
     type(derivative_terms) :: r
     real(dp) :: value, measure
-    integer :: p, k, o, i, d, order, ns, nd
+    integer :: p, k, o, i, d, order, ns, nd, nnodes
+    logical :: over_nodes
 
     if (.not. this % is_integral()) then
        error stop 'operation_field: a functional is the integral of a field over its manifold'
@@ -501,8 +516,14 @@ contains
        error stop 'operation_field: a functional is evaluated on the solution of a residual, which &
             &stores the jet at every point'
     end if
+    ! over the quadrature nodes of the solution when it stores them,
+    ! the families' own rule; over the points with their measure
+    ! otherwise
+    over_nodes = allocated(solution % node_weight)
     order  = size(solution % jet, 3) - 1
     nd     = size(solution % jet, 4)
+    nnodes = size(solution % jet, 2)
+    if (over_nodes) nnodes = size(solution % node_weight)
     values = solution % on % design_values()
     if (size(values) < this % component(1) % num_designs()) then
        error stop 'operation_field: the functional reads a design coordinate the manifold does not have'
@@ -511,23 +532,32 @@ contains
     ns = size(slot)
     allocate(q(0:ns - 1), g(0:ns - 1), gd(size(values)), jets(0:ns - 1), varied(0:ns - 1))
     allocate(nu(size(values)), along(size(values)), design(size(values)))
-    allocate(gradient(size(solution % jet, 1), size(solution % jet, 2), 0:order, nd), source=0.0_dp)
+    allocate(gradient(size(solution % jet, 1), nnodes, 0:order, nd), source=0.0_dp)
     allocate(total(1 + nd * order), partial(size(values), 0:order, nd), source=0.0_dp)
     allocate(unit(order), source=0.0_dp)
     if (order > 0) unit(1) = 1.0_dp
 
-    do p = 1, size(solution % jet, 2)
-       if (this % integrated_part == TIME_FACE) then
-          measure = solution % on % measure_on_face(p, this % integrated_time)
-          if (measure == 0.0_dp) cycle
+    do p = 1, nnodes
+       if (over_nodes) then
+          measure  = solution % node_weight(p)
+          position = solution % node_position(:, p)
+          if (this % integrated_part == TIME_FACE) then
+             measure = 0.0_dp
+             if (solution % node_point(p) > 0) then
+                measure = solution % on % measure_on_face(solution % node_point(p), this % integrated_time)
+             end if
+          end if
        else
-          measure = solution % on % measure(p)
+          measure  = solution % on % measure(p)
+          position = solution % on % position(p)
+          if (this % integrated_part == TIME_FACE) measure = solution % on % measure_on_face(p, this % integrated_time)
        end if
+       if (measure == 0.0_dp) cycle
        ! the value, its gradient in the jet and in the design
        do k = 0, ns - 1
-          q(k) = solution % jet(slot(k), p, 1, 1)
+          q(k) = jet_of(slot(k), p, 1, 1)
        end do
-       call this % component(1) % gradient_at(q, values, value, g, solution % on % position(p), gd)
+       call this % component(1) % gradient_at(q, values, value, g, position, gd)
        total(1) = total(1) + measure * value
        do d = 1, nd
           do k = 0, ns - 1
@@ -536,9 +566,9 @@ contains
           partial(:, 0, d) = partial(:, 0, d) + measure * gd
        end do
        if (order == 0) cycle
-       ! along each design coordinate d: the jets over the order's
-       ! directions, and over one more, the last, seeded on a
-       ! component or on a coordinate
+       ! along each expansion d: the jets over the order's directions,
+       ! and over one more, the last, seeded on a component or on a
+       ! coordinate
        do d = 1, nd
           seed = solution % on % expansion_seed(d)
           do i = 1, size(values)
@@ -546,24 +576,24 @@ contains
              along(i) = symmetric_terms(values(i), seed(i) * unit, order + 1)
           end do
           do k = 0, ns - 1
-             jets(k)   = symmetric_terms(q(k), solution % jet(slot(k), p, 2:order + 1, d), order)
-             varied(k) = symmetric_terms(q(k), solution % jet(slot(k), p, 2:order + 1, d), order + 1)
+             jets(k)   = symmetric_terms(q(k), [(jet_of(slot(k), p, o + 1, d), o = 1, order)], order)
+             varied(k) = symmetric_terms(q(k), [(jet_of(slot(k), p, o + 1, d), o = 1, order)], order + 1)
           end do
-          r = this % component(1) % at_instant(jets, nu, solution % on % position(p))
+          r = this % component(1) % at_instant(jets, nu, position)
           do o = 1, order
              total(1 + (d - 1) * order + o) = total(1 + (d - 1) * order + o) + measure * coefficient(r, 2**o - 1)
           end do
           do i = 1, size(values)
              design = along
              call design(i) % set_coefficient(2**order, 1.0_dp)
-             r = this % component(1) % at_instant(varied, design, solution % on % position(p))
+             r = this % component(1) % at_instant(varied, design, position)
              do o = 1, order
                 partial(i, o, d) = partial(i, o, d) + measure * coefficient(r, 2**o - 1 + 2**order)
              end do
           end do
           do k = 0, ns - 1
              call varied(k) % set_coefficient(2**order, 1.0_dp)
-             r = this % component(1) % at_instant(varied, along, solution % on % position(p))
+             r = this % component(1) % at_instant(varied, along, position)
              call varied(k) % set_coefficient(2**order, 0.0_dp)
              do o = 1, order
                 gradient(slot(k), p, o, d) = gradient(slot(k), p, o, d) + measure * coefficient(r, 2**o - 1 + 2**order)
@@ -572,7 +602,31 @@ contains
        end do
     end do
 
+  contains
+
+    ! the jet coefficient at a node or a point
+    pure real(dp) function jet_of(row, n, k, d)
+      integer, intent(in) :: row, n, k, d
+      if (over_nodes) then
+         jet_of = solution % node_jet(row, n, k, d)
+      else
+         jet_of = solution % jet(row, n, k, d)
+      end if
+    end function jet_of
+
   end subroutine functional_over
+
+  ! the quadrature nodes of a solution, copied to a field read from it
+  subroutine nodes_copied(from, to)
+    type(discrete_field), intent(in)    :: from
+    type(discrete_field), intent(inout) :: to
+    if (allocated(from % node_weight)) then
+       to % node_jet      = from % node_jet
+       to % node_weight   = from % node_weight
+       to % node_position = from % node_position
+       to % node_point    = from % node_point
+    end if
+  end subroutine nodes_copied
 
   !===================================================================!
   ! THE DERIVATIVE OF A DISCRETE FIELD along the design: the
@@ -647,6 +701,7 @@ contains
        allocate(d % jet(size(this % jet, 1), npts, 1, 1))
        d % jet(:, :, 1, 1) = (this % jet(:, :, 3, third) - this % jet(:, :, 3, column) - this % jet(:, :, 3, second)) / 2.0_dp
        if (allocated(this % rule)) d % rule = this % rule
+       call nodes_copied(this, d)
        return
     end if
 
@@ -686,6 +741,7 @@ contains
     allocate(d % jet(size(this % jet, 1), npts, order - n + 1, 1))
     d % jet(:, :, :, 1) = this % jet(:, :, n + 1:order + 1, column)
     if (allocated(this % rule)) d % rule = this % rule
+    call nodes_copied(this, d)
 
   contains
 
@@ -1140,6 +1196,7 @@ contains
     if (allocated(this % jet))  chosen % jet  = this % jet
     if (allocated(this % rule)) chosen % rule = this % rule
     chosen % along = this % along
+    call nodes_copied(this, chosen)
     if (allocated(this % slot)) then
        allocate(chosen % slot(count))
        count = 0

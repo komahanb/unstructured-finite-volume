@@ -113,6 +113,7 @@ module operation_family
      procedure :: history_depth    => family_history_depth
      procedure :: num_stages       => family_num_stages
      procedure :: stage_weight     => family_stage_weight
+     procedure :: stage_abscissa   => family_stage_abscissa
      procedure :: step_quadrature  => family_step_quadrature
      procedure :: primary_degree   => family_primary_degree
      procedure :: row_pattern      => family_row_pattern
@@ -289,6 +290,21 @@ contains
     family_stage_weight = this % b(i)
 
   end function family_stage_weight
+
+  ! the abscissa of a stage within the step, the row sum of the
+  ! tableau: the stage's time is the instant behind plus the abscissa
+  ! times the step
+  pure real(dp) function family_stage_abscissa(this, i)
+
+    class(family), intent(in) :: this
+    integer      , intent(in) :: i
+
+    if (i < 1 .or. i > size(this % b)) then
+       error stop 'operation_family: this stage is not one of the tableau'
+    end if
+    family_stage_abscissa = sum(this % a(i, :))
+
+  end function family_stage_abscissa
 
   !===================================================================!
   ! The interpolatory quadrature over the step [t_(k-1), t_k], on the

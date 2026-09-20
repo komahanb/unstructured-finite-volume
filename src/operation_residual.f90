@@ -104,6 +104,9 @@ module operation_residual
      integer                , private :: connected_degrees = 0
      integer                , private :: unknowns = 0
      integer , allocatable, private :: primary(:)
+     ! the designs at a point: the design is a vector of one value per
+     ! design coordinate at every evaluation point
+     integer                , private :: designs = 1
 
    contains
 
@@ -392,7 +395,8 @@ contains
           end if
        end do
     end if
-    call this % declare_arguments(2, [contract(FIELD_REAL, 1), contract(FIELD_REAL, 1)])
+    if (allocated(this % physics)) this % designs = this % physics % num_designs()
+    call this % declare_arguments(2, [contract(FIELD_REAL, 1), contract(FIELD_REAL, this % designs)])
 
   end function create
 
@@ -645,7 +649,7 @@ contains
 
   type(typed_field_domain) function design_fields(this) result(fields)
     class(residual_operator), intent(in) :: this
-    fields = typed_field_domain(this % points)
+    fields = typed_field_domain(this % points, this % designs)
   end function design_fields
 
   !===================================================================!
@@ -668,9 +672,10 @@ contains
             &degree per unknown point; size(x) = ', size(x), ', unknowns = ', this % unknowns
        error stop trim(message)
     end if
-    if (size(nu) /= size(this % at)) then
-       write(message,'(a,i0,a,i0)') 'operation_residual: the design must contain one value per &
-            &evaluation point; size(nu) = ', size(nu), ', size(at) = ', size(this % at)
+    if (size(nu) /= size(this % at) * this % designs) then
+       write(message,'(a,i0,a,i0)') 'operation_residual: the design must contain one value per design &
+            &per evaluation point; size(nu) = ', size(nu), ', size(at) * designs = ', &
+            & size(this % at) * this % designs
        error stop trim(message)
     end if
     states  = this % state_fields()
@@ -764,8 +769,9 @@ contains
     type(continuous_domain) :: continuous
     type(discrete_domain) :: domain
     real(dp), allocatable :: design_values(:)
-    if (.not. bound_on(inputs, this % argument(2), this % design_domain(), size(this % at))) then
-       error stop 'operation_residual: the design must be defined on the point domain with one value per point'
+    if (.not. bound_on(inputs, this % argument(2), this % design_domain(), size(this % at) * this % designs)) then
+       error stop 'operation_residual: the design must be defined on the point domain with one value per &
+            &design per point'
     end if
     call bound_real_vector(inputs, this % argument(2), design_values)
     continuous = continuous_domain(this % physics)
@@ -918,7 +924,7 @@ contains
        call require_field(along, size(v), this % unknown_domain(), this % unknowns, &
             & 'a direction in the state must be defined on the unknown domain with one value per unknown')
     else if (given % argument_is(this % argument(2))) then
-       call require_field(along, size(v), this % design_domain(), size(this % at), &
+       call require_field(along, size(v), this % design_domain(), size(this % at) * this % designs, &
             & 'a direction in the design must be defined on the point domain with one value per point')
     else
        error stop 'operation_residual: require_direction received a variation naming neither the state nor the design'
@@ -1041,8 +1047,9 @@ contains
     is_fixed = this % fixed_indicator()
     call state_of(this, inputs, x, state)
     if (allocated(this % physics)) then
-       if (.not. bound_on(inputs, this % argument(2), this % design_domain(), npts)) then
-          error stop 'operation_residual: the design must be defined on the point domain with one value per point'
+       if (.not. bound_on(inputs, this % argument(2), this % design_domain(), npts * this % designs)) then
+          error stop 'operation_residual: the design must be defined on the point domain with one value per &
+               &design per point'
        end if
        call bound_real_vector(inputs, this % argument(2), nu)
        xs = gathered(this, x)
@@ -1063,7 +1070,8 @@ contains
        call this % rules(j) % read_components(reads)
        do p = 1, npts
           if (is_fixed(this % at(p) + this % primary(j) + 1)) cycle
-          call this % rules(j) % gradient_at(xs((p - 1) * deg + 1:p * deg), nu(p), value, g)
+          call this % rules(j) % gradient_at(xs((p - 1) * deg + 1:p * deg), &
+               & nu((p - 1) * this % designs + 1:p * this % designs), value, g)
           do k = 1, size(reads)
              d = reads(k)
              num_triples    = num_triples + 1
@@ -2413,7 +2421,7 @@ contains
                 call q(d) % set_symmetric(k, jets(rows % at(p) + d + 1, k))
              end do
           end do
-          r = rows % rules(j) % at_instant(q, design)
+          r = rows % rules(j) % at_instant(q, spread(design, 1, rows % designs))
           b(row) = -mixed_partial(r)
        end do
     end do
@@ -2442,7 +2450,7 @@ contains
     design = derivative_terms(nu, m)
     call design % set_symmetric(1, 1.0_dp)
     allocate(q(0:g % num_components() - 1), source=derivative_terms(0.0_dp, m))
-    stated_derivative = -mixed_partial(g % at_instant(q, design, position))
+    stated_derivative = -mixed_partial(g % at_instant(q, spread(design, 1, g % num_designs()), position))
 
   end function stated_derivative
 
@@ -2696,7 +2704,7 @@ contains
           along = symmetric_terms(mu(row, 0), lower, o)
           do d = 0, deg - 1
              call q(d) % set_coefficient(2**o, 1.0_dp)
-             r = rows % rules(j) % at_instant(q, design)
+             r = rows % rules(j) % at_instant(q, spread(design, 1, rows % designs))
              call q(d) % set_coefficient(2**o, 0.0_dp)
              do k = 0, o
                 partial(k) = coefficient(r, 2**k - 1 + 2**o)
@@ -2746,7 +2754,7 @@ contains
           do d = 0, deg - 1
              q(d) = symmetric_terms(jets(rows % at(p) + d + 1, 0), jets(rows % at(p) + d + 1, 1:o), o + 1)
           end do
-          r = rows % rules(j) % at_instant(q, design)
+          r = rows % rules(j) % at_instant(q, spread(design, 1, rows % designs))
           do k = 0, o
              partial(k) = coefficient(r, 2**k - 1 + 2**o)
           end do
@@ -2777,7 +2785,7 @@ contains
     design = derivative_terms(nu, 1)
     call design % set_symmetric(1, 1.0_dp)
     allocate(q(0:g % num_components() - 1), source=derivative_terms(0.0_dp, 1))
-    r     = g % at_instant(q, design)
+    r     = g % at_instant(q, spread(design, 1, g % num_designs()))
     given = -coefficient(r, 0)
     slope = coefficient(r, 1)
 
@@ -2887,7 +2895,7 @@ contains
     end if
 
     designs = rows % design_fields()
-    design  = designs % design(spread(this % points % design_value(), 1, npts))
+    design  = designs % design(spread(this % points % design_value(), 1, npts * rows % designs))
     call solver % state(rows, rows % unknown_graph(), rows % unknown_domain(), unknowns, stored_inputs=[design])
 
   end function solver_for
@@ -3099,9 +3107,9 @@ contains
     g  = equation % graph(1)
     nu = derivative_terms(0.0_dp, 0)
     allocate(q(0:g % num_components() - 1), source=nu)
-    at_zero_value = mixed_partial(g % at_instant(q, nu, position))
+    at_zero_value = mixed_partial(g % at_instant(q, spread(nu, 1, g % num_designs()), position))
     q(comp) = derivative_terms(1.0_dp, 0)
-    at_one_value  = mixed_partial(g % at_instant(q, nu, position))
+    at_one_value  = mixed_partial(g % at_instant(q, spread(nu, 1, g % num_designs()), position))
     given = -at_zero_value
     slope = at_one_value - at_zero_value
   end subroutine affine_value

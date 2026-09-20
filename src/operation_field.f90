@@ -494,23 +494,23 @@ contains
           jets(k)   = symmetric_terms(q(k), solution % jet(slot(k), p, 2:order + 1), order)
           varied(k) = symmetric_terms(q(k), solution % jet(slot(k), p, 2:order + 1), order + 1)
        end do
-       call this % component(1) % gradient_at(q, solution % on % design_value(), value, g, &
+       call this % component(1) % gradient_at(q, [solution % on % design_value()], value, g, &
             & solution % on % position(p))
        do k = 0, ns - 1
           gradient(slot(k), p, 0) = gradient(slot(k), p, 0) + measure * g(k)
        end do
-       r = this % component(1) % at_instant(jets, nu, solution % on % position(p))
+       r = this % component(1) % at_instant(jets, [nu], solution % on % position(p))
        do o = 0, order
           total(o + 1) = total(o + 1) + measure * coefficient(r, 2**o - 1)
        end do
-       r = this % component(1) % at_instant(varied, design, solution % on % position(p))
+       r = this % component(1) % at_instant(varied, [design], solution % on % position(p))
        do o = 0, order
           partial(o) = partial(o) + measure * coefficient(r, 2**o - 1 + 2**order)
        end do
        if (order > 0) then
           do k = 0, ns - 1
              call varied(k) % set_coefficient(2**order, 1.0_dp)
-             r = this % component(1) % at_instant(varied, along, solution % on % position(p))
+             r = this % component(1) % at_instant(varied, [along], solution % on % position(p))
              call varied(k) % set_coefficient(2**order, 0.0_dp)
              do o = 1, order
                 gradient(slot(k), p, o) = gradient(slot(k), p, o) + measure * coefficient(r, 2**o - 1 + 2**order)

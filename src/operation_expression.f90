@@ -156,6 +156,9 @@ module operation_expression
      integer, allocatable, private :: degrees(:)
      integer, private :: fields      = 0
      integer, private :: multipliers = 0
+     ! the designs the expression reads, one value per design at a
+     ! point: the highest index named, one at least
+     integer, private :: designs     = 1
      integer, private :: varied      = 0
      integer, allocatable, private :: field_degree(:)
 
@@ -188,6 +191,7 @@ module operation_expression
      procedure :: num_vertices
      procedure :: num_fields
      procedure :: num_multipliers
+     procedure :: num_designs
      procedure :: degree_along
      procedure :: degree_of_field
      procedure :: offset_of_field
@@ -291,11 +295,28 @@ contains
 
   end function unknown
 
-  function design() result(this)
+  !===================================================================!
+  ! The i-th design: read from the design of the point, a vector of
+  ! one value per design coordinate. An index below one stops the
+  ! program; the first when none is given.
+  !===================================================================!
 
+  function design(field) result(this)
+
+    integer, intent(in), optional :: field
     type(expression) :: this
 
-    this = vertex(VERTEX_LEAF, ARGUMENT_DESIGN, 0, 0.0_dp)
+    integer :: f
+    character(len=250) :: message
+
+    f = 1
+    if (present(field)) f = field
+    if (f < 1) then
+       write(message,'(a,i0)') 'operation_expression: a design must be named by a positive index; field = ', f
+       error stop trim(message)
+    end if
+
+    this = vertex(VERTEX_LEAF, ARGUMENT_DESIGN, 0, 0.0_dp, field=f)
 
   end function design
 
@@ -552,6 +573,7 @@ contains
 
     this % fields      = 1
     this % multipliers = 0
+    this % designs     = 1
     coordinates        = FIRST_COORDINATE
     do i = 1, this % num_vertices()
        if (this % kind(i) /= VERTEX_LEAF) cycle
@@ -561,6 +583,8 @@ contains
           coordinates   = max(coordinates, this % along(i))
        case (ARGUMENT_MULTIPLIER)
           this % multipliers = max(this % multipliers, this % field(i))
+       case (ARGUMENT_DESIGN)
+          this % designs = max(this % designs, this % field(i))
        end select
     end do
 
@@ -570,7 +594,7 @@ contains
 
     call this % declare_arguments(2, [ &
          & contract(FIELD_REAL, this % num_components()), &
-         & contract(FIELD_REAL, 1) ], label=label, &
+         & contract(FIELD_REAL, this % designs) ], label=label, &
          & max_degree=max_subset_width() - merge(1, 0, this % varied > 0))
 
   end subroutine derive_domain
@@ -719,16 +743,18 @@ contains
 
     class(expression)     , intent(in) :: this
     type(derivative_terms), intent(in) :: q(0:)
-    type(derivative_terms), intent(in) :: nu
+    type(derivative_terms), intent(in) :: nu(:)
     real(dp)              , intent(in), optional :: position(:)
     type(derivative_terms) :: r
 
-    type(derivative_terms), allocatable :: stored(:)
-    type(derivative_terms) :: design
+    type(derivative_terms), allocatable :: stored(:), design(:)
     integer :: n, j, given
 
     if (size(q) /= this % num_components()) then
        error stop 'operation_expression: the point does not store one component per law component'
+    end if
+    if (size(nu) < this % designs) then
+       error stop 'operation_expression: the point does not store one value per design the law reads'
     end if
     if (this % multipliers == 0) then
        r = this % evaluated_over(q, nu, position)
@@ -739,16 +765,19 @@ contains
     ! a multiplier, read from no input, is zero, and the varied one
     ! has one more direction, the highest, whose partial is returned
     ! over the caller's
-    n = nu % num_directions()
+    n = nu(1) % num_directions()
     if (this % varied > 0) n = n + 1
-    design = extend_directions(nu, n)
+    allocate(design(size(nu)))
+    do j = 1, size(nu)
+       design(j) = extend_directions(nu(j), n)
+    end do
     given  = this % num_components()
     allocate(stored(0:given + this % multipliers - 1))
     do j = 0, given - 1
        stored(j) = extend_directions(q(j), n)
     end do
     do j = 1, this % multipliers
-       stored(given + j - 1) = derivative_terms(0.0_dp, design)
+       stored(given + j - 1) = derivative_terms(0.0_dp, design(1))
     end do
     if (this % varied > 0) call stored(given + this % varied - 1) % set_direction(n, 1.0_dp)
 
@@ -776,7 +805,7 @@ contains
             &but the expression reads the state or a multiplier'
     end if
     allocate(q(0:this % num_components() - 1), source=0.0_dp)
-    call this % values_over(q, 0.0_dp, position, v, dv)
+    call this % values_over(q, [0.0_dp], position, v, dv)
     value_at = v(size(v))
 
   end function value_at
@@ -795,13 +824,16 @@ contains
 
     class(expression), intent(in) :: this
     real(dp)         , intent(in) :: q(0:)
-    real(dp)         , intent(in) :: nu
+    real(dp)         , intent(in) :: nu(:)
     real(dp)         , intent(in), optional :: position(:)
     real(dp), allocatable, intent(out) :: v(:), dv(:)
 
     integer :: i, at, f, s, n
     real(dp) :: d
 
+    if (size(nu) < this % designs) then
+       error stop 'operation_expression: the point does not store one value per design the law reads'
+    end if
     allocate(v(this % num_vertices()), dv(this % num_vertices()))
     dv = 0.0_dp
 
@@ -811,7 +843,7 @@ contains
        select case (this % kind(i))
        case (VERTEX_LEAF)
           if (this % position(i) == ARGUMENT_DESIGN) then
-             v(i) = nu
+             v(i) = nu(this % field(i))
           else if (this % position(i) == ARGUMENT_COORDINATE) then
              if (.not. present(position)) then
                 error stop 'operation_expression: the expression reads a coordinate, but no position was given'
@@ -889,14 +921,15 @@ contains
   ! direction per pass.
   !===================================================================!
 
-  pure subroutine gradient_at(this, q, nu, value, g, position)
+  pure subroutine gradient_at(this, q, nu, value, g, position, g_design)
 
     class(expression), intent(in)  :: this
     real(dp)         , intent(in)  :: q(0:)
-    real(dp)         , intent(in)  :: nu
+    real(dp)         , intent(in)  :: nu(:)
     real(dp)         , intent(out) :: value
     real(dp)         , intent(out) :: g(0:)
     real(dp)         , intent(in), optional :: position(:)
+    real(dp)         , intent(out), optional :: g_design(:)
 
     real(dp), allocatable :: v(:), dv(:), a(:), da(:)
     integer :: i, f, s, at, n
@@ -912,6 +945,7 @@ contains
     allocate(a(size(v)), da(size(v)), source=0.0_dp)
     a(size(v)) = 1.0_dp
     g = 0.0_dp
+    if (present(g_design)) g_design = 0.0_dp
 
     do i = this % num_vertices(), 1, -1
        if (a(i) == 0.0_dp .and. da(i) == 0.0_dp) cycle
@@ -925,6 +959,13 @@ contains
                 g(at) = g(at) + da(i)
              else
                 g(at) = g(at) + a(i)
+             end if
+          else if (this % position(i) == ARGUMENT_DESIGN .and. present(g_design)) then
+             ! the gradient in the design, by the same reverse pass
+             if (this % varied > 0) then
+                g_design(this % field(i)) = g_design(this % field(i)) + da(i)
+             else
+                g_design(this % field(i)) = g_design(this % field(i)) + a(i)
              end if
           end if
        case (VERTEX_CONSTANT)
@@ -1067,7 +1108,7 @@ contains
 
     class(expression)     , intent(in) :: this
     type(derivative_terms), intent(in) :: q(0:)
-    type(derivative_terms), intent(in) :: nu
+    type(derivative_terms), intent(in) :: nu(:)
     real(dp)              , intent(in), optional :: position(:)
     type(derivative_terms) :: r
 
@@ -1080,7 +1121,7 @@ contains
        select case (this % kind(i))
        case (VERTEX_LEAF)
           if (this % position(i) == ARGUMENT_DESIGN) then
-             v(i) = nu
+             v(i) = nu(this % field(i))
           else if (this % position(i) == ARGUMENT_COORDINATE) then
              ! a coordinate is read from the position of the point,
              ! which an evaluation without a position does not have
@@ -1090,7 +1131,7 @@ contains
              if (this % field(i) > size(position)) then
                 error stop 'operation_expression: the expression reads a coordinate the position does not have'
              end if
-             v(i) = derivative_terms(position(this % field(i)), nu)
+             v(i) = derivative_terms(position(this % field(i)), nu(1))
           else
              ! the tuple lists every field's components together, the
              ! components along time first, then along space, and the
@@ -1103,7 +1144,7 @@ contains
              v(i) = q(at)
           end if
        case (VERTEX_CONSTANT)
-          v(i) = derivative_terms(this % coefficient(i), nu)
+          v(i) = derivative_terms(this % coefficient(i), nu(1))
        case (VERTEX_SUM)
           v(i) = v(this % first(i)) + v(this % second(i))
        case (VERTEX_DIFFERENCE)
@@ -1412,6 +1453,14 @@ contains
 
   end function num_multipliers
 
+  pure integer function num_designs(this)
+
+    class(expression), intent(in) :: this
+
+    num_designs = this % designs
+
+  end function num_designs
+
   !===================================================================!
   ! A field's degree along the first coordinate; a multiplier's is
   ! zero.
@@ -1459,10 +1508,11 @@ contains
     class(field), allocatable, intent(inout) :: output
 
     real(dp), allocatable :: values(:)
-    integer :: k, nd, base
+    integer :: k, nd, base, ndesign
     character(len=250) :: message
 
-    nd = this % num_components()
+    nd      = this % num_components()
+    ndesign = this % designs
 
     if (size(q) /= input_graph % num_vertices() * nd) then
        write(message,'(a,i0,a,i0,a,i0)') 'operation_expression: the state does not store one &
@@ -1470,9 +1520,10 @@ contains
             & ', num_vertices = ', input_graph % num_vertices(), ', components per point = ', nd
        error stop trim(message)
     end if
-    if (size(nu) /= input_graph % num_vertices()) then
-       write(message,'(a,i0,a,i0)') 'operation_expression: the design does not store one value &
-            &per point; size(nu) = ', size(nu), ', num_vertices = ', input_graph % num_vertices()
+    if (size(nu) /= input_graph % num_vertices() * ndesign) then
+       write(message,'(a,i0,a,i0,a,i0)') 'operation_expression: the design does not store one value &
+            &per design per point; size(nu) = ', size(nu), ', num_vertices = ', input_graph % num_vertices(), &
+            & ', designs = ', ndesign
        error stop trim(message)
     end if
 
@@ -1480,7 +1531,8 @@ contains
 
     do k = 1, input_graph % num_vertices()
        base = (k - 1) * nd
-       values(k) = mixed_partial(this % at_instant(q(base + 1:base + nd), nu(k)))
+       values(k) = mixed_partial(this % at_instant(q(base + 1:base + nd), &
+            & nu((k - 1) * ndesign + 1:k * ndesign)))
     end do
 
     call emit_real(this % name(), input_graph % vertex_set(), &

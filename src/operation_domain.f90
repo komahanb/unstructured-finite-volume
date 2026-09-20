@@ -42,6 +42,7 @@ module operation_domain
      procedure :: equation_degree      => continuous_domain_equation_degree
      procedure :: num_coordinates      => continuous_domain_num_coordinates
      procedure :: num_components       => continuous_domain_num_components
+     procedure :: num_designs          => continuous_domain_num_designs
      procedure :: component_at         => continuous_domain_component_at
      procedure :: highest_degree_along => continuous_domain_highest_degree_along
      procedure :: discrete             => continuous_domain_discrete
@@ -109,6 +110,14 @@ contains
     n = this % law % num_components()
 
   end function continuous_domain_num_components
+
+  pure integer function continuous_domain_num_designs(this) result(n)
+
+    class(continuous_domain), intent(in) :: this
+
+    n = this % law % num_designs()
+
+  end function continuous_domain_num_designs
 
   pure integer function continuous_domain_component_at(this, coordinate, order) result(at)
 
@@ -191,7 +200,7 @@ contains
 
     class(discrete_domain), intent(in) :: this
 
-    fields = typed_field_domain(this % point_set, this % points)
+    fields = typed_field_domain(this % point_set, this % points, this % continuous % num_designs())
 
   end function discrete_domain_design_fields
 

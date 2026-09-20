@@ -1,9 +1,9 @@
 !=====================================================================!
 ! THE VAN DER POL OSCILLATOR, the second-order equation
 !
-!      u'' - mu (1 - u^2) u' + u = 0
+!      u'' - nu (1 - u^2) u' + u = 0
 !
-! on the interval [0, T] with u(0) = 2, u'(0) = 0 and mu = 1, stated
+! on the interval [0, T] with u(0) = 2, u'(0) = 0 and nu = 1, stated
 ! on a manifold of time alone, with the energy
 !
 !      J = integral over [0, T] of (u^2 + u_t^2) / 2
@@ -42,7 +42,7 @@ program van_der_pol
 
   implicit none
 
-  real(dp), parameter :: T_final = 2.0_dp, mu = 1.0_dp
+  real(dp), parameter :: T_final = 2.0_dp, nu = 1.0_dp
   real(dp) :: u_initial = 2.0_dp, v_initial = 0.0_dp
   integer  :: num_instants = 11
 
@@ -82,7 +82,7 @@ program van_der_pol
 
   ! the equation as a function Omega -> R of the jet of u to order
   ! two along t
-  oscillator = u % derivative([t, t]) - mu*(1.0_dp - u*u)*u % derivative([t]) + u
+  oscillator = u % derivative([t, t]) - nu*(1.0_dp - u*u)*u % derivative([t]) + u
 
   ! the initial data, functions dOmega -> R: the value and the first
   ! derivative of u at t = 0

@@ -266,6 +266,10 @@ module operation_residual
      type(residual_term), allocatable :: condition(:)
      type(continuous_field), allocatable :: objective
      logical                   :: with_adjoint = .false.
+     ! two images divide a checkpointed reverse sweep: image 2 solves
+     ! the segments again, image 1 forms their multipliers; every
+     ! image then owns every expansion
+     logical                   :: overlapped = .false.
      character(len=32)         :: adjoint_name = ''
 
    contains
@@ -1723,7 +1727,7 @@ contains
   ! pipelined over the images retains every stage.
   !===================================================================!
 
-  subroutine minimize(this, estimate, solution, checkpoint)
+  recursive subroutine minimize(this, estimate, solution, checkpoint)
 
     class(discrete_residual), intent(in)  :: this
     type(discrete_field)    , intent(in)  :: estimate
@@ -1745,6 +1749,8 @@ contains
     real(dp), allocatable :: part_gradient(:,:,:,:)
     type(discrete_field) :: part
     type(expression_view) :: view
+    type(discrete_residual) :: halves
+    logical :: wavefront
     integer(8) :: tick, tock, rate
     character(len=250) :: message
 
@@ -1773,8 +1779,19 @@ contains
     if (segment > 0 .and. .not. this % with_chain) then
        error stop 'operation_residual: checkpoints divide a chain of blocks; the residual has none'
     end if
-    if (segment > 0 .and. pipelined(this)) then
-       error stop 'operation_residual: a chain pipelined over the images retains every stage; no checkpoints'
+    ! with checkpoints the wavefront, which retains every stage, is not
+    ! formed; two images on a manifold of time alone divide the reverse
+    ! sweep instead, image 2 solving each segment again while image 1
+    ! forms the multipliers of the segment after it
+    wavefront = pipelined(this) .and. segment == 0
+    if (segment > 0 .and. num_images() == 2 .and. .not. this % points % with_space .and. .not. this % overlapped) then
+       select type (this)
+       type is (discrete_residual)
+          halves = this
+       end select
+       halves % overlapped = .true.
+       call halves % minimize(estimate, solution, checkpoint)
+       return
     end if
     allocate(tuple(stride, ncells, ninst), source=0.0_dp)
     allocate(tjet(stride, ncells, ninst, order, nd), source=0.0_dp)
@@ -1826,7 +1843,7 @@ contains
           ! the wavefront over the blocks and the orders, when the images
           ! number the orders plus one on a manifold of time alone with
           ! one expansion; the block loop otherwise
-          if (pipelined(this)) then
+          if (wavefront) then
              call wavefront_expansion(this, rows_along, tuple, stages, tjet, sjet)
              nb = 0
           end if
@@ -2255,7 +2272,8 @@ contains
        call solve_block(this, this % schemes % scheme(b), first, last, depth, rows_along, tuple, lo, stages, &
             & tjet, sjet)
     end do
-    if (this % points % design_order() > 0 .and. num_images() > 1 .and. .not. this % points % with_space) then
+    if (this % points % design_order() > 0 .and. num_images() > 1 .and. .not. this % points % with_space &
+         & .and. .not. this % overlapped) then
        hi  = ubound(stages, 4)
        own = tjet(:, :, lo:hi, :, :)
        call co_sum(own)
@@ -2327,7 +2345,8 @@ contains
     type(residual_operator) :: rows
     integer , allocatable :: primary(:)
     integer :: stride, nf, ncells, ninst, nc, ng, j, b, nb, first, last, depth, order, nd, ni, d
-    integer :: nseg, sg, b1, b2, lo, hi, top, k, c, f
+    integer :: nseg, sg, b1, b2, lo, hi, top, k, c, f, width, half
+    real(dp), allocatable :: stages_co(:,:,:,:,:)[:], sjet_co(:,:,:,:,:,:,:)[:]
 
     stride = this % rule % num_components()
     nf     = this % manifold % num_unknowns
@@ -2376,7 +2395,7 @@ contains
        return
     end if
 
-    if (pipelined(this)) then
+    if (pipelined(this) .and. segment == 0) then
        ! the wavefront in reverse: image o + 1 forms order o of every
        ! block, one block behind image o; each image's multipliers of
        ! its own order, summed over the images at the end
@@ -2408,26 +2427,57 @@ contains
           top = max(top, this % schemes % scheme(b) % num_stages())
        end do
        nseg = (nb + segment - 1) / segment
-       tuple_again = tuple
-       tjet_again  = tjet
+       if (this % overlapped) then
+          ! the widest segment, and two coarray halves: image 2 writes
+          ! the segment sg into the half of its parity and meets image
+          ! 1, which reads it and forms its multipliers while image 2
+          ! solves the segment before into the other half
+          width = 0
+          do sg = 1, nseg
+             call segment_extent(this, sg, segment, b1, b2, lo, hi)
+             width = max(width, hi - lo + 1)
+          end do
+          allocate(stages_co(stride, ncells, top, width, 2)[*], sjet_co(stride, ncells, top, width, order, nd, 2)[*])
+          stages_co = 0.0_dp
+          sjet_co   = 0.0_dp
+       end if
+       if (.not. this % overlapped .or. this_image() == 2) then
+          tuple_again = tuple
+          tjet_again  = tjet
+       end if
        do sg = nseg, 1, -1
           call segment_extent(this, sg, segment, b1, b2, lo, hi)
-          if (verbosity >= 1) print '(a,i0,a,i0,a,i0,a,i0,a)', 'segment ', sg, ' again  blocks ', b1, '..', b2, &
-               & '  resident memory ', resident_kilobytes() / 1024, ' MB'
+          half = mod(sg, 2) + 1
           allocate(stages_seg(stride, ncells, top, lo:hi), sjet_seg(stride, ncells, top, lo:hi, order, nd), source=0.0_dp)
-          do b = b1, b2
-             call block_extent(this, b, first, last, depth)
-             do k = first + depth, last
-                do c = 1, ncells
-                   tuple_again(:, c, k) = 0.0_dp
-                   do f = 1, nf
-                      tuple_again(this % rule % offset_of_field(f) + 1, c, k) = &
-                           & estimate % value(this % points % point_of(k, c), f)
+          if (.not. this % overlapped .or. this_image() == 2) then
+             if (verbosity >= 1) print '(a,i0,a,i0,a,i0,a,i0,a)', 'segment ', sg, ' again  blocks ', b1, '..', b2, &
+                  & '  resident memory ', resident_kilobytes() / 1024, ' MB'
+             do b = b1, b2
+                call block_extent(this, b, first, last, depth)
+                do k = first + depth, last
+                   do c = 1, ncells
+                      tuple_again(:, c, k) = 0.0_dp
+                      do f = 1, nf
+                         tuple_again(this % rule % offset_of_field(f) + 1, c, k) = &
+                              & estimate % value(this % points % point_of(k, c), f)
+                      end do
                    end do
                 end do
              end do
-          end do
-          call segment_solved(this, b1, b2, rows_along, tuple_again, lo, stages_seg, tjet_again, sjet_seg)
+             call segment_solved(this, b1, b2, rows_along, tuple_again, lo, stages_seg, tjet_again, sjet_seg)
+          end if
+          if (this % overlapped) then
+             if (this_image() == 2) then
+                stages_co(:, :, :, 1:hi - lo + 1, half)     = stages_seg(:, :, :, lo:hi)
+                sjet_co(:, :, :, 1:hi - lo + 1, :, :, half) = sjet_seg(:, :, :, lo:hi, :, :)
+                sync images(1)
+                deallocate(stages_seg, sjet_seg)
+                cycle
+             end if
+             sync images(2)
+             stages_seg(:, :, :, lo:hi)     = stages_co(:, :, :, 1:hi - lo + 1, half)[2]
+             sjet_seg(:, :, :, lo:hi, :, :) = sjet_co(:, :, :, 1:hi - lo + 1, :, :, half)[2]
+          end if
           call segment_nodes(this, b1, b2, tuple, lo, stages_seg, tjet, sjet_seg, part, stage_node_seg)
           if (allocated(this % objective)) then
              call this % objective % functional(part, total, gradient, partial)
@@ -2442,6 +2492,14 @@ contains
           end do
           deallocate(stages_seg, sjet_seg, gradient)
        end do
+       if (this % overlapped) then
+          ! the multipliers, formed by image 1, given to image 2
+          sync all
+          call co_broadcast(adjoint, source_image=1)
+          call co_broadcast(reaction, source_image=1)
+          call co_broadcast(gauge, source_image=1)
+          call co_broadcast(design_multiplier, source_image=1)
+       end if
     end if
     call shared_expansions_summed(this, adjoint, reaction, gauge, design_multiplier)
 
@@ -2459,7 +2517,7 @@ contains
     integer :: order
 
     order = ubound(adjoint, 4)
-    if (order < 1 .or. num_images() == 1 .or. this % points % with_space) return
+    if (order < 1 .or. num_images() == 1 .or. this % points % with_space .or. this % overlapped) return
     above = adjoint(:, :, :, 1:order, :)
     call co_sum(above)
     adjoint(:, :, :, 1:order, :) = above
@@ -4150,7 +4208,7 @@ contains
     integer                 , intent(in) :: d
 
     expansion_owned = .true.
-    if (this % points % with_space .or. num_images() == 1) return
+    if (this % points % with_space .or. num_images() == 1 .or. this % overlapped) return
     expansion_owned = mod(d - 1, num_images()) + 1 == this_image()
 
   end function expansion_owned

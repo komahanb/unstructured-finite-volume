@@ -1717,8 +1717,8 @@ contains
   ! nodes, and the reverse sweep forms each segment again from the
   ! state at its instants, which is retained, before the multipliers
   ! of its blocks. The storage of the stages falls from the chain to
-  ! a segment at the cost of a second forward sweep, whose Newton
-  ! iterations begin at the converged instants. The solution then
+  ! a segment at the cost of a second forward sweep, from the same
+  ! estimate and through the same iterates. The solution then
   ! integrates the objective alone, whose value it stores; a chain
   ! pipelined over the images retains every stage.
   !===================================================================!

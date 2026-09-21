@@ -98,7 +98,9 @@ program van_der_pol_study
   case default
      error stop 'van_der_pol_study: the mode is table, chain or windows'
   end select
-  print '(a,a,a,i0,a,i0,a,i0)', 'mode ', trim(mode), '  instants ', n, '  dirk order ', order, '  stages ', stages
+  if (this_image() == 1) then
+     print '(a,a,a,i0,a,i0,a,i0)', 'mode ', trim(mode), '  instants ', n, '  dirk order ', order, '  stages ', stages
+  end if
 
   omega   = continuous_manifold(time=interval(0.0_dp, T_final), design=parameter('nu', nu_design))
   domega  = omega % boundary(time=0.0_dp)
@@ -133,19 +135,22 @@ program van_der_pol_study
      reverse(k) = -kappa_h % value(1, 1)
   end do
 
-  print '(a)', '  k   g_k by the expansion       g_k by the adjoint expansion'
-  print '(i3, es24.16)', 0, values(1)
-  do k = 1, degree
-     if (k < degree) then
-        print '(i3, 2es24.16)', k, values(1 + k), reverse(k - 1)
-     else
-        print '(i3, es24.16, a)', k, values(1 + k), '   (the adjoint expansion of order ' // trim(item_of(degree - 1)) // ')'
+  ! the table, printed by image 1: every image has the same solution
+  if (this_image() == 1) then
+     print '(a)', '  k   g_k by the expansion       g_k by the adjoint expansion'
+     print '(i3, es24.16)', 0, values(1)
+     do k = 1, degree
+        if (k < degree) then
+           print '(i3, 2es24.16)', k, values(1 + k), reverse(k - 1)
+        else
+           print '(i3, es24.16, a)', k, values(1 + k), '   (the adjoint expansion of order ' // trim(item_of(degree - 1)) // ')'
+        end if
+     end do
+     if (trim(mode) == 'table') then
+        print '(a)', 'the paper''s Table 4 at h = 0.02, IMID-2: 1.65208997, 1.79779439, 0.19985514, -0.22354341, 0.22194265'
+     else if (trim(mode) == 'windows') then
+        print '(a)', 'the paper''s eq. 20: dF/dnu = 2.502871579137'
      end if
-  end do
-  if (trim(mode) == 'table') then
-     print '(a)', 'the paper''s Table 4 at h = 0.02, IMID-2: 1.65208997, 1.79779439, 0.19985514, -0.22354341, 0.22194265'
-  else
-     print '(a)', 'the paper''s eq. 20: dF/dnu = 2.502871579137'
   end if
 
 contains

@@ -61,6 +61,7 @@ module operation_residual
   use util_derivative_terms, only : operator(*)
   use token_identity       , only : token
   use operation_field      , only : continuous_field, discrete_field, WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR
+  use view_expression      , only : expression_view
   use operation_manifold   , only : continuous_manifold, discrete_manifold
   use operation_family     , only : family, chain
   use operation_weight     , only : scheme_weight
@@ -1707,13 +1708,27 @@ contains
   ! moments (its instants, and the stages of a one-step family) and
   ! the cells. The solution is a discrete field of the manifold's
   ! unknowns at the instants.
+  !
+  ! CHECKPOINTS: with checkpoint = k blocks, the stages of the steps
+  ! and their jets along the design, which the reverse sweep reads at
+  ! every block, are retained over one segment of k blocks at a time
+  ! rather than over the chain: the forward sweep discards each
+  ! segment's stages once the objective is summed over its quadrature
+  ! nodes, and the reverse sweep forms each segment again from the
+  ! state at its instants, which is retained, before the multipliers
+  ! of its blocks. The storage of the stages falls from the chain to
+  ! a segment at the cost of a second forward sweep, whose Newton
+  ! iterations begin at the converged instants. The solution then
+  ! integrates the objective alone, whose value it stores; a chain
+  ! pipelined over the images retains every stage.
   !===================================================================!
 
-  subroutine minimize(this, estimate, solution)
+  subroutine minimize(this, estimate, solution, checkpoint)
 
     class(discrete_residual), intent(in)  :: this
     type(discrete_field)    , intent(in)  :: estimate
     type(discrete_field)    , intent(out) :: solution
+    integer                 , intent(in), optional :: checkpoint
 
     real(dp), allocatable :: tuple(:,:,:), stages(:,:,:,:), tjet(:,:,:,:,:), sjet(:,:,:,:,:,:), value(:,:)
     real(dp), allocatable :: jet(:,:,:,:), adjoint(:,:,:,:,:), reaction(:,:,:,:), gauge(:,:,:,:)
@@ -1725,6 +1740,11 @@ contains
     character(len=32), allocatable :: names(:)
     type(stencil), allocatable :: rows_along(:,:)
     integer :: stride, nf, ncells, ninst, f, c, k, b, first, last, depth, nb, top, o, npts, nc, j
+    integer :: segment, nseg, sg, b1, b2, lo, hi
+    real(dp), allocatable :: objective_value(:), objective_partial(:,:,:), part_value(:), part_partial(:,:,:)
+    real(dp), allocatable :: part_gradient(:,:,:,:)
+    type(discrete_field) :: part
+    type(expression_view) :: view
     integer(8) :: tick, tock, rate
     character(len=250) :: message
 
@@ -1747,6 +1767,15 @@ contains
     ! derivatives along the design to the order of the expansion
     order = this % points % design_order()
     nd    = max(1, this % points % num_expansions())
+    segment = 0
+    if (present(checkpoint)) segment = checkpoint
+    if (segment < 0) error stop 'operation_residual: checkpoint is a number of blocks, at least one'
+    if (segment > 0 .and. .not. this % with_chain) then
+       error stop 'operation_residual: checkpoints divide a chain of blocks; the residual has none'
+    end if
+    if (segment > 0 .and. pipelined(this)) then
+       error stop 'operation_residual: a chain pipelined over the images retains every stage; no checkpoints'
+    end if
     allocate(tuple(stride, ncells, ninst), source=0.0_dp)
     allocate(tjet(stride, ncells, ninst, order, nd), source=0.0_dp)
     do k = 1, ninst
@@ -1784,36 +1813,58 @@ contains
        do b = 1, nb
           top = max(top, this % schemes % scheme(b) % num_stages())
        end do
-       allocate(stages(stride, ncells, top, ninst), sjet(stride, ncells, top, ninst, order, nd), source=0.0_dp)
-       ! the wavefront over the blocks and the orders, when the images
-       ! number the orders plus one on a manifold of time alone with
-       ! one expansion; the block loop otherwise
-       if (pipelined(this)) then
-          call wavefront_expansion(this, rows_along, tuple, stages, tjet, sjet)
-          nb = 0
-       end if
        do b = 1, nb
-          first = this % schemes % from(b)
-          last  = ninst
-          if (b < nb) last = this % schemes % from(b + 1) - 1
-          depth = 0
-          if (b > 1) depth = this % schemes % scheme(b) % history_depth(top_degree(this % rule, nf))
-          if (first - depth < 1) then
+          call block_extent(this, b, first, last, depth)
+          if (first < 1) then
              write(message,'(a,i0,a,i0,a,i0)') 'operation_residual: block ', b, ' reads ', depth, &
-                  & ' instants of history before instant ', first
+                  & ' instants of history before instant ', first + depth
              error stop trim(message)
           end if
-          call solve_block(this, this % schemes % scheme(b), first - depth, last, depth, rows_along, tuple, &
-               & stages, tjet, sjet)
        end do
+       if (segment == 0) then
+          allocate(stages(stride, ncells, top, ninst), sjet(stride, ncells, top, ninst, order, nd), source=0.0_dp)
+          ! the wavefront over the blocks and the orders, when the images
+          ! number the orders plus one on a manifold of time alone with
+          ! one expansion; the block loop otherwise
+          if (pipelined(this)) then
+             call wavefront_expansion(this, rows_along, tuple, stages, tjet, sjet)
+             nb = 0
+          end if
+          do b = 1, nb
+             call block_extent(this, b, first, last, depth)
+             call solve_block(this, this % schemes % scheme(b), first, last, depth, rows_along, tuple, &
+                  & 1, stages, tjet, sjet)
+          end do
+       else
+          ! segment by segment: the stages of a segment, the objective
+          ! summed over its nodes, the stages released
+          nseg = (nb + segment - 1) / segment
+          allocate(objective_value(1 + nd * order), source=0.0_dp)
+          allocate(objective_partial(size(this % points % design_values()), 0:order, nd), source=0.0_dp)
+          do sg = 1, nseg
+             call segment_extent(this, sg, segment, b1, b2, lo, hi)
+             if (verbosity >= 1) print '(a,i0,a,i0,a,i0)', 'segment ', sg, '  blocks ', b1, '..', b2
+             allocate(stages(stride, ncells, top, lo:hi), sjet(stride, ncells, top, lo:hi, order, nd), source=0.0_dp)
+             call segment_solved(this, b1, b2, rows_along, tuple, lo, stages, tjet, sjet)
+             if (allocated(this % objective)) then
+                call segment_nodes(this, b1, b2, tuple, lo, stages, tjet, sjet, part, stage_node)
+                call this % objective % functional(part, part_value, part_gradient, part_partial)
+                objective_value   = objective_value + part_value
+                objective_partial = objective_partial + part_partial
+             end if
+             deallocate(stages, sjet)
+          end do
+          allocate(stages(stride, ncells, top, 1:0), sjet(stride, ncells, top, 1:0, order, nd))
+       end if
     else
        ! the point manifold: one system, its jets along the design
        allocate(stages(stride, 1, 1, 1), sjet(stride, 1, 1, 1, order, nd), source=0.0_dp)
        call solve_point(this, tuple, rows, q)
-       if (order > 0) call design_jets(this, rows, q, [0], [1], 1, 1, 0, tjet, sjet)
+       if (order > 0) call design_jets(this, rows, q, [0], [1], 1, 1, 0, tjet, 1, sjet)
     end if
-    ! the expansions shared among the images: their jets summed once
-    if (order > 0 .and. num_images() > 1 .and. .not. this % points % with_space) then
+    ! the expansions shared among the images: their jets summed once;
+    ! segment by segment above when the stages are not retained
+    if (order > 0 .and. num_images() > 1 .and. .not. this % points % with_space .and. segment == 0) then
        call co_sum(tjet)
        call co_sum(sjet)
     end if
@@ -1860,18 +1911,28 @@ contains
     solution % jet  = jet
     solution % slot = slot(1:nf)
     solution % rule = this % rule
-    call quadrature_nodes(this, tuple, stages, tjet, sjet, solution, stage_node)
+    if (segment == 0) then
+       call quadrature_nodes(this, tuple, 1, stages, tjet, sjet, solution, stage_node)
+    else
+       ! the objective's value stored, the nodes not
+       solution % objective_value   = objective_value
+       solution % objective_formula = ''
+       if (allocated(this % objective)) then
+          view = expression_view(this % objective % component(1))
+          solution % objective_formula = view % formula()
+       end if
+    end if
     call system_clock(tock)
-    if (verbosity >= 1) print '(a,f10.3,a)', 'the forward sweep with its expansions took ', &
-         & real(tock - tick, dp) / real(rate, dp), ' s'
+    if (verbosity >= 1) print '(a,f10.3,a,i0,a)', 'the forward sweep with its expansions took ', &
+         & real(tock - tick, dp) / real(rate, dp), ' s; resident memory ', resident_kilobytes() / 1024, ' MB'
 
     if (this % with_adjoint) then
        tick = tock
-       call adjoint_sweep(this, rows_along, tuple, stages, tjet, sjet, solution, stage_node, adjoint, reaction, &
-            & gauge, design_multiplier)
+       call adjoint_sweep(this, rows_along, tuple, 1, stages, tjet, sjet, solution, stage_node, segment, &
+            & objective_partial, estimate, adjoint, reaction, gauge, design_multiplier)
        call system_clock(tock)
-       if (verbosity >= 1) print '(a,f10.3,a)', 'the reverse sweep with its expansions took ', &
-            & real(tock - tick, dp) / real(rate, dp), ' s'
+       if (verbosity >= 1) print '(a,f10.3,a,i0,a)', 'the reverse sweep with its expansions took ', &
+            & real(tock - tick, dp) / real(rate, dp), ' s; resident memory ', resident_kilobytes() / 1024, ' MB'
        ! every multiplier and its derivatives along the design as a
        ! column with a row of the jet of its own
        names(nf + 1:2 * nf) = this % adjoint_name
@@ -1942,11 +2003,16 @@ contains
       solution % jet  = jet
       solution % slot = slot
       solution % rule = this % rule
-      solution % node_jet      = with_nodes % node_jet
-      solution % node_weight   = with_nodes % node_weight
-      solution % node_position = with_nodes % node_position
-      solution % node_point    = with_nodes % node_point
-      solution % node_image    = with_nodes % node_image
+      if (segment == 0) then
+         solution % node_jet      = with_nodes % node_jet
+         solution % node_weight   = with_nodes % node_weight
+         solution % node_position = with_nodes % node_position
+         solution % node_point    = with_nodes % node_point
+         solution % node_image    = with_nodes % node_image
+      else
+         solution % objective_value   = with_nodes % objective_value
+         solution % objective_formula = with_nodes % objective_formula
+      end if
     end block estimate_nodes
 
   end subroutine minimize
@@ -1967,18 +2033,21 @@ contains
   ! there is none.
   !===================================================================!
 
-  subroutine quadrature_nodes(this, tuple, stages, tjet, sjet, solution, stage_node)
+  subroutine quadrature_nodes(this, tuple, sbase, stages, tjet, sjet, solution, stage_node, blocks)
 
     class(discrete_residual), intent(in)    :: this
-    real(dp)                , intent(in)    :: tuple(:,:,:), stages(:,:,:,:), tjet(:,:,:,:,:), sjet(:,:,:,:,:,:)
+    real(dp)                , intent(in)    :: tuple(:,:,:)
+    integer                 , intent(in)    :: sbase
+    real(dp)                , intent(in)    :: stages(:,:,:,sbase:), tjet(:,:,:,:,:), sjet(:,:,:,sbase:,:,:)
     type(discrete_field)    , intent(inout) :: solution
     integer , allocatable   , intent(out)   :: stage_node(:,:,:)
+    integer                 , intent(in), optional :: blocks(2)
 
     type(derivative_terms), allocatable :: dt(:), weight(:)
     integer , allocatable :: instant(:), cell_owner(:)
     real(dp), allocatable :: position(:)
     integer :: stride, ncells, ninst, npts, order, nd, nb, b, first, last, depth, n, s, smax, k, i, c, j
-    integer :: nnodes, nn, nf, d, o
+    integer :: nnodes, nn, nf, d, o, b1, b2, klo, khi
     logical :: staged
     real(dp) :: h
 
@@ -1990,13 +2059,30 @@ contains
     order  = this % points % design_order()
     nd     = max(1, this % points % num_expansions())
 
+    ! the blocks whose nodes are formed: every block, or the range
+    ! given; the points of every instant are nodes, those outside
+    ! the range with no measure and no point
     smax   = 1
     nnodes = npts
     nb     = 0
+    b1     = 1
+    b2     = 0
+    klo    = 1
+    khi    = ninst
     if (this % with_chain) then
        nb = this % schemes % num_blocks()
+       b2 = nb
+       if (present(blocks)) then
+          b1 = blocks(1)
+          b2 = blocks(2)
+          call block_extent(this, b1, first, last, depth)
+          klo = first + depth
+          call block_extent(this, b2, first, last, depth)
+          khi = last
+       end if
        do b = 1, nb
           smax = max(smax, this % schemes % scheme(b) % num_stages())
+          if (b < b1 .or. b > b2) cycle
           call block_extent(this, b, first, last, depth)
           if (marches_by_stages(this % schemes % scheme(b), top_degree(this % rule, nf) + 1)) then
              nnodes = nnodes + (last - first) * this % schemes % scheme(b) % num_stages() * ncells
@@ -2008,11 +2094,11 @@ contains
     allocate(solution % node_weight(nnodes), source=0.0_dp)
     allocate(solution % node_position(this % points % num_coordinates(), nnodes), source=0.0_dp)
     allocate(solution % node_point(nnodes), source=0)
-    allocate(solution % node_image(nnodes), source=1)
+    allocate(solution % node_image(nnodes), source=this_image())
     cell_owner = cell_owners(this)
 
     ! the points as nodes, their jets those of the solution
-    do k = 1, ninst
+    do k = klo, khi
        do c = 1, ncells
           nn = this % points % point_of(k, c)
           solution % node_point(nn)       = nn
@@ -2033,7 +2119,7 @@ contains
     end if
 
     nn = npts
-    do b = 1, nb
+    do b = b1, b2
        call block_extent(this, b, first, last, depth)
        n      = last - first + 1
        staged = marches_by_stages(this % schemes % scheme(b), top_degree(this % rule, nf) + 1)
@@ -2108,6 +2194,97 @@ contains
   end subroutine block_extent
 
   !===================================================================!
+  ! The resident memory of the process in kilobytes, from the kernel's
+  ! status of the process; zero where that is not readable.
+  !===================================================================!
+
+  integer function resident_kilobytes()
+    character(len=128) :: line
+    integer :: unit, status
+    resident_kilobytes = 0
+    open(newunit=unit, file='/proc/self/status', status='old', action='read', iostat=status)
+    if (status /= 0) return
+    do
+       read(unit, '(a)', iostat=status) line
+       if (status /= 0) exit
+       if (line(1:6) == 'VmRSS:') then
+          read(line(7:), *, iostat=status) resident_kilobytes
+          exit
+       end if
+    end do
+    close(unit)
+  end function resident_kilobytes
+
+  !===================================================================!
+  ! The segment sg of k blocks: its blocks b1..b2, and the instants
+  ! lo..hi of the stages its blocks determine, the step into each own
+  ! instant of each block.
+  !===================================================================!
+
+  subroutine segment_extent(this, sg, k, b1, b2, lo, hi)
+    class(discrete_residual), intent(in)  :: this
+    integer                 , intent(in)  :: sg, k
+    integer                 , intent(out) :: b1, b2, lo, hi
+    integer :: first, last, depth
+    b1 = (sg - 1) * k + 1
+    b2 = min(this % schemes % num_blocks(), sg * k)
+    call block_extent(this, b1, first, last, depth)
+    lo = first + 1
+    call block_extent(this, b2, first, last, depth)
+    hi = last
+  end subroutine segment_extent
+
+  !===================================================================!
+  ! The forward solve of the blocks b1..b2 into the stage arrays that
+  ! begin at the instant lo; the jets of expansions the images share
+  ! summed over the segment's instants once.
+  !===================================================================!
+
+  subroutine segment_solved(this, b1, b2, rows_along, tuple, lo, stages, tjet, sjet)
+
+    class(discrete_residual), intent(in)    :: this
+    integer                 , intent(in)    :: b1, b2, lo
+    type(stencil)           , intent(in)    :: rows_along(:,:)
+    real(dp)                , intent(inout) :: tuple(:,:,:), stages(:,:,:,lo:), tjet(:,:,:,:,:), sjet(:,:,:,lo:,:,:)
+
+    real(dp), allocatable :: own(:,:,:,:,:)
+    integer :: b, first, last, depth, hi
+
+    do b = b1, b2
+       call block_extent(this, b, first, last, depth)
+       call solve_block(this, this % schemes % scheme(b), first, last, depth, rows_along, tuple, lo, stages, &
+            & tjet, sjet)
+    end do
+    if (this % points % design_order() > 0 .and. num_images() > 1 .and. .not. this % points % with_space) then
+       hi  = ubound(stages, 4)
+       own = tjet(:, :, lo:hi, :, :)
+       call co_sum(own)
+       tjet(:, :, lo:hi, :, :) = own
+       call co_sum(sjet)
+    end if
+
+  end subroutine segment_solved
+
+  !===================================================================!
+  ! The quadrature nodes of the blocks b1..b2 as a field: the
+  ! manifold, the rule and the nodes, the jet at the points left out.
+  !===================================================================!
+
+  subroutine segment_nodes(this, b1, b2, tuple, lo, stages, tjet, sjet, part, stage_node)
+
+    class(discrete_residual), intent(in)  :: this
+    integer                 , intent(in)  :: b1, b2, lo
+    real(dp)                , intent(in)  :: tuple(:,:,:), stages(:,:,:,lo:), tjet(:,:,:,:,:), sjet(:,:,:,lo:,:,:)
+    type(discrete_field)    , intent(out) :: part
+    integer , allocatable   , intent(out) :: stage_node(:,:,:)
+
+    allocate(part % on, source=this % points)
+    part % rule = this % rule
+    call quadrature_nodes(this, tuple, lo, stages, tjet, sjet, part, stage_node, [b1, b2])
+
+  end subroutine segment_nodes
+
+  !===================================================================!
   ! THE REVERSE SWEEP: the multipliers of every row of L_h and their
   ! derivatives along each design coordinate to the order of the
   ! expansion, block by block from the last, each block's transposed
@@ -2127,21 +2304,30 @@ contains
   ! residual without a chain has no blocks to sweep, and is refused.
   !===================================================================!
 
-  subroutine adjoint_sweep(this, rows_along, tuple, stages, tjet, sjet, solution, stage_node, adjoint, reaction, &
-       & gauge, design_multiplier)
+  subroutine adjoint_sweep(this, rows_along, tuple, sbase, stages, tjet, sjet, solution, stage_node, segment, &
+       & objective_partial, estimate, adjoint, reaction, gauge, design_multiplier)
 
     class(discrete_residual), intent(in)  :: this
     type(stencil)           , intent(in)  :: rows_along(:,:)
-    real(dp)                , intent(in)  :: tuple(:,:,:), stages(:,:,:,:), tjet(:,:,:,:,:), sjet(:,:,:,:,:,:)
+    real(dp)                , intent(in)  :: tuple(:,:,:)
+    integer                 , intent(in)  :: sbase
+    real(dp)                , intent(in)  :: stages(:,:,:,sbase:), tjet(:,:,:,:,:), sjet(:,:,:,sbase:,:,:)
     type(discrete_field)    , intent(in)  :: solution
-    integer                 , intent(in)  :: stage_node(:,:,:)
+    integer , allocatable   , intent(in)  :: stage_node(:,:,:)
+    integer                 , intent(in)  :: segment
+    real(dp), allocatable   , intent(in)  :: objective_partial(:,:,:)
+    type(discrete_field)    , intent(in)  :: estimate
     real(dp), allocatable   , intent(out) :: adjoint(:,:,:,:,:), reaction(:,:,:,:), gauge(:,:,:,:)
     real(dp), allocatable   , intent(out) :: design_multiplier(:,:,:)
 
-    real(dp), allocatable :: gradient(:,:,:,:), partial(:,:,:), incoming(:,:,:,:,:), q(:)
+    real(dp), allocatable :: gradient(:,:,:,:), partial(:,:,:), incoming(:,:,:,:,:), q(:), total(:)
+    real(dp), allocatable :: tuple_again(:,:,:), tjet_again(:,:,:,:,:), stages_seg(:,:,:,:), sjet_seg(:,:,:,:,:,:)
+    integer , allocatable :: stage_node_seg(:,:,:)
+    type(discrete_field) :: part
     type(residual_operator) :: rows
     integer , allocatable :: primary(:)
     integer :: stride, nf, ncells, ninst, nc, ng, j, b, nb, first, last, depth, order, nd, ni, d
+    integer :: nseg, sg, b1, b2, lo, hi, top, k, c, f
 
     stride = this % rule % num_components()
     nf     = this % manifold % num_unknowns
@@ -2151,7 +2337,9 @@ contains
     nd     = max(1, this % points % num_expansions())
     ni     = size(this % points % design_values())
 
-    if (allocated(this % objective)) then
+    if (segment > 0) then
+       partial = objective_partial
+    else if (allocated(this % objective)) then
        call this % objective % differential(solution, gradient, partial)
     else
        allocate(gradient(stride, size(solution % node_weight), 0:order, nd), partial(ni, 0:order, nd), source=0.0_dp)
@@ -2183,7 +2371,7 @@ contains
     if (.not. this % with_chain) then
        ! the point manifold: one system, its transposed solve
        call point_rows(this, tuple, rows, q, primary)
-       call adjoint_rows(this, 1, 1, 0, rows, q, [0], [1], primary, tjet, sjet, gradient, stage_node, &
+       call adjoint_rows(this, 1, 1, 0, rows, q, [0], [1], primary, tjet, sbase, sjet, gradient, stage_node, &
             & adjoint, incoming, reaction, gauge, design_multiplier)
        return
     end if
@@ -2204,15 +2392,57 @@ contains
     end if
 
     nb = this % schemes % num_blocks()
-    do b = nb, 1, -1
-       first = this % schemes % from(b)
-       last  = ninst
-       if (b < nb) last = this % schemes % from(b + 1) - 1
-       depth = 0
-       if (b > 1) depth = this % schemes % scheme(b) % history_depth(top_degree(this % rule, nf))
-       call adjoint_block(this, this % schemes % scheme(b), first - depth, last, depth, rows_along, tuple, &
-            & stages, tjet, sjet, gradient, stage_node, adjoint, incoming, reaction, gauge, design_multiplier)
-    end do
+    if (segment == 0) then
+       do b = nb, 1, -1
+          call block_extent(this, b, first, last, depth)
+          call adjoint_block(this, this % schemes % scheme(b), first, last, depth, rows_along, tuple, &
+               & sbase, stages, tjet, sjet, gradient, stage_node, adjoint, incoming, reaction, gauge, design_multiplier)
+       end do
+    else
+       ! segment by segment from the last: the segment's blocks solved
+       ! again from the estimate at their own instants, the same
+       ! iterates as the forward sweep's, the objective's differential
+       ! at the segment's nodes, then its blocks in reverse
+       top = 1
+       do b = 1, nb
+          top = max(top, this % schemes % scheme(b) % num_stages())
+       end do
+       nseg = (nb + segment - 1) / segment
+       tuple_again = tuple
+       tjet_again  = tjet
+       do sg = nseg, 1, -1
+          call segment_extent(this, sg, segment, b1, b2, lo, hi)
+          if (verbosity >= 1) print '(a,i0,a,i0,a,i0,a,i0,a)', 'segment ', sg, ' again  blocks ', b1, '..', b2, &
+               & '  resident memory ', resident_kilobytes() / 1024, ' MB'
+          allocate(stages_seg(stride, ncells, top, lo:hi), sjet_seg(stride, ncells, top, lo:hi, order, nd), source=0.0_dp)
+          do b = b1, b2
+             call block_extent(this, b, first, last, depth)
+             do k = first + depth, last
+                do c = 1, ncells
+                   tuple_again(:, c, k) = 0.0_dp
+                   do f = 1, nf
+                      tuple_again(this % rule % offset_of_field(f) + 1, c, k) = &
+                           & estimate % value(this % points % point_of(k, c), f)
+                   end do
+                end do
+             end do
+          end do
+          call segment_solved(this, b1, b2, rows_along, tuple_again, lo, stages_seg, tjet_again, sjet_seg)
+          call segment_nodes(this, b1, b2, tuple, lo, stages_seg, tjet, sjet_seg, part, stage_node_seg)
+          if (allocated(this % objective)) then
+             call this % objective % functional(part, total, gradient, partial)
+          else
+             allocate(gradient(stride, size(part % node_weight), 0:order, nd), source=0.0_dp)
+          end if
+          do b = b2, b1, -1
+             call block_extent(this, b, first, last, depth)
+             call adjoint_block(this, this % schemes % scheme(b), first, last, depth, rows_along, tuple, &
+                  & lo, stages_seg, tjet, sjet_seg, gradient, stage_node_seg, adjoint, incoming, reaction, gauge, &
+                  & design_multiplier)
+          end do
+          deallocate(stages_seg, sjet_seg, gradient)
+       end do
+    end if
     call shared_expansions_summed(this, adjoint, reaction, gauge, design_multiplier)
 
   end subroutine adjoint_sweep
@@ -2288,14 +2518,16 @@ contains
   ! the tuple of instant k otherwise.
   !===================================================================!
 
-  subroutine block_rows(this, scheme, first, last, depth, rows_along, tuple, stages, solved_stages, &
+  subroutine block_rows(this, scheme, first, last, depth, rows_along, tuple, sbase, stages, solved_stages, &
        & rows, q, at, instant_moment, primary)
 
     class(discrete_residual), intent(in)  :: this
     type(family)            , intent(in)  :: scheme
     integer                 , intent(in)  :: first, last, depth
     type(stencil)           , intent(in)  :: rows_along(:,:)
-    real(dp)                , intent(in)  :: tuple(:,:,:), stages(:,:,:,:)
+    real(dp)                , intent(in)  :: tuple(:,:,:)
+    integer                 , intent(in)  :: sbase
+    real(dp)                , intent(in)  :: stages(:,:,:,sbase:)
     logical                 , intent(in)  :: solved_stages
     type(residual_operator) , intent(out) :: rows
     real(dp), allocatable   , intent(out) :: q(:)
@@ -2513,13 +2745,15 @@ contains
   ! estimate, the block's own instants written back.
   !===================================================================!
 
-  subroutine solve_block(this, scheme, first, last, depth, rows_along, tuple, stages, tjet, sjet, expand)
+  subroutine solve_block(this, scheme, first, last, depth, rows_along, tuple, sbase, stages, tjet, sjet, expand)
 
     class(discrete_residual), intent(in)    :: this
     type(family)            , intent(in)    :: scheme
     integer                 , intent(in)    :: first, last, depth
     type(stencil)           , intent(in)    :: rows_along(:,:)
-    real(dp)                , intent(inout) :: tuple(:,:,:), stages(:,:,:,:), tjet(:,:,:,:,:), sjet(:,:,:,:,:,:)
+    real(dp)                , intent(inout) :: tuple(:,:,:)
+    integer                 , intent(in)    :: sbase
+    real(dp)                , intent(inout) :: stages(:,:,:,sbase:), tjet(:,:,:,:,:), sjet(:,:,:,sbase:,:,:)
     logical                 , intent(in), optional :: expand
 
     type(residual_operator) :: rows
@@ -2536,7 +2770,7 @@ contains
             & '  history ', depth, ' instants'
     end if
 
-    call block_rows(this, scheme, first, last, depth, rows_along, tuple, stages, .false., &
+    call block_rows(this, scheme, first, last, depth, rows_along, tuple, sbase, stages, .false., &
          & rows, q, at, instant_moment, primary)
     call solved(this, rows, size(q), stride, size(at), q)
 
@@ -2566,7 +2800,7 @@ contains
        if (present(expand)) then
           if (.not. expand) return
        end if
-       call design_jets(this, rows, q, at, instant_moment, first, last, depth, tjet, sjet, scheme)
+       call design_jets(this, rows, q, at, instant_moment, first, last, depth, tjet, sbase, sjet, scheme)
     end if
 
   end subroutine solve_block
@@ -2587,13 +2821,15 @@ contains
   ! at sjet(:, c, i, k, m, d).
   !===================================================================!
 
-  subroutine design_jets(this, rows, q, at, instant_moment, first, last, depth, tjet, sjet, scheme)
+  subroutine design_jets(this, rows, q, at, instant_moment, first, last, depth, tjet, sbase, sjet, scheme)
 
     class(discrete_residual), intent(in)    :: this
     type(residual_operator) , intent(in)    :: rows
     real(dp)                , intent(in)    :: q(:)
     integer                 , intent(in)    :: at(:), instant_moment(:), first, last, depth
-    real(dp)                , intent(inout) :: tjet(:,:,:,:,:), sjet(:,:,:,:,:,:)
+    real(dp)                , intent(inout) :: tjet(:,:,:,:,:)
+    integer                 , intent(in)    :: sbase
+    real(dp)                , intent(inout) :: sjet(:,:,:,sbase:,:,:)
     type(family)            , intent(in), optional :: scheme
 
     type(newton) :: solver
@@ -2779,7 +3015,7 @@ contains
          if (staged) s = scheme % num_stages()
          if (m == 0) then
             ! the state, published to the image of order one
-            call solve_block(this, scheme, first, last, depth, rows_along, tuple, stages, tjet, sjet, expand=.false.)
+            call solve_block(this, scheme, first, last, depth, rows_along, tuple, 1, stages, tjet, sjet, expand=.false.)
             tuple_co(:, :, first + depth:last) = tuple(:, :, first + depth:last)
             if (staged) stages_co(:, :, 1:s, first + 1:last) = stages(:, :, 1:s, first + 1:last)
             sync images(2)
@@ -2792,7 +3028,7 @@ contains
                if (staged) slower(:, :, 1:s, first + 1:last, o) = sjet_co(:, :, 1:s, first + 1:last, o)[o + 1]
             end do
             if (verbosity >= 1) print '(a,i0,a,i0,a,i0)', 'wavefront: image ', me, ' forms order ', m, ' of block ', b
-            call block_rows(this, scheme, first, last, depth, rows_along, tuple, stages, .true., &
+            call block_rows(this, scheme, first, last, depth, rows_along, tuple, 1, stages, .true., &
                  & rows, q, at, instant_moment, primary)
             unknowns = size(q)
             npts     = size(at)
@@ -2924,7 +3160,7 @@ contains
          if (o > 0) sync images(me - 1)
          if (verbosity >= 1) print '(a,i0,a,i0,a,i0)', 'wavefront: image ', me, ' forms the adjoint of order ', o, &
               & ' of block ', b
-         call block_rows(this, scheme, first, last, depth, rows_along, tuple, stages, .true., &
+         call block_rows(this, scheme, first, last, depth, rows_along, tuple, 1, stages, .true., &
               & rows, q, at, instant_moment, primary)
          unknowns = size(q)
          npts     = size(at)
@@ -3121,14 +3357,16 @@ contains
   ! subtracted from the design conditions' multipliers.
   !===================================================================!
 
-  subroutine adjoint_block(this, scheme, first, last, depth, rows_along, tuple, stages, tjet, sjet, gradient, &
+  subroutine adjoint_block(this, scheme, first, last, depth, rows_along, tuple, sbase, stages, tjet, sjet, gradient, &
        & stage_node, adjoint, incoming, reaction, gauge, in_design)
 
     class(discrete_residual), intent(in)    :: this
     type(family)            , intent(in)    :: scheme
     integer                 , intent(in)    :: first, last, depth
     type(stencil)           , intent(in)    :: rows_along(:,:)
-    real(dp)                , intent(in)    :: tuple(:,:,:), stages(:,:,:,:), tjet(:,:,:,:,:), sjet(:,:,:,:,:,:)
+    real(dp)                , intent(in)    :: tuple(:,:,:)
+    integer                 , intent(in)    :: sbase
+    real(dp)                , intent(in)    :: stages(:,:,:,sbase:), tjet(:,:,:,:,:), sjet(:,:,:,sbase:,:,:)
     real(dp)                , intent(in)    :: gradient(:,:,0:,:)
     integer                 , intent(in)    :: stage_node(:,:,:)
     real(dp)                , intent(inout) :: adjoint(:,:,:,0:,:), incoming(:,:,:,0:,:), reaction(:,:,0:,:)
@@ -3143,9 +3381,9 @@ contains
             & first + depth, '..', last, '  t = ', this % points % instant(first + depth), ' .. ', &
             & this % points % instant(last)
     end if
-    call block_rows(this, scheme, first, last, depth, rows_along, tuple, stages, .true., &
+    call block_rows(this, scheme, first, last, depth, rows_along, tuple, sbase, stages, .true., &
          & rows, q, at, instant_moment, primary)
-    call adjoint_rows(this, first, last, depth, rows, q, at, instant_moment, primary, tjet, sjet, gradient, &
+    call adjoint_rows(this, first, last, depth, rows, q, at, instant_moment, primary, tjet, sbase, sjet, gradient, &
          & stage_node, adjoint, incoming, reaction, gauge, in_design, scheme)
 
   end subroutine adjoint_block
@@ -3156,7 +3394,7 @@ contains
   ! described above.
   !===================================================================!
 
-  subroutine adjoint_rows(this, first, last, depth, rows, q, at, instant_moment, primary, tjet, sjet, gradient, &
+  subroutine adjoint_rows(this, first, last, depth, rows, q, at, instant_moment, primary, tjet, sbase, sjet, gradient, &
        & stage_node, adjoint, incoming, reaction, gauge, in_design, scheme)
 
     class(discrete_residual), intent(in)    :: this
@@ -3164,7 +3402,9 @@ contains
     type(residual_operator) , intent(in)    :: rows
     real(dp)                , intent(in)    :: q(:)
     integer                 , intent(in)    :: at(:), instant_moment(:), primary(:)
-    real(dp)                , intent(in)    :: tjet(:,:,:,:,:), sjet(:,:,:,:,:,:)
+    real(dp)                , intent(in)    :: tjet(:,:,:,:,:)
+    integer                 , intent(in)    :: sbase
+    real(dp)                , intent(in)    :: sjet(:,:,:,sbase:,:,:)
     real(dp)                , intent(in)    :: gradient(:,:,0:,:)
     integer                 , intent(in)    :: stage_node(:,:,:)
     real(dp)                , intent(inout) :: adjoint(:,:,:,0:,:), incoming(:,:,:,0:,:), reaction(:,:,0:,:)

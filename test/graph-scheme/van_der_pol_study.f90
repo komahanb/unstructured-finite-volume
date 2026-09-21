@@ -17,7 +17,7 @@
 ! the paper's 2.502871579137, eight significant digits, the
 ! difference 1.8e-9 not resolved.
 !
-!      van_der_pol_study [mode] [order] [stages] [h] [degree]
+!      van_der_pol_study [mode] [order] [stages] [h] [degree] [checkpoint]
 !
 ! mode 'table' (default): one family over [0, 1] at the step h, the
 ! paper's Table 4 at h = 0.02 - IMID-2 = dirk(2), DIRK-3 = dirk(3),
@@ -27,7 +27,11 @@
 ! pipelines on degree + 1 images: at h = 0.0005, SDIRK-4, one image
 ! takes 1.24 s at degree 0 and 0.55 s more per degree, 2.90 s at
 ! degree 3; the wavefronts on 2, 3, 4 images take 1.38, 1.51, 1.65 s
-! at degrees 1, 2, 3, the same digits; mode 'windows': the
+! at degrees 1, 2, 3, the same digits. With checkpoint = k the stages
+! are retained over k blocks at a time and formed again in the
+! reverse sweep: at h = 0.0005, degree 3, k = 45, the serial build
+! takes 3.50 s against 2.37 s, the digits equal to fourteen places;
+! mode 'windows': the
 ! three-window chain of the paper's Table 7 over [0, 1.5], SDIRK-4 at
 ! h = 0.025, DIRK-4 at h = 0.02, SDIRK-4 at h = 0.0125, the instants
 ! listed, and dF/dnu against the paper's 2.502871579137.
@@ -47,7 +51,7 @@ program van_der_pol_study
   implicit none
 
   real(dp), parameter :: nu_design = 1.0_dp, u_initial = 2.0_dp, v_initial = 0.0_dp
-  integer :: degree = 4
+  integer :: degree = 4, checkpoint = 0
 
   character(len=16) :: mode = 'table'
   integer  :: order = 2, stages = 0
@@ -124,7 +128,13 @@ program van_der_pol_study
 
   rest     = continuous_field(omega, [u_initial])
   estimate = rest % discretize(omega_h)
-  call L_h % minimize(estimate, solution)
+  ! checkpoint > 0: the stages retained over segments of that many
+  ! blocks alone, formed again in the reverse sweep
+  if (checkpoint > 0) then
+     call L_h % minimize(estimate, solution, checkpoint=checkpoint)
+  else
+     call L_h % minimize(estimate, solution)
+  end if
 
   sensitivity = energy % at(solution)
   call sensitivity % values(values)
@@ -179,6 +189,7 @@ contains
     if (count >= 3) then; call get_command_argument(3, item); read(item, *) stages; end if
     if (count >= 4) then; call get_command_argument(4, item); read(item, *) h;      end if
     if (count >= 5) then; call get_command_argument(5, item); read(item, *) degree; end if
+    if (count >= 6) then; call get_command_argument(6, item); read(item, *) checkpoint; end if
   end subroutine arguments
 
 end program van_der_pol_study

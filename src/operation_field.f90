@@ -30,6 +30,7 @@ module operation_field
   use operation_expression, only : FIRST_COORDINATE
   use operation_expression, only : operator(+), operator(-), operator(*), operator(/), operator(**)
   use operation_expression, only : sin, cos, exp, log, sqrt
+  use view_expression     , only : expression_view
 
   implicit none
 
@@ -180,6 +181,7 @@ module operation_field
      procedure :: discretize     => field_discretize
      procedure :: at             => field_at
      procedure :: differential   => field_differential
+     procedure :: functional     => functional_over
      procedure :: num_components => field_num_components
      procedure :: graph          => field_graph
      procedure :: is_unknown
@@ -234,6 +236,12 @@ module operation_field
      ! the image that owns the node: a functional sums its owned nodes
      ! and the images' sums once
      integer , allocatable :: node_image(:)
+     ! a solution whose stages were retained over checkpoints alone
+     ! integrates the objective of its residual and no other
+     ! functional: the value and its derivatives along the design,
+     ! summed segment by segment, and the objective's formula
+     real(dp), allocatable :: objective_value(:)
+     character(len=:), allocatable :: objective_formula
 
    contains
 
@@ -506,8 +514,9 @@ contains
     type(derivative_terms), allocatable :: jets(:), varied(:), nu(:), along(:), design(:)
     type(derivative_terms) :: r
     real(dp) :: value, measure
-    integer :: p, k, o, i, d, order, ns, nd, nnodes
+    integer :: p, k, o, i, d, order, ns, nd, nnodes, stride
     logical :: over_nodes
+    type(expression_view) :: view
 
     if (.not. this % is_integral()) then
        error stop 'operation_field: a functional is the integral of a field over its manifold'
@@ -515,7 +524,23 @@ contains
     if (size(this % component) /= 1) then
        error stop 'operation_field: a functional is a scalar field'
     end if
-    if (.not. (allocated(solution % jet) .and. allocated(solution % rule))) then
+    if (.not. allocated(solution % rule)) then
+       error stop 'operation_field: a functional is evaluated on the solution of a residual, which &
+            &stores the jet at every point'
+    end if
+    ! a solution retained over checkpoints: the objective's value, summed
+    ! by its residual segment by segment; no other functional
+    if (allocated(solution % objective_value)) then
+       view = expression_view(this % component(1))
+       if (view % formula() /= solution % objective_formula) then
+          error stop 'operation_field: the solution retained its stages over checkpoints alone, so the &
+               &only functional it integrates is the objective of the residual that formed it'
+       end if
+       total = solution % objective_value
+       allocate(gradient(0, 0, 0, 0), partial(0, 0, 0))
+       return
+    end if
+    if (.not. (allocated(solution % jet) .or. allocated(solution % node_jet))) then
        error stop 'operation_field: a functional is evaluated on the solution of a residual, which &
             &stores the jet at every point'
     end if
@@ -523,10 +548,17 @@ contains
     ! the families' own rule; over the points with their measure
     ! otherwise
     over_nodes = allocated(solution % node_weight)
-    order  = size(solution % jet, 3) - 1
-    nd     = size(solution % jet, 4)
-    nnodes = size(solution % jet, 2)
-    if (over_nodes) nnodes = size(solution % node_weight)
+    if (over_nodes) then
+       stride = size(solution % node_jet, 1)
+       order  = size(solution % node_jet, 3) - 1
+       nd     = size(solution % node_jet, 4)
+       nnodes = size(solution % node_weight)
+    else
+       stride = size(solution % jet, 1)
+       order  = size(solution % jet, 3) - 1
+       nd     = size(solution % jet, 4)
+       nnodes = size(solution % jet, 2)
+    end if
     values = solution % on % design_values()
     if (size(values) < this % component(1) % num_designs()) then
        error stop 'operation_field: the functional reads a design coordinate the manifold does not have'
@@ -535,7 +567,7 @@ contains
     ns = size(slot)
     allocate(q(0:ns - 1), g(0:ns - 1), gd(size(values)), jets(0:ns - 1), varied(0:ns - 1))
     allocate(nu(size(values)), along(size(values)), design(size(values)))
-    allocate(gradient(size(solution % jet, 1), nnodes, 0:order, nd), source=0.0_dp)
+    allocate(gradient(stride, nnodes, 0:order, nd), source=0.0_dp)
     allocate(total(1 + nd * order), partial(size(values), 0:order, nd), source=0.0_dp)
     allocate(unit(order), source=0.0_dp)
     if (order > 0) unit(1) = 1.0_dp
@@ -638,6 +670,10 @@ contains
        to % node_position = from % node_position
        to % node_point    = from % node_point
        to % node_image    = from % node_image
+    end if
+    if (allocated(from % objective_value)) then
+       to % objective_value   = from % objective_value
+       to % objective_formula = from % objective_formula
     end if
   end subroutine nodes_copied
 

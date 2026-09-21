@@ -17,7 +17,7 @@
 ! the paper's 2.502871579137, eight significant digits, the
 ! difference 1.8e-9 not resolved.
 !
-!      van_der_pol_study [mode] [order] [stages] [h] [degree] [checkpoint]
+!      van_der_pol_study [mode] [order] [stages] [h] [degree] [checkpoint] [snapshots] [verbosity]
 !
 ! mode 'table' (default): one family over [0, 1] at the step h, the
 ! paper's Table 4 at h = 0.02 - IMID-2 = dirk(2), DIRK-3 = dirk(3),
@@ -27,10 +27,17 @@
 ! pipelines on degree + 1 images: at h = 0.0005, SDIRK-4, one image
 ! takes 1.24 s at degree 0 and 0.55 s more per degree, 2.90 s at
 ! degree 3; the wavefronts on 2, 3, 4 images take 1.38, 1.51, 1.65 s
-! at degrees 1, 2, 3, the same digits. With checkpoint = k the stages
-! are retained over k blocks at a time and formed again in the
-! reverse sweep: at h = 0.0005, degree 3, k = 45, the serial build
-! takes 3.50 s against 2.37 s, the digits equal to fourteen places;
+! at degrees 1, 2, 3, the same digits. Mode 'mixed' is the chain
+! dirk, bdf, adams of the order given, one block per instant, whose
+! multistep rules weigh history instants. With checkpoint = k or
+! snapshots = s the state is stored at snapshots and the blocks are
+! solved again in the reverse sweep: at h = 0.0005, degree 3, the
+! coarray build takes 2.96 s with the state over the chain; 4.11 s
+! with k = 45 (2001 block solves again), 7.79 s with s = 10 (8191
+! again, the binomial count 10186 with the forward sweep) and 6.39 s
+! with s = 20, the digits equal to fourteen places; two images, one
+! solving again while the other forms the multipliers, take 3.08,
+! 6.59 and 5.23 s;
 ! mode 'windows': the
 ! three-window chain of the paper's Table 7 over [0, 1.5], SDIRK-4 at
 ! h = 0.025, DIRK-4 at h = 0.02, SDIRK-4 at h = 0.0125, the instants
@@ -42,16 +49,17 @@
 program van_der_pol_study
 
   use util_precision    , only : dp
+  use util_verbosity    , only : set_verbosity
   use operation_manifold, only : continuous_manifold, discrete_manifold, interval, instants, parameter, expansion
   use operation_field   , only : continuous_field, discrete_field, integral, &
        &                         operator(+), operator(-), operator(*), operator(/), operator(**)
   use operation_residual, only : continuous_residual, discrete_residual, operator(+), operator(*)
-  use operation_family  , only : family, dirk, chain
+  use operation_family  , only : family, dirk, bdf, adams, chain
 
   implicit none
 
   real(dp), parameter :: nu_design = 1.0_dp, u_initial = 2.0_dp, v_initial = 0.0_dp
-  integer :: degree = 4, checkpoint = 0
+  integer :: degree = 4, checkpoint = 0, snapshots = 0, verbose = 0
 
   character(len=16) :: mode = 'table'
   integer  :: order = 2, stages = 0
@@ -71,6 +79,7 @@ program van_der_pol_study
   integer :: k, n
 
   call arguments()
+  if (this_image() == 1) call set_verbosity(verbose)
   allocate(values(1 + degree), reverse(0:degree))
 
   select case (trim(mode))
@@ -90,6 +99,23 @@ program van_der_pol_study
         schemes(k) = tableau(order, stages)
         from(k) = k
      end do
+  case ('mixed')
+     ! dirk over the first three instants, bdf over the next four,
+     ! adams to the end, each of the order given, one block per instant
+     T_final = 1.0_dp
+     n = nint(T_final / h) + 1
+     times = [(real(k - 1, dp) * h, k = 1, n)]
+     allocate(schemes(n), from(n))
+     do k = 1, n
+        if (k <= 3) then
+           schemes(k) = dirk(order)
+        else if (k <= 7) then
+           schemes(k) = bdf(order)
+        else
+           schemes(k) = adams(order)
+        end if
+        from(k) = k
+     end do
   case ('windows')
      T_final = 1.5_dp
      times = [(0.025_dp * real(k, dp), k = 0, 19), (0.5_dp + 0.02_dp * real(k, dp), k = 0, 24), &
@@ -100,7 +126,7 @@ program van_der_pol_study
      schemes(2) = dirk(4);           from(2) = 21
      schemes(3) = dirk(4, stages=5); from(3) = 46
   case default
-     error stop 'van_der_pol_study: the mode is table, chain or windows'
+     error stop 'van_der_pol_study: the mode is table, chain, mixed or windows'
   end select
   if (this_image() == 1) then
      print '(a,a,a,i0,a,i0,a,i0)', 'mode ', trim(mode), '  instants ', n, '  dirk order ', order, '  stages ', stages
@@ -132,6 +158,8 @@ program van_der_pol_study
   ! blocks alone, formed again in the reverse sweep
   if (checkpoint > 0) then
      call L_h % minimize(estimate, solution, checkpoint=checkpoint)
+  else if (snapshots > 0) then
+     call L_h % minimize(estimate, solution, snapshots=snapshots)
   else
      call L_h % minimize(estimate, solution)
   end if
@@ -190,6 +218,8 @@ contains
     if (count >= 4) then; call get_command_argument(4, item); read(item, *) h;      end if
     if (count >= 5) then; call get_command_argument(5, item); read(item, *) degree; end if
     if (count >= 6) then; call get_command_argument(6, item); read(item, *) checkpoint; end if
+    if (count >= 7) then; call get_command_argument(7, item); read(item, *) snapshots; end if
+    if (count >= 8) then; call get_command_argument(8, item); read(item, *) verbose; end if
   end subroutine arguments
 
 end program van_der_pol_study

@@ -1,0 +1,305 @@
+\documentclass[10pt]{article}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage[margin=0.62in]{geometry}
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.32em}
+\setlength{\abovedisplayskip}{0.42em}
+\setlength{\belowdisplayskip}{0.42em}
+
+\newcommand{\R}{\mathbb R}
+\newcommand{\Z}{\mathbb Z}
+\newcommand{\dd}{\,\mathrm d}
+
+\begin{document}
+
+\begin{center}
+{\bfseries Taylor--Green Problem from a Generic Constrained Form}
+\end{center}
+
+\textbf{Generic form.}
+Let
+\[
+  Q:\Omega\to\R^m
+\]
+be the unknown field.  Here \(\Omega\) is the continuous domain on which the
+field is defined, and \(m\) is the number of scalar components of the field.
+Let
+\[
+  \mathcal Y=\{Y_1,\ldots,Y_N\}
+\]
+be the domains on which equations are imposed.  For each \(Y_a\), let
+\[
+  R_a[Q]:Y_a\to\R^{r_a},
+  \qquad
+  \lambda_a:Y_a\to\R^{r_a}.
+\]
+The integer \(r_a\) is the number of scalar equations imposed at each point of
+\(Y_a\).
+The constrained functional is
+\[
+  \boxed{
+  \mathcal L(Q,\lambda)
+  =
+  \sum_{a=1}^N
+  \int_{Y_a}
+  \lambda_a(y_a)^T R_a[Q](y_a)\dd Y_a
+  }
+\]
+where \(y_a\) denotes the coordinates on \(Y_a\).  The domains \(Y_a\), not the
+grammar of the equation, distinguish an interior law, a boundary law, an
+initial trace, a gauge, or an interface equation.  Variation with respect to
+all multipliers gives
+\[
+  R_a[Q]=0\quad\text{on }Y_a,\qquad a=1,\ldots,N.
+\]
+
+\textbf{Generic finite-dimensional form.}
+A discretization replaces the field domain by a finite coordinate set
+\(\Omega^h\) and each residual domain by a finite coordinate set \(Y_a^h\):
+\[
+  Q^h:\Omega^h\to\R^m,\qquad
+  Y_a^h=\{y_{a,1}^h,\ldots,y_{a,n_a}^h\}.
+\]
+It also gives a discrete residual and a multiplier on each discrete residual
+domain:
+\[
+  R_a^h[Q^h]:Y_a^h\to\R^{r_a},
+  \qquad
+  \lambda_a^h:Y_a^h\to\R^{r_a}.
+\]
+With weights \(w_{a,j}\) on \(Y_a^h\), the discrete constrained functional is
+\[
+  \boxed{
+  \mathcal L^h(Q^h,\lambda^h)
+  =
+  \sum_{a=1}^N
+  \sum_{j=1}^{n_a}
+  w_{a,j}\lambda_a^h(y_{a,j}^h)^T
+  R_a^h[Q^h](y_{a,j}^h)
+  }.
+\]
+Variation with respect to all discrete multipliers gives
+\[
+  R_a^h[Q^h]=0\quad\text{on }Y_a^h,\qquad a=1,\ldots,N.
+\]
+
+\textbf{Taylor--Green continuous specialization.}
+Let \(\Z\) be the set of integers and set
+\[
+  Y_t=[0,t_f],\qquad
+  Y_x=\R^2/(2\pi\Z)^2,\qquad
+  \Omega=Y_t\times Y_x,\qquad
+  \partial_0\Omega=\{0\}\times Y_x .
+\]
+For this problem,
+\[
+  t_f=1,\qquad \nu=0.01,\qquad
+  x=(x_1,x_2)\in Y_x,\qquad
+  Q=(u,v,p):\Omega\to\R^3 .
+\]
+The three residual domains are
+\[
+  Y_1=\Omega,\qquad
+  Y_2=\partial_0\Omega,\qquad
+  Y_3=Y_t .
+\]
+
+The law residual \(R_1[Q]:Y_1\to\R^3\) is
+\[
+R_1[Q]=
+\begin{bmatrix}
+u_t+u u_{x_1}+v u_{x_2}+p_{x_1}
+  -\nu(u_{x_1x_1}+u_{x_2x_2})\\
+v_t+u v_{x_1}+v v_{x_2}+p_{x_2}
+  -\nu(v_{x_1x_1}+v_{x_2x_2})\\
+p_{x_1x_1}+p_{x_2x_2}
+  +u_{x_1}^2+2u_{x_2}v_{x_1}+v_{x_2}^2
+\end{bmatrix}.
+\]
+The third row is part of the law; it is the pressure equation obtained from
+the divergence of incompressible momentum.
+
+The exact field used to select the solution is
+\[
+  Q^*=(u^*,v^*,p^*),
+\]
+\[
+  u^*=\sin x_1\cos x_2\,e^{-2\nu t},\qquad
+  v^*=-\cos x_1\sin x_2\,e^{-2\nu t},\qquad
+  p^*=\frac{\cos 2x_1+\cos 2x_2}{4}e^{-4\nu t}.
+\]
+The initial-trace residual \(R_2[Q]:Y_2\to\R^2\) is
+\[
+R_2[Q]=
+\begin{bmatrix}
+u|_{\partial_0\Omega}-u^*|_{\partial_0\Omega}\\
+v|_{\partial_0\Omega}-v^*|_{\partial_0\Omega}
+\end{bmatrix}.
+\]
+The pressure-gauge residual \(R_3[Q]:Y_3\to\R\) is
+\[
+  R_3[Q](t)=\int_{Y_x}p(t,x)\dd x .
+\]
+Thus
+\[
+\mathcal L
+=
+\int_{Y_1}\lambda_1^T R_1[Q]\dd Y_1
++
+\int_{Y_2}\lambda_2^T R_2[Q]\dd Y_2
++
+\int_{Y_3}\lambda_3 R_3[Q]\dd Y_3 .
+\]
+
+\textbf{Taylor--Green finite-dimensional specialization.}
+Choose discrete coordinate sets
+\[
+  Y_t^h=\{t_0,\ldots,t_n\},\qquad
+  Y_x^h=\{x_c:c\in C_h\},
+\]
+and define
+\[
+  \Omega^h=Y_t^h\times Y_x^h,\qquad
+  \partial_0\Omega^h=\{t_0\}\times Y_x^h.
+\]
+The discrete residual domains are
+\[
+  Y_1^h=\Omega^h,\qquad
+  Y_2^h=\partial_0\Omega^h,\qquad
+  Y_3^h=Y_t^h.
+\]
+The discrete field is
+\[
+  Q^h=(u^h,v^h,p^h):\Omega^h\to\R^3 .
+\]
+
+Let \(D_t,D_1,D_2,D_{11},D_{22}\) be the selected derivative approximations.
+Write
+\[
+  \widehat u_t=D_tu^h,\qquad
+  \widehat u_i=D_i u^h,\qquad
+  \widehat u_{ii}=D_{ii}u^h,
+\]
+and similarly for \(v^h,p^h\).  On \(Y_1^h\),
+\[
+R_1^h[Q^h]=
+\begin{bmatrix}
+\widehat u_t+u^h\widehat u_1+v^h\widehat u_2+\widehat p_1
+  -\nu(\widehat u_{11}+\widehat u_{22})\\
+\widehat v_t+u^h\widehat v_1+v^h\widehat v_2+\widehat p_2
+  -\nu(\widehat v_{11}+\widehat v_{22})\\
+\widehat p_{11}+\widehat p_{22}
+  +\widehat u_1^2+2\widehat u_2\widehat v_1+\widehat v_2^2
+\end{bmatrix}.
+\]
+On \(Y_2^h\) and \(Y_3^h\),
+\[
+R_2^h[Q^h](x_c)=
+\begin{bmatrix}
+u^h(t_0,x_c)-u^*(t_0,x_c)\\
+v^h(t_0,x_c)-v^*(t_0,x_c)
+\end{bmatrix},
+\qquad
+R_3^h[Q^h](t_k)=\sum_{c\in C_h}w_c\,p^h(t_k,x_c).
+\]
+
+With quadrature weights \(w_{a,j}\) on each \(Y_a^h\), the discrete
+functional is
+\[
+  \boxed{
+  \mathcal L^h(Q^h,\lambda^h)
+  =
+  \sum_{a=1}^3
+  \sum_{y_{a,j}^h\in Y_a^h}
+  w_{a,j}\lambda_a^h(y_{a,j}^h)^T
+  R_a^h[Q^h](y_{a,j}^h)
+  }.
+\]
+Variation with respect to all discrete multipliers gives
+\[
+  R_a^h[Q^h]=0\quad\text{on }Y_a^h,\qquad a=1,2,3.
+\]
+
+
+\section{The jet along the design}
+
+A \emph{jet} is the list of the derivatives of a quantity along a
+coordinate at one point, to some order: the coefficients of its
+Taylor expansion there, the expansion not summed. For the unknown
+$u(t, \nu)$ at a fixed instant $t_k$ and the design value $\nu_0$, the
+jet along $\nu$ of order three is
+\[
+  \Bigl( u,\; \frac{\partial u}{\partial \nu},\;
+         \frac{\partial^2 u}{\partial \nu^2},\;
+         \frac{\partial^3 u}{\partial \nu^3} \Bigr)(t_k, \nu_0),
+\]
+and it represents $u(t_k, \nu)$ near $\nu_0$ through
+\[
+  u(t_k, \nu) = u + \frac{\partial u}{\partial \nu}(\nu - \nu_0)
+  + \frac{\partial^2 u}{\partial \nu^2}\frac{(\nu - \nu_0)^2}{2}
+  + \frac{\partial^3 u}{\partial \nu^3}\frac{(\nu - \nu_0)^3}{6} + \cdots
+\]
+
+The word is the one used along time. The discrete residual stores, at
+every instant, the jet of $u$ along $t$, $(u, u_t, u_{tt})$, which the
+time families connect. The design coordinate $\nu$ is a point of the
+design space, fixed at $\nu_0$; its discretization is the expansion of
+an order at that value, so that the discrete manifold
+$\Omega_h = \{t_1, \ldots, t_n\} \times \mathrm{expansion}(3)$ is the
+grid
+\[
+\begin{array}{c|cccc}
+       & \text{order } 0 & \text{order } 1 & \text{order } 2 & \text{order } 3 \\
+       & \text{(the state)} & \dfrac{d}{d\nu} & \dfrac{d^2}{d\nu^2} & \dfrac{d^3}{d\nu^3} \\[1ex]
+\hline
+  t_n  & [u, u_t, u_{tt}] & [u, u_t, u_{tt}]' & [u, u_t, u_{tt}]'' & [u, u_t, u_{tt}]''' \\
+  \vdots & \vdots & \vdots & \vdots & \vdots \\
+  t_2  & [u, u_t, u_{tt}] & [u, u_t, u_{tt}]' & [u, u_t, u_{tt}]'' & [u, u_t, u_{tt}]''' \\
+  t_1  & [u, u_t, u_{tt}] & [u, u_t, u_{tt}]' & [u, u_t, u_{tt}]'' & [u, u_t, u_{tt}]'''
+\end{array}
+\]
+Column $0$ is the solution. Column $1$ is $du/d\nu$ at every instant,
+column $2$ is $d^2u/d\nu^2$, and so on. The derivative of a discrete
+field along $\nu$ is the field of the next column, with the columns
+after it as its jet; in the programs, \texttt{u\_h \% derivative([nu])}.
+
+The multipliers have the same columns. The adjoint $\lambda_r(t)$ at
+every instant has its jet along $\nu$ beside it, and $\kappa$, the
+multiplier of the condition $\nu - \nu_0 = 0$, a single number, has a
+jet of four numbers. Since $\kappa = -dJ/d\nu$, that jet is
+\[
+  \Bigl( -\frac{dJ}{d\nu},\; -\frac{d^2J}{d\nu^2},\;
+         -\frac{d^3J}{d\nu^3},\; -\frac{d^4J}{d\nu^4} \Bigr),
+\]
+the sensitivities of the objective by the adjoint, which the expansion
+of the state computes independently.
+
+The columns follow from the equations holding at every $\nu$. Let
+$F(u(\nu), \nu) = 0$ be the discrete residual over a block and
+$A = \partial F / \partial u$ its Jacobian. Differentiating once along
+$\nu$,
+\[
+  A\, u' + \frac{\partial F}{\partial \nu} = 0,
+\]
+so column $1$ is one linear solve with $A$. Differentiating twice,
+\[
+  A\, u'' + \frac{d}{d\nu}\Bigl(\frac{\partial F}{\partial u}\Bigr) u'
+          + \frac{d}{d\nu}\Bigl(\frac{\partial F}{\partial \nu}\Bigr) = 0,
+\]
+so column $2$ is one more solve with the same $A$, its right side in
+$u$ and $u'$; and so on to the order. The jet arithmetic of the type
+\texttt{derivative\_terms} evaluates $F$ on the jets of $u$ and $\nu$,
+with the coefficient of order $m$ of $u$ set to zero, and returns the
+jet of $F$, whose coefficient at order $m$ is exactly the right side of
+the $m$-th solve. Nothing is differentiated by hand and nothing is
+approximated by differences.
+
+The adjoint's columns follow the same way from the adjoint equation
+$A^{\mathsf T} \mu = -\partial J / \partial u$: differentiating along
+$\nu$ leaves $A^{\mathsf T}$ on the left, so each order is one more
+transposed solve per block, its right side formed from the jets of the
+state and the lower columns of $\mu$.
+
+\end{document}

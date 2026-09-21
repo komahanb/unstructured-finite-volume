@@ -1725,6 +1725,7 @@ contains
     character(len=32), allocatable :: names(:)
     type(stencil), allocatable :: rows_along(:,:)
     integer :: stride, nf, ncells, ninst, f, c, k, b, first, last, depth, nb, top, o, npts, nc, j
+    integer(8) :: tick, tock, rate
     character(len=250) :: message
 
     stride = this % rule % num_components()
@@ -1774,6 +1775,7 @@ contains
        allocate(rows_along(0, 0))
     end if
 
+    call system_clock(tick, rate)
     if (this % with_chain) then
        nb = this % schemes % num_blocks()
        ! the stages of the step into each instant, one set per family
@@ -1859,10 +1861,17 @@ contains
     solution % slot = slot(1:nf)
     solution % rule = this % rule
     call quadrature_nodes(this, tuple, stages, tjet, sjet, solution, stage_node)
+    call system_clock(tock)
+    if (verbosity >= 1) print '(a,f10.3,a)', 'the forward sweep with its expansions took ', &
+         & real(tock - tick, dp) / real(rate, dp), ' s'
 
     if (this % with_adjoint) then
+       tick = tock
        call adjoint_sweep(this, rows_along, tuple, stages, tjet, sjet, solution, stage_node, adjoint, reaction, &
             & gauge, design_multiplier)
+       call system_clock(tock)
+       if (verbosity >= 1) print '(a,f10.3,a)', 'the reverse sweep with its expansions took ', &
+            & real(tock - tick, dp) / real(rate, dp), ' s'
        ! every multiplier and its derivatives along the design as a
        ! column with a row of the jet of its own
        names(nf + 1:2 * nf) = this % adjoint_name

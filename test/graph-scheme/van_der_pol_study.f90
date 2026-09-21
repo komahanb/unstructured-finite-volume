@@ -17,11 +17,17 @@
 ! the paper's 2.502871579137, eight significant digits, the
 ! difference 1.8e-9 not resolved.
 !
-!      van_der_pol_study [mode] [order] [stages] [h]
+!      van_der_pol_study [mode] [order] [stages] [h] [degree]
 !
 ! mode 'table' (default): one family over [0, 1] at the step h, the
 ! paper's Table 4 at h = 0.02 - IMID-2 = dirk(2), DIRK-3 = dirk(3),
-! DIRK-4 = dirk(4), SDIRK-4 = dirk(4, stages=5); mode 'windows': the
+! DIRK-4 = dirk(4), SDIRK-4 = dirk(4, stages=5); mode 'chain': the
+! same family over [0, 1] at the step h as a chain of one block per
+! instant, the form the wavefront over the blocks and the orders
+! pipelines on degree + 1 images: at h = 0.0005, SDIRK-4, one image
+! takes 1.24 s at degree 0 and 0.55 s more per degree, 2.90 s at
+! degree 3; the wavefronts on 2, 3, 4 images take 1.38, 1.51, 1.65 s
+! at degrees 1, 2, 3, the same digits; mode 'windows': the
 ! three-window chain of the paper's Table 7 over [0, 1.5], SDIRK-4 at
 ! h = 0.025, DIRK-4 at h = 0.02, SDIRK-4 at h = 0.0125, the instants
 ! listed, and dF/dnu against the paper's 2.502871579137.
@@ -41,7 +47,7 @@ program van_der_pol_study
   implicit none
 
   real(dp), parameter :: nu_design = 1.0_dp, u_initial = 2.0_dp, v_initial = 0.0_dp
-  integer , parameter :: degree = 4
+  integer :: degree = 4
 
   character(len=16) :: mode = 'table'
   integer  :: order = 2, stages = 0
@@ -56,11 +62,12 @@ program van_der_pol_study
   type(discrete_field)      :: estimate, solution, kappa_h, sensitivity
   type(continuous_residual) :: r, g, d, L
   type(discrete_residual)   :: L_h
-  real(dp) :: values(1 + degree), reverse(0:degree)
+  real(dp), allocatable :: values(:), reverse(:)
   character(len=32) :: item
   integer :: k, n
 
   call arguments()
+  allocate(values(1 + degree), reverse(0:degree))
 
   select case (trim(mode))
   case ('table')
@@ -70,6 +77,15 @@ program van_der_pol_study
      allocate(schemes(1), from(1))
      schemes(1) = tableau(order, stages)
      from(1) = 1
+  case ('chain')
+     T_final = 1.0_dp
+     n = nint(T_final / h) + 1
+     times = [(real(k - 1, dp) * h, k = 1, n)]
+     allocate(schemes(n), from(n))
+     do k = 1, n
+        schemes(k) = tableau(order, stages)
+        from(k) = k
+     end do
   case ('windows')
      T_final = 1.5_dp
      times = [(0.025_dp * real(k, dp), k = 0, 19), (0.5_dp + 0.02_dp * real(k, dp), k = 0, 24), &
@@ -80,7 +96,7 @@ program van_der_pol_study
      schemes(2) = dirk(4);           from(2) = 21
      schemes(3) = dirk(4, stages=5); from(3) = 46
   case default
-     error stop 'van_der_pol_study: the mode is table or windows'
+     error stop 'van_der_pol_study: the mode is table, chain or windows'
   end select
   print '(a,a,a,i0,a,i0,a,i0)', 'mode ', trim(mode), '  instants ', n, '  dirk order ', order, '  stages ', stages
 
@@ -157,6 +173,7 @@ contains
     if (count >= 2) then; call get_command_argument(2, item); read(item, *) order;  end if
     if (count >= 3) then; call get_command_argument(3, item); read(item, *) stages; end if
     if (count >= 4) then; call get_command_argument(4, item); read(item, *) h;      end if
+    if (count >= 5) then; call get_command_argument(5, item); read(item, *) degree; end if
   end subroutine arguments
 
 end program van_der_pol_study

@@ -418,8 +418,9 @@ contains
        ! describes, and adding it would perturb rather than refine.
        ! What was already accumulated is retained - at s = 2 that is
        ! delta_1, Newton's own step, so this is never larger than
-       ! Newton.
-       if (norm2(correction) >= norm2(individual(:, s - 1))) return
+       ! Newton. The norm is the family's, reduced over the images, so
+       ! every image takes the same decision.
+       if (this % norm(correction) >= this % norm(individual(:, s - 1))) return
 
        individual(:, s) = correction
        delta = delta + correction

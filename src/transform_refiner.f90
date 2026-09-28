@@ -27,7 +27,6 @@ module transform_refiner
   use util_precision  , only : dp
   use view_directed , only : directed_graph
   use field_calculus, only : field
-  use graph_fractal      , only : graph
   use transform_structure, only : transform, through_blocks
   use view_directed_stored         , only : stored_directed_graph
   use field_stored   , only : stored_field
@@ -63,7 +62,6 @@ module transform_refiner
    contains
 
      procedure :: defined_on_graph
-     procedure :: defined_on_data
      procedure :: refine_graph
      procedure :: refine_data
 
@@ -101,39 +99,6 @@ contains
     defined_on_graph = input_graph % num_vertices() > 0 .and. this % split >= 1
 
   end function defined_on_graph
-
-  !===================================================================!
-  ! Whether this refiner is defined on that data: true for a field
-  ! whose entries match the graph it is defined on.
-  !===================================================================!
-
-  logical function defined_on_data(this, input_graph, input_data)
-
-    class(refiner)   , intent(in) :: this
-    class(directed_graph)     , intent(in) :: input_graph
-    class(field), intent(in) :: input_data
-
-    defined_on_data = this % defined_on_graph(input_graph)
-
-    select type (input_data)
-    class is (stored_field)
-       block
-         type(graph) :: dom
-         integer         :: n_dom
-         dom   = input_data % domain()
-         n_dom = input_data % num_entries()
-         ! Full coverage, not merely family: this kernel indexes
-         ! every vertex densely (AGENTS.md 5B: routing is not
-         ! admissibility).
-         defined_on_data = defined_on_data &
-              & .and. dom % same_as(input_graph % vertex_set()) &
-              & .and. input_data % num_entries() >= 0
-       end block
-    class default
-       defined_on_data = .false.
-    end select
-
-  end function defined_on_data
 
   !===================================================================!
   ! R. Split every cell, join the children of each cell to one

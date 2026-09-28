@@ -1054,7 +1054,6 @@ module gti_sweeps
      procedure :: set_coarse_nodes
      procedure :: coarse_nodes
      procedure :: jacobian_present
-     procedure :: multigrid_on
      procedure :: coarsens
      procedure :: read_inner
      procedure :: store_inner
@@ -1062,7 +1061,6 @@ module gti_sweeps
      procedure :: copy_configuration_into
      procedure :: set_linear_stopping
      procedure :: set_linear_limits
-     procedure, private :: rows_named
      procedure, private :: inner_minimizer
      procedure, private :: solve_minimizer
   end type solver_context
@@ -1259,11 +1257,6 @@ contains
     class(solver_context), intent(in) :: this
     predictor_order = this % taylor_order
   end function predictor_order
-  pure function rows_named(this) result(name)
-    class(solver_context), intent(in) :: this
-    character(len=:), allocatable :: name
-    name = trim(this % row_kinds) // ', eliminated ' // trim(this % elimination_kind)
-  end function rows_named
   subroutine set_jacobian(this, name)
     class(solver_context), intent(inout) :: this
     character(len=*), intent(in) :: name
@@ -1322,10 +1315,6 @@ contains
     class(solver_context), intent(in) :: this
     yes = this % multigrid_enabled .or. trim(this % preconditioner_kind) == 'multigrid'
   end function coarsens
-  pure logical function multigrid_on(this) result(yes)
-    class(solver_context), intent(in) :: this
-    yes = this % multigrid_enabled
-  end function multigrid_on
   subroutine set_aggregates(this, aggregates)
     class(solver_context), intent(inout) :: this
     integer, intent(in), optional :: aggregates(:)
@@ -2559,12 +2548,9 @@ module gti_block
      integer , allocatable, private :: spatial_r(:), spatial_c(:)
      real(dp), allocatable, private :: spatial_w(:)
    contains
-     procedure :: constrained_block => block_constrained
      procedure :: linear_block => block_linear_block
      procedure :: placed_on
      procedure :: slice_of
-     procedure :: node_of
-     procedure :: moment_of
      procedure, private :: labels_of
      procedure :: num_nodes
      procedure :: spatial_discretization_laid
@@ -2663,18 +2649,6 @@ contains
     integer, allocatable :: node(:), moment(:)
     call this % labels_of(slice, node, moment)
   end function slice_of
-  function node_of(this) result(node)
-    class(block_residual), intent(in) :: this
-    integer, allocatable :: node(:)
-    integer, allocatable :: slice(:), moment(:)
-    call this % labels_of(slice, node, moment)
-  end function node_of
-  function moment_of(this) result(moment)
-    class(block_residual), intent(in) :: this
-    integer, allocatable :: moment(:)
-    integer, allocatable :: slice(:), node(:)
-    call this % labels_of(slice, node, moment)
-  end function moment_of
   integer function num_nodes(this)
     class(block_residual), intent(in) :: this
     integer, allocatable :: slice(:), node(:), moment(:)
@@ -2911,59 +2885,6 @@ contains
     if (allocated(this % moment_time)) lin % moment_time = this % moment_time
     if (allocated(this % spatial_r)) call lin % with_spatial_rows(this % spatial_r, this % spatial_c, this % spatial_w)
   end function block_linear_block
-  !===================================================================!
-  ! THE BLOCK CONSTRAINED TO A SUBSET OF ITS OWN UNKNOWNS. this %
-  ! residual_operator % constrain (src/operation_residual.f90) is
-  ! Element's own operation (Ch. 4.6.3 of the dissertation) - it
-  ! eliminates unknowns from stencils, points and fixed rows alone.
-  ! A block residual's own operation additionally passes its layout
-  ! across unchanged and composes its own free with the constraint
-  ! just applied, so the two are named separately (constrained_block
-  ! here, constrain on residual_operator) rather than sharing one
-  ! name for two different operations.
-  !===================================================================!
-  function block_constrained(this, free, values) result(sub)
-    class(block_residual), intent(in) :: this
-    integer              , intent(in) :: free(:)
-    real(dp)             , intent(in) :: values(:)
-    type(block_residual) :: sub
-    sub % residual_operator = this % residual_operator % constrain(free, values)
-    sub % layout = this % layout
-    if (allocated(this % free)) then
-       sub % free = this % free(free)
-    else
-       sub % free = free
-    end if
-    if (allocated(this % eliminated)) sub % eliminated = this % eliminated(free)
-    if (allocated(this % moment_time)) sub % moment_time = this % moment_time
-    if (allocated(this % spatial_r)) call spatial_rows_constrained(this, free, sub)
-  end function block_constrained
-  !===================================================================!
-  ! The spatial rows of a constrained block: those whose row and
-  ! column are both free, renumbered onto the free unknowns.
-  !===================================================================!
-  subroutine spatial_rows_constrained(this, free, sub)
-    class(block_residual), intent(in)    :: this
-    integer              , intent(in)    :: free(:)
-    type(block_residual) , intent(inout) :: sub
-    integer, allocatable :: sub_of(:), r(:), c(:)
-    real(dp), allocatable :: w(:)
-    integer :: e, n
-    allocate(sub_of(this % num_unknowns()), source=0)
-    do e = 1, size(free)
-       sub_of(free(e)) = e
-    end do
-    allocate(r(size(this % spatial_r)), c(size(this % spatial_r)), w(size(this % spatial_r)))
-    n = 0
-    do e = 1, size(this % spatial_r)
-       if (sub_of(this % spatial_r(e)) == 0 .or. sub_of(this % spatial_c(e)) == 0) cycle
-       n    = n + 1
-       r(n) = sub_of(this % spatial_r(e))
-       c(n) = sub_of(this % spatial_c(e))
-       w(n) = this % spatial_w(e)
-    end do
-    call sub % with_spatial_rows(r(1:n), c(1:n), w(1:n))
-  end subroutine spatial_rows_constrained
   !===================================================================!
   ! THE LABELLING A SWEEP ITERATES OVER, and the order of traversal.
   ! Space and time are chosen separately: a dimension left coupled places

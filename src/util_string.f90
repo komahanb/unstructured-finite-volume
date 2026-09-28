@@ -27,7 +27,6 @@ module util_string
 
      ! Overridden procedures.
      procedure :: print
-     procedure :: equals
      procedure :: tokenize
      procedure :: as_integer
      procedure :: as_real
@@ -147,20 +146,6 @@ contains
     if(allocated(this % str)) deallocate(this % str)
 
   end subroutine destroy
-
-  !===================================================================!
-  ! Overridden string equality logic, based on a comparison of entries.
-  !===================================================================!
-  
-  pure elemental type(logical) function equals(this, element)
-    
-    class(string), intent(in) :: this
-    class(string), intent(in) :: element 
-
-    ! Two string objects are equal when their values are equal.
-    equals = (element % str .eq. this % str)
-
-  end function equals
 
   !===================================================================!
   ! Print the string representation of the object.

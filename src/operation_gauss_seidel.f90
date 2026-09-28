@@ -221,7 +221,7 @@ contains
              end do
           end do
           if (explicit) then
-             if (distributed) call this % distribution % update(dx)
+             if (distributed) call this % distribution % gather(dx)
              associate (columns => ordered(first(col):first(col + 1) - 1))
                call subtracted_columns(this, columns, dx, r)
                dx(columns) = 0.0_dp

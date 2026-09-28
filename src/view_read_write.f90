@@ -63,13 +63,6 @@
 ! `next` gives everything downstream, and of `previous` everything
 ! upstream.
 !
-!             SOURCES AND SINKS
-!
-! A vertex of in-degree zero is a SOURCE: nothing enters it. A vertex
-! of out-degree zero is a SINK: nothing leaves it. In a bipartite
-! digraph these are exactly the boundary - a source of Y is entered
-! by no vertex of X, and a sink of Y points at none.
-!
 !             WHAT A CALLER MAY READ INTO IT
 !
 ! This module fixes no meaning on either part. A caller that takes X
@@ -131,12 +124,6 @@ module view_read_write
      ! the neighbourhoods, which is where direction is read
      procedure :: in_neighbourhood
      procedure :: out_neighbourhood
-     procedure :: in_degree
-     procedure :: out_degree
-
-     ! the boundary
-     procedure :: is_source
-     procedure :: is_sink
 
      ! the two-hop neighbourhoods within one part
      procedure :: previous
@@ -320,40 +307,6 @@ contains
     integer, allocatable    , intent(out) :: neighbours(:)
     call neighbourhood(this, part, vertex, .false., neighbours)
   end subroutine out_neighbourhood
-
-  integer function in_degree(this, part, vertex)
-    class(bipartite_digraph), intent(in) :: this
-    integer                 , intent(in) :: part, vertex
-    integer, allocatable :: neighbours(:)
-    call this % in_neighbourhood(part, vertex, neighbours)
-    in_degree = size(neighbours)
-  end function in_degree
-
-  integer function out_degree(this, part, vertex)
-    class(bipartite_digraph), intent(in) :: this
-    integer                 , intent(in) :: part, vertex
-    integer, allocatable :: neighbours(:)
-    call this % out_neighbourhood(part, vertex, neighbours)
-    out_degree = size(neighbours)
-  end function out_degree
-
-  !===================================================================!
-  ! THE BOUNDARY. A source is entered by nothing; a sink points at
-  ! nothing. Both are ordinary states of a vertex and neither is an
-  ! error.
-  !===================================================================!
-
-  logical function is_source(this, part, vertex)
-    class(bipartite_digraph), intent(in) :: this
-    integer                 , intent(in) :: part, vertex
-    is_source = this % in_degree(part, vertex) == 0
-  end function is_source
-
-  logical function is_sink(this, part, vertex)
-    class(bipartite_digraph), intent(in) :: this
-    integer                 , intent(in) :: part, vertex
-    is_sink = this % out_degree(part, vertex) == 0
-  end function is_sink
 
   !===================================================================!
   ! THE PATHS OF LENGTH TWO from a vertex, one arc into the other part

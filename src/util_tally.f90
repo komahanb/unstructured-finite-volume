@@ -90,9 +90,7 @@ module util_tally
    contains
      procedure :: open
      procedure :: close
-     procedure :: recording
      procedure :: num_levels
-     procedure :: num_orders
      procedure :: level_name
      procedure :: order
      procedure :: enter
@@ -156,14 +154,6 @@ contains
 
   end subroutine close
 
-  pure logical function recording(this) result(on)
-
-    class(tally), intent(in) :: this
-
-    on = this % on
-
-  end function recording
-
   pure integer function num_levels(this) result(n)
 
     class(tally), intent(in) :: this
@@ -177,14 +167,6 @@ contains
     n = num_events
 
   end function tally_num_events
-
-  pure integer function num_orders(this) result(n)
-
-    class(tally), intent(in) :: this
-
-    n = this % highest
-
-  end function num_orders
 
   pure function level_name(this, level) result(named)
 

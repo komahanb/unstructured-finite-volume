@@ -126,7 +126,6 @@ module transform_partitioner
    contains
 
      procedure :: defined_on_graph
-     procedure :: defined_on_data
      procedure :: partition_graph
      procedure :: partition_data
 
@@ -179,28 +178,6 @@ contains
     end if
 
   end function defined_on_graph
-
-  !===================================================================!
-  ! Data can be restricted when the graph can be partitioned and the
-  ! data is defined on that graph.
-  !===================================================================!
-
-  logical function defined_on_data(this, input_graph, input_data)
-
-    class(partitioner), intent(in) :: this
-    class(directed_graph)      , intent(in) :: input_graph
-    class(field) , intent(in) :: input_data
-
-    defined_on_data = this % defined_on_graph(input_graph)
-
-    select type (input_data)
-    class is (field)
-       defined_on_data = defined_on_data .and. input_data % num_entries() >= 0
-    class default
-       defined_on_data = .false.
-    end select
-
-  end function defined_on_data
 
   !===================================================================!
   ! P. Assign an owner to every cell, gather this part's cells, and
@@ -260,19 +237,11 @@ contains
        end if
        eglobal(num_part_edges) = e
 
-       ! An edge is owned by the part that owns its TAIL - always,
-       ! whether this part owns that tail or reads it as a halo copy. One global
-       ! edge therefore has exactly one owner across all parts, which
-       ! is what makes assembly reconstruct a global edge field
-       ! exactly once. (The branch below is vestigial: both arms
-       ! assign the same value. An earlier design let the head's
-       ! owner own the edge for a halo tail; that rule was never
-       ! implemented, and the uniqueness property does not need it.)
-       if (owner(t) == this % part) then
-          eowner(num_part_edges) = owner(t)
-       else
-          eowner(num_part_edges) = owner(t)
-       end if
+       ! An edge is owned by the part that owns its TAIL, whether this
+       ! part owns that tail or reads it as a halo copy. One global edge
+       ! therefore has exactly one owner across all parts, which is what
+       ! makes assembly reconstruct a global edge field exactly once.
+       eowner(num_part_edges) = owner(t)
     end do
 
     allocate(vowner(size(own_part)))

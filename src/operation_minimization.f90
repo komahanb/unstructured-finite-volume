@@ -221,7 +221,6 @@ module operation_minimization
      procedure :: diverging
      procedure :: initial_residual_norm
      procedure, private :: fit_log_residual
-     procedure :: exhausted
      procedure :: terminated
      procedure :: record_result
      procedure :: result => minimizer_result
@@ -484,32 +483,6 @@ contains
     imbalance = this % initial_residual
 
   end function initial_residual_norm
-
-  !===================================================================!
-  ! Whether the iteration has reached its limit. A limit setting
-  ! that is neither by_count nor by_rate stops the program.
-  !===================================================================!
-
-  logical function exhausted(this, iteration) result(criterion_met)
-
-    class(minimizer), intent(in) :: this
-    integer         , intent(in) :: iteration
-    character(len=250) :: message
-
-    criterion_met = iteration >= this % max_iterations
-
-    select case (this % limit_kind)
-    case (by_count)
-       continue
-    case (by_rate)
-       criterion_met = criterion_met .or. this % stagnated()
-    case default
-       write(message,'(a,i0)') 'minimizer: an iteration limit must be counted or taken from the &
-            &rate; this % limit_kind = ', this % limit_kind
-       error stop trim(message)
-    end select
-
-  end function exhausted
 
   !===================================================================!
   ! Whether an iteration stops at this imbalance: recorded, then
@@ -969,7 +942,7 @@ contains
        select type (a => this % action)
        type is (stencil)
           xh = x
-          call this % distribution % update(xh)
+          call this % distribution % gather(xh)
           allocate(y(size(x)), source=0.0_dp)
           call a % row_product(this % distribution % owned, xh, y)
           return

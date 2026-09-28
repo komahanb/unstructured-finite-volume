@@ -1,8 +1,7 @@
 !=====================================================================!
 ! The transform prime: the operation between graphs, graph -> graph
-! with data mapped along. Two symbols at this level, both
-! admissibility predicates: may this transform act on that graph, and
-! on that data defined on it. The concrete types - partition,
+! with data mapped along. One symbol at this level, an admissibility
+! predicate: may this transform act on that graph. The concrete types - partition,
 ! assemble, coarsen, refine - are each checked by a round-trip law:
 !
 !      exact        assemble(partition(G)) = G      both ways
@@ -20,7 +19,6 @@ module transform_structure
 
   use util_precision, only : dp
   use view_directed , only : directed_graph
-  use field_calculus, only : field
 
   implicit none
 
@@ -34,7 +32,6 @@ module transform_structure
    contains
 
      procedure(transform_on_graph_interface), deferred :: defined_on_graph
-     procedure(transform_on_data_interface) , deferred :: defined_on_data
 
   end type transform
 
@@ -45,13 +42,6 @@ module transform_structure
        class(transform), intent(in) :: this
        class(directed_graph), intent(in) :: input_graph
      end function transform_on_graph_interface
-
-     logical function transform_on_data_interface(this, input_graph, input_data)
-       import :: transform, directed_graph, field
-       class(transform), intent(in) :: this
-       class(directed_graph), intent(in) :: input_graph
-       class(field), intent(in) :: input_data
-     end function transform_on_data_interface
 
   end interface
 

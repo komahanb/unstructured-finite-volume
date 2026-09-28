@@ -4824,63 +4824,6 @@ contains
   end function face_instant
 
   !===================================================================!
-  ! The one parent component a face equation reads: the field f, the
-  ! component in the equation's own tuple, and the degree of the
-  ! derivative along time it is - zero for the value of f, one for
-  ! its first derivative - since the equation's tuple and the rule's
-  ! lay the jets out differently. Invalid input: an equation reading
-  ! no component, several, or one outside the jets of the unknowns.
-  !===================================================================!
-
-  subroutine stated_value(equation, f, comp, degree)
-    type(continuous_field), intent(in)  :: equation
-    integer               , intent(out) :: f, comp, degree
-    type(expression) :: g
-    integer, allocatable :: reads(:)
-    integer :: k
-    g = equation % graph(1)
-    call g % read_components(reads)
-    if (size(reads) /= 1) then
-       error stop 'operation_residual: a condition on a face states the value of one component'
-    end if
-    comp = reads(1)
-    f = 0
-    do k = 1, g % num_fields() - g % num_multipliers()
-       if (comp >= g % offset_of_field(k) .and. comp <= g % offset_of_field(k) + g % degree_of_field(k)) f = k
-    end do
-    if (f == 0) then
-       error stop 'operation_residual: a condition on a face states the value of an unknown or of one of &
-            &its derivatives along time'
-    end if
-    degree = comp - g % offset_of_field(f)
-  end subroutine stated_value
-
-  !===================================================================!
-  ! The equation g(u) at a position, evaluated at u = 0 and u = 1 on
-  ! the component named: given = -g(0), slope = g(1) - g(0), so that a
-  ! condition u - h(x) = 0 yields given = h(x), slope = 1.
-  !===================================================================!
-
-  subroutine affine_value(equation, comp, position, given, slope)
-    type(continuous_field), intent(in)  :: equation
-    integer               , intent(in)  :: comp
-    real(dp)              , intent(in)  :: position(:)
-    real(dp)              , intent(out) :: given, slope
-    type(expression) :: g
-    type(derivative_terms), allocatable :: q(:)
-    type(derivative_terms) :: nu
-    real(dp) :: at_zero_value, at_one_value
-    g  = equation % graph(1)
-    nu = derivative_terms(0.0_dp, 0)
-    allocate(q(0:g % num_components() - 1), source=nu)
-    at_zero_value = mixed_partial(g % at_instant(q, spread(nu, 1, g % num_designs()), position))
-    q(comp) = derivative_terms(1.0_dp, 0)
-    at_one_value  = mixed_partial(g % at_instant(q, spread(nu, 1, g % num_designs()), position))
-    given = -at_zero_value
-    slope = at_one_value - at_zero_value
-  end subroutine affine_value
-
-  !===================================================================!
   ! THE GAUGE ROWS: for each condition on the time factor, the
   ! integral of one parent unknown over the region, at every moment
   ! after the history: the sum over the cells of the volume times the

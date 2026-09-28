@@ -107,7 +107,6 @@ module transform_assembler
    contains
 
      procedure :: defined_on_graph
-     procedure :: defined_on_data
      procedure :: defined_on_relation
      procedure :: assemble_graph
      procedure :: assemble_data
@@ -159,30 +158,6 @@ contains
     defined_on_relation = rel % describes(part_graph)
 
   end function defined_on_relation
-
-  !===================================================================!
-  ! Whether this assembler is defined on that data: true for a field
-  ! on a part that passes the graph check above.
-  !===================================================================!
-
-  ! Evaluates through defined_on_graph, so it inherits that check's
-  ! scope and no more. The relation predicate is defined_on_relation.
-  logical function defined_on_data(this, input_graph, input_data)
-
-    class(assembler) , intent(in) :: this
-    class(directed_graph)     , intent(in) :: input_graph
-    class(field), intent(in) :: input_data
-
-    defined_on_data = this % defined_on_graph(input_graph)
-
-    select type (input_data)
-    class is (field)
-       defined_on_data = defined_on_data .and. input_data % num_entries() >= 0
-    class default
-       defined_on_data = .false.
-    end select
-
-  end function defined_on_data
 
   !===================================================================!
   ! Map the part back to whole-graph order.

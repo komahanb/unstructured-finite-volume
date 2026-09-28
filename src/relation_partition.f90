@@ -143,15 +143,12 @@ module relation_partition
      procedure :: global_edge_index
      procedure :: global_index
      procedure :: part_vertex_index
-     procedure :: part_edge_index
      procedure :: vertex_owner_part
      procedure :: edge_owner_part
      procedure :: owner_part
 
      procedure :: describes
      procedure :: describes_whole
-     procedure :: whole_vertex_set
-     procedure :: whole_edge_set
      procedure :: num_whole_vertices
      procedure :: num_whole_edges
 
@@ -303,13 +300,6 @@ contains
          &                     this % number, this % cut)
   end function part_vertex_index
 
-  pure integer function part_edge_index(this, global_index, part_id)
-    class(partition_relation), intent(in) :: this
-    integer                                  , intent(in) :: global_index, part_id
-    part_edge_index = inward(this % eglobal, global_index, part_id, &
-         &                   this % number, this % cut)
-  end function part_edge_index
-
   pure integer function inward(global, global_index, requested, own_part, cut)
     integer, allocatable, intent(in) :: global(:)
     integer             , intent(in) :: global_index, requested, own_part
@@ -372,19 +362,9 @@ contains
   end function owner
 
   !===================================================================!
-  ! The far side of the relation: identity and count, for a caller
-  ! that must size or name the destination of an assembly.
+  ! The far side of the relation: the count, for a caller that must
+  ! size the destination of an assembly.
   !===================================================================!
-
-  type(graph) function whole_vertex_set(this)
-    class(partition_relation), intent(in) :: this
-    whole_vertex_set = this % whole_vertices
-  end function whole_vertex_set
-
-  type(graph) function whole_edge_set(this)
-    class(partition_relation), intent(in) :: this
-    whole_edge_set = this % whole_edges
-  end function whole_edge_set
 
   pure integer function num_whole_vertices(this)
     class(partition_relation), intent(in) :: this

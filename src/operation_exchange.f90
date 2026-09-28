@@ -6,7 +6,6 @@
 ! not own are its halo, and every other entry is zero or stale and
 ! never read. The exchange is
 !
-!      update(x)     x(halo) := x(halo) of the owning image
 !      gather(x)     x(i)    := x(i) of the owner of i, for every i
 !      total(s)      the sum of s over the images
 !      maximum(s)    the largest s over the images
@@ -35,19 +34,14 @@ module operation_exchange
      integer, allocatable :: owner(:)
      logical, allocatable :: is_owned(:)
      integer, allocatable :: owned(:)
-     ! the halo, grouped by the owning image: the entries owned by
-     ! image p are halo(halo_first(p):halo_first(p + 1) - 1)
      integer, allocatable :: halo(:)
-     integer, allocatable :: halo_first(:)
 
    contains
 
      procedure :: halo_from
-     procedure :: update
      procedure :: gather
      procedure :: total
      procedure :: maximum
-     procedure :: num_owned
 
   end type exchange
 
@@ -81,20 +75,14 @@ contains
     this % owner    = owner
     this % is_owned = owner == this % image
     this % owned    = pack([(i, i = 1, size(owner))], this % is_owned)
-    allocate(this % halo(0), this % halo_first(this % images + 1), source=0)
-    this % halo_first = 1
+    allocate(this % halo(0))
 
   end function create
 
-  pure integer function num_owned(this)
-    class(exchange), intent(in) :: this
-    num_owned = size(this % owned)
-  end function num_owned
-
   !===================================================================!
   ! THE HALO from a coupling: the tails of the edges entering owned
-  ! vertices that this image does not own, each once, grouped by
-  ! owner. A coupling of another vertex count than the ownership is
+  ! vertices that this image does not own, each once, in index
+  ! order. A coupling of another vertex count than the ownership is
   ! invalid input.
   !===================================================================!
 
@@ -104,8 +92,7 @@ contains
     class(directed_graph), intent(in)    :: coupling
 
     logical, allocatable :: in_halo(:)
-    integer, allocatable :: count(:)
-    integer :: e, t, h, n, p, at
+    integer :: e, t, h, n
     character(len=250) :: message
 
     n = size(this % owner)
@@ -123,46 +110,20 @@ contains
        if (this % is_owned(h) .and. .not. this % is_owned(t)) in_halo(t) = .true.
     end do
 
-    allocate(count(this % images), source=0)
-    do t = 1, n
-       if (in_halo(t)) count(this % owner(t)) = count(this % owner(t)) + 1
-    end do
-    this % halo_first(1) = 1
-    do p = 1, this % images
-       this % halo_first(p + 1) = this % halo_first(p) + count(p)
-    end do
-    if (allocated(this % halo)) deallocate(this % halo)
-    allocate(this % halo(this % halo_first(this % images + 1) - 1))
-    count = this % halo_first(1:this % images)
-    do t = 1, n
-       if (.not. in_halo(t)) cycle
-       p  = this % owner(t)
-       at = count(p)
-       this % halo(at) = t
-       count(p) = at + 1
-    end do
+    this % halo = pack([(t, t = 1, n)], in_halo)
 
   end subroutine halo_from
 
   !===================================================================!
-  ! THE HALO UPDATE AND THE GATHER, both by one sum over the images
-  ! of the vector with every entry not owned set to zero: each entry
-  ! is owned by one image, so the sum is the owner's value everywhere.
+  ! THE GATHER, by one sum over the images of the vector with every
+  ! entry not owned set to zero: each entry is owned by one image, so
+  ! the sum is the owner's value everywhere.
   ! A reduction of the whole length costs more than the halo alone
   ! would, and needs no coarray variable: the coarray runtime in use
   ! (OpenCoarrays 2.9.2 under gfortran 14) registers a module coarray
   ! before the runtime is initialised and mis-sizes a vector-subscript
   ! access through a component, while its collectives are sound.
   !===================================================================!
-
-  subroutine update(this, x)
-
-    class(exchange), intent(in)    :: this
-    real(dp)       , intent(inout) :: x(:)
-
-    call this % gather(x)
-
-  end subroutine update
 
   subroutine gather(this, x)
 

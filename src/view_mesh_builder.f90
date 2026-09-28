@@ -82,7 +82,7 @@ contains
     integer , allocatable :: face_cells(:,:), num_face_cells(:)
 
     character(len=64), allocatable :: etags(:)
-    integer :: f, tag
+    integer :: f, row
 
     ! the periodic links and the shift of every face
     integer , allocatable :: first(:), last(:), image(:), master(:), remaining(:)
@@ -135,15 +135,15 @@ contains
     num_face_cells    = num_face_cells(remaining)
     face_shift        = face_shift(:, remaining)
 
-    ! tag names on the boundary faces, blank inside
+    ! tag names on the boundary faces, blank inside; a name is found by
+    ! its physical number and dimension, not by its line in the file
     allocate(etags(num_faces))
     etags = ''
     do f = 1, num_faces
        if (num_face_cells(f) < 2) then
-          tag = face_tags(f)
-          if (tag >= 1 .and. tag <= size(tag_info)) then
-             etags(f) = tag_info(tag) % str
-          end if
+          row = findloc(tag_numbers, face_tags(f), dim=1, &
+               & mask=tag_physical_dimensions == spatial_dim - 1)
+          if (row > 0) etags(f) = tag_info(row) % str
        end if
     end do
 

@@ -8144,7 +8144,7 @@ contains
     do mask = 1, 2**n - 1
        if (nu_seed(mask) /= 0.0_dp) call nu % set_coefficient(mask, nu_seed(mask))
     end do
-    t = rule % at_instant(q, nu)
+    t = rule % at_instant(q, [nu])
   end function point_terms
   !===================================================================!
   ! THE POINTS ONE STEP IS INTEGRATED OVER, AND THEIR WEIGHTS.

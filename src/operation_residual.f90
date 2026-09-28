@@ -72,7 +72,6 @@ module operation_residual
   use operation_exchange       , only : exchange
   use util_verbosity           , only : verbosity
   use transform_partitioner    , only : partitioner, PARTITION_BREADTH_FIRST
-  use relation_partition       , only : partition_relation
   use operation_minimization, only : solve_result
   use operation_newton      , only : newton
   use operation_dense_direct, only : dense_direct
@@ -850,44 +849,6 @@ contains
     end do
   end subroutine governed
 
-  pure subroutine accumulate_state(this, x, r)
-    class(residual_operator), intent(in)    :: this
-    real(dp)                 , intent(in)    :: x(:)
-    real(dp)                 , intent(inout) :: r(:)
-    integer :: i
-    do i = 1, size(this % fixed_rows)
-       r(this % fixed_rows(i)) = x(this % fixed_rows(i)) - this % fixed(i)
-    end do
-  end subroutine accumulate_state
-
-  pure subroutine accumulate_direction(this, v, r)
-    class(residual_operator), intent(in)    :: this
-    real(dp)                 , intent(in)    :: v(:)
-    real(dp)                 , intent(inout) :: r(:)
-    integer :: i
-    do i = 1, size(this % fixed_rows)
-       r(this % fixed_rows(i)) = v(this % fixed_rows(i))
-    end do
-  end subroutine accumulate_direction
-
-  !===================================================================!
-  ! THE DESIGN PARTIAL OF A FIXED ROW. The row states x(row) - h(row)
-  ! with h a function of the design, so its partial along a design
-  ! direction v is -dh(row)/dnu times v at the point whose tuple contains
-  ! the row. A value that is data of the problem has a zero rate and
-  ! the row reads zero, as it did before rates were stated.
-  !===================================================================!
-
-  pure subroutine design_of_fixed_rows(this, v, r)
-    class(residual_operator), intent(in)    :: this
-    real(dp)                 , intent(in)    :: v(:)
-    real(dp)                 , intent(inout) :: r(:)
-    integer :: i
-    do i = 1, size(this % fixed_rows)
-       r(this % fixed_rows(i)) = -this % fixed_rate(i) * v(point_of(this, this % fixed_rows(i)))
-    end do
-  end subroutine design_of_fixed_rows
-
   ! the point whose tuple contains an unknown: the last point whose
   ! offset lies below it, the tuples being placed in order
   pure integer function point_of(this, row) result(p)
@@ -904,15 +865,6 @@ contains
     class(residual_operator), intent(in) :: this
     yes = any(this % fixed_rate /= 0.0_dp)
   end function any_fixed_rate
-
-  pure subroutine zero_fixed_rows(this, r)
-    class(residual_operator), intent(in)    :: this
-    real(dp)                 , intent(inout) :: r(:)
-    integer :: i
-    do i = 1, size(this % fixed_rows)
-       r(this % fixed_rows(i)) = 0.0_dp
-    end do
-  end subroutine zero_fixed_rows
 
   !===================================================================!
   ! The state read from the frozen tuple: a field on U with one value
@@ -985,7 +937,7 @@ contains
     call state_of(this, inputs, x, state)
     call discretized(this, inputs, state, x, r, governing)
     call placed(this, governing, r)
-    call accumulate_state(this, x, r)
+    r(this % fixed_rows) = x(this % fixed_rows) - this % fixed
     call write_prescribed(this, x, r, along=.false.)
     call placed_output(this, r, output)
   end subroutine residual_apply
@@ -1179,10 +1131,10 @@ contains
                   &only; a repeated design partial of a fixed row is not stated'
           end if
        end if
-       call second_tangent(this, inputs, variations, x, governing)
+       call physics_tangent(this, inputs, variations, x, governing)
        allocate(r(this % num_unknowns()), source=0.0_dp)
        call placed(this, governing, r)
-       call zero_fixed_rows(this, r)
+       r(this % fixed_rows) = 0.0_dp
        call zero_prescribed_rows(this, r)
        call placed_output(this, r, output)
        return
@@ -1191,18 +1143,21 @@ contains
     if (variations(1) % argument_is(this % argument(1))) then
        call discretized(this, inputs, state, x, r, governing, v)
        call placed(this, governing, r)
-       call accumulate_direction(this, v, r)
+       r(this % fixed_rows) = v(this % fixed_rows)
        call write_prescribed(this, v, r, along=.true.)
     else
-       call design_tangent(this, inputs, variations, x, r, governing)
+       allocate(r(this % num_unknowns()), source=0.0_dp)
+       call physics_tangent(this, inputs, variations, x, governing)
        call placed(this, governing, r)
-       call design_of_fixed_rows(this, v, r)
+       ! a fixed row states x(row) - h(row); its partial along a design
+       ! direction v is -dh(row)/dnu times v at the point of the row
+       r(this % fixed_rows) = -this % fixed_rate * v([(point_of(this, this % fixed_rows(i)), i = 1, size(this % fixed_rows))])
        call zero_prescribed_rows(this, r)
     end if
     call placed_output(this, r, output)
   end subroutine residual_partial_action
 
-  subroutine second_tangent(this, inputs, variations, x, governing)
+  subroutine physics_tangent(this, inputs, variations, x, governing)
     class(residual_operator), intent(in) :: this
     type(binding)             , intent(in) :: inputs(:)
     type(variation)          , intent(in) :: variations(:)
@@ -1221,7 +1176,7 @@ contains
        at_points(i) = physics_variation(this, variations(i))
     end do
     call governed(this, point_data, governing, at_points)
-  end subroutine second_tangent
+  end subroutine physics_tangent
 
   function physics_variation(this, given) result(at_points)
     class(residual_operator), intent(in) :: this
@@ -1241,22 +1196,6 @@ contains
        error stop 'operation_residual: physics_variation received a variation naming neither the state nor the design'
     end if
   end function physics_variation
-
-  subroutine design_tangent(this, inputs, variations, x, r, governing)
-    class(residual_operator), intent(in) :: this
-    type(binding)             , intent(in) :: inputs(:)
-    type(variation)          , intent(in) :: variations(:)
-    real(dp)                 , intent(in) :: x(:)
-    real(dp), allocatable, intent(out) :: r(:), governing(:,:)
-    type(stored_field), allocatable :: point_data(:)
-    allocate(r(this % num_unknowns()), source=0.0_dp)
-    if (.not. allocated(this % physics)) then
-       allocate(governing(size(this % at), 0))
-       return
-    end if
-    call point_inputs(this, inputs, x, point_data)
-    call governed(this, point_data, governing, [variations(1) % with_argument(this % physics % argument(2))])
-  end subroutine design_tangent
 
   !===================================================================!
   ! THE RESIDUAL CONSTRAINED TO free UNKNOWNS OF ITS OWN NUMBERING,
@@ -2296,7 +2235,7 @@ contains
     type(discrete_field) :: part
     type(lower_bounds) :: lb
     integer :: stride, nf, ncells, ninst, order, nd, ni, nb, top, reach, b, first, last, depth, nslots, again
-    integer :: ia, k, c, f, d, o, b1, b2, wlo, whi, lo, width, half, reversals, nc, ng, j
+    integer :: ia, k, c, f, d, o, b1, b2, wlo, whi, lo, width, half, reversals
     integer(8) :: optimum, tick, tock, rate
     logical :: solves, reverses
 
@@ -2368,19 +2307,7 @@ contains
 
     ! THE REVERSE SWEEP
     tick = tock
-    nc = 0
-    ng = 0
-    do j = 1, size(this % condition)
-       if (this % condition(j) % manifold % is_face())        nc = nc + size(this % condition(j) % equation)
-       if (this % condition(j) % manifold % is_time_factor()) ng = ng + size(this % condition(j) % equation)
-    end do
-    allocate(adjoint(nf, ncells, ninst, 0:order, nd), reaction(ncells, nc, 0:order, nd), source=0.0_dp)
-    allocate(gauge(ninst, ng, 0:order, nd), design_multiplier(ni, 0:order, nd), source=0.0_dp)
-    allocate(incoming(stride, ncells, 1:0, 0:order, nd))
-    design_multiplier = -partial
-    do d = 1, nd
-       if (.not. expansion_owned(this, d)) design_multiplier(:, 1:, d) = 0.0_dp
-    end do
+    call allocate_multipliers(this, partial, 0, adjoint, incoming, reaction, gauge, design_multiplier)
 
     if (this % overlapped) then
        ! the widest window among the reversals, and the two halves
@@ -2780,7 +2707,7 @@ contains
     real(dp), allocatable :: gradient(:,:,:,:), partial(:,:,:), incoming(:,:,:,:,:), q(:)
     type(residual_operator) :: rows
     integer , allocatable :: primary(:)
-    integer :: stride, nf, ncells, ninst, nc, ng, j, b, nb, first, last, depth, order, nd, ni, d
+    integer :: stride, nf, ncells, ninst, b, nb, first, last, depth, order, nd, ni
 
     stride = this % rule % num_components()
     nf     = this % manifold % num_unknowns
@@ -2796,28 +2723,7 @@ contains
        allocate(gradient(stride, size(solution % node_weight), 0:order, nd), partial(ni, 0:order, nd), source=0.0_dp)
     end if
 
-    nc = 0
-    ng = 0
-    do j = 1, size(this % condition)
-       if (this % condition(j) % manifold % is_face())        nc = nc + size(this % condition(j) % equation)
-       if (this % condition(j) % manifold % is_time_factor()) ng = ng + size(this % condition(j) % equation)
-    end do
-    allocate(adjoint(nf, ncells, ninst, 0:order, nd), incoming(stride, ncells, ninst, 0:order, nd), source=0.0_dp)
-    allocate(reaction(ncells, nc, 0:order, nd), gauge(ninst, ng, 0:order, nd), source=0.0_dp)
-    allocate(design_multiplier(ni, 0:order, nd), source=0.0_dp)
-
-    ! THE MULTIPLIERS OF THE DESIGN CONDITIONS nu_i - nu_i0 = 0 and
-    ! their derivatives: the stationarity of L in nu_i, kappa_i =
-    ! -(dJ/dnu_i at fixed state + the sum over every row of its
-    ! multiplier times the row's partial in nu_i) = -dJ/dnu_i, the
-    ! total derivative by the adjoint; the partial in nu_i here, the
-    ! rows' sums by the blocks
-    design_multiplier = -partial
-    ! an expansion another image owns: its derivatives above order
-    ! zero are left zero here, and summed over the images at the end
-    do d = 1, nd
-       if (.not. expansion_owned(this, d)) design_multiplier(:, 1:, d) = 0.0_dp
-    end do
+    call allocate_multipliers(this, partial, ninst, adjoint, incoming, reaction, gauge, design_multiplier)
 
     if (.not. this % with_chain) then
        ! the point manifold: one system, its transposed solve
@@ -2851,6 +2757,49 @@ contains
     call shared_expansions_summed(this, adjoint, reaction, gauge, design_multiplier)
 
   end subroutine adjoint_sweep
+
+  !===================================================================!
+  ! The multipliers of the reverse sweep, zero, with the incoming
+  ! multipliers over ninst instants. THE MULTIPLIERS OF THE DESIGN
+  ! CONDITIONS nu_i - nu_i0 = 0 and their derivatives: the
+  ! stationarity of L in nu_i, kappa_i = -(dJ/dnu_i at fixed state +
+  ! the sum over every row of its multiplier times the row's partial
+  ! in nu_i) = -dJ/dnu_i, the total derivative by the adjoint; the
+  ! partial in nu_i here, the rows' sums by the blocks. An expansion
+  ! another image owns: its derivatives above order zero are left zero
+  ! here, and summed over the images at the end.
+  !===================================================================!
+
+  subroutine allocate_multipliers(this, partial, ninst, adjoint, incoming, reaction, gauge, design_multiplier)
+
+    class(discrete_residual), intent(in)  :: this
+    real(dp)                , intent(in)  :: partial(:,0:,:)
+    integer                 , intent(in)  :: ninst
+    real(dp), allocatable   , intent(out) :: adjoint(:,:,:,:,:), incoming(:,:,:,:,:), reaction(:,:,:,:)
+    real(dp), allocatable   , intent(out) :: gauge(:,:,:,:), design_multiplier(:,:,:)
+
+    integer :: nf, ncells, order, nd, nc, ng, j, d
+
+    nf     = this % manifold % num_unknowns
+    ncells = this % points % num_cells()
+    order  = ubound(partial, 2)
+    nd     = size(partial, 3)
+    nc = 0
+    ng = 0
+    do j = 1, size(this % condition)
+       if (this % condition(j) % manifold % is_face())        nc = nc + size(this % condition(j) % equation)
+       if (this % condition(j) % manifold % is_time_factor()) ng = ng + size(this % condition(j) % equation)
+    end do
+    allocate(adjoint(nf, ncells, this % points % num_instants(), 0:order, nd), source=0.0_dp)
+    allocate(incoming(this % rule % num_components(), ncells, ninst, 0:order, nd), source=0.0_dp)
+    allocate(reaction(ncells, nc, 0:order, nd), gauge(this % points % num_instants(), ng, 0:order, nd), source=0.0_dp)
+    allocate(design_multiplier(size(partial, 1), 0:order, nd), source=0.0_dp)
+    design_multiplier = -partial
+    do d = 1, nd
+       if (.not. expansion_owned(this, d)) design_multiplier(:, 1:, d) = 0.0_dp
+    end do
+
+  end subroutine allocate_multipliers
 
   ! the derivatives along the expansions the images shared, summed
   ! once: order zero is complete on every image and is left alone
@@ -4514,26 +4463,13 @@ contains
     integer, allocatable :: cell_owner(:)
 
     type(partitioner) :: cut
-    class(directed_graph), allocatable :: part
-    type(partition_relation) :: relation
-    integer :: ncells, k, v
 
-    ncells = this % points % num_cells()
     ! without a region nothing is shared: every image owns every cell
     ! of its own, and no sum over the images is taken
-    allocate(cell_owner(ncells), source=this_image())
+    allocate(cell_owner(this % points % num_cells()), source=this_image())
     if (num_images() == 1 .or. .not. this % points % with_space) return
-    cell_owner = 0
-    do k = 1, num_images()
-       cut = partitioner(PARTITION_BREADTH_FIRST, num_images(), part=k)
-       call cut % partition_graph(this % points % cells, part, relation)
-       do v = 1, part % num_vertices()
-          if (relation % vertex_owner_part(v) == k) cell_owner(relation % global_vertex_index(v)) = k
-       end do
-    end do
-    if (any(cell_owner == 0)) then
-       error stop 'operation_residual: the partition of the cells over the images leaves a cell unowned'
-    end if
+    cut = partitioner(PARTITION_BREADTH_FIRST, num_images())
+    call cut % assign_owners(this % points % cells, cell_owner)
 
   end function cell_owners
 

@@ -127,6 +127,7 @@ module transform_partitioner
 
      procedure :: defined_on_graph
      procedure :: partition_graph
+     procedure :: assign_owners
      procedure :: partition_data
 
   end type partitioner

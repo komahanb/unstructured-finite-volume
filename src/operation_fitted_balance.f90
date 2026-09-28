@@ -46,11 +46,7 @@
 module operation_fitted_balance
 
   use util_precision  , only : dp
-  use view_directed, only : directed_graph
-  use field_calculus, only : field
-  use view_directed_stored        , only : stored_directed_graph
   use field_forms        , only : form
-  use field_stored  , only : stored_field
   use view_mesh   , only : mesh, values_of
   use operation_stencil, only : stencil, triple_list
   use operation_fitting      , only : fit
@@ -96,9 +92,6 @@ contains
     type(stencil) :: op
 
     type(fit) :: fitting
-    type(stored_directed_graph) :: constellation
-    type(stored_field)   :: positions
-    class(field), allocatable :: fitted
     real(dp), allocatable :: areas(:), normals(:), fcentres(:), centres(:), offsets(:,:)
     integer , allocatable :: rows(:), columns(:), cell_neighbourhood(:)
     real(dp), allocatable :: weights(:), pts(:), w(:), constant(:)
@@ -172,17 +165,11 @@ contains
        xf = fcentres(d * e - d + 1 : d * e)
        if (h == 0) pts(d * npts - d + 1 : d * npts) = xf
 
-       constellation = stored_directed_graph(npts, tails=[integer ::], heads=[integer ::])
-       positions = stored_field('positions', constellation % vertex_set(), &
-            & constellation % num_vertices(), num_components=d)
-       call positions % set_real_vector(pts)
-
        ! Algebra: one apply, directed along the normal at the face.
        fitting = fit(shape, at=xf, &
             & direction=normals(d * e - d + 1 : d * e), &
             & scale=scales(e))
-       call fitting % apply(constellation, fitting % bind([positions]), fitted)
-       call fitted % real_vector(w)
+       w = fitting % weights(pts)
        do j = 1, size(cell_neighbourhood)
           call triples % assign(t, cell_neighbourhood(j), w(j))
           if (h > 0) call triples % assign(h, cell_neighbourhood(j), -w(j))
@@ -224,9 +211,6 @@ contains
 
     type(stencil) :: op
     type(fit) :: fitting
-    type(stored_directed_graph) :: constellation
-    type(stored_field)   :: positions
-    class(field), allocatable :: fitted
     real(dp), allocatable :: centres(:), pts(:), w(:), weights(:), offsets(:,:)
     integer , allocatable :: rows(:), columns(:), cell_neighbourhood(:), active(:)
     type(triple_list) :: triples
@@ -273,14 +257,9 @@ contains
           end if
           needed = npts + 1
        end do
-       constellation = stored_directed_graph(npts, tails=[integer ::], heads=[integer ::])
-       positions = stored_field('positions', constellation % vertex_set(), &
-            & constellation % num_vertices(), num_components=d)
-       call positions % set_real_vector(pts)
        fitting = fit(shape, at=centres(d * c - d + 1 : d * c), &
             & direction=[1.0_dp, 0.0_dp, 0.0_dp], orders=orders)
-       call fitting % apply(constellation, fitting % bind([positions]), fitted)
-       call fitted % real_vector(w)
+       w = fitting % weights(pts)
        do j = 1, npts
           call triples % assign(c, cell_neighbourhood(j), w(j))
        end do

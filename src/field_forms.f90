@@ -6,7 +6,7 @@
 ! being either:
 !
 !      evaluation      num_members, the table's width recorded where
-!                      the basis is declared; values, slopes - the
+!                      the basis is declared; values, derivatives - the
 !                      concretion's own table of functions, read whole
 !      active basis    WHICH table entries are active, as a declared set:
 !                      an identity, and a representation listing them
@@ -33,7 +33,8 @@
 !      num_members                  the table's width
 !      values(x, at)            each table entry, evaluated at x,
 !                               reckoned about the point `at`
-!      slopes(x, at, n)         each entry's derivative along n
+!      derivatives(x, at, o)    each entry's derivative of the
+!                               multi-index o
 !
 ! and one operation of its own: restrict, which sets that membership.
 ! restrict is here rather than at the caller because a form owns its
@@ -80,7 +81,6 @@ module field_forms
 
      procedure :: num_members
      procedure(form_values_interface), deferred :: values
-     procedure(form_slopes_interface), deferred :: slopes
      procedure(form_derivatives_interface), deferred :: derivatives
      procedure(form_count_interface) , deferred :: dimension
 
@@ -100,12 +100,6 @@ module field_forms
        real(dp), intent(out) :: phi(:)
      end subroutine form_values_interface
 
-     pure subroutine form_slopes_interface(this, x, at, direction, dphi)
-       import :: form, dp
-       class(form), intent(in) :: this
-       real(dp), intent(in)  :: x(:), at(:), direction(:)
-       real(dp), intent(out) :: dphi(:)
-     end subroutine form_slopes_interface
      ! the derivative of each entry of the multi-index orders, one
      ! order per coordinate, at x reckoned about at
      pure subroutine form_derivatives_interface(this, x, at, orders, dphi)
@@ -145,7 +139,6 @@ module field_forms
    contains
 
      procedure :: values    => polynomial_values
-     procedure :: slopes    => polynomial_slopes
      procedure :: derivatives => polynomial_derivatives
      procedure :: dimension => polynomial_dimension
      procedure :: pure_members
@@ -175,7 +168,6 @@ module field_forms
    contains
 
      procedure :: values    => harmonic_values
-     procedure :: slopes    => harmonic_slopes
      procedure :: derivatives => harmonic_derivatives
      procedure :: dimension => harmonic_dimension
 
@@ -369,38 +361,6 @@ contains
   end subroutine polynomial_values
 
   !-------------------------------------------------------------------!
-  ! The derivative of each monomial along the direction: the sum over
-  ! the coordinates of the direction's component times the power as
-  ! a factor.
-  !-------------------------------------------------------------------!
-
-  pure subroutine polynomial_slopes(this, x, at, direction, dphi)
-
-    class(polynomial_form), intent(in) :: this
-    real(dp), intent(in)  :: x(:), at(:), direction(:)
-    real(dp), intent(out) :: dphi(:)
-
-    real(dp) :: r(size(this % power, 1)), term
-    integer :: m, c, o
-
-    r = x(1:size(r)) - at(1:size(r))
-    do m = 1, size(dphi)
-       dphi(m) = 0.0_dp
-       do c = 1, size(r)
-          if (this % power(c, m) == 0) cycle
-          term = direction(c) * real(this % power(c, m), dp) &
-               & * monomial(r(c), this % power(c, m) - 1)
-          do o = 1, size(r)
-             if (o == c) cycle
-             term = term * monomial(r(o), this % power(o, m))
-          end do
-          dphi(m) = dphi(m) + term
-       end do
-    end do
-
-  end subroutine polynomial_slopes
-
-  !-------------------------------------------------------------------!
   ! The derivative of each monomial of the multi-index orders: for
   ! each coordinate the falling factorial of the power times the
   ! monomial of the power less the order, zero where the order
@@ -497,27 +457,6 @@ contains
     phi(3) = cos(phase)
 
   end subroutine harmonic_values
-
-  !===================================================================!
-  ! d/dn of a wave: the chain rule gives the factor k . n.
-  !===================================================================!
-
-  pure subroutine harmonic_slopes(this, x, at, direction, dphi)
-
-    class(harmonic_form), intent(in) :: this
-    real(dp), intent(in)  :: x(:), at(:), direction(:)
-    real(dp), intent(out) :: dphi(:)
-
-    real(dp) :: phase, kn
-
-    phase = dot_product(this % wavenumber, x - at)
-    kn    = dot_product(this % wavenumber, direction)
-
-    dphi(1) = 0.0_dp
-    dphi(2) =  kn * cos(phase)
-    dphi(3) = -kn * sin(phase)
-
-  end subroutine harmonic_slopes
 
 
   !===================================================================!

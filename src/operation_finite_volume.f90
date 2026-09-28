@@ -40,10 +40,7 @@
 module operation_finite_volume
 
   use util_precision                    , only : dp
-  use field_calculus                    , only : field
   use field_forms                       , only : polynomial_form
-  use field_stored                      , only : stored_field
-  use view_directed_stored              , only : stored_directed_graph
   use view_mesh                         , only : mesh, values_of
   use operation_action                  , only : binding
   use operation_stencil                 , only : stencil, triple_list, combine_triples
@@ -107,9 +104,6 @@ contains
     type(triple_list) :: triples
     type(polynomial_form) :: shape
     type(fit) :: fitting
-    type(stored_directed_graph) :: constellation
-    type(stored_field) :: positions(1)
-    class(field), allocatable :: fitted
     real(dp) :: flux
     integer :: nv, ne, d, e, t, h, j, npts
     character(len=250) :: message
@@ -170,13 +164,9 @@ contains
           do j = 1, npts
              pts(d * (j - 1) + 1:d * j) = centres(d * (members(j) - 1) + 1:d * members(j)) + offsets(:, j)
           end do
-          constellation = stored_directed_graph(npts, tails=[integer ::], heads=[integer ::])
-          positions(1)  = stored_field('positions', constellation % vertex_set(), npts, num_components=d)
-          call positions(1) % set_real_vector(pts)
           fitting = fit(shape, at=fcentres(d * (e - 1) + 1:d * e), direction=[1.0_dp, 0.0_dp, 0.0_dp], &
                & orders=orders)
-          call fitting % apply(constellation, fitting % bind(positions), fitted)
-          call fitted % real_vector(w)
+          w = fitting % weights(pts)
           do j = 1, npts
              call triples % assign(t, members(j),  flux * w(j) / volumes(t))
              if (h > 0) call triples % assign(h, members(j), -flux * w(j) / volumes(h))

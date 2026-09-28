@@ -45,6 +45,7 @@ module operation_fitting
   use graph_fractal      , only : graph
   use field_forms        , only : form
   use field_stored  , only : stored_field
+  use view_directed_stored, only : stored_directed_graph
   use operation_stencil, only : stencil
   use operation_conjugate_gradient, only : conjugate_gradient
 
@@ -76,6 +77,7 @@ module operation_fitting
 
      procedure :: name   => fit_name
      procedure :: apply  => fit_apply
+     procedure :: weights => fit_weights
 
   end type fit
 
@@ -176,6 +178,30 @@ contains
          & allocated(this % shape))
 
   end function fit_name
+
+  !===================================================================!
+  ! The weights of the fit on the points pts, size(this % at)
+  ! coordinates per point: one weight per point.
+  !===================================================================!
+
+  function fit_weights(this, pts) result(w)
+
+    class(fit), intent(in) :: this
+    real(dp)  , intent(in) :: pts(:)
+    real(dp), allocatable :: w(:)
+
+    type(stored_directed_graph) :: constellation
+    type(stored_field) :: positions
+    class(field), allocatable :: fitted
+
+    constellation = stored_directed_graph(size(pts) / size(this % at), tails=[integer ::], heads=[integer ::])
+    positions = stored_field('positions', constellation % vertex_set(), constellation % num_vertices(), &
+         & num_components=size(this % at))
+    call positions % set_real_vector(pts)
+    call this % apply(constellation, this % bind([positions]), fitted)
+    call fitted % real_vector(w)
+
+  end function fit_weights
   !===================================================================!
   ! Positions in, weights out. The conditions respect the member set;
   ! the dual is passed to the level's own solver.
@@ -193,7 +219,8 @@ contains
     type(conjugate_gradient) :: solver
     real(dp), allocatable :: positions(:), w(:), b(:,:), bw(:,:)
     real(dp), allocatable :: g(:,:), r(:), lam(:), point_weight(:)
-    integer , allocatable :: member_list(:)
+    integer , allocatable :: member_list(:), axis(:)
+    real(dp), allocatable :: first(:)
     logical , allocatable :: active(:)
     real(dp) :: achieved, d2, nearest
     integer :: npts, nc, i, j, d
@@ -237,8 +264,16 @@ contains
        if (allocated(this % orders)) then
           call this % shape % derivatives(this % at, this % at, this % orders, r)
        else
-          call this % shape % slopes(this % at, this % at, &
-               & this % direction, r)
+          ! the slope along the direction: the first derivative along
+          ! each coordinate times the direction's component
+          r = 0.0_dp
+          allocate(axis(d), first(nc))
+          do i = 1, d
+             axis    = 0
+             axis(i) = 1
+             call this % shape % derivatives(this % at, this % at, axis, first)
+             r = r + this % direction(i) * first
+          end do
        end if
        r = this % scale * r
 

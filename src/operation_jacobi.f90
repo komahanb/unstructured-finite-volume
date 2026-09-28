@@ -47,7 +47,8 @@ contains
 
   !===================================================================!
   ! One colour class: every unknown corrected at once from the state
-  ! the iteration began at. The coupling is never read.
+  ! the iteration began at. The sweep does not read the coupling; the
+  ! block diagonal of an operator other than a stencil still does.
   !===================================================================!
 
   subroutine one_colour(this, n, colours)

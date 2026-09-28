@@ -187,7 +187,7 @@ contains
     type(stored_field), allocatable :: inputs(:)
     integer , allocatable :: rows(:), columns(:)
     real(dp), allocatable :: weights(:)
-    logical :: jacobian_defined
+    logical :: jacobian_defined, failed
     real(dp), allocatable :: residual(:), y(:), dq(:)
     real(dp) :: linear_achieved, initial, factor, previous, step_norm
     integer :: nonzeros
@@ -260,20 +260,17 @@ contains
        ! overflowed reports a value that is not a number. Neither
        ! yields a step.
        outcome = this % inner % result()
-       if (outcome % failed() .or. .not. ieee_is_finite(linear_achieved) .or. &
-            & linear_achieved > huge(1.0_dp) / 2.0_dp) then
-          call this % record_result(achieved, it - 1, SOLVE_INNER_FAILED)
-          return
-       end if
-
-       if (this % higher_order_jacobian_product > 1) then
+       failed = outcome % failed() .or. .not. ieee_is_finite(linear_achieved) .or. &
+            & linear_achieved > huge(1.0_dp) / 2.0_dp
+       if (.not. failed .and. this % higher_order_jacobian_product > 1) then
           call halley_correction(this, inputs, dq, linear_achieved)
           outcome = this % inner % result()
-          if (outcome % failed() .or. .not. ieee_is_finite(linear_achieved) .or. &
-               & linear_achieved > huge(1.0_dp) / 2.0_dp) then
-             call this % record_result(achieved, it - 1, SOLVE_INNER_FAILED)
-             return
-          end if
+          failed = outcome % failed() .or. .not. ieee_is_finite(linear_achieved) .or. &
+               & linear_achieved > huge(1.0_dp) / 2.0_dp
+       end if
+       if (failed) then
+          call this % record_result(achieved, it - 1, SOLVE_INNER_FAILED)
+          return
        end if
 
        ! THE STEP IS DAMPED where the full step does not decrease the

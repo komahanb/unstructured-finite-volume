@@ -965,11 +965,8 @@ contains
 
     ! a singular or overflowing inner solve yields no step; its report
     ! is passed on as the residual
-    if (.not. ieee_is_finite(inner_achieved) .or. outcome % failed()) then
-       call this % record_result(achieved, outcome % iterations, SOLVE_INNER_FAILED)
-       return
-    end if
-    if (inner_achieved > huge(1.0_dp) / 2.0_dp) then
+    if (.not. ieee_is_finite(inner_achieved) .or. outcome % failed() .or. &
+         & inner_achieved > huge(1.0_dp) / 2.0_dp) then
        call this % record_result(achieved, outcome % iterations, SOLVE_INNER_FAILED)
        return
     end if

@@ -28,6 +28,7 @@ module operation_gauss_seidel
   use util_precision  , only : dp
   use operation_minimization, only : minimizer
   use operation_stencil     , only : stencil
+  use relation_binary       , only : group_by_key
   use util_factorisation    , only : dense_factorisation
   use util_tally, only : linear_solves, factorisations
 
@@ -245,29 +246,11 @@ contains
     logical, intent(in)  :: active(:)
     integer, allocatable, intent(out) :: ordered(:), first(:)
 
-    integer, allocatable :: at(:)
-    integer :: b, i, col
+    integer :: j
 
-    allocate(first(num_colours + 1), source=0)
-    do b = 1, size(colours)
-       do i = 1, w
-          if (active((b - 1) * w + i)) first(colours(b) + 1) = first(colours(b) + 1) + 1
-       end do
-    end do
-    first(1) = 1
-    do col = 1, num_colours
-       first(col + 1) = first(col + 1) + first(col)
-    end do
-    at = first(1:num_colours)
-    allocate(ordered(first(num_colours + 1) - 1))
-    do b = 1, size(colours)
-       col = colours(b)
-       do i = 1, w
-          if (.not. active((b - 1) * w + i)) cycle
-          ordered(at(col)) = (b - 1) * w + i
-          at(col) = at(col) + 1
-       end do
-    end do
+    ! a column that is not active has key zero and belongs to no colour
+    call group_by_key(num_colours, merge([(colours((j - 1) / w + 1), j = 1, size(active))], 0, active), &
+         & [(j, j = 1, size(active))], first, ordered)
 
   end subroutine columns_by_colour
 

@@ -740,16 +740,8 @@ contains
 
     class(stored_directed_graph), intent(in) :: this
 
-    character(len=250) :: message
-
-    if (this % num_without_head > 0) then
-       write(message,'(a,i0,a)') 'stored_directed_graph: this graph cannot be transposed; ', &
-            & this % num_without_head, ' edge(s) lack a head'
-       error stop trim(message)
-    end if
-
     transposed_graph = this
-    transposed_graph % reversed = .not. this % reversed
+    call transposed_graph % reverse()
 
   end function transpose
 
@@ -757,7 +749,8 @@ contains
   ! Reverse the orientation of this value in place: the same
   ! immutable arrays read with tail and head exchanged, at constant
   ! cost and without allocation. Reversing twice restores the
-  ! orientation. The refusal is the transpose's.
+  ! orientation. An edge without a head stops the program, as in the
+  ! transpose.
   !===================================================================!
 
   subroutine reverse_orientation(this)

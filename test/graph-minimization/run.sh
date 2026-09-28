@@ -33,14 +33,14 @@ declare -A reason=(
     [partition]='a restriction must select unknowns of the partition'
     [unstated]='evaluate was called before the operator was stated on the solver domain'
     [state_domain]='the bound state must be defined on the unknown domain'
-    [design_domain]='the design must be defined on the point domain with one value per point'
-    [design_count]='the design must be defined on the point domain with one value per point'
+    [design_domain]='the design must be defined on the point domain with one value per design per point'
+    [design_count]='the design must be defined on the point domain with one value per design per point'
     [state_count]='requires the values to fill num_entries * num_components exactly'
     [pairing_domain]='requires fields on the same domain'
-    [other_placement]='the design must be defined on the point domain with one value per point'
+    [other_placement]='the design must be defined on the point domain with one value per design per point'
     [host]="received a graph that is not this residual's own unknown graph"
     [direction_domain]='a direction in the state must be defined on the unknown domain'
-    [stored_domain]='the design must be defined on the point domain with one value per point'
+    [stored_domain]='the design must be defined on the point domain with one value per design per point'
 )
 for case_name in "${!reason[@]}"; do
     if ./restriction_refusal "$case_name" >refusal.out 2>&1; then

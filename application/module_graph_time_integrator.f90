@@ -3168,7 +3168,7 @@ contains
     type(expression), allocatable :: rules(:)
     type(dense_factorisation) :: block_factor
     class(field), allocatable :: out
-    real(dp), allocatable :: below(:), r(:,:), slope(:,:,:), weights(:), e(:), a(:,:), rhs(:), dq(:), column(:)
+    real(dp), allocatable :: below(:), r(:,:), slope(:,:,:), weights(:), e(:), a(:,:), rhs(:), column(:)
     integer , allocatable :: top(:), count(:), offset(:)
     real(dp) :: initial_residual_norm, target
     integer  :: nodes, i, k, iteration, fields, f, j, given
@@ -3267,46 +3267,51 @@ contains
           return
        end if
        if (iteration == active_context % stopping_iterations) exit
-       ! slope(i, j, f) is rule j's partial in field f's highest component at node i
-       do f = 1, fields
-          e = 0.0_dp
-          do i = 1, nodes
-             e((i - 1) * degrees + top(f) + 1) = 1.0_dp
-          end do
-          direction = point_states % direction(e)
-          do j = 1, fields
-             call rules(j) % partial_action(points, rules(j) % bind([state, design_field]), &
-                  & [variation(rules(j) % argument(1), direction)], out)
-             call out % real_vector(column)
-             slope(:, j, f) = column
-          end do
+       call fill_slopes()
+       do i = 1, nodes
+          if (fields > 1) call active_context % account % record(factorisations)
+          q((i - 1) * degrees + top + 1) = q((i - 1) * degrees + top + 1) - closed_step(i)
        end do
-       if (fields == 1) then
-          do i = 1, nodes
-             q((i - 1) * degrees + top(1) + 1) = q((i - 1) * degrees + top(1) + 1) - r(i, 1) / slope(i, 1, 1)
-          end do
-       else
-          do i = 1, nodes
-             a   = slope(i, :, :)
-             rhs = r(i, :)
-             call active_context % account % record(factorisations)
-             call block_factor % factorise(a, 0.0_dp)
-             call block_factor % substitute(rhs, dq, .false.)
-             do f = 1, fields
-                q((i - 1) * degrees + top(f) + 1) = q((i - 1) * degrees + top(f) + 1) - dq(f)
-             end do
-          end do
-       end if
     end do
     write(message,'(a,i0,a,es12.4,a,es12.4)') 'gti_march: the initial state did not become &
          &consistent with the physics within ', active_context % stopping_iterations, &
          & ' iterations; residual = ', norm2(r), ', tolerance = ', active_context % stopping_tolerance
     error stop trim(message)
   contains
+    ! slope(i, j, f) is rule j's partial in field f's highest component
+    ! at node i, at the state
+    subroutine fill_slopes()
+      do f = 1, fields
+         e = 0.0_dp
+         do i = 1, nodes
+            e((i - 1) * degrees + top(f) + 1) = 1.0_dp
+         end do
+         direction = point_states % direction(e)
+         do j = 1, fields
+            call rules(j) % partial_action(points, rules(j) % bind([state, design_field]), &
+                 & [variation(rules(j) % argument(1), direction)], out)
+            call out % real_vector(column)
+            slope(:, j, f) = column
+         end do
+      end do
+    end subroutine fill_slopes
+    ! the solution of slope(node, :, :) step = r(node, :)
+    function closed_step(node) result(step)
+      integer, intent(in) :: node
+      real(dp), allocatable :: step(:)
+      if (fields == 1) then
+         step = [r(node, 1) / slope(node, 1, 1)]
+      else
+         a   = slope(node, :, :)
+         rhs = r(node, :)
+         call block_factor % factorise(a, 0.0_dp)
+         call block_factor % substitute(rhs, step, .false.)
+      end if
+    end function closed_step
     subroutine filled_rate()
-      real(dp), allocatable :: entry(:), matrix(:,:), right(:), closed(:)
+      real(dp), allocatable :: entry(:)
       type(stored_field) :: design_direction
-      integer :: node, field_index, rule_index
+      integer :: node, rule_index
       if (.not. present(rate)) return
       allocate(rate(nodes * degrees), source=0.0_dp)
       state            = point_states % state(q)
@@ -3319,36 +3324,12 @@ contains
          call out % real_vector(entry)
          r(:, rule_index) = entry
       end do
-      ! and its partial in each field's highest component there
-      do field_index = 1, fields
-         e = 0.0_dp
-         do node = 1, nodes
-            e((node - 1) * degrees + top(field_index) + 1) = 1.0_dp
-         end do
-         direction = point_states % direction(e)
-         do rule_index = 1, fields
-            call rules(rule_index) % partial_action(points, &
-                 & rules(rule_index) % bind([state, design_field]), &
-                 & [variation(rules(rule_index) % argument(1), direction)], out)
-            call out % real_vector(entry)
-            slope(:, rule_index, field_index) = entry
-         end do
+      ! and its partial in each field's highest component there; the
+      ! solution for -r is the negation of the solution for r
+      call fill_slopes()
+      do node = 1, nodes
+         rate((node - 1) * degrees + top + 1) = -closed_step(node)
       end do
-      if (fields == 1) then
-         do node = 1, nodes
-            rate((node - 1) * degrees + top(1) + 1) = -r(node, 1) / slope(node, 1, 1)
-         end do
-      else
-         do node = 1, nodes
-            matrix = slope(node, :, :)
-            right  = -r(node, :)
-            call block_factor % factorise(matrix, 0.0_dp)
-            call block_factor % substitute(right, closed, .false.)
-            do field_index = 1, fields
-               rate((node - 1) * degrees + top(field_index) + 1) = closed(field_index)
-            end do
-         end do
-      end if
     end subroutine filled_rate
   end function consistent_states
   !===================================================================!

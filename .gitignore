@@ -101,3 +101,4 @@ test/graph-scheme/van_der_pol
 test/graph-scheme/van_der_pol_sensitivity
 test/graph-scheme/van_der_pol_continuous_adjoint
 test/graph-scheme/van_der_pol_study
+gmon.out

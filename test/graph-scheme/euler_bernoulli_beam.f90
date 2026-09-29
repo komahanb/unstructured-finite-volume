@@ -44,6 +44,11 @@
 !      the law applied to that w, the derivative of EI w_xx formed by
 !      the chain rule when the law is discretized.
 !
+! The multipliers of the conditions are returned under their names;
+! the sum over the instants of the multiplier of w = 0 at an end is
+! -dJ/de for the datum e of w there at every instant (measured against
+! the central difference of J on 21 x 17: 7.9479677 and 7.9479451).
+!
 ! The instant count and the point count are read from the command
 ! line (default 41 and 17). Measured at 801 instants from 9 to 33
 ! points, the error of case 1 falls as 3.95e-3, 2.03e-4, 5.67e-6 and
@@ -94,7 +99,7 @@ contains
     type(discrete_manifold)   :: omega_h
     type(continuous_field)    :: t, x, w, w_exact, exact, energy
     type(continuous_field)    :: adjoint, mu_t, mu_x, lambda, lambda_0, lambda_L
-    type(discrete_field)      :: estimate, solution, error, functional
+    type(discrete_field)      :: estimate, solution, error, functional, at_0, at_L
     type(continuous_residual) :: r, r_t, r_x, ic, bc_0, bc_L, Lagrangian
     type(discrete_residual)   :: L_h
     real(dp) :: frequency, J(1)
@@ -150,6 +155,14 @@ contains
     print '(a)', 'simply supported, uniform EI and rhoA'
     print '(a, es12.4)', '   error against the exact solution  ', error % norm()
     print '(a, es24.16, a, es24.16)', '   J = ', J(1), '   exact ', T_final * EI_0 * (pi / L)**4 * L / 4.0_dp
+
+    ! the multipliers of w = 0 at the two ends, summed over the
+    ! instants: -dJ/de for the datum e of w at that end at every instant
+    at_0 = solution % fields(['lambda_0'])
+    at_L = solution % fields(['lambda_L'])
+    print '(a, 2es24.16)', '   -dJ/de at x = 0 and at x = L ', &
+         & sum([(at_0 % value((k - 1) * num_points + 1, 1), k = 1, num_instants)]), &
+         & sum([(at_L % value((k - 1) * num_points + 1, 1), k = 1, num_instants)])
 
   end subroutine simply_supported
 

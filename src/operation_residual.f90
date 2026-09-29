@@ -327,6 +327,7 @@ module operation_residual
      procedure, private :: face_rows_of
      procedure, private :: space_face_rows_of
      procedure, private :: space_face_relation
+     procedure, private :: space_face_placement
      procedure, private :: fixed_rows_of
      procedure, private :: gauge_rows_of
      procedure, private :: gauged_unknowns
@@ -2028,6 +2029,7 @@ contains
        do j = 1, size(this % condition)
           if (this % condition(j) % manifold % is_time_face())          nc = nc + size(this % condition(j) % equation)
           if (this % condition(j) % manifold % is_time_factor())   nc = nc + size(this % condition(j) % equation)
+          if (this % condition(j) % manifold % is_space_face())    nc = nc + size(this % condition(j) % equation)
           if (this % condition(j) % manifold % is_design_factor()) nc = nc + size(this % condition(j) % equation)
        end do
     end if
@@ -2126,9 +2128,10 @@ contains
                 end do
              end do
           end if
-          if (this % condition(j) % manifold % is_time_factor()) then
-             ! the multiplier of a time-factor condition, a function
-             ! of time alone: its value at every cell of the instant
+          if (this % condition(j) % manifold % is_time_factor() .or. this % condition(j) % manifold % is_space_face()) then
+             ! the multiplier of a condition on the time factor or on a
+             ! face of the region, a function of time alone: its value at
+             ! every cell of the instant
              do f = 1, size(this % condition(j) % equation)
                 nc = nc + 1
                 g  = g + 1
@@ -2967,7 +2970,10 @@ contains
     ng = 0
     do j = 1, size(this % condition)
        if (this % condition(j) % manifold % is_time_face())        nc = nc + size(this % condition(j) % equation)
-       if (this % condition(j) % manifold % is_time_factor()) ng = ng + size(this % condition(j) % equation)
+       ! the multipliers that are functions of time alone: of the
+       ! conditions on the time factor and on the faces of the region
+       if (this % condition(j) % manifold % is_time_factor() .or. this % condition(j) % manifold % is_space_face()) &
+            & ng = ng + size(this % condition(j) % equation)
     end do
     allocate(adjoint(nf, ncells, this % points % num_instants(), 0:order, nd), source=0.0_dp)
     allocate(incoming(this % rule % num_components(), ncells, ninst, 0:order, nd), source=0.0_dp)
@@ -4224,15 +4230,33 @@ contains
     real(dp)                , intent(inout) :: in_design(:,0:,:)
 
     real(dp), allocatable :: slope(:), products(:), slopes(:)
-    integer , allocatable :: fields(:), degrees(:)
+    integer , allocatable :: fields(:), degrees(:), target(:), row_point(:), row_offset(:), field(:), determined(:,:)
+    logical , allocatable :: occupied(:)
     real(dp) :: given
-    integer :: stride, nf, ncells, n, k, c, f, base, m, j, i, instant, degree, e, g, ni
+    integer :: stride, nf, ncells, n, k, c, f, base, m, j, i, instant, degree, e, g, ni, face_point, row
 
     stride = this % rule % num_components()
     nf     = this % manifold % num_unknowns
     ncells = this % points % num_cells()
     n      = last - first + 1
     ni     = size(values)
+
+    ! the rows the conditions on the faces of the region occupy, and the
+    ! physics rows their difference relations moved to: none of their
+    ! multipliers is the adjoint of the physics
+    allocate(occupied(size(mu, 1)), source=.false.)
+    do j = 1, size(this % condition)
+       if (.not. this % condition(j) % manifold % is_space_face()) cycle
+       call this % space_face_placement(j, primary, face_point, target, row_point, row_offset, field, determined)
+       do i = 1, size(this % condition(j) % equation)
+          do m = 1, size(at) / ncells
+             row = at((m - 1) * ncells + row_point(i)) + row_offset(i) + 1
+             if (.not. rows % prescribed_row(row)) cycle
+             occupied(row) = .true.
+             occupied(at((m - 1) * ncells + target(i)) + primary(field(i)) + 1) = .true.
+          end do
+       end do
+    end do
 
     do k = depth + 1, n
        do c = 1, ncells
@@ -4241,24 +4265,42 @@ contains
              do m = instant_moment(k) - merge(s, 0, k > 1), instant_moment(k)
                 if (c == 1 .and. gauged(f)) cycle
                 base = at((m - 1) * ncells + c)
+                if (occupied(base + primary(f) + 1)) cycle
                 adjoint(f, c, first + k - 1, o, d) = adjoint(f, c, first + k - 1, o, d) + mu(base + primary(f) + 1, o)
              end do
           end do
        end do
     end do
+    ! the multipliers that are functions of time alone, summed over the
+    ! moments of the step into each instant: of a condition on the time
+    ! factor, at its row at the first cell; of a condition on a face of
+    ! the region, at the row it occupies where it acts
     g = 0
     do j = 1, size(this % condition)
-       if (.not. this % condition(j) % manifold % is_time_factor()) cycle
-       do i = 1, size(this % condition(j) % equation)
-          g = g + 1
-          f = this % condition(j) % equation(i) % index(1)
-          do k = depth + 1, n
-             do m = instant_moment(k) - merge(s, 0, k > 1), instant_moment(k)
-                base = at((m - 1) * ncells + 1)
-                gauge(first + k - 1, g, o, d) = gauge(first + k - 1, g, o, d) + mu(base + primary(f) + 1, o)
+       if (this % condition(j) % manifold % is_time_factor()) then
+          do i = 1, size(this % condition(j) % equation)
+             g = g + 1
+             f = this % condition(j) % equation(i) % index(1)
+             do k = depth + 1, n
+                do m = instant_moment(k) - merge(s, 0, k > 1), instant_moment(k)
+                   base = at((m - 1) * ncells + 1)
+                   gauge(first + k - 1, g, o, d) = gauge(first + k - 1, g, o, d) + mu(base + primary(f) + 1, o)
+                end do
              end do
           end do
-       end do
+       else if (this % condition(j) % manifold % is_space_face()) then
+          call this % space_face_placement(j, primary, face_point, target, row_point, row_offset, field, determined)
+          do i = 1, size(this % condition(j) % equation)
+             g = g + 1
+             do k = depth + 1, n
+                do m = instant_moment(k) - merge(s, 0, k > 1), instant_moment(k)
+                   row = at((m - 1) * ncells + row_point(i)) + row_offset(i) + 1
+                   if (.not. rows % prescribed_row(row)) cycle
+                   gauge(first + k - 1, g, o, d) = gauge(first + k - 1, g, o, d) + mu(row, o)
+                end do
+             end do
+          end do
+       end if
     end do
     e = 0
     do j = 1, size(this % condition)
@@ -4924,99 +4966,137 @@ contains
     integer , allocatable   , intent(out) :: rows(:), columns(:)
     real(dp), allocatable   , intent(out) :: weights(:), constants(:)
 
-    integer , allocatable :: nearest(:), column_of(:)
-    real(dp), allocatable :: distance(:), slopes(:), w(:)
+    integer , allocatable :: column_of(:), target(:), row_point(:), row_offset(:), field(:), determined(:,:)
+    real(dp), allocatable :: slopes(:), w(:)
     real(dp) :: given
-    integer :: ncells, d, j, i, m, k, e, face_point, target, used, axis, f, pass, determined(2), row, space
+    integer :: ncells, j, i, m, k, e, face_point, row, space, f, along(2)
     logical :: acting
 
     ncells = this % points % num_cells()
-    d      = this % points % dimension
     allocate(rows(0), columns(0), weights(0), constants(0))
     do j = 1, size(this % condition)
        if (.not. this % condition(j) % manifold % is_space_face()) cycle
-       associate (face => this % condition(j) % manifold)
-         ! the points by their distance to the face along its axis
-         axis     = face % face_axis - merge(1, 0, this % manifold % with_time)
-         distance = abs(this % points % centre(axis:d * ncells:d) - face % face_value)
-         nearest  = sorted_by(distance)
-         face_point = nearest(1)
-         ! a point on the face, up to the rounding of the generated
-         ! positions: the vertex-centred mesh of an interval has one at
-         ! each end, a cell-centred mesh has none
-         if (distance(face_point) > 4.0_dp * epsilon(1.0_dp) * max(abs(face % face_value), distance(nearest(2)))) then
-            error stop 'operation_residual: a condition on a face of the region requires a point on the face; &
-                 &the region of an interval discretized by points has one at each end'
-         end if
-         ! the conditions stated before on the same face take the nearer points
-         used = 0
-         do k = 1, j - 1
-            if (.not. this % condition(k) % manifold % is_space_face()) cycle
-            if (this % condition(k) % manifold % face_axis == face % face_axis .and. &
-                 & this % condition(k) % manifold % face_value == face % face_value) then
-               used = used + size(this % condition(k) % equation)
-            end if
-         end do
-         if (used + size(this % condition(j) % equation) > ncells) then
-            error stop 'operation_residual: a face of the region has more conditions than the region has points'
-         end if
-       end associate
-       ! the conditions on the value first, on the face's own point
-       do pass = 1, 2
-          do i = 1, size(this % condition(j) % equation)
+       call this % space_face_placement(j, primary, face_point, target, row_point, row_offset, field, determined)
+       do i = 1, size(this % condition(j) % equation)
+          do m = 1, nm
+             ! the implicit moments of the block after its history, the
+             ! first instant aside: at an explicit moment the family's
+             ! quadrature of the moments before, which satisfy the
+             ! condition, satisfies it too
+             acting = implicit_moment(m)
+             do k = 1, depth
+                if (instant_moment(k) == m) acting = .false.
+             end do
+             if (first == 1 .and. instant_moment(1) == m) acting = .false.
+             if (.not. acting) cycle
              call this % space_face_relation(this % condition(j) % equation(i), &
-                  & positions(:, face_point), column_of, slopes, given, f, determined)
-             if ((pass == 1) .neqv. (determined(2) == 0)) cycle
-             used   = used + 1
-             target = nearest(used)
-             do m = 1, nm
-                ! the implicit moments of the block after its history, the
-                ! first instant aside: at an explicit moment the family's
-                ! quadrature of the moments before, which satisfy the
-                ! condition, satisfies it too
-                acting = implicit_moment(m)
-                do k = 1, depth
-                   if (instant_moment(k) == m) acting = .false.
-                end do
-                if (first == 1 .and. instant_moment(1) == m) acting = .false.
-                if (.not. acting) cycle
-                call this % space_face_relation(this % condition(j) % equation(i), &
-                     & positions(:, (m - 1) * ncells + face_point), column_of, slopes, given, f, determined)
-                if (determined(2) == 0) then
-                   row = at((m - 1) * ncells + target) + primary(f) + 1
-                else
-                   ! the difference relation of the derivative at the face's
-                   ! point, moved to the physics row of the target point
-                   row   = at((m - 1) * ncells + face_point) + this % rule % component_at(determined(1), determined(2), f) + 1
-                   space = determined(1) - merge(1, 0, this % manifold % with_time)
-                   associate (op => rows_along(space, determined(2)))
-                     call op % weights % real_vector(w)
-                     rows      = [rows, at((m - 1) * ncells + target) + primary(f) + 1]
-                     columns   = [columns, row]
-                     weights   = [weights, 1.0_dp]
+                  & positions(:, (m - 1) * ncells + face_point), column_of, slopes, given, f, along)
+             row = at((m - 1) * ncells + row_point(i)) + row_offset(i) + 1
+             if (determined(2, i) > 0) then
+                ! the difference relation of the derivative at the face's
+                ! point, moved to the physics row of the target point
+                space = determined(1, i) - merge(1, 0, this % manifold % with_time)
+                associate (op => rows_along(space, determined(2, i)))
+                  call op % weights % real_vector(w)
+                  rows      = [rows, at((m - 1) * ncells + target(i)) + primary(field(i)) + 1]
+                  columns   = [columns, row]
+                  weights   = [weights, 1.0_dp]
+                  constants = [constants, 0.0_dp]
+                  do e = 1, op % pattern % num_edges()
+                     if (op % pattern % edge_head(e) /= face_point) cycle
+                     rows      = [rows, at((m - 1) * ncells + target(i)) + primary(field(i)) + 1]
+                     columns   = [columns, at((m - 1) * ncells + op % pattern % edge_tail(e)) &
+                          & + this % rule % offset_of_field(field(i)) + 1]
+                     weights   = [weights, -w(e)]
                      constants = [constants, 0.0_dp]
-                     do e = 1, op % pattern % num_edges()
-                        if (op % pattern % edge_head(e) /= face_point) cycle
-                        rows      = [rows, at((m - 1) * ncells + target) + primary(f) + 1]
-                        columns   = [columns, at((m - 1) * ncells + op % pattern % edge_tail(e)) &
-                             & + this % rule % offset_of_field(f) + 1]
-                        weights   = [weights, -w(e)]
-                        constants = [constants, 0.0_dp]
-                     end do
-                   end associate
-                end if
-                do e = 1, size(column_of)
-                   rows      = [rows, row]
-                   columns   = [columns, at((m - 1) * ncells + face_point) + column_of(e) + 1]
-                   weights   = [weights, slopes(e)]
-                   constants = [constants, -given]
-                end do
+                  end do
+                end associate
+             end if
+             do e = 1, size(column_of)
+                rows      = [rows, row]
+                columns   = [columns, at((m - 1) * ncells + face_point) + column_of(e) + 1]
+                weights   = [weights, slopes(e)]
+                constants = [constants, -given]
              end do
           end do
        end do
     end do
 
   end subroutine space_face_rows_of
+
+  !===================================================================!
+  ! WHERE THE CONDITIONS ON ONE FACE OF THE REGION ARE STATED: the
+  ! face's point, and for equation i of condition j the point whose
+  ! physics row it displaces, the point and the offset within its
+  ! tuple of the row the condition occupies, the field, and the space
+  ! derivative it determines (the order zero for a value). Conditions
+  ! on the value come first, on the face's own point; the conditions
+  ! stated before on the same face take the nearer points. Invalid
+  ! input: a face with no point on it, or more conditions on a face
+  ! than the region has points.
+  !===================================================================!
+
+  subroutine space_face_placement(this, j, primary, face_point, target, row_point, row_offset, field, determined)
+
+    class(discrete_residual), intent(in)  :: this
+    integer                 , intent(in)  :: j, primary(:)
+    integer                 , intent(out) :: face_point
+    integer , allocatable   , intent(out) :: target(:), row_point(:), row_offset(:), field(:), determined(:,:)
+
+    integer , allocatable :: nearest(:), column_of(:)
+    real(dp), allocatable :: distance(:), slopes(:)
+    real(dp) :: given
+    integer :: ncells, d, n, i, k, used, axis, pass, f, along(2)
+
+    ncells = this % points % num_cells()
+    d      = this % points % dimension
+    n      = size(this % condition(j) % equation)
+    associate (face => this % condition(j) % manifold)
+      ! the points by their distance to the face along its axis
+      axis     = face % face_axis - merge(1, 0, this % manifold % with_time)
+      distance = abs(this % points % centre(axis:d * ncells:d) - face % face_value)
+      nearest  = sorted_by(distance)
+      face_point = nearest(1)
+      ! a point on the face, up to the rounding of the generated
+      ! positions: the vertex-centred mesh of an interval has one at
+      ! each end, a cell-centred mesh has none
+      if (distance(face_point) > 4.0_dp * epsilon(1.0_dp) * max(abs(face % face_value), distance(nearest(2)))) then
+         error stop 'operation_residual: a condition on a face of the region requires a point on the face; &
+              &the region of an interval discretized by points has one at each end'
+      end if
+      used = 0
+      do k = 1, j - 1
+         if (.not. this % condition(k) % manifold % is_space_face()) cycle
+         if (this % condition(k) % manifold % face_axis == face % face_axis .and. &
+              & this % condition(k) % manifold % face_value == face % face_value) then
+            used = used + size(this % condition(k) % equation)
+         end if
+      end do
+      if (used + n > ncells) then
+         error stop 'operation_residual: a face of the region has more conditions than the region has points'
+      end if
+    end associate
+    allocate(target(n), row_point(n), row_offset(n), field(n), determined(2, n))
+    do pass = 1, 2
+       do i = 1, n
+          call this % space_face_relation(this % condition(j) % equation(i), &
+               & this % points % position(face_point), column_of, slopes, given, f, along)
+          if ((pass == 1) .neqv. (along(2) == 0)) cycle
+          used            = used + 1
+          target(i)       = nearest(used)
+          field(i)        = f
+          determined(:, i) = along
+          if (along(2) == 0) then
+             row_point(i)  = target(i)
+             row_offset(i) = primary(f)
+          else
+             row_point(i)  = face_point
+             row_offset(i) = this % rule % component_at(along(1), along(2), f)
+          end if
+       end do
+    end do
+
+  end subroutine space_face_placement
 
   !===================================================================!
   ! A condition on a face of the region as an affine relation of the

@@ -8,6 +8,25 @@ Lagrangian.
 The rank measurements quoted here are reproduced by
 `doc/unified-residuals-rank.py [P] [N]`.
 
+## Status (2026-09-28)
+
+| Phase | State | Commit |
+|---|---|---|
+| 1. Positions in every rule | done; variable EI beam order 4 in x, 2 in t, dJ/ds by tangent and adjoint | 1c898b8 |
+| (type-bound procedures of the residual) | done | 20b0c1f |
+| 2. Geometry factors: `region(interval)`, `points(n)`, `boundary(c, value)` | done | ff210ce |
+| 3. Jet component and derivative operator; `jet_form`; representation laws as residuals | done | 13f8cf7, 52ed4b4, 1a2728b |
+| 4. Conditions on the faces of the region, with closed fitted differences | done; the open family along x not built | ddfa240 |
+| 5. The beam analysis example | done | 102c263 |
+| Multipliers of face conditions and of representation laws | done | 1dd35e0, 92f41dc |
+| 6. Mixed components | not started | |
+| 7. The beam optimization example (identification by Newton on the design) | done | bd608da |
+| 8. Disagreement estimates, the grid as a design | not started (later) | |
+
+Every commit above was compared with the suites, the demos and a
+two-image run against the state before it; the only differences are
+the new examples' own output.
+
 ## 1. Purpose
 
 Every law of a problem is stated the same way: a residual on its own
@@ -551,13 +570,24 @@ cells by the gradient.
 5. **Names.** `component`, `derivative`, `discretization`, `points` and
    `boundary(c, value)` are proposals, subject to the naming law and its
    hook.
-6. **Which of two disagreeing paths holds.** There are three answers:
+6. **Stability of the fitted differences next to a face (measured).**
+   Order-6 fitted differences, one-sided at the ends, give a
+   semi-discrete operator with growing modes on fine grids:
+   - the simply supported beam at 801 instants and 129 points diverges
+     (error 6.6e77) at order 6 and converges (5.1e-5) at order 4;
+   - the clamped case diverges at the same grid from the Adams-Moulton
+     blocks on, with no damping in the family to hide the growth;
+   - the periodic problems have no end and do not show it.
+
+   Candidates: a closure of lower order at the ends, a closure that
+   satisfies summation by parts, or the open family along x of phase 4.
+7. **Which of two disagreeing paths holds.** There are three answers:
    - choose one (the demos);
    - resolve both through a term in L (section 15);
    - require concretions that commute by construction.
 
    Which one is the default for regions where the concretions do not
    commute is open.
-7. **The resolution term's form and weight.** A soft penalty or a slack
+8. **The resolution term's form and weight.** A soft penalty or a slack
    with a multiplier, and the scale of its weight relative to J.
-8. **The inequality constraints of the grid as a design** (section 16).
+9. **The inequality constraints of the grid as a design** (section 16).

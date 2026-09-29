@@ -515,36 +515,9 @@ contains
        this = x
        return
     end if
-    this = jet_subtree(x, x % root())
+    this = subtree(x, x % root(), resolved=.true.)
 
   end function jet_form
-
-  recursive function jet_subtree(x, i) result(this)
-
-    type(expression), intent(in) :: x
-    integer         , intent(in) :: i
-    type(expression) :: this
-
-    integer :: k
-
-    select case (x % kind(i))
-    case (VERTEX_DERIVATIVE)
-       this = jet_subtree(x, x % first(i))
-       do k = 1, x % order(i)
-          this = total_derivative(this, x % along(i))
-       end do
-    case (VERTEX_LEAF)
-       this = vertex(VERTEX_LEAF, x % position(i), x % order(i), 0.0_dp, x % along(i), x % field(i), &
-            & x % mixed_order(i))
-    case (VERTEX_CONSTANT)
-       this = constant(x % coefficient(i))
-    case (VERTEX_SUM, VERTEX_DIFFERENCE, VERTEX_PRODUCT, VERTEX_QUOTIENT)
-       this = joined(jet_subtree(x, x % first(i)), jet_subtree(x, x % second(i)), x % kind(i))
-    case default
-       this = applied(jet_subtree(x, x % first(i)), x % kind(i), x % order(i), x % coefficient(i))
-    end select
-
-  end function jet_subtree
 
   !===================================================================!
   ! THE COMPONENT A REPRESENTATION LAW DEFINES: for a law d^b(q) - p,
@@ -685,12 +658,20 @@ contains
   !       integration by parts aside
   !===================================================================!
 
-  recursive function subtree(x, i) result(this)
+  ! the copy of the subtree at i; resolved, every derivative operator
+  ! replaced by the total derivatives it denotes, as jet_form requires
+  recursive function subtree(x, i, resolved) result(this)
 
     type(expression), intent(in) :: x
     integer         , intent(in) :: i
+    logical         , intent(in), optional :: resolved
     type(expression) :: this
 
+    integer :: k
+    logical :: jet
+
+    jet = .false.
+    if (present(resolved)) jet = resolved
     select case (x % kind(i))
     case (VERTEX_LEAF)
        this = vertex(VERTEX_LEAF, x % position(i), x % order(i), 0.0_dp, x % along(i), x % field(i), &
@@ -698,11 +679,18 @@ contains
     case (VERTEX_CONSTANT)
        this = constant(x % coefficient(i))
     case (VERTEX_SUM, VERTEX_DIFFERENCE, VERTEX_PRODUCT, VERTEX_QUOTIENT)
-       this = joined(subtree(x, x % first(i)), subtree(x, x % second(i)), x % kind(i))
+       this = joined(subtree(x, x % first(i), resolved), subtree(x, x % second(i), resolved), x % kind(i))
     case (VERTEX_DERIVATIVE)
-       this = derivative(subtree(x, x % first(i)), x % along(i), x % order(i))
+       this = subtree(x, x % first(i), resolved)
+       if (.not. jet) then
+          this = derivative(this, x % along(i), x % order(i))
+          return
+       end if
+       do k = 1, x % order(i)
+          this = total_derivative(this, x % along(i))
+       end do
     case default
-       this = applied(subtree(x, x % first(i)), x % kind(i), x % order(i), x % coefficient(i))
+       this = applied(subtree(x, x % first(i), resolved), x % kind(i), x % order(i), x % coefficient(i))
     end select
 
   end function subtree

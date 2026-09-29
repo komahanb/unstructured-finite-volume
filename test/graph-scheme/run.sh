@@ -39,7 +39,8 @@
 #                        mesh file: simply supported against its mode
 #                        (2.80e-4), J against T EI (pi/L)^4 L/4; clamped
 #                        with EI(x), rhoA(x) and a manufactured load
-#                        (6.87e-4)
+#                        (6.87e-4), and the same on the open line, the
+#                        trapezoid rule on the segments
 #   euler_bernoulli_beam_optimization
 #                        EI(x) = EI_0 (1 + s1 x/L + s2 (x/L)^2) found
 #                        by Newton on the design, gradient and hessian

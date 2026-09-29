@@ -70,6 +70,7 @@ module operation_residual
   use view_directed_connectivity, only : connectivity_graph
   use operation_scheme_stencil  , only : derived_constraints
   use operation_derivative_approximation, only : derivative_approximation
+  use operation_segment_trapezoid, only : segment_trapezoid
   use operation_exchange       , only : exchange
   use util_verbosity           , only : verbosity
   use transform_partitioner    , only : partitioner, PARTITION_BREADTH_FIRST
@@ -332,6 +333,8 @@ module operation_residual
      procedure, private :: space_face_rows_of
      procedure, private :: space_face_relation
      procedure, private :: space_face_placement
+     procedure, private :: segment_rows_of
+     procedure, private :: open_line
      procedure, private :: fixed_rows_of
      procedure, private :: gauge_rows_of
      procedure, private :: gauged_unknowns
@@ -3155,6 +3158,7 @@ contains
     real(dp), allocatable :: face_constants(:), point_positions(:,:), space_weights(:), space_constants(:)
     integer , allocatable :: space_rows(:), space_columns(:)
     logical , allocatable :: implicit_moment(:)
+    logical :: open_line
     integer :: stride, nf, ncells, n, s, nm, m, k, i, f, c, e, count, nd, width, unknowns, npts
     integer :: comp, axis, o, j, ne, history_last, time_relations
     logical :: staged
@@ -3254,6 +3258,19 @@ contains
     end do
 
     time_relations = e
+
+    ! the implicit moments: those at which a relation of the family
+    ! determines a component from a component of the same moment; at
+    ! any other moment the family's quadrature of the moments before
+    ! determines the values
+    allocate(implicit_moment(nm), source=.false.)
+    do j = 1, time_relations
+       if ((determined(j) - 1) / width == (source(j) - 1) / width) then
+          implicit_moment((determined(j) - 1) / width + 1) = .true.
+       end if
+    end do
+    open_line = this % open_line()
+
     if (this % with_differences) then
        do f = 1, nf
           do c = 2, this % rule % num_coordinates()
@@ -3264,6 +3281,9 @@ contains
                   call op % weights % real_vector(w)
                   ne = op % pattern % num_edges()
                   do m = 1, nm
+                     ! on an open line the segment relations state the
+                     ! derivatives at the implicit moments
+                     if (open_line .and. implicit_moment(m)) cycle
                      do j = 1, ne
                         e = e + 1
                         determined(e) = at_of(m, op % pattern % edge_head(j)) + comp + 1
@@ -3302,22 +3322,19 @@ contains
     call this % gauge_rows_of(nm, history_last, at, primary, gauge_rows, gauge_columns, gauge_weights)
     call this % face_rows_of(first, last, depth, instant_moment, at, face_rows, face_columns, face_weights, face_constants)
     point_positions = this % block_positions(scheme, first, n, instant_moment, stage_moment)
-    ! the implicit moments: those at which a relation of the family
-    ! determines a component from a component of the same moment; at
-    ! any other moment the family's quadrature of the moments before
-    ! determines the values
-    allocate(implicit_moment(nm), source=.false.)
-    do j = 1, time_relations
-       if ((determined(j) - 1) / width == (source(j) - 1) / width) then
-          implicit_moment((determined(j) - 1) / width + 1) = .true.
-       end if
-    end do
     call this % space_face_rows_of(first, depth, nm, instant_moment, at, primary, point_positions, rows_along, &
          & implicit_moment, space_rows, space_columns, space_weights, space_constants)
     face_rows      = [face_rows, space_rows]
     face_columns   = [face_columns, space_columns]
     face_weights   = [face_weights, space_weights]
     face_constants = [face_constants, space_constants]
+    if (open_line) then
+       call this % segment_rows_of(nm, at, implicit_moment, space_rows, space_columns, space_weights)
+       face_rows      = [face_rows, space_rows]
+       face_columns   = [face_columns, space_columns]
+       face_weights   = [face_weights, space_weights]
+       face_constants = [face_constants, spread(0.0_dp, 1, size(space_rows))]
+    end if
     allocate(zeros(unknowns), source=0.0_dp)
     do e = 1, size(face_rows)
        zeros(face_rows(e)) = face_constants(e)
@@ -4296,7 +4313,7 @@ contains
              row = at((m - 1) * ncells + row_point(i)) + row_offset(i) + 1
              if (.not. rows % prescribed_row(row)) cycle
              occupied(row) = .true.
-             occupied(at((m - 1) * ncells + target(i)) + primary(field(i)) + 1) = .true.
+             if (target(i) > 0) occupied(at((m - 1) * ncells + target(i)) + primary(field(i)) + 1) = .true.
              if (determined(2, i) > 0) moved(row) = at((m - 1) * ncells + target(i)) + primary(field(i)) + 1
           end do
        end do
@@ -4342,6 +4359,7 @@ contains
                 do m = instant_moment(k) - merge(s, 0, k > 1), instant_moment(k)
                    row = at((m - 1) * ncells + c) + law_row + 1
                    if (moved(row) > 0) row = moved(row)
+                   if (occupied(row)) cycle
                    adjoint(nf + e, c, first + k - 1, o, d) = adjoint(nf + e, c, first + k - 1, o, d) + mu(row, o)
                 end do
              end do
@@ -4746,6 +4764,9 @@ contains
        ! where four sweeps end it in 26 s and a restart of 120 with two
        ! sweeps in 27 s at twice the basis storage.
        sweeps % block_width    = stride
+       ! on an open line the conditions of one end occupy rows at the
+       ! other, so a block is the whole line at one moment
+       if (this % open_line()) sweeps % block_width = stride * this % points % num_cells()
        sweeps % max_iterations = 4
        krylov % restart        = 60
        krylov % tolerance      = 1.0e-3_dp
@@ -5102,6 +5123,77 @@ contains
   end subroutine space_face_rows_of
 
   !===================================================================!
+  ! Whether the derivatives along space are relations on the segments
+  ! of a line, which leave rows open for the conditions on its faces.
+  !===================================================================!
+
+  logical function open_line(this)
+
+    class(discrete_residual), intent(in) :: this
+
+    open_line = .false.
+    if (.not. this % with_differences) return
+    select type (differences => this % differences)
+    type is (segment_trapezoid)
+       open_line = .true.
+    end select
+
+  end function open_line
+
+  !===================================================================!
+  ! THE SEGMENT ROWS of a block, at its implicit moments: for each
+  ! field, each space coordinate and each order k of its chain, the
+  ! trapezoid relation between the components of orders k - 1 and k at
+  ! the two ends of every segment, in the row of the component of order
+  ! k at the segment's upper point. The points of the line lie in
+  ! ascending order. Invalid input: a region of several coordinates, or
+  ! points that do not ascend.
+  !===================================================================!
+
+  subroutine segment_rows_of(this, nm, at, implicit_moment, rows, columns, weights)
+
+    class(discrete_residual), intent(in)  :: this
+    integer                 , intent(in)  :: nm, at(:)
+    logical                 , intent(in)  :: implicit_moment(:)
+    integer , allocatable   , intent(out) :: rows(:), columns(:)
+    real(dp), allocatable   , intent(out) :: weights(:)
+
+    integer :: ncells, m, f, c, k, i, lower, upper, row, here, next
+    real(dp) :: h
+
+    ncells = this % points % num_cells()
+    if (this % points % dimension /= 1) then
+       error stop 'operation_residual: the segment relations act on a line; the region has several coordinates'
+    end if
+    if (any(this % points % centre(2:) <= this % points % centre(:ncells - 1))) then
+       error stop 'operation_residual: the segment relations read the points of the line in ascending order'
+    end if
+    allocate(rows(0), columns(0), weights(0))
+    do m = 1, nm
+       if (.not. implicit_moment(m)) cycle
+       do f = 1, this % manifold % num_unknowns
+          do c = merge(2, 1, this % manifold % with_time), this % rule % num_coordinates()
+             do k = 1, this % rule % degree_along(c)
+                lower = this % rule % offset_of_field(f)
+                if (k > 1) lower = this % rule % component_at(c, k - 1, f)
+                upper = this % rule % component_at(c, k, f)
+                do i = 1, ncells - 1
+                   h    = this % points % centre(i + 1) - this % points % centre(i)
+                   here = at((m - 1) * ncells + i)
+                   next = at((m - 1) * ncells + i + 1)
+                   row  = next + upper + 1
+                   rows    = [rows, row, row, row, row]
+                   columns = [columns, next + lower + 1, here + lower + 1, next + upper + 1, here + upper + 1]
+                   weights = [weights, 1.0_dp, -1.0_dp, -h / 2.0_dp, -h / 2.0_dp]
+                end do
+             end do
+          end do
+       end do
+    end do
+
+  end subroutine segment_rows_of
+
+  !===================================================================!
   ! WHERE THE CONDITIONS ON ONE FACE OF THE REGION ARE STATED: the
   ! face's point, and for equation i of condition j the point whose
   ! physics row it displaces, the point and the offset within its
@@ -5123,7 +5215,7 @@ contains
     integer , allocatable :: nearest(:), column_of(:)
     real(dp), allocatable :: distance(:), slopes(:)
     real(dp) :: given
-    integer :: ncells, d, n, i, k, used, axis, pass, f, along(2)
+    integer :: ncells, d, n, i, k, used, axis, pass, f, along(2), top
 
     ncells = this % points % num_cells()
     d      = this % points % dimension
@@ -5154,6 +5246,34 @@ contains
       end if
     end associate
     allocate(target(n), row_point(n), row_offset(n), field(n), determined(2, n))
+    if (this % open_line()) then
+       ! the segment relations leave the rows of the chain's components
+       ! open at the line's lower point: the conditions of both faces
+       ! take them in the order they are stated, the rows at one end and
+       ! the columns at the other, no physics row displaced
+       used = 0
+       top  = 0
+       do k = 1, size(this % condition)
+          if (.not. this % condition(k) % manifold % is_space_face()) cycle
+          if (k < j) used = used + size(this % condition(k) % equation)
+          top = top + size(this % condition(k) % equation)
+       end do
+       axis = this % condition(j) % manifold % face_axis
+       if (top /= this % rule % degree_along(axis)) then
+          error stop 'operation_residual: the faces of an open line state as many conditions as its chain has &
+               &orders; each takes one open row'
+       end if
+       do i = 1, n
+          call this % space_face_relation(this % condition(j) % equation(i), &
+               & this % points % position(face_point), column_of, slopes, given, f, along)
+          target(i)        = 0
+          field(i)         = f
+          determined(:, i) = [axis, 0]
+          row_point(i)     = minloc(this % points % centre(1:ncells), dim=1)
+          row_offset(i)    = this % rule % component_at(axis, used + i, f)
+       end do
+       return
+    end if
     do pass = 1, 2
        do i = 1, n
           call this % space_face_relation(this % condition(j) % equation(i), &

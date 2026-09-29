@@ -16,7 +16,8 @@ The rank measurements quoted here are reproduced by
 | (type-bound procedures of the residual) | done | 20b0c1f |
 | 2. Geometry factors: `region(interval)`, `points(n)`, `boundary(c, value)` | done | ff210ce |
 | 3. Jet component and derivative operator; `jet_form`; representation laws as residuals | done | 13f8cf7, 52ed4b4, 1a2728b |
-| 4. Conditions on the faces of the region, with closed fitted differences | done; the open family along x not built | ddfa240 |
+| 4. Conditions on the faces of the region, with closed fitted differences | done | ddfa240 |
+| 4. The open line: the trapezoid rule on the segments, the conditions of both ends in its open rows, closed differences at the explicit moments, Gauss-Seidel on whole lines | done; order 2, stable at 801 x 129 | (this commit) |
 | 5. The beam analysis example | done | 102c263 |
 | Multipliers of face conditions and of representation laws | done | 1dd35e0, 92f41dc |
 | 6. Mixed components | not started | |
@@ -581,6 +582,9 @@ cells by the gradient.
 
    Candidates: a closure of lower order at the ends, a closure that
    satisfies summation by parts, or the open family along x of phase 4.
+   The open line (`segment_trapezoid`) is stable on the same grids,
+   8.64e-5 at 801 x 129, of order two; a relation of higher order on
+   the segments (Hermite) is the next step for its accuracy.
 7. **Which of two disagreeing paths holds.** There are three answers:
    - choose one (the demos);
    - resolve both through a term in L (section 15);

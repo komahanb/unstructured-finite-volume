@@ -32,7 +32,7 @@
 ! beamline takes the row of the physics at a point next to that end,
 ! so the physics holds on the points away from the ends.
 !
-! Two cases:
+! Three cases:
 !
 !   1. simply supported, uniform EI and rhoA, no load: the mode
 !      w = sin(pi x / L) cos(omega t), omega = (pi / L)^2 sqrt(EI / rhoA),
@@ -42,7 +42,14 @@
 !      rhoA(x) = rhoA_0 (1 + cos(pi x / L) / 4), loaded so that
 !      w = sin(pi x / L)^2 cos(omega t) is the solution; the load is
 !      the law applied to that w, the derivative of EI w_xx formed by
-!      the chain rule when the law is discretized.
+!      the chain rule when the law is discretized;
+!   3. case 2 on the open line: d_x by the trapezoid rule on the
+!      segments of the line of points, whose relations leave four rows
+!      open at the lower end for the four conditions of both ends; of
+!      order two, and stable where the fitted differences of order 6,
+!      one-sided at the ends, are not (801 instants, 129 points: case 1
+!      diverges at order 6, while the open line gives 8.64e-5 and
+!      case 3 6.53e-4, falling by 4.0 per halving of the step).
 !
 ! The multipliers of the conditions are returned under their names;
 ! the sum over the instants of the multiplier of w = 0 at an end is
@@ -67,6 +74,7 @@ program euler_bernoulli_beam
   use operation_residual         , only : continuous_residual, discrete_residual, operator(+), operator(*)
   use operation_family           , only : dirk, bdf, adams, chain
   use operation_finite_difference, only : finite_difference
+  use operation_segment_trapezoid, only : segment_trapezoid
 
   implicit none
 
@@ -85,7 +93,8 @@ program euler_bernoulli_beam
   end if
 
   call simply_supported()
-  call clamped()
+  call clamped(open_line=.false.)
+  call clamped(open_line=.true.)
 
 contains
 
@@ -167,11 +176,15 @@ contains
   end subroutine simply_supported
 
   !===================================================================!
-  ! Case 2: the clamped beam of varying stiffness and mass, loaded so
-  ! that a chosen deflection is the solution.
+  ! Cases 2 and 3: the clamped beam of varying stiffness and mass,
+  ! loaded so that a chosen deflection is the solution; the derivatives
+  ! along x by the fitted differences, or on the open line by the
+  ! trapezoid rule on its segments.
   !===================================================================!
 
-  subroutine clamped()
+  subroutine clamped(open_line)
+
+    logical, intent(in) :: open_line
 
     type(continuous_manifold) :: omega, initial, left, right
     type(discrete_manifold)   :: omega_h
@@ -215,15 +228,25 @@ contains
     lambda_L = bc_L % multiplier('lambda_L', [t])
     Lagrangian = r + lambda*ic + lambda_0*bc_0 + lambda_L*bc_L
 
-    L_h = Lagrangian % discretize(omega_h, &
-         & time=chain([(dirk(2), k = 1, 4), (bdf(2), k = 5, 7), (adams(2), k = 8, num_instants)], &
-         &            from=[(k, k = 1, num_instants)]), space=finite_difference(order=6))
+    if (open_line) then
+       L_h = Lagrangian % discretize(omega_h, &
+            & time=chain([(dirk(2), k = 1, 4), (bdf(2), k = 5, 7), (adams(2), k = 8, num_instants)], &
+            &            from=[(k, k = 1, num_instants)]), space=segment_trapezoid())
+    else
+       L_h = Lagrangian % discretize(omega_h, &
+            & time=chain([(dirk(2), k = 1, 4), (bdf(2), k = 5, 7), (adams(2), k = 8, num_instants)], &
+            &            from=[(k, k = 1, num_instants)]), space=finite_difference(order=6))
+    end if
 
     estimate = exact % discretize(omega_h)
     call L_h % minimize(estimate, solution)
 
     error = solution % fields(['w']) - estimate
-    print '(a)', 'clamped, EI(x) and rhoA(x) varying, manufactured load'
+    if (open_line) then
+       print '(a)', 'clamped, EI(x) and rhoA(x) varying, manufactured load, the open line'
+    else
+       print '(a)', 'clamped, EI(x) and rhoA(x) varying, manufactured load'
+    end if
     print '(a, es12.4)', '   error against the exact solution  ', error % norm()
 
   end subroutine clamped

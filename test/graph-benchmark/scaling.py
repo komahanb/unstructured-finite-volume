@@ -173,7 +173,7 @@ def provenance(builds, cpus, priority):
         "commit": output(["git", "rev-parse", "HEAD"]),
         "branch": output(["git", "rev-parse", "--abbrev-ref", "HEAD"]),
         "working_tree": output(["git", "status", "--short"]),
-        "compiler": output(["gfortran-15", "--version"]).splitlines()[0],
+        "compiler": output(["gfortran-14", "--version"]).splitlines()[0],
         "library_flags": "build.sh: make OPTIMIZE=yes with DEBUG=yes: -O3 -g -Wall -pedantic -fbounds-check -fbacktrace "
                          "-ffpe-trap=invalid,overflow,underflow -std=f2023 -fcoarray=single -cpp -fPIC",
         "benchmark_flags": "test/graph-benchmark/Makefile: the same DEBUG flags without -O3, plus -O2",

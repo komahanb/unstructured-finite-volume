@@ -294,7 +294,7 @@ contains
 
     wide = max(widest_label(cols, sets, labels), widest_value(values)) + 3
 
-    allocate(character(len=width) :: pic % line(2 + sets % num_members_of(rows)))
+    allocate(pic % line(2 + sets % num_members_of(rows)))
     pic % line = repeat(' ', width)
 
     call put(pic % line(1), 1, d % name() // ' VALUES')

@@ -7,7 +7,7 @@
 set -e
 
 cd "$(dirname "$0")"
-F90=${F90:-gfortran-15}
+F90=${F90:-gfortran-14}
 FLAGS="-std=f2023 -fcoarray=single -cpp -Wall -fbounds-check -O2"
 
 # OPENMP=yes compiles and links with -fopenmp, as the library must

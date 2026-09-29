@@ -8,7 +8,7 @@ fi
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 module_dir=${UFVM_GTI_MODULE_DIR:-$work}
-compiler=${F90:-gfortran-15}
+compiler=${F90:-gfortran-14}
 if [ ! -f "$module_dir/gti_demos.mod" ]; then
     # verify.sh supplies a fresh private directory shared by the GTI suites.
     sed '/^program graph_time_integrator/,$d' "$root/application/module_graph_time_integrator.f90" > "$module_dir/modules.f90"

@@ -15,7 +15,7 @@ if [ "${UFVM_SKIP_LIBRARY_BUILD:-0}" != 1 ]; then
 fi
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-compiler=${F90:-gfortran-15}
+compiler=${F90:-gfortran-14}
 flags="-std=f2023 -fcoarray=single -cpp -fbounds-check -O2"
 openmp=${OPENMP:-no}
 if [ "$openmp" = yes ]; then

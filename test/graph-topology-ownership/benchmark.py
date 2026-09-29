@@ -20,7 +20,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--baseline-library", type=Path, required=True)
     parser.add_argument("--candidate-library", type=Path, default=Path(__file__).resolve().parents[2] / "lib")
-    parser.add_argument("--compiler", default="gfortran-15")
+    parser.add_argument("--compiler", default="gfortran-14")
     parser.add_argument("--samples", type=int, default=7)
     parser.add_argument("--vertices", type=int, default=20000)
     parser.add_argument("--repetitions", type=int, default=1000)

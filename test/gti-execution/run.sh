@@ -8,7 +8,7 @@ fi
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 module_dir=${UFVM_GTI_MODULE_DIR:-$work}
-compiler=${F90:-gfortran-15}
+compiler=${F90:-gfortran-14}
 if [ ! -f "$module_dir/gti_demos.mod" ]; then
     sed '/^program graph_time_integrator/,$d' "$root/application/module_graph_time_integrator.f90" > "$module_dir/modules.f90"
     "$compiler" -std=f2023 -fcoarray=single -cpp -fbounds-check -O2 -I"$root/lib" -J"$module_dir" \

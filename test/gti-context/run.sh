@@ -9,7 +9,7 @@ fi
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 module_dir=${UFVM_GTI_MODULE_DIR:-$work}
-compiler=${F90:-gfortran-15}
+compiler=${F90:-gfortran-14}
 if [ ! -f "$module_dir/gti_march.mod" ]; then
     # Standalone use needs only the prefix; verify.sh supplies the full module build.
     sed '/^end module gti_march/q' "$root/application/module_graph_time_integrator.f90" > "$module_dir/modules.f90"

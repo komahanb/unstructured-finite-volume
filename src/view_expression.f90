@@ -20,7 +20,7 @@ module view_expression
   use operation_expression, only : expression, expression_vertex, FIRST_COORDINATE
   use operation_expression, only : VERTEX_LEAF, VERTEX_CONSTANT, VERTEX_SUM, VERTEX_DIFFERENCE
   use operation_expression, only : VERTEX_PRODUCT, VERTEX_QUOTIENT, VERTEX_INTEGER_POWER
-  use operation_expression, only : VERTEX_REAL_POWER, VERTEX_FUNCTION
+  use operation_expression, only : VERTEX_REAL_POWER, VERTEX_FUNCTION, VERTEX_DERIVATIVE
   use operation_expression, only : ARGUMENT_DESIGN, ARGUMENT_MULTIPLIER, ARGUMENT_COORDINATE
   use operation_expression, only : SINE, COSINE, EXPONENTIAL, LOGARITHM, SQUARE_ROOT
 
@@ -106,6 +106,8 @@ contains
          case default
             error stop 'view_expression: this vertex names a function that is not one of those defined'
          end select
+      case (VERTEX_DERIVATIVE)
+         text = 'd' // repeat(axis(u % along), u % order)
       case default
          error stop 'view_expression: this vertex names a kind that is not one of those defined'
       end select
@@ -328,7 +330,7 @@ contains
     case (VERTEX_LEAF, VERTEX_CONSTANT)
        level = 5
        text  = operator
-    case (VERTEX_FUNCTION)
+    case (VERTEX_FUNCTION, VERTEX_DERIVATIVE)
        level = 4
        first = infix(this, this % v(i) % first, 0)
        text  = operator // '(' // first // ')'

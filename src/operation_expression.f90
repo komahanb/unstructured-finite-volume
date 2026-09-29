@@ -97,6 +97,7 @@ module operation_expression
   private
   public :: expression
   public :: unknown, design, constant, multiplier, coordinate, component, component_along
+  public :: derivative, jet_form
   public :: euler_lagrange, at_zero
   public :: partial_derivative, partial_in_design, total_derivative, stationarity, boundary_terms
   public :: operator(+), operator(-), operator(*), operator(/), operator(**)
@@ -112,6 +113,9 @@ module operation_expression
   integer, parameter, public :: VERTEX_INTEGER_POWER = 7
   integer, parameter, public :: VERTEX_REAL_POWER    = 8
   integer, parameter, public :: VERTEX_FUNCTION      = 9
+  ! the derivative of the vertex read, of an order along a coordinate:
+  ! an operator, replaced by jet components before the law is evaluated
+  integer, parameter, public :: VERTEX_DERIVATIVE    = 10
 
   ! THE COORDINATE A DERIVATIVE FOLLOWS, named by its place among the
   ! coordinates the state is declared over. One is the first declared;
@@ -451,6 +455,79 @@ contains
   end function component_along
 
   !===================================================================!
+  ! THE DERIVATIVE OPERATOR of an order along a coordinate, applied to
+  ! any expression and stored in the law as a vertex. The law is not
+  ! evaluated until jet_form has replaced every such vertex by the jet
+  ! components it denotes. Invalid input: an order below one, or a
+  ! coordinate before the first.
+  !===================================================================!
+
+  function derivative(x, along, order) result(this)
+
+    type(expression), intent(in) :: x
+    integer         , intent(in) :: along, order
+    type(expression) :: this
+
+    character(len=250) :: message
+
+    if (order < 1 .or. along < FIRST_COORDINATE) then
+       write(message,'(a,i0,a,i0)') 'operation_expression: a derivative operator is of order one or &
+            &more along a declared coordinate; order = ', order, ', along = ', along
+       error stop trim(message)
+    end if
+    this = applied(x, VERTEX_DERIVATIVE, order, 0.0_dp)
+    this % along(size(this % along)) = along
+
+  end function derivative
+
+  !===================================================================!
+  ! THE JET FORM of a law: every derivative operator replaced by what
+  ! it denotes in the jet, the total derivative of the expression it
+  ! reads by the chain rule, order times along its coordinate. A law
+  ! with no operator is returned as it is. A mixed derivative of a
+  ! component stops the program, as the total derivative does.
+  !===================================================================!
+
+  function jet_form(x) result(this)
+
+    type(expression), intent(in) :: x
+    type(expression) :: this
+
+    if (.not. any(x % kind == VERTEX_DERIVATIVE)) then
+       this = x
+       return
+    end if
+    this = jet_subtree(x, x % root())
+
+  end function jet_form
+
+  recursive function jet_subtree(x, i) result(this)
+
+    type(expression), intent(in) :: x
+    integer         , intent(in) :: i
+    type(expression) :: this
+
+    integer :: k
+
+    select case (x % kind(i))
+    case (VERTEX_DERIVATIVE)
+       this = jet_subtree(x, x % first(i))
+       do k = 1, x % order(i)
+          this = total_derivative(this, x % along(i))
+       end do
+    case (VERTEX_LEAF)
+       this = vertex(VERTEX_LEAF, x % position(i), x % order(i), 0.0_dp, x % along(i), x % field(i))
+    case (VERTEX_CONSTANT)
+       this = constant(x % coefficient(i))
+    case (VERTEX_SUM, VERTEX_DIFFERENCE, VERTEX_PRODUCT, VERTEX_QUOTIENT)
+       this = joined(jet_subtree(x, x % first(i)), jet_subtree(x, x % second(i)), x % kind(i))
+    case default
+       this = applied(jet_subtree(x, x % first(i)), x % kind(i), x % order(i), x % coefficient(i))
+    end select
+
+  end function jet_subtree
+
+  !===================================================================!
   ! The stationarity of a Lagrangian in its j-th multiplier: the
   ! partial of the rule along that multiplier, at zero. A multiplier
   ! the rule does not read stops the program.
@@ -564,6 +641,8 @@ contains
        this = constant(x % coefficient(i))
     case (VERTEX_SUM, VERTEX_DIFFERENCE, VERTEX_PRODUCT, VERTEX_QUOTIENT)
        this = joined(subtree(x, x % first(i)), subtree(x, x % second(i)), x % kind(i))
+    case (VERTEX_DERIVATIVE)
+       this = derivative(subtree(x, x % first(i)), x % along(i), x % order(i))
     case default
        this = applied(subtree(x, x % first(i)), x % kind(i), x % order(i), x % coefficient(i))
     end select
@@ -633,6 +712,9 @@ contains
     character(len=250) :: message
 
     select case (x % kind(i))
+    case (VERTEX_DERIVATIVE)
+       error stop 'operation_expression: a law with a derivative operator is differentiated only in its &
+            &jet form; jet_form replaces the operator by the jet components it denotes'
     case (VERTEX_LEAF)
        this = constant(0.0_dp)
        select case (mode)
@@ -1227,6 +1309,9 @@ contains
              error stop 'operation_expression: this vertex names a function that is not one of &
                   &those defined'
           end select
+       case (VERTEX_DERIVATIVE)
+          error stop 'operation_expression: a law with a derivative operator is evaluated only in its &
+               &jet form; jet_form replaces the operator by the jet components it denotes'
        case default
           error stop 'operation_expression: this vertex names a kind that is not one of those &
                &defined'
@@ -1498,6 +1583,9 @@ contains
              error stop 'operation_expression: this vertex names a function that is not one of &
                   &those defined'
           end select
+       case (VERTEX_DERIVATIVE)
+          error stop 'operation_expression: a law with a derivative operator is evaluated only in its &
+               &jet form; jet_form replaces the operator by the jet components it denotes'
        case default
           error stop 'operation_expression: this vertex names a kind that is not one of those &
                &defined'

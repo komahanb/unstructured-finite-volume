@@ -25,6 +25,7 @@ module operation_field
   use token_identity      , only : token
   use util_derivative_terms, only : derivative_terms, coefficient, symmetric_terms
   use operation_expression, only : expression, unknown, constant, coordinate, component, component_along, design
+  use operation_expression, only : derivative, jet_form
   use operation_expression, only : partial_derivative, partial_in_design, total_derivative, stationarity
   use operation_expression, only : boundary_terms
   use operation_expression, only : FIRST_COORDINATE
@@ -180,6 +181,7 @@ module operation_field
 
      procedure :: derivative     => field_derivative
      procedure :: jet_component  => field_jet_component
+     procedure :: jet_form       => field_jet_form
      procedure :: partial        => field_partial
      procedure :: stationarity   => field_stationarity
      procedure :: boundary_terms => field_boundary_terms
@@ -522,6 +524,7 @@ contains
     integer :: p, k, o, i, d, order, ns, nd, nnodes, stride
     logical :: over_nodes
     type(expression_view) :: view
+    type(expression) :: integrand
 
     if (.not. this % is_integral()) then
        error stop 'operation_field: a functional is the integral of a field over its manifold'
@@ -529,6 +532,7 @@ contains
     if (size(this % component) /= 1) then
        error stop 'operation_field: a functional is a scalar field'
     end if
+    integrand = jet_form(this % component(1))
     if (.not. allocated(solution % rule)) then
        error stop 'operation_field: a functional is evaluated on the solution of a residual, which &
             &stores the jet at every point'
@@ -536,7 +540,7 @@ contains
     ! a solution retained over checkpoints: the objective's value, summed
     ! by its residual segment by segment; no other functional
     if (allocated(solution % objective_value)) then
-       view = expression_view(this % component(1))
+       view = expression_view(integrand)
        if (view % formula() /= solution % objective_formula) then
           error stop 'operation_field: the solution retained its stages over checkpoints alone, so the &
                &only functional it integrates is the objective of the residual that formed it'
@@ -565,10 +569,10 @@ contains
        nnodes = size(solution % jet, 2)
     end if
     values = solution % on % design_values()
-    if (size(values) < this % component(1) % num_designs()) then
+    if (size(values) < integrand % num_designs()) then
        error stop 'operation_field: the functional reads a design coordinate the manifold does not have'
     end if
-    call jet_slots(this % component(1), solution % rule, slot)
+    call jet_slots(integrand, solution % rule, slot)
     ns = size(slot)
     allocate(q(0:ns - 1), g(0:ns - 1), gd(size(values)), jets(0:ns - 1), varied(0:ns - 1))
     allocate(nu(size(values)), along(size(values)), design(size(values)))
@@ -598,7 +602,7 @@ contains
        do k = 0, ns - 1
           q(k) = jet_of(slot(k), p, 1, 1)
        end do
-       call this % component(1) % gradient_at(q, values, value, g, position, gd)
+       call integrand % gradient_at(q, values, value, g, position, gd)
        total(1) = total(1) + measure * value
        do d = 1, nd
           do k = 0, ns - 1
@@ -620,21 +624,21 @@ contains
              jets(k)   = symmetric_terms(q(k), [(jet_of(slot(k), p, o + 1, d), o = 1, order)], order)
              varied(k) = symmetric_terms(q(k), [(jet_of(slot(k), p, o + 1, d), o = 1, order)], order + 1)
           end do
-          r = this % component(1) % at_instant(jets, nu, position)
+          r = integrand % at_instant(jets, nu, position)
           do o = 1, order
              total(1 + (d - 1) * order + o) = total(1 + (d - 1) * order + o) + measure * coefficient(r, 2**o - 1)
           end do
           do i = 1, size(values)
              design = along
              call design(i) % set_coefficient(2**order, 1.0_dp)
-             r = this % component(1) % at_instant(varied, design, position)
+             r = integrand % at_instant(varied, design, position)
              do o = 1, order
                 partial(i, o, d) = partial(i, o, d) + measure * coefficient(r, 2**o - 1 + 2**order)
              end do
           end do
           do k = 0, ns - 1
              call varied(k) % set_coefficient(2**order, 1.0_dp)
-             r = this % component(1) % at_instant(varied, along, position)
+             r = integrand % at_instant(varied, along, position)
              call varied(k) % set_coefficient(2**order, 0.0_dp)
              do o = 1, order
                 gradient(slot(k), p, o, d) = gradient(slot(k), p, o, d) + measure * coefficient(r, 2**o - 1 + 2**order)
@@ -932,11 +936,12 @@ contains
 
   !===================================================================!
   ! THE DERIVATIVE along a multi-index of coordinate functions: each
-  ! entry one order along that coordinate. A field that is not an
-  ! unknown is differentiated by the chain rule over the jets it
-  ! reads; an unknown's derivative is its component along the
-  ! multi-index. Invalid input: a field of several components, or an
-  ! empty multi-index.
+  ! entry one order along that coordinate, an operator stored in the law
+  ! until jet_form replaces it by the jet components it denotes. An
+  ! unknown along a coordinate it is not a function of has the zero
+  ! derivative. Invalid input: a field of several components, an empty
+  ! multi-index, or an entry that is not a time or space coordinate of
+  ! the field's manifold.
   !===================================================================!
 
   function field_derivative(this, along) result(d)
@@ -953,25 +958,49 @@ contains
     if (size(along) < 1) then
        error stop 'operation_field: derivative requires one coordinate at least'
     end if
-    ! a field that is not an unknown: its total derivative along the
-    ! coordinates, by the chain rule over the jets it reads
-    if (this % index(1) < 1) then
-       d = this
-       d % index = [0]
-       do k = 1, size(along)
-          if (along(k) % design_coordinate .or. along(k) % coordinate < 1) then
-             error stop 'operation_field: the total derivative of a field is along a coordinate of time or space'
-          end if
-          if (.not. along(k) % on % matches(this % on)) then
-             error stop 'operation_field: the total derivative is along a coordinate of the field''s manifold'
-          end if
-          d % component = [total_derivative(d % component(1), along(k) % coordinate)]
-       end do
-       return
+    do k = 1, size(along)
+       if (along(k) % design_coordinate .or. along(k) % coordinate < 1) then
+          error stop 'operation_field: the derivative of a field is along a coordinate of time or space'
+       end if
+       if (.not. along(k) % on % matches(this % on)) then
+          error stop 'operation_field: the derivative is along a coordinate of the field''s manifold'
+       end if
+    end do
+    ! an unknown along a coordinate it is not a function of: zero
+    if (this % index(1) >= 1 .and. allocated(this % argument)) then
+       if (any([(.not. any(this % argument == along(k) % name), k = 1, size(along))])) then
+          d = this % jet_component(along)
+          return
+       end if
     end if
-    d = this % jet_component(along)
+    ! the operator, one order per entry of the multi-index, replaced by
+    ! jet components when the law is discretized
+    d = this
+    d % index = [0]
+    do k = 1, size(along)
+       d % component = [derivative(d % component(1), along(k) % coordinate, 1)]
+    end do
 
   end function field_derivative
+
+  !===================================================================!
+  ! The field with every derivative operator of its components replaced
+  ! by the jet components it denotes.
+  !===================================================================!
+
+  function field_jet_form(this) result(form)
+
+    class(continuous_field), intent(in) :: this
+    type(continuous_field) :: form
+
+    integer :: k
+
+    form = this
+    do k = 1, size(this % component)
+       form % component(k) = jet_form(this % component(k))
+    end do
+
+  end function field_jet_form
 
   !===================================================================!
   ! THE JET COMPONENT of an unknown along a multi-index of

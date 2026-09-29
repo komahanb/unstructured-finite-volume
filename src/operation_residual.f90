@@ -53,7 +53,7 @@ module operation_residual
   use field_calculus    , only : field, FIELD_REAL
   use field_stored      , only : stored_field, typed_field_domain
   use operation_stencil  , only : stencil, combine_triples
-  use operation_expression , only : expression, euler_lagrange, multiplier, constant
+  use operation_expression , only : expression, euler_lagrange, multiplier, constant, jet_form
   use operation_expression , only : operator(+), operator(*)
   use operation_domain     , only : continuous_domain, discrete_domain
   use util_derivative_terms, only : max_subset_width, derivative_terms, mixed_partial, coefficient, symmetric_terms
@@ -1662,9 +1662,12 @@ contains
       end if
       ! the Lagrangian of the equations: its stationarity in the j-th
       ! multiplier is the j-th equation, the row of the j-th unknown
-      image % rule = multiplier(1) * t % equation(1) % graph(1)
+      ! every derivative operator replaced by the jet components it
+      ! denotes, here and nowhere else: the rule, the conditions and the
+      ! objective are evaluated in their jet form
+      image % rule = multiplier(1) * jet_form(t % equation(1) % graph(1))
       do j = 2, size(t % equation)
-         image % rule = image % rule + multiplier(j) * t % equation(j) % graph(1)
+         image % rule = image % rule + multiplier(j) * jet_form(t % equation(j) % graph(1))
       end do
     end associate
 
@@ -1674,6 +1677,9 @@ contains
        if (k == whole_term) cycle
        j = j + 1
        image % condition(j) = this % term(k)
+       do i = 1, size(image % condition(j) % equation)
+          image % condition(j) % equation(i) = image % condition(j) % equation(i) % jet_form()
+       end do
        if (.not. image % condition(j) % manifold % parent % matches(image % manifold % identity)) then
           error stop 'operation_residual: a condition is stated on a part of another manifold'
        end if
@@ -1731,7 +1737,7 @@ contains
           error stop 'operation_residual: an objective requires the equations paired with a multiplier, &
                &the adjoint, whose equation is the stationarity of the Lagrangian in the state'
        end if
-       image % objective = this % objective
+       image % objective = this % objective % jet_form()
     end if
 
     image % points = points

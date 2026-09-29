@@ -125,9 +125,11 @@ measured.
 
 **A component and an operator are different things.**
 
-- `w % component(alpha)` is the stored unknown, a leaf of a law.
-- `derivative(u, alpha)` is the operator `d^alpha` applied to a field.
-  Discretization replaces it by a concretion (section 6).
+- `w % jet_component(alpha)` is the stored unknown, a leaf of a law.
+- `u % derivative(alpha)` is the operator `d^alpha` applied to any field,
+  stored in the law as a vertex. `jet_form` replaces it by the jet
+  components it denotes, once, in `discretize`; the concretion along
+  the coordinate may choose another form (section 6).
 - Today `w % derivative([t])` is a component: it selects a stored value
   and does not differentiate, so `d_t w - w_t` would read `0 = 0`. The
   representation laws need the operator.
@@ -165,20 +167,20 @@ component per point, less the rows left open for the conditions
 
 **The laws are stated as residuals on Omega, like the physics:**
 
-    r   = continuous_residual(omega, [rhoA*w % component([t, t]) + derivative(EI*w % component([x, x]), [x, x]) - f])
+    r   = continuous_residual(omega, [rhoA*w % jet_component([t, t]) + derivative(EI*w % jet_component([x, x]), [x, x]) - f])
 
-    r_t = continuous_residual(omega, [derivative(w, [t])    - w % component([t]),                    &
-                                      derivative(w, [t, t]) - w % component([t, t])])
+    r_t = continuous_residual(omega, [derivative(w, [t])    - w % jet_component([t]),                    &
+                                      derivative(w, [t, t]) - w % jet_component([t, t])])
 
-    r_x = continuous_residual(omega, [derivative(w, [x])          - w % component([x]),              &
-                                      derivative(w, [x, x])       - w % component([x, x]),           &
-                                      derivative(w, [x, x, x])    - w % component([x, x, x]),        &
-                                      derivative(w, [x, x, x, x]) - w % component([x, x, x, x])])
+    r_x = continuous_residual(omega, [derivative(w, [x])          - w % jet_component([x]),              &
+                                      derivative(w, [x, x])       - w % jet_component([x, x]),           &
+                                      derivative(w, [x, x, x])    - w % jet_component([x, x, x]),        &
+                                      derivative(w, [x, x, x, x]) - w % jet_component([x, x, x, x])])
 
     ic  = continuous_residual(omega % boundary(t, 0.0_dp), [...])
 
-    bc0 = continuous_residual(omega % boundary(x, 0.0_dp), [w, w % component([x])])
-    bcL = continuous_residual(omega % boundary(x, L),      [w, w % component([x])])
+    bc0 = continuous_residual(omega % boundary(x, 0.0_dp), [w, w % jet_component([x])])
+    bcL = continuous_residual(omega % boundary(x, L),      [w, w % jet_component([x])])
 
     L   = energy + lambda_r*r + mu_t*r_t + mu_x*r_x + lambda_ic*ic + lambda_0*bc0 + lambda_L*bcL
 
@@ -347,7 +349,7 @@ excluded:
    - Migrate `boundary(time=...)`.
    - Check: every output unchanged.
 3. **Component and operator.**
-   - `w % component(alpha)` and `derivative(u, alpha)`.
+   - `w % jet_component(alpha)` and `derivative(u, alpha)`.
    - Operator nodes kept unexpanded.
    - Representation residuals as `continuous_residual`s, generated when
      not stated.

@@ -297,6 +297,9 @@ module operation_residual
      class(derivative_approximation), allocatable :: differences
      logical                   :: with_differences = .false.
      type(residual_term), allocatable :: condition(:)
+     ! the representation laws paired with a multiplier, whose
+     ! multipliers the reverse sweep returns under their names
+     type(residual_term), allocatable :: representation(:)
      type(continuous_field), allocatable :: objective
      logical                   :: with_adjoint = .false.
      ! two images divide a checkpointed reverse sweep: image 2 solves
@@ -309,6 +312,7 @@ module operation_residual
 
      procedure :: minimize
      procedure, private :: check_representations
+     procedure, private :: num_represented
      procedure, private :: block_positions
 
      procedure, private :: adjoint_block
@@ -1623,6 +1627,21 @@ contains
   ! concretion.
   !===================================================================!
 
+  ! the equations of the representation laws paired with a multiplier
+  pure integer function num_represented(this)
+
+    class(discrete_residual), intent(in) :: this
+
+    integer :: r
+
+    num_represented = 0
+    if (.not. allocated(this % representation)) return
+    do r = 1, size(this % representation)
+       num_represented = num_represented + size(this % representation(r) % equation)
+    end do
+
+  end function num_represented
+
   subroutine check_representations(this, defined, with_chain, with_differences)
 
     class(discrete_residual), intent(in) :: this
@@ -1745,6 +1764,7 @@ contains
     end associate
 
     call image % check_representations(defined, present(time), present(space))
+    image % representation = pack(this % term, representation .and. [(this % term(k) % paired, k = 1, size(this % term))])
 
     allocate(image % condition(num_conditions))
     j = 0
@@ -2034,7 +2054,7 @@ contains
        end do
     end if
     ! the multiplier columns: the equations', then the conditions'
-    nm = merge(nf + nc, 0, this % with_adjoint)
+    nm = merge(nf + nc + this % num_represented(), 0, this % with_adjoint)
     allocate(value(npts, nf + nm), source=0.0_dp)
     ! the rows of the jet: the rule's components over the chain; under
     ! a schedule the unknowns alone, the state having been a window
@@ -2106,7 +2126,7 @@ contains
        do k = 1, ninst
           do c = 1, ncells
              do o = 0, order
-                jet(nrow + 1:nrow + nf, this % points % point_of(k, c), o + 1, :) = adjoint(:, c, k, o, :)
+                jet(nrow + 1:nrow + nf, this % points % point_of(k, c), o + 1, :) = adjoint(1:nf, c, k, o, :)
              end do
           end do
        end do
@@ -2154,6 +2174,24 @@ contains
              do c = 1, ncells
                 do o = 0, order
                    jet(nrow + nf + nc, this % points % point_of(k, c), o + 1, :) = reaction(c, e, o, :)
+                end do
+             end do
+          end do
+       end do
+       ! the multipliers of the representation laws, after the
+       ! conditions', one column per equation at every point; equation e
+       ! of the laws is entry nf + e of the adjoint
+       e = 0
+       do j = 1, size(this % representation)
+          do f = 1, size(this % representation(j) % equation)
+             nc = nc + 1
+             e  = e + 1
+             names(2 * nf + nc) = this % representation(j) % multiplier % name
+             do k = 1, ninst
+                do c = 1, ncells
+                   do o = 0, order
+                      jet(nrow + nf + nc, this % points % point_of(k, c), o + 1, :) = adjoint(nf + e, c, k, o, :)
+                   end do
                 end do
              end do
           end do
@@ -2975,7 +3013,8 @@ contains
        if (this % condition(j) % manifold % is_time_factor() .or. this % condition(j) % manifold % is_space_face()) &
             & ng = ng + size(this % condition(j) % equation)
     end do
-    allocate(adjoint(nf, ncells, this % points % num_instants(), 0:order, nd), source=0.0_dp)
+    allocate(adjoint(nf + this % num_represented(), ncells, this % points % num_instants(), 0:order, nd), &
+         & source=0.0_dp)
     allocate(incoming(this % rule % num_components(), ncells, ninst, 0:order, nd), source=0.0_dp)
     allocate(reaction(ncells, nc, 0:order, nd), gauge(this % points % num_instants(), ng, 0:order, nd), source=0.0_dp)
     allocate(design_multiplier(size(partial, 1), 0:order, nd), source=0.0_dp)
@@ -4231,9 +4270,12 @@ contains
 
     real(dp), allocatable :: slope(:), products(:), slopes(:)
     integer , allocatable :: fields(:), degrees(:), target(:), row_point(:), row_offset(:), field(:), determined(:,:)
+    integer , allocatable :: moved(:), determined_degrees(:)
     logical , allocatable :: occupied(:)
     real(dp) :: given
     integer :: stride, nf, ncells, n, k, c, f, base, m, j, i, instant, degree, e, g, ni, face_point, row
+    integer :: law(3), law_row, q
+    logical :: along_time
 
     stride = this % rule % num_components()
     nf     = this % manifold % num_unknowns
@@ -4245,6 +4287,7 @@ contains
     ! physics rows their difference relations moved to: none of their
     ! multipliers is the adjoint of the physics
     allocate(occupied(size(mu, 1)), source=.false.)
+    allocate(moved(size(mu, 1)), source=0)
     do j = 1, size(this % condition)
        if (.not. this % condition(j) % manifold % is_space_face()) cycle
        call this % space_face_placement(j, primary, face_point, target, row_point, row_offset, field, determined)
@@ -4254,6 +4297,7 @@ contains
              if (.not. rows % prescribed_row(row)) cycle
              occupied(row) = .true.
              occupied(at((m - 1) * ncells + target(i)) + primary(field(i)) + 1) = .true.
+             if (determined(2, i) > 0) moved(row) = at((m - 1) * ncells + target(i)) + primary(field(i)) + 1
           end do
        end do
     end do
@@ -4267,6 +4311,39 @@ contains
                 base = at((m - 1) * ncells + c)
                 if (occupied(base + primary(f) + 1)) cycle
                 adjoint(f, c, first + k - 1, o, d) = adjoint(f, c, first + k - 1, o, d) + mu(base + primary(f) + 1, o)
+             end do
+          end do
+       end do
+    end do
+    ! the multipliers of the representation laws, summed over the
+    ! moments of the step into each instant: law k along time of a
+    ! field, the family's row of the k-th component it determines, the
+    ! initial instant aside, whose rows are the initial data's; law k
+    ! along a space coordinate, the difference row of that component,
+    ! or where a face condition took it, the row the difference moved to
+    e = 0
+    do j = 1, size(this % representation)
+       do i = 1, size(this % representation(j) % equation)
+          e   = e + 1
+          law = represented_component(this % representation(j) % equation(i) % graph(1))
+          f   = law(1)
+          along_time = this % manifold % with_time .and. law(3) == FIRST_COORDINATE
+          if (along_time) then
+             determined_degrees = pack([(q, q = 0, this % rule % degree_of_field(f))], &
+                  & [(q /= primary(f) - this % rule % offset_of_field(f), q = 0, this % rule % degree_of_field(f))])
+             law_row = this % rule % offset_of_field(f) + determined_degrees(law(2))
+          else
+             law_row = this % rule % component_at(law(3), law(2), f)
+          end if
+          do k = depth + 1, n
+             do c = 1, ncells
+                adjoint(nf + e, c, first + k - 1, o, d) = 0.0_dp
+                if (along_time .and. first + k - 1 == 1) cycle
+                do m = instant_moment(k) - merge(s, 0, k > 1), instant_moment(k)
+                   row = at((m - 1) * ncells + c) + law_row + 1
+                   if (moved(row) > 0) row = moved(row)
+                   adjoint(nf + e, c, first + k - 1, o, d) = adjoint(nf + e, c, first + k - 1, o, d) + mu(row, o)
+                end do
              end do
           end do
        end do

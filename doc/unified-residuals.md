@@ -323,8 +323,13 @@ points of its domain.
   datum. This is the mechanical reaction (shear force, bending moment)
   only when L is the action of the beam. With J the energy integral that
   reading is not demonstrated, and the example prints both.
-- `mu_t` and `mu_x`: the multipliers of the representation laws. Today
-  they are formed inside the reverse sweep and not reported.
+- `mu_t` and `mu_x`: the multipliers of the representation laws, returned
+  under their names. Law k along time is the family's row of the k-th
+  component it determines; law k along a space coordinate is the
+  difference row of that component, or the row it moved to where a face
+  condition took it. Measured on the simply supported beam:
+  `mu_x(4) = -EI adjoint` at every point after the first instant, to
+  zero difference, as the adjoint equation of the column `w_xxxx` states.
 
 ## 11. What must not change
 

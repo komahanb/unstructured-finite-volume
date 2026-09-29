@@ -143,7 +143,7 @@ module operation_expression
   ! and a constant or an exponent.
   type, public :: expression_vertex
      integer  :: kind = 0, first = 0, second = 0
-     integer  :: position = 0, field = 0, order = 0, along = FIRST_COORDINATE
+     integer  :: position = 0, field = 0, order = 0, along = FIRST_COORDINATE, mixed_order = 0
      real(dp) :: coefficient = 0.0_dp
   end type expression_vertex
 
@@ -169,6 +169,9 @@ module operation_expression
      ! point: the highest index named, zero when none is read
      integer, private :: position_coordinates = 0
      integer, allocatable, private :: field_degree(:)
+     ! per field, the highest order along the first coordinate of a
+     ! mixed component, zero when the field has none
+     integer, allocatable, private :: mixed_degree_of_field(:)
 
      integer , allocatable, private :: kind(:)
      integer , allocatable, private :: first(:), second(:)    ! the vertices read; 0 if none
@@ -176,6 +179,7 @@ module operation_expression
      integer , allocatable, private :: field(:)               ! a state leaf's field, a multiplier's index
      integer , allocatable, private :: order(:)               ! a leaf's component, or a function index
      integer , allocatable, private :: along(:)               ! the coordinate a leaf's derivative follows
+     integer , allocatable, private :: mixed_order(:)         ! a leaf's order along the first coordinate, too
      real(dp), allocatable, private :: coefficient(:)         ! a constant, or an exponent
 
    contains
@@ -208,6 +212,8 @@ module operation_expression
      procedure :: degree_along
      procedure :: degree_of_field
      procedure :: offset_of_field
+     procedure :: mixed_degree
+     procedure, private :: leaf_at
      procedure, private :: components_per_field
      procedure, private :: stored_at
      procedure, private :: order_at
@@ -262,11 +268,11 @@ contains
   ! THE LEAVES.
   !===================================================================!
 
-  function vertex(kind, position, order, coefficient, along, field) result(this)
+  function vertex(kind, position, order, coefficient, along, field, mixed_order) result(this)
 
     integer , intent(in) :: kind, position, order
     real(dp), intent(in) :: coefficient
-    integer , intent(in), optional :: along, field
+    integer , intent(in), optional :: along, field, mixed_order
     type(expression) :: this
 
     this % kind        = [kind]
@@ -277,8 +283,10 @@ contains
     this % coefficient = [coefficient]
     this % along       = [FIRST_COORDINATE]
     this % field       = [0]
+    this % mixed_order = [0]
     if (present(along)) this % along = [along]
     if (present(field)) this % field = [field]
+    if (present(mixed_order)) this % mixed_order = [mixed_order]
 
     call this % derive_domain()
 
@@ -420,13 +428,17 @@ contains
   !===================================================================!
   ! The same component named along any coordinate: which one is given
   ! by its place among those declared, so a rule reads no differently
-  ! whether the coordinate is a time, a length or a sample.
+  ! whether the coordinate is a time, a length or a sample. With a
+  ! mixed order the component is also of that order along the first
+  ! coordinate. Invalid input: a mixed order below zero, or one along
+  ! the first coordinate itself.
   !===================================================================!
 
-  function component_along(x, coordinate, d) result(this)
+  function component_along(x, coordinate, d, mixed_order) result(this)
 
     type(expression), intent(in) :: x
     integer         , intent(in) :: coordinate, d
+    integer         , intent(in), optional :: mixed_order
     type(expression) :: this
 
     integer :: n
@@ -451,6 +463,12 @@ contains
     end if
 
     this = vertex(VERTEX_LEAF, ARGUMENT_STATE, d, 0.0_dp, coordinate, x % field(1))
+    if (.not. present(mixed_order)) return
+    if (mixed_order < 0 .or. (mixed_order > 0 .and. (coordinate == FIRST_COORDINATE .or. d < 1))) then
+       error stop 'operation_expression: a mixed component is of positive order along a later &
+            &coordinate and of nonnegative order along the first'
+    end if
+    this % mixed_order = [mixed_order]
 
   end function component_along
 
@@ -516,7 +534,8 @@ contains
           this = total_derivative(this, x % along(i))
        end do
     case (VERTEX_LEAF)
-       this = vertex(VERTEX_LEAF, x % position(i), x % order(i), 0.0_dp, x % along(i), x % field(i))
+       this = vertex(VERTEX_LEAF, x % position(i), x % order(i), 0.0_dp, x % along(i), x % field(i), &
+            & x % mixed_order(i))
     case (VERTEX_CONSTANT)
        this = constant(x % coefficient(i))
     case (VERTEX_SUM, VERTEX_DIFFERENCE, VERTEX_PRODUCT, VERTEX_QUOTIENT)
@@ -555,6 +574,11 @@ contains
     if (form % position(a) /= ARGUMENT_STATE .or. form % position(b) /= ARGUMENT_STATE) return
     if (form % field(a) /= form % field(b) .or. form % order(a) /= form % order(b)) return
     if (form % order(b) < 1 .or. form % along(a) /= form % along(b)) return
+    if (form % mixed_order(a) /= form % mixed_order(b)) return
+    if (form % mixed_order(b) > 0) then
+       error stop 'operation_expression: a representation law of a mixed component is not stated; &
+            &the concretion along space defines the mixed components'
+    end if
     defined = [form % field(b), form % order(b), form % along(b)]
 
   end function represented_component
@@ -629,6 +653,7 @@ contains
     this % field       = [a % field,       b % field,       0]
     this % order       = [a % order,       b % order,       0]
     this % along       = [a % along,       b % along,       FIRST_COORDINATE]
+    this % mixed_order = [a % mixed_order, b % mixed_order, 0]
     this % coefficient = [a % coefficient, b % coefficient, 0.0_dp]
 
     call this % derive_domain()
@@ -668,7 +693,8 @@ contains
 
     select case (x % kind(i))
     case (VERTEX_LEAF)
-       this = vertex(VERTEX_LEAF, x % position(i), x % order(i), 0.0_dp, x % along(i), x % field(i))
+       this = vertex(VERTEX_LEAF, x % position(i), x % order(i), 0.0_dp, x % along(i), x % field(i), &
+            & x % mixed_order(i))
     case (VERTEX_CONSTANT)
        this = constant(x % coefficient(i))
     case (VERTEX_SUM, VERTEX_DIFFERENCE, VERTEX_PRODUCT, VERTEX_QUOTIENT)
@@ -752,7 +778,7 @@ contains
        select case (mode)
        case (1)
           if (x % position(i) == ARGUMENT_STATE) then
-             if (x % field(i) == field .and. x % order(i) == order .and. &
+             if (x % field(i) == field .and. x % order(i) == order .and. x % mixed_order(i) == 0 .and. &
                   & (x % along(i) == along .or. order == 0)) this = constant(1.0_dp)
           end if
        case (2)
@@ -761,14 +787,23 @@ contains
           end if
        case (3)
           if (x % position(i) == ARGUMENT_STATE) then
+             ! a mixed component is of order mixed_order along the
+             ! first coordinate and order along a later one
              if (x % order(i) == 0) then
                 this = vertex(VERTEX_LEAF, ARGUMENT_STATE, 1, 0.0_dp, along, x % field(i))
              else if (x % along(i) == along) then
-                this = vertex(VERTEX_LEAF, ARGUMENT_STATE, x % order(i) + 1, 0.0_dp, along, x % field(i))
+                this = vertex(VERTEX_LEAF, ARGUMENT_STATE, x % order(i) + 1, 0.0_dp, along, x % field(i), &
+                     & x % mixed_order(i))
+             else if (x % along(i) == FIRST_COORDINATE) then
+                this = vertex(VERTEX_LEAF, ARGUMENT_STATE, 1, 0.0_dp, along, x % field(i), x % order(i))
+             else if (along == FIRST_COORDINATE) then
+                this = vertex(VERTEX_LEAF, ARGUMENT_STATE, x % order(i), 0.0_dp, x % along(i), x % field(i), &
+                     & x % mixed_order(i) + 1)
              else
                 write(message,'(a,i0,a,i0)') 'operation_expression: the total derivative along coordinate ', &
                      & along, ' of a component along coordinate ', x % along(i)
-                error stop trim(message) // ' is a mixed derivative, which is not a component of the jet'
+                error stop trim(message) // ' is a mixed derivative of two later coordinates, which is not &
+                     &a component of the jet'
              end if
           else if (x % position(i) == ARGUMENT_COORDINATE) then
              if (x % field(i) == along) this = constant(1.0_dp)
@@ -893,6 +928,10 @@ contains
     if (field < 1 .or. field > x % fields) then
        error stop 'operation_expression: the stationarity is in a field the expression reads'
     end if
+    if (any(x % mixed_order > 0)) then
+       error stop 'operation_expression: the stationarity of an expression reading a mixed component &
+            &is not formed; the partials in the mixed components are not taken'
+    end if
     top = max(0, x % highest_degree_along(c, field))
     this = constant(0.0_dp)
     do o = 0, top
@@ -936,6 +975,10 @@ contains
     if (field < 1 .or. field > x % fields) then
        error stop 'operation_expression: the boundary terms are in a field the expression reads'
     end if
+    if (any(x % mixed_order > 0)) then
+       error stop 'operation_expression: the boundary terms of an expression reading a mixed component &
+            &are not formed; the partials in the mixed components are not taken'
+    end if
     top = max(0, x % highest_degree_along(c, field))
     allocate(terms(top))
     do k = 0, top - 1
@@ -973,6 +1016,7 @@ contains
     this % field       = [a % field,       0]
     this % order       = [a % order,       order]
     this % along       = [a % along,       FIRST_COORDINATE]
+    this % mixed_order = [a % mixed_order, 0]
     this % coefficient = [a % coefficient, coefficient]
 
     call this % derive_domain()
@@ -1030,7 +1074,16 @@ contains
        end select
     end do
 
-    this % field_degree = [(max(0, this % highest_degree_along(FIRST_COORDINATE, f)), f = 1, this % fields)]
+    this % mixed_degree_of_field = [(0, f = 1, this % fields)]
+    do i = 1, this % num_vertices()
+       if (this % kind(i) /= VERTEX_LEAF .or. this % position(i) /= ARGUMENT_STATE) cycle
+       this % mixed_degree_of_field(this % field(i)) = max(this % mixed_degree_of_field(this % field(i)), &
+            & this % mixed_order(i))
+    end do
+    ! the orders along the first coordinate a mixed component is read
+    ! from are stored too
+    this % field_degree = [(max(0, this % highest_degree_along(FIRST_COORDINATE, f), &
+         & this % mixed_degree_of_field(f)), f = 1, this % fields)]
     this % degrees      = [this % field_degree(1), &
          & (max(0, this % highest_degree_along(c)), c = FIRST_COORDINATE + 1, coordinates)]
 
@@ -1300,7 +1353,7 @@ contains
              v(i) = 0.0_dp
              if (this % field(i) == this % varied) dv(i) = 1.0_dp
           else
-             at = this % stored_at(this % position(i), this % field(i), this % along(i), this % order(i))
+             at = this % leaf_at(i)
              if (at > ubound(q, 1)) then
                 error stop 'operation_expression: the state does not store the component read, &
                      &beyond the end of the stored tuple'
@@ -1401,7 +1454,7 @@ contains
        select case (this % kind(i))
        case (VERTEX_LEAF)
           if (this % position(i) == ARGUMENT_STATE) then
-             at = this % stored_at(this % position(i), this % field(i), this % along(i), this % order(i))
+             at = this % leaf_at(i)
              if (this % varied > 0) then
                 g(at) = g(at) + da(i)
              else
@@ -1583,7 +1636,7 @@ contains
              ! the tuple lists every field's components together, the
              ! components along time first, then along space, and the
              ! multipliers after every field
-             at = this % stored_at(this % position(i), this % field(i), this % along(i), this % order(i))
+             at = this % leaf_at(i)
              if (at > ubound(q, 1)) then
                 error stop 'operation_expression: the state does not store the component read, &
                      &beyond the end of the stored tuple'
@@ -1672,7 +1725,7 @@ contains
     allocate(read(0:this % num_components() - 1), source=.false.)
     do i = 1, this % num_vertices()
        if (this % kind(i) /= VERTEX_LEAF .or. this % position(i) /= ARGUMENT_STATE) cycle
-       at = this % component_at(this % along(i), this % order(i), this % field(i))
+       at = this % leaf_at(i)
        read(at) = .true.
     end do
     components = pack([(at, at = 0, size(read) - 1)], read)
@@ -1728,7 +1781,7 @@ contains
     allocate(v(this % num_vertices()))
     do i = 1, size(v)
        v(i) = expression_vertex(this % kind(i), this % first(i), this % second(i), this % position(i), &
-            & this % field(i), this % order(i), this % along(i), this % coefficient(i))
+            & this % field(i), this % order(i), this % along(i), this % mixed_order(i), this % coefficient(i))
     end do
 
   end function vertices
@@ -1736,22 +1789,38 @@ contains
   !===================================================================!
   ! THE COMPONENT A COORDINATE AND AN ORDER NAME. The first
   ! coordinate's orders run from zero and every later one's from one,
-  ! since order zero is the state itself and is named once.
+  ! since order zero is the state itself and is named once. A mixed
+  ! order names the component of that order along the first
+  ! coordinate too.
   !===================================================================!
 
-  pure integer function component_at(this, coordinate, order, field) result(at)
+  pure integer function component_at(this, coordinate, order, field, mixed_order) result(at)
 
     class(expression), intent(in) :: this
     integer          , intent(in) :: coordinate, order
-    integer          , intent(in), optional :: field
+    integer          , intent(in), optional :: field, mixed_order
 
     integer :: f
 
     f = 1
     if (present(field)) f = field
-    at = this % offset_of_field(f) + this % order_at(f, coordinate, order)
+    at = this % offset_of_field(f) + this % order_at(f, coordinate, order, mixed_order)
 
   end function component_at
+
+  !===================================================================!
+  ! The component of the tuple a state or multiplier leaf reads.
+  !===================================================================!
+
+  pure integer function leaf_at(this, i) result(at)
+
+    class(expression), intent(in) :: this
+    integer          , intent(in) :: i
+
+    at = this % stored_at(this % position(i), this % field(i), this % along(i), this % order(i), &
+         & this % mixed_order(i))
+
+  end function leaf_at
 
   !===================================================================!
   ! The first component of a field in the tuple the rule reads, which
@@ -1784,10 +1853,11 @@ contains
   ! every state field and then the multipliers, one value each.
   !===================================================================!
 
-  pure integer function stored_at(this, position, field, coordinate, order) result(at)
+  pure integer function stored_at(this, position, field, coordinate, order, mixed_order) result(at)
 
     class(expression), intent(in) :: this
     integer          , intent(in) :: position, field, coordinate, order
+    integer          , intent(in), optional :: mixed_order
 
     integer :: f
 
@@ -1799,16 +1869,27 @@ contains
     do f = 1, field - 1
        at = at + this % components_per_field(f)
     end do
-    at = at + this % order_at(field, coordinate, order)
+    at = at + this % order_at(field, coordinate, order, mixed_order)
 
   end function stored_at
 
-  pure integer function order_at(this, field, coordinate, order) result(at)
+  !===================================================================!
+  ! The place of a component within its field's components: the
+  ! orders along the first coordinate from zero, then one block of
+  ! the later coordinates' orders for each mixed order from zero, the
+  ! pure components first.
+  !===================================================================!
+
+  pure integer function order_at(this, field, coordinate, order, mixed_order) result(at)
 
     class(expression), intent(in) :: this
     integer          , intent(in) :: field, coordinate, order
+    integer          , intent(in), optional :: mixed_order
 
-    integer :: c
+    integer :: c, a
+
+    a = 0
+    if (present(mixed_order)) a = mixed_order
 
     if (coordinate < FIRST_COORDINATE .or. coordinate > this % num_coordinates()) then
        error stop 'operation_expression: this component names a coordinate the law does not read'
@@ -1821,10 +1902,13 @@ contains
          & coordinate == FIRST_COORDINATE)) then
        error stop 'operation_expression: this component names an order the coordinate does not store'
     end if
+    if (a < 0 .or. a > this % mixed_degree_of_field(field) .or. (a > 0 .and. coordinate == FIRST_COORDINATE)) then
+       error stop 'operation_expression: this component names a mixed order the field does not store'
+    end if
 
     at = order
     if (coordinate == FIRST_COORDINATE) return
-    at = this % field_degree(field) + 1
+    at = this % field_degree(field) + 1 + a * sum(this % degrees(FIRST_COORDINATE + 1:))
     do c = FIRST_COORDINATE + 1, coordinate - 1
        at = at + this % degrees(c)
     end do
@@ -1835,7 +1919,7 @@ contains
   !===================================================================!
   ! How many components one field stores at a point: its own orders
   ! along the first coordinate including zero, and each later
-  ! coordinate's orders from one.
+  ! coordinate's orders from one, once for each mixed order from zero.
   !===================================================================!
 
   pure integer function components_per_field(this, field)
@@ -1843,10 +1927,27 @@ contains
     class(expression), intent(in) :: this
     integer          , intent(in) :: field
 
-    components_per_field = this % field_degree(field) + 1
-    if (size(this % degrees) > 1) components_per_field = components_per_field + sum(this % degrees(2:))
+    components_per_field = this % field_degree(field) + 1 &
+         & + (1 + this % mixed_degree_of_field(field)) * sum(this % degrees(FIRST_COORDINATE + 1:))
 
   end function components_per_field
+
+  !===================================================================!
+  ! A field's highest order along the first coordinate among its mixed
+  ! components; zero when it has none.
+  !===================================================================!
+
+  pure integer function mixed_degree(this, field)
+
+    class(expression), intent(in) :: this
+    integer          , intent(in) :: field
+
+    if (field < 1 .or. field > this % fields) then
+       error stop 'operation_expression: the mixed degree is of a field the rule reads'
+    end if
+    mixed_degree = this % mixed_degree_of_field(field)
+
+  end function mixed_degree
 
   !===================================================================!
   ! How many components one point of the state stores: every state

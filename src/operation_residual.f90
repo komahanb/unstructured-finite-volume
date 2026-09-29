@@ -3161,7 +3161,7 @@ contains
     logical , allocatable :: implicit_moment(:)
     logical :: open_line
     integer :: stride, nf, ncells, n, s, nm, m, k, i, f, c, e, count, nd, width, unknowns, npts
-    integer :: comp, axis, o, j, ne, history_last, time_relations
+    integer :: comp, axis, o, j, ne, history_last, time_relations, a
     logical :: staged
 
     stride = this % rule % num_components()
@@ -3215,7 +3215,8 @@ contains
        do f = 1, nf
           do c = 2, this % rule % num_coordinates()
              do o = 1, this % rule % degree_along(c)
-                count = count + rows_along(c - 1, o) % pattern % num_edges() * nm
+                count = count + rows_along(c - 1, o) % pattern % num_edges() * nm &
+                     & * (1 + this % rule % mixed_degree(f))
              end do
           end do
        end do
@@ -3272,27 +3273,33 @@ contains
     end do
     open_line = this % open_line()
 
+    ! the mixed component of order a along time and o along space is
+    ! the space derivative of order o of the time component of order
+    ! a, the path along space chosen by the concretion; a = 0 is the
+    ! pure space derivative of the values
     if (this % with_differences) then
        do f = 1, nf
-          do c = 2, this % rule % num_coordinates()
-             axis = c - 1
-             do o = 1, this % rule % degree_along(c)
-                comp = this % rule % component_at(c, o, f)
-                associate (op => rows_along(axis, o))
-                  call op % weights % real_vector(w)
-                  ne = op % pattern % num_edges()
-                  do m = 1, nm
-                     ! on an open line the segment relations state the
-                     ! derivatives at the implicit moments
-                     if (open_line .and. implicit_moment(m)) cycle
-                     do j = 1, ne
-                        e = e + 1
-                        determined(e) = at_of(m, op % pattern % edge_head(j)) + comp + 1
-                        source(e)     = at_of(m, op % pattern % edge_tail(j)) + this % rule % offset_of_field(f) + 1
-                        weight(e)     = w(j)
+          do a = 0, this % rule % mixed_degree(f)
+             do c = 2, this % rule % num_coordinates()
+                axis = c - 1
+                do o = 1, this % rule % degree_along(c)
+                   comp = this % rule % component_at(c, o, f, a)
+                   associate (op => rows_along(axis, o))
+                     call op % weights % real_vector(w)
+                     ne = op % pattern % num_edges()
+                     do m = 1, nm
+                        ! on an open line the segment relations state the
+                        ! derivatives at the implicit moments
+                        if (open_line .and. implicit_moment(m)) cycle
+                        do j = 1, ne
+                           e = e + 1
+                           determined(e) = at_of(m, op % pattern % edge_head(j)) + comp + 1
+                           source(e)     = at_of(m, op % pattern % edge_tail(j)) + this % rule % offset_of_field(f) + a + 1
+                           weight(e)     = w(j)
+                        end do
                      end do
-                  end do
-                end associate
+                   end associate
+                end do
              end do
           end do
        end do
@@ -5246,8 +5253,9 @@ contains
   ! trapezoid relation between the components of orders k - 1 and k at
   ! the two ends of every segment, in the row of the component of order
   ! k at the segment's upper point. The points of the line lie in
-  ! ascending order. Invalid input: a region of several coordinates, or
-  ! points that do not ascend.
+  ! ascending order. Invalid input: a region of several coordinates,
+  ! points that do not ascend, or a mixed component, whose chain along
+  ! the line would need conditions of its own at the ends.
   !===================================================================!
 
   subroutine segment_rows_of(this, nm, at, implicit_moment, rows, columns, weights)
@@ -5267,6 +5275,10 @@ contains
     end if
     if (any(this % points % centre(2:) <= this % points % centre(:ncells - 1))) then
        error stop 'operation_residual: the segment relations read the points of the line in ascending order'
+    end if
+    if (any([(this % rule % mixed_degree(f) > 0, f = 1, this % manifold % num_unknowns)])) then
+       error stop 'operation_residual: the segment relations do not state a mixed component; its chain &
+            &along the line has no conditions at the ends'
     end if
     allocate(rows(0), columns(0), weights(0))
     do m = 1, nm

@@ -32,7 +32,7 @@
 ! beamline takes the row of the physics at a point next to that end,
 ! so the physics holds on the points away from the ends.
 !
-! Four cases:
+! Five cases:
 !
 !   1. simply supported, uniform EI and rhoA, no load: the mode
 !      w = sin(pi x / L) cos(omega t), omega = (pi / L)^2 sqrt(EI / rhoA),
@@ -50,7 +50,20 @@
 !      one-sided at the ends, are not (801 instants, 129 points: case 1
 !      diverges at order 6, while the open line gives 8.64e-5 and
 !      case 3 6.53e-4, falling by 4.0 per halving of the step);
-!   4. case 1 on the open line.
+!   4. case 1 on the open line;
+!   5. case 2 with the Kelvin-Voigt damping of the bending moment,
+!
+!      rhoA w_tt + d_xx( EI w_xx + c w_xxt ) - f = 0,
+!
+!      c(x) = c_0 (1 + (x / L)^2): the law reads the mixed components
+!      w_xxt, w_xxxt, w_xxxxt, each the difference along x of w_t, the
+!      path the concretion chooses. Measured, the error falls as
+!      3.06e-2, 4.07e-4, 9.03e-6 over 9 to 33 points at 801 instants,
+!      and as 8.91e-4, 1.51e-4, 3.13e-5, 8.33e-6 over 21 to 161 instants
+!      at 65 points; one Newton step per block; with c_0 the design, the
+!      misfit's dJ/dc_0 at c_0 = 0.5 on 21 x 17 is 0.1096767998 by the
+!      tangent, 0.1096767982 by the adjoint, 0.1096764971 by the central
+!      difference of step 1e-3 (its error h^2/6 J''' = -3e-7).
 !
 ! In cases 1 and 4 the multipliers mu_x also give an estimate of the
 ! error of J: the representation laws evaluated on the jet that
@@ -113,6 +126,7 @@ program euler_bernoulli_beam
   call clamped(open_line=.false.)
   call clamped(open_line=.true.)
   call simply_supported(open_line=.true.)
+  call clamped(open_line=.false., damping_scale=0.3_dp)
 
 contains
 
@@ -211,19 +225,21 @@ contains
   end subroutine simply_supported
 
   !===================================================================!
-  ! Cases 2 and 3: the clamped beam of varying stiffness and mass,
+  ! Cases 2, 3 and 5: the clamped beam of varying stiffness and mass,
   ! loaded so that a chosen deflection is the solution; the derivatives
   ! along x by the fitted differences, or on the open line by the
-  ! trapezoid rule on its segments.
+  ! trapezoid rule on its segments; with a damping scale, the
+  ! Kelvin-Voigt damping of the bending moment.
   !===================================================================!
 
-  subroutine clamped(open_line)
+  subroutine clamped(open_line, damping_scale)
 
-    logical, intent(in) :: open_line
+    logical , intent(in) :: open_line
+    real(dp), intent(in), optional :: damping_scale
 
     type(continuous_manifold) :: omega, initial, left, right
     type(discrete_manifold)   :: omega_h
-    type(continuous_field)    :: t, x, w, w_exact, exact, EI, rhoA, moment, moment_exact, load
+    type(continuous_field)    :: t, x, w, w_exact, exact, EI, rhoA, damping, moment, moment_exact, load
     type(continuous_field)    :: lambda, lambda_0, lambda_L
     type(discrete_field)      :: estimate, solution, error
     type(continuous_residual) :: r, ic, bc_0, bc_L, Lagrangian
@@ -243,16 +259,23 @@ contains
     EI   = EI_0   * (1.0_dp + x / (2.0_dp * L))
     rhoA = rhoA_0 * (1.0_dp + cos(pi / L * x) / 4.0_dp)
 
-    ! the chosen solution, clamped at both ends, and the load it needs
+    ! the chosen solution, clamped at both ends, and the bending moment
+    ! of it and of the unknown, damped when a damping scale is given
     frequency    = (pi / L)**2 * sqrt(EI_0 / rhoA_0)
     w_exact      = sin(pi / L * x)**2 * cos(frequency * t)
     exact        = continuous_field(omega, [w_exact])
+    w            = omega % unknown('w', [t, x])
     moment_exact = EI * w_exact % derivative([x, x])
-    load         = rhoA * w_exact % derivative([t, t]) + moment_exact % derivative([x, x])
+    moment       = EI * w % derivative([x, x])
+    if (present(damping_scale)) then
+       damping      = damping_scale * (1.0_dp + (x / L)**2)
+       moment_exact = moment_exact + damping * w_exact % derivative([x, x, t])
+       moment       = moment + damping * w % derivative([x, x, t])
+    end if
 
-    ! the physics in flux form, d_xx of the bending moment EI w_xx
-    w      = omega % unknown('w', [t, x])
-    moment = EI * w % derivative([x, x])
+    ! the load the chosen solution needs, and the physics in flux form,
+    ! d_xx of the bending moment
+    load   = rhoA * w_exact % derivative([t, t]) + moment_exact % derivative([x, x])
     r      = continuous_residual(omega, [rhoA * w % derivative([t, t]) + moment % derivative([x, x]) - load])
     ic     = continuous_residual(initial, [w - w_exact, w % derivative([t])])
     bc_0   = continuous_residual(left , [w, w % derivative([x])])
@@ -279,6 +302,8 @@ contains
     error = solution % fields(['w']) - estimate
     if (open_line) then
        print '(a)', 'clamped, EI(x) and rhoA(x) varying, manufactured load, the open line'
+    else if (present(damping_scale)) then
+       print '(a)', 'clamped, EI(x) and rhoA(x) varying, manufactured load, Kelvin-Voigt damping c(x) w_xxt'
     else
        print '(a)', 'clamped, EI(x) and rhoA(x) varying, manufactured load'
     end if

@@ -20,7 +20,7 @@ The rank measurements quoted here are reproduced by
 | 4. The open line: the trapezoid rule on the segments, the conditions of both ends in its open rows, closed differences at the explicit moments, Gauss-Seidel on whole lines | done; order 2, stable at 801 x 129 | 1866adc |
 | 5. The beam analysis example | done | 102c263 |
 | Multipliers of face conditions and of representation laws | done | 1dd35e0, 92f41dc |
-| 6. Mixed components | not started | |
+| 6. Mixed components: a leaf of orders along the first coordinate and one later coordinate, each defined along space from the time component | done; the Kelvin-Voigt beam, order 4+ in x and 2 in t, dJ/dc by tangent and adjoint | (this commit) |
 | 7. The beam optimization example (identification by Newton on the design) | done | bd608da |
 | 8. The disagreement estimate `disagreement(solution, other)` | done; effectivity 1.0007 on the open line, 0.35 to 0.78 under closed differences | (this commit) |
 | 8. The grid as a design | not started | |
@@ -333,6 +333,39 @@ corners, for example `w0(0) = 0`.
   error and contradict it. A single law, the mixed fit `q_alpha` from
   the values directly, remains the rule.
 
+**Implemented.** A leaf of the jet carries a mixed order beside its
+order: the component of order `a` along the first coordinate and `o`
+along one later coordinate. `w % derivative([x, x, t])` and
+`w % jet_component([x, x, t])` name `w_xxt`; the entries commute.
+
+- **Layout.** Each field stores, after its pure components, one block of
+  the later coordinates' orders for each mixed order `a = 1 .. A`. A law
+  with no mixed leaf has the layout it had.
+- **The path.** The concretion along space defines the mixed component
+  of orders `(a, o)` as the difference of order `o` of the time
+  component `w_(a)`, the path along x of the table above. The families
+  along time state the pure time components alone. The rows are those
+  of the pure components with the source column moved from `w` to
+  `w_(a)`.
+- **Refused.** A representation law of a mixed component, the
+  stationarity and the partials in a mixed component, a mixed component
+  of two later coordinates, and the open line (the chain of `w_t` along
+  the line would need conditions at the ends).
+- **Measured** on the clamped Kelvin-Voigt beam
+  `rhoA w_tt + d_xx(EI w_xx + c w_xxt) = f`, `c(x) = c_0 (1 + (x/L)^2)`,
+  whose law reads `w_xxt`, `w_xxxt` and `w_xxxxt`, with fitted
+  differences of order 6:
+
+  | grid (instants x points) | error |
+  |---|---|
+  | 801 x 9, 17, 33 | 3.06e-2, 4.07e-4, 9.03e-6 |
+  | 21, 41, 81, 161 x 65 | 8.91e-4, 1.51e-4, 3.13e-5, 8.33e-6 |
+
+  One Newton step per block. With `c_0` the design, `dJ/dc_0` of the
+  misfit at `c_0 = 0.5` on 21 x 17 is 0.1096767998 by the tangent,
+  0.1096767982 by the adjoint, 0.1096764971 by the central difference
+  of step 1e-3, whose own error `h^2/6 J'''` is -3e-7.
+
 ## 10. Multipliers and the adjoint
 
 Each residual's multiplier is returned under its own name, at the
@@ -622,3 +655,7 @@ cells by the gradient.
 8. **The resolution term's form and weight.** A soft penalty or a slack
    with a multiplier, and the scale of its weight relative to J.
 9. **The inequality constraints of the grid as a design** (section 16).
+10. **Mixed components of two later coordinates.** A leaf carries one
+    mixed order, along the first coordinate, so `w_xy` is stored on a
+    region without time and not with it. A multi-index of one order per
+    coordinate is the general form.

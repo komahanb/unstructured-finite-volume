@@ -868,7 +868,7 @@ contains
     type(expression), intent(in)  :: g, rule
     integer, allocatable, intent(out) :: slot(:)
 
-    integer :: f, d, c, o, fields
+    integer :: f, d, c, o, a, fields
     character(len=250) :: message
 
     allocate(slot(0:g % num_components() - 1), source=0)
@@ -899,8 +899,16 @@ contains
                   & rule % degree_along(c)
              error stop trim(message)
           end if
-          do o = 1, g % degree_along(c)
-             slot(g % component_at(c, o, f)) = rule % component_at(c, o, f) + 1
+          if (g % mixed_degree(f) > rule % mixed_degree(f)) then
+             write(message,'(a,i0,a,i0)') 'operation_field: the functional reads a mixed derivative of order ', &
+                  & g % mixed_degree(f), ' along the first coordinate, and the rule stores the order ', &
+                  & rule % mixed_degree(f)
+             error stop trim(message)
+          end if
+          do a = 0, g % mixed_degree(f)
+             do o = 1, g % degree_along(c)
+                slot(g % component_at(c, o, f, a)) = rule % component_at(c, o, f, a) + 1
+             end do
           end do
        end do
     end do
@@ -1006,10 +1014,12 @@ contains
   ! THE JET COMPONENT of an unknown along a multi-index of
   ! coordinate functions: each entry one order along that coordinate.
   ! Along a coordinate the unknown is not a function of, one outside
-  ! its arguments, the component is the zero field. Invalid input: a
-  ! field that is not a scalar unknown, an entry that is not a
-  ! coordinate of the same manifold, or two distinct coordinates,
-  ! since the jet stores no mixed component.
+  ! its arguments, the component is the zero field. A multi-index of
+  ! the first coordinate and one later coordinate names a mixed
+  ! component, the entries commuting. Invalid input: a field that is
+  ! not a scalar unknown, an entry that is not a coordinate of the
+  ! same manifold, or two distinct later coordinates, whose mixed
+  ! components the jet does not store.
   !===================================================================!
 
   function field_jet_component(this, along) result(d)
@@ -1018,7 +1028,7 @@ contains
     type(continuous_field) , intent(in) :: along(:)
     type(continuous_field) :: d
 
-    integer :: k, c
+    integer :: k, c, mixed_order
     character(len=250) :: message
 
     if (size(this % component) /= 1 .or. this % index(1) < 1) then
@@ -1027,7 +1037,9 @@ contains
     if (size(along) < 1) then
        error stop 'operation_field: jet_component requires one coordinate at least'
     end if
-    c = along(1) % coordinate
+    c = maxval([(along(k) % coordinate, k = 1, size(along))])
+    mixed_order = count([(along(k) % coordinate == FIRST_COORDINATE, k = 1, size(along))])
+    if (c == FIRST_COORDINATE) mixed_order = 0
     do k = 1, size(along)
        if (along(k) % design_coordinate) then
           error stop 'operation_field: the derivative of a continuous field along the design coordinate &
@@ -1043,9 +1055,9 @@ contains
                &of another manifold'
           error stop trim(message)
        end if
-       if (along(k) % coordinate /= c) then
-          error stop 'operation_field: a mixed derivative is not a component of the jet; the multi-index &
-               &must repeat one coordinate'
+       if (along(k) % coordinate /= c .and. along(k) % coordinate /= FIRST_COORDINATE) then
+          error stop 'operation_field: a mixed derivative of two later coordinates is not a component of &
+               &the jet; the multi-index names the first coordinate and one later coordinate'
        end if
     end do
 
@@ -1053,7 +1065,7 @@ contains
     d % name  = this % name
     d % index = [0]
     if (allocated(this % argument)) then
-       if (.not. any(this % argument == along(1) % name)) then
+       if (any([(.not. any(this % argument == along(k) % name), k = 1, size(along))])) then
           d % component = [constant(0.0_dp)]
           return
        end if
@@ -1061,7 +1073,7 @@ contains
     if (c == FIRST_COORDINATE) then
        d % component = [component(this % component(1), size(along))]
     else
-       d % component = [component_along(this % component(1), c, size(along))]
+       d % component = [component_along(this % component(1), c, size(along) - mixed_order, mixed_order)]
     end if
 
   end function field_jet_component
@@ -1099,6 +1111,9 @@ contains
     if (leaf % num_vertices() /= 1 .or. .not. leaf % reads_state()) then
        error stop 'operation_field: the partial derivative is in a component of the jet of an unknown, &
             &u or u % component([t]), or in a design coordinate'
+    end if
+    if (leaf % mixed_degree(leaf % leaf_field()) > 0) then
+       error stop 'operation_field: the partial derivative in a mixed component is not taken'
     end if
     d % component = [partial_derivative(this % component(1), leaf % leaf_field(), leaf % leaf_order(), &
          & leaf % leaf_along())]

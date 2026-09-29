@@ -43,7 +43,9 @@
 #                        trapezoid rule on the segments; case 1 on the
 #                        open line, and in both the error of J
 #                        estimated by mu_x: 1.009 of it on the open
-#                        line, 0.78 under the fitted differences
+#                        line, 0.78 under the fitted differences; case
+#                        2 with the Kelvin-Voigt damping c(x) w_xxt, the
+#                        mixed components along x of w_t (3.73e-4)
 #   euler_bernoulli_beam_optimization
 #                        EI(x) = EI_0 (1 + s1 x/L + s2 (x/L)^2) found
 #                        by Newton on the design, gradient and hessian

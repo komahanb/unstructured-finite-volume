@@ -80,7 +80,8 @@ contains
          case (ARGUMENT_COORDINATE)
             text = axis(u % field)
          case default
-            text = 'q' // written(u % field) // repeat(axis(u % along), u % order)
+            text = 'q' // written(u % field) // repeat(axis(FIRST_COORDINATE), u % mixed_order) &
+                 & // repeat(axis(u % along), u % order)
          end select
       case (VERTEX_CONSTANT)
          text = number(u % coefficient)

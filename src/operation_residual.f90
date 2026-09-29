@@ -55,6 +55,7 @@ module operation_residual
   use operation_stencil  , only : stencil, combine_triples
   use operation_expression , only : expression, euler_lagrange, multiplier, constant, jet_form, represented_component
   use operation_expression , only : operator(+), operator(*)
+  use operation_expression , only : expression_vertex, VERTEX_LEAF, ARGUMENT_STATE, FIRST_COORDINATE
   use operation_domain     , only : continuous_domain, discrete_domain
   use util_derivative_terms, only : max_subset_width, derivative_terms, mixed_partial, coefficient, symmetric_terms
   use util_derivative_terms, only : value
@@ -324,6 +325,8 @@ module operation_residual
      procedure, private :: face_instant
      procedure, private :: face_row_moment
      procedure, private :: face_rows_of
+     procedure, private :: space_face_rows_of
+     procedure, private :: space_face_relation
      procedure, private :: fixed_rows_of
      procedure, private :: gauge_rows_of
      procedure, private :: gauged_unknowns
@@ -1754,11 +1757,12 @@ contains
        if (.not. image % condition(j) % manifold % parent % matches(image % manifold % identity)) then
           error stop 'operation_residual: a condition is stated on a part of another manifold'
        end if
-       ! a condition on a face of the region takes rows only once the
-       ! concretion along its coordinate states which rows it leaves open
-       if (image % condition(j) % manifold % is_space_face()) then
-          error stop 'operation_residual: a condition on a face of the region is not yet given rows; &
-               &the concretion along its coordinate does not state the rows it leaves open'
+       ! a condition on a face of the region takes the rows of the
+       ! physics at the points nearest the face: the derivatives along
+       ! space come from a closed approximation at every point
+       if (image % condition(j) % manifold % is_space_face() .and. .not. present(space)) then
+          error stop 'operation_residual: a condition on a face of the region requires the derivatives along &
+               &space approximated at every point, a derivative approximation'
        end if
        ! a condition on the design factor fixes the design coordinate
        ! at the value the manifold states: nu - nu_0 = 0, one equation
@@ -3103,9 +3107,11 @@ contains
     integer , allocatable :: stage_moment(:,:), fixed_rows(:)
     integer , allocatable :: determined(:), source(:), gauge_rows(:), gauge_columns(:), face_rows(:), face_columns(:)
     real(dp), allocatable :: weight(:), fixed(:), w(:), steps(:), gauge_weights(:), zeros(:), face_weights(:)
-    real(dp), allocatable :: face_constants(:)
+    real(dp), allocatable :: face_constants(:), point_positions(:,:), space_weights(:), space_constants(:)
+    integer , allocatable :: space_rows(:), space_columns(:)
+    logical , allocatable :: implicit_moment(:)
     integer :: stride, nf, ncells, n, s, nm, m, k, i, f, c, e, count, nd, width, unknowns, npts
-    integer :: comp, axis, o, j, ne, history_last
+    integer :: comp, axis, o, j, ne, history_last, time_relations
     logical :: staged
 
     stride = this % rule % num_components()
@@ -3202,6 +3208,7 @@ contains
        end if
     end do
 
+    time_relations = e
     if (this % with_differences) then
        do f = 1, nf
           do c = 2, this % rule % num_coordinates()
@@ -3249,6 +3256,23 @@ contains
     if (depth > 0) history_last = instant_moment(depth)
     call this % gauge_rows_of(nm, history_last, at, primary, gauge_rows, gauge_columns, gauge_weights)
     call this % face_rows_of(first, last, depth, instant_moment, at, face_rows, face_columns, face_weights, face_constants)
+    point_positions = this % block_positions(scheme, first, n, instant_moment, stage_moment)
+    ! the implicit moments: those at which a relation of the family
+    ! determines a component from a component of the same moment; at
+    ! any other moment the family's quadrature of the moments before
+    ! determines the values
+    allocate(implicit_moment(nm), source=.false.)
+    do j = 1, time_relations
+       if ((determined(j) - 1) / width == (source(j) - 1) / width) then
+          implicit_moment((determined(j) - 1) / width + 1) = .true.
+       end if
+    end do
+    call this % space_face_rows_of(first, depth, nm, instant_moment, at, primary, point_positions, rows_along, &
+         & implicit_moment, space_rows, space_columns, space_weights, space_constants)
+    face_rows      = [face_rows, space_rows]
+    face_columns   = [face_columns, space_columns]
+    face_weights   = [face_weights, space_weights]
+    face_constants = [face_constants, space_constants]
     allocate(zeros(unknowns), source=0.0_dp)
     do e = 1, size(face_rows)
        zeros(face_rows(e)) = face_constants(e)
@@ -3257,10 +3281,10 @@ contains
        gauge = stencil([gauge_rows, face_rows], [gauge_columns, face_columns], [gauge_weights, face_weights], &
             & zeros, 'prescribed')
        rows  = residual_operator(relations, this % rule, at, unknowns, stride, primary, fixed_rows, fixed, &
-            & prescribed=gauge, positions=this % block_positions(scheme, first, n, instant_moment, stage_moment))
+            & prescribed=gauge, positions=point_positions)
     else
        rows  = residual_operator(relations, this % rule, at, unknowns, stride, primary, fixed_rows, fixed, &
-            & positions=this % block_positions(scheme, first, n, instant_moment, stage_moment))
+            & positions=point_positions)
     end if
 
     ! the estimate: the tuple at each instant; at a stage of the step
@@ -4868,6 +4892,206 @@ contains
   ! instant; a chain of several blocks cannot satisfy it, and is
   ! refused.
   !===================================================================!
+
+  !===================================================================!
+  ! THE SPACE FACE ROWS of a block: every condition on a face of the
+  ! region, at every moment of the block after its history but the
+  ! manifold's first instant, where the initial data and the physics
+  ! at every point determine the jet, and but the explicit moments,
+  ! where the family's quadrature of the moments before, which satisfy
+  ! the condition, determines the values. Each condition takes the row of
+  ! the physics at one of the points nearest the face, so the physics
+  ! is stated on the points away from it. A condition on the value takes
+  ! the physics row at the face's own point. A condition on a space
+  ! derivative takes the row of the difference relation of that
+  ! derivative at the face's point, and the relation moves to the
+  ! physics row of the next point: the same equations, each point's
+  ! block keeping an entry on its own components. The condition is its
+  ! affine relation in the components at the face's point, with its
+  ! value at zero state as the constant. Invalid input: a face with no
+  ! point on it, or more conditions on a face than the region has
+  ! points.
+  !===================================================================!
+
+  subroutine space_face_rows_of(this, first, depth, nm, instant_moment, at, primary, positions, rows_along, &
+       & implicit_moment, rows, columns, weights, constants)
+
+    class(discrete_residual), intent(in)  :: this
+    integer                 , intent(in)  :: first, depth, nm, instant_moment(:), at(:), primary(:)
+    real(dp)                , intent(in)  :: positions(:,:)
+    type(stencil)           , intent(in)  :: rows_along(:,:)
+    logical                 , intent(in)  :: implicit_moment(:)
+    integer , allocatable   , intent(out) :: rows(:), columns(:)
+    real(dp), allocatable   , intent(out) :: weights(:), constants(:)
+
+    integer , allocatable :: nearest(:), column_of(:)
+    real(dp), allocatable :: distance(:), slopes(:), w(:)
+    real(dp) :: given
+    integer :: ncells, d, j, i, m, k, e, face_point, target, used, axis, f, pass, determined(2), row, space
+    logical :: acting
+
+    ncells = this % points % num_cells()
+    d      = this % points % dimension
+    allocate(rows(0), columns(0), weights(0), constants(0))
+    do j = 1, size(this % condition)
+       if (.not. this % condition(j) % manifold % is_space_face()) cycle
+       associate (face => this % condition(j) % manifold)
+         ! the points by their distance to the face along its axis
+         axis     = face % face_axis - merge(1, 0, this % manifold % with_time)
+         distance = abs(this % points % centre(axis:d * ncells:d) - face % face_value)
+         nearest  = sorted_by(distance)
+         face_point = nearest(1)
+         ! a point on the face, up to the rounding of the generated
+         ! positions: the vertex-centred mesh of an interval has one at
+         ! each end, a cell-centred mesh has none
+         if (distance(face_point) > 4.0_dp * epsilon(1.0_dp) * max(abs(face % face_value), distance(nearest(2)))) then
+            error stop 'operation_residual: a condition on a face of the region requires a point on the face; &
+                 &the region of an interval discretized by points has one at each end'
+         end if
+         ! the conditions stated before on the same face take the nearer points
+         used = 0
+         do k = 1, j - 1
+            if (.not. this % condition(k) % manifold % is_space_face()) cycle
+            if (this % condition(k) % manifold % face_axis == face % face_axis .and. &
+                 & this % condition(k) % manifold % face_value == face % face_value) then
+               used = used + size(this % condition(k) % equation)
+            end if
+         end do
+         if (used + size(this % condition(j) % equation) > ncells) then
+            error stop 'operation_residual: a face of the region has more conditions than the region has points'
+         end if
+       end associate
+       ! the conditions on the value first, on the face's own point
+       do pass = 1, 2
+          do i = 1, size(this % condition(j) % equation)
+             call this % space_face_relation(this % condition(j) % equation(i), &
+                  & positions(:, face_point), column_of, slopes, given, f, determined)
+             if ((pass == 1) .neqv. (determined(2) == 0)) cycle
+             used   = used + 1
+             target = nearest(used)
+             do m = 1, nm
+                ! the implicit moments of the block after its history, the
+                ! first instant aside: at an explicit moment the family's
+                ! quadrature of the moments before, which satisfy the
+                ! condition, satisfies it too
+                acting = implicit_moment(m)
+                do k = 1, depth
+                   if (instant_moment(k) == m) acting = .false.
+                end do
+                if (first == 1 .and. instant_moment(1) == m) acting = .false.
+                if (.not. acting) cycle
+                call this % space_face_relation(this % condition(j) % equation(i), &
+                     & positions(:, (m - 1) * ncells + face_point), column_of, slopes, given, f, determined)
+                if (determined(2) == 0) then
+                   row = at((m - 1) * ncells + target) + primary(f) + 1
+                else
+                   ! the difference relation of the derivative at the face's
+                   ! point, moved to the physics row of the target point
+                   row   = at((m - 1) * ncells + face_point) + this % rule % component_at(determined(1), determined(2), f) + 1
+                   space = determined(1) - merge(1, 0, this % manifold % with_time)
+                   associate (op => rows_along(space, determined(2)))
+                     call op % weights % real_vector(w)
+                     rows      = [rows, at((m - 1) * ncells + target) + primary(f) + 1]
+                     columns   = [columns, row]
+                     weights   = [weights, 1.0_dp]
+                     constants = [constants, 0.0_dp]
+                     do e = 1, op % pattern % num_edges()
+                        if (op % pattern % edge_head(e) /= face_point) cycle
+                        rows      = [rows, at((m - 1) * ncells + target) + primary(f) + 1]
+                        columns   = [columns, at((m - 1) * ncells + op % pattern % edge_tail(e)) &
+                             & + this % rule % offset_of_field(f) + 1]
+                        weights   = [weights, -w(e)]
+                        constants = [constants, 0.0_dp]
+                     end do
+                   end associate
+                end if
+                do e = 1, size(column_of)
+                   rows      = [rows, row]
+                   columns   = [columns, at((m - 1) * ncells + face_point) + column_of(e) + 1]
+                   weights   = [weights, slopes(e)]
+                   constants = [constants, -given]
+                end do
+             end do
+          end do
+       end do
+    end do
+
+  end subroutine space_face_rows_of
+
+  !===================================================================!
+  ! A condition on a face of the region as an affine relation of the
+  ! components of the rule's tuple at one point: for each state leaf
+  ! the condition reads, the component's place in the rule's tuple and
+  ! the condition's slope in it; given = -g at zero state; field, the
+  ! field of the last leaf read; determined, the coordinate and the
+  ! order of the space derivative of highest order the condition
+  ! reads, the order zero when it reads none.
+  !===================================================================!
+
+  subroutine space_face_relation(this, equation, position, column_of, slopes, given, field, determined)
+
+    class(discrete_residual), intent(in)  :: this
+    type(continuous_field)  , intent(in)  :: equation
+    real(dp)                , intent(in)  :: position(:)
+    integer , allocatable   , intent(out) :: column_of(:)
+    real(dp), allocatable   , intent(out) :: slopes(:)
+    real(dp)                , intent(out) :: given
+    integer                 , intent(out) :: field, determined(2)
+
+    type(expression) :: g
+    type(expression_vertex), allocatable :: v(:)
+    real(dp), allocatable :: q(:), grad(:)
+    real(dp) :: value
+    integer :: i, own, along, column
+
+    g = equation % graph(1)
+    allocate(q(0:g % num_components() - 1), grad(0:g % num_components() - 1), source=0.0_dp)
+    call g % gradient_at(q, this % points % design_values(), value, grad, position)
+    given = -value
+    v = g % vertices()
+    allocate(column_of(0), slopes(0))
+    field = 0
+    determined = [FIRST_COORDINATE, 0]
+    do i = 1, size(v)
+       if (v(i) % kind /= VERTEX_LEAF .or. v(i) % position /= ARGUMENT_STATE) cycle
+       along  = merge(FIRST_COORDINATE, v(i) % along, v(i) % order == 0)
+       own    = g % component_at(along, v(i) % order, v(i) % field)
+       column = this % rule % component_at(along, v(i) % order, v(i) % field)
+       if (any(column_of == column)) cycle
+       column_of = [column_of, column]
+       slopes    = [slopes, grad(own)]
+       field     = v(i) % field
+       if (along /= FIRST_COORDINATE .or. .not. this % manifold % with_time) then
+          if (v(i) % order > determined(2)) determined = [along, v(i) % order]
+       end if
+    end do
+    if (field == 0) then
+       error stop 'operation_residual: a condition on a face of the region reads a component of the unknowns'
+    end if
+
+  end subroutine space_face_relation
+
+  ! the indices of values in ascending order of value, ties by index
+  pure function sorted_by(values) result(order)
+
+    real(dp), intent(in) :: values(:)
+    integer, allocatable :: order(:)
+
+    integer :: i, j, k
+
+    order = [(i, i = 1, size(values))]
+    do i = 2, size(order)
+       k = order(i)
+       j = i - 1
+       do while (j >= 1)
+          if (values(order(j)) <= values(k)) exit
+          order(j + 1) = order(j)
+          j = j - 1
+       end do
+       order(j + 1) = k
+    end do
+
+  end function sorted_by
 
   integer function face_row_moment(this, instant, first, last, depth, instant_moment) result(m)
 

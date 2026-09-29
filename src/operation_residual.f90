@@ -108,6 +108,9 @@ module operation_residual
      ! the designs at a point: the design is a vector of one value per
      ! design coordinate at every evaluation point
      integer                , private :: designs = 1
+     ! the position of every evaluation point, one column per point:
+     ! the time, then the space coordinates; no rows when none is given
+     real(dp), allocatable, private :: point_positions(:,:)
 
    contains
 
@@ -118,6 +121,7 @@ module operation_residual
      procedure :: defined_at_zero => residual_defined_at_zero
      procedure :: partial_action => residual_partial_action
      procedure :: explicit_jacobian => residual_explicit_jacobian
+     procedure, private :: positions => residual_positions
 
      procedure :: num_unknowns
      procedure :: fixed_unknowns
@@ -288,6 +292,7 @@ module operation_residual
    contains
 
      procedure :: minimize
+     procedure, private :: block_positions
 
   end type discrete_residual
 
@@ -305,7 +310,7 @@ contains
   !===================================================================!
 
   function create(primary_law, rule, at, unknowns, degrees, primary, fixed_rows, fixed, &
-       & connected_law, fixed_rate, prescribed) result(this)
+       & connected_law, fixed_rate, prescribed, positions) result(this)
 
     type(stencil)         , intent(in) :: primary_law
     type(expression)      , intent(in), optional :: rule
@@ -315,6 +320,7 @@ contains
     type(stencil)         , intent(in), optional :: connected_law
     real(dp)              , intent(in), optional :: fixed_rate(:)
     type(stencil)         , intent(in), optional :: prescribed
+    real(dp)              , intent(in), optional :: positions(:,:)
     type(residual_operator) :: this
     type(continuous_domain) :: domain
     integer :: j, components, governed, e
@@ -405,6 +411,17 @@ contains
     if (present(fixed_rate)) this % fixed_rate = fixed_rate
     this % points = stored_directed_graph(size(at), tails=[integer ::], heads=[integer ::])
     this % unknown_vertices = stored_directed_graph(unknowns, tails=[integer ::], heads=[integer ::])
+    ! the positions of the points, one column per point
+    if (present(positions)) then
+       if (size(positions, 2) /= size(at)) then
+          write(message,'(a,i0,a,i0)') 'operation_residual: one position is required per evaluation &
+               &point; size(positions, 2) = ', size(positions, 2), ', points = ', size(at)
+          error stop trim(message)
+       end if
+       this % point_positions = positions
+    else
+       allocate(this % point_positions(0, size(at)))
+    end if
     ! a prescribed row is one an edge of the prescribed stencil enters;
     ! a row both prescribed and fixed is invalid input
     if (present(prescribed)) then
@@ -835,19 +852,46 @@ contains
     type(variation)         , intent(in), optional :: variations(:)
     class(field), allocatable :: half
     real(dp), allocatable :: column(:)
-    integer :: j
+    type(stored_field), allocatable :: bound(:)
+    integer :: j, coordinates
     allocate(governing(size(this % at), size(this % rules)))
     do j = 1, size(this % rules)
+       ! a rule that reads a coordinate is given the positions of the
+       ! points as its third argument
+       bound       = point_data
+       coordinates = this % rules(j) % num_position_coordinates()
+       if (coordinates > 0) bound = [point_data, this % positions(coordinates)]
        if (present(variations)) then
-          call this % rules(j) % partial_action(this % points, this % rules(j) % bind(point_data), &
+          call this % rules(j) % partial_action(this % points, this % rules(j) % bind(bound), &
                & variations, half)
        else
-          call this % rules(j) % apply(this % points, this % rules(j) % bind(point_data), half)
+          call this % rules(j) % apply(this % points, this % rules(j) % bind(bound), half)
        end if
        call half % real_vector(column)
        governing(:, j) = column
     end do
   end subroutine governed
+
+  !===================================================================!
+  ! The first `coordinates` coordinates of every point's position as a
+  ! field on the points, one component per coordinate. A rule that
+  ! reads a coordinate the positions do not store stops the program.
+  !===================================================================!
+
+  function residual_positions(this, coordinates) result(positions)
+    class(residual_operator), intent(in) :: this
+    integer                 , intent(in) :: coordinates
+    type(stored_field) :: positions
+    character(len=250) :: message
+    if (coordinates > size(this % point_positions, 1)) then
+       write(message,'(a,i0,a,i0)') 'operation_residual: a rule reads a coordinate the positions of the &
+            &points do not store; coordinates read = ', coordinates, ', coordinates stored = ', &
+            & size(this % point_positions, 1)
+       error stop trim(message)
+    end if
+    positions = stored_field('positions', this % points % vertex_set(), size(this % at), num_components=coordinates)
+    call positions % set_real_vector(reshape(this % point_positions(1:coordinates, :), [coordinates * size(this % at)]))
+  end function residual_positions
 
   ! the point whose tuple contains an unknown: the last point whose
   ! offset lies below it, the tuples being placed in order
@@ -1051,7 +1095,7 @@ contains
        do p = 1, npts
           if (is_fixed(this % at(p) + this % primary(j) + 1)) cycle
           call this % rules(j) % gradient_at(xs((p - 1) * deg + 1:p * deg), &
-               & nu((p - 1) * this % designs + 1:p * this % designs), value, g)
+               & nu((p - 1) * this % designs + 1:p * this % designs), value, g, this % point_positions(:, p))
           do k = 1, size(reads)
              d = reads(k)
              num_triples    = num_triples + 1
@@ -1254,11 +1298,11 @@ contains
        secondary = this % connected_law % restricted(free, values)
        sub = residual_operator(derived, this % physics, at, size(free), &
             & this % degrees, this % primary, fixed_rows(1:ncar), fixed(1:ncar), &
-            & connected_law=secondary, fixed_rate=rate(1:ncar))
+            & connected_law=secondary, fixed_rate=rate(1:ncar), positions=this % point_positions(:, points))
     else
        sub = residual_operator(derived, this % physics, at, size(free), &
             & this % degrees, this % primary, fixed_rows(1:ncar), fixed(1:ncar), &
-            & fixed_rate=rate(1:ncar))
+            & fixed_rate=rate(1:ncar), positions=this % point_positions(:, points))
     end if
 
   end function constrain
@@ -1364,6 +1408,7 @@ contains
     ! unknown and point domains as the residual it linearizes
     lin % unknown_vertices = this % unknown_vertices
     lin % points           = this % points
+    lin % point_positions  = this % point_positions
     call lin % versioned(version_number, transposed=transposed)
 
   end function linearize
@@ -2872,6 +2917,43 @@ contains
   ! the tuple of instant k otherwise.
   !===================================================================!
 
+  !===================================================================!
+  ! The position of every point of a block, moment outer and cell
+  ! inner: the time of the moment - an instant's own, or for stage i
+  ! of the step into instant k the instant behind plus the stage's
+  ! abscissa times the step - then the cell's centre.
+  !===================================================================!
+
+  function block_positions(this, scheme, first, n, instant_moment, stage_moment) result(positions)
+
+    class(discrete_residual), intent(in) :: this
+    type(family)            , intent(in) :: scheme
+    integer                 , intent(in) :: first, n, instant_moment(:), stage_moment(:,:)
+    real(dp), allocatable :: positions(:,:)
+
+    integer :: ncells, k, i, c, m
+
+    ncells = this % points % num_cells()
+    allocate(positions(this % points % num_coordinates(), maxval(instant_moment) * ncells))
+    do k = 1, n
+       do c = 1, ncells
+          positions(:, (instant_moment(k) - 1) * ncells + c) = &
+               & this % points % position(this % points % point_of(first + k - 1, c))
+       end do
+       if (k == 1) cycle
+       do i = 1, size(stage_moment, 2)
+          m = stage_moment(k - 1, i)
+          if (m == 0) cycle
+          do c = 1, ncells
+             positions(:, (m - 1) * ncells + c) = this % points % position(this % points % point_of(first + k - 2, c))
+             positions(1, (m - 1) * ncells + c) = this % points % instant(first + k - 2) &
+                  & + scheme % stage_abscissa(i) * this % points % step(first + k - 1)
+          end do
+       end do
+    end do
+
+  end function block_positions
+
   subroutine block_rows(this, scheme, first, last, depth, rows_along, lb, tuple, stages, solved_stages, &
        & rows, q, at, instant_moment, primary)
 
@@ -3045,9 +3127,10 @@ contains
        gauge = stencil([gauge_rows, face_rows], [gauge_columns, face_columns], [gauge_weights, face_weights], &
             & zeros, 'prescribed')
        rows  = residual_operator(relations, this % rule, at, unknowns, stride, primary, fixed_rows, fixed, &
-            & prescribed=gauge)
+            & prescribed=gauge, positions=this % block_positions(scheme, first, n, instant_moment, stage_moment))
     else
-       rows  = residual_operator(relations, this % rule, at, unknowns, stride, primary, fixed_rows, fixed)
+       rows  = residual_operator(relations, this % rule, at, unknowns, stride, primary, fixed_rows, fixed, &
+            & positions=this % block_positions(scheme, first, n, instant_moment, stage_moment))
     end if
 
     ! the estimate: the tuple at each instant; at a stage of the step
@@ -3625,7 +3708,7 @@ contains
                 call q(c) % set_symmetric(k, jets(rows % at(p) + c + 1, k))
              end do
           end do
-          r = rows % rules(j) % at_instant(q, design)
+          r = rows % rules(j) % at_instant(q, design, rows % point_positions(:, p))
           source(row) = -mixed_partial(r)
        end do
     end do
@@ -4113,7 +4196,7 @@ contains
           along = symmetric_terms(mu(row, 0), lower, o)
           do c = 0, deg - 1
              call q(c) % set_coefficient(2**o, 1.0_dp)
-             r = rows % rules(j) % at_instant(q, design)
+             r = rows % rules(j) % at_instant(q, design, rows % point_positions(:, p))
              call q(c) % set_coefficient(2**o, 0.0_dp)
              do k = 0, o
                 partial(k) = coefficient(r, 2**k - 1 + 2**o)
@@ -4166,7 +4249,7 @@ contains
              row = rows % at(p) + rows % primary(j) + 1
              if (is_fixed(row)) cycle
              x = jets(rows % at(p) + 1:rows % at(p) + deg, 0)
-             call rows % rules(j) % gradient_at(x, values, value, g, g_design=gd)
+             call rows % rules(j) % gradient_at(x, values, value, g, rows % point_positions(:, p), g_design=gd)
              total = total + mu(row, 0) * gd
           end do
        end do
@@ -4185,7 +4268,7 @@ contains
              do c = 0, deg - 1
                 q(c) = symmetric_terms(jets(rows % at(p) + c + 1, 0), jets(rows % at(p) + c + 1, 1:o), o + 1)
              end do
-             r = rows % rules(j) % at_instant(q, design)
+             r = rows % rules(j) % at_instant(q, design, rows % point_positions(:, p))
              do k = 0, o
                 partial(k) = coefficient(r, 2**k - 1 + 2**o)
              end do

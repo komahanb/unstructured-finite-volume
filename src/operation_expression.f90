@@ -85,7 +85,7 @@ module operation_expression
 
   use util_precision       , only : dp
   use operation_action     , only : operation, variation, contract
-  use operation_action     , only : binding, seeded_argument, emit_real
+  use operation_action     , only : binding, seeded_argument, emit_real, bound_real_vector
   use field_calculus       , only : FIELD_REAL
   use view_directed        , only : directed_graph
   use field_calculus       , only : field
@@ -161,6 +161,9 @@ module operation_expression
      ! point: the highest index named, one at least
      integer, private :: designs     = 1
      integer, private :: varied      = 0
+     ! the coordinates the expression reads from the position of a
+     ! point: the highest index named, zero when none is read
+     integer, private :: position_coordinates = 0
      integer, allocatable, private :: field_degree(:)
 
      integer , allocatable, private :: kind(:)
@@ -177,12 +180,14 @@ module operation_expression
      procedure :: defined_at_zero => expression_defined_at_zero
      procedure :: partial_action => expression_partial_action
      procedure :: at_instant     => expression_at_instant
+     procedure, private :: evaluate => expression_evaluate
      procedure :: value_at
      procedure :: gradient_at
      procedure, private :: values_over
      procedure :: reads_state
      procedure :: equation_degree
      procedure :: num_coordinates
+     procedure :: num_position_coordinates
      procedure :: num_components
      procedure :: component_at
      procedure :: highest_degree_along
@@ -888,11 +893,13 @@ contains
     class(expression), intent(inout) :: this
     character(len=*) , intent(in), optional :: label
 
+    type(contract), allocatable :: contracts(:)
     integer :: i, f, c, coordinates
 
     this % fields      = 1
     this % multipliers = 0
     this % designs     = 1
+    this % position_coordinates = 0
     coordinates        = FIRST_COORDINATE
     do i = 1, this % num_vertices()
        if (this % kind(i) /= VERTEX_LEAF) cycle
@@ -904,6 +911,8 @@ contains
           this % multipliers = max(this % multipliers, this % field(i))
        case (ARGUMENT_DESIGN)
           this % designs = max(this % designs, this % field(i))
+       case (ARGUMENT_COORDINATE)
+          this % position_coordinates = max(this % position_coordinates, this % field(i))
        end select
     end do
 
@@ -911,9 +920,11 @@ contains
     this % degrees      = [this % field_degree(1), &
          & (max(0, this % highest_degree_along(c)), c = FIRST_COORDINATE + 1, coordinates)]
 
-    call this % declare_arguments(2, [ &
-         & contract(FIELD_REAL, this % num_components()), &
-         & contract(FIELD_REAL, this % designs) ], label=label, &
+    ! a rule that reads a coordinate takes the positions of the points
+    ! as a third argument, one value per coordinate read per point
+    contracts = [contract(FIELD_REAL, this % num_components()), contract(FIELD_REAL, this % designs)]
+    if (this % position_coordinates > 0) contracts = [contracts, contract(FIELD_REAL, this % position_coordinates)]
+    call this % declare_arguments(size(contracts), contracts, label=label, &
          & max_degree=max_subset_width() - merge(1, 0, this % varied > 0))
 
   end subroutine derive_domain
@@ -1826,6 +1837,16 @@ contains
 
   end function degree_of_field
 
+  ! the coordinates a rule reads from the position of a point: the
+  ! highest index named, zero when the rule reads none
+  pure integer function num_position_coordinates(this)
+
+    class(expression), intent(in) :: this
+
+    num_position_coordinates = this % position_coordinates
+
+  end function num_position_coordinates
+
   pure integer function num_coordinates(this)
 
     class(expression), intent(in) :: this
@@ -1847,15 +1868,16 @@ contains
   ! subset: the value with no directions, the mixed partial with n.
   !===================================================================!
 
-  subroutine evaluated(this, input_graph, q, nu, output)
+  subroutine expression_evaluate(this, input_graph, q, nu, output, positions)
 
     class(expression)     , intent(in) :: this
     class(directed_graph) , intent(in) :: input_graph
     type(derivative_terms), intent(in) :: q(:), nu(:)
     class(field), allocatable, intent(inout) :: output
+    real(dp)              , intent(in), optional :: positions(:)
 
     real(dp), allocatable :: values(:)
-    integer :: k, nd, base, ndesign
+    integer :: k, nd, base, ndesign, coordinates
     character(len=250) :: message
 
     nd      = this % num_components()
@@ -1874,18 +1896,33 @@ contains
        error stop trim(message)
     end if
 
+    coordinates = this % position_coordinates
+    if (present(positions)) then
+       if (size(positions) /= input_graph % num_vertices() * coordinates) then
+          write(message,'(a,i0,a,i0,a,i0)') 'operation_expression: the positions do not store one &
+               &value per coordinate read per point; size(positions) = ', size(positions), &
+               & ', num_vertices = ', input_graph % num_vertices(), ', coordinates read = ', coordinates
+          error stop trim(message)
+       end if
+    end if
+
     allocate(values(input_graph % num_vertices()))
 
     do k = 1, input_graph % num_vertices()
        base = (k - 1) * nd
-       values(k) = mixed_partial(this % at_instant(q(base + 1:base + nd), &
-            & nu((k - 1) * ndesign + 1:k * ndesign)))
+       if (present(positions)) then
+          values(k) = mixed_partial(this % at_instant(q(base + 1:base + nd), &
+               & nu((k - 1) * ndesign + 1:k * ndesign), positions((k - 1) * coordinates + 1:k * coordinates)))
+       else
+          values(k) = mixed_partial(this % at_instant(q(base + 1:base + nd), &
+               & nu((k - 1) * ndesign + 1:k * ndesign)))
+       end if
     end do
 
     call emit_real(this % name(), input_graph % vertex_set(), &
          & input_graph % num_vertices(), values, output)
 
-  end subroutine evaluated
+  end subroutine expression_evaluate
 
   subroutine expression_apply(this, input_graph, inputs, output)
 
@@ -1913,19 +1950,23 @@ contains
     class(field), allocatable, intent(inout) :: output
 
     type(derivative_terms), allocatable :: q(:), nu(:)
+    real(dp), allocatable :: positions(:)
     integer :: on_state, on_design
     character(len=250) :: message
 
     call this % require_variations(variations)
     call seeded_argument(this, inputs, variations, ARGUMENT_STATE , q , on_state)
     call seeded_argument(this, inputs, variations, ARGUMENT_DESIGN, nu, on_design)
+    ! the positions, the third argument of a rule that reads a coordinate
+    if (this % position_coordinates > 0) call bound_real_vector(inputs, this % argument(3), positions)
     if (on_state + on_design < size(variations)) then
        write(message,'(a,i0,a,i0,a,i0)') 'operation_expression: a variation names neither the &
             &state nor the design; on_state = ', on_state, ', on_design = ', on_design, &
             & ', size(variations) = ', size(variations)
        error stop trim(message)
     end if
-    call evaluated(this, input_graph, q, nu, output)
+    ! unallocated when the rule reads no coordinate, and then absent
+    call this % evaluate(input_graph, q, nu, output, positions)
 
   end subroutine expression_partial_action
 

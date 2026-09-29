@@ -4777,9 +4777,12 @@ contains
        ! over several images, the cells are distributed and the
        ! linear solve with them; a build of one image under a
        ! launcher of several would run the whole problem once per
-       ! process, and is refused
+       ! process, and is refused. The line of an open line is one
+       ! block of the sweeps, which a partition of its points would
+       ! divide: every image solves the whole line.
        call require_images()
-       if (num_images() > 1) solver % distribution = exchange(this % owners_of_unknowns(unknowns, stride, npts))
+       if (num_images() > 1 .and. .not. this % open_line()) &
+            & solver % distribution = exchange(this % owners_of_unknowns(unknowns, stride, npts))
     else
        ! a direct inner solve converges Newton quadratically to
        ! round-off at the cost of a step, and the sensitivities read

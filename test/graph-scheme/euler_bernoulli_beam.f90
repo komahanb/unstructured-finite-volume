@@ -204,13 +204,13 @@ contains
     call functional % values(J)
     J_exact    = T_final * EI_0 * (pi / L)**4 * L / 4.0_dp
     if (open_line) then
-       print '(a)', 'simply supported, uniform EI and rhoA, the open line'
+       if (this_image() == 1) print '(a)', 'simply supported, uniform EI and rhoA, the open line'
     else
-       print '(a)', 'simply supported, uniform EI and rhoA'
+       if (this_image() == 1) print '(a)', 'simply supported, uniform EI and rhoA'
     end if
-    print '(a, es12.4)', '   error against the exact solution  ', error % norm()
-    print '(a, es24.16, a, es24.16)', '   J = ', J(1), '   exact ', J_exact
-    print '(a, es12.4, a, es12.4)', '   J_exact - J = ', J_exact - J(1), &
+    if (this_image() == 1) print '(a, es12.4)', '   error against the exact solution  ', error % norm()
+    if (this_image() == 1) print '(a, es24.16, a, es24.16)', '   J = ', J(1), '   exact ', J_exact
+    if (this_image() == 1) print '(a, es12.4, a, es12.4)', '   J_exact - J = ', J_exact - J(1), &
          & '   estimate by mu_x and differences of order 8 ', &
          & sum(L_h % disagreement(solution, finite_difference(order=8)))
 
@@ -218,7 +218,7 @@ contains
     ! instants: -dJ/de for the datum e of w at that end at every instant
     at_0 = solution % fields(['lambda_0'])
     at_L = solution % fields(['lambda_L'])
-    print '(a, 2es24.16)', '   -dJ/de at x = 0 and at x = L ', &
+    if (this_image() == 1) print '(a, 2es24.16)', '   -dJ/de at x = 0 and at x = L ', &
          & sum([(at_0 % value((k - 1) * num_points + 1, 1), k = 1, num_instants)]), &
          & sum([(at_L % value((k - 1) * num_points + 1, 1), k = 1, num_instants)])
 
@@ -301,13 +301,13 @@ contains
 
     error = solution % fields(['w']) - estimate
     if (open_line) then
-       print '(a)', 'clamped, EI(x) and rhoA(x) varying, manufactured load, the open line'
+       if (this_image() == 1) print '(a)', 'clamped, EI(x) and rhoA(x) varying, manufactured load, the open line'
     else if (present(damping_scale)) then
-       print '(a)', 'clamped, EI(x) and rhoA(x) varying, manufactured load, Kelvin-Voigt damping c(x) w_xxt'
+       if (this_image() == 1) print '(a)', 'clamped, EI(x) and rhoA(x) varying, manufactured load, Kelvin-Voigt damping c(x) w_xxt'
     else
-       print '(a)', 'clamped, EI(x) and rhoA(x) varying, manufactured load'
+       if (this_image() == 1) print '(a)', 'clamped, EI(x) and rhoA(x) varying, manufactured load'
     end if
-    print '(a, es12.4)', '   error against the exact solution  ', error % norm()
+    if (this_image() == 1) print '(a, es12.4)', '   error against the exact solution  ', error % norm()
 
   end subroutine clamped
 

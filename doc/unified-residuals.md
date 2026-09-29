@@ -28,7 +28,9 @@ The rank measurements quoted here are reproduced by
 Every commit above was compared with the suites and the demos against
 the state before it, those before 1866adc also with a two-image run;
 the only differences are the new examples' own output. From 1866adc on
-the comparison is on one image. The mapping of a functional that reads
+the comparison is on one image; at 332d0ed every graph-scheme program
+also ran on two and on four images, after the open line was solved
+whole on every image. The mapping of a functional that reads
 a mixed component (`jet_slots`) is not exercised: the Kelvin-Voigt
 objectives read w alone.
 

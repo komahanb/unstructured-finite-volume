@@ -78,7 +78,7 @@ program euler_bernoulli_beam_grid
      call evaluate_grid(s - step, phi(-1))
      call evaluate_grid(s + step, phi(1))
      call evaluate_grid(s, phi(0), eta, J_error, w_error)
-     print '(a, i0, a, f9.5, a, es11.4, a, es11.4, a, es11.4, a, es11.4)', 'iteration ', iteration, &
+     if (this_image() == 1) print '(a, i0, a, f9.5, a, es11.4, a, es11.4, a, es11.4, a, es11.4)', 'iteration ', iteration, &
           & '  s = ', s, '  Phi = ', phi(0), '  eta = ', eta, '  J - J_h = ', J_error, &
           & '  |w - w_exact| = ', w_error
 

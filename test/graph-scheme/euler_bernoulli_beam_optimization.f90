@@ -75,12 +75,12 @@ program euler_bernoulli_beam_optimization
   s = 0.0_dp
   do iteration = 1, 8
      call evaluate_misfit(s, J, gradient, hessian)
-     print '(a, i0, a, 2f12.8, a, es12.4, a, es12.4)', 'iteration ', iteration, '  s = ', s, &
+     if (this_image() == 1) print '(a, i0, a, 2f12.8, a, es12.4, a, es12.4)', 'iteration ', iteration, '  s = ', s, &
           & '  J = ', J, '  |dJ/ds| = ', norm2(gradient)
      if (norm2(gradient) < 1.0e-10_dp) exit
      s = s - linear_solution(hessian, gradient)
   end do
-  print '(a, 2f12.8)', 'true s      = ', s_true
+  if (this_image() == 1) print '(a, 2f12.8)', 'true s      = ', s_true
 
 contains
 

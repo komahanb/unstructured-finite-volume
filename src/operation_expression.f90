@@ -97,7 +97,7 @@ module operation_expression
   private
   public :: expression
   public :: unknown, design, constant, multiplier, coordinate, component, component_along
-  public :: derivative, jet_form
+  public :: derivative, jet_form, represented_component
   public :: euler_lagrange, at_zero
   public :: partial_derivative, partial_in_design, total_derivative, stationarity, boundary_terms
   public :: operator(+), operator(-), operator(*), operator(/), operator(**)
@@ -526,6 +526,38 @@ contains
     end select
 
   end function jet_subtree
+
+  !===================================================================!
+  ! THE COMPONENT A REPRESENTATION LAW DEFINES: for a law d^b(q) - p,
+  ! an operator applied to a jet component less the jet component the
+  ! operator denotes, the field, the order and the coordinate of p;
+  ! zeros for any other law. A law whose jet form is not the
+  ! difference of two equal state components, or that has no
+  ! operator, is not a representation law.
+  !===================================================================!
+
+  function represented_component(x) result(defined)
+
+    type(expression), intent(in) :: x
+    integer :: defined(3)
+
+    type(expression) :: form
+    integer :: r, a, b
+
+    defined = 0
+    if (.not. any(x % kind == VERTEX_DERIVATIVE)) return
+    form = jet_form(x)
+    r = form % root()
+    if (form % kind(r) /= VERTEX_DIFFERENCE) return
+    a = form % first(r)
+    b = form % second(r)
+    if (form % kind(a) /= VERTEX_LEAF .or. form % kind(b) /= VERTEX_LEAF) return
+    if (form % position(a) /= ARGUMENT_STATE .or. form % position(b) /= ARGUMENT_STATE) return
+    if (form % field(a) /= form % field(b) .or. form % order(a) /= form % order(b)) return
+    if (form % order(b) < 1 .or. form % along(a) /= form % along(b)) return
+    defined = [form % field(b), form % order(b), form % along(b)]
+
+  end function represented_component
 
   !===================================================================!
   ! The stationarity of a Lagrangian in its j-th multiplier: the

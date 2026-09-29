@@ -53,7 +53,7 @@ module operation_residual
   use field_calculus    , only : field, FIELD_REAL
   use field_stored      , only : stored_field, typed_field_domain
   use operation_stencil  , only : stencil, combine_triples
-  use operation_expression , only : expression, euler_lagrange, multiplier, constant, jet_form
+  use operation_expression , only : expression, euler_lagrange, multiplier, constant, jet_form, represented_component
   use operation_expression , only : operator(+), operator(*)
   use operation_domain     , only : continuous_domain, discrete_domain
   use util_derivative_terms, only : max_subset_width, derivative_terms, mixed_partial, coefficient, symmetric_terms
@@ -307,6 +307,7 @@ module operation_residual
    contains
 
      procedure :: minimize
+     procedure, private :: check_representations
      procedure, private :: block_positions
 
      procedure, private :: adjoint_block
@@ -1606,6 +1607,58 @@ contains
   ! given for a coordinate absent, is invalid input.
   !===================================================================!
 
+  !===================================================================!
+  ! THE REPRESENTATION LAWS STATED, each column of defined the field,
+  ! the order and the coordinate of the jet component one law defines.
+  ! Along a coordinate with laws stated, every component the rule
+  ! stores along it, of order one to its degree, is defined exactly
+  ! once, and the coordinate has its concretion: the chain of families
+  ! along time, a derivative approximation along space. The rows stay
+  ! those the concretion builds. Invalid input: a component defined
+  ! twice or not at all, or a law along a coordinate without its
+  ! concretion.
+  !===================================================================!
+
+  subroutine check_representations(this, defined, with_chain, with_differences)
+
+    class(discrete_residual), intent(in) :: this
+    integer                 , intent(in) :: defined(:,:)
+    logical                 , intent(in) :: with_chain, with_differences
+
+    integer :: c, f, o, top, times
+    logical :: along_time
+    character(len=250) :: message
+
+    do c = 1, this % rule % num_coordinates()
+       if (.not. any(defined(3, :) == c)) cycle
+       along_time = this % manifold % with_time .and. c == 1
+       if ((along_time .and. .not. with_chain) .or. (.not. along_time .and. .not. with_differences)) then
+          write(message,'(a,i0)') 'operation_residual: a representation law is stated along a coordinate &
+               &that has no concretion; coordinate = ', c
+          error stop trim(message)
+       end if
+       do f = 1, this % manifold % num_unknowns
+          top = merge(this % rule % degree_of_field(f), this % rule % degree_along(c), along_time)
+          do o = 1, top
+             times = count(defined(1, :) == f .and. defined(2, :) == o .and. defined(3, :) == c)
+             if (times /= 1) then
+                write(message,'(a,i0,a,i0,a,i0,a,i0,a)') 'operation_residual: along coordinate ', c, &
+                     & ' the component of order ', o, ' of field ', f, ' is defined ', times, &
+                     & ' times; a representation law defines each stored component once'
+                error stop trim(message)
+             end if
+          end do
+       end do
+       if (count(defined(3, :) == c) /= sum([(merge(this % rule % degree_of_field(f), &
+            & this % rule % degree_along(c), along_time), f = 1, this % manifold % num_unknowns)])) then
+          write(message,'(a,i0)') 'operation_residual: a representation law defines a component the rule &
+               &does not store; coordinate = ', c
+          error stop trim(message)
+       end if
+    end do
+
+  end subroutine check_representations
+
   function residual_discretize(this, points, time, space) result(image)
 
     class(continuous_residual), intent(in) :: this
@@ -1615,18 +1668,34 @@ contains
     type(discrete_residual) :: image
 
     integer :: k, j, i, whole_term, num_conditions, nf
+    integer, allocatable :: defined(:,:)
+    logical, allocatable :: representation(:)
     logical :: covering
     real(dp) :: given
     real(dp), allocatable :: slope(:)
     character(len=250) :: message
 
+    ! the terms on the whole manifold: the representation laws, every
+    ! equation of which defines a jet component, and the one term of the
+    ! physics
+    allocate(representation(size(this % term)), source=.false.)
+    allocate(defined(3, 0))
     whole_term = 0
     num_conditions = 0
     do k = 1, size(this % term)
        associate (t => this % term(k))
          if (t % manifold % part == WHOLE) then
+            representation(k) = all([(represented_component(t % equation(i) % graph(1)) /= 0, &
+                 & i = 1, size(t % equation))])
+            if (representation(k)) then
+               do i = 1, size(t % equation)
+                  defined = reshape([defined, represented_component(t % equation(i) % graph(1))], &
+                       & [3, size(defined, 2) + 1])
+               end do
+               cycle
+            end if
             if (whole_term /= 0) then
-               error stop 'operation_residual: one term states the equations on the whole manifold'
+               error stop 'operation_residual: one term states the physics on the whole manifold'
             end if
             whole_term = k
          else
@@ -1671,10 +1740,12 @@ contains
       end do
     end associate
 
+    call image % check_representations(defined, present(time), present(space))
+
     allocate(image % condition(num_conditions))
     j = 0
     do k = 1, size(this % term)
-       if (k == whole_term) cycle
+       if (k == whole_term .or. representation(k)) cycle
        j = j + 1
        image % condition(j) = this % term(k)
        do i = 1, size(image % condition(j) % equation)

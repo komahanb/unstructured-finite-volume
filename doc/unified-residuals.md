@@ -1,7 +1,7 @@
 # Unified residuals: physics, representation and conditions on one manifold
 
-Status: design note, not implemented. Revised 2026-09-28 after the
-owner's review. Written for two Euler-Bernoulli beam examples in
+Status: implemented through the phases of the table below, 2026-09-29;
+revised 2026-09-28 after the owner's review. Written for two Euler-Bernoulli beam examples in
 `test/graph-scheme`: an analysis, then an optimization of the same
 Lagrangian.
 
@@ -20,14 +20,17 @@ The rank measurements quoted here are reproduced by
 | 4. The open line: the trapezoid rule on the segments, the conditions of both ends in its open rows, closed differences at the explicit moments, Gauss-Seidel on whole lines | done; order 2, stable at 801 x 129 | 1866adc |
 | 5. The beam analysis example | done | 102c263 |
 | Multipliers of face conditions and of representation laws | done | 1dd35e0, 92f41dc |
-| 6. Mixed components: a leaf of orders along the first coordinate and one later coordinate, each defined along space from the time component | done; the Kelvin-Voigt beam, order 4+ in x and 2 in t, dJ/dc by tangent and adjoint | (this commit) |
+| 6. Mixed components: a leaf of orders along the first coordinate and one later coordinate, each defined along space from the time component | done; the Kelvin-Voigt beam, order 4+ in x and 2 in t, dJ/dc by tangent and adjoint | 8080dfb |
 | 7. The beam optimization example (identification by Newton on the design) | done | bd608da |
-| 8. The disagreement estimate `disagreement(solution, other)` | done; effectivity 1.0007 on the open line, 0.35 to 0.78 under closed differences | (this commit) |
-| 8. The grid as a design: one grading coordinate of the beamline, Newton on the sum of squares of the estimate's contributions | done; error of J 2.34e-2 to -7.4e-4 at a fixed 17 points; gradient by central differences | (this commit) |
+| 8. The disagreement estimate `disagreement(solution, other)` | done; effectivity 1.0007 on the open line, 0.35 to 0.78 under closed differences | 7f282da |
+| 8. The grid as a design: one grading coordinate of the beamline, Newton on the sum of squares of the estimate's contributions | done; error of J 2.34e-2 to -7.4e-4 at a fixed 17 points; gradient by central differences | 237a17b |
 
-Every commit above was compared with the suites, the demos and a
-two-image run against the state before it; the only differences are
-the new examples' own output.
+Every commit above was compared with the suites and the demos against
+the state before it, those before 1866adc also with a two-image run;
+the only differences are the new examples' own output. From 1866adc on
+the comparison is on one image. The mapping of a functional that reads
+a mixed component (`jet_slots`) is not exercised: the Kelvin-Voigt
+objectives read w alone.
 
 ## 1. Purpose
 

@@ -63,15 +63,15 @@ module operation_manifold
   use token_identity      , only : token, next_token
   use operation_field     , only : continuous_support, discrete_support, continuous_field
   use operation_field     , only : unknown_field, coordinate_field
-  use operation_field     , only : WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR, DESIGN_FACTOR
+  use operation_field     , only : WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR, DESIGN_FACTOR, SPACE_FACE
   use view_mesh           , only : mesh, values_of
-  use view_mesh_builder   , only : mesh_from_gmsh
+  use view_mesh_builder   , only : mesh_from_gmsh, mesh_from_points
 
   implicit none
 
   private
   public :: continuous_manifold, discrete_manifold
-  public :: interval, region, instants, mesh, parameter, expansion
+  public :: interval, region, points, mesh, parameter, expansion
 
   integer, parameter :: MAX_NAME = 32
 
@@ -83,26 +83,30 @@ module operation_manifold
      module procedure create_interval
   end interface interval
 
-  ! the region of space, as the gmsh geometry file describes it
+  ! the region of space: as a gmsh geometry file describes it, or
+  ! the interval of one space coordinate
   type :: region
      character(len=:), allocatable :: geometry
+     type(interval), allocatable :: extent
   end type region
 
   interface region
      module procedure create_region
+     module procedure create_region_of_interval
   end interface region
 
-  ! the instants of the interval: n equally spaced, or the list given,
-  ! ascending from one end of the interval to the other
-  type :: instants
+  ! the points of an interval of time or of a space coordinate: n
+  ! equally spaced, or the list given, ascending from one end of the
+  ! interval to the other
+  type :: points
      integer :: n = 0
-     real(dp), allocatable :: time(:)
-  end type instants
+     real(dp), allocatable :: position(:)
+  end type points
 
-  interface instants
-     module procedure create_instants
-     module procedure create_instants_at
-  end interface instants
+  interface points
+     module procedure create_points
+     module procedure create_points_at
+  end interface points
 
   interface mesh
      module procedure mesh_from_file
@@ -159,7 +163,8 @@ module operation_manifold
      procedure :: discretize      => manifold_discretize
      procedure :: num_coordinates => manifold_num_coordinates
      procedure :: is_point
-     procedure :: is_face
+     procedure :: is_time_face
+     procedure :: is_space_face
      procedure :: is_time_factor
      procedure :: is_space_factor
      procedure :: is_design_factor
@@ -241,45 +246,54 @@ contains
 
   end function create_region
 
-  function create_instants(n) result(this)
+  function create_region_of_interval(extent) result(this)
+
+    type(interval), intent(in) :: extent
+    type(region) :: this
+
+    this % extent = extent
+
+  end function create_region_of_interval
+
+  function create_points(n) result(this)
 
     integer, intent(in) :: n
-    type(instants) :: this
+    type(points) :: this
 
     character(len=250) :: message
 
     if (n < 2) then
-       write(message,'(a,i0)') 'operation_manifold: an interval is discretized by two instants at &
+       write(message,'(a,i0)') 'operation_manifold: an interval is discretized by two points at &
             &least; n = ', n
        error stop trim(message)
     end if
     this % n = n
 
-  end function create_instants
+  end function create_points
 
-  function create_instants_at(time) result(this)
+  function create_points_at(position) result(this)
 
-    real(dp), intent(in) :: time(:)
-    type(instants) :: this
+    real(dp), intent(in) :: position(:)
+    type(points) :: this
 
     integer :: k
     character(len=250) :: message
 
-    if (size(time) < 2) then
-       write(message,'(a,i0)') 'operation_manifold: an interval is discretized by two instants at &
-            &least; size(time) = ', size(time)
+    if (size(position) < 2) then
+       write(message,'(a,i0)') 'operation_manifold: an interval is discretized by two points at &
+            &least; size(position) = ', size(position)
        error stop trim(message)
     end if
-    do k = 2, size(time)
-       if (time(k) <= time(k - 1)) then
-          write(message,'(a,i0)') 'operation_manifold: the instants ascend; instant ', k
+    do k = 2, size(position)
+       if (position(k) <= position(k - 1)) then
+          write(message,'(a,i0)') 'operation_manifold: the points ascend; point ', k
           error stop trim(message) // ' does not follow the one before it'
        end if
     end do
-    this % n    = size(time)
-    this % time = time
+    this % n    = size(position)
+    this % position = position
 
-  end function create_instants_at
+  end function create_points_at
 
   function mesh_from_file(filename) result(cells)
 
@@ -413,10 +427,15 @@ contains
     is_point = .not. (this % with_time .or. this % with_space)
   end function is_point
 
-  pure logical function is_face(this)
+  pure logical function is_time_face(this)
     class(continuous_manifold), intent(in) :: this
-    is_face = this % part == TIME_FACE
-  end function is_face
+    is_time_face = this % part == TIME_FACE
+  end function is_time_face
+
+  pure logical function is_space_face(this)
+    class(continuous_manifold), intent(in) :: this
+    is_space_face = this % part == SPACE_FACE
+  end function is_space_face
 
   pure logical function is_time_factor(this)
     class(continuous_manifold), intent(in) :: this
@@ -441,7 +460,9 @@ contains
 
   pure integer function manifold_num_coordinates(this)
     class(continuous_manifold), intent(in) :: this
-    manifold_num_coordinates = merge(1, 0, this % with_time) + merge(3, 0, this % with_space)
+    manifold_num_coordinates = merge(1, 0, this % with_time)
+    if (this % with_space) manifold_num_coordinates = manifold_num_coordinates &
+         & + merge(1, 3, allocated(this % geometry % extent))
   end function manifold_num_coordinates
 
   !===================================================================!
@@ -552,8 +573,12 @@ contains
     case default
        error stop 'operation_manifold: a coordinate is named t, x, y or z; the name given is ' // trim(name)
     end select
-    if (trim(name) /= 't') then
-       if (this % with_space) axis = merge(1, 0, this % with_time) + at
+    if (trim(name) /= 't' .and. this % with_space) then
+       if (allocated(this % geometry % extent) .and. at > 1) then
+          error stop 'operation_manifold: the region of an interval has the one coordinate x; the name &
+               &given is ' // trim(name)
+       end if
+       axis = merge(1, 0, this % with_time) + at
     end if
     if (axis == 0) then
        error stop 'operation_manifold: the manifold has no coordinate named ' // trim(name)
@@ -563,34 +588,53 @@ contains
   end function manifold_coordinate
 
   !===================================================================!
-  ! THE PARTS: the face at one instant, a manifold of the space alone
-  ! that records its parent and the instant; the time factor; the
-  ! space factor. Each is a manifold with unknowns of its own.
+  ! THE PARTS: the face where one coordinate takes a value at an end
+  ! of its interval, a manifold of the other coordinates that records
+  ! its parent, the coordinate and the value; the time factor; the
+  ! space factor. Each is a manifold with unknowns of its own. Invalid
+  ! input: a field that is not a coordinate of this manifold, a design
+  ! coordinate, a space coordinate of a region with no interval, or a
+  ! value at neither end.
   !===================================================================!
 
-  function manifold_boundary(this, time) result(face)
+  function manifold_boundary(this, along, value) result(face)
 
     class(continuous_manifold), intent(in) :: this
-    real(dp)                  , intent(in) :: time
+    type(continuous_field)    , intent(in) :: along
+    real(dp)                  , intent(in) :: value
     type(continuous_manifold) :: face
 
+    type(interval) :: span
+    logical :: of_time
     character(len=250) :: message
 
-    if (.not. this % with_time) then
-       error stop 'operation_manifold: a face at an instant requires a manifold with a time coordinate'
+    if (along % coordinate < 1 .or. along % design_coordinate .or. .not. along % on % matches(this % identity)) then
+       error stop 'operation_manifold: a face is taken along a time or space coordinate of this manifold'
     end if
-    if (time /= this % span % a .and. time /= this % span % b) then
+    of_time = this % with_time .and. along % coordinate == 1
+    if (of_time) then
+       span = this % span
+    else
+       if (.not. allocated(this % geometry % extent)) then
+          error stop 'operation_manifold: a face along a space coordinate requires the region of an interval'
+       end if
+       span = this % geometry % extent
+    end if
+    if (value /= span % a .and. value /= span % b) then
        write(message,'(a,es12.5,a,es12.5,a,es12.5)') 'operation_manifold: the face must be at an end &
-            &of the interval; time = ', time, ', interval = [', this % span % a, ', ', this % span % b
+            &of the interval; value = ', value, ', interval = [', span % a, ', ', span % b
        error stop trim(message)
     end if
-    face % identity   = next_token()
-    face % with_space = this % with_space
-    face % geometry   = this % geometry
+    face % identity    = next_token()
+    face % with_time   = this % with_time .and. .not. of_time
+    if (face % with_time) face % span = this % span
+    face % with_space  = this % with_space .and. of_time
+    face % geometry    = this % geometry
     face % with_design = this % with_design
     if (allocated(this % design_parameter)) face % design_parameter = this % design_parameter
-    face % part       = TIME_FACE
-    face % face_time  = time
+    face % part       = merge(TIME_FACE, SPACE_FACE, of_time)
+    face % face_axis  = along % coordinate
+    face % face_value = value
     face % parent     = this % identity
     allocate(face % unknown_name(0))
 
@@ -696,18 +740,18 @@ contains
   function manifold_discretize(this, time, space, design) result(image)
 
     class(continuous_manifold), intent(in) :: this
-    type(instants) , intent(in), optional :: time
-    type(mesh)     , intent(in), optional :: space
+    type(points)   , intent(in), optional :: time
+    class(*)       , intent(in), optional :: space
     type(expansion), intent(in), optional :: design
     type(discrete_manifold) :: image
 
     integer :: k
 
     if (this % with_time .neqv. present(time)) then
-       error stop 'operation_manifold: the time coordinate is discretized by its instants, and only it'
+       error stop 'operation_manifold: the time coordinate is discretized by its points, and only it'
     end if
     if (this % with_space .neqv. present(space)) then
-       error stop 'operation_manifold: the region is discretized by a mesh, and only it'
+       error stop 'operation_manifold: the region is discretized by a mesh or by points, and only it'
     end if
     if (this % with_design .neqv. present(design)) then
        error stop 'operation_manifold: the design coordinate is discretized by an expansion of an order, &
@@ -732,26 +776,53 @@ contains
     end if
     if (present(time)) then
        image % with_time = .true.
-       if (allocated(time % time)) then
-          if (abs(time % time(1) - this % span % a) > 1.0e-12_dp * max(1.0_dp, abs(this % span % a)) .or. &
-               & abs(time % time(time % n) - this % span % b) > 1.0e-12_dp * max(1.0_dp, abs(this % span % b))) then
-             error stop 'operation_manifold: the instants listed run from one end of the interval to the other'
-          end if
-          image % instant = time % time
-       else
-          image % instant = [(this % span % a + (this % span % b - this % span % a) * real(k - 1, dp) &
-               & / real(time % n - 1, dp), k = 1, time % n)]
-       end if
+       image % instant = positions_on(time, this % span)
     end if
     if (present(space)) then
        image % with_space = .true.
-       image % cells      = space
-       image % dimension  = space % dimension
-       call values_of(space % cell_centre(), image % centre)
-       call values_of(space % cell_volume(), image % volume)
+       select type (space)
+       type is (mesh)
+          image % cells = space
+       type is (points)
+          if (.not. allocated(this % geometry % extent)) then
+             error stop 'operation_manifold: points discretize the region of an interval; a region &
+                  &read from a geometry file is discretized by a mesh'
+          end if
+          image % cells = mesh_from_points(positions_on(space, this % geometry % extent))
+       class default
+          error stop 'operation_manifold: a region is discretized by a mesh or by points'
+       end select
+       image % dimension  = image % cells % dimension
+       call values_of(image % cells % cell_centre(), image % centre)
+       call values_of(image % cells % cell_volume(), image % volume)
     end if
 
   end function manifold_discretize
+
+  !===================================================================!
+  ! The positions of points on an interval: those listed, which run
+  ! from one end to the other, or n equally spaced from end to end.
+  !===================================================================!
+
+  function positions_on(given, span) result(position)
+
+    type(points)  , intent(in) :: given
+    type(interval), intent(in) :: span
+    real(dp), allocatable :: position(:)
+
+    integer :: k
+
+    if (allocated(given % position)) then
+       if (abs(given % position(1) - span % a) > 1.0e-12_dp * max(1.0_dp, abs(span % a)) .or. &
+            & abs(given % position(given % n) - span % b) > 1.0e-12_dp * max(1.0_dp, abs(span % b))) then
+          error stop 'operation_manifold: the points listed run from one end of the interval to the other'
+       end if
+       position = given % position
+    else
+       position = [(span % a + (span % b - span % a) * real(k - 1, dp) / real(given % n - 1, dp), k = 1, given % n)]
+    end if
+
+  end function positions_on
 
   pure integer function num_instants(this)
     class(discrete_manifold), intent(in) :: this

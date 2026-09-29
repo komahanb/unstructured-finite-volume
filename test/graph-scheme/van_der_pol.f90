@@ -34,7 +34,7 @@ program van_der_pol
 
   use util_precision    , only : dp
   use util_verbosity    , only : set_verbosity
-  use operation_manifold, only : continuous_manifold, discrete_manifold, interval, instants
+  use operation_manifold, only : continuous_manifold, discrete_manifold, interval, points
   use operation_field   , only : continuous_field, discrete_field, integral, &
        &                         operator(+), operator(-), operator(*), operator(/), operator(**)
   use operation_residual, only : continuous_residual, discrete_residual, operator(+), operator(*)
@@ -73,8 +73,8 @@ program van_der_pol
   ! Omega = [0, T], a manifold of time alone; dOmega = {0};
   ! Omega_h = {t_0..t_n}
   omega   = continuous_manifold(time=interval(0.0_dp, T_final))
-  domega  = omega % boundary(time=0.0_dp)
-  omega_h = omega % discretize(time=instants(num_instants))
+  domega  = omega % boundary(omega % coordinate('t'), 0.0_dp)
+  omega_h = omega % discretize(time=points(num_instants))
 
   ! the coordinate function t and the unknown function u(t) : Omega -> R
   t = omega % coordinate('t')

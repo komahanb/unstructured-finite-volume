@@ -81,7 +81,7 @@ program van_der_pol_sensitivity
 
   use util_precision    , only : dp
   use util_verbosity    , only : set_verbosity
-  use operation_manifold, only : continuous_manifold, discrete_manifold, interval, instants, parameter, expansion
+  use operation_manifold, only : continuous_manifold, discrete_manifold, interval, points, parameter, expansion
   use operation_field   , only : continuous_field, discrete_field, integral, &
        &                         operator(+), operator(-), operator(*), operator(/), operator(**)
   use operation_residual, only : continuous_residual, discrete_residual, operator(+), operator(*)
@@ -107,8 +107,8 @@ program van_der_pol_sensitivity
   ! expansion of order 3 at (1, 1) along each coordinate
   omega   = continuous_manifold(time=interval(0.0_dp, T_final), &
        &                        design=[parameter('nu', nu_design), parameter('mu', mu_design)])
-  domega  = omega % boundary(time=0.0_dp)
-  omega_h = omega % discretize(time=instants(num_instants), design=expansion(order=order))
+  domega  = omega % boundary(omega % coordinate('t'), 0.0_dp)
+  omega_h = omega % discretize(time=points(num_instants), design=expansion(order=order))
 
   ! the coordinate functions t, nu, mu : Omega -> R
   t  = omega % coordinate('t')

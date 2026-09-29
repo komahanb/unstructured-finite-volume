@@ -42,8 +42,8 @@ one instance of a discretized geometry.
 
 | Geometry | Discrete image | Today | After this change |
 |---|---|---|---|
-| `interval(a, b)` of a coordinate | points on it, ends included | time only (`instants(n)`) | any coordinate (`points(n)`; `instants` its name for time) |
-| `region('file.geo')` | `mesh('file.msh')` | gmsh files | unchanged |
+| `interval(a, b)` of a coordinate | points on it, ends included | time only (`instants(n)`) | any coordinate, `points(n)` (`instants` renamed, one type for time and space) |
+| `region('file.geo')`, or `region(interval(a, b))` | `mesh('file.msh')`, or `points(n)`: the vertex-centred line mesh | gmsh files | both |
 | a product of factors, `beamline x timeline` | the product of the images | time x region only | any factors |
 | curves, surfaces, volumes from the coordinate algebra | generated points and cells | none | later; the factor interface admits them |
 

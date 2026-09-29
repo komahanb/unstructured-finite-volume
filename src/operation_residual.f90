@@ -1677,6 +1677,12 @@ contains
        if (.not. image % condition(j) % manifold % parent % matches(image % manifold % identity)) then
           error stop 'operation_residual: a condition is stated on a part of another manifold'
        end if
+       ! a condition on a face of the region takes rows only once the
+       ! concretion along its coordinate states which rows it leaves open
+       if (image % condition(j) % manifold % is_space_face()) then
+          error stop 'operation_residual: a condition on a face of the region is not yet given rows; &
+               &the concretion along its coordinate does not state the rows it leaves open'
+       end if
        ! a condition on the design factor fixes the design coordinate
        ! at the value the manifold states: nu - nu_0 = 0, one equation
        if (image % condition(j) % manifold % is_design_factor()) then
@@ -1939,7 +1945,7 @@ contains
     nc = 0
     if (this % with_adjoint) then
        do j = 1, size(this % condition)
-          if (this % condition(j) % manifold % is_face())          nc = nc + size(this % condition(j) % equation)
+          if (this % condition(j) % manifold % is_time_face())          nc = nc + size(this % condition(j) % equation)
           if (this % condition(j) % manifold % is_time_factor())   nc = nc + size(this % condition(j) % equation)
           if (this % condition(j) % manifold % is_design_factor()) nc = nc + size(this % condition(j) % equation)
        end do
@@ -2055,8 +2061,8 @@ contains
                 end do
              end do
           end if
-          if (.not. this % condition(j) % manifold % is_face()) cycle
-          k = this % face_instant(this % condition(j) % manifold % face_time)
+          if (.not. this % condition(j) % manifold % is_time_face()) cycle
+          k = this % face_instant(this % condition(j) % manifold % face_value)
           do f = 1, size(this % condition(j) % equation)
              nc = nc + 1
              e  = e + 1
@@ -2879,7 +2885,7 @@ contains
     nc = 0
     ng = 0
     do j = 1, size(this % condition)
-       if (this % condition(j) % manifold % is_face())        nc = nc + size(this % condition(j) % equation)
+       if (this % condition(j) % manifold % is_time_face())        nc = nc + size(this % condition(j) % equation)
        if (this % condition(j) % manifold % is_time_factor()) ng = ng + size(this % condition(j) % equation)
     end do
     allocate(adjoint(nf, ncells, this % points % num_instants(), 0:order, nd), source=0.0_dp)
@@ -3417,8 +3423,8 @@ contains
        end do
     end do
     do j = 1, size(this % condition)
-       if (.not. this % condition(j) % manifold % is_face()) cycle
-       instant = this % face_instant(this % condition(j) % manifold % face_time)
+       if (.not. this % condition(j) % manifold % is_time_face()) cycle
+       instant = this % face_instant(this % condition(j) % manifold % face_value)
        if (instant < first + depth .or. instant > last) cycle
        do i = 1, size(this % condition(j) % equation)
           do c = 1, ncells
@@ -4155,8 +4161,8 @@ contains
     end do
     e = 0
     do j = 1, size(this % condition)
-       if (.not. this % condition(j) % manifold % is_face()) cycle
-       instant = this % face_instant(this % condition(j) % manifold % face_time)
+       if (.not. this % condition(j) % manifold % is_time_face()) cycle
+       instant = this % face_instant(this % condition(j) % manifold % face_value)
        do i = 1, size(this % condition(j) % equation)
           e = e + 1
           if (instant < first + depth .or. instant > last) cycle
@@ -4176,8 +4182,8 @@ contains
     in_design(:, o, d) = in_design(:, o, d) - products
     e = 0
     do j = 1, size(this % condition)
-       if (.not. this % condition(j) % manifold % is_face()) cycle
-       instant = this % face_instant(this % condition(j) % manifold % face_time)
+       if (.not. this % condition(j) % manifold % is_time_face()) cycle
+       instant = this % face_instant(this % condition(j) % manifold % face_value)
        do i = 1, size(this % condition(j) % equation)
           e = e + 1
           if (instant < first + depth .or. instant > last) cycle
@@ -4735,8 +4741,8 @@ contains
     ncells = this % points % num_cells()
     count  = 0
     do j = 1, size(this % condition)
-       if (.not. this % condition(j) % manifold % is_face()) cycle
-       instant = this % face_instant(this % condition(j) % manifold % face_time)
+       if (.not. this % condition(j) % manifold % is_time_face()) cycle
+       instant = this % face_instant(this % condition(j) % manifold % face_value)
        if (instant < first + depth .or. instant > last) cycle
        do i = 1, size(this % condition(j) % equation)
           call face_relation(this % condition(j) % equation(i), this % points % design_values(), &
@@ -4748,8 +4754,8 @@ contains
     allocate(rows(count), columns(count), weights(count), constants(count))
     e = 0
     do j = 1, size(this % condition)
-       if (.not. this % condition(j) % manifold % is_face()) cycle
-       instant = this % face_instant(this % condition(j) % manifold % face_time)
+       if (.not. this % condition(j) % manifold % is_time_face()) cycle
+       instant = this % face_instant(this % condition(j) % manifold % face_value)
        if (instant < first + depth .or. instant > last) cycle
        m = this % face_row_moment(instant, first, last, depth, instant_moment)
        do i = 1, size(this % condition(j) % equation)

@@ -27,7 +27,7 @@ program taylor_green_vortex_3d
 
   use util_precision             , only : dp
   use util_verbosity             , only : set_verbosity
-  use operation_manifold         , only : continuous_manifold, discrete_manifold, interval, region, instants, mesh
+  use operation_manifold         , only : continuous_manifold, discrete_manifold, interval, region, points, mesh
   use operation_field            , only : continuous_field, discrete_field, integral, sin, cos, exp, &
        &                                  operator(+), operator(-), operator(*), operator(/), operator(**)
   use operation_residual         , only : continuous_residual, discrete_residual, operator(+), operator(*)
@@ -52,9 +52,9 @@ program taylor_green_vortex_3d
   ! Omega = [0, T] x B, B the box of box_3d.py; dOmega = {0} x B;
   ! tau = [0, T]; Omega_h = {t_0..t_n} x C, C the cells of box_3d.msh
   omega   = continuous_manifold(time=interval(0.0_dp, T_final), space=region('box_3d.py'))
-  domega  = omega % boundary(time=0.0_dp)
+  domega  = omega % boundary(omega % coordinate('t'), 0.0_dp)
   tau     = omega % time()
-  omega_h = omega % discretize(time=instants(num_instants), space=mesh('box_3d.msh'))
+  omega_h = omega % discretize(time=points(num_instants), space=mesh('box_3d.msh'))
 
   ! the coordinate functions t, x, y, z : Omega -> R
   t = omega % coordinate('t')

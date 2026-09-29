@@ -51,7 +51,7 @@ program van_der_pol_continuous_adjoint
 
   use util_precision    , only : dp
   use util_verbosity    , only : set_verbosity
-  use operation_manifold, only : continuous_manifold, discrete_manifold, interval, instants, parameter, expansion
+  use operation_manifold, only : continuous_manifold, discrete_manifold, interval, points, parameter, expansion
   use operation_field   , only : continuous_field, discrete_field, integral, &
        &                         operator(+), operator(-), operator(*), operator(/), operator(**)
   use operation_residual, only : continuous_residual, discrete_residual, operator(+), operator(*)
@@ -94,9 +94,9 @@ program van_der_pol_continuous_adjoint
   ! THE CONTINUOUS ADJOINT. Omega = [0, T] x {nu}; its faces at 0 and
   ! at T; Omega_h the instants, the design expanded to order zero
   omega    = continuous_manifold(time=interval(0.0_dp, T_final), design=parameter('nu', nu_design))
-  domega_0 = omega % boundary(time=0.0_dp)
-  domega_T = omega % boundary(time=T_final)
-  omega_h  = omega % discretize(time=instants(num_instants), design=expansion(order=0))
+  domega_0 = omega % boundary(omega % coordinate('t'), 0.0_dp)
+  domega_T = omega % boundary(omega % coordinate('t'), T_final)
+  omega_h  = omega % discretize(time=points(num_instants), design=expansion(order=0))
 
   t      = omega % coordinate('t')
   nu     = omega % coordinate('nu')
@@ -149,8 +149,8 @@ program van_der_pol_continuous_adjoint
   ! one design coordinate, the chain dirk(2), bdf(2), adams(2) over
   ! the same instants, the expansion of order 1
   omega_d  = continuous_manifold(time=interval(0.0_dp, T_final), design=parameter('nu', nu_design))
-  domega_d = omega_d % boundary(time=0.0_dp)
-  omega_dh = omega_d % discretize(time=instants(num_instants), design=expansion(order=1))
+  domega_d = omega_d % boundary(omega_d % coordinate('t'), 0.0_dp)
+  omega_dh = omega_d % discretize(time=points(num_instants), design=expansion(order=1))
   t_d  = omega_d % coordinate('t')
   nu_d = omega_d % coordinate('nu')
   u_d  = omega_d % unknown('u', [t_d, nu_d])

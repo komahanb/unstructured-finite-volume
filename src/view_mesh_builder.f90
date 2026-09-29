@@ -31,6 +31,7 @@ module view_mesh_builder
 
   private
   public :: mesh_from_gmsh
+  public :: mesh_from_points
 
 contains
 
@@ -225,5 +226,62 @@ contains
        if (all(b /= a(k))) same_set = .false.
     end do
   end function same_set
+
+  !===================================================================!
+  ! THE VERTEX-CENTRED MESH OF POINTS ON A LINE, ascending. Each point
+  ! is the centre of one cell, the cell between the midpoints to its
+  ! neighbours, so that the cell lengths are the trapezoidal weights
+  ! of the points. An interior face lies at each midpoint; a boundary
+  ! face lies at each end point, tagged lower and upper, and is at the
+  ! centre of its cell, so its delta is zero. Invalid input: fewer
+  ! than two points, or points that do not ascend.
+  !===================================================================!
+
+  impure type(mesh) function mesh_from_points(positions) result(m)
+
+    real(dp), intent(in) :: positions(:)
+
+    integer , allocatable :: tails(:), heads(:)
+    real(dp), allocatable :: volumes(:), areas(:), deltas(:), normals(:), face_centres(:), weights(:)
+    character(len=5), allocatable :: tags(:)
+    integer :: n, f
+
+    n = size(positions)
+    if (n < 2) error stop 'view_mesh_builder: a line of points requires two points at least'
+    if (any(positions(2:) <= positions(:n - 1))) then
+       error stop 'view_mesh_builder: the points of a line ascend'
+    end if
+
+    ! the interior faces, then the boundary faces at the two ends
+    allocate(tails(n + 1), heads(n + 1), areas(n + 1), deltas(n + 1), normals(n + 1), &
+         & face_centres(n + 1), weights(n + 1), tags(n + 1))
+    do f = 1, n - 1
+       tails(f)        = f
+       heads(f)        = f + 1
+       face_centres(f) = (positions(f) + positions(f + 1)) / 2.0_dp
+       deltas(f)       = positions(f + 1) - positions(f)
+       normals(f)      = 1.0_dp
+       weights(f)      = 0.5_dp
+       tags(f)         = ''
+    end do
+    tails(n : n + 1)        = [1, n]
+    heads(n : n + 1)        = 0
+    face_centres(n : n + 1) = [positions(1), positions(n)]
+    deltas(n : n + 1)       = 0.0_dp
+    normals(n : n + 1)      = [-1.0_dp, 1.0_dp]
+    weights(n : n + 1)      = 1.0_dp
+    tags(n : n + 1)         = ['lower', 'upper']
+    areas = 1.0_dp
+
+    allocate(volumes(n))
+    volumes(1)         = (positions(2) - positions(1)) / 2.0_dp
+    volumes(2 : n - 1) = (positions(3 : n) - positions(1 : n - 2)) / 2.0_dp
+    volumes(n)         = (positions(n) - positions(n - 1)) / 2.0_dp
+
+    m = mesh(n, tails=tails, heads=heads, volumes=volumes, cell_centres=positions, areas=areas, &
+         & deltas=deltas, normals=normals, face_centres=face_centres, weights=weights, etags=tags, &
+         & dimension=1)
+
+  end function mesh_from_points
 
 end module view_mesh_builder

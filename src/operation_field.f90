@@ -38,10 +38,11 @@ module operation_field
   public :: continuous_support, discrete_support
   public :: continuous_field, discrete_field
   public :: unknown_field, coordinate_field, integral
-  public :: WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR, DESIGN_FACTOR
+  public :: WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR, DESIGN_FACTOR, SPACE_FACE
 
   ! the parts a support can be of another
-  integer, parameter :: WHOLE = 0, TIME_FACE = 1, TIME_FACTOR = 2, SPACE_FACTOR = 3, DESIGN_FACTOR = 4
+  integer, parameter :: WHOLE = 0, TIME_FACE = 1, TIME_FACTOR = 2, SPACE_FACTOR = 3, DESIGN_FACTOR = 4, &
+       & SPACE_FACE = 5
   public :: operator(+), operator(-), operator(*), operator(/), operator(**)
   public :: sin, cos, exp, log, sqrt
 
@@ -54,11 +55,14 @@ module operation_field
 
      type(token) :: identity
      ! the part of another support this one is - the whole, the face
-     ! at an instant, the time factor, the space factor, the design
-     ! factor - the identity of that parent, and the instant of a face
+     ! at an instant, the face at a value of a space coordinate, the
+     ! time factor, the space factor, the design factor - the identity
+     ! of that parent, and for a face the coordinate it is taken along
+     ! and the coordinate's value there
      integer     :: part = WHOLE
      type(token) :: parent
-     real(dp)    :: face_time = 0.0_dp
+     integer     :: face_axis  = 0
+     real(dp)    :: face_value = 0.0_dp
 
    contains
 
@@ -428,7 +432,7 @@ contains
     this % integrated_over   = over % identity
     this % integrated_part   = over % part
     this % integrated_parent = over % parent
-    this % integrated_time   = over % face_time
+    this % integrated_time   = over % face_value
 
   end function integral
 

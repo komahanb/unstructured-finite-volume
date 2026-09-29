@@ -38,7 +38,7 @@ program taylor_green_study
   use util_precision             , only : dp
   use iso_fortran_env            , only : int64
   use util_verbosity             , only : set_verbosity
-  use operation_manifold         , only : continuous_manifold, discrete_manifold, interval, region, instants, mesh
+  use operation_manifold         , only : continuous_manifold, discrete_manifold, interval, region, points, mesh
   use operation_field            , only : continuous_field, discrete_field, integral, sin, cos, exp, &
        &                                  operator(+), operator(-), operator(*), operator(/), operator(**)
   use operation_residual         , only : continuous_residual, discrete_residual, operator(+), operator(*)
@@ -100,9 +100,9 @@ program taylor_green_study
        & ') adams(', adams_order, ')  mesh ', trim(mesh_file), '  blocks from ', from
 
   omega   = continuous_manifold(time=interval(0.0_dp, T_final), space=region('box.geo'))
-  domega  = omega % boundary(time=0.0_dp)
+  domega  = omega % boundary(omega % coordinate('t'), 0.0_dp)
   tau     = omega % time()
-  omega_h = omega % discretize(time=instants(num_instants), space=mesh(trim(mesh_file)))
+  omega_h = omega % discretize(time=points(num_instants), space=mesh(trim(mesh_file)))
 
   t = omega % coordinate('t')
   x = omega % coordinate('x')

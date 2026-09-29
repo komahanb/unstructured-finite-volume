@@ -50,7 +50,7 @@ program van_der_pol_study
 
   use util_precision    , only : dp
   use util_verbosity    , only : set_verbosity
-  use operation_manifold, only : continuous_manifold, discrete_manifold, interval, instants, parameter, expansion
+  use operation_manifold, only : continuous_manifold, discrete_manifold, interval, points, parameter, expansion
   use operation_field   , only : continuous_field, discrete_field, integral, &
        &                         operator(+), operator(-), operator(*), operator(/), operator(**)
   use operation_residual, only : continuous_residual, discrete_residual, operator(+), operator(*)
@@ -133,8 +133,8 @@ program van_der_pol_study
   end if
 
   omega   = continuous_manifold(time=interval(0.0_dp, T_final), design=parameter('nu', nu_design))
-  domega  = omega % boundary(time=0.0_dp)
-  omega_h = omega % discretize(time=instants(times), design=expansion(order=degree))
+  domega  = omega % boundary(omega % coordinate('t'), 0.0_dp)
+  omega_h = omega % discretize(time=points(times), design=expansion(order=degree))
   t  = omega % coordinate('t')
   nu = omega % coordinate('nu')
   u  = omega % unknown('u', [t, nu])

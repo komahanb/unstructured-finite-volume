@@ -74,21 +74,19 @@ ifeq ($(COMPILER),gnu)
   endif
 
   # Coarray images: COARRAY=lib compiles every source with
-  # -fcoarray=lib against the packaged OpenCoarrays (libcaf_openmpi
-  # over OpenMPI, run by mpirun -np N) and installs into lib_par/.
-  # gfortran 15 emits the coarray interface of GCC 15, which
-  # OpenCoarrays 2.9.2 does not define, so this build selects
-  # gfortran-14 unless F90 is given. The default -fcoarray=single
-  # build treats every image statement as one image.
+  # -fcoarray=lib, by the same compiler as the one-image build, and
+  # installs into lib_par/. The runtime is OpenCoarrays built from its
+  # main branch for the coarray interface of GCC 15 over MPICH (CAF_DIR),
+  # run by mpiexec.mpich -n N: OpenCoarrays refuses OpenMPI from GCC 15
+  # on, since OpenMPI's windows are not the same on every image. The
+  # default -fcoarray=single build treats every image statement as one
+  # image.
+  CAF_DIR   ?= $(HOME)/install/opencoarrays-gcc15-mpich
+  MPICH_LIB ?= /usr/lib/x86_64-linux-gnu/libmpich.so.12
   ifeq ($(COARRAY),lib)
-    ifeq ($(origin F90),file)
-      F90 := gfortran-14
-    endif
     F90FLAGS := $(subst -fcoarray=single,-fcoarray=lib,$(F90FLAGS))
     LIBDIR   := ../lib_par
-    CAF_LIBS := /usr/lib/x86_64-linux-gnu/open-coarrays/openmpi/lib/libcaf_openmpi.a \
-                -L/usr/lib/x86_64-linux-gnu/openmpi/lib -lmpi_mpifh -lmpi -lopen-rte -lopen-pal \
-                -lhwloc -levent_core -levent_pthreads -lm -lz
+    CAF_LIBS := $(CAF_DIR)/lib/libcaf_mpi.a $(MPICH_LIB) -Wl,-rpath,$(dir $(MPICH_LIB))
     LDFLAGS  += $(CAF_LIBS)
   endif
 

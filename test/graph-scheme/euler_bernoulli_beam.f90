@@ -32,7 +32,7 @@
 ! beamline takes the row of the physics at a point next to that end,
 ! so the physics holds on the points away from the ends.
 !
-! Three cases:
+! Four cases:
 !
 !   1. simply supported, uniform EI and rhoA, no load: the mode
 !      w = sin(pi x / L) cos(omega t), omega = (pi / L)^2 sqrt(EI / rhoA),
@@ -49,7 +49,24 @@
 !      order two, and stable where the fitted differences of order 6,
 !      one-sided at the ends, are not (801 instants, 129 points: case 1
 !      diverges at order 6, while the open line gives 8.64e-5 and
-!      case 3 6.53e-4, falling by 4.0 per halving of the step).
+!      case 3 6.53e-4, falling by 4.0 per halving of the step);
+!   4. case 1 on the open line.
+!
+! In cases 1 and 4 the multipliers mu_x also give an estimate of the
+! error of J: the representation laws evaluated on the jet that
+! differences of order 8 form from the values of w, their mismatch
+! weighted by mu_x,
+!
+!      eta = - sum over the rows of mu_x (D_8 w - w_h's jet),
+!
+! a relation of the open line evaluated on that jet as a whole. On the
+! open line eta / (J - J_h) is 1.009 at 41 x 17, and with differences
+! of order 6 1.0435, 1.0101, 1.0018, 1.0007 at 801 instants over 9 to
+! 65 points. Under the fitted differences of order 6 it is 0.78 at
+! 41 x 17 and 0.41, 0.35 at 801 x 17 and 33: next to each end a
+! condition takes the row of a representation law, whose mismatch then
+! has no multiplier (at 801 x 17 the points beside the ends contribute
+! 1.7e-6 and the next ones -3.8e-4).
 !
 ! The multipliers of the conditions are returned under their names;
 ! the sum over the instants of the multiplier of w = 0 at an end is
@@ -92,17 +109,21 @@ program euler_bernoulli_beam
      read(item, *) num_points
   end if
 
-  call simply_supported()
+  call simply_supported(open_line=.false.)
   call clamped(open_line=.false.)
   call clamped(open_line=.true.)
+  call simply_supported(open_line=.true.)
 
 contains
 
   !===================================================================!
-  ! Case 1: the mode of the simply supported beam.
+  ! Cases 1 and 4: the mode of the simply supported beam, and the
+  ! estimate of the error of its energy.
   !===================================================================!
 
-  subroutine simply_supported()
+  subroutine simply_supported(open_line)
+
+    logical, intent(in) :: open_line
 
     type(continuous_manifold) :: omega, initial, left, right
     type(discrete_manifold)   :: omega_h
@@ -111,7 +132,7 @@ contains
     type(discrete_field)      :: estimate, solution, error, functional, at_0, at_L
     type(continuous_residual) :: r, r_t, r_x, ic, bc_0, bc_L, Lagrangian
     type(discrete_residual)   :: L_h
-    real(dp) :: frequency, J(1)
+    real(dp) :: frequency, J(1), J_exact
     integer  :: k
 
     ! Omega = [0, L] x [0, T]; its faces at t = 0, x = 0 and x = L
@@ -151,9 +172,15 @@ contains
     lambda_L = bc_L % multiplier('lambda_L', [t])
     Lagrangian = energy + adjoint*r + mu_t*r_t + mu_x*r_x + lambda*ic + lambda_0*bc_0 + lambda_L*bc_L
 
-    L_h = Lagrangian % discretize(omega_h, &
-         & time=chain([(dirk(2), k = 1, 4), (bdf(2), k = 5, 7), (adams(2), k = 8, num_instants)], &
-         &            from=[(k, k = 1, num_instants)]), space=finite_difference(order=6))
+    if (open_line) then
+       L_h = Lagrangian % discretize(omega_h, &
+            & time=chain([(dirk(2), k = 1, 4), (bdf(2), k = 5, 7), (adams(2), k = 8, num_instants)], &
+            &            from=[(k, k = 1, num_instants)]), space=segment_trapezoid())
+    else
+       L_h = Lagrangian % discretize(omega_h, &
+            & time=chain([(dirk(2), k = 1, 4), (bdf(2), k = 5, 7), (adams(2), k = 8, num_instants)], &
+            &            from=[(k, k = 1, num_instants)]), space=finite_difference(order=6))
+    end if
 
     estimate = exact % discretize(omega_h)
     call L_h % minimize(estimate, solution)
@@ -161,9 +188,17 @@ contains
     error      = solution % fields(['w']) - estimate
     functional = energy % at(solution)
     call functional % values(J)
-    print '(a)', 'simply supported, uniform EI and rhoA'
+    J_exact    = T_final * EI_0 * (pi / L)**4 * L / 4.0_dp
+    if (open_line) then
+       print '(a)', 'simply supported, uniform EI and rhoA, the open line'
+    else
+       print '(a)', 'simply supported, uniform EI and rhoA'
+    end if
     print '(a, es12.4)', '   error against the exact solution  ', error % norm()
-    print '(a, es24.16, a, es24.16)', '   J = ', J(1), '   exact ', T_final * EI_0 * (pi / L)**4 * L / 4.0_dp
+    print '(a, es24.16, a, es24.16)', '   J = ', J(1), '   exact ', J_exact
+    print '(a, es12.4, a, es12.4)', '   J_exact - J = ', J_exact - J(1), &
+         & '   estimate by mu_x and differences of order 8 ', &
+         & sum(L_h % disagreement(solution, finite_difference(order=8)))
 
     ! the multipliers of w = 0 at the two ends, summed over the
     ! instants: -dJ/de for the datum e of w at that end at every instant

@@ -8,7 +8,7 @@ Lagrangian.
 The rank measurements quoted here are reproduced by
 `doc/unified-residuals-rank.py [P] [N]`.
 
-## Status (2026-09-28)
+## Status (2026-09-29)
 
 | Phase | State | Commit |
 |---|---|---|
@@ -17,12 +17,13 @@ The rank measurements quoted here are reproduced by
 | 2. Geometry factors: `region(interval)`, `points(n)`, `boundary(c, value)` | done | ff210ce |
 | 3. Jet component and derivative operator; `jet_form`; representation laws as residuals | done | 13f8cf7, 52ed4b4, 1a2728b |
 | 4. Conditions on the faces of the region, with closed fitted differences | done | ddfa240 |
-| 4. The open line: the trapezoid rule on the segments, the conditions of both ends in its open rows, closed differences at the explicit moments, Gauss-Seidel on whole lines | done; order 2, stable at 801 x 129 | (this commit) |
+| 4. The open line: the trapezoid rule on the segments, the conditions of both ends in its open rows, closed differences at the explicit moments, Gauss-Seidel on whole lines | done; order 2, stable at 801 x 129 | 1866adc |
 | 5. The beam analysis example | done | 102c263 |
 | Multipliers of face conditions and of representation laws | done | 1dd35e0, 92f41dc |
 | 6. Mixed components | not started | |
 | 7. The beam optimization example (identification by Newton on the design) | done | bd608da |
-| 8. Disagreement estimates, the grid as a design | not started (later) | |
+| 8. The disagreement estimate `disagreement(solution, other)` | done; effectivity 1.0007 on the open line, 0.35 to 0.78 under closed differences | (this commit) |
+| 8. The grid as a design | not started | |
 
 Every commit above was compared with the suites, the demos and a
 two-image run against the state before it; the only differences are
@@ -500,6 +501,32 @@ every other multiplier, with no separate estimation machinery.
 - **It measures the difference of two errors, not either one.** The
   two can partly cancel. Its effectivity is measured, as the accuracy
   contract does for G22 and G23, and not assumed.
+
+**Measured on the beam.** `L_h % disagreement(solution, other)`
+returns one contribution per point: for each representation law along
+space, minus its multiplier times the law evaluated on the jet that the
+concretion `other` forms from the values of w. At a point the law is
+`D^k w - w_(k)`. On the open line it is the trapezoid relation of the
+segment, evaluated on that jet, at the segment's upper point. The
+mode of the simply supported beam, where `J - J_h` is known:
+
+| concretion | estimator | grid (instants x points) | eta / (J - J_h) |
+|---|---|---|---|
+| open line | differences of order 6 | 801 x 9, 17, 33, 65 | 1.0435, 1.0101, 1.0018, 1.0007 |
+| open line | differences of order 8 | 41 x 17 | 1.009 |
+| differences of order 4 | order 6 | 801 x 9, 17, 33 | 0.37, 0.47, 0.62 |
+| differences of order 4 | order 8 | 801 x 17, 33, 65 | 0.46, 0.62, 0.76 |
+| differences of order 6 | order 8 | 41 x 17; 801 x 17, 33 | 0.78; 0.41, 0.35 |
+
+- **The open line is estimated to 1 %.** Every row of a law carries its
+  multiplier; the conditions of the ends take the open rows.
+- **Under closed differences the estimate is partial.** Next to each
+  end a condition takes the row of a representation law.
+  The mismatch of that law then has no multiplier. At 801 x 17 the
+  points beside the ends contribute 1.7e-6, the next ones -3.8e-4,
+  the interior at most 1.8e-5.
+- **Time is not estimated.** The laws along time are those of the
+  families; `r_t` has no second concretion here.
 
 **The structural alternative.** Mimetic, or discrete-exterior-calculus,
 concretions are built so that the discrete derivatives commute exactly.

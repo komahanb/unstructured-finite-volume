@@ -40,7 +40,10 @@
 #                        (2.80e-4), J against T EI (pi/L)^4 L/4; clamped
 #                        with EI(x), rhoA(x) and a manufactured load
 #                        (6.87e-4), and the same on the open line, the
-#                        trapezoid rule on the segments
+#                        trapezoid rule on the segments; case 1 on the
+#                        open line, and in both the error of J
+#                        estimated by mu_x: 1.009 of it on the open
+#                        line, 0.78 under the fitted differences
 #   euler_bernoulli_beam_optimization
 #                        EI(x) = EI_0 (1 + s1 x/L + s2 (x/L)^2) found
 #                        by Newton on the design, gradient and hessian

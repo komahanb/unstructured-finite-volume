@@ -312,6 +312,7 @@ module operation_residual
    contains
 
      procedure :: minimize
+     procedure :: disagreement
      procedure, private :: check_representations
      procedure, private :: num_represented
      procedure, private :: block_positions
@@ -5121,6 +5122,105 @@ contains
     end do
 
   end subroutine space_face_rows_of
+
+  !===================================================================!
+  ! THE DISAGREEMENT OF ANOTHER REPRESENTATION with a solution: for
+  ! each law of a stated representation along space, d^k w - w_(k) = 0
+  ! in the row of the component w_(k), the other concretion's
+  ! derivative of the solution's values less the solution's component
+  ! at every point of every instant, times the law's multiplier there,
+  ! negated. The solution satisfies its own representation; were the
+  ! other one exact, the solution's rows would be perturbed by these
+  ! mismatches, and the multiplier of a row is -dJ/d(its datum), so the
+  ! contributions, one per point, sum to an estimate of
+  ! J(other) - J(solution). On an open line the row of a law is the
+  ! trapezoid relation of a segment, and its mismatch is that relation
+  ! evaluated on the other concretion's jet of the solution's values,
+  ! at the segment's upper point; at the first instant the rows are the
+  ! closed ones. Invalid input: a solution without the multipliers of a
+  ! representation along space.
+  !===================================================================!
+
+  function disagreement(this, solution, other) result(contribution)
+
+    class(discrete_residual)       , intent(in) :: this
+    type(discrete_field)           , intent(in) :: solution
+    class(derivative_approximation), intent(in) :: other
+    real(dp), allocatable :: contribution(:)
+
+    type(stencil) :: rows, lower_rows
+    type(discrete_field) :: multipliers
+    real(dp), allocatable :: w(:), values(:), derivative(:), lower(:), lower_weights(:)
+    real(dp) :: h
+    integer :: ncells, ninst, j, i, k, c, e, f, law(3), point
+    logical :: stated, open_line
+
+    ncells = this % points % num_cells()
+    ninst  = this % points % num_instants()
+    allocate(contribution(this % points % num_points()), source=0.0_dp)
+    open_line = this % open_line()
+    stated = .false.
+    if (allocated(this % representation)) then
+       do j = 1, size(this % representation)
+          law = represented_component(this % representation(j) % equation(1) % graph(1))
+          if (this % manifold % with_time .and. law(3) == FIRST_COORDINATE) cycle
+          stated = .true.
+          multipliers = solution % fields([this % representation(j) % multiplier % name])
+          do i = 1, size(this % representation(j) % equation)
+             law  = represented_component(this % representation(j) % equation(i) % graph(1))
+             f    = law(1)
+             rows = other % derivative_rows(this % points % cells, law(3) - merge(1, 0, this % manifold % with_time), &
+                  & law(2))
+             call rows % weights % real_vector(w)
+             if (law(2) > 1) then
+                lower_rows = other % derivative_rows(this % points % cells, law(3) - merge(1, 0, this % manifold % with_time), &
+                     & law(2) - 1)
+                call lower_rows % weights % real_vector(lower_weights)
+             end if
+             allocate(values(ncells), derivative(ncells), lower(ncells))
+             do k = 1, ninst
+                do c = 1, ncells
+                   values(c) = solution % jet(this % rule % offset_of_field(f) + 1, (k - 1) * ncells + c, 1, 1)
+                end do
+                derivative = 0.0_dp
+                do e = 1, rows % pattern % num_edges()
+                   derivative(rows % pattern % edge_head(e)) = derivative(rows % pattern % edge_head(e)) &
+                        & + w(e) * values(rows % pattern % edge_tail(e))
+                end do
+                if (open_line .and. k > 1) then
+                   ! the other jet's order law(2) - 1, the values at order zero
+                   lower = values
+                   if (law(2) > 1) then
+                      lower = 0.0_dp
+                      do e = 1, lower_rows % pattern % num_edges()
+                         lower(lower_rows % pattern % edge_head(e)) = lower(lower_rows % pattern % edge_head(e)) &
+                              & + lower_weights(e) * values(lower_rows % pattern % edge_tail(e))
+                      end do
+                   end if
+                   do c = 1, ncells - 1
+                      point = (k - 1) * ncells + c + 1
+                      h = this % points % centre(c + 1) - this % points % centre(c)
+                      contribution(point) = contribution(point) - multipliers % value(point, i) &
+                           & * (lower(c + 1) - lower(c) - h / 2.0_dp * (derivative(c + 1) + derivative(c)))
+                   end do
+                   cycle
+                end if
+                do c = 1, ncells
+                   point = (k - 1) * ncells + c
+                   contribution(point) = contribution(point) - multipliers % value(point, i) &
+                        & * (derivative(c) - solution % jet(this % rule % component_at(law(3), law(2), f) + 1, point, 1, 1))
+                end do
+             end do
+             deallocate(values, derivative, lower)
+          end do
+       end do
+    end if
+    if (.not. stated) then
+       error stop 'operation_residual: the disagreement reads the multipliers of a representation along space, &
+            &stated as a residual and paired'
+    end if
+
+  end function disagreement
 
   !===================================================================!
   ! Whether the derivatives along space are relations on the segments

@@ -552,7 +552,7 @@ end module gti_configuration
 
 module gti_physics
   use util_precision      , only : dp
-  use operation_expression, only : expression, unknown, design, derivative, derivative_along, &
+  use operation_expression, only : expression, unknown, design, component, component_along, &
        & multiplier, euler_lagrange, at_zero, &
        & FIRST_COORDINATE, &
        & operator(+), operator(-), operator(*), operator(**)
@@ -584,15 +584,15 @@ contains
     if (algebraic) then
        q_square = unknown(SQUARE)
     else
-       q_square = derivative(q, 0)**2
+       q_square = component(q, 0)**2
     end if
-    r = derivative(q, degree) - nu * (1.0_dp - q_square) * derivative(q, degree - 1) + derivative(q, 0)
+    r = component(q, degree) - nu * (1.0_dp - q_square) * component(q, degree - 1) + component(q, 0)
     ! the spatial law read from the jet: minus the diffusion times the
     ! second derivative along each spatial coordinate, the coordinates
     ! declared after the instants
     if (present(dimension)) then
        do j = 1, dimension
-          r = r - diffusion * derivative_along(q, FIRST_COORDINATE + j, 2)
+          r = r - diffusion * component_along(q, FIRST_COORDINATE + j, 2)
        end do
     end if
   end function residual_rule
@@ -614,7 +614,7 @@ contains
     q = unknown(STATE)
     if (algebraic) then
        l = functional + multiplier(LAMBDA) * residual_rule(degree, algebraic, diffusion, dimension) &
-            & + multiplier(MU) * (unknown(SQUARE) - derivative(q, 0)**2)
+            & + multiplier(MU) * (unknown(SQUARE) - component(q, 0)**2)
     else
        l = functional + multiplier(COSTATE) * residual_rule(degree, algebraic, diffusion, dimension)
     end if
@@ -623,7 +623,7 @@ contains
     type(expression) :: f
     type(expression) :: q
     q = unknown(STATE)
-    f = 0.5_dp * (derivative(q, 0)**2 + derivative(q, 1)**2)
+    f = 0.5_dp * (component(q, 0)**2 + component(q, 1)**2)
   end function energy_rule
   !===================================================================!
   ! THE RADIAL OSCILLATOR: the radial equation of the planar isotropic
@@ -642,7 +642,7 @@ contains
     type(expression) :: q, nu
     q  = unknown(STATE)
     nu = design()
-    r = derivative(q, degree) + derivative(q, 0) - nu * derivative(q, 0)**(-3)
+    r = component(q, degree) + component(q, 0) - nu * component(q, 0)**(-3)
   end function radial_rule
   !===================================================================!
   ! The Lagrangian L = F + lambda R of the radial oscillator over its
@@ -662,20 +662,20 @@ contains
     type(expression) :: q, nu
     q  = unknown(STATE)
     nu = design()
-    f = 0.5_dp * (derivative(q, 0)**2 + derivative(q, 1)**2) + 0.5_dp * nu * derivative(q, 0)**(-2)
+    f = 0.5_dp * (component(q, 0)**2 + component(q, 1)**2) + 0.5_dp * nu * component(q, 0)**(-2)
   end function radial_energy_rule
   ! the square of the state, whose integral over the horizon depends
   ! on the trajectory in both its value and its design derivative
   function square_integral_rule() result(f)
     type(expression) :: f
-    f = derivative(unknown(STATE), 0)**2
+    f = component(unknown(STATE), 0)**2
   end function square_integral_rule
   function dissipation_rule() result(f)
     type(expression) :: f
     type(expression) :: q, nu
     q  = unknown(STATE)
     nu = design()
-    f = nu * (1.0_dp - derivative(q, 0)**2) * derivative(q, 1) * derivative(q, 1)
+    f = nu * (1.0_dp - component(q, 0)**2) * component(q, 1) * component(q, 1)
   end function dissipation_rule
   !===================================================================!
   ! The mean of the state, int q dt: zero by cancellation on the
@@ -684,7 +684,7 @@ contains
   !===================================================================!
   function mean_rule() result(f)
     type(expression) :: f
-    f = derivative(unknown(STATE), 0)
+    f = component(unknown(STATE), 0)
   end function mean_rule
   !===================================================================!
   ! The physics by name: the residual of the named Lagrangian, its
@@ -752,21 +752,21 @@ contains
     nu = design()
     l  = functional
     do i = 1, d
-       momentum = derivative(unknown(i), 1) + derivative_along(unknown(d + 1), FIRST_COORDINATE + i, 1)
+       momentum = component(unknown(i), 1) + component_along(unknown(d + 1), FIRST_COORDINATE + i, 1)
        do j = 1, d
-          momentum = momentum + unknown(j) * derivative_along(unknown(i), FIRST_COORDINATE + j, 1) &
-               & - nu * derivative_along(unknown(i), FIRST_COORDINATE + j, 2)
+          momentum = momentum + unknown(j) * component_along(unknown(i), FIRST_COORDINATE + j, 1) &
+               & - nu * component_along(unknown(i), FIRST_COORDINATE + j, 2)
        end do
        l = l + multiplier(i) * momentum
     end do
-    relation = derivative_along(unknown(d + 1), FIRST_COORDINATE + 1, 2)
+    relation = component_along(unknown(d + 1), FIRST_COORDINATE + 1, 2)
     do j = 2, d
-       relation = relation + derivative_along(unknown(d + 1), FIRST_COORDINATE + j, 2)
+       relation = relation + component_along(unknown(d + 1), FIRST_COORDINATE + j, 2)
     end do
     do j = 1, d
        do k = 1, d
-          relation = relation + derivative_along(unknown(j), FIRST_COORDINATE + k, 1) &
-               & * derivative_along(unknown(k), FIRST_COORDINATE + j, 1)
+          relation = relation + component_along(unknown(j), FIRST_COORDINATE + k, 1) &
+               & * component_along(unknown(k), FIRST_COORDINATE + j, 1)
        end do
     end do
     l = l + multiplier(d + 1) * relation
@@ -775,9 +775,9 @@ contains
     integer, intent(in) :: dimension
     type(expression) :: f
     integer :: i
-    f = 0.5_dp * derivative(unknown(1), 0)**2
+    f = 0.5_dp * component(unknown(1), 0)**2
     do i = 2, dimension
-       f = f + 0.5_dp * derivative(unknown(i), 0)**2
+       f = f + 0.5_dp * component(unknown(i), 0)**2
     end do
   end function kinetic_energy_rule
   function viscous_dissipation_rule(dimension) result(f)
@@ -785,11 +785,11 @@ contains
     type(expression) :: f
     type(expression) :: sum_of_squares
     integer :: i, j
-    sum_of_squares = derivative_along(unknown(1), FIRST_COORDINATE + 1, 1)**2
+    sum_of_squares = component_along(unknown(1), FIRST_COORDINATE + 1, 1)**2
     do i = 1, dimension
        do j = 1, dimension
           if (i == 1 .and. j == 1) cycle
-          sum_of_squares = sum_of_squares + derivative_along(unknown(i), FIRST_COORDINATE + j, 1)**2
+          sum_of_squares = sum_of_squares + component_along(unknown(i), FIRST_COORDINATE + j, 1)**2
        end do
     end do
     f = design() * sum_of_squares

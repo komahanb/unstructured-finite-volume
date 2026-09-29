@@ -139,9 +139,9 @@ program van_der_pol_study
   nu = omega % coordinate('nu')
   u  = omega % unknown('u', [t, nu])
 
-  oscillator = u % derivative([t, t]) - nu*(1.0_dp - u*u)*u % derivative([t]) + u
+  oscillator = u % jet_component([t, t]) - nu*(1.0_dp - u*u)*u % jet_component([t]) + u
   u0 = u - u_initial
-  v0 = u % derivative([t]) - v_initial
+  v0 = u % jet_component([t]) - v_initial
   energy   = integral(nu*u*u/2.0_dp, over=omega % time())
   r        = continuous_residual(omega,  [oscillator])
   g        = continuous_residual(domega, [u0, v0])

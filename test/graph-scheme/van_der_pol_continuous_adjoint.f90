@@ -106,8 +106,8 @@ program van_der_pol_continuous_adjoint
   ! the oscillator, the density of the Lagrangian, and its
   ! stationarity in u: the adjoint equation, with the boundary terms
   ! of the integration by parts as the conditions at T
-  r        = u % derivative([t, t]) - nu*(1.0_dp - u*u)*u % derivative([t]) + u
-  density  = (u*u + u % derivative([t])**2)/2.0_dp + lambda*r
+  r        = u % jet_component([t, t]) - nu*(1.0_dp - u*u)*u % jet_component([t]) + u
+  density  = (u*u + u % jet_component([t])**2)/2.0_dp + lambda*r
   adjoint  = density % stationarity(u, t)
   terminal = density % boundary_terms(u, t)
   view = expression_view(adjoint % graph(1))
@@ -121,7 +121,7 @@ program van_der_pol_continuous_adjoint
   ! the initial data of u at 0, the natural conditions of lambda at
   ! T, the two-point system on Omega, and its Lagrangian
   u0  = u - u_initial
-  v0  = u % derivative([t]) - v_initial
+  v0  = u % jet_component([t]) - v_initial
   system = continuous_residual(omega,    [r, adjoint])
   g_0    = continuous_residual(domega_0, [u0, v0])
   g_T    = continuous_residual(domega_T, terminal)
@@ -154,10 +154,10 @@ program van_der_pol_continuous_adjoint
   t_d  = omega_d % coordinate('t')
   nu_d = omega_d % coordinate('nu')
   u_d  = omega_d % unknown('u', [t_d, nu_d])
-  r_d  = u_d % derivative([t_d, t_d]) - nu_d*(1.0_dp - u_d*u_d)*u_d % derivative([t_d]) + u_d
+  r_d  = u_d % jet_component([t_d, t_d]) - nu_d*(1.0_dp - u_d*u_d)*u_d % jet_component([t_d]) + u_d
   u0_d = u_d - u_initial
-  v0_d = u_d % derivative([t_d]) - v_initial
-  energy   = integral((u_d*u_d + u_d % derivative([t_d])**2)/2.0_dp, over=omega_d % time())
+  v0_d = u_d % jet_component([t_d]) - v_initial
+  energy   = integral((u_d*u_d + u_d % jet_component([t_d])**2)/2.0_dp, over=omega_d % time())
   r_term   = continuous_residual(omega_d,  [r_d])
   g_term   = continuous_residual(domega_d, [u0_d, v0_d])
   d_term   = continuous_residual(omega_d % design(), [nu_d - nu_design])

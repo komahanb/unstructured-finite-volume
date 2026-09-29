@@ -82,15 +82,15 @@ program van_der_pol
 
   ! the equation as a function Omega -> R of the jet of u to order
   ! two along t
-  oscillator = u % derivative([t, t]) - nu*(1.0_dp - u*u)*u % derivative([t]) + u
+  oscillator = u % jet_component([t, t]) - nu*(1.0_dp - u*u)*u % jet_component([t]) + u
 
   ! the initial data, functions dOmega -> R: the value and the first
   ! derivative of u at t = 0
   u0 = u - u_initial
-  v0 = u % derivative([t]) - v_initial
+  v0 = u % jet_component([t]) - v_initial
 
   ! the energy J, the integral over the time factor
-  energy = integral((u*u + u % derivative([t])**2)/2.0_dp, over=omega % time())
+  energy = integral((u*u + u % jet_component([t])**2)/2.0_dp, over=omega % time())
 
   ! r on Omega with its multiplier lambda_r(t) : Omega -> R, the
   ! adjoint; g on dOmega with its multiplier lambda : dOmega -> R^2,

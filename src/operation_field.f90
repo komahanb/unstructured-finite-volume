@@ -24,7 +24,7 @@ module operation_field
   use util_precision      , only : dp
   use token_identity      , only : token
   use util_derivative_terms, only : derivative_terms, coefficient, symmetric_terms
-  use operation_expression, only : expression, unknown, constant, coordinate, derivative, derivative_along, design
+  use operation_expression, only : expression, unknown, constant, coordinate, component, component_along, design
   use operation_expression, only : partial_derivative, partial_in_design, total_derivative, stationarity
   use operation_expression, only : boundary_terms
   use operation_expression, only : FIRST_COORDINATE
@@ -179,6 +179,7 @@ module operation_field
    contains
 
      procedure :: derivative     => field_derivative
+     procedure :: jet_component  => field_jet_component
      procedure :: partial        => field_partial
      procedure :: stationarity   => field_stationarity
      procedure :: boundary_terms => field_boundary_terms
@@ -931,12 +932,11 @@ contains
 
   !===================================================================!
   ! THE DERIVATIVE along a multi-index of coordinate functions: each
-  ! entry one order along that coordinate. Along a coordinate the
-  ! unknown is not a function of, one outside its arguments, the
-  ! derivative is the zero field. Invalid input: a field that is not
-  ! a scalar unknown, an entry that is not a coordinate of the same
-  ! manifold, or two distinct coordinates, since the jet stores no
-  ! mixed component.
+  ! entry one order along that coordinate. A field that is not an
+  ! unknown is differentiated by the chain rule over the jets it
+  ! reads; an unknown's derivative is its component along the
+  ! multi-index. Invalid input: a field of several components, or an
+  ! empty multi-index.
   !===================================================================!
 
   function field_derivative(this, along) result(d)
@@ -945,8 +945,7 @@ contains
     type(continuous_field) , intent(in) :: along(:)
     type(continuous_field) :: d
 
-    integer :: k, c
-    character(len=250) :: message
+    integer :: k
 
     if (size(this % component) /= 1) then
        error stop 'operation_field: derivative requires a scalar field'
@@ -970,12 +969,41 @@ contains
        end do
        return
     end if
+    d = this % jet_component(along)
+
+  end function field_derivative
+
+  !===================================================================!
+  ! THE JET COMPONENT of an unknown along a multi-index of
+  ! coordinate functions: each entry one order along that coordinate.
+  ! Along a coordinate the unknown is not a function of, one outside
+  ! its arguments, the component is the zero field. Invalid input: a
+  ! field that is not a scalar unknown, an entry that is not a
+  ! coordinate of the same manifold, or two distinct coordinates,
+  ! since the jet stores no mixed component.
+  !===================================================================!
+
+  function field_jet_component(this, along) result(d)
+
+    class(continuous_field), intent(in) :: this
+    type(continuous_field) , intent(in) :: along(:)
+    type(continuous_field) :: d
+
+    integer :: k, c
+    character(len=250) :: message
+
+    if (size(this % component) /= 1 .or. this % index(1) < 1) then
+       error stop 'operation_field: jet_component requires a scalar unknown'
+    end if
+    if (size(along) < 1) then
+       error stop 'operation_field: jet_component requires one coordinate at least'
+    end if
     c = along(1) % coordinate
     do k = 1, size(along)
        if (along(k) % design_coordinate) then
           error stop 'operation_field: the derivative of a continuous field along the design coordinate &
                &is not stated; the derivatives along the design are read from the discrete solution, &
-               &derivative([nu]) on a discrete field'
+               &component([nu]) on a discrete field'
        end if
        if (along(k) % coordinate < 1) then
           write(message,'(a,i0,a)') 'operation_field: entry ', k, ' of the multi-index is not a coordinate'
@@ -1002,16 +1030,16 @@ contains
        end if
     end if
     if (c == FIRST_COORDINATE) then
-       d % component = [derivative(this % component(1), size(along))]
+       d % component = [component(this % component(1), size(along))]
     else
-       d % component = [derivative_along(this % component(1), c, size(along))]
+       d % component = [component_along(this % component(1), c, size(along))]
     end if
 
-  end function field_derivative
+  end function field_jet_component
 
   !===================================================================!
   ! THE PARTIAL DERIVATIVE of a scalar field in a component of the
-  ! jet of an unknown - u, or u % derivative([t]) - or in a design
+  ! jet of an unknown - u, or u % jet_component([t]) - or in a design
   ! coordinate, every other leaf unchanged: the symbolic derivative as a
   ! field on the same manifold. Invalid input: a field of several
   ! components, or an argument that is neither a jet component of an
@@ -1041,7 +1069,7 @@ contains
     leaf = in % component(1)
     if (leaf % num_vertices() /= 1 .or. .not. leaf % reads_state()) then
        error stop 'operation_field: the partial derivative is in a component of the jet of an unknown, &
-            &u or u % derivative([t]), or in a design coordinate'
+            &u or u % component([t]), or in a design coordinate'
     end if
     d % component = [partial_derivative(this % component(1), leaf % leaf_field(), leaf % leaf_order(), &
          & leaf % leaf_along())]

@@ -28,9 +28,9 @@
 !
 !      q  = unknown()
 !      nu = design()
-!      r  = derivative(q, 2) + nu * derivative(q, 1) + sin(derivative(q, 0))
+!      r  = component(q, 2) + nu * component(q, 1) + sin(component(q, 0))
 !
-! derivative(q, d) is the component of degree d: along the instants
+! component(q, d) is the component of degree d: along the instants
 ! the derivatives are unknowns the scheme relates, so the vertex
 ! selects and does not differentiate. The state r reads stores the
 ! components of degree 0, 1 and 2: the highest degree any leaf names.
@@ -96,7 +96,7 @@ module operation_expression
 
   private
   public :: expression
-  public :: unknown, design, constant, multiplier, coordinate, derivative, derivative_along
+  public :: unknown, design, constant, multiplier, coordinate, component, component_along
   public :: euler_lagrange, at_zero
   public :: partial_derivative, partial_in_design, total_derivative, stationarity, boundary_terms
   public :: operator(+), operator(-), operator(*), operator(/), operator(**)
@@ -387,7 +387,7 @@ contains
   ! instants only the unknown has components.
   !===================================================================!
 
-  function derivative(x, d) result(this)
+  function component(x, d) result(this)
 
     type(expression), intent(in) :: x
     integer         , intent(in) :: d
@@ -398,7 +398,7 @@ contains
 
     n = x % root()
     if (n /= 1 .or. x % kind(1) /= VERTEX_LEAF .or. x % position(1) /= ARGUMENT_STATE) then
-       write(message,'(a,i0,a,i0,a,i0)') 'operation_expression: derivative requires its &
+       write(message,'(a,i0,a,i0,a,i0)') 'operation_expression: component requires its &
             &argument to be the unknown; num_vertices = ', n, ', x % kind(1) = ', &
             & x % kind(1), ', x % position(1) = ', x % position(1)
        error stop trim(message)
@@ -411,7 +411,7 @@ contains
 
     this = vertex(VERTEX_LEAF, ARGUMENT_STATE, d, 0.0_dp, FIRST_COORDINATE, x % field(1))
 
-  end function derivative
+  end function component
 
   !===================================================================!
   ! The same component named along any coordinate: which one is given
@@ -419,7 +419,7 @@ contains
   ! whether the coordinate is a time, a length or a sample.
   !===================================================================!
 
-  function derivative_along(x, coordinate, d) result(this)
+  function component_along(x, coordinate, d) result(this)
 
     type(expression), intent(in) :: x
     integer         , intent(in) :: coordinate, d
@@ -430,7 +430,7 @@ contains
 
     n = x % root()
     if (n /= 1 .or. x % kind(1) /= VERTEX_LEAF .or. x % position(1) /= ARGUMENT_STATE) then
-       write(message,'(a,i0,a,i0,a,i0)') 'operation_expression: derivative_along requires its &
+       write(message,'(a,i0,a,i0,a,i0)') 'operation_expression: component_along requires its &
             &argument to be the unknown; num_vertices = ', n, ', x % kind(1) = ', &
             & x % kind(1), ', x % position(1) = ', x % position(1)
        error stop trim(message)
@@ -448,7 +448,7 @@ contains
 
     this = vertex(VERTEX_LEAF, ARGUMENT_STATE, d, 0.0_dp, coordinate, x % field(1))
 
-  end function derivative_along
+  end function component_along
 
   !===================================================================!
   ! The stationarity of a Lagrangian in its j-th multiplier: the

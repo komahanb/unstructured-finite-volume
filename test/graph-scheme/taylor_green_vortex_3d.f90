@@ -77,16 +77,16 @@ program taylor_green_vortex_3d
   p = omega % unknown('p', [t, x, y, z])
 
   ! the four equations as functions Omega -> R of the jet of (u, v, w, p)
-  momentum_x = u % derivative([t]) + u*u % derivative([x]) + v*u % derivative([y]) + w*u % derivative([z]) &
-       &     + p % derivative([x]) - nu*(u % derivative([x, x]) + u % derivative([y, y]) + u % derivative([z, z]))
-  momentum_y = v % derivative([t]) + u*v % derivative([x]) + v*v % derivative([y]) + w*v % derivative([z]) &
-       &     + p % derivative([y]) - nu*(v % derivative([x, x]) + v % derivative([y, y]) + v % derivative([z, z]))
-  momentum_z = w % derivative([t]) + u*w % derivative([x]) + v*w % derivative([y]) + w*w % derivative([z]) &
-       &     + p % derivative([z]) - nu*(w % derivative([x, x]) + w % derivative([y, y]) + w % derivative([z, z]))
-  pressure   = p % derivative([x, x]) + p % derivative([y, y]) + p % derivative([z, z]) &
-       &     + u % derivative([x])**2 + v % derivative([y])**2 + w % derivative([z])**2 &
-       &     + 2.0_dp*(u % derivative([y])*v % derivative([x]) + u % derivative([z])*w % derivative([x]) &
-       &             + v % derivative([z])*w % derivative([y]))
+  momentum_x = u % jet_component([t]) + u*u % jet_component([x]) + v*u % jet_component([y]) + w*u % jet_component([z]) &
+       &     + p % jet_component([x]) - nu*(u % jet_component([x, x]) + u % jet_component([y, y]) + u % jet_component([z, z]))
+  momentum_y = v % jet_component([t]) + u*v % jet_component([x]) + v*v % jet_component([y]) + w*v % jet_component([z]) &
+       &     + p % jet_component([y]) - nu*(v % jet_component([x, x]) + v % jet_component([y, y]) + v % jet_component([z, z]))
+  momentum_z = w % jet_component([t]) + u*w % jet_component([x]) + v*w % jet_component([y]) + w*w % jet_component([z]) &
+       &     + p % jet_component([z]) - nu*(w % jet_component([x, x]) + w % jet_component([y, y]) + w % jet_component([z, z]))
+  pressure   = p % jet_component([x, x]) + p % jet_component([y, y]) + p % jet_component([z, z]) &
+       &     + u % jet_component([x])**2 + v % jet_component([y])**2 + w % jet_component([z])**2 &
+       &     + 2.0_dp*(u % jet_component([y])*v % jet_component([x]) + u % jet_component([z])*w % jet_component([x]) &
+       &             + v % jet_component([z])*w % jet_component([y]))
 
   ! r on Omega; g on dOmega with its multiplier lambda(x, y, z) : dOmega -> R^3,
   ! one component per condition; the gauge on tau with its multiplier

@@ -103,4 +103,5 @@ test/graph-scheme/van_der_pol_continuous_adjoint
 test/graph-scheme/van_der_pol_study
 test/graph-scheme/euler_bernoulli_beam
 test/graph-scheme/euler_bernoulli_beam_optimization
+test/graph-scheme/euler_bernoulli_beam_grid
 gmon.out

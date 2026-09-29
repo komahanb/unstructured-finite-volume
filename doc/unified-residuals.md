@@ -23,7 +23,7 @@ The rank measurements quoted here are reproduced by
 | 6. Mixed components: a leaf of orders along the first coordinate and one later coordinate, each defined along space from the time component | done; the Kelvin-Voigt beam, order 4+ in x and 2 in t, dJ/dc by tangent and adjoint | (this commit) |
 | 7. The beam optimization example (identification by Newton on the design) | done | bd608da |
 | 8. The disagreement estimate `disagreement(solution, other)` | done; effectivity 1.0007 on the open line, 0.35 to 0.78 under closed differences | (this commit) |
-| 8. The grid as a design | not started | |
+| 8. The grid as a design: one grading coordinate of the beamline, Newton on the sum of squares of the estimate's contributions | done; error of J 2.34e-2 to -7.4e-4 at a fixed 17 points; gradient by central differences | (this commit) |
 
 Every commit above was compared with the suites, the demos and a
 two-image run against the state before it; the only differences are
@@ -610,6 +610,39 @@ multiplier.
   identically. That direction is fixed, or projected away, as
   `grid_stationary_partition` does.
 
+**Measured on the beam** (`euler_bernoulli_beam_grid`). The clamped
+beam on the open line with the solution `sin(pi (x/L)^2)^2 cos(omega t)`,
+whose curvature grows along the beamline, and the goal `J = integral of
+w^2 / 2`. One design coordinate `s` grades the points,
+`x_i = L (xi_i + s xi_i (1 - xi_i))`; the ends stay on the geometry and
+the points ascend for `|s| < 1`, so neither constraint needs a
+multiplier, and the scale direction does not arise.
+
+- **The objective is `Phi = sum of eta_ik^2`** over points and instants.
+  - `eta` itself changes sign: its zero, near `s = 0.41`, is a grid
+    where contributions cancel.
+  - `sum of |eta_ik|` has its minimum near the same grid but is not
+    differentiable.
+  - `sum over i of |sum over k of eta_ik|` does not follow the error:
+    it is smaller at `s = -0.3`, where the error of w is twice the
+    uniform grid's, than at `s = 0`.
+- **Newton's iteration on `dPhi/ds = 0`** from the uniform grid, with
+  steps bounded by 0.2, converges in four iterations to `s = 0.372` at
+  101 x 17 (0.379 at 201 x 17):
+
+  | s | Phi | J - J_h | error of w |
+  |---|---|---|---|
+  | 0 | 1.46e-5 | 2.34e-2 | 5.49e-2 |
+  | 0.372 | 1.03e-5 | -7.4e-4 | 3.14e-2 |
+
+- **The gradient is by central differences** of step 0.02, three solves
+  per iteration. The gradient through the reverse sweep needs a second
+  adjoint, since `eta` reads the multipliers, and the derivatives of the
+  concretion's weights in the positions: the segment relations are
+  linear in the lengths, the fitted differences are not.
+- **The estimate fails on grids graded the other way:**
+  `eta / (J - J_h) = 0.37` at `s = -0.6`.
+
 **Relation to refinement.** Moving the positions (r-adaptation) keeps
 the size of the system, while refinement (h-adaptation) changes it.
 Both read the same localized `eta`: refinement splits where the
@@ -654,7 +687,8 @@ cells by the gradient.
    commute is open.
 8. **The resolution term's form and weight.** A soft penalty or a slack
    with a multiplier, and the scale of its weight relative to J.
-9. **The inequality constraints of the grid as a design** (section 16).
+9. **The inequality constraints of the grid as a design** (section 16),
+   and the gradient of `eta` in the positions through a second adjoint.
 10. **Mixed components of two later coordinates.** A leaf carries one
     mixed order, along the first coordinate, so `w_xy` is stored on a
     region without time and not with it. A multi-index of one order per

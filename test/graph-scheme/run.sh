@@ -52,6 +52,11 @@
 #                        from the multiplier of the design condition:
 #                        s = (0.5096, -0.3107) against (0.5, -0.3) on
 #                        21 x 17, the gradient 8.3e-12
+#   euler_bernoulli_beam_grid
+#                        the points of the beamline graded by one design
+#                        coordinate s, moved by Newton on the sum of the
+#                        squares of the estimate's contributions: s =
+#                        0.372, the error of J 2.34e-2 to -7.4e-4
 #   run                  the same tableau on the expression and the
 #                        residual_operator directly
 #
@@ -87,5 +92,7 @@ echo "== euler_bernoulli_beam"
 ./euler_bernoulli_beam
 echo "== euler_bernoulli_beam_optimization"
 ./euler_bernoulli_beam_optimization
+echo "== euler_bernoulli_beam_grid"
+./euler_bernoulli_beam_grid
 echo "== run"
 ./run

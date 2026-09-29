@@ -34,6 +34,12 @@
 #   van_der_pol_study    the Van der Pol case of the graph time
 #                        integrators paper: its Table 4 to degree four
 #                        at h = 0.02, and its three-window chain
+#   euler_bernoulli_beam the beam rhoA w_tt + d_xx(EI w_xx) = f on
+#                        [0, 2] x [0, 1], 41 instants, 17 points, no
+#                        mesh file: simply supported against its mode
+#                        (2.80e-4), J against T EI (pi/L)^4 L/4; clamped
+#                        with EI(x), rhoA(x) and a manufactured load
+#                        (6.87e-4)
 #   run                  the same tableau on the expression and the
 #                        residual_operator directly
 #
@@ -65,5 +71,7 @@ echo "== van_der_pol_continuous_adjoint"
 ./van_der_pol_continuous_adjoint
 echo "== van_der_pol_study"
 ./van_der_pol_study
+echo "== euler_bernoulli_beam"
+./euler_bernoulli_beam
 echo "== run"
 ./run

@@ -19,7 +19,7 @@ endif
 F90FLAGS += -I$(LIB)/ -Wtarget-lifetime
 LDFLAGS += -L$(LIB)/ $(LIB)/libufvm.a
 
-all: dirk_coefficients taylor_green_vortex taylor_green_vortex_3d taylor_green_study van_der_pol van_der_pol_sensitivity van_der_pol_continuous_adjoint van_der_pol_study run
+all: dirk_coefficients taylor_green_vortex taylor_green_vortex_3d taylor_green_study van_der_pol van_der_pol_sensitivity van_der_pol_continuous_adjoint van_der_pol_study euler_bernoulli_beam run
 
 dirk_coefficients: dirk_coefficients.o $(LIB)/libufvm.a
 	$(F90) $< -o $@ $(LDFLAGS)
@@ -44,6 +44,10 @@ van_der_pol_continuous_adjoint: van_der_pol_continuous_adjoint.o $(LIB)/libufvm.
 van_der_pol_study: van_der_pol_study.o $(LIB)/libufvm.a
 	$(F90) $< -o $@ $(LDFLAGS)
 
+# the Euler-Bernoulli beam on an interval of points, no mesh file
+euler_bernoulli_beam: euler_bernoulli_beam.o $(LIB)/libufvm.a
+	$(F90) $< -o $@ $(LDFLAGS)
+
 # the same statement under chosen parameters, convergence printed
 taylor_green_study: taylor_green_study.o $(LIB)/libufvm.a
 	$(F90) $< -o $@ $(LDFLAGS)
@@ -62,7 +66,7 @@ box_3d.msh: box_3d.py
 	python3 box_3d.py 8
 
 clean:
-	@rm -f *.o *.mod *.so run dirk_coefficients taylor_green_vortex taylor_green_vortex_3d taylor_green_study van_der_pol van_der_pol_sensitivity van_der_pol_continuous_adjoint van_der_pol_study *.vtu gmsh.log variant.stamp
+	@rm -f *.o *.mod *.so run dirk_coefficients taylor_green_vortex taylor_green_vortex_3d taylor_green_study van_der_pol van_der_pol_sensitivity van_der_pol_continuous_adjoint van_der_pol_study euler_bernoulli_beam *.vtu gmsh.log variant.stamp
 
 .SUFFIXES: .f90 .o
 .PHONY: all clean FORCE

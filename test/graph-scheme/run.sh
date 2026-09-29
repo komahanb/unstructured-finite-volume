@@ -40,6 +40,12 @@
 #                        (2.80e-4), J against T EI (pi/L)^4 L/4; clamped
 #                        with EI(x), rhoA(x) and a manufactured load
 #                        (6.87e-4)
+#   euler_bernoulli_beam_optimization
+#                        EI(x) = EI_0 (1 + s1 x/L + s2 (x/L)^2) found
+#                        by Newton on the design, gradient and hessian
+#                        from the multiplier of the design condition:
+#                        s = (0.5096, -0.3107) against (0.5, -0.3) on
+#                        21 x 17, the gradient 8.3e-12
 #   run                  the same tableau on the expression and the
 #                        residual_operator directly
 #
@@ -73,5 +79,7 @@ echo "== van_der_pol_study"
 ./van_der_pol_study
 echo "== euler_bernoulli_beam"
 ./euler_bernoulli_beam
+echo "== euler_bernoulli_beam_optimization"
+./euler_bernoulli_beam_optimization
 echo "== run"
 ./run

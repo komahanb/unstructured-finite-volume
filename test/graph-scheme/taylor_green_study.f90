@@ -117,12 +117,12 @@ program taylor_green_study
   v      = omega % unknown('v', [t, x, y])
   p      = omega % unknown('p', [t, x, y])
 
-  momentum_x = u % jet_component([t]) + u*u % jet_component([x]) + v*u % jet_component([y]) + p % jet_component([x]) &
-       &     - nu*(u % jet_component([x, x]) + u % jet_component([y, y]))
-  momentum_y = v % jet_component([t]) + u*v % jet_component([x]) + v*v % jet_component([y]) + p % jet_component([y]) &
-       &     - nu*(v % jet_component([x, x]) + v % jet_component([y, y]))
-  pressure   = p % jet_component([x, x]) + p % jet_component([y, y]) &
-       &     + u % jet_component([x])**2 + 2.0_dp*u % jet_component([y])*v % jet_component([x]) + v % jet_component([y])**2
+  momentum_x = u % derivative([t]) + u*u % derivative([x]) + v*u % derivative([y]) + p % derivative([x]) &
+       &     - nu*(u % derivative([x, x]) + u % derivative([y, y]))
+  momentum_y = v % derivative([t]) + u*v % derivative([x]) + v*v % derivative([y]) + p % derivative([y]) &
+       &     - nu*(v % derivative([x, x]) + v % derivative([y, y]))
+  pressure   = p % derivative([x, x]) + p % derivative([y, y]) &
+       &     + u % derivative([x])**2 + 2.0_dp*u % derivative([y])*v % derivative([x]) + v % derivative([y])**2
 
   r      = continuous_residual(omega,  [momentum_x, momentum_y, pressure])
   g      = continuous_residual(domega, [u - u_exact, v - v_exact])

@@ -151,11 +151,16 @@ measured.
 
 **A component and an operator are different things.**
 
-- `w % jet_component(alpha)` is the stored unknown, a leaf of a law.
+- The stored unknown `w_(alpha)` is a leaf of a law, formed inside the
+  library alone.
 - `u % derivative(alpha)` is the operator `d^alpha` applied to any field,
   stored in the law as a vertex. `jet_form` replaces it by the jet
   components it denotes, once, in `discretize`; the concretion along
-  the coordinate may choose another form (section 6).
+  the coordinate may choose another form (section 6). On an unknown it
+  denotes that unknown's component, so physics, conditions, objectives
+  and partials are written with `derivative` alone.
+- `representation(w, x, k)` states the laws `d^j w - w_(j)`, j = 1..k,
+  the one place the operator and the stored unknown meet.
 - Today `w % derivative([t])` is a component: it selects a stored value
   and does not differentiate, so `d_t w - w_t` would read `0 = 0`. The
   representation laws need the operator.
@@ -193,20 +198,16 @@ component per point, less the rows left open for the conditions
 
 **The laws are stated as residuals on Omega, like the physics:**
 
-    r   = continuous_residual(omega, [rhoA*w % jet_component([t, t]) + derivative(EI*w % jet_component([x, x]), [x, x]) - f])
+    r   = continuous_residual(omega, [rhoA*w % derivative([t, t]) + (EI*w % derivative([x, x])) % derivative([x, x]) - f])
 
-    r_t = continuous_residual(omega, [derivative(w, [t])    - w % jet_component([t]),                    &
-                                      derivative(w, [t, t]) - w % jet_component([t, t])])
+    r_t = continuous_residual(omega, representation(w, t, 2))
 
-    r_x = continuous_residual(omega, [derivative(w, [x])          - w % jet_component([x]),              &
-                                      derivative(w, [x, x])       - w % jet_component([x, x]),           &
-                                      derivative(w, [x, x, x])    - w % jet_component([x, x, x]),        &
-                                      derivative(w, [x, x, x, x]) - w % jet_component([x, x, x, x])])
+    r_x = continuous_residual(omega, representation(w, x, 4))
 
     ic  = continuous_residual(omega % boundary(t, 0.0_dp), [...])
 
-    bc0 = continuous_residual(omega % boundary(x, 0.0_dp), [w, w % jet_component([x])])
-    bcL = continuous_residual(omega % boundary(x, L),      [w, w % jet_component([x])])
+    bc0 = continuous_residual(omega % boundary(x, 0.0_dp), [w, w % derivative([x])])
+    bcL = continuous_residual(omega % boundary(x, L),      [w, w % derivative([x])])
 
     L   = energy + lambda_r*r + mu_t*r_t + mu_x*r_x + lambda_ic*ic + lambda_0*bc0 + lambda_L*bcL
 
@@ -340,8 +341,8 @@ corners, for example `w0(0) = 0`.
 
 **Implemented.** A leaf of the jet carries a mixed order beside its
 order: the component of order `a` along the first coordinate and `o`
-along one later coordinate. `w % derivative([x, x, t])` and
-`w % jet_component([x, x, t])` name `w_xxt`; the entries commute.
+along one later coordinate. `w % derivative([x, x, t])` names `w_xxt`;
+the entries commute.
 
 - **Layout.** Each field stores, after its pure components, one block of
   the later coordinates' orders for each mixed order `a = 1 .. A`. A law
@@ -413,7 +414,8 @@ excluded:
    - Migrate `boundary(time=...)`.
    - Check: every output unchanged.
 3. **Component and operator.**
-   - `w % jet_component(alpha)` and `derivative(u, alpha)`.
+   - `derivative(u, alpha)`, the stored component formed inside the
+     library, and `representation(w, x, k)` for the laws.
    - Operator nodes kept unexpanded.
    - Representation residuals as `continuous_residual`s, generated when
      not stated.

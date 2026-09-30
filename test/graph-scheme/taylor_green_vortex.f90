@@ -96,13 +96,13 @@ program taylor_green_vortex
   p = omega % unknown('p', [t, x, y])
 
   ! the three equations as functions Omega -> R of the jet of (u, v, p);
-  ! jet_component([x, x]) is the component d^2/dx^2 of the unknown's jet
-  momentum_x = u % jet_component([t]) + u*u % jet_component([x]) + v*u % jet_component([y]) + p % jet_component([x]) &
-       &     - nu*(u % jet_component([x, x]) + u % jet_component([y, y]))
-  momentum_y = v % jet_component([t]) + u*v % jet_component([x]) + v*v % jet_component([y]) + p % jet_component([y]) &
-       &     - nu*(v % jet_component([x, x]) + v % jet_component([y, y]))
-  pressure   = p % jet_component([x, x]) + p % jet_component([y, y]) &
-       &     + u % jet_component([x])**2 + 2.0_dp*u % jet_component([y])*v % jet_component([x]) + v % jet_component([y])**2
+  ! derivative([x, x]) of an unknown is the component d^2/dx^2 of its jet
+  momentum_x = u % derivative([t]) + u*u % derivative([x]) + v*u % derivative([y]) + p % derivative([x]) &
+       &     - nu*(u % derivative([x, x]) + u % derivative([y, y]))
+  momentum_y = v % derivative([t]) + u*v % derivative([x]) + v*v % derivative([y]) + p % derivative([y]) &
+       &     - nu*(v % derivative([x, x]) + v % derivative([y, y]))
+  pressure   = p % derivative([x, x]) + p % derivative([y, y]) &
+       &     + u % derivative([x])**2 + 2.0_dp*u % derivative([y])*v % derivative([x]) + v % derivative([y])**2
 
   ! r on Omega; g on dOmega with its multiplier lambda(x, y) : dOmega -> R^2,
   ! one component per condition; the gauge on tau with its multiplier

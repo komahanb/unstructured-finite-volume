@@ -120,16 +120,16 @@ program van_der_pol_sensitivity
 
   ! the oscillator as a function Omega -> R of the jet of u along t,
   ! reading nu and mu as coordinates
-  oscillator = u % jet_component([t, t]) - nu*(1.0_dp - u*u)*u % jet_component([t]) + mu*u
+  oscillator = u % derivative([t, t]) - nu*(1.0_dp - u*u)*u % derivative([t]) + mu*u
 
   ! the initial data, functions dOmega -> R: the value and the first
   ! derivative of u at t = 0
   u0 = u - u_initial
-  v0 = u % jet_component([t]) - v_initial
+  v0 = u % derivative([t]) - v_initial
 
   ! the energy J, a function of the design alone: the integral over
   ! the time factor
-  energy = integral((u*u + u % jet_component([t])**2)/2.0_dp, over=omega % time())
+  energy = integral((u*u + u % derivative([t])**2)/2.0_dp, over=omega % time())
 
   ! r on Omega with its multiplier lambda_r(t, nu, mu) : Omega -> R,
   ! the adjoint; g on dOmega with its multiplier lambda(nu, mu) :

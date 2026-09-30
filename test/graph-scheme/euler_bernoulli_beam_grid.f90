@@ -43,7 +43,7 @@ program euler_bernoulli_beam_grid
 
   use util_precision             , only : dp
   use operation_manifold         , only : continuous_manifold, discrete_manifold, interval, region, points
-  use operation_field            , only : continuous_field, discrete_field, integral
+  use operation_field            , only : continuous_field, discrete_field, integral, representation
   use operation_field            , only : sin, cos, operator(+), operator(-), operator(*), operator(/), operator(**)
   use operation_residual         , only : continuous_residual, discrete_residual, operator(+), operator(*)
   use operation_family           , only : dirk, bdf, adams, chain
@@ -138,10 +138,7 @@ contains
     ! and the clamped ends
     w    = omega % unknown('w', [t, x])
     r    = continuous_residual(omega, [rhoA * w % derivative([t, t]) + EI * w % derivative([x, x, x, x]) - load])
-    r_x  = continuous_residual(omega, [w % derivative([x])          - w % jet_component([x]), &
-         &                             w % derivative([x, x])       - w % jet_component([x, x]), &
-         &                             w % derivative([x, x, x])    - w % jet_component([x, x, x]), &
-         &                             w % derivative([x, x, x, x]) - w % jet_component([x, x, x, x])])
+    r_x  = continuous_residual(omega, representation(w, x, 4))
     ic   = continuous_residual(initial, [w - w_exact, w % derivative([t])])
     bc_0 = continuous_residual(left , [w, w % derivative([x])])
     bc_L = continuous_residual(right, [w, w % derivative([x])])

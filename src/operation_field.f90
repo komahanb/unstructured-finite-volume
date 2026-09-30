@@ -38,7 +38,7 @@ module operation_field
   private
   public :: continuous_support, discrete_support
   public :: continuous_field, discrete_field
-  public :: unknown_field, coordinate_field, integral
+  public :: unknown_field, coordinate_field, integral, representation
   public :: WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR, DESIGN_FACTOR, SPACE_FACE
 
   ! the parts a support can be of another
@@ -180,7 +180,7 @@ module operation_field
    contains
 
      procedure :: derivative     => field_derivative
-     procedure :: jet_component  => field_jet_component
+     procedure, private :: jet_component => field_jet_component
      procedure :: jet_form       => field_jet_form
      procedure :: partial        => field_partial
      procedure :: stationarity   => field_stationarity
@@ -1079,8 +1079,33 @@ contains
   end function field_jet_component
 
   !===================================================================!
+  ! THE REPRESENTATION LAWS of an unknown along a coordinate, to an
+  ! order: for k = 1 to the order, the derivative of order k of u less
+  ! the component of its jet the derivative denotes, d^k u - u_(k).
+  ! The concretion along the coordinate states each as its rows; stated
+  ! as a residual, each is paired with a multiplier. Invalid input: an
+  ! order below one.
+  !===================================================================!
+
+  function representation(u, along, order) result(laws)
+
+    type(continuous_field), intent(in) :: u, along
+    integer               , intent(in) :: order
+    type(continuous_field), allocatable :: laws(:)
+
+    integer :: k, j
+
+    if (order < 1) error stop 'operation_field: a representation is of order one or more'
+    allocate(laws(order))
+    do k = 1, order
+       laws(k) = u % derivative([(along, j = 1, k)]) - u % jet_component([(along, j = 1, k)])
+    end do
+
+  end function representation
+
+  !===================================================================!
   ! THE PARTIAL DERIVATIVE of a scalar field in a component of the
-  ! jet of an unknown - u, or u % jet_component([t]) - or in a design
+  ! jet of an unknown - u, or u % derivative([t]) - or in a design
   ! coordinate, every other leaf unchanged: the symbolic derivative as a
   ! field on the same manifold. Invalid input: a field of several
   ! components, or an argument that is neither a jet component of an
@@ -1104,18 +1129,19 @@ contains
        if (allocated(in % direction)) then
           error stop 'operation_field: the partial derivative is in a design coordinate, not a direction'
        end if
-       d % component = [partial_in_design(this % component(1), in % coordinate)]
+       d % component = [partial_in_design(jet_form(this % component(1)), in % coordinate)]
        return
     end if
-    leaf = in % component(1)
+    ! a derivative of an unknown is the component of its jet it denotes
+    leaf = jet_form(in % component(1))
     if (leaf % num_vertices() /= 1 .or. .not. leaf % reads_state()) then
-       error stop 'operation_field: the partial derivative is in a component of the jet of an unknown, &
-            &u or u % component([t]), or in a design coordinate'
+       error stop 'operation_field: the partial derivative is in an unknown or a derivative of one, &
+            &u or u % derivative([t]), or in a design coordinate'
     end if
     if (leaf % mixed_degree(leaf % leaf_field()) > 0) then
        error stop 'operation_field: the partial derivative in a mixed component is not taken'
     end if
-    d % component = [partial_derivative(this % component(1), leaf % leaf_field(), leaf % leaf_order(), &
+    d % component = [partial_derivative(jet_form(this % component(1)), leaf % leaf_field(), leaf % leaf_order(), &
          & leaf % leaf_along())]
 
   end function field_partial
@@ -1149,7 +1175,7 @@ contains
     end if
     d = this
     d % index = [0]
-    d % component = [stationarity(this % component(1), in % index(1), along % coordinate)]
+    d % component = [stationarity(jet_form(this % component(1)), in % index(1), along % coordinate)]
 
   end function field_stationarity
 
@@ -1180,7 +1206,7 @@ contains
     if (along % design_coordinate .or. along % coordinate < 1) then
        error stop 'operation_field: the boundary terms are along a coordinate of time or space'
     end if
-    graphs = boundary_terms(this % component(1), in % index(1), along % coordinate)
+    graphs = boundary_terms(jet_form(this % component(1)), in % index(1), along % coordinate)
     allocate(terms(size(graphs)))
     do k = 1, size(graphs)
        terms(k) = this

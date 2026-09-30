@@ -468,16 +468,13 @@ contains
   ! product over every edge.
   !===================================================================!
 
-  subroutine column_product(this, columns, q, y, factor, rows)
+  subroutine column_product(this, columns, q, y, factor)
 
     class(stencil), intent(in)    :: this
     integer       , intent(in)    :: columns(:)
     real(dp)      , intent(in)    :: q(:)
     real(dp)      , intent(inout) :: y(:)
     real(dp)      , intent(in), optional :: factor
-    ! the rows accumulated, when not every row is: an image forms its
-    ! own rows alone
-    logical       , intent(in), optional :: rows(:)
 
     real(dp), pointer :: w(:)
     real(dp) :: scale
@@ -487,11 +484,7 @@ contains
     w => this % weights % real_values()
     if (.not. associated(w)) return
 
-    if (present(rows)) then
-       call this % pattern % read_outgoing(accumulate_some_rows)
-    else
-       call this % pattern % read_outgoing(accumulate_columns)
-    end if
+    call this % pattern % read_outgoing(accumulate_columns)
 
   contains
 
@@ -512,25 +505,6 @@ contains
       end do
 
     end subroutine accumulate_columns
-
-    subroutine accumulate_some_rows(offsets, indices, targets)
-
-      integer, intent(in) :: offsets(:), indices(:), targets(:)
-      integer :: k, c, p, e
-      real(dp) :: qc
-
-      do k = 1, size(columns)
-         c  = columns(k)
-         qc = scale * q(c)
-         if (qc == 0.0_dp) cycle
-         do p = offsets(c), offsets(c + 1) - 1
-            e = indices(p)
-            if (.not. rows(targets(e))) cycle
-            y(targets(e)) = y(targets(e)) + w(e) * qc
-         end do
-      end do
-
-    end subroutine accumulate_some_rows
 
   end subroutine column_product
 

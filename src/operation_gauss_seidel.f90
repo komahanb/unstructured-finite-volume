@@ -122,7 +122,7 @@ contains
     integer , allocatable :: colours(:), ordered(:), first(:)
     logical , allocatable :: active(:)
     integer :: it, col, b, w, nb, i, num_colours
-    logical :: explicit, distributed
+    logical :: explicit, distributed, zero_start
     character(len=250) :: message
 
     call this % record_event(linear_solves)
@@ -138,7 +138,11 @@ contains
 
     call this % initialize_residual_history()
     ! the residual at the zero state is the right-hand side itself
-    if (all(x == 0.0_dp)) then
+    zero_start = all(x == 0.0_dp)
+    ! over several images every image takes the same branch, the one
+    ! that exchanges or the one that does not
+    if (allocated(this % distribution)) zero_start = this % distribution % maximum(merge(0.0_dp, 1.0_dp, zero_start)) == 0.0_dp
+    if (zero_start) then
        r = rhs
     else
        call this % imbalance(rhs, x, r)
@@ -162,6 +166,11 @@ contains
        else
           allocate(block(nb))
           do b = 1, nb
+             ! a block of another image's is never relaxed here, and
+             ! its rows are not in this image's part
+             if (allocated(this % distribution)) then
+                if (.not. this % distribution % is_owned((b - 1) * w + 1)) cycle
+             end if
              call this % record_event(factorisations)
              call block(b) % factorise(d(:, :, b), tiny(1.0_dp))
              if (block(b) % singular()) then
@@ -172,7 +181,13 @@ contains
           end do
        end if
 
-       call this % colouring(nb, colours)
+       ! over several images the colours of the whole blocks, the same
+       ! on every image, restricted to this image's part
+       if (allocated(this % distribution)) then
+          colours = this % distribution % block_colour
+       else
+          call this % colouring(nb, colours)
+       end if
 
        ! the diagonal, its factorisation and the colouring are stored
        ! for the operator and read in place by every solve on it
@@ -186,16 +201,13 @@ contains
     num_colours = maxval(this % stored_colours)
     allocate(block_solution(w))
     distributed = allocated(this % distribution)
+    ! every image exchanges after each colour of the whole
+    if (distributed) num_colours = size(this % distribution % colour_first) - 1
     if (explicit) then
        allocate(dx(size(x)), source=0.0_dp)
-       ! the columns whose change reaches an owned row, by colour:
-       ! every column on one image, the owned and the halo over
-       ! several
+       ! the columns whose change reaches an owned row, by colour: every
+       ! column of the part, the owned and the halo
        allocate(active(size(x)), source=.true.)
-       if (distributed) then
-          active = this % distribution % is_owned
-          active(this % distribution % halo) = .true.
-       end if
        call columns_by_colour(this % stored_colours, w, num_colours, active, ordered, first)
     end if
 
@@ -222,7 +234,9 @@ contains
              end do
           end do
           if (explicit) then
-             if (distributed) call this % distribution % gather(dx)
+             ! the owned increments of this colour sent and the halo's
+             ! received, then subtracted from the owned rows
+             if (distributed) call this % distribution % gather(dx, colour=col)
              associate (columns => ordered(first(col):first(col + 1) - 1))
                call subtracted_columns(this, columns, dx, r)
                dx(columns) = 0.0_dp
@@ -264,11 +278,7 @@ contains
 
     select type (a => this % action)
     type is (stencil)
-       if (allocated(this % distribution)) then
-          call a % column_product(columns, dx, r, factor=-1.0_dp, rows=this % distribution % is_owned)
-       else
-          call a % column_product(columns, dx, r, factor=-1.0_dp)
-       end if
+       call a % column_product(columns, dx, r, factor=-1.0_dp)
     end select
 
   end subroutine subtracted_columns

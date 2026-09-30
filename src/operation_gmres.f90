@@ -39,7 +39,7 @@ module operation_gmres
   use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
   use util_tally, only : linear_solves, tally
   use view_directed, only : directed_graph
-  use view_directed_stored, only : stored_directed_graph
+  use operation_exchange, only : blocked
   use graph_fractal, only : graph
   use operation_action, only : operation
   use field_stored, only : stored_field
@@ -152,37 +152,6 @@ contains
     end if
 
   end function gmres_storage_entries
-
-  !===================================================================!
-  ! The coupling of the blocks of `width` consecutive unknowns: an
-  ! edge between two blocks for every edge of the unknowns' coupling
-  ! between them, none within a block.
-  !===================================================================!
-
-  function blocked(coupling, width) result(blocks)
-
-    class(directed_graph), intent(in) :: coupling
-    integer              , intent(in) :: width
-    type(stored_directed_graph) :: blocks
-
-    integer, allocatable :: tails(:), heads(:)
-    integer :: e, ne, t, h, n
-
-    ne = coupling % num_edges()
-    allocate(tails(ne), heads(ne))
-    n = 0
-    do e = 1, ne
-       if (.not. coupling % edge_has_head(e)) cycle
-       t = (coupling % edge_tail(e) - 1) / width + 1
-       h = (coupling % edge_head(e) - 1) / width + 1
-       if (t == h) cycle
-       n = n + 1
-       tails(n) = t
-       heads(n) = h
-    end do
-    blocks = stored_directed_graph(coupling % num_vertices() / width, tails=tails(1:n), heads=heads(1:n))
-
-  end function blocked
 
   !===================================================================!
   ! The direction through the preconditioner: M^-1 v, or v itself

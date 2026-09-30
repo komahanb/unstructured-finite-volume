@@ -84,6 +84,8 @@ module operation_newton
   use operation_minimization        , only : minimizer, restrict, solve_result, SOLVE_INNER_FAILED
   use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
   use operation_stencil     , only : stencil
+  use operation_exchange    , only : exchange
+  use view_directed_stored  , only : stored_directed_graph
   use util_tally, only : newton_solves, primal_loops, tally
   use util_verbosity, only : verbosity
   use operation_dense_direct, only : dense_direct
@@ -120,6 +122,11 @@ module operation_newton
      integer :: higher_order_jacobian_product = 1
 
      class(minimizer), allocatable :: inner
+
+     ! over several images, the part of this image the inner solve
+     ! runs on, cut from the explicit jacobian's pattern at the solve's
+     ! first step: the pattern is the same at every step
+     type(exchange), allocatable, private :: part
 
    contains
 
@@ -193,11 +200,14 @@ contains
     integer :: nonzeros
     real(dp), allocatable :: trial(:)
     integer :: it, halving
+    integer , allocatable :: part_rows(:), part_columns(:)
+    real(dp), allocatable :: part_weights(:)
     type(solve_result) :: outcome
 
     call this % record_event(newton_solves)
 
     allocate(dq(size(x)))
+    if (allocated(this % part)) deallocate(this % part)
 
     call this % initialize_residual_history()
 
@@ -237,11 +247,25 @@ contains
        end if
        nonzeros = 0
        if (jacobian_defined) nonzeros = size(rows)
-       if (jacobian_defined) then
+       if (jacobian_defined .and. allocated(this % distribution)) then
+          ! over several images the inner solve runs on this image's
+          ! part: the rows it owns, in the part's numbering
+          if (.not. allocated(this % part)) then
+             allocate(this % part, source=this % distribution % part( &
+                  & stored_directed_graph(this % num_unknowns, tails=columns, heads=rows)))
+          end if
+          call this % part % restricted_triples(rows, columns, weights, part_rows, part_columns, part_weights)
+          jacobian = stencil(part_rows, part_columns, part_weights, &
+               & spread(0.0_dp, 1, size(this % part % whole_index)), 'explicit jacobian')
+          call jacobian % versioned(this % action % version(), this % action % transpose_version())
+          this % inner % distribution = this % part
+          call this % inner % state(jacobian, jacobian % pattern, jacobian % pattern % vertex_set(), &
+               & size(this % part % whole_index), num_components = this % num_components, &
+               & coupling = jacobian % pattern)
+       else if (jacobian_defined) then
           jacobian = stencil(rows, columns, weights, &
                & spread(0.0_dp, 1, this % num_unknowns), 'explicit jacobian')
           call jacobian % versioned(this % action % version(), this % action % transpose_version())
-          if (allocated(this % distribution)) this % inner % distribution = this % distribution
           call this % inner % state(jacobian, jacobian % pattern, this % unknown_domain, &
                & this % num_unknowns, num_components = this % num_components, &
                & coupling = jacobian % pattern)
@@ -250,10 +274,7 @@ contains
                & this % num_unknowns, num_components = this % num_components)
        end if
        dq = 0.0_dp
-       call this % inner % solve(-residual, dq, linear_achieved)
-       ! the step of a distributed solve is owned in parts: every
-       ! image gathers the whole before the residual is evaluated
-       if (allocated(this % distribution)) call this % distribution % gather(dq)
+       call inner_solved(this, -residual, dq, linear_achieved)
 
        ! An inner minimizer that encountered a singular jacobian reports
        ! a residual no completed solve produces, and one that
@@ -402,7 +423,7 @@ contains
        call out % real_vector(b)
 
        correction = 0.0_dp
-       call this % inner % solve(-b / (fact * real(s, dp)), correction, one_achieved)
+       call inner_solved(this, -b / (fact * real(s, dp)), correction, one_achieved)
        outcome = this % inner % result()
        achieved = max(achieved, one_achieved)
        if (outcome % failed()) return
@@ -439,5 +460,32 @@ contains
     if (allocated(this % inner)) call this % inner % bind_account(account)
 
   end subroutine newton_bind_account
+
+  !===================================================================!
+  ! THE INNER SOLVE of a step, on the whole: over several images the
+  ! right-hand side restricted to this image's part, the step solved
+  ! there and assembled whole from every part's owned entries, so that
+  ! every image evaluates the residual at the same state.
+  !===================================================================!
+
+  subroutine inner_solved(this, b, dx, achieved)
+
+    class(newton), intent(inout) :: this
+    real(dp)     , intent(in)    :: b(:)
+    real(dp)     , intent(inout) :: dx(:)
+    real(dp)     , intent(out)   :: achieved
+
+    real(dp), allocatable :: local(:)
+
+    if (allocated(this % part)) then
+       local = this % part % restriction(dx)
+       call this % inner % solve(this % part % restriction(b), local, achieved)
+       dx = this % part % assembled(local)
+       return
+    end if
+    call this % inner % solve(b, dx, achieved)
+    if (allocated(this % distribution)) call this % distribution % gather(dx)
+
+  end subroutine inner_solved
 
 end module operation_newton

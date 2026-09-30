@@ -620,12 +620,6 @@ contains
     ! the coupling, rather than colouring the execution context.
     if (allocated(this % coupling)) deallocate(this % coupling)
     if (present(coupling)) allocate(this % coupling, source=coupling)
-    ! the halo of a distributed solve is read from a coupling over the
-    ! unknowns themselves; a coupling over blocks of them leaves the
-    ! halo already stated
-    if (allocated(this % distribution) .and. present(coupling)) then
-       if (coupling % num_vertices() == num_unknowns) call this % distribution % halo_from(coupling)
-    end if
 
     this % num_components = 1
     if (present(num_components)) this % num_components = max(num_components, 1)

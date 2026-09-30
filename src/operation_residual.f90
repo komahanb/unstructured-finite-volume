@@ -4782,7 +4782,7 @@ contains
        ! divide: every image solves the whole line.
        call require_images()
        if (num_images() > 1 .and. .not. this % open_line()) &
-            & solver % distribution = exchange(this % owners_of_unknowns(unknowns, stride, npts))
+            & solver % distribution = exchange(this % owners_of_unknowns(unknowns, stride, npts), width=stride)
     else
        ! a direct inner solve converges Newton quadratically to
        ! round-off at the cost of a step, and the sensitivities read

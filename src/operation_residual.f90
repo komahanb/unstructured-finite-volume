@@ -133,6 +133,8 @@ module operation_residual
      procedure :: num_fixed
      procedure :: first_fixed
      procedure :: stride
+     procedure :: coupling
+     procedure :: part_of
      procedure :: num_degrees
      procedure :: primary_degree
      procedure :: primary_row
@@ -575,6 +577,97 @@ contains
     class(residual_operator), intent(in) :: this
     stride = this % degrees + this % connected_degrees
   end function stride
+
+  !===================================================================!
+  ! The coupling of the unknowns: an edge from every column to every
+  ! row of the stencils' entries. The physics reads a point's own
+  ! tuple alone, so it couples no two points.
+  !===================================================================!
+
+  function coupling(this) result(graph_of)
+    class(residual_operator), intent(in) :: this
+    type(stored_directed_graph) :: graph_of
+    integer , allocatable :: heads(:), tails(:), h(:), t(:)
+    real(dp), allocatable :: w(:)
+    call this % primary_law % entries(heads, tails, w)
+    if (allocated(this % connected_law)) then
+       call this % connected_law % entries(h, t, w)
+       heads = [heads, h]
+       tails = [tails, t]
+    end if
+    if (allocated(this % prescribed)) then
+       call this % prescribed % entries(h, t, w)
+       heads = [heads, h]
+       tails = [tails, t]
+    end if
+    graph_of = stored_directed_graph(this % unknowns, tails=tails, heads=heads)
+  end function coupling
+
+  !===================================================================!
+  ! THE PART of the residual an image forms: the rows of the points the
+  ! part owns, over the unknowns of the part in its own numbering, the
+  ! owned first and the halo after. The physics is stated at the owned
+  ! points, each stencil restricted to the owned rows, and the fixed
+  ! rows the part owns. Invalid input: the points' tuples not in the
+  ! order of the unknowns.
+  !===================================================================!
+
+  function part_of(this, part) result(sub)
+    class(residual_operator), intent(in) :: this
+    type(exchange)          , intent(in) :: part
+    type(residual_operator) :: sub
+    type(stencil), allocatable :: connected, prescribed
+    integer , allocatable :: points(:), at(:), place_of(:), fixed_rows(:)
+    real(dp), allocatable :: fixed(:), rate(:)
+    logical , allocatable :: owned_fixed(:)
+    integer :: w, npts, i
+    w = this % stride()
+    if (any(this % at /= [((i - 1) * w, i = 1, size(this % at))])) then
+       error stop 'operation_residual: a residual is cut into parts when its points'' tuples follow &
+            &one another in the order of the unknowns'
+    end if
+    npts   = size(part % owned) / w
+    points = [((part % whole_index((i - 1) * w + 1) - 1) / w + 1, i = 1, npts)]
+    at     = [((i - 1) * w, i = 1, npts)]
+    allocate(place_of(this % unknowns), source=0)
+    place_of(part % whole_index) = [(i, i = 1, size(part % whole_index))]
+    owned_fixed = this % fixed_rows > 0
+    do i = 1, size(this % fixed_rows)
+       owned_fixed(i) = place_of(this % fixed_rows(i)) > 0
+       if (owned_fixed(i)) owned_fixed(i) = part % is_owned(place_of(this % fixed_rows(i)))
+    end do
+    fixed_rows = place_of(pack(this % fixed_rows, owned_fixed))
+    fixed      = pack(this % fixed, owned_fixed)
+    rate       = pack(this % fixed_rate, owned_fixed)
+    if (allocated(this % connected_law)) connected = part_stencil(this % connected_law, part)
+    if (allocated(this % prescribed))    prescribed = part_stencil(this % prescribed, part)
+    if (allocated(this % physics)) then
+       sub = residual_operator(part_stencil(this % primary_law, part), this % physics, at, &
+            & size(part % whole_index), this % degrees, this % primary, fixed_rows, fixed, &
+            & connected_law=connected, fixed_rate=rate, prescribed=prescribed, &
+            & positions=this % point_positions(:, points))
+    else
+       sub = residual_operator(part_stencil(this % primary_law, part), at=at, &
+            & unknowns=size(part % whole_index), degrees=this % degrees, primary=this % primary, &
+            & fixed_rows=fixed_rows, fixed=fixed, connected_law=connected, fixed_rate=rate, &
+            & prescribed=prescribed, positions=this % point_positions(:, points))
+    end if
+  end function part_of
+
+  ! a stencil's rows the part owns, in the part's numbering, with their
+  ! constants
+  function part_stencil(op, part) result(sub)
+    type(stencil) , intent(in) :: op
+    type(exchange), intent(in) :: part
+    type(stencil) :: sub
+    integer , allocatable :: heads(:), tails(:), rows(:), columns(:)
+    real(dp), allocatable :: w(:), weights(:), constants(:)
+    call op % entries(heads, tails, w)
+    call op % constants % real_vector(constants)
+    call part % restricted_triples(heads, tails, w, rows, columns, weights)
+    sub = stencil(rows, columns, weights, merge(constants(part % whole_index), 0.0_dp, part % is_owned), &
+         & label=op % name())
+  end function part_stencil
 
   pure integer function num_degrees(this)
     class(residual_operator), intent(in) :: this
@@ -4670,10 +4763,27 @@ contains
 
     type(newton)       :: solver
     type(solve_result) :: outcome
+    type(exchange)     :: whole, part
+    real(dp), allocatable :: local(:)
     real(dp) :: achieved
 
-    solver = this % solver_for(rows, unknowns, stride, npts)
-    call solver % solve(spread(0.0_dp, 1, unknowns), q, achieved)
+    ! over several images each image solves its part of the rows, from
+    ! the partitioner's cut of the residual's coupling, and the parts'
+    ! owned entries are assembled whole; the line of an open line is one
+    ! block of the sweeps, which a cut would divide
+    if (num_images() > 1 .and. this % points % with_space .and. .not. this % open_line()) then
+       call require_images()
+       whole = exchange(this % owners_of_unknowns(unknowns, stride, npts), width=stride)
+       part  = whole % part(rows % coupling())
+       solver = this % solver_for(rows % part_of(part), size(part % whole_index), stride, &
+            & size(part % owned) / stride, part)
+       local = part % restriction(q)
+       call solver % solve(spread(0.0_dp, 1, size(local)), local, achieved)
+       q = part % assembled(local)
+    else
+       solver = this % solver_for(rows, unknowns, stride, npts)
+       call solver % solve(spread(0.0_dp, 1, unknowns), q, achieved)
+    end if
     outcome = solver % result()
     if (.not. outcome % converged()) then
        error stop 'operation_residual: minimize did not converge: ' // outcome % description()
@@ -4741,11 +4851,13 @@ contains
   ! operator's jacobian can be formed at any q through it.
   !===================================================================!
 
-  function solver_for(this, rows, unknowns, stride, npts) result(solver)
+  function solver_for(this, rows, unknowns, stride, npts, part) result(solver)
 
     class(discrete_residual), intent(in) :: this
     type(residual_operator) , intent(in) :: rows
     integer                 , intent(in) :: unknowns, stride, npts
+    ! over several images, the part the rows are of
+    type(exchange)          , intent(in), optional :: part
     type(newton) :: solver
 
     type(dense_direct) :: direct
@@ -4774,15 +4886,10 @@ contains
        krylov % tolerance      = 1.0e-3_dp
        allocate(krylov % preconditioner, source=sweeps)
        allocate(solver % inner, source=krylov)
-       ! over several images, the cells are distributed and the
-       ! linear solve with them; a build of one image under a
-       ! launcher of several would run the whole problem once per
-       ! process, and is refused. The line of an open line is one
-       ! block of the sweeps, which a partition of its points would
-       ! divide: every image solves the whole line.
+       ! a build of one image under a launcher of several would run
+       ! the whole problem once per process, and is refused
        call require_images()
-       if (num_images() > 1 .and. .not. this % open_line()) &
-            & solver % distribution = exchange(this % owners_of_unknowns(unknowns, stride, npts), width=stride)
+       if (present(part)) solver % distribution = part
     else
        ! a direct inner solve converges Newton quadratically to
        ! round-off at the cost of a step, and the sensitivities read

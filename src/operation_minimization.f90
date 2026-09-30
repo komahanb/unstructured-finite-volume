@@ -939,6 +939,7 @@ contains
           call this % distribution % gather(xh)
           allocate(y(size(x)), source=0.0_dp)
           call a % row_product(this % distribution % owned, xh, y)
+          call this % distribution % add_summed_rows(xh, y)
           return
        end select
     end if

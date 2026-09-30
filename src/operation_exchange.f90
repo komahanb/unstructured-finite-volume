@@ -18,6 +18,9 @@
 !                      ownership
 !      restriction(x)  the part's entries of a whole vector
 !      assembled(x)    the whole vector of the parts' owned entries
+!      add_summed_rows(x, y)
+!                      a summed row's owner adds to y the other parts'
+!                      terms of the row at x
 !
 ! The ownership is given per unknown and is the same for every
 ! unknown of a block, so the part is cut from the coupling of the
@@ -30,7 +33,12 @@
 ! blocks, the same on every image, and its interface in colour order,
 ! so that a relaxation sweeping the colours in turn gathers each
 ! colour's interface alone, and relaxes in the order one image does.
-! Under one image nothing is exchanged.
+! A summed row reads every point - the integral of an unknown over
+! the region - so it is not a coupling of the cut: its owner states
+! the terms of its own columns, every other part keeps the terms of
+! its owned columns here, and one sum over the images of their
+! partial sums completes the row. Under one image nothing is
+! exchanged.
 !
 ! A reduction needs no coarray variable: the coarray runtime in use
 ! (OpenCoarrays 2.9.2 under gfortran 14) registers a module coarray
@@ -53,7 +61,7 @@ module operation_exchange
   implicit none
 
   private
-  public :: exchange, blocked
+  public :: exchange, blocked, state_summed_rows
 
   type :: exchange
 
@@ -77,6 +85,11 @@ module operation_exchange
      ! colour_first(c):colour_first(c+1)-1, and the entries sent to it
      ! and received from it at sent_first(c) and received_first(c)
      integer, allocatable :: block_colour(:), colour_first(:), sent_first(:), received_first(:)
+     ! of a part: the summed rows, each one's row in this part when it
+     ! owns it (zero otherwise), and the terms of this part's owned
+     ! columns in the rows it does not own
+     integer , allocatable :: summed_row(:), term_row(:), term_column(:)
+     real(dp), allocatable :: term_weight(:)
 
    contains
 
@@ -87,6 +100,7 @@ module operation_exchange
      procedure :: restriction
      procedure :: assembled
      procedure :: restricted_triples
+     procedure :: add_summed_rows
 
   end type exchange
 
@@ -269,15 +283,19 @@ contains
   ! it owns: every halo entry then takes its owner's value.
   !===================================================================!
 
-  subroutine gather(this, x, colour)
+  subroutine gather(this, x, colour, summed_into, factor)
 
     class(exchange), intent(in)    :: this
     real(dp)       , intent(inout) :: x(:)
     ! of a part, the interface of this colour alone
     integer        , intent(in), optional :: colour
+    ! of a part, the other parts' terms of the summed rows at x, times
+    ! the factor, added to this vector in the same sum
+    real(dp)       , intent(inout), optional :: summed_into(:)
+    real(dp)       , intent(in)   , optional :: factor
 
     real(dp), allocatable :: shared(:)
-    integer :: first, last, s1, s2, r1, r2
+    integer :: first, last, s1, s2, r1, r2, g, e
 
     if (this % images == 1) return
     if (.not. allocated(this % whole_index)) then
@@ -299,10 +317,20 @@ contains
        r1 = this % received_first(colour)
        r2 = this % received_first(colour + 1) - 1
     end if
-    allocate(shared(first:last), source=0.0_dp)
+    g = 0
+    if (present(summed_into) .and. allocated(this % summed_row)) g = size(this % summed_row)
+    allocate(shared(first:last + g), source=0.0_dp)
     shared(this % sent_at(s1:s2)) = x(this % sent(s1:s2))
+    do e = 1, merge(size(this % term_row), 0, g > 0)
+       shared(last + this % term_row(e)) = shared(last + this % term_row(e)) &
+            & + this % term_weight(e) * x(this % term_column(e))
+    end do
     call co_sum(shared)
     x(this % received(r1:r2)) = shared(this % received_at(r1:r2))
+    do e = 1, g
+       if (this % summed_row(e) > 0) summed_into(this % summed_row(e)) = summed_into(this % summed_row(e)) &
+            & + factor * shared(last + e)
+    end do
 
   end subroutine gather
 
@@ -340,21 +368,29 @@ contains
   ! block adjacent to its own.
   !===================================================================!
 
-  subroutine restricted_triples(this, rows, columns, weights, part_rows, part_columns, part_weights)
+  subroutine restricted_triples(this, rows, columns, weights, part_rows, part_columns, part_weights, summed)
 
     class(exchange)      , intent(in)  :: this
     integer              , intent(in)  :: rows(:), columns(:)
     real(dp)             , intent(in)  :: weights(:)
     integer , allocatable, intent(out) :: part_rows(:), part_columns(:)
     real(dp), allocatable, intent(out) :: part_weights(:)
+    ! the whole's summed rows: of those the terms of the owned columns
+    ! alone, the others' being added by add_summed_rows
+    integer              , intent(in), optional :: summed(:)
 
     integer, allocatable :: place_of(:)
-    logical, allocatable :: owned_row(:)
+    logical, allocatable :: owned_row(:), is_summed(:)
     integer :: i
 
     allocate(place_of(size(this % owner)), source=0)
     place_of(this % whole_index) = [(i, i = 1, size(this % whole_index))]
     owned_row = this % owner(rows) == this % image
+    if (present(summed)) then
+       allocate(is_summed(size(this % owner)), source=.false.)
+       is_summed(summed) = .true.
+       owned_row = owned_row .and. (.not. is_summed(rows) .or. this % owner(columns) == this % image)
+    end if
     part_rows    = place_of(pack(rows, owned_row))
     part_columns = place_of(pack(columns, owned_row))
     part_weights = pack(weights, owned_row)
@@ -363,6 +399,64 @@ contains
     end if
 
   end subroutine restricted_triples
+
+  !===================================================================!
+  ! THE SUMMED ROWS of a part, from the whole's rows and the whole
+  ! operator's terms (rows, columns, weights): the terms this part owns
+  ! the column of, in the rows it does not own.
+  !===================================================================!
+
+  subroutine state_summed_rows(this, summed, rows, columns, weights)
+
+    type(exchange), intent(inout) :: this
+    integer       , intent(in)    :: summed(:), rows(:), columns(:)
+    real(dp)      , intent(in)    :: weights(:)
+
+    integer, allocatable :: place_of(:), index_of(:)
+    logical, allocatable :: from_here(:)
+    integer :: i
+
+    allocate(place_of(size(this % owner)), index_of(size(this % owner)), source=0)
+    place_of(this % whole_index) = [(i, i = 1, size(this % whole_index))]
+    index_of(summed) = [(i, i = 1, size(summed))]
+    this % summed_row = merge(place_of(summed), 0, this % owner(summed) == this % image)
+    from_here = index_of(rows) > 0 .and. this % owner(rows) /= this % image .and. this % owner(columns) == this % image
+    this % term_row    = index_of(pack(rows, from_here))
+    this % term_column = place_of(pack(columns, from_here))
+    this % term_weight = pack(weights, from_here)
+
+  end subroutine state_summed_rows
+
+  !===================================================================!
+  ! The other parts' terms of the summed rows at x added to y at the
+  ! rows this part owns: one sum over the images of every part's
+  ! partial sums. Every image calls it, the owner of no summed row too.
+  !===================================================================!
+
+  subroutine add_summed_rows(this, x, y, factor)
+
+    class(exchange), intent(in)    :: this
+    real(dp)       , intent(in)    :: x(:)
+    real(dp)       , intent(inout) :: y(:)
+    ! the terms times this factor, one when absent
+    real(dp)       , intent(in), optional :: factor
+
+    real(dp), allocatable :: partial(:)
+    integer :: e
+
+    if (.not. allocated(this % summed_row)) return
+    if (size(this % summed_row) == 0) return
+    allocate(partial(size(this % summed_row)), source=0.0_dp)
+    do e = 1, size(this % term_row)
+       partial(this % term_row(e)) = partial(this % term_row(e)) + this % term_weight(e) * x(this % term_column(e))
+    end do
+    call co_sum(partial)
+    if (present(factor)) partial = factor * partial
+    do e = 1, size(this % summed_row)
+       if (this % summed_row(e) > 0) y(this % summed_row(e)) = y(this % summed_row(e)) + partial(e)
+    end do
+
+  end subroutine add_summed_rows
 
   !===================================================================!
   ! The coupling of the blocks of `width` consecutive unknowns: an

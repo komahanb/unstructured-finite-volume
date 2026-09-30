@@ -71,7 +71,7 @@ module operation_residual
   use operation_scheme_stencil  , only : derived_constraints
   use operation_derivative_approximation, only : derivative_approximation
   use operation_segment_trapezoid, only : segment_trapezoid
-  use operation_exchange       , only : exchange
+  use operation_exchange       , only : exchange, state_summed_rows
   use util_verbosity           , only : verbosity
   use transform_partitioner    , only : partitioner, PARTITION_BREADTH_FIRST
   use operation_minimization, only : solve_result
@@ -113,6 +113,11 @@ module operation_residual
      ! the position of every evaluation point, one column per point:
      ! the time, then the space coordinates; no rows when none is given
      real(dp), allocatable, private :: point_positions(:,:)
+     ! the rows that read every point, the integral of an unknown over
+     ! the region: over several images each part states the terms of
+     ! its owned columns and summed_by adds the others'
+     integer       , allocatable, private :: summed_rows(:)
+     type(exchange), allocatable, private :: summed_by
 
    contains
 
@@ -135,6 +140,7 @@ module operation_residual
      procedure :: stride
      procedure :: coupling
      procedure :: part_of
+     procedure, private :: terms
      procedure :: num_degrees
      procedure :: primary_degree
      procedure :: primary_row
@@ -373,7 +379,7 @@ contains
   !===================================================================!
 
   function create(primary_law, rule, at, unknowns, degrees, primary, fixed_rows, fixed, &
-       & connected_law, fixed_rate, prescribed, positions) result(this)
+       & connected_law, fixed_rate, prescribed, positions, summed_rows) result(this)
 
     type(stencil)         , intent(in) :: primary_law
     type(expression)      , intent(in), optional :: rule
@@ -384,6 +390,7 @@ contains
     real(dp)              , intent(in), optional :: fixed_rate(:)
     type(stencil)         , intent(in), optional :: prescribed
     real(dp)              , intent(in), optional :: positions(:,:)
+    integer               , intent(in), optional :: summed_rows(:)
     type(residual_operator) :: this
     type(continuous_domain) :: domain
     integer :: j, components, governed, e
@@ -503,6 +510,7 @@ contains
        end do
     end if
     if (allocated(this % physics)) this % designs = this % physics % num_designs()
+    if (present(summed_rows)) this % summed_rows = summed_rows
     call this % declare_arguments(2, [contract(FIELD_REAL, 1), contract(FIELD_REAL, this % designs)])
 
   end function create
@@ -587,21 +595,39 @@ contains
   function coupling(this) result(graph_of)
     class(residual_operator), intent(in) :: this
     type(stored_directed_graph) :: graph_of
-    integer , allocatable :: heads(:), tails(:), h(:), t(:)
+    integer , allocatable :: heads(:), tails(:)
     real(dp), allocatable :: w(:)
+    logical, allocatable :: is_summed(:)
+    call this % terms(heads, tails, w)
+    ! a summed row couples no point to another: its sum is formed over
+    ! the images
+    allocate(is_summed(this % unknowns), source=.false.)
+    if (allocated(this % summed_rows)) is_summed(this % summed_rows) = .true.
+    graph_of = stored_directed_graph(this % unknowns, tails=pack(tails, .not. is_summed(heads)), &
+         & heads=pack(heads, .not. is_summed(heads)))
+  end function coupling
+
+  ! every stencil's terms, as (row, column, weight)
+  subroutine terms(this, heads, tails, w)
+    class(residual_operator), intent(in)  :: this
+    integer , allocatable   , intent(out) :: heads(:), tails(:)
+    real(dp), allocatable   , intent(out) :: w(:)
+    integer , allocatable :: h(:), t(:)
+    real(dp), allocatable :: v(:)
     call this % primary_law % entries(heads, tails, w)
     if (allocated(this % connected_law)) then
-       call this % connected_law % entries(h, t, w)
+       call this % connected_law % entries(h, t, v)
        heads = [heads, h]
        tails = [tails, t]
+       w     = [w, v]
     end if
     if (allocated(this % prescribed)) then
-       call this % prescribed % entries(h, t, w)
+       call this % prescribed % entries(h, t, v)
        heads = [heads, h]
        tails = [tails, t]
+       w     = [w, v]
     end if
-    graph_of = stored_directed_graph(this % unknowns, tails=tails, heads=heads)
-  end function coupling
+  end subroutine terms
 
   !===================================================================!
   ! THE PART of the residual an image forms: the rows of the points the
@@ -613,12 +639,13 @@ contains
   !===================================================================!
 
   function part_of(this, part) result(sub)
-    class(residual_operator), intent(in) :: this
-    type(exchange)          , intent(in) :: part
+    class(residual_operator), intent(in)    :: this
+    ! the part, given the terms of the summed rows it adds
+    type(exchange)          , intent(inout) :: part
     type(residual_operator) :: sub
     type(stencil), allocatable :: connected, prescribed
-    integer , allocatable :: points(:), at(:), place_of(:), fixed_rows(:)
-    real(dp), allocatable :: fixed(:), rate(:)
+    integer , allocatable :: points(:), at(:), place_of(:), fixed_rows(:), summed(:), heads(:), tails(:)
+    real(dp), allocatable :: fixed(:), rate(:), weights(:)
     logical , allocatable :: owned_fixed(:)
     integer :: w, npts, i
     w = this % stride()
@@ -639,32 +666,38 @@ contains
     fixed_rows = place_of(pack(this % fixed_rows, owned_fixed))
     fixed      = pack(this % fixed, owned_fixed)
     rate       = pack(this % fixed_rate, owned_fixed)
-    if (allocated(this % connected_law)) connected = part_stencil(this % connected_law, part)
-    if (allocated(this % prescribed))    prescribed = part_stencil(this % prescribed, part)
+    allocate(summed(0))
+    if (allocated(this % summed_rows)) summed = this % summed_rows
+    call this % terms(heads, tails, weights)
+    call state_summed_rows(part, summed, heads, tails, weights)
+    if (allocated(this % connected_law)) connected = part_stencil(this % connected_law, part, summed)
+    if (allocated(this % prescribed))    prescribed = part_stencil(this % prescribed, part, summed)
     if (allocated(this % physics)) then
-       sub = residual_operator(part_stencil(this % primary_law, part), this % physics, at, &
+       sub = residual_operator(part_stencil(this % primary_law, part, summed), this % physics, at, &
             & size(part % whole_index), this % degrees, this % primary, fixed_rows, fixed, &
             & connected_law=connected, fixed_rate=rate, prescribed=prescribed, &
             & positions=this % point_positions(:, points))
     else
-       sub = residual_operator(part_stencil(this % primary_law, part), at=at, &
+       sub = residual_operator(part_stencil(this % primary_law, part, summed), at=at, &
             & unknowns=size(part % whole_index), degrees=this % degrees, primary=this % primary, &
             & fixed_rows=fixed_rows, fixed=fixed, connected_law=connected, fixed_rate=rate, &
             & prescribed=prescribed, positions=this % point_positions(:, points))
     end if
+    sub % summed_by = part
   end function part_of
 
   ! a stencil's rows the part owns, in the part's numbering, with their
   ! constants
-  function part_stencil(op, part) result(sub)
+  function part_stencil(op, part, summed) result(sub)
     type(stencil) , intent(in) :: op
     type(exchange), intent(in) :: part
+    integer       , intent(in) :: summed(:)
     type(stencil) :: sub
     integer , allocatable :: heads(:), tails(:), rows(:), columns(:)
     real(dp), allocatable :: w(:), weights(:), constants(:)
     call op % entries(heads, tails, w)
     call op % constants % real_vector(constants)
-    call part % restricted_triples(heads, tails, w, rows, columns, weights)
+    call part % restricted_triples(heads, tails, w, rows, columns, weights, summed)
     sub = stencil(rows, columns, weights, merge(constants(part % whole_index), 0.0_dp, part % is_owned), &
          & label=op % name())
   end function part_stencil
@@ -1137,6 +1170,7 @@ contains
     call this % placed(governing, r)
     r(this % fixed_rows) = x(this % fixed_rows) - this % fixed
     call this % write_prescribed(x, r, along=.false.)
+    if (allocated(this % summed_by)) call this % summed_by % add_summed_rows(x, r)
     call this % placed_output(r, output)
   end subroutine residual_apply
 
@@ -1343,6 +1377,7 @@ contains
        call this % placed(governing, r)
        r(this % fixed_rows) = v(this % fixed_rows)
        call this % write_prescribed(v, r, along=.true.)
+       if (allocated(this % summed_by)) call this % summed_by % add_summed_rows(v, r)
     else
        allocate(r(this % num_unknowns()), source=0.0_dp)
        call this % physics_tangent(inputs, variations, x, governing)
@@ -1459,6 +1494,8 @@ contains
             & fixed_rate=rate(1:ncar), positions=this % point_positions(:, points))
     end if
 
+    if (allocated(this % summed_rows)) sub % summed_rows = pack(sub_of(this % summed_rows), sub_of(this % summed_rows) > 0)
+
   end function constrain
 
   !===================================================================!
@@ -1561,6 +1598,7 @@ contains
     ! A = D_Q R maps U to Y = U: the frozen residual is on the same
     ! unknown and point domains as the residual it linearizes
     lin % unknown_vertices = this % unknown_vertices
+    if (allocated(this % summed_rows)) lin % summed_rows = this % summed_rows
     lin % points           = this % points
     lin % point_positions  = this % point_positions
     call lin % versioned(version_number, transposed=transposed)
@@ -3439,8 +3477,10 @@ contains
     if (size(gauge_rows) + size(face_rows) > 0) then
        gauge = stencil([gauge_rows, face_rows], [gauge_columns, face_columns], [gauge_weights, face_weights], &
             & zeros, 'prescribed')
+       ! the gauge rows, one per moment and gauged field, read every
+       ! cell of the moment
        rows  = residual_operator(relations, this % rule, at, unknowns, stride, primary, fixed_rows, fixed, &
-            & prescribed=gauge, positions=point_positions)
+            & prescribed=gauge, positions=point_positions, summed_rows=gauge_rows(1:size(gauge_rows):ncells))
     else
        rows  = residual_operator(relations, this % rule, at, unknowns, stride, primary, fixed_rows, fixed, &
             & positions=point_positions)
@@ -4764,6 +4804,7 @@ contains
     type(newton)       :: solver
     type(solve_result) :: outcome
     type(exchange)     :: whole, part
+    type(residual_operator) :: sub
     real(dp), allocatable :: local(:)
     real(dp) :: achieved
 
@@ -4775,8 +4816,8 @@ contains
        call require_images()
        whole = exchange(this % owners_of_unknowns(unknowns, stride, npts), width=stride)
        part  = whole % part(rows % coupling())
-       solver = this % solver_for(rows % part_of(part), size(part % whole_index), stride, &
-            & size(part % owned) / stride, part)
+       sub   = rows % part_of(part)
+       solver = this % solver_for(sub, size(part % whole_index), stride, size(part % owned) / stride, part)
        local = part % restriction(q)
        call solver % solve(spread(0.0_dp, 1, size(local)), local, achieved)
        q = part % assembled(local)

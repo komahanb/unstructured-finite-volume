@@ -236,7 +236,9 @@ contains
           if (explicit) then
              ! the owned increments of this colour sent and the halo's
              ! received, then subtracted from the owned rows
-             if (distributed) call this % distribution % gather(dx, colour=col)
+             ! and the other parts' increments in the summed rows this
+             ! part owns, in the same sum
+             if (distributed) call this % distribution % gather(dx, colour=col, summed_into=r, factor=-1.0_dp)
              associate (columns => ordered(first(col):first(col + 1) - 1))
                call subtracted_columns(this, columns, dx, r)
                dx(columns) = 0.0_dp

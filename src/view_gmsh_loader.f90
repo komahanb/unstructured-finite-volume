@@ -11,7 +11,8 @@
 !        element -> (entityDim, entityTag) -> physical tag
 !
 !   - $Nodes is block-structured: per entity block, all node tags then
-!     all coordinates (node tags may be sparse - mapped through findloc).
+!     all coordinates (node tags may be sparse - mapped through a table
+!     from number to position).
 !   - $Elements is block-structured: per entity block, element lines
 !     with no per-element tag list.
 !
@@ -152,6 +153,9 @@ contains
 
     integer :: mesh_dim
 
+    ! the position in vertex_numbers of each node number
+    integer, allocatable :: position(:)
+
     ! Load the mesh into memory.
     if (verbosity .ge. 1) write(*,'(a,a)') "Loading mesh file :", this % file % filename
     call this % file % read_lines(lines)
@@ -283,8 +287,8 @@ contains
 
     !----------------------------------------------------------------!
     ! $Nodes is block-structured: per block, all node tags then all
-    ! coordinates. Node tags can be sparse and are mapped through
-    ! findloc.
+    ! coordinates. Node tags can be sparse and are mapped through a
+    ! table from number to position, formed once.
     !----------------------------------------------------------------!
 
     process_nodes: block
@@ -342,6 +346,8 @@ contains
       end if
 
     end block process_nodes
+
+    position = position_of_number(vertex_numbers)
 
     !----------------------------------------------------------------!
     ! $Elements is block-structured. The top dimension contains the
@@ -506,7 +512,7 @@ contains
       tags(at)    = phys
       counts(at)  = nv
       do j = 1, nv
-         vertices(j, at) = findloc(vertex_numbers, tokens(1 + j) % as_integer(), dim=1)
+         vertices(j, at) = located(position, tokens(1 + j) % as_integer())
       end do
 
     end subroutine record
@@ -538,6 +544,7 @@ contains
     integer :: section_start(num_sections), section_end(num_sections)
     integer :: num_links, num_tokens, il, l, num_affine, num_pairs, i, at, tag_image, tag_master
     real(dp), allocatable :: affine(:)
+    integer , allocatable :: position(:)
     real(dp), parameter :: identity(16) = [1.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, &
          &                                 0.0_dp, 1.0_dp, 0.0_dp, 0.0_dp, &
          &                                 0.0_dp, 0.0_dp, 1.0_dp, 0.0_dp, &
@@ -552,6 +559,7 @@ contains
        return
     end if
 
+    position = position_of_number(vertex_numbers)
     il = section_start(PERIODIC) + 1
     read(lines(il) % str, *) num_links
     allocate(first(num_links), last(num_links), translation(3, num_links))
@@ -605,8 +613,8 @@ contains
        do i = 1, num_pairs
           call lines(il) % tokenize(" ", num_tokens, tokens)
           at = at + 1
-          image(at)  = findloc(vertex_numbers, tokens(1) % as_integer(), dim=1)
-          master(at) = findloc(vertex_numbers, tokens(2) % as_integer(), dim=1)
+          image(at)  = located(position, tokens(1) % as_integer())
+          master(at) = located(position, tokens(2) % as_integer())
           if (image(at) == 0 .or. master(at) == 0) then
              error stop 'view_gmsh_loader: a periodic pair names a node absent from $Nodes'
           end if
@@ -646,5 +654,28 @@ contains
     end do
 
   end subroutine find_tags
+
+  !====================================================================!
+  ! The position of each node number in the list of numbers, the first
+  ! where a number repeats: a table indexed by number, so that reading
+  ! an element's nodes is linear in the elements; and a number's
+  ! position in it, zero for a number the list does not contain.
+  !====================================================================!
+
+  pure function position_of_number(numbers) result(position)
+    integer, intent(in) :: numbers(:)
+    integer, allocatable :: position(:)
+    integer :: i
+    allocate(position(max(0, maxval(numbers))), source=0)
+    do i = size(numbers), 1, -1
+       if (numbers(i) >= 1) position(numbers(i)) = i
+    end do
+  end function position_of_number
+
+  pure integer function located(position, number)
+    integer, intent(in) :: position(:), number
+    located = 0
+    if (number >= 1 .and. number <= size(position)) located = position(number)
+  end function located
 
 end module view_gmsh_loader

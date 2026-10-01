@@ -83,9 +83,18 @@ ifeq ($(COMPILER),gnu)
   ifeq ($(COARRAY),lib)
     F90FLAGS := $(subst -fcoarray=single,-fcoarray=lib,$(F90FLAGS))
     LIBDIR   := ../lib_par
-    CAF_LIBS := /usr/lib/x86_64-linux-gnu/open-coarrays/openmpi/lib/libcaf_openmpi.a \
-                -L/usr/lib/x86_64-linux-gnu/openmpi/lib -lmpi_mpifh -lmpi -lopen-rte -lopen-pal \
-                -lhwloc -levent_core -levent_pthreads -lm -lz
+    # OPENCOARRAYS, when set, is the prefix of an OpenCoarrays built
+    # from source (lib/libcaf_mpi.a), compiled and linked through the
+    # MPI wrapper of the MPI it was built against; otherwise the
+    # packaged runtime over the packaged OpenMPI
+    ifneq ($(OPENCOARRAYS),)
+      F90      := mpifort
+      CAF_LIBS := $(OPENCOARRAYS)/lib/libcaf_mpi.a
+    else
+      CAF_LIBS := /usr/lib/x86_64-linux-gnu/open-coarrays/openmpi/lib/libcaf_openmpi.a \
+                  -L/usr/lib/x86_64-linux-gnu/openmpi/lib -lmpi_mpifh -lmpi -lopen-rte -lopen-pal \
+                  -lhwloc -levent_core -levent_pthreads -lm -lz
+    endif
     LDFLAGS  += $(CAF_LIBS)
   endif
 

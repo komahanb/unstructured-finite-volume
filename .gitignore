@@ -105,3 +105,4 @@ test/graph-scheme/euler_bernoulli_beam
 test/graph-scheme/euler_bernoulli_beam_optimization
 test/graph-scheme/euler_bernoulli_beam_grid
 gmon.out
+test/graph-scheme/box_*.geo

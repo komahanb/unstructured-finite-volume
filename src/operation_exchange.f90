@@ -24,26 +24,37 @@
 !
 ! The ownership is given per unknown and is the same for every
 ! unknown of a block, so the part is cut from the coupling of the
-! blocks and consists of whole blocks. The interface is the union of the
-! halos of every part: each image cuts every part from the same
-! ownership, so no exchange forms it. A gather of a part sums the
-! interface alone over the images: the halo a product or a relaxation
-! over owned rows reads, at a length that falls against the whole as
-! the unknowns grow. The part also stores the colouring of the whole
-! blocks, the same on every image, and its interface in colour order,
-! so that a relaxation sweeping the colours in turn gathers each
-! colour's interface alone, and relaxes in the order one image does.
-! A summed row reads every point - the integral of an unknown over
-! the region - so it is not a coupling of the cut: its owner states
-! the terms of its own columns, every other part keeps the terms of
-! its owned columns here, and one sum over the images of their
-! partial sums completes the row. Under one image nothing is
+! blocks and consists of whole blocks. The neighbours of a part are
+! the owners of its halo; the relation is symmetric, the adjacency of
+! the blocks being so. The part sends to each neighbour the unknowns
+! of its owned blocks adjacent to that neighbour's, one segment per
+! neighbour in ascending image order, each segment in the order of
+! the colouring of the whole blocks, then of the block; the halo it
+! receives from a neighbour is that neighbour's segment for it, in
+! the same order. Both ends compute the segments from the same
+! ownership and the same adjacency, so nothing is exchanged to form
+! them, and a gather of a part is one write of the sent segments to
+! this image's outbox, one synchronisation with the neighbours, and
+! one contiguous read of each neighbour's segment: the volume per
+! image is that of its own halo, not of the interface of the whole,
+! and no image waits for an image that is not its neighbour. The
+! part also stores the colouring of the whole blocks, the same on
+! every image, so that a relaxation sweeping the colours in turn
+! gathers each colour's segments alone, and relaxes in the order one
+! image does. A summed row reads every point - the integral of an
+! unknown over the region - so it is not a coupling of the cut: its
+! owner states the terms of its own columns, every other part keeps
+! the terms of its owned columns here, and one sum over the images
+! of their partial sums completes the row. Under one image nothing is
 ! exchanged.
 !
-! A reduction needs no coarray variable: the coarray runtime in use
-! (OpenCoarrays 2.9.2 under gfortran 14) registers a module coarray
-! before the runtime is initialised and mis-sizes a vector-subscript
-! access through a component, while its collectives are sound.
+! The outbox is a coarray allocated in this module, by every image
+! at once with the same bounds. The coarray runtime in use
+! (OpenCoarrays 2.9.2 under gfortran 14) mis-sizes a remote read
+! whose source or destination is vector-subscripted, and rejects one
+! of zero length: every remote read here is a contiguous section of
+! positive length into a contiguous vector. The reductions need no
+! coarray variable: the collectives are sound.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -76,15 +87,20 @@ module operation_exchange
      integer, allocatable :: owned(:)
      ! of a part: the whole's index of each entry, owned first
      integer, allocatable :: whole_index(:)
-     ! of a part: the interface entries this part owns and those of its
-     ! halo, each with its place in the interface
-     integer, allocatable :: sent(:), sent_at(:), received(:), received_at(:)
-     integer :: interface_length = 0
      ! of a part: the colour of each of its blocks in the colouring of
-     ! the whole blocks; the interface of colour c at
-     ! colour_first(c):colour_first(c+1)-1, and the entries sent to it
-     ! and received from it at sent_first(c) and received_first(c)
-     integer, allocatable :: block_colour(:), colour_first(:), sent_first(:), received_first(:)
+     ! the whole blocks, and the number of colours
+     integer, allocatable :: block_colour(:)
+     integer :: num_colours = 0
+     ! of a part: the neighbouring images, ascending; the entries sent,
+     ! in the order of the outbox, those of neighbour k and colour c
+     ! at sent_first(c, k):sent_first(c + 1, k) - 1; the halo entries
+     ! received, in the order of the neighbours' segments, those of
+     ! neighbour k and colour c at received_first(c, k):
+     ! received_first(c + 1, k) - 1, read from the neighbour's outbox
+     ! from remote_first(c, k)
+     integer, allocatable :: neighbours(:)
+     integer, allocatable :: sent(:), received(:)
+     integer, allocatable :: sent_first(:,:), received_first(:,:), remote_first(:,:)
      ! of a part: the summed rows, each one's row in this part when it
      ! owns it (zero otherwise), and the terms of this part's owned
      ! columns in the rows it does not own
@@ -107,6 +123,17 @@ module operation_exchange
   interface exchange
      module procedure create
   end interface exchange
+
+  ! THE OUTBOX: the segments this image sends, in two buffers
+  ! alternated by every gather of a part. A neighbour reads a buffer
+  ! after the synchronisation of its gather; the next gather writes
+  ! the other buffer, and the one after it passes a synchronisation
+  ! the neighbour reaches only after its read, so no read is overtaken
+  ! by a write. One vector, the second buffer after the first, each
+  ! of the largest segment total over the images, the bounds being
+  ! the same on every image.
+  real(dp), allocatable :: outbox(:)[:]
+  integer :: buffer = 2
 
 contains
 
@@ -148,8 +175,10 @@ contains
   !===================================================================!
   ! THE PART of this image, cut by the partitioner from the coupling
   ! of the blocks with the whole's ownership adopted: whole blocks,
-  ! the owned first; and the interface, from the halo of every part.
-  ! A coupling of another vertex count than the ownership, or a block
+  ! the owned first; and the segments sent to and received from each
+  ! neighbour, from one pass over the adjacency of the blocks. Every
+  ! image calls this at once: the outbox is allocated here. A
+  ! coupling of another vertex count than the ownership, or a block
   ! whose unknowns have several owners, is invalid input.
   !===================================================================!
 
@@ -165,10 +194,8 @@ contains
     class(field), allocatable :: coloured
     type(partition_relation) :: rel
     class(directed_graph), allocatable :: cut_part
-    integer, allocatable :: block_owner(:), interface_of(:), local_blocks(:), position(:), colours(:)
-    logical, allocatable :: in_interface(:)
-    integer, allocatable :: order(:)
-    integer :: nb, w, k, i, b, j, c, owned_blocks, length
+    integer, allocatable :: block_owner(:), local_blocks(:), colours(:)
+    integer :: nb, w, i, b, j, owned_blocks, length
     character(len=250) :: message
 
     w  = this % width
@@ -190,17 +217,11 @@ contains
     call colouring % apply(blocks, output=coloured)
     call coloured % integer_vector(colours)
 
-    ! every part's halo, from the same ownership on every image
-    allocate(in_interface(nb), source=.false.)
-    do k = 1, this % images
-       cut = partitioner(PARTITION_ADOPTED, this % images, part=k, adopted=block_owner)
-       call cut % partition_graph(blocks, cut_part, rel)
-       owned_blocks = count(block_owner == k)
-       do i = owned_blocks + 1, cut_part % num_vertices()
-          in_interface(rel % global_vertex_index(i)) = .true.
-       end do
-       if (k == this % image) local_blocks = [(rel % global_vertex_index(i), i = 1, cut_part % num_vertices())]
-    end do
+    ! this image's part alone
+    cut = partitioner(PARTITION_ADOPTED, this % images, part=this % image, adopted=block_owner)
+    call cut % partition_graph(blocks, cut_part, rel)
+    owned_blocks = count(block_owner == this % image)
+    local_blocks = [(rel % global_vertex_index(i), i = 1, cut_part % num_vertices())]
 
     local % image  = this % image
     local % images = this % images
@@ -211,91 +232,200 @@ contains
     do i = 1, size(local_blocks)
        local % whole_index((i - 1) * w + 1:i * w) = [((local_blocks(i) - 1) * w + j, j = 1, w)]
     end do
-    local % is_owned = this % owner(local % whole_index) == this % image
+    local % is_owned     = this % owner(local % whole_index) == this % image
     local % block_colour = colours(local_blocks)
-    local % owned    = pack([(i, i = 1, length)], local % is_owned)
+    local % num_colours  = maxval(colours)
+    local % owned        = pack([(i, i = 1, length)], local % is_owned)
 
-    ! each interface unknown's place in the interface, and the part's
-    ! entries that send to it and receive from it
-    allocate(interface_of(nb), source=0)
-    allocate(local % colour_first(maxval(colours) + 1))
-    local % interface_length = 0
-    do c = 1, maxval(colours)
-       local % colour_first(c) = local % interface_length + 1
-       do b = 1, nb
-          if (.not. in_interface(b) .or. colours(b) /= c) cycle
-          interface_of(b) = local % interface_length
-          local % interface_length = local % interface_length + w
-       end do
-    end do
-    local % colour_first(maxval(colours) + 1) = local % interface_length + 1
-    allocate(position(length), source=0)
-    do i = 1, length
-       b = (local % whole_index(i) - 1) / w + 1
-       if (in_interface(b)) position(i) = interface_of(b) + local % whole_index(i) - (b - 1) * w
-    end do
-    ! in the order of the interface, so each colour's entries are
-    ! consecutive
-    order = interface_order(position)
-    local % sent        = pack(order, local % is_owned(order))
-    local % sent_at     = position(local % sent)
-    local % received    = pack(order, .not. local % is_owned(order))
-    local % received_at = position(local % received)
-    local % sent_first     = colour_bounds(local % sent_at, local % colour_first)
-    local % received_first = colour_bounds(local % received_at, local % colour_first)
+    call segments(local, blocks, block_owner, colours, local_blocks, owned_blocks)
+    call allocate_outbox(size(local % sent))
 
   end function part
 
-  ! the part's entries that lie in the interface, by ascending place
-  function interface_order(position) result(order)
-    integer, intent(in) :: position(:)
-    integer, allocatable :: order(:)
-    integer, allocatable :: at(:)
-    integer :: i
-    allocate(at(max(0, maxval(position))), source=0)
-    do i = 1, size(position)
-       if (position(i) > 0) at(position(i)) = i
-    end do
-    order = pack(at, at > 0)
-  end function interface_order
+  !===================================================================!
+  ! THE SEGMENTS of a part. The neighbours are the owners of the halo
+  ! blocks. One pass over the blocks owned by this image or by a
+  ! neighbour reads each block's adjacent owners: a block of this
+  ! image adjacent to neighbour k is sent to k; a block of neighbour k
+  ! adjacent to this image is received from k; a block of neighbour k
+  ! adjacent to an image before this one lies before k's segment for
+  ! this image in k's outbox. A halo block received from no neighbour,
+  ! or a received block outside the part, is invalid input: the
+  ! partitioner's halo is the set of blocks adjacent to the owned
+  ! ones, which is what the pass reads.
+  !===================================================================!
 
-  ! for places ascending, the first of each colour's range of places
-  function colour_bounds(places, colour_first) result(first)
-    integer, intent(in) :: places(:), colour_first(:)
-    integer, allocatable :: first(:)
-    integer :: c, k
-    allocate(first(size(colour_first)))
-    k = 1
-    do c = 1, size(colour_first)
-       do while (k <= size(places))
-          if (places(k) >= colour_first(c)) exit
-          k = k + 1
-       end do
-       first(c) = k
+  subroutine segments(local, blocks, block_owner, colours, local_blocks, owned_blocks)
+
+    type(exchange)             , intent(inout) :: local
+    type(stored_directed_graph), intent(in)    :: blocks
+    integer                    , intent(in)    :: block_owner(:), colours(:), local_blocks(:)
+    integer                    , intent(in)    :: owned_blocks
+
+    integer, allocatable :: neighbour_index(:), marked(:), adjacent(:)
+    integer, allocatable :: send_count(:,:), receive_count(:,:), before(:)
+    integer, allocatable :: send_at(:,:), receive_at(:,:), place_of(:)
+    integer :: me, w, nc, nn, nb, b, o, i, k, c, m, pass, p, j, s, r
+
+    me = local % image
+    w  = local % width
+    nc = local % num_colours
+    nb = size(block_owner)
+
+    ! the neighbours, ascending, from the owners of the halo blocks
+    allocate(neighbour_index(local % images), source=0)
+    do i = owned_blocks + 1, size(local_blocks)
+       neighbour_index(block_owner(local_blocks(i))) = 1
     end do
-  end function colour_bounds
+    nn = 0
+    do k = 1, local % images
+       if (neighbour_index(k) == 0) cycle
+       nn = nn + 1
+       neighbour_index(k) = nn
+    end do
+    allocate(local % neighbours(nn))
+    do k = 1, local % images
+       if (neighbour_index(k) > 0) local % neighbours(neighbour_index(k)) = k
+    end do
+
+    allocate(send_count(nc, nn), receive_count(nc, nn), before(nn), marked(local % images))
+    allocate(local % sent_first(nc + 1, nn), local % received_first(nc + 1, nn), local % remote_first(nc + 1, nn))
+    allocate(send_at(nc, nn), receive_at(nc, nn))
+    allocate(place_of(nb * w), source=0)
+    place_of(local % whole_index) = [(i, i = 1, size(local % whole_index))]
+    marked = 0
+
+    ! the first pass counts the blocks of each segment, the second
+    ! places their unknowns in the order of the counts
+    do pass = 1, 2
+       if (pass == 1) then
+          send_count    = 0
+          receive_count = 0
+          before        = 0
+       else
+          call segment_bounds(send_count, w, local % sent_first)
+          call segment_bounds(receive_count, w, local % received_first)
+          do k = 1, nn
+             local % remote_first(:, k) = before(k) + local % received_first(:, k) - local % received_first(1, k) + 1
+          end do
+          allocate(local % sent(w * sum(send_count)))
+          allocate(local % received(w * sum(receive_count)))
+          send_at    = local % sent_first(1:nc, :)
+          receive_at = local % received_first(1:nc, :)
+       end if
+       do b = 1, nb
+          o = block_owner(b)
+          if (o /= me) then
+             if (neighbour_index(o) == 0) cycle
+          end if
+          c = colours(b)
+          call blocks % adjacent_vertices(b, adjacent)
+          do i = 1, size(adjacent)
+             m = block_owner(adjacent(i))
+             ! each adjacent image once per block and pass
+             if (m == o .or. marked(m) == (pass - 1) * nb + b) cycle
+             marked(m) = (pass - 1) * nb + b
+             if (o == me) then
+                k = neighbour_index(m)
+                if (pass == 1) then
+                   send_count(c, k) = send_count(c, k) + 1
+                else
+                   do j = 1, w
+                      s = send_at(c, k)
+                      local % sent(s) = place_of((b - 1) * w + j)
+                      send_at(c, k) = s + 1
+                   end do
+                end if
+             else if (m == me) then
+                k = neighbour_index(o)
+                if (pass == 1) then
+                   receive_count(c, k) = receive_count(c, k) + 1
+                else
+                   do j = 1, w
+                      r = receive_at(c, k)
+                      p = place_of((b - 1) * w + j)
+                      if (p == 0) error stop 'operation_exchange: a block sent by a neighbour lies outside the part'
+                      local % received(r) = p
+                      receive_at(c, k) = r + 1
+                   end do
+                end if
+             else if (m < me .and. pass == 1) then
+                k = neighbour_index(o)
+                before(k) = before(k) + w
+             end if
+          end do
+       end do
+    end do
+
+    if (size(local % received) /= (size(local_blocks) - owned_blocks) * w) then
+       error stop 'operation_exchange: the halo of the part is not the union of the neighbours'' segments'
+    end if
+
+  end subroutine segments
+
+  ! the first entry of each (colour, neighbour) segment, the segments
+  ! of one neighbour consecutive by colour and the neighbours
+  ! consecutive, each block counted contributing w entries
+  pure subroutine segment_bounds(count, w, first)
+    integer, intent(in)  :: count(:,:), w
+    integer, intent(out) :: first(:,:)
+    integer :: c, k, n
+    n = 1
+    do k = 1, size(count, 2)
+       do c = 1, size(count, 1)
+          first(c, k) = n
+          n = n + w * count(c, k)
+       end do
+       first(size(count, 1) + 1, k) = n
+    end do
+  end subroutine segment_bounds
+
+  !===================================================================!
+  ! The outbox of the length given on this image, allocated by every
+  ! image at once with the largest length over the images; an outbox
+  ! already of that length is left as it is.
+  !===================================================================!
+
+  subroutine allocate_outbox(length)
+
+    integer, intent(in) :: length
+
+    integer :: needed
+
+    needed = max(length, 1)
+    call co_max(needed)
+    if (allocated(outbox)) then
+       if (size(outbox) == 2 * needed) return
+       deallocate(outbox)
+    end if
+    allocate(outbox(2 * needed)[*])
+    outbox = 0.0_dp
+
+  end subroutine allocate_outbox
 
   !===================================================================!
   ! THE GATHER. Of the whole, by one sum over the images of the vector
   ! with every entry not owned set to zero: each entry is owned by one
   ! image, so the sum is the owner's value everywhere. Of a part, by
-  ! one sum of the interface, each image placing the interface entries
-  ! it owns: every halo entry then takes its owner's value.
+  ! the neighbour exchange: the sent segments written to this image's
+  ! outbox, one synchronisation with the neighbours, and each
+  ! neighbour's segment for this image read from its outbox into the
+  ! halo. Every image calls it, with the same colour.
   !===================================================================!
 
   subroutine gather(this, x, colour, summed_into, factor)
 
     class(exchange), intent(in)    :: this
     real(dp)       , intent(inout) :: x(:)
-    ! of a part, the interface of this colour alone
+    ! of a part, the segments of this colour alone
     integer        , intent(in), optional :: colour
     ! of a part, the other parts' terms of the summed rows at x, times
-    ! the factor, added to this vector in the same sum
+    ! the factor, added to this vector
     real(dp)       , intent(inout), optional :: summed_into(:)
     real(dp)       , intent(in)   , optional :: factor
 
-    real(dp), allocatable :: shared(:)
-    integer :: first, last, s1, s2, r1, r2, g, e
+    real(dp), allocatable :: segment(:)
+    integer :: c1, c2, k, a, b, ra, rb, shift
 
     if (this % images == 1) return
     if (.not. allocated(this % whole_index)) then
@@ -303,34 +433,36 @@ contains
        call co_sum(x)
        return
     end if
-    first = 1
-    last  = this % interface_length
-    s1 = 1
-    s2 = size(this % sent)
-    r1 = 1
-    r2 = size(this % received)
+    c1 = 1
+    c2 = this % num_colours
     if (present(colour)) then
-       first = this % colour_first(colour)
-       last  = this % colour_first(colour + 1) - 1
-       s1 = this % sent_first(colour)
-       s2 = this % sent_first(colour + 1) - 1
-       r1 = this % received_first(colour)
-       r2 = this % received_first(colour + 1) - 1
+       c1 = colour
+       c2 = colour
     end if
-    g = 0
-    if (present(summed_into) .and. allocated(this % summed_row)) g = size(this % summed_row)
-    allocate(shared(first:last + g), source=0.0_dp)
-    shared(this % sent_at(s1:s2)) = x(this % sent(s1:s2))
-    do e = 1, merge(size(this % term_row), 0, g > 0)
-       shared(last + this % term_row(e)) = shared(last + this % term_row(e)) &
-            & + this % term_weight(e) * x(this % term_column(e))
+    buffer = 3 - buffer
+    shift  = (buffer - 1) * (size(outbox) / 2)
+    allocate(segment(size(this % received)))
+    do k = 1, size(this % neighbours)
+       a = this % sent_first(c1, k)
+       b = this % sent_first(c2 + 1, k) - 1
+       if (b < a) cycle
+       outbox(shift + a:shift + b) = x(this % sent(a:b))
     end do
-    call co_sum(shared)
-    x(this % received(r1:r2)) = shared(this % received_at(r1:r2))
-    do e = 1, g
-       if (this % summed_row(e) > 0) summed_into(this % summed_row(e)) = summed_into(this % summed_row(e)) &
-            & + factor * shared(last + e)
+    if (size(this % neighbours) > 0) sync images(this % neighbours)
+    do k = 1, size(this % neighbours)
+       a  = this % received_first(c1, k)
+       b  = this % received_first(c2 + 1, k) - 1
+       ! a section of no entries is not read: the runtime rejects
+       ! a remote read of zero length
+       if (b < a) cycle
+       ra = shift + this % remote_first(c1, k)
+       rb = ra + b - a
+       ! into a contiguous vector first: the runtime mis-sizes a
+       ! remote read whose destination is vector-subscripted
+       segment(1:b - a + 1) = outbox(ra:rb)[this % neighbours(k)]
+       x(this % received(a:b)) = segment(1:b - a + 1)
     end do
+    if (present(summed_into)) call this % add_summed_rows(x, summed_into, factor)
 
   end subroutine gather
 

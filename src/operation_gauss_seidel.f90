@@ -202,7 +202,7 @@ contains
     allocate(block_solution(w))
     distributed = allocated(this % distribution)
     ! every image exchanges after each colour of the whole
-    if (distributed) num_colours = size(this % distribution % colour_first) - 1
+    if (distributed) num_colours = this % distribution % num_colours
     if (explicit) then
        allocate(dx(size(x)), source=0.0_dp)
        ! the columns whose change reaches an owned row, by colour: every

@@ -226,9 +226,16 @@ contains
        call linearized % freeze(inputs, base=y)
 
        ! A statement whose jacobian is explicit passes the inner
-       ! minimizer a stencil, whose pattern is then the coupling a
-       ! structured minimizer sweeps by; any other is passed the
-       ! linearization, a matrix-vector product.
+       ! minimizer a stencil; the coupling a structured minimizer
+       ! sweeps by is the one this solver was stated with, when one
+       ! was, and the stencil's pattern otherwise: a row that reads
+       ! every unknown, the integral of a field over the region, lies
+       ! in the pattern but couples no two points, and a colouring
+       ! taken from the pattern gives its block a colour of its own
+       ! and the others one colour fewer, under which the sweep
+       ! converges at half the rate (255 against 117 preconditioner
+       ! applications on the 16 x 16 vortex). Any other statement is
+       ! passed the linearization, a matrix-vector product.
        jacobian_defined = .false.
        if (this % explicit) then
           call this % action % explicit_jacobian(this % graph, this % action % bind(inputs), &
@@ -242,9 +249,15 @@ contains
                & spread(0.0_dp, 1, this % num_unknowns), 'explicit jacobian')
           call jacobian % versioned(this % action % version(), this % action % transpose_version())
           if (allocated(this % distribution)) this % inner % distribution = this % distribution
-          call this % inner % state(jacobian, jacobian % pattern, this % unknown_domain, &
-               & this % num_unknowns, num_components = this % num_components, &
-               & coupling = jacobian % pattern)
+          if (allocated(this % coupling)) then
+             call this % inner % state(jacobian, jacobian % pattern, this % unknown_domain, &
+                  & this % num_unknowns, num_components = this % num_components, &
+                  & coupling = this % coupling)
+          else
+             call this % inner % state(jacobian, jacobian % pattern, this % unknown_domain, &
+                  & this % num_unknowns, num_components = this % num_components, &
+                  & coupling = jacobian % pattern)
+          end if
        else
           call this % inner % state(linearized, this % graph, this % unknown_domain, &
                & this % num_unknowns, num_components = this % num_components)

@@ -4941,7 +4941,10 @@ contains
 
     designs = rows % design_fields()
     design  = designs % design(design_at_points(this % points % design_values(), rows % designs, npts))
-    call solver % state(rows, rows % unknown_graph(), rows % unknown_domain(), unknowns, stored_inputs=[design])
+    ! the coupling of the unknowns, the summed rows excluded, is what
+    ! the inner minimizer's sweep is coloured by
+    call solver % state(rows, rows % unknown_graph(), rows % unknown_domain(), unknowns, stored_inputs=[design], &
+         & coupling=rows % coupling())
 
   end function solver_for
 

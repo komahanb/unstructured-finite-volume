@@ -40,8 +40,8 @@
 ! 4.56e-7, 3.10e-11 (quadratic, the derivatives exact), and the design
 ! found approaches the true one as the grid is refined: s1 =
 ! 0.50961827, 0.50205024, 0.50054911 on 21 x 17, 41 x 33 and 81 x 33
-! instants by points. At the design found, dJ/ds by the expansion of
-! the state is below 3e-11 as well.
+! instants by points. At the design found at 21 x 17, dJ/ds by the
+! expansion of the state is (-2.47e-11, -1.82e-11).
 !=====================================================================!
 
 program euler_bernoulli_beam_optimization

@@ -37,7 +37,8 @@
 ! this image's outbox, one synchronisation with the neighbours, and
 ! one contiguous read of each neighbour's segment: the volume per
 ! image is that of its own halo, not of the interface of the whole,
-! and no image waits for an image that is not its neighbour. The
+! and no image waits for an image that is not its neighbour, except
+! through the one sum of the summed rows when there are any. The
 ! part also stores the colouring of the whole blocks, the same on
 ! every image, so that a relaxation sweeping the colours in turn
 ! gathers each colour's segments alone, and relaxes in the order one
@@ -382,8 +383,10 @@ contains
 
   !===================================================================!
   ! The outbox of the length given on this image, allocated by every
-  ! image at once with the largest length over the images; an outbox
-  ! already of that length is left as it is.
+  ! image at once with the largest length over the images. An outbox
+  ! at least that long is left as it is: a reallocation synchronises
+  ! every image, and an exchange formed earlier still writes within
+  ! the length it was formed with.
   !===================================================================!
 
   subroutine allocate_outbox(length)
@@ -395,7 +398,7 @@ contains
     needed = max(length, 1)
     call co_max(needed)
     if (allocated(outbox)) then
-       if (size(outbox) == 2 * needed) return
+       if (size(outbox) >= 2 * needed) return
        deallocate(outbox)
     end if
     allocate(outbox(2 * needed)[*])

@@ -81,7 +81,4 @@ coordinate.
 
 ## Not done
 
-- In `euler_bernoulli_beam_optimization.f90` the argument lists of the
-  unknown and of the multipliers are their defaults: removed, the
-  program prints every digit unchanged, serially.
 - `expression_view` prints every design coordinate as `nu`.

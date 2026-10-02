@@ -111,7 +111,7 @@ program euler_bernoulli_beam_optimization
 
   ! the physics in flux form, the initial data and the clamped ends;
   ! no condition on the design
-  w      = omega % unknown('w', [t, x, s1, s2])
+  w      = omega % unknown('w')
   moment = EI * w % derivative([x, x])
   r      = continuous_residual(omega, [rhoA * w % derivative([t, t]) + moment % derivative([x, x]) - load])
   ic     = continuous_residual(initial, [w - w_true, w % derivative([t])])
@@ -120,10 +120,10 @@ program euler_bernoulli_beam_optimization
 
   ! the misfit, and the Lagrangian
   misfit   = integral((w - w_true)**2 / 2.0_dp, over=omega)
-  adjoint  = r    % multiplier('adjoint', [t, x, s1, s2])
-  lambda   = ic   % multiplier('lambda', [x, s1, s2])
-  lambda_0 = bc_0 % multiplier('lambda_0', [t, s1, s2])
-  lambda_L = bc_L % multiplier('lambda_L', [t, s1, s2])
+  adjoint  = r    % multiplier('adjoint')
+  lambda   = ic   % multiplier('lambda')
+  lambda_0 = bc_0 % multiplier('lambda_0')
+  lambda_L = bc_L % multiplier('lambda_L')
   Lagrangian = misfit + adjoint*r + lambda*ic + lambda_0*bc_0 + lambda_L*bc_L
 
   L_h = Lagrangian % discretize(omega_h, &

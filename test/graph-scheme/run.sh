@@ -22,7 +22,10 @@
 #                        adjoint's along nu, mu and nu + mu, the mixed
 #                        derivative read from both rows of the Hessian
 #                        and by polarization, and the conditions summed
-#                        bare; every difference is rounding, 1.4e-14 at
+#                        bare; the design read back by name, and the
+#                        oscillator from u_t and u_tt read by name at
+#                        every instant, 4.7e-13, Newton's tolerance;
+#                        every other difference is rounding, 1.4e-14 at
 #                        most, and the program stops above 1e-10
 #   euler_bernoulli_beam_grid
 #                        the points of the beamline graded by one design

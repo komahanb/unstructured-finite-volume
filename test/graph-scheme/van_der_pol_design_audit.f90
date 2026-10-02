@@ -7,9 +7,10 @@
 !
 ! the initial velocity and the objective reading the design. The
 ! expansion is of order two along nu, along mu and along the
-! direction w = nu + mu. Three laws are audited, each by a difference
-! that is zero to rounding, and the program stops when one exceeds
-! 1e-10.
+! direction w = nu + mu. Each law below is audited by a difference
+! that is zero to rounding, or, for the oscillator itself, to the
+! tolerance of Newton's iteration, and the program stops when one
+! exceeds 1e-10.
 !
 ! THE TWO HALVES OF L AGREE. Along each expansion, of seed s, the
 ! derivatives of J by the expansion of the state against those by the
@@ -29,6 +30,11 @@
 !
 ! THE DESIGN IS READ BY NAME: fields(['nu', 'mu']) of the solution
 ! is the design the manifold states, (1, 1).
+!
+! THE DERIVATIVES OF THE STATE ARE READ BY NAME: u_t and u_tt, the
+! derivatives along t of the solution's u, are the components its
+! jet stores, and with u they satisfy the oscillator at every instant
+! to the tolerance of Newton's iteration.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -56,6 +62,7 @@ program van_der_pol_design_audit
   type(continuous_residual) :: r, g, d, L
   type(discrete_residual)   :: L_h
   type(discrete_field)      :: estimate, solution, bare, kappa_h, slope, energy_h, bare_energy, design_h
+  type(discrete_field)      :: u_h, u_t_h, u_tt_h
   type(continuous_field)    :: along(3)
   real(dp) :: J(1 + 3 * order), by_adjoint, mixed, apart, largest
   integer  :: k, e
@@ -125,6 +132,15 @@ program van_der_pol_design_audit
   design_h = solution % fields(['nu', 'mu'])
   print '(a, 2f8.4)', 'the design read from the solution: ', design_h % value(1, 1), design_h % value(1, 2)
   largest = max(largest, abs(design_h % value(1, 1) - 1.0_dp), abs(design_h % value(1, 2) - 1.0_dp))
+
+  ! THE DERIVATIVES OF THE STATE ARE READ BY NAME
+  u_h    = solution % fields(['u'])
+  u_t_h  = u_h % derivative([t])
+  u_tt_h = u_h % derivative([t, t])
+  apart  = maxval(abs(u_tt_h % value(:, 1) - (1.0_dp - u_h % value(:, 1)**2) * u_t_h % value(:, 1) &
+       &             + u_h % value(:, 1)))
+  print '(a, es12.2)', 'the oscillator at every instant, from u_t and u_tt read by name: ', apart
+  largest = max(largest, apart)
 
   ! A CONDITION NEEDS NO MULTIPLIER: the initial data and the design
   ! condition bare

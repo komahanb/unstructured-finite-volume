@@ -690,7 +690,96 @@ contains
   end subroutine nodes_copied
 
   !===================================================================!
-  ! THE DERIVATIVE OF A DISCRETE FIELD along the design: the
+  ! THE DERIVATIVE ALONG TIME AND SPACE of an unknown read from a
+  ! solution: the component its jet stores of the orders the
+  ! multi-index names along the first coordinate and along at most
+  ! one later coordinate, with its columns along the design. Nothing
+  ! is computed. Invalid input: a field of several components, or not
+  ! read from a solution, or a multiplier; a solution under a
+  ! checkpoint or snapshot schedule, whose jet keeps the values alone;
+  ! two later coordinates; an order the jet does not store.
+  !===================================================================!
+
+  function stored_component(this, along) result(d)
+
+    class(discrete_field)  , intent(in) :: this
+    type(continuous_field) , intent(in) :: along(:)
+    type(discrete_field) :: d
+
+    integer :: k, f, field, first, later, coordinate, row
+    character(len=32) :: name
+
+    if (size(this % value, 2) /= 1) then
+       error stop 'operation_field: a derivative along time or space is read of one unknown'
+    end if
+    if (.not. (allocated(this % jet) .and. allocated(this % slot) .and. allocated(this % rule))) then
+       error stop 'operation_field: a derivative along time or space is read from the jet of a solution'
+    end if
+    if (this % along /= 0) then
+       error stop 'operation_field: a derivative along time or space is read before those along the design'
+    end if
+    if (allocated(this % objective_value)) then
+       error stop 'operation_field: under a checkpoint or snapshot schedule the jet of a solution keeps the &
+            &values alone'
+    end if
+    field = 0
+    ! the unknowns of the state, the multipliers the rule reads after
+    ! them having no row of the tuple
+    do f = 1, this % rule % num_fields() - this % rule % num_multipliers()
+       if (this % rule % offset_of_field(f) + 1 == this % slot(1)) field = f
+    end do
+    if (field == 0) then
+       error stop 'operation_field: a derivative along time or space is read of an unknown, whose jet the &
+            &solution stores'
+    end if
+    first      = 0
+    later      = 0
+    coordinate = 0
+    name       = trim(this % name(1)) // '_'
+    do k = 1, size(along)
+       name = trim(name) // trim(along(k) % name)
+       if (along(k) % coordinate == FIRST_COORDINATE) then
+          first = first + 1
+          cycle
+       end if
+       if (coordinate /= 0 .and. along(k) % coordinate /= coordinate) then
+          error stop 'operation_field: the jet stores the derivatives along one later coordinate at a time'
+       end if
+       coordinate = along(k) % coordinate
+       later      = later + 1
+    end do
+    if (later == 0) then
+       if (first > this % rule % degree_of_field(field)) then
+          error stop 'operation_field: the jet does not store this derivative along the first coordinate'
+       end if
+       row = this % rule % component_at(FIRST_COORDINATE, first, field) + 1
+    else
+       if (later > this % rule % degree_along(coordinate) .or. first > this % rule % mixed_degree(field)) then
+          error stop 'operation_field: the jet does not store this derivative'
+       end if
+       row = this % rule % component_at(coordinate, later, field, first) + 1
+    end if
+
+    allocate(d % on, source=this % on)
+    allocate(d % name(1))
+    d % name(1) = name
+    d % value   = reshape(this % jet(row, :, 1), [size(this % jet, 2), 1])
+    d % jet     = this % jet
+    d % slot    = [row]
+    d % rule    = this % rule
+    d % along   = 0
+    call nodes_copied(this, d)
+
+  end function stored_component
+
+  !===================================================================!
+  ! THE DERIVATIVE OF A DISCRETE FIELD. Along time and space, the
+  ! component the jet of a solution stores, read and not computed;
+  ! the entries of the multi-index along time and space come before
+  ! those along the design, which are then read from that component's
+  ! columns, as below.
+  !
+  ! Along the design: the
   ! multi-index names design coordinates or directions, and the
   ! derivative is read from the columns stored - along the expansion
   ! whose seed is the coordinate's unit vector or the direction's
@@ -707,7 +796,7 @@ contains
   ! order other than two, or a component with no jet.
   !===================================================================!
 
-  function discrete_derivative(this, along) result(d)
+  recursive function discrete_derivative(this, along) result(d)
 
     class(discrete_field)  , intent(in) :: this
     type(continuous_field) , intent(in) :: along(:)
@@ -715,9 +804,22 @@ contains
 
     type(expansion) :: expanded
     real(dp), allocatable :: seed(:), other(:), both(:)
-    integer :: n, k, order, npts, e, second, third, c
+    integer :: n, k, order, npts, e, second, third, c, m
     logical :: mixed
     character(len=250) :: message
+
+    ! along time and space: the stored component, then its columns
+    ! along the design
+    m = count(.not. along % design_coordinate)
+    if (m > 0) then
+       if (any(along(1:m) % design_coordinate)) then
+          error stop 'operation_field: a multi-index names the coordinates of time and space before those of &
+               &the design'
+       end if
+       d = stored_component(this, along(1:m))
+       if (m < size(along)) d = d % derivative(along(m + 1:))
+       return
+    end if
 
     n = size(along)
     do k = 1, n

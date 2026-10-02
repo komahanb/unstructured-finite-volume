@@ -15,10 +15,11 @@
 #                        mixed components along x of w_t (3.73e-4)
 #   euler_bernoulli_beam_optimization
 #                        EI(x) = EI_0 (1 + s1 x/L + s2 (x/L)^2) found
-#                        by Newton on the design, gradient and hessian
-#                        from the multiplier of the design condition:
-#                        s = (0.5096, -0.3107) against (0.5, -0.3) on
-#                        21 x 17
+#                        where dJ/ds = 0, no condition fixing the
+#                        design: minimize iterates on it, the gradient
+#                        and hessian from the multiplier of the
+#                        design; s = (0.5096, -0.3107) against (0.5,
+#                        -0.3) on 21 x 17
 #
 #     run.sh             on one process
 #     IMAGES=n run.sh    on n coarray images: the library and the

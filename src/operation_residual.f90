@@ -64,6 +64,7 @@ module operation_residual
   use operation_field      , only : continuous_field, discrete_field, WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR
   use view_expression      , only : expression_view
   use operation_manifold   , only : continuous_manifold, discrete_manifold
+  use operation_expansion  , only : expansion
   use operation_family     , only : family, chain
   use operation_weight     , only : scheme_weight
   use operation_coupling   , only : weights_of
@@ -273,6 +274,9 @@ module operation_residual
   ! the actions of a scheduled reverse sweep
   integer, parameter :: ACTION_RESTORE = 1, ACTION_ADVANCE = 2, ACTION_STORE = 3, ACTION_REVERSE = 4
 
+  ! the iterations of Newton's method on a free design
+  integer, parameter :: MAX_DESIGN_ITERATIONS = 50
+
   type :: continuous_residual
 
      type(residual_term), allocatable :: term(:)
@@ -371,6 +375,7 @@ module operation_residual
 
      procedure :: minimize
      procedure :: disagreement
+     procedure, private :: zero_at_design
      procedure, private :: check_representations
      procedure, private :: num_represented
      procedure, private :: block_positions
@@ -2043,11 +2048,135 @@ contains
   end function residual_discretize
 
   !===================================================================!
-  ! THE ZERO OF THE DISCRETE RESIDUAL from an estimate: one block of
-  ! the chain after another, each a residual_operator over the block's
-  ! moments (its instants, and the stages of a one-step family) and
-  ! the cells. The solution is a discrete field of the manifold's
-  ! unknowns at the instants.
+  ! THE ZERO OF THE DISCRETE RESIDUAL, at the design the image states,
+  ! or, when no condition is stated on the design, at the design where
+  ! dJ/ds = 0: the stationarity of L_h in the design once the
+  ! condition that would hold it is removed. That design is found by
+  ! Newton's iteration on s from the value the manifold states, each
+  ! iterate the zero with the design prescribed there, the gradient -kappa
+  ! and the hessian -dkappa/ds from the expansion of order one along
+  ! each design coordinate: the reduced-space method. The iteration
+  ! ends where |dJ/ds| is below 1e-10 times the larger of one and its
+  ! first value, and the solution is the zero at that design. A free
+  ! design requires an objective, the equations paired with their
+  ! multiplier, and the expansion of order one along each design
+  ! coordinate.
+  !===================================================================!
+
+  recursive subroutine minimize(this, estimate, solution, checkpoint, snapshots)
+
+    class(discrete_residual), intent(in)  :: this
+    type(discrete_field)    , intent(in)  :: estimate
+    type(discrete_field)    , intent(out) :: solution
+    integer                 , intent(in), optional :: checkpoint, snapshots
+
+    type(discrete_residual) :: iterate
+    real(dp), allocatable :: kappa(:,:), gradient(:), hessian(:,:)
+    real(dp) :: tolerance
+    integer :: n, j, iteration
+    character(len=250) :: message
+
+    if (.not. free_design(this)) then
+       call this % zero_at_design(estimate, solution, checkpoint, snapshots)
+       return
+    end if
+    if (.not. (allocated(this % objective) .and. this % with_adjoint)) then
+       error stop 'operation_residual: a design on which no condition is stated is free, and is found where &
+            &dJ/ds = 0, which requires an objective and the equations paired with their multiplier'
+    end if
+    select type (this)
+    type is (discrete_residual)
+       iterate = this
+    end select
+    if (iterate % points % expansion % order < 1 .or. .not. along_each_coordinate(iterate % points % expansion)) then
+       error stop 'operation_residual: a free design is found by Newton''s iteration, whose hessian is the &
+            &expansion of order one along each design coordinate'
+    end if
+    n = iterate % points % expansion % num_designs()
+    allocate(gradient(n), hessian(n, n))
+    tolerance = 0.0_dp
+    do iteration = 1, MAX_DESIGN_ITERATIONS
+       call iterate % zero_at_design(estimate, solution, checkpoint, snapshots, kappa)
+       gradient = -kappa(:, 0)
+       do j = 1, n
+          hessian(:, j) = -kappa(:, iterate % points % expansion % column(j, 1))
+       end do
+       if (iteration == 1) tolerance = 1.0e-10_dp * max(1.0_dp, norm2(gradient))
+       if (verbosity >= 1) print '(a, i0, a, es12.4, a, *(es24.16))', 'design iteration ', iteration, &
+            & '  |dJ/ds| = ', norm2(gradient), '  s = ', iterate % points % expansion % at
+       if (norm2(gradient) < tolerance) return
+       iterate % points % expansion % at = iterate % points % expansion % at - linear_solution(hessian, gradient)
+    end do
+    write(message, '(a,i0,a)') 'operation_residual: Newton''s iteration on the free design did not reach &
+         &dJ/ds = 0 in ', MAX_DESIGN_ITERATIONS, ' iterations'
+    error stop trim(message)
+
+  end subroutine minimize
+
+  ! a design on which no condition is stated
+  logical function free_design(this)
+    class(discrete_residual), intent(in) :: this
+    integer :: j
+    free_design = this % manifold % with_design
+    do j = 1, size(this % condition)
+       if (this % condition(j) % manifold % is_design_factor()) free_design = .false.
+    end do
+  end function free_design
+
+  ! whether the expansions are along the design coordinates, one each
+  ! in their order
+  logical function along_each_coordinate(expanded)
+    type(expansion), intent(in) :: expanded
+    integer :: e, i
+    along_each_coordinate = expanded % num_expansions() == expanded % num_designs()
+    if (.not. along_each_coordinate) return
+    do e = 1, expanded % num_expansions()
+       do i = 1, expanded % num_designs()
+          if (expanded % along(i, e) /= merge(1.0_dp, 0.0_dp, i == e)) along_each_coordinate = .false.
+       end do
+    end do
+  end function along_each_coordinate
+
+  !===================================================================!
+  ! The solution x of A x = b by elimination with partial pivoting. A
+  ! singular A stops the program.
+  !===================================================================!
+
+  function linear_solution(A, b) result(x)
+
+    real(dp), intent(in) :: A(:,:), b(:)
+    real(dp) :: x(size(b))
+
+    real(dp) :: M(size(b), size(b) + 1), row(size(b) + 1)
+    integer :: n, k, i, p
+
+    n = size(b)
+    M(:, 1:n)   = A
+    M(:, n + 1) = b
+    do k = 1, n
+       p = k - 1 + maxloc(abs(M(k:n, k)), 1)
+       if (M(p, k) == 0.0_dp) error stop 'operation_residual: the hessian of the free design is singular'
+       if (p /= k) then
+          row     = M(k, :)
+          M(k, :) = M(p, :)
+          M(p, :) = row
+       end if
+       do i = k + 1, n
+          M(i, k:) = M(i, k:) - M(i, k) / M(k, k) * M(k, k:)
+       end do
+    end do
+    do k = n, 1, -1
+       x(k) = (M(k, n + 1) - dot_product(M(k, k + 1:n), x(k + 1:n))) / M(k, k)
+    end do
+
+  end function linear_solution
+
+  !===================================================================!
+  ! THE ZERO AT THE DESIGN THE IMAGE STATES, from an estimate: one
+  ! block of the chain after another, each a residual_operator over
+  ! the block's moments (its instants, and the stages of a one-step
+  ! family) and the cells. The solution is a discrete field of the
+  ! manifold's unknowns at the instants.
   !
   ! SCHEDULES: with checkpoint = k or snapshots = s the state is not
   ! stored over the chain. Both sweeps run over a window of instants,
@@ -2067,15 +2196,18 @@ contains
   ! nodes, so that it integrates the objective alone. A chain
   ! pipelined over the images retains every stage and takes no
   ! schedule; two images on a manifold of time alone divide a
-  ! scheduled reverse sweep instead.
+  ! scheduled reverse sweep instead. With kappa present, the
+  ! multipliers of the design, -dJ/ds in every column of the
+  ! expansion, are returned in it.
   !===================================================================!
 
-  recursive subroutine minimize(this, estimate, solution, checkpoint, snapshots)
+  recursive subroutine zero_at_design(this, estimate, solution, checkpoint, snapshots, kappa)
 
     class(discrete_residual), intent(in)  :: this
     type(discrete_field)    , intent(in)  :: estimate
     type(discrete_field)    , intent(out) :: solution
     integer                 , intent(in), optional :: checkpoint, snapshots
+    real(dp), allocatable   , intent(out), optional :: kappa(:,:)
 
     real(dp), allocatable :: tuple(:,:,:,:), stages(:,:,:,:,:), value(:,:)
     real(dp), allocatable :: jet(:,:,:), adjoint(:,:,:,:), reaction(:,:,:), gauge(:,:,:)
@@ -2139,7 +2271,7 @@ contains
           halves = this
        end select
        halves % overlapped = .true.
-       call halves % minimize(estimate, solution, checkpoint, snapshots)
+       call halves % zero_at_design(estimate, solution, checkpoint, snapshots, kappa)
        return
     end if
     if (.not. scheduled) then
@@ -2371,6 +2503,11 @@ contains
        end do
     end if
 
+    if (present(kappa) .and. allocated(design_multiplier)) then
+       allocate(kappa(size(design_multiplier, 1), 0:ubound(design_multiplier, 2)))
+       kappa = design_multiplier
+    end if
+
     estimate_nodes: block
       type(discrete_field) :: with_nodes
       with_nodes = solution
@@ -2390,7 +2527,7 @@ contains
       end if
     end block estimate_nodes
 
-  end subroutine minimize
+  end subroutine zero_at_design
 
   !===================================================================!
   ! THE QUADRATURE NODES of a solution: the families' own rule for the

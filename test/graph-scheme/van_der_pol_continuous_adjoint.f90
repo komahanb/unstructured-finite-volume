@@ -70,7 +70,7 @@ program van_der_pol_continuous_adjoint
   type(continuous_field)    :: t, nu, u, lambda, r, density, adjoint, u0, v0, rest, sensitivity
   type(continuous_field), allocatable :: terminal(:)
   type(discrete_field)      :: estimate, solution, lambda_h, functional
-  type(continuous_residual) :: system, g_0, g_T, L
+  type(continuous_residual) :: system, g_0, g_T, g_nu, L
   type(discrete_residual)   :: L_h
   type(continuous_field)    :: rho_0, rho_T
 
@@ -120,15 +120,18 @@ program van_der_pol_continuous_adjoint
   end do
 
   ! the initial data of u at 0, the natural conditions of lambda at
-  ! T, the two-point system on Omega, and its Lagrangian
+  ! T, the design held at nu_design - a design on which no condition
+  ! is stated is free - the two-point system on Omega, and its
+  ! Lagrangian
   u0  = u - u_initial
   v0  = u % derivative([t]) - v_initial
   system = continuous_residual(omega,    [r, adjoint])
   g_0    = continuous_residual(domega_0, [u0, v0])
   g_T    = continuous_residual(domega_T, terminal)
+  g_nu   = continuous_residual(omega % design(), [nu - nu_design])
   rho_0  = g_0 % multiplier('rho_0', [nu])
   rho_T  = g_T % multiplier('rho_T', [nu])
-  L      = system + rho_0*g_0 + rho_T*g_T
+  L      = system + rho_0*g_0 + rho_T*g_T + g_nu
 
   ! one block over every instant by dirk(2): the state marches from
   ! its data at 0, the adjoint from its conditions at T, together

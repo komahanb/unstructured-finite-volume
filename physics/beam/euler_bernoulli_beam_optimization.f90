@@ -6,6 +6,9 @@
 !
 !      rhoA w_tt + d_xx( EI w_xx ) - f = 0     on Omega = [0, L] x [0, T],
 !
+! discretized along x by finite elements, the Hermite cubics of its
+! case 6, and along t by its chain of families,
+!
 ! with a stiffness of two design coordinates,
 !
 !      EI(x) = EI_0 (1 + s1 x / L + s2 (x / L)^2),
@@ -36,12 +39,15 @@
 ! error of the discretization.
 !
 ! Measured, the iterations printed by minimize at verbosity one: from
-! s = 0 the gradient falls as 1.19e-1, 2.19e-2, 1.55e-3, 2.66e-5,
-! 4.56e-7, 3.10e-11 (quadratic, the derivatives exact), and the design
+! s = 0 the gradient falls as 1.20e-1, 2.20e-2, 1.57e-3, 3.74e-5,
+! 7.13e-7, 2.00e-11 (quadratic, the derivatives exact), and the design
 ! found approaches the true one as the grid is refined: s1 =
-! 0.50961827, 0.50205024, 0.50054911 on 21 x 17, 41 x 33 and 81 x 33
+! 0.51178039, 0.50183579, 0.50033454 on 21 x 17, 41 x 33 and 81 x 33
 ! instants by points. At the design found at 21 x 17, dJ/ds by the
-! expansion of the state is (-2.47e-11, -1.82e-11).
+! expansion of the state is (-1.58e-11, -1.23e-11). At the true design
+! on 21 x 17, dJ/ds by the adjoint and by the expansion agree to
+! 4e-12 relative, and the central differences of step 1e-4 to 1e-6,
+! their own error.
 !=====================================================================!
 
 program euler_bernoulli_beam_optimization
@@ -53,7 +59,7 @@ program euler_bernoulli_beam_optimization
   use operation_field            , only : sin, cos, operator(+), operator(-), operator(*), operator(/), operator(**)
   use operation_residual         , only : continuous_residual, discrete_residual, operator(+), operator(*)
   use operation_family           , only : dirk, bdf, adams, chain
-  use operation_finite_difference, only : finite_difference
+  use operation_finite_element   , only : finite_element
 
   implicit none
 
@@ -128,7 +134,7 @@ program euler_bernoulli_beam_optimization
 
   L_h = Lagrangian % discretize(omega_h, &
        & time=chain([(dirk(2), k = 1, 4), (bdf(2), k = 5, 7), (adams(2), k = 8, num_instants)], &
-       &            from=[(k, k = 1, num_instants)]), space=finite_difference(order=6))
+       &            from=[(k, k = 1, num_instants)]), space=finite_element(degree=3))
 
   estimate = exact % discretize(omega_h)
   call L_h % minimize(estimate, solution)

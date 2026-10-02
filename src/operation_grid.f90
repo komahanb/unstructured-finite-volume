@@ -60,7 +60,7 @@ module operation_grid
 
   private
   public :: grid, uniform_grid, random_grid, designed_grid, fixed_grid, gauss_grid
-  public :: partition, partitioned
+  public :: partition, partitioned, gauss_node_weight
 
   ! One representation, the weight rule a case: uniform weighs every
   ! step one, random a bounded deterministic draw, designed the design

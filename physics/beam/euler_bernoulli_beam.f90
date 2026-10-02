@@ -28,11 +28,13 @@
 ! Omega_h is n instants of [0, T] times np points of [0, L], ends
 ! included; no mesh file is read. d_t is discretized by the chain of
 ! families of the other examples, d_x by finite differences of order
-! 6, which give w_xxxx at order 4. A condition at an end of the
-! beamline takes the row of the physics at a point next to that end,
-! so the physics holds on the points away from the ends.
+! 6, which give w_xxxx at order 4, or by finite elements. A condition
+! at an end of the beamline takes, under finite differences, the row
+! of the physics at a point next to that end, so the physics holds on
+! the points away from the ends; under finite elements, the row of the
+! coefficient it fixes at the end.
 !
-! Five cases:
+! Seven cases:
 !
 !   1. simply supported, uniform EI and rhoA, no load: the mode
 !      w = sin(pi x / L) cos(omega t), omega = (pi / L)^2 sqrt(EI / rhoA),
@@ -63,7 +65,20 @@
 !      at 65 points; one Newton step per block; with c_0 the design, the
 !      misfit's dJ/dc_0 at c_0 = 0.5 on 21 x 17 is 0.1096767998 by the
 !      tangent, 0.1096767982 by the adjoint, 0.1096764971 by the central
-!      difference of step 1e-3 (its error h^2/6 J''' = -3e-7).
+!      difference of step 1e-3 (its error h^2/6 J''' = -3e-7);
+!   6. case 2 by finite elements: the law in flux form tested against
+!      the Hermite cubics on the segments of the line, the derivative
+!      d_xx of the bending moment moved onto the multiplier, so that
+!      the elements read w_xx alone; each point stores the coefficients
+!      w and w_x, the clamped ends fix them, and the initial data are
+!      projected onto the cubics that satisfy the clamped ends.
+!      Measured at 801 instants, the error falls as 1.37e-4, 8.47e-6,
+!      4.70e-7 over 9 to 33 points, by 16 per halving: order 4; at 65
+!      points as 1.69e-3, 2.50e-4, 4.14e-5, 8.15e-6 over 21 to 161
+!      instants;
+!   7. case 5 by finite elements, the damping's w_xxt formed by the
+!      basis from the jets in time of w and w_x: 4.52e-5, 3.49e-6,
+!      3.57e-7 over 9 to 33 points at 801 instants.
 !
 ! In cases 1 and 4 the multipliers mu_x also give an estimate of the
 ! error of J: the representation laws evaluated on the jet that
@@ -104,6 +119,7 @@ program euler_bernoulli_beam
   use operation_residual         , only : continuous_residual, discrete_residual, operator(+), operator(*)
   use operation_family           , only : dirk, bdf, adams, chain
   use operation_finite_difference, only : finite_difference
+  use operation_finite_element   , only : finite_element
   use operation_segment_trapezoid, only : segment_trapezoid
 
   implicit none
@@ -127,6 +143,8 @@ program euler_bernoulli_beam
   call clamped(open_line=.true.)
   call simply_supported(open_line=.true.)
   call clamped(open_line=.false., damping_scale=0.3_dp)
+  call clamped(open_line=.false., elements=.true.)
+  call clamped(open_line=.false., damping_scale=0.3_dp, elements=.true.)
 
 contains
 
@@ -221,17 +239,19 @@ contains
   end subroutine simply_supported
 
   !===================================================================!
-  ! Cases 2, 3 and 5: the clamped beam of varying stiffness and mass,
-  ! loaded so that a chosen deflection is the solution; the derivatives
-  ! along x by the fitted differences, or on the open line by the
-  ! trapezoid rule on its segments; with a damping scale, the
-  ! Kelvin-Voigt damping of the bending moment.
+  ! Cases 2, 3, 5, 6 and 7: the clamped beam of varying stiffness and
+  ! mass, loaded so that a chosen deflection is the solution; the
+  ! derivatives along x by the fitted differences, on the open line by
+  ! the trapezoid rule on its segments, or with elements by the Hermite
+  ! cubics; with a damping scale, the Kelvin-Voigt damping of the
+  ! bending moment.
   !===================================================================!
 
-  subroutine clamped(open_line, damping_scale)
+  subroutine clamped(open_line, damping_scale, elements)
 
     logical , intent(in) :: open_line
     real(dp), intent(in), optional :: damping_scale
+    logical , intent(in), optional :: elements
 
     type(continuous_manifold) :: omega, initial, left, right
     type(discrete_manifold)   :: omega_h
@@ -242,7 +262,10 @@ contains
     type(discrete_residual)   :: L_h
     real(dp) :: frequency
     integer  :: k
+    logical  :: by_elements
 
+    by_elements = .false.
+    if (present(elements)) by_elements = elements
     omega   = continuous_manifold(time=interval(0.0_dp, T_final), space=region(interval(0.0_dp, L)))
     t       = omega % coordinate('t')
     x       = omega % coordinate('x')
@@ -286,6 +309,10 @@ contains
        L_h = Lagrangian % discretize(omega_h, &
             & time=chain([(dirk(2), k = 1, 4), (bdf(2), k = 5, 7), (adams(2), k = 8, num_instants)], &
             &            from=[(k, k = 1, num_instants)]), space=segment_trapezoid())
+    else if (by_elements) then
+       L_h = Lagrangian % discretize(omega_h, &
+            & time=chain([(dirk(2), k = 1, 4), (bdf(2), k = 5, 7), (adams(2), k = 8, num_instants)], &
+            &            from=[(k, k = 1, num_instants)]), space=finite_element(degree=3))
     else
        L_h = Lagrangian % discretize(omega_h, &
             & time=chain([(dirk(2), k = 1, 4), (bdf(2), k = 5, 7), (adams(2), k = 8, num_instants)], &
@@ -298,8 +325,13 @@ contains
     error = solution % fields(['w']) - estimate
     if (open_line) then
        if (this_image() == 1) print '(a)', 'clamped, EI(x) and rhoA(x) varying, manufactured load, the open line'
+    else if (present(damping_scale) .and. by_elements) then
+       if (this_image() == 1) print '(a)', 'clamped, EI(x) and rhoA(x) varying, manufactured load, Kelvin-Voigt damping &
+            &c(x) w_xxt, finite elements'
     else if (present(damping_scale)) then
        if (this_image() == 1) print '(a)', 'clamped, EI(x) and rhoA(x) varying, manufactured load, Kelvin-Voigt damping c(x) w_xxt'
+    else if (by_elements) then
+       if (this_image() == 1) print '(a)', 'clamped, EI(x) and rhoA(x) varying, manufactured load, finite elements'
     else
        if (this_image() == 1) print '(a)', 'clamped, EI(x) and rhoA(x) varying, manufactured load'
     end if

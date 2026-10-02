@@ -54,6 +54,7 @@ module operation_residual
   use field_stored      , only : stored_field, typed_field_domain
   use operation_stencil  , only : stencil, combine_triples
   use operation_expression , only : expression, euler_lagrange, multiplier, constant, jet_form, represented_component
+  use operation_expression , only : flux_form, coefficient_form
   use operation_expression , only : operator(+), operator(*)
   use operation_expression , only : expression_vertex, VERTEX_LEAF, ARGUMENT_STATE, FIRST_COORDINATE
   use operation_domain     , only : continuous_domain, discrete_domain
@@ -70,7 +71,7 @@ module operation_residual
   use operation_coupling   , only : weights_of
   use view_directed_connectivity, only : connectivity_graph
   use operation_scheme_stencil  , only : derived_constraints
-  use operation_derivative_approximation, only : derivative_approximation
+  use operation_derivative_approximation, only : derivative_approximation, element_quadrature
   use operation_segment_trapezoid, only : segment_trapezoid
   use operation_exchange       , only : exchange, state_summed_rows
   use util_verbosity           , only : verbosity
@@ -87,6 +88,34 @@ module operation_residual
   public :: residual_operator
   public :: continuous_residual, discrete_residual
   public :: operator(+), operator(*)
+
+  !===================================================================!
+  ! THE PROJECTION OF A LAW ON THE CELLS, tested against a basis in
+  ! place of placed at the points. An instance is an element at one
+  ! moment: element_point(i, n) is the point of node i of instance n,
+  ! negative where another part states the node's rows, and
+  ! element_cell(n) the element of the quadrature. A quadrature point
+  ! of an instance is a site, where the rules are evaluated: site
+  ! (n - 1) nq + q is the point q of instance n. The tuple the rules
+  ! read at a site is formed from the tuples of the instance's nodes:
+  ! its component c is the sum over the nodes and their coefficients
+  ! of the basis's derivative formed(0, c) times the node's component
+  ! formed(k + 1, c), -1 for a coefficient that forms none. Rule j
+  ! tests the equation tested(1, j) with the basis's derivative
+  ! tested(2, j), and coefficient_row(k, f) is the row, within a node's
+  ! tuple, of the coefficient k of the equation f: the rule's value at
+  ! a site, times the weight and the test function there, is added to
+  ! the row of every coefficient of every node the instance states.
+  !===================================================================!
+
+  type :: projection
+     type(element_quadrature) :: elements
+     integer , allocatable :: element_point(:,:)
+     integer , allocatable :: element_cell(:)
+     integer , allocatable :: tested(:,:)
+     integer , allocatable :: coefficient_row(:,:)
+     integer , allocatable :: formed(:,:)
+  end type projection
 
   type, extends(operation) :: residual_operator
 
@@ -119,6 +148,12 @@ module operation_residual
      ! its owned columns and summed_by adds the others'
      integer       , allocatable, private :: summed_rows(:)
      type(exchange), allocatable, private :: summed_by
+     ! the law projected on the cells, in place of placed at the
+     ! points; its sites as the vertices the rules are evaluated over,
+     ! and the position of each
+     type(projection), allocatable, private :: projected
+     type(stored_directed_graph)  , private :: sites
+     real(dp), allocatable        , private :: site_positions(:,:)
 
    contains
 
@@ -181,6 +216,13 @@ module operation_residual
      procedure, private :: state_of
      procedure, private :: write_prescribed
      procedure, private :: zero_prescribed_rows
+     procedure, private :: formed_at_sites
+     procedure, private :: design_at_sites
+     procedure, private :: tested_into
+     procedure, private :: projected_count
+     procedure, private :: projected_triples
+     procedure, private :: projected_edges
+     procedure, private :: projected_part
   end type residual_operator
 
   interface residual_operator
@@ -370,6 +412,14 @@ module operation_residual
      ! image then owns every expansion
      logical                   :: overlapped = .false.
      character(len=32)         :: adjoint_name = ''
+     ! THE LAW PROJECTED ON THE CELLS, for a method that tests it
+     ! against a basis: its flux form as a Lagrangian, each multiplier
+     ! of which tests the equation tested(1, m) with the basis's
+     ! derivative tested(2, m), and the elements of the region; the
+     ! rule is then the layout of the coefficients a node stores
+     type(expression)        , allocatable :: flux
+     integer                 , allocatable :: tested(:,:)
+     type(element_quadrature), allocatable :: elements
 
    contains
 
@@ -400,6 +450,7 @@ module operation_residual
      procedure, private :: space_face_placement
      procedure, private :: segment_rows_of
      procedure, private :: open_line
+     procedure, private :: whole_line
      procedure, private :: fixed_rows_of
      procedure, private :: gauge_rows_of
      procedure, private :: gauged_unknowns
@@ -417,6 +468,16 @@ module operation_residual
      procedure, private :: solver_for
      procedure, private :: wavefront_adjoint
      procedure, private :: wavefront_expansion
+     procedure, private :: coefficient_component
+     procedure, private :: formed_components
+     procedure, private :: points_on_face
+     procedure, private :: stored_order
+     procedure, private :: projected_nodes
+     procedure, private :: site_jet
+     procedure, private :: site_gradient
+     procedure, private :: coefficient_derivative
+     procedure, private :: fixed_coefficient
+     procedure, private :: projected_datum
   end type discrete_residual
 
 contains
@@ -433,7 +494,7 @@ contains
   !===================================================================!
 
   function create(primary_law, rule, at, unknowns, degrees, primary, fixed_rows, fixed, &
-       & connected_law, fixed_rate, prescribed, positions, summed_rows) result(this)
+       & connected_law, fixed_rate, prescribed, positions, summed_rows, projected) result(this)
 
     type(stencil)         , intent(in) :: primary_law
     type(expression)      , intent(in), optional :: rule
@@ -445,9 +506,10 @@ contains
     type(stencil)         , intent(in), optional :: prescribed
     real(dp)              , intent(in), optional :: positions(:,:)
     integer               , intent(in), optional :: summed_rows(:)
+    type(projection)      , intent(in), optional :: projected
     type(residual_operator) :: this
     type(continuous_domain) :: domain
-    integer :: j, components, governed, e
+    integer :: j, components, governed, e, n, q, nq, s, dimension
     character(len=250) :: message
 
     if (size(fixed_rows) /= size(fixed)) then
@@ -485,6 +547,10 @@ contains
        domain     = continuous_domain(rule)
        components = domain % num_components()
        governed   = max(1, rule % num_multipliers())
+       ! a projected law reads at its sites the tuple the basis forms,
+       ! of its own layout, from the nodes' tuples of degrees
+       ! components
+       if (present(projected)) components = degrees
        if (degrees > components) then
           write(message,'(a,i0,a,i0)') 'operation_residual: the primary degree count must lie &
                &within the law''s component count; degrees = ', degrees, ', num_components = ', &
@@ -565,6 +631,26 @@ contains
     end if
     if (allocated(this % physics)) this % designs = this % physics % num_designs()
     if (present(summed_rows)) this % summed_rows = summed_rows
+    ! the sites of a projection, at the time of their instance's moment
+    ! and the position of their quadrature point
+    if (present(projected)) then
+       if (.not. present(positions)) then
+          error stop 'operation_residual: a law projected on the cells is evaluated at the positions of its sites'
+       end if
+       this % projected = projected
+       nq        = projected % elements % num_quadrature_points()
+       dimension = projected % elements % dimension
+       this % sites = stored_directed_graph(size(projected % element_cell) * nq, tails=[integer ::], heads=[integer ::])
+       allocate(this % site_positions(size(positions, 1), size(projected % element_cell) * nq))
+       do n = 1, size(projected % element_cell)
+          do q = 1, nq
+             s = (n - 1) * nq + q
+             this % site_positions(:, s) = positions(:, abs(projected % element_point(1, n)))
+             this % site_positions(size(positions, 1) - dimension + 1:, s) = &
+                  & projected % elements % position(:, q, projected % element_cell(n))
+          end do
+       end do
+    end if
     call this % declare_arguments(2, [contract(FIELD_REAL, 1), contract(FIELD_REAL, this % designs)])
 
   end function create
@@ -642,8 +728,9 @@ contains
 
   !===================================================================!
   ! The coupling of the unknowns: an edge from every column to every
-  ! row of the stencils' entries. The physics reads a point's own
-  ! tuple alone, so it couples no two points.
+  ! row of the stencils' entries. The physics placed at the points
+  ! reads a point's own tuple alone, so it couples no two points; a
+  ! projected law couples every node of an instance with every other.
   !===================================================================!
 
   function coupling(this) result(graph_of)
@@ -653,6 +740,8 @@ contains
     real(dp), allocatable :: w(:)
     logical, allocatable :: is_summed(:)
     call this % terms(heads, tails, w)
+    ! a projected law couples the nodes of each instance
+    if (allocated(this % projected)) call this % projected_edges(heads, tails)
     ! a summed row couples no point to another: its sum is formed over
     ! the images
     allocate(is_summed(this % unknowns), source=.false.)
@@ -699,8 +788,9 @@ contains
     type(residual_operator) :: sub
     type(stencil), allocatable :: connected, prescribed
     integer , allocatable :: points(:), at(:), place_of(:), fixed_rows(:), summed(:), heads(:), tails(:)
+    integer , allocatable :: point_place(:)
     real(dp), allocatable :: fixed(:), rate(:), weights(:)
-    logical , allocatable :: owned_fixed(:)
+    logical , allocatable :: owned_fixed(:), owned_point(:)
     integer :: w, npts, i
     w = this % stride()
     if (any(this % at /= [((i - 1) * w, i = 1, size(this % at))])) then
@@ -708,6 +798,9 @@ contains
             &one another in the order of the unknowns'
     end if
     npts   = size(part % owned) / w
+    ! a projected law reads the halo's tuples too: its points are the
+    ! part's every point, the owned first
+    if (allocated(this % projected)) npts = size(part % whole_index) / w
     points = [((part % whole_index((i - 1) * w + 1) - 1) / w + 1, i = 1, npts)]
     at     = [((i - 1) * w, i = 1, npts)]
     allocate(place_of(this % unknowns), source=0)
@@ -726,7 +819,16 @@ contains
     call state_summed_rows(part, summed, heads, tails, weights)
     if (allocated(this % connected_law)) connected = part_stencil(this % connected_law, part, summed)
     if (allocated(this % prescribed))    prescribed = part_stencil(this % prescribed, part, summed)
-    if (allocated(this % physics)) then
+    if (allocated(this % projected)) then
+       allocate(point_place(size(this % at)), source=0)
+       point_place(points) = [(i, i = 1, npts)]
+       owned_point = [(part % is_owned((i - 1) * w + 1), i = 1, npts)]
+       sub = residual_operator(part_stencil(this % primary_law, part, summed), this % physics, at, &
+            & size(part % whole_index), this % degrees, this % primary, fixed_rows, fixed, &
+            & connected_law=connected, fixed_rate=rate, prescribed=prescribed, &
+            & positions=this % point_positions(:, points), &
+            & projected=this % projected_part(point_place, owned_point))
+    else if (allocated(this % physics)) then
        sub = residual_operator(part_stencil(this % primary_law, part, summed), this % physics, at, &
             & size(part % whole_index), this % degrees, this % primary, fixed_rows, fixed, &
             & connected_law=connected, fixed_rate=rate, prescribed=prescribed, &
@@ -1060,11 +1162,19 @@ contains
     end if
     call bound_real_vector(inputs, this % argument(2), design_values)
     continuous = continuous_domain(this % physics)
-    domain     = continuous % discrete(this % points)
-    points  = domain % state_fields()
-    designs = domain % design_fields()
-    state  = points % state(this % gathered(x))
-    design = designs % design(design_values)
+    if (allocated(this % projected)) then
+       domain  = continuous % discrete(this % sites)
+       points  = domain % state_fields()
+       designs = domain % design_fields()
+       state   = points % state(this % formed_at_sites(x))
+       design  = designs % design(this % design_at_sites(design_values))
+    else
+       domain  = continuous % discrete(this % points)
+       points  = domain % state_fields()
+       designs = domain % design_fields()
+       state   = points % state(this % gathered(x))
+       design  = designs % design(design_values)
+    end if
     point_data = [state, design]
   end subroutine point_inputs
 
@@ -1073,6 +1183,10 @@ contains
     real(dp)                 , intent(in)    :: governing(:,:)
     real(dp)                 , intent(inout) :: r(:)
     integer :: p, j
+    if (allocated(this % projected)) then
+       call this % tested_into(governing, r)
+       return
+    end if
     do j = 1, size(this % rules)
        do p = 1, size(this % at)
           r(this % at(p) + this % primary(j) + 1) = &
@@ -1095,14 +1209,25 @@ contains
     real(dp), allocatable :: column(:)
     type(stored_field), allocatable :: bound(:)
     integer :: j, coordinates
-    allocate(governing(size(this % at), size(this % rules)))
+    ! at the points, or at the sites of a projection
+    if (allocated(this % projected)) then
+       allocate(governing(this % sites % num_vertices(), size(this % rules)))
+    else
+       allocate(governing(size(this % at), size(this % rules)))
+    end if
     do j = 1, size(this % rules)
        ! a rule that reads a coordinate is given the positions of the
        ! points as its third argument
        bound       = point_data
        coordinates = this % rules(j) % num_position_coordinates()
        if (coordinates > 0) bound = [point_data, this % positions(coordinates)]
-       if (present(variations)) then
+       if (allocated(this % projected)) then
+          if (present(variations)) then
+             call this % rules(j) % partial_action(this % sites, this % rules(j) % bind(bound), variations, half)
+          else
+             call this % rules(j) % apply(this % sites, this % rules(j) % bind(bound), half)
+          end if
+       else if (present(variations)) then
           call this % rules(j) % partial_action(this % points, this % rules(j) % bind(bound), &
                & variations, half)
        else
@@ -1129,6 +1254,13 @@ contains
             &points do not store; coordinates read = ', coordinates, ', coordinates stored = ', &
             & size(this % point_positions, 1)
        error stop trim(message)
+    end if
+    if (allocated(this % projected)) then
+       positions = stored_field('positions', this % sites % vertex_set(), this % sites % num_vertices(), &
+            & num_components=coordinates)
+       call positions % set_real_vector(reshape(this % site_positions(1:coordinates, :), &
+            & [coordinates * this % sites % num_vertices()]))
+       return
     end if
     positions = stored_field('positions', this % points % vertex_set(), size(this % at), num_components=coordinates)
     call positions % set_real_vector(reshape(this % point_positions(1:coordinates, :), [coordinates * size(this % at)]))
@@ -1259,8 +1391,13 @@ contains
     end if
     call this % point_inputs(inputs, x, point_data)
     if (present(v)) then
-       points    = typed_field_domain(this % points, this % stride())
-       direction = points % direction(this % gathered(v))
+       if (allocated(this % projected)) then
+          points    = typed_field_domain(this % sites, this % physics % num_components())
+          direction = points % direction(this % formed_at_sites(v))
+       else
+          points    = typed_field_domain(this % points, this % stride())
+          direction = points % direction(this % gathered(v))
+       end if
        varied(1) = variation(this % physics % argument(1), direction)
        call this % governed(point_data, governing, varied)
     else
@@ -1323,6 +1460,8 @@ contains
     end if
     count = this % primary_law % pattern % num_edges() + npts * this % degrees * size(this % rules) &
          & + size(this % fixed_rows)
+    if (allocated(this % projected)) count = this % primary_law % pattern % num_edges() + size(this % fixed_rows) &
+         & + this % projected_count()
     if (allocated(this % connected_law)) count = count + this % connected_law % pattern % num_edges()
     if (allocated(this % prescribed))    count = count + this % prescribed % pattern % num_edges()
     allocate(r(count), c(count), w(count))
@@ -1331,8 +1470,12 @@ contains
     if (allocated(this % connected_law)) call stencil_triples(this % connected_law, is_fixed, r, c, w, num_triples)
     ! each rule's partials in the components it reads, by one reverse
     ! pass per point: a component no leaf of the rule names has a zero
-    ! column
+    ! column; projected, by one pass per site, through the basis
+    if (allocated(this % projected)) then
+       call this % projected_triples(x, nu, is_fixed, r, c, w, num_triples)
+    end if
     do j = 1, size(this % rules)
+       if (allocated(this % projected)) exit
        call this % rules(j) % read_components(reads)
        do p = 1, npts
           if (is_fixed(this % at(p) + this % primary(j) + 1)) cycle
@@ -1473,10 +1616,18 @@ contains
     type(typed_field_domain) :: points
     real(dp), allocatable :: v(:)
     call given % direction(v)
-    if (given % argument_is(this % argument(1))) then
+    if (given % argument_is(this % argument(1)) .and. allocated(this % projected)) then
+       points    = typed_field_domain(this % sites, this % physics % num_components())
+       direction = points % direction(this % formed_at_sites(v))
+       at_points = variation(this % physics % argument(1), direction)
+    else if (given % argument_is(this % argument(1))) then
        points    = typed_field_domain(this % points, this % stride())
        direction = points % direction(this % gathered(v))
        at_points = variation(this % physics % argument(1), direction)
+    else if (given % argument_is(this % argument(2)) .and. allocated(this % projected)) then
+       points    = typed_field_domain(this % sites, this % designs)
+       direction = points % direction(this % design_at_sites(v))
+       at_points = variation(this % physics % argument(2), direction)
     else if (given % argument_is(this % argument(2))) then
        at_points = given % with_argument(this % physics % argument(2))
     else
@@ -1533,6 +1684,10 @@ contains
     end do
 
     derived = this % primary_law % restricted(free, values)
+    if (allocated(this % projected)) then
+       error stop 'operation_residual: a residual projected on the cells is not restricted; its instances &
+            &read the nodes outside the selection'
+    end if
     if (allocated(this % prescribed)) then
        error stop 'operation_residual: a residual with prescribed rows is not restricted; the &
             &prescribed relation would lose its unknowns outside the selection'
@@ -1658,6 +1813,266 @@ contains
     call lin % versioned(version_number, transposed=transposed)
 
   end function linearize
+
+  !===================================================================!
+  ! THE PROJECTION'S SITES. The tuples the rules read at every site,
+  ! formed from the state by the basis, one tuple after another; the
+  ! design at every site, that of its instance's first node.
+  !===================================================================!
+
+  pure function formed_at_sites(this, x) result(y)
+    class(residual_operator), intent(in) :: this
+    real(dp)                , intent(in) :: x(:)
+    real(dp), allocatable :: y(:)
+    integer :: width, nq, n, q, s, c, i, k, p, d, offset, e
+    associate (pr => this % projected, el => this % projected % elements)
+      width = size(pr % formed, 2)
+      nq    = el % num_quadrature_points()
+      allocate(y(width * size(pr % element_cell) * nq), source=0.0_dp)
+      do n = 1, size(pr % element_cell)
+         e = pr % element_cell(n)
+         do q = 1, nq
+            s = (n - 1) * nq + q
+            do c = 1, width
+               d = pr % formed(0, c)
+               do i = 1, size(pr % element_point, 1)
+                  p = abs(pr % element_point(i, n))
+                  do k = 0, el % num_coefficients() - 1
+                     offset = pr % formed(k + 1, c)
+                     if (offset < 0) cycle
+                     y((s - 1) * width + c) = y((s - 1) * width + c) + el % basis(d, k, i, q, e) &
+                          & * x(this % at(p) + offset + 1)
+                  end do
+               end do
+            end do
+         end do
+      end do
+    end associate
+  end function formed_at_sites
+
+  pure function design_at_sites(this, v) result(w)
+    class(residual_operator), intent(in) :: this
+    real(dp)                , intent(in) :: v(:)
+    real(dp), allocatable :: w(:)
+    integer :: nq, n, q, s, p, nd
+    nd = this % designs
+    nq = this % projected % elements % num_quadrature_points()
+    allocate(w(nd * size(this % projected % element_cell) * nq))
+    do n = 1, size(this % projected % element_cell)
+       p = abs(this % projected % element_point(1, n))
+       do q = 1, nq
+          s = (n - 1) * nq + q
+          w((s - 1) * nd + 1:s * nd) = v((p - 1) * nd + 1:p * nd)
+       end do
+    end do
+  end function design_at_sites
+
+  !===================================================================!
+  ! Each rule's value at every site, times the weight and the test
+  ! function of every coefficient of every node the instance states,
+  ! added to that coefficient's row.
+  !===================================================================!
+
+  pure subroutine tested_into(this, governing, r)
+    class(residual_operator), intent(in)    :: this
+    real(dp)                , intent(in)    :: governing(:,:)
+    real(dp)                , intent(inout) :: r(:)
+    integer :: j, f, d, n, e, q, s, i, p, k, nq
+    real(dp) :: value
+    associate (pr => this % projected, el => this % projected % elements)
+      nq = el % num_quadrature_points()
+      do j = 1, size(this % rules)
+         f = pr % tested(1, j)
+         d = pr % tested(2, j)
+         do n = 1, size(pr % element_cell)
+            e = pr % element_cell(n)
+            do q = 1, nq
+               s = (n - 1) * nq + q
+               value = governing(s, j)
+               do i = 1, size(pr % element_point, 1)
+                  p = pr % element_point(i, n)
+                  if (p < 1) cycle
+                  do k = 0, el % num_coefficients() - 1
+                     r(this % at(p) + pr % coefficient_row(k, f) + 1) = &
+                          & r(this % at(p) + pr % coefficient_row(k, f) + 1) + value * el % test(d, k, i, q, e)
+                  end do
+               end do
+            end do
+         end do
+      end do
+    end associate
+  end subroutine tested_into
+
+  !===================================================================!
+  ! THE JACOBIAN OF THE PROJECTION: at each site, the gradient of each
+  ! rule in the tuple it reads there, times the weight and the test
+  ! function of the row, and times the basis's derivative that forms
+  ! each component from each coefficient of each node of the instance:
+  ! one entry per row stated, component read, node and coefficient,
+  ! the entries of one row and column summed when combined.
+  !===================================================================!
+
+  pure integer function projected_count(this) result(count)
+    class(residual_operator), intent(in) :: this
+    integer :: width, nodes, nk
+    width = size(this % projected % formed, 2)
+    nodes = size(this % projected % element_point, 1)
+    nk    = this % projected % elements % num_coefficients()
+    count = size(this % rules) * this % sites % num_vertices() * nodes * nk * width * nodes * nk
+  end function projected_count
+
+  subroutine projected_triples(this, x, nu, is_fixed, r, c, w, num_triples)
+    class(residual_operator), intent(in)    :: this
+    real(dp)                , intent(in)    :: x(:), nu(:)
+    logical                 , intent(in)    :: is_fixed(:)
+    integer                 , intent(inout) :: r(:), c(:)
+    real(dp)                , intent(inout) :: w(:)
+    integer                 , intent(inout) :: num_triples
+    real(dp), allocatable :: xs(:), ns(:), g(:)
+    integer , allocatable :: reads(:)
+    integer :: width, nd, nq, j, f, d, n, e, q, s, i, p, k, m, comp, dd, i2, p2, k2, offset, row
+    real(dp) :: value, tau
+    width = size(this % projected % formed, 2)
+    nd    = this % designs
+    xs    = this % formed_at_sites(x)
+    ns    = this % design_at_sites(nu)
+    allocate(g(0:width - 1))
+    associate (pr => this % projected, el => this % projected % elements)
+      nq = el % num_quadrature_points()
+      do j = 1, size(this % rules)
+         f = pr % tested(1, j)
+         d = pr % tested(2, j)
+         call this % rules(j) % read_components(reads)
+         do n = 1, size(pr % element_cell)
+            e = pr % element_cell(n)
+            do q = 1, nq
+               s = (n - 1) * nq + q
+               call this % rules(j) % gradient_at(xs((s - 1) * width + 1:s * width), &
+                    & ns((s - 1) * nd + 1:s * nd), value, g, this % site_positions(:, s))
+               do i = 1, size(pr % element_point, 1)
+                  p = pr % element_point(i, n)
+                  if (p < 1) cycle
+                  do k = 0, el % num_coefficients() - 1
+                     row = this % at(p) + pr % coefficient_row(k, f) + 1
+                     if (is_fixed(row)) cycle
+                     tau = el % test(d, k, i, q, e)
+                     if (tau == 0.0_dp) cycle
+                     do m = 1, size(reads)
+                        comp = reads(m)
+                        dd   = pr % formed(0, comp + 1)
+                        do i2 = 1, size(pr % element_point, 1)
+                           p2 = abs(pr % element_point(i2, n))
+                           do k2 = 0, el % num_coefficients() - 1
+                              offset = pr % formed(k2 + 1, comp + 1)
+                              if (offset < 0) cycle
+                              num_triples    = num_triples + 1
+                              r(num_triples) = row
+                              c(num_triples) = this % at(p2) + offset + 1
+                              w(num_triples) = tau * g(comp) * el % basis(dd, k2, i2, q, e)
+                           end do
+                        end do
+                     end do
+                  end do
+               end do
+            end do
+         end do
+      end do
+    end associate
+  end subroutine projected_triples
+
+  !===================================================================!
+  ! The edges a projected law adds to the coupling: from every
+  ! component a node's tuple forms at a site to the row of every
+  ! coefficient of every equation of every node of the instance.
+  !===================================================================!
+
+  subroutine projected_edges(this, heads, tails)
+    class(residual_operator), intent(in)    :: this
+    integer , allocatable   , intent(inout) :: heads(:), tails(:)
+    integer , allocatable :: offsets(:), h(:), t(:)
+    integer :: n, i, p, f, k, i2, p2, o, e
+    associate (pr => this % projected, el => this % projected % elements)
+      offsets = [integer ::]
+      do o = 1, size(pr % formed, 2)
+         do k = 1, size(pr % formed, 1) - 1
+            if (pr % formed(k, o) < 0) cycle
+            if (any(offsets == pr % formed(k, o))) cycle
+            offsets = [offsets, pr % formed(k, o)]
+         end do
+      end do
+      allocate(h(size(pr % element_cell) * size(pr % element_point, 1)**2 * size(pr % coefficient_row) &
+           & * size(offsets)), t(size(pr % element_cell) * size(pr % element_point, 1)**2 &
+           & * size(pr % coefficient_row) * size(offsets)))
+      e = 0
+      do n = 1, size(pr % element_cell)
+         do i = 1, size(pr % element_point, 1)
+            p = pr % element_point(i, n)
+            if (p < 1) cycle
+            do f = 1, size(pr % coefficient_row, 2)
+               do k = 0, el % num_coefficients() - 1
+                  do i2 = 1, size(pr % element_point, 1)
+                     p2 = abs(pr % element_point(i2, n))
+                     do o = 1, size(offsets)
+                        e    = e + 1
+                        h(e) = this % at(p) + pr % coefficient_row(k, f) + 1
+                        t(e) = this % at(p2) + offsets(o) + 1
+                     end do
+                  end do
+               end do
+            end do
+         end do
+      end do
+    end associate
+    heads = [heads, h(1:e)]
+    tails = [tails, t(1:e)]
+  end subroutine projected_edges
+
+  !===================================================================!
+  ! THE PROJECTION OF A PART: the instances with a node the part owns,
+  ! each node's point in the part's numbering, negative for a node of
+  ! the halo, whose rows another part states.
+  !===================================================================!
+
+  function projected_part(this, place_of, owned) result(sub)
+    class(residual_operator), intent(in) :: this
+    ! the part's point of each point, zero outside the part, and
+    ! whether the part owns it
+    integer                 , intent(in) :: place_of(:)
+    logical                 , intent(in) :: owned(:)
+    type(projection) :: sub
+    logical, allocatable :: stated(:)
+    integer :: n, i, p, m
+    associate (pr => this % projected)
+      allocate(stated(size(pr % element_cell)), source=.false.)
+      do n = 1, size(pr % element_cell)
+         do i = 1, size(pr % element_point, 1)
+            p = abs(pr % element_point(i, n))
+            if (place_of(p) > 0) then
+               if (owned(place_of(p)) .and. pr % element_point(i, n) > 0) stated(n) = .true.
+            end if
+         end do
+      end do
+      sub % elements        = pr % elements
+      sub % tested          = pr % tested
+      sub % coefficient_row = pr % coefficient_row
+      sub % formed          = pr % formed
+      sub % element_cell    = pack(pr % element_cell, stated)
+      allocate(sub % element_point(size(pr % element_point, 1), count(stated)))
+      m = 0
+      do n = 1, size(pr % element_cell)
+         if (.not. stated(n)) cycle
+         m = m + 1
+         do i = 1, size(pr % element_point, 1)
+            p = abs(pr % element_point(i, n))
+            if (place_of(p) == 0) then
+               error stop 'operation_residual: a part reads every node of an instance it states'
+            end if
+            sub % element_point(i, m) = place_of(p)
+            if (.not. owned(place_of(p)) .or. pr % element_point(i, n) < 1) sub % element_point(i, m) = -place_of(p)
+         end do
+      end do
+    end associate
+  end function projected_part
 
   !===================================================================!
   ! A term: the equations on a manifold. Invalid input: an equation
@@ -1952,6 +2367,9 @@ contains
     end associate
 
     call image % check_representations(defined, present(time), present(space))
+    if (present(space)) then
+       if (space % projects()) call projected_form(image, this % term(whole_term), space, points, defined)
+    end if
     image % representation = pack(this % term, representation .and. [(this % term(k) % paired, k = 1, size(this % term))])
 
     allocate(image % condition(num_conditions))
@@ -2022,6 +2440,10 @@ contains
                &the adjoint, whose equation is the stationarity of the Lagrangian in the state'
        end if
        image % objective = this % objective % jet_form()
+       if (allocated(image % elements) .and. this % objective % integrated_part /= WHOLE) then
+          error stop 'operation_residual: under a projection on the cells the objective is integrated over the &
+               &whole manifold, at the quadrature points of the cells'
+       end if
     end if
 
     image % points = points
@@ -2257,6 +2679,10 @@ contains
             &binomial schedule; one of the two is given'
     end if
     scheduled = segment > 0 .or. shots > 0
+    if (scheduled .and. allocated(this % elements)) then
+       error stop 'operation_residual: a law projected on the cells is not solved under a checkpoint or snapshot &
+            &schedule'
+    end if
     if (scheduled .and. .not. this % with_chain) then
        error stop 'operation_residual: checkpoints and snapshots divide a chain of blocks; the residual has none'
     end if
@@ -2561,6 +2987,11 @@ contains
     integer :: nnodes, nn, nf, b1, b2, klo, khi, offset
     logical :: staged
     real(dp) :: h
+
+    if (allocated(this % elements)) then
+       call this % projected_nodes(tuple, stages, solution, stage_node)
+       return
+    end if
 
     stride = this % rule % num_components()
     nf     = this % manifold % num_unknowns
@@ -3427,7 +3858,9 @@ contains
     logical , allocatable :: implicit_moment(:)
     logical :: open_line
     integer :: stride, nf, ncells, n, s, nm, m, k, i, f, c, e, count, nd, width, unknowns, npts
-    integer :: comp, axis, o, j, ne, history_last, time_relations, a
+    integer :: comp, axis, o, j, ne, history_last, time_relations, a, chain, chains, cells
+    integer , allocatable :: rule_primary(:)
+    type(projection) :: projected
     logical :: staged
 
     stride = this % rule % num_components()
@@ -3465,16 +3898,20 @@ contains
     end do
 
     ! THE ROWS ALONG TIME AND SPACE, as triples: the component
-    ! determined, the component it reads, the weight
+    ! determined, the component it reads, the weight. Projected on the
+    ! cells, every coefficient a node stores has a chain along time of
+    ! its own, related by the family as the value's
+    chains = 1
+    if (allocated(this % elements)) chains = this % elements % num_coefficients()
     count = 0
     do f = 1, nf
        if (this % rule % degree_of_field(f) < 1) cycle
        if (staged) then
           connectivity = scheme % stage_connectivity(this % rule % degree_of_field(f) + 1)
-          count = count + (n - 1) * connectivity % num_edges() * ncells
+          count = count + (n - 1) * connectivity % num_edges() * ncells * chains
        else
           connectivity = scheme % block_connectivity(this % rule % degree_of_field(f) + 1, n)
-          count = count + connectivity % num_edges() * ncells
+          count = count + connectivity % num_edges() * ncells * chains
        end if
     end do
     if (this % with_differences) then
@@ -3492,37 +3929,39 @@ contains
 
     do f = 1, nf
        if (this % rule % degree_of_field(f) < 1) cycle
-       if (staged) then
-          connectivity = scheme % stage_connectivity(this % rule % degree_of_field(f) + 1)
-          do k = 1, n - 1
-             steps = spread(this % points % step(first + k), 1, s + 2)
+       do chain = 0, chains - 1
+          if (staged) then
+             connectivity = scheme % stage_connectivity(this % rule % degree_of_field(f) + 1)
+             do k = 1, n - 1
+                steps = spread(this % points % step(first + k), 1, s + 2)
+                call weights_of(scheme_weight(scheme), connectivity, steps, w)
+                do j = 1, connectivity % num_edges()
+                   do c = 1, ncells
+                      e = e + 1
+                      determined(e) = at_of(moment_of(connectivity % edge_head(j), k), c) &
+                           & + this % coefficient_component(f, chain, connectivity % head_degree(j)) + 1
+                      source(e)     = at_of(moment_of(connectivity % edge_tail(j), k), c) &
+                           & + this % coefficient_component(f, chain, connectivity % tail_degree(j)) + 1
+                      weight(e)     = w(j)
+                   end do
+                end do
+             end do
+          else
+             connectivity = scheme % block_connectivity(this % rule % degree_of_field(f) + 1, n)
+             steps = [(this % points % step(first + k - 1), k = 1, n)]
              call weights_of(scheme_weight(scheme), connectivity, steps, w)
              do j = 1, connectivity % num_edges()
                 do c = 1, ncells
                    e = e + 1
-                   determined(e) = at_of(moment_of(connectivity % edge_head(j), k), c) &
-                        & + this % rule % offset_of_field(f) + connectivity % head_degree(j) + 1
-                   source(e)     = at_of(moment_of(connectivity % edge_tail(j), k), c) &
-                        & + this % rule % offset_of_field(f) + connectivity % tail_degree(j) + 1
+                   determined(e) = at_of(instant_moment(connectivity % edge_head(j)), c) &
+                        & + this % coefficient_component(f, chain, connectivity % head_degree(j)) + 1
+                   source(e)     = at_of(instant_moment(connectivity % edge_tail(j)), c) &
+                        & + this % coefficient_component(f, chain, connectivity % tail_degree(j)) + 1
                    weight(e)     = w(j)
                 end do
              end do
-          end do
-       else
-          connectivity = scheme % block_connectivity(this % rule % degree_of_field(f) + 1, n)
-          steps = [(this % points % step(first + k - 1), k = 1, n)]
-          call weights_of(scheme_weight(scheme), connectivity, steps, w)
-          do j = 1, connectivity % num_edges()
-             do c = 1, ncells
-                e = e + 1
-                determined(e) = at_of(instant_moment(connectivity % edge_head(j)), c) &
-                     & + this % rule % offset_of_field(f) + connectivity % head_degree(j) + 1
-                source(e)     = at_of(instant_moment(connectivity % edge_tail(j)), c) &
-                     & + this % rule % offset_of_field(f) + connectivity % tail_degree(j) + 1
-                weight(e)     = w(j)
-             end do
-          end do
-       end if
+          end if
+       end do
     end do
 
     time_relations = e
@@ -3608,7 +4047,44 @@ contains
     do e = 1, size(face_rows)
        zeros(face_rows(e)) = face_constants(e)
     end do
-    if (size(gauge_rows) + size(face_rows) > 0) then
+    ! PROJECTED ON THE CELLS: each element at each moment an instance,
+    ! the law in flux form tested at its quadrature points against the
+    ! basis, its rules each in the row of the value's coefficient of
+    ! the equation it tests
+    if (allocated(this % elements)) then
+       if (size(gauge_rows) > 0) then
+          error stop 'operation_residual: under a projection on the cells the integral of an unknown over the &
+               &region is not stated'
+       end if
+       cells = this % elements % num_cells()
+       allocate(projected % element_point(this % elements % num_nodes(), nm * cells), &
+            & projected % element_cell(nm * cells))
+       do m = 1, nm
+          do e = 1, cells
+             projected % element_point(:, (m - 1) * cells + e) = (m - 1) * ncells + this % elements % node(:, e)
+             projected % element_cell((m - 1) * cells + e) = e
+          end do
+       end do
+       projected % elements = this % elements
+       projected % tested   = this % tested
+       allocate(projected % coefficient_row(0:this % elements % num_coefficients() - 1, nf))
+       do f = 1, nf
+          do k = 0, this % elements % num_coefficients() - 1
+             projected % coefficient_row(k, f) = this % coefficient_component(f, k, &
+                  & scheme % primary_degree(this % rule % degree_of_field(f)))
+          end do
+       end do
+       call this % formed_components(projected % formed)
+       rule_primary = [(primary(this % tested(1, j)), j = 1, size(this % tested, 2))]
+       if (size(face_rows) > 0) then
+          gauge = stencil(face_rows, face_columns, face_weights, zeros, 'prescribed')
+          blk % rows = residual_operator(relations, this % flux, at, unknowns, stride, rule_primary, fixed_rows, &
+               & fixed, prescribed=gauge, positions=point_positions, projected=projected)
+       else
+          blk % rows = residual_operator(relations, this % flux, at, unknowns, stride, rule_primary, fixed_rows, &
+               & fixed, positions=point_positions, projected=projected)
+       end if
+    else if (size(gauge_rows) + size(face_rows) > 0) then
        gauge = stencil([gauge_rows, face_rows], [gauge_columns, face_columns], [gauge_weights, face_weights], &
             & zeros, 'prescribed')
        ! the gauge rows, one per moment and gauged field, read every
@@ -3876,6 +4352,15 @@ contains
        if (.not. this % condition(j) % manifold % is_time_face()) cycle
        instant = this % face_instant(this % condition(j) % manifold % face_value)
        if (instant < blk % first + blk % depth .or. instant > blk % last) cycle
+       if (allocated(this % elements)) then
+          ! projected: the derivative of each row's datum is the
+          ! integral of the derivative of the condition's against the
+          ! row's basis function
+          do i = 1, size(this % condition(j) % equation)
+             call this % projected_datum(this % condition(j) % equation(i), instant, m, values, seed, blk, rhs)
+          end do
+          cycle
+       end if
        do i = 1, size(this % condition(j) % equation)
           do c = 1, blk % num_cells
              call this % face_relation(this % condition(j) % equation(i), values, &
@@ -4097,6 +4582,10 @@ contains
     real(dp), allocatable :: source(:)
     integer :: deg, npts, j, p, c, k, row
 
+    if (allocated(rows % projected)) then
+       call projected_design_source(rows, jets, m, values, seed, owner, b)
+       return
+    end if
     is_fixed = rows % fixed_indicator()
     deg      = rows % degrees
     npts     = size(rows % at)
@@ -4336,7 +4825,7 @@ contains
 
     type(residual_operator) :: lin
     real(dp), allocatable :: rhs(:)
-    integer :: stride, n, k, c, i, base, unknowns, column
+    integer :: stride, n, k, c, i, base, unknowns, column, nsites, site
 
     stride   = blk % rows % degrees
     n        = blk % last - blk % first + 1
@@ -4344,23 +4833,47 @@ contains
     column   = this % points % expansion % column(d, o)
     if (verbosity >= 1 .and. o > 0) print '(a,i0,a,i0)', 'adjoint expansion ', d, ' along the design, order ', o
     allocate(rhs(unknowns), source=0.0_dp)
-    do k = blk % depth + 1, n
-       do c = 1, blk % num_cells
-          base = blk % tuple_at(blk % instant_moment(k), c)
-          rhs(base + 1:base + stride) = -gradient(1:stride, this % points % point_of(blk % first + k - 1, c), column) &
-               & + incoming(:, c, blk % first + k - 1, column)
-       end do
-    end do
-    ! the objective's differential at the stages, the seeds of the
-    ! stage quadrature
-    do k = 1, n - 1
-       do i = 1, blk % num_stages
+    if (allocated(this % elements)) then
+       ! projected: the differential at the sites, returned to the
+       ! nodes by the transpose of the basis that formed the sites' jets
+       nsites = this % elements % num_cells() * this % elements % num_quadrature_points()
+       do k = blk % depth + 1, n
           do c = 1, blk % num_cells
-             base = blk % tuple_at(blk % instant_moment(k) + i, c)
-             rhs(base + 1:base + stride) = -gradient(1:stride, stage_node(blk % first + k, i, c), column)
+             base = blk % tuple_at(blk % instant_moment(k), c)
+             rhs(base + 1:base + stride) = incoming(:, c, blk % first + k - 1, column)
+          end do
+          do site = 1, nsites
+             call this % site_gradient(site, gradient(1:stride, (blk % first + k - 2) * nsites + site, column), &
+                  & blk, blk % instant_moment(k), rhs)
           end do
        end do
-    end do
+       do k = 1, n - 1
+          do i = 1, blk % num_stages
+             do site = 1, nsites
+                call this % site_gradient(site, gradient(1:stride, stage_node(blk % first + k, i, site), column), &
+                     & blk, blk % instant_moment(k) + i, rhs)
+             end do
+          end do
+       end do
+    else
+       do k = blk % depth + 1, n
+          do c = 1, blk % num_cells
+             base = blk % tuple_at(blk % instant_moment(k), c)
+             rhs(base + 1:base + stride) = -gradient(1:stride, this % points % point_of(blk % first + k - 1, c), &
+                  & column) + incoming(:, c, blk % first + k - 1, column)
+          end do
+       end do
+       ! the objective's differential at the stages, the seeds of the
+       ! stage quadrature
+       do k = 1, n - 1
+          do i = 1, blk % num_stages
+             do c = 1, blk % num_cells
+                base = blk % tuple_at(blk % instant_moment(k) + i, c)
+                rhs(base + 1:base + stride) = -gradient(1:stride, stage_node(blk % first + k, i, c), column)
+             end do
+          end do
+       end do
+    end if
     if (o > 0) call adjoint_source(blk % rows, jets, mu(:, 0:o - 1), o, this % points % expansion % values(), &
          & this % points % expansion % seed(d), blk % owner, rhs)
     lin = blk % rows % linearize(blk % rows % unknown_graph(), blk % rows % bind(blk % inputs), rhs, &
@@ -4417,6 +4930,10 @@ contains
     integer :: stride, nf, ncells, n, k, c, f, m, j, i, instant, degree, e, g, ni, face_point, row
     integer :: law(3), law_row, q, column, lo, first, last, depth, s
     logical :: along_time
+    integer , allocatable :: equation_row(:), on_face(:)
+    real(dp), allocatable :: position(:)
+    real(dp) :: tau
+    integer :: node, el_cell, qp, i0, k0, row_field, row_order, kd
 
     stride = this % rule % num_components()
     nf     = this % manifold % num_unknowns
@@ -4427,6 +4944,16 @@ contains
     s      = blk % num_stages
     n      = last - first + 1
     values = this % points % expansion % values()
+    ! the row of each equation within a point's tuple: projected, the
+    ! row of its value's coefficient
+    allocate(equation_row(nf))
+    do f = 1, nf
+       if (allocated(this % elements)) then
+          equation_row(f) = blk % rows % projected % coefficient_row(0, f)
+       else
+          equation_row(f) = blk % rows % primary(f)
+       end if
+    end do
     seed   = this % points % expansion % seed(d)
     ni     = size(values)
     ! the column of the order o along the expansion d, and the first
@@ -4441,6 +4968,21 @@ contains
     allocate(moved(size(mu, 1)), source=0)
     do j = 1, size(this % condition)
        if (.not. this % condition(j) % manifold % is_space_face()) cycle
+       if (allocated(this % elements)) then
+          ! projected: the rows of the coefficients the condition fixes at
+          ! the nodes on the face
+          on_face = this % points_on_face(j)
+          do i = 1, size(this % condition(j) % equation)
+             do m = 1, size(blk % rows % at) / ncells
+                do node = 1, size(on_face)
+                   row = blk % tuple_at(m, on_face(node)) + this % fixed_coefficient(j, i, f, &
+                        & equation_row) + 1
+                   if (blk % rows % prescribed_row(row)) occupied(row) = .true.
+                end do
+             end do
+          end do
+          cycle
+       end if
        call this % space_face_placement(j, blk % rows % primary, face_point, target, row_point, row_offset, field, determined)
        do i = 1, size(this % condition(j) % equation)
           do m = 1, size(blk % rows % at) / ncells
@@ -4459,7 +5001,7 @@ contains
              adjoint(f, c, first + k - 1, column) = 0.0_dp
              do m = blk % instant_moment(k) - merge(s, 0, k > 1), blk % instant_moment(k)
                 if (c == 1 .and. gauged(f)) cycle
-                row = blk % tuple_at(m, c) + blk % rows % primary(f) + 1
+                row = blk % tuple_at(m, c) + equation_row(f) + 1
                 if (occupied(row)) cycle
                 adjoint(f, c, first + k - 1, column) = adjoint(f, c, first + k - 1, column) + mu(row, o)
              end do
@@ -4518,6 +5060,22 @@ contains
                 end do
              end do
           end do
+       else if (this % condition(j) % manifold % is_space_face() .and. allocated(this % elements)) then
+          ! projected: the multiplier of the row the condition takes at
+          ! the nodes on the face, summed over the nodes
+          on_face = this % points_on_face(j)
+          do i = 1, size(this % condition(j) % equation)
+             g = g + 1
+             do k = depth + 1, n
+                do m = blk % instant_moment(k) - merge(s, 0, k > 1), blk % instant_moment(k)
+                   do node = 1, size(on_face)
+                      row = blk % tuple_at(m, on_face(node)) + this % fixed_coefficient(j, i, f, equation_row) + 1
+                      if (.not. blk % rows % prescribed_row(row)) cycle
+                      gauge(first + k - 1, g, column) = gauge(first + k - 1, g, column) + mu(row, o)
+                   end do
+                end do
+             end do
+          end do
        else if (this % condition(j) % manifold % is_space_face()) then
           call this % space_face_placement(j, blk % rows % primary, face_point, target, row_point, row_offset, field, determined)
           do i = 1, size(this % condition(j) % equation)
@@ -4558,6 +5116,37 @@ contains
        do i = 1, size(this % condition(j) % equation)
           e = e + 1
           if (instant < first + depth .or. instant > last) cycle
+          if (allocated(this % elements)) then
+             ! projected: each row of the condition is its integral
+             ! against a basis function, and so is the partial of its
+             ! datum, weighted by the row's multiplier
+             m = this % face_row_moment(instant, first, last, depth, blk % instant_moment)
+             associate (el => this % elements)
+               do el_cell = 1, el % num_cells()
+                  do qp = 1, el % num_quadrature_points()
+                     position = this % points % position(this % points % point_of(instant, el % node(1, el_cell)))
+                     position(size(position) - el % dimension + 1:) = el % position(:, qp, el_cell)
+                     call this % face_relation(this % condition(j) % equation(i), values, position, columns, slopes, &
+                          & given, row)
+                     call this % stored_order(row, row_field, row_order)
+                     do kd = 1, ni
+                        slope = stated_partial_jet(this % condition(j) % equation(i), kd, seed, o, values, position)
+                        do i0 = 1, el % num_nodes()
+                           do k0 = 0, el % num_coefficients() - 1
+                              tau = el % test(0, k0, i0, qp, el_cell)
+                              q   = blk % tuple_at(m, el % node(i0, el_cell)) &
+                                   & + this % coefficient_component(row_field, k0, row_order) + 1
+                              in_design(kd, column) = in_design(kd, column) + mixed_partial( &
+                                   & symmetric_terms(mu(q, 0), mu(q, 1:o), o) &
+                                   & * symmetric_terms(tau * slope(0), tau * slope(1:o), o))
+                           end do
+                        end do
+                     end do
+                  end do
+               end do
+             end associate
+             cycle
+          end if
           do c = 1, ncells
              do k = 1, ni
                 slope = stated_partial_jet(this % condition(j) % equation(i), k, seed, o, values, &
@@ -4602,6 +5191,10 @@ contains
     logical, allocatable :: is_fixed(:)
     integer :: deg, npts, j, p, c, k, row
 
+    if (allocated(rows % projected)) then
+       call projected_adjoint_source(rows, jets, mu, o, values, seed, owner, rhs)
+       return
+    end if
     is_fixed = rows % fixed_indicator()
     deg      = rows % degrees
     npts     = size(rows % at)
@@ -4663,6 +5256,10 @@ contains
     real(dp) :: value
     integer :: deg, npts, j, p, c, k, i, row
 
+    if (allocated(rows % projected)) then
+       total = projected_design_products(rows, jets, mu, o, values, seed, owner)
+       return
+    end if
     is_fixed = rows % fixed_indicator()
     deg      = rows % degrees
     npts     = size(rows % at)
@@ -4706,6 +5303,238 @@ contains
     if (any(owner /= this_image())) call co_sum(total)
 
   end function design_products
+
+  !===================================================================!
+  ! THE PROJECTED SOURCES AND PRODUCTS, as the three above with the
+  ! point replaced by the site: the tuple's jets along the design at a
+  ! site formed by the basis from the nodes' columns; the m-th
+  ! derivative of the rule's value tested into the rows of the
+  ! instance's nodes; the multiplier at a site, of the rule's equation,
+  ! the sum of the rows' multipliers times the weight and the test
+  ! function; and the partial in a component of the site's tuple
+  ! returned to the nodes' components by the basis that formed it. An
+  ! instance belongs to the image of its first node, and the sums are
+  ! taken over the images once.
+  !===================================================================!
+
+  subroutine projected_design_source(rows, jets, m, values, seed, owner, b)
+
+    type(residual_operator), intent(in)    :: rows
+    real(dp)               , intent(in)    :: jets(:,0:)
+    integer                , intent(in)    :: m
+    real(dp)               , intent(in)    :: values(:), seed(:)
+    integer                , intent(in)    :: owner(:)
+    real(dp)               , intent(inout) :: b(:)
+
+    type(derivative_terms), allocatable :: q(:), design(:)
+    type(derivative_terms) :: r
+    logical , allocatable :: is_fixed(:)
+    real(dp), allocatable :: source(:), formed(:,:)
+    integer :: width, nq, j, f, d, n, e, qp, s, c, k, i, p, row, o
+    real(dp) :: value
+
+    is_fixed = rows % fixed_indicator()
+    width    = size(rows % projected % formed, 2)
+    design   = design_terms(values, seed, m, m)
+    allocate(q(0:width - 1))
+    allocate(source(size(b)), source=0.0_dp)
+    allocate(formed(width * rows % sites % num_vertices(), 0:m - 1))
+    do o = 0, m - 1
+       formed(:, o) = rows % formed_at_sites(jets(:, o))
+    end do
+    associate (pr => rows % projected, el => rows % projected % elements)
+      nq = el % num_quadrature_points()
+      do j = 1, size(rows % rules)
+         f = pr % tested(1, j)
+         d = pr % tested(2, j)
+         do n = 1, size(pr % element_cell)
+            if (owner(abs(pr % element_point(1, n))) /= this_image()) cycle
+            e = pr % element_cell(n)
+            do qp = 1, nq
+               s = (n - 1) * nq + qp
+               do c = 0, width - 1
+                  q(c) = derivative_terms(formed((s - 1) * width + c + 1, 0), m)
+                  do k = 1, m - 1
+                     call q(c) % set_symmetric(k, formed((s - 1) * width + c + 1, k))
+                  end do
+               end do
+               r     = rows % rules(j) % at_instant(q, design, rows % site_positions(:, s))
+               value = -mixed_partial(r)
+               do i = 1, size(pr % element_point, 1)
+                  p = pr % element_point(i, n)
+                  if (p < 1) cycle
+                  do k = 0, el % num_coefficients() - 1
+                     row = rows % at(p) + pr % coefficient_row(k, f) + 1
+                     if (is_fixed(row)) cycle
+                     source(row) = source(row) + value * el % test(d, k, i, qp, e)
+                  end do
+               end do
+            end do
+         end do
+      end do
+    end associate
+    if (any(owner /= this_image())) call co_sum(source)
+    b = b + source
+
+  end subroutine projected_design_source
+
+  subroutine projected_adjoint_source(rows, jets, mu, o, values, seed, owner, rhs)
+
+    type(residual_operator), intent(in)    :: rows
+    real(dp)               , intent(in)    :: jets(:,0:), mu(:,0:)
+    integer                , intent(in)    :: o
+    real(dp)               , intent(in)    :: values(:), seed(:)
+    integer                , intent(in)    :: owner(:)
+    real(dp)               , intent(inout) :: rhs(:)
+
+    type(derivative_terms), allocatable :: q(:), design(:)
+    type(derivative_terms) :: r, along
+    logical , allocatable :: is_fixed(:)
+    real(dp), allocatable :: source(:), formed(:,:), lambda(:), partial(:), lower(:)
+    integer :: width, nq, j, f, d, n, e, qp, s, c, k, i, p, row, i2, p2, k2, offset, dd
+    real(dp) :: value, tau
+
+    is_fixed = rows % fixed_indicator()
+    width    = size(rows % projected % formed, 2)
+    design   = design_terms(values, seed, o, o + 1)
+    allocate(q(0:width - 1), lambda(0:o - 1), partial(0:o), lower(o))
+    allocate(source(size(rhs)), source=0.0_dp)
+    allocate(formed(width * rows % sites % num_vertices(), 0:o))
+    do k = 0, o
+       formed(:, k) = rows % formed_at_sites(jets(:, k))
+    end do
+    associate (pr => rows % projected, el => rows % projected % elements)
+      nq = el % num_quadrature_points()
+      do j = 1, size(rows % rules)
+         f = pr % tested(1, j)
+         d = pr % tested(2, j)
+         do n = 1, size(pr % element_cell)
+            if (owner(abs(pr % element_point(1, n))) /= this_image()) cycle
+            e = pr % element_cell(n)
+            do qp = 1, nq
+               s = (n - 1) * nq + qp
+               ! the multiplier of the rule at the site, to the order
+               ! below o, the o-th left out
+               lambda = 0.0_dp
+               do i = 1, size(pr % element_point, 1)
+                  p = pr % element_point(i, n)
+                  if (p < 1) cycle
+                  do k = 0, el % num_coefficients() - 1
+                     row = rows % at(p) + pr % coefficient_row(k, f) + 1
+                     if (is_fixed(row)) cycle
+                     tau    = el % test(d, k, i, qp, e)
+                     lambda = lambda + tau * mu(row, 0:o - 1)
+                  end do
+               end do
+               lower(1:o - 1) = lambda(1:o - 1)
+               lower(o)       = 0.0_dp
+               along = symmetric_terms(lambda(0), lower, o)
+               do c = 0, width - 1
+                  q(c) = symmetric_terms(formed((s - 1) * width + c + 1, 0), &
+                       & [(formed((s - 1) * width + c + 1, k), k = 1, o)], o + 1)
+               end do
+               do c = 0, width - 1
+                  call q(c) % set_coefficient(2**o, 1.0_dp)
+                  r = rows % rules(j) % at_instant(q, design, rows % site_positions(:, s))
+                  call q(c) % set_coefficient(2**o, 0.0_dp)
+                  do k = 0, o
+                     partial(k) = coefficient(r, 2**k - 1 + 2**o)
+                  end do
+                  value = -mixed_partial(along * symmetric_terms(partial(0), partial(1:o), o))
+                  dd = pr % formed(0, c + 1)
+                  do i2 = 1, size(pr % element_point, 1)
+                     p2 = abs(pr % element_point(i2, n))
+                     do k2 = 0, el % num_coefficients() - 1
+                        offset = pr % formed(k2 + 1, c + 1)
+                        if (offset < 0) cycle
+                        source(rows % at(p2) + offset + 1) = source(rows % at(p2) + offset + 1) &
+                             & + el % basis(dd, k2, i2, qp, e) * value
+                     end do
+                  end do
+               end do
+            end do
+         end do
+      end do
+    end associate
+    if (any(owner /= this_image())) call co_sum(source)
+    rhs = rhs + source
+
+  end subroutine projected_adjoint_source
+
+  function projected_design_products(rows, jets, mu, o, values, seed, owner) result(total)
+
+    type(residual_operator), intent(in) :: rows
+    real(dp)               , intent(in) :: jets(:,0:), mu(:,0:)
+    integer                , intent(in) :: o
+    real(dp)               , intent(in) :: values(:), seed(:)
+    integer                , intent(in) :: owner(:)
+    real(dp), allocatable :: total(:)
+
+    type(derivative_terms), allocatable :: q(:), design(:)
+    type(derivative_terms) :: r
+    logical , allocatable :: is_fixed(:)
+    real(dp), allocatable :: formed(:,:), lambda(:), partial(:), g(:), gd(:)
+    integer :: width, nq, j, f, d, n, e, qp, s, c, k, i, p, row, l
+    real(dp) :: value, tau
+
+    is_fixed = rows % fixed_indicator()
+    width    = size(rows % projected % formed, 2)
+    allocate(total(size(values)), source=0.0_dp)
+    allocate(q(0:width - 1), lambda(0:o), partial(0:o), g(0:width - 1), gd(size(values)))
+    allocate(formed(width * rows % sites % num_vertices(), 0:o))
+    do k = 0, o
+       formed(:, k) = rows % formed_at_sites(jets(:, k))
+    end do
+    associate (pr => rows % projected, el => rows % projected % elements)
+      nq = el % num_quadrature_points()
+      do l = 1, merge(1, size(values), o == 0)
+         if (o > 0) then
+            design = design_terms(values, seed, o, o + 1)
+            call design(l) % set_coefficient(2**o, 1.0_dp)
+         end if
+         do j = 1, size(rows % rules)
+            f = pr % tested(1, j)
+            d = pr % tested(2, j)
+            do n = 1, size(pr % element_cell)
+               if (owner(abs(pr % element_point(1, n))) /= this_image()) cycle
+               e = pr % element_cell(n)
+               do qp = 1, nq
+                  s = (n - 1) * nq + qp
+                  lambda = 0.0_dp
+                  do i = 1, size(pr % element_point, 1)
+                     p = pr % element_point(i, n)
+                     if (p < 1) cycle
+                     do k = 0, el % num_coefficients() - 1
+                        row = rows % at(p) + pr % coefficient_row(k, f) + 1
+                        if (is_fixed(row)) cycle
+                        tau    = el % test(d, k, i, qp, e)
+                        lambda = lambda + tau * mu(row, 0:o)
+                     end do
+                  end do
+                  if (o == 0) then
+                     call rows % rules(j) % gradient_at(formed((s - 1) * width + 1:s * width, 0), values, value, g, &
+                          & rows % site_positions(:, s), g_design=gd)
+                     total = total + lambda(0) * gd
+                     cycle
+                  end if
+                  do c = 0, width - 1
+                     q(c) = symmetric_terms(formed((s - 1) * width + c + 1, 0), &
+                          & [(formed((s - 1) * width + c + 1, k), k = 1, o)], o + 1)
+                  end do
+                  r = rows % rules(j) % at_instant(q, design, rows % site_positions(:, s))
+                  do k = 0, o
+                     partial(k) = coefficient(r, 2**k - 1 + 2**o)
+                  end do
+                  total(l) = total(l) + mixed_partial(symmetric_terms(lambda(0), lambda(1:o), o) &
+                       & * symmetric_terms(partial(0), partial(1:o), o))
+               end do
+            end do
+         end do
+      end do
+    end associate
+    if (any(owner /= this_image())) call co_sum(total)
+
+  end function projected_design_products
 
   !===================================================================!
   ! The condition on the design factor at the design values: given =
@@ -4793,14 +5622,15 @@ contains
 
     ! over several images each image solves its part of the rows, from
     ! the partitioner's cut of the residual's coupling, and the parts'
-    ! owned entries are assembled whole; the line of an open line is one
-    ! block of the sweeps, which a cut would divide
-    if (num_images() > 1 .and. this % manifold % with_space .and. .not. this % open_line()) then
+    ! owned entries are assembled whole; the line of an open line, and
+    ! of a law projected on the cells of a line, is one block of the
+    ! sweeps, which a cut would divide
+    if (num_images() > 1 .and. this % manifold % with_space .and. .not. this % whole_line()) then
        call require_images()
        whole = exchange(this % owners_of_unknowns(unknowns, stride, npts), width=stride)
        part  = whole % part(rows % coupling())
        sub   = rows % part_of(part)
-       solver = this % solver_for(sub, size(part % whole_index), stride, size(part % owned) / stride, part)
+       solver = this % solver_for(sub, size(part % whole_index), stride, size(sub % at), part)
        local = part % restriction(q)
        call solver % solve(spread(0.0_dp, 1, size(local)), local, achieved)
        q = part % assembled(local)
@@ -4903,8 +5733,10 @@ contains
        ! sweeps in 27 s at twice the basis storage.
        sweeps % block_width    = stride
        ! on an open line the conditions of one end occupy rows at the
-       ! other, so a block is the whole line at one moment
-       if (this % open_line()) sweeps % block_width = stride * this % points % num_cells()
+       ! other, and a law projected on the cells of a line couples every
+       ! node of a moment through its elements: a block is the whole
+       ! line at one moment
+       if (this % whole_line()) sweeps % block_width = stride * this % points % num_cells()
        sweeps % max_iterations = 4
        krylov % restart        = 60
        krylov % tolerance      = 1.0e-3_dp
@@ -5058,6 +5890,499 @@ contains
   end function owners_of_unknowns
 
   !===================================================================!
+  ! THE PROJECTED FORM of the physics on the cells, for a method that
+  ! tests the law against a basis. Each equation in flux form, each
+  ! group of its terms paired with a multiplier of its own and tested
+  ! with the derivative of the basis the group names: the Lagrangian of
+  ! the projection. The coefficients a node stores reach one order
+  ! below the highest derivative along space that the flux form puts
+  ! on the unknown or on the multiplier, and their layout becomes the
+  ! rule's; the basis's jet reaches that highest order. Invalid input:
+  ! a representation law along space, which the basis states.
+  !===================================================================!
+
+  subroutine projected_form(image, physics, space, points, defined)
+
+    type(discrete_residual)        , intent(inout) :: image
+    type(residual_term)            , intent(in)    :: physics
+    class(derivative_approximation), intent(in)    :: space
+    type(discrete_manifold)        , intent(in)    :: points
+    integer                        , intent(in)    :: defined(:,:)
+
+    type(expression), allocatable :: flux(:)
+    type(expression) :: law
+    integer, allocatable :: coordinate(:), order(:), group(:,:)
+    integer :: first, last, j, g, m, c, top
+
+    first = merge(FIRST_COORDINATE + 1, FIRST_COORDINATE, image % manifold % with_time)
+    last  = first + points % dimension - 1
+    if (any(defined(3, :) >= first)) then
+       error stop 'operation_residual: under a projection on the cells the basis states the representation &
+            &laws along space; none is stated'
+    end if
+    law = constant(0.0_dp)
+    allocate(group(3, 0))
+    m   = 0
+    top = 0
+    do j = 1, size(physics % equation)
+       call flux_form(physics % equation(j) % graph(1), first, coordinate, order, flux)
+       do g = 1, size(flux)
+          m     = m + 1
+          law   = law + multiplier(m) * flux(g)
+          group = reshape([group, j, coordinate(g), order(g)], [3, m])
+          top   = max(top, order(g))
+          do c = first, last
+             top = max(top, flux(g) % highest_degree_along(c))
+          end do
+       end do
+    end do
+    allocate(image % tested(2, m))
+    do g = 1, m
+       image % tested(1, g) = group(1, g)
+       image % tested(2, g) = 0
+       if (group(3, g) > 0) image % tested(2, g) = (group(2, g) - first) * top + group(3, g)
+    end do
+    image % flux     = law
+    image % rule     = coefficient_form(law, first, last, max(top - 1, 0))
+    image % elements = space % elements(points % cells, max(top - 1, 0), top)
+
+  end subroutine projected_form
+
+  !===================================================================!
+  ! THE COMPONENT OF A NODE'S TUPLE storing the coefficient k of the
+  ! field f at the order a along time: the value's own order for the
+  ! coefficient zero, and otherwise the mixed component of the order
+  ! of the coefficient's derivative along its axis. Without time the
+  ! order a is zero.
+  !===================================================================!
+
+  pure integer function coefficient_component(this, f, k, a) result(at)
+
+    class(discrete_residual), intent(in) :: this
+    integer                 , intent(in) :: f, k, a
+
+    integer :: first, axis, o
+
+    if (k == 0) then
+       at = this % rule % offset_of_field(f) + a
+       return
+    end if
+    first = merge(FIRST_COORDINATE + 1, FIRST_COORDINATE, this % manifold % with_time)
+    axis  = (k - 1) / this % elements % order + 1
+    o     = k - (axis - 1) * this % elements % order
+    if (this % manifold % with_time) then
+       at = this % rule % component_at(first + axis - 1, o, f, a)
+    else
+       at = this % rule % component_at(first + axis - 1, o, f)
+    end if
+
+  end function coefficient_component
+
+  !===================================================================!
+  ! THE FIELD AND THE ORDER ALONG TIME of a component of a node's
+  ! tuple that stores no derivative along space: the condition on a
+  ! time face reads and determines such components alone.
+  !===================================================================!
+
+  pure subroutine stored_order(this, component, field, order)
+
+    class(discrete_residual), intent(in)  :: this
+    integer                 , intent(in)  :: component
+    integer                 , intent(out) :: field, order
+
+    integer :: f
+
+    field = 0
+    order = 0
+    do f = 1, this % manifold % num_unknowns
+       if (component >= this % rule % offset_of_field(f) .and. &
+            & component <= this % rule % offset_of_field(f) + this % rule % degree_of_field(f)) then
+          field = f
+          order = component - this % rule % offset_of_field(f)
+       end if
+    end do
+    if (field == 0) then
+       error stop 'operation_residual: a condition on a time face reads the values of the unknowns and their &
+            &derivatives along time'
+    end if
+
+  end subroutine stored_order
+
+  !===================================================================!
+  ! HOW THE TUPLE THE FLUX FORM READS IS FORMED at a quadrature point:
+  ! for each of its components, formed(0, c) the derivative of the
+  ! basis - zero the value, (a - 1) d + o the order o along the axis a,
+  ! d the basis's highest order - and formed(k + 1, c) the component of
+  ! a node's tuple that the coefficient k contributes, of the same
+  ! field and the same order along time.
+  !===================================================================!
+
+  subroutine formed_components(this, formed)
+
+    class(discrete_residual), intent(in)  :: this
+    integer, allocatable    , intent(out) :: formed(:,:)
+
+    integer :: f, a, c, cc, o, k, axis, first, top, nk
+
+    nk    = this % elements % num_coefficients()
+    top   = this % elements % derivatives
+    first = merge(FIRST_COORDINATE + 1, FIRST_COORDINATE, this % manifold % with_time)
+    allocate(formed(0:nk, this % flux % num_components()), source=-1)
+    do f = 1, this % manifold % num_unknowns
+       ! along the first coordinate: the orders along time, or without
+       ! time the orders along the first axis of space
+       do a = 0, this % flux % degree_of_field(f)
+          c = this % flux % offset_of_field(f) + a + 1
+          if (this % manifold % with_time) then
+             formed(0, c) = 0
+             do k = 0, nk - 1
+                formed(k + 1, c) = this % coefficient_component(f, k, a)
+             end do
+          else
+             formed(0, c) = a
+             do k = 0, nk - 1
+                formed(k + 1, c) = this % coefficient_component(f, k, 0)
+             end do
+          end if
+       end do
+       do cc = FIRST_COORDINATE + 1, this % flux % num_coordinates()
+          axis = cc - first + 1
+          do a = 0, merge(this % flux % mixed_degree(f), 0, this % manifold % with_time)
+             do o = 1, this % flux % degree_along(cc)
+                if (this % manifold % with_time) then
+                   c = this % flux % component_at(cc, o, f, a) + 1
+                else
+                   c = this % flux % component_at(cc, o, f) + 1
+                end if
+                formed(0, c) = (axis - 1) * top + o
+                do k = 0, nk - 1
+                   formed(k + 1, c) = this % coefficient_component(f, k, a)
+                end do
+             end do
+          end do
+       end do
+    end do
+
+  end subroutine formed_components
+
+  !===================================================================!
+  ! THE QUADRATURE NODES OF A PROJECTED SOLUTION: every site of the
+  ! cells at every instant and at every stage of a staged family's
+  ! steps, the site (e - 1) nq + q at the quadrature point q of the
+  ! element e; its weight the family's rule in time times the site's in
+  ! space, its jet the one the tuples of the element's nodes form there
+  ! by the basis, of the layout of a node's tuple. stage_node(k, i, s)
+  ! is the node of stage i of the step into instant k at site s; a site
+  ! is a node without a point.
+  !===================================================================!
+
+  subroutine projected_nodes(this, tuple, stages, solution, stage_node)
+
+    class(discrete_residual), intent(in)    :: this
+    real(dp)                , intent(in)    :: tuple(:,:,:,0:), stages(:,:,:,:,0:)
+    type(discrete_field)    , intent(inout) :: solution
+    integer , allocatable   , intent(out)   :: stage_node(:,:,:)
+
+    type(derivative_terms), allocatable :: dt(:), weight(:)
+    integer , allocatable :: instant(:), cell_owner(:)
+    real(dp), allocatable :: position(:)
+    integer :: stride, ninst, nsites, nq, nnodes, nn, nb, b, first, last, depth, n, s, smax, k, i, j, e, q, site
+    logical :: staged
+    real(dp) :: h
+
+    stride = this % rule % num_components()
+    ninst  = this % points % num_instants()
+    nq     = this % elements % num_quadrature_points()
+    nsites = this % elements % num_cells() * nq
+    smax   = 1
+    nnodes = ninst * nsites
+    nb     = 0
+    if (this % with_chain) nb = this % schemes % num_blocks()
+    do b = 1, nb
+       smax = max(smax, this % schemes % scheme(b) % num_stages())
+       call this % block_extent(b, first, last, depth)
+       if (marches_by_stages(this % schemes % scheme(b), top_degree(this % rule, this % manifold % num_unknowns) + 1)) &
+            & nnodes = nnodes + (last - first) * this % schemes % scheme(b) % num_stages() * nsites
+    end do
+    allocate(stage_node(lbound(stages, 4):ubound(stages, 4), smax, nsites), source=0)
+    if (allocated(solution % node_jet)) then
+       deallocate(solution % node_jet, solution % node_weight, solution % node_position, solution % node_point, &
+            & solution % node_image)
+    end if
+    allocate(solution % node_jet(stride, nnodes, this % points % expansion % num_columns()), source=0.0_dp)
+    allocate(solution % node_weight(nnodes), source=0.0_dp)
+    allocate(solution % node_position(this % points % num_coordinates(), nnodes), source=0.0_dp)
+    allocate(solution % node_point(nnodes), source=0)
+    allocate(solution % node_image(nnodes), source=this_image())
+    cell_owner = this % cell_owners()
+
+    ! the sites at every instant
+    do k = 1, ninst
+       do e = 1, this % elements % num_cells()
+          do q = 1, nq
+             site = (e - 1) * nq + q
+             nn   = (k - 1) * nsites + site
+             solution % node_image(nn) = cell_owner(this % elements % node(1, e))
+             position = this % points % position(this % points % point_of(k, this % elements % node(1, e)))
+             position(size(position) - this % elements % dimension + 1:) = this % elements % position(:, q, e)
+             solution % node_position(:, nn) = position
+             solution % node_jet(:, nn, :) = this % site_jet(e, q, tuple(:, :, k, :))
+          end do
+       end do
+    end do
+    if (.not. this % with_chain) then
+       do k = 1, ninst
+          do e = 1, this % elements % num_cells()
+             do q = 1, nq
+                solution % node_weight((k - 1) * nsites + (e - 1) * nq + q) = this % elements % weight(q, e)
+             end do
+          end do
+       end do
+       return
+    end if
+
+    nn = ninst * nsites
+    do b = 1, nb
+       call this % block_extent(b, first, last, depth)
+       n      = last - first + 1
+       staged = marches_by_stages(this % schemes % scheme(b), top_degree(this % rule, this % manifold % num_unknowns) + 1)
+       associate (scheme => this % schemes % scheme(b))
+         if (staged) then
+            s = scheme % num_stages()
+            do k = 1, n - 1
+               h = this % points % step(first + k)
+               do i = 1, s
+                  do e = 1, this % elements % num_cells()
+                     do q = 1, nq
+                        site = (e - 1) * nq + q
+                        nn   = nn + 1
+                        stage_node(first + k, i, site) = nn
+                        solution % node_image(nn)  = cell_owner(this % elements % node(1, e))
+                        solution % node_weight(nn) = h * scheme % stage_weight(i) * this % elements % weight(q, e)
+                        position = this % points % position(this % points % point_of(first + k - 1, &
+                             & this % elements % node(1, e)))
+                        position(1) = position(1) + scheme % stage_abscissa(i) * h
+                        position(size(position) - this % elements % dimension + 1:) = this % elements % position(:, q, e)
+                        solution % node_position(:, nn) = position
+                        solution % node_jet(:, nn, :) = this % site_jet(e, q, stages(:, :, i, first + k, :))
+                     end do
+                  end do
+               end do
+            end do
+         else
+            allocate(dt(n))
+            do j = 1, n
+               dt(j) = derivative_terms(this % points % step(first + j - 1), 0)
+            end do
+            do k = depth + 1, n
+               call scheme % step_quadrature(dt, k, weight, instant=instant)
+               h = this % points % step(first + k - 1)
+               do j = 1, size(weight)
+                  do e = 1, this % elements % num_cells()
+                     do q = 1, nq
+                        site = (e - 1) * nq + q
+                        nn   = (first + instant(j) - 2) * nsites + site
+                        solution % node_weight(nn) = solution % node_weight(nn) &
+                             & + h * value(weight(j)) * this % elements % weight(q, e)
+                     end do
+                  end do
+               end do
+            end do
+            deallocate(dt)
+         end if
+       end associate
+    end do
+
+  end subroutine projected_nodes
+
+  !===================================================================!
+  ! THE JET AT A QUADRATURE POINT of the layout of a node's tuple, in
+  ! every column: each component - of a field, an order along time and
+  ! a coefficient - the sum over the element's nodes and their
+  ! coefficients of the basis's derivative the component's coefficient
+  ! names times the nodes' components of the same field and order
+  ! along time. site_gradient is its transpose: a differential at the
+  ! quadrature point returned to the nodes' rows at a moment of a
+  ! block, subtracted from rhs.
+  !===================================================================!
+
+  pure function site_jet(this, e, q, tuples) result(jet)
+
+    class(discrete_residual), intent(in) :: this
+    integer                 , intent(in) :: e, q
+    real(dp)                , intent(in) :: tuples(:,:,0:)
+    real(dp) :: jet(size(tuples, 1), 0:ubound(tuples, 3))
+
+    integer :: f, a, kc, c, i, k
+
+    jet = 0.0_dp
+    associate (el => this % elements)
+      do f = 1, this % manifold % num_unknowns
+         do a = 0, merge(this % rule % degree_of_field(f), 0, this % manifold % with_time)
+            do kc = 0, el % num_coefficients() - 1
+               c = this % coefficient_component(f, kc, a) + 1
+               do i = 1, el % num_nodes()
+                  do k = 0, el % num_coefficients() - 1
+                     jet(c, :) = jet(c, :) + el % basis(this % coefficient_derivative(kc), k, i, q, e) &
+                          & * tuples(this % coefficient_component(f, k, a) + 1, el % node(i, e), :)
+                  end do
+               end do
+            end do
+         end do
+      end do
+    end associate
+
+  end function site_jet
+
+  subroutine site_gradient(this, site, g, blk, m, rhs)
+
+    class(discrete_residual), intent(in)    :: this
+    integer                 , intent(in)    :: site, m
+    real(dp)                , intent(in)    :: g(:)
+    type(chain_block)       , intent(in)    :: blk
+    real(dp)                , intent(inout) :: rhs(:)
+
+    integer :: f, a, kc, c, i, k, e, q, row
+
+    associate (el => this % elements)
+      e = (site - 1) / el % num_quadrature_points() + 1
+      q = site - (e - 1) * el % num_quadrature_points()
+      do f = 1, this % manifold % num_unknowns
+         do a = 0, merge(this % rule % degree_of_field(f), 0, this % manifold % with_time)
+            do kc = 0, el % num_coefficients() - 1
+               c = this % coefficient_component(f, kc, a) + 1
+               if (g(c) == 0.0_dp) cycle
+               do i = 1, el % num_nodes()
+                  do k = 0, el % num_coefficients() - 1
+                     row = blk % tuple_at(m, el % node(i, e)) + this % coefficient_component(f, k, a) + 1
+                     rhs(row) = rhs(row) - el % basis(this % coefficient_derivative(kc), k, i, q, e) * g(c)
+                  end do
+               end do
+            end do
+         end do
+      end do
+    end associate
+
+  end subroutine site_gradient
+
+  !===================================================================!
+  ! THE COMPONENT A CONDITION ON A FACE OF THE REGION FIXES under a
+  ! projection, within a node's tuple: of the field of equation i of
+  ! condition j, the coefficient it determines, at the order along time
+  ! of the equations' rows (equation_row less the field's offset).
+  !===================================================================!
+
+  integer function fixed_coefficient(this, j, i, field, equation_row) result(component)
+
+    class(discrete_residual), intent(in)  :: this
+    integer                 , intent(in)  :: j, i, equation_row(:)
+    integer                 , intent(out) :: field
+
+    integer , allocatable :: column_of(:)
+    real(dp), allocatable :: slopes(:), position(:)
+    real(dp) :: given
+    integer  :: along(2), coefficient, first
+
+    first    = merge(FIRST_COORDINATE + 1, FIRST_COORDINATE, this % manifold % with_time)
+    position = this % points % position(1)
+    call this % space_face_relation(this % condition(j) % equation(i), position, column_of, slopes, given, field, along)
+    coefficient = 0
+    if (along(2) > 0) coefficient = (along(1) - first) * this % elements % order + along(2)
+    component = this % coefficient_component(field, coefficient, equation_row(field) - this % rule % offset_of_field(field))
+
+  end function fixed_coefficient
+
+  !===================================================================!
+  ! THE m-th DERIVATIVE ALONG THE DESIGN of the data of a condition on
+  ! a time face, projected: at the row of each node's coefficient, the
+  ! integral over the cells around the node of the coefficient's basis
+  ! function times the derivative of the value the condition states,
+  ! written into rhs at the row the condition occupies in the block.
+  !===================================================================!
+
+  subroutine projected_datum(this, equation, instant, m, values, seed, blk, rhs)
+
+    class(discrete_residual), intent(in)    :: this
+    type(continuous_field)  , intent(in)    :: equation
+    integer                 , intent(in)    :: instant, m
+    real(dp)                , intent(in)    :: values(:), seed(:)
+    type(chain_block)       , intent(in)    :: blk
+    real(dp)                , intent(inout) :: rhs(:)
+
+    integer , allocatable :: columns(:)
+    real(dp), allocatable :: slopes(:), position(:)
+    real(dp) :: given, stated
+    integer  :: e, q, i0, k0, row, row_field, row_order, moment, r
+    logical , allocatable :: written(:)
+
+    moment = this % face_row_moment(instant, blk % first, blk % last, blk % depth, blk % instant_moment)
+    allocate(written(size(rhs)), source=.false.)
+    associate (el => this % elements)
+      do e = 1, el % num_cells()
+         do q = 1, el % num_quadrature_points()
+            position = this % points % position(this % points % point_of(instant, el % node(1, e)))
+            position(size(position) - el % dimension + 1:) = el % position(:, q, e)
+            call this % face_relation(equation, values, position, columns, slopes, given, row)
+            call this % stored_order(row, row_field, row_order)
+            stated = stated_derivative(equation, m, values, seed, position)
+            do i0 = 1, el % num_nodes()
+               do k0 = 0, el % num_coefficients() - 1
+                  r = blk % tuple_at(moment, el % node(i0, e)) + this % coefficient_component(row_field, k0, row_order) + 1
+                  if (.not. written(r)) rhs(r) = 0.0_dp
+                  written(r) = .true.
+                  rhs(r) = rhs(r) + el % test(0, k0, i0, q, e) * stated
+               end do
+            end do
+         end do
+      end do
+    end associate
+
+  end subroutine projected_datum
+
+  ! the derivative of the basis a coefficient names: the value for the
+  ! coefficient zero, the same order along the same axis otherwise
+  pure integer function coefficient_derivative(this, k) result(d)
+    class(discrete_residual), intent(in) :: this
+    integer                 , intent(in) :: k
+    integer :: axis, o
+    d = 0
+    if (k == 0) return
+    axis = (k - 1) / this % elements % order + 1
+    o    = k - (axis - 1) * this % elements % order
+    d    = (axis - 1) * this % elements % derivatives + o
+  end function coefficient_derivative
+
+  !===================================================================!
+  ! THE POINTS ON A FACE OF THE REGION: those whose coordinate along
+  ! the face's axis is the face's value, to the rounding of the
+  ! generated positions. A face with no point on it is invalid input.
+  !===================================================================!
+
+  function points_on_face(this, j) result(on_face)
+
+    class(discrete_residual), intent(in) :: this
+    integer                 , intent(in) :: j
+    integer, allocatable :: on_face(:)
+
+    real(dp), allocatable :: distance(:)
+    real(dp) :: tolerance
+    integer :: ncells, d, axis, c
+
+    ncells = this % points % num_cells()
+    d      = this % points % dimension
+    associate (face => this % condition(j) % manifold)
+      axis      = face % face_axis - merge(1, 0, this % manifold % with_time)
+      distance  = abs(this % points % centre(axis:d * ncells:d) - face % face_value)
+      tolerance = 4.0_dp * epsilon(1.0_dp) * max(abs(face % face_value), maxval(distance))
+      on_face   = pack([(c, c = 1, ncells)], distance <= tolerance)
+    end associate
+    if (size(on_face) == 0) then
+       error stop 'operation_residual: a condition on a face of the region requires a point on the face'
+    end if
+
+  end function points_on_face
+
+  !===================================================================!
   ! THE FIXED ROWS of a block: every component at the history instants,
   ! from the tuples already solved.
   !===================================================================!
@@ -5153,26 +6478,46 @@ contains
     real(dp) :: given
     integer :: ncells, j, i, m, k, e, face_point, row, space, f, along(2), bound, entries, instant, base
     logical :: acting
+    logical, allocatable :: taken(:)
 
     ! an equation on a time face enters a column per component at each
     ! cell; one on a face of the region enters at each moment at most
     ! one moved row, the edges into the face's point, and a column per
-    ! component
+    ! component. Projected, an equation on a time face enters at each
+    ! quadrature point of each element a column per component read,
+    ! node and coefficient, for each node and coefficient tested
     ncells = this % points % num_cells()
     bound  = 0
     do j = 1, size(this % condition)
        associate (face => this % condition(j) % manifold, count => size(this % condition(j) % equation))
          if (face % is_time_face()) bound = bound + count * ncells * this % rule % num_components()
          if (face % is_space_face()) bound = bound + count * nm * (1 + ncells + this % rule % num_components())
+         if (face % is_time_face() .and. allocated(this % elements)) bound = bound + count &
+              & * this % elements % num_cells() * this % elements % num_quadrature_points() &
+              & * (this % elements % num_nodes() * this % elements % num_coefficients())**2 &
+              & * this % rule % num_components()
        end associate
     end do
     allocate(rows(bound), columns(bound), weights(bound), constants(bound))
     entries = 0
+    ! projected, the initial data are projected onto the functions that
+    ! satisfy the conditions on the faces of the region: at the
+    ! manifold's first instant each such condition takes the row of
+    ! the coefficient it fixes in place of the projection's
+    allocate(taken(maxval(at) + this % rule % num_components()), source=.false.)
+    if (allocated(this % elements) .and. first == 1 .and. depth == 0) call taken_at_first_instant()
     do j = 1, size(this % condition)
        if (.not. this % condition(j) % manifold % is_time_face()) cycle
        instant = this % face_instant(this % condition(j) % manifold % face_value)
        if (instant < first + depth .or. instant > last) cycle
        m = this % face_row_moment(instant, first, last, depth, instant_moment)
+       if (allocated(this % elements)) then
+          do i = 1, size(this % condition(j) % equation)
+             call projected_condition(this % condition(j) % equation(i), instant, &
+                  & (instant_moment(instant - first + 1) - 1) * ncells, (m - 1) * ncells)
+          end do
+          cycle
+       end if
        do i = 1, size(this % condition(j) % equation)
           do k = 1, ncells
              call this % face_relation(this % condition(j) % equation(i), this % points % expansion % values(), &
@@ -5187,6 +6532,10 @@ contains
     end do
     do j = 1, size(this % condition)
        if (.not. this % condition(j) % manifold % is_space_face()) cycle
+       if (allocated(this % elements)) then
+          call coefficient_condition(j)
+          cycle
+       end if
        call this % space_face_placement(j, primary, face_point, target, row_point, row_offset, field, determined)
        do i = 1, size(this % condition(j) % equation)
           do m = 1, nm
@@ -5240,6 +6589,152 @@ contains
       weights(entries)   = weight
       constants(entries) = constant
     end subroutine add
+
+    !-----------------------------------------------------------------!
+    ! A CONDITION ON A TIME FACE, PROJECTED: for every node and every
+    ! coefficient, the integral over the cells around the node of the
+    ! coefficient's basis function times the condition, in place of
+    ! the row of that coefficient at the order along time the
+    ! condition determines; the condition's jet at each quadrature
+    ! point formed by the basis from the coefficients at the face's
+    ! instant. The constant of a row is the integral of the basis
+    ! function times the condition at zero state, written on each of
+    ! the row's entries. columns_at and rows_at offset the points of
+    ! the moment of the columns and of the rows, the face's instant
+    ! being the manifold's instant.
+    !-----------------------------------------------------------------!
+
+    subroutine projected_condition(equation, instant, columns_at, rows_at)
+
+      type(continuous_field), intent(in) :: equation
+      integer               , intent(in) :: instant, columns_at, rows_at
+
+      real(dp), allocatable :: position(:), constant_of(:)
+      integer  :: e, q, i0, k0, i, k, r, cr, row_field, row_order, column_field, column_order, start, row
+      real(dp) :: tau
+
+      allocate(constant_of(maxval(at) + this % rule % num_components()), source=0.0_dp)
+      start = entries
+      associate (el => this % elements)
+        do e = 1, el % num_cells()
+           do q = 1, el % num_quadrature_points()
+              position = this % points % position(this % points % point_of(instant, el % node(1, e)))
+              position(size(position) - el % dimension + 1:) = el % position(:, q, e)
+              call this % face_relation(equation, this % points % expansion % values(), position, column_of, &
+                   & slopes, given, row)
+              call this % stored_order(row, row_field, row_order)
+              do i0 = 1, el % num_nodes()
+                 do k0 = 0, el % num_coefficients() - 1
+                    tau = el % test(0, k0, i0, q, e)
+                    r   = at(rows_at + el % node(i0, e)) + this % coefficient_component(row_field, k0, row_order) + 1
+                    if (taken(r)) cycle
+                    constant_of(r) = constant_of(r) - tau * given
+                    do cr = 1, size(column_of)
+                       call this % stored_order(column_of(cr), column_field, column_order)
+                       do i = 1, el % num_nodes()
+                          do k = 0, el % num_coefficients() - 1
+                             call add(r, at(columns_at + el % node(i, e)) &
+                                  & + this % coefficient_component(column_field, k, column_order) + 1, &
+                                  & tau * slopes(cr) * el % basis(0, k, i, q, e), 0.0_dp)
+                          end do
+                       end do
+                    end do
+                 end do
+              end do
+           end do
+        end do
+      end associate
+      do r = start + 1, entries
+         constants(r) = constant_of(rows(r))
+      end do
+
+    end subroutine projected_condition
+
+    !-----------------------------------------------------------------!
+    ! A CONDITION ON A FACE OF THE REGION under a projection fixes, at
+    ! every node on the face, the coefficient it determines - the value,
+    ! or a derivative along space to the element's order - in place of
+    ! that coefficient's row, at the moments the conditions of the
+    ! points act at. A condition on a derivative above the element's
+    ! order is natural: the projection satisfies it through the terms
+    ! of the integration by parts, and it is not stated as a row.
+    !-----------------------------------------------------------------!
+
+    subroutine coefficient_condition(j)
+
+      integer, intent(in) :: j
+
+      integer, allocatable :: on_face(:)
+      integer :: i, m, k, n, c, coefficient, start_space
+      logical :: initial
+
+      start_space = merge(FIRST_COORDINATE + 1, FIRST_COORDINATE, this % manifold % with_time)
+      on_face = this % points_on_face(j)
+      do i = 1, size(this % condition(j) % equation)
+         do m = 1, nm
+            acting = implicit_moment(m)
+            do k = 1, depth
+               if (instant_moment(k) == m) acting = .false.
+            end do
+            ! the manifold's first instant, the block's own
+            initial = first == 1 .and. depth == 0 .and. instant_moment(1) == m
+            if (initial) acting = .true.
+            if (.not. acting) cycle
+            do n = 1, size(on_face)
+               call this % space_face_relation(this % condition(j) % equation(i), &
+                    & positions(:, (m - 1) * ncells + on_face(n)), column_of, slopes, given, f, along)
+               if (along(2) > this % elements % order) then
+                  error stop 'operation_residual: under a projection on the cells a condition on a face fixes a &
+                       &coefficient of the element, the value or a derivative to its order; a condition on a &
+                       &higher derivative is natural and is not stated'
+               end if
+               coefficient = 0
+               if (along(2) > 0) coefficient = (along(1) - start_space) * this % elements % order + along(2)
+               ! at the first instant the row of the coefficient's value
+               ! the initial data project, elsewhere the row of the law
+               if (initial) then
+                  row = at((m - 1) * ncells + on_face(n)) + this % coefficient_component(f, coefficient, 0) + 1
+               else
+                  row = at((m - 1) * ncells + on_face(n)) + this % coefficient_component(f, coefficient, &
+                       & primary(f) - this % rule % offset_of_field(f)) + 1
+               end if
+               do c = 1, size(column_of)
+                  call add(row, at((m - 1) * ncells + on_face(n)) + column_of(c) + 1, slopes(c), -given)
+               end do
+            end do
+         end do
+      end do
+
+    end subroutine coefficient_condition
+
+    !-----------------------------------------------------------------!
+    ! The rows the conditions on the faces of the region take at the
+    ! manifold's first instant: the value's row of each coefficient
+    ! they fix at the nodes on the faces.
+    !-----------------------------------------------------------------!
+
+    subroutine taken_at_first_instant()
+
+      integer, allocatable :: on_face(:)
+      integer :: jj, ii, n, coefficient, start_space, m1
+
+      start_space = merge(FIRST_COORDINATE + 1, FIRST_COORDINATE, this % manifold % with_time)
+      m1 = instant_moment(1)
+      do jj = 1, size(this % condition)
+         if (.not. this % condition(jj) % manifold % is_space_face()) cycle
+         on_face = this % points_on_face(jj)
+         do ii = 1, size(this % condition(jj) % equation)
+            do n = 1, size(on_face)
+               call this % space_face_relation(this % condition(jj) % equation(ii), &
+                    & positions(:, (m1 - 1) * ncells + on_face(n)), column_of, slopes, given, f, along)
+               coefficient = 0
+               if (along(2) > 0) coefficient = (along(1) - start_space) * this % elements % order + along(2)
+               taken(at((m1 - 1) * ncells + on_face(n)) + this % coefficient_component(f, coefficient, 0) + 1) = .true.
+            end do
+         end do
+      end do
+
+    end subroutine taken_at_first_instant
 
   end subroutine face_rows_of
 
@@ -5342,6 +6837,14 @@ contains
     end select
 
   end function open_line
+
+  ! whether a block of the sweeps is the whole line at one moment: on
+  ! an open line, and for a law projected on the cells of a line
+  logical function whole_line(this)
+    class(discrete_residual), intent(in) :: this
+    whole_line = this % open_line()
+    if (allocated(this % elements)) whole_line = whole_line .or. this % points % dimension == 1
+  end function whole_line
 
   !===================================================================!
   ! THE SEGMENT ROWS of a block, at its implicit moments: for each

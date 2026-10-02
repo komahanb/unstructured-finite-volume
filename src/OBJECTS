@@ -71,6 +71,7 @@ operation_derivative_approximation.o \
 operation_finite_difference.o \
 operation_segment_trapezoid.o \
 operation_finite_volume.o \
+operation_finite_element.o \
 operation_diffusion.o \
 operation_gauss_seidel.o \
 operation_jacobi.o \

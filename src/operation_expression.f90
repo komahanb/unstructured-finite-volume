@@ -100,6 +100,7 @@ module operation_expression
   public :: derivative, jet_form, represented_component
   public :: euler_lagrange, at_zero
   public :: partial_derivative, partial_in_design, total_derivative, stationarity, boundary_terms
+  public :: flux_form, coefficient_form
   public :: operator(+), operator(-), operator(*), operator(/), operator(**)
   public :: sin, cos, exp, log, sqrt
 
@@ -985,6 +986,160 @@ contains
     end do
 
   end function boundary_terms
+
+  !===================================================================!
+  ! THE FLUX FORM OF A LAW tested against its multiplier. The law is a
+  ! sum of terms, each times a constant; a term is the derivative of
+  ! some order along one coordinate of space of a flux, any expression
+  ! but a bare leaf, or any other expression. Integrated by parts, the
+  ! pairing of the multiplier with the derivative of order o of a flux
+  ! is (-1)^o times the pairing of the multiplier's derivative of that
+  ! order with the flux. The terms are grouped by the derivative of the
+  ! multiplier that tests them, of order(g) along coordinate(g), the
+  ! order zero the multiplier itself; flux(g) is the jet form of the
+  ! sum of the group's terms with their signs. The terms of the
+  ! integration by parts on the faces are left to the conditions there.
+  ! space is the first coordinate of space. A derivative of a bare
+  ! unknown is not a flux and stays on the unknown. Invalid input: a
+  ! flux differentiated along two coordinates.
+  !===================================================================!
+
+  subroutine flux_form(x, space, coordinate, order, flux)
+
+    type(expression), intent(in) :: x
+    integer         , intent(in) :: space
+    integer         , allocatable, intent(out) :: coordinate(:), order(:)
+    type(expression), allocatable, intent(out) :: flux(:)
+
+    integer , allocatable :: term(:), along(:), times(:)
+    real(dp), allocatable :: factor(:)
+    type(expression) :: group
+    integer :: k, g
+
+    allocate(term(0), along(0), times(0), factor(0))
+    call collect(x % root(), 1.0_dp)
+
+    ! the groups in the order their first term appears, the
+    ! multiplier itself first
+    allocate(coordinate(0), order(0))
+    if (any(times == 0)) then
+       coordinate = [0]
+       order      = [0]
+    end if
+    do k = 1, size(term)
+       if (times(k) == 0) cycle
+       if (any(coordinate == along(k) .and. order == times(k))) cycle
+       coordinate = [coordinate, along(k)]
+       order      = [order, times(k)]
+    end do
+    allocate(flux(size(order)))
+    do g = 1, size(order)
+       group = constant(0.0_dp)
+       do k = 1, size(term)
+          if (times(k) /= order(g) .or. (times(k) > 0 .and. along(k) /= coordinate(g))) cycle
+          group = sum_of(group, product_of(constant(factor(k)), subtree(x, term(k), resolved=.true.)))
+       end do
+       flux(g) = group
+    end do
+
+  contains
+
+    recursive subroutine collect(i, c)
+
+      integer , intent(in) :: i
+      real(dp), intent(in) :: c
+
+      integer :: j, a, o
+
+      select case (x % kind(i))
+      case (VERTEX_SUM)
+         call collect(x % first(i), c)
+         call collect(x % second(i), c)
+         return
+      case (VERTEX_DIFFERENCE)
+         call collect(x % first(i), c)
+         call collect(x % second(i), -c)
+         return
+      case (VERTEX_PRODUCT)
+         if (x % kind(x % first(i)) == VERTEX_CONSTANT) then
+            call collect(x % second(i), c * x % coefficient(x % first(i)))
+            return
+         end if
+         if (x % kind(x % second(i)) == VERTEX_CONSTANT) then
+            call collect(x % first(i), c * x % coefficient(x % second(i)))
+            return
+         end if
+      end select
+      ! the derivatives along one coordinate of space, peeled
+      j = i
+      a = 0
+      o = 0
+      do while (x % kind(j) == VERTEX_DERIVATIVE)
+         if (x % along(j) < space) exit
+         if (a /= 0 .and. x % along(j) /= a) then
+            error stop 'operation_expression: a flux is differentiated along one coordinate of space; &
+                 &a law in flux form is a sum of derivatives of fluxes, each along one coordinate'
+         end if
+         a = x % along(j)
+         o = o + x % order(j)
+         j = x % first(j)
+      end do
+      if (o > 0 .and. .not. (x % kind(j) == VERTEX_LEAF .and. x % position(j) == ARGUMENT_STATE)) then
+         term   = [term, j]
+         along  = [along, a]
+         times  = [times, o]
+         factor = [factor, c * real((-1)**o, dp)]
+      else
+         term   = [term, i]
+         along  = [along, 0]
+         times  = [times, 0]
+         factor = [factor, c]
+      end if
+
+    end subroutine collect
+
+  end subroutine flux_form
+
+  !===================================================================!
+  ! THE COEFFICIENTS A NODE STORES of every state field of x, as an
+  ! expression that reads each once: with time the first coordinate,
+  ! the orders along it that x stores, and along each coordinate of
+  ! space from space to last the orders one to order, each with every
+  ! order along time, the coefficient's own jet in time; without time,
+  ! the orders zero to order along the first coordinate and one to
+  ! order along the others. Its layout is the tuple of a node.
+  !===================================================================!
+
+  function coefficient_form(x, space, last, order) result(this)
+
+    type(expression), intent(in) :: x
+    integer         , intent(in) :: space, last, order
+    type(expression) :: this
+
+    integer :: f, a, c, k, top
+
+    this = constant(0.0_dp)
+    do f = 1, x % fields
+       top = 0
+       if (space > FIRST_COORDINATE) top = x % field_degree(f)
+       do a = 0, top
+          this = this + vertex(VERTEX_LEAF, ARGUMENT_STATE, a, 0.0_dp, along=FIRST_COORDINATE, field=f)
+       end do
+       if (space == FIRST_COORDINATE) then
+          do k = 1, order
+             this = this + vertex(VERTEX_LEAF, ARGUMENT_STATE, k, 0.0_dp, along=FIRST_COORDINATE, field=f)
+          end do
+       end if
+       do c = max(space, FIRST_COORDINATE + 1), last
+          do k = 1, order
+             do a = 0, top
+                this = this + vertex(VERTEX_LEAF, ARGUMENT_STATE, k, 0.0_dp, along=c, field=f, mixed_order=a)
+             end do
+          end do
+       end do
+    end do
+
+  end function coefficient_form
 
   function applied(a, kind, order, coefficient) result(this)
 

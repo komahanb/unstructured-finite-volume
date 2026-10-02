@@ -27,16 +27,19 @@ requires its own solver or its own adjoint.
 
 ## On the beam
 
-- **Physics:** `physics/beam/euler_bernoulli_beam.f90`, cases 2, 3 and
-  5, which have no objective.
+- **Physics:** `physics/beam/euler_bernoulli_beam.f90`, cases 2, 3, 5,
+  6 and 7, which have no objective; cases 6 and 7 by finite elements
+  (`doc/finite-element-method.md`).
 - **Sensitivity:** the Lagrangian of
   `physics/beam/euler_bernoulli_beam_optimization.f90` with `+ kappa*d`,
   `d = continuous_residual(omega % design(), [s1 - s1_0, s2 - s2_0])`:
   `minimize` returns kappa = -dJ/ds at (s1_0, s2_0).
 - **Optimization:** that program as it stands, without `+ kappa*d`.
-  `minimize` finds s = (0.50961827, -0.31071464) at 21 x 17 by Newton's
-  iteration on the design, the digits the program's own iteration gave
-  before it was moved into the library.
+  `minimize` finds s = (0.51178039, -0.31039058) at 21 x 17 by Newton's
+  iteration on the design, the beam discretized by finite elements. By
+  the fitted differences of order 6 it found (0.50961827, -0.31071464),
+  the digits the program's own iteration gave before it was moved into
+  the library.
 - **Under uncertainty:** deferred. Its non-intrusive form is a weighted
   sum of Lagrangians, one at each node of the distribution; its
   intrusive form is one Lagrangian of the laws projected onto the

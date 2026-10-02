@@ -71,8 +71,9 @@ module operation_expansion
   !===================================================================!
   ! The expansion of an order at the design values, along its seeds:
   ! one column of `along` per expansion, the derivative of each design
-  ! coordinate along it. A manifold without a design has the expansion
-  ! of order zero with no seed and no value.
+  ! coordinate along it; `at` the value of each design coordinate and
+  ! `name` its name. A manifold without a design has the expansion of
+  ! order zero with no seed, no value and no name.
   !===================================================================!
 
   type :: expansion
@@ -80,6 +81,7 @@ module operation_expansion
      integer :: order = 0
      real(dp), allocatable :: along(:,:)
      real(dp), allocatable :: at(:)
+     character(len=32), allocatable :: name(:)
 
    contains
 

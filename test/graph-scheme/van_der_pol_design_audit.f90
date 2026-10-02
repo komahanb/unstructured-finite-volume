@@ -27,6 +27,9 @@
 ! state, adjoint and energy, and its solution has no multiplier of
 ! either among its fields.
 !
+! THE DESIGN IS READ BY NAME: fields(['nu', 'mu']) of the solution
+! is the design the manifold states, (1, 1).
+!
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
@@ -52,7 +55,7 @@ program van_der_pol_design_audit
   type(continuous_field)    :: t, nu, mu, w, u, energy, lambda_r, lambda, kappa, rest
   type(continuous_residual) :: r, g, d, L
   type(discrete_residual)   :: L_h
-  type(discrete_field)      :: estimate, solution, bare, kappa_h, slope, energy_h, bare_energy
+  type(discrete_field)      :: estimate, solution, bare, kappa_h, slope, energy_h, bare_energy, design_h
   type(continuous_field)    :: along(3)
   real(dp) :: J(1 + 3 * order), by_adjoint, mixed, apart, largest
   integer  :: k, e
@@ -117,6 +120,11 @@ program van_der_pol_design_audit
   print '(a, es24.16)', '-d kappa_mu / d nu                = ', -slope % value(1, 2)
   print '(a, es24.16)', '(J_ww - J_nunu - J_mumu) / 2      = ', mixed
   largest = max(largest, abs(apart), abs(mixed + slope % value(1, 2)))
+
+  ! THE DESIGN IS READ BY NAME
+  design_h = solution % fields(['nu', 'mu'])
+  print '(a, 2f8.4)', 'the design read from the solution: ', design_h % value(1, 1), design_h % value(1, 2)
+  largest = max(largest, abs(design_h % value(1, 1) - 1.0_dp), abs(design_h % value(1, 2) - 1.0_dp))
 
   ! A CONDITION NEEDS NO MULTIPLIER: the initial data and the design
   ! condition bare

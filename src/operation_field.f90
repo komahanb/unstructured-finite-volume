@@ -1323,8 +1323,12 @@ contains
   !===================================================================!
   ! The components named, in the order named, every component of a
   ! name in its order - the components of a multiplier share its
-  ! name. The jet is retained. A name not present stops the
-  ! program.
+  ! name. The jet is retained. A design coordinate of the support
+  ! that no component is named after is read as the component whose
+  ! value at every point is the design the support is at, and whose
+  ! jet, a row after the field's, is that of the coordinate: its
+  ! value, the entry of each seed at order one, zero above. A name
+  ! present as neither stops the program.
   !===================================================================!
 
   function fields(this, names) result(chosen)
@@ -1333,43 +1337,60 @@ contains
     character(len=*)     , intent(in) :: names(:)
     type(discrete_field) :: chosen
 
-    integer :: k, j, count
+    integer, allocatable :: slot(:), design(:)
+    integer :: k, j, count, nrow, d
 
     allocate(chosen % on, source=this % on)
     count = 0
     do k = 1, size(names)
-       count = count + count_named(names(k))
+       if (count_named(names(k)) == 0 .and. design_index(names(k)) == 0) then
+          error stop 'operation_field: fields names a component the field does not have: ' // trim(names(k))
+       end if
+       count = count + max(count_named(names(k)), 1)
     end do
-    allocate(chosen % name(count), chosen % value(size(this % value, 1), count))
+    allocate(chosen % name(count), chosen % value(size(this % value, 1), count), slot(count))
+    allocate(design(0))
+    nrow = 0
+    if (allocated(this % jet)) nrow = size(this % jet, 1)
     count = 0
     do k = 1, size(names)
        if (count_named(names(k)) == 0) then
-          error stop 'operation_field: fields names a component the field does not have: ' // trim(names(k))
+          if (this % along /= 0) then
+             error stop 'operation_field: the design is read from the solution, not from a derivative of it'
+          end if
+          count  = count + 1
+          design = [design, design_index(names(k))]
+          chosen % name(count)     = names(k)
+          chosen % value(:, count) = this % on % expansion % at(design(size(design)))
+          slot(count) = nrow + size(design)
+          cycle
        end if
        do j = 1, size(this % name)
           if (trim(this % name(j)) == trim(names(k))) then
              count = count + 1
              chosen % name(count)     = this % name(j)
              chosen % value(:, count) = this % value(:, j)
+             if (allocated(this % slot)) slot(count) = this % slot(j)
           end if
        end do
     end do
-    if (allocated(this % jet))  chosen % jet  = this % jet
+    if (allocated(this % jet)) then
+       allocate(chosen % jet(nrow + size(design), size(this % jet, 2), size(this % jet, 3)), source=0.0_dp)
+       chosen % jet(1:nrow, :, :) = this % jet
+       associate (expanded => this % on % expansion)
+         do k = 1, size(design)
+            chosen % jet(nrow + k, :, 1) = expanded % at(design(k))
+            if (expanded % order < 1) cycle
+            do d = 1, expanded % num_expansions()
+               chosen % jet(nrow + k, :, 1 + expanded % column(d, 1)) = expanded % along(design(k), d)
+            end do
+         end do
+       end associate
+    end if
     if (allocated(this % rule)) chosen % rule = this % rule
     chosen % along = this % along
     call nodes_copied(this, chosen)
-    if (allocated(this % slot)) then
-       allocate(chosen % slot(count))
-       count = 0
-       do k = 1, size(names)
-          do j = 1, size(this % name)
-             if (trim(this % name(j)) == trim(names(k))) then
-                count = count + 1
-                chosen % slot(count) = this % slot(j)
-             end if
-          end do
-       end do
-    end if
+    if (allocated(this % slot)) chosen % slot = slot
 
   contains
 
@@ -1381,6 +1402,17 @@ contains
          if (trim(this % name(j)) == trim(name)) count_named = count_named + 1
       end do
     end function count_named
+
+    ! the design coordinate of the support named so, zero for none
+    pure integer function design_index(name)
+      character(len=*), intent(in) :: name
+      integer :: i
+      design_index = 0
+      if (.not. allocated(this % on % expansion % name)) return
+      do i = 1, size(this % on % expansion % name)
+         if (trim(this % on % expansion % name(i)) == trim(name)) design_index = i
+      end do
+    end function design_index
 
   end function fields
 

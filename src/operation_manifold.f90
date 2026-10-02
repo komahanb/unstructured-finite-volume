@@ -657,7 +657,8 @@ contains
     image % identity = this % identity
     if (present(design)) then
        image % expansion = design
-       image % expansion % at = [(this % design_parameter(k) % value, k = 1, size(this % design_parameter))]
+       image % expansion % at   = [(this % design_parameter(k) % value, k = 1, size(this % design_parameter))]
+       image % expansion % name = [(this % design_parameter(k) % name, k = 1, size(this % design_parameter))]
        if (allocated(design % along)) then
           if (size(design % along, 1) /= size(this % design_parameter)) then
              error stop 'operation_manifold: a direction of the expansion has one entry per design coordinate'

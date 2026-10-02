@@ -26,6 +26,10 @@ for suite in graph-contract graph-robustness graph-minimization graph-multigrid 
     echo "Verifying $suite"
     "./test/$suite/run.sh"
 done
+for problem in van_der_pol beam taylor_green; do
+    echo "Verifying physics/$problem"
+    "./physics/$problem/run.sh"
+done
 for demo in function_identities scheme_weights randomized_checks lagrangian_expansion taylor_state; do
     (cd application && ./graph_time_integrator "--demo=$demo")
 done

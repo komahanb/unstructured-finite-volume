@@ -24,7 +24,7 @@ mesh="box_${n}.msh"
 
 cd "$suite_dir"
 if [ ! -e "$mesh" ]; then
-    sed "s/^n = .*/n = $n;/" box.geo > "box_${n}.geo"
+    sed "s/^n = .*/n = $n;/" ../../physics/taylor_green/box.geo > "box_${n}.geo"
     gmsh -2 "box_${n}.geo" -o "$mesh" > "gmsh_${n}.log"
 fi
 

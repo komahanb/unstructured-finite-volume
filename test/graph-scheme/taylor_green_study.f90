@@ -1,15 +1,17 @@
 !=====================================================================!
 ! THE TAYLOR-GREEN VORTEX under chosen parameters: the same statement
-! as taylor_green_vortex.f90, with the duration, the number of
-! instants, the order of the finite differences, the orders of the
-! three time families and the instants their blocks begin at read
-! from the command line, and the convergence of every solve printed.
+! as physics/taylor_green/taylor_green_vortex.f90, with the duration,
+! the number of instants, the order of the finite differences, the
+! orders of the three time families and the instants their blocks
+! begin at read from the command line, and the convergence of every
+! solve printed.
 !
 !      taylor_green_study [T] [instants] [order] [dirk] [bdf] [adams] [from2] [from3] [mesh] [length] [method]
 !                         [adjoint] [checkpoint] [snapshots] [stages]
 !
 ! Every argument has the value of taylor_green_vortex.f90 when
-! absent: 1.0 10 2 2 2 2 5 8 box.msh 0 difference. The tenth, when
+! absent: 1.0 10 2 2 2 2 5 8 box.msh 0 difference, box.msh meshed from
+! physics/taylor_green/box.geo. The tenth, when
 ! positive, is the number of instants per Adams block: the Adams
 ! family is repeated in blocks of that length from the third block's
 ! first instant to the end, so that a long duration is solved block

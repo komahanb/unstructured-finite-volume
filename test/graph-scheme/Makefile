@@ -1,10 +1,9 @@
 include ../../Makefile.in
 
 #=====================================================================#
-# The two programs on the continuous/discrete residual interface: the
-# two-stage third-order SDIRK tableau and the Taylor-Green vortex;
-# and the earlier SDIRK program on the expression and the
-# residual_operator directly.
+# The studies, the audits and the derivations of schemes on the
+# continuous/discrete residual interface; the problems they read are
+# stated in physics/.
 # -Wtarget-lifetime checks pointer target lifetimes at compile time.
 #=====================================================================#
 
@@ -19,23 +18,9 @@ endif
 F90FLAGS += -I$(LIB)/ -Wtarget-lifetime
 LDFLAGS += -L$(LIB)/ $(LIB)/libufvm.a
 
-all: dirk_coefficients taylor_green_vortex taylor_green_vortex_3d taylor_green_study van_der_pol van_der_pol_sensitivity van_der_pol_continuous_adjoint van_der_pol_study van_der_pol_design_audit van_der_pol_philosophical_template euler_bernoulli_beam euler_bernoulli_beam_optimization euler_bernoulli_beam_grid run
+all: dirk_coefficients taylor_green_study van_der_pol_continuous_adjoint van_der_pol_study van_der_pol_design_audit euler_bernoulli_beam_grid run
 
 dirk_coefficients: dirk_coefficients.o $(LIB)/libufvm.a
-	$(F90) $< -o $@ $(LDFLAGS)
-
-taylor_green_vortex: taylor_green_vortex.o $(LIB)/libufvm.a
-	$(F90) $< -o $@ $(LDFLAGS)
-
-# the vortex in three dimensions on the periodic 8 x 8 x 8 box
-taylor_green_vortex_3d: taylor_green_vortex_3d.o $(LIB)/libufvm.a
-	$(F90) $< -o $@ $(LDFLAGS)
-
-# the van der Pol oscillator on a manifold of time alone
-van_der_pol: van_der_pol.o $(LIB)/libufvm.a
-	$(F90) $< -o $@ $(LDFLAGS)
-
-van_der_pol_sensitivity: van_der_pol_sensitivity.o $(LIB)/libufvm.a
 	$(F90) $< -o $@ $(LDFLAGS)
 
 van_der_pol_continuous_adjoint: van_der_pol_continuous_adjoint.o $(LIB)/libufvm.a
@@ -50,19 +35,6 @@ van_der_pol_study: van_der_pol_study.o $(LIB)/libufvm.a
 van_der_pol_design_audit: van_der_pol_design_audit.o $(LIB)/libufvm.a
 	$(F90) $< -o $@ $(LDFLAGS)
 
-# the oscillator as the template of a problem: one statement, its
-# extension the order of the expansion along nu
-van_der_pol_philosophical_template: van_der_pol_philosophical_template.o $(LIB)/libufvm.a
-	$(F90) $< -o $@ $(LDFLAGS)
-
-# the Euler-Bernoulli beam on an interval of points, no mesh file
-euler_bernoulli_beam: euler_bernoulli_beam.o $(LIB)/libufvm.a
-	$(F90) $< -o $@ $(LDFLAGS)
-
-# the stiffness of the beam identified by Newton on the design
-euler_bernoulli_beam_optimization: euler_bernoulli_beam_optimization.o $(LIB)/libufvm.a
-	$(F90) $< -o $@ $(LDFLAGS)
-
 # the points of the beamline graded by Newton on the estimated error
 euler_bernoulli_beam_grid: euler_bernoulli_beam_grid.o $(LIB)/libufvm.a
 	$(F90) $< -o $@ $(LDFLAGS)
@@ -74,18 +46,13 @@ taylor_green_study: taylor_green_study.o $(LIB)/libufvm.a
 run: test.o $(LIB)/libufvm.a
 	$(F90) test.o -o $@ $(LDFLAGS)
 
-# the periodic boxes, meshed by gmsh from their geometries
-box.msh: box.geo
-	gmsh -2 box.geo -o box.msh > gmsh.log
-
-# the box in three dimensions is written by box_3d.py: gmsh's
-# transfinite volume does not accept a face copied from its periodic
-# master
-box_3d.msh: box_3d.py
-	python3 box_3d.py 8
+# the periodic box of the study, meshed by gmsh from the geometry of
+# the problem
+box.msh: ../../physics/taylor_green/box.geo
+	gmsh -2 ../../physics/taylor_green/box.geo -o box.msh > gmsh.log
 
 clean:
-	@rm -f *.o *.mod *.so run dirk_coefficients taylor_green_vortex taylor_green_vortex_3d taylor_green_study van_der_pol van_der_pol_sensitivity van_der_pol_continuous_adjoint van_der_pol_study van_der_pol_design_audit van_der_pol_philosophical_template euler_bernoulli_beam euler_bernoulli_beam_optimization euler_bernoulli_beam_grid *.vtu gmsh.log variant.stamp
+	@rm -f *.o *.mod *.so run dirk_coefficients taylor_green_study van_der_pol_continuous_adjoint van_der_pol_study van_der_pol_design_audit euler_bernoulli_beam_grid *.vtu gmsh.log variant.stamp
 
 .SUFFIXES: .f90 .o
 .PHONY: all clean FORCE

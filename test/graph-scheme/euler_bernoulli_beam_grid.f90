@@ -1,8 +1,9 @@
 !=====================================================================!
 ! THE POINTS OF THE BEAMLINE AS A DESIGN.
 !
-! The clamped Euler-Bernoulli beam of euler_bernoulli_beam.f90 on the
-! open line, uniform EI and rhoA, loaded so that
+! The clamped Euler-Bernoulli beam of
+! physics/beam/euler_bernoulli_beam.f90 on the open line, uniform EI
+! and rhoA, loaded so that
 !
 !      w = sin(pi (x / L)^2)^2 cos(omega t)
 !

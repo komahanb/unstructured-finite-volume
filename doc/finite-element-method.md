@@ -59,7 +59,7 @@ so the bracket enters no row.
   volume, as under finite differences. Unnormalized, the stiffness
   (3e4) and the slope's mass (3e-5) put the smallest singular value of
   a block near 1e-13. dJ/ds by the adjoint and by the tangent then
-  agreed to 1e-5 relative; normalized, they agree to 1e-12.
+  agreed to 1e-5 relative; normalized, they agree to 4e-12.
 - **The initial data are projected onto the functions that satisfy the
   essential conditions.** At the first instant a clamped end takes the
   rows of the coefficients it fixes in place of the projection's. With
@@ -178,6 +178,11 @@ it does under finite differences.
   refused under a projection.
 - The representation laws along space are refused: the basis states
   them, and `disagreement` reads their multipliers.
+- In two and three coordinates the heat study verifies the forward
+  solve alone. The reverse sweep, the expansions along the design and
+  the multipliers of the conditions are verified on the line. The
+  multiplier of a condition on a face of several coordinates is
+  returned summed over the face's nodes, not as a field on the face.
 
 ## Two and three coordinates
 

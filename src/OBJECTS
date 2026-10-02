@@ -33,6 +33,7 @@ field_stored.o \
 operation_action.o \
 operation_expression.o \
 view_expression.o \
+operation_expansion.o \
 operation_field.o \
 operation_domain.o \
 operation_edge_function.o \

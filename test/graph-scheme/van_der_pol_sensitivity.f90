@@ -79,13 +79,14 @@
 
 program van_der_pol_sensitivity
 
-  use util_precision    , only : dp
-  use util_verbosity    , only : set_verbosity
-  use operation_manifold, only : continuous_manifold, discrete_manifold, interval, points, parameter, expansion
-  use operation_field   , only : continuous_field, discrete_field, integral, &
-       &                         operator(+), operator(-), operator(*), operator(/), operator(**)
-  use operation_residual, only : continuous_residual, discrete_residual, operator(+), operator(*)
-  use operation_family  , only : dirk, bdf, adams, chain
+  use util_precision     , only : dp
+  use util_verbosity     , only : set_verbosity
+  use operation_manifold , only : continuous_manifold, discrete_manifold, interval, points, parameter
+  use operation_expansion, only : expansion
+  use operation_field    , only : continuous_field, discrete_field, integral, &
+       &                          operator(+), operator(-), operator(*), operator(/), operator(**)
+  use operation_residual , only : continuous_residual, discrete_residual, operator(+), operator(*)
+  use operation_family   , only : dirk, bdf, adams, chain
 
   implicit none
 

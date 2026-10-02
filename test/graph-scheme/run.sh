@@ -34,6 +34,16 @@
 #   van_der_pol_study    the Van der Pol case of the graph time
 #                        integrators paper: its Table 4 to degree four
 #                        at h = 0.02, and its three-window chain
+#   van_der_pol_design_audit
+#                        the expansion along the design audited on two
+#                        design coordinates, the initial velocity and
+#                        the objective reading them: the derivatives of
+#                        J by the expansion of the state against the
+#                        adjoint's along nu, mu and nu + mu, the mixed
+#                        derivative read from both rows of the Hessian
+#                        and by polarization, and the conditions summed
+#                        bare; every difference is rounding, 1.4e-14 at
+#                        most, and the program stops above 1e-10
 #   euler_bernoulli_beam the beam rhoA w_tt + d_xx(EI w_xx) = f on
 #                        [0, 2] x [0, 1], 41 instants, 17 points, no
 #                        mesh file: simply supported against its mode
@@ -88,6 +98,8 @@ echo "== van_der_pol_continuous_adjoint"
 ./van_der_pol_continuous_adjoint
 echo "== van_der_pol_study"
 ./van_der_pol_study
+echo "== van_der_pol_design_audit"
+./van_der_pol_design_audit
 echo "== euler_bernoulli_beam"
 ./euler_bernoulli_beam
 echo "== euler_bernoulli_beam_optimization"

@@ -12,47 +12,20 @@
 ! coordinate: the instants of the interval, the cells of a mesh of
 ! the region. Nothing else: the approximation of a derivative is a
 ! property of the residual placed on the points, not of the points.
+! The image states which coordinates it has by what it stores - its
+! instants, its cells, the expansion of its design - and repeats no
+! declaration of the manifold it is the image of.
 !
 !      coordinate index   1 the time, then the space axes in order
 !      point index        instant outer, cell inner
 !      position(p)        the instant and the cell centre
 !      measure(p)         the instant's share of the interval times the cell's volume
 !
-! THE JET ALONG THE DESIGN. A jet is the derivatives of a quantity
-! along a coordinate at one point, to an order: the coefficients of
-! its Taylor expansion there, the expansion not summed. The design
-! coordinate nu is a point of the design space, fixed at a value
-! nu_0, and its discretization is the expansion of an order at that
-! value, so that the discrete manifold is the instants (and cells)
-! times the orders of the expansion:
-!
-!             nu_0 ------>  nu  (the design, one point, expanded to order 3)
-!
-!   t_n  |  [u, u_t, u_tt]  [u, u_t, u_tt]'  [u, u_t, u_tt]''  [u, u_t, u_tt]'''
-!    :   |        :
-!   t_2  |  [u, u_t, u_tt]  [u, u_t, u_tt]'  [u, u_t, u_tt]''  [u, u_t, u_tt]'''
-!   t_1  |  [u, u_t, u_tt]  [u, u_t, u_tt]'  [u, u_t, u_tt]''  [u, u_t, u_tt]'''
-!        |
-!   time v      order 0          order 1          order 2           order 3
-!              (the state)     (d/dnu)          (d^2/dnu^2)       (d^3/dnu^3)
-!
-! Every point stores the jet of the unknowns along time, which the
-! families connect; column 0 is the solution, column 1 its
-! derivative along nu at every instant, column 2 the second
-! derivative, and so on. The derivative of a discrete field along nu
-! is the columns from the next on. The multipliers have the same
-! columns: the equations' at every instant, the reactions', the
-! gauges', and the design condition's, whose column m is minus the
-! (m + 1)-th derivative of the objective.
-!
-! The columns follow from the equations holding at every nu: with
-! F(u(nu), nu) = 0 and A the jacobian of F in u, A u' + dF/dnu = 0
-! gives column 1 by one linear solve with A, A u'' + (terms in u',
-! u) = 0 gives column 2 by one more solve with the same A, and so
-! on; the jet arithmetic of util_derivative_terms evaluates F on the
-! jets of u and nu and returns the jet of F, whose coefficient at
-! order m is the right side of the m-th solve. Nothing is
-! differentiated by hand and nothing is approximated by differences.
+! THE DESIGN. The design coordinate nu is a point of the design
+! space, fixed at a value nu_0; its discrete image is the expansion
+! of an order at that value, which operation_expansion states, so
+! that the discrete manifold is the instants (and cells) times the
+! orders of the expansion.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -61,6 +34,7 @@ module operation_manifold
 
   use util_precision      , only : dp
   use token_identity      , only : token, next_token
+  use operation_expansion , only : expansion
   use operation_field     , only : continuous_support, discrete_support, continuous_field
   use operation_field     , only : unknown_field, coordinate_field
   use operation_field     , only : WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR, DESIGN_FACTOR, SPACE_FACE
@@ -71,7 +45,7 @@ module operation_manifold
 
   private
   public :: continuous_manifold, discrete_manifold
-  public :: interval, region, points, mesh, parameter, expansion
+  public :: interval, region, points, mesh, parameter
 
   integer, parameter :: MAX_NAME = 32
 
@@ -113,9 +87,9 @@ module operation_manifold
   end interface mesh
 
   ! the design: a coordinate fixed at a value, a point of the design
-  ! space; its discretization is the Taylor expansion of an order at
-  ! that value, so that the discrete solution stores its derivatives
-  ! along the design to the order
+  ! space; its discrete image is the expansion of an order at that
+  ! value, so that the discrete solution stores its derivatives along
+  ! the design to the order
   type :: parameter
      character(len=MAX_NAME) :: name = ''
      real(dp) :: value = 0.0_dp
@@ -124,21 +98,6 @@ module operation_manifold
   interface parameter
      module procedure create_parameter
   end interface parameter
-
-  ! the expansion along the design: of an order, along each design
-  ! coordinate when no direction is given, along the directions
-  ! given otherwise, one per column, each a vector over the design
-  ! coordinates
-  type :: expansion
-     integer :: order = 0
-     real(dp), allocatable :: along(:,:)
-  end type expansion
-
-  interface expansion
-     module procedure create_expansion
-     module procedure create_expansion_along
-     module procedure create_expansion_along_several
-  end interface expansion
 
   type, extends(continuous_support) :: continuous_manifold
 
@@ -178,20 +137,11 @@ module operation_manifold
 
   type, extends(discrete_support) :: discrete_manifold
 
-     logical :: with_time  = .false.
-     logical :: with_space = .false.
-     logical :: with_design = .false.
      real(dp), allocatable :: instant(:)
      type(mesh) :: cells
      integer :: dimension = 0
      real(dp), allocatable :: centre(:)
      real(dp), allocatable :: volume(:)
-     type(parameter), allocatable :: design_parameter(:)
-     integer :: order = 0
-     ! the seeds of the expansions: one column per expansion, the
-     ! derivative of each design coordinate along it - the identity
-     ! for the expansion along each coordinate
-     real(dp), allocatable :: along(:,:)
 
    contains
 
@@ -200,11 +150,6 @@ module operation_manifold
      procedure :: position        => discrete_position
      procedure :: measure         => discrete_measure
      procedure :: design_factor   => discrete_design_factor
-     procedure :: design_order    => discrete_design_order
-     procedure :: num_designs     => discrete_num_designs
-     procedure :: design_values   => discrete_design_values
-     procedure :: num_expansions  => discrete_num_expansions
-     procedure :: expansion_seed  => discrete_expansion_seed
      procedure :: measure_on_face => discrete_measure_on_face
      procedure :: num_instants
      procedure :: num_cells
@@ -323,53 +268,6 @@ contains
     this % value = value
 
   end function create_parameter
-
-  function create_expansion(order) result(this)
-
-    integer, intent(in) :: order
-    type(expansion) :: this
-
-    character(len=250) :: message
-
-    if (order < 0) then
-       write(message,'(a,i0)') 'operation_manifold: the expansion along the design is of order zero at &
-            &least; order = ', order
-       error stop trim(message)
-    end if
-    this % order = order
-
-  end function create_expansion
-
-  function create_expansion_along(order, along) result(this)
-
-    integer , intent(in) :: order
-    real(dp), intent(in) :: along(:)
-    type(expansion) :: this
-
-    this = create_expansion_along_several(order, reshape(along, [size(along), 1]))
-
-  end function create_expansion_along
-
-  function create_expansion_along_several(order, along) result(this)
-
-    integer , intent(in) :: order
-    real(dp), intent(in) :: along(:,:)
-    type(expansion) :: this
-
-    integer :: e
-
-    this = create_expansion(order)
-    if (size(along, 2) < 1) then
-       error stop 'operation_manifold: an expansion along directions names one direction at least'
-    end if
-    do e = 1, size(along, 2)
-       if (all(along(:, e) == 0.0_dp)) then
-          error stop 'operation_manifold: a direction of the expansion is a nonzero vector over the design coordinates'
-       end if
-    end do
-    this % along = along
-
-  end function create_expansion_along_several
 
   function create_manifold(time, space, design) result(this)
 
@@ -625,20 +523,34 @@ contains
             &of the interval; value = ', value, ', interval = [', span % a, ', ', span % b
        error stop trim(message)
     end if
-    face % identity    = next_token()
-    face % with_time   = this % with_time .and. .not. of_time
+    face = part_of(this, merge(TIME_FACE, SPACE_FACE, of_time))
+    face % with_time  = this % with_time .and. .not. of_time
     if (face % with_time) face % span = this % span
-    face % with_space  = this % with_space .and. of_time
-    face % geometry    = this % geometry
-    face % with_design = this % with_design
-    if (allocated(this % design_parameter)) face % design_parameter = this % design_parameter
-    face % part       = merge(TIME_FACE, SPACE_FACE, of_time)
+    face % with_space = this % with_space .and. of_time
+    face % geometry   = this % geometry
     face % face_axis  = along % coordinate
     face % face_value = value
-    face % parent     = this % identity
-    allocate(face % unknown_name(0))
 
   end function manifold_boundary
+
+  ! a part of a manifold: a manifold of its own that records its
+  ! parent and which part of it it is, with the design coordinates of
+  ! the parent and no unknown yet; the part taken states the
+  ! coordinates of time and space it retains
+  function part_of(this, part) result(sub)
+
+    class(continuous_manifold), intent(in) :: this
+    integer                   , intent(in) :: part
+    type(continuous_manifold) :: sub
+
+    sub % identity    = next_token()
+    sub % with_design = this % with_design
+    if (allocated(this % design_parameter)) sub % design_parameter = this % design_parameter
+    sub % part        = part
+    sub % parent      = this % identity
+    allocate(sub % unknown_name(0))
+
+  end function part_of
 
   function manifold_time(this) result(factor)
 
@@ -648,14 +560,9 @@ contains
     if (.not. this % with_time) then
        error stop 'operation_manifold: the time factor requires a manifold with a time coordinate'
     end if
-    factor % identity  = next_token()
+    factor = part_of(this, TIME_FACTOR)
     factor % with_time = .true.
     factor % span      = this % span
-    factor % with_design = this % with_design
-    if (allocated(this % design_parameter)) factor % design_parameter = this % design_parameter
-    factor % part      = TIME_FACTOR
-    factor % parent    = this % identity
-    allocate(factor % unknown_name(0))
 
   end function manifold_time
 
@@ -667,14 +574,9 @@ contains
     if (.not. this % with_space) then
        error stop 'operation_manifold: the space factor requires a manifold with a region'
     end if
-    factor % identity   = next_token()
+    factor = part_of(this, SPACE_FACTOR)
     factor % with_space = .true.
     factor % geometry   = this % geometry
-    factor % with_design = this % with_design
-    if (allocated(this % design_parameter)) factor % design_parameter = this % design_parameter
-    factor % part       = SPACE_FACTOR
-    factor % parent     = this % identity
-    allocate(factor % unknown_name(0))
 
   end function manifold_space
 
@@ -721,12 +623,7 @@ contains
     if (.not. this % with_design) then
        error stop 'operation_manifold: the design factor requires a manifold with a design coordinate'
     end if
-    factor % identity    = next_token()
-    factor % with_design = .true.
-    if (allocated(this % design_parameter)) factor % design_parameter = this % design_parameter
-    factor % part        = DESIGN_FACTOR
-    factor % parent      = this % identity
-    allocate(factor % unknown_name(0))
+    factor = part_of(this, DESIGN_FACTOR)
 
   end function manifold_design
 
@@ -759,27 +656,21 @@ contains
     end if
     image % identity = this % identity
     if (present(design)) then
-       image % with_design = .true.
-       image % design_parameter = this % design_parameter
-       image % order       = design % order
+       image % expansion = design
+       image % expansion % at = [(this % design_parameter(k) % value, k = 1, size(this % design_parameter))]
        if (allocated(design % along)) then
           if (size(design % along, 1) /= size(this % design_parameter)) then
              error stop 'operation_manifold: a direction of the expansion has one entry per design coordinate'
           end if
-          image % along = design % along
        else
-          allocate(image % along(size(this % design_parameter), size(this % design_parameter)), source=0.0_dp)
+          allocate(image % expansion % along(size(this % design_parameter), size(this % design_parameter)), source=0.0_dp)
           do k = 1, size(this % design_parameter)
-             image % along(k, k) = 1.0_dp
+             image % expansion % along(k, k) = 1.0_dp
           end do
        end if
     end if
-    if (present(time)) then
-       image % with_time = .true.
-       image % instant = positions_on(time, this % span)
-    end if
+    if (present(time)) image % instant = positions_on(time, this % span)
     if (present(space)) then
-       image % with_space = .true.
        select type (space)
        type is (mesh)
           image % cells = space
@@ -827,13 +718,13 @@ contains
   pure integer function num_instants(this)
     class(discrete_manifold), intent(in) :: this
     num_instants = 1
-    if (this % with_time) num_instants = size(this % instant)
+    if (allocated(this % instant)) num_instants = size(this % instant)
   end function num_instants
 
   pure integer function num_cells(this)
     class(discrete_manifold), intent(in) :: this
     num_cells = 1
-    if (this % with_space) num_cells = size(this % volume)
+    if (allocated(this % volume)) num_cells = size(this % volume)
   end function num_cells
 
   pure integer function discrete_num_points(this)
@@ -843,7 +734,7 @@ contains
 
   pure integer function discrete_num_coordinates(this)
     class(discrete_manifold), intent(in) :: this
-    discrete_num_coordinates = merge(1, 0, this % with_time) + this % dimension
+    discrete_num_coordinates = merge(1, 0, allocated(this % instant)) + this % dimension
   end function discrete_num_coordinates
 
   !===================================================================!
@@ -856,62 +747,10 @@ contains
     class(discrete_manifold), intent(in) :: this
     class(discrete_support), allocatable :: factor
     type(discrete_manifold) :: point
-    point % identity    = next_token()
-    point % with_design = this % with_design
-    if (allocated(this % design_parameter)) point % design_parameter = this % design_parameter
-    point % order       = this % order
-    if (allocated(this % along)) point % along = this % along
+    point % identity  = next_token()
+    point % expansion = this % expansion
     allocate(factor, source=point)
   end function discrete_design_factor
-
-  pure integer function discrete_design_order(this)
-    class(discrete_manifold), intent(in) :: this
-    discrete_design_order = this % order
-  end function discrete_design_order
-
-  pure integer function discrete_num_designs(this)
-    class(discrete_manifold), intent(in) :: this
-    discrete_num_designs = 0
-    if (this % with_design) discrete_num_designs = size(this % design_parameter)
-  end function discrete_num_designs
-
-  ! the expansions: their number, and the seed of each, the
-  ! derivative of every design coordinate along it
-  pure integer function discrete_num_expansions(this)
-    class(discrete_manifold), intent(in) :: this
-    discrete_num_expansions = 0
-    if (allocated(this % along)) discrete_num_expansions = size(this % along, 2)
-  end function discrete_num_expansions
-
-  pure function discrete_expansion_seed(this, e) result(seed)
-    class(discrete_manifold), intent(in) :: this
-    integer                 , intent(in) :: e
-    real(dp), allocatable :: seed(:)
-    if (.not. allocated(this % along)) then
-       allocate(seed(1), source=0.0_dp)
-       return
-    end if
-    if (e < 1 .or. e > size(this % along, 2)) then
-       error stop 'operation_manifold: the expansion named does not exist'
-    end if
-    seed = this % along(:, e)
-  end function discrete_expansion_seed
-
-  ! the design vector: the value of every design coordinate, or the
-  ! one value zero without a design, which no expression reads
-  pure function discrete_design_values(this) result(v)
-    class(discrete_manifold), intent(in) :: this
-    real(dp), allocatable :: v(:)
-    integer :: i
-    if (.not. this % with_design) then
-       allocate(v(1), source=0.0_dp)
-       return
-    end if
-    allocate(v(size(this % design_parameter)))
-    do i = 1, size(v)
-       v(i) = this % design_parameter(i) % value
-    end do
-  end function discrete_design_values
 
   !===================================================================!
   ! The measure of a point within the face at an instant: the cell's
@@ -925,12 +764,12 @@ contains
     real(dp)                , intent(in) :: time
     integer :: k, c
     discrete_measure_on_face = 0.0_dp
-    if (.not. this % with_time) return
+    if (.not. allocated(this % instant)) return
     k = (p - 1) / this % num_cells() + 1
     c = p - (k - 1) * this % num_cells()
     if (abs(this % instant(k) - time) > 1.0e-12_dp * max(1.0_dp, abs(time))) return
     discrete_measure_on_face = 1.0_dp
-    if (this % with_space) discrete_measure_on_face = this % volume(c)
+    if (allocated(this % volume)) discrete_measure_on_face = this % volume(c)
   end function discrete_measure_on_face
 
   ! the point of instant k and cell c: instant outer, cell inner
@@ -960,8 +799,8 @@ contains
     c = p - (k - 1) * this % num_cells()
     d = this % dimension
     allocate(x(this % num_coordinates()))
-    if (this % with_time) x(1) = this % instant(k)
-    if (this % with_space) then
+    if (allocated(this % instant)) x(1) = this % instant(k)
+    if (allocated(this % volume)) then
        x(this % num_coordinates() - d + 1:) = this % centre(d * (c - 1) + 1:d * c)
     end if
 
@@ -982,7 +821,7 @@ contains
     k = (p - 1) / this % num_cells() + 1
     c = p - (k - 1) * this % num_cells()
     discrete_measure = 1.0_dp
-    if (this % with_time) then
+    if (allocated(this % instant)) then
        n = size(this % instant)
        if (k == 1) then
           discrete_measure = 0.5_dp * this % step(2)
@@ -992,7 +831,7 @@ contains
           discrete_measure = 0.5_dp * (this % step(k) + this % step(k + 1))
        end if
     end if
-    if (this % with_space) discrete_measure = discrete_measure * this % volume(c)
+    if (allocated(this % volume)) discrete_measure = discrete_measure * this % volume(c)
 
   end function discrete_measure
 

@@ -185,7 +185,7 @@ contains
 
     select type (points => field % on)
     type is (discrete_manifold)
-       if (.not. points % with_space) then
+       if (.not. allocated(points % volume)) then
           error stop 'view_paraview_writer: a field is drawn on the cells of a region; the manifold has none'
        end if
        if (.not. points % cells % has_corners()) then

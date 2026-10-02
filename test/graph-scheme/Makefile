@@ -19,7 +19,7 @@ endif
 F90FLAGS += -I$(LIB)/ -Wtarget-lifetime
 LDFLAGS += -L$(LIB)/ $(LIB)/libufvm.a
 
-all: dirk_coefficients taylor_green_vortex taylor_green_vortex_3d taylor_green_study van_der_pol van_der_pol_sensitivity van_der_pol_continuous_adjoint van_der_pol_study euler_bernoulli_beam euler_bernoulli_beam_optimization euler_bernoulli_beam_grid run
+all: dirk_coefficients taylor_green_vortex taylor_green_vortex_3d taylor_green_study van_der_pol van_der_pol_sensitivity van_der_pol_continuous_adjoint van_der_pol_study van_der_pol_design_audit van_der_pol_philosophical_template euler_bernoulli_beam euler_bernoulli_beam_optimization euler_bernoulli_beam_grid run
 
 dirk_coefficients: dirk_coefficients.o $(LIB)/libufvm.a
 	$(F90) $< -o $@ $(LDFLAGS)
@@ -42,6 +42,17 @@ van_der_pol_continuous_adjoint: van_der_pol_continuous_adjoint.o $(LIB)/libufvm.
 	$(F90) $< -o $@ $(LDFLAGS)
 
 van_der_pol_study: van_der_pol_study.o $(LIB)/libufvm.a
+	$(F90) $< -o $@ $(LDFLAGS)
+
+# the expansion along the design audited: the derivatives of J by the
+# state against the adjoint's, the Hessian read twice, the conditions
+# bare; the program stops when a difference exceeds 1e-10
+van_der_pol_design_audit: van_der_pol_design_audit.o $(LIB)/libufvm.a
+	$(F90) $< -o $@ $(LDFLAGS)
+
+# the oscillator as the template of a problem: one statement, its
+# extension the order of the expansion along nu
+van_der_pol_philosophical_template: van_der_pol_philosophical_template.o $(LIB)/libufvm.a
 	$(F90) $< -o $@ $(LDFLAGS)
 
 # the Euler-Bernoulli beam on an interval of points, no mesh file
@@ -74,7 +85,7 @@ box_3d.msh: box_3d.py
 	python3 box_3d.py 8
 
 clean:
-	@rm -f *.o *.mod *.so run dirk_coefficients taylor_green_vortex taylor_green_vortex_3d taylor_green_study van_der_pol van_der_pol_sensitivity van_der_pol_continuous_adjoint van_der_pol_study euler_bernoulli_beam euler_bernoulli_beam_optimization euler_bernoulli_beam_grid *.vtu gmsh.log variant.stamp
+	@rm -f *.o *.mod *.so run dirk_coefficients taylor_green_vortex taylor_green_vortex_3d taylor_green_study van_der_pol van_der_pol_sensitivity van_der_pol_continuous_adjoint van_der_pol_study van_der_pol_design_audit van_der_pol_philosophical_template euler_bernoulli_beam euler_bernoulli_beam_optimization euler_bernoulli_beam_grid *.vtu gmsh.log variant.stamp
 
 .SUFFIXES: .f90 .o
 .PHONY: all clean FORCE

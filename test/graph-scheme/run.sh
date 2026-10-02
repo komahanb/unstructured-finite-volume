@@ -32,6 +32,12 @@
 #                        coordinate s, moved by Newton on the sum of the
 #                        squares of the estimate's contributions: s =
 #                        0.372, the error of J 2.34e-2 to -7.4e-4
+#   heat_conduction_study
+#                        the heat equation by Lagrange elements of
+#                        degree one on the unit square, of quadrangles
+#                        and of triangles, and on the unit cube, of
+#                        hexahedra and of tetrahedra: the error in L2
+#                        over the manifold, of order 2
 #   run                  the same tableau on the expression and the
 #                        residual_operator directly
 #
@@ -57,5 +63,9 @@ echo "== van_der_pol_design_audit"
 ./van_der_pol_design_audit
 echo "== euler_bernoulli_beam_grid"
 ./euler_bernoulli_beam_grid
+echo "== heat_conduction_study"
+for m in square_q8.msh square_t8.msh cube_h4.msh cube_t4.msh; do
+    ./heat_conduction_study $m
+done
 echo "== run"
 ./run

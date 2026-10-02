@@ -39,13 +39,13 @@ module operation_manifold
   use operation_field     , only : unknown_field, coordinate_field
   use operation_field     , only : WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR, DESIGN_FACTOR, SPACE_FACE
   use view_mesh           , only : mesh, values_of
-  use view_mesh_builder   , only : mesh_from_gmsh, mesh_from_points
+  use view_mesh_builder   , only : mesh_from_gmsh, mesh_from_points, mesh_of_corners
 
   implicit none
 
   private
   public :: continuous_manifold, discrete_manifold
-  public :: interval, region, points, mesh, parameter
+  public :: interval, region, points, mesh, corners, parameter
 
   integer, parameter :: MAX_NAME = 32
 
@@ -85,6 +85,12 @@ module operation_manifold
   interface mesh
      module procedure mesh_from_file
   end interface mesh
+
+  ! the corners of a mesh as the points of a region, the mesh's cells
+  ! the elements of their corners
+  interface corners
+     module procedure corners_of
+  end interface corners
 
   ! the design: a coordinate fixed at a value, a point of the design
   ! space; its discrete image is the expansion of an order at that
@@ -248,6 +254,15 @@ contains
     cells = mesh_from_gmsh(filename)
 
   end function mesh_from_file
+
+  function corners_of(cells) result(points)
+
+    type(mesh), intent(in) :: cells
+    type(mesh) :: points
+
+    points = mesh_of_corners(cells)
+
+  end function corners_of
 
   ! a design parameter named as a coordinate is, other than t, x, y, z
   function create_parameter(name, value) result(this)
@@ -489,10 +504,12 @@ contains
   ! THE PARTS: the face where one coordinate takes a value at an end
   ! of its interval, a manifold of the other coordinates that records
   ! its parent, the coordinate and the value; the time factor; the
-  ! space factor. Each is a manifold with unknowns of its own. Invalid
-  ! input: a field that is not a coordinate of this manifold, a design
-  ! coordinate, a space coordinate of a region with no interval, or a
-  ! value at neither end.
+  ! space factor. Each is a manifold with unknowns of its own. On a
+  ! region read from a geometry file a face of space is where the
+  ! coordinate takes the value, its points those of the discretization
+  ! that lie there. Invalid input: a field that is not a coordinate of
+  ! this manifold, a design coordinate, or a value at neither end of an
+  ! interval.
   !===================================================================!
 
   function manifold_boundary(this, along, value) result(face)
@@ -512,11 +529,11 @@ contains
     of_time = this % with_time .and. along % coordinate == 1
     if (of_time) then
        span = this % span
-    else
-       if (.not. allocated(this % geometry % extent)) then
-          error stop 'operation_manifold: a face along a space coordinate requires the region of an interval'
-       end if
+    else if (allocated(this % geometry % extent)) then
        span = this % geometry % extent
+    else
+       span % a = value
+       span % b = value
     end if
     if (value /= span % a .and. value /= span % b) then
        write(message,'(a,es12.5,a,es12.5,a,es12.5)') 'operation_manifold: the face must be at an end &

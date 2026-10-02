@@ -18,7 +18,7 @@
 module view_mesh_builder
 
   use util_precision  , only : dp
-  use view_mesh     , only : mesh
+  use view_mesh     , only : mesh, values_of
   use util_string         , only : string
   use view_mesh_loader, only : mesh_loader
   use view_gmsh_loader    , only : gmsh_loader
@@ -32,6 +32,7 @@ module view_mesh_builder
   private
   public :: mesh_from_gmsh
   public :: mesh_from_points
+  public :: mesh_of_corners
 
 contains
 
@@ -283,5 +284,133 @@ contains
          & dimension=1)
 
   end function mesh_from_points
+
+  !===================================================================!
+  ! THE CORNERS OF A MESH AS ITS POINTS: the mesh whose cells are the
+  ! corners some cell of m reads, numbered in the order of the corners,
+  ! each at its corner's position and with a share of the volumes of
+  ! the cells around it, a cell's volume over its corner count; its
+  ! faces join every two corners of a cell, once. The cells of m are
+  ! its elements, their corners renumbered. Invalid input: a
+  ! mesh that keeps no corners, and a periodic mesh, whose corners on
+  ! the two sides of a periodic face are not identified.
+  !===================================================================!
+
+  impure type(mesh) function mesh_of_corners(m) result(c)
+
+    type(mesh), intent(in) :: m
+
+    integer , allocatable :: number(:), count_of(:), start(:), other(:), tails(:), heads(:)
+    real(dp), allocatable :: volume(:), centre(:), shift(:), cell_volume(:)
+    real(dp), allocatable :: areas(:), deltas(:), normals(:), face_centres(:), weights(:)
+    real(dp) :: span(3)
+    integer :: d, n, ncell, e, i, j, a, b, k, f, nf, low, high
+
+    if (.not. m % has_corners()) then
+       error stop 'view_mesh_builder: the corners of a mesh are its points where the mesh keeps them, as a mesh &
+            &read from a file does'
+    end if
+    call values_of(m % face_shift(), shift)
+    if (any(shift /= 0.0_dp)) then
+       error stop 'view_mesh_builder: the corners on the two sides of a periodic face are not identified'
+    end if
+    d     = m % dimension
+    ncell = size(m % num_cell_corners)
+
+    ! the corners some cell reads, numbered in order
+    allocate(number(size(m % corners, 2)), source=0)
+    do e = 1, ncell
+       number(m % cell_corners(1:m % num_cell_corners(e), e)) = 1
+    end do
+    n = 0
+    do k = 1, size(number)
+       if (number(k) == 0) cycle
+       n = n + 1
+       number(k) = n
+    end do
+
+    ! the positions, and each cell's volume shared among its corners
+    allocate(centre(d * n), volume(n), source=0.0_dp)
+    do k = 1, size(number)
+       if (number(k) > 0) centre(d * (number(k) - 1) + 1:d * number(k)) = m % corners(1:d, k)
+    end do
+    call values_of(m % cell_volume(), cell_volume)
+    do e = 1, ncell
+       do i = 1, m % num_cell_corners(e)
+          k = number(m % cell_corners(i, e))
+          volume(k) = volume(k) + cell_volume(e) / real(m % num_cell_corners(e), dp)
+       end do
+    end do
+
+    ! the faces: for each corner the corners above it that share a
+    ! cell with it, each once
+    allocate(count_of(n), source=0)
+    do e = 1, ncell
+       do i = 1, m % num_cell_corners(e)
+          do j = 1, m % num_cell_corners(e)
+             a = number(m % cell_corners(i, e))
+             b = number(m % cell_corners(j, e))
+             if (a < b) count_of(a) = count_of(a) + 1
+          end do
+       end do
+    end do
+    allocate(start(n + 1))
+    start(1) = 1
+    do k = 1, n
+       start(k + 1) = start(k) + count_of(k)
+    end do
+    allocate(other(start(n + 1) - 1))
+    count_of = 0
+    do e = 1, ncell
+       do i = 1, m % num_cell_corners(e)
+          do j = 1, m % num_cell_corners(e)
+             a = number(m % cell_corners(i, e))
+             b = number(m % cell_corners(j, e))
+             if (a >= b) cycle
+             other(start(a) + count_of(a)) = b
+             count_of(a) = count_of(a) + 1
+          end do
+       end do
+    end do
+    allocate(tails(size(other)), heads(size(other)))
+    nf = 0
+    do a = 1, n
+       low  = start(a)
+       high = start(a + 1) - 1
+       do f = low, high
+          if (any(other(low:f - 1) == other(f))) cycle
+          nf = nf + 1
+          tails(nf) = a
+          heads(nf) = other(f)
+       end do
+    end do
+    allocate(areas(nf), deltas(nf), normals(d * nf), face_centres(d * nf), weights(nf))
+    do f = 1, nf
+       span(1:d) = centre(d * (heads(f) - 1) + 1:d * heads(f)) - centre(d * (tails(f) - 1) + 1:d * tails(f))
+       areas(f)  = 1.0_dp
+       deltas(f) = norm2(span(1:d))
+       normals(d * (f - 1) + 1:d * f)      = span(1:d) / deltas(f)
+       face_centres(d * (f - 1) + 1:d * f) = centre(d * (tails(f) - 1) + 1:d * tails(f)) + span(1:d) / 2.0_dp
+       weights(f) = 0.5_dp
+    end do
+
+    c = mesh(n, tails=tails(1:nf), heads=heads(1:nf), volumes=volume, cell_centres=centre, areas=areas, &
+         & deltas=deltas, normals=normals, face_centres=face_centres, weights=weights, dimension=d)
+
+    ! the cells of m, the elements of their corners
+    allocate(c % corners(3, n), source=0.0_dp)
+    do k = 1, size(number)
+       if (number(k) > 0) c % corners(:, number(k)) = m % corners(:, k)
+    end do
+    c % cell_corners = m % cell_corners
+    do e = 1, ncell
+       do i = 1, m % num_cell_corners(e)
+          c % cell_corners(i, e) = number(m % cell_corners(i, e))
+       end do
+    end do
+    c % num_cell_corners = m % num_cell_corners
+    c % cell_kinds       = m % cell_kinds
+
+  end function mesh_of_corners
 
 end module view_mesh_builder

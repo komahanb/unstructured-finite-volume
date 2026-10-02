@@ -18,7 +18,7 @@ endif
 F90FLAGS += -I$(LIB)/ -Wtarget-lifetime
 LDFLAGS += -L$(LIB)/ $(LIB)/libufvm.a
 
-all: dirk_coefficients taylor_green_study van_der_pol_continuous_adjoint van_der_pol_study van_der_pol_design_audit euler_bernoulli_beam_grid run
+all: dirk_coefficients taylor_green_study van_der_pol_continuous_adjoint van_der_pol_study van_der_pol_design_audit euler_bernoulli_beam_grid heat_conduction_study square_q8.msh square_t8.msh cube_h4.msh cube_t4.msh run
 
 dirk_coefficients: dirk_coefficients.o $(LIB)/libufvm.a
 	$(F90) $< -o $@ $(LDFLAGS)
@@ -43,8 +43,23 @@ euler_bernoulli_beam_grid: euler_bernoulli_beam_grid.o $(LIB)/libufvm.a
 taylor_green_study: taylor_green_study.o $(LIB)/libufvm.a
 	$(F90) $< -o $@ $(LDFLAGS)
 
+# the heat equation by Lagrange elements on the unit square and cube
+heat_conduction_study: heat_conduction_study.o $(LIB)/libufvm.a
+	$(F90) $< -o $@ $(LDFLAGS)
+
 run: test.o $(LIB)/libufvm.a
 	$(F90) test.o -o $@ $(LDFLAGS)
+
+# the unit square of n x n quadrangles or triangles and the unit cube
+# of n x n x n hexahedra or tetrahedra, n the number in the name
+square_q%.msh: square.geo
+	gmsh -2 square.geo -setnumber n $* -setnumber quadrangles 1 -o $@ > gmsh.log
+square_t%.msh: square.geo
+	gmsh -2 square.geo -setnumber n $* -setnumber quadrangles 0 -o $@ > gmsh.log
+cube_h%.msh: cube.geo
+	gmsh -3 cube.geo -setnumber n $* -setnumber hexahedra 1 -o $@ > gmsh.log
+cube_t%.msh: cube.geo
+	gmsh -3 cube.geo -setnumber n $* -setnumber hexahedra 0 -o $@ > gmsh.log
 
 # the periodic box of the study, meshed by gmsh from the geometry of
 # the problem
@@ -52,7 +67,7 @@ box.msh: ../../physics/taylor_green/box.geo
 	gmsh -2 ../../physics/taylor_green/box.geo -o box.msh > gmsh.log
 
 clean:
-	@rm -f *.o *.mod *.so run dirk_coefficients taylor_green_study van_der_pol_continuous_adjoint van_der_pol_study van_der_pol_design_audit euler_bernoulli_beam_grid *.vtu gmsh.log variant.stamp
+	@rm -f *.o *.mod *.so run dirk_coefficients taylor_green_study van_der_pol_continuous_adjoint van_der_pol_study van_der_pol_design_audit euler_bernoulli_beam_grid heat_conduction_study *.vtu gmsh.log variant.stamp
 
 .SUFFIXES: .f90 .o
 .PHONY: all clean FORCE

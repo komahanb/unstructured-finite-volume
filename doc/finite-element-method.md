@@ -1,8 +1,9 @@
 # The finite element method
 
-Status: implemented on a line, 2026-10-02: the Hermite cubic, for the
-beam's physics and its identification. Lagrange elements in two and
-three dimensions are the next phase. The note continues
+Status: implemented, 2026-10-02: on a line the Hermite cubic, for the
+beam's physics and its identification; on the cells of a mesh of two
+and three coordinates the Lagrange elements of degree one, for the heat
+equation. The note continues
 `doc/unified-residuals.md`: section 5 keeps the derivative operators of
 a law unexpanded so that the concretion chooses its form, and section 6
 lists finite elements with the essential conditions at boundary nodes
@@ -24,8 +25,8 @@ as their open rows.
    formed from the basis at the quadrature points, so the
    representation laws along space hold without rows.
 4. An essential condition fixes a coefficient in place of that
-   coefficient's row. A natural condition enters through the boundary
-   terms of the integration by parts.
+   coefficient's row. A natural condition belongs to the boundary terms
+   of the integration by parts; it is not yet stated (see Scope).
 5. The transpose of the Galerkin system is the Galerkin system of the
    adjoint. Along time the adjoint remains the transpose of the family.
 
@@ -136,11 +137,15 @@ it does under finite differences.
   (`projects`), and the elements (`elements`), the cells' nodes,
   quadrature points, weights, the basis's jet and the test functions.
 - `operation_finite_element.f90`, new: `finite_element(degree)`. On a
-  line the cells are the segments between consecutive points. The basis
+  line the cells are the segments between consecutive points; in two
+  and three coordinates, the cells a mesh of corners keeps. The basis
   is dual to the coefficients, a column of the inverse of the matrix of
   the coefficients of the polynomials of `polynomial_form`, factorised
-  by `dense_factorisation`. The quadrature is Gauss-Legendre of p + 1
-  points, `gauss_node_weight` of `operation_grid.f90`, now public.
+  by `dense_factorisation`. The quadrature is Gauss-Legendre,
+  `gauss_node_weight` of `operation_grid.f90`, now public.
+- `view_mesh_builder.f90` and `operation_manifold.f90`: `corners(m)`,
+  the corners of a mesh as the points of a region; a face of a region
+  read from a geometry file at a coordinate's value.
 - `operation_expression.f90`: `flux_form`, the law's terms grouped by
   the derivative of the multiplier that tests them; `coefficient_form`,
   the layout of the coefficients a node stores.
@@ -155,7 +160,8 @@ it does under finite differences.
   objective is integrated at the quadrature points, and its
   differential is returned to the nodes by the transpose of the basis.
   The sources of the expansions and the design products are evaluated
-  at the quadrature points.
+  at the quadrature points. The Jacobian is summed element by element
+  and written once per element.
 
 ## Scope
 
@@ -173,13 +179,63 @@ it does under finite differences.
 - The representation laws along space are refused: the basis states
   them, and `disagreement` reads their multipliers.
 
+## Two and three coordinates
+
+The points of the region are the corners of a mesh read from a file,
+and its cells are the elements:
+
+```fortran
+omega_h = omega % discretize(time=points(n), space=corners(mesh('square_q8.msh')))
+L_h     = L % discretize(omega_h, time=chain(...), space=finite_element(degree=1))
+```
+
+- `corners(m)` is the mesh whose cells are the corners some cell of m
+  reads, each with a share of the volumes of the cells around it, its
+  faces joining the corners of each cell. It keeps the cells of m as
+  the elements of their corners. A periodic mesh is refused: its
+  corners on the two sides of a periodic face are not identified.
+- The elements are of degree one: triangles and tetrahedra with the
+  polynomials of degree one, quadrangles and hexahedra with the
+  bilinear and trilinear ones. The basis on the reference cell is dual
+  to the values at its corners, by the same factorisation as on the
+  line, and each cell is the image of the reference cell under its own
+  basis. The quadrature is the tensor product of Gauss-Legendre rules
+  of three points, collapsed onto the triangle and the tetrahedron.
+- A face of a region read from a geometry file is where a coordinate
+  takes a value; its points are the corners that lie there. A corner on
+  several faces belongs to the condition stated first.
+- Over several images the part of an image states the rows of its own
+  corners and reads the corners of every cell around them.
+
+`test/graph-scheme/heat_conduction_study.f90` states the heat equation
+u_t - div(k grad u) = f, k = 1 + x/2, on the unit square and the unit
+cube, with u = 0 on every face and f such that u = sin(pi x) sin(pi y)
+cos(t) is the solution, times sin(pi z) on the cube. The error in L2
+over [0, 1/2] x B:
+
+| Cells | n = 4 | 8 | 16 | 32 |
+|---|---|---|---|---|
+| quadrangles, 81 instants | 1.98e-2 | 4.94e-3 | 1.23e-3 | 3.08e-4 |
+| triangles, 81 instants | 5.16e-2 | 1.37e-2 | 3.47e-3 | |
+
+| Cells | n = 2 | 4 | 8 |
+|---|---|---|---|
+| hexahedra, 41 instants | 6.41e-2 | 1.54e-2 | 3.81e-3 |
+| tetrahedra, 41 instants | 1.67e-1 | 6.58e-2 | 1.92e-2 |
+
+The error falls by 4 per halving, order 2, the order of the elements of
+degree one. On the tetrahedra, six to each cube of an extruded mesh, it
+falls by 2.5 and then 3.4, still approaching that order at n = 8. The
+digits are the same on 1, 2 and 4 images.
+
 ## Next
 
-Lagrange elements on the cells of a gmsh mesh in two and three
-dimensions: the points of the discrete manifold at the mesh's
-vertices, the bilinear and trilinear maps of the reference square and
-cube, and the tensor product of the Gauss-Legendre rule. They are to be
-verified on a law with an exact solution. Found in passing, read and
-not run: with no time chain, `quadrature_nodes` gives every node the
-weight one (`operation_residual.f90`), which omits the cell volume from
-a steady objective under finite differences.
+- The element interface of the dissertation as one type: the point of
+  a collocation as the element of one node, so that the placement at
+  the points and the projection are one code path.
+- Natural conditions through the boundary terms, and elements of
+  higher degree in two and three coordinates, which need the incidence
+  of the cells with their edges and faces.
+- Found in passing, read and not run: with no time chain,
+  `quadrature_nodes` gives every node the weight one, which omits the
+  cell volume from a steady objective under finite differences.

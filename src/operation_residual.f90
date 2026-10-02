@@ -1904,22 +1904,40 @@ contains
   end subroutine tested_into
 
   !===================================================================!
-  ! THE JACOBIAN OF THE PROJECTION: at each site, the gradient of each
-  ! rule in the tuple it reads there, times the weight and the test
-  ! function of the row, and times the basis's derivative that forms
-  ! each component from each coefficient of each node of the instance:
-  ! one entry per row stated, component read, node and coefficient,
-  ! the entries of one row and column summed when combined.
+  ! THE JACOBIAN OF THE PROJECTION, element by element. At each site of
+  ! an instance, the gradient of each rule in the tuple it reads, times
+  ! the weight and the test function of a row and the basis's
+  ! derivative that forms each component from each coefficient of each
+  ! node, is summed into the instance's matrix: its rows the node, the
+  ! coefficient and the equation; its columns the node and the
+  ! component of a node's tuple the basis reads. The entries of the
+  ! rows the instance states are then written once each, those of one
+  ! row and column of two instances summed when combined.
   !===================================================================!
 
   pure integer function projected_count(this) result(count)
     class(residual_operator), intent(in) :: this
-    integer :: width, nodes, nk
-    width = size(this % projected % formed, 2)
+    integer :: nodes, nk
     nodes = size(this % projected % element_point, 1)
     nk    = this % projected % elements % num_coefficients()
-    count = size(this % rules) * this % sites % num_vertices() * nodes * nk * width * nodes * nk
+    count = size(this % projected % element_cell) * nodes * nk * size(this % projected % coefficient_row, 2) &
+         & * nodes * size(read_offsets(this % projected % formed))
   end function projected_count
+
+  ! the components of a node's tuple the basis reads, each once
+  pure function read_offsets(formed) result(offsets)
+    integer, intent(in) :: formed(0:,:)
+    integer, allocatable :: offsets(:)
+    integer :: c, k
+    offsets = [integer ::]
+    do c = 1, size(formed, 2)
+       do k = 1, ubound(formed, 1)
+          if (formed(k, c) < 0) cycle
+          if (any(offsets == formed(k, c))) cycle
+          offsets = [offsets, formed(k, c)]
+       end do
+    end do
+  end function read_offsets
 
   subroutine projected_triples(this, x, nu, is_fixed, r, c, w, num_triples)
     class(residual_operator), intent(in)    :: this
@@ -1928,49 +1946,72 @@ contains
     integer                 , intent(inout) :: r(:), c(:)
     real(dp)                , intent(inout) :: w(:)
     integer                 , intent(inout) :: num_triples
-    real(dp), allocatable :: xs(:), ns(:), g(:)
-    integer , allocatable :: reads(:)
-    integer :: width, nd, nq, j, f, d, n, e, q, s, i, p, k, m, comp, dd, i2, p2, k2, offset, row
+    real(dp), allocatable :: xs(:), ns(:), g(:), local(:,:)
+    integer , allocatable :: reads(:), offsets(:), place(:)
+    integer :: width, nd, nq, nodes, nk, nf, no, j, f, d, n, e, q, s, i, p, k, m, comp, dd, i2, k2, offset, row, o
     real(dp) :: value, tau
-    width = size(this % projected % formed, 2)
-    nd    = this % designs
-    xs    = this % formed_at_sites(x)
-    ns    = this % design_at_sites(nu)
+    width   = size(this % projected % formed, 2)
+    nd      = this % designs
+    xs      = this % formed_at_sites(x)
+    ns      = this % design_at_sites(nu)
+    offsets = read_offsets(this % projected % formed)
+    no      = size(offsets)
+    allocate(place(0:maxval([offsets, 0])), source=0)
+    place(offsets) = [(o, o = 1, no)]
     allocate(g(0:width - 1))
     associate (pr => this % projected, el => this % projected % elements)
-      nq = el % num_quadrature_points()
-      do j = 1, size(this % rules)
-         f = pr % tested(1, j)
-         d = pr % tested(2, j)
-         call this % rules(j) % read_components(reads)
-         do n = 1, size(pr % element_cell)
-            e = pr % element_cell(n)
-            do q = 1, nq
-               s = (n - 1) * nq + q
+      nq    = el % num_quadrature_points()
+      nodes = size(pr % element_point, 1)
+      nk    = el % num_coefficients()
+      nf    = size(pr % coefficient_row, 2)
+      allocate(local(nodes * nk * nf, nodes * no))
+      do n = 1, size(pr % element_cell)
+         e     = pr % element_cell(n)
+         local = 0.0_dp
+         do q = 1, nq
+            s = (n - 1) * nq + q
+            do j = 1, size(this % rules)
+               f = pr % tested(1, j)
+               d = pr % tested(2, j)
+               call this % rules(j) % read_components(reads)
                call this % rules(j) % gradient_at(xs((s - 1) * width + 1:s * width), &
                     & ns((s - 1) * nd + 1:s * nd), value, g, this % site_positions(:, s))
-               do i = 1, size(pr % element_point, 1)
-                  p = pr % element_point(i, n)
-                  if (p < 1) cycle
-                  do k = 0, el % num_coefficients() - 1
-                     row = this % at(p) + pr % coefficient_row(k, f) + 1
-                     if (is_fixed(row)) cycle
+               do i = 1, nodes
+                  do k = 0, nk - 1
                      tau = el % test(d, k, i, q, e)
                      if (tau == 0.0_dp) cycle
                      do m = 1, size(reads)
                         comp = reads(m)
                         dd   = pr % formed(0, comp + 1)
-                        do i2 = 1, size(pr % element_point, 1)
-                           p2 = abs(pr % element_point(i2, n))
-                           do k2 = 0, el % num_coefficients() - 1
+                        do i2 = 1, nodes
+                           do k2 = 0, nk - 1
                               offset = pr % formed(k2 + 1, comp + 1)
                               if (offset < 0) cycle
-                              num_triples    = num_triples + 1
-                              r(num_triples) = row
-                              c(num_triples) = this % at(p2) + offset + 1
-                              w(num_triples) = tau * g(comp) * el % basis(dd, k2, i2, q, e)
+                              local(((f - 1) * nodes + i - 1) * nk + k + 1, (i2 - 1) * no + place(offset)) = &
+                                   & local(((f - 1) * nodes + i - 1) * nk + k + 1, (i2 - 1) * no + place(offset)) &
+                                   & + tau * g(comp) * el % basis(dd, k2, i2, q, e)
                            end do
                         end do
+                     end do
+                  end do
+               end do
+            end do
+         end do
+         ! the rows the instance states, once each
+         do f = 1, nf
+            do i = 1, nodes
+               p = pr % element_point(i, n)
+               if (p < 1) cycle
+               do k = 0, nk - 1
+                  row = this % at(p) + pr % coefficient_row(k, f) + 1
+                  if (is_fixed(row)) cycle
+                  do i2 = 1, nodes
+                     do o = 1, no
+                        if (local(((f - 1) * nodes + i - 1) * nk + k + 1, (i2 - 1) * no + o) == 0.0_dp) cycle
+                        num_triples    = num_triples + 1
+                        r(num_triples) = row
+                        c(num_triples) = this % at(abs(pr % element_point(i2, n))) + offsets(o) + 1
+                        w(num_triples) = local(((f - 1) * nodes + i - 1) * nk + k + 1, (i2 - 1) * no + o)
                      end do
                   end do
                end do
@@ -4932,6 +4973,7 @@ contains
     logical :: along_time
     integer , allocatable :: equation_row(:), on_face(:)
     real(dp), allocatable :: position(:)
+    logical , allocatable :: attributed(:)
     real(dp) :: tau
     integer :: node, el_cell, qp, i0, k0, row_field, row_order, kd
 
@@ -5062,15 +5104,18 @@ contains
           end do
        else if (this % condition(j) % manifold % is_space_face() .and. allocated(this % elements)) then
           ! projected: the multiplier of the row the condition takes at
-          ! the nodes on the face, summed over the nodes
+          ! the nodes on the face, summed over the nodes; a node on
+          ! several faces belongs to the condition stated first
           on_face = this % points_on_face(j)
+          if (.not. allocated(attributed)) allocate(attributed(size(mu, 1)), source=.false.)
           do i = 1, size(this % condition(j) % equation)
              g = g + 1
              do k = depth + 1, n
                 do m = blk % instant_moment(k) - merge(s, 0, k > 1), blk % instant_moment(k)
                    do node = 1, size(on_face)
                       row = blk % tuple_at(m, on_face(node)) + this % fixed_coefficient(j, i, f, equation_row) + 1
-                      if (.not. blk % rows % prescribed_row(row)) cycle
+                      if (.not. blk % rows % prescribed_row(row) .or. attributed(row)) cycle
+                      attributed(row) = .true.
                       gauge(first + k - 1, g, column) = gauge(first + k - 1, g, column) + mu(row, o)
                    end do
                 end do
@@ -6478,7 +6523,7 @@ contains
     real(dp) :: given
     integer :: ncells, j, i, m, k, e, face_point, row, space, f, along(2), bound, entries, instant, base
     logical :: acting
-    logical, allocatable :: taken(:)
+    logical, allocatable :: taken(:), claimed(:)
 
     ! an equation on a time face enters a column per component at each
     ! cell; one on a face of the region enters at each moment at most
@@ -6505,6 +6550,8 @@ contains
     ! manifold's first instant each such condition takes the row of
     ! the coefficient it fixes in place of the projection's
     allocate(taken(maxval(at) + this % rule % num_components()), source=.false.)
+    ! a node on several faces: the condition stated first takes its row
+    allocate(claimed(size(taken)), source=.false.)
     if (allocated(this % elements) .and. first == 1 .and. depth == 0) call taken_at_first_instant()
     do j = 1, size(this % condition)
        if (.not. this % condition(j) % manifold % is_time_face()) cycle
@@ -6698,6 +6745,8 @@ contains
                   row = at((m - 1) * ncells + on_face(n)) + this % coefficient_component(f, coefficient, &
                        & primary(f) - this % rule % offset_of_field(f)) + 1
                end if
+               if (claimed(row)) cycle
+               claimed(row) = .true.
                do c = 1, size(column_of)
                   call add(row, at((m - 1) * ncells + on_face(n)) + column_of(c) + 1, slopes(c), -given)
                end do

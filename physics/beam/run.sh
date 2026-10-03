@@ -18,8 +18,10 @@
 #                        where dJ/ds = 0, no condition fixing the
 #                        design: minimize iterates on it, the gradient
 #                        and hessian from the multiplier of the
-#                        design; s = (0.5096, -0.3107) against (0.5,
-#                        -0.3) on 21 x 17
+#                        design; s = (0.5118, -0.3104) against (0.5,
+#                        -0.3) on 21 x 17; with the bound s1 <= 0.45,
+#                        the third argument, s = (0.45, -0.2240) and
+#                        the bound's multiplier 2.4205e-5
 #
 #     run.sh             on one process
 #     IMAGES=n run.sh    on n coarray images: the library and the
@@ -57,3 +59,4 @@ launch() {
 
 launch euler_bernoulli_beam
 launch euler_bernoulli_beam_optimization
+launch euler_bernoulli_beam_optimization 21 17 0.45

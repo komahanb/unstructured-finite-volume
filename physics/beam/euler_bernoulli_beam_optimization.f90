@@ -48,6 +48,21 @@
 ! on 21 x 17, dJ/ds by the adjoint and by the expansion agree to
 ! 4e-12 relative, and the central differences of step 1e-4 to 1e-6,
 ! their own error.
+!
+! A third argument bounds the design, s1 <= s1_max: the inequality is
+! paired with mu >= 0,
+!
+!      L + mu (s1 - s1_max),
+!
+! and each Newton step on s is the minimizer of the quadratic model of
+! J under the inequality linearized at the iterate. With s1 <= 0.45 on
+! 21 x 17 the design found is (0.45, -0.22396067) in six iterations,
+! mu = 2.4205141386e-5: -dJ/ds1 there by the adjoint of the design
+! fixed at it, to every digit, and by the central differences of steps
+! 1e-3 and 1e-4 to 1.05e-7 and 1.05e-9, their own error; dJ/ds2 =
+! -4.2e-13. On 2 and 4 images mu is the same to 2.5e-8: dJ/ds is
+! computed to 1e-13, as its central differences of steps 1e-9 to 1e-6
+! show, and the design found moves within that, s2 by 2.2e-12.
 !=====================================================================!
 
 program euler_bernoulli_beam_optimization
@@ -68,15 +83,16 @@ program euler_bernoulli_beam_optimization
   real(dp), parameter :: s_true(2) = [0.5_dp, -0.3_dp]
 
   integer  :: num_instants = 21, num_points = 17
+  real(dp) :: s1_max
   character(len=32) :: item
 
   type(continuous_manifold) :: omega, initial, left, right
   type(discrete_manifold)   :: omega_h
   type(continuous_field)    :: t, x, s1, s2, w, w_true, exact
   type(continuous_field)    :: EI, EI_true, rhoA, moment, moment_true, load, misfit
-  type(continuous_field)    :: adjoint, lambda, lambda_0, lambda_L
-  type(discrete_field)      :: estimate, solution, functional, s_h
-  type(continuous_residual) :: r, ic, bc_0, bc_L, Lagrangian
+  type(continuous_field)    :: adjoint, lambda, lambda_0, lambda_L, mu
+  type(discrete_field)      :: estimate, solution, functional, s_h, mu_h
+  type(continuous_residual) :: r, ic, bc_0, bc_L, bound, Lagrangian
   type(discrete_residual)   :: L_h
   real(dp) :: frequency, values(3)
   integer  :: k
@@ -88,6 +104,10 @@ program euler_bernoulli_beam_optimization
   if (command_argument_count() >= 2) then
      call get_command_argument(2, item)
      read(item, *) num_points
+  end if
+  if (command_argument_count() >= 3) then
+     call get_command_argument(3, item)
+     read(item, *) s1_max
   end if
 
   ! Omega = [0, L] x [0, T] x {(s1, s2)}, the design from (0, 0); its
@@ -132,6 +152,13 @@ program euler_bernoulli_beam_optimization
   lambda_L = bc_L % multiplier('lambda_L')
   Lagrangian = misfit + adjoint*r + lambda*ic + lambda_0*bc_0 + lambda_L*bc_L
 
+  ! the bound on s1 when given, paired with mu >= 0
+  if (command_argument_count() >= 3) then
+     bound      = continuous_residual(omega % design(), [s1 - s1_max], inequality=.true.)
+     mu         = bound % multiplier('mu')
+     Lagrangian = Lagrangian + mu*bound
+  end if
+
   L_h = Lagrangian % discretize(omega_h, &
        & time=chain([(dirk(2), k = 1, 4), (bdf(2), k = 5, 7), (adams(2), k = 8, num_instants)], &
        &            from=[(k, k = 1, num_instants)]), space=finite_element(degree=3))
@@ -147,5 +174,9 @@ program euler_bernoulli_beam_optimization
   s_h = solution % fields(['s1', 's2'])
   if (this_image() == 1) print '(a, 2f12.8)', 's found     = ', s_h % value(1, 1), s_h % value(1, 2)
   if (this_image() == 1) print '(a, 2f12.8)', 'true s      = ', s_true
+  if (command_argument_count() >= 3) then
+     mu_h = solution % fields(['mu'])
+     if (this_image() == 1) print '(a, es16.8)', 'mu          = ', mu_h % value(1, 1)
+  end if
 
 end program euler_bernoulli_beam_optimization

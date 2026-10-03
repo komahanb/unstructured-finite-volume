@@ -1,7 +1,8 @@
 # The rotorcraft optimization in the Lagrangian framework
 
 Status: plan, 2026-10-02; the rigid rotor built, 2026-10-03, in
-`physics/rotorcraft-dynamics/` (section "The rigid rotor"). The source
+`physics/rotorcraft-dynamics/` (section "The rigid rotor"); inequalities
+on the design in `minimize`, 2026-10-03 (stage 4). The source
 is komahanb/rotorcraft-optimization, `deterministic-optimization`:
 Python scripts that build the case in TACS (`tacs_builder.py`,
 `scripts/multiscenario.py` and its three scenarios). The facts below
@@ -230,6 +231,19 @@ differences.
    multiplier, solved by an augmented Lagrangian as ALGENCAN does, or
    by an active-set Newton on the reduced space. Verified first on the
    beam's identification with a bound on the stiffness.
+   Built 2026-10-03 for inequalities on the design factor,
+   `continuous_residual(omega % design(), [c], inequality=.true.)`
+   paired with its multiplier: each Newton step on the design minimizes
+   the quadratic model of J under the inequalities linearized at the
+   iterate, its active set settled within the step, and the multipliers
+   returned are those of the design returned. The beam's identification
+   with s1 <= 0.45 finds (0.45, -0.22396067) in six iterations, the
+   multiplier 2.4205141386e-5, -dJ/ds1 at that design by the adjoint to
+   every digit; a lower bound, two bounds of which one is active, and
+   s1^2 + s2^2 <= 1/4 converge in six iterations each, the multipliers
+   satisfying the stationarity of L in the design. The smoothness
+   constraints are of this kind. KS <= 1/4 is not: it is a functional of
+   the state, and needs its own reverse sweep.
 5. **Three scenarios on one design.** The sum of three discrete
    Lagrangians, each with its own state and adjoint, and one design
    iteration.
@@ -245,7 +259,8 @@ differences.
   expansion along the design; a free design found by Newton; the finite
   element method on lines and meshes; runs on several images.
 - **Missing:**
-  - inequality conditions on the design, and an optimizer for them;
+  - inequalities on functionals of the state, KS <= 1/4, each with its
+    own reverse sweep (those on the design factor exist);
   - several Lagrangians on one design;
   - a way to write a body's 7 coordinates and its action once, not as
     7 scalar laws by hand, without moving solver logic into `physics/`;

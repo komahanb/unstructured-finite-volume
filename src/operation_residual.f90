@@ -260,6 +260,10 @@ module operation_residual
      type(continuous_field), allocatable :: equation(:)
      type(continuous_field) :: multiplier
      logical :: paired = .false.
+     ! an inequality on the design factor: each equation at most zero,
+     ! its multiplier nonnegative and zero where the equation is below
+     ! zero
+     logical :: inequality = .false.
 
   end type residual_term
 
@@ -433,6 +437,8 @@ module operation_residual
      procedure :: minimize
      procedure :: disagreement
      procedure, private :: zero_at_design
+     procedure, private :: inequalities_at
+     procedure, private :: place_inequality_multipliers
      procedure, private :: check_representations
      procedure, private :: num_represented
      procedure, private :: block_positions
@@ -2123,15 +2129,17 @@ contains
   end function projected_part
 
   !===================================================================!
-  ! A term: the equations on a manifold. Invalid input: an equation
-  ! that is not a scalar field, or one on neither the manifold nor
-  ! its parent.
+  ! A term: the equations on a manifold; with inequality, on the
+  ! design factor, each equation at most zero. Invalid input: an
+  ! equation that is not a scalar field, or one on neither the
+  ! manifold nor its parent; an inequality on another part.
   !===================================================================!
 
-  function create_continuous(manifold, equations) result(this)
+  function create_continuous(manifold, equations, inequality) result(this)
 
     type(continuous_manifold), intent(in) :: manifold
     type(continuous_field)   , intent(in) :: equations(:)
+    logical                  , intent(in), optional :: inequality
     type(continuous_residual) :: this
 
     integer :: k
@@ -2140,6 +2148,10 @@ contains
     allocate(this % term(1))
     this % term(1) % manifold = manifold
     this % term(1) % equation = equations
+    if (present(inequality)) this % term(1) % inequality = inequality
+    if (this % term(1) % inequality .and. .not. manifold % is_design_factor()) then
+       error stop 'operation_residual: an inequality is a condition on the design factor'
+    end if
     do k = 1, size(equations)
        if (equations(k) % num_components() /= 1) then
           write(message,'(a,i0,a,i0)') 'operation_residual: an equation is a scalar field; equation ', &
@@ -2348,6 +2360,7 @@ contains
     integer, allocatable :: defined(:,:)
     logical, allocatable :: representation(:)
     logical :: covering
+    type(expression) :: form
     real(dp) :: given
     real(dp), allocatable :: slope(:)
     character(len=250) :: message
@@ -2437,9 +2450,19 @@ contains
           error stop 'operation_residual: a condition on a face of the region requires the derivatives along &
                &space approximated at every point, a derivative approximation'
        end if
+       ! an inequality on the design factor is a function of the design
+       ! coordinates alone
+       if (image % condition(j) % inequality) then
+          do i = 1, size(image % condition(j) % equation)
+             form = image % condition(j) % equation(i) % graph(1)
+             if (form % reads_state()) then
+                error stop 'operation_residual: an inequality on the design factor is a function of the design &
+                     &coordinates alone'
+             end if
+          end do
        ! a condition on the design factor fixes the design coordinate
        ! at the value the manifold states: nu - nu_0 = 0, one equation
-       if (image % condition(j) % manifold % is_design_factor()) then
+       else if (image % condition(j) % manifold % is_design_factor()) then
           if (size(image % condition(j) % equation) /= points % expansion % num_designs()) then
              error stop 'operation_residual: the condition on the design factor fixes every design coordinate, &
                   &one equation per coordinate in the order of the coordinates'
@@ -2530,6 +2553,16 @@ contains
   ! multiplier, and the expansion of order one along each design
   ! coordinate.
   !
+  ! UNDER INEQUALITIES c(s) <= 0 on the design factor, each step is the
+  ! minimizer of the quadratic model of J under the inequalities
+  ! linearized at the iterate, c + A d <= 0, with their multipliers mu,
+  ! nonnegative and zero where an inequality is not active; the
+  ! iteration ends where |dJ/ds + A^T mu| is below the same tolerance
+  ! and no inequality exceeds 1e-12 of its scale. The multipliers are
+  ! returned under the inequality's name, those of the design returned:
+  ! the stationarity of L = J + mu . c in the design there, by least
+  ! squares on the active inequalities.
+  !
   ! CONTINUED, each block of the chain after the first starts Newton's
   ! iteration from the solution at the last instant before it, at its
   ! instants and the stages of its steps, rather than from the
@@ -2546,8 +2579,9 @@ contains
     logical                 , intent(in), optional :: continued
 
     type(discrete_residual) :: iterate
-    real(dp), allocatable :: kappa(:,:), gradient(:), hessian(:,:)
-    real(dp) :: tolerance
+    real(dp), allocatable :: kappa(:,:), gradient(:), hessian(:,:), c(:), a(:,:), step(:), mu(:)
+    integer , allocatable :: active(:)
+    real(dp) :: tolerance, stationarity
     integer :: n, j, iteration
     character(len=250) :: message
 
@@ -2588,10 +2622,31 @@ contains
           hessian(:, j) = -kappa(:, iterate % points % expansion % column(j, 1))
        end do
        if (iteration == 1) tolerance = 1.0e-10_dp * max(1.0_dp, norm2(gradient))
-       if (verbosity >= 1) print '(a, i0, a, es12.4, a, *(es24.16))', 'design iteration ', iteration, &
-            & '  |dJ/ds| = ', norm2(gradient), '  s = ', iterate % points % expansion % at
-       if (norm2(gradient) < tolerance) return
-       iterate % points % expansion % at = iterate % points % expansion % at - linear_solution(hessian, gradient)
+       call iterate % inequalities_at(c, a)
+       if (size(c) == 0) then
+          if (verbosity >= 1) print '(a, i0, a, es12.4, a, *(es24.16))', 'design iteration ', iteration, &
+               & '  |dJ/ds| = ', norm2(gradient), '  s = ', iterate % points % expansion % at
+          if (norm2(gradient) < tolerance) return
+          iterate % points % expansion % at = iterate % points % expansion % at - linear_solution(hessian, gradient)
+          cycle
+       end if
+       call quadratic_step(hessian, gradient, c, a, step, mu)
+       stationarity = norm2(gradient + matmul(transpose(a), mu))
+       if (verbosity >= 1) then
+          write(message, '(a, i0, a)') '(a, i0, a, es12.4, a, ', n, 'es24.16, a, *(es24.16))'
+          print trim(message), 'design iteration ', iteration, '  |dJ/ds + A^T mu| = ', stationarity, '  s = ', &
+               & iterate % points % expansion % at, '  mu = ', mu
+       end if
+       if (stationarity < tolerance .and. maxval(c) <= 1.0e-12_dp * max(1.0_dp, maxval(abs(c)))) then
+          ! the multipliers of the design returned, not of the step:
+          ! dJ/ds + A^T mu = 0 by least squares on the active inequalities
+          active = pack([(j, j = 1, size(c))], mu > 0.0_dp)
+          if (size(active) > 0) mu(active) = linear_solution(matmul(a(active, :), transpose(a(active, :))), &
+               & -matmul(a(active, :), gradient))
+          call iterate % place_inequality_multipliers(mu, solution)
+          return
+       end if
+       iterate % points % expansion % at = iterate % points % expansion % at + step
     end do
     write(message, '(a,i0,a)') 'operation_residual: Newton''s iteration on the free design did not reach &
          &dJ/ds = 0 in ', MAX_DESIGN_ITERATIONS, ' iterations'
@@ -2599,13 +2654,130 @@ contains
 
   end subroutine minimize
 
-  ! a design on which no condition is stated
+  !===================================================================!
+  ! THE INEQUALITIES ON THE DESIGN FACTOR at the design the manifold
+  ! states: c(i) the value of the i-th equation, a(i, :) its gradient
+  ! in the design coordinates; none where no inequality is stated.
+  !===================================================================!
+
+  subroutine inequalities_at(this, c, a)
+
+    class(discrete_residual), intent(in)  :: this
+    real(dp), allocatable   , intent(out) :: c(:), a(:,:)
+
+    real(dp), allocatable :: slope(:)
+    real(dp) :: given
+    integer :: j, i, m
+
+    m = 0
+    do j = 1, size(this % condition)
+       if (this % condition(j) % inequality) m = m + size(this % condition(j) % equation)
+    end do
+    allocate(c(m), a(m, this % points % expansion % num_designs()))
+    m = 0
+    do j = 1, size(this % condition)
+       if (.not. this % condition(j) % inequality) cycle
+       do i = 1, size(this % condition(j) % equation)
+          m = m + 1
+          call design_condition(this % condition(j) % equation(i), this % points % expansion % values(), given, slope)
+          c(m)    = -given
+          a(m, :) = slope
+       end do
+    end do
+
+  end subroutine inequalities_at
+
+  ! the multipliers of the inequalities into the solution, each a
+  ! function on the design factor: its value at every point
+  subroutine place_inequality_multipliers(this, mu, solution)
+
+    class(discrete_residual), intent(in)    :: this
+    real(dp)                , intent(in)    :: mu(:)
+    type(discrete_field)    , intent(inout) :: solution
+
+    integer :: j, i, m, column, first
+
+    m = 0
+    do j = 1, size(this % condition)
+       if (.not. this % condition(j) % inequality) cycle
+       first = 1
+       do i = 1, size(this % condition(j) % equation)
+          m = m + 1
+          if (.not. this % condition(j) % paired) cycle
+          ! the i-th column of the multiplier's name
+          do column = first, size(solution % name)
+             if (trim(solution % name(column)) == trim(this % condition(j) % multiplier % name)) exit
+          end do
+          first = column + 1
+          solution % value(:, column) = mu(m)
+          if (allocated(solution % jet) .and. allocated(solution % slot)) then
+             solution % jet(solution % slot(column), :, 1) = mu(m)
+          end if
+       end do
+    end do
+
+  end subroutine place_inequality_multipliers
+
+  !===================================================================!
+  ! THE STEP OF THE DESIGN UNDER ITS INEQUALITIES: the minimizer of
+  ! g . d + d . H d / 2 over the steps with c + A d <= 0, and the
+  ! multiplier of each inequality, nonnegative and zero where it is not
+  ! active. The active set begins empty; each set is solved with its
+  ! inequalities as equalities, the one of the most negative multiplier
+  ! leaving it and then the most violated joining it, until no
+  ! multiplier is negative and no inequality is violated. Invalid
+  ! input: an active set that does not settle.
+  !===================================================================!
+
+  subroutine quadratic_step(hessian, gradient, c, a, step, mu)
+
+    real(dp), intent(in)  :: hessian(:,:), gradient(:), c(:), a(:,:)
+    real(dp), allocatable, intent(out) :: step(:), mu(:)
+
+    real(dp), allocatable :: system(:,:), x(:), violation(:)
+    integer , allocatable :: set(:)
+    logical :: active(size(c))
+    real(dp) :: tolerance
+    integer :: n, k, iteration
+
+    n = size(gradient)
+    active    = .false.
+    tolerance = 1.0e-12_dp * max(1.0_dp, maxval(abs(c)))
+    allocate(mu(size(c)))
+    do iteration = 1, 4 * (size(c) + 1)
+       set = pack([(k, k = 1, size(c))], active)
+       allocate(system(n + size(set), n + size(set)), source=0.0_dp)
+       system(1:n, 1:n) = hessian
+       system(1:n, n + 1:) = transpose(a(set, :))
+       system(n + 1:, 1:n) = a(set, :)
+       x = linear_solution(system, [-gradient, -c(set)])
+       deallocate(system)
+       step    = x(1:n)
+       mu      = 0.0_dp
+       mu(set) = x(n + 1:)
+       if (any(mu < 0.0_dp .and. active)) then
+          active(minloc(mu, dim=1, mask=active)) = .false.
+          cycle
+       end if
+       violation = c + matmul(a, step)
+       if (any(violation > tolerance .and. .not. active)) then
+          active(maxloc(violation, dim=1, mask=.not. active)) = .true.
+          cycle
+       end if
+       return
+    end do
+    error stop 'operation_residual: the active set of the inequalities on the design does not settle'
+
+  end subroutine quadratic_step
+
+  ! a design on which no equality is stated
   logical function free_design(this)
     class(discrete_residual), intent(in) :: this
     integer :: j
     free_design = this % manifold % with_design
     do j = 1, size(this % condition)
-       if (this % condition(j) % manifold % is_design_factor()) free_design = .false.
+       if (this % condition(j) % manifold % is_design_factor() .and. .not. this % condition(j) % inequality) &
+            & free_design = .false.
     end do
   end function free_design
 
@@ -2940,6 +3112,9 @@ contains
                 if (.not. this % condition(j) % paired) cycle
                 nc = nc + 1
                 names(2 * nf + nc) = this % condition(j) % multiplier % name
+                ! an inequality's multiplier is the design iteration's,
+                ! placed by minimize
+                if (this % condition(j) % inequality) cycle
                 jet(nrow + nf + nc, :, :) = spread(design_multiplier(f, :), 1, npts)
              end do
           end if

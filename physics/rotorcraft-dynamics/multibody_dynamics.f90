@@ -191,13 +191,13 @@ contains
     b % mass    = mass
     b % inertia = inertia
     do k = 1, 3
-       b % u(k) = omega % unknown(name // '_u' // digit(k), [this % t])
+       b % u(k) = omega % unknown(name // '_u' // digit(k))
     end do
-    b % eta = omega % unknown(name // '_eta', [this % t])
+    b % eta = omega % unknown(name // '_eta')
     do k = 1, 3
-       b % eps(k) = omega % unknown(name // '_eps' // digit(k), [this % t])
+       b % eps(k) = omega % unknown(name // '_eps' // digit(k))
     end do
-    b % norm = omega % unknown(name // '_norm', [this % t])
+    b % norm = omega % unknown(name // '_norm')
     this % unknowns = [this % unknowns, b % u, b % eta, b % eps, b % norm]
 
     action = b % kinetic_energy(this % t) - b % potential_energy(this % gravity) &
@@ -254,7 +254,7 @@ contains
 
     do k = 1, size(conditions)
        write(label, '(i0)') k
-       reaction = omega % unknown(name // '_' // trim(label), [this % t])
+       reaction = omega % unknown(name // '_' // trim(label))
        this % unknowns = [this % unknowns, reaction]
        this % guess    = [this % guess, continuous_field(omega, [0.0_dp])]
        call add(this, reaction * conditions(k))

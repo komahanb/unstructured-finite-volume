@@ -62,20 +62,27 @@ instants drawn.
   hub's angle to 1e-16 and every condition of the joints to 2e-14 at
   every instant of the revolution.
 - Against TACS with the same rigid blades (36 steps, BDF of order
-  one): the first step agrees to 5.7e-10. The motion here satisfies
-  the Euler-Lagrange equations of the bodies, projected on the
-  conditions, to 2e-11 relative, evaluated independently. TACS's
-  motion does not, by 7e-9 relative at the first step: TACS's rigid
-  link applies the moment of its position reaction on body A with the
-  wrong sign (`TACSRigidLink::addResidual` adds
+  one): the first step agrees to 5.7e-10. At every step of the
+  revolution the motion here satisfies the Euler-Lagrange equations of
+  the bodies, projected on the conditions, to 3e-10 relative,
+  evaluated independently; TACS's motion misses them by up to 4.5e-3.
+  TACS's rigid link applies the moment of its position reaction on
+  body A with the wrong sign (`TACSRigidLink::addResidual` adds
   `addEMatTransProduct(-1.0, t, ...)` where the gradient of
   `uB - uA - t + C_A^T t` gives +1). Every other element of TACS
-  reacts along the gradient of its condition, to 1e-10; with that sign
-  reversed, TACS's states satisfy the equations to the same 2e-11 and
-  these do not. The upper swashplate's turn about the shaft drifts
-  from it: the energies after a revolution are 4.739e5 J here and
-  4.719e5 in TACS. TACS's runs of the case carry the error in the caps'
-  links, to the pitch links and to the blades.
+  reacts along the gradient of its condition, to 1e-10. With that sign
+  reversed in the equations, TACS's states satisfy them to 3e-10 at
+  every step and these miss them by up to 5e-3: the sign is the whole
+  difference. The upper swashplate's turn about the shaft drifts from
+  it: the energies after a revolution are 4.739e5 J here and 4.719e5
+  in TACS. TACS's runs of the case carry the error in the caps' links,
+  to the pitch links and to the blades.
+- The sensitivities (`triple_pendulum_sensitivity.f90`): the pendulum
+  with a design in a mass and one in a joint's condition, which the
+  first instant states by its second derivative. dJ/ds by the adjoint
+  and by the expansion agree to 8e-14 and 9e-15, and central
+  differences of step 1e-4 to 3e-10 and 7e-10, their own error; the
+  same digits on 1, 2 and 4 images.
 - 360 steps: the energy falls to 4.94255e5 J over the revolution, where
   36 steps lose 2.5e4: the dissipation of bdf(1). 168 seconds, 232 MB.
 

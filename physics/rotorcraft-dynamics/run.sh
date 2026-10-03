@@ -7,6 +7,10 @@
 #                        largest condition of the joints, below 1e-15;
 #                        the instant count from the command line
 #                        (default 201)
+#   triple_pendulum_sensitivity
+#                        the pendulum with a design in a mass and in a
+#                        joint: dJ/ds by the adjoint and by the
+#                        expansion, agreeing to 8e-14
 #   rotorcraft_dynamics  the rotor of komahanb/rotorcraft-optimization,
 #                        26 bodies and 34 joints, one revolution by
 #                        bdf(1), the setup read from rotorcraft.nml:
@@ -27,5 +31,7 @@ make -C "$dir" >/dev/null
 cd "$dir"
 echo "== triple_pendulum"
 ./triple_pendulum
+echo "== triple_pendulum_sensitivity"
+./triple_pendulum_sensitivity
 echo "== rotorcraft_dynamics"
 ./rotorcraft_dynamics

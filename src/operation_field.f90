@@ -158,6 +158,12 @@ module operation_field
      integer     :: integrated_part = WHOLE
      type(token) :: integrated_parent
      real(dp)    :: integrated_time = 0.0_dp
+     ! A FIELD OF TIME WITH AN INTEGRAL OVER THE REGION, on a manifold
+     ! of time and space: its value the component plus the integral over
+     ! the region of the integrand, the sum of a field and of integrals
+     ! over the space factor; such an integral enters a field linearly,
+     ! times fields of time alone
+     type(expression), allocatable :: integrand(:)
 
    contains
 
@@ -1151,6 +1157,16 @@ contains
     do k = 1, size(along)
        d % component = [derivative(d % component(1), along(k) % coordinate, 1)]
     end do
+    ! of a field with an integral over the region, along time: the
+    ! derivative of its terms and the integral of the integrand's
+    if (allocated(this % integrand)) then
+       if (any([(along(k) % name /= 't', k = 1, size(along))])) then
+          error stop 'operation_field: a field with an integral over the region is differentiated along time alone'
+       end if
+       do k = 1, size(along)
+          d % integrand = [derivative(d % integrand(1), along(k) % coordinate, 1)]
+       end do
+    end if
 
   end function field_derivative
 
@@ -1170,6 +1186,11 @@ contains
     do k = 1, size(this % component)
        form % component(k) = jet_form(this % component(k))
     end do
+    if (allocated(this % integrand)) then
+       do k = 1, size(this % integrand)
+          form % integrand(k) = jet_form(this % integrand(k))
+       end do
+    end if
 
   end function field_jet_form
 
@@ -1651,10 +1672,60 @@ contains
     this % index     = [0]
   end function composed
 
+  !===================================================================!
+  ! THE TWO PARTS OF A SCALAR FIELD: the field itself and no integral,
+  ! or, for the integral over the space factor of a manifold of time
+  ! and space or a field with such an integral, its terms of time and
+  ! the integrand over the region. A field with an integral is
+  ! composed of both parts.
+  !===================================================================!
+
+  logical function with_integral(a)
+    type(continuous_field), intent(in) :: a
+    with_integral = allocated(a % integrand) .or. (a % is_integral() .and. a % integrated_part == SPACE_FACTOR)
+  end function with_integral
+
+  subroutine parts(a, terms, integrand)
+    type(continuous_field), intent(in)  :: a
+    type(expression)      , intent(out) :: terms, integrand
+    if (allocated(a % integrand)) then
+       terms     = a % component(1)
+       integrand = a % integrand(1)
+    else if (with_integral(a)) then
+       terms     = constant(0.0_dp)
+       integrand = a % component(1)
+    else
+       terms     = a % component(1)
+       integrand = constant(0.0_dp)
+    end if
+  end subroutine parts
+
+  function composed_parts(a, terms, integrand) result(this)
+    type(continuous_field), intent(in) :: a
+    type(expression)      , intent(in) :: terms, integrand
+    type(continuous_field) :: this
+    this = composed(a, terms)
+    this % integrand = [integrand]
+  end function composed_parts
+
+  subroutine require_linear(a, symbol)
+    type(continuous_field), intent(in) :: a
+    character(len=*)      , intent(in) :: symbol
+    if (with_integral(a)) then
+       error stop 'operation_field: an integral over the region enters a field linearly, not through ' // symbol
+    end if
+  end subroutine require_linear
+
   function plus(a, b) result(this)
     type(continuous_field), intent(in) :: a, b
     type(continuous_field) :: this
+    type(expression) :: ta, ia, tb, ib
     call require_scalar(a, '+'); call require_scalar(b, '+'); call require_one_manifold(a, b, '+')
+    if (with_integral(a) .or. with_integral(b)) then
+       call parts(a, ta, ia); call parts(b, tb, ib)
+       this = composed_parts(a, ta + tb, ia + ib)
+       return
+    end if
     this = composed(a, a % component(1) + b % component(1))
   end function plus
 
@@ -1662,7 +1733,13 @@ contains
     real(dp)              , intent(in) :: x
     type(continuous_field), intent(in) :: b
     type(continuous_field) :: this
+    type(expression) :: tb, ib
     call require_scalar(b, '+')
+    if (with_integral(b)) then
+       call parts(b, tb, ib)
+       this = composed_parts(b, x + tb, ib)
+       return
+    end if
     this = composed(b, x + b % component(1))
   end function real_plus
 
@@ -1671,13 +1748,20 @@ contains
     real(dp)              , intent(in) :: x
     type(continuous_field) :: this
     call require_scalar(a, '+')
-    this = composed(a, a % component(1) + x)
+    this = real_plus(x, a)
+    if (.not. with_integral(a)) this = composed(a, a % component(1) + x)
   end function plus_real
 
   function minus(a, b) result(this)
     type(continuous_field), intent(in) :: a, b
     type(continuous_field) :: this
+    type(expression) :: ta, ia, tb, ib
     call require_scalar(a, '-'); call require_scalar(b, '-'); call require_one_manifold(a, b, '-')
+    if (with_integral(a) .or. with_integral(b)) then
+       call parts(a, ta, ia); call parts(b, tb, ib)
+       this = composed_parts(a, ta - tb, ia - ib)
+       return
+    end if
     this = composed(a, a % component(1) - b % component(1))
   end function minus
 
@@ -1685,7 +1769,13 @@ contains
     real(dp)              , intent(in) :: x
     type(continuous_field), intent(in) :: b
     type(continuous_field) :: this
+    type(expression) :: tb, ib
     call require_scalar(b, '-')
+    if (with_integral(b)) then
+       call parts(b, tb, ib)
+       this = composed_parts(b, x - tb, -ib)
+       return
+    end if
     this = composed(b, x - b % component(1))
   end function real_minus
 
@@ -1693,21 +1783,46 @@ contains
     type(continuous_field), intent(in) :: a
     real(dp)              , intent(in) :: x
     type(continuous_field) :: this
+    type(expression) :: ta, ia
     call require_scalar(a, '-')
+    if (with_integral(a)) then
+       call parts(a, ta, ia)
+       this = composed_parts(a, ta - x, ia)
+       return
+    end if
     this = composed(a, a % component(1) - x)
   end function minus_real
 
   function negated(a) result(this)
     type(continuous_field), intent(in) :: a
     type(continuous_field) :: this
+    type(expression) :: ta, ia
     call require_scalar(a, '-')
+    if (with_integral(a)) then
+       call parts(a, ta, ia)
+       this = composed_parts(a, -ta, -ia)
+       return
+    end if
     this = composed(a, -a % component(1))
   end function negated
 
+  ! a field with an integral times a field of time alone: both parts
+  ! times it
   function times(a, b) result(this)
     type(continuous_field), intent(in) :: a, b
     type(continuous_field) :: this
+    type(expression) :: ta, ia
     call require_scalar(a, '*'); call require_scalar(b, '*'); call require_one_manifold(a, b, '*')
+    if (with_integral(a) .and. with_integral(b)) call require_linear(a, '*')
+    if (with_integral(a)) then
+       call parts(a, ta, ia)
+       this = composed_parts(a, ta * b % component(1), ia * b % component(1))
+       return
+    else if (with_integral(b)) then
+       call parts(b, ta, ia)
+       this = composed_parts(b, a % component(1) * ta, a % component(1) * ia)
+       return
+    end if
     this = composed(a, a % component(1) * b % component(1))
   end function times
 
@@ -1715,7 +1830,13 @@ contains
     real(dp)              , intent(in) :: x
     type(continuous_field), intent(in) :: b
     type(continuous_field) :: this
+    type(expression) :: tb, ib
     call require_scalar(b, '*')
+    if (with_integral(b)) then
+       call parts(b, tb, ib)
+       this = composed_parts(b, x * tb, x * ib)
+       return
+    end if
     this = composed(b, x * b % component(1))
   end function real_times
 
@@ -1723,14 +1844,27 @@ contains
     type(continuous_field), intent(in) :: a
     real(dp)              , intent(in) :: x
     type(continuous_field) :: this
+    type(expression) :: ta, ia
     call require_scalar(a, '*')
+    if (with_integral(a)) then
+       call parts(a, ta, ia)
+       this = composed_parts(a, ta * x, ia * x)
+       return
+    end if
     this = composed(a, a % component(1) * x)
   end function times_real
 
   function over(a, b) result(this)
     type(continuous_field), intent(in) :: a, b
     type(continuous_field) :: this
+    type(expression) :: ta, ia
     call require_scalar(a, '/'); call require_scalar(b, '/'); call require_one_manifold(a, b, '/')
+    call require_linear(b, '/')
+    if (with_integral(a)) then
+       call parts(a, ta, ia)
+       this = composed_parts(a, ta / b % component(1), ia / b % component(1))
+       return
+    end if
     this = composed(a, a % component(1) / b % component(1))
   end function over
 
@@ -1738,7 +1872,7 @@ contains
     real(dp)              , intent(in) :: x
     type(continuous_field), intent(in) :: b
     type(continuous_field) :: this
-    call require_scalar(b, '/')
+    call require_scalar(b, '/'); call require_linear(b, '/')
     this = composed(b, x / b % component(1))
   end function real_over
 
@@ -1746,7 +1880,13 @@ contains
     type(continuous_field), intent(in) :: a
     real(dp)              , intent(in) :: x
     type(continuous_field) :: this
+    type(expression) :: ta, ia
     call require_scalar(a, '/')
+    if (with_integral(a)) then
+       call parts(a, ta, ia)
+       this = composed_parts(a, ta / x, ia / x)
+       return
+    end if
     this = composed(a, a % component(1) / x)
   end function over_real
 
@@ -1754,7 +1894,7 @@ contains
     type(continuous_field), intent(in) :: a
     integer               , intent(in) :: n
     type(continuous_field) :: this
-    call require_scalar(a, '**')
+    call require_scalar(a, '**'); call require_linear(a, '**')
     this = composed(a, a % component(1) ** n)
   end function to_integer
 
@@ -1762,42 +1902,42 @@ contains
     type(continuous_field), intent(in) :: a
     real(dp)              , intent(in) :: p
     type(continuous_field) :: this
-    call require_scalar(a, '**')
+    call require_scalar(a, '**'); call require_linear(a, '**')
     this = composed(a, a % component(1) ** p)
   end function to_real
 
   function sine_of(a) result(this)
     type(continuous_field), intent(in) :: a
     type(continuous_field) :: this
-    call require_scalar(a, 'sin')
+    call require_scalar(a, 'sin'); call require_linear(a, 'sin')
     this = composed(a, sin(a % component(1)))
   end function sine_of
 
   function cosine_of(a) result(this)
     type(continuous_field), intent(in) :: a
     type(continuous_field) :: this
-    call require_scalar(a, 'cos')
+    call require_scalar(a, 'cos'); call require_linear(a, 'cos')
     this = composed(a, cos(a % component(1)))
   end function cosine_of
 
   function exponential_of(a) result(this)
     type(continuous_field), intent(in) :: a
     type(continuous_field) :: this
-    call require_scalar(a, 'exp')
+    call require_scalar(a, 'exp'); call require_linear(a, 'exp')
     this = composed(a, exp(a % component(1)))
   end function exponential_of
 
   function logarithm_of(a) result(this)
     type(continuous_field), intent(in) :: a
     type(continuous_field) :: this
-    call require_scalar(a, 'log')
+    call require_scalar(a, 'log'); call require_linear(a, 'log')
     this = composed(a, log(a % component(1)))
   end function logarithm_of
 
   function root_of(a) result(this)
     type(continuous_field), intent(in) :: a
     type(continuous_field) :: this
-    call require_scalar(a, 'sqrt')
+    call require_scalar(a, 'sqrt'); call require_linear(a, 'sqrt')
     this = composed(a, sqrt(a % component(1)))
   end function root_of
 

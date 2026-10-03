@@ -115,6 +115,9 @@ module operation_manifold
      type(parameter), allocatable :: design_parameter(:)
      integer        :: num_unknowns = 0
      character(len=MAX_NAME), allocatable :: unknown_name(:)
+     ! an unknown of a manifold of space that is a function of no
+     ! coordinate of space: of time alone, or of the design alone
+     logical, allocatable :: of_time_alone(:)
 
    contains
 
@@ -304,7 +307,7 @@ contains
        this % with_design = .true.
        this % design_parameter = [design]
     end if
-    allocate(this % unknown_name(0))
+    allocate(this % unknown_name(0), this % of_time_alone(0))
 
   end function create_manifold
 
@@ -445,8 +448,10 @@ contains
 
     u = unknown_field(this, name, this % num_unknowns + 1, n, names)
     padded = name
-    this % unknown_name = [this % unknown_name, (padded, k = 1, n)]
-    this % num_unknowns = this % num_unknowns + n
+    this % unknown_name  = [this % unknown_name, (padded, k = 1, n)]
+    this % of_time_alone = [this % of_time_alone, (this % with_space .and. .not. any(names == 'x' .or. names == 'y' &
+         & .or. names == 'z'), k = 1, n)]
+    this % num_unknowns  = this % num_unknowns + n
 
   end function manifold_unknown
 
@@ -565,7 +570,7 @@ contains
     if (allocated(this % design_parameter)) sub % design_parameter = this % design_parameter
     sub % part        = part
     sub % parent      = this % identity
-    allocate(sub % unknown_name(0))
+    allocate(sub % unknown_name(0), sub % of_time_alone(0))
 
   end function part_of
 

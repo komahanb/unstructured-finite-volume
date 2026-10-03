@@ -74,14 +74,25 @@
 ! is not a line search; it is only the difference between reporting
 ! a failure and stopping the program.
 !
+!                 AT THE ROUNDING OF THE RESIDUAL
+!
+! The tolerance is relative to the residual the iteration began at. An
+! iterate already near the solution - the solution at the instant
+! before, in a march - begins at a residual so small that a reduction
+! by the tolerance lies below the rounding of the residual's own
+! evaluation, and no step reaches it. There no halving of the step
+! decreases the residual, and the full step is below half the digits
+! of the iterate: the iterate is the solution to the rounding, and the
+! iteration ends converged at it.
+!
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module operation_newton
 
   use iso_fortran_env , only : int64
-  use util_precision  , only : dp
-  use operation_minimization        , only : minimizer, restrict, solve_result, SOLVE_INNER_FAILED
+  use util_precision  , only : dp, half_digits
+  use operation_minimization        , only : minimizer, restrict, solve_result, SOLVE_INNER_FAILED, SOLVE_CONVERGED
   use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
   use operation_stencil     , only : stencil
   use util_tally, only : newton_solves, primal_loops, tally
@@ -187,9 +198,9 @@ contains
     type(stored_field), allocatable :: inputs(:)
     integer , allocatable :: rows(:), columns(:)
     real(dp), allocatable :: weights(:)
-    logical :: jacobian_defined, failed
+    logical :: jacobian_defined, failed, decreased
     real(dp), allocatable :: residual(:), y(:), dq(:)
-    real(dp) :: linear_achieved, initial, factor, previous, step_norm
+    real(dp) :: linear_achieved, initial, factor, previous, step_norm, full_step
     integer :: nonzeros
     real(dp), allocatable :: trial(:)
     integer :: it, halving
@@ -292,14 +303,16 @@ contains
        ! halvings are exhausted, after which the last trial is taken.
        ! The reported residual and the next jacobian use the same
        ! updated state. The count is the number of completed steps.
-       previous = achieved
-       factor   = 1.0_dp
+       previous  = achieved
+       factor    = 1.0_dp
+       full_step = this % norm(dq)
        do halving = 0, max_halvings
           trial = x + factor * dq
           call this % evaluate(trial, y, inputs)
-          residual = y - rhs
-          achieved = this % norm(residual)
-          if (achieved <= (1.0_dp - 1.0e-4_dp * factor) * previous) exit
+          residual  = y - rhs
+          achieved  = this % norm(residual)
+          decreased = achieved <= (1.0_dp - 1.0e-4_dp * factor) * previous
+          if (decreased) exit
           if (halving == max_halvings) exit
           factor = 0.5_dp * factor
        end do
@@ -309,6 +322,18 @@ contains
        ! every image whether or not it prints
        step_norm = this % norm(dq)
        if (verbosity >= 1) call reported(this, it, achieved, initial, step_norm, factor, jacobian_defined, nonzeros, outcome)
+       ! AT THE ROUNDING OF THE RESIDUAL: no halving of the step
+       ! decreases the residual, and the full step is below half the
+       ! digits of the iterate. The residual is the rounding of its own
+       ! evaluation, which no step reduces, and the iterate before the
+       ! step is the solution: converged, whatever the residual the
+       ! iteration began at
+       if (.not. decreased .and. full_step <= half_digits * this % norm(x)) then
+          x        = x - dq
+          achieved = previous
+          call this % record_result(achieved, it, SOLVE_CONVERGED)
+          return
+       end if
        if (this % terminated(achieved, it)) return
 
     end do

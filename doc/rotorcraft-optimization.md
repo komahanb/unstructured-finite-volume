@@ -76,7 +76,7 @@ instants drawn.
   every step and these miss them by up to 5e-3: the sign is the whole
   difference. The upper swashplate's turn about the shaft drifts from
   it: the energies after a revolution are 4.739e5 J here and 4.719e5
-  in TACS. TACS's runs of the case carry the error in the caps' links,
+  in TACS. TACS's runs of the case have the error in the caps' links,
   to the pitch links and to the blades.
 - The sensitivities (`triple_pendulum_sensitivity.f90`): the pendulum
   with a design in a mass and one in a joint's condition, which the
@@ -126,7 +126,37 @@ its kinetic energy read in those turning axes and its stiffening by
 the axial stress of the rotation added to its potential energy.
 Recommended: the second. It keeps the beam, the plate and the solid
 linear and alike, one model replacing another at setup, and the cap
-carries the revolution.
+turns the revolution.
+
+**The library piece, the same for both.** Either way the bodies are
+unknowns of time alone and the blade is a field of time and of the
+blade, on one manifold: the cap's coordinates are read by the blade's
+law (in the cap's axes) or by its root condition (in fixed axes), and
+the cap's law reads an integral over the blade. Built 2026-10-03:
+- An unknown declared with time alone among its arguments, on a
+  manifold of time and space, `omega % unknown('theta', [t])`, is
+  stored at every point; its equation is stated once per instant, at
+  the first point, its terms of time once and its integral over the
+  region at the quadrature points of the elements; at every other point
+  the copy equals the one before, so the basis forms the unknown
+  itself.
+- A field may contain an integral over the region,
+  `I*theta_tt + integral(g, over=omega % space()) - tau`, entering
+  linearly, differentiated along time inside the integral.
+- Newton ends converged where no halving of its step decreases the
+  residual and the step is below half the digits of the iterate: an
+  iterate started from the instant before, whose residual a relative
+  tolerance would place below the rounding of the residual's own
+  evaluation.
+- Verified on `euler_bernoulli_beam.f90`, case 8: the clamped beam of
+  case 6 on a turning hub, the hub's angle an unknown of time alone
+  whose law reads the integral of the beam's moment of momentum. At
+  801 instants the error of the deflection falls as 1.51e-4, 9.47e-6,
+  5.40e-7 over 9, 17 and 33 points, order 4, and of the angle as
+  4.18e-5, 2.66e-6, 5.11e-7; with the angle's law reading no integral
+  the deflection is case 6's to every printed digit. dJ/ds through the
+  hub's inertia by the adjoint and by the expansion agree to 2e-13,
+  central differences to their own error, on 1, 2 and 4 images.
 
 ## The case
 
@@ -257,7 +287,10 @@ differences.
   sin, cos, exp and products; `stationarity`; conditions with their
   multipliers; objectives as integrals; the reverse sweep and the
   expansion along the design; a free design found by Newton; the finite
-  element method on lines and meshes; runs on several images.
+  element method on lines and meshes; runs on several images;
+  inequalities on the design factor; unknowns of time alone on a
+  manifold of time and space, their laws reading integrals over the
+  region.
 - **Missing:**
   - inequalities on functionals of the state, KS <= 1/4, each with its
     own reverse sweep (those on the design factor exist);

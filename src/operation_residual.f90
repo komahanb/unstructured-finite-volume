@@ -466,6 +466,7 @@ module operation_residual
      procedure, private :: whole_line
      procedure, private :: fixed_rows_of
      procedure, private :: gauge_rows_of
+     procedure, private :: time_alone_rows_of
      procedure, private :: gauged_unknowns
      procedure, private :: multipliers_of_order
      procedure, private :: owners_of_unknowns
@@ -2428,6 +2429,10 @@ contains
     if (present(space)) then
        if (space % projects()) call projected_form(image, this % term(whole_term), space, points, defined)
     end if
+    if (any(image % manifold % of_time_alone(1:nf)) .and. .not. allocated(image % elements)) then
+       error stop 'operation_residual: an unknown of time alone on a manifold of space is stated under a &
+            &projection on the cells, which tests its equation with the weight alone'
+    end if
     if (present(time) .and. .not. allocated(image % elements)) call initial_form(image, this % term(whole_term))
     image % representation = pack(this % term, representation .and. [(this % term(k) % paired, k = 1, size(this % term))])
 
@@ -2561,7 +2566,8 @@ contains
   ! and no inequality exceeds 1e-12 of its scale. The multipliers are
   ! returned under the inequality's name, those of the design returned:
   ! the stationarity of L = J + mu . c in the design there, by least
-  ! squares on the active inequalities.
+  ! squares on the active inequalities. Invalid input: an inequality
+  ! and an equality on the design factor together.
   !
   ! CONTINUED, each block of the chain after the first starts Newton's
   ! iteration from the solution at the last instant before it, at its
@@ -2597,6 +2603,10 @@ contains
        end if
     end if
     if (.not. free_design(this)) then
+       if (any(this % condition % inequality)) then
+          error stop 'operation_residual: an inequality bounds a free design; an equality on the design &
+               &factor fixes it and leaves the inequality nothing to bound'
+       end if
        call this % zero_at_design(estimate, solution, checkpoint, snapshots)
        return
     end if
@@ -4102,6 +4112,7 @@ contains
     type(projection) :: projected
     type(expression) :: rule
     logical :: staged
+    integer :: nodes, factor
 
     stride = this % rule % num_components()
     nf     = this % manifold % num_unknowns
@@ -4283,6 +4294,9 @@ contains
        face_weights   = [face_weights, space_weights]
        face_constants = [face_constants, spread(0.0_dp, 1, size(space_rows))]
     end if
+    factor = merge(1, 0, any(this % manifold % of_time_alone(1:nf)))
+    if (factor > 0) call this % time_alone_rows_of(depth, nm, instant_moment, at, primary, fixed_rows, face_rows, &
+         & face_columns, face_weights, face_constants)
     allocate(zeros(unknowns), source=0.0_dp)
     do e = 1, size(face_rows)
        zeros(face_rows(e)) = face_constants(e)
@@ -4297,15 +4311,19 @@ contains
                &region is not stated'
        end if
        cells = this % elements % num_cells()
-       allocate(projected % element_point(this % elements % num_nodes(), nm * cells), &
-            & projected % element_cell(nm * cells))
+       nodes = this % elements % num_nodes()
+       allocate(projected % element_point(nodes + factor, nm * cells), projected % element_cell(nm * cells))
        do m = 1, nm
           do e = 1, cells
-             projected % element_point(:, (m - 1) * cells + e) = (m - 1) * ncells + this % elements % node(:, e)
+             projected % element_point(1:nodes, (m - 1) * cells + e) = (m - 1) * ncells + this % elements % node(:, e)
+             ! the first point of the moment, where the equations of the
+             ! unknowns of time alone are stated
+             if (factor > 0) projected % element_point(nodes + 1, (m - 1) * cells + e) = (m - 1) * ncells + 1
              projected % element_cell((m - 1) * cells + e) = e
           end do
        end do
        projected % elements = this % elements
+       if (factor > 0) call with_first_point(projected % elements)
        projected % tested   = this % tested
        allocate(projected % coefficient_row(0:this % elements % num_coefficients() - 1, nf))
        do f = 1, nf
@@ -6164,7 +6182,11 @@ contains
   ! the projection. The coefficients a node stores reach one order
   ! below the highest derivative along space that the flux form puts
   ! on the unknown or on the multiplier, and their layout becomes the
-  ! rule's; the basis's jet reaches that highest order. Invalid input:
+  ! rule's; the basis's jet reaches that highest order. The equation
+  ! of an unknown of time alone is one group, tested with the weight
+  ! alone at the first point of each moment: its terms of time over the
+  ! measure of the region, so that they sum to themselves, and the
+  ! integrand of its integral over the region as it is. Invalid input:
   ! a representation law along space, which the basis states.
   !===================================================================!
 
@@ -6176,10 +6198,11 @@ contains
     type(discrete_manifold)        , intent(in)    :: points
     integer                        , intent(in)    :: defined(:,:)
 
-    type(expression), allocatable :: flux(:)
-    type(expression) :: law
+    type(expression), allocatable :: flux(:), groups(:), over_region(:)
+    type(expression) :: law, region_part
     integer, allocatable :: coordinate(:), order(:), group(:,:)
     integer :: first, last, j, g, m, c, top
+    real(dp) :: volume
 
     first = merge(FIRST_COORDINATE + 1, FIRST_COORDINATE, image % manifold % with_time)
     last  = first + points % dimension - 1
@@ -6187,31 +6210,66 @@ contains
        error stop 'operation_residual: under a projection on the cells the basis states the representation &
             &laws along space; none is stated'
     end if
-    law = constant(0.0_dp)
-    allocate(group(3, 0))
+    allocate(group(3, 0), groups(0), over_region(0))
     m   = 0
     top = 0
     do j = 1, size(physics % equation)
-       call flux_form(physics % equation(j) % graph(1), first, coordinate, order, flux)
+       ! the equation of an unknown of time alone, one group without
+       ! its flux form: its terms of time, and the integrand of its
+       ! integral over the region
+       associate (equation => physics % equation(j))
+         region_part = constant(0.0_dp)
+         if (image % manifold % of_time_alone(j)) then
+            if (allocated(equation % integrand)) then
+               flux        = [jet_form(equation % graph(1))]
+               region_part = jet_form(equation % integrand(1))
+            else if (equation % is_integral() .and. equation % integrated_part == SPACE_FACTOR) then
+               flux        = [constant(0.0_dp)]
+               region_part = jet_form(equation % graph(1))
+            else
+               flux = [jet_form(equation % graph(1))]
+            end if
+            coordinate = [first]
+            order      = [0]
+         else
+            if (allocated(equation % integrand)) then
+               error stop 'operation_residual: an integral over the region is a term of the equation of an &
+                    &unknown of time alone'
+            end if
+            call flux_form(equation % graph(1), first, coordinate, order, flux)
+         end if
+       end associate
        do g = 1, size(flux)
-          m     = m + 1
-          law   = law + multiplier(m) * flux(g)
-          group = reshape([group, j, coordinate(g), order(g)], [3, m])
-          top   = max(top, order(g))
+          m           = m + 1
+          groups      = [groups, flux(g)]
+          over_region = [over_region, region_part]
+          group       = reshape([group, j, coordinate(g), order(g)], [3, m])
+          top         = max(top, order(g))
           do c = first, last
-             top = max(top, flux(g) % highest_degree_along(c))
+             top = max(top, flux(g) % highest_degree_along(c), region_part % highest_degree_along(c))
           end do
        end do
     end do
+    image % elements = space % elements(points % cells, max(top - 1, 0), top)
+    volume = sum(image % elements % weight)
+    law = constant(0.0_dp)
     allocate(image % tested(2, m))
     do g = 1, m
        image % tested(1, g) = group(1, g)
        image % tested(2, g) = 0
        if (group(3, g) > 0) image % tested(2, g) = (group(2, g) - first) * top + group(3, g)
+       if (image % manifold % of_time_alone(group(1, g))) then
+          ! tested with the weight alone, at the first point of each
+          ! moment, over the measure of the region: its terms of time
+          ! alone once, an integral over the region as it is
+          image % tested(2, g) = ubound(image % elements % test, 1) + 1
+          law = law + multiplier(g) * (groups(g) * constant(1.0_dp / volume) + over_region(g))
+       else
+          law = law + multiplier(g) * groups(g)
+       end if
     end do
-    image % flux     = law
-    image % rule     = coefficient_form(law, first, last, max(top - 1, 0))
-    image % elements = space % elements(points % cells, max(top - 1, 0), top)
+    image % flux = law
+    image % rule = coefficient_form(law, first, last, max(top - 1, 0))
 
   end subroutine projected_form
 
@@ -6697,6 +6755,109 @@ contains
     end if
 
   end function points_on_face
+
+  !===================================================================!
+  ! THE ROWS OF THE UNKNOWNS OF TIME ALONE in a block. Such an unknown
+  ! is stored at every point, its equation stated at the first point
+  ! of each moment; at every other point the component the equation
+  ! determines equals the one at the point before, and every
+  ! coefficient of the basis but the value is zero, so that the basis
+  ! forms the unknown itself at every quadrature point. Appended to the
+  ! prescribed rows, none where the history or a face condition takes
+  ! the row.
+  !===================================================================!
+
+  subroutine time_alone_rows_of(this, depth, nm, instant_moment, at, primary, fixed_rows, rows, columns, weights, &
+       & constants)
+
+    class(discrete_residual), intent(in)    :: this
+    integer                 , intent(in)    :: depth, nm, instant_moment(:), at(:), primary(:), fixed_rows(:)
+    integer , allocatable   , intent(inout) :: rows(:), columns(:)
+    real(dp), allocatable   , intent(inout) :: weights(:), constants(:)
+
+    logical , allocatable :: taken(:)
+    integer , allocatable :: r(:), c(:)
+    real(dp), allocatable :: w(:)
+    integer :: ncells, nk, f, a, m, p, k, row, component, e
+
+    ncells = this % points % num_cells()
+    nk     = this % elements % num_coefficients()
+    allocate(taken(maxval(at) + this % rule % num_components()), source=.false.)
+    taken(fixed_rows) = .true.
+    taken(rows)       = .true.
+    allocate(r(2 * nm * ncells * nk * count(this % manifold % of_time_alone(1:this % manifold % num_unknowns))))
+    allocate(c(size(r)), w(size(r)))
+    e = 0
+    do f = 1, this % manifold % num_unknowns
+       if (.not. this % manifold % of_time_alone(f)) cycle
+       a = primary(f) - this % rule % offset_of_field(f)
+       do m = 1, nm
+          if (any(instant_moment(1:depth) == m)) cycle
+          do p = 1, ncells
+             do k = 0, nk - 1
+                component = this % coefficient_component(f, k, a)
+                row = at((m - 1) * ncells + p) + component + 1
+                if (taken(row)) cycle
+                if (k > 0) then
+                   call add(row, row, 1.0_dp)
+                else if (p > 1) then
+                   call add(row, row, 1.0_dp)
+                   call add(row, at((m - 1) * ncells + p - 1) + component + 1, -1.0_dp)
+                end if
+             end do
+          end do
+       end do
+    end do
+    rows      = [rows, r(1:e)]
+    columns   = [columns, c(1:e)]
+    weights   = [weights, w(1:e)]
+    constants = [constants, spread(0.0_dp, 1, e)]
+
+  contains
+
+    subroutine add(row, column, weight)
+      integer , intent(in) :: row, column
+      real(dp), intent(in) :: weight
+      e    = e + 1
+      r(e) = row
+      c(e) = column
+      w(e) = weight
+    end subroutine add
+
+  end subroutine time_alone_rows_of
+
+  !===================================================================!
+  ! THE FIRST POINT OF A MOMENT AS A NODE OF EVERY ELEMENT: no basis
+  ! function, so that the tuple at a quadrature point is formed as
+  ! before, and, at the derivative index past the basis's last, a test
+  ! function that is the weight of each quadrature point. The equation
+  ! of an unknown of time alone, tested so, is its integral over the
+  ! cells, stated at the first point of the moment.
+  !===================================================================!
+
+  pure subroutine with_first_point(el)
+
+    type(element_quadrature), intent(inout) :: el
+
+    real(dp), allocatable :: basis(:,:,:,:,:), test(:,:,:,:,:)
+    integer , allocatable :: node(:,:)
+    integer :: d, nn
+
+    d  = ubound(el % test, 1) + 1
+    nn = el % num_nodes()
+    allocate(basis(0:d, 0:ubound(el % basis, 2), nn + 1, size(el % basis, 4), size(el % basis, 5)), source=0.0_dp)
+    allocate(test(0:d, 0:ubound(el % basis, 2), nn + 1, size(el % basis, 4), size(el % basis, 5)), source=0.0_dp)
+    basis(0:d - 1, :, 1:nn, :, :) = el % basis
+    test(0:d - 1, :, 1:nn, :, :)  = el % test
+    test(d, 0, nn + 1, :, :)      = el % weight
+    allocate(node(nn + 1, size(el % node, 2)))
+    node(1:nn, :)   = el % node
+    node(nn + 1, :) = 1
+    call move_alloc(basis, el % basis)
+    call move_alloc(test, el % test)
+    call move_alloc(node, el % node)
+
+  end subroutine with_first_point
 
   !===================================================================!
   ! THE FIXED ROWS of a block: every component at the history instants,

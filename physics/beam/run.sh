@@ -12,7 +12,12 @@
 #                        estimated by mu_x: 1.009 of it on the open
 #                        line, 0.78 under the fitted differences; case
 #                        2 with the Kelvin-Voigt damping c(x) w_xxt, the
-#                        mixed components along x of w_t (3.73e-4)
+#                        mixed components along x of w_t (3.73e-4);
+#                        the clamped beam by finite elements on a
+#                        turning hub, the hub's angle an unknown of
+#                        time alone whose law reads the integral of the
+#                        beam's moment of momentum (2.39e-4, the angle
+#                        2.11e-4)
 #   euler_bernoulli_beam_optimization
 #                        EI(x) = EI_0 (1 + s1 x/L + s2 (x/L)^2) found
 #                        where dJ/ds = 0, no condition fixing the

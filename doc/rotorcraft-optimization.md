@@ -208,9 +208,16 @@ point of the box of a blade moves with its section of the beam, and
 `rotor_<instant>.vtu` states the beam's deflection as a vector at
 every point, for paraview's warp by vector.
 
-Still to come: the laws of time alone evaluated once per moment, not
-at every quadrature point; the blade's energy over the span in the
-printed energy.
+A law of time alone that reads no integral over the span - of a body
+the blades are not fixed to, or of a joint - is tested at one site of
+each moment with one, so that it is evaluated there alone; every
+rule is evaluated only where its test functions are other than zero,
+an expression forms the place of each leaf in its tuple once with its
+domain, and the reverse sweep's sources are formed in the components
+a rule reads alone. At 36 steps and 5 points of the span the march
+takes 2 min 20 s where it took 5 min, the motion the same to every
+printed digit and the smooth maximum to 7e-15. Still to come: the
+blade's energy over the span in the printed energy.
 
 **The thickness, the mass and the stress** (`strips`, `thickness`,
 `sensitivities` in `rotorcraft.nml`). With strips, the thickness of

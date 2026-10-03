@@ -186,6 +186,9 @@ module operation_expression
      ! per field, its first component in the tuple, and after the last
      ! field the count of components
      integer, allocatable, private :: field_offset(:)
+     ! per vertex, the component of the tuple a state or multiplier leaf
+     ! reads, formed with the domain; -1 for any other vertex
+     integer, allocatable, private :: leaf_component(:)
 
      integer , allocatable, private :: kind(:)
      integer , allocatable, private :: first(:), second(:)    ! the vertices read; 0 if none
@@ -1514,7 +1517,7 @@ contains
 
     type(contract), allocatable :: contracts(:)
     integer, allocatable :: offset(:)
-    integer :: f
+    integer :: f, i
 
     allocate(offset(this % fields + 1))
     offset(1) = 0
@@ -1522,6 +1525,13 @@ contains
        offset(f + 1) = offset(f) + this % components_per_field(f)
     end do
     this % field_offset = offset
+    this % leaf_component = [(-1, i = 1, this % num_vertices())]
+    do i = 1, this % num_vertices()
+       if (this % kind(i) /= VERTEX_LEAF) cycle
+       if (this % position(i) /= ARGUMENT_STATE .and. this % position(i) /= ARGUMENT_MULTIPLIER) cycle
+       this % leaf_component(i) = this % stored_at(this % position(i), this % field(i), this % along(i), &
+            & this % order(i), this % mixed_order(i))
+    end do
     contracts = [contract(FIELD_REAL, this % num_components()), contract(FIELD_REAL, this % designs)]
     if (this % position_coordinates > 0) contracts = [contracts, contract(FIELD_REAL, this % position_coordinates)]
     call this % declare_arguments(size(contracts), contracts, label=label, &
@@ -2343,7 +2353,8 @@ contains
   end function component_at
 
   !===================================================================!
-  ! The component of the tuple a state or multiplier leaf reads.
+  ! The component of the tuple a state or multiplier leaf reads: the
+  ! one formed with the domain, where it was.
   !===================================================================!
 
   pure integer function leaf_at(this, i) result(at)
@@ -2351,6 +2362,12 @@ contains
     class(expression), intent(in) :: this
     integer          , intent(in) :: i
 
+    if (allocated(this % leaf_component)) then
+       if (i <= size(this % leaf_component)) then
+          at = this % leaf_component(i)
+          if (at >= 0) return
+       end if
+    end if
     at = this % stored_at(this % position(i), this % field(i), this % along(i), this % order(i), &
          & this % mixed_order(i))
 

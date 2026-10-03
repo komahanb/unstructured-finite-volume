@@ -1280,7 +1280,7 @@ contains
     real(dp)                , intent(in)  :: x(:)
     real(dp), allocatable   , intent(out) :: governing(:,:)
     real(dp), allocatable :: design_values(:), xs(:), ns(:)
-    integer :: j, s, width, nd, nsites, coordinates
+    integer :: j, s, width, nd, nsites, coordinates, nq
     call bound_real_vector(inputs, this % argument(2), design_values)
     xs     = this % formed_at_sites(x)
     ns     = this % design_at_sites(design_values)
@@ -1288,9 +1288,16 @@ contains
     nd     = this % designs
     nsites = this % sites % num_vertices()
     allocate(governing(nsites, size(this % rules)))
+    nq = this % projected % elements % num_quadrature_points()
     do j = 1, size(this % rules)
        coordinates = this % rules(j) % num_position_coordinates()
        do s = 1, nsites
+          ! no rule is evaluated where its test functions vanish
+          if (.not. tested_at(this % projected % elements, this % projected % tested(2, j), s - ((s - 1) / nq) * nq, &
+               & this % projected % element_cell((s - 1) / nq + 1))) then
+             governing(s, j) = 0.0_dp
+             cycle
+          end if
           if (coordinates > 0) then
              governing(s, j) = this % rules(j) % value_on(xs((s - 1) * width + 1:s * width), &
                   & ns((s - 1) * nd + 1:s * nd), this % site_positions(1:coordinates, s))
@@ -1958,6 +1965,7 @@ contains
             e = pr % element_cell(n)
             do q = 1, nq
                s = (n - 1) * nq + q
+               if (.not. tested_at(el, d, q, e)) cycle
                value = governing(s, j)
                do i = 1, size(pr % element_point, 1)
                   p = pr % element_point(i, n)
@@ -2099,6 +2107,7 @@ contains
             do j = 1, size(this % rules)
                f = pr % tested(1, j)
                d = pr % tested(2, j)
+               if (.not. tested_at(el, d, q, e)) cycle
                call this % rules(j) % read_components(reads)
                call this % rules(j) % gradient_at(xs((s - 1) * width + 1:s * width), &
                     & ns((s - 1) * nd + 1:s * nd), value, g, this % site_positions(:, s))
@@ -2267,7 +2276,8 @@ contains
        error stop 'operation_residual: an inequality is a condition on the design factor'
     end if
     do k = 1, size(equations)
-       if (equations(k) % num_components() /= 1) then
+       ! a smooth maximum of several components is a scalar
+       if (equations(k) % num_components() /= 1 .and. .not. equations(k) % weight > 0.0_dp) then
           write(message,'(a,i0,a,i0)') 'operation_residual: an equation is a scalar field; equation ', &
                & k, ' has components = ', equations(k) % num_components()
           error stop trim(message)
@@ -5808,7 +5818,8 @@ contains
     type(derivative_terms) :: r, along
     real(dp), allocatable :: partial(:), lower(:), source(:)
     logical, allocatable :: is_fixed(:)
-    integer :: deg, npts, j, p, c, k, row
+    integer, allocatable :: reads(:)
+    integer :: deg, npts, j, p, c, k, row, m
 
     if (allocated(rows % projected)) then
        call projected_adjoint_source(rows, jets, mu, o, values, seed, owner, rhs)
@@ -5822,6 +5833,8 @@ contains
     design = design_terms(values, seed, o, o + 1)
     allocate(q(0:deg - 1))
     do j = 1, size(rows % rules)
+       ! the components the rule reads: its partial in any other is zero
+       call rows % rules(j) % read_components(reads)
        do p = 1, npts
           if (owner(p) /= this_image()) cycle
           row = rows % at(p) + rows % primary(j) + 1
@@ -5832,7 +5845,8 @@ contains
           lower(1:o - 1) = mu(row, 1:o - 1)
           lower(o)       = 0.0_dp
           along = symmetric_terms(mu(row, 0), lower, o)
-          do c = 0, deg - 1
+          do m = 1, size(reads)
+             c = reads(m)
              call q(c) % set_coefficient(2**o, 1.0_dp)
              r = rows % rules(j) % at_instant(q, design, rows % point_positions(:, p))
              call q(c) % set_coefficient(2**o, 0.0_dp)
@@ -5971,6 +5985,7 @@ contains
             e = pr % element_cell(n)
             do qp = 1, nq
                s = (n - 1) * nq + qp
+               if (.not. tested_at(el, d, qp, e)) cycle
                do c = 0, width - 1
                   q(c) = derivative_terms(formed((s - 1) * width + c + 1, 0), m)
                   do k = 1, m - 1
@@ -6010,7 +6025,8 @@ contains
     type(derivative_terms) :: r, along
     logical , allocatable :: is_fixed(:)
     real(dp), allocatable :: source(:), formed(:,:), lambda(:), partial(:), lower(:)
-    integer :: width, nq, j, f, d, n, e, qp, s, c, k, i, p, row, i2, p2, k2, offset, dd
+    integer , allocatable :: reads(:)
+    integer :: width, nq, j, f, d, n, e, qp, s, c, k, i, p, row, i2, p2, k2, offset, dd, m
     real(dp) :: value, tau
 
     is_fixed = rows % fixed_indicator()
@@ -6027,11 +6043,14 @@ contains
       do j = 1, size(rows % rules)
          f = pr % tested(1, j)
          d = pr % tested(2, j)
+         ! the components the rule reads: its partial in any other is zero
+         call rows % rules(j) % read_components(reads)
          do n = 1, size(pr % element_cell)
             if (owner(abs(pr % element_point(1, n))) /= this_image()) cycle
             e = pr % element_cell(n)
             do qp = 1, nq
                s = (n - 1) * nq + qp
+               if (.not. tested_at(el, d, qp, e)) cycle
                ! the multiplier of the rule at the site, to the order
                ! below o, the o-th left out
                lambda = 0.0_dp
@@ -6052,7 +6071,8 @@ contains
                   q(c) = symmetric_terms(formed((s - 1) * width + c + 1, 0), &
                        & [(formed((s - 1) * width + c + 1, k), k = 1, o)], o + 1)
                end do
-               do c = 0, width - 1
+               do m = 1, size(reads)
+                  c = reads(m)
                   call q(c) % set_coefficient(2**o, 1.0_dp)
                   r = rows % rules(j) % at_instant(q, design, rows % site_positions(:, s))
                   call q(c) % set_coefficient(2**o, 0.0_dp)
@@ -6119,6 +6139,7 @@ contains
                e = pr % element_cell(n)
                do qp = 1, nq
                   s = (n - 1) * nq + qp
+                  if (.not. tested_at(el, d, qp, e)) cycle
                   lambda = 0.0_dp
                   do i = 1, size(pr % element_point, 1)
                      p = pr % element_point(i, n)
@@ -6557,9 +6578,10 @@ contains
     type(expression), allocatable :: flux(:), groups(:), over_region(:)
     type(expression) :: law, region_part
     integer, allocatable :: coordinate(:), order(:), group(:,:)
+    logical, allocatable :: with_region(:)
     integer :: first, last, j, g, m, c, top, o
     real(dp) :: volume
-    logical :: differentiated
+    logical :: differentiated, reads_region
 
     first = merge(FIRST_COORDINATE + 1, FIRST_COORDINATE, image % manifold % with_time)
     last  = first + points % dimension - 1
@@ -6567,7 +6589,7 @@ contains
        error stop 'operation_residual: under a projection on the cells the basis states the representation &
             &laws along space; none is stated'
     end if
-    allocate(group(3, 0), groups(0), over_region(0))
+    allocate(group(3, 0), groups(0), over_region(0), with_region(0))
     m   = 0
     top = 0
     do j = 1, size(physics % equation)
@@ -6575,14 +6597,17 @@ contains
        ! its flux form: its terms of time, and the integrand of its
        ! integral over the region
        associate (equation => physics % equation(j))
-         region_part = constant(0.0_dp)
+         region_part  = constant(0.0_dp)
+         reads_region = .false.
          if (image % manifold % of_time_alone(j)) then
             if (allocated(equation % integrand)) then
-               flux        = [jet_form(equation % graph(1))]
-               region_part = jet_form(equation % integrand(1))
+               flux         = [jet_form(equation % graph(1))]
+               region_part  = jet_form(equation % integrand(1))
+               reads_region = .true.
             else if (equation % is_integral() .and. equation % integrated_part == SPACE_FACTOR) then
-               flux        = [constant(0.0_dp)]
-               region_part = jet_form(equation % graph(1))
+               flux         = [constant(0.0_dp)]
+               region_part  = jet_form(equation % graph(1))
+               reads_region = .true.
             else
                flux = [jet_form(equation % graph(1))]
             end if
@@ -6600,6 +6625,7 @@ contains
           m           = m + 1
           groups      = [groups, flux(g)]
           over_region = [over_region, region_part]
+          with_region = [with_region, reads_region]
           group       = reshape([group, j, coordinate(g), order(g)], [3, m])
           top         = max(top, order(g))
           do c = first, last
@@ -6618,9 +6644,15 @@ contains
        if (image % manifold % of_time_alone(group(1, g))) then
           ! tested with the weight alone, at the first point of each
           ! moment, over the measure of the region: its terms of time
-          ! alone once, an integral over the region as it is
-          image % tested(2, g) = ubound(image % elements % test, 1) + 1
-          groups(g) = groups(g) * constant(1.0_dp / volume) + over_region(g)
+          ! alone once, an integral over the region as it is; with no
+          ! integral over the region, tested at one site of each moment
+          ! with one, its terms evaluated there alone
+          if (with_region(g)) then
+             image % tested(2, g) = ubound(image % elements % test, 1) + 1
+             groups(g) = groups(g) * constant(1.0_dp / volume) + over_region(g)
+          else
+             image % tested(2, g) = ubound(image % elements % test, 1) + 2
+          end if
        end if
        law = law + multiplier(g) * groups(g)
     end do
@@ -7264,7 +7296,10 @@ contains
   ! before, and, at the derivative index past the basis's last, a test
   ! function that is the weight of each quadrature point. The equation
   ! of an unknown of time alone, tested so, is its integral over the
-  ! cells, stated at the first point of the moment.
+  ! cells, stated at the first point of the moment. At the index after
+  ! it, a test function that is one at the first quadrature point of
+  ! the first cell and zero elsewhere: an equation tested so is stated
+  ! by its value there.
   !===================================================================!
 
   pure subroutine with_first_point(el)
@@ -7277,11 +7312,14 @@ contains
 
     d  = ubound(el % test, 1) + 1
     nn = el % num_nodes()
-    allocate(basis(0:d, 0:ubound(el % basis, 2), nn + 1, size(el % basis, 4), size(el % basis, 5)), source=0.0_dp)
-    allocate(test(0:d, 0:ubound(el % basis, 2), nn + 1, size(el % basis, 4), size(el % basis, 5)), source=0.0_dp)
+    allocate(basis(0:d + 1, 0:ubound(el % basis, 2), nn + 1, size(el % basis, 4), size(el % basis, 5)), &
+         & source=0.0_dp)
+    allocate(test(0:d + 1, 0:ubound(el % basis, 2), nn + 1, size(el % basis, 4), size(el % basis, 5)), &
+         & source=0.0_dp)
     basis(0:d - 1, :, 1:nn, :, :) = el % basis
     test(0:d - 1, :, 1:nn, :, :)  = el % test
     test(d, 0, nn + 1, :, :)      = el % weight
+    test(d + 1, 0, nn + 1, 1, 1)  = 1.0_dp
     allocate(node(nn + 1, size(el % node, 2)))
     node(1:nn, :)   = el % node
     node(nn + 1, :) = 1
@@ -7290,6 +7328,14 @@ contains
     call move_alloc(node, el % node)
 
   end subroutine with_first_point
+
+  ! whether a test function of the derivative index d is other than
+  ! zero at the quadrature point q of the cell e
+  pure logical function tested_at(el, d, q, e)
+    type(element_quadrature), intent(in) :: el
+    integer                 , intent(in) :: d, q, e
+    tested_at = any(el % test(d, :, :, q, e) /= 0.0_dp)
+  end function tested_at
 
   !===================================================================!
   ! THE FIXED ROWS of a block: every component at the history instants,

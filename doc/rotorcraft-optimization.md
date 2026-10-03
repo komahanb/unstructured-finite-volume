@@ -81,7 +81,7 @@ instants drawn.
 - The sensitivities (`triple_pendulum_sensitivity.f90`): the pendulum
   with a design in a mass and one in a joint's condition, which the
   first instant states by its second derivative. dJ/ds by the adjoint
-  and by the expansion agree to 8e-14 and 9e-15, and central
+  and by the expansion agree to 1.1e-14 and 1.1e-14, and central
   differences of step 1e-4 to 3e-10 and 7e-10, their own error; the
   same digits on 1, 2 and 4 images.
 - 360 steps: the energy falls to 4.94255e5 J over the revolution, where
@@ -153,10 +153,53 @@ the cap's law reads an integral over the blade. Built 2026-10-03:
   whose law reads the integral of the beam's moment of momentum. At
   801 instants the error of the deflection falls as 1.51e-4, 9.47e-6,
   5.40e-7 over 9, 17 and 33 points, order 4, and of the angle as
-  4.18e-5, 2.66e-6, 5.11e-7; with the angle's law reading no integral
+  4.18e-5, 2.66e-6, 5.10e-7; with the angle's law reading no integral
   the deflection is case 6's to every printed digit. dJ/ds through the
-  hub's inertia by the adjoint and by the expansion agree to 2e-13,
+  hub's inertia by the adjoint and by the expansion agree to 5e-13,
   central differences to their own error, on 1, 2 and 4 images.
+- The stationarity of a density along several coordinates,
+  `density % stationarity(w, [t, x])`, keeps each derivative an
+  operator, so that the elements read the outer derivatives along space
+  as fluxes: case 8's laws formed from its action give its errors.
+- At the first instant an equation of time alone that reads no
+  component of top degree, a joint's condition, is stated by its
+  derivative along time under the projection too; a march begun from
+  the instant before is solved to the rounding of its residual, and
+  its first instant begins from the estimate's derivatives along time.
+  Before, it began from zero rates, which laws quadratic in the rates
+  reached by a long damped iteration: the rigid rotor's first instant
+  now takes two Newton steps, its revolution the same digits.
+
+**The blade as a beam in the cap's axes** (`multibody_dynamics.f90`,
+`beam`), the recommended frame, built as the default while the
+decision stands. The blade is a field of time and of its span: the
+displacement along its span, chord and thickness and its twist, the
+section's centre at root + (x + u) e_s + v e_c + w e_f in the cap's
+reference axes. Its density over the span is the kinetic energy of the
+section's centre and of its turning (the cap's angular velocity and the
+twist's rate, with the section's moments of inertia), less the strain
+energy with the axial strain to second order in the slopes, which
+stiffens the turning blade, and less the potential in gravity. The
+bodies' coordinates and the reactions become unknowns of time alone;
+the cap's laws gain the integral over the span of the stationarity of
+the blade's density. `blade_on_hub.f90` verifies it on one blade on a
+driven hub: as E grows the driver's reactions approach the rigid
+plate's (-225.9008 and -225.91163 at E = 7e15 and 7e17 against
+-225.91174), and the one about z falls with the step for both, the
+dissipation of bdf(1); the same digits on 1, 2 and 4 images.
+
+**The rotor with beam blades does not yet run at its scale.** Every
+point of the span stores every field, so the 355 unknowns of time alone
+are stored at every node: the dense block of the whole line at a moment,
+the element matrices and the projected initial conditions grow with
+the square or the cube of that count. At 3 span points the setup takes
+75 s and the first block does not begin within ten minutes, at 6 GB.
+The next steps: the tying rows (copies, zero slopes, history, the
+family's relations) eliminated before a dense direct solve of the rest,
+about 355 + 32 np unknowns a moment, with the initial conditions of the
+unknowns of time alone stated point by point; the element matrices
+formed from each rule's own components; the laws of time alone
+evaluated once per moment.
 
 ## The case
 

@@ -20,7 +20,7 @@ F90FLAGS += -I$(LIB)/ -Wtarget-lifetime
 LDFLAGS += -L$(LIB)/ $(LIB)/libufvm.a
 
 MODULES  = multibody_dynamics.o
-PROGRAMS = triple_pendulum triple_pendulum_sensitivity rotorcraft_dynamics
+PROGRAMS = triple_pendulum triple_pendulum_sensitivity blade_on_hub rotorcraft_dynamics
 
 all: $(PROGRAMS)
 

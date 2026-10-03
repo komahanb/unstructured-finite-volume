@@ -10,7 +10,11 @@
 #   triple_pendulum_sensitivity
 #                        the pendulum with a design in a mass and in a
 #                        joint: dJ/ds by the adjoint and by the
-#                        expansion, agreeing to 8e-14
+#                        expansion, agreeing to 1.1e-14
+#   blade_on_hub         the blade of the rotor on a turning hub, as a
+#                        beam in the hub's axes or as a rigid plate:
+#                        the driver's reactions and the tip's motion;
+#                        the beam approaches the plate as E grows
 #   rotorcraft_dynamics  the rotor of komahanb/rotorcraft-optimization,
 #                        26 bodies and 34 joints, one revolution by
 #                        bdf(1), the setup read from rotorcraft.nml:
@@ -33,5 +37,7 @@ echo "== triple_pendulum"
 ./triple_pendulum
 echo "== triple_pendulum_sensitivity"
 ./triple_pendulum_sensitivity
+echo "== blade_on_hub"
+./blade_on_hub
 echo "== rotorcraft_dynamics"
 ./rotorcraft_dynamics

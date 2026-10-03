@@ -426,8 +426,9 @@ module operation_residual
      type(element_quadrature), allocatable :: elements
      ! THE RULE AT THE MANIFOLD'S FIRST INSTANT, where a law the initial
      ! data satisfy is stated by its derivative along time; unallocated
-     ! when no law is
+     ! when no law is. Projected, the flux form there
      type(expression)        , allocatable :: initial_rule
+     type(expression)        , allocatable :: initial_flux
      ! each block after the first starts from the solution at the last
      ! instant before it (minimize, continued)
      logical                 :: continued = .false.
@@ -467,6 +468,7 @@ module operation_residual
      procedure, private :: fixed_rows_of
      procedure, private :: gauge_rows_of
      procedure, private :: time_alone_rows_of
+     procedure, private :: estimated_rates
      procedure, private :: gauged_unknowns
      procedure, private :: multipliers_of_order
      procedure, private :: owners_of_unknowns
@@ -2572,8 +2574,9 @@ contains
   ! CONTINUED, each block of the chain after the first starts Newton's
   ! iteration from the solution at the last instant before it, at its
   ! instants and the stages of its steps, rather than from the
-  ! estimate, which then gives the first block alone: the march of a
-  ! motion the estimate does not follow.
+  ! estimate, which then gives the first block alone, its derivatives
+  ! along time those of the estimate: the march of a motion the
+  ! estimate does not follow.
   !===================================================================!
 
   recursive subroutine minimize(this, estimate, solution, checkpoint, snapshots, continued)
@@ -2955,6 +2958,7 @@ contains
              end do
           end do
        end do
+       if (this % continued) call this % estimated_rates(tuple(:, :, :, 0), 1)
     end if
 
     ! the finite-difference rows along each space axis and order, once
@@ -3606,6 +3610,7 @@ contains
             end do
          end do
       end do
+      if (this % continued .and. whi - own >= 2) call this % estimated_rates(window(:, :, own:whi, 0), own)
       call move_alloc(window, state)
     end subroutine window_moved
 
@@ -4334,12 +4339,21 @@ contains
        end do
        call this % formed_components(projected % formed)
        rule_primary = [(primary(this % tested(1, j)), j = 1, size(this % tested, 2))]
+       ! the block of the manifold's first instant states the laws there
+       rule = this % flux
+       if (allocated(this % initial_flux) .and. first == 1 .and. depth == 0) then
+          if (n > 1) then
+             error stop 'operation_residual: a law the initial data satisfy is stated at the first instant by its &
+                  &derivative along time, in a block of that instant alone'
+          end if
+          rule = this % initial_flux
+       end if
        if (size(face_rows) > 0) then
           gauge = stencil(face_rows, face_columns, face_weights, zeros, 'prescribed')
-          blk % rows = residual_operator(relations, this % flux, at, unknowns, stride, rule_primary, fixed_rows, &
+          blk % rows = residual_operator(relations, rule, at, unknowns, stride, rule_primary, fixed_rows, &
                & fixed, prescribed=gauge, positions=point_positions, projected=projected)
        else
-          blk % rows = residual_operator(relations, this % flux, at, unknowns, stride, rule_primary, fixed_rows, &
+          blk % rows = residual_operator(relations, rule, at, unknowns, stride, rule_primary, fixed_rows, &
                & fixed, positions=point_positions, projected=projected)
        end if
     else
@@ -6031,6 +6045,11 @@ contains
        ! the whole problem once per process, and is refused
        call require_images()
        if (present(part)) solver % distribution = part
+       ! a march begun from the instant before is solved to the rounding
+       ! of its residual, as under a direct inner solve: its first
+       ! residual, of components the instant before leaves inconsistent
+       ! with the family, is not the law's own scale
+       if (this % continued) solver % tolerance = 1.0e-13_dp
     else
        ! a direct inner solve converges Newton quadratically to
        ! round-off at the cost of a step, and the sensitivities read
@@ -6201,8 +6220,9 @@ contains
     type(expression), allocatable :: flux(:), groups(:), over_region(:)
     type(expression) :: law, region_part
     integer, allocatable :: coordinate(:), order(:), group(:,:)
-    integer :: first, last, j, g, m, c, top
+    integer :: first, last, j, g, m, c, top, o
     real(dp) :: volume
+    logical :: differentiated
 
     first = merge(FIRST_COORDINATE + 1, FIRST_COORDINATE, image % manifold % with_time)
     last  = first + points % dimension - 1
@@ -6263,13 +6283,42 @@ contains
           ! moment, over the measure of the region: its terms of time
           ! alone once, an integral over the region as it is
           image % tested(2, g) = ubound(image % elements % test, 1) + 1
-          law = law + multiplier(g) * (groups(g) * constant(1.0_dp / volume) + over_region(g))
-       else
-          law = law + multiplier(g) * groups(g)
+          groups(g) = groups(g) * constant(1.0_dp / volume) + over_region(g)
        end if
+       law = law + multiplier(g) * groups(g)
     end do
     image % flux = law
     image % rule = coefficient_form(law, first, last, max(top - 1, 0))
+
+    ! AT THE FIRST INSTANT an equation of time alone that reads no
+    ! component of top degree - a joint's condition - is stated by its
+    ! derivative along time of the least order that reads one, as on
+    ! a manifold of time alone (initial_form)
+    if (.not. image % manifold % with_time) return
+    differentiated = .false.
+    law = constant(0.0_dp)
+    do g = 1, m
+       if (image % manifold % of_time_alone(group(1, g))) then
+          do o = 1, top_degree(image % rule, image % manifold % num_unknowns)
+             if (reads_top_degree(groups(g))) exit
+             groups(g) = total_derivative(groups(g), FIRST_COORDINATE)
+             differentiated = .true.
+          end do
+       end if
+       law = law + multiplier(g) * groups(g)
+    end do
+    if (differentiated) image % initial_flux = law
+
+  contains
+
+    logical function reads_top_degree(x)
+      type(expression), intent(in) :: x
+      integer :: f
+      reads_top_degree = .false.
+      do f = 1, image % manifold % num_unknowns
+         if (x % highest_order_read(f) == image % rule % degree_of_field(f)) reads_top_degree = .true.
+      end do
+    end function reads_top_degree
 
   end subroutine projected_form
 
@@ -6755,6 +6804,46 @@ contains
     end if
 
   end function points_on_face
+
+  !===================================================================!
+  ! THE ESTIMATE'S DERIVATIVES ALONG TIME at its instants, those of the
+  ! parabola through its values at three instants about each: the
+  ! first and the second derivative of every field, of its value's
+  ! coefficient; above the second, none. A march begun from the
+  ! instant before (continued) begins its first instant from them,
+  ! where the initial data state the rates, rather than from zero
+  ! rates, which a law quadratic in them reaches by a damped
+  ! iteration. tuple(:, :, k) is the instant first + k - 1.
+  !===================================================================!
+
+  subroutine estimated_rates(this, tuple, first)
+
+    class(discrete_residual), intent(in)    :: this
+    real(dp)                , intent(inout) :: tuple(:,:,:)
+    integer                 , intent(in)    :: first
+
+    real(dp) :: s(3), w1(3), w2(3), tk
+    integer :: n, k, j, f, o, i
+
+    n = size(tuple, 3)
+    if (n < 3) return
+    do k = 1, n
+       j  = min(max(k - 1, 1), n - 2)
+       s  = [(this % points % instant(first + j + i - 1), i = 0, 2)]
+       tk = this % points % instant(first + k - 1)
+       w1 = [((tk - s(2)) + (tk - s(3))) / ((s(1) - s(2)) * (s(1) - s(3))), &
+            & ((tk - s(1)) + (tk - s(3))) / ((s(2) - s(1)) * (s(2) - s(3))), &
+            & ((tk - s(1)) + (tk - s(2))) / ((s(3) - s(1)) * (s(3) - s(2)))]
+       w2 = [2.0_dp / ((s(1) - s(2)) * (s(1) - s(3))), 2.0_dp / ((s(2) - s(1)) * (s(2) - s(3))), &
+            & 2.0_dp / ((s(3) - s(1)) * (s(3) - s(2)))]
+       do f = 1, this % manifold % num_unknowns
+          o = this % rule % offset_of_field(f)
+          if (this % rule % degree_of_field(f) >= 1) tuple(o + 2, :, k) = matmul(tuple(o + 1, :, j:j + 2), w1)
+          if (this % rule % degree_of_field(f) >= 2) tuple(o + 3, :, k) = matmul(tuple(o + 1, :, j:j + 2), w2)
+       end do
+    end do
+
+  end subroutine estimated_rates
 
   !===================================================================!
   ! THE ROWS OF THE UNKNOWNS OF TIME ALONE in a block. Such an unknown

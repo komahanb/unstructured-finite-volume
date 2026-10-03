@@ -9,9 +9,9 @@
 ! The objective is J, the integral over time of the square of C's fall,
 ! and the design conditions s - s_0 pair with kappa = -dJ/ds.
 !
-! At s = (1, 1), J = 3.8528427173363862: dJ/ds by the adjoint
-! -2.6054981030793983e-2 and -8.7722777922432781e-3, by the expansion
-! the same to 8e-14 and 9e-15, by central differences of step 1e-4
+! At s = (1, 1), J = 3.8528427173363879: dJ/ds by the adjoint
+! -2.6054981030792207e-2 and -8.7722777922433336e-3, by the expansion
+! the same to 1.1e-14 and 1.1e-14, by central differences of step 1e-4
 ! the same to 3e-10 and 7e-10, their own error. The same digits on 1,
 ! 2 and 4 images. The design values and the order of the expansion are
 ! read from the command line (default 1, 1, 1).

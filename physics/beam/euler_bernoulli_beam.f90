@@ -106,12 +106,14 @@
 !      laws applied to them; each block starts from the instant before
 !      (continued). Measured at 801 instants over 9, 17 and 33 points,
 !      the error of w falls as 1.51e-4, 9.47e-6, 5.40e-7, order 4, and
-!      of theta as 4.18e-5, 2.66e-6, 5.11e-7; with theta's law reading
+!      of theta as 4.18e-5, 2.66e-6, 5.10e-7; with theta's law reading
 !      no integral the error of w is case 6's to every printed digit.
-!      With the inertia I (1 + s), s = 0.2, the misfit's dJ/ds is
-!      3.7922827357989589e-4 by the adjoint and 3.7922827357981793e-4
-!      by the expansion, and the central differences of step 1e-4 are
-!      within 3.5e-12, their own error.
+!      The same laws formed as the stationarity of the action, along t
+!      and x in w and along t in theta, give the same errors, theta
+!      the same to 2e-11. With the inertia I (1 + s), s = 0.2, the
+!      misfit's dJ/ds is 3.79228278023e-4 by the adjoint, the same by
+!      the expansion to 5e-13, and the central differences of step 1e-4
+!      are within 7e-12, their own error.
 !
 ! In cases 1 and 4 the multipliers mu_x also give an estimate of the
 ! error of J: the representation laws evaluated on the jet that

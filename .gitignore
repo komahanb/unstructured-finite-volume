@@ -109,6 +109,7 @@ physics/taylor_green/taylor_green_vortex
 physics/taylor_green/taylor_green_vortex_3d
 physics/rotorcraft-dynamics/triple_pendulum
 physics/rotorcraft-dynamics/triple_pendulum_sensitivity
+physics/rotorcraft-dynamics/blade_on_hub
 physics/rotorcraft-dynamics/rotorcraft_dynamics
 physics/rotorcraft-dynamics/*.pvd
 gmon.out

@@ -60,6 +60,15 @@
 ! motion, every reaction zero; its energy the bodies' kinetic and
 ! potential energies summed.
 !
+! A BLADE AS A BEAM (beam) is a field of time and of its span x, in
+! the axes of the body it is fixed to: on a manifold of time and of
+! the span, the bodies' coordinates and the reactions are unknowns of
+! time alone. The blade's density is a density over the span, and the
+! law of an unknown of time alone it reads gains the integral over the
+! span of its stationarity there; the laws of the blade's fields are
+! the stationarity of that density along t and x, the outer
+! derivatives along x read by the elements as fluxes.
+!
 ! A TABLE OF BODIES is read from a file of one body a line, a line
 ! that begins with # aside: the name, the name of a surface mesh, the
 ! mass, the centre of mass, the inertia about it in the order xx xy xz
@@ -81,14 +90,15 @@ module multibody_dynamics
   use util_string         , only : string
   use relation_binary     , only : ragged
   use operation_manifold  , only : continuous_manifold, discrete_manifold
-  use operation_field     , only : continuous_field, discrete_field, sin, cos, &
-       &                           operator(+), operator(-), operator(*), operator(/)
+  use operation_field     , only : continuous_field, discrete_field, integral, sin, cos, &
+       &                           operator(+), operator(-), operator(*), operator(/), operator(**)
+  use operation_expression, only : expression
   use view_paraview_writer, only : paraview_writer, time_series
 
   implicit none
 
   private
-  public :: rigid_body, mechanism, body_table, surface
+  public :: rigid_body, beam_blade, mechanism, body_table, surface
   public :: spherical, revolute, cylindrical, fixed, rigid_link, revolute_driver, motion_driver
 
   type :: rigid_body
@@ -99,11 +109,21 @@ module multibody_dynamics
      type(continuous_field) :: u(3), eta, eps(3), norm
    contains
      procedure :: position
+     procedure :: moved
      procedure :: direction
      procedure :: angular_velocity
      procedure :: kinetic_energy
      procedure :: potential_energy
   end type rigid_body
+
+  ! a blade as a beam in the axes of the body it is fixed to: its root
+  ! and its axes - span, chord, thickness - in that body's reference
+  ! axes, its section, and its fields of time and span
+  type :: beam_blade
+     character(len=:), allocatable :: name
+     real(dp) :: root(3) = 0.0_dp, axes(3,3) = 0.0_dp, chord = 0.0_dp, thickness = 0.0_dp
+     type(continuous_field) :: u, v, w, phi
+  end type beam_blade
 
   ! the points of a surface in the reference configuration, and its
   ! cells: their points, padded to four, their counts and their gmsh
@@ -121,14 +141,24 @@ module multibody_dynamics
      type(continuous_field), allocatable :: unknowns(:)
      type(continuous_field), allocatable :: initial(:)
      type(continuous_field), allocatable :: guess(:)
+     ! the density over the span of the blades as beams, the span
+     ! coordinate and the space factor, the unknowns of time and span,
+     ! and the conditions at the root
+     type(continuous_field) :: distributed, x
+     type(continuous_manifold) :: space
+     logical :: spread = .false.
+     logical, allocatable :: of_space(:)
+     type(continuous_field), allocatable :: root(:)
      ! the bodies drawn, and the surface of each
      type(rigid_body), allocatable :: drawn(:)
      type(surface)   , allocatable :: surfaces(:)
    contains
      procedure :: body
+     procedure :: beam
      procedure :: joint
      procedure :: laws
      procedure :: estimate
+     procedure, private :: time_unknown
      procedure :: draw_with
      procedure :: draw
   end type mechanism
@@ -159,6 +189,7 @@ contains
     this % t = t
     if (present(gravity)) this % gravity = gravity
     allocate(this % unknowns(0), this % initial(0), this % guess(0), this % drawn(0), this % surfaces(0))
+    allocate(this % of_space(0), this % root(0))
 
   end function create_mechanism
 
@@ -191,14 +222,15 @@ contains
     b % mass    = mass
     b % inertia = inertia
     do k = 1, 3
-       b % u(k) = omega % unknown(name // '_u' // digit(k))
+       b % u(k) = this % time_unknown(omega, name // '_u' // digit(k))
     end do
-    b % eta = omega % unknown(name // '_eta')
+    b % eta = this % time_unknown(omega, name // '_eta')
     do k = 1, 3
-       b % eps(k) = omega % unknown(name // '_eps' // digit(k))
+       b % eps(k) = this % time_unknown(omega, name // '_eps' // digit(k))
     end do
-    b % norm = omega % unknown(name // '_norm')
+    b % norm = this % time_unknown(omega, name // '_norm')
     this % unknowns = [this % unknowns, b % u, b % eta, b % eps, b % norm]
+    this % of_space = [this % of_space, (.false., k = 1, 8)]
 
     action = b % kinetic_energy(this % t) - b % potential_energy(this % gravity) &
          & + b % norm * (b % eta * b % eta + b % eps(1) * b % eps(1) + b % eps(2) * b % eps(2) &
@@ -254,13 +286,135 @@ contains
 
     do k = 1, size(conditions)
        write(label, '(i0)') k
-       reaction = omega % unknown(name // '_' // trim(label))
+       reaction = this % time_unknown(omega, name // '_' // trim(label))
        this % unknowns = [this % unknowns, reaction]
+       this % of_space = [this % of_space, .false.]
        this % guess    = [this % guess, continuous_field(omega, [0.0_dp])]
        call add(this, reaction * conditions(k))
     end do
 
   end subroutine joint
+
+  !===================================================================!
+  ! A BLADE AS A BEAM in the axes of the body it is fixed to: the
+  ! displacement u along its span, v along its chord and w along its
+  ! thickness, and its twist phi about its span, fields of time and of
+  ! the span x, declared on the manifold under the blade's name. The
+  ! centre of the section at x is root + (x + u) e_s + v e_c + w e_f
+  ! in the body's reference axes, which the body moves; the section, of
+  ! chord c and thickness h, is of the density rho and the moduli E and
+  ! nu. The blade's density over the span is the kinetic energy of the
+  ! section - of its centre, and of its turning at the body's angular
+  ! velocity and the twist's rate about e_s with the section's moments
+  ! of inertia - less its strain energy and its potential energy:
+  !
+  !      rho A |p_t|^2/2 + w.J w/2 - EA eps^2/2 - EI_f w_xx^2/2
+  !        - EI_c v_xx^2/2 - GJ phi_x^2/2 + rho A g.p,
+  !
+  ! the axial strain to second order in the slopes, eps = u_x + (v_x^2
+  ! + w_x^2)/2, which stiffens the turning blade; A = c h, EI_f = E c
+  ! h^3/12, EI_c = E h c^3/12, GJ = G (1 - 0.63 h/c) c h^3/3 of the thin
+  ! rectangle, G = E/(2 (1 + nu)). At the root the blade is fixed to the
+  ! body, u, v, w, phi, v_x and w_x zero; it begins at rest in the
+  ! body's axes, and its estimate is zero.
+  !===================================================================!
+
+  subroutine beam(this, omega, blade, b, name, x, root, axes, density, modulus, poisson, chord, thickness)
+
+    class(mechanism)         , intent(inout) :: this
+    type(continuous_manifold), intent(inout) :: omega
+    type(beam_blade)         , intent(out)   :: blade
+    type(rigid_body)         , intent(in)    :: b
+    character(len=*)         , intent(in)    :: name
+    type(continuous_field)   , intent(in)    :: x
+    real(dp)                 , intent(in)    :: root(3), axes(3,3), density, modulus, poisson, chord, thickness
+
+    type(continuous_field) :: centre(3), p(3), rate, turning(3), body_rate(3), slope_v, slope_w, strain, energy
+    type(continuous_field) :: zero
+    real(dp) :: area, inertia(3,3), shear, moments(3)
+    integer :: k, i, j
+
+    blade % name      = name
+    blade % root      = root
+    blade % axes      = axes
+    blade % chord     = chord
+    blade % thickness = thickness
+    blade % u   = omega % unknown(name // '_u')
+    blade % v   = omega % unknown(name // '_v')
+    blade % w   = omega % unknown(name // '_w')
+    blade % phi = omega % unknown(name // '_phi')
+    this % unknowns = [this % unknowns, blade % u, blade % v, blade % w, blade % phi]
+    this % of_space = [this % of_space, .true., .true., .true., .true.]
+    this % x     = x
+    this % space = omega % space()
+
+    ! the section: its area, its moments of inertia per length about the
+    ! span, the chord and the thickness, in the body's reference axes
+    area    = chord * thickness
+    shear   = modulus / (2.0_dp * (1.0_dp + poisson))
+    moments = density * [(chord * thickness**3 + thickness * chord**3) / 12.0_dp, chord * thickness**3 / 12.0_dp, &
+         & thickness * chord**3 / 12.0_dp]
+    inertia = 0.0_dp
+    do k = 1, 3
+       do j = 1, 3
+          do i = 1, 3
+             inertia(i, j) = inertia(i, j) + moments(k) * axes(i, k) * axes(j, k)
+          end do
+       end do
+    end do
+
+    ! the centre of the section and where the body moves it; its
+    ! kinetic energy and that of the section's turning
+    do k = 1, 3
+       centre(k) = root(k) + axes(k, 1) * (x + blade % u) + axes(k, 2) * blade % v + axes(k, 3) * blade % w
+    end do
+    p = b % moved(centre)
+    rate   = p(1) % derivative([this % t])
+    energy = rate * rate
+    do k = 2, 3
+       rate   = p(k) % derivative([this % t])
+       energy = energy + rate * rate
+    end do
+    energy    = (density * area / 2.0_dp) * energy
+    body_rate = b % angular_velocity(this % t)
+    rate      = blade % phi % derivative([this % t])
+    do k = 1, 3
+       turning(k) = body_rate(k)
+       if (axes(k, 1) /= 0.0_dp) turning(k) = turning(k) + axes(k, 1) * rate
+    end do
+    do i = 1, 3
+       if (inertia(i, i) /= 0.0_dp) energy = energy + (inertia(i, i) / 2.0_dp) * turning(i) * turning(i)
+       do j = i + 1, 3
+          if (abs(inertia(i, j)) > 0.0_dp) energy = energy + inertia(i, j) * turning(i) * turning(j)
+       end do
+    end do
+
+    ! less the strain energy, and the potential energy in gravity
+    slope_v = blade % v % derivative([x])
+    slope_w = blade % w % derivative([x])
+    strain  = blade % u % derivative([x]) + (slope_v * slope_v + slope_w * slope_w) / 2.0_dp
+    energy  = energy - (modulus * area / 2.0_dp) * strain * strain &
+         & - (modulus * chord * thickness**3 / 24.0_dp) * blade % w % derivative([x, x])**2 &
+         & - (modulus * thickness * chord**3 / 24.0_dp) * blade % v % derivative([x, x])**2 &
+         & - (shear * (1.0_dp - 0.63_dp * thickness / chord) * chord * thickness**3 / 6.0_dp) &
+         & * blade % phi % derivative([x])**2 + (density * area) * combination(this % gravity, p)
+    if (this % spread) then
+       this % distributed = this % distributed + energy
+    else
+       this % distributed = energy
+       this % spread      = .true.
+    end if
+
+    ! at rest in the body's axes at the first instant; fixed to the
+    ! body at the root; the estimate zero
+    this % initial = [this % initial, blade % u, blade % v, blade % w, blade % phi, &
+         & blade % u % derivative([this % t]), blade % v % derivative([this % t]), &
+         & blade % w % derivative([this % t]), blade % phi % derivative([this % t])]
+    this % root = [this % root, blade % u, blade % v, blade % w, blade % phi, slope_v, slope_w]
+    zero = continuous_field(omega, [0.0_dp])
+    this % guess = [this % guess, zero, zero, zero, zero]
+
+  end subroutine beam
 
   subroutine add(this, term)
     type(mechanism)       , intent(inout) :: this
@@ -275,18 +429,55 @@ contains
 
   ! the laws: the stationarity of the density in each unknown, in the
   ! order declared, the density's derivatives along time read once as
-  ! the components of the jet
+  ! the components of the jet. Of a field of time and span, the
+  ! stationarity of the density over the span along t and x; of an
+  ! unknown of time alone the density over the span reads, the
+  ! integral over the span of its stationarity is added
   function laws(this) result(equations)
     class(mechanism), intent(in) :: this
     type(continuous_field), allocatable :: equations(:)
     type(continuous_field) :: density
+    type(expression) :: spread_form
     integer :: k
     density = this % density % jet_form()
+    if (this % spread) spread_form = this % distributed % graph(1)
     allocate(equations(size(this % unknowns)))
     do k = 1, size(this % unknowns)
+       if (this % of_space(k)) then
+          equations(k) = this % distributed % stationarity(this % unknowns(k), [this % t, this % x])
+          cycle
+       end if
        equations(k) = density % stationarity(this % unknowns(k), this % t)
+       if (.not. this % spread) cycle
+       if (spread_form % highest_order_read(this % unknowns(k) % index(1)) < 0) cycle
+       equations(k) = equations(k) + integral(this % distributed % stationarity(this % unknowns(k), this % t), &
+            & over=this % space)
     end do
   end function laws
+
+  ! an unknown of the bodies and the joints: of time alone on a
+  ! manifold of time and space, and of the design when the manifold
+  ! has one
+  function time_unknown(this, omega, name) result(u)
+    class(mechanism)         , intent(in)    :: this
+    type(continuous_manifold), intent(inout) :: omega
+    character(len=*)         , intent(in)    :: name
+    type(continuous_field) :: u
+    type(continuous_field), allocatable :: arguments(:)
+    integer :: k
+    if (.not. omega % with_space) then
+       u = omega % unknown(name)
+       return
+    end if
+    allocate(arguments(1))
+    arguments(1) = this % t
+    if (omega % with_design) then
+       do k = 1, size(omega % design_parameter)
+          arguments = [arguments, omega % coordinate(trim(omega % design_parameter(k) % name))]
+       end do
+    end if
+    u = omega % unknown(name, arguments)
+  end function time_unknown
 
   ! the estimate: the tuple of the unknowns' estimates
   function estimate(this, omega) result(tuple)
@@ -459,6 +650,24 @@ contains
        p(k) = p(k) + b % u(k) + b % centre(k)
     end do
   end function position
+
+  ! the point given as fields of the reference configuration,
+  ! r0 + u + C^T (x - r0)
+  function moved(b, x) result(p)
+    class(rigid_body)     , intent(in) :: b
+    type(continuous_field), intent(in) :: x(3)
+    type(continuous_field) :: p(3)
+    type(continuous_field) :: d(3), s(3), r(3)
+    integer :: k
+    do k = 1, 3
+       d(k) = x(k) - b % centre(k)
+    end do
+    s = cross(b % eps, d)
+    r = cross(b % eps, s)
+    do k = 1, 3
+       p(k) = d(k) + 2.0_dp * (b % eta * s(k) + r(k)) + b % u(k) + b % centre(k)
+    end do
+  end function moved
 
   function direction(b, e) result(d)
     class(rigid_body), intent(in) :: b

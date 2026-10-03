@@ -171,7 +171,8 @@ module operation_field
      procedure, private :: jet_component => field_jet_component
      procedure :: jet_form       => field_jet_form
      procedure :: partial        => field_partial
-     procedure :: stationarity   => field_stationarity
+     procedure, private :: field_stationarity, field_stationarity_along
+     generic   :: stationarity   => field_stationarity, field_stationarity_along
      procedure :: boundary_terms => field_boundary_terms
      procedure :: discretize     => field_discretize
      procedure :: at             => field_at
@@ -1362,6 +1363,52 @@ contains
     d % component = [stationarity(jet_form(this % component(1)), in % index(1), along % coordinate)]
 
   end function field_stationarity
+
+  !===================================================================!
+  ! ALONG SEVERAL COORDINATES: the partial in the value, and for each
+  ! coordinate and each order o the density reads along it, (-1)^o
+  ! times the o-th derivative along it of the partial in the component
+  ! of that order, each derivative an operator of the field, replaced
+  ! when the law is discretized - so that a projection on the cells
+  ! reads the outer derivatives along space as fluxes. Invalid input
+  ! as for one coordinate.
+  !===================================================================!
+
+  function field_stationarity_along(this, in, along) result(d)
+
+    class(continuous_field), intent(in) :: this
+    type(continuous_field) , intent(in) :: in, along(:)
+    type(continuous_field) :: d
+
+    type(continuous_field) :: term
+    type(expression) :: form
+    integer :: k, o, top
+
+    if (size(this % component) /= 1) then
+       error stop 'operation_field: the stationarity is of a scalar field'
+    end if
+    if (size(in % component) /= 1 .or. in % index(1) < 1) then
+       error stop 'operation_field: the stationarity is in a scalar unknown of the manifold'
+    end if
+    form = jet_form(this % component(1))
+    d = this % partial(in)
+    do k = 1, size(along)
+       if (along(k) % design_coordinate .or. along(k) % coordinate < 1) then
+          error stop 'operation_field: the stationarity integrates by parts along a coordinate of time or space'
+       end if
+       top = form % highest_degree_along(along(k) % coordinate, in % index(1))
+       do o = 1, top
+          term = this % partial(in % derivative(spread(along(k), 1, o)))
+          term = term % derivative(spread(along(k), 1, o))
+          if (mod(o, 2) == 0) then
+             d = d + term
+          else
+             d = d - term
+          end if
+       end do
+    end do
+
+  end function field_stationarity_along
 
   !===================================================================!
   ! THE BOUNDARY TERMS of the stationarity of a scalar field in an

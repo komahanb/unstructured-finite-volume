@@ -31,7 +31,7 @@ module operation_field
   use operation_expression, only : boundary_terms
   use operation_expression, only : FIRST_COORDINATE
   use operation_expression, only : operator(+), operator(-), operator(*), operator(/), operator(**)
-  use operation_expression, only : sin, cos, exp, log, sqrt
+  use operation_expression, only : sin, cos, exp, log, sqrt, heaviside
   use view_expression     , only : expression_view
 
   implicit none
@@ -39,14 +39,14 @@ module operation_field
   private
   public :: continuous_support, discrete_support
   public :: continuous_field, discrete_field
-  public :: unknown_field, coordinate_field, integral, representation
+  public :: unknown_field, coordinate_field, integral, maximum, representation
   public :: WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR, DESIGN_FACTOR, SPACE_FACE
 
   ! the parts a support can be of another
   integer, parameter :: WHOLE = 0, TIME_FACE = 1, TIME_FACTOR = 2, SPACE_FACTOR = 3, DESIGN_FACTOR = 4, &
        & SPACE_FACE = 5
   public :: operator(+), operator(-), operator(*), operator(/), operator(**)
-  public :: sin, cos, exp, log, sqrt
+  public :: sin, cos, exp, log, sqrt, heaviside
 
   !===================================================================!
   ! THE SUPPORTS. A continuous support is known to a field by its
@@ -158,6 +158,9 @@ module operation_field
      integer     :: integrated_part = WHOLE
      type(token) :: integrated_parent
      real(dp)    :: integrated_time = 0.0_dp
+     ! the weight of a smooth maximum over the factor; zero for an
+     ! integral
+     real(dp)    :: weight = 0.0_dp
      ! A FIELD OF TIME WITH AN INTEGRAL OVER THE REGION, on a manifold
      ! of time and space: its value the component plus the integral over
      ! the region of the integrand, the sum of a field and of integrals
@@ -226,6 +229,10 @@ module operation_field
      integer :: along = 0
      type(expression), allocatable :: rule
      real(dp), allocatable :: node_jet(:,:,:)
+     ! the layout of the nodes' jets where it is not the rule's: under
+     ! a projection on the cells, the flux's, with the derivatives along
+     ! space its basis forms at the quadrature points
+     type(expression), allocatable :: node_rule
      real(dp), allocatable :: node_weight(:)
      real(dp), allocatable :: node_position(:,:)
      integer , allocatable :: node_point(:)
@@ -293,6 +300,10 @@ module operation_field
   interface sqrt
      module procedure root_of
   end interface sqrt
+
+  interface heaviside
+     module procedure step_of
+  end interface heaviside
 
 contains
 
@@ -429,6 +440,33 @@ contains
   end function integral
 
   !===================================================================!
+  ! THE SMOOTH MAXIMUM of the components of a field over a factor of
+  ! its manifold, of the weight rho > 0, the aggregate of Kreisselmeier
+  ! and Steinhauser:
+  !
+  !      log( integral of sum_i exp(rho f_i) ) / rho,
+  !
+  ! which tends to the largest f_i over the factor as rho grows. On a
+  ! solution it is m + log( integral of sum_i exp(rho (f_i - m)) ) /
+  ! rho, m the largest f_i at the nodes, so that no exponential
+  ! exceeds one; along the design, the derivative of the logarithm.
+  !===================================================================!
+
+  function maximum(f, over, weight) result(this)
+
+    type(continuous_field)   , intent(in) :: f
+    class(continuous_support), intent(in) :: over
+    real(dp)                 , intent(in) :: weight
+    type(continuous_field) :: this
+
+    if (.not. weight > 0.0_dp) error stop 'operation_field: the weight of a smooth maximum is positive'
+    if (allocated(f % integrand)) error stop 'operation_field: a smooth maximum is of a field with no integral'
+    this = integral(f, over)
+    this % weight = weight
+
+  end function maximum
+
+  !===================================================================!
   ! THE VALUE OF A FUNCTIONAL ON A SOLUTION: the integral over the
   ! points of the support, with their measure, of the integrand
   ! evaluated on the jet at each point; a field on the design factor
@@ -456,7 +494,11 @@ contains
        functional = field_on_points(this, solution)
        return
     end if
-    call functional_over(this, solution, total, gradient, partial)
+    if (this % weight > 0.0_dp) then
+       total = maximum_over(this, solution)
+    else
+       call functional_over(this, solution, total, gradient, partial)
+    end if
     allocate(names(size(total)))
     names(1) = ''
     if (allocated(this % name)) names(1) = this % name
@@ -523,7 +565,23 @@ contains
     real(dp), allocatable  , intent(out) :: partial(:,:)
 
     real(dp), allocatable :: total(:)
+    real(dp) :: m, scale
+    integer  :: c
 
+    if (this % weight > 0.0_dp) then
+       ! of the smooth maximum m + log(I) / rho: the differential of I
+       ! over rho I, and along each expansion the derivative of that
+       ! quotient, I's own derivative read in its value's column
+       call maximum_parts(this, solution, m, total, gradient, partial)
+       scale = 1.0_dp / (this % weight * total(1))
+       gradient(:, :, 0) = gradient(:, :, 0) * scale
+       partial(:, 0)     = partial(:, 0) * scale
+       do c = 1, ubound(gradient, 3)
+          gradient(:, :, c) = gradient(:, :, c) * scale - gradient(:, :, 0) * (total(1 + c) / total(1))
+          partial(:, c)     = partial(:, c) * scale - partial(:, 0) * (total(1 + c) / total(1))
+       end do
+       return
+    end if
     call functional_over(this, solution, total, gradient, partial)
 
   end subroutine field_differential
@@ -571,6 +629,9 @@ contains
     if (size(this % component) /= 1) then
        error stop 'operation_field: a functional is a scalar field'
     end if
+    if (this % weight > 0.0_dp) then
+       error stop 'operation_field: a smooth maximum is not the integral of its field; at evaluates it'
+    end if
     integrand = jet_form(this % component(1))
     if (.not. allocated(solution % rule)) then
        error stop 'operation_field: a functional is evaluated on the solution of a residual, which &
@@ -611,7 +672,11 @@ contains
     if (size(values) < integrand % num_designs()) then
        error stop 'operation_field: the functional reads a design coordinate the manifold does not have'
     end if
-    call jet_slots(integrand, solution % rule, slot)
+    if (over_nodes .and. allocated(solution % node_rule)) then
+       call jet_slots(integrand, solution % node_rule, slot)
+    else
+       call jet_slots(integrand, solution % rule, slot)
+    end if
     ns = size(slot)
     allocate(q(0:ns - 1), g(0:ns - 1), gd(size(values)), jets(0:ns - 1), varied(0:ns - 1))
     allocate(nu(size(values)), along(size(values)), design(size(values)))
@@ -709,6 +774,116 @@ contains
   end subroutine functional_over
 
   !===================================================================!
+  ! THE SMOOTH MAXIMUM ON A SOLUTION in every column of the expansion
+  ! of order one: m the largest component at the nodes, or at the
+  ! points, of positive measure; I the integral of the sum of exp(rho
+  ! (f_i - m)), in every column; the value m + log(I) / rho and its
+  ! derivative along each expansion I' / (rho I).
+  !===================================================================!
+
+  function maximum_over(this, solution) result(total)
+
+    class(continuous_field), intent(in) :: this
+    type(discrete_field)   , intent(in) :: solution
+    real(dp), allocatable :: total(:)
+
+    real(dp), allocatable :: gradient(:,:,:), partial(:,:)
+    real(dp) :: m
+
+    call maximum_parts(this, solution, m, total, gradient, partial)
+    total(2:) = total(2:) / (this % weight * total(1))
+    total(1)  = m + log(total(1)) / this % weight
+
+  end function maximum_over
+
+  ! the largest component m, and the integral I of the shifted
+  ! exponentials with its differential, in every column
+  subroutine maximum_parts(this, solution, m, total, gradient, partial)
+
+    class(continuous_field), intent(in)  :: this
+    type(discrete_field)   , intent(in)  :: solution
+    real(dp)               , intent(out) :: m
+    real(dp), allocatable  , intent(out) :: total(:), gradient(:,:,:), partial(:,:)
+
+    type(continuous_field) :: shifted
+    type(expression) :: summed, g
+    real(dp), allocatable :: q(:), w(:), values(:), gd(:), position(:)
+    integer , allocatable :: slot(:)
+    real(dp) :: value, measure
+    integer  :: i, p, k, nnodes
+    logical  :: over_nodes
+
+    if (solution % on % expansion % order > 1) then
+       error stop 'operation_field: a smooth maximum is evaluated along the design to the first order'
+    end if
+    if (.not. (allocated(solution % rule) .and. (allocated(solution % jet) .or. allocated(solution % node_jet)))) then
+       error stop 'operation_field: a smooth maximum is evaluated on the solution of a residual, which stores &
+            &the jet at every point'
+    end if
+    ! the largest component, at the nodes of the families' rule or at
+    ! the points
+    over_nodes = allocated(solution % node_weight)
+    if (over_nodes) then
+       nnodes = size(solution % node_weight)
+    else
+       nnodes = size(solution % jet, 2)
+    end if
+    values = solution % on % expansion % values()
+    m = -huge(1.0_dp)
+    do i = 1, size(this % component)
+       g = jet_form(this % component(i))
+       if (over_nodes .and. allocated(solution % node_rule)) then
+          call jet_slots(g, solution % node_rule, slot)
+       else
+          call jet_slots(g, solution % rule, slot)
+       end if
+       if (allocated(q)) deallocate(q, w, gd)
+       allocate(q(0:size(slot) - 1), w(0:size(slot) - 1), gd(size(values)))
+       do p = 1, nnodes
+          if (over_nodes) then
+             if (solution % node_image(p) /= this_image()) cycle
+             measure  = solution % node_weight(p)
+             position = solution % node_position(:, p)
+             if (this % integrated_part == TIME_FACE) then
+                measure = 0.0_dp
+                if (solution % node_point(p) > 0) then
+                   measure = solution % on % measure_on_face(solution % node_point(p), this % integrated_time)
+                end if
+             end if
+             do k = 0, size(slot) - 1
+                q(k) = solution % node_jet(slot(k), p, 1)
+             end do
+          else
+             measure  = solution % on % measure(p)
+             position = solution % on % position(p)
+             if (this % integrated_part == TIME_FACE) measure = solution % on % measure_on_face(p, this % integrated_time)
+             do k = 0, size(slot) - 1
+                q(k) = solution % jet(slot(k), p, 1)
+             end do
+          end if
+          if (measure == 0.0_dp) cycle
+          call g % gradient_at(q, values, value, w, position, gd)
+          m = max(m, value)
+       end do
+    end do
+    if (over_nodes) then
+       if (any(solution % node_image /= this_image())) call co_max(m)
+    end if
+
+    ! the integral of the shifted exponentials, and the logarithm
+    summed = exp(this % weight * (this % component(1) - m))
+    do i = 2, size(this % component)
+       summed = summed + exp(this % weight * (this % component(i) - m))
+    end do
+    shifted = this
+    shifted % weight    = 0.0_dp
+    shifted % component = [summed]
+    shifted % index     = [0]
+    call functional_over(shifted, solution, total, gradient, partial)
+
+  end subroutine maximum_parts
+
+  !===================================================================!
   ! THE EXPANSION A FIELD'S JET IS ALONG: the support's, to the order
   ! the jet stores; for the derivative along one expansion, that
   ! expansion alone, from the derivative's own column on.
@@ -736,6 +911,7 @@ contains
     type(discrete_field), intent(inout) :: to
     if (allocated(from % node_weight)) then
        to % node_jet      = from % node_jet
+       if (allocated(from % node_rule)) to % node_rule = from % node_rule
        to % node_weight   = from % node_weight
        to % node_position = from % node_position
        to % node_point    = from % node_point
@@ -1987,5 +2163,13 @@ contains
     call require_scalar(a, 'sqrt'); call require_linear(a, 'sqrt')
     this = composed(a, sqrt(a % component(1)))
   end function root_of
+
+  ! the step H(a), of the coordinates alone
+  function step_of(a) result(this)
+    type(continuous_field), intent(in) :: a
+    type(continuous_field) :: this
+    call require_scalar(a, 'heaviside'); call require_linear(a, 'heaviside')
+    this = composed(a, heaviside(a % component(1)))
+  end function step_of
 
 end module operation_field

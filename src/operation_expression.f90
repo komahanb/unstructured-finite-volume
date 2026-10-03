@@ -108,7 +108,7 @@ module operation_expression
   public :: partial_derivative, partial_in_design, total_derivative, stationarity, boundary_terms
   public :: flux_form, coefficient_form
   public :: operator(+), operator(-), operator(*), operator(/), operator(**)
-  public :: sin, cos, exp, log, sqrt
+  public :: sin, cos, exp, log, sqrt, heaviside
 
   ! the vertex kinds
   integer, parameter, public :: VERTEX_LEAF          = 1
@@ -138,12 +138,16 @@ module operation_expression
   integer, parameter, public :: ARGUMENT_MULTIPLIER = 3
   integer, parameter, public :: ARGUMENT_COORDINATE = 4
 
-  ! the elementary functions
+  ! the elementary functions; the step H(a), one where a >= 0 and zero
+  ! elsewhere, of a function of the coordinates alone: its derivative
+  ! along a coordinate a reads is a measure, not a function, and is
+  ! refused, and along any other zero
   integer, parameter, public :: SINE        = 1
   integer, parameter, public :: COSINE      = 2
   integer, parameter, public :: EXPONENTIAL = 3
   integer, parameter, public :: LOGARITHM   = 4
   integer, parameter, public :: SQUARE_ROOT = 5
+  integer, parameter, public :: UNIT_STEP   = 6
 
   ! ONE VERTEX AS A VALUE, for a view: the kind, the two vertices
   ! read (0 if none), a leaf's argument, field, order and coordinate,
@@ -274,6 +278,10 @@ module operation_expression
   interface sqrt
      module procedure root_of
   end interface sqrt
+
+  interface heaviside
+     module procedure step_of
+  end interface heaviside
 
 contains
 
@@ -600,9 +608,11 @@ contains
   ! THE COMPONENT A REPRESENTATION LAW DEFINES: for a law d^b(q) - p,
   ! an operator applied to a jet component less the jet component the
   ! operator denotes, the field, the order and the coordinate of p;
-  ! zeros for any other law. A law whose jet form is not the
-  ! difference of two equal state components, or that has no
-  ! operator, is not a representation law.
+  ! zeros for any other law. A law that is not the difference of
+  ! operators on a leaf and a leaf, whose jet form is not the
+  ! difference of two equal state components, or that has no operator,
+  ! is not a representation law; the shape is read before the jet
+  ! form, so that no other law is differentiated.
   !===================================================================!
 
   function represented_component(x) result(defined)
@@ -615,6 +625,14 @@ contains
 
     defined = 0
     if (.not. any(x % kind == VERTEX_DERIVATIVE)) return
+    r = x % root()
+    if (x % kind(r) /= VERTEX_DIFFERENCE) return
+    a = x % first(r)
+    if (x % kind(x % second(r)) /= VERTEX_LEAF) return
+    do while (x % kind(a) == VERTEX_DERIVATIVE)
+       a = x % first(a)
+    end do
+    if (x % kind(a) /= VERTEX_LEAF) return
     form = jet_form(x)
     r = form % root()
     if (form % kind(r) /= VERTEX_DIFFERENCE) return
@@ -1069,6 +1087,9 @@ contains
           else
              this = da / (constant(2.0_dp) * sqrt(a))
           end if
+       case (UNIT_STEP)
+          error stop 'operation_expression: the derivative of a step along a variable its argument reads is a &
+               &measure, not a function'
        case default
           error stop 'operation_expression: the function is not one this module differentiates'
        end select
@@ -1680,6 +1701,18 @@ contains
     this = applied(a, VERTEX_FUNCTION, SQUARE_ROOT, 0.0_dp)
   end function root_of
 
+  function step_of(a) result(this)
+    type(expression), intent(in) :: a
+    type(expression) :: this
+    integer :: i
+    do i = 1, a % num_vertices()
+       if (a % kind(i) == VERTEX_LEAF .and. a % position(i) /= ARGUMENT_COORDINATE) then
+          error stop 'operation_expression: a step is a function of the coordinates alone'
+       end if
+    end do
+    this = applied(a, VERTEX_FUNCTION, UNIT_STEP, 0.0_dp)
+  end function step_of
+
   !===================================================================!
   ! EVALUATION: the loop over the vertices, over derivative_terms. A
   ! state component past those given, or a function index outside
@@ -1822,6 +1855,11 @@ contains
           case (EXPONENTIAL); v(i) = exp(v(f));  dv(i) =  v(i) * dv(f)
           case (LOGARITHM);   v(i) = log(v(f));  dv(i) =  dv(f) / v(f)
           case (SQUARE_ROOT); v(i) = sqrt(v(f)); dv(i) =  dv(f) / (2.0_dp * v(i))
+          case (UNIT_STEP)
+             if (dv(f) /= 0.0_dp) error stop 'operation_expression: a step is differentiated along a direction &
+                  &its argument reads, where its derivative is a measure'
+             v(i)  = merge(1.0_dp, 0.0_dp, v(f) >= 0.0_dp)
+             dv(i) = 0.0_dp
           case default
              error stop 'operation_expression: this vertex names a function that is not one of &
                   &those defined'
@@ -1969,6 +2007,7 @@ contains
           case (LOGARITHM);   d =  1.0_dp / v(f);      dd = -dv(f) / (v(f) * v(f))
           case (SQUARE_ROOT); d =  0.5_dp / v(i);      dd = -0.5_dp * dv(i) / (v(i) * v(i))
           case default
+             ! the step, of the coordinates alone
              d  = 0.0_dp
              dd = 0.0_dp
           end select
@@ -2127,6 +2166,11 @@ contains
           case (EXPONENTIAL); call exponential_terms(v(:, f), v(:, i))
           case (LOGARITHM);   call logarithm_terms(v(:, f), v(:, i))
           case (SQUARE_ROOT); call real_power_terms(v(:, f), 0.5_dp, v(:, i))
+          case (UNIT_STEP)
+             if (any(v(1:, f) /= 0.0_dp)) error stop 'operation_expression: a step is differentiated along a &
+                  &direction its argument reads, where its derivative is a measure'
+             v(:, i) = 0.0_dp
+             v(0, i) = merge(1.0_dp, 0.0_dp, v(0, f) >= 0.0_dp)
           case default
              error stop 'operation_expression: this vertex names a function that is not one of &
                   &those defined'

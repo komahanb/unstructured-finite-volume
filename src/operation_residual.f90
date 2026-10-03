@@ -440,6 +440,13 @@ module operation_residual
      ! each block after the first starts from the solution at the last
      ! instant before it (minimize, continued)
      logical                 :: continued = .false.
+     ! THE MULTIPLIERS OF THE INEQUALITIES ON FUNCTIONALS of the state,
+     ! one per inequality in the order stated, zero for one on the
+     ! design alone: the reverse sweep adds each functional's
+     ! differential times its multiplier to the objective's, the
+     ! Lagrangian's, so that the multipliers of the design and their
+     ! expansion are its gradient and its hessian in the design
+     real(dp), allocatable   :: functional_weight(:)
 
    contains
 
@@ -447,6 +454,7 @@ module operation_residual
      procedure :: disagreement
      procedure, private :: zero_at_design
      procedure, private :: inequalities_at
+     procedure, private :: functional_inequalities
      procedure, private :: place_inequality_multipliers
      procedure, private :: check_representations
      procedure, private :: num_represented
@@ -2295,8 +2303,8 @@ contains
   !===================================================================!
   ! The objective added to a residual, J + lambda . r: a scalar
   ! field, the integral of a function of the state over the
-  ! manifold. Invalid input: a field that is not an integral or not
-  ! scalar, or a residual with an objective already.
+  ! manifold, or the smooth maximum of several. Invalid input: a field
+  ! that is neither, or a residual with an objective already.
   !===================================================================!
 
   function objective_sum(objective, residual) result(this)
@@ -2306,10 +2314,11 @@ contains
     type(continuous_residual) :: this
 
     if (.not. objective % is_integral()) then
-       error stop 'operation_residual: the objective is the integral of a field over the manifold'
+       error stop 'operation_residual: the objective is the integral of a field over the manifold, or its &
+            &smooth maximum'
     end if
-    if (objective % num_components() /= 1) then
-       error stop 'operation_residual: the objective is a scalar field'
+    if (objective % num_components() /= 1 .and. .not. objective % weight > 0.0_dp) then
+       error stop 'operation_residual: the objective is the integral of a scalar field'
     end if
     if (allocated(residual % objective)) then
        error stop 'operation_residual: one objective enters the Lagrangian'
@@ -2465,7 +2474,7 @@ contains
     integer :: k, j, i, whole_term, num_conditions, nf
     integer, allocatable :: defined(:,:)
     logical, allocatable :: representation(:)
-    logical :: covering
+    logical :: covering, projected
     type(expression) :: form
     real(dp) :: given
     real(dp), allocatable :: slope(:)
@@ -2526,14 +2535,17 @@ contains
       ! multiplier is the j-th equation, the row of the j-th unknown
       ! every derivative operator replaced by the jet components it
       ! denotes, here and nowhere else: the rule, the conditions and the
-      ! objective are evaluated in their jet form
-      image % rule = paired([(jet_form(t % equation(j) % graph(1)), j = 1, size(t % equation))])
+      ! objective are evaluated in their jet form. Under a projection on
+      ! the cells the projection forms the rule from the equations as
+      ! they are, the outer derivatives along space read as fluxes and
+      ! never formed
+      projected = .false.
+      if (present(space)) projected = space % projects()
+      if (.not. projected) image % rule = paired([(jet_form(t % equation(j) % graph(1)), j = 1, size(t % equation))])
     end associate
 
+    if (projected) call projected_form(image, this % term(whole_term), space, points, defined)
     call image % check_representations(defined, present(time), present(space))
-    if (present(space)) then
-       if (space % projects()) call projected_form(image, this % term(whole_term), space, points, defined)
-    end if
     if (any(image % manifold % of_time_alone(1:nf)) .and. .not. allocated(image % elements)) then
        error stop 'operation_residual: an unknown of time alone on a manifold of space is stated under a &
             &projection on the cells, which tests its equation with the weight alone'
@@ -2561,14 +2573,23 @@ contains
                &space approximated at every point, a derivative approximation'
        end if
        ! an inequality on the design factor is a function of the design
-       ! coordinates alone
+       ! coordinates alone, or a functional of the state over the whole
+       ! manifold, an integral or a smooth maximum
        if (image % condition(j) % inequality) then
           do i = 1, size(image % condition(j) % equation)
-             form = image % condition(j) % equation(i) % graph(1)
-             if (form % reads_state()) then
-                error stop 'operation_residual: an inequality on the design factor is a function of the design &
-                     &coordinates alone'
-             end if
+             associate (equation => image % condition(j) % equation(i))
+               form = equation % graph(1)
+               if (equation % is_integral()) then
+                  if (equation % integrated_part /= WHOLE .or. &
+                       & .not. equation % integrated_over % matches(image % manifold % identity)) then
+                     error stop 'operation_residual: an inequality on a functional of the state is over the whole &
+                          &manifold'
+                  end if
+               else if (form % reads_state()) then
+                  error stop 'operation_residual: an inequality on the design factor is a function of the design &
+                       &coordinates alone, or a functional of the state over the manifold'
+               end if
+             end associate
           end do
        ! a condition on the design factor fixes the design coordinate
        ! at the value the manifold states: nu - nu_0 = 0, one equation
@@ -2674,6 +2695,24 @@ contains
   ! squares on the active inequalities. Invalid input: an inequality
   ! and an equality on the design factor together.
   !
+  ! An inequality on a FUNCTIONAL OF THE STATE - an integral or a
+  ! smooth maximum over the manifold - has its value and its gradient
+  ! from the expansion of the state, and enters the reverse sweep times
+  ! its multiplier of the step before: the hessian of the model is that
+  ! of the Lagrangian J + mu . c. The merit of an iterate is J plus the
+  ! violations times a penalty, at least twice every multiplier; a step
+  ! that does not decrease it by a tenth of the decrease its model
+  ! predicts is taken again from the design before it, with the
+  ! hessian shifted by sigma times the identity, sigma raised fourfold
+  ! from at least |dJ/ds| / (0.1 max(1, |s|)), and with each violated
+  ! inequality linearized to remove a quarter of the fraction of its
+  ! violation the step before removed, c + A d <= (1 - theta) c; a
+  ! hessian that is not positive definite is shifted from that value
+  ! too, and the shift falls and theta rises fourfold, to one, after a
+  ! step that decreases the merit by more than three quarters of its
+  ! prediction. A positive definite hessian whose steps all decrease
+  ! the merit is never shifted, and theta is one.
+  !
   ! CONTINUED, each block of the chain after the first starts Newton's
   ! iteration from the solution at the last instant before it, at its
   ! instants and the stages of its steps, rather than from the
@@ -2691,10 +2730,15 @@ contains
     logical                 , intent(in), optional :: continued
 
     type(discrete_residual) :: iterate
-    real(dp), allocatable :: kappa(:,:), gradient(:), hessian(:,:), c(:), a(:,:), step(:), mu(:)
+    type(discrete_field)    :: functional
+    real(dp), allocatable :: kappa(:,:), gradient(:), hessian(:,:), c(:), a(:,:), step(:), mu(:), weight(:)
+    real(dp), allocatable :: accepted(:), accepted_gradient(:), accepted_hessian(:,:), accepted_c(:), accepted_a(:,:)
     integer , allocatable :: active(:)
-    real(dp) :: tolerance, stationarity
+    logical , allocatable :: of_state(:)
+    real(dp) :: tolerance, stationarity, objective, accepted_objective, penalty, shift, reach, predicted, decrease
+    real(dp) :: reduction
     integer :: n, j, iteration
+    logical :: with_accepted, refused
     character(len=250) :: message
 
     if (present(continued)) then
@@ -2731,14 +2775,25 @@ contains
     n = iterate % points % expansion % num_designs()
     allocate(gradient(n), hessian(n, n))
     tolerance = 0.0_dp
+    of_state  = iterate % functional_inequalities()
+    allocate(weight(size(of_state)), source=0.0_dp)
+    penalty   = 0.0_dp
+    shift     = 0.0_dp
+    reduction = 1.0_dp
+    predicted = 0.0_dp
+    with_accepted = .false.
     do iteration = 1, MAX_DESIGN_ITERATIONS
+       if (any(of_state)) iterate % functional_weight = weight
        call iterate % zero_at_design(estimate, solution, checkpoint, snapshots, kappa)
+       call iterate % inequalities_at(solution, c, a)
+       ! the gradient of J: the Lagrangian's less the functionals' times
+       ! the multipliers the reverse sweep read
        gradient = -kappa(:, 0)
+       if (any(of_state)) gradient = gradient - matmul(weight, a)
        do j = 1, n
           hessian(:, j) = -kappa(:, iterate % points % expansion % column(j, 1))
        end do
        if (iteration == 1) tolerance = 1.0e-10_dp * max(1.0_dp, norm2(gradient))
-       call iterate % inequalities_at(c, a)
        if (size(c) == 0) then
           if (verbosity >= 1) print '(a, i0, a, es12.4, a, *(es24.16))', 'design iteration ', iteration, &
                & '  |dJ/ds| = ', norm2(gradient), '  s = ', iterate % points % expansion % at
@@ -2746,14 +2801,58 @@ contains
           iterate % points % expansion % at = iterate % points % expansion % at - linear_solution(hessian, gradient)
           cycle
        end if
-       call quadratic_step(hessian, gradient, c, a, step, mu)
+
+       ! the iterate against the design before it: refused, the step is
+       ! taken again from there, shorter
+       functional = iterate % objective % at(solution)
+       objective  = functional % value(1, 1)
+       refused    = .false.
+       if (with_accepted) then
+          decrease = accepted_objective + penalty * sum(max(accepted_c, 0.0_dp)) &
+               & - (objective + penalty * sum(max(c, 0.0_dp)))
+          ! a decrease predicted below the rounding of the merit is not
+          ! tested
+          refused  = decrease < 0.1_dp * predicted .and. predicted > 1.0e-12_dp * max(1.0_dp, &
+               & abs(accepted_objective) + penalty * sum(max(accepted_c, 0.0_dp)))
+          if (refused) then
+             iterate % points % expansion % at = accepted
+             gradient  = accepted_gradient
+             hessian   = accepted_hessian
+             c         = accepted_c
+             a         = accepted_a
+             objective = accepted_objective
+             shift     = max(4.0_dp * shift, reach)
+             reduction = reduction / 4.0_dp
+          else if (decrease > 0.75_dp * predicted) then
+             shift = shift / 4.0_dp
+             if (shift < 1.0e-3_dp * reach) shift = 0.0_dp
+             reduction = min(1.0_dp, 4.0_dp * reduction)
+          end if
+       end if
+       if (.not. refused) then
+          accepted           = iterate % points % expansion % at
+          accepted_gradient  = gradient
+          accepted_hessian   = hessian
+          accepted_c         = c
+          accepted_a         = a
+          accepted_objective = objective
+          with_accepted      = .true.
+       end if
+
+       ! the step: the hessian shifted while it is not positive definite
+       reach = norm2(gradient) / (0.1_dp * max(1.0_dp, maxval(abs(accepted))))
+       if (.not. positive_definite(hessian, shift)) shift = max(shift, reach)
+       do while (.not. positive_definite(hessian, shift))
+          shift = 2.0_dp * shift
+       end do
+       call quadratic_step(shifted(hessian, shift), gradient, c - (1.0_dp - reduction) * max(c, 0.0_dp), a, step, mu)
        stationarity = norm2(gradient + matmul(transpose(a), mu))
        if (verbosity >= 1) then
-          write(message, '(a, i0, a)') '(a, i0, a, es12.4, a, ', n, 'es24.16, a, *(es24.16))'
-          print trim(message), 'design iteration ', iteration, '  |dJ/ds + A^T mu| = ', stationarity, '  s = ', &
-               & iterate % points % expansion % at, '  mu = ', mu
+          write(message, '(a, i0, a)') '(a, i0, a, es12.4, a, es12.4, a, ', n, 'es24.16, a, *(es24.16))'
+          print trim(message), 'design iteration ', iteration, '  |dJ/ds + A^T mu| = ', stationarity, &
+               & '  shift = ', shift, '  s = ', iterate % points % expansion % at, '  mu = ', mu
        end if
-       if (stationarity < tolerance .and. maxval(c) <= 1.0e-12_dp * max(1.0_dp, maxval(abs(c)))) then
+       if (.not. refused .and. stationarity < tolerance .and. maxval(c) <= 1.0e-12_dp * max(1.0_dp, maxval(abs(c)))) then
           ! the multipliers of the design returned, not of the step:
           ! dJ/ds + A^T mu = 0 by least squares on the active inequalities
           active = pack([(j, j = 1, size(c))], mu > 0.0_dp)
@@ -2762,7 +2861,13 @@ contains
           call iterate % place_inequality_multipliers(mu, solution)
           return
        end if
-       iterate % points % expansion % at = iterate % points % expansion % at + step
+       ! the penalty at least twice every multiplier, and the decrease of
+       ! the merit the model predicts for the step
+       penalty   = max(penalty, 2.0_dp * maxval(mu))
+       predicted = -(dot_product(gradient, step) + dot_product(step, matmul(hessian, step)) / 2.0_dp) &
+            & + penalty * (sum(max(c, 0.0_dp)) - sum(max(c + matmul(a, step), 0.0_dp)))
+       weight = merge(mu, 0.0_dp, of_state)
+       iterate % points % expansion % at = accepted + step
     end do
     write(message, '(a,i0,a)') 'operation_residual: Newton''s iteration on the free design did not reach &
          &dJ/ds = 0 in ', MAX_DESIGN_ITERATIONS, ' iterations'
@@ -2773,17 +2878,21 @@ contains
   !===================================================================!
   ! THE INEQUALITIES ON THE DESIGN FACTOR at the design the manifold
   ! states: c(i) the value of the i-th equation, a(i, :) its gradient
-  ! in the design coordinates; none where no inequality is stated.
+  ! in the design coordinates; none where no inequality is stated. A
+  ! functional of the state is evaluated on the solution, its gradient
+  ! the expansion's column of order one along each design coordinate.
   !===================================================================!
 
-  subroutine inequalities_at(this, c, a)
+  subroutine inequalities_at(this, solution, c, a)
 
     class(discrete_residual), intent(in)  :: this
+    type(discrete_field)    , intent(in)  :: solution
     real(dp), allocatable   , intent(out) :: c(:), a(:,:)
 
+    type(discrete_field) :: functional
     real(dp), allocatable :: slope(:)
     real(dp) :: given
-    integer :: j, i, m
+    integer :: j, i, m, d
 
     m = 0
     do j = 1, size(this % condition)
@@ -2795,6 +2904,14 @@ contains
        if (.not. this % condition(j) % inequality) cycle
        do i = 1, size(this % condition(j) % equation)
           m = m + 1
+          if (this % condition(j) % equation(i) % is_integral()) then
+             functional = this % condition(j) % equation(i) % at(solution)
+             c(m) = functional % value(1, 1)
+             do d = 1, size(a, 2)
+                a(m, d) = functional % value(1, 1 + this % points % expansion % column(d, 1))
+             end do
+             cycle
+          end if
           call design_condition(this % condition(j) % equation(i), this % points % expansion % values(), given, slope)
           c(m)    = -given
           a(m, :) = slope
@@ -2802,6 +2919,24 @@ contains
     end do
 
   end subroutine inequalities_at
+
+  ! which of the inequalities, in the order stated, are on functionals
+  ! of the state
+  function functional_inequalities(this) result(of_state)
+
+    class(discrete_residual), intent(in) :: this
+    logical, allocatable :: of_state(:)
+
+    integer :: j, i
+
+    allocate(of_state(0))
+    do j = 1, size(this % condition)
+       if (.not. this % condition(j) % inequality) cycle
+       of_state = [of_state, (this % condition(j) % equation(i) % is_integral(), &
+            & i = 1, size(this % condition(j) % equation))]
+    end do
+
+  end function functional_inequalities
 
   ! the multipliers of the inequalities into the solution, each a
   ! function on the design factor: its value at every point
@@ -2885,6 +3020,37 @@ contains
     error stop 'operation_residual: the active set of the inequalities on the design does not settle'
 
   end subroutine quadratic_step
+
+  ! whether h + shift I is positive definite, the symmetric part of h
+  ! read: its factor by Cholesky exists
+  pure logical function positive_definite(h, shift)
+    real(dp), intent(in) :: h(:,:), shift
+    real(dp) :: l(size(h, 1), size(h, 1)), s
+    integer :: i, j
+    l = 0.0_dp
+    positive_definite = .false.
+    do j = 1, size(h, 1)
+       s = h(j, j) + shift - sum(l(j, 1:j - 1)**2)
+       if (.not. s > 0.0_dp) return
+       l(j, j) = sqrt(s)
+       do i = j + 1, size(h, 1)
+          l(i, j) = ((h(i, j) + h(j, i)) / 2.0_dp - sum(l(i, 1:j - 1) * l(j, 1:j - 1))) / l(j, j)
+       end do
+    end do
+    positive_definite = .true.
+  end function positive_definite
+
+  ! h + shift I
+  pure function shifted(h, shift) result(s)
+    real(dp), intent(in) :: h(:,:), shift
+    real(dp) :: s(size(h, 1), size(h, 2))
+    integer :: i
+    s = h
+    if (shift == 0.0_dp) return
+    do i = 1, size(h, 1)
+       s(i, i) = s(i, i) + shift
+    end do
+  end function shifted
 
   ! a design on which no equality is stated
   logical function free_design(this)
@@ -3031,6 +3197,12 @@ contains
             &binomial schedule; one of the two is given'
     end if
     scheduled = segment > 0 .or. shots > 0
+    if (scheduled .and. allocated(this % functional_weight)) then
+       if (any(this % functional_weight /= 0.0_dp)) then
+          error stop 'operation_residual: an inequality on a functional of the state is solved without a checkpoint &
+               &or snapshot schedule, which integrates the objective alone'
+       end if
+    end if
     if (scheduled .and. allocated(this % elements)) then
        error stop 'operation_residual: a law projected on the cells is not solved under a checkpoint or snapshot &
             &schedule'
@@ -3299,6 +3471,7 @@ contains
       solution % rule = this % rule
       if (.not. scheduled) then
          solution % node_jet      = with_nodes % node_jet
+         if (allocated(with_nodes % node_rule)) solution % node_rule = with_nodes % node_rule
          solution % node_weight   = with_nodes % node_weight
          solution % node_position = with_nodes % node_position
          solution % node_point    = with_nodes % node_point
@@ -3989,9 +4162,9 @@ contains
     real(dp), allocatable   , intent(out) :: adjoint(:,:,:,:), reaction(:,:,:), gauge(:,:,:)
     real(dp), allocatable   , intent(out) :: design_multiplier(:,:)
 
-    real(dp), allocatable :: gradient(:,:,:), partial(:,:), incoming(:,:,:,:)
+    real(dp), allocatable :: gradient(:,:,:), partial(:,:), incoming(:,:,:,:), g(:,:,:), p(:,:)
     type(chain_block) :: point
-    integer :: stride, ninst, b, nb, first, last, depth, ncol, ni
+    integer :: stride, ninst, b, nb, first, last, depth, ncol, ni, j, i, m
 
     stride = this % rule % num_components()
     ninst  = this % points % num_instants()
@@ -4001,7 +4174,23 @@ contains
     if (allocated(this % objective)) then
        call this % objective % differential(solution, gradient, partial)
     else
-       allocate(gradient(stride, size(solution % node_weight), 0:ncol - 1), partial(ni, 0:ncol - 1), source=0.0_dp)
+       allocate(gradient(size(solution % node_jet, 1), size(solution % node_weight), 0:ncol - 1), &
+            & partial(ni, 0:ncol - 1), source=0.0_dp)
+    end if
+    ! the functionals of the inequalities, each times its multiplier:
+    ! the differential of the Lagrangian's functionals
+    if (allocated(this % functional_weight)) then
+       m = 0
+       do j = 1, size(this % condition)
+          if (.not. this % condition(j) % inequality) cycle
+          do i = 1, size(this % condition(j) % equation)
+             m = m + 1
+             if (this % functional_weight(m) == 0.0_dp) cycle
+             call this % condition(j) % equation(i) % differential(solution, g, p)
+             gradient = gradient + this % functional_weight(m) * g
+             partial  = partial  + this % functional_weight(m) * p
+          end do
+       end do
     end if
 
     call this % allocate_multipliers(partial, ninst, adjoint, incoming, reaction, gauge, design_multiplier)
@@ -5250,6 +5439,7 @@ contains
     type(residual_operator) :: lin
     real(dp), allocatable :: rhs(:)
     integer :: stride, n, k, c, i, base, unknowns, column, nsites, site
+    integer, allocatable :: formed(:,:)
 
     stride   = blk % rows % degrees
     n        = blk % last - blk % first + 1
@@ -5261,20 +5451,21 @@ contains
        ! projected: the differential at the sites, returned to the
        ! nodes by the transpose of the basis that formed the sites' jets
        nsites = this % elements % num_cells() * this % elements % num_quadrature_points()
+       call this % formed_components(formed)
        do k = blk % depth + 1, n
           do c = 1, blk % num_cells
              base = blk % tuple_at(blk % instant_moment(k), c)
              rhs(base + 1:base + stride) = incoming(:, c, blk % first + k - 1, column)
           end do
           do site = 1, nsites
-             call this % site_gradient(site, gradient(1:stride, (blk % first + k - 2) * nsites + site, column), &
+             call this % site_gradient(formed, site, gradient(:, (blk % first + k - 2) * nsites + site, column), &
                   & blk, blk % instant_moment(k), rhs)
           end do
        end do
        do k = 1, n - 1
           do i = 1, blk % num_stages
              do site = 1, nsites
-                call this % site_gradient(site, gradient(1:stride, stage_node(blk % first + k, i, site), column), &
+                call this % site_gradient(formed, site, gradient(:, stage_node(blk % first + k, i, site), column), &
                      & blk, blk % instant_moment(k) + i, rhs)
              end do
           end do
@@ -6653,13 +6844,14 @@ contains
     integer , allocatable   , intent(out)   :: stage_node(:,:,:)
 
     type(derivative_terms), allocatable :: dt(:), weight(:)
-    integer , allocatable :: instant(:), cell_owner(:)
+    integer , allocatable :: instant(:), cell_owner(:), formed(:,:)
     real(dp), allocatable :: position(:)
     integer :: stride, ninst, nsites, nq, nnodes, nn, nb, b, first, last, depth, n, s, smax, k, i, j, e, q, site
     logical :: staged
     real(dp) :: h
 
-    stride = this % rule % num_components()
+    call this % formed_components(formed)
+    stride = this % flux % num_components()
     ninst  = this % points % num_instants()
     nq     = this % elements % num_quadrature_points()
     nsites = this % elements % num_cells() * nq
@@ -6683,6 +6875,7 @@ contains
     allocate(solution % node_position(this % points % num_coordinates(), nnodes), source=0.0_dp)
     allocate(solution % node_point(nnodes), source=0)
     allocate(solution % node_image(nnodes), source=this_image())
+    solution % node_rule = this % flux
     cell_owner = this % cell_owners()
 
     ! the sites at every instant
@@ -6695,7 +6888,7 @@ contains
              position = this % points % position(this % points % point_of(k, this % elements % node(1, e)))
              position(size(position) - this % elements % dimension + 1:) = this % elements % position(:, q, e)
              solution % node_position(:, nn) = position
-             solution % node_jet(:, nn, :) = this % site_jet(e, q, tuple(:, :, k, :))
+             solution % node_jet(:, nn, :) = this % site_jet(formed, e, q, tuple(:, :, k, :))
           end do
        end do
     end do
@@ -6733,7 +6926,7 @@ contains
                         position(1) = position(1) + scheme % stage_abscissa(i) * h
                         position(size(position) - this % elements % dimension + 1:) = this % elements % position(:, q, e)
                         solution % node_position(:, nn) = position
-                        solution % node_jet(:, nn, :) = this % site_jet(e, q, stages(:, :, i, first + k, :))
+                        solution % node_jet(:, nn, :) = this % site_jet(formed, e, q, stages(:, :, i, first + k, :))
                      end do
                   end do
                end do
@@ -6765,37 +6958,32 @@ contains
   end subroutine projected_nodes
 
   !===================================================================!
-  ! THE JET AT A QUADRATURE POINT of the layout of a node's tuple, in
-  ! every column: each component - of a field, an order along time and
-  ! a coefficient - the sum over the element's nodes and their
-  ! coefficients of the basis's derivative the component's coefficient
-  ! names times the nodes' components of the same field and order
-  ! along time. site_gradient is its transpose: a differential at the
-  ! quadrature point returned to the nodes' rows at a moment of a
-  ! block, subtracted from rhs.
+  ! THE JET AT A QUADRATURE POINT of the layout of the flux's tuple,
+  ! in every column: each component - of a field, an order along time
+  ! and an order along space - the sum over the element's nodes and
+  ! their coefficients of the basis's derivative it names times the
+  ! nodes' components of the same field and order along time, as
+  ! formed_components lays them out. site_gradient is its transpose: a
+  ! differential at the quadrature point returned to the nodes' rows
+  ! at a moment of a block, subtracted from rhs.
   !===================================================================!
 
-  pure function site_jet(this, e, q, tuples) result(jet)
+  pure function site_jet(this, formed, e, q, tuples) result(jet)
 
     class(discrete_residual), intent(in) :: this
-    integer                 , intent(in) :: e, q
+    integer                 , intent(in) :: formed(0:,:), e, q
     real(dp)                , intent(in) :: tuples(:,:,0:)
-    real(dp) :: jet(size(tuples, 1), 0:ubound(tuples, 3))
+    real(dp) :: jet(size(formed, 2), 0:ubound(tuples, 3))
 
-    integer :: f, a, kc, c, i, k
+    integer :: c, i, k
 
     jet = 0.0_dp
     associate (el => this % elements)
-      do f = 1, this % manifold % num_unknowns
-         do a = 0, merge(this % rule % degree_of_field(f), 0, this % manifold % with_time)
-            do kc = 0, el % num_coefficients() - 1
-               c = this % coefficient_component(f, kc, a) + 1
-               do i = 1, el % num_nodes()
-                  do k = 0, el % num_coefficients() - 1
-                     jet(c, :) = jet(c, :) + el % basis(this % coefficient_derivative(kc), k, i, q, e) &
-                          & * tuples(this % coefficient_component(f, k, a) + 1, el % node(i, e), :)
-                  end do
-               end do
+      do c = 1, size(formed, 2)
+         if (formed(0, c) < 0) cycle
+         do i = 1, el % num_nodes()
+            do k = 0, el % num_coefficients() - 1
+               jet(c, :) = jet(c, :) + el % basis(formed(0, c), k, i, q, e) * tuples(formed(k + 1, c) + 1, el % node(i, e), :)
             end do
          end do
       end do
@@ -6803,30 +6991,25 @@ contains
 
   end function site_jet
 
-  subroutine site_gradient(this, site, g, blk, m, rhs)
+  subroutine site_gradient(this, formed, site, g, blk, m, rhs)
 
     class(discrete_residual), intent(in)    :: this
-    integer                 , intent(in)    :: site, m
+    integer                 , intent(in)    :: formed(0:,:), site, m
     real(dp)                , intent(in)    :: g(:)
     type(chain_block)       , intent(in)    :: blk
     real(dp)                , intent(inout) :: rhs(:)
 
-    integer :: f, a, kc, c, i, k, e, q, row
+    integer :: c, i, k, e, q, row
 
     associate (el => this % elements)
       e = (site - 1) / el % num_quadrature_points() + 1
       q = site - (e - 1) * el % num_quadrature_points()
-      do f = 1, this % manifold % num_unknowns
-         do a = 0, merge(this % rule % degree_of_field(f), 0, this % manifold % with_time)
-            do kc = 0, el % num_coefficients() - 1
-               c = this % coefficient_component(f, kc, a) + 1
-               if (g(c) == 0.0_dp) cycle
-               do i = 1, el % num_nodes()
-                  do k = 0, el % num_coefficients() - 1
-                     row = blk % tuple_at(m, el % node(i, e)) + this % coefficient_component(f, k, a) + 1
-                     rhs(row) = rhs(row) - el % basis(this % coefficient_derivative(kc), k, i, q, e) * g(c)
-                  end do
-               end do
+      do c = 1, size(formed, 2)
+         if (g(c) == 0.0_dp .or. formed(0, c) < 0) cycle
+         do i = 1, el % num_nodes()
+            do k = 0, el % num_coefficients() - 1
+               row = blk % tuple_at(m, el % node(i, e)) + formed(k + 1, c) + 1
+               rhs(row) = rhs(row) - el % basis(formed(0, c), k, i, q, e) * g(c)
             end do
          end do
       end do

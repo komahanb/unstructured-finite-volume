@@ -63,6 +63,23 @@
 ! -4.2e-13. On 2 and 4 images mu is the same to 2.5e-8: dJ/ds is
 ! computed to 1e-13, as its central differences of steps 1e-9 to 1e-6
 ! show, and the design found moves within that, s2 by 2.2e-12.
+!
+! A third argument misfit=m asks instead for the least mean stiffness
+! whose misfit is at most m, an inequality on a functional of the
+! state paired with mu >= 0:
+!
+!      C(s) = integral over Omega of EI / (EI_0 L T) = 1 + s1/2 + s2/3,
+!      L = C + <adjoint, r> + ... + mu (J - m),
+!
+! J - m one integral over Omega. C is linear in s, so the model's
+! hessian is the Lagrangian's, mu times J's by the reverse sweep with
+! J weighted by mu, and the first steps, before mu is known, are those
+! of the shifted model from s = 0, where J exceeds m. With m = 1e-4 on
+! 21 x 17 the design found is (-0.01538570, 0.40832545) in 13
+! iterations, J - m = 3.0e-15, and with m = 1e-6 (0.49081178,
+! -0.28174700) in 32, J - m = -1.1e-16: in both mu = -dC/ds_i / dJ/ds_i,
+! 104.84257061 and 4135.9907, along s1 and along s2 alike, dJ/ds by
+! the expansion of the state.
 !=====================================================================!
 
 program euler_bernoulli_beam_optimization
@@ -83,13 +100,13 @@ program euler_bernoulli_beam_optimization
   real(dp), parameter :: s_true(2) = [0.5_dp, -0.3_dp]
 
   integer  :: num_instants = 21, num_points = 17
-  real(dp) :: s1_max
+  real(dp) :: s1_max, misfit_max = 0.0_dp
   character(len=32) :: item
 
   type(continuous_manifold) :: omega, initial, left, right
   type(discrete_manifold)   :: omega_h
   type(continuous_field)    :: t, x, s1, s2, w, w_true, exact
-  type(continuous_field)    :: EI, EI_true, rhoA, moment, moment_true, load, misfit
+  type(continuous_field)    :: EI, EI_true, rhoA, moment, moment_true, load, misfit, stiffness
   type(continuous_field)    :: adjoint, lambda, lambda_0, lambda_L, mu
   type(discrete_field)      :: estimate, solution, functional, s_h, mu_h
   type(continuous_residual) :: r, ic, bc_0, bc_L, bound, Lagrangian
@@ -107,7 +124,11 @@ program euler_bernoulli_beam_optimization
   end if
   if (command_argument_count() >= 3) then
      call get_command_argument(3, item)
-     read(item, *) s1_max
+     if (item(1:7) == 'misfit=') then
+        read(item(8:), *) misfit_max
+     else
+        read(item, *) s1_max
+     end if
   end if
 
   ! Omega = [0, L] x [0, T] x {(s1, s2)}, the design from (0, 0); its
@@ -150,10 +171,21 @@ program euler_bernoulli_beam_optimization
   lambda   = ic   % multiplier('lambda')
   lambda_0 = bc_0 % multiplier('lambda_0')
   lambda_L = bc_L % multiplier('lambda_L')
-  Lagrangian = misfit + adjoint*r + lambda*ic + lambda_0*bc_0 + lambda_L*bc_L
+  if (misfit_max > 0.0_dp) then
+     ! the mean stiffness, its misfit at most the bound given: the
+     ! misfit less the bound one integral over Omega
+     stiffness  = integral(EI / (EI_0 * L * T_final), over=omega)
+     Lagrangian = stiffness + adjoint*r + lambda*ic + lambda_0*bc_0 + lambda_L*bc_L
+     bound      = continuous_residual(omega % design(), &
+          & [integral((w - w_true)**2 / 2.0_dp - misfit_max / (L * T_final), over=omega)], inequality=.true.)
+     mu         = bound % multiplier('mu')
+     Lagrangian = Lagrangian + mu*bound
+  else
+     Lagrangian = misfit + adjoint*r + lambda*ic + lambda_0*bc_0 + lambda_L*bc_L
+  end if
 
   ! the bound on s1 when given, paired with mu >= 0
-  if (command_argument_count() >= 3) then
+  if (command_argument_count() >= 3 .and. .not. misfit_max > 0.0_dp) then
      bound      = continuous_residual(omega % design(), [s1 - s1_max], inequality=.true.)
      mu         = bound % multiplier('mu')
      Lagrangian = Lagrangian + mu*bound
@@ -177,6 +209,14 @@ program euler_bernoulli_beam_optimization
   if (command_argument_count() >= 3) then
      mu_h = solution % fields(['mu'])
      if (this_image() == 1) print '(a, es16.8)', 'mu          = ', mu_h % value(1, 1)
+  end if
+  ! with the misfit bounded: J and the mean stiffness, each with its
+  ! derivatives by the expansion, and the stationarity of C + mu J
+  if (misfit_max > 0.0_dp) then
+     if (this_image() == 1) print '(a, 3es24.16)', 'J, dJ/ds    = ', values
+     functional = stiffness % at(solution)
+     call functional % values(values(1:3))
+     if (this_image() == 1) print '(a, 3es24.16)', 'C, dC/ds    = ', values
   end if
 
 end program euler_bernoulli_beam_optimization

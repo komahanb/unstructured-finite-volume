@@ -105,7 +105,7 @@ program blade_on_hub
   call spinner % body(omega, hub, 'hub', [0.0_dp, 0.0_dp, height], 20.0_dp, inertia, angular_velocity=speed * ez)
   if (trim(model) == 'beam') then
      call spinner % beam(omega, blade, hub, 'blade', x, [root, 0.0_dp, height], axes, density, modulus, poisson, &
-          & chord, thickness)
+          & chord, continuous_field(omega, [thickness]))
   else
      mass  = density * thickness * (tip - root) * chord
      plate = 0.0_dp

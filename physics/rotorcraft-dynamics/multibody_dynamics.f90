@@ -67,7 +67,10 @@
 ! law of an unknown of time alone it reads gains the integral over the
 ! span of its stationarity there; the laws of the blade's fields are
 ! the stationarity of that density along t and x, the outer
-! derivatives along x read by the elements as fluxes.
+! derivatives along x read by the elements as fluxes. Its thickness
+! is a field of the span and of the design; its stress (stress) the
+! von Mises function at the corners of its section and at the middles
+! of its long sides.
 !
 ! A TABLE OF BODIES is read from a file of one body a line, a line
 ! that begins with # aside: the name, the name of a surface mesh, the
@@ -124,8 +127,10 @@ module multibody_dynamics
   ! axes, its section, and its fields of time and span
   type :: beam_blade
      character(len=:), allocatable :: name
-     real(dp) :: root(3) = 0.0_dp, axes(3,3) = 0.0_dp, chord = 0.0_dp, thickness = 0.0_dp
-     type(continuous_field) :: u, v, w, phi
+     real(dp) :: root(3) = 0.0_dp, axes(3,3) = 0.0_dp, chord = 0.0_dp, modulus = 0.0_dp, shear = 0.0_dp
+     type(continuous_field) :: x, thickness, u, v, w, phi
+   contains
+     procedure :: stress
   end type beam_blade
 
   ! the points of a surface in the reference configuration, and its
@@ -322,9 +327,10 @@ contains
   ! the axial strain to second order in the slopes, eps = u_x + (v_x^2
   ! + w_x^2)/2, which stiffens the turning blade; A = c h, EI_f = E c
   ! h^3/12, EI_c = E h c^3/12, GJ = G (1 - 0.63 h/c) c h^3/3 of the thin
-  ! rectangle, G = E/(2 (1 + nu)). At the root the blade is fixed to the
-  ! body, u, v, w, phi, v_x and w_x zero; it begins at rest in the
-  ! body's axes, and its estimate is zero.
+  ! rectangle, G = E/(2 (1 + nu)). The thickness h is a field of the
+  ! span and of the design, the chord a number. At the root the blade
+  ! is fixed to the body, u, v, w, phi, v_x and w_x zero; it begins at
+  ! rest in the body's axes, and its estimate is zero.
   !===================================================================!
 
   subroutine beam(this, omega, blade, b, name, x, root, axes, density, modulus, poisson, chord, thickness)
@@ -334,18 +340,22 @@ contains
     type(beam_blade)         , intent(out)   :: blade
     type(rigid_body)         , intent(in)    :: b
     character(len=*)         , intent(in)    :: name
-    type(continuous_field)   , intent(in)    :: x
-    real(dp)                 , intent(in)    :: root(3), axes(3,3), density, modulus, poisson, chord, thickness
+    type(continuous_field)   , intent(in)    :: x, thickness
+    real(dp)                 , intent(in)    :: root(3), axes(3,3), density, modulus, poisson, chord
 
     type(continuous_field) :: centre(3), p(3), rate, turning(3), body_rate(3), slope_v, slope_w, strain, energy
-    type(continuous_field) :: zero
-    real(dp) :: area, inertia(3,3), shear, moments(3)
-    integer :: k, i, j
+    type(continuous_field) :: zero, area, moments(3), inertia
+    real(dp) :: shear
+    logical  :: stated
+    integer  :: k, i, j
 
     blade % name      = name
     blade % root      = root
     blade % axes      = axes
     blade % chord     = chord
+    blade % modulus   = modulus
+    blade % shear     = modulus / (2.0_dp * (1.0_dp + poisson))
+    blade % x         = x
     blade % thickness = thickness
     blade % u   = omega % unknown(name // '_u')
     blade % v   = omega % unknown(name // '_v')
@@ -357,19 +367,12 @@ contains
     this % space = omega % space()
 
     ! the section: its area, its moments of inertia per length about the
-    ! span, the chord and the thickness, in the body's reference axes
-    area    = chord * thickness
-    shear   = modulus / (2.0_dp * (1.0_dp + poisson))
-    moments = density * [(chord * thickness**3 + thickness * chord**3) / 12.0_dp, chord * thickness**3 / 12.0_dp, &
-         & thickness * chord**3 / 12.0_dp]
-    inertia = 0.0_dp
-    do k = 1, 3
-       do j = 1, 3
-          do i = 1, 3
-             inertia(i, j) = inertia(i, j) + moments(k) * axes(i, k) * axes(j, k)
-          end do
-       end do
-    end do
+    ! span, the chord and the thickness
+    area       = chord * thickness
+    shear      = modulus / (2.0_dp * (1.0_dp + poisson))
+    moments(1) = density * ((chord * thickness**3 + thickness * chord**3) / 12.0_dp)
+    moments(2) = density * (chord * thickness**3 / 12.0_dp)
+    moments(3) = density * (thickness * chord**3 / 12.0_dp)
 
     ! the centre of the section and where the body moves it; its
     ! kinetic energy and that of the section's turning
@@ -390,10 +393,26 @@ contains
        turning(k) = body_rate(k)
        if (axes(k, 1) /= 0.0_dp) turning(k) = turning(k) + axes(k, 1) * rate
     end do
+    ! the moments of inertia in the body's reference axes, J_ij the sum
+    ! of the moments about the axes k with a_ik a_jk nonzero
     do i = 1, 3
-       if (inertia(i, i) /= 0.0_dp) energy = energy + (inertia(i, i) / 2.0_dp) * turning(i) * turning(i)
-       do j = i + 1, 3
-          if (abs(inertia(i, j)) > 0.0_dp) energy = energy + inertia(i, j) * turning(i) * turning(j)
+       do j = i, 3
+          stated = .false.
+          do k = 1, 3
+             if (axes(i, k) * axes(j, k) == 0.0_dp) cycle
+             if (stated) then
+                inertia = inertia + moments(k) * (axes(i, k) * axes(j, k))
+             else
+                inertia = moments(k) * (axes(i, k) * axes(j, k))
+                stated  = .true.
+             end if
+          end do
+          if (.not. stated) cycle
+          if (i == j) then
+             energy = energy + (inertia / 2.0_dp) * turning(i) * turning(i)
+          else
+             energy = energy + inertia * turning(i) * turning(j)
+          end if
        end do
     end do
 
@@ -423,6 +442,39 @@ contains
     this % guess = [this % guess, zero, zero, zero, zero]
 
   end subroutine beam
+
+  !===================================================================!
+  ! THE STRESS OF A BLADE AS A BEAM, the von Mises function (sigma^2 +
+  ! 3 tau^2) / sigma_y^2 of the yield stress sigma_y at the four
+  ! corners of its section and at the middles of its long sides,
+  ! fields of time and of the span: sigma = E (eps - y v_xx - z w_xx)
+  ! the normal stress at the offsets y along the chord and z along the
+  ! thickness, tau = G h phi_x the shear of the twist, at the middles
+  ! of the long sides, zero at the corners.
+  !===================================================================!
+
+  function stress(blade, yield) result(f)
+
+    class(beam_blade), intent(in) :: blade
+    real(dp)         , intent(in) :: yield
+    type(continuous_field) :: f(6)
+
+    type(continuous_field) :: slope_v, slope_w, strain, lag, flap, shear
+
+    slope_v = blade % v % derivative([blade % x])
+    slope_w = blade % w % derivative([blade % x])
+    strain  = blade % u % derivative([blade % x]) + (slope_v * slope_v + slope_w * slope_w) / 2.0_dp
+    lag     = (blade % chord / 2.0_dp) * blade % v % derivative([blade % x, blade % x])
+    flap    = (blade % thickness / 2.0_dp) * blade % w % derivative([blade % x, blade % x])
+    shear   = blade % shear * blade % thickness * blade % phi % derivative([blade % x])
+    f(1) = (blade % modulus * (strain - lag - flap))**2 / yield**2
+    f(2) = (blade % modulus * (strain + lag - flap))**2 / yield**2
+    f(3) = (blade % modulus * (strain - lag + flap))**2 / yield**2
+    f(4) = (blade % modulus * (strain + lag + flap))**2 / yield**2
+    f(5) = ((blade % modulus * (strain - flap))**2 + 3.0_dp * shear**2) / yield**2
+    f(6) = ((blade % modulus * (strain + flap))**2 + 3.0_dp * shear**2) / yield**2
+
+  end function stress
 
   subroutine add(this, term)
     type(mechanism)       , intent(inout) :: this

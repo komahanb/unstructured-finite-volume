@@ -22,7 +22,7 @@ module view_expression
   use operation_expression, only : VERTEX_PRODUCT, VERTEX_QUOTIENT, VERTEX_INTEGER_POWER
   use operation_expression, only : VERTEX_REAL_POWER, VERTEX_FUNCTION, VERTEX_DERIVATIVE
   use operation_expression, only : ARGUMENT_DESIGN, ARGUMENT_MULTIPLIER, ARGUMENT_COORDINATE
-  use operation_expression, only : SINE, COSINE, EXPONENTIAL, LOGARITHM, SQUARE_ROOT
+  use operation_expression, only : SINE, COSINE, EXPONENTIAL, LOGARITHM, SQUARE_ROOT, UNIT_STEP
 
   implicit none
 
@@ -104,6 +104,7 @@ contains
          case (EXPONENTIAL); text = 'exp'
          case (LOGARITHM);   text = 'log'
          case (SQUARE_ROOT); text = 'sqrt'
+         case (UNIT_STEP);   text = 'heaviside'
          case default
             error stop 'view_expression: this vertex names a function that is not one of those defined'
          end select

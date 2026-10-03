@@ -212,6 +212,59 @@ Still to come: the laws of time alone evaluated once per moment, not
 at every quadrature point; the blade's energy over the span in the
 printed energy.
 
+**The thickness, the mass and the stress** (`strips`, `thickness`,
+`sensitivities` in `rotorcraft.nml`). With strips, the thickness of
+each strip of the span is a design coordinate, the same for the four
+blades: h = h_1 plus, at the inner edge x_j of each strip after the
+first, (h_j - h_(j-1)) H(x - x_j), H the unit step, a function of the
+coordinates alone whose derivative along a coordinate it reads is
+refused. The elements read the thickness inside the fluxes alone, so
+nothing differentiates it along the span. The functions:
+
+- the blades' mass over the revolution, the integral of 4 rho c h:
+  2.1737794328871449 kg s at 2 cm, TACS's 2.173779432887122;
+- the smooth maximum (`operation_field`, `maximum`) of the von Mises
+  function (sigma^2 + 3 tau^2) / sigma_y^2 at the corners of each
+  section and the middles of its long sides, over the four blades and
+  the revolution: log( integral of sum exp(rho f) ) / rho, evaluated
+  as m + log( integral of sum exp(rho (f - m)) ) / rho, m the largest
+  f at the quadrature nodes. The square of the ratio, which has no
+  root to differentiate where the stress vanishes, at the first
+  instant.
+
+With eight strips at 2 cm the motion is the same to every printed
+digit as with the uniform thickness. At 36 steps, 5 points of the
+span and rho = 100, the derivative of the smooth maximum along the
+thickness of the first strip by the expansion is -166.45582952328755;
+central differences of steps 1e-5 and 2e-5 miss it by 1.318e-4 and
+5.271e-4, ratio 4.00, their own error, and their extrapolation is
+-166.4558295191, within 2.5e-11. Along the root strip the stress falls
+and along the outer strips it rises, the centrifugal load they add.
+
+**The stress of the beam blades and the march.** The largest von Mises
+ratio of the blades at 2 cm, collective, 5 points of the span:
+
+| march | largest ratio | its parts: axial, lag, flap |
+|---|---|---|
+| 36 steps, bdf(1) | 1.29 | 0.16, 0.85, 0.28 |
+| 72 steps, bdf(1) | 0.83 | 0.16, 0.51, 0.16 |
+| 36 steps, bdf(2) | 0.52 | 0.16, 0.34, 0.02 |
+| 72 steps, bdf(2) | 0.29 | 0.22, 0.06, 0.01, at the start |
+| 360 steps, bdf(1) | 0.33 | 0.16, 0.14, 0.03 |
+
+The lag bending is the error of the march: bdf(1) forms the
+centripetal acceleration of the turning blade a step late, a load
+along the chord of about w dt times the centrifugal load, which bends
+the blade at the root; a rigid blade takes it as a reaction of its
+link. The axial stress, 0.16 of the yield, is that of the turning,
+and neither it nor the lag bending depends on a uniform thickness: at
+36 steps and 9 points of the span the ratio is 1.34 at 1 cm and 1.36
+at 2 cm. Only the
+thickness's distribution changes them, a blade thinner outboard
+loading its root less. KS <= 1/4 is not met by a uniform blade at
+any of these marches; TACS's run ends where it is not met either, KS
+0.37 at about 1 cm.
+
 ## The case
 
 - **Bodies.** The case has 26 bodies:
@@ -328,6 +381,19 @@ differences.
    satisfying the stationarity of L in the design. The smoothness
    constraints are of this kind. KS <= 1/4 is not: it is a functional of
    the state, and needs its own reverse sweep.
+   Built 2026-10-03 for functionals of the state: an inequality on an
+   integral or a smooth maximum over the manifold has its value and its
+   gradient from the expansion of the state, and enters the reverse
+   sweep times its multiplier of the step before, so that the model's
+   hessian is the Lagrangian's. Each iterate is tested by the merit J +
+   penalty * violations; a step the merit refuses is taken again from
+   the design before it with the hessian shifted and each violated
+   inequality asked for a quarter of the reduction, and a hessian that
+   is not positive definite - the mass's, zero - is shifted from the
+   start. The steps of the bounds above are unchanged. The beam's least
+   mean stiffness with its misfit at most m (`misfit=m`): 13
+   iterations at m = 1e-4 and 32 at 1e-6, the multiplier the same along
+   s1 and s2 to 3e-12 and 6e-11.
 5. **Three scenarios on one design.** The sum of three discrete
    Lagrangians, each with its own state and adjoint, and one design
    iteration.

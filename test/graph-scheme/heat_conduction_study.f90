@@ -31,12 +31,38 @@
 ! falling by 4 per halving, order 2, the order of the elements of
 ! degree one; on the tetrahedra by 2.5 and 3.4, still approaching it.
 ! The digits are the same on 1, 2 and 4 images.
+!
+! With a third argument s0 the conductivity is a design,
+! k = 1 + s x / 2, the load still the law's at s = 1, and the
+! objective J = integral of (u - u_exact)^2 / 2 over the manifold:
+!
+!      L = J + <adjoint, r> + <lambda, ic> + sum of <mu_k, face_k>
+!            + kappa (s - s0)
+!
+! J and dJ/ds are printed, dJ/ds by the expansion of order one along
+! s and by the adjoint, -kappa; central differences are runs at
+! s0 + h and s0 - h. Measured at s0 = 0.8, 21 instants, h = 1e-4, the
+! central difference less its own error h^2/6 J''' (J''' from the
+! three runs' expansions):
+!
+!      square_q8  expansion -6.3071758203e-4, adjoint -6.3071758521e-4,
+!                 central difference -6.3071758353e-4
+!      cube_h4    expansion  9.9193613399e-5, adjoint  9.9193613395e-5,
+!                 central difference  9.9193613366e-5
+!
+! the expansion and the adjoint agreeing to 5e-9 and 4e-11 relative,
+! the precision of the solve: Newton on a problem in space stops at
+! half the digits, and with a tolerance of 1e-13 they agree to 3.5e-14
+! on the quadrangles and 7e-15 on the triangles. The same digits to
+! 1e-15 on 1, 2 and 4 images.
 !=====================================================================!
 
 program heat_conduction_study
 
   use util_precision          , only : dp
   use operation_manifold      , only : continuous_manifold, discrete_manifold, interval, region, points, mesh, corners
+  use operation_manifold      , only : parameter
+  use operation_expansion     , only : expansion
   use operation_field         , only : continuous_field, discrete_field, integral
   use operation_field         , only : sin, cos, operator(+), operator(-), operator(*), operator(/), operator(**)
   use operation_residual      , only : continuous_residual, discrete_residual, operator(+), operator(*)
@@ -52,23 +78,37 @@ program heat_conduction_study
   type(continuous_manifold) :: omega, initial
   type(discrete_manifold)   :: omega_h
   type(continuous_field)    :: t, x, y, z, u, u_exact, exact, conductivity, flux_law, flux_exact, square
-  type(continuous_field)    :: q(3), q_exact(3), coordinate(3)
-  type(continuous_residual) :: r, ic, Lagrangian
+  type(continuous_field)    :: q(3), q_exact(3), coordinate(3), s, conductivity_exact, kappa
+  type(continuous_residual) :: r, ic, Lagrangian, design
   type(continuous_residual), allocatable :: face(:)
-  type(discrete_field)      :: estimate, solution, error, functional
+  type(discrete_field)      :: estimate, solution, error, functional, kappa_h
   type(discrete_residual)   :: L_h
-  real(dp) :: J(1)
+  real(dp) :: J(2), s0
+  logical  :: with_design
 
   if (command_argument_count() >= 1) call get_command_argument(1, file)
   if (command_argument_count() >= 2) then
      call get_command_argument(2, item)
      read(item, *) num_instants
   end if
+  with_design = command_argument_count() >= 3
+  if (with_design) then
+     call get_command_argument(3, item)
+     read(item, *) s0
+  end if
 
-  ! the region of the geometry the mesh was made from
-  omega   = continuous_manifold(time=interval(0.0_dp, T_final), &
-       &                        space=region(trim(merge('cube.geo  ', 'square.geo', file(1:4) == 'cube'))))
-  omega_h = omega % discretize(time=points(num_instants), space=corners(mesh(trim(file))))
+  ! the region of the geometry the mesh was made from, and the design
+  if (with_design) then
+     omega   = continuous_manifold(time=interval(0.0_dp, T_final), &
+          &                        space=region(trim(merge('cube.geo  ', 'square.geo', file(1:4) == 'cube'))), &
+          &                        design=[parameter('s', s0)])
+     omega_h = omega % discretize(time=points(num_instants), space=corners(mesh(trim(file))), &
+          &                       design=expansion(order=1))
+  else
+     omega   = continuous_manifold(time=interval(0.0_dp, T_final), &
+          &                        space=region(trim(merge('cube.geo  ', 'square.geo', file(1:4) == 'cube'))))
+     omega_h = omega % discretize(time=points(num_instants), space=corners(mesh(trim(file))))
+  end if
   d       = omega_h % dimension
   t       = omega % coordinate('t')
   x       = omega % coordinate('x')
@@ -76,7 +116,12 @@ program heat_conduction_study
   z       = omega % coordinate('z')
   initial = omega % boundary(t, 0.0_dp)
 
-  conductivity = 1.0_dp + x / 2.0_dp
+  conductivity       = 1.0_dp + x / 2.0_dp
+  conductivity_exact = conductivity
+  if (with_design) then
+     s            = omega % coordinate('s')
+     conductivity = 1.0_dp + s * x / 2.0_dp
+  end if
   u_exact = sin(pi * x) * sin(pi * y) * cos(t)
   if (d == 3) u_exact = u_exact * sin(pi * z)
   exact = continuous_field(omega, [u_exact])
@@ -87,7 +132,7 @@ program heat_conduction_study
   coordinate = [x, y, z]
   do k = 1, d
      q(k)       = conductivity * u % derivative([coordinate(k)])
-     q_exact(k) = conductivity * u_exact % derivative([coordinate(k)])
+     q_exact(k) = conductivity_exact * u_exact % derivative([coordinate(k)])
   end do
   flux_law   = q(1) % derivative([x]) + q(2) % derivative([y])
   flux_exact = q_exact(1) % derivative([x]) + q_exact(2) % derivative([y])
@@ -108,10 +153,20 @@ program heat_conduction_study
      face(5) = continuous_residual(omega % boundary(z, 0.0_dp), [u])
      face(6) = continuous_residual(omega % boundary(z, 1.0_dp), [u])
   end if
-  Lagrangian = r + ic
-  do k = 1, 2 * d
-     Lagrangian = Lagrangian + face(k)
-  end do
+  square = integral((u - u_exact)**2 / 2.0_dp, over=omega)
+  if (with_design) then
+     design     = continuous_residual(omega % design(), [s - s0])
+     kappa      = design % multiplier('kappa')
+     Lagrangian = square + r % multiplier('adjoint') * r + ic % multiplier('lambda') * ic + kappa * design
+     do k = 1, 2 * d
+        Lagrangian = Lagrangian + face(k) % multiplier('mu_' // achar(iachar('0') + k)) * face(k)
+     end do
+  else
+     Lagrangian = r + ic
+     do k = 1, 2 * d
+        Lagrangian = Lagrangian + face(k)
+     end do
+  end if
 
   L_h = Lagrangian % discretize(omega_h, &
        & time=chain([(dirk(2), k = 1, 4), (bdf(2), k = 5, 7), (adams(2), k = 8, num_instants)], &
@@ -120,10 +175,16 @@ program heat_conduction_study
   call L_h % minimize(estimate, solution)
 
   error      = solution % fields(['u']) - estimate
-  square     = integral((u - u_exact)**2 / 2.0_dp, over=omega)
   functional = square % at(solution)
-  call functional % values(J)
-  if (this_image() == 1) print '(a, a, i0, a, es12.4, a, es12.4)', trim(file), ', ', num_instants, &
-       & ' instants: error at the nodes ', error % norm(), ', in L2 over the manifold ', sqrt(2.0_dp * J(1))
+  call functional % values(J(1:merge(2, 1, with_design)))
+  if (with_design) then
+     kappa_h = solution % fields(['kappa'])
+     if (this_image() == 1) print '(a, a, i0, a, f8.4, a, es24.16, a, es24.16, a, es24.16)', trim(file), ', ', &
+          & num_instants, ' instants, s = ', s0, ': J ', J(1), '  dJ/ds by the expansion ', J(2), &
+          & '  by the adjoint ', -kappa_h % value(1, 1)
+  else if (this_image() == 1) then
+     print '(a, a, i0, a, es12.4, a, es12.4)', trim(file), ', ', num_instants, &
+          & ' instants: error at the nodes ', error % norm(), ', in L2 over the manifold ', sqrt(2.0_dp * J(1))
+  end if
 
 end program heat_conduction_study

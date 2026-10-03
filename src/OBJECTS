@@ -85,6 +85,7 @@ util_file.o \
 view_mesh_geometry.o \
 view_mesh_loader.o \
 view_gmsh_loader.o \
+view_bdf_loader.o \
 view_mesh_builder.o \
 operation_manifold.o \
 operation_residual.o \

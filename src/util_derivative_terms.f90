@@ -83,6 +83,15 @@
 ! numbers per quantity. The degree is bounded by the width of mask a
 ! default integer can store, which max_subset_width reports.
 !
+!             THE RULES ON THE COEFFICIENTS
+!
+! Each rule is also stated on arrays of the 2^n coefficients, indexed
+! by mask from zero (product_terms, quotient_terms and the others), so
+! that an evaluation over many quantities stores their coefficients
+! in one array and allocates none per operation. The operators of the
+! type are these rules on its own coefficients, so the two forms
+! perform the same arithmetic in the same order.
+!
 !             WHAT IS REJECTED
 !
 ! A quotient whose divisor has a zero value, and a direction index
@@ -103,6 +112,8 @@ module util_derivative_terms
   public :: derivative_terms, value, mixed_partial, coefficient, max_subset_width, symmetric_terms
   public :: extend_directions, partial
   public :: integer_power, composed, leibniz_parts, inner_product
+  public :: extended_terms, product_terms, quotient_terms, integer_power_terms, real_power_terms
+  public :: sine_terms, cosine_terms, exponential_terms, logarithm_terms
   public :: operator(+), operator(-), operator(*), operator(/), operator(**)
   public :: sin, cos, exp, log, sqrt
 
@@ -262,6 +273,21 @@ contains
     this % terms(1:size(x % terms)) = x % terms
 
   end function extend_directions
+
+  ! the same, into the coefficients c over the directions of c
+  pure subroutine extended_terms(x, c)
+
+    type(derivative_terms), intent(in)  :: x
+    real(dp)              , intent(out) :: c(0:)
+
+    if (size(c) < size(x % terms)) then
+       error stop 'util_derivative_terms: extended_terms was given fewer coefficients than x stores - a &
+            &direction is never discarded'
+    end if
+    c = 0.0_dp
+    c(0:size(x % terms) - 1) = x % terms
+
+  end subroutine extended_terms
 
   !===================================================================!
   ! The derivative along direction i, as a quantity over the other
@@ -481,19 +507,8 @@ contains
     type(derivative_terms), intent(in) :: a, b
     type(derivative_terms) :: c
 
-    integer :: m, s
-
     c = create_like(0.0_dp, a)
-
-    do m = 0, size(a % terms) - 1
-       s = m
-       do
-          c % terms(m + 1) = c % terms(m + 1) &
-               & + a % terms(s + 1) * b % terms(ieor(m, s) + 1)
-          if (s == 0) exit
-          s = iand(s - 1, m)
-       end do
-    end do
+    call product_terms(a % terms, b % terms, c % terms)
 
   end function terms_times
 
@@ -502,26 +517,57 @@ contains
     type(derivative_terms), intent(in) :: a, b
     type(derivative_terms) :: r
 
+    r = create_like(0.0_dp, a)
+    call quotient_terms(a % terms, b % terms, r % terms)
+
+  end function terms_over
+
+  ! the product on the coefficients: c(m) the sum over the splittings
+  ! of m of a on one part times b on the other
+  pure subroutine product_terms(a, b, c)
+
+    real(dp), intent(in)  :: a(0:), b(0:)
+    real(dp), intent(out) :: c(0:)
+
+    integer :: m, s
+
+    do m = 0, size(a) - 1
+       c(m) = 0.0_dp
+       s = m
+       do
+          c(m) = c(m) + a(s) * b(ieor(m, s))
+          if (s == 0) exit
+          s = iand(s - 1, m)
+       end do
+    end do
+
+  end subroutine product_terms
+
+  ! the quotient on the coefficients: r b = a solved subset by subset
+  ! in increasing order
+  pure subroutine quotient_terms(a, b, r)
+
+    real(dp), intent(in)  :: a(0:), b(0:)
+    real(dp), intent(out) :: r(0:)
+
     real(dp) :: accumulated
     integer  :: m, s
 
-    if (b % terms(1) == 0.0_dp) then
+    if (b(0) == 0.0_dp) then
        error stop 'util_derivative_terms: b % terms(1) is zero - a quotient cannot divide by zero'
     end if
 
-    r = create_like(0.0_dp, a)
-
-    do m = 0, size(a % terms) - 1
-       accumulated = a % terms(m + 1)
+    do m = 0, size(a) - 1
+       accumulated = a(m)
        s = m
        do while (s /= 0)
-          accumulated = accumulated - b % terms(s + 1) * r % terms(ieor(m, s) + 1)
+          accumulated = accumulated - b(s) * r(ieor(m, s))
           s = iand(s - 1, m)
        end do
-       r % terms(m + 1) = accumulated / b % terms(1)
+       r(m) = accumulated / b(0)
     end do
 
-  end function terms_over
+  end subroutine quotient_terms
 
   !===================================================================!
   ! THE PRODUCT RULE ON THE FULL SUBSET, READ BY THE SIZE OF ONE
@@ -601,17 +647,33 @@ contains
     integer               , intent(in) :: n
     type(derivative_terms) :: p
 
-    integer :: i
-
-    p = create_like(1.0_dp, x)
-
-    do i = 1, abs(n)
-       p = p * x
-    end do
-
-    if (n < 0) p = create_like(1.0_dp, x) / p
+    p = create_like(0.0_dp, x)
+    call integer_power_terms(x % terms, n, p % terms)
 
   end function integer_power
+
+  pure subroutine integer_power_terms(x, n, p)
+
+    real(dp), intent(in)  :: x(0:)
+    integer , intent(in)  :: n
+    real(dp), intent(out) :: p(0:)
+
+    real(dp) :: previous(0:size(x) - 1), unit(0:size(x) - 1)
+    integer :: i
+
+    unit    = 0.0_dp
+    unit(0) = 1.0_dp
+    p = unit
+    do i = 1, abs(n)
+       previous = p
+       call product_terms(previous, x, p)
+    end do
+    if (n < 0) then
+       previous = p
+       call quotient_terms(unit, previous, p)
+    end if
+
+  end subroutine integer_power_terms
 
   pure function terms_to_integer(x, n) result(p)
 
@@ -635,11 +697,21 @@ contains
     real(dp)              , intent(in) :: f(0:)
     type(derivative_terms) :: g
 
+    g = create_like(0.0_dp, a)
+    call composed_terms(a % terms, f, g % terms)
+
+  end function composed
+
+  pure subroutine composed_terms(a, f, g)
+
+    real(dp), intent(in)  :: a(0:), f(0:)
+    real(dp), intent(out) :: g(0:)
+
     real(dp), allocatable :: table(:,:)
     real(dp) :: accumulated
     integer  :: n, m, k, i, remaining_subset, s
 
-    n = a % directions
+    n = trailz(size(a))
 
     if (ubound(f, 1) < n) then
        error stop 'util_derivative_terms: ubound(f,1) is below n - the composed function must &
@@ -656,7 +728,7 @@ contains
           accumulated = 0.0_dp
           s = remaining_subset
           do
-             accumulated = accumulated + a % terms(ior(s, i) + 1) * table(k + 1, ieor(remaining_subset, s))
+             accumulated = accumulated + a(ior(s, i)) * table(k + 1, ieor(remaining_subset, s))
              if (s == 0) exit
              s = iand(s - 1, remaining_subset)
           end do
@@ -664,12 +736,11 @@ contains
        end do
     end do
 
-    g = create_like(0.0_dp, a)
     do m = 0, 2**n - 1
-       g % terms(m + 1) = table(0, m)
+       g(m) = table(0, m)
     end do
 
-  end function composed
+  end subroutine composed_terms
 
   !===================================================================!
   ! THE DERIVATIVE TABLES, each f^(k) at x for k = 0 .. n.
@@ -680,44 +751,74 @@ contains
     type(derivative_terms), intent(in) :: a
     type(derivative_terms) :: g
 
-    real(dp) :: f(0:a % directions)
-
-    f = exp(a % terms(1))
-    g = composed(a, f)
+    g = create_like(0.0_dp, a)
+    call exponential_terms(a % terms, g % terms)
 
   end function terms_exp
+
+  pure subroutine exponential_terms(a, g)
+
+    real(dp), intent(in)  :: a(0:)
+    real(dp), intent(out) :: g(0:)
+
+    real(dp) :: f(0:trailz(size(a)))
+
+    f = exp(a(0))
+    call composed_terms(a, f, g)
+
+  end subroutine exponential_terms
 
   pure function terms_sin(a) result(g)
 
     type(derivative_terms), intent(in) :: a
     type(derivative_terms) :: g
 
-    real(dp) :: f(0:a % directions), cycle(0:3)
-    integer  :: k
-
-    cycle = [sin(a % terms(1)), cos(a % terms(1)), -sin(a % terms(1)), -cos(a % terms(1))]
-    do k = 0, a % directions
-       f(k) = cycle(mod(k, 4))
-    end do
-    g = composed(a, f)
+    g = create_like(0.0_dp, a)
+    call sine_terms(a % terms, g % terms)
 
   end function terms_sin
+
+  pure subroutine sine_terms(a, g)
+
+    real(dp), intent(in)  :: a(0:)
+    real(dp), intent(out) :: g(0:)
+
+    real(dp) :: f(0:trailz(size(a))), cycle(0:3)
+    integer  :: k
+
+    cycle = [sin(a(0)), cos(a(0)), -sin(a(0)), -cos(a(0))]
+    do k = 0, trailz(size(a))
+       f(k) = cycle(mod(k, 4))
+    end do
+    call composed_terms(a, f, g)
+
+  end subroutine sine_terms
 
   pure function terms_cos(a) result(g)
 
     type(derivative_terms), intent(in) :: a
     type(derivative_terms) :: g
 
-    real(dp) :: f(0:a % directions), cycle(0:3)
-    integer  :: k
-
-    cycle = [cos(a % terms(1)), -sin(a % terms(1)), -cos(a % terms(1)), sin(a % terms(1))]
-    do k = 0, a % directions
-       f(k) = cycle(mod(k, 4))
-    end do
-    g = composed(a, f)
+    g = create_like(0.0_dp, a)
+    call cosine_terms(a % terms, g % terms)
 
   end function terms_cos
+
+  pure subroutine cosine_terms(a, g)
+
+    real(dp), intent(in)  :: a(0:)
+    real(dp), intent(out) :: g(0:)
+
+    real(dp) :: f(0:trailz(size(a))), cycle(0:3)
+    integer  :: k
+
+    cycle = [cos(a(0)), -sin(a(0)), -cos(a(0)), sin(a(0))]
+    do k = 0, trailz(size(a))
+       f(k) = cycle(mod(k, 4))
+    end do
+    call composed_terms(a, f, g)
+
+  end subroutine cosine_terms
 
   !-------------------------------------------------------------------!
   ! log: f^(k) = (-1)^(k-1) (k-1)! / x^k, formed as f^(k) = -f^(k-1)
@@ -730,23 +831,34 @@ contains
     type(derivative_terms), intent(in) :: a
     type(derivative_terms) :: g
 
-    real(dp) :: f(0:a % directions), x
-    integer  :: k
+    g = create_like(0.0_dp, a)
+    call logarithm_terms(a % terms, g % terms)
 
-    x = a % terms(1)
+  end function terms_log
+
+  pure subroutine logarithm_terms(a, g)
+
+    real(dp), intent(in)  :: a(0:)
+    real(dp), intent(out) :: g(0:)
+
+    real(dp) :: f(0:trailz(size(a))), x
+    integer  :: k, n
+
+    n = trailz(size(a))
+    x = a(0)
     if (x <= 0.0_dp) then
        error stop 'util_derivative_terms: a % terms(1) is not positive - log is only &
             &differentiated at a positive value'
     end if
 
     f(0) = log(x)
-    if (a % directions >= 1) f(1) = 1.0_dp / x
-    do k = 2, a % directions
+    if (n >= 1) f(1) = 1.0_dp / x
+    do k = 2, n
        f(k) = -f(k - 1) * real(k - 1, dp) / x
     end do
-    g = composed(a, f)
+    call composed_terms(a, f, g)
 
-  end function terms_log
+  end subroutine logarithm_terms
 
   !-------------------------------------------------------------------!
   ! A real power: f^(k) = p (p-1) .. (p-k+1) x^(p-k), formed as
@@ -761,22 +873,32 @@ contains
     real(dp)              , intent(in) :: p
     type(derivative_terms) :: g
 
-    real(dp) :: f(0:a % directions), x
+    g = create_like(0.0_dp, a)
+    call real_power_terms(a % terms, p, g % terms)
+
+  end function terms_to_real
+
+  pure subroutine real_power_terms(a, p, g)
+
+    real(dp), intent(in)  :: a(0:), p
+    real(dp), intent(out) :: g(0:)
+
+    real(dp) :: f(0:trailz(size(a))), x
     integer  :: k
 
-    x = a % terms(1)
+    x = a(0)
     if (x <= 0.0_dp) then
        error stop 'util_derivative_terms: a % terms(1) is not positive - a real power is only &
             &differentiated at a positive value'
     end if
 
     f(0) = x**p
-    do k = 1, a % directions
+    do k = 1, trailz(size(a))
        f(k) = f(k - 1) * (p - real(k - 1, dp)) / x
     end do
-    g = composed(a, f)
+    call composed_terms(a, f, g)
 
-  end function terms_to_real
+  end subroutine real_power_terms
 
   pure function terms_sqrt(a) result(g)
 

@@ -16,11 +16,13 @@
 ! A direct solve is a single pass, so the tolerance and iteration
 ! limit inherited from the minimizer family are unused. The one
 ! numerical check is on the pivot: a pivot at or below
-! singular_tolerance times the largest entry of the matrix cannot be
-! divided by, being indistinguishable from zero at the matrix's own
-! scale; the default is the spacing of the build's kind. By default
-! that stops the program, the matrix being singular where the caller
-! expected it not to be.
+! singular_tolerance times the largest entry of its column cannot be
+! divided by, being indistinguishable from zero at its column's own
+! scale; the default is the spacing of the build's kind. A matrix whose
+! columns differ in scale - the reactions of an index-three system,
+! whose pivots fall as the square of the step - is singular only where
+! a column is. By default a singular pivot stops the program, the
+! matrix being singular where the caller expected it not to be.
 !
 ! A caller whose matrix is a jacobian frozen at an intermediate
 ! iterate does not expect that, since singularity there is a property
@@ -131,7 +133,7 @@ contains
   ! stopping the program: singular_tolerance must be positive,
   ! size(x) must equal size(rhs) because x is written in place,
   ! and every pivot must exceed singular_tolerance times the largest
-  ! entry of the matrix.
+  ! entry of its column.
   !===================================================================!
 
   subroutine dense_direct_solve(this, rhs, x, achieved)
@@ -186,7 +188,7 @@ contains
        call compile_matrix_from_action(this % action, this % graph, this % unknown_domain, &
             & this % num_unknowns, n, this % num_components, a, constant, stored=this % stored)
        call this % record_event(factorisations)
-       call this % factor % factorise(a, this % singular_tolerance * maxval(abs(a)))
+       call this % factor % factorise(a, this % singular_tolerance, maxval(abs(a), dim=1))
        this % retained_version  = this % action % version()
        this % retained_transposed = this % action % transpose_version()
     end if

@@ -54,14 +54,17 @@ contains
   !===================================================================!
   ! L U of a square matrix, in place in a copy. A matrix that is not
   ! square stops the program. A pivot at or below the threshold leaves
-  ! the factorisation singular rather than dividing by it.
+  ! the factorisation singular rather than dividing by it; given the
+  ! scale of each column, at or below the threshold times its column's
+  ! scale.
   !===================================================================!
 
-  subroutine factorise(this, a, threshold)
+  subroutine factorise(this, a, threshold, scales)
 
     class(dense_factorisation), intent(inout) :: this
     real(dp)                  , intent(in)    :: a(:,:)
     real(dp)                  , intent(in)    :: threshold
+    real(dp)                  , intent(in), optional :: scales(:)
 
     real(dp), allocatable :: row(:)
     real(dp) :: factor
@@ -97,7 +100,12 @@ contains
           this % lu(p, :)  = row
        end if
 
-       if (abs(this % lu(k, k)) <= threshold) then
+       if (present(scales)) then
+          if (abs(this % lu(k, k)) <= threshold * scales(k)) then
+             this % is_singular = .true.
+             return
+          end if
+       else if (abs(this % lu(k, k)) <= threshold) then
           this % is_singular = .true.
           return
        end if

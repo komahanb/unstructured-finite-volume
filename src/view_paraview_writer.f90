@@ -29,6 +29,21 @@
 ! util_string; both are optional and omitted together. A numbered
 ! series of files is read by paraview as steps in time.
 !
+! CELLS ALONE. Without a mesh, the cells are those the corner lists
+! give and no volume is written: a surface, or the bodies of a
+! mechanism moved to an instant.
+!
+!      w = paraview_writer(coordinates, corners, cell_types)
+!
+! A TIME SERIES. time_series writes the collection paraview reads as
+! the instants of a motion, each file with its time:
+!
+!      call time_series('rotor.pvd', files, times)
+!
+! write_binary writes the same file with its data in binary, base64
+! within the elements: a third of the size, for the many files of a
+! time series.
+!
 ! FROM A GMSH FILE. mesh_from_gmsh discards the corners it reads, so
 ! a caller that requires the plot reads them again through the
 ! loader and passes them on:
@@ -114,7 +129,7 @@ module view_paraview_writer
   private
   public :: paraview_writer
   public :: polygon_cell, hypercube_cell
-  public :: paraview
+  public :: paraview, time_series
 
   ! the writer's conventions, since gmsh defines no such elements
   integer, parameter :: polygon_cell   = -1  ! an agglomerated polygon
@@ -147,6 +162,7 @@ module view_paraview_writer
    contains
 
      procedure :: write
+     procedure :: write_binary
 
   end type paraview_writer
 
@@ -157,6 +173,7 @@ module view_paraview_writer
   interface paraview_writer
      module procedure construct
      module procedure construct_ragged
+     module procedure construct_cells
   end interface paraview_writer
 
 contains
@@ -344,6 +361,55 @@ contains
     end if
 
   end function construct_ragged
+
+  !===================================================================!
+  ! The writer of cells alone, the corner lists giving the cells, the
+  ! coordinates of three or fewer axes drawn as they are; no volume.
+  !===================================================================!
+
+  impure type(paraview_writer) function construct_cells(coordinates, corners, cell_types) result (this)
+
+    real(dp)    , intent(in) :: coordinates(:,:)    ! (ndim, point)
+    type(ragged), intent(in) :: corners             ! each cell's points, in order
+    integer     , intent(in) :: cell_types(:)
+
+    integer :: k
+
+    this % num_cells = corners % num_lists()
+    call require(size(cell_types) == this % num_cells, 'one type per cell')
+    call require(size(coordinates, 1) <= 3, 'three or fewer coordinates drawn without a slice')
+    call require(all(corners % entries >= 1) .and. all(corners % entries <= size(coordinates, 2)), &
+         &    'corners among the points')
+    call projected(this, coordinates, corners, cell_types, [(k, k = 1, size(coordinates, 1))])
+
+  end function construct_cells
+
+  !===================================================================!
+  ! THE TIME SERIES: the collection of the files of the instants, each
+  ! with its time.
+  !===================================================================!
+
+  impure subroutine time_series(filename, files, times)
+
+    character(len=*), intent(in) :: filename
+    character(len=*), intent(in) :: files(:)
+    real(dp)        , intent(in) :: times(:)
+
+    integer :: unit, k
+
+    call require(size(files) == size(times), 'one time per file')
+    open(newunit=unit, file=trim(filename), action='write', form='formatted', status='replace')
+    write(unit, '(a)') '<VTKFile type="Collection" version="0.1" byte_order="LittleEndian">'
+    write(unit, '(a)') '<Collection>'
+    do k = 1, size(files)
+       write(unit, '(a,es24.16,a,a,a)') '<DataSet timestep="', times(k), '" part="0" file="', &
+            & trim(files(k)), '"/>'
+    end do
+    write(unit, '(a)') '</Collection>'
+    write(unit, '(a)') '</VTKFile>'
+    close(unit)
+
+  end subroutine time_series
 
   !===================================================================!
   ! The projection: every point, its drawn coordinates first and
@@ -680,12 +746,14 @@ contains
 
       write(fhandle, '(a)') '<CellData>'
 
-      ! Export the cell volumes.
-      write(fhandle, '(a)') '<DataArray type="Float64" Name="volume" format="ascii">'
-      do icell = 1, num_projection_axes
-         write(fhandle, '(es24.16)') this % volumes(this % cells(icell))
-      end do
-      write(fhandle, '(a)') '</DataArray>'
+      ! Export the cell volumes, of a writer with a mesh.
+      if (allocated(this % volumes)) then
+         write(fhandle, '(a)') '<DataArray type="Float64" Name="volume" format="ascii">'
+         do icell = 1, num_projection_axes
+            write(fhandle, '(es24.16)') this % volumes(this % cells(icell))
+         end do
+         write(fhandle, '(a)') '</DataArray>'
+      end if
 
       if (present(solution_labels) .and. present(phic)) then
          do iresult = 1, size(solution_labels)
@@ -710,5 +778,115 @@ contains
     close(unit=fhandle)
 
   end subroutine write
+
+  !===================================================================!
+  ! The file with its data in binary: the same points, cells and cell
+  ! fields as write, each array its byte count, an unsigned 32-bit
+  ! integer, and its bytes, little endian, encoded together in base64
+  ! within the element.
+  !===================================================================!
+
+  impure subroutine write_binary(this, filename, phic, solution_labels)
+
+    use iso_fortran_env, only : int8, int32, real64
+
+    class(paraview_writer), intent(in)           :: this
+    character(len=*)      , intent(in)           :: filename
+    real(dp)              , intent(in), optional :: phic(:,:)
+    type(string)          , intent(in), optional :: solution_labels(:)
+
+    integer :: unit, ierr, ncells, nconnectivity, k
+
+    ncells        = size(this % cells)
+    nconnectivity = this % first_point(ncells + 1) - 1
+    if (present(solution_labels) .and. present(phic)) then
+       call require(size(phic, 1) == this % num_cells, 'one value per mesh cell per label')
+       call require(size(phic, 2) == size(solution_labels), 'one label per field')
+    end if
+
+    open(newunit=unit, file=trim(filename), action='write', form='formatted', status='replace', iostat=ierr)
+    if (ierr /= 0) error stop 'paraview writer: opening ' // trim(filename) // ' failed'
+    write(unit, '(a)') '<VTKFile type="UnstructuredGrid" version="0.1" byte_order="LittleEndian" header_type="UInt32">'
+    write(unit, '(a)') '<UnstructuredGrid>'
+    write(unit, '(a,i0,a,i0,a)') '<Piece NumberOfPoints="', size(this % points, 2), '" NumberOfCells="', ncells, '">'
+    write(unit, '(a)') '<Points>'
+    write(unit, '(a)') '<DataArray type="Float64" NumberOfComponents="3" format="binary">'
+    write(unit, '(a)') encoded(transfer(real(this % points, real64), [0_int8]))
+    write(unit, '(a)') '</DataArray>'
+    write(unit, '(a)') '</Points>'
+    write(unit, '(a)') '<Cells>'
+    write(unit, '(a)') '<DataArray type="Int32" Name="connectivity" format="binary">'
+    write(unit, '(a)') encoded(transfer(int(this % cell_points(1:nconnectivity) - 1, int32), [0_int8]))
+    write(unit, '(a)') '</DataArray>'
+    write(unit, '(a)') '<DataArray type="Int32" Name="offsets" format="binary">'
+    write(unit, '(a)') encoded(transfer(int(this % first_point(2:ncells + 1) - 1, int32), [0_int8]))
+    write(unit, '(a)') '</DataArray>'
+    write(unit, '(a)') '<DataArray type="UInt8" Name="types" format="binary">'
+    write(unit, '(a)') encoded(int(this % types(1:ncells), int8))
+    write(unit, '(a)') '</DataArray>'
+    write(unit, '(a)') '</Cells>'
+    write(unit, '(a)') '<CellData>'
+    if (allocated(this % volumes)) then
+       write(unit, '(a)') '<DataArray type="Float64" Name="volume" format="binary">'
+       write(unit, '(a)') encoded(transfer(real(this % volumes(this % cells), real64), [0_int8]))
+       write(unit, '(a)') '</DataArray>'
+    end if
+    if (present(solution_labels) .and. present(phic)) then
+       do k = 1, size(solution_labels)
+          write(unit, '(a,a,a)') '<DataArray type="Float64" Name="', trim(solution_labels(k) % str), '" format="binary">'
+          write(unit, '(a)') encoded(transfer(real(phic(this % cells, k), real64), [0_int8]))
+          write(unit, '(a)') '</DataArray>'
+       end do
+    end if
+    write(unit, '(a)') '</CellData>'
+    write(unit, '(a)') '</Piece>'
+    write(unit, '(a)') '</UnstructuredGrid>'
+    write(unit, '(a)') '</VTKFile>'
+    close(unit)
+
+  contains
+
+    ! the byte count and the bytes, in base64
+    function encoded(bytes) result(text)
+      integer(int8), intent(in) :: bytes(:)
+      character(len=:), allocatable :: text
+      text = base64([transfer(int(size(bytes), int32), [0_int8]), bytes])
+    end function encoded
+
+  end subroutine write_binary
+
+  ! the bytes in base64: each three bytes four characters of the
+  ! alphabet, the last group padded with =
+  pure function base64(bytes) result(text)
+
+    use iso_fortran_env, only : int8
+
+    integer(int8), intent(in) :: bytes(:)
+    character(len=:), allocatable :: text
+
+    character(len=64), parameter :: alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+    integer :: n, i, k, b1, b2, b3, c
+
+    n = size(bytes)
+    allocate(character(len=4 * ((n + 2) / 3)) :: text)
+    k = 0
+    do i = 1, n, 3
+       b1 = iand(int(bytes(i)), 255)
+       b2 = 0
+       b3 = 0
+       if (i + 1 <= n) b2 = iand(int(bytes(i + 1)), 255)
+       if (i + 2 <= n) b3 = iand(int(bytes(i + 2)), 255)
+       c = ishft(b1, -2)
+       text(k + 1:k + 1) = alphabet(c + 1:c + 1)
+       c = ior(ishft(iand(b1, 3), 4), ishft(b2, -4))
+       text(k + 2:k + 2) = alphabet(c + 1:c + 1)
+       c = ior(ishft(iand(b2, 15), 2), ishft(b3, -6))
+       text(k + 3:k + 3) = merge(alphabet(c + 1:c + 1), '=', i + 1 <= n)
+       c = iand(b3, 63)
+       text(k + 4:k + 4) = merge(alphabet(c + 1:c + 1), '=', i + 2 <= n)
+       k = k + 4
+    end do
+
+  end function base64
 
 end module view_paraview_writer

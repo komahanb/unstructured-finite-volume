@@ -56,7 +56,11 @@
 ! reads, so the state contract excludes it; it is supplied inside the
 ! evaluation, zero in value, with its own direction when its
 ! stationarity is read. Nothing is rewritten: the same vertices are
-! evaluated with one more direction.
+! evaluated with one more direction - but for a Lagrangian that is a
+! sum of terms, each a multiplier times a law free of multipliers,
+! whose stationarity in a multiplier is the vertices of the law it
+! multiplies, the same numbers without the vertices of the other
+! laws.
 !
 !             THE PARTIALS
 !
@@ -89,15 +93,17 @@ module operation_expression
   use field_calculus       , only : FIELD_REAL
   use view_directed        , only : directed_graph
   use field_calculus       , only : field
-  use util_derivative_terms, only : derivative_terms, mixed_partial, max_subset_width, integer_power
-  use util_derivative_terms, only : extend_directions, partial
+  use util_derivative_terms, only : derivative_terms, mixed_partial, max_subset_width
+  use util_derivative_terms, only : partial, extended_terms, product_terms, quotient_terms
+  use util_derivative_terms, only : integer_power_terms, real_power_terms, sine_terms, cosine_terms
+  use util_derivative_terms, only : exponential_terms, logarithm_terms
 
   implicit none
 
   private
   public :: expression
   public :: unknown, design, constant, multiplier, coordinate, component, component_along
-  public :: derivative, jet_form, represented_component
+  public :: derivative, jet_form, represented_component, on_domain, paired
   public :: euler_lagrange, at_zero
   public :: partial_derivative, partial_in_design, total_derivative, stationarity, boundary_terms
   public :: flux_form, coefficient_form
@@ -173,6 +179,9 @@ module operation_expression
      ! per field, the highest order along the first coordinate of a
      ! mixed component, zero when the field has none
      integer, allocatable, private :: mixed_degree_of_field(:)
+     ! per field, its first component in the tuple, and after the last
+     ! field the count of components
+     integer, allocatable, private :: field_offset(:)
 
      integer , allocatable, private :: kind(:)
      integer , allocatable, private :: first(:), second(:)    ! the vertices read; 0 if none
@@ -200,6 +209,7 @@ module operation_expression
      procedure :: num_components
      procedure :: component_at
      procedure :: highest_degree_along
+     procedure :: highest_order_read
      procedure :: read_components
      procedure :: root
      procedure :: vertices
@@ -220,6 +230,7 @@ module operation_expression
      procedure, private :: order_at
      procedure, private :: evaluated_over
      procedure, private :: derive_domain
+     procedure, private :: declare_domain
 
   end type expression
 
@@ -371,6 +382,70 @@ contains
     this = vertex(VERTEX_LEAF, ARGUMENT_MULTIPLIER, 0, 0.0_dp, field=j)
 
   end function multiplier
+
+  !===================================================================!
+  ! THE LAWS PAIRED WITH THEIR MULTIPLIERS, multiplier(1) * laws(1) +
+  ! multiplier(2) * laws(2) + ..., formed in one pass: the vertices
+  ! the products and the sums formed one at a time would have, in
+  ! their order, without the copy of the sum each would make.
+  !===================================================================!
+
+  function paired(laws) result(this)
+
+    type(expression), intent(in) :: laws(:)
+    type(expression) :: this
+
+    integer :: total, j, n, at, leaf, root
+
+    total = sum([(laws(j) % root() + 2, j = 1, size(laws))]) + size(laws) - 1
+    allocate(this % kind(total), this % first(total), this % second(total), this % position(total), &
+         & this % field(total), this % order(total), this % along(total), this % mixed_order(total), &
+         & this % coefficient(total))
+    this % first       = 0
+    this % second      = 0
+    this % position    = 0
+    this % field       = 0
+    this % order       = 0
+    this % along       = FIRST_COORDINATE
+    this % mixed_order = 0
+    this % coefficient = 0.0_dp
+    at   = 0
+    root = 0
+    do j = 1, size(laws)
+       ! the multiplier
+       at = at + 1
+       leaf = at
+       this % kind(at)     = VERTEX_LEAF
+       this % position(at) = ARGUMENT_MULTIPLIER
+       this % field(at)    = j
+       ! the law
+       n = laws(j) % root()
+       this % kind(at + 1:at + n)        = laws(j) % kind
+       this % first(at + 1:at + n)       = shifted(laws(j) % first, at)
+       this % second(at + 1:at + n)      = shifted(laws(j) % second, at)
+       this % position(at + 1:at + n)    = laws(j) % position
+       this % field(at + 1:at + n)       = laws(j) % field
+       this % order(at + 1:at + n)       = laws(j) % order
+       this % along(at + 1:at + n)       = laws(j) % along
+       this % mixed_order(at + 1:at + n) = laws(j) % mixed_order
+       this % coefficient(at + 1:at + n) = laws(j) % coefficient
+       at = at + n
+       ! their product, and its sum with the terms before
+       at = at + 1
+       this % kind(at)   = VERTEX_PRODUCT
+       this % first(at)  = leaf
+       this % second(at) = at - 1
+       if (j > 1) then
+          at = at + 1
+          this % kind(at)   = VERTEX_SUM
+          this % first(at)  = root
+          this % second(at) = at - 1
+       end if
+       root = at
+    end do
+    call this % derive_domain()
+
+  end function paired
 
   !===================================================================!
   ! The c-th coordinate function: read from the position of the point
@@ -559,8 +634,12 @@ contains
 
   !===================================================================!
   ! The stationarity of a Lagrangian in its j-th multiplier: the
-  ! partial of the rule along that multiplier, at zero. A multiplier
-  ! the rule does not read stops the program.
+  ! partial of the rule along that multiplier, at zero. When the
+  ! Lagrangian is a sum of terms, each a multiplier times a law free of
+  ! multipliers, and the j-th multiplier is read in one term alone, the
+  ! partial is that term's law: its vertices, on the domain and the
+  ! arguments of the Lagrangian, so that it reads the Lagrangian's
+  ! tuple. A multiplier the rule does not read stops the program.
   !===================================================================!
 
   function euler_lagrange(lagrangian, multiplier, label) result(this)
@@ -571,6 +650,7 @@ contains
     type(expression) :: this
 
     character(len=250) :: message
+    integer :: law, start
 
     if (multiplier < 1 .or. multiplier > lagrangian % multipliers) then
        write(message,'(a,i0,a,i0)') 'operation_expression: the stationarity must be in a &
@@ -579,11 +659,90 @@ contains
        error stop trim(message)
     end if
 
+    law = factor_of(lagrangian, multiplier)
+    if (law > 0) then
+       ! the vertices of a subtree are consecutive, its root last
+       start = law
+       do while (lagrangian % first(start) > 0)
+          start = lagrangian % first(start)
+       end do
+       this % kind        = lagrangian % kind(start:law)
+       this % first       = shifted(lagrangian % first(start:law), 1 - start)
+       this % second      = shifted(lagrangian % second(start:law), 1 - start)
+       this % position    = lagrangian % position(start:law)
+       this % field       = lagrangian % field(start:law)
+       this % order       = lagrangian % order(start:law)
+       this % along       = lagrangian % along(start:law)
+       this % mixed_order = lagrangian % mixed_order(start:law)
+       this % coefficient = lagrangian % coefficient(start:law)
+       this % fields                = lagrangian % fields
+       this % multipliers           = lagrangian % multipliers
+       this % designs               = lagrangian % designs
+       this % position_coordinates  = lagrangian % position_coordinates
+       this % field_degree          = lagrangian % field_degree
+       this % mixed_degree_of_field = lagrangian % mixed_degree_of_field
+       this % degrees               = lagrangian % degrees
+       call this % share_arguments(lagrangian)
+       call this % declare_domain(label)
+       return
+    end if
     this = lagrangian
     this % varied = multiplier
     call this % derive_domain(label)
 
   end function euler_lagrange
+
+  ! the vertex of the law the j-th multiplier multiplies, in a
+  ! Lagrangian whose terms are summed and the j-th multiplier read once,
+  ! as a factor of a term whose other factor reads no multiplier; zero
+  ! for a Lagrangian of any other form
+  function factor_of(lagrangian, j) result(law)
+
+    type(expression), intent(in) :: lagrangian
+    integer         , intent(in) :: j
+    integer :: law
+
+    integer, allocatable :: pending(:)
+    integer :: i, other, start
+
+    law = 0
+    if (count(lagrangian % kind == VERTEX_LEAF .and. lagrangian % position == ARGUMENT_MULTIPLIER &
+         & .and. lagrangian % field == j) /= 1) return
+    pending = [lagrangian % root()]
+    do while (size(pending) > 0)
+       i = pending(size(pending))
+       pending = pending(1:size(pending) - 1)
+       select case (lagrangian % kind(i))
+       case (VERTEX_SUM)
+          pending = [pending, lagrangian % first(i), lagrangian % second(i)]
+       case (VERTEX_PRODUCT)
+          if (read_multiplier(lagrangian % first(i))) then
+             other = lagrangian % second(i)
+          else if (read_multiplier(lagrangian % second(i))) then
+             other = lagrangian % first(i)
+          else
+             cycle
+          end if
+          start = other
+          do while (lagrangian % first(start) > 0)
+             start = lagrangian % first(start)
+          end do
+          if (any(lagrangian % kind(start:other) == VERTEX_LEAF .and. &
+               & lagrangian % position(start:other) == ARGUMENT_MULTIPLIER)) return
+          law = other
+          return
+       end select
+    end do
+
+  contains
+
+    logical function read_multiplier(k)
+      integer, intent(in) :: k
+      read_multiplier = lagrangian % kind(k) == VERTEX_LEAF .and. lagrangian % position(k) == ARGUMENT_MULTIPLIER &
+           & .and. lagrangian % field(k) == j
+    end function read_multiplier
+
+  end function factor_of
 
   !===================================================================!
   ! The Lagrangian with every multiplier at zero, which for a
@@ -668,11 +827,31 @@ contains
     logical         , intent(in), optional :: resolved
     type(expression) :: this
 
-    integer :: k
+    integer :: k, start
     logical :: jet
 
     jet = .false.
     if (present(resolved)) jet = resolved
+    ! a subtree free of derivative operators is its consecutive
+    ! vertices, its root last, renumbered: the vertices the joins below
+    ! would form, in their order
+    start = i
+    do while (x % first(start) > 0)
+       start = x % first(start)
+    end do
+    if (.not. any(x % kind(start:i) == VERTEX_DERIVATIVE)) then
+       this % kind        = x % kind(start:i)
+       this % first       = shifted(x % first(start:i), 1 - start)
+       this % second      = shifted(x % second(start:i), 1 - start)
+       this % position    = x % position(start:i)
+       this % field       = x % field(start:i)
+       this % order       = x % order(start:i)
+       this % along       = x % along(start:i)
+       this % mixed_order = x % mixed_order(start:i)
+       this % coefficient = x % coefficient(start:i)
+       call this % derive_domain()
+       return
+    end if
     select case (x % kind(i))
     case (VERTEX_LEAF)
        this = vertex(VERTEX_LEAF, x % position(i), x % order(i), 0.0_dp, x % along(i), x % field(i), &
@@ -747,17 +926,24 @@ contains
   ! the derivative of the subtree at i, the leaves differentiated by
   ! the mode: 1 the partial in the state component (field, order,
   ! along), 2 the partial in the design field, 3 the total derivative
-  ! along the coordinate along
-  recursive function differentiated(x, i, mode, field, order, along) result(this)
+  ! along the coordinate along. A subtree that reads no leaf the mode
+  ! differentiates, reads(i) false, has the derivative zero, and an
+  ! operand is copied only into a term that is not zero.
+  recursive function differentiated(x, i, mode, field, order, along, reads) result(this)
 
     type(expression), intent(in) :: x
     integer         , intent(in) :: i, mode, field, order, along
+    logical         , intent(in) :: reads(:)
     type(expression) :: this
 
     type(expression) :: a, b, da, db
     integer :: n
     character(len=250) :: message
 
+    if (.not. reads(i)) then
+       this = constant(0.0_dp)
+       return
+    end if
     select case (x % kind(i))
     case (VERTEX_DERIVATIVE)
        error stop 'operation_expression: a law with a derivative operator is differentiated only in its &
@@ -801,27 +987,43 @@ contains
     case (VERTEX_CONSTANT)
        this = constant(0.0_dp)
     case (VERTEX_SUM)
-       this = sum_of(differentiated(x, x % first(i), mode, field, order, along), &
-            &        differentiated(x, x % second(i), mode, field, order, along))
+       this = sum_of(differentiated(x, x % first(i), mode, field, order, along, reads), &
+            &        differentiated(x, x % second(i), mode, field, order, along, reads))
     case (VERTEX_DIFFERENCE)
-       this = difference_of(differentiated(x, x % first(i), mode, field, order, along), &
-            &               differentiated(x, x % second(i), mode, field, order, along))
+       this = difference_of(differentiated(x, x % first(i), mode, field, order, along, reads), &
+            &               differentiated(x, x % second(i), mode, field, order, along, reads))
     case (VERTEX_PRODUCT)
-       da = differentiated(x, x % first(i), mode, field, order, along)
-       db = differentiated(x, x % second(i), mode, field, order, along)
-       a  = subtree(x, x % first(i))
-       b  = subtree(x, x % second(i))
-       this = sum_of(product_of(da, b), product_of(a, db))
+       da = differentiated(x, x % first(i), mode, field, order, along, reads)
+       db = differentiated(x, x % second(i), mode, field, order, along, reads)
+       if (is_constant(da, 0.0_dp) .and. is_constant(db, 0.0_dp)) then
+          this = constant(0.0_dp)
+       else if (is_constant(da, 0.0_dp)) then
+          this = product_of(subtree(x, x % first(i)), db)
+       else if (is_constant(db, 0.0_dp)) then
+          this = product_of(da, subtree(x, x % second(i)))
+       else
+          a  = subtree(x, x % first(i))
+          b  = subtree(x, x % second(i))
+          this = sum_of(product_of(da, b), product_of(a, db))
+       end if
     case (VERTEX_QUOTIENT)
-       da = differentiated(x, x % first(i), mode, field, order, along)
-       db = differentiated(x, x % second(i), mode, field, order, along)
+       da = differentiated(x, x % first(i), mode, field, order, along, reads)
+       db = differentiated(x, x % second(i), mode, field, order, along, reads)
+       if (is_constant(da, 0.0_dp) .and. is_constant(db, 0.0_dp)) then
+          this = constant(0.0_dp)
+          return
+       end if
        a  = subtree(x, x % first(i))
        b  = subtree(x, x % second(i))
        this = difference_of(product_of(da, b), product_of(a, db))
        if (.not. is_constant(this, 0.0_dp)) this = this / (b * b)
     case (VERTEX_INTEGER_POWER)
        n  = nint(x % coefficient(i))
-       da = differentiated(x, x % first(i), mode, field, order, along)
+       da = differentiated(x, x % first(i), mode, field, order, along, reads)
+       if (is_constant(da, 0.0_dp)) then
+          this = constant(0.0_dp)
+          return
+       end if
        a  = subtree(x, x % first(i))
        if (n == 0) then
           this = constant(0.0_dp)
@@ -833,11 +1035,19 @@ contains
           this = product_of(product_of(constant(real(n, dp)), a ** (n - 1)), da)
        end if
     case (VERTEX_REAL_POWER)
-       da = differentiated(x, x % first(i), mode, field, order, along)
+       da = differentiated(x, x % first(i), mode, field, order, along, reads)
+       if (is_constant(da, 0.0_dp)) then
+          this = constant(0.0_dp)
+          return
+       end if
        a  = subtree(x, x % first(i))
        this = product_of(product_of(constant(x % coefficient(i)), a ** (x % coefficient(i) - 1.0_dp)), da)
     case (VERTEX_FUNCTION)
-       da = differentiated(x, x % first(i), mode, field, order, along)
+       da = differentiated(x, x % first(i), mode, field, order, along, reads)
+       if (is_constant(da, 0.0_dp)) then
+          this = constant(0.0_dp)
+          return
+       end if
        a  = subtree(x, x % first(i))
        select case (x % order(i))
        case (SINE)
@@ -878,7 +1088,7 @@ contains
 
     c = FIRST_COORDINATE
     if (present(along)) c = along
-    this = differentiated(x, x % root(), 1, field, order, c)
+    this = differentiated(x, x % root(), 1, field, order, c, leaves_read(x, 1, field, order, c))
 
   end function partial_derivative
 
@@ -888,7 +1098,7 @@ contains
     integer         , intent(in) :: field
     type(expression) :: this
 
-    this = differentiated(x, x % root(), 2, field, 0, FIRST_COORDINATE)
+    this = differentiated(x, x % root(), 2, field, 0, FIRST_COORDINATE, leaves_read(x, 2, field, 0, FIRST_COORDINATE))
 
   end function partial_in_design
 
@@ -898,9 +1108,42 @@ contains
     integer         , intent(in) :: along
     type(expression) :: this
 
-    this = differentiated(x, x % root(), 3, 0, 0, along)
+    this = differentiated(x, x % root(), 3, 0, 0, along, leaves_read(x, 3, 0, 0, along))
 
   end function total_derivative
+
+  ! whether the subtree at each vertex reads a leaf that the mode of
+  ! differentiated differentiates to other than zero
+  pure function leaves_read(x, mode, field, order, along) result(reads)
+
+    type(expression), intent(in) :: x
+    integer         , intent(in) :: mode, field, order, along
+    logical :: reads(x % num_vertices())
+
+    integer :: i
+
+    do i = 1, x % num_vertices()
+       select case (x % kind(i))
+       case (VERTEX_LEAF)
+          select case (mode)
+          case (1)
+             reads(i) = x % position(i) == ARGUMENT_STATE .and. x % field(i) == field .and. &
+                  & x % order(i) == order .and. x % mixed_order(i) == 0 .and. (x % along(i) == along .or. order == 0)
+          case (2)
+             reads(i) = x % position(i) == ARGUMENT_DESIGN .and. x % field(i) == field
+          case default
+             reads(i) = x % position(i) == ARGUMENT_STATE .or. &
+                  & (x % position(i) == ARGUMENT_COORDINATE .and. x % field(i) == along)
+          end select
+       case (VERTEX_CONSTANT)
+          reads(i) = .false.
+       case default
+          reads(i) = reads(x % first(i))
+          if (x % second(i) > 0) reads(i) = reads(i) .or. reads(x % second(i))
+       end select
+    end do
+
+  end function leaves_read
 
   function stationarity(x, field, along) result(this)
 
@@ -1194,7 +1437,6 @@ contains
     class(expression), intent(inout) :: this
     character(len=*) , intent(in), optional :: label
 
-    type(contract), allocatable :: contracts(:)
     integer :: i, f, c, coordinates
 
     this % fields      = 1
@@ -1230,14 +1472,72 @@ contains
     this % degrees      = [this % field_degree(1), &
          & (max(0, this % highest_degree_along(c)), c = FIRST_COORDINATE + 1, coordinates)]
 
-    ! a rule that reads a coordinate takes the positions of the points
-    ! as a third argument, one value per coordinate read per point
+    call this % declare_domain(label)
+
+  end subroutine derive_domain
+
+  ! the argument contracts of the domain: a rule that reads a
+  ! coordinate takes the positions of the points as a third argument,
+  ! one value per coordinate read per point
+  subroutine declare_domain(this, label)
+
+    class(expression), intent(inout) :: this
+    character(len=*) , intent(in), optional :: label
+
+    type(contract), allocatable :: contracts(:)
+    integer, allocatable :: offset(:)
+    integer :: f
+
+    allocate(offset(this % fields + 1))
+    offset(1) = 0
+    do f = 1, this % fields
+       offset(f + 1) = offset(f) + this % components_per_field(f)
+    end do
+    this % field_offset = offset
     contracts = [contract(FIELD_REAL, this % num_components()), contract(FIELD_REAL, this % designs)]
     if (this % position_coordinates > 0) contracts = [contracts, contract(FIELD_REAL, this % position_coordinates)]
     call this % declare_arguments(size(contracts), contracts, label=label, &
          & max_degree=max_subset_width() - merge(1, 0, this % varied > 0))
 
-  end subroutine derive_domain
+  end subroutine declare_domain
+
+  !===================================================================!
+  ! THE EXPRESSION ON THE DOMAIN OF ANOTHER that contains its own: x
+  ! read from the tuple, the designs and the positions of y, so that
+  ! two rules evaluated on one block index one tuple. Invalid input:
+  ! a domain that does not contain the expression's.
+  !===================================================================!
+
+  function on_domain(x, y) result(this)
+
+    type(expression), intent(in) :: x, y
+    type(expression) :: this
+
+    integer :: f, c
+
+    if (x % fields > y % fields .or. x % multipliers > y % multipliers .or. x % designs > y % designs &
+         & .or. x % position_coordinates > y % position_coordinates .or. size(x % degrees) > size(y % degrees)) then
+       error stop 'operation_expression: the domain does not contain the expression''s own'
+    end if
+    do f = 1, x % fields
+       if (x % field_degree(f) > y % field_degree(f) .or. x % mixed_degree_of_field(f) > y % mixed_degree_of_field(f)) &
+            & error stop 'operation_expression: the domain does not contain the expression''s own'
+    end do
+    do c = 1, size(x % degrees)
+       if (x % degrees(c) > y % degrees(c)) error stop 'operation_expression: the domain does not contain the &
+            &expression''s own'
+    end do
+    this = x
+    this % fields                = y % fields
+    this % multipliers           = y % multipliers
+    this % designs               = y % designs
+    this % position_coordinates  = y % position_coordinates
+    this % field_degree          = y % field_degree
+    this % mixed_degree_of_field = y % mixed_degree_of_field
+    this % degrees               = y % degrees
+    call this % declare_domain()
+
+  end function on_domain
 
   !===================================================================!
   ! THE OPERATORS.
@@ -1387,8 +1687,7 @@ contains
     real(dp)              , intent(in), optional :: position(:)
     type(derivative_terms) :: r
 
-    type(derivative_terms), allocatable :: stored(:), design(:)
-    integer :: n, j, given
+    integer :: n
 
     if (size(q) /= this % num_components()) then
        error stop 'operation_expression: the point does not store one component per law component'
@@ -1396,33 +1695,16 @@ contains
     if (size(nu) < this % designs) then
        error stop 'operation_expression: the point does not store one value per design the law reads'
     end if
-    if (this % multipliers == 0) then
-       r = this % evaluated_over(q, nu, position)
-       return
-    end if
 
     ! the tuple evaluated stores the state and then the multipliers;
     ! a multiplier, read from no input, is zero, and the varied one
     ! has one more direction, the highest, whose partial is returned
     ! over the caller's
     n = nu(1) % num_directions()
-    if (this % varied > 0) n = n + 1
-    allocate(design(size(nu)))
-    do j = 1, size(nu)
-       design(j) = extend_directions(nu(j), n)
-    end do
-    given  = this % num_components()
-    allocate(stored(0:given + this % multipliers - 1))
-    do j = 0, given - 1
-       stored(j) = extend_directions(q(j), n)
-    end do
-    do j = 1, this % multipliers
-       stored(given + j - 1) = derivative_terms(0.0_dp, design(1))
-    end do
-    if (this % varied > 0) call stored(given + this % varied - 1) % set_direction(n, 1.0_dp)
-
-    r = this % evaluated_over(stored, design, position)
-    if (this % varied > 0) r = partial(r, n)
+    if (size(q) > 0) n = max(n, q(0) % num_directions())
+    if (this % multipliers > 0 .and. this % varied > 0) n = n + 1
+    r = this % evaluated_over(q, nu, n, position)
+    if (this % multipliers > 0 .and. this % varied > 0) r = partial(r, n)
 
   end function expression_at_instant
 
@@ -1739,33 +2021,37 @@ contains
   end function expression_defined_at_zero
 
   !===================================================================!
-  ! The loop over the vertices, on the stored tuple.
+  ! The loop over the vertices, on the stored tuple: the coefficients
+  ! of every vertex over n directions in one array, each rule of
+  ! util_derivative_terms applied to the coefficients of its operands.
+  ! A state leaf reads its component of q and a design leaf its design,
+  ! the directions either lacks zero; a multiplier is zero, the varied
+  ! one with the derivative one along the direction n.
   !===================================================================!
 
-  pure function evaluated_over(this, q, nu, position) result(r)
-
-    ! the arithmetic over derivative_terms is read here alone, so the
-    ! module's public operators are its own, on expressions
-    use util_derivative_terms, only : operator(+), operator(-), operator(*), operator(/), &
-         & operator(**), sin, cos, exp, log, sqrt
+  pure function evaluated_over(this, q, nu, n, position) result(r)
 
     class(expression)     , intent(in) :: this
     type(derivative_terms), intent(in) :: q(0:)
     type(derivative_terms), intent(in) :: nu(:)
+    integer               , intent(in) :: n
     real(dp)              , intent(in), optional :: position(:)
     type(derivative_terms) :: r
 
-    type(derivative_terms), allocatable :: v(:)
-    integer :: i, at
+    real(dp), allocatable :: v(:,:)
+    integer :: i, at, f, s
 
-    allocate(v(this % num_vertices()))
+    allocate(v(0:2**n - 1, this % num_vertices()))
 
     do i = 1, this % num_vertices()
+       f = this % first(i)
+       s = this % second(i)
        select case (this % kind(i))
        case (VERTEX_LEAF)
-          if (this % position(i) == ARGUMENT_DESIGN) then
-             v(i) = nu(this % field(i))
-          else if (this % position(i) == ARGUMENT_COORDINATE) then
+          select case (this % position(i))
+          case (ARGUMENT_DESIGN)
+             call extended_terms(nu(this % field(i)), v(:, i))
+          case (ARGUMENT_COORDINATE)
              ! a coordinate is read from the position of the point,
              ! which an evaluation without a position does not have
              if (.not. present(position)) then
@@ -1774,39 +2060,43 @@ contains
              if (this % field(i) > size(position)) then
                 error stop 'operation_expression: the expression reads a coordinate the position does not have'
              end if
-             v(i) = derivative_terms(position(this % field(i)), nu(1))
-          else
+             v(:, i) = 0.0_dp
+             v(0, i) = position(this % field(i))
+          case (ARGUMENT_MULTIPLIER)
+             v(:, i) = 0.0_dp
+             if (this % field(i) == this % varied) v(2**(n - 1), i) = 1.0_dp
+          case default
              ! the tuple lists every field's components together, the
-             ! components along time first, then along space, and the
-             ! multipliers after every field
+             ! components along time first, then along space
              at = this % leaf_at(i)
              if (at > ubound(q, 1)) then
                 error stop 'operation_expression: the state does not store the component read, &
                      &beyond the end of the stored tuple'
              end if
-             v(i) = q(at)
-          end if
+             call extended_terms(q(at), v(:, i))
+          end select
        case (VERTEX_CONSTANT)
-          v(i) = derivative_terms(this % coefficient(i), nu(1))
+          v(:, i) = 0.0_dp
+          v(0, i) = this % coefficient(i)
        case (VERTEX_SUM)
-          v(i) = v(this % first(i)) + v(this % second(i))
+          v(:, i) = v(:, f) + v(:, s)
        case (VERTEX_DIFFERENCE)
-          v(i) = v(this % first(i)) - v(this % second(i))
+          v(:, i) = v(:, f) - v(:, s)
        case (VERTEX_PRODUCT)
-          v(i) = v(this % first(i)) * v(this % second(i))
+          call product_terms(v(:, f), v(:, s), v(:, i))
        case (VERTEX_QUOTIENT)
-          v(i) = v(this % first(i)) / v(this % second(i))
+          call quotient_terms(v(:, f), v(:, s), v(:, i))
        case (VERTEX_INTEGER_POWER)
-          v(i) = integer_power(v(this % first(i)), nint(this % coefficient(i)))
+          call integer_power_terms(v(:, f), nint(this % coefficient(i)), v(:, i))
        case (VERTEX_REAL_POWER)
-          v(i) = v(this % first(i)) ** this % coefficient(i)
+          call real_power_terms(v(:, f), this % coefficient(i), v(:, i))
        case (VERTEX_FUNCTION)
           select case (this % order(i))
-          case (SINE);        v(i) = sin(v(this % first(i)))
-          case (COSINE);      v(i) = cos(v(this % first(i)))
-          case (EXPONENTIAL); v(i) = exp(v(this % first(i)))
-          case (LOGARITHM);   v(i) = log(v(this % first(i)))
-          case (SQUARE_ROOT); v(i) = sqrt(v(this % first(i)))
+          case (SINE);        call sine_terms(v(:, f), v(:, i))
+          case (COSINE);      call cosine_terms(v(:, f), v(:, i))
+          case (EXPONENTIAL); call exponential_terms(v(:, f), v(:, i))
+          case (LOGARITHM);   call logarithm_terms(v(:, f), v(:, i))
+          case (SQUARE_ROOT); call real_power_terms(v(:, f), 0.5_dp, v(:, i))
           case default
              error stop 'operation_expression: this vertex names a function that is not one of &
                   &those defined'
@@ -1820,7 +2110,7 @@ contains
        end select
     end do
 
-    r = v(size(v))
+    r = derivative_terms(v(:, this % num_vertices()))
 
   end function evaluated_over
 
@@ -1850,6 +2140,33 @@ contains
     end do
 
   end function highest_degree_along
+
+  !===================================================================!
+  ! The highest order along the first coordinate at which this rule
+  ! reads a field - a component along a later coordinate at the order
+  ! along the first it is mixed with - and minus one when it reads
+  ! none of the field.
+  !===================================================================!
+
+  pure integer function highest_order_read(this, field)
+
+    class(expression), intent(in) :: this
+    integer          , intent(in) :: field
+
+    integer :: i
+
+    highest_order_read = -1
+    do i = 1, this % num_vertices()
+       if (this % kind(i) /= VERTEX_LEAF .or. this % position(i) /= ARGUMENT_STATE) cycle
+       if (this % field(i) /= field) cycle
+       if (this % along(i) == FIRST_COORDINATE) then
+          highest_order_read = max(highest_order_read, this % order(i))
+       else
+          highest_order_read = max(highest_order_read, this % mixed_order(i))
+       end if
+    end do
+
+  end function highest_order_read
 
   !===================================================================!
   ! The components of the tuple the rule reads, each once, in
@@ -1975,8 +2292,6 @@ contains
     class(expression), intent(in) :: this
     integer          , intent(in) :: field
 
-    integer :: f
-
     if (field < 1 .or. field > this % fields + this % multipliers) then
        error stop 'operation_expression: this component names a field the rule does not read'
     end if
@@ -1984,10 +2299,7 @@ contains
        error stop 'operation_expression: this component names a multiplier, which is not stored &
             &in the tuple'
     end if
-    at = 0
-    do f = 1, field - 1
-       at = at + this % components_per_field(f)
-    end do
+    at = this % field_offset(field)
 
   end function offset_of_field
 
@@ -2002,17 +2314,11 @@ contains
     integer          , intent(in) :: position, field, coordinate, order
     integer          , intent(in), optional :: mixed_order
 
-    integer :: f
-
     if (position == ARGUMENT_MULTIPLIER) then
        at = this % num_components() + field - 1
        return
     end if
-    at = 0
-    do f = 1, field - 1
-       at = at + this % components_per_field(f)
-    end do
-    at = at + this % order_at(field, coordinate, order, mixed_order)
+    at = this % field_offset(field) + this % order_at(field, coordinate, order, mixed_order)
 
   end function stored_at
 
@@ -2103,6 +2409,10 @@ contains
 
     integer :: f
 
+    if (allocated(this % field_offset)) then
+       num_components = this % field_offset(size(this % field_offset))
+       return
+    end if
     num_components = 0
     do f = 1, this % fields
        num_components = num_components + this % components_per_field(f)

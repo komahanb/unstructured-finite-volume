@@ -1,0 +1,8 @@
+! THE SETUP of rotorcraft_dynamics
+&setup
+  blade       = 'rigid'        ! rigid; beam, plate and solid to come
+  scenario    = 'collective'   ! collective, longitudinal or lateral
+  thickness   = 0.02           ! of the blades
+  revolutions = 1
+  steps       = 360            ! per revolution
+/

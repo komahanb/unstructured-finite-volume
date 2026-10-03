@@ -1,10 +1,124 @@
 # The rotorcraft optimization in the Lagrangian framework
 
-Status: plan, 2026-10-02. The source is komahanb/rotorcraft-optimization,
-`deterministic-optimization`: Python scripts that build the case in TACS
-(`tacs_builder.py`, `scripts/multiscenario.py` and its three scenarios).
-The facts below are read from those scripts, the TACS sources the clone
-vendors, and its run log (`logs/multiscenario.log`).
+Status: plan, 2026-10-02; the rigid rotor built, 2026-10-03, in
+`physics/rotorcraft-dynamics/` (section "The rigid rotor"). The source
+is komahanb/rotorcraft-optimization, `deterministic-optimization`:
+Python scripts that build the case in TACS (`tacs_builder.py`,
+`scripts/multiscenario.py` and its three scenarios). The facts below
+are read from those scripts, the TACS sources the clone vendors, and
+its run log (`logs/multiscenario.log`).
+
+## The rigid rotor
+
+Built 2026-10-03, with the decisions of the author: each blade at the
+azimuth of its cap; the blade model chosen at setup, rigid first, then
+beam, plate and solid; the in-house minimizer in place of ALGENCAN; the
+time history drawn for paraview.
+
+**The statement.** `multibody_dynamics.f90` states a rigid body and its
+joints as fields of time. A body's action is its kinetic energy less
+its potential energy, with the unit norm of its Euler parameters paired
+with a multiplier; a joint is a list of conditions, each paired with a
+reaction. The Lagrangian density of the mechanism is the sum of the
+actions and of the products of the conditions with their reactions,
+and its stationarity in each unknown is that unknown's law: 355
+unknowns of time, 26 bodies of eight and 147 reactions.
+`rotorcraft_dynamics.f90` states the 26 bodies (the table
+`rotor_bodies.txt`, read from the case's `data/inp`) and the 34 joints
+of `collective.py`. A blade is a plate of span 1.56 from the radius
+0.44, chord 0.121, density 2500 and the thickness of the setup, along
+the azimuth of its cap and linked to it.
+
+**Two rotations agree** where the vector part of the rotation between
+them vanishes, eta_a eps_b - eta_b eps_a - eps_a x eps_b. The rigid
+link and the hub's driver are stated so: three conditions independent
+at every orientation. Equal parameters eps_a = eps_b leave eta to the
+unit norm, whose derivative 2 eta vanishes at half a turn; the block of
+that instant is singular. TACS adds terms of a factor delta to the unit
+norms for the same reason.
+
+**The first instant.** The initial data fix the positions and the
+rates, so a joint's condition reads nothing the first instant leaves
+free. The library states such a law there by its derivative along time
+of the least order that reads the accelerations: the condition hidden
+in its holding at every instant, which determines the reactions at the
+first instant.
+
+**The march** is bdf(1) over 360 steps of the revolution, as TACS
+marches it, each step from the solution of the step before
+(`minimize(..., continued=.true.)`).
+
+**The setup**, `rotorcraft.nml`: the blade model, the scenario
+(collective, longitudinal, lateral), the thickness, the revolutions,
+the steps, the directory of the bodies' meshes and the stride of the
+instants drawn.
+
+**Verified.**
+- The triple pendulum of the dissertation (`triple_pendulum.f90`):
+  the joints' conditions below 1e-15 at every instant; the change of
+  the energy at t = 2 is -6.74e-2, -1.16e-2 and -2.20e-3 at 401, 801
+  and 1601 instants under bdf(2), approaching order two.
+- The rotor: the initial energy 4.99144494e5 J, TACS's 4.99144e5; the
+  hub's angle to 1e-16 and every condition of the joints to 2e-14 at
+  every instant of the revolution.
+- Against TACS with the same rigid blades (36 steps, BDF of order
+  one): the first step agrees to 5.7e-10. The motion here satisfies
+  the Euler-Lagrange equations of the bodies, projected on the
+  conditions, to 2e-11 relative, evaluated independently. TACS's
+  motion does not, by 7e-9 relative at the first step: TACS's rigid
+  link applies the moment of its position reaction on body A with the
+  wrong sign (`TACSRigidLink::addResidual` adds
+  `addEMatTransProduct(-1.0, t, ...)` where the gradient of
+  `uB - uA - t + C_A^T t` gives +1). Every other element of TACS
+  reacts along the gradient of its condition, to 1e-10; with that sign
+  reversed, TACS's states satisfy the equations to the same 2e-11 and
+  these do not. The upper swashplate's turn about the shaft drifts
+  from it: the energies after a revolution are 4.739e5 J here and
+  4.719e5 in TACS. TACS's runs of the case carry the error in the caps'
+  links, to the pitch links and to the blades.
+- 360 steps: the energy falls to 4.94255e5 J over the revolution, where
+  36 steps lose 2.5e4: the dissipation of bdf(1). 168 seconds, 232 MB.
+
+**The drawing.** Every rigid body is drawn with its surface mesh (the
+case's `data/mesh`, the corners of its CQUAD9 cells), each blade with
+the box of its plate, moved with the body to each instant drawn: x =
+r0 + u + C^T (X - r0). One file of 168326 points per instant,
+`rotor_<instant>.vtu`, and `rotor.pvd`, the time series paraview reads.
+
+**What changed in src/.**
+- `operation_residual.f90`: the laws at the first instant (above);
+  `minimize(..., continued)`; the rule formed in one pass.
+- `operation_expression.f90`: the stationarity of a Lagrangian that is
+  a sum of multipliers times laws is the law the multiplier multiplies,
+  read on the Lagrangian's tuple, where before each row evaluated the
+  whole Lagrangian; the symbolic derivative skips a subtree that does
+  not read its variable; the offsets of the fields are stored; the
+  rule is evaluated on one array of coefficients.
+- `util_derivative_terms.f90`: each rule on arrays of coefficients,
+  the operators of the type those rules on its own.
+- `operation_field.f90`: `at` of a field that is not an integral is
+  its value at every point of the solution.
+- `operation_dense_direct.f90`: a pivot is singular at or below the
+  tolerance times the largest entry of its column; the reactions of
+  the index-three system have pivots near the square of the step.
+- `view_paraview_writer.f90`: a writer of cells alone, the file in
+  binary, the time series; `view_bdf_loader.f90`: the surface of a
+  Nastran bulk data file.
+
+Every value of the 92 cases is unchanged, serially and on 1, 2 and 4
+images. The count of nonzeros in Newton's report falls, the explicit
+zeros of the rows no longer listed. The laws of the rotor are formed
+in 1.1 s, where they took 225 s, and a step takes 0.46 s.
+
+**Decision before the beam.** A blade that turns a full revolution is
+not a linear beam, plate or solid in fixed axes. Either it is
+geometrically exact in fixed axes, as in the dissertation and TACS,
+linked to its cap at the root; or it is linear in the axes of its cap,
+its kinetic energy read in those turning axes and its stiffening by
+the axial stress of the rotation added to its potential energy.
+Recommended: the second. It keeps the beam, the plate and the solid
+linear and alike, one model replacing another at setup, and the cap
+carries the revolution.
 
 ## The case
 
@@ -135,6 +249,10 @@ differences.
   - the rotating beam of the blades.
 
 ## Decisions for the author
+
+Decided 2026-10-03: each blade at its cap; the blade model chosen at
+setup, rigid, beam, plate and solid in that order; the in-house
+minimizer.
 
 1. **The blades at 90 and 270 degrees** are attached across the hub:
    `blade90.inp` reads `rotor2_192dv.bdf`, which lies at y from -2.0 to

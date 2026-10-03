@@ -193,6 +193,7 @@ module operation_action
      procedure :: explicit_jacobian => operation_explicit_jacobian
 
      procedure :: declare_arguments
+     procedure :: share_arguments
      procedure :: versioned
      procedure :: version
      procedure :: transpose_version
@@ -372,6 +373,22 @@ contains
     if (present(max_degree)) this % exact_degree = max_degree
 
   end subroutine declare_arguments
+
+  !===================================================================!
+  ! The argument space and the name of another operation taken as this
+  ! one's: an operation formed from another and read on its arguments,
+  ! so that a variation of the other's arguments names this one's.
+  !===================================================================!
+
+  subroutine share_arguments(this, other)
+
+    class(operation), intent(inout) :: this
+    class(operation), intent(in)    :: other
+
+    this % arguments_space = other % arguments_space
+    if (allocated(other % label)) this % label = other % label
+
+  end subroutine share_arguments
 
   pure integer function num_arguments(this)
 

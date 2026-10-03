@@ -54,7 +54,7 @@ module operation_residual
   use field_stored      , only : stored_field, typed_field_domain
   use operation_stencil  , only : stencil, combine_triples
   use operation_expression , only : expression, euler_lagrange, multiplier, constant, jet_form, represented_component
-  use operation_expression , only : flux_form, coefficient_form
+  use operation_expression , only : flux_form, coefficient_form, total_derivative, on_domain, paired
   use operation_expression , only : operator(+), operator(*)
   use operation_expression , only : expression_vertex, VERTEX_LEAF, ARGUMENT_STATE, FIRST_COORDINATE
   use operation_domain     , only : continuous_domain, discrete_domain
@@ -420,6 +420,13 @@ module operation_residual
      type(expression)        , allocatable :: flux
      integer                 , allocatable :: tested(:,:)
      type(element_quadrature), allocatable :: elements
+     ! THE RULE AT THE MANIFOLD'S FIRST INSTANT, where a law the initial
+     ! data satisfy is stated by its derivative along time; unallocated
+     ! when no law is
+     type(expression)        , allocatable :: initial_rule
+     ! each block after the first starts from the solution at the last
+     ! instant before it (minimize, continued)
+     logical                 :: continued = .false.
 
    contains
 
@@ -2401,16 +2408,14 @@ contains
       ! every derivative operator replaced by the jet components it
       ! denotes, here and nowhere else: the rule, the conditions and the
       ! objective are evaluated in their jet form
-      image % rule = multiplier(1) * jet_form(t % equation(1) % graph(1))
-      do j = 2, size(t % equation)
-         image % rule = image % rule + multiplier(j) * jet_form(t % equation(j) % graph(1))
-      end do
+      image % rule = paired([(jet_form(t % equation(j) % graph(1)), j = 1, size(t % equation))])
     end associate
 
     call image % check_representations(defined, present(time), present(space))
     if (present(space)) then
        if (space % projects()) call projected_form(image, this % term(whole_term), space, points, defined)
     end if
+    if (present(time) .and. .not. allocated(image % elements)) call initial_form(image, this % term(whole_term))
     image % representation = pack(this % term, representation .and. [(this % term(k) % paired, k = 1, size(this % term))])
 
     allocate(image % condition(num_conditions))
@@ -2524,14 +2529,21 @@ contains
   ! design requires an objective, the equations paired with their
   ! multiplier, and the expansion of order one along each design
   ! coordinate.
+  !
+  ! CONTINUED, each block of the chain after the first starts Newton's
+  ! iteration from the solution at the last instant before it, at its
+  ! instants and the stages of its steps, rather than from the
+  ! estimate, which then gives the first block alone: the march of a
+  ! motion the estimate does not follow.
   !===================================================================!
 
-  recursive subroutine minimize(this, estimate, solution, checkpoint, snapshots)
+  recursive subroutine minimize(this, estimate, solution, checkpoint, snapshots, continued)
 
     class(discrete_residual), intent(in)  :: this
     type(discrete_field)    , intent(in)  :: estimate
     type(discrete_field)    , intent(out) :: solution
     integer                 , intent(in), optional :: checkpoint, snapshots
+    logical                 , intent(in), optional :: continued
 
     type(discrete_residual) :: iterate
     real(dp), allocatable :: kappa(:,:), gradient(:), hessian(:,:)
@@ -2539,6 +2551,17 @@ contains
     integer :: n, j, iteration
     character(len=250) :: message
 
+    if (present(continued)) then
+       if (continued .neqv. this % continued) then
+          select type (this)
+          type is (discrete_residual)
+             iterate = this
+          end select
+          iterate % continued = continued
+          call iterate % minimize(estimate, solution, checkpoint, snapshots)
+          return
+       end if
+    end if
     if (.not. free_design(this)) then
        call this % zero_at_design(estimate, solution, checkpoint, snapshots)
        return
@@ -3902,6 +3925,7 @@ contains
     integer :: comp, axis, o, j, ne, history_last, time_relations, a, chain, chains, cells
     integer , allocatable :: rule_primary(:)
     type(projection) :: projected
+    type(expression) :: rule
     logical :: staged
 
     stride = this % rule % num_components()
@@ -4125,16 +4149,27 @@ contains
           blk % rows = residual_operator(relations, this % flux, at, unknowns, stride, rule_primary, fixed_rows, &
                & fixed, positions=point_positions, projected=projected)
        end if
-    else if (size(gauge_rows) + size(face_rows) > 0) then
-       gauge = stencil([gauge_rows, face_rows], [gauge_columns, face_columns], [gauge_weights, face_weights], &
-            & zeros, 'prescribed')
-       ! the gauge rows, one per moment and gauged field, read every
-       ! cell of the moment
-       blk % rows = residual_operator(relations, this % rule, at, unknowns, stride, primary, fixed_rows, fixed, &
-            & prescribed=gauge, positions=point_positions, summed_rows=gauge_rows(1:size(gauge_rows):ncells))
     else
-       blk % rows = residual_operator(relations, this % rule, at, unknowns, stride, primary, fixed_rows, fixed, &
-            & positions=point_positions)
+       ! the block of the manifold's first instant states the laws there
+       rule = this % rule
+       if (allocated(this % initial_rule) .and. first == 1 .and. depth == 0) then
+          if (n > 1) then
+             error stop 'operation_residual: a law the initial data satisfy is stated at the first instant by its &
+                  &derivative along time, in a block of that instant alone'
+          end if
+          rule = this % initial_rule
+       end if
+       if (size(gauge_rows) + size(face_rows) > 0) then
+          gauge = stencil([gauge_rows, face_rows], [gauge_columns, face_columns], [gauge_weights, face_weights], &
+               & zeros, 'prescribed')
+          ! the gauge rows, one per moment and gauged field, read every
+          ! cell of the moment
+          blk % rows = residual_operator(relations, rule, at, unknowns, stride, primary, fixed_rows, fixed, &
+               & prescribed=gauge, positions=point_positions, summed_rows=gauge_rows(1:size(gauge_rows):ncells))
+       else
+          blk % rows = residual_operator(relations, rule, at, unknowns, stride, primary, fixed_rows, fixed, &
+               & positions=point_positions)
+       end if
     end if
     blk % first      = first
     blk % last       = last
@@ -4298,6 +4333,7 @@ contains
     logical                 , intent(in), optional :: expand
 
     type(chain_block) :: blk
+    integer :: m, c
 
     if (verbosity >= 1) then
        print '(a,a,a,i0,a,i0,a,es12.4,a,es12.4,a,i0,a)', 'block  ', trim(scheme % name()), '  instants ', first, &
@@ -4306,6 +4342,17 @@ contains
     end if
     call this % block_rows(scheme, first, last, depth, rows_along, lb, tuple(:, :, :, 0), stages(:, :, :, :, 0), &
          & .false., blk)
+    ! continued, every moment after the history starts from the tuple
+    ! of the last instant of the history
+    if (this % continued .and. depth > 0) then
+       associate (stride => this % rule % num_components())
+         do m = blk % instant_moment(depth) + 1, size(blk % rows % at) / blk % num_cells
+            do c = 1, blk % num_cells
+               blk % q(blk % tuple_at(m, c) + 1:blk % tuple_at(m, c) + stride) = tuple(:, c, first + depth - 1, 0)
+            end do
+         end do
+       end associate
+    end if
     call this % solve_rows(blk, lb, tuple, stages, expand)
 
   end subroutine solve_block
@@ -5992,6 +6039,55 @@ contains
     image % elements = space % elements(points % cells, max(top - 1, 0), top)
 
   end subroutine projected_form
+
+  !===================================================================!
+  ! THE LAWS AT THE FIRST INSTANT. There the initial data fix every
+  ! component of a field below its top degree along time, so a law
+  ! that reads no component of top degree - a joint's condition on
+  ! the positions - is satisfied by the data and determines nothing:
+  ! the reaction paired with it has no row. Such a law is stated at
+  ! the first instant by its derivative along time of the least order
+  ! that reads a component of top degree, the condition hidden in its
+  ! holding at every instant, which determines the reaction there. The
+  ! rule at the first instant is the rule with those laws
+  ! differentiated, on the rule's domain; it is not formed when no law
+  ! is differentiated.
+  !===================================================================!
+
+  subroutine initial_form(image, physics)
+
+    type(discrete_residual), intent(inout) :: image
+    type(residual_term)    , intent(in)    :: physics
+
+    type(expression), allocatable :: laws(:)
+    integer :: j, o, nf
+    logical :: differentiated
+
+    nf = image % manifold % num_unknowns
+    differentiated = .false.
+    allocate(laws(size(physics % equation)))
+    do j = 1, size(physics % equation)
+       laws(j) = jet_form(physics % equation(j) % graph(1))
+       do o = 1, top_degree(image % rule, nf)
+          if (reads_top_degree(laws(j))) exit
+          laws(j) = total_derivative(laws(j), FIRST_COORDINATE)
+          differentiated = .true.
+       end do
+    end do
+    if (differentiated) image % initial_rule = on_domain(paired(laws), image % rule)
+
+  contains
+
+    logical function reads_top_degree(x)
+      type(expression), intent(in) :: x
+      integer :: f
+      reads_top_degree = .false.
+      do f = 1, nf
+         if (x % highest_order_read(f) == image % rule % degree_of_field(f)) reads_top_degree = .true.
+      end do
+    end function reads_top_degree
+
+  end subroutine initial_form
 
   !===================================================================!
   ! THE COMPONENT OF A NODE'S TUPLE storing the coefficient k of the

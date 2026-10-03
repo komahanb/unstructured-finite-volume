@@ -427,9 +427,12 @@ contains
   ! evaluated on the jet at each point; a field on the design factor
   ! of the support. The differential is its gradient in the jet at
   ! every point, in the layout of the solution's rule: the source of
-  ! the adjoint equation. Invalid input: a field that is not a scalar
-  ! integral, a solution without a jet, or an integrand reading a
-  ! derivative the rule does not store.
+  ! the adjoint equation. A field that is not an integral is evaluated
+  ! on the jet at every point, at the design the jet is expanded
+  ! about: a field of the solution's support, one value per point and
+  ! component. Invalid input: an integral of several components, a
+  ! solution without a jet, or a field reading a derivative the rule
+  ! does not store.
   !===================================================================!
 
   function field_at(this, solution) result(functional)
@@ -442,6 +445,10 @@ contains
     character(len=32), allocatable :: names(:)
     integer :: d, o
 
+    if (.not. this % is_integral()) then
+       functional = field_on_points(this, solution)
+       return
+    end if
     call functional_over(this, solution, total, gradient, partial)
     allocate(names(size(total)))
     names(1) = ''
@@ -456,6 +463,50 @@ contains
     functional = discrete_field(solution % on % design_factor(), reshape(total, [1, size(total)]), names)
 
   end function field_at
+
+  ! a field that is not an integral, each component evaluated on the
+  ! jet at every point of the solution
+  function field_on_points(this, solution) result(on_points)
+
+    class(continuous_field), intent(in) :: this
+    type(discrete_field)   , intent(in) :: solution
+    type(discrete_field) :: on_points
+
+    type(expression) :: g
+    type(expansion)  :: expanded
+    integer , allocatable :: slot(:)
+    real(dp), allocatable :: q(:), gradient(:), gd(:), designs(:), values(:,:)
+    character(len=32), allocatable :: names(:)
+    integer :: j, p, k
+
+    if (.not. (allocated(solution % rule) .and. allocated(solution % jet))) then
+       error stop 'operation_field: a field is evaluated on the solution of a residual, which stores the jet &
+            &at every point'
+    end if
+    expanded = jet_expansion(solution)
+    designs  = expanded % values()
+    allocate(values(size(solution % jet, 2), size(this % component)))
+    allocate(names(size(this % component)))
+    names = ''
+    if (allocated(this % name)) names = this % name
+    do j = 1, size(this % component)
+       g = jet_form(this % component(j))
+       call jet_slots(g, solution % rule, slot)
+       if (size(designs) < g % num_designs()) then
+          error stop 'operation_field: the field reads a design coordinate the manifold does not have'
+       end if
+       if (allocated(q)) deallocate(q, gradient, gd)
+       allocate(q(0:size(slot) - 1), gradient(0:size(slot) - 1), gd(size(designs)))
+       do p = 1, size(solution % jet, 2)
+          do k = 0, size(slot) - 1
+             q(k) = solution % jet(slot(k), p, 1)
+          end do
+          call g % gradient_at(q, designs, values(p, j), gradient, solution % on % position(p), gd)
+       end do
+    end do
+    on_points = discrete_field(solution % on, values, names)
+
+  end function field_on_points
 
   subroutine field_differential(this, solution, gradient, partial)
 

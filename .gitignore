@@ -107,5 +107,8 @@ physics/beam/euler_bernoulli_beam
 physics/beam/euler_bernoulli_beam_optimization
 physics/taylor_green/taylor_green_vortex
 physics/taylor_green/taylor_green_vortex_3d
+physics/rotorcraft-dynamics/triple_pendulum
+physics/rotorcraft-dynamics/rotorcraft_dynamics
+physics/rotorcraft-dynamics/*.pvd
 gmon.out
 test/graph-scheme/box_*.geo

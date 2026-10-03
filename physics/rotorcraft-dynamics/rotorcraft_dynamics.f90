@@ -14,11 +14,14 @@
 !
 ! The bodies are rigid, their table in rotor_bodies.txt. The blades
 ! are plates of span 1.56 from the radius 0.44, chord 0.121 and the
-! thickness of the setup, density 2500; each lies along the azimuth of
-! its cap, 0, 90, 180 and 270 degrees, and is linked to that cap. The
+! thickness of the setup, density 2500, E = 70e9 and nu = 0.3; each
+! lies along the azimuth of its cap, 0, 90, 180 and 270 degrees. The
 ! blade model is chosen at setup: rigid, each blade a rigid body of
-! the plate's mass and inertia; beam, plate and solid are not yet
-! stated.
+! the plate's mass and inertia linked to its cap; beam, each blade a
+! beam in the axes of its cap (multibody_dynamics, beam), fixed to it
+! at the root, a field of time and of the span by the hermite cubics,
+! the bodies' coordinates and the reactions unknowns of time alone;
+! plate and solid are not yet stated.
 !
 ! The Lagrangian density is the bodies' kinetic energy less their
 ! potential energy, with every condition of the joints times its
@@ -28,10 +31,16 @@
 ! is 4.99144494e5 J, and over the revolution of 360 steps it falls to
 ! 4.94255e5, the dissipation of bdf(1); the hub's angle holds to
 ! 1e-16 and every condition of the joints to 2e-14 at every instant.
+! With the blades as beams the march is solved with the rows that tie
+! the copies of the unknowns of time alone eliminated, the rest by a
+! direct solve; at the tenth step of 360 the tip of the blade at zero
+! degrees has moved by 7.22238e-4 along the span, and along the chord
+! by -7.10262e-4, -7.07935e-4, -7.07820e-4, -7.07813e-4 at 3, 5, 9
+! and 17 points of the span, order four.
 !
 ! THE SETUP, rotorcraft.nml:
 !
-!      blade        rigid (beam, plate and solid to come)
+!      blade        rigid or beam (plate and solid to come)
 !      scenario     collective, longitudinal or lateral: the push
 !                   rods' amplitudes, 0.05 each, or 0.025, 0.025 and
 !                   0.05, or 0.025, 0.05 and 0.025 at 90, 180 and 270
@@ -42,10 +51,13 @@
 !      meshes       the directory of the bodies' surface meshes, the
 !                   case's data/mesh; none, no drawing
 !      every        the stride of the instants drawn
+!      span_points  of a blade as a beam
 !
 ! THE DRAWING: every rigid body is drawn with the surface of its mesh,
 ! each blade with the box of its plate, moved with the body to each
-! instant drawn: rotor_<instant>.vtu and rotor.pvd for paraview.
+! instant drawn; a blade as a beam with each point of the box moved
+! with its section of the beam, and the beam's deflection a vector at
+! the point: rotor_<instant>.vtu and rotor.pvd for paraview.
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
@@ -53,12 +65,13 @@ program rotorcraft_dynamics
 
   use util_precision    , only : dp
   use util_verbosity    , only : set_verbosity
-  use operation_manifold, only : continuous_manifold, discrete_manifold, interval, points
+  use operation_manifold, only : continuous_manifold, discrete_manifold, interval, region, points
   use operation_field   , only : continuous_field, discrete_field
   use operation_residual, only : continuous_residual, discrete_residual, operator(+)
   use operation_family  , only : dirk, bdf, chain
-  use multibody_dynamics, only : rigid_body, mechanism, body_table, surface, spherical, revolute, cylindrical, &
-       &                         fixed, rigid_link, revolute_driver, motion_driver
+  use operation_finite_element, only : finite_element
+  use multibody_dynamics, only : rigid_body, beam_blade, mechanism, body_table, surface, spherical, revolute, &
+       &                         cylindrical, fixed, rigid_link, revolute_driver, motion_driver
   use view_bdf_loader   , only : bdf_surface
 
   implicit none
@@ -67,27 +80,30 @@ program rotorcraft_dynamics
   real(dp), parameter :: ex(3) = [1.0_dp, 0.0_dp, 0.0_dp], ey(3) = [0.0_dp, 1.0_dp, 0.0_dp], &
        &                 ez(3) = [0.0_dp, 0.0_dp, 1.0_dp], origin(3) = 0.0_dp
   real(dp), parameter :: density = 2500.0_dp, root = 0.44_dp, tip = 2.0_dp, chord = 0.121_dp, height = 0.9_dp
+  real(dp), parameter :: modulus = 70.0e9_dp, poisson = 0.3_dp
 
   ! the setup
   character(len=16)  :: blade = 'rigid', scenario = 'collective'
   character(len=256) :: meshes = ''
   real(dp)           :: thickness = 0.02_dp
-  integer            :: revolutions = 1, steps = 360, every = 10
-  namelist /setup/ blade, scenario, thickness, revolutions, steps, meshes, every
+  integer            :: revolutions = 1, steps = 360, every = 10, span_points = 9
+  namelist /setup/ blade, scenario, thickness, revolutions, steps, meshes, every, span_points
 
-  type(continuous_manifold) :: omega, domega
+  type(continuous_manifold) :: omega, domega, left
   type(discrete_manifold)   :: omega_h
-  type(continuous_field)    :: t, motion, energy
-  type(discrete_field)      :: estimate, solution, energy_h, hub_h
+  type(continuous_field)    :: t, x, motion, energy
+  type(discrete_field)      :: estimate, solution, energy_h, hub_h, tip_h
   type(continuous_residual) :: r, g, L
   type(discrete_residual)   :: L_h
   type(mechanism)           :: rotor
   type(body_table)          :: table
   type(rigid_body), allocatable :: part(:)
   type(rigid_body)          :: blades(4)
+  type(beam_blade)          :: beams(4)
   real(dp)                  :: amplitude(3)
   real(dp), allocatable     :: e(:), hub_eps(:)
-  integer :: unit, k, n, num_instants, lower, upper, cap, rod
+  character(len=32), allocatable :: names(:)
+  integer :: unit, k, n, num_instants, lower, upper, cap, rod, np
 
   open(newunit=unit, file='rotorcraft.nml', status='old', action='read')
   read(unit, nml=setup)
@@ -100,11 +116,25 @@ program rotorcraft_dynamics
      error stop 'rotorcraft_dynamics: the scenario is collective, longitudinal or lateral'
   end select
 
-  ! one revolution of the hub, a manifold of time alone
+  ! the revolutions of the hub, a manifold of time alone; with the
+  ! blades as beams, of time and of the span from the root to the tip
   num_instants = revolutions * steps + 1
-  omega   = continuous_manifold(time=interval(0.0_dp, revolutions * 2.0_dp * pi / speed))
+  np = 1
+  select case (trim(blade))
+  case ('rigid')
+     omega   = continuous_manifold(time=interval(0.0_dp, revolutions * 2.0_dp * pi / speed))
+     omega_h = omega % discretize(time=points(num_instants))
+  case ('beam')
+     omega   = continuous_manifold(time=interval(0.0_dp, revolutions * 2.0_dp * pi / speed), &
+          &                        space=region(interval(0.0_dp, tip - root)))
+     omega_h = omega % discretize(time=points(num_instants), space=points(span_points))
+     x       = omega % coordinate('x')
+     left    = omega % boundary(x, 0.0_dp)
+     np      = span_points
+  case default
+     error stop 'rotorcraft_dynamics: the blade model is rigid or beam; plate and solid are not yet stated'
+  end select
   domega  = omega % boundary(omega % coordinate('t'), 0.0_dp)
-  omega_h = omega % discretize(time=points(num_instants))
   t       = omega % coordinate('t')
 
   ! THE BODIES: the table's, each turning at its rate about z
@@ -116,7 +146,10 @@ program rotorcraft_dynamics
           & table % inertia(:, :, k), angular_velocity=table % rate(k) * ez)
   end do
 
-  ! the blades, each along the azimuth of its cap and turning with it
+  ! the blades, each along the azimuth of its cap and turning with it:
+  ! rigid plates linked to the caps, or beams in the caps' axes from
+  ! the root, the span along the azimuth, the chord across it and the
+  ! thickness along z
   select case (trim(blade))
   case ('rigid')
      do k = 1, 4
@@ -124,8 +157,12 @@ program rotorcraft_dynamics
              & turned([(root + tip) / 2.0_dp, 0.0_dp, height], k - 1), &
              & density * thickness * (tip - root) * chord, plate(k - 1), angular_velocity=speed * ez)
      end do
-  case default
-     error stop 'rotorcraft_dynamics: the blade model is rigid; beam, plate and solid are not yet stated'
+  case ('beam')
+     do k = 1, 4
+        call rotor % beam(omega, beams(k), part(table % row('cap_' // trim(degrees(k - 1)))), &
+             & 'blade_' // trim(degrees(k - 1)), x, turned([root, 0.0_dp, height], k - 1), &
+             & reshape([turned(ex, k - 1), turned(ey, k - 1), ez], [3, 3]), density, modulus, poisson, chord, thickness)
+     end do
   end select
 
   ! THE JOINTS
@@ -155,7 +192,8 @@ program rotorcraft_dynamics
        call rotor % joint(omega, 'shaft_link_' // trim(degrees(k - 1)), &
             & revolute(hub, turned([0.231_dp, 0.0_dp, height], k - 1), abs(turned(ex, k - 1)), part(upper)))
        call rotor % joint(omega, 'link_cap_' // trim(degrees(k - 1)), rigid_link(part(upper), part(cap)))
-       call rotor % joint(omega, 'cap_blade_' // trim(degrees(k - 1)), rigid_link(part(cap), blades(k)))
+       if (trim(blade) == 'rigid') call rotor % joint(omega, 'cap_blade_' // trim(degrees(k - 1)), &
+            & rigid_link(part(cap), blades(k)))
     end do
 
     ! the push rods on the lower swashplate, driven along z
@@ -182,37 +220,62 @@ program rotorcraft_dynamics
         call rotor % draw_with(part(k), mesh_surface(trim(meshes) // '/' // trim(table % mesh(k))))
      end do
      do k = 1, 4
-        call rotor % draw_with(blades(k), plate_surface(k - 1))
+        if (trim(blade) == 'rigid') then
+           call rotor % draw_with(blades(k), plate_surface(k - 1))
+        else
+           call rotor % draw_beam_with(beams(k), part(table % row('cap_' // trim(degrees(k - 1)))), &
+                & plate_surface(k - 1))
+        end if
      end do
   end if
 
-  ! the laws on the revolution, the initial data on {0}
+  ! the laws on the revolution, the initial data on {0}, and with the
+  ! blades as beams their conditions at the root, the derivatives
+  ! along the span by the hermite cubics
   r = continuous_residual(omega,  rotor % laws())
   g = continuous_residual(domega, rotor % initial)
   L = r + g
-  L_h = L % discretize(omega_h, time=chain([dirk(2), (bdf(1), k = 2, num_instants)], &
-       &                                   from=[(k, k = 1, num_instants)]))
+  if (trim(blade) == 'rigid') then
+     L_h = L % discretize(omega_h, time=chain([dirk(2), (bdf(1), k = 2, num_instants)], &
+          &                                   from=[(k, k = 1, num_instants)]))
+  else
+     L = L + continuous_residual(left, rotor % root)
+     L_h = L % discretize(omega_h, time=chain([dirk(2), (bdf(1), k = 2, num_instants)], &
+          &                                   from=[(k, k = 1, num_instants)]), space=finite_element(degree=3))
+  end if
 
   motion   = rotor % estimate(omega)
   estimate = motion % discretize(omega_h)
   if (this_image() == 1 .and. num_instants <= 11) call set_verbosity(1)
   call L_h % minimize(estimate, solution, continued=.true.)
 
-  ! the energy at every instant, and the hub's angle
+  ! the energy at every instant - of the rigid bodies alone when the
+  ! blades are beams - and the hub's angle; the first point of each
+  ! instant, and with beams the tip of the blade at zero degrees
   energy   = rotor % energy
   energy_h = energy % at(solution)
-  allocate(e(num_instants), hub_eps(num_instants))
+  allocate(e(num_instants * np), hub_eps(num_instants * np))
   call energy_h % values(e)
   hub_h = solution % fields(['hub_eps3'])
   call hub_h % values(hub_eps)
   print '(a, a, a, a, a, i0, a)', 'the rotor, ', trim(blade), ' blades, ', trim(scenario), ', ', num_instants, &
        & ' instants:'
-  print '(a)', '   angle         energy   hub eps3 - sin(w t/2)'
   n = max(1, (num_instants - 1) / (12 * revolutions))
-  do k = 1, num_instants, n
-     print '(f8.1, es16.8, es14.3)', speed * omega_h % instant(k) * 180.0_dp / pi, e(k), &
-          & hub_eps(k) - sin(speed * omega_h % instant(k) / 2.0_dp)
-  end do
+  if (trim(blade) == 'rigid') then
+     print '(a)', '   angle         energy   hub eps3 - sin(w t/2)'
+     do k = 1, num_instants, n
+        print '(f8.1, es16.8, es14.3)', speed * omega_h % instant(k) * 180.0_dp / pi, e(k), &
+             & hub_eps(k) - sin(speed * omega_h % instant(k) / 2.0_dp)
+     end do
+  else
+     names = [character(len=32) :: 'blade_0_u', 'blade_0_v', 'blade_0_w', 'blade_0_phi']
+     tip_h = solution % fields(names)
+     print '(a)', '   angle   bodies'' energy   hub eps3 - sin(w t/2)    the tip of the blade at 0: u, v, w, phi'
+     do k = 1, num_instants, n
+        print '(f8.1, es16.8, es14.3, 4es14.5)', speed * omega_h % instant(k) * 180.0_dp / pi, e((k - 1) * np + 1), &
+             & hub_eps((k - 1) * np + 1) - sin(speed * omega_h % instant(k) / 2.0_dp), tip_h % value(k * np, :)
+     end do
+  end if
 
   ! the time history
   if (len_trim(meshes) > 0) call rotor % draw(solution, 'rotor', every)

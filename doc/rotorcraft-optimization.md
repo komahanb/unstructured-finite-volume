@@ -126,7 +126,7 @@ its kinetic energy read in those turning axes and its stiffening by
 the axial stress of the rotation added to its potential energy.
 Recommended: the second. It keeps the beam, the plate and the solid
 linear and alike, one model replacing another at setup, and the cap
-turns the revolution.
+turns the revolution. Decided by the author, 2026-10-03: the second.
 
 **The library piece, the same for both.** Either way the bodies are
 unknowns of time alone and the blade is a field of time and of the
@@ -171,8 +171,7 @@ the cap's law reads an integral over the blade. Built 2026-10-03:
   now takes two Newton steps, its revolution the same digits.
 
 **The blade as a beam in the cap's axes** (`multibody_dynamics.f90`,
-`beam`), the recommended frame, built as the default while the
-decision stands. The blade is a field of time and of its span: the
+`beam`), the frame the author chose. The blade is a field of time and of its span: the
 displacement along its span, chord and thickness and its twist, the
 section's centre at root + (x + u) e_s + v e_c + w e_f in the cap's
 reference axes. Its density over the span is the kinetic energy of the
@@ -188,18 +187,30 @@ plate's (-225.9008 and -225.91163 at E = 7e15 and 7e17 against
 -225.91174), and the one about z falls with the step for both, the
 dissipation of bdf(1); the same digits on 1, 2 and 4 images.
 
-**The rotor with beam blades does not yet run at its scale.** Every
-point of the span stores every field, so the 355 unknowns of time alone
-are stored at every node: the dense block of the whole line at a moment,
-the element matrices and the projected initial conditions grow with
-the square or the cube of that count. At 3 span points the setup takes
-75 s and the first block does not begin within ten minutes, at 6 GB.
-The next steps: the tying rows (copies, zero slopes, history, the
-family's relations) eliminated before a dense direct solve of the rest,
-about 355 + 32 np unknowns a moment, with the initial conditions of the
-unknowns of time alone stated point by point; the element matrices
-formed from each rule's own components; the laws of time alone
-evaluated once per moment.
+**The rotor with beam blades** (`blade = 'beam'` in `rotorcraft.nml`,
+the span's points `span_points`). Every point of the span stores
+every field, the 355 unknowns of time alone among them, so the
+solver eliminates the rows that tie their copies - with the history,
+the family's relations and the zero coefficients - and solves the
+rest directly: about 355 unknowns of time alone and 32 per point of
+the span at each moment. The element matrices are formed field by
+field, an expression's degrees are derived in one pass over its
+leaves, and the rules are evaluated on the real values the basis
+forms. The setup takes 5.5 s and a step about 2 s at 5 points of the
+span; a revolution of 360 steps takes 22 minutes, the tip stretched
+by 7.5e-4 by the turning, the hub's angle to 1e-16. At the tenth step
+the tip of the blade at zero degrees has moved along the chord by
+-7.10262e-4, -7.07935e-4, -7.07820e-4 and -7.07813e-4 at 3, 5, 9 and
+17 points of the span, order four; the same digits on 1, 2 and 4
+images. A march of 36 steps a revolution does not resolve the blades'
+motion: its tip motion is ten times that of 360 steps. Drawn, each
+point of the box of a blade moves with its section of the beam, and
+`rotor_<instant>.vtu` states the beam's deflection as a vector at
+every point, for paraview's warp by vector.
+
+Still to come: the laws of time alone evaluated once per moment, not
+at every quadrature point; the blade's energy over the span in the
+printed energy.
 
 ## The case
 
@@ -350,7 +361,10 @@ differences.
 
 Decided 2026-10-03: each blade at its cap; the blade model chosen at
 setup, rigid, beam, plate and solid in that order; the in-house
-minimizer.
+minimizer; the blade linear in its cap's axes; the optimization with
+the beam, the plate and the solid, on a reduced case first (about 8
+strips, one scenario, 36 steps) and then on the case as TACS states
+it; TACS compared as it is, its rigid-link sign noted.
 
 1. **The blades at 90 and 270 degrees** are attached across the hub:
    `blade90.inp` reads `rotor2_192dv.bdf`, which lies at y from -2.0 to

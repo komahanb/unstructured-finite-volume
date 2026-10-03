@@ -201,6 +201,7 @@ module operation_expression
      procedure, private :: evaluate => expression_evaluate
      procedure :: value_at
      procedure :: gradient_at
+     procedure :: value_on
      procedure, private :: values_over
      procedure :: reads_state
      procedure :: equation_degree
@@ -1438,6 +1439,7 @@ contains
     character(len=*) , intent(in), optional :: label
 
     integer :: i, f, c, coordinates
+    integer, allocatable :: along_degree(:)
 
     this % fields      = 1
     this % multipliers = 0
@@ -1459,18 +1461,23 @@ contains
        end select
     end do
 
+    ! in one pass over the leaves: the highest mixed order of each
+    ! field, its highest order along the first coordinate, and the
+    ! highest order along each later coordinate
     this % mixed_degree_of_field = [(0, f = 1, this % fields)]
+    this % field_degree = [(-1, f = 1, this % fields)]
+    allocate(along_degree(coordinates), source=-1)
     do i = 1, this % num_vertices()
        if (this % kind(i) /= VERTEX_LEAF .or. this % position(i) /= ARGUMENT_STATE) cycle
-       this % mixed_degree_of_field(this % field(i)) = max(this % mixed_degree_of_field(this % field(i)), &
-            & this % mixed_order(i))
+       f = this % field(i)
+       this % mixed_degree_of_field(f) = max(this % mixed_degree_of_field(f), this % mixed_order(i))
+       if (this % along(i) == FIRST_COORDINATE) this % field_degree(f) = max(this % field_degree(f), this % order(i))
+       if (this % along(i) >= 1) along_degree(this % along(i)) = max(along_degree(this % along(i)), this % order(i))
     end do
     ! the orders along the first coordinate a mixed component is read
     ! from are stored too
-    this % field_degree = [(max(0, this % highest_degree_along(FIRST_COORDINATE, f), &
-         & this % mixed_degree_of_field(f)), f = 1, this % fields)]
-    this % degrees      = [this % field_degree(1), &
-         & (max(0, this % highest_degree_along(c)), c = FIRST_COORDINATE + 1, coordinates)]
+    this % field_degree = [(max(0, this % field_degree(f), this % mixed_degree_of_field(f)), f = 1, this % fields)]
+    this % degrees      = [this % field_degree(1), (max(0, along_degree(c)), c = FIRST_COORDINATE + 1, coordinates)]
 
     call this % declare_domain(label)
 
@@ -1845,6 +1852,29 @@ contains
   ! of a rule needs, where the derivative arithmetic gives one
   ! direction per pass.
   !===================================================================!
+
+  !===================================================================!
+  ! THE RULE'S VALUE on the real values of the state and the design, by
+  ! the forward pass of gradient_at alone.
+  !===================================================================!
+
+  pure real(dp) function value_on(this, q, nu, position) result(value)
+
+    class(expression), intent(in) :: this
+    real(dp)         , intent(in) :: q(0:)
+    real(dp)         , intent(in) :: nu(:)
+    real(dp)         , intent(in), optional :: position(:)
+
+    real(dp), allocatable :: v(:), dv(:)
+
+    call this % values_over(q, nu, position, v, dv)
+    if (this % varied > 0) then
+       value = dv(size(v))
+    else
+       value = v(size(v))
+    end if
+
+  end function value_on
 
   pure subroutine gradient_at(this, q, nu, value, g, position, g_design)
 

@@ -79,7 +79,10 @@
 ! reference configuration and its cells; on a solution, every surface
 ! moved with its body to an instant, x = r0 + u + C^T (X - r0), is
 ! one paraview file of that instant, the cells marked by their body,
-! and the files of the instants a time series.
+! and the files of the instants a time series. A blade as a beam is
+! drawn with a surface of the blade, each point moved with its
+! section of the beam and then with the body the blade is fixed to,
+! its deflection a vector at the point.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -149,9 +152,13 @@ module multibody_dynamics
      logical :: spread = .false.
      logical, allocatable :: of_space(:)
      type(continuous_field), allocatable :: root(:)
-     ! the bodies drawn, and the surface of each
+     ! the bodies drawn, and the surface of each; the blades as beams
+     ! drawn, the body each is fixed to and its surface
      type(rigid_body), allocatable :: drawn(:)
      type(surface)   , allocatable :: surfaces(:)
+     type(beam_blade), allocatable :: drawn_beams(:)
+     type(rigid_body), allocatable :: beam_bodies(:)
+     type(surface)   , allocatable :: beam_surfaces(:)
    contains
      procedure :: body
      procedure :: beam
@@ -160,6 +167,7 @@ module multibody_dynamics
      procedure :: estimate
      procedure, private :: time_unknown
      procedure :: draw_with
+     procedure :: draw_beam_with
      procedure :: draw
   end type mechanism
 
@@ -189,7 +197,7 @@ contains
     this % t = t
     if (present(gravity)) this % gravity = gravity
     allocate(this % unknowns(0), this % initial(0), this % guess(0), this % drawn(0), this % surfaces(0))
-    allocate(this % of_space(0), this % root(0))
+    allocate(this % of_space(0), this % root(0), this % drawn_beams(0), this % beam_bodies(0), this % beam_surfaces(0))
 
   end function create_mechanism
 
@@ -488,9 +496,21 @@ contains
   end function estimate
 
   !===================================================================!
-  ! THE DRAWING: a body drawn with a surface; and on a solution, at
-  ! every instant of the stride given, the surfaces moved with their
-  ! bodies, <name>_<instant>.vtu, with <name>.pvd the time series.
+  ! THE DRAWING: a body drawn with a surface, and a blade as a beam
+  ! with a surface of its blade - a box, or a mesh - in the reference
+  ! configuration; and on a solution, at every instant of the stride
+  ! given, the surfaces moved, <name>_<instant>.vtu, with <name>.pvd
+  ! the time series. A body's surface moves with it; a point X of a
+  ! beam's surface, at the span s = (X - root).e_s and the offsets
+  ! c and f along the chord and the thickness, moves with its section,
+  !
+  !      X + u e_s + v e_c + w e_f + phi e_s x (c e_c + f e_f)
+  !        - (c v_x + f w_x) e_s,
+  !
+  ! the fields and their slopes read from the hermite cubics at s, and
+  ! then with the body the beam is fixed to. Each cell is marked by its
+  ! body, and at each point is the deflection of the beam, in the
+  ! fixed axes, zero on a rigid body.
   !===================================================================!
 
   subroutine draw_with(this, b, s)
@@ -501,6 +521,16 @@ contains
     this % surfaces = [this % surfaces, s]
   end subroutine draw_with
 
+  subroutine draw_beam_with(this, blade, b, s)
+    class(mechanism), intent(inout) :: this
+    type(beam_blade), intent(in)    :: blade
+    type(rigid_body), intent(in)    :: b
+    type(surface)   , intent(in)    :: s
+    this % drawn_beams   = [this % drawn_beams, blade]
+    this % beam_bodies   = [this % beam_bodies, b]
+    this % beam_surfaces = [this % beam_surfaces, s]
+  end subroutine draw_beam_with
+
   subroutine draw(this, solution, name, every)
 
     class(mechanism)    , intent(in) :: this
@@ -508,58 +538,126 @@ contains
     character(len=*)    , intent(in) :: name
     integer             , intent(in) :: every
 
-    type(discrete_field) :: coordinates
+    type(discrete_field) :: coordinates, bodies, values, slopes
     type(paraview_writer) :: writer
     character(len=256), allocatable :: files(:)
     character(len=32), allocatable :: names(:)
-    real(dp), allocatable :: points(:,:), body(:,:), times(:), moved(:,:)
+    real(dp), allocatable :: points(:,:), body(:,:), times(:), moved(:,:), deflection(:,:), node(:)
+    real(dp), allocatable :: field(:,:,:), slope(:,:,:)
     integer , allocatable :: corners(:,:), count(:), kinds(:)
-    real(dp) :: c(3,3), u(3), eta, eps(3)
+    real(dp) :: c(3,3), u(3), eta, eps(3), local(4), rate(4), along, chord, across, offset(3), p(3), h, xi
+    character(len=4), parameter :: suffix(4) = ['_u  ', '_v  ', '_w  ', '_phi']
     character(len=256) :: file
-    integer :: b, k, j, i, np, nc, p0, c0
+    integer :: b, k, j, i, np, nc, p0, c0, ns, m, first, nb, nr, f
 
     if (this_image() /= 1) return
+    nr = size(this % drawn)
+    nb = size(this % drawn_beams)
+    ! the coordinates of the bodies drawn, and of the bodies the beams
+    ! are fixed to
     allocate(names(0))
-    do b = 1, size(this % drawn)
-       associate (n => this % drawn(b) % name)
-         names = [character(len=32) :: names, n // '_u1', n // '_u2', n // '_u3', n // '_eta', n // '_eps1', &
-              & n // '_eps2', n // '_eps3']
-       end associate
+    do b = 1, nr
+       names = [character(len=32) :: names, coordinate_names(this % drawn(b) % name)]
     end do
-    coordinates = solution % fields(names)
-    np = sum([(size(this % surfaces(b) % points, 2), b = 1, size(this % surfaces))])
-    nc = sum([(size(this % surfaces(b) % count), b = 1, size(this % surfaces))])
-    allocate(points(3, np), corners(4, nc), count(nc), kinds(nc), body(nc, 1))
+    if (nr > 0) coordinates = solution % fields(names)
+    deallocate(names)
+    allocate(names(0))
+    do b = 1, nb
+       names = [character(len=32) :: names, coordinate_names(this % beam_bodies(b) % name)]
+    end do
+    if (nb > 0) bodies = solution % fields(names)
+    np = sum([(size(this % surfaces(b) % points, 2), b = 1, nr)]) &
+         & + sum([(size(this % beam_surfaces(b) % points, 2), b = 1, nb)])
+    nc = sum([(size(this % surfaces(b) % count), b = 1, nr)]) + sum([(size(this % beam_surfaces(b) % count), b = 1, nb)])
+    allocate(points(3, np), deflection(3, np), corners(4, nc), count(nc), kinds(nc), body(nc, 1))
     allocate(files(0), times(0))
     select type (on => solution % on)
     type is (discrete_manifold)
+       ! the points of an instant, along the span when the blades are
+       ! beams, and the span coordinate of each
+       ns = on % num_cells()
+       allocate(node(ns), source=0.0_dp)
+       if (nb > 0) then
+          do j = 1, ns
+             associate (x => on % position(on % point_of(1, j)))
+               node(j) = x(size(x))
+             end associate
+          end do
+          allocate(field(4, ns * on % num_instants(), nb), slope(4, ns * on % num_instants(), nb))
+          do b = 1, nb
+             do f = 1, 4
+                ! the name in an array of its own first: a constructor
+                ! with a type spec passed straight as an argument
+                ! corrupts the memory under the compiler in use
+                deallocate(names)
+                allocate(names(1))
+                names(1) = this % drawn_beams(b) % name // trim(suffix(f))
+                values = solution % fields(names)
+                slopes = values % derivative([this % x])
+                field(f, :, b) = values % value(:, 1)
+                slope(f, :, b) = slopes % value(:, 1)
+             end do
+          end do
+       end if
        do k = 1, on % num_instants(), every
+          first = (k - 1) * ns + 1
+          deflection = 0.0_dp
           p0 = 0
           c0 = 0
-          do b = 1, size(this % drawn)
-             j   = 7 * (b - 1)
-             u   = [(coordinates % value(k, j + i), i = 1, 3)]
-             eta = coordinates % value(k, j + 4)
-             eps = [(coordinates % value(k, j + 4 + i), i = 1, 3)]
-             c   = rotation(eta, eps)
+          do b = 1, nr
+             call body_at(coordinates, b, first, u, eta, eps)
+             c = rotation(eta, eps)
              associate (s => this % surfaces(b), r0 => this % drawn(b) % centre)
                moved = s % points
                do i = 1, size(moved, 2)
                   moved(:, i) = r0 + u + matmul(transpose(c), s % points(:, i) - r0)
                end do
-               points(:, p0 + 1:p0 + size(moved, 2)) = moved
-               corners(:, c0 + 1:c0 + size(s % count)) = s % corners + p0
-               where (corners(:, c0 + 1:c0 + size(s % count)) == p0) corners(:, c0 + 1:c0 + size(s % count)) = 0
-               count(c0 + 1:c0 + size(s % count)) = s % count
-               kinds(c0 + 1:c0 + size(s % count)) = s % kinds
-               body(c0 + 1:c0 + size(s % count), 1) = real(b, dp)
-               p0 = p0 + size(moved, 2)
-               c0 = c0 + size(s % count)
+               call placed(s, moved, real(b, dp))
+             end associate
+          end do
+          do b = 1, nb
+             call body_at(bodies, b, first, u, eta, eps)
+             c = rotation(eta, eps)
+             associate (s => this % beam_surfaces(b), blade => this % drawn_beams(b), r0 => this % beam_bodies(b) % centre)
+               moved = s % points
+               do i = 1, size(moved, 2)
+                  ! the section through the point, and the point's offsets
+                  along  = min(max(dot_product(s % points(:, i) - blade % root, blade % axes(:, 1)), node(1)), node(ns))
+                  chord  = dot_product(s % points(:, i) - blade % root, blade % axes(:, 2))
+                  across = dot_product(s % points(:, i) - blade % root, blade % axes(:, 3))
+                  m = 1
+                  do j = 1, ns - 1
+                     if (along >= node(j)) m = j
+                  end do
+                  h  = node(m + 1) - node(m)
+                  xi = (along - node(m)) / h
+                  ! the fields and their slopes by the hermite cubics
+                  do f = 1, 4
+                     associate (v0 => field(f, first + m - 1, b), v1 => field(f, first + m, b), &
+                          &     s0 => slope(f, first + m - 1, b), s1 => slope(f, first + m, b))
+                       local(f) = (1.0_dp - 3.0_dp * xi**2 + 2.0_dp * xi**3) * v0 + h * (xi - 2.0_dp * xi**2 + xi**3) * s0 &
+                            & + (3.0_dp * xi**2 - 2.0_dp * xi**3) * v1 + h * (xi**3 - xi**2) * s1
+                       rate(f)  = (6.0_dp * xi**2 - 6.0_dp * xi) / h * v0 + (1.0_dp - 4.0_dp * xi + 3.0_dp * xi**2) * s0 &
+                            & + (6.0_dp * xi - 6.0_dp * xi**2) / h * v1 + (3.0_dp * xi**2 - 2.0_dp * xi) * s1
+                     end associate
+                  end do
+                  offset = chord * blade % axes(:, 2) + across * blade % axes(:, 3)
+                  p = local(1) * blade % axes(:, 1) + local(2) * blade % axes(:, 2) + local(3) * blade % axes(:, 3) &
+                       & + local(4) * cross_product(blade % axes(:, 1), offset) &
+                       & - (chord * rate(2) + across * rate(3)) * blade % axes(:, 1)
+                  moved(:, i) = r0 + u + matmul(transpose(c), s % points(:, i) + p - r0)
+                  deflection(:, p0 + i) = matmul(transpose(c), p)
+               end do
+               call placed(s, moved, real(nr + b, dp))
              end associate
           end do
           write(file, '(a, a, i4.4, a)') trim(name), '_', k, '.vtu'
           writer = paraview_writer(points, ragged(corners, count), kinds)
-          call writer % write_binary(trim(file), body, [string('body')])
+          if (nb > 0) then
+             call writer % write_binary(trim(file), body, [string('body')], deflection, 'deflection')
+          else
+             call writer % write_binary(trim(file), body, [string('body')])
+          end if
           files = [character(len=256) :: files, file]
           times = [times, on % instant(k)]
        end do
@@ -568,7 +666,44 @@ contains
     end select
     call time_series(trim(name) // '.pvd', files, times)
 
+  contains
+
+    ! a surface's moved points and its cells, marked by the body
+    subroutine placed(s, moved, mark)
+      type(surface), intent(in) :: s
+      real(dp)     , intent(in) :: moved(:,:), mark
+      points(:, p0 + 1:p0 + size(moved, 2)) = moved
+      corners(:, c0 + 1:c0 + size(s % count)) = s % corners + p0
+      where (corners(:, c0 + 1:c0 + size(s % count)) == p0) corners(:, c0 + 1:c0 + size(s % count)) = 0
+      count(c0 + 1:c0 + size(s % count)) = s % count
+      kinds(c0 + 1:c0 + size(s % count)) = s % kinds
+      body(c0 + 1:c0 + size(s % count), 1) = mark
+      p0 = p0 + size(moved, 2)
+      c0 = c0 + size(s % count)
+    end subroutine placed
+
   end subroutine draw
+
+  ! the names of a body's coordinates, as the body declares them
+  function coordinate_names(n) result(names)
+    character(len=*), intent(in) :: n
+    character(len=32) :: names(7)
+    names = [character(len=32) :: n // '_u1', n // '_u2', n // '_u3', n // '_eta', n // '_eps1', n // '_eps2', &
+         & n // '_eps3']
+  end function coordinate_names
+
+  ! the coordinates of the b-th body of a field of bodies' coordinates
+  ! at a point
+  subroutine body_at(coordinates, b, point, u, eta, eps)
+    type(discrete_field), intent(in)  :: coordinates
+    integer             , intent(in)  :: b, point
+    real(dp)            , intent(out) :: u(3), eta, eps(3)
+    integer :: j, i
+    j   = 7 * (b - 1)
+    u   = [(coordinates % value(point, j + i), i = 1, 3)]
+    eta = coordinates % value(point, j + 4)
+    eps = [(coordinates % value(point, j + 4 + i), i = 1, 3)]
+  end subroutine body_at
 
   ! the rotation matrix of the Euler parameters, C = I - 2 eta eps^x +
   ! 2 eps^x eps^x

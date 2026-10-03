@@ -79,6 +79,7 @@ module operation_residual
   use operation_minimization, only : solve_result
   use operation_newton      , only : newton
   use operation_dense_direct, only : dense_direct
+  use operation_elimination , only : elimination
   use operation_gmres       , only : gmres
   use operation_gauss_seidel, only : gauss_seidel
 
@@ -154,6 +155,11 @@ module operation_residual
      type(projection), allocatable, private :: projected
      type(stored_directed_graph)  , private :: sites
      real(dp), allocatable        , private :: site_positions(:,:)
+     ! the tying rows, each of one unknown on its own diagonal reading
+     ! others before it: the history, the family's relations, and the
+     ! copies and zero coefficients of the unknowns of time alone,
+     ! eliminated before a direct solve of the rest
+     logical, allocatable, private :: tying(:)
 
    contains
 
@@ -205,6 +211,7 @@ module operation_residual
      procedure, private :: discretized
      procedure, private :: gathered
      procedure, private :: governed
+     procedure, private :: governed_on_reals
      procedure, private :: physics_tangent
      procedure, private :: physics_variation
      procedure, private :: placed
@@ -220,6 +227,7 @@ module operation_residual
      procedure, private :: design_at_sites
      procedure, private :: tested_into
      procedure, private :: projected_count
+     procedure, private :: projected_columns
      procedure, private :: projected_triples
      procedure, private :: projected_edges
      procedure, private :: projected_part
@@ -510,7 +518,7 @@ contains
   !===================================================================!
 
   function create(primary_law, rule, at, unknowns, degrees, primary, fixed_rows, fixed, &
-       & connected_law, fixed_rate, prescribed, positions, summed_rows, projected) result(this)
+       & connected_law, fixed_rate, prescribed, positions, summed_rows, projected, tying) result(this)
 
     type(stencil)         , intent(in) :: primary_law
     type(expression)      , intent(in), optional :: rule
@@ -523,6 +531,7 @@ contains
     real(dp)              , intent(in), optional :: positions(:,:)
     integer               , intent(in), optional :: summed_rows(:)
     type(projection)      , intent(in), optional :: projected
+    logical               , intent(in), optional :: tying(:)
     type(residual_operator) :: this
     type(continuous_domain) :: domain
     integer :: j, components, governed, e, n, q, nq, s, dimension
@@ -647,6 +656,7 @@ contains
     end if
     if (allocated(this % physics)) this % designs = this % physics % num_designs()
     if (present(summed_rows)) this % summed_rows = summed_rows
+    if (present(tying)) this % tying = tying
     ! the sites of a projection, at the time of their instance's moment
     ! and the position of their quadrature point
     if (present(projected)) then
@@ -1254,6 +1264,35 @@ contains
     end do
   end subroutine governed
 
+  ! every rule's value at every site of the projection, on the real
+  ! values the basis forms there
+  subroutine governed_on_reals(this, inputs, x, governing)
+    class(residual_operator), intent(in)  :: this
+    type(binding)           , intent(in)  :: inputs(:)
+    real(dp)                , intent(in)  :: x(:)
+    real(dp), allocatable   , intent(out) :: governing(:,:)
+    real(dp), allocatable :: design_values(:), xs(:), ns(:)
+    integer :: j, s, width, nd, nsites, coordinates
+    call bound_real_vector(inputs, this % argument(2), design_values)
+    xs     = this % formed_at_sites(x)
+    ns     = this % design_at_sites(design_values)
+    width  = size(this % projected % formed, 2)
+    nd     = this % designs
+    nsites = this % sites % num_vertices()
+    allocate(governing(nsites, size(this % rules)))
+    do j = 1, size(this % rules)
+       coordinates = this % rules(j) % num_position_coordinates()
+       do s = 1, nsites
+          if (coordinates > 0) then
+             governing(s, j) = this % rules(j) % value_on(xs((s - 1) * width + 1:s * width), &
+                  & ns((s - 1) * nd + 1:s * nd), this % site_positions(1:coordinates, s))
+          else
+             governing(s, j) = this % rules(j) % value_on(xs((s - 1) * width + 1:s * width), ns((s - 1) * nd + 1:s * nd))
+          end if
+       end do
+    end do
+  end subroutine governed_on_reals
+
   !===================================================================!
   ! The first `coordinates` coordinates of every point's position as a
   ! field on the points, one component per coordinate. A rule that
@@ -1403,6 +1442,12 @@ contains
     end if
     if (.not. allocated(this % physics)) then
        allocate(governing(size(this % at), 0))
+       return
+    end if
+    ! with the tying rows eliminated, each rule's value at each site on
+    ! the real values, by the pass its jacobian takes
+    if (allocated(this % projected) .and. allocated(this % tying) .and. .not. present(v)) then
+       call this % governed_on_reals(inputs, x, governing)
        return
     end if
     call this % point_inputs(inputs, x, point_data)
@@ -1826,6 +1871,7 @@ contains
     if (allocated(this % summed_rows)) lin % summed_rows = this % summed_rows
     lin % points           = this % points
     lin % point_positions  = this % point_positions
+    if (allocated(this % tying)) lin % tying = this % tying
     call lin % versioned(version_number, transposed=transposed)
 
   end function linearize
@@ -1931,14 +1977,61 @@ contains
   ! row and column of two instances summed when combined.
   !===================================================================!
 
-  pure integer function projected_count(this) result(count)
+  integer function projected_count(this) result(count)
     class(residual_operator), intent(in) :: this
+    integer , allocatable :: offsets(:), slot(:,:), columns_of(:), first(:), column(:)
     integer :: nodes, nk
     nodes = size(this % projected % element_point, 1)
     nk    = this % projected % elements % num_coefficients()
-    count = size(this % projected % element_cell) * nodes * nk * size(this % projected % coefficient_row, 2) &
-         & * nodes * size(read_offsets(this % projected % formed))
+    call this % projected_columns(offsets, slot, columns_of, first, column)
+    count = size(this % projected % element_cell) * nodes * nk * nodes * sum(columns_of)
   end function projected_count
+
+  !===================================================================!
+  ! THE COLUMNS EACH FIELD'S ROWS READ in an instance: of the
+  ! components of a node's tuple the basis reads (offsets), those the
+  ! rules testing the field read, in the order of offsets.
+  ! columns_of(f) of them, column(first(f):first(f) + columns_of(f) -
+  ! 1) their places in offsets, and slot(o, f) the rank of the o-th
+  ! offset among the field's, zero where it reads none.
+  !===================================================================!
+
+  subroutine projected_columns(this, offsets, slot, columns_of, first, column)
+    class(residual_operator), intent(in)  :: this
+    integer , allocatable   , intent(out) :: offsets(:), slot(:,:), columns_of(:), first(:), column(:)
+    integer , allocatable :: reads(:), place(:)
+    integer :: no, nf, j, f, m, k2, o, r
+    associate (pr => this % projected)
+      offsets = read_offsets(pr % formed)
+      no      = size(offsets)
+      nf      = size(pr % coefficient_row, 2)
+      allocate(place(0:maxval([offsets, 0])), source=0)
+      place(offsets) = [(o, o = 1, no)]
+      allocate(slot(no, nf), source=0)
+      do j = 1, size(this % rules)
+         f = pr % tested(1, j)
+         call this % rules(j) % read_components(reads)
+         do m = 1, size(reads)
+            do k2 = 1, ubound(pr % formed, 1)
+               if (pr % formed(k2, reads(m) + 1) < 0) cycle
+               slot(place(pr % formed(k2, reads(m) + 1)), f) = 1
+            end do
+         end do
+      end do
+    end associate
+    allocate(columns_of(nf), first(nf), column(count(slot > 0)))
+    r = 0
+    do f = 1, nf
+       first(f) = r + 1
+       do o = 1, no
+          if (slot(o, f) == 0) cycle
+          r = r + 1
+          column(r)  = o
+          slot(o, f) = r - first(f) + 1
+       end do
+       columns_of(f) = r - first(f) + 1
+    end do
+  end subroutine projected_columns
 
   ! the components of a node's tuple the basis reads, each once
   pure function read_offsets(formed) result(offsets)
@@ -1962,15 +2055,16 @@ contains
     integer                 , intent(inout) :: r(:), c(:)
     real(dp)                , intent(inout) :: w(:)
     integer                 , intent(inout) :: num_triples
-    real(dp), allocatable :: xs(:), ns(:), g(:), local(:,:)
-    integer , allocatable :: reads(:), offsets(:), place(:)
+    real(dp), allocatable :: xs(:), ns(:), g(:), local(:)
+    integer , allocatable :: reads(:), offsets(:), place(:), slot(:,:), columns_of(:), first(:), column(:), base(:)
     integer :: width, nd, nq, nodes, nk, nf, no, j, f, d, n, e, q, s, i, p, k, m, comp, dd, i2, k2, offset, row, o
+    integer :: at_row
     real(dp) :: value, tau
     width   = size(this % projected % formed, 2)
     nd      = this % designs
     xs      = this % formed_at_sites(x)
     ns      = this % design_at_sites(nu)
-    offsets = read_offsets(this % projected % formed)
+    call this % projected_columns(offsets, slot, columns_of, first, column)
     no      = size(offsets)
     allocate(place(0:maxval([offsets, 0])), source=0)
     place(offsets) = [(o, o = 1, no)]
@@ -1980,7 +2074,15 @@ contains
       nodes = size(pr % element_point, 1)
       nk    = el % num_coefficients()
       nf    = size(pr % coefficient_row, 2)
-      allocate(local(nodes * nk * nf, nodes * no))
+      ! the instance's matrix, a block for each field: its rows the
+      ! node and the coefficient, its columns the node and the field's
+      ! own offsets
+      allocate(base(nf + 1))
+      base(1) = 0
+      do f = 1, nf
+         base(f + 1) = base(f) + nodes * nk * nodes * columns_of(f)
+      end do
+      allocate(local(base(nf + 1)))
       do n = 1, size(pr % element_cell)
          e     = pr % element_cell(n)
          local = 0.0_dp
@@ -1996,6 +2098,7 @@ contains
                   do k = 0, nk - 1
                      tau = el % test(d, k, i, q, e)
                      if (tau == 0.0_dp) cycle
+                     at_row = base(f) + ((i - 1) * nk + k) * nodes * columns_of(f)
                      do m = 1, size(reads)
                         comp = reads(m)
                         dd   = pr % formed(0, comp + 1)
@@ -2003,9 +2106,8 @@ contains
                            do k2 = 0, nk - 1
                               offset = pr % formed(k2 + 1, comp + 1)
                               if (offset < 0) cycle
-                              local(((f - 1) * nodes + i - 1) * nk + k + 1, (i2 - 1) * no + place(offset)) = &
-                                   & local(((f - 1) * nodes + i - 1) * nk + k + 1, (i2 - 1) * no + place(offset)) &
-                                   & + tau * g(comp) * el % basis(dd, k2, i2, q, e)
+                              o = at_row + (i2 - 1) * columns_of(f) + slot(place(offset), f)
+                              local(o) = local(o) + tau * g(comp) * el % basis(dd, k2, i2, q, e)
                            end do
                         end do
                      end do
@@ -2021,13 +2123,14 @@ contains
                do k = 0, nk - 1
                   row = this % at(p) + pr % coefficient_row(k, f) + 1
                   if (is_fixed(row)) cycle
+                  at_row = base(f) + ((i - 1) * nk + k) * nodes * columns_of(f)
                   do i2 = 1, nodes
-                     do o = 1, no
-                        if (local(((f - 1) * nodes + i - 1) * nk + k + 1, (i2 - 1) * no + o) == 0.0_dp) cycle
+                     do o = 1, columns_of(f)
+                        if (local(at_row + (i2 - 1) * columns_of(f) + o) == 0.0_dp) cycle
                         num_triples    = num_triples + 1
                         r(num_triples) = row
-                        c(num_triples) = this % at(abs(pr % element_point(i2, n))) + offsets(o) + 1
-                        w(num_triples) = local(((f - 1) * nodes + i - 1) * nk + k + 1, (i2 - 1) * no + o)
+                        c(num_triples) = this % at(abs(pr % element_point(i2, n))) + offsets(column(first(f) + o - 1)) + 1
+                        w(num_triples) = local(at_row + (i2 - 1) * columns_of(f) + o)
                      end do
                   end do
                end do
@@ -4118,6 +4221,8 @@ contains
     type(expression) :: rule
     logical :: staged
     integer :: nodes, factor
+    integer , allocatable :: related(:), added(:), single(:)
+    logical , allocatable :: tying(:), entries(:)
 
     stride = this % rule % num_components()
     nf     = this % manifold % num_unknowns
@@ -4268,6 +4373,7 @@ contains
 
     relations = derived_constraints(determined(1:e), source(1:e), weight(1:e), unknowns, &
          & 'rows along time and space')
+    related = determined(1:e)
 
     ! the row of each equation within a point's tuple: the value row
     ! for a family that determines the derivatives, the top derivative
@@ -4300,8 +4406,26 @@ contains
        face_constants = [face_constants, spread(0.0_dp, 1, size(space_rows))]
     end if
     factor = merge(1, 0, any(this % manifold % of_time_alone(1:nf)))
-    if (factor > 0) call this % time_alone_rows_of(depth, nm, instant_moment, at, primary, fixed_rows, face_rows, &
-         & face_columns, face_weights, face_constants)
+    if (factor > 0) then
+       call this % time_alone_rows_of(depth, nm, instant_moment, at, primary, fixed_rows, face_rows, &
+            & face_columns, face_weights, face_constants, added)
+       ! THE TYING ROWS: the history, the family's relations, the rows of
+       ! the unknowns of time alone, and the prescribed rows of one entry
+       ! on their own diagonal; a prescribed row of several entries is
+       ! not, though it take the row of a relation
+       allocate(tying(unknowns), entries(unknowns), source=.false.)
+       tying(fixed_rows) = .true.
+       tying(related)    = .true.
+       allocate(single(unknowns), source=0)
+       do j = 1, size(face_rows)
+          single(face_rows(j)) = single(face_rows(j)) + 1
+          if (face_columns(j) == face_rows(j)) entries(face_rows(j)) = .true.
+       end do
+       do j = 1, size(face_rows)
+          tying(face_rows(j)) = single(face_rows(j)) == 1 .and. entries(face_rows(j))
+       end do
+       tying(added) = .true.
+    end if
     allocate(zeros(unknowns), source=0.0_dp)
     do e = 1, size(face_rows)
        zeros(face_rows(e)) = face_constants(e)
@@ -4350,8 +4474,13 @@ contains
        end if
        if (size(face_rows) > 0) then
           gauge = stencil(face_rows, face_columns, face_weights, zeros, 'prescribed')
-          blk % rows = residual_operator(relations, rule, at, unknowns, stride, rule_primary, fixed_rows, &
-               & fixed, prescribed=gauge, positions=point_positions, projected=projected)
+          if (factor > 0) then
+             blk % rows = residual_operator(relations, rule, at, unknowns, stride, rule_primary, fixed_rows, &
+                  & fixed, prescribed=gauge, positions=point_positions, projected=projected, tying=tying)
+          else
+             blk % rows = residual_operator(relations, rule, at, unknowns, stride, rule_primary, fixed_rows, &
+                  & fixed, prescribed=gauge, positions=point_positions, projected=projected)
+          end if
        else
           blk % rows = residual_operator(relations, rule, at, unknowns, stride, rule_primary, fixed_rows, &
                & fixed, positions=point_positions, projected=projected)
@@ -6016,6 +6145,7 @@ contains
     type(dense_direct) :: direct
     type(gmres)        :: krylov
     type(gauss_seidel) :: sweeps
+    type(elimination)  :: reduced
     type(typed_field_domain) :: designs
     type(stored_field) :: design
 
@@ -6050,6 +6180,17 @@ contains
        ! residual, of components the instant before leaves inconsistent
        ! with the family, is not the law's own scale
        if (this % continued) solver % tolerance = 1.0e-13_dp
+       ! WITH UNKNOWNS OF TIME ALONE, stored at every point, the tying
+       ! rows are eliminated and the rest - the laws of the unknowns of
+       ! time alone at the first point, those of the fields at every
+       ! node - solved directly: Newton converges to round-off
+       if (allocated(rows % tying)) then
+          reduced % eliminated = rows % tying
+          allocate(reduced % inner, source=direct)
+          deallocate(solver % inner)
+          allocate(solver % inner, source=reduced)
+          solver % tolerance = 1.0e-13_dp
+       end if
     else
        ! a direct inner solve converges Newton quadratically to
        ! round-off at the cost of a step, and the sensitivities read
@@ -6061,9 +6202,14 @@ contains
     designs = rows % design_fields()
     design  = designs % design(design_at_points(this % points % expansion % values(), rows % designs, npts))
     ! the coupling of the unknowns, the summed rows excluded, is what
-    ! the inner minimizer's sweep is coloured by
-    call solver % state(rows, rows % unknown_graph(), rows % unknown_domain(), unknowns, stored_inputs=[design], &
-         & coupling=rows % coupling())
+    ! the inner minimizer's sweep is coloured by; a direct solve after
+    ! the elimination has no sweep
+    if (allocated(rows % tying)) then
+       call solver % state(rows, rows % unknown_graph(), rows % unknown_domain(), unknowns, stored_inputs=[design])
+    else
+       call solver % state(rows, rows % unknown_graph(), rows % unknown_domain(), unknowns, stored_inputs=[design], &
+            & coupling=rows % coupling())
+    end if
 
   end function solver_for
 
@@ -6850,50 +6996,63 @@ contains
   ! is stored at every point, its equation stated at the first point
   ! of each moment; at every other point the component the equation
   ! determines equals the one at the point before, and every
-  ! coefficient of the basis but the value is zero, so that the basis
-  ! forms the unknown itself at every quadrature point. Appended to the
-  ! prescribed rows, none where the history or a face condition takes
-  ! the row.
+  ! coefficient of the basis but the value is zero at every order, so
+  ! that the basis forms the unknown itself at every quadrature point.
+  ! Appended to the prescribed rows, none where the history or a face
+  ! condition takes the row; added lists them.
   !===================================================================!
 
   subroutine time_alone_rows_of(this, depth, nm, instant_moment, at, primary, fixed_rows, rows, columns, weights, &
-       & constants)
+       & constants, added)
 
     class(discrete_residual), intent(in)    :: this
     integer                 , intent(in)    :: depth, nm, instant_moment(:), at(:), primary(:), fixed_rows(:)
     integer , allocatable   , intent(inout) :: rows(:), columns(:)
     real(dp), allocatable   , intent(inout) :: weights(:), constants(:)
+    integer , allocatable   , intent(out)   :: added(:)
 
     logical , allocatable :: taken(:)
     integer , allocatable :: r(:), c(:)
     real(dp), allocatable :: w(:)
-    integer :: ncells, nk, f, a, m, p, k, row, component, e
+    integer :: ncells, nk, f, a, m, p, k, row, component, e, o
 
     ncells = this % points % num_cells()
     nk     = this % elements % num_coefficients()
     allocate(taken(maxval(at) + this % rule % num_components()), source=.false.)
     taken(fixed_rows) = .true.
     taken(rows)       = .true.
-    allocate(r(2 * nm * ncells * nk * count(this % manifold % of_time_alone(1:this % manifold % num_unknowns))))
-    allocate(c(size(r)), w(size(r)))
+    allocate(r(2 * nm * ncells * nk * (top_degree(this % rule, this % manifold % num_unknowns) + 1) &
+         & * count(this % manifold % of_time_alone(1:this % manifold % num_unknowns))))
+    allocate(c(size(r)), w(size(r)), added(size(r)))
     e = 0
+    o = 0
     do f = 1, this % manifold % num_unknowns
        if (.not. this % manifold % of_time_alone(f)) cycle
        a = primary(f) - this % rule % offset_of_field(f)
        do m = 1, nm
           if (any(instant_moment(1:depth) == m)) cycle
           do p = 1, ncells
-             do k = 0, nk - 1
-                component = this % coefficient_component(f, k, a)
-                row = at((m - 1) * ncells + p) + component + 1
-                if (taken(row)) cycle
-                if (k > 0) then
+             ! the value's coefficient at the order the equation
+             ! determines: the one at the point before
+             component = this % coefficient_component(f, 0, a)
+             row = at((m - 1) * ncells + p) + component + 1
+             if (p > 1 .and. .not. taken(row)) then
+                call add(row, row, 1.0_dp)
+                call add(row, at((m - 1) * ncells + p - 1) + component + 1, -1.0_dp)
+                o = o + 1
+                added(o) = row
+             end if
+             ! every other coefficient zero, at every order
+             do k = 1, nk - 1
+                do a = 0, this % rule % degree_of_field(f)
+                   row = at((m - 1) * ncells + p) + this % coefficient_component(f, k, a) + 1
+                   if (taken(row)) cycle
                    call add(row, row, 1.0_dp)
-                else if (p > 1) then
-                   call add(row, row, 1.0_dp)
-                   call add(row, at((m - 1) * ncells + p - 1) + component + 1, -1.0_dp)
-                end if
+                   o = o + 1
+                   added(o) = row
+                end do
              end do
+             a = primary(f) - this % rule % offset_of_field(f)
           end do
        end do
     end do
@@ -6901,6 +7060,7 @@ contains
     columns   = [columns, c(1:e)]
     weights   = [weights, w(1:e)]
     constants = [constants, spread(0.0_dp, 1, e)]
+    added     = added(1:o)
 
   contains
 
@@ -7081,6 +7241,18 @@ contains
        m = this % face_row_moment(instant, first, last, depth, instant_moment)
        if (allocated(this % elements)) then
           do i = 1, size(this % condition(j) % equation)
+             ! a condition on unknowns of time alone, at every point
+             if (of_time_alone(this % condition(j) % equation(i))) then
+                do k = 1, ncells
+                   call this % face_relation(this % condition(j) % equation(i), this % points % expansion % values(), &
+                        & this % points % position(this % points % point_of(instant, k)), column_of, slopes, given, row)
+                   base = at((instant_moment(instant - first + 1) - 1) * ncells + k)
+                   do e = 1, size(column_of)
+                      call add(at((m - 1) * ncells + k) + row + 1, base + column_of(e) + 1, slopes(e), -given)
+                   end do
+                end do
+                cycle
+             end if
              call projected_condition(this % condition(j) % equation(i), instant, &
                   & (instant_moment(instant - first + 1) - 1) * ncells, (m - 1) * ncells)
           end do
@@ -7157,6 +7329,18 @@ contains
       weights(entries)   = weight
       constants(entries) = constant
     end subroutine add
+
+    ! a condition that reads the unknowns of time alone and no other
+    logical function of_time_alone(equation)
+      type(continuous_field), intent(in) :: equation
+      type(expression) :: form
+      integer :: f
+      form = equation % graph(1)
+      of_time_alone = any(this % manifold % of_time_alone(1:this % manifold % num_unknowns))
+      do f = 1, this % manifold % num_unknowns
+         if (.not. this % manifold % of_time_alone(f) .and. form % highest_order_read(f) >= 0) of_time_alone = .false.
+      end do
+    end function of_time_alone
 
     !-----------------------------------------------------------------!
     ! A CONDITION ON A TIME FACE, PROJECTED: for every node and every

@@ -783,10 +783,10 @@ contains
   ! The file with its data in binary: the same points, cells and cell
   ! fields as write, each array its byte count, an unsigned 32-bit
   ! integer, and its bytes, little endian, encoded together in base64
-  ! within the element.
+  ! within the element; and a vector at every point when given.
   !===================================================================!
 
-  impure subroutine write_binary(this, filename, phic, solution_labels)
+  impure subroutine write_binary(this, filename, phic, solution_labels, point_vectors, vector_label)
 
     use iso_fortran_env, only : int8, int32, real64
 
@@ -794,6 +794,9 @@ contains
     character(len=*)      , intent(in)           :: filename
     real(dp)              , intent(in), optional :: phic(:,:)
     type(string)          , intent(in), optional :: solution_labels(:)
+    ! a vector at every point, (3, points), under its label
+    real(dp)              , intent(in), optional :: point_vectors(:,:)
+    character(len=*)      , intent(in), optional :: vector_label
 
     integer :: unit, ierr, ncells, nconnectivity, k
 
@@ -839,6 +842,16 @@ contains
        end do
     end if
     write(unit, '(a)') '</CellData>'
+    if (present(point_vectors) .and. present(vector_label)) then
+       call require(size(point_vectors, 1) == 3 .and. size(point_vectors, 2) == size(this % points, 2), &
+            & 'one vector of three components per point')
+       write(unit, '(a)') '<PointData>'
+       write(unit, '(a,a,a)') '<DataArray type="Float64" Name="', trim(vector_label), &
+            & '" NumberOfComponents="3" format="binary">'
+       write(unit, '(a)') encoded(transfer(real(point_vectors, real64), [0_int8]))
+       write(unit, '(a)') '</DataArray>'
+       write(unit, '(a)') '</PointData>'
+    end if
     write(unit, '(a)') '</Piece>'
     write(unit, '(a)') '</UnstructuredGrid>'
     write(unit, '(a)') '</VTKFile>'

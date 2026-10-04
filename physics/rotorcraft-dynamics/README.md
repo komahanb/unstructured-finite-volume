@@ -1,0 +1,162 @@
+# The dynamics of a rotorcraft
+
+The rotor of the TACS case of `komahanb/rotorcraft-optimization`
+(dissertation, section 5.4): 26 bodies and 34 joints, the hub turning
+at 109.12 rad/s, three push rods driving the swashplates, and four
+blades, each a rigid plate or a beam, chosen at setup. Its motion over
+the revolutions, the blades' mass and the smooth maximum of their
+stress, the derivatives of these along the thickness of each strip of
+the span, and the thickness of least mass whose stress is bounded in
+one scenario or in three.
+
+| program | what it does |
+|---|---|
+| `rotorcraft_dynamics` | the rotor; its setup read from `rotorcraft.nml` |
+| `triple_pendulum` | the triple pendulum of the dissertation, section 5.1 |
+| `triple_pendulum_sensitivity` | the pendulum's dJ/ds by the adjoint and by the expansion |
+| `blade_on_hub` | one blade on a driven hub, as a beam or as a rigid plate |
+
+`rotor_bodies.txt` is the table of the rigid bodies, read by
+`rotorcraft_dynamics`; the header of each program states what it
+computes and what it was measured to give.
+
+## Building and running
+
+From this directory,
+
+    make                              # the library, if its sources changed, and the four programs
+    ./rotorcraft_dynamics             # reads rotorcraft.nml in the directory it runs in
+    ./triple_pendulum 201             # the instant count (default 201)
+    ./triple_pendulum_sensitivity 1 1 1   # the two design values and the order of the expansion
+    ./blade_on_hub beam 36 5 70e9     # beam [steps] [span points] [E], or: rigid [steps]
+
+`./run.sh` builds the library from the repository's root and runs the
+four programs with their defaults. On several images, build with
+`make COARRAY=lib` and run with `mpirun -np 2 ./rotorcraft_dynamics`;
+one image needs `OMPI_MCA_osc=pt2pt mpirun -np 1 ...`. The rotor's march
+gives the same digits on 1 and 2 images, the pendulum's on 1, 2 and 4.
+
+To run a setup of your own, copy `rotor_bodies.txt` and a
+`rotorcraft.nml` into a directory and run the program there: each run
+writes its drawing into the directory it runs in.
+
+## The setup, `rotorcraft.nml`
+
+    &setup
+      blade = 'beam', scenario = 'collective', steps = 36, span_points = 5
+    /
+
+| name | meaning | default |
+|---|---|---|
+| `blade` | `'rigid'` or `'beam'` (plate and solid to come) | `'rigid'` |
+| `scenario` | `'collective'`, `'longitudinal'` or `'lateral'`, or several of them | `'collective'` |
+| `thickness` | of the blades; with strips, of each strip | 2 cm |
+| `revolutions` | of the hub | 1 |
+| `steps` | per revolution | 360 |
+| `order` | of the backward differences of the march, 1 or 2 | 1 |
+| `span_points` | of a blade as a beam | 9 |
+| `strips` | of the span, the thickness of each a design coordinate; 0, uniform | 0 |
+| `sensitivities` | with strips: the derivatives along each thickness | `.true.` |
+| `optimize` | with strips: the least mass whose stress is bounded | `.false.` |
+| `ks_bound` | the bound of the von Mises ratio, its square bounding the smooth maximum | 0.25 |
+| `ks_weight` | the weight of the smooth maximum | 100 |
+| `bounds` | the least and the greatest thickness | 1 cm, 2 cm |
+| `smoothness` | the largest difference of adjacent strips | 1 mm |
+| `yield` | the yield stress | 350e6 |
+| `meshes` | the directory of the bodies' surface meshes; none, no drawing | none |
+| `every` | the stride of the instants drawn | 10 |
+
+## Setups, and how long they take
+
+On one image of this workstation:
+
+- **The rigid rotor over a revolution**, with `rotorcraft.nml` as it is:
+  about 2 min. Printed: the energy and the hub's angle every 30
+  degrees.
+- **The blades as beams**, `blade = 'beam', steps = 36, span_points =
+  5`: about 1 min. Printed also: the motion of the tip of the blade at
+  zero degrees, the blades' mass and the smooth maximum of their
+  stress.
+- **The derivatives along the thickness of 8 strips**, adding
+  `strips = 8, thickness = 8*0.02`: about half an hour, the expansion
+  along every strip. Printed for each strip: the mass's derivative, and the
+  smooth maximum's by the expansion and by the reverse sweep.
+- **The least mass, one scenario**, adding `optimize = .true.,
+  ks_bound = 1.25`: 6 design iterations, about 11 min.
+- **The least mass, three scenarios**, `scenario = 'collective',
+  'longitudinal', 'lateral'` with `ks_bound = 1.5`: 6 design
+  iterations, about 33 min. Printed for each scenario, at the design
+  found: its motion, mass and smooth maximum, the thickness of each
+  strip and the multiplier of its bound.
+
+At 36 steps of bdf(1) the blades' stress is 1.29 times the yield at
+2 cm and no thickness meets `ks_bound = 0.25`; the bounds 1.25 and 1.5
+above stand in for it until the march of the reduced case is decided.
+Five points of the span resolve the stress at the root to some 15 per
+cent; the case as TACS states it - 48 strips, 49 points of the span,
+360 steps, three scenarios - would take days (see
+`doc/rotorcraft-optimization.md`).
+
+## Drawing the motion in ParaView
+
+Set `meshes` to the TACS case's surface meshes,
+
+    meshes = '/home/komahan/_git/rotorcraft-optimization/deterministic-optimization/data/mesh'
+
+and `every` to the stride of the instants drawn. Every rigid body is
+drawn with its mesh, moved with the body to each instant; each blade
+with the box of its plate, its thickness that of each strip - the
+setup's, and for the design found the thicknesses found - and as a
+beam each point of the box moved with its section of the beam. The run
+writes:
+
+| setup | files |
+|---|---|
+| one scenario | `rotor_<instant>.vtu`, `rotor.pvd` |
+| several scenarios | `rotor_<scenario>_<instant>.vtu`, `rotor_<scenario>.pvd` |
+| to optimize | the initial design marched first: `rotor_initial.pvd` and `rotor_optimized.pvd`, or `rotor_<scenario>_initial.pvd` and `rotor_<scenario>_optimized.pvd` |
+
+The least mass of one scenario, drawn at the initial design and at
+the design found, every third of the 37 instants, about 12 min:
+
+    &setup
+      blade = 'beam', scenario = 'collective', steps = 36, span_points = 5,
+      strips = 8, thickness = 8*0.02, optimize = .true., ks_bound = 1.25, every = 3,
+      meshes = '/home/komahan/_git/rotorcraft-optimization/deterministic-optimization/data/mesh'
+    /
+
+writes `rotor_initial.pvd` and `rotor_optimized.pvd`, 13 instants each:
+the blades 2 cm thick in the first, and in the second 1.02 cm at the
+root strip and 1 cm outboard.
+
+Each `.vtu` has `body`, the number of the body of each cell, and
+with beams `deflection`, the beam's deflection at each point in the
+fixed axes, zero on the rigid bodies. In ParaView:
+
+1. File, Open, the `.pvd`; Apply. The time slider runs through the
+   instants drawn; Play animates the revolution.
+2. Colour by `body` to tell the bodies apart.
+3. With beams, Filters, Warp By Vector, the vector `deflection`, a
+   scale factor of 10 to 100 to see the blades bend - at 36 steps of
+   bdf(1) mostly in lag, the centripetal acceleration a step late;
+   colour by `deflection` to see its magnitude.
+4. To compare the initial and the optimized design, open both `.pvd`
+   files, split the view, show one in each and link the cameras
+   (right-click in a view, Link Camera); the time slider moves both.
+
+Without the window, `pvpython` draws an instant into a picture; on
+this workstation it needs the system's Python path,
+
+    PYTHONPATH=/usr/lib/python3/dist-packages pvpython --force-offscreen-rendering draw.py
+
+with `draw.py`:
+
+    from paraview.simple import *
+    rotor = PVDReader(FileName='rotor_optimized.pvd')
+    warped = WarpByVector(Input=rotor, Vectors=['POINTS', 'deflection'], ScaleFactor=50.0)
+    view = GetActiveViewOrCreate('RenderView')
+    display = Show(warped, view)
+    ColorBy(display, ('CELLS', 'body'))
+    view.ViewTime = rotor.TimestepValues[-1]
+    view.ResetCamera()
+    SaveScreenshot('rotor_optimized.png', view, ImageResolution=[1200, 900])

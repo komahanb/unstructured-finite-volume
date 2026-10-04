@@ -108,10 +108,16 @@
 ! gives the multiplier as the mass's over it to 5e-9.
 !
 ! THE DRAWING: every rigid body is drawn with the surface of its mesh,
-! each blade with the box of its plate, moved with the body to each
-! instant drawn; a blade as a beam with each point of the box moved
-! with its section of the beam, and the beam's deflection a vector at
-! the point: rotor_<instant>.vtu and rotor.pvd for paraview.
+! each blade with the box of its plate, its thickness that of each
+! strip, moved with the body to each instant drawn; a blade as a beam
+! with each point of the box moved with its section of the beam, and
+! the beam's deflection a vector at the point: rotor_<instant>.vtu and
+! rotor.pvd for paraview, rotor_<scenario>_... where several scenarios
+! are listed. To optimize, the initial design is marched, reported and
+! drawn first, rotor_initial, and the design found drawn with the
+! thicknesses found, rotor_optimized. README.md states how to run and
+! draw.
+!
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
@@ -155,6 +161,7 @@ program rotorcraft_dynamics
   type(mechanism)         :: rotors(size(scenario))
   type(continuous_field)  :: masses(size(scenario)), kss(size(scenario))
   integer :: unit, j, ns, num_instants, np
+  logical :: optimizing
 
   open(newunit=unit, file='rotorcraft.nml', status='old', action='read')
   read(unit, nml=setup)
@@ -166,22 +173,36 @@ program rotorcraft_dynamics
   num_instants = revolutions * steps + 1
   np = 1
   if (trim(blade) == 'beam') np = span_points
+  optimizing = strips > 0 .and. optimize .and. trim(blade) == 'beam'
+  if (this_image() == 1 .and. num_instants <= 11) call set_verbosity(1)
+
+  ! to optimize with the bodies drawn, the initial design marched,
+  ! reported and drawn first, beside the design found
+  if (optimizing .and. len_trim(meshes) > 0) then
+     do j = 1, ns
+        call stated(scenario(j), j == 1, L_h(j), estimates(j), rotors(j), masses(j), kss(j), omega_h, initial=.true.)
+        call L_h(j) % minimize(estimates(j), solutions(j), continued=.true.)
+        call reported(scenario(j), ns == 1, rotors(j), masses(j), kss(j), solutions(j), 'initial')
+     end do
+  end if
   do j = 1, ns
      call stated(scenario(j), j == 1, L_h(j), estimates(j), rotors(j), masses(j), kss(j), omega_h)
   end do
 
   ! each marched in turn; to optimize, the one design of them all
-  if (this_image() == 1 .and. num_instants <= 11) call set_verbosity(1)
-  if (strips > 0 .and. optimize .and. trim(blade) == 'beam') then
+  if (optimizing) then
      call minimize_together(L_h(1:ns), estimates(1:ns), solutions(1:ns), continued=.true.)
+     do j = 1, ns
+        call reported(scenario(j), ns == 1, rotors(j), masses(j), kss(j), solutions(j), 'optimized')
+     end do
   else
      do j = 1, ns
         call L_h(j) % minimize(estimates(j), solutions(j), continued=.true.)
      end do
+     do j = 1, ns
+        call reported(scenario(j), ns == 1, rotors(j), masses(j), kss(j), solutions(j))
+     end do
   end if
-  do j = 1, ns
-     call reported(scenario(j), ns == 1, rotors(j), masses(j), kss(j), solutions(j))
-  end do
 
 contains
 
@@ -191,10 +212,10 @@ contains
   ! the scenario, the functions, the Lagrangian discretized and the
   ! estimate. To optimize, every scenario bounds its stress, and the
   ! first states the objective and the inequalities on the design
-  ! alone.
+  ! alone; initial, the march at the setup's thickness alone.
   !===================================================================!
 
-  subroutine stated(name, first, L_h, estimate, rotor, mass, ks, omega_h)
+  subroutine stated(name, first, L_h, estimate, rotor, mass, ks, omega_h, initial)
 
     character(len=*)       , intent(in)  :: name
     logical                , intent(in)  :: first
@@ -203,6 +224,7 @@ contains
     type(mechanism)        , intent(out) :: rotor
     type(continuous_field) , intent(out) :: mass, ks
     type(discrete_manifold), intent(out) :: omega_h
+    logical                , intent(in), optional :: initial
 
     type(continuous_manifold) :: omega, domega, left
     type(continuous_field)    :: t, x, motion, h, adjoint, lambda, nu, kappa, mu_ks, mu_bounds, mu_smooth, bounded
@@ -215,6 +237,10 @@ contains
     type(beam_blade)          :: beams(4)
     real(dp)                  :: amplitude(3)
     integer :: k, lower, upper, cap, rod
+    logical :: marched
+
+    marched = .false.
+    if (present(initial)) marched = initial
 
     select case (trim(name))
     case ('collective');   amplitude = [0.05_dp, 0.05_dp, 0.05_dp]
@@ -354,10 +380,10 @@ contains
        end do
        do k = 1, 4
           if (trim(blade) == 'rigid') then
-             call rotor % draw_with(blades(k), plate_surface(k - 1))
+             call rotor % draw_with(blades(k), plate_surface(k - 1, thickness(1:1)))
           else
              call rotor % draw_beam_with(beams(k), part(table % row('cap_' // trim(degrees(k - 1)))), &
-                  & plate_surface(k - 1))
+                  & plate_surface(k - 1, thickness(1:max(strips, 1))))
           end if
        end do
     end if
@@ -400,7 +426,7 @@ contains
           thicknesses = [(omega % coordinate(numbered('h', k)), k = 1, strips)]
           d = continuous_residual(omega % design(), [(thicknesses(k) - thickness(k), k = 1, strips)])
        end if
-       if (strips > 0 .and. optimize) then
+       if (strips > 0 .and. optimize .and. .not. marched) then
           allocate(limits(size(stresses)))
           do k = 1, size(stresses)
              limits(k) = stresses(k) - ks_bound**2
@@ -424,7 +450,7 @@ contains
              mu_smooth = smooth % multiplier('mu_smooth')
              L = mass + L + mu_bounds*within + mu_smooth*smooth
           end if
-       else if (strips > 0 .and. sensitivities) then
+       else if (strips > 0 .and. sensitivities .and. .not. marched) then
           adjoint = r % multiplier('adjoint')
           lambda  = g % multiplier('lambda')
           nu      = b % multiplier('nu')
@@ -448,21 +474,25 @@ contains
   ! bodies alone when the blades are beams - and the hub's angle, the
   ! first point of each instant; with beams the tip of the blade at
   ! zero degrees and the functions; and the time history drawn, named
-  ! after the scenario where several are listed.
+  ! after the scenario where several are listed, and to optimize after
+  ! the design, initial or optimized.
   !===================================================================!
 
-  subroutine reported(name, alone, rotor, mass, ks, solution)
+  subroutine reported(name, alone, rotor, mass, ks, solution, design)
 
     character(len=*)      , intent(in) :: name
     logical               , intent(in) :: alone
     type(mechanism)       , intent(in) :: rotor
     type(continuous_field), intent(in) :: mass, ks
     type(discrete_field)  , intent(in) :: solution
+    character(len=*)      , intent(in), optional :: design
 
     type(continuous_field) :: energy
     type(discrete_field)   :: energy_h, hub_h, tip_h, mass_h, ks_h, kappa_h, found
-    real(dp), allocatable  :: e(:), hub_eps(:)
+    type(mechanism)        :: drawn
+    real(dp), allocatable  :: e(:), hub_eps(:), found_thickness(:)
     character(len=32), allocatable :: names(:)
+    character(len=:), allocatable :: drawing
     integer :: k, n
 
     ! the energy at every instant - of the rigid bodies alone when the
@@ -474,8 +504,13 @@ contains
     call energy_h % values(e)
     hub_h = solution % fields(['hub_eps3'])
     call hub_h % values(hub_eps)
-    print '(a, a, a, a, a, i0, a)', 'the rotor, ', trim(blade), ' blades, ', trim(name), ', ', num_instants, &
-         & ' instants:'
+    if (present(design)) then
+       print '(a, a, a, a, a, i0, a, a, a)', 'the rotor, ', trim(blade), ' blades, ', trim(name), ', ', &
+            & num_instants, ' instants, the ', design, ' design:'
+    else
+       print '(a, a, a, a, a, i0, a)', 'the rotor, ', trim(blade), ' blades, ', trim(name), ', ', num_instants, &
+            & ' instants:'
+    end if
     n = max(1, (num_instants - 1) / (12 * revolutions))
     if (trim(blade) == 'rigid') then
        print '(a)', '   angle         energy   hub eps3 - sin(w t/2)'
@@ -500,12 +535,17 @@ contains
        print '(a, es24.16)', '   the blades'' mass over the revolutions, kg s     ', mass_h % value(1, 1)
        print '(a, es24.16)', '   the smooth maximum of their von Mises function   ', ks_h % value(1, 1)
        if (strips > 0 .and. optimize) then
-          names = [(numbered('h', k), k = 1, strips)]
-          found = solution % fields(names)
-          print '(a)', '   the thickness found, strip by strip, and the multiplier of the stress'
-          print '(8es16.8)', found % value(1, :)
-          found = solution % fields(['mu_ks'])
-          print '(a, es24.16)', '   mu_ks ', found % value(1, 1)
+          if (present(design)) then
+             if (design == 'optimized') then
+                names = [(numbered('h', k), k = 1, strips)]
+                found = solution % fields(names)
+                found_thickness = found % value(1, :)
+                print '(a)', '   the thickness found, strip by strip, and the multiplier of the stress'
+                print '(8es16.8)', found_thickness
+                found = solution % fields(['mu_ks'])
+                print '(a, es24.16)', '   mu_ks ', found % value(1, 1)
+             end if
+          end if
        else if (strips > 0 .and. sensitivities) then
           kappa_h = solution % fields(['kappa'])
           print '(a)', '   along the thickness of each strip: the mass''s, the smooth maximum''s by the expansion and &
@@ -516,13 +556,19 @@ contains
        end if
     end if
 
-    ! the time history
+    ! the time history; of the design found, each blade drawn with the
+    ! thickness found of each strip
     if (len_trim(meshes) > 0) then
-       if (alone) then
-          call rotor % draw(solution, 'rotor', every)
-       else
-          call rotor % draw(solution, 'rotor_' // trim(name), every)
+       drawing = 'rotor'
+       if (.not. alone) drawing = drawing // '_' // trim(name)
+       if (present(design)) drawing = drawing // '_' // design
+       drawn = rotor
+       if (allocated(found_thickness)) then
+          do k = 1, size(drawn % beam_surfaces)
+             drawn % beam_surfaces(k) = plate_surface(k - 1, found_thickness)
+          end do
        end if
+       call drawn % draw(solution, drawing, every)
     end if
 
   end subroutine reported
@@ -536,17 +582,20 @@ contains
 
   ! the surface of the plate of the blade of k quarter turns: the box
   ! of its span, chord and thickness, 48 cells along the span and 4
-  ! along the chord on each face
-  function plate_surface(k) result(s)
-    integer, intent(in) :: k
+  ! along the chord on each face, its thickness at each point that of
+  ! the strip of the span it lies in, h(1) to h(size(h)) from the root
+  function plate_surface(k, h) result(s)
+    integer , intent(in) :: k
+    real(dp), intent(in) :: h(:)
     type(surface) :: s
     integer, parameter :: ns = 48, nc = 4
-    real(dp) :: x(3, 8), corner(3)
-    integer :: i, j, f, face(4, 6), n1, n2, p, c
-    ! the corners of the box along the azimuth zero, and its faces
+    real(dp) :: x(3, 8), corner(3), y(3)
+    integer :: i, j, f, face(4, 6), n1, n2, p, c, m
+    ! the corners of the box along the azimuth zero, of unit thickness,
+    ! and its faces
     do i = 1, 8
        corner = [merge(tip, root, btest(i - 1, 0)), merge(chord, -chord, btest(i - 1, 1)) / 2.0_dp, &
-            & height + merge(thickness(1), -thickness(1), btest(i - 1, 2)) / 2.0_dp]
+            & height + merge(1.0_dp, -1.0_dp, btest(i - 1, 2)) / 2.0_dp]
        x(:, i) = corner
     end do
     face = reshape([1, 2, 4, 3,  5, 6, 8, 7,  1, 2, 6, 5,  3, 4, 8, 7,  1, 3, 7, 5,  2, 4, 8, 6], [4, 6])
@@ -559,9 +608,11 @@ contains
        p = size(s % points, 2)
        do j = 0, n2
           do i = 0, n1
-             s % points = reshape([s % points, turned(x(:, face(1, f)) + (x(:, face(2, f)) - x(:, face(1, f))) &
-                  & * real(i, dp) / n1 + (x(:, face(4, f)) - x(:, face(1, f))) * real(j, dp) / n2, k)], &
-                  & [3, size(s % points, 2) + 1])
+             y = x(:, face(1, f)) + (x(:, face(2, f)) - x(:, face(1, f))) * real(i, dp) / n1 &
+                  & + (x(:, face(4, f)) - x(:, face(1, f))) * real(j, dp) / n2
+             m    = max(1, min(size(h), 1 + int((y(1) - root) / (tip - root) * size(h))))
+             y(3) = height + (y(3) - height) * h(m)
+             s % points = reshape([s % points, turned(y, k)], [3, size(s % points, 2) + 1])
           end do
        end do
        do j = 1, n2

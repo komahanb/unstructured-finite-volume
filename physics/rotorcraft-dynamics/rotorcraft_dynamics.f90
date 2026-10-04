@@ -59,6 +59,15 @@
 !      ks_weight    the weight of the smooth maximum of the stress
 !      sensitivities with strips, the functions' derivatives along each
 !                   thickness (.true.), or the functions alone
+!      optimize     with strips, the thickness of the least mass whose
+!                   smooth maximum of the von Mises function is at
+!                   most ks_bound^2, each strip's within bounds and
+!                   adjacent strips' within smoothness of each other
+!      ks_bound     the bound of the von Mises ratio, 0.25
+!      bounds       the least and the greatest thickness, 0.01 and 0.02
+!      smoothness   the largest difference of adjacent strips, 1e-3
+!      order        of the backward differences of the march, 1 or 2,
+!                   from one step of bdf(1)
 !
 ! THE FUNCTIONS, of the blades as beams: the blades' mass over the
 ! revolutions, and the smooth maximum (operation_field, maximum) of
@@ -69,11 +78,21 @@
 ! by the reverse sweep, -kappa, its objective. At 36 steps, 5 points of
 ! the span and eight strips at 2 cm the mass is 2.1737794328871449 kg
 ! s, TACS's 2.173779432887122, and the smooth maximum at ks_weight =
-! 100 1.6760974217836719, the same on 1 and 2 images; along the root
+! 100 1.6760974217836406, the same on 1 and 2 images; along the root
 ! strip's thickness its derivative by the expansion is
-! -166.45582952328755, and central differences of steps 1e-5 and 2e-5
-! miss it by their own error, 1.318e-4 and 5.271e-4, extrapolated to
-! within 2.5e-11.
+! -166.45582953687486, by the reverse sweep the same to 5.4e-14 (along
+! the eight strips to 4e-14 to 2.5e-13), and central differences of
+! steps 5e-6, 1e-5 and 2e-5 miss it by their own error, 3.29e-5,
+! 1.317e-4 and 5.270e-4, extrapolated in the step's second and fourth
+! powers to within 1.4e-9.
+!
+! THE LEAST MASS (optimize), at 36 steps, 5 points of the span and
+! eight strips from 2 cm, with ks_bound = 1.25 - the stress of this
+! march is 1.29 times the yield at 2 cm, and no uniform blade meets
+! 0.25 at any march of the note - is found in six iterations: the root
+! strip 1.0203272556788471 cm and the seven others at their bound of
+! 1 cm, the mass 1.0896514020886789 kg s, the smooth maximum on its
+! bound to 5e-15 and its multiplier 0.037891294249.
 !
 ! THE DRAWING: every rigid body is drawn with the surface of its mesh,
 ! each blade with the box of its plate, moved with the body to each
@@ -110,17 +129,20 @@ program rotorcraft_dynamics
   character(len=16)  :: blade = 'rigid', scenario = 'collective'
   character(len=256) :: meshes = ''
   real(dp)           :: thickness(48) = 0.02_dp, yield = 350.0e6_dp, ks_weight = 100.0_dp
-  integer            :: revolutions = 1, steps = 360, every = 10, span_points = 9, strips = 0
-  logical            :: sensitivities = .true.
+  real(dp)           :: ks_bound = 0.25_dp, bounds(2) = [0.01_dp, 0.02_dp], smoothness = 1.0e-3_dp
+  integer            :: revolutions = 1, steps = 360, every = 10, span_points = 9, strips = 0, order = 1
+  logical            :: sensitivities = .true., optimize = .false.
   namelist /setup/ blade, scenario, thickness, revolutions, steps, meshes, every, span_points, strips, yield, &
-       & ks_weight, sensitivities
+       & ks_weight, sensitivities, optimize, ks_bound, bounds, smoothness, order
 
   type(continuous_manifold) :: omega, domega, left
   type(discrete_manifold)   :: omega_h
-  type(continuous_field)    :: t, x, motion, energy, h, mass, ks, adjoint, lambda, nu, kappa
-  type(discrete_field)      :: estimate, solution, energy_h, hub_h, tip_h, mass_h, ks_h, kappa_h
-  type(continuous_field), allocatable :: stresses(:)
-  type(continuous_residual) :: r, g, b, d, L
+  type(continuous_field)    :: t, x, motion, energy, h, mass, ks, adjoint, lambda, nu, kappa, mu_ks, mu_bounds
+  type(continuous_field)    :: mu_smooth, bounded
+  type(discrete_field)      :: estimate, solution, energy_h, hub_h, tip_h, mass_h, ks_h, kappa_h, found
+  type(continuous_field), allocatable :: stresses(:), thicknesses(:), limits(:)
+  type(continuous_residual) :: r, g, b, d, L, stressed, within, smooth
+  type(chain)               :: march
   type(discrete_residual)   :: L_h
   type(mechanism)           :: rotor
   type(body_table)          :: table
@@ -156,7 +178,9 @@ program rotorcraft_dynamics
         omega   = continuous_manifold(time=interval(0.0_dp, revolutions * 2.0_dp * pi / speed), &
              &                        space=region(interval(0.0_dp, tip - root)), &
              &                        design=[(parameter(numbered('h', k), thickness(k)), k = 1, strips)])
-        if (sensitivities) then
+        ! the derivatives by the expansion of order one; to optimize, by
+        ! the reverse sweeps alone, the hessian by its BFGS update
+        if (sensitivities .and. .not. optimize) then
            omega_h = omega % discretize(time=points(num_instants), space=points(span_points), design=expansion(order=1))
         else
            omega_h = omega % discretize(time=points(num_instants), space=points(span_points), design=expansion(order=0))
@@ -290,23 +314,54 @@ program rotorcraft_dynamics
      ks       = maximum(continuous_field(omega, stresses), over=omega, weight=ks_weight)
   end if
 
+  ! the march: bdf of the setup's order, from one step of bdf(1)
+  if (order == 1) then
+     march = chain([dirk(2), (bdf(1), k = 2, num_instants)], from=[(k, k = 1, num_instants)])
+  else
+     march = chain([dirk(2), bdf(1), (bdf(order), k = 3, num_instants)], from=[(k, k = 1, num_instants)])
+  end if
+
   ! the laws on the revolution, the initial data on {0}, and with the
   ! blades as beams their conditions at the root, the derivatives
-  ! along the span by the hermite cubics; with strips each thickness at
-  ! the setup's, every condition paired with its multiplier and the
+  ! along the span by the hermite cubics. With strips, every condition
+  ! paired with its multiplier: each thickness at the setup's and the
   ! smooth maximum the objective, so that -kappa is its derivative
-  ! along each thickness by the reverse sweep
+  ! along each thickness by the reverse sweep; or, to optimize, the
+  ! least mass over the revolutions whose smooth maximum of the von
+  ! Mises function is at most ks_bound^2, the thickness of each strip
+  ! within the bounds and adjacent strips within the smoothness, no
+  ! condition fixing the thicknesses
   r = continuous_residual(omega,  rotor % laws())
   g = continuous_residual(domega, rotor % initial)
   if (trim(blade) == 'rigid') then
      L   = r + g
-     L_h = L % discretize(omega_h, time=chain([dirk(2), (bdf(1), k = 2, num_instants)], &
-          &                                   from=[(k, k = 1, num_instants)]))
+     L_h = L % discretize(omega_h, time=march)
   else
      b = continuous_residual(left, rotor % root)
-     if (strips > 0) d = continuous_residual(omega % design(), [(omega % coordinate(numbered('h', k)) - thickness(k), &
-          &                                                     k = 1, strips)])
-     if (strips > 0 .and. sensitivities) then
+     if (strips > 0) then
+        thicknesses = [(omega % coordinate(numbered('h', k)), k = 1, strips)]
+        d = continuous_residual(omega % design(), [(thicknesses(k) - thickness(k), k = 1, strips)])
+     end if
+     if (strips > 0 .and. optimize) then
+        allocate(limits(size(stresses)))
+        do k = 1, size(stresses)
+           limits(k) = stresses(k) - ks_bound**2
+        end do
+        bounded   = maximum(continuous_field(omega, limits), over=omega, weight=ks_weight)
+        stressed  = continuous_residual(omega % design(), [bounded], inequality=.true.)
+        within    = continuous_residual(omega % design(), [(bounds(1) - thicknesses(k), k = 1, strips), &
+             &                                           (thicknesses(k) - bounds(2), k = 1, strips)], inequality=.true.)
+        smooth    = continuous_residual(omega % design(), [(thicknesses(k) - thicknesses(k + 1) - smoothness, &
+             &                                            k = 1, strips - 1), (thicknesses(k + 1) - thicknesses(k) &
+             &                                            - smoothness, k = 1, strips - 1)], inequality=.true.)
+        adjoint   = r % multiplier('adjoint')
+        lambda    = g % multiplier('lambda')
+        nu        = b % multiplier('nu')
+        mu_ks     = stressed % multiplier('mu_ks')
+        mu_bounds = within % multiplier('mu_bounds')
+        mu_smooth = smooth % multiplier('mu_smooth')
+        L = mass + adjoint*r + lambda*g + nu*b + mu_ks*stressed + mu_bounds*within + mu_smooth*smooth
+     else if (strips > 0 .and. sensitivities) then
         adjoint = r % multiplier('adjoint')
         lambda  = g % multiplier('lambda')
         nu      = b % multiplier('nu')
@@ -317,8 +372,7 @@ program rotorcraft_dynamics
      else
         L = r + g + b
      end if
-     L_h = L % discretize(omega_h, time=chain([dirk(2), (bdf(1), k = 2, num_instants)], &
-          &                                   from=[(k, k = 1, num_instants)]), space=finite_element(degree=3))
+     L_h = L % discretize(omega_h, time=march, space=finite_element(degree=3))
   end if
 
   motion   = rotor % estimate(omega)
@@ -360,7 +414,14 @@ program rotorcraft_dynamics
      ks_h   = ks % at(solution)
      print '(a, es24.16)', '   the blades'' mass over the revolutions, kg s     ', mass_h % value(1, 1)
      print '(a, es24.16)', '   the smooth maximum of their von Mises function   ', ks_h % value(1, 1)
-     if (strips > 0 .and. sensitivities) then
+     if (strips > 0 .and. optimize) then
+        names = [(numbered('h', k), k = 1, strips)]
+        found = solution % fields(names)
+        print '(a)', '   the thickness found, strip by strip, and the multiplier of the stress'
+        print '(8es16.8)', found % value(1, :)
+        found = solution % fields(['mu_ks'])
+        print '(a, es24.16)', '   mu_ks ', found % value(1, 1)
+     else if (strips > 0 .and. sensitivities) then
         kappa_h = solution % fields(['kappa'])
         print '(a)', '   along the thickness of each strip: the mass''s, the smooth maximum''s by the expansion and &
              &by the reverse sweep'

@@ -81,9 +81,10 @@ instants drawn.
 - The sensitivities (`triple_pendulum_sensitivity.f90`): the pendulum
   with a design in a mass and one in a joint's condition, which the
   first instant states by its second derivative. dJ/ds by the adjoint
-  and by the expansion agree to 1.1e-14 and 1.1e-14, and central
-  differences of step 1e-4 to 3e-10 and 7e-10, their own error; the
-  same digits on 1, 2 and 4 images.
+  and by the expansion agree to 2.9e-13 and 2.3e-14, 7.6e-15 and
+  2e-16, where J itself varies by 6e-15 between designs 1e-9 apart,
+  and central differences of step 1e-4 to 1.5e-9 and 8.3e-10, their
+  own error; the same digits on 1, 2 and 4 images.
 - 360 steps: the energy falls to 4.94255e5 J over the revolution, where
   36 steps lose 2.5e4: the dissipation of bdf(1). 168 seconds, 232 MB.
 
@@ -218,6 +219,30 @@ a rule reads alone. At 36 steps and 5 points of the span the march
 takes 2 min 20 s where it took 5 min, the motion the same to every
 printed digit and the smooth maximum to 7e-15. Still to come: the
 blade's energy over the span in the printed energy.
+
+Each block of the march begins from the instant before with the
+unknowns of time alone - the bodies' coordinates - extrapolated along
+time to the block's last instant by the taylor polynomial of their
+derivatives below the top one; the hub turns by 10 degrees in a step
+of 36, and Newton began every block that far from its solution. The
+top derivative is not read: at the end of a step of a tableau the law
+alone determines it, 2e2 where the acceleration is 8 on the beam of
+case 8. Nor is the beam's field extrapolated: its stiff modes' rates
+times the step begin Newton at six times the residual, its test
+relative to that residual then ends at the edge of the rounding, and
+case 8's misfit varied by 5e-15 between designs 1e-9 apart where it
+varies by 8e-16. The march of 36 steps takes 1 min 7 s where it took
+2 min 17 s, of 12 steps 2 min 2 s where it took 8 min 24 s, the motion
+the same to every printed digit and the smooth maximum to 1.2e-14 and
+4.4e-14; the rigid rotor's revolution 2 min 9 s where it took 2 min
+38 s, the same energies; `blade_on_hub` as a beam 7.6 s where it took
+15.7 s. The direct solve of a block with unknowns of time alone scales
+its rows and then its columns to a largest entry of one before it
+factors them: along the eight strips the derivatives of the smooth
+maximum by the reverse sweep and by the expansion agree to 4e-14 to
+2.5e-13 where they agreed to 1.6e-11 to 1.1e-9, and `blade_on_hub` at
+E = 7e15, whose factorisation found a singular pivot, runs again,
+-225.9008 and 3531.5 as its header records.
 
 **The thickness, the mass and the stress** (`strips`, `thickness`,
 `sensitivities` in `rotorcraft.nml`). With strips, the thickness of
@@ -401,9 +426,46 @@ differences.
    mean stiffness with its misfit at most m (`misfit=m`): 13
    iterations at m = 1e-4 and 32 at 1e-6, the multiplier the same along
    s1 and s2 to 3e-12 and 6e-11.
+   The hessian by the expansion costs a reverse sweep's expansion along
+   every design coordinate: on the rotor at 36 steps and eight strips
+   251 s forward and 1998 s backward an iteration, growing with the
+   strips. With the design discretized by the expansion of order zero
+   the gradients are those of the reverse sweeps alone, J's and each
+   functional's of its own on the same forward sweep, and the hessian
+   their damped BFGS update, its cost apart from the number of strips:
+   on the same rotor 69 s forward and 20 s backward. The beam's bound
+   and misfit cases converge to the same designs (`bfgs`, a fourth
+   argument), in 19, 15 and 45 iterations where the expansion took 6,
+   13 and 32. The rotor optimizes by this update.
+   Each inequality has its own penalty in the merit, at least twice its
+   own multiplier. One penalty, twice the largest multiplier, weighed
+   the rotor's smooth maximum of the stress - of no units and of
+   multiplier 0.04 - by the 34.6 of the bounds on the thickness, so
+   that a step that lowered the mass by 3.4e-3 and exceeded the
+   stress's bound by 3.4e-3 was refused, and taken again unchanged, its
+   length fixed by its active inequalities; a refused step is now taken
+   again at most half as long. The beam's cases, of one inequality
+   each, are the same to every digit. The rotor's least mass at 36
+   steps of bdf(1), 5 points of the span and eight strips from 2 cm,
+   the bound of the von Mises ratio 1.25 - the march's own stress is
+   1.29 at 2 cm -, takes six iterations where it took 21, eleven
+   minutes: the root strip 1.0203272556788471 cm, the seven others at
+   their bound of 1 cm, the mass 1.0896514020886789 kg s, the smooth
+   maximum on its bound to 5e-15, and its multiplier 0.037891294249,
+   the 21 iterations' to 1.6e-12.
 5. **Three scenarios on one design.** The sum of three discrete
    Lagrangians, each with its own state and adjoint, and one design
    iteration.
+   Built 2026-10-03: `minimize_together(residuals, estimates,
+   solutions)`, residuals on manifolds of the same design coordinates,
+   each with its forward and reverse sweeps at every iterate; the
+   gradient and the hessian the sums of theirs, the inequalities those
+   of all, the merit the sum of the objectives, any residual having
+   none. The beam's identification as two scenarios at two frequencies
+   converges in six iterations, the derivatives of the two misfits
+   along the design summing to 5e-11; the least mean stiffness of one
+   scenario with the misfit of the other at most 1e-4 in thirteen, the
+   multiplier the same along s1 and s2 to 2e-12.
 6. **The blades as plates** (later): first-order shear plates on the
    span-by-chord rectangle, by the Lagrange elements of two
    coordinates, nearer TACS's shells.
@@ -417,18 +479,18 @@ differences.
   element method on lines and meshes; runs on several images;
   inequalities on the design factor; unknowns of time alone on a
   manifold of time and space, their laws reading integrals over the
-  region.
+  region; inequalities on functionals of the state, each with its own
+  reverse sweep; several Lagrangians on one design; the smooth maximum
+  with its largest value subtracted; the blades as beams.
 - **Missing:**
-  - inequalities on functionals of the state, KS <= 1/4, each with its
-    own reverse sweep (those on the design factor exist);
-  - several Lagrangians on one design;
   - a way to write a body's 7 coordinates and its action once, not as
     7 scalar laws by hand, without moving solver logic into `physics/`;
   - a check that the families march an index-3 system, and an initial
     state consistent with the joints (TACS starts the push rods at rest
     against their drivers);
-  - the KS aggregation with its maximum shift;
-  - the rotating beam of the blades.
+  - the rotor's three scenarios on one design, and the case as TACS
+    states it: 48 strips, 360 steps, KS <= 1/4;
+  - the blades as plates and as solids.
 
 ## Decisions for the author
 

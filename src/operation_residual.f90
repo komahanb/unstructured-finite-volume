@@ -87,7 +87,7 @@ module operation_residual
 
   private
   public :: residual_operator
-  public :: continuous_residual, discrete_residual
+  public :: continuous_residual, discrete_residual, minimize_together
   public :: operator(+), operator(*)
 
   !===================================================================!
@@ -455,6 +455,7 @@ module operation_residual
      procedure, private :: zero_at_design
      procedure, private :: inequalities_at
      procedure, private :: functional_inequalities
+     procedure, private :: extrapolated
      procedure, private :: place_inequality_multipliers
      procedure, private :: check_representations
      procedure, private :: num_represented
@@ -2709,14 +2710,20 @@ contains
   ! smooth maximum over the manifold - has its value and its gradient
   ! from the expansion of the state, and enters the reverse sweep times
   ! its multiplier of the step before: the hessian of the model is that
-  ! of the Lagrangian J + mu . c. The merit of an iterate is J plus the
-  ! violations times a penalty, at least twice every multiplier; a step
-  ! that does not decrease it by a tenth of the decrease its model
-  ! predicts is taken again from the design before it, with the
-  ! hessian shifted by sigma times the identity, sigma raised fourfold
-  ! from at least |dJ/ds| / (0.1 max(1, |s|)), and with each violated
-  ! inequality linearized to remove a quarter of the fraction of its
-  ! violation the step before removed, c + A d <= (1 - theta) c; a
+  ! of the Lagrangian J + mu . c. The merit of an iterate is J plus
+  ! each violation times its penalty, at least twice the inequality's
+  ! own multiplier, zero while it has not been active - the next
+  ! step's linearization then restores it: the inequalities are of
+  ! their own units, and one penalty of the largest multiplier weighed
+  ! the rotor's smooth maximum of the stress, of multiplier 0.04, by
+  ! the 34.6 of its bounds on the thickness. A step that does not
+  ! decrease the merit by a tenth of the decrease its model predicts
+  ! is taken again from the design before it, at most half as long,
+  ! with the hessian shifted by sigma times the identity, sigma raised
+  ! fourfold from at least |dJ/ds| / (0.1 max(1, |s|)), and with each
+  ! violated inequality linearized to remove a quarter of the fraction
+  ! of its violation the step before removed, c + A d <= (1 - theta) c
+  ! - the shift does not shorten a step its active inequalities fix; a
   ! hessian that is not positive definite is shifted from that value
   ! too, and the shift falls and theta rises fourfold, to one, after a
   ! step that decreases the merit by more than three quarters of its
@@ -2724,11 +2731,12 @@ contains
   ! the merit is never shifted, and theta is one.
   !
   ! CONTINUED, each block of the chain after the first starts Newton's
-  ! iteration from the solution at the last instant before it, at its
-  ! instants and the stages of its steps, rather than from the
-  ! estimate, which then gives the first block alone, its derivatives
-  ! along time those of the estimate: the march of a motion the
-  ! estimate does not follow.
+  ! iteration from the solution at the last instant before it, its
+  ! unknowns of time alone extrapolated along time to the block's last
+  ! instant, at its instants and the stages of its steps, rather than
+  ! from the estimate, which then gives the first block alone, its
+  ! derivatives along time those of the estimate: the march of a
+  ! motion the estimate does not follow.
   !===================================================================!
 
   recursive subroutine minimize(this, estimate, solution, checkpoint, snapshots, continued)
@@ -2739,26 +2747,17 @@ contains
     integer                 , intent(in), optional :: checkpoint, snapshots
     logical                 , intent(in), optional :: continued
 
-    type(discrete_residual) :: iterate
-    type(discrete_field)    :: functional
-    real(dp), allocatable :: kappa(:,:), gradient(:), hessian(:,:), c(:), a(:,:), step(:), mu(:), weight(:)
-    real(dp), allocatable :: accepted(:), accepted_gradient(:), accepted_hessian(:,:), accepted_c(:), accepted_a(:,:)
-    integer , allocatable :: active(:)
-    logical , allocatable :: of_state(:)
-    real(dp) :: tolerance, stationarity, objective, accepted_objective, penalty, shift, reach, predicted, decrease
-    real(dp) :: reduction
-    integer :: n, j, iteration
-    logical :: with_accepted, refused
-    character(len=250) :: message
+    type(discrete_residual) :: iterate(1)
+    type(discrete_field)    :: estimates(1), solutions(1)
 
     if (present(continued)) then
        if (continued .neqv. this % continued) then
           select type (this)
           type is (discrete_residual)
-             iterate = this
+             iterate(1) = this
           end select
-          iterate % continued = continued
-          call iterate % minimize(estimate, solution, checkpoint, snapshots)
+          iterate(1) % continued = continued
+          call iterate(1) % minimize(estimate, solution, checkpoint, snapshots)
           return
        end if
     end if
@@ -2776,56 +2775,187 @@ contains
     end if
     select type (this)
     type is (discrete_residual)
-       iterate = this
+       iterate(1) = this
     end select
-    if (iterate % points % expansion % order < 1 .or. .not. along_each_coordinate(iterate % points % expansion)) then
-       error stop 'operation_residual: a free design is found by Newton''s iteration, whose hessian is the &
-            &expansion of order one along each design coordinate'
+    ! the estimate in an array of its own: a constructor passed straight
+    ! as an argument is a temporary the compiler in use mishandles
+    estimates(1) = estimate
+    call design_iteration(iterate, estimates, solutions, checkpoint, snapshots)
+    solution = solutions(1)
+
+  end subroutine minimize
+
+  !===================================================================!
+  ! SEVERAL LAGRANGIANS ON ONE DESIGN: residuals on manifolds of the
+  ! same design coordinates, each with its own estimate and solution,
+  ! the design free in every one - the scenarios of one design. The
+  ! design is found where the sum of the Lagrangians is stationary in
+  ! it: the sum of their objectives, any of which may have none, least
+  ! under the inequalities of all, by the iteration of minimize, every
+  ! residual's forward and reverse sweeps at each iterate and its
+  ! multipliers returned with its solution. Invalid input: residuals
+  ! of different design coordinates, a residual with an equality on
+  ! the design, or none with an objective.
+  !===================================================================!
+
+  subroutine minimize_together(residuals, estimates, solutions, checkpoint, snapshots, continued)
+
+    type(discrete_residual), intent(in)  :: residuals(:)
+    type(discrete_field)   , intent(in)  :: estimates(:)
+    type(discrete_field)   , intent(out) :: solutions(:)
+    integer                , intent(in), optional :: checkpoint, snapshots
+    logical                , intent(in), optional :: continued
+
+    type(discrete_residual), allocatable :: iterates(:)
+    integer :: k
+
+    if (size(estimates) /= size(residuals) .or. size(solutions) /= size(residuals)) then
+       error stop 'operation_residual: one estimate and one solution for each residual minimized together'
     end if
-    n = iterate % points % expansion % num_designs()
-    allocate(gradient(n), hessian(n, n))
+    iterates = residuals
+    do k = 1, size(iterates)
+       if (present(continued)) iterates(k) % continued = continued
+       if (.not. free_design(iterates(k))) then
+          error stop 'operation_residual: residuals minimized together have a free design, no equality on it'
+       end if
+       if (.not. iterates(k) % with_adjoint) then
+          error stop 'operation_residual: residuals minimized together have their equations paired with their &
+               &multiplier'
+       end if
+       if (iterates(k) % points % expansion % num_designs() /= iterates(1) % points % expansion % num_designs()) then
+          error stop 'operation_residual: residuals minimized together have the same design coordinates'
+       end if
+       if (any(iterates(k) % points % expansion % values() /= iterates(1) % points % expansion % values())) then
+          error stop 'operation_residual: residuals minimized together begin at the same design'
+       end if
+    end do
+    if (.not. any([(allocated(iterates(k) % objective), k = 1, size(iterates))])) then
+       error stop 'operation_residual: residuals minimized together have an objective, one at least'
+    end if
+    call design_iteration(iterates, estimates, solutions, checkpoint, snapshots)
+
+  end subroutine minimize_together
+
+  !===================================================================!
+  ! THE ITERATION ON THE FREE DESIGN of one residual or of several on
+  ! one design, as minimize states it: the gradient and the hessian
+  ! the sums of every residual's, the inequalities those of all, the
+  ! merit the sum of the objectives plus each violation times its
+  ! penalty.
+  !===================================================================!
+
+  subroutine design_iteration(iterates, estimates, solutions, checkpoint, snapshots)
+
+    type(discrete_residual), intent(inout) :: iterates(:)
+    type(discrete_field)   , intent(in)    :: estimates(:)
+    type(discrete_field)   , intent(out)   :: solutions(:)
+    integer                , intent(in), optional :: checkpoint, snapshots
+
+    type(discrete_field)    :: functional
+    real(dp), allocatable :: kappa(:,:), gradient(:), hessian(:,:), c(:), a(:,:), step(:), mu(:), weight(:)
+    real(dp), allocatable :: accepted(:), accepted_gradient(:), accepted_hessian(:,:), accepted_c(:), accepted_a(:,:)
+    real(dp), allocatable :: ck(:), ak(:,:), functional_kappa(:,:), quasi_hessian(:,:), penalty(:)
+    integer , allocatable :: active(:), first(:)
+    logical , allocatable :: of_state(:)
+    real(dp) :: tolerance, stationarity, objective, accepted_objective, shift, reach, predicted, decrease
+    real(dp) :: reduction, limit
+    integer :: n, j, k, iteration
+    logical :: with_accepted, refused, quasi
+    character(len=250) :: message
+
+    ! the hessian of the model: the expansion's of order one along each
+    ! design coordinate, or, of order zero, the damped BFGS update's of
+    ! the Lagrangian's gradient, each functional's by its own reverse
+    ! sweep
+    quasi = all([(iterates(k) % points % expansion % order == 0, k = 1, size(iterates))])
+    do k = 1, size(iterates)
+       if (.not. quasi .and. (iterates(k) % points % expansion % order < 1 .or. &
+            & .not. along_each_coordinate(iterates(k) % points % expansion))) then
+          error stop 'operation_residual: a free design is found by Newton''s iteration, whose hessian is the &
+               &expansion of order one along each design coordinate, or, of order zero, its BFGS update'
+       end if
+    end do
+    n = iterates(1) % points % expansion % num_designs()
+    allocate(gradient(n), hessian(n, n), quasi_hessian(n, n), source=0.0_dp)
     tolerance = 0.0_dp
-    of_state  = iterate % functional_inequalities()
-    allocate(weight(size(of_state)), source=0.0_dp)
-    penalty   = 0.0_dp
+    ! the inequalities of every residual in turn, first(k) the first of
+    ! the k-th residual's
+    allocate(of_state(0), first(size(iterates) + 1))
+    first(1) = 1
+    do k = 1, size(iterates)
+       of_state = [of_state, iterates(k) % functional_inequalities()]
+       first(k + 1) = size(of_state) + 1
+    end do
+    allocate(weight(size(of_state)), penalty(size(of_state)), source=0.0_dp)
     shift     = 0.0_dp
     reduction = 1.0_dp
     predicted = 0.0_dp
     with_accepted = .false.
     do iteration = 1, MAX_DESIGN_ITERATIONS
-       if (any(of_state)) iterate % functional_weight = weight
-       call iterate % zero_at_design(estimate, solution, checkpoint, snapshots, kappa)
-       call iterate % inequalities_at(solution, c, a)
-       ! the gradient of J: the Lagrangian's less the functionals' times
-       ! the multipliers the reverse sweep read
-       gradient = -kappa(:, 0)
-       if (any(of_state)) gradient = gradient - matmul(weight, a)
-       do j = 1, n
-          hessian(:, j) = -kappa(:, iterate % points % expansion % column(j, 1))
+       gradient  = 0.0_dp
+       hessian   = 0.0_dp
+       objective = 0.0_dp
+       allocate(c(0), a(0, n))
+       do k = 1, size(iterates)
+          if (quasi) then
+             call iterates(k) % zero_at_design(estimates(k), solutions(k), checkpoint, snapshots, kappa, &
+                  & functional_kappa)
+             call iterates(k) % inequalities_at(solutions(k), ck, ak, -functional_kappa)
+          else
+             if (any(of_state(first(k):first(k + 1) - 1))) &
+                  & iterates(k) % functional_weight = weight(first(k):first(k + 1) - 1)
+             call iterates(k) % zero_at_design(estimates(k), solutions(k), checkpoint, snapshots, kappa)
+             call iterates(k) % inequalities_at(solutions(k), ck, ak)
+          end if
+          c = [c, ck]
+          a = reshape([transpose(a), transpose(ak)], [size(c), n], order=[2, 1])
+          ! the gradient of J: the Lagrangian's less the functionals' times
+          ! the multipliers the reverse sweep read
+          gradient = gradient - kappa(:, 0)
+          if (.not. quasi) then
+             do j = 1, n
+                hessian(:, j) = hessian(:, j) - kappa(:, iterates(k) % points % expansion % column(j, 1))
+             end do
+          end if
+          if (allocated(iterates(k) % objective) .and. (size(of_state) > 0 .or. quasi)) then
+             functional = iterates(k) % objective % at(solutions(k))
+             objective  = objective + functional % value(1, 1)
+          end if
        end do
+       if (verbosity >= 1) print '(a, i0, a, es24.16, a, *(es24.16))', 'design iterate ', iteration, '  J = ', &
+            & objective, '  c = ', c
+       if (any(of_state) .and. .not. quasi) gradient = gradient - matmul(weight, a)
+       if (quasi) hessian = quasi_hessian
        if (iteration == 1) tolerance = 1.0e-10_dp * max(1.0_dp, norm2(gradient))
-       if (size(c) == 0) then
+       if (size(c) == 0 .and. .not. quasi) then
           if (verbosity >= 1) print '(a, i0, a, es12.4, a, *(es24.16))', 'design iteration ', iteration, &
-               & '  |dJ/ds| = ', norm2(gradient), '  s = ', iterate % points % expansion % at
+               & '  |dJ/ds| = ', norm2(gradient), '  s = ', iterates(1) % points % expansion % at
           if (norm2(gradient) < tolerance) return
-          iterate % points % expansion % at = iterate % points % expansion % at - linear_solution(hessian, gradient)
+          do k = 1, size(iterates)
+             iterates(k) % points % expansion % at = iterates(k) % points % expansion % at &
+                  & - linear_solution(hessian, gradient)
+          end do
+          deallocate(c, a)
           cycle
        end if
 
        ! the iterate against the design before it: refused, the step is
        ! taken again from there, shorter
-       functional = iterate % objective % at(solution)
-       objective  = functional % value(1, 1)
-       refused    = .false.
+       refused = .false.
        if (with_accepted) then
-          decrease = accepted_objective + penalty * sum(max(accepted_c, 0.0_dp)) &
-               & - (objective + penalty * sum(max(c, 0.0_dp)))
+          decrease = accepted_objective + dot_product(penalty, max(accepted_c, 0.0_dp)) &
+               & - (objective + dot_product(penalty, max(c, 0.0_dp)))
           ! a decrease predicted below the rounding of the merit is not
           ! tested
           refused  = decrease < 0.1_dp * predicted .and. predicted > 1.0e-12_dp * max(1.0_dp, &
-               & abs(accepted_objective) + penalty * sum(max(accepted_c, 0.0_dp)))
+               & abs(accepted_objective) + dot_product(penalty, max(accepted_c, 0.0_dp)))
           if (refused) then
-             iterate % points % expansion % at = accepted
+             if (verbosity >= 1) print '(a, es12.4, a, es12.4)', 'refused: the merit decreased by ', decrease, &
+                  & ' where the model predicted ', predicted
+             limit = norm2(step) / 2.0_dp
+             do k = 1, size(iterates)
+                iterates(k) % points % expansion % at = accepted
+             end do
              gradient  = accepted_gradient
              hessian   = accepted_hessian
              c         = accepted_c
@@ -2840,7 +2970,14 @@ contains
           end if
        end if
        if (.not. refused) then
-          accepted           = iterate % points % expansion % at
+          ! the update of the Lagrangian's hessian by the step accepted and
+          ! the change of its gradient, at the multipliers of that step
+          if (quasi .and. with_accepted) then
+             call bfgs_update(quasi_hessian, iterates(1) % points % expansion % at - accepted, &
+                  & gradient + matmul(transpose(a), mu) - accepted_gradient - matmul(transpose(accepted_a), mu))
+             hessian = quasi_hessian
+          end if
+          accepted           = iterates(1) % points % expansion % at
           accepted_gradient  = gradient
           accepted_hessian   = hessian
           accepted_c         = c
@@ -2856,11 +2993,12 @@ contains
           shift = 2.0_dp * shift
        end do
        call quadratic_step(shifted(hessian, shift), gradient, c - (1.0_dp - reduction) * max(c, 0.0_dp), a, step, mu)
+       if (refused .and. norm2(step) > limit) step = step * (limit / norm2(step))
        stationarity = norm2(gradient + matmul(transpose(a), mu))
        if (verbosity >= 1) then
           write(message, '(a, i0, a)') '(a, i0, a, es12.4, a, es12.4, a, ', n, 'es24.16, a, *(es24.16))'
           print trim(message), 'design iteration ', iteration, '  |dJ/ds + A^T mu| = ', stationarity, &
-               & '  shift = ', shift, '  s = ', iterate % points % expansion % at, '  mu = ', mu
+               & '  shift = ', shift, '  s = ', iterates(1) % points % expansion % at, '  mu = ', mu
        end if
        if (.not. refused .and. stationarity < tolerance .and. maxval(c) <= 1.0e-12_dp * max(1.0_dp, maxval(abs(c)))) then
           ! the multipliers of the design returned, not of the step:
@@ -2868,36 +3006,44 @@ contains
           active = pack([(j, j = 1, size(c))], mu > 0.0_dp)
           if (size(active) > 0) mu(active) = linear_solution(matmul(a(active, :), transpose(a(active, :))), &
                & -matmul(a(active, :), gradient))
-          call iterate % place_inequality_multipliers(mu, solution)
+          do k = 1, size(iterates)
+             call iterates(k) % place_inequality_multipliers(mu(first(k):first(k + 1) - 1), solutions(k))
+          end do
           return
        end if
-       ! the penalty at least twice every multiplier, and the decrease of
+       ! each penalty at least twice its multiplier, and the decrease of
        ! the merit the model predicts for the step
-       penalty   = max(penalty, 2.0_dp * maxval(mu))
+       penalty   = max(penalty, 2.0_dp * mu)
        predicted = -(dot_product(gradient, step) + dot_product(step, matmul(hessian, step)) / 2.0_dp) &
-            & + penalty * (sum(max(c, 0.0_dp)) - sum(max(c + matmul(a, step), 0.0_dp)))
+            & + dot_product(penalty, max(c, 0.0_dp) - max(c + matmul(a, step), 0.0_dp))
        weight = merge(mu, 0.0_dp, of_state)
-       iterate % points % expansion % at = accepted + step
+       do k = 1, size(iterates)
+          iterates(k) % points % expansion % at = accepted + step
+       end do
+       deallocate(c, a)
     end do
     write(message, '(a,i0,a)') 'operation_residual: Newton''s iteration on the free design did not reach &
          &dJ/ds = 0 in ', MAX_DESIGN_ITERATIONS, ' iterations'
     error stop trim(message)
 
-  end subroutine minimize
+  end subroutine design_iteration
 
   !===================================================================!
   ! THE INEQUALITIES ON THE DESIGN FACTOR at the design the manifold
   ! states: c(i) the value of the i-th equation, a(i, :) its gradient
   ! in the design coordinates; none where no inequality is stated. A
   ! functional of the state is evaluated on the solution, its gradient
-  ! the expansion's column of order one along each design coordinate.
+  ! the expansion's column of order one along each design coordinate,
+  ! or, given, the m-th column of gradients, -kappa of its own reverse
+  ! sweep.
   !===================================================================!
 
-  subroutine inequalities_at(this, solution, c, a)
+  subroutine inequalities_at(this, solution, c, a, gradients)
 
     class(discrete_residual), intent(in)  :: this
     type(discrete_field)    , intent(in)  :: solution
     real(dp), allocatable   , intent(out) :: c(:), a(:,:)
+    real(dp)                , intent(in), optional :: gradients(:,:)
 
     type(discrete_field) :: functional
     real(dp), allocatable :: slope(:)
@@ -2917,6 +3063,10 @@ contains
           if (this % condition(j) % equation(i) % is_integral()) then
              functional = this % condition(j) % equation(i) % at(solution)
              c(m) = functional % value(1, 1)
+             if (present(gradients)) then
+                a(m, :) = gradients(:, m)
+                cycle
+             end if
              do d = 1, size(a, 2)
                 a(m, d) = functional % value(1, 1 + this % points % expansion % column(d, 1))
              end do
@@ -3050,6 +3200,36 @@ contains
     positive_definite = .true.
   end function positive_definite
 
+  !===================================================================!
+  ! THE DAMPED BFGS UPDATE of b by the step s and the change y of the
+  ! gradient, Powell's: where s.y < s.b s / 5, y is replaced by
+  ! theta y + (1 - theta) b s, theta = 0.8 s.b s / (s.b s - s.y), so
+  ! that b stays positive definite. A zero b is first the identity
+  ! times y.y / s.y, and is left zero where s.y is not positive.
+  !===================================================================!
+
+  pure subroutine bfgs_update(b, s, y)
+    real(dp), intent(inout) :: b(:,:)
+    real(dp), intent(in)    :: s(:), y(:)
+    real(dp) :: bs(size(s)), r(size(s)), sbs, sy, theta
+    integer :: i
+    sy = dot_product(s, y)
+    if (all(b == 0.0_dp)) then
+       if (.not. sy > 0.0_dp) return
+       do i = 1, size(s)
+          b(i, i) = dot_product(y, y) / sy
+       end do
+    end if
+    bs  = matmul(b, s)
+    sbs = dot_product(s, bs)
+    if (.not. sbs > 0.0_dp) return
+    theta = 1.0_dp
+    if (sy < 0.2_dp * sbs) theta = 0.8_dp * sbs / (sbs - sy)
+    r = theta * y + (1.0_dp - theta) * bs
+    b = b - spread(bs, 2, size(s)) * spread(bs, 1, size(s)) / sbs &
+         & + spread(r, 2, size(s)) * spread(r, 1, size(s)) / dot_product(s, r)
+  end subroutine bfgs_update
+
   ! h + shift I
   pure function shifted(h, shift) result(s)
     real(dp), intent(in) :: h(:,:), shift
@@ -3151,13 +3331,13 @@ contains
   ! expansion, are returned in it.
   !===================================================================!
 
-  recursive subroutine zero_at_design(this, estimate, solution, checkpoint, snapshots, kappa)
+  recursive subroutine zero_at_design(this, estimate, solution, checkpoint, snapshots, kappa, functional_kappa)
 
     class(discrete_residual), intent(in)  :: this
     type(discrete_field)    , intent(in)  :: estimate
     type(discrete_field)    , intent(out) :: solution
     integer                 , intent(in), optional :: checkpoint, snapshots
-    real(dp), allocatable   , intent(out), optional :: kappa(:,:)
+    real(dp), allocatable   , intent(out), optional :: kappa(:,:), functional_kappa(:,:)
 
     real(dp), allocatable :: tuple(:,:,:,:), stages(:,:,:,:,:), value(:,:)
     real(dp), allocatable :: jet(:,:,:), adjoint(:,:,:,:), reaction(:,:,:), gauge(:,:,:)
@@ -3470,6 +3650,38 @@ contains
     if (present(kappa) .and. allocated(design_multiplier)) then
        allocate(kappa(size(design_multiplier, 1), 0:ubound(design_multiplier, 2)))
        kappa = design_multiplier
+    end if
+
+    ! the multipliers of the design of each functional of the state an
+    ! inequality states, by a reverse sweep of its own on the same
+    ! forward sweep, the functional alone the objective: -dc/ds in
+    ! column m, the m-th inequality's, zero for one on the design alone
+    if (present(functional_kappa)) then
+       if (scheduled) then
+          error stop 'operation_residual: the derivatives of the functionals of the inequalities are formed &
+               &without a checkpoint or snapshot schedule'
+       end if
+       separate: block
+         type(discrete_residual) :: alone
+         real(dp), allocatable :: adjoint_m(:,:,:,:), reaction_m(:,:,:), gauge_m(:,:,:), multiplier_m(:,:)
+         logical , allocatable :: of_state(:)
+         integer :: m
+         select type (this)
+         type is (discrete_residual)
+            alone = this
+         end select
+         if (allocated(alone % objective)) deallocate(alone % objective)
+         of_state = this % functional_inequalities()
+         allocate(functional_kappa(size(this % points % expansion % values()), size(of_state)), source=0.0_dp)
+         do m = 1, size(of_state)
+            if (.not. of_state(m)) cycle
+            alone % functional_weight    = [(0.0_dp, k = 1, size(of_state))]
+            alone % functional_weight(m) = 1.0_dp
+            call alone % adjoint_sweep(rows_along, tuple, stages, solution, stage_node, adjoint_m, reaction_m, &
+                 & gauge_m, multiplier_m)
+            functional_kappa(:, m) = multiplier_m(:, 0)
+         end do
+       end block separate
     end if
 
     estimate_nodes: block
@@ -4868,6 +5080,7 @@ contains
     logical                 , intent(in), optional :: expand
 
     type(chain_block) :: blk
+    real(dp), allocatable :: predicted(:,:)
     integer :: m, c
 
     if (verbosity >= 1) then
@@ -4878,12 +5091,15 @@ contains
     call this % block_rows(scheme, first, last, depth, rows_along, lb, tuple(:, :, :, 0), stages(:, :, :, :, 0), &
          & .false., blk)
     ! continued, every moment after the history starts from the tuple
-    ! of the last instant of the history
+    ! of the last instant of the history, its unknowns of time alone
+    ! extrapolated along time to the block's last instant
     if (this % continued .and. depth > 0) then
        associate (stride => this % rule % num_components())
+         predicted = tuple(:, :, first + depth - 1, 0)
+         call this % extrapolated(predicted, this % points % instant(last) - this % points % instant(first + depth - 1))
          do m = blk % instant_moment(depth) + 1, size(blk % rows % at) / blk % num_cells
             do c = 1, blk % num_cells
-               blk % q(blk % tuple_at(m, c) + 1:blk % tuple_at(m, c) + stride) = tuple(:, c, first + depth - 1, 0)
+               blk % q(blk % tuple_at(m, c) + 1:blk % tuple_at(m, c) + stride) = predicted(:, c)
             end do
          end do
        end associate
@@ -6398,6 +6614,8 @@ contains
        ! node - solved directly: Newton converges to round-off
        if (allocated(rows % tying)) then
           reduced % eliminated = rows % tying
+          ! its rows of positions, rotations and reactions equilibrated
+          direct % equilibrated = .true.
           allocate(reduced % inner, source=direct)
           deallocate(solver % inner)
           allocate(solver % inner, source=reduced)
@@ -7205,6 +7423,74 @@ contains
     end do
 
   end subroutine estimated_rates
+
+  !===================================================================!
+  ! A TUPLE EXTRAPOLATED ALONG TIME by h: of every unknown that is a
+  ! function of no coordinate of space and of the second degree in
+  ! time at least, the value and each derivative along time below the
+  ! top one replaced by the taylor polynomial, at h, of the
+  ! derivatives above it and below the top - of the field, or of each
+  ! coefficient of the basis of a projection.
+  !
+  ! The top derivative is not read: at the instant ahead of a step of
+  ! a tableau the law alone determines it, from the value and the
+  ! rates the weights b form, the error of their stiff modes
+  ! multiplied by those modes' stiffness - 2e2 where the acceleration
+  ! is 8 on the beam of case 8 on its hub - and the polynomial that
+  ! read it began Newton 1e4 times further from the solution than the
+  ! tuple itself. Nor is a field of space extrapolated: its stiff
+  ! modes' rates times h and their stiffness begin Newton at six times
+  ! the residual of the tuple itself, its test relative to that
+  ! residual then ends at the edge of the rounding, and the misfit of
+  ! case 8 varies by 5e-15 between designs 1e-9 apart where it varies
+  ! by 8e-16 from the tuple.
+  !===================================================================!
+
+  subroutine extrapolated(this, tuple, h)
+
+    class(discrete_residual), intent(in)    :: this
+    real(dp)                , intent(inout) :: tuple(:,:)
+    real(dp)                , intent(in)    :: h
+
+    integer, allocatable :: chain(:)
+    integer :: f, k, a, top, nk
+
+    nk = 1
+    if (allocated(this % elements)) nk = this % elements % num_coefficients()
+    do f = 1, this % manifold % num_unknowns
+       top = this % rule % degree_of_field(f)
+       if (top < 2) cycle
+       if (this % manifold % with_space .and. .not. this % manifold % of_time_alone(f)) cycle
+       do k = 0, nk - 1
+          if (allocated(this % elements)) then
+             chain = [(this % coefficient_component(f, k, a) + 1, a = 0, top - 1)]
+          else
+             chain = [(this % rule % offset_of_field(f) + a + 1, a = 0, top - 1)]
+          end if
+          call taylor(chain)
+       end do
+    end do
+
+  contains
+
+    ! the components of the chain, from the value up, each the sum of
+    ! those above it times h^i / i!
+    subroutine taylor(chain)
+      integer, intent(in) :: chain(0:)
+      real(dp) :: term(size(tuple, 2)), factor
+      integer :: j, i
+      do j = 0, ubound(chain, 1) - 1
+         term   = tuple(chain(j), :)
+         factor = 1.0_dp
+         do i = j + 1, ubound(chain, 1)
+            factor = factor * h / real(i - j, dp)
+            term   = term + factor * tuple(chain(i), :)
+         end do
+         tuple(chain(j), :) = term
+      end do
+    end subroutine taylor
+
+  end subroutine extrapolated
 
   !===================================================================!
   ! THE ROWS OF THE UNKNOWNS OF TIME ALONE in a block. Such an unknown

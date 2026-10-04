@@ -59,6 +59,10 @@ module operation_dense_direct
      ! specified otherwise.
      logical  :: singular_reported = .false.
 
+     ! Whether the matrix is equilibrated before it is factorised (see
+     ! util_factorisation): rows of different units
+     logical  :: equilibrated = .false.
+
      ! The factors retained, and the version of the statement they
      ! belong to. A statement with the same version is not formed or
      ! factorised again; one with version zero always is. A statement
@@ -188,7 +192,8 @@ contains
        call compile_matrix_from_action(this % action, this % graph, this % unknown_domain, &
             & this % num_unknowns, n, this % num_components, a, constant, stored=this % stored)
        call this % record_event(factorisations)
-       call this % factor % factorise(a, this % singular_tolerance, maxval(abs(a), dim=1))
+       call this % factor % factorise(a, this % singular_tolerance, maxval(abs(a), dim=1), &
+            & equilibrated=this % equilibrated)
        this % retained_version  = this % action % version()
        this % retained_transposed = this % action % transpose_version()
     end if

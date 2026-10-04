@@ -20,6 +20,13 @@
 ! against it stops the program. Whether a singular pivot is an error
 ! or an expected result is the caller's decision, read from singular().
 !
+! EQUILIBRATED, the matrix factorised is D_r A D_c, its rows and then
+! its columns scaled to a largest entry of one, and a substitution
+! scales its right side and its solution by them: x = D_c (D_r A
+! D_c)^-1 D_r b, and against the transpose x = D_r (D_c A^T D_r)^-1
+! D_c b. A system of rows of different units - positions, rotations
+! and reactions - is solved to the digits its scaled matrix allows.
+!
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
@@ -35,6 +42,7 @@ module util_factorisation
   type :: dense_factorisation
 
      real(dp), allocatable, private :: lu(:,:)
+     real(dp), allocatable, private :: row_scale(:), column_scale(:)
      integer , allocatable, private :: pivot_rows(:)
      integer , private :: n = 0
      logical , private :: is_singular = .false.
@@ -56,15 +64,16 @@ contains
   ! square stops the program. A pivot at or below the threshold leaves
   ! the factorisation singular rather than dividing by it; given the
   ! scale of each column, at or below the threshold times its column's
-  ! scale.
+  ! scale, which equilibrated is one.
   !===================================================================!
 
-  subroutine factorise(this, a, threshold, scales)
+  subroutine factorise(this, a, threshold, scales, equilibrated)
 
     class(dense_factorisation), intent(inout) :: this
     real(dp)                  , intent(in)    :: a(:,:)
     real(dp)                  , intent(in)    :: threshold
     real(dp)                  , intent(in), optional :: scales(:)
+    logical                   , intent(in), optional :: equilibrated
 
     real(dp), allocatable :: row(:)
     real(dp) :: factor
@@ -81,6 +90,19 @@ contains
     this % n           = n
     this % lu          = a
     this % is_singular = .false.
+    if (allocated(this % row_scale)) deallocate(this % row_scale, this % column_scale)
+    if (present(equilibrated)) then
+       if (equilibrated) then
+          this % row_scale = [(1.0_dp / max(tiny(1.0_dp), maxval(abs(a(k, :)))), k = 1, n)]
+          do k = 1, n
+             this % lu(k, :) = this % lu(k, :) * this % row_scale(k)
+          end do
+          this % column_scale = [(1.0_dp / max(tiny(1.0_dp), maxval(abs(this % lu(:, k)))), k = 1, n)]
+          do k = 1, n
+             this % lu(:, k) = this % lu(:, k) * this % column_scale(k)
+          end do
+       end if
+    end if
     if (allocated(this % pivot_rows)) deallocate(this % pivot_rows)
     allocate(this % pivot_rows(n), source=0)
     allocate(row(n))
@@ -100,7 +122,12 @@ contains
           this % lu(p, :)  = row
        end if
 
-       if (present(scales)) then
+       if (allocated(this % row_scale)) then
+          if (abs(this % lu(k, k)) <= threshold) then
+             this % is_singular = .true.
+             return
+          end if
+       else if (present(scales)) then
           if (abs(this % lu(k, k)) <= threshold * scales(k)) then
              this % is_singular = .true.
              return
@@ -172,6 +199,7 @@ contains
     end if
 
     x = b
+    if (allocated(this % row_scale)) x = b * merge(this % column_scale, this % row_scale, transposed)
 
     if (.not. transposed) then
 
@@ -215,6 +243,7 @@ contains
        end do
 
     end if
+    if (allocated(this % row_scale)) x = x * merge(this % row_scale, this % column_scale, transposed)
 
   end subroutine substituted
 

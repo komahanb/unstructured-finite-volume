@@ -80,6 +80,24 @@
 ! -0.28174700) in 32, J - m = -1.1e-16: in both mu = -dC/ds_i / dJ/ds_i,
 ! 104.84257061 and 4135.9907, along s1 and along s2 alike, dJ/ds by
 ! the expansion of the state.
+!
+! A third argument scenarios asks for the stiffness from two
+! deflections, at the frequency and at twice it, two scenarios each
+! with its own state on one design: the sum of their misfits least,
+! minimize_together over the two Lagrangians. On 21 x 17 the design
+! found is (0.5612926640, -0.3552221853) in six iterations, the
+! derivatives of the two misfits along the design by the expansion
+! summing to -5.0e-11 and -3.9e-11 against their own 4.1e-3 and
+! 2.9e-3.
+!
+! A fourth argument bfgs discretizes the design by the expansion of
+! order zero: the gradients are those of the reverse sweeps alone, J's
+! and each functional's of its own, and the hessian of the model their
+! damped BFGS update, its cost apart from the number of design
+! coordinates. The bound s1 <= 0.45 is reached in 19 iterations where
+! the expansion took 6, the misfit at most 1e-4 in 15 and at most 1e-6
+! in 45 where it took 13 and 32: the same designs, the multipliers to
+! 7e-9 and the mean stiffness to 6e-13 of the expansion's.
 !=====================================================================!
 
 program euler_bernoulli_beam_optimization
@@ -89,7 +107,8 @@ program euler_bernoulli_beam_optimization
   use operation_expansion        , only : expansion
   use operation_field            , only : continuous_field, discrete_field, integral
   use operation_field            , only : sin, cos, operator(+), operator(-), operator(*), operator(/), operator(**)
-  use operation_residual         , only : continuous_residual, discrete_residual, operator(+), operator(*)
+  use operation_residual         , only : continuous_residual, discrete_residual, operator(+), operator(*), &
+       &                                  minimize_together
   use operation_family           , only : dirk, bdf, adams, chain
   use operation_finite_element   , only : finite_element
 
@@ -101,17 +120,13 @@ program euler_bernoulli_beam_optimization
 
   integer  :: num_instants = 21, num_points = 17
   real(dp) :: s1_max, misfit_max = 0.0_dp
+  logical  :: bounded = .false., scenarios = .false., quasi = .false.
   character(len=32) :: item
 
-  type(continuous_manifold) :: omega, initial, left, right
-  type(discrete_manifold)   :: omega_h
-  type(continuous_field)    :: t, x, s1, s2, w, w_true, exact
-  type(continuous_field)    :: EI, EI_true, rhoA, moment, moment_true, load, misfit, stiffness
-  type(continuous_field)    :: adjoint, lambda, lambda_0, lambda_L, mu
-  type(discrete_field)      :: estimate, solution, functional, s_h, mu_h
-  type(continuous_residual) :: r, ic, bc_0, bc_L, bound, Lagrangian
-  type(discrete_residual)   :: L_h
-  real(dp) :: frequency, values(3)
+  type(continuous_field)    :: misfit, stiffness, misfits(2), stiffnesses(2)
+  type(discrete_field)      :: estimate, solution, functional, s_h, mu_h, estimates(2), solutions(2)
+  type(discrete_residual)   :: L_h, L_hs(2)
+  real(dp) :: values(3), total(3)
   integer  :: k
 
   if (command_argument_count() >= 1) then
@@ -126,82 +141,52 @@ program euler_bernoulli_beam_optimization
      call get_command_argument(3, item)
      if (item(1:7) == 'misfit=') then
         read(item(8:), *) misfit_max
+     else if (trim(item) == 'scenarios') then
+        scenarios = .true.
      else
         read(item, *) s1_max
+        bounded = .true.
      end if
   end if
-
-  ! Omega = [0, L] x [0, T] x {(s1, s2)}, the design from (0, 0); its
-  ! faces at t = 0, x = 0 and x = L
-  omega   = continuous_manifold(time=interval(0.0_dp, T_final), space=region(interval(0.0_dp, L)), &
-       &                        design=[parameter('s1', 0.0_dp), parameter('s2', 0.0_dp)])
-  t       = omega % coordinate('t')
-  x       = omega % coordinate('x')
-  s1      = omega % coordinate('s1')
-  s2      = omega % coordinate('s2')
-  initial = omega % boundary(t, 0.0_dp)
-  left    = omega % boundary(x, 0.0_dp)
-  right   = omega % boundary(x, L)
-  omega_h = omega % discretize(time=points(num_instants), space=points(num_points), design=expansion(order=1))
-
-  ! the stiffness at the design, the true stiffness, the mass per length
-  rhoA    = rhoA_0 + 0.0_dp * x
-  EI      = EI_0 * (1.0_dp + s1 * x / L + s2 * (x / L)**2)
-  EI_true = EI_0 * (1.0_dp + s_true(1) * x / L + s_true(2) * (x / L)**2)
-
-  ! the deflection at the true stiffness, and the load it needs
-  frequency   = (pi / L)**2 * sqrt(EI_0 / rhoA_0)
-  w_true      = sin(pi / L * x)**2 * cos(frequency * t)
-  exact       = continuous_field(omega, [w_true])
-  moment_true = EI_true * w_true % derivative([x, x])
-  load        = rhoA * w_true % derivative([t, t]) + moment_true % derivative([x, x])
-
-  ! the physics in flux form, the initial data and the clamped ends;
-  ! no condition on the design
-  w      = omega % unknown('w')
-  moment = EI * w % derivative([x, x])
-  r      = continuous_residual(omega, [rhoA * w % derivative([t, t]) + moment % derivative([x, x]) - load])
-  ic     = continuous_residual(initial, [w - w_true, w % derivative([t])])
-  bc_0   = continuous_residual(left , [w, w % derivative([x])])
-  bc_L   = continuous_residual(right, [w, w % derivative([x])])
-
-  ! the misfit, and the Lagrangian
-  misfit   = integral((w - w_true)**2 / 2.0_dp, over=omega)
-  adjoint  = r    % multiplier('adjoint')
-  lambda   = ic   % multiplier('lambda')
-  lambda_0 = bc_0 % multiplier('lambda_0')
-  lambda_L = bc_L % multiplier('lambda_L')
-  if (misfit_max > 0.0_dp) then
-     ! the mean stiffness, its misfit at most the bound given: the
-     ! misfit less the bound one integral over Omega
-     stiffness  = integral(EI / (EI_0 * L * T_final), over=omega)
-     Lagrangian = stiffness + adjoint*r + lambda*ic + lambda_0*bc_0 + lambda_L*bc_L
-     bound      = continuous_residual(omega % design(), &
-          & [integral((w - w_true)**2 / 2.0_dp - misfit_max / (L * T_final), over=omega)], inequality=.true.)
-     mu         = bound % multiplier('mu')
-     Lagrangian = Lagrangian + mu*bound
-  else
-     Lagrangian = misfit + adjoint*r + lambda*ic + lambda_0*bc_0 + lambda_L*bc_L
+  ! with a fourth argument bfgs, the hessian of the design's iteration
+  ! by the BFGS update of the reverse sweeps' gradients
+  if (command_argument_count() >= 4) then
+     call get_command_argument(4, item)
+     quasi = trim(item) == 'bfgs'
   end if
 
-  ! the bound on s1 when given, paired with mu >= 0
-  if (command_argument_count() >= 3 .and. .not. misfit_max > 0.0_dp) then
-     bound      = continuous_residual(omega % design(), [s1 - s1_max], inequality=.true.)
-     mu         = bound % multiplier('mu')
-     Lagrangian = Lagrangian + mu*bound
+  ! two scenarios on one design: the deflections at the frequency and
+  ! at twice it, the sum of their misfits least
+  if (scenarios) then
+     do k = 1, 2
+        call scenario(real(k, dp), L_hs(k), estimates(k), misfits(k), stiffnesses(k))
+     end do
+     call minimize_together(L_hs, estimates, solutions)
+     total = 0.0_dp
+     do k = 1, 2
+        functional = misfits(k) % at(solutions(k))
+        call functional % values(values)
+        total = total + values
+        if (this_image() == 1) print '(a, i0, a, 3es24.16)', 'J, dJ/ds of scenario ', k, ' = ', values
+     end do
+     if (this_image() == 1) print '(a, 2es24.16)', 'the sum of dJ/ds          = ', total(2:3)
+     s_h = solutions(1) % fields(['s1', 's2'])
+     if (this_image() == 1) print '(a, 2f14.10)', 's found     = ', s_h % value(1, 1), s_h % value(1, 2)
+     stop
   end if
 
-  L_h = Lagrangian % discretize(omega_h, &
-       & time=chain([(dirk(2), k = 1, 4), (bdf(2), k = 5, 7), (adams(2), k = 8, num_instants)], &
-       &            from=[(k, k = 1, num_instants)]), space=finite_element(degree=3))
-
-  estimate = exact % discretize(omega_h)
+  call scenario(1.0_dp, L_h, estimate, misfit, stiffness)
   call L_h % minimize(estimate, solution)
 
   ! J at the design found, dJ/ds there by the expansion of the state,
   ! and the design
   functional = misfit % at(solution)
-  call functional % values(values)
+  if (quasi) then
+     call functional % values(values(1:1))
+     values(2:3) = 0.0_dp
+  else
+     call functional % values(values)
+  end if
   if (this_image() == 1) print '(a, 3es12.4)', 'J, dJ/ds    = ', values
   s_h = solution % fields(['s1', 's2'])
   if (this_image() == 1) print '(a, 2f12.8)', 's found     = ', s_h % value(1, 1), s_h % value(1, 2)
@@ -215,8 +200,104 @@ program euler_bernoulli_beam_optimization
   if (misfit_max > 0.0_dp) then
      if (this_image() == 1) print '(a, 3es24.16)', 'J, dJ/ds    = ', values
      functional = stiffness % at(solution)
-     call functional % values(values(1:3))
+     if (quasi) then
+        call functional % values(values(1:1))
+     else
+        call functional % values(values(1:3))
+     end if
      if (this_image() == 1) print '(a, 3es24.16)', 'C, dC/ds    = ', values
   end if
+
+contains
+
+  !===================================================================!
+  ! THE BEAM AND ITS LAGRANGIAN at the frequency times the harmonic
+  ! given: its manifold, its residual discretized, the estimate, the
+  ! misfit and the mean stiffness.
+  !===================================================================!
+
+  subroutine scenario(harmonic, L_h, estimate, misfit, stiffness)
+
+    real(dp)               , intent(in)  :: harmonic
+    type(discrete_residual), intent(out) :: L_h
+    type(discrete_field)   , intent(out) :: estimate
+    type(continuous_field) , intent(out) :: misfit, stiffness
+
+    type(continuous_manifold) :: omega, initial, left, right
+    type(discrete_manifold)   :: omega_h
+    type(continuous_field)    :: t, x, s1, s2, w, w_true, exact
+    type(continuous_field)    :: EI, EI_true, rhoA, moment, moment_true, load
+    type(continuous_field)    :: adjoint, lambda, lambda_0, lambda_L, mu
+    type(continuous_residual) :: r, ic, bc_0, bc_L, bound, Lagrangian
+    real(dp) :: frequency
+    integer  :: k
+
+    ! Omega = [0, L] x [0, T] x {(s1, s2)}, the design from (0, 0); its
+    ! faces at t = 0, x = 0 and x = L
+    omega   = continuous_manifold(time=interval(0.0_dp, T_final), space=region(interval(0.0_dp, L)), &
+         &                        design=[parameter('s1', 0.0_dp), parameter('s2', 0.0_dp)])
+    t       = omega % coordinate('t')
+    x       = omega % coordinate('x')
+    s1      = omega % coordinate('s1')
+    s2      = omega % coordinate('s2')
+    initial = omega % boundary(t, 0.0_dp)
+    left    = omega % boundary(x, 0.0_dp)
+    right   = omega % boundary(x, L)
+    omega_h = omega % discretize(time=points(num_instants), space=points(num_points), &
+         &                       design=expansion(order=merge(0, 1, quasi)))
+
+    ! the stiffness at the design, the true stiffness, the mass per length
+    rhoA    = rhoA_0 + 0.0_dp * x
+    EI      = EI_0 * (1.0_dp + s1 * x / L + s2 * (x / L)**2)
+    EI_true = EI_0 * (1.0_dp + s_true(1) * x / L + s_true(2) * (x / L)**2)
+
+    ! the deflection at the true stiffness, and the load it needs
+    frequency   = harmonic * (pi / L)**2 * sqrt(EI_0 / rhoA_0)
+    w_true      = sin(pi / L * x)**2 * cos(frequency * t)
+    exact       = continuous_field(omega, [w_true])
+    moment_true = EI_true * w_true % derivative([x, x])
+    load        = rhoA * w_true % derivative([t, t]) + moment_true % derivative([x, x])
+
+    ! the physics in flux form, the initial data and the clamped ends;
+    ! no condition on the design
+    w      = omega % unknown('w')
+    moment = EI * w % derivative([x, x])
+    r      = continuous_residual(omega, [rhoA * w % derivative([t, t]) + moment % derivative([x, x]) - load])
+    ic     = continuous_residual(initial, [w - w_true, w % derivative([t])])
+    bc_0   = continuous_residual(left , [w, w % derivative([x])])
+    bc_L   = continuous_residual(right, [w, w % derivative([x])])
+
+    ! the misfit, and the Lagrangian
+    misfit    = integral((w - w_true)**2 / 2.0_dp, over=omega)
+    stiffness = integral(EI / (EI_0 * L * T_final), over=omega)
+    adjoint   = r    % multiplier('adjoint')
+    lambda    = ic   % multiplier('lambda')
+    lambda_0  = bc_0 % multiplier('lambda_0')
+    lambda_L  = bc_L % multiplier('lambda_L')
+    if (misfit_max > 0.0_dp) then
+       ! the mean stiffness, its misfit at most the bound given: the
+       ! misfit less the bound one integral over Omega
+       Lagrangian = stiffness + adjoint*r + lambda*ic + lambda_0*bc_0 + lambda_L*bc_L
+       bound      = continuous_residual(omega % design(), &
+            & [integral((w - w_true)**2 / 2.0_dp - misfit_max / (L * T_final), over=omega)], inequality=.true.)
+       mu         = bound % multiplier('mu')
+       Lagrangian = Lagrangian + mu*bound
+    else
+       Lagrangian = misfit + adjoint*r + lambda*ic + lambda_0*bc_0 + lambda_L*bc_L
+    end if
+
+    ! the bound on s1 when given, paired with mu >= 0
+    if (bounded) then
+       bound      = continuous_residual(omega % design(), [s1 - s1_max], inequality=.true.)
+       mu         = bound % multiplier('mu')
+       Lagrangian = Lagrangian + mu*bound
+    end if
+
+    L_h = Lagrangian % discretize(omega_h, &
+         & time=chain([(dirk(2), k = 1, 4), (bdf(2), k = 5, 7), (adams(2), k = 8, num_instants)], &
+         &            from=[(k, k = 1, num_instants)]), space=finite_element(degree=3))
+    estimate = exact % discretize(omega_h)
+
+  end subroutine scenario
 
 end program euler_bernoulli_beam_optimization

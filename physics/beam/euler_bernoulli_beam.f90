@@ -111,9 +111,9 @@
 !      The same laws formed as the stationarity of the action, along t
 !      and x in w and along t in theta, give the same errors, theta
 !      the same to 2e-11. With the inertia I (1 + s), s = 0.2, the
-!      misfit's dJ/ds is 3.79228278022e-4 by the adjoint, the same by
-!      the expansion to 3e-15, and the central differences of steps
-!      2e-4 and 1e-4 are within 2.7e-11 and 2.7e-12.
+!      misfit's dJ/ds is 3.79228278020e-4 by the adjoint, the same by
+!      the expansion to 9e-16, and the central differences of steps
+!      2e-4 and 1e-4 are within 2.0e-11 and 3.5e-12.
 !
 ! In cases 1 and 4 the multipliers mu_x also give an estimate of the
 ! error of J: the representation laws evaluated on the jet that

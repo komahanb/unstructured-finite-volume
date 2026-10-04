@@ -6486,7 +6486,10 @@ contains
   !===================================================================!
   ! The condition on the design factor at the design values: given =
   ! -g(nu_0) and slope(i) = dg/dnu_i, so that nu_k - nu_k0 = 0 gives
-  ! zero and the k-th unit vector.
+  ! zero and the k-th unit vector. Each slope by a jet of one
+  ! direction, seeded on nu_i: a jet of every coordinate's direction
+  ! stores the mixed derivatives of every subset of them, 2^48 terms
+  ! for the 48 strips of the rotor.
   !===================================================================!
 
   subroutine design_condition(equation, values, given, slope)
@@ -6499,21 +6502,21 @@ contains
     type(expression) :: g
     type(derivative_terms), allocatable :: q(:), nu(:)
     type(derivative_terms) :: r
-    integer :: i, nd
+    integer :: i, j, nd
 
     g  = equation % graph(1)
     nd = size(values)
-    allocate(nu(nd))
-    do i = 1, nd
-       nu(i) = derivative_terms(values(i), nd)
-       call nu(i) % set_direction(i, 1.0_dp)
-    end do
-    allocate(q(0:g % num_components() - 1), source=derivative_terms(0.0_dp, nd))
-    r     = g % at_instant(q, nu)
-    given = -coefficient(r, 0)
-    allocate(slope(nd))
-    do i = 1, nd
-       slope(i) = coefficient(r, 2**(i - 1))
+    allocate(nu(nd), slope(nd))
+    allocate(q(0:g % num_components() - 1), source=derivative_terms(0.0_dp, 1))
+    given = 0.0_dp
+    do i = 1, max(nd, 1)
+       do j = 1, nd
+          nu(j) = derivative_terms(values(j), 1)
+       end do
+       if (nd > 0) call nu(i) % set_direction(1, 1.0_dp)
+       r     = g % at_instant(q, nu)
+       given = -coefficient(r, 0)
+       if (nd > 0) slope(i) = coefficient(r, 1)
     end do
 
   end subroutine design_condition

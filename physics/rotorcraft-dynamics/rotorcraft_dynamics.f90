@@ -44,7 +44,8 @@
 !      scenario     collective, longitudinal or lateral: the push
 !                   rods' amplitudes, 0.05 each, or 0.025, 0.025 and
 !                   0.05, or 0.025, 0.05 and 0.025 at 90, 180 and 270
-!                   degrees
+!                   degrees; several listed, each is stated on a
+!                   manifold of its own and marched in turn
 !      thickness    of the blades; with strips, of each strip
 !      revolutions  of the hub
 !      steps        per revolution
@@ -61,8 +62,12 @@
 !                   thickness (.true.), or the functions alone
 !      optimize     with strips, the thickness of the least mass whose
 !                   smooth maximum of the von Mises function is at
-!                   most ks_bound^2, each strip's within bounds and
-!                   adjacent strips' within smoothness of each other
+!                   most ks_bound^2 in every scenario listed, each
+!                   strip's within bounds and adjacent strips' within
+!                   smoothness of each other: one design of the
+!                   scenarios' Lagrangians (minimize_together), the
+!                   first stating the mass and the inequalities on
+!                   the design alone
 !      ks_bound     the bound of the von Mises ratio, 0.25
 !      bounds       the least and the greatest thickness, 0.01 and 0.02
 !      smoothness   the largest difference of adjacent strips, 1e-3
@@ -92,7 +97,15 @@
 ! 0.25 at any march of the note - is found in six iterations: the root
 ! strip 1.0203272556788471 cm and the seven others at their bound of
 ! 1 cm, the mass 1.0896514020886789 kg s, the smooth maximum on its
-! bound to 5e-15 and its multiplier 0.037891294249.
+! bound to 5e-15 and its multiplier 0.037891294249. The three
+! scenarios together with ks_bound = 1.5 - their smooth maxima at 2 cm
+! 1.676, 2.106 and 2.991, at 1 cm 1.638, 1.811 and 2.323 - in six
+! iterations: the root strip 1.0308636977683841 cm and the seven others
+! at 1 cm, the mass 1.0910828959080567 kg s, the lateral's smooth
+! maximum on its bound to 7e-15 and its multiplier 0.0578856747211,
+! the others' 1.525 and 1.739 and zero; the lateral's derivative along
+! the root strip by central differences of step 1e-6, -234.706109775,
+! gives the multiplier as the mass's over it to 5e-9.
 !
 ! THE DRAWING: every rigid body is drawn with the surface of its mesh,
 ! each blade with the box of its plate, moved with the body to each
@@ -110,7 +123,8 @@ program rotorcraft_dynamics
   use operation_expansion, only : expansion
   use operation_field   , only : continuous_field, discrete_field, integral, maximum, heaviside, &
        &                         operator(+), operator(-), operator(*)
-  use operation_residual, only : continuous_residual, discrete_residual, operator(+), operator(*)
+  use operation_residual, only : continuous_residual, discrete_residual, operator(+), operator(*), &
+       &                         minimize_together
   use operation_family  , only : dirk, bdf, chain
   use operation_finite_element, only : finite_element
   use multibody_dynamics, only : rigid_body, beam_blade, mechanism, body_table, surface, spherical, revolute, &
@@ -126,7 +140,7 @@ program rotorcraft_dynamics
   real(dp), parameter :: modulus = 70.0e9_dp, poisson = 0.3_dp
 
   ! the setup
-  character(len=16)  :: blade = 'rigid', scenario = 'collective'
+  character(len=16)  :: blade = 'rigid', scenario(3) = [character(len=16) :: 'collective', '', '']
   character(len=256) :: meshes = ''
   real(dp)           :: thickness(48) = 0.02_dp, yield = 350.0e6_dp, ks_weight = 100.0_dp
   real(dp)           :: ks_bound = 0.25_dp, bounds(2) = [0.01_dp, 0.02_dp], smoothness = 1.0e-3_dp
@@ -135,306 +149,383 @@ program rotorcraft_dynamics
   namelist /setup/ blade, scenario, thickness, revolutions, steps, meshes, every, span_points, strips, yield, &
        & ks_weight, sensitivities, optimize, ks_bound, bounds, smoothness, order
 
-  type(continuous_manifold) :: omega, domega, left
-  type(discrete_manifold)   :: omega_h
-  type(continuous_field)    :: t, x, motion, energy, h, mass, ks, adjoint, lambda, nu, kappa, mu_ks, mu_bounds
-  type(continuous_field)    :: mu_smooth, bounded
-  type(discrete_field)      :: estimate, solution, energy_h, hub_h, tip_h, mass_h, ks_h, kappa_h, found
-  type(continuous_field), allocatable :: stresses(:), thicknesses(:), limits(:)
-  type(continuous_residual) :: r, g, b, d, L, stressed, within, smooth
-  type(chain)               :: march
-  type(discrete_residual)   :: L_h
-  type(mechanism)           :: rotor
-  type(body_table)          :: table
-  type(rigid_body), allocatable :: part(:)
-  type(rigid_body)          :: blades(4)
-  type(beam_blade)          :: beams(4)
-  real(dp)                  :: amplitude(3)
-  real(dp), allocatable     :: e(:), hub_eps(:)
-  character(len=32), allocatable :: names(:)
-  integer :: unit, k, n, num_instants, lower, upper, cap, rod, np
+  type(discrete_manifold) :: omega_h
+  type(discrete_residual) :: L_h(size(scenario))
+  type(discrete_field)    :: estimates(size(scenario)), solutions(size(scenario))
+  type(mechanism)         :: rotors(size(scenario))
+  type(continuous_field)  :: masses(size(scenario)), kss(size(scenario))
+  integer :: unit, j, ns, num_instants, np
 
   open(newunit=unit, file='rotorcraft.nml', status='old', action='read')
   read(unit, nml=setup)
   close(unit)
-  select case (trim(scenario))
-  case ('collective');   amplitude = [0.05_dp, 0.05_dp, 0.05_dp]
-  case ('longitudinal'); amplitude = [0.025_dp, 0.025_dp, 0.05_dp]
-  case ('lateral');      amplitude = [0.025_dp, 0.05_dp, 0.025_dp]
-  case default
-     error stop 'rotorcraft_dynamics: the scenario is collective, longitudinal or lateral'
-  end select
 
-  ! the revolutions of the hub, a manifold of time alone; with the
-  ! blades as beams, of time and of the span from the root to the tip
+  ! the scenarios listed, each on a manifold of its own
+  ns = count(len_trim(scenario) > 0)
+  if (ns == 0) error stop 'rotorcraft_dynamics: the setup lists a scenario at least'
   num_instants = revolutions * steps + 1
   np = 1
-  select case (trim(blade))
-  case ('rigid')
-     omega   = continuous_manifold(time=interval(0.0_dp, revolutions * 2.0_dp * pi / speed))
-     omega_h = omega % discretize(time=points(num_instants))
-  case ('beam')
-     if (strips > 0) then
-        omega   = continuous_manifold(time=interval(0.0_dp, revolutions * 2.0_dp * pi / speed), &
-             &                        space=region(interval(0.0_dp, tip - root)), &
-             &                        design=[(parameter(numbered('h', k), thickness(k)), k = 1, strips)])
-        ! the derivatives by the expansion of order one; to optimize, by
-        ! the reverse sweeps alone, the hessian by its BFGS update
-        if (sensitivities .and. .not. optimize) then
-           omega_h = omega % discretize(time=points(num_instants), space=points(span_points), design=expansion(order=1))
-        else
-           omega_h = omega % discretize(time=points(num_instants), space=points(span_points), design=expansion(order=0))
-        end if
-     else
-        omega   = continuous_manifold(time=interval(0.0_dp, revolutions * 2.0_dp * pi / speed), &
-             &                        space=region(interval(0.0_dp, tip - root)))
-        omega_h = omega % discretize(time=points(num_instants), space=points(span_points))
-     end if
-     x       = omega % coordinate('x')
-     left    = omega % boundary(x, 0.0_dp)
-     np      = span_points
-  case default
-     error stop 'rotorcraft_dynamics: the blade model is rigid or beam; plate and solid are not yet stated'
-  end select
-  domega  = omega % boundary(omega % coordinate('t'), 0.0_dp)
-  t       = omega % coordinate('t')
-
-  ! THE BODIES: the table's, each turning at its rate about z
-  rotor = mechanism(t)
-  table = body_table('rotor_bodies.txt')
-  allocate(part(size(table % name)))
-  do k = 1, size(table % name)
-     call rotor % body(omega, part(k), trim(table % name(k)), table % centre(:, k), table % mass(k), &
-          & table % inertia(:, :, k), angular_velocity=table % rate(k) * ez)
+  if (trim(blade) == 'beam') np = span_points
+  do j = 1, ns
+     call stated(scenario(j), j == 1, L_h(j), estimates(j), rotors(j), masses(j), kss(j), omega_h)
   end do
 
-  ! the blades, each along the azimuth of its cap and turning with it:
-  ! rigid plates linked to the caps, or beams in the caps' axes from
-  ! the root, the span along the azimuth, the chord across it and the
-  ! thickness along z
-  select case (trim(blade))
-  case ('rigid')
-     do k = 1, 4
-        call rotor % body(omega, blades(k), 'blade_' // trim(degrees(k - 1)), &
-             & turned([(root + tip) / 2.0_dp, 0.0_dp, height], k - 1), &
-             & density * thickness(1) * (tip - root) * chord, plate(k - 1), angular_velocity=speed * ez)
-     end do
-  case ('beam')
-     ! the thickness: the setup's, or with strips of the span the
-     ! thickness of each strip a design coordinate, the same for the
-     ! four blades, h = h_1 + sum over j > 1 of (h_j - h_(j-1)) H(x -
-     ! x_j), x_j the inner edge of strip j
-     if (strips > 0) then
-        h = omega % coordinate(numbered('h', 1))
-        do k = 2, strips
-           h = h + (omega % coordinate(numbered('h', k)) - omega % coordinate(numbered('h', k - 1))) &
-                & * heaviside(x - real(k - 1, dp) * (tip - root) / real(strips, dp))
-        end do
-     else
-        h = continuous_field(omega, [thickness(1)])
-     end if
-     do k = 1, 4
-        call rotor % beam(omega, beams(k), part(table % row('cap_' // trim(degrees(k - 1)))), &
-             & 'blade_' // trim(degrees(k - 1)), x, turned([root, 0.0_dp, height], k - 1), &
-             & reshape([turned(ex, k - 1), turned(ey, k - 1), ez], [3, 3]), density, modulus, poisson, chord, h)
-     end do
-  end select
-
-  ! THE JOINTS
-  associate (hub => part(table % row('hub')), lsp => part(table % row('lower_swashplate')), &
-       &     usp => part(table % row('upper_swashplate')), sphere => part(table % row('sphere')), &
-       &     bsp => part(table % row('base_plate')), lph => part(table % row('lower_horn')), &
-       &     uph => part(table % row('upper_horn')))
-
-    ! the shaft turns at its rate; the swashplates hinge about z, the
-    ! lower one on the sphere, which slides along the shaft's axis
-    call rotor % joint(omega, 'hub_driver', revolute_driver(hub, ez, speed, t))
-    call rotor % joint(omega, 'swashplates', revolute(lsp, [0.0_dp, 0.0_dp, 0.4_dp], ez, usp))
-    call rotor % joint(omega, 'swashplate_sphere', spherical(lsp, [0.0_dp, 0.0_dp, 0.4_dp], sphere))
-    call rotor % joint(omega, 'sphere_shaft', cylindrical(sphere, [0.0_dp, 0.0_dp, 0.4_dp], ez))
-
-    ! at each of the four azimuths: the upper swashplate to the lower
-    ! pitch link, the lower to the upper pitch link, the upper pitch
-    ! link hinged to the shaft, the cap and the blade linked to it
-    do k = 1, 4
-       lower = table % row('lower_link_' // trim(degrees(k - 1, 30)))
-       upper = table % row('upper_link_' // trim(degrees(k - 1, 30)))
-       cap   = table % row('cap_' // trim(degrees(k - 1)))
-       call rotor % joint(omega, 'swashplate_link_' // trim(degrees(k - 1)), &
-            & spherical(usp, turned([0.278167359696_dp, 0.1606_dp, 0.43_dp], k - 1), part(lower)))
-       call rotor % joint(omega, 'links_' // trim(degrees(k - 1)), &
-            & spherical(part(lower), turned([0.278167359696_dp, 0.1606_dp, height], k - 1), part(upper)))
-       call rotor % joint(omega, 'shaft_link_' // trim(degrees(k - 1)), &
-            & revolute(hub, turned([0.231_dp, 0.0_dp, height], k - 1), abs(turned(ex, k - 1)), part(upper)))
-       call rotor % joint(omega, 'link_cap_' // trim(degrees(k - 1)), rigid_link(part(upper), part(cap)))
-       if (trim(blade) == 'rigid') call rotor % joint(omega, 'cap_blade_' // trim(degrees(k - 1)), &
-            & rigid_link(part(cap), blades(k)))
-    end do
-
-    ! the push rods on the lower swashplate, driven along z
-    do k = 1, 3
-       rod = table % row('push_rod_' // trim(degrees(k)))
-       call rotor % joint(omega, 'rod_swashplate_' // trim(degrees(k)), &
-            & spherical(part(rod), turned([0.4004_dp, 0.0_dp, 0.38_dp], k), lsp))
-       call rotor % joint(omega, 'rod_driver_' // trim(degrees(k)), &
-            & motion_driver(part(rod), amplitude(k) * ez, speed / 4.0_dp, t))
-    end do
-
-    ! the base plate fixed, the horns hinged to it and to each other
-    ! about y, the upper horn on the lower swashplate
-    call rotor % joint(omega, 'base', fixed(bsp))
-    call rotor % joint(omega, 'base_horn', revolute(lph, [0.4004_dp, 0.0_dp, 0.05_dp], ey, bsp))
-    call rotor % joint(omega, 'horns', revolute(lph, [0.5654_dp, 0.0_dp, 0.215_dp], ey, uph))
-    call rotor % joint(omega, 'horn_swashplate', spherical(uph, [0.4004_dp, 0.0_dp, 0.38_dp], lsp))
-
-  end associate
-
-  ! the surfaces the bodies are drawn with
-  if (len_trim(meshes) > 0) then
-     do k = 1, size(table % name)
-        call rotor % draw_with(part(k), mesh_surface(trim(meshes) // '/' // trim(table % mesh(k))))
-     end do
-     do k = 1, 4
-        if (trim(blade) == 'rigid') then
-           call rotor % draw_with(blades(k), plate_surface(k - 1))
-        else
-           call rotor % draw_beam_with(beams(k), part(table % row('cap_' // trim(degrees(k - 1)))), &
-                & plate_surface(k - 1))
-        end if
-     end do
-  end if
-
-  ! with the blades as beams, the blades' mass over the revolutions and
-  ! the smooth maximum of the von Mises function of their stress over
-  ! the blades, the corners and the middles of the long sides of their
-  ! sections and the revolutions
-  if (trim(blade) == 'beam') then
-     mass     = integral(4.0_dp * density * chord * h, over=omega)
-     stresses = [(beams(k) % stress(yield), k = 1, 4)]
-     ks       = maximum(continuous_field(omega, stresses), over=omega, weight=ks_weight)
-  end if
-
-  ! the march: bdf of the setup's order, from one step of bdf(1)
-  if (order == 1) then
-     march = chain([dirk(2), (bdf(1), k = 2, num_instants)], from=[(k, k = 1, num_instants)])
-  else
-     march = chain([dirk(2), bdf(1), (bdf(order), k = 3, num_instants)], from=[(k, k = 1, num_instants)])
-  end if
-
-  ! the laws on the revolution, the initial data on {0}, and with the
-  ! blades as beams their conditions at the root, the derivatives
-  ! along the span by the hermite cubics. With strips, every condition
-  ! paired with its multiplier: each thickness at the setup's and the
-  ! smooth maximum the objective, so that -kappa is its derivative
-  ! along each thickness by the reverse sweep; or, to optimize, the
-  ! least mass over the revolutions whose smooth maximum of the von
-  ! Mises function is at most ks_bound^2, the thickness of each strip
-  ! within the bounds and adjacent strips within the smoothness, no
-  ! condition fixing the thicknesses
-  r = continuous_residual(omega,  rotor % laws())
-  g = continuous_residual(domega, rotor % initial)
-  if (trim(blade) == 'rigid') then
-     L   = r + g
-     L_h = L % discretize(omega_h, time=march)
-  else
-     b = continuous_residual(left, rotor % root)
-     if (strips > 0) then
-        thicknesses = [(omega % coordinate(numbered('h', k)), k = 1, strips)]
-        d = continuous_residual(omega % design(), [(thicknesses(k) - thickness(k), k = 1, strips)])
-     end if
-     if (strips > 0 .and. optimize) then
-        allocate(limits(size(stresses)))
-        do k = 1, size(stresses)
-           limits(k) = stresses(k) - ks_bound**2
-        end do
-        bounded   = maximum(continuous_field(omega, limits), over=omega, weight=ks_weight)
-        stressed  = continuous_residual(omega % design(), [bounded], inequality=.true.)
-        within    = continuous_residual(omega % design(), [(bounds(1) - thicknesses(k), k = 1, strips), &
-             &                                           (thicknesses(k) - bounds(2), k = 1, strips)], inequality=.true.)
-        smooth    = continuous_residual(omega % design(), [(thicknesses(k) - thicknesses(k + 1) - smoothness, &
-             &                                            k = 1, strips - 1), (thicknesses(k + 1) - thicknesses(k) &
-             &                                            - smoothness, k = 1, strips - 1)], inequality=.true.)
-        adjoint   = r % multiplier('adjoint')
-        lambda    = g % multiplier('lambda')
-        nu        = b % multiplier('nu')
-        mu_ks     = stressed % multiplier('mu_ks')
-        mu_bounds = within % multiplier('mu_bounds')
-        mu_smooth = smooth % multiplier('mu_smooth')
-        L = mass + adjoint*r + lambda*g + nu*b + mu_ks*stressed + mu_bounds*within + mu_smooth*smooth
-     else if (strips > 0 .and. sensitivities) then
-        adjoint = r % multiplier('adjoint')
-        lambda  = g % multiplier('lambda')
-        nu      = b % multiplier('nu')
-        kappa   = d % multiplier('kappa')
-        L = ks + adjoint*r + lambda*g + nu*b + kappa*d
-     else if (strips > 0) then
-        L = r + g + b + d
-     else
-        L = r + g + b
-     end if
-     L_h = L % discretize(omega_h, time=march, space=finite_element(degree=3))
-  end if
-
-  motion   = rotor % estimate(omega)
-  estimate = motion % discretize(omega_h)
+  ! each marched in turn; to optimize, the one design of them all
   if (this_image() == 1 .and. num_instants <= 11) call set_verbosity(1)
-  call L_h % minimize(estimate, solution, continued=.true.)
-
-  ! the energy at every instant - of the rigid bodies alone when the
-  ! blades are beams - and the hub's angle; the first point of each
-  ! instant, and with beams the tip of the blade at zero degrees
-  energy   = rotor % energy
-  energy_h = energy % at(solution)
-  allocate(e(num_instants * np), hub_eps(num_instants * np))
-  call energy_h % values(e)
-  hub_h = solution % fields(['hub_eps3'])
-  call hub_h % values(hub_eps)
-  print '(a, a, a, a, a, i0, a)', 'the rotor, ', trim(blade), ' blades, ', trim(scenario), ', ', num_instants, &
-       & ' instants:'
-  n = max(1, (num_instants - 1) / (12 * revolutions))
-  if (trim(blade) == 'rigid') then
-     print '(a)', '   angle         energy   hub eps3 - sin(w t/2)'
-     do k = 1, num_instants, n
-        print '(f8.1, es16.8, es14.3)', speed * omega_h % instant(k) * 180.0_dp / pi, e(k), &
-             & hub_eps(k) - sin(speed * omega_h % instant(k) / 2.0_dp)
-     end do
+  if (strips > 0 .and. optimize .and. trim(blade) == 'beam') then
+     call minimize_together(L_h(1:ns), estimates(1:ns), solutions(1:ns), continued=.true.)
   else
-     names = [character(len=32) :: 'blade_0_u', 'blade_0_v', 'blade_0_w', 'blade_0_phi']
-     tip_h = solution % fields(names)
-     print '(a)', '   angle   bodies'' energy   hub eps3 - sin(w t/2)    the tip of the blade at 0: u, v, w, phi'
-     do k = 1, num_instants, n
-        print '(f8.1, es16.8, es14.3, 4es14.5)', speed * omega_h % instant(k) * 180.0_dp / pi, e((k - 1) * np + 1), &
-             & hub_eps((k - 1) * np + 1) - sin(speed * omega_h % instant(k) / 2.0_dp), tip_h % value(k * np, :)
+     do j = 1, ns
+        call L_h(j) % minimize(estimates(j), solutions(j), continued=.true.)
      end do
-
-     ! the functions, and along each strip's thickness the mass's and
-     ! the smooth maximum's derivatives by the expansion, and the smooth
-     ! maximum's by the reverse sweep
-     mass_h = mass % at(solution)
-     ks_h   = ks % at(solution)
-     print '(a, es24.16)', '   the blades'' mass over the revolutions, kg s     ', mass_h % value(1, 1)
-     print '(a, es24.16)', '   the smooth maximum of their von Mises function   ', ks_h % value(1, 1)
-     if (strips > 0 .and. optimize) then
-        names = [(numbered('h', k), k = 1, strips)]
-        found = solution % fields(names)
-        print '(a)', '   the thickness found, strip by strip, and the multiplier of the stress'
-        print '(8es16.8)', found % value(1, :)
-        found = solution % fields(['mu_ks'])
-        print '(a, es24.16)', '   mu_ks ', found % value(1, 1)
-     else if (strips > 0 .and. sensitivities) then
-        kappa_h = solution % fields(['kappa'])
-        print '(a)', '   along the thickness of each strip: the mass''s, the smooth maximum''s by the expansion and &
-             &by the reverse sweep'
-        do k = 1, strips
-           print '(i8, 3es24.16)', k, mass_h % value(1, 1 + k), ks_h % value(1, 1 + k), -kappa_h % value(1, k)
-        end do
-     end if
   end if
-
-  ! the time history
-  if (len_trim(meshes) > 0) call rotor % draw(solution, 'rotor', every)
+  do j = 1, ns
+     call reported(scenario(j), ns == 1, rotors(j), masses(j), kss(j), solutions(j))
+  end do
 
 contains
+
+  !===================================================================!
+  ! ONE SCENARIO STATED on a manifold of its own: the revolutions, the
+  ! bodies, the blades and the joints with the push rods' amplitudes of
+  ! the scenario, the functions, the Lagrangian discretized and the
+  ! estimate. To optimize, every scenario bounds its stress, and the
+  ! first states the objective and the inequalities on the design
+  ! alone.
+  !===================================================================!
+
+  subroutine stated(name, first, L_h, estimate, rotor, mass, ks, omega_h)
+
+    character(len=*)       , intent(in)  :: name
+    logical                , intent(in)  :: first
+    type(discrete_residual), intent(out) :: L_h
+    type(discrete_field)   , intent(out) :: estimate
+    type(mechanism)        , intent(out) :: rotor
+    type(continuous_field) , intent(out) :: mass, ks
+    type(discrete_manifold), intent(out) :: omega_h
+
+    type(continuous_manifold) :: omega, domega, left
+    type(continuous_field)    :: t, x, motion, h, adjoint, lambda, nu, kappa, mu_ks, mu_bounds, mu_smooth, bounded
+    type(continuous_field), allocatable :: stresses(:), thicknesses(:), limits(:)
+    type(continuous_residual) :: r, g, b, d, L, stressed, within, smooth
+    type(chain)               :: march
+    type(body_table)          :: table
+    type(rigid_body), allocatable :: part(:)
+    type(rigid_body)          :: blades(4)
+    type(beam_blade)          :: beams(4)
+    real(dp)                  :: amplitude(3)
+    integer :: k, lower, upper, cap, rod
+
+    select case (trim(name))
+    case ('collective');   amplitude = [0.05_dp, 0.05_dp, 0.05_dp]
+    case ('longitudinal'); amplitude = [0.025_dp, 0.025_dp, 0.05_dp]
+    case ('lateral');      amplitude = [0.025_dp, 0.05_dp, 0.025_dp]
+    case default
+       error stop 'rotorcraft_dynamics: the scenario is collective, longitudinal or lateral'
+    end select
+
+    ! the revolutions of the hub, a manifold of time alone; with the
+    ! blades as beams, of time and of the span from the root to the tip
+    select case (trim(blade))
+    case ('rigid')
+       omega   = continuous_manifold(time=interval(0.0_dp, revolutions * 2.0_dp * pi / speed))
+       omega_h = omega % discretize(time=points(num_instants))
+    case ('beam')
+       if (strips > 0) then
+          omega   = continuous_manifold(time=interval(0.0_dp, revolutions * 2.0_dp * pi / speed), &
+               &                        space=region(interval(0.0_dp, tip - root)), &
+               &                        design=[(parameter(numbered('h', k), thickness(k)), k = 1, strips)])
+          ! the derivatives by the expansion of order one; to optimize, by
+          ! the reverse sweeps alone, the hessian by its BFGS update
+          if (sensitivities .and. .not. optimize) then
+             omega_h = omega % discretize(time=points(num_instants), space=points(span_points), &
+                  &                       design=expansion(order=1))
+          else
+             omega_h = omega % discretize(time=points(num_instants), space=points(span_points), &
+                  &                       design=expansion(order=0))
+          end if
+       else
+          omega   = continuous_manifold(time=interval(0.0_dp, revolutions * 2.0_dp * pi / speed), &
+               &                        space=region(interval(0.0_dp, tip - root)))
+          omega_h = omega % discretize(time=points(num_instants), space=points(span_points))
+       end if
+       x       = omega % coordinate('x')
+       left    = omega % boundary(x, 0.0_dp)
+    case default
+       error stop 'rotorcraft_dynamics: the blade model is rigid or beam; plate and solid are not yet stated'
+    end select
+    domega  = omega % boundary(omega % coordinate('t'), 0.0_dp)
+    t       = omega % coordinate('t')
+
+    ! THE BODIES: the table's, each turning at its rate about z
+    rotor = mechanism(t)
+    table = body_table('rotor_bodies.txt')
+    allocate(part(size(table % name)))
+    do k = 1, size(table % name)
+       call rotor % body(omega, part(k), trim(table % name(k)), table % centre(:, k), table % mass(k), &
+            & table % inertia(:, :, k), angular_velocity=table % rate(k) * ez)
+    end do
+
+    ! the blades, each along the azimuth of its cap and turning with it:
+    ! rigid plates linked to the caps, or beams in the caps' axes from
+    ! the root, the span along the azimuth, the chord across it and the
+    ! thickness along z
+    select case (trim(blade))
+    case ('rigid')
+       do k = 1, 4
+          call rotor % body(omega, blades(k), 'blade_' // trim(degrees(k - 1)), &
+               & turned([(root + tip) / 2.0_dp, 0.0_dp, height], k - 1), &
+               & density * thickness(1) * (tip - root) * chord, plate(k - 1), angular_velocity=speed * ez)
+       end do
+    case ('beam')
+       ! the thickness: the setup's, or with strips of the span the
+       ! thickness of each strip a design coordinate, the same for the
+       ! four blades, h = h_1 + sum over j > 1 of (h_j - h_(j-1)) H(x -
+       ! x_j), x_j the inner edge of strip j
+       if (strips > 0) then
+          h = omega % coordinate(numbered('h', 1))
+          do k = 2, strips
+             h = h + (omega % coordinate(numbered('h', k)) - omega % coordinate(numbered('h', k - 1))) &
+                  & * heaviside(x - real(k - 1, dp) * (tip - root) / real(strips, dp))
+          end do
+       else
+          h = continuous_field(omega, [thickness(1)])
+       end if
+       do k = 1, 4
+          call rotor % beam(omega, beams(k), part(table % row('cap_' // trim(degrees(k - 1)))), &
+               & 'blade_' // trim(degrees(k - 1)), x, turned([root, 0.0_dp, height], k - 1), &
+               & reshape([turned(ex, k - 1), turned(ey, k - 1), ez], [3, 3]), density, modulus, poisson, chord, h)
+       end do
+    end select
+
+    ! THE JOINTS
+    associate (hub => part(table % row('hub')), lsp => part(table % row('lower_swashplate')), &
+         &     usp => part(table % row('upper_swashplate')), sphere => part(table % row('sphere')), &
+         &     bsp => part(table % row('base_plate')), lph => part(table % row('lower_horn')), &
+         &     uph => part(table % row('upper_horn')))
+
+      ! the shaft turns at its rate; the swashplates hinge about z, the
+      ! lower one on the sphere, which slides along the shaft's axis
+      call rotor % joint(omega, 'hub_driver', revolute_driver(hub, ez, speed, t))
+      call rotor % joint(omega, 'swashplates', revolute(lsp, [0.0_dp, 0.0_dp, 0.4_dp], ez, usp))
+      call rotor % joint(omega, 'swashplate_sphere', spherical(lsp, [0.0_dp, 0.0_dp, 0.4_dp], sphere))
+      call rotor % joint(omega, 'sphere_shaft', cylindrical(sphere, [0.0_dp, 0.0_dp, 0.4_dp], ez))
+
+      ! at each of the four azimuths: the upper swashplate to the lower
+      ! pitch link, the lower to the upper pitch link, the upper pitch
+      ! link hinged to the shaft, the cap and the blade linked to it
+      do k = 1, 4
+         lower = table % row('lower_link_' // trim(degrees(k - 1, 30)))
+         upper = table % row('upper_link_' // trim(degrees(k - 1, 30)))
+         cap   = table % row('cap_' // trim(degrees(k - 1)))
+         call rotor % joint(omega, 'swashplate_link_' // trim(degrees(k - 1)), &
+              & spherical(usp, turned([0.278167359696_dp, 0.1606_dp, 0.43_dp], k - 1), part(lower)))
+         call rotor % joint(omega, 'links_' // trim(degrees(k - 1)), &
+              & spherical(part(lower), turned([0.278167359696_dp, 0.1606_dp, height], k - 1), part(upper)))
+         call rotor % joint(omega, 'shaft_link_' // trim(degrees(k - 1)), &
+              & revolute(hub, turned([0.231_dp, 0.0_dp, height], k - 1), abs(turned(ex, k - 1)), part(upper)))
+         call rotor % joint(omega, 'link_cap_' // trim(degrees(k - 1)), rigid_link(part(upper), part(cap)))
+         if (trim(blade) == 'rigid') call rotor % joint(omega, 'cap_blade_' // trim(degrees(k - 1)), &
+              & rigid_link(part(cap), blades(k)))
+      end do
+
+      ! the push rods on the lower swashplate, driven along z
+      do k = 1, 3
+         rod = table % row('push_rod_' // trim(degrees(k)))
+         call rotor % joint(omega, 'rod_swashplate_' // trim(degrees(k)), &
+              & spherical(part(rod), turned([0.4004_dp, 0.0_dp, 0.38_dp], k), lsp))
+         call rotor % joint(omega, 'rod_driver_' // trim(degrees(k)), &
+              & motion_driver(part(rod), amplitude(k) * ez, speed / 4.0_dp, t))
+      end do
+
+      ! the base plate fixed, the horns hinged to it and to each other
+      ! about y, the upper horn on the lower swashplate
+      call rotor % joint(omega, 'base', fixed(bsp))
+      call rotor % joint(omega, 'base_horn', revolute(lph, [0.4004_dp, 0.0_dp, 0.05_dp], ey, bsp))
+      call rotor % joint(omega, 'horns', revolute(lph, [0.5654_dp, 0.0_dp, 0.215_dp], ey, uph))
+      call rotor % joint(omega, 'horn_swashplate', spherical(uph, [0.4004_dp, 0.0_dp, 0.38_dp], lsp))
+
+    end associate
+
+    ! the surfaces the bodies are drawn with
+    if (len_trim(meshes) > 0) then
+       do k = 1, size(table % name)
+          call rotor % draw_with(part(k), mesh_surface(trim(meshes) // '/' // trim(table % mesh(k))))
+       end do
+       do k = 1, 4
+          if (trim(blade) == 'rigid') then
+             call rotor % draw_with(blades(k), plate_surface(k - 1))
+          else
+             call rotor % draw_beam_with(beams(k), part(table % row('cap_' // trim(degrees(k - 1)))), &
+                  & plate_surface(k - 1))
+          end if
+       end do
+    end if
+
+    ! with the blades as beams, the blades' mass over the revolutions and
+    ! the smooth maximum of the von Mises function of their stress over
+    ! the blades, the corners and the middles of the long sides of their
+    ! sections and the revolutions
+    if (trim(blade) == 'beam') then
+       mass     = integral(4.0_dp * density * chord * h, over=omega)
+       stresses = [(beams(k) % stress(yield), k = 1, 4)]
+       ks       = maximum(continuous_field(omega, stresses), over=omega, weight=ks_weight)
+    end if
+
+    ! the march: bdf of the setup's order, from one step of bdf(1)
+    if (order == 1) then
+       march = chain([dirk(2), (bdf(1), k = 2, num_instants)], from=[(k, k = 1, num_instants)])
+    else
+       march = chain([dirk(2), bdf(1), (bdf(order), k = 3, num_instants)], from=[(k, k = 1, num_instants)])
+    end if
+
+    ! the laws on the revolution, the initial data on {0}, and with the
+    ! blades as beams their conditions at the root, the derivatives
+    ! along the span by the hermite cubics. With strips, every condition
+    ! paired with its multiplier: each thickness at the setup's and the
+    ! smooth maximum the objective, so that -kappa is its derivative
+    ! along each thickness by the reverse sweep; or, to optimize, the
+    ! least mass over the revolutions whose smooth maximum of the von
+    ! Mises function is at most ks_bound^2, the thickness of each strip
+    ! within the bounds and adjacent strips within the smoothness, no
+    ! condition fixing the thicknesses
+    r = continuous_residual(omega,  rotor % laws())
+    g = continuous_residual(domega, rotor % initial)
+    if (trim(blade) == 'rigid') then
+       L   = r + g
+       L_h = L % discretize(omega_h, time=march)
+    else
+       b = continuous_residual(left, rotor % root)
+       if (strips > 0) then
+          thicknesses = [(omega % coordinate(numbered('h', k)), k = 1, strips)]
+          d = continuous_residual(omega % design(), [(thicknesses(k) - thickness(k), k = 1, strips)])
+       end if
+       if (strips > 0 .and. optimize) then
+          allocate(limits(size(stresses)))
+          do k = 1, size(stresses)
+             limits(k) = stresses(k) - ks_bound**2
+          end do
+          bounded  = maximum(continuous_field(omega, limits), over=omega, weight=ks_weight)
+          stressed = continuous_residual(omega % design(), [bounded], inequality=.true.)
+          adjoint  = r % multiplier('adjoint')
+          lambda   = g % multiplier('lambda')
+          nu       = b % multiplier('nu')
+          mu_ks    = stressed % multiplier('mu_ks')
+          L = adjoint*r + lambda*g + nu*b + mu_ks*stressed
+          if (first) then
+             within    = continuous_residual(omega % design(), [(bounds(1) - thicknesses(k), k = 1, strips), &
+                  &                                           (thicknesses(k) - bounds(2), k = 1, strips)], &
+                  &                          inequality=.true.)
+             smooth    = continuous_residual(omega % design(), [(thicknesses(k) - thicknesses(k + 1) - smoothness, &
+                  &                                            k = 1, strips - 1), (thicknesses(k + 1) &
+                  &                                            - thicknesses(k) - smoothness, k = 1, strips - 1)], &
+                  &                          inequality=.true.)
+             mu_bounds = within % multiplier('mu_bounds')
+             mu_smooth = smooth % multiplier('mu_smooth')
+             L = mass + L + mu_bounds*within + mu_smooth*smooth
+          end if
+       else if (strips > 0 .and. sensitivities) then
+          adjoint = r % multiplier('adjoint')
+          lambda  = g % multiplier('lambda')
+          nu      = b % multiplier('nu')
+          kappa   = d % multiplier('kappa')
+          L = ks + adjoint*r + lambda*g + nu*b + kappa*d
+       else if (strips > 0) then
+          L = r + g + b + d
+       else
+          L = r + g + b
+       end if
+       L_h = L % discretize(omega_h, time=march, space=finite_element(degree=3))
+    end if
+
+    motion   = rotor % estimate(omega)
+    estimate = motion % discretize(omega_h)
+
+  end subroutine stated
+
+  !===================================================================!
+  ! ONE SCENARIO REPORTED: the energy at every instant - of the rigid
+  ! bodies alone when the blades are beams - and the hub's angle, the
+  ! first point of each instant; with beams the tip of the blade at
+  ! zero degrees and the functions; and the time history drawn, named
+  ! after the scenario where several are listed.
+  !===================================================================!
+
+  subroutine reported(name, alone, rotor, mass, ks, solution)
+
+    character(len=*)      , intent(in) :: name
+    logical               , intent(in) :: alone
+    type(mechanism)       , intent(in) :: rotor
+    type(continuous_field), intent(in) :: mass, ks
+    type(discrete_field)  , intent(in) :: solution
+
+    type(continuous_field) :: energy
+    type(discrete_field)   :: energy_h, hub_h, tip_h, mass_h, ks_h, kappa_h, found
+    real(dp), allocatable  :: e(:), hub_eps(:)
+    character(len=32), allocatable :: names(:)
+    integer :: k, n
+
+    ! the energy at every instant - of the rigid bodies alone when the
+    ! blades are beams - and the hub's angle; the first point of each
+    ! instant, and with beams the tip of the blade at zero degrees
+    energy   = rotor % energy
+    energy_h = energy % at(solution)
+    allocate(e(num_instants * np), hub_eps(num_instants * np))
+    call energy_h % values(e)
+    hub_h = solution % fields(['hub_eps3'])
+    call hub_h % values(hub_eps)
+    print '(a, a, a, a, a, i0, a)', 'the rotor, ', trim(blade), ' blades, ', trim(name), ', ', num_instants, &
+         & ' instants:'
+    n = max(1, (num_instants - 1) / (12 * revolutions))
+    if (trim(blade) == 'rigid') then
+       print '(a)', '   angle         energy   hub eps3 - sin(w t/2)'
+       do k = 1, num_instants, n
+          print '(f8.1, es16.8, es14.3)', speed * omega_h % instant(k) * 180.0_dp / pi, e(k), &
+               & hub_eps(k) - sin(speed * omega_h % instant(k) / 2.0_dp)
+       end do
+    else
+       names = [character(len=32) :: 'blade_0_u', 'blade_0_v', 'blade_0_w', 'blade_0_phi']
+       tip_h = solution % fields(names)
+       print '(a)', '   angle   bodies'' energy   hub eps3 - sin(w t/2)    the tip of the blade at 0: u, v, w, phi'
+       do k = 1, num_instants, n
+          print '(f8.1, es16.8, es14.3, 4es14.5)', speed * omega_h % instant(k) * 180.0_dp / pi, e((k - 1) * np + 1), &
+               & hub_eps((k - 1) * np + 1) - sin(speed * omega_h % instant(k) / 2.0_dp), tip_h % value(k * np, :)
+       end do
+
+       ! the functions, and along each strip's thickness the mass's and
+       ! the smooth maximum's derivatives by the expansion, and the smooth
+       ! maximum's by the reverse sweep
+       mass_h = mass % at(solution)
+       ks_h   = ks % at(solution)
+       print '(a, es24.16)', '   the blades'' mass over the revolutions, kg s     ', mass_h % value(1, 1)
+       print '(a, es24.16)', '   the smooth maximum of their von Mises function   ', ks_h % value(1, 1)
+       if (strips > 0 .and. optimize) then
+          names = [(numbered('h', k), k = 1, strips)]
+          found = solution % fields(names)
+          print '(a)', '   the thickness found, strip by strip, and the multiplier of the stress'
+          print '(8es16.8)', found % value(1, :)
+          found = solution % fields(['mu_ks'])
+          print '(a, es24.16)', '   mu_ks ', found % value(1, 1)
+       else if (strips > 0 .and. sensitivities) then
+          kappa_h = solution % fields(['kappa'])
+          print '(a)', '   along the thickness of each strip: the mass''s, the smooth maximum''s by the expansion and &
+               &by the reverse sweep'
+          do k = 1, strips
+             print '(i8, 3es24.16)', k, mass_h % value(1, 1 + k), ks_h % value(1, 1 + k), -kappa_h % value(1, k)
+          end do
+       end if
+    end if
+
+    ! the time history
+    if (len_trim(meshes) > 0) then
+       if (alone) then
+          call rotor % draw(solution, 'rotor', every)
+       else
+          call rotor % draw(solution, 'rotor_' // trim(name), every)
+       end if
+    end if
+
+  end subroutine reported
 
   ! the surface of a body's mesh
   function mesh_surface(file) result(s)

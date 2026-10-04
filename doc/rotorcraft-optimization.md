@@ -297,6 +297,18 @@ loading its root less. KS <= 1/4 is not met by a uniform blade at
 any of these marches; TACS's run ends where it is not met either, KS
 0.37 at about 1 cm.
 
+The smooth maximum here is the logarithm of an integral over the
+revolution and the span, of the square of the ratio, at `ks_weight` =
+100: it differs from the largest value by the logarithm of the measure
+near it, summed over the blades and the points of the sections, over
+the weight. At 360 steps it is 0.0538 for the uniform
+blade at 2 cm, where the square of the largest ratio is 0.109, and
+0.0185 for the thickness falling from 2 cm at the root to 1 cm at the
+tip in eight strips; at 36 steps, where the lag bending of bdf(1)
+lasts the revolution, 1.676 against 1.66. TACS bounds 4 KS - 1 with
+rho_KS = 1e5 on the ratio itself, the largest value to 1e-4: the case
+as TACS states it takes `ks_weight` near 1e5.
+
 ## The case
 
 - **Bodies.** The case has 26 bodies:
@@ -453,6 +465,24 @@ differences.
    their bound of 1 cm, the mass 1.0896514020886789 kg s, the smooth
    maximum on its bound to 5e-15, and its multiplier 0.037891294249,
    the 21 iterations' to 1.6e-12.
+   Each step is found by the dual method of Goldfarb and Idnani: from
+   the minimizer of the model without inequalities, the most violated
+   inequality joins the active set, the normals of the active ones
+   remaining independent - one that depends on them moves the multipliers
+   alone, and one leaves where its multiplier vanishes - and the step
+   and the multipliers are those of one solve of the active set's
+   equalities at every move. The primal active set it replaces took
+   dependent normals in: the rotor's three scenarios at 2 cm, its
+   eight upper bounds active and three smooth maxima violated, made its
+   system singular. Where no step meets the inequalities linearized,
+   each violated one is required to remove a quarter of its fraction,
+   three times, and then only not to grow, which the null step meets. Of 2000
+   random problems, every step meets its conditions to 1.3e-11; each of
+   the 230 without one has the weights of inequalities whose
+   normals cancel and whose constants sum above zero; and where the
+   primal active set settled, 1738, the step and the multipliers are
+   its own to every digit. The beam's cases and the rotor's are the
+   same to every digit.
 5. **Three scenarios on one design.** The sum of three discrete
    Lagrangians, each with its own state and adjoint, and one design
    iteration.
@@ -466,6 +496,22 @@ differences.
    along the design summing to 5e-11; the least mean stiffness of one
    scenario with the misfit of the other at most 1e-4 in thirteen, the
    multiplier the same along s1 and s2 to 2e-12.
+   The rotor's scenarios (`scenario` lists several in
+   `rotorcraft.nml`), each stated on a manifold of its own and marched
+   in turn; to optimize, one design of all, the first stating the mass
+   and the inequalities on the design alone and every one its bound on
+   the stress. At 36 steps, 5 points of the span and eight strips from
+   2 cm, their smooth maxima are 1.676, 2.106 and 2.991 at 2 cm and
+   1.638, 1.811 and 2.323 at 1 cm, so that a bound of 1.8 leaves every
+   strip at 1 cm, in two iterations. With ks_bound = 1.5 the least mass
+   takes six iterations, 33 minutes, none refused: the root strip
+   1.0308636977683841 cm and the seven others at 1 cm, the mass
+   1.0910828959080567 kg s, the lateral's smooth maximum on its bound
+   to 7e-15 and its multiplier 0.0578856747211, the collective's and
+   the longitudinal's 1.525 and 1.739 and zero. The lateral's derivative
+   along the root strip by central differences of step 1e-6,
+   -234.706109775, gives that multiplier as the mass's over it to
+   5e-9.
 6. **The blades as plates** (later): first-order shear plates on the
    span-by-chord rectangle, by the Lagrange elements of two
    coordinates, nearer TACS's shells.
@@ -480,16 +526,17 @@ differences.
   inequalities on the design factor; unknowns of time alone on a
   manifold of time and space, their laws reading integrals over the
   region; inequalities on functionals of the state, each with its own
-  reverse sweep; several Lagrangians on one design; the smooth maximum
-  with its largest value subtracted; the blades as beams.
+  reverse sweep; several Lagrangians on one design, the rotor's three
+  scenarios among them; the smooth maximum with its largest value
+  subtracted; the blades as beams.
 - **Missing:**
   - a way to write a body's 7 coordinates and its action once, not as
     7 scalar laws by hand, without moving solver logic into `physics/`;
   - a check that the families march an index-3 system, and an initial
     state consistent with the joints (TACS starts the push rods at rest
     against their drivers);
-  - the rotor's three scenarios on one design, and the case as TACS
-    states it: 48 strips, 360 steps, KS <= 1/4;
+  - the case as TACS states it: 48 strips, three scenarios, 360 steps,
+    KS <= 1/4 with `ks_weight` near 1e5;
   - the blades as plates and as solids.
 
 ## Decisions for the author

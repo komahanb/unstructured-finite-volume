@@ -2728,7 +2728,10 @@ contains
   ! too, and the shift falls and theta rises fourfold, to one, after a
   ! step that decreases the merit by more than three quarters of its
   ! prediction. A positive definite hessian whose steps all decrease
-  ! the merit is never shifted, and theta is one.
+  ! the merit is never shifted, and theta is one. Where no step meets
+  ! the inequalities linearized, theta is quartered for that step, three
+  ! times, and then zero: each violated inequality is then required
+  ! only not to grow, which the null step meets.
   !
   ! CONTINUED, each block of the chain after the first starts Newton's
   ! iteration from the solution at the last instant before it, its
@@ -2858,9 +2861,9 @@ contains
     integer , allocatable :: active(:), first(:)
     logical , allocatable :: of_state(:)
     real(dp) :: tolerance, stationarity, objective, accepted_objective, shift, reach, predicted, decrease
-    real(dp) :: reduction, limit
-    integer :: n, j, k, iteration
-    logical :: with_accepted, refused, quasi
+    real(dp) :: reduction, limit, theta
+    integer :: n, j, k, iteration, quartering
+    logical :: with_accepted, refused, quasi, solvable
     character(len=250) :: message
 
     ! the hessian of the model: the expansion's of order one along each
@@ -2992,7 +2995,19 @@ contains
        do while (.not. positive_definite(hessian, shift))
           shift = 2.0_dp * shift
        end do
-       call quadratic_step(shifted(hessian, shift), gradient, c - (1.0_dp - reduction) * max(c, 0.0_dp), a, step, mu)
+       ! where no step meets the inequalities linearized, each violated
+       ! one is required to remove a quarter of its fraction, three
+       ! times, and then only not to grow, which the null step meets
+       theta = reduction
+       do quartering = 0, 4
+          call quadratic_step(shifted(hessian, shift), gradient, c - (1.0_dp - theta) * max(c, 0.0_dp), a, step, &
+               & mu, solvable)
+          if (solvable) exit
+          theta = merge(0.0_dp, theta / 4.0_dp, quartering == 3)
+       end do
+       if (.not. solvable) then
+          error stop 'operation_residual: no step meets the inequalities on the design, not even the null step'
+       end if
        if (refused .and. norm2(step) > limit) step = step * (limit / norm2(step))
        stationarity = norm2(gradient + matmul(transpose(a), mu))
        if (verbosity >= 1) then
@@ -3131,53 +3146,129 @@ contains
 
   !===================================================================!
   ! THE STEP OF THE DESIGN UNDER ITS INEQUALITIES: the minimizer of
-  ! g . d + d . H d / 2 over the steps with c + A d <= 0, and the
-  ! multiplier of each inequality, nonnegative and zero where it is not
-  ! active. The active set begins empty; each set is solved with its
-  ! inequalities as equalities, the one of the most negative multiplier
-  ! leaving it and then the most violated joining it, until no
-  ! multiplier is negative and no inequality is violated. Invalid
-  ! input: an active set that does not settle.
+  ! g . d + d . H d / 2 over the steps with c + A d <= 0, H positive
+  ! definite, and the multiplier of each inequality, nonnegative and
+  ! zero where it is not active; solvable false where no step meets
+  ! the inequalities.
+  !
+  ! By the dual method of Goldfarb and Idnani: from the minimizer
+  ! without inequalities, d = -H^-1 g, the most violated inequality p
+  ! joins the active set by raising its multiplier t from zero, the
+  ! active ones remaining equalities - the step moves by -t z and their
+  ! multipliers by -t r, H z + N r = a_p and N^T z = 0, N the active
+  ! normals - until p is met; where an active multiplier vanishes
+  ! first, that inequality leaves and p goes on joining. The active
+  ! normals stay independent: a_p depends on them where a_p . z, which
+  ! is z . H z, is below 1e-6 of a_p . H^-1 a_p, and only the
+  ! multipliers then move; and no step exists where p is not met and no
+  ! active multiplier vanishes, (1, -r) on p and the active set then
+  ! the weights of the inequalities whose normals cancel and whose
+  ! constants sum to more than zero. At every move the step and the
+  ! multipliers are those of one solve of the active set's equalities,
+  ! not the sum of the moves. Of 2000 random problems: summed, and the
+  ! dependence at 1e-12, an inequality nearly dependent raised the
+  ! multipliers to 1e15 and the active values away from zero; at 1e-8,
+  ! two nearly dependent in turn made five normals active in four
+  ! dimensions; at 1e-6 every step meets its conditions to 1.3e-11, and
+  ! each of the 230 without one has the weights to 1.4e-5. Where the
+  ! primal active set it replaces settled, 1738 of them, the step and
+  ! the multipliers are its own to every digit; it took dependent
+  ! normals in, and the rotor's three scenarios at 2 cm, its eight
+  ! upper bounds active and three smooth maxima violated, made its
+  ! system singular.
   !===================================================================!
 
-  subroutine quadratic_step(hessian, gradient, c, a, step, mu)
+  subroutine quadratic_step(hessian, gradient, c, a, step, mu, solvable)
 
     real(dp), intent(in)  :: hessian(:,:), gradient(:), c(:), a(:,:)
     real(dp), allocatable, intent(out) :: step(:), mu(:)
+    logical , intent(out) :: solvable
 
-    real(dp), allocatable :: system(:,:), x(:), violation(:)
+    real(dp), allocatable :: u(:), r(:), z(:)
     integer , allocatable :: set(:)
     logical :: active(size(c))
-    real(dp) :: tolerance
-    integer :: n, k, iteration
+    real(dp) :: tolerance, t1, t2, joining, met, along
+    integer :: j, p, leaving, iteration
 
-    n = size(gradient)
-    active    = .false.
     tolerance = 1.0e-12_dp * max(1.0_dp, maxval(abs(c)))
-    allocate(mu(size(c)))
-    do iteration = 1, 4 * (size(c) + 1)
-       set = pack([(k, k = 1, size(c))], active)
-       allocate(system(n + size(set), n + size(set)), source=0.0_dp)
-       system(1:n, 1:n) = hessian
-       system(1:n, n + 1:) = transpose(a(set, :))
-       system(n + 1:, 1:n) = a(set, :)
-       x = linear_solution(system, [-gradient, -c(set)])
-       deallocate(system)
-       step    = x(1:n)
-       mu      = 0.0_dp
-       mu(set) = x(n + 1:)
-       if (any(mu < 0.0_dp .and. active)) then
-          active(minloc(mu, dim=1, mask=active)) = .false.
-          cycle
-       end if
-       violation = c + matmul(a, step)
-       if (any(violation > tolerance .and. .not. active)) then
-          active(maxloc(violation, dim=1, mask=.not. active)) = .true.
-          cycle
-       end if
-       return
+    allocate(mu(size(c)), source=0.0_dp)
+    active   = .false.
+    solvable = .true.
+    do iteration = 1, 10 * (size(c) + size(gradient) + 1)
+       set = pack([(j, j = 1, size(c))], active)
+       call active_solution(set, 0, 0.0_dp, step, u)
+       if (all(active)) exit
+       p = maxloc(c + matmul(a, step), dim=1, mask=.not. active)
+       if (c(p) + dot_product(a(p, :), step) <= tolerance) exit
+       ! p joins: its multiplier raised from zero until it is met
+       joining = 0.0_dp
+       along   = dot_product(a(p, :), linear_solution(hessian, a(p, :)))
+       do
+          call active_solution(set, p, joining, step, u, z, r)
+          met = c(p) + dot_product(a(p, :), step)
+          ! the largest rise before an active multiplier vanishes, and the
+          ! rise that meets p, none where a_p depends on the active normals
+          t1      = huge(1.0_dp)
+          leaving = 0
+          do j = 1, size(set)
+             if (r(j) > 0.0_dp) then
+                if (u(j) / r(j) < t1) then
+                   t1      = u(j) / r(j)
+                   leaving = j
+                end if
+             end if
+          end do
+          t2 = huge(1.0_dp)
+          if (dot_product(a(p, :), z) > 1.0e-6_dp * along) t2 = met / dot_product(a(p, :), z)
+          if (leaving == 0 .and. t2 == huge(1.0_dp)) then
+             solvable = .false.
+             return
+          end if
+          joining = joining + min(t1, t2)
+          if (t2 <= t1) then
+             active(p) = .true.
+             exit
+          end if
+          active(set(leaving)) = .false.
+          set = pack([(j, j = 1, size(c))], active)
+       end do
     end do
-    error stop 'operation_residual: the active set of the inequalities on the design does not settle'
+    if (size(c) > 0) then
+       if (maxval(c + matmul(a, step)) > tolerance) then
+          error stop 'operation_residual: the dual method on the inequalities of the design does not settle'
+       end if
+    end if
+    mu(set) = max(u, 0.0_dp)
+
+  contains
+
+    ! the step and the multipliers of the active set with the multiplier
+    ! joining of p, H d + g + N u + joining a_p = 0 and N^T d = -c_N, by
+    ! one solve of their equalities; and given z and r, H z + N r = a_p
+    ! and N^T z = 0
+    subroutine active_solution(set, p, joining, step, u, z, r)
+      integer , intent(in)  :: set(:), p
+      real(dp), intent(in)  :: joining
+      real(dp), allocatable, intent(out) :: step(:), u(:)
+      real(dp), allocatable, intent(out), optional :: z(:), r(:)
+      real(dp), allocatable :: system(:,:), x(:), right(:)
+      integer :: n, i
+      n = size(gradient)
+      allocate(system(n + size(set), n + size(set)), source=0.0_dp)
+      system(1:n, 1:n)    = hessian
+      system(1:n, n + 1:) = transpose(a(set, :))
+      system(n + 1:, 1:n) = a(set, :)
+      right = -gradient
+      if (p > 0) right = right - joining * a(p, :)
+      x    = linear_solution(system, [right, -c(set)])
+      step = x(1:n)
+      u    = x(n + 1:)
+      if (present(z)) then
+         x = linear_solution(system, [a(p, :), (0.0_dp, i = 1, size(set))])
+         z = x(1:n)
+         r = x(n + 1:)
+      end if
+    end subroutine active_solution
 
   end subroutine quadratic_step
 

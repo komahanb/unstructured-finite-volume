@@ -274,11 +274,14 @@ and 945 residuals, and the cases of the suite are the same to every
 digit, but case 8's misfit then varies by 3.6e-15 between designs
 1e-9 apart where it varies by 8e-16, the iterations it ends polishing
 the hub's angle. A revolution of 360 steps at 49 points and its
-reverse sweep take hours for each scenario, and an optimization of the
-three days. At 49 points the eliminated
-solve met 1e-6 to 2e-8 of the residual it began at, so that Newton's
-steps were ruled by its error; it refines its solution now, and every
-solve meets its tolerance.
+reverse sweep would take, by these marches of 36 steps, hours for each
+scenario, and an optimization of the three days. At 49 points the
+eliminated solve met 1e-6 to 2e-8 of the residual it began at, so that
+Newton's steps were ruled by its error; it refines its solution now:
+of the 227 solves of a march of 10 steps, 198 meet their tolerance,
+most to 1e-14, and 29 end between 1.5e-8 and 1.6e-7, against 1.5e-8 -
+16 in a block that converges in 29 iterations, 12 in a step of 36
+degrees that does not converge.
 
 **The thickness, the mass and the stress** (`strips`, `thickness`,
 `sensitivities` in `rotorcraft.nml`). With strips, the thickness of
@@ -599,8 +602,9 @@ Open, with what the work has measured:
    too and need elements of the second order in the mesh layer,
    proposed; or by Q1, which locks.
 3. **The case as TACS states it**: its 48 strips need 49 points of the
-   span, where a revolution of 360 steps and its reverse sweep take
-   hours for each scenario and the optimization of the three days; or
+   span, where a revolution of 360 steps and its reverse sweep would
+   take, by the marches of 36 steps measured, hours for each scenario
+   and the optimization of the three days; or
    a coarser case - 48 strips on 25 points, or fewer strips - which is
    not TACS's.
 4. **The weight of the smooth maximum** of that case: near 1e5, so

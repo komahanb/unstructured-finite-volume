@@ -244,6 +244,42 @@ maximum by the reverse sweep and by the expansion agree to 4e-14 to
 E = 7e15, whose factorisation found a singular pivot, runs again,
 -225.9008 and 3531.5 as its header records.
 
+**The span's points and the cost of a march.** The 48 strips of the
+case need a point of the span at the edge of each, 49 points, where
+the rest of this note takes 5. At 36 steps, 48 strips at 2 cm, the
+march takes:
+
+| points of the span | time | memory | smooth maximum |
+|---|---|---|---|
+| 13 | 8 min 55 s | 0.66 GB | 1.877 |
+| 25 | 19 min 59 s | 0.95 GB | 1.920 |
+| 49 | 36 min 30 s | 1.41 GB | 1.935 |
+
+against 1.676 at 5 points: the designs found on 5 points rest on a
+stress some 15 per cent below the one the span resolves. The time
+grows as the points, not as the cube of the block's 355 + 32 np
+unknowns: at 25 points, of 18 min 53 s, the residual's 1394
+evaluations take 607 s, the 372 jacobians 424 s, and the eliminated
+solve, its dense factorisation within it, 56 s. With the thickness
+uniform the same march takes 12 min 52 s and with eight strips 13 min
+49 s, so that the 47 unit steps of the 48 strips cost a third of it.
+Newton takes about ten iterations a block, and at 5 points 5.9, of
+which some two stand at the rounding of the residual, each halving its
+step up to eight times before the iteration ends. An exit at the
+rounding by the course of the iteration - a full step that does not
+decrease the residual after one of full length that cut it a
+hundredfold, below 1e-6 of the first - was tried and is not taken: at
+25 points it takes a quarter of the time, 14 min 11 s, 298 jacobians
+and 945 residuals, and the cases of the suite are the same to every
+digit, but case 8's misfit then varies by 3.6e-15 between designs
+1e-9 apart where it varies by 8e-16, the iterations it ends polishing
+the hub's angle. A revolution of 360 steps at 49 points and its
+reverse sweep take hours for each scenario, and an optimization of the
+three days. At 49 points the eliminated
+solve met 1e-6 to 2e-8 of the residual it began at, so that Newton's
+steps were ruled by its error; it refines its solution now, and every
+solve meets its tolerance.
+
 **The thickness, the mass and the stress** (`strips`, `thickness`,
 `sensitivities` in `rotorcraft.nml`). With strips, the thickness of
 each strip of the span is a design coordinate, the same for the four
@@ -548,16 +584,28 @@ the beam, the plate and the solid, on a reduced case first (about 8
 strips, one scenario, 36 steps) and then on the case as TACS states
 it; TACS compared as it is, its rigid-link sign noted.
 
-1. **The blades at 90 and 270 degrees** are attached across the hub:
-   `blade90.inp` reads `rotor2_192dv.bdf`, which lies at y from -2.0 to
-   -0.44, but it is linked to the cap at (0, 0.429, 0.9). `blade270.inp`
-   is the mirror case. Collective input is symmetric and unaffected;
-   under cyclic input the two blades are 180 degrees out of phase with
-   their names. Reproduce this, or place each blade at its cap?
-2. **The blade model of the first optimization:** the rotating beam of
-   stage 2, or the plate of stage 6.
-3. **The optimizer:** an augmented Lagrangian in `minimize`, keeping
-   the design iteration in the library.
+Open, with what the work has measured:
+
+1. **The march of the reduced case.** At 36 steps of bdf(1) the stress
+   of the blades is 1.29 times the yield at 2 cm, its lag bending the
+   centripetal acceleration a step late, so that KS <= 1/4 is met by no
+   uniform blade; 72 steps of bdf(2) give 0.29, 360 of bdf(1) 0.33. The
+   reduced optimizations above take ks_bound = 1.25 and 1.5 in its
+   place. 72 steps of bdf(2) are proposed.
+2. **The plate theory**, before the plate and the solid: Kirchhoff
+   plates by bicubic Hermite elements, which need the mixed
+   derivatives along space in the elements; first-order shear plates
+   by the Lagrange elements of degree two, Q9, which serve the solid
+   too and need elements of the second order in the mesh layer,
+   proposed; or by Q1, which locks.
+3. **The case as TACS states it**: its 48 strips need 49 points of the
+   span, where a revolution of 360 steps and its reverse sweep take
+   hours for each scenario and the optimization of the three days; or
+   a coarser case - 48 strips on 25 points, or fewer strips - which is
+   not TACS's.
+4. **The weight of the smooth maximum** of that case: near 1e5, so
+   that it bounds the largest stress as TACS's rho_KS = 1e5 does, the
+   weight of 100 here lying a factor of two below it at 360 steps.
 
 ## Targets from the TACS run
 

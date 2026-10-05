@@ -16,7 +16,17 @@
 ! of step 1e-4 the same to 1.5e-9 and 8.3e-10, their own error. The
 ! same digits on 1, 2 and 4 images.
 ! The design values and the order of the expansion are read from the
-! command line (default 1, 1, 1).
+! command line (default 1, 1, 1), and the march fourth, as in
+! triple_pendulum: bdf(2), dirk(3) or dirk(4,5). By dirk(3) J =
+! 3.8528991840555467, dJ/ds by the adjoint -2.6173518014575941e-2 and
+! -8.7599105207181779e-3, by the expansion the same to 2.2e-15 and
+! 8.2e-17, by central differences of step 1e-4 to 1.9e-11 and 2.1e-11;
+! by dirk(4,5) J = 3.8562007423271916, the adjoint's
+! -2.5600245931057159e-2 and -8.7607292092715689e-3, the expansion's
+! the same to 1.5e-13 and 1.6e-16, central differences to 3.5e-10 and
+! 1.4e-10: the conditions at the end of each step, stated there by
+! their second derivative, transposed and expanded as at the first
+! instant.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -49,7 +59,7 @@ program triple_pendulum_sensitivity
   type(mechanism)           :: pendulum
   type(rigid_body)          :: a, b, c
   real(dp), allocatable     :: values(:)
-  character(len=32)         :: item
+  character(len=32)         :: item, march = 'bdf(2)'
   integer :: k
 
   if (command_argument_count() >= 1) then
@@ -61,6 +71,7 @@ program triple_pendulum_sensitivity
   if (command_argument_count() >= 3) then
      call get_command_argument(3, item); read(item, *) order
   end if
+  if (command_argument_count() >= 4) call get_command_argument(4, march)
 
   omega   = continuous_manifold(time=interval(0.0_dp, T_final), &
        &                        design=[parameter('s1', s1_value), parameter('s2', s2_value)])
@@ -96,8 +107,7 @@ program triple_pendulum_sensitivity
   lambda   = g % multiplier('lambda')
   kappa    = d % multiplier('kappa')
   L = objective + lambda_r * r + lambda * g + kappa * d
-  L_h = L % discretize(omega_h, time=chain([dirk(2), bdf(1), (bdf(2), k = 3, num_instants)], &
-       &                                   from=[(k, k = 1, num_instants)]))
+  L_h = L % discretize(omega_h, time=march_of(march, num_instants))
 
   motion   = pendulum % estimate(omega)
   estimate = motion % discretize(omega_h)
@@ -112,6 +122,31 @@ program triple_pendulum_sensitivity
   if (order >= 1) print '(a, 2es24.16)', 'dJ/ds by the expansion   = ', values(2), values(2 + order)
 
 contains
+
+  ! the march of the token: bdf(2), from one step of bdf(1), or every
+  ! step by the DIRK tableau dirk(order) or dirk(order,stages)
+  function march_of(token, n) result(march)
+    character(len=*), intent(in) :: token
+    integer         , intent(in) :: n
+    type(chain) :: march
+    integer :: order, stages, k, comma
+    if (trim(token) == 'bdf(2)') then
+       march = chain([dirk(2), bdf(1), (bdf(2), k = 3, n)], from=[(k, k = 1, n)])
+       return
+    end if
+    if (index(token, 'dirk(') /= 1 .or. index(token, ')') == 0) then
+       error stop 'the march is bdf(2), dirk(order) or dirk(order,stages)'
+    end if
+    comma = index(token, ',')
+    if (comma > 0) then
+       read(token(6:comma - 1), *) order
+       read(token(comma + 1:index(token, ')') - 1), *) stages
+       march = chain([(dirk(order, stages=stages), k = 1, n)], from=[(k, k = 1, n)])
+    else
+       read(token(6:index(token, ')') - 1), *) order
+       march = chain([(dirk(order), k = 1, n)], from=[(k, k = 1, n)])
+    end if
+  end function march_of
 
   function bar(mass, length) result(inertia)
     real(dp), intent(in) :: mass, length

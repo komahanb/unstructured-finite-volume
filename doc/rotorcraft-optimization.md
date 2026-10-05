@@ -571,12 +571,54 @@ differences.
 - **Missing:**
   - a way to write a body's 7 coordinates and its action once, not as
     7 scalar laws by hand, without moving solver logic into `physics/`;
-  - a check that the families march an index-3 system, and an initial
-    state consistent with the joints (TACS starts the push rods at rest
-    against their drivers);
+  - an initial state consistent with the joints (TACS starts the push
+    rods at rest against their drivers); the families on the index-3
+    system are measured in "A step of a DIRK tableau on the joints";
   - the case as TACS states it: 48 strips, three scenarios, 360 steps,
     KS <= 1/4 with `ks_weight` near 1e5;
   - the blades as plates and as solids.
+
+## A step of a DIRK tableau on the joints
+
+At the end of a step of a DIRK tableau the quadrature of the stages
+fixes the positions and the velocities, as the initial data fix them
+at the first instant. A joint's condition there read nothing the step
+left free, its reaction had no row, and every tableau stopped the
+pendulum and the rotor at its first step with a singular pivot. The
+block now states the laws at such an explicit moment by the rule of
+the first instant, each condition by its second derivative along
+time; projected on the elements, an instance's columns include those
+that rule reads. The 92 cases and the heat cases are the same to
+every digit, serially and on 1, 2 and 4 images, and the rotor's
+marches, derivatives and least mass to every printed digit. Through
+the new rows the pendulum's dJ/ds by the adjoint and by the expansion
+agree to 2.2e-15 by dirk(3) and to 1.5e-13 by dirk(4,5), and the
+rotor's along two strips to 5e-14 from a start by dirk(3). A march by
+a tableau gives on 1 and 2 images the digits it gives serially, but
+for the last two of the rotor's mass on 2 images, which the sum over
+the images takes in another order, as it did by bdf(1) before.
+
+The tableaux on conditions of position, a system of index three, the
+rotor's blades as beams at 2 cm, 36 steps and 5 points of the span:
+
+| march | the pendulum, 201 to 801 instants | the rotor's largest von Mises ratio |
+|---|---|---|
+| dirk(2) x12, bdf(2) x12, adams(2) x12 | diverges | 2.46, the energy swinging threefold |
+| dirk(3) x12, bdf(2) x12, adams(2) x12 | energy of order 2.6, conditions off by O(h^2) at the instants | 0.462 |
+| dirk(4,5) x12, bdf(2) x12, adams(2) x12 | energy of order one, conditions exact | 0.394 |
+| bdf(1) x1, bdf(2) x23, adams(2) x12 | | 0.568 |
+| bdf(2) | | 0.520 |
+| bdf(1) | | 1.290 |
+
+The implicit midpoint, dirk(2), and adams(2), the trapezoidal rule,
+multiply a stiff error by -1 at every step and damp none: the
+midpoint's step ends at twice its stage less its start, off the
+conditions, and its stages' return to them grows; adams(2) leaves the
+rigid rotor's energy oscillating by 1 per cent. The usual remedy is
+the conditions stated at the velocity, a choice of the statement left
+open. The SDIRK of Hairer and Wanner weighs two of its stages
+negatively, -49/48 and -85/12, and the smooth maximum, the logarithm
+of a quadrature over the stages, is then not defined: NaN.
 
 ## Decisions for the author
 
@@ -594,13 +636,17 @@ Open, with what the work has measured:
    centripetal acceleration a step late, so that KS <= 1/4 is met by no
    uniform blade; 72 steps of bdf(2) give 0.29, 360 of bdf(1) 0.33. The
    reduced optimizations above take ks_bound = 1.25 and 1.5 in its
-   place. 72 steps of bdf(2) are proposed.
+   place. Extrapolated in the step, bdf(1) from 72 and 360 steps at
+   the first order and bdf(2) from 36 and 72 at the second, the ratio
+   converges near 0.21, 0.205 and 0.213. The marches of three families
+   are measured in "A step of a DIRK tableau on the joints"; a march
+   chosen by its measured convergence is proposed.
 2. **The plate theory**, before the plate and the solid: Kirchhoff
    plates by bicubic Hermite elements, which need the mixed
    derivatives along space in the elements; first-order shear plates
    by the Lagrange elements of degree two, Q9, which serve the solid
-   too and need elements of the second order in the mesh layer,
-   proposed; or by Q1, which locks.
+   too and need the cells' edges numbered as members of the mesh, not
+   a mesh of the second order, proposed; or by Q1, which locks.
 3. **The case as TACS states it**: its 48 strips need 49 points of the
    span, where a revolution of 360 steps and its reverse sweep would
    take, by the marches of 36 steps measured, hours for each scenario

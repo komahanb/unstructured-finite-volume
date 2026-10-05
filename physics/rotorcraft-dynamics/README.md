@@ -12,8 +12,8 @@ one scenario or in three.
 | program | what it does |
 |---|---|
 | `rotorcraft_dynamics` | the rotor; its setup read from `rotorcraft.nml` |
-| `triple_pendulum` | the triple pendulum of the dissertation, section 5.1 |
-| `triple_pendulum_sensitivity` | the pendulum's dJ/ds by the adjoint and by the expansion |
+| `triple_pendulum` | the triple pendulum of the dissertation, section 5.1, marched by bdf(2) or by a DIRK tableau |
+| `triple_pendulum_sensitivity` | the pendulum's dJ/ds by the adjoint and by the expansion, by either march |
 | `blade_on_hub` | one blade on a driven hub, as a beam or as a rigid plate |
 
 `rotor_bodies.txt` is the table of the rigid bodies, read by
@@ -27,7 +27,9 @@ From this directory,
     make                              # the library, if its sources changed, and the four programs
     ./rotorcraft_dynamics             # reads rotorcraft.nml in the directory it runs in
     ./triple_pendulum 201             # the instant count (default 201)
+    ./triple_pendulum 201 'dirk(3)'   # and the march: bdf(2) (default), dirk(3) or dirk(4,5)
     ./triple_pendulum_sensitivity 1 1 1   # the two design values and the order of the expansion
+    ./triple_pendulum_sensitivity 1 1 1 'dirk(4,5)'   # and the march
     ./blade_on_hub beam 36 5 70e9     # beam [steps] [span points] [E], or: rigid [steps]
 
 `./run.sh` builds the library from the repository's root and runs the

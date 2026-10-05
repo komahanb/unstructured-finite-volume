@@ -18,7 +18,21 @@
 !
 ! The energy is conserved by the motion and dissipated by the
 ! scheme at its order; the conditions hold at every instant. The
-! instant count is read from the command line (default 201).
+! instant count is read from the command line (default 201), and the
+! march after it: bdf(2) from one step of bdf(1), the default, or
+! every step by one DIRK tableau, dirk(3) or dirk(4,5). At the end of
+! a step of a tableau the stages' quadrature fixes the positions and
+! the velocities, and each condition is stated there as at the first
+! instant. Measured at 201, 401 and 801 instants: by dirk(3), the two
+! stages of Crouzeix, the change of the energy at t = 2 is -8.35e-2,
+! -1.29e-2 and -2.17e-3, order 2.6, and the largest condition there
+! 4.5e-5, 1.1e-5 and 2.8e-6, order two, the end of a step off the
+! conditions its stages satisfy; by dirk(4,5), the stiffly accurate
+! SDIRK of Hairer and Wanner, +7.41, +3.40 and +1.65, order one, the
+! order of its stages on a system of index three, the conditions to
+! 2e-15. The implicit midpoint, dirk(2), diverges at 201 to 1601
+! instants: its step ends at twice its stage less its start, off the
+! conditions, and each stage's return to them grows.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -47,13 +61,14 @@ program triple_pendulum
   type(mechanism)           :: pendulum
   type(rigid_body)          :: a, b, c
   real(dp), allocatable     :: e(:), defect(:,:)
-  character(len=32)         :: item
+  character(len=32)         :: item, march = 'bdf(2)'
   integer :: k
 
   if (command_argument_count() >= 1) then
      call get_command_argument(1, item)
      read(item, *) num_instants
   end if
+  if (command_argument_count() >= 2) call get_command_argument(2, march)
 
   omega   = continuous_manifold(time=interval(0.0_dp, T_final))
   domega  = omega % boundary(omega % coordinate('t'), 0.0_dp)
@@ -78,8 +93,7 @@ program triple_pendulum
   r = continuous_residual(omega,  pendulum % laws())
   g = continuous_residual(domega, pendulum % initial)
   L = r + g
-  L_h = L % discretize(omega_h, time=chain([dirk(2), bdf(1), (bdf(2), k = 3, num_instants)], &
-       &                                   from=[(k, k = 1, num_instants)]))
+  L_h = L % discretize(omega_h, time=march_of(march, num_instants))
 
   motion   = pendulum % estimate(omega)
   estimate = motion % discretize(omega_h)
@@ -106,6 +120,31 @@ program triple_pendulum
   end do
 
 contains
+
+  ! the march of the token: bdf(2), from one step of bdf(1), or every
+  ! step by the DIRK tableau dirk(order) or dirk(order,stages)
+  function march_of(token, n) result(march)
+    character(len=*), intent(in) :: token
+    integer         , intent(in) :: n
+    type(chain) :: march
+    integer :: order, stages, k, comma
+    if (trim(token) == 'bdf(2)') then
+       march = chain([dirk(2), bdf(1), (bdf(2), k = 3, n)], from=[(k, k = 1, n)])
+       return
+    end if
+    if (index(token, 'dirk(') /= 1 .or. index(token, ')') == 0) then
+       error stop 'the march is bdf(2), dirk(order) or dirk(order,stages)'
+    end if
+    comma = index(token, ',')
+    if (comma > 0) then
+       read(token(6:comma - 1), *) order
+       read(token(comma + 1:index(token, ')') - 1), *) stages
+       march = chain([(dirk(order, stages=stages), k = 1, n)], from=[(k, k = 1, n)])
+    else
+       read(token(6:index(token, ')') - 1), *) order
+       march = chain([(dirk(order), k = 1, n)], from=[(k, k = 1, n)])
+    end if
+  end function march_of
 
   ! the inertia of a bar along x of the given mass and length about
   ! its centre of mass

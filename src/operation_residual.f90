@@ -160,6 +160,14 @@ module operation_residual
      ! copies and zero coefficients of the unknowns of time alone,
      ! eliminated before a direct solve of the rest
      logical, allocatable, private :: tying(:)
+     ! THE RULES AT THE EXPLICIT POINTS, those of the moments at which
+     ! the family's quadrature of the moments before determines every
+     ! component below the top degree: there a law that reads none - a
+     ! joint's condition - is stated by its derivative along time, as
+     ! at the manifold's first instant; explicit(p) marks the points
+     type(expression), allocatable, private :: explicit_physics
+     type(expression), allocatable, private :: explicit_rules(:)
+     logical         , allocatable, private :: explicit(:)
 
    contains
 
@@ -231,6 +239,8 @@ module operation_residual
      procedure, private :: projected_triples
      procedure, private :: projected_edges
      procedure, private :: projected_part
+     procedure, private :: explicit_marks
+     procedure, private :: explicit_at
   end type residual_operator
 
   interface residual_operator
@@ -434,7 +444,9 @@ module operation_residual
      type(element_quadrature), allocatable :: elements
      ! THE RULE AT THE MANIFOLD'S FIRST INSTANT, where a law the initial
      ! data satisfy is stated by its derivative along time; unallocated
-     ! when no law is. Projected, the flux form there
+     ! when no law is. Projected, the flux form there. The same rule
+     ! states the laws at the explicit moments of a block, the instants
+     ! the steps of a staged family reach
      type(expression)        , allocatable :: initial_rule
      type(expression)        , allocatable :: initial_flux
      ! each block after the first starts from the solution at the last
@@ -527,7 +539,8 @@ contains
   !===================================================================!
 
   function create(primary_law, rule, at, unknowns, degrees, primary, fixed_rows, fixed, &
-       & connected_law, fixed_rate, prescribed, positions, summed_rows, projected, tying) result(this)
+       & connected_law, fixed_rate, prescribed, positions, summed_rows, projected, tying, explicit_rule, explicit) &
+       & result(this)
 
     type(stencil)         , intent(in) :: primary_law
     type(expression)      , intent(in), optional :: rule
@@ -541,6 +554,8 @@ contains
     integer               , intent(in), optional :: summed_rows(:)
     type(projection)      , intent(in), optional :: projected
     logical               , intent(in), optional :: tying(:)
+    type(expression)      , intent(in), optional :: explicit_rule
+    logical               , intent(in), optional :: explicit(:)
     type(residual_operator) :: this
     type(continuous_domain) :: domain
     integer :: j, components, governed, e, n, q, nq, s, dimension
@@ -620,6 +635,27 @@ contains
        end if
     else
        allocate(this % rules(0))
+    end if
+    ! the rules at the explicit points, of the rule's multipliers
+    if (present(explicit_rule) .and. present(explicit)) then
+       if (size(explicit) /= size(at)) then
+          error stop 'operation_residual: one explicit mark is required per evaluation point'
+       end if
+       if (any(explicit)) then
+          if (max(1, explicit_rule % num_multipliers()) /= size(this % rules)) then
+             error stop 'operation_residual: the rule at the explicit points governs the rows the rule governs'
+          end if
+          this % explicit_physics = explicit_rule
+          if (explicit_rule % num_multipliers() > 0) then
+             allocate(this % explicit_rules(explicit_rule % num_multipliers()))
+             do j = 1, explicit_rule % num_multipliers()
+                this % explicit_rules(j) = euler_lagrange(explicit_rule, j)
+             end do
+          else
+             this % explicit_rules = [explicit_rule]
+          end if
+          this % explicit = explicit
+       end if
     end if
     this % at      = at
     this % unknowns = unknowns
@@ -875,6 +911,7 @@ contains
             & prescribed=prescribed, positions=this % point_positions(:, points))
     end if
     sub % summed_by = part
+    call sub % explicit_at(this, points)
   end function part_of
 
   ! a stencil's rows the part owns, in the part's numbering, with their
@@ -964,6 +1001,8 @@ contains
     ! is exact to every order when there is no physics
     residual_max_degree = max_subset_width()
     if (allocated(this % physics)) residual_max_degree = this % physics % max_degree()
+    if (allocated(this % explicit_physics)) residual_max_degree = max(residual_max_degree, &
+         & this % explicit_physics % max_degree())
   end function residual_max_degree
 
   !===================================================================!
@@ -981,6 +1020,11 @@ contains
     do j = 1, size(this % rules)
        defined = defined .and. this % rules(j) % defined_at_zero()
     end do
+    if (allocated(this % explicit_rules)) then
+       do j = 1, size(this % explicit_rules)
+          defined = defined .and. this % explicit_rules(j) % defined_at_zero()
+       end do
+    end if
   end function residual_defined_at_zero
 
   type(expression) function rule(this) result(law)
@@ -1240,38 +1284,76 @@ contains
     type(stored_field)      , intent(in) :: point_data(:)
     real(dp), allocatable   , intent(out) :: governing(:,:)
     type(variation)         , intent(in), optional :: variations(:)
-    class(field), allocatable :: half
     real(dp), allocatable :: column(:)
-    type(stored_field), allocatable :: bound(:)
-    integer :: j, coordinates
+    logical , allocatable :: marked(:)
+    integer :: j
     ! at the points, or at the sites of a projection
     if (allocated(this % projected)) then
        allocate(governing(this % sites % num_vertices(), size(this % rules)))
     else
        allocate(governing(size(this % at), size(this % rules)))
     end if
+    marked = this % explicit_marks()
     do j = 1, size(this % rules)
-       ! a rule that reads a coordinate is given the positions of the
-       ! points as its third argument
-       bound       = point_data
-       coordinates = this % rules(j) % num_position_coordinates()
-       if (coordinates > 0) bound = [point_data, this % positions(coordinates)]
-       if (allocated(this % projected)) then
-          if (present(variations)) then
-             call this % rules(j) % partial_action(this % sites, this % rules(j) % bind(bound), variations, half)
-          else
-             call this % rules(j) % apply(this % sites, this % rules(j) % bind(bound), half)
-          end if
-       else if (present(variations)) then
-          call this % rules(j) % partial_action(this % points, this % rules(j) % bind(bound), &
-               & variations, half)
-       else
-          call this % rules(j) % apply(this % points, this % rules(j) % bind(bound), half)
-       end if
-       call half % real_vector(column)
+       call evaluated(this % rules(j), column)
        governing(:, j) = column
+       ! at the explicit sites, the rule there
+       if (allocated(this % explicit_rules)) then
+          call evaluated(this % explicit_rules(j), column)
+          where (marked) governing(:, j) = column
+       end if
     end do
+  contains
+    subroutine evaluated(law, column)
+      type(expression)     , intent(in)  :: law
+      real(dp), allocatable, intent(out) :: column(:)
+      class(field), allocatable :: half
+      type(stored_field), allocatable :: bound(:)
+      integer :: coordinates
+      ! a rule that reads a coordinate is given the positions of the
+      ! points as its third argument
+      bound       = point_data
+      coordinates = law % num_position_coordinates()
+      if (coordinates > 0) bound = [point_data, this % positions(coordinates)]
+      if (allocated(this % projected)) then
+         if (present(variations)) then
+            call law % partial_action(this % sites, law % bind(bound), variations, half)
+         else
+            call law % apply(this % sites, law % bind(bound), half)
+         end if
+      else if (present(variations)) then
+         call law % partial_action(this % points, law % bind(bound), variations, half)
+      else
+         call law % apply(this % points, law % bind(bound), half)
+      end if
+      call half % real_vector(column)
+    end subroutine evaluated
   end subroutine governed
+
+  !===================================================================!
+  ! The explicit marks at the evaluation sites: at the points, or at
+  ! each site of a projection its instance's, the mark of the instance's
+  ! first point; none without rules at the explicit points.
+  !===================================================================!
+
+  function explicit_marks(this) result(marked)
+    class(residual_operator), intent(in) :: this
+    logical, allocatable :: marked(:)
+    integer :: nq, s
+    if (.not. allocated(this % explicit)) then
+       allocate(marked(0))
+       return
+    end if
+    if (allocated(this % projected)) then
+       nq = this % projected % elements % num_quadrature_points()
+       allocate(marked(size(this % projected % element_cell) * nq))
+       do s = 1, size(marked)
+          marked(s) = this % explicit(abs(this % projected % element_point(1, (s - 1) / nq + 1)))
+       end do
+    else
+       marked = this % explicit
+    end if
+  end function explicit_marks
 
   ! every rule's value at every site of the projection, on the real
   ! values the basis forms there
@@ -1281,6 +1363,7 @@ contains
     real(dp)                , intent(in)  :: x(:)
     real(dp), allocatable   , intent(out) :: governing(:,:)
     real(dp), allocatable :: design_values(:), xs(:), ns(:)
+    logical , allocatable :: marked(:)
     integer :: j, s, width, nd, nsites, coordinates, nq
     call bound_real_vector(inputs, this % argument(2), design_values)
     xs     = this % formed_at_sites(x)
@@ -1290,8 +1373,8 @@ contains
     nsites = this % sites % num_vertices()
     allocate(governing(nsites, size(this % rules)))
     nq = this % projected % elements % num_quadrature_points()
+    marked = this % explicit_marks()
     do j = 1, size(this % rules)
-       coordinates = this % rules(j) % num_position_coordinates()
        do s = 1, nsites
           ! no rule is evaluated where its test functions vanish
           if (.not. tested_at(this % projected % elements, this % projected % tested(2, j), s - ((s - 1) / nq) * nq, &
@@ -1299,14 +1382,27 @@ contains
              governing(s, j) = 0.0_dp
              cycle
           end if
-          if (coordinates > 0) then
-             governing(s, j) = this % rules(j) % value_on(xs((s - 1) * width + 1:s * width), &
-                  & ns((s - 1) * nd + 1:s * nd), this % site_positions(1:coordinates, s))
-          else
-             governing(s, j) = this % rules(j) % value_on(xs((s - 1) * width + 1:s * width), ns((s - 1) * nd + 1:s * nd))
+          ! at an explicit site, the rule there
+          if (allocated(this % explicit_rules)) then
+             if (marked(s)) then
+                governing(s, j) = value_of(this % explicit_rules(j))
+                cycle
+             end if
           end if
+          governing(s, j) = value_of(this % rules(j))
        end do
     end do
+  contains
+    real(dp) function value_of(law)
+      type(expression), intent(in) :: law
+      coordinates = law % num_position_coordinates()
+      if (coordinates > 0) then
+         value_of = law % value_on(xs((s - 1) * width + 1:s * width), ns((s - 1) * nd + 1:s * nd), &
+              & this % site_positions(1:coordinates, s))
+      else
+         value_of = law % value_on(xs((s - 1) * width + 1:s * width), ns((s - 1) * nd + 1:s * nd))
+      end if
+    end function value_of
   end subroutine governed_on_reals
 
   !===================================================================!
@@ -1514,8 +1610,8 @@ contains
     logical              , intent(out) :: jacobian_defined
     type(stored_field) :: state
     real(dp), allocatable :: x(:), w(:), column(:), xs(:), nu(:), g(:)
-    integer , allocatable :: r(:), c(:), reads(:)
-    logical , allocatable :: is_fixed(:)
+    integer , allocatable :: r(:), c(:), reads(:), explicit_reads(:)
+    logical , allocatable :: is_fixed(:), marked(:)
     integer :: e, d, p, npts, n, num_triples, count, j, k, deg
     real(dp) :: value
     jacobian_defined = which == 1
@@ -1551,20 +1647,25 @@ contains
     if (allocated(this % projected)) then
        call this % projected_triples(x, nu, is_fixed, r, c, w, num_triples)
     end if
+    marked = this % explicit_marks()
     do j = 1, size(this % rules)
        if (allocated(this % projected)) exit
        call this % rules(j) % read_components(reads)
+       if (allocated(this % explicit_rules)) call this % explicit_rules(j) % read_components(explicit_reads)
        do p = 1, npts
           if (is_fixed(this % at(p) + this % primary(j) + 1)) cycle
+          ! at an explicit point, the rule there
+          if (allocated(this % explicit_rules)) then
+             if (marked(p)) then
+                call this % explicit_rules(j) % gradient_at(xs((p - 1) * deg + 1:p * deg), &
+                     & nu((p - 1) * this % designs + 1:p * this % designs), value, g, this % point_positions(:, p))
+                call triples_at(explicit_reads)
+                cycle
+             end if
+          end if
           call this % rules(j) % gradient_at(xs((p - 1) * deg + 1:p * deg), &
                & nu((p - 1) * this % designs + 1:p * this % designs), value, g, this % point_positions(:, p))
-          do k = 1, size(reads)
-             d = reads(k)
-             num_triples    = num_triples + 1
-             r(num_triples) = this % at(p) + this % primary(j) + 1
-             c(num_triples) = this % at(p) + d + 1
-             w(num_triples) = g(d)
-          end do
+          call triples_at(reads)
        end do
     end do
     do e = 1, size(this % fixed_rows)
@@ -1583,6 +1684,18 @@ contains
        end do
     end if
     call combine_triples(n, n, r(1:num_triples), c(1:num_triples), w(1:num_triples), rows, columns, weights)
+  contains
+    ! the partials of rule j at point p in the components it reads
+    subroutine triples_at(read)
+      integer, intent(in) :: read(:)
+      do k = 1, size(read)
+         d = read(k)
+         num_triples    = num_triples + 1
+         r(num_triples) = this % at(p) + this % primary(j) + 1
+         c(num_triples) = this % at(p) + d + 1
+         w(num_triples) = g(d)
+      end do
+    end subroutine triples_at
   end subroutine residual_explicit_jacobian
 
   subroutine stencil_triples(op, is_fixed, r, c, w, num_triples)
@@ -1781,8 +1894,25 @@ contains
     end if
 
     if (allocated(this % summed_rows)) sub % summed_rows = pack(sub_of(this % summed_rows), sub_of(this % summed_rows) > 0)
+    call sub % explicit_at(this, points)
 
   end function constrain
+
+  !===================================================================!
+  ! The rules at the explicit points of a residual, at the points of it
+  ! given: those of a part or of a constraint.
+  !===================================================================!
+
+  subroutine explicit_at(this, whole, points)
+    class(residual_operator), intent(inout) :: this
+    type(residual_operator) , intent(in)    :: whole
+    integer                 , intent(in)    :: points(:)
+    if (.not. allocated(whole % explicit)) return
+    if (.not. any(whole % explicit(points))) return
+    this % explicit_physics = whole % explicit_physics
+    this % explicit_rules   = whole % explicit_rules
+    this % explicit         = whole % explicit(points)
+  end subroutine explicit_at
 
   !===================================================================!
   ! THE POINTS A CONSTRAINT RETAINS: the evaluation points whose
@@ -2028,12 +2158,12 @@ contains
       do j = 1, size(this % rules)
          f = pr % tested(1, j)
          call this % rules(j) % read_components(reads)
-         do m = 1, size(reads)
-            do k2 = 1, ubound(pr % formed, 1)
-               if (pr % formed(k2, reads(m) + 1) < 0) cycle
-               slot(place(pr % formed(k2, reads(m) + 1)), f) = 1
-            end do
-         end do
+         call slotted()
+         ! and those the rule at the explicit points reads
+         if (allocated(this % explicit_rules)) then
+            call this % explicit_rules(j) % read_components(reads)
+            call slotted()
+         end if
       end do
     end associate
     allocate(columns_of(nf), first(nf), column(count(slot > 0)))
@@ -2048,6 +2178,15 @@ contains
        end do
        columns_of(f) = r - first(f) + 1
     end do
+  contains
+    subroutine slotted()
+      do m = 1, size(reads)
+         do k2 = 1, ubound(this % projected % formed, 1)
+            if (this % projected % formed(k2, reads(m) + 1) < 0) cycle
+            slot(place(this % projected % formed(k2, reads(m) + 1)), f) = 1
+         end do
+      end do
+    end subroutine slotted
   end subroutine projected_columns
 
   ! the components of a node's tuple the basis reads, each once
@@ -2077,7 +2216,10 @@ contains
     integer :: width, nd, nq, nodes, nk, nf, no, j, f, d, n, e, q, s, i, p, k, m, comp, dd, i2, k2, offset, row, o
     integer :: at_row
     real(dp) :: value, tau
+    logical , allocatable :: marked(:)
+    logical :: explicit_site
     width   = size(this % projected % formed, 2)
+    marked  = this % explicit_marks()
     nd      = this % designs
     xs      = this % formed_at_sites(x)
     ns      = this % design_at_sites(nu)
@@ -2109,9 +2251,18 @@ contains
                f = pr % tested(1, j)
                d = pr % tested(2, j)
                if (.not. tested_at(el, d, q, e)) cycle
-               call this % rules(j) % read_components(reads)
-               call this % rules(j) % gradient_at(xs((s - 1) * width + 1:s * width), &
-                    & ns((s - 1) * nd + 1:s * nd), value, g, this % site_positions(:, s))
+               ! at an explicit site, the rule there
+               explicit_site = .false.
+               if (allocated(this % explicit_rules)) explicit_site = marked(s)
+               if (explicit_site) then
+                  call this % explicit_rules(j) % read_components(reads)
+                  call this % explicit_rules(j) % gradient_at(xs((s - 1) * width + 1:s * width), &
+                       & ns((s - 1) * nd + 1:s * nd), value, g, this % site_positions(:, s))
+               else
+                  call this % rules(j) % read_components(reads)
+                  call this % rules(j) % gradient_at(xs((s - 1) * width + 1:s * width), &
+                       & ns((s - 1) * nd + 1:s * nd), value, g, this % site_positions(:, s))
+               end if
                do i = 1, nodes
                   do k = 0, nk - 1
                      tau = el % test(d, k, i, q, e)
@@ -4724,7 +4875,7 @@ contains
     logical :: staged
     integer :: nodes, factor
     integer , allocatable :: related(:), added(:), single(:)
-    logical , allocatable :: tying(:), entries(:)
+    logical , allocatable :: tying(:), entries(:), explicit_point(:)
 
     stride = this % rule % num_components()
     nf     = this % manifold % num_unknowns
@@ -4897,6 +5048,21 @@ contains
     history_last = 0
     if (depth > 0) history_last = instant_moment(depth)
     call this % gauge_rows_of(nm, history_last, at, primary, gauge_rows, gauge_columns, gauge_weights)
+
+    ! THE EXPLICIT POINTS: those of the moments after the history at
+    ! which the family's quadrature of the moments before determines
+    ! every component below the top degree - the instant a step of a
+    ! staged family reaches. As at the manifold's first instant, a law
+    ! there that reads no component of top degree - a joint's condition
+    ! - is stated by its derivative along time of the least order that
+    ! reads one, which determines its multiplier there; the block of
+    ! the manifold's first instant takes that rule at every point
+    allocate(explicit_point(npts), source=.false.)
+    if (.not. (first == 1 .and. depth == 0)) then
+       do m = history_last + 1, nm
+          if (.not. implicit_moment(m)) explicit_point((m - 1) * ncells + 1:m * ncells) = .true.
+       end do
+    end if
     point_positions = this % block_positions(scheme, first, n, instant_moment, stage_moment)
     call this % face_rows_of(first, last, depth, nm, instant_moment, at, primary, point_positions, rows_along, &
          & implicit_moment, face_rows, face_columns, face_weights, face_constants)
@@ -4978,14 +5144,17 @@ contains
           gauge = stencil(face_rows, face_columns, face_weights, zeros, 'prescribed')
           if (factor > 0) then
              blk % rows = residual_operator(relations, rule, at, unknowns, stride, rule_primary, fixed_rows, &
-                  & fixed, prescribed=gauge, positions=point_positions, projected=projected, tying=tying)
+                  & fixed, prescribed=gauge, positions=point_positions, projected=projected, tying=tying, &
+                  & explicit_rule=this % initial_flux, explicit=explicit_point)
           else
              blk % rows = residual_operator(relations, rule, at, unknowns, stride, rule_primary, fixed_rows, &
-                  & fixed, prescribed=gauge, positions=point_positions, projected=projected)
+                  & fixed, prescribed=gauge, positions=point_positions, projected=projected, &
+                  & explicit_rule=this % initial_flux, explicit=explicit_point)
           end if
        else
           blk % rows = residual_operator(relations, rule, at, unknowns, stride, rule_primary, fixed_rows, &
-               & fixed, positions=point_positions, projected=projected)
+               & fixed, positions=point_positions, projected=projected, explicit_rule=this % initial_flux, &
+               & explicit=explicit_point)
        end if
     else
        ! the block of the manifold's first instant states the laws there
@@ -5003,10 +5172,11 @@ contains
           ! the gauge rows, one per moment and gauged field, read every
           ! cell of the moment
           blk % rows = residual_operator(relations, rule, at, unknowns, stride, primary, fixed_rows, fixed, &
-               & prescribed=gauge, positions=point_positions, summed_rows=gauge_rows(1:size(gauge_rows):ncells))
+               & prescribed=gauge, positions=point_positions, summed_rows=gauge_rows(1:size(gauge_rows):ncells), &
+               & explicit_rule=this % initial_rule, explicit=explicit_point)
        else
           blk % rows = residual_operator(relations, rule, at, unknowns, stride, primary, fixed_rows, fixed, &
-               & positions=point_positions)
+               & positions=point_positions, explicit_rule=this % initial_rule, explicit=explicit_point)
        end if
     end if
     blk % first      = first
@@ -6974,7 +7144,8 @@ contains
     ! AT THE FIRST INSTANT an equation of time alone that reads no
     ! component of top degree - a joint's condition - is stated by its
     ! derivative along time of the least order that reads one, as on
-    ! a manifold of time alone (initial_form)
+    ! a manifold of time alone (initial_form); so too at the explicit
+    ! moments of a block
     if (.not. image % manifold % with_time) return
     differentiated = .false.
     law = constant(0.0_dp)
@@ -7014,7 +7185,10 @@ contains
   ! holding at every instant, which determines the reaction there. The
   ! rule at the first instant is the rule with those laws
   ! differentiated, on the rule's domain; it is not formed when no law
-  ! is differentiated.
+  ! is differentiated. It is the rule too at every explicit moment of
+  ! a block - the instant a step of a staged family reaches - where the
+  ! family's quadrature of the stages fixes every component below the
+  ! top degree as the initial data fix them at the first instant.
   !===================================================================!
 
   subroutine initial_form(image, physics)

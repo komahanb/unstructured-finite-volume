@@ -184,6 +184,7 @@ module multibody_dynamics
      type(continuous_field) :: x, u, v, w, phi
    contains
      procedure :: stress
+     procedure :: strain_energy
   end type beam_blade
 
   ! the points of a surface in the reference configuration, and its
@@ -223,6 +224,7 @@ module multibody_dynamics
      procedure :: joint
      procedure :: laws
      procedure :: estimate
+     procedure :: reactions
      procedure, private :: time_unknown
      procedure :: draw_with
      procedure :: draw_beam_with
@@ -506,6 +508,22 @@ contains
 
   end function stress
 
+  ! the strain energy of a blade as a beam per length of its span, a
+  ! field of time and of the span: (EA eps^2 + EI_f w_xx^2 + EI_c v_xx^2
+  ! + GJ phi_x^2)/2, the strain energy the beam's density states
+  function strain_energy(blade) result(e)
+    class(beam_blade), intent(in) :: blade
+    type(continuous_field) :: e
+    type(continuous_field) :: slope_v, slope_w, strain
+    slope_v = blade % v % derivative([blade % x])
+    slope_w = blade % w % derivative([blade % x])
+    strain  = blade % u % derivative([blade % x]) + (slope_v * slope_v + slope_w * slope_w) / 2.0_dp
+    e = (blade % section % axial / 2.0_dp) * strain * strain &
+         & + (blade % section % flap / 2.0_dp) * blade % w % derivative([blade % x, blade % x])**2 &
+         & + (blade % section % lag / 2.0_dp) * blade % v % derivative([blade % x, blade % x])**2 &
+         & + (blade % section % torsion / 2.0_dp) * blade % phi % derivative([blade % x])**2
+  end function strain_energy
+
   ! a section given by its properties, as TACS's TimoshenkoStiffness
   ! takes them
   function given_section(mass, moments, axial, flap, lag, torsion) result(this)
@@ -645,6 +663,29 @@ contains
   end function time_unknown
 
   ! the estimate: the tuple of the unknowns' estimates
+  ! the reactions of the joint of a name, the multipliers of its
+  ! conditions in their order, unknowns of time alone; a name no joint
+  ! has stops the program
+  function reactions(this, name) result(r)
+    class(mechanism), intent(in) :: this
+    character(len=*), intent(in) :: name
+    type(continuous_field), allocatable :: r(:)
+    character(len=8) :: label
+    integer :: k, j
+    allocate(r(0))
+    do k = 1, size(this % unknowns)
+       write(label, '(i0)') size(r) + 1
+       do j = 1, size(this % unknowns)
+          if (this % unknowns(j) % name == name // '_' // trim(label)) then
+             r = [r, this % unknowns(j)]
+             exit
+          end if
+       end do
+       if (j > size(this % unknowns)) exit
+    end do
+    if (size(r) == 0) error stop 'multibody_dynamics: no joint of this name states a reaction: ' // name
+  end function reactions
+
   function estimate(this, omega) result(tuple)
     class(mechanism)         , intent(in) :: this
     type(continuous_manifold), intent(in) :: omega

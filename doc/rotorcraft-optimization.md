@@ -569,7 +569,12 @@ differences.
   scenarios among them; the smooth maximum with its largest value
   subtracted; the blades as beams, their section given by its
   properties per length, as TACS's TimoshenkoStiffness takes them, or
-  implied by a uniform solid rectangle, which alone states its stress.
+  implied by a uniform solid rectangle, which alone states its stress;
+  ten objectives of the blades as beams - the mass, the smooth maximum
+  of the stress, the strain energy, the mean squares of the flap, lag
+  and twist and of the pitch-link, push-rod and hub loads - with their
+  derivatives along every strip by the expansion and one's by the
+  reverse sweep, which agree to 1e-13.
 - **Missing:**
   - a way to write a body's 7 coordinates and its action once, not as
     7 scalar laws by hand, without moving solver logic into `physics/`;

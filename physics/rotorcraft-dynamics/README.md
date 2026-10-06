@@ -69,11 +69,36 @@ writes its drawing into the directory it runs in.
 | `optimize` | with strips: the least mass whose stress is bounded | `.false.` |
 | `ks_bound` | the bound of the von Mises ratio, its square bounding the smooth maximum | 0.25 |
 | `ks_weight` | the weight of the smooth maximum | 100 |
+| `objective` | with strips and sensitivities: the objective whose derivatives the reverse sweep forms too | `'stress'` |
 | `bounds` | the least and the greatest thickness | 1 cm, 2 cm |
 | `smoothness` | the largest difference of adjacent strips | 1 mm |
 | `yield` | the yield stress | 350e6 |
 | `meshes` | the directory of the bodies' surface meshes; none, no drawing | none |
 | `every` | the stride of the instants drawn | 10 |
+
+## The objectives
+
+Functionals of the motion of the blades as beams, printed after each
+march. With strips and `sensitivities`, the derivatives of every one
+along the thickness of each strip by the expansion of the motion, and
+those of the one named `objective` by the reverse sweep too. The means
+are over the revolutions, and for a field of the blades over the four
+blades and the span.
+
+| `objective` | the functional |
+|---|---|
+| `mass` | the blades' mass over the revolutions, kg s |
+| `stress` | the smooth maximum of the von Mises ratio over the blades, their sections and the revolutions; the solid section alone states it |
+| `strain_energy` | the mean of the blades' strain energy, J |
+| `flap`, `lag`, `twist` | the mean squares of the flap and lag displacements, m^2, and of the elastic twist, rad^2 |
+| `pitch_link` | the mean square of the force of a pitch link on the upper swashplate, N^2 |
+| `push_rod` | the mean square of the force of a push rod's driver, N^2 |
+| `hub_force` | the mean square of the force of the hub's driver, N^2 |
+| `hub_moment` | the mean square of the reactions of the hub driver's conditions on its tilt about x and y |
+
+Not yet: the driver's torque and power, in vacuum mostly the
+dissipation of the march; the placement of the frequencies on the
+fan plot, which needs the eigenvalues; anything of the air.
 
 ## Setups, and how long they take
 

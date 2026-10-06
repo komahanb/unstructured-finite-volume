@@ -83,6 +83,11 @@
 !                   first stating the mass and the inequalities on
 !                   the design alone
 !      ks_bound     the bound of the von Mises ratio, 0.25
+!      objective    with strips and sensitivities, the objective whose
+!                   derivatives the reverse sweep forms too: mass,
+!                   stress (the default), strain_energy, flap, lag,
+!                   twist, pitch_link, push_rod, hub_force or
+!                   hub_moment
 !      bounds       the least and the greatest thickness, 0.01 and 0.02
 !      smoothness   the largest difference of adjacent strips, 1e-3
 !      order        of the backward differences of the march, 1 or 2,
@@ -93,9 +98,22 @@
 ! (operation_field, maximum) of
 ! the von Mises function of their stress over the four blades, the
 ! corners and the middles of the long sides of their sections and the
-! revolutions; with strips, their derivatives along the thickness of
-! each strip by the expansion of the motion, and the smooth maximum's
-! by the reverse sweep, -kappa, its objective. At 36 steps, 5 points of
+! revolutions; and the further objectives (objectives_of), means over
+! the revolutions: the blades' strain energy; the squares of their
+! flap and lag displacements and of their elastic twist over the
+! blades and the span; the squares of the forces of the four pitch
+! links on the upper swashplate, of the three push rods' drivers and
+! of the hub's driver, and of the reactions of the hub driver's
+! conditions on its tilt about x and y. With strips, the derivatives
+! of every one along the thickness of each strip by the expansion of
+! the motion, and the setup's objective's by the reverse sweep too,
+! -kappa, the smooth maximum unless another is named. At 12 steps, 5
+! points of the span and two strips of 2 and 1.5 cm, the reverse
+! sweep of each objective in turn gives its derivatives as the
+! expansion does to 2.5e-14 to 9.4e-13, the mass's exactly, and the
+! hub driver's tilt reactions' to 1.5e-10, their mean square some
+! 1e-6 of the hub force's; central differences of step 1e-5 miss
+! them by their own error, 4e-9 to 1.5e-6. At 36 steps, 5 points of
 ! the span and eight strips at 2 cm the mass is 2.1737794328871449 kg
 ! s, TACS's 2.173779432887122, and the smooth maximum at ks_weight =
 ! 100 1.6760974217836406, the same on 1 and 2 images; along the root
@@ -170,18 +188,24 @@ program rotorcraft_dynamics
   ! the section of a blade as a beam: the solid plate's, or given by its
   ! properties per length, TACS's uniform HART-II case by default
   character(len=16)  :: section_kind = 'solid'
+  ! the objective whose derivatives the reverse sweep forms too
+  character(len=16)  :: objective = 'stress'
   real(dp)           :: section_mass = 0.95_dp, section_moments(3) = [7.1828e-4_dp, 1.7e-5_dp, 7.0128e-4_dp]
   real(dp)           :: section_axial = 1.17e7_dp, section_flap = 2.5e2_dp, section_lag = 5.2e3_dp
   real(dp)           :: section_torsion = 1.6e2_dp
   namelist /setup/ blade, scenario, thickness, revolutions, steps, meshes, every, span_points, strips, yield, &
        & ks_weight, sensitivities, optimize, ks_bound, bounds, smoothness, order, section_kind, section_mass, &
-       & section_moments, section_axial, section_flap, section_lag, section_torsion
+       & section_moments, section_axial, section_flap, section_lag, section_torsion, objective
+  ! the objectives besides the mass and the smooth maximum, of the blades
+  ! as beams (objectives_of)
+  character(len=16), parameter :: further(8) = [character(len=16) :: 'strain_energy', 'flap', 'lag', 'twist', &
+       & 'pitch_link', 'push_rod', 'hub_force', 'hub_moment']
 
   type(discrete_manifold) :: omega_h
   type(discrete_residual) :: L_h(size(scenario))
   type(discrete_field)    :: estimates(size(scenario)), solutions(size(scenario))
   type(mechanism)         :: rotors(size(scenario))
-  type(continuous_field)  :: masses(size(scenario)), kss(size(scenario))
+  type(continuous_field)  :: masses(size(scenario)), kss(size(scenario)), others(size(further), size(scenario))
   integer :: unit, j, ns, num_instants, np
   logical :: optimizing
 
@@ -194,6 +218,10 @@ program rotorcraft_dynamics
   if (ns == 0) error stop 'rotorcraft_dynamics: the setup lists a scenario at least'
   if (trim(section_kind) /= 'solid' .and. trim(section_kind) /= 'given') then
      error stop 'rotorcraft_dynamics: the section of a blade as a beam is solid or given'
+  end if
+  if (trim(objective) /= 'mass' .and. trim(objective) /= 'stress' .and. .not. any(further == objective)) then
+     error stop 'rotorcraft_dynamics: the objective is mass, stress, strain_energy, flap, lag, twist, pitch_link, &
+          &push_rod, hub_force or hub_moment'
   end if
   if (trim(blade) == 'beam' .and. trim(section_kind) == 'given' .and. strips > 0) then
      error stop 'rotorcraft_dynamics: strips design the thickness of the solid section; a section given by its &
@@ -209,27 +237,28 @@ program rotorcraft_dynamics
   ! reported and drawn first, beside the design found
   if (optimizing .and. len_trim(meshes) > 0) then
      do j = 1, ns
-        call stated(scenario(j), j == 1, L_h(j), estimates(j), rotors(j), masses(j), kss(j), omega_h, initial=.true.)
+        call stated(scenario(j), j == 1, L_h(j), estimates(j), rotors(j), masses(j), kss(j), others(:, j), omega_h, &
+             & initial=.true.)
         call L_h(j) % minimize(estimates(j), solutions(j), continued=.true.)
-        call reported(scenario(j), ns == 1, rotors(j), masses(j), kss(j), solutions(j), 'initial')
+        call reported(scenario(j), ns == 1, rotors(j), masses(j), kss(j), others(:, j), solutions(j), 'initial')
      end do
   end if
   do j = 1, ns
-     call stated(scenario(j), j == 1, L_h(j), estimates(j), rotors(j), masses(j), kss(j), omega_h)
+     call stated(scenario(j), j == 1, L_h(j), estimates(j), rotors(j), masses(j), kss(j), others(:, j), omega_h)
   end do
 
   ! each marched in turn; to optimize, the one design of them all
   if (optimizing) then
      call minimize_together(L_h(1:ns), estimates(1:ns), solutions(1:ns), continued=.true.)
      do j = 1, ns
-        call reported(scenario(j), ns == 1, rotors(j), masses(j), kss(j), solutions(j), 'optimized')
+        call reported(scenario(j), ns == 1, rotors(j), masses(j), kss(j), others(:, j), solutions(j), 'optimized')
      end do
   else
      do j = 1, ns
         call L_h(j) % minimize(estimates(j), solutions(j), continued=.true.)
      end do
      do j = 1, ns
-        call reported(scenario(j), ns == 1, rotors(j), masses(j), kss(j), solutions(j))
+        call reported(scenario(j), ns == 1, rotors(j), masses(j), kss(j), others(:, j), solutions(j))
      end do
   end if
 
@@ -244,14 +273,14 @@ contains
   ! alone; initial, the march at the setup's thickness alone.
   !===================================================================!
 
-  subroutine stated(name, first, L_h, estimate, rotor, mass, ks, omega_h, initial)
+  subroutine stated(name, first, L_h, estimate, rotor, mass, ks, others, omega_h, initial)
 
     character(len=*)       , intent(in)  :: name
     logical                , intent(in)  :: first
     type(discrete_residual), intent(out) :: L_h
     type(discrete_field)   , intent(out) :: estimate
     type(mechanism)        , intent(out) :: rotor
-    type(continuous_field) , intent(out) :: mass, ks
+    type(continuous_field) , intent(out) :: mass, ks, others(:)
     type(discrete_manifold), intent(out) :: omega_h
     logical                , intent(in), optional :: initial
 
@@ -441,6 +470,7 @@ contains
        mass     = integral(4.0_dp * s % mass, over=omega)
        stresses = [(beams(k) % stress(yield), k = 1, 4)]
        if (size(stresses) > 0) ks = maximum(continuous_field(omega, stresses), over=omega, weight=ks_weight)
+       call objectives_of(rotor, beams, omega, others)
     end if
 
     ! the march: bdf of the setup's order, from one step of bdf(1)
@@ -500,7 +530,14 @@ contains
           lambda  = g % multiplier('lambda')
           nu      = b % multiplier('nu')
           kappa   = d % multiplier('kappa')
-          L = ks + adjoint*r + lambda*g + nu*b + kappa*d
+          select case (trim(objective))
+          case ('stress')
+             L = ks + adjoint*r + lambda*g + nu*b + kappa*d
+          case ('mass')
+             L = mass + adjoint*r + lambda*g + nu*b + kappa*d
+          case default
+             L = others(findloc(further, objective, 1)) + adjoint*r + lambda*g + nu*b + kappa*d
+          end select
        else if (strips > 0) then
           L = r + g + b + d
        else
@@ -515,6 +552,70 @@ contains
   end subroutine stated
 
   !===================================================================!
+  ! THE FURTHER OBJECTIVES of the blades as beams, each the mean over
+  ! the revolutions, and of a field of the blades over the four blades
+  ! and the span: the blades' strain energy; the squares of their flap
+  ! and lag displacements and of their elastic twist; and the squares
+  ! of the forces of the four pitch links on the upper swashplate, of
+  ! the three push rods' drivers and of the hub's driver, and of the
+  ! reactions of the hub driver's conditions on its tilt about x and y.
+  ! Each is an integral over the manifold, as the reverse sweep reads
+  ! an objective under the elements: a reaction, a function of time
+  ! alone, integrates over the span to the span's length times itself.
+  !===================================================================!
+
+  subroutine objectives_of(rotor, beams, omega, others)
+
+    type(mechanism)          , intent(in)  :: rotor
+    type(beam_blade)         , intent(in)  :: beams(4)
+    type(continuous_manifold), intent(in)  :: omega
+    type(continuous_field)   , intent(out) :: others(:)
+
+    type(continuous_field) :: strain, flap, lag, twist, links, rods, force, tilt
+    type(continuous_field), allocatable :: r(:)
+    real(dp) :: period, span
+    integer  :: k
+
+    period = revolutions * 2.0_dp * pi / speed
+    span   = tip - root
+    strain = beams(1) % strain_energy()
+    flap   = beams(1) % w * beams(1) % w
+    lag    = beams(1) % v * beams(1) % v
+    twist  = beams(1) % phi * beams(1) % phi
+    do k = 2, 4
+       strain = strain + beams(k) % strain_energy()
+       flap   = flap + beams(k) % w * beams(k) % w
+       lag    = lag + beams(k) % v * beams(k) % v
+       twist  = twist + beams(k) % phi * beams(k) % phi
+    end do
+    r     = rotor % reactions('swashplate_link_' // trim(degrees(0)))
+    links = r(1) * r(1) + r(2) * r(2) + r(3) * r(3)
+    do k = 2, 4
+       r     = rotor % reactions('swashplate_link_' // trim(degrees(k - 1)))
+       links = links + r(1) * r(1) + r(2) * r(2) + r(3) * r(3)
+    end do
+    r    = rotor % reactions('rod_driver_' // trim(degrees(1)))
+    rods = r(1) * r(1) + r(2) * r(2) + r(3) * r(3)
+    do k = 2, 3
+       r    = rotor % reactions('rod_driver_' // trim(degrees(k)))
+       rods = rods + r(1) * r(1) + r(2) * r(2) + r(3) * r(3)
+    end do
+    r     = rotor % reactions('hub_driver')
+    force = r(1) * r(1) + r(2) * r(2) + r(3) * r(3)
+    tilt  = r(4) * r(4) + r(5) * r(5)
+
+    others(1) = integral((1.0_dp / period) * strain, over=omega)
+    others(2) = integral((1.0_dp / (4.0_dp * span * period)) * flap, over=omega)
+    others(3) = integral((1.0_dp / (4.0_dp * span * period)) * lag, over=omega)
+    others(4) = integral((1.0_dp / (4.0_dp * span * period)) * twist, over=omega)
+    others(5) = integral((1.0_dp / (4.0_dp * span * period)) * links, over=omega)
+    others(6) = integral((1.0_dp / (3.0_dp * span * period)) * rods, over=omega)
+    others(7) = integral((1.0_dp / (span * period)) * force, over=omega)
+    others(8) = integral((1.0_dp / (span * period)) * tilt, over=omega)
+
+  end subroutine objectives_of
+
+  !===================================================================!
   ! ONE SCENARIO REPORTED: the energy at every instant - of the rigid
   ! bodies alone when the blades are beams - and the hub's angle, the
   ! first point of each instant; with beams the tip of the blade at
@@ -523,22 +624,22 @@ contains
   ! the design, initial or optimized.
   !===================================================================!
 
-  subroutine reported(name, alone, rotor, mass, ks, solution, design)
+  subroutine reported(name, alone, rotor, mass, ks, others, solution, design)
 
     character(len=*)      , intent(in) :: name
     logical               , intent(in) :: alone
     type(mechanism)       , intent(in) :: rotor
-    type(continuous_field), intent(in) :: mass, ks
+    type(continuous_field), intent(in) :: mass, ks, others(:)
     type(discrete_field)  , intent(in) :: solution
     character(len=*)      , intent(in), optional :: design
 
     type(continuous_field) :: energy
-    type(discrete_field)   :: energy_h, hub_h, tip_h, mass_h, ks_h, kappa_h, found
+    type(discrete_field)   :: energy_h, hub_h, tip_h, mass_h, ks_h, kappa_h, found, other_h
     type(mechanism)        :: drawn
     real(dp), allocatable  :: e(:), hub_eps(:), found_thickness(:)
     character(len=32), allocatable :: names(:)
     character(len=:), allocatable :: drawing
-    integer :: k, n
+    integer :: k, n, j
 
     ! the energy at every instant - of the rigid bodies alone when the
     ! blades are beams - and the hub's angle; the first point of each
@@ -595,11 +696,36 @@ contains
           end if
        else if (strips > 0 .and. sensitivities) then
           kappa_h = solution % fields(['kappa'])
-          print '(a)', '   along the thickness of each strip: the mass''s, the smooth maximum''s by the expansion and &
-               &by the reverse sweep'
-          do k = 1, strips
-             print '(i8, 3es24.16)', k, mass_h % value(1, 1 + k), ks_h % value(1, 1 + k), -kappa_h % value(1, k)
-          end do
+          if (trim(objective) == 'stress') then
+             print '(a)', '   along the thickness of each strip: the mass''s, the smooth maximum''s by the expansion and &
+                  &by the reverse sweep'
+             do k = 1, strips
+                print '(i8, 3es24.16)', k, mass_h % value(1, 1 + k), ks_h % value(1, 1 + k), -kappa_h % value(1, k)
+             end do
+          else
+             print '(a)', '   along the thickness of each strip: the mass''s, the smooth maximum''s by the expansion'
+             do k = 1, strips
+                print '(i8, 2es24.16)', k, mass_h % value(1, 1 + k), ks_h % value(1, 1 + k)
+             end do
+          end if
+       end if
+
+       ! the further objectives, and with the strips' thicknesses design
+       ! coordinates their derivatives along each by the expansion; the
+       ! objective of the reverse sweep's by it too, beside them
+       print '(a)', '   the further objectives, means over the revolutions:'
+       do j = 1, size(further)
+          other_h = others(j) % at(solution)
+          print '(3x, a16, es24.16)', further(j), other_h % value(1, 1)
+          if (strips > 0 .and. sensitivities .and. .not. optimize) then
+             print '(5x, a, *(es24.16))', 'along the strips', other_h % value(1, 2:1 + strips)
+             if (trim(objective) == trim(further(j))) then
+                print '(5x, a, *(es24.16))', 'by the reverse  ', -kappa_h % value(1, 1:strips)
+             end if
+          end if
+       end do
+       if (strips > 0 .and. sensitivities .and. .not. optimize .and. trim(objective) == 'mass') then
+          print '(a, *(es24.16))', '   the mass''s by the reverse sweep along the strips', -kappa_h % value(1, 1:strips)
        end if
     end if
 

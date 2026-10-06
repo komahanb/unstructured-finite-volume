@@ -651,25 +651,30 @@ is not the blade's stress:
   as the march damps it: at 576 steps the ratio is 0.21 to 0.25 up to
   60 degrees and 0.17 to 0.18 up to 120, where at 288 steps it is 0.16.
   The blade itself is undamped. Past 150 degrees the ratio is 0.152 to
-  0.159 at 288 and 576 steps, the centrifugal stress at the root of the
-  second strip, 0.153. A uniform blade's centrifugal stress at the root
-  is rho Omega^2 (R^2 - r0^2) / (2 sigma_y), 0.162 of the yield at any
-  thickness: the 0.293 to 0.299 measured at 72 steps, read before as
-  that stress, is the start's. The bound 0.25 and the limits set from
-  those measurements bound the march's error.
+  0.159 at 288 and 576 steps, near the centrifugal stress at the root
+  of the second strip, 0.153. A uniform blade's centrifugal stress at
+  the root is rho Omega^2 (R^2 - r0^2) / (2 sigma_y), 0.162 of the
+  yield at any thickness: the 0.293 to 0.299 measured at 72 steps,
+  read before as that stress, is the start's. The bound 0.25 and the
+  limits set from those measurements bound the march's error.
 - **The reactions' mean squares include the start's impulse.** The
   push rods' doubles as the step halves, 6.7e8, 1.3e9, 2.7e9 and 5.3e9
   N^2: it grows as 1/dt. The flap's and the lag's converge, the
   flap's at the second order: 9.2e-7, 3.5e-7, 2.7e-7 and 2.5e-7 m^2.
-- **Five points of the span are too few** for a thickness that changes
-  from strip to strip: one cubic element spans two strips, its strain
-  continuous. At nine points, one element a strip, the design found
-  exceeds its bound in every scenario by 12 per cent (0.0703, 0.0704,
-  0.0690).
+- **Five points of the span resolve the stress roughly** where the
+  thickness changes from strip to strip: one cubic element spans two
+  strips, its strain continuous. At 288 steps, past the start, the
+  ratio is 0.152 to 0.159 at five points and 0.160 to 0.166 at nine,
+  one element a strip; the start's peak is 0.227 and 0.234. At 72
+  steps the design found exceeds its bound at nine points in every
+  scenario by 12 per cent of the squared ratio (0.0703, 0.0704,
+  0.0690): the start's peak, which the span's resolution changes too.
 - **TACS's shells state a stress at the root that the beam does not.**
-  Their smooth maximum at 2 cm is 0.438 to 0.441 ("Targets from the
-  TACS run"), against the beam's 0.16 once the start has passed, and
-  their optimum keeps 17 mm at the root.
+  Their smooth maximum at 2 cm over the revolution, their own start
+  included, is 0.438 to 0.441 at 360 steps ("Targets from the TACS
+  run"); the beam's over the revolution at the design found is 0.227
+  and 0.264 at 288 and 576 steps, and 0.16 once the start has passed.
+  Their optimum keeps 17 mm at the root.
 
 At the design found, rounded to nine digits, the reverse sweep and the
 expansion give the smooth maximum's derivatives in the longitudinal
@@ -817,16 +822,18 @@ Open, with what the work has measured:
 4. **The weight of the smooth maximum** of that case: near 1e5, so
    that it bounds the largest stress as TACS's rho_KS = 1e5 does, the
    weight of 100 here lying a factor of two below it at 360 steps.
-5. **The initial data.** The rotor starts at the full rate, its blades
-   unstretched and its push rods not at rest against their drivers, as
-   TACS's case does. The start then decides the largest stress and the
+5. **The initial data.** The rotor starts at the full rate with its
+   blades unstretched, and its push rods at rest while their drivers
+   move them, a sin(Omega t / 4) at the rate a Omega / 4, as TACS's
+   case does. The start then decides the largest stress and the
    reactions' mean squares, and neither converges in the step ("The
    published optimization"): every optimization stated so far bounds
-   the march's error. Proposed: the steady rotation as the initial data
-   - the blades stretched by their centrifugal load, the rods at rest.
-   It is also the state about which the fan plot's frequencies are the
-   eigenvalues, and its stress is the published minimum-weight blades'
-   (TM-100569). The alternative, the reductions over a window of time
+   the march's error. Proposed: initial data consistent with the
+   rotation and the drivers - the blades in the steady rotation,
+   stretched by their centrifugal load, and the rods moving at their
+   drivers' velocity. The steady rotation is also the state about which
+   the fan plot's frequencies are the eigenvalues, and its stress is the
+   published minimum-weight blades' (TM-100569). The alternative, the reductions over a window of time
    after the start - a part of the time factor, as a face is a part of
    the boundary - converges only as fast as the march damps the start's
    wave, which the blade does not.

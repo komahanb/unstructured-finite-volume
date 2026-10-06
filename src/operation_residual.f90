@@ -2429,7 +2429,7 @@ contains
     end if
     do k = 1, size(equations)
        ! a smooth maximum of several components is a scalar
-       if (equations(k) % num_components() /= 1 .and. .not. equations(k) % weight > 0.0_dp) then
+       if (equations(k) % num_components() /= 1 .and. equations(k) % weight == 0.0_dp) then
           write(message,'(a,i0,a,i0)') 'operation_residual: an equation is a scalar field; equation ', &
                & k, ' has components = ', equations(k) % num_components()
           error stop trim(message)
@@ -2479,7 +2479,7 @@ contains
        error stop 'operation_residual: the objective is the integral of a field over the manifold, or its &
             &smooth maximum'
     end if
-    if (objective % num_components() /= 1 .and. .not. objective % weight > 0.0_dp) then
+    if (objective % num_components() /= 1 .and. objective % weight == 0.0_dp) then
        error stop 'operation_residual: the objective is the integral of a scalar field'
     end if
     if (allocated(residual % objective)) then

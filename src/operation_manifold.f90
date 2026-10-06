@@ -130,6 +130,7 @@ module operation_manifold
      procedure :: direction       => manifold_direction
      procedure :: discretize      => manifold_discretize
      procedure :: num_coordinates => manifold_num_coordinates
+     procedure :: measure         => manifold_measure
      procedure :: is_point
      procedure :: is_time_face
      procedure :: is_space_face
@@ -636,6 +637,27 @@ contains
   ! design is stated and paired with its multiplier, the sensitivity
   ! of the objective to the design.
   !===================================================================!
+
+  ! the measure of the manifold or of its part: the duration of its
+  ! time times the length of its region of one coordinate, one for a
+  ! factor of neither - a point, the design; a region of a mesh states
+  ! its measure on its points alone and stops the program
+  function manifold_measure(this) result(m)
+
+    class(continuous_manifold), intent(in) :: this
+    real(dp) :: m
+
+    m = 1.0_dp
+    if (this % with_time) m = m * (this % span % b - this % span % a)
+    if (this % with_space) then
+       if (.not. allocated(this % geometry % extent)) then
+          error stop 'operation_manifold: the measure of a region of a mesh is known on its points alone; a &
+               &mean over it is not yet stated'
+       end if
+       m = m * (this % geometry % extent % b - this % geometry % extent % a)
+    end if
+
+  end function manifold_measure
 
   function manifold_design(this) result(factor)
 

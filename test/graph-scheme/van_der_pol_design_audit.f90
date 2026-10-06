@@ -36,6 +36,10 @@
 ! jet stores, and with u they satisfy the oscillator at every instant
 ! to the tolerance of Newton's iteration.
 !
+! THE MEAN IS THE INTEGRAL OVER THE MEASURE: the mean of one over the
+! time is one, and the mean of the energy's density over the time is J
+! over T, in every column of the expansion.
+!
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
@@ -44,7 +48,7 @@ program van_der_pol_design_audit
   use util_precision     , only : dp
   use operation_manifold , only : continuous_manifold, discrete_manifold, interval, points, parameter
   use operation_expansion, only : expansion
-  use operation_field    , only : continuous_field, discrete_field, integral, &
+  use operation_field    , only : continuous_field, discrete_field, integral, mean, &
        &                          operator(+), operator(-), operator(*), operator(/), operator(**)
   use operation_residual , only : continuous_residual, discrete_residual, operator(+), operator(*)
   use operation_family   , only : dirk, bdf, adams, chain
@@ -62,7 +66,8 @@ program van_der_pol_design_audit
   type(continuous_residual) :: r, g, d, L
   type(discrete_residual)   :: L_h
   type(discrete_field)      :: estimate, solution, bare, kappa_h, slope, energy_h, bare_energy, design_h
-  type(discrete_field)      :: u_h, u_t_h, u_tt_h
+  type(discrete_field)      :: u_h, u_t_h, u_tt_h, unit_h, average_h
+  type(continuous_field)    :: unit, average
   type(continuous_field)    :: along(3)
   real(dp) :: J(1 + 3 * order), by_adjoint, mixed, apart, largest
   integer  :: k, e
@@ -156,6 +161,16 @@ program van_der_pol_design_audit
        & abs(bare_energy % value(1, 1) - J(1))
   largest = max(largest, apart, abs(bare_energy % value(1, 1) - J(1)))
   if (size(bare % name) /= 2) error stop 'van_der_pol_design_audit: a bare condition returned a multiplier'
+
+  ! THE MEAN IS THE INTEGRAL OVER THE MEASURE, in every column
+  unit      = mean(continuous_field(omega, [1.0_dp]), over=omega % time())
+  average   = mean((u*u + mu*u % derivative([t])**2)/2.0_dp, over=omega % time())
+  unit_h    = unit % at(solution)
+  average_h = average % at(solution)
+  apart = max(abs(unit_h % value(1, 1) - 1.0_dp), maxval(abs(unit_h % value(1, 2:))), &
+       &      maxval(abs(average_h % value(1, :) - J / T_final)))
+  print '(a, es12.2)', 'the mean of one, and of the energy''s density against J / T, apart by ', apart
+  largest = max(largest, apart)
 
   print '(a, es12.2)', 'the largest difference of the audit = ', largest
   if (largest > tolerance) error stop 'van_der_pol_design_audit: a law of the expansion along the design fails'

@@ -39,7 +39,7 @@ module operation_field
   private
   public :: continuous_support, discrete_support
   public :: continuous_field, discrete_field
-  public :: unknown_field, coordinate_field, integral, maximum, representation
+  public :: unknown_field, coordinate_field, integral, mean, maximum, minimum, representation
   public :: WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR, DESIGN_FACTOR, SPACE_FACE
 
   ! the parts a support can be of another
@@ -69,6 +69,7 @@ module operation_field
    contains
 
      procedure :: same_support
+     procedure :: measure => support_measure
 
   end type continuous_support
 
@@ -420,24 +421,101 @@ contains
   end function create_constants
 
   !===================================================================!
-  ! The integral of a field over a factor of its manifold: the field,
-  ! marked with the factor's identity, its part and its parent. The
-  ! discrete residual sums it over the points of that factor.
+  ! THE REDUCTIONS of a field over a factor of its manifold - the whole,
+  ! a factor or a face - and over its components: the integral, the
+  ! mean, the smooth maximum and the smooth minimum. Each is a mean of
+  ! one generator,
+  !
+  !      phi^-1( integral of phi(f) over the support ),
+  !
+  ! the integral's phi the identity, the mean's the identity over the
+  ! measure made one, the smooth maximum's the exponential exp(rho f):
+  ! the integral of the semiring in which a sum is log(exp(rho a) +
+  ! exp(rho b)) / rho, which is the maximum as rho grows and, of
+  ! negative weight, the minimum. So the reductions over a product of
+  ! factors are the reductions over each in turn, of one generator,
+  ! and a reduction of a reduction of another generator is not yet
+  ! stated: a field reduced already stops the program.
   !===================================================================!
 
+  ! the integral over the support and over the components, their sum
   function integral(f, over) result(this)
 
     type(continuous_field)   , intent(in) :: f
     class(continuous_support), intent(in) :: over
     type(continuous_field) :: this
 
+    this = reduced(summed(f), over)
+
+  end function integral
+
+  ! the mean over the support and over the components: the integral of
+  ! the components' mean over the support's measure, so that the mean
+  ! of one is one, and a field of time alone on a manifold of time and
+  ! space has its mean over the time
+  function mean(f, over) result(this)
+
+    type(continuous_field)   , intent(in) :: f
+    class(continuous_support), intent(in) :: over
+    type(continuous_field) :: this
+
+    this = integral((1.0_dp / (real(size(f % component), dp) * over % measure())) * summed(f), over)
+
+  end function mean
+
+  ! the field marked with the factor's identity, its part and its
+  ! parent; the discrete residual sums it over the points of that
+  ! factor
+  function reduced(f, over) result(this)
+
+    type(continuous_field)   , intent(in) :: f
+    class(continuous_support), intent(in) :: over
+    type(continuous_field) :: this
+
+    if (f % is_integral() .or. allocated(f % integrand)) then
+       error stop 'operation_field: a reduction of a field reduced already is not yet stated; a reduction over &
+            &the product of the factors is'
+    end if
     this = f
     this % integrated_over   = over % identity
     this % integrated_part   = over % part
     this % integrated_parent = over % parent
     this % integrated_time   = over % face_value
 
-  end function integral
+  end function reduced
+
+  ! the sum of the components of a field, a field of one
+  function summed(f) result(this)
+
+    type(continuous_field), intent(in) :: f
+    type(continuous_field) :: this
+
+    type(expression) :: total
+    integer :: i
+
+    this = f
+    if (size(f % component) <= 1) return
+    total = f % component(1)
+    do i = 2, size(f % component)
+       total = total + f % component(i)
+    end do
+    this % component = [total]
+    this % index     = [0]
+
+  end function summed
+
+  ! the measure of a support - the duration of its time times the
+  ! measure of its region - which a mean divides by; a support that
+  ! does not state it stops the program
+  function support_measure(this) result(m)
+
+    class(continuous_support), intent(in) :: this
+    real(dp) :: m
+
+    m = 0.0_dp
+    error stop 'operation_field: this support does not state its measure'
+
+  end function support_measure
 
   !===================================================================!
   ! THE SMOOTH MAXIMUM of the components of a field over a factor of
@@ -450,6 +528,8 @@ contains
   ! solution it is m + log( integral of sum_i exp(rho (f_i - m)) ) /
   ! rho, m the largest f_i at the nodes, so that no exponential
   ! exceeds one; along the design, the derivative of the logarithm.
+  ! THE SMOOTH MINIMUM is the same of the weight -rho, which tends to
+  ! the smallest f_i, m then the smallest f_i.
   !===================================================================!
 
   function maximum(f, over, weight) result(this)
@@ -461,10 +541,24 @@ contains
 
     if (.not. weight > 0.0_dp) error stop 'operation_field: the weight of a smooth maximum is positive'
     if (allocated(f % integrand)) error stop 'operation_field: a smooth maximum is of a field with no integral'
-    this = integral(f, over)
+    this = reduced(f, over)
     this % weight = weight
 
   end function maximum
+
+  function minimum(f, over, weight) result(this)
+
+    type(continuous_field)   , intent(in) :: f
+    class(continuous_support), intent(in) :: over
+    real(dp)                 , intent(in) :: weight
+    type(continuous_field) :: this
+
+    if (.not. weight > 0.0_dp) error stop 'operation_field: the weight of a smooth minimum is positive'
+    if (allocated(f % integrand)) error stop 'operation_field: a smooth minimum is of a field with no integral'
+    this = reduced(f, over)
+    this % weight = -weight
+
+  end function minimum
 
   !===================================================================!
   ! THE VALUE OF A FUNCTIONAL ON A SOLUTION: the integral over the
@@ -494,7 +588,7 @@ contains
        functional = field_on_points(this, solution)
        return
     end if
-    if (this % weight > 0.0_dp) then
+    if (this % weight /= 0.0_dp) then
        total = maximum_over(this, solution)
     else
        call functional_over(this, solution, total, gradient, partial)
@@ -568,7 +662,7 @@ contains
     real(dp) :: m, scale
     integer  :: c
 
-    if (this % weight > 0.0_dp) then
+    if (this % weight /= 0.0_dp) then
        ! of the smooth maximum m + log(I) / rho: the differential of I
        ! over rho I, and along each expansion the derivative of that
        ! quotient, I's own derivative read in its value's column
@@ -629,7 +723,7 @@ contains
     if (size(this % component) /= 1) then
        error stop 'operation_field: a functional is a scalar field'
     end if
-    if (this % weight > 0.0_dp) then
+    if (this % weight /= 0.0_dp) then
        error stop 'operation_field: a smooth maximum is not the integral of its field; at evaluates it'
     end if
     integrand = jet_form(this % component(1))
@@ -796,8 +890,9 @@ contains
 
   end function maximum_over
 
-  ! the largest component m, and the integral I of the shifted
-  ! exponentials with its differential, in every column
+  ! the largest component m - the smallest, of a negative weight - and
+  ! the integral I of the shifted exponentials with its differential,
+  ! in every column
   subroutine maximum_parts(this, solution, m, total, gradient, partial)
 
     class(continuous_field), intent(in)  :: this
@@ -829,7 +924,7 @@ contains
        nnodes = size(solution % jet, 2)
     end if
     values = solution % on % expansion % values()
-    m = -huge(1.0_dp)
+    m = merge(-huge(1.0_dp), huge(1.0_dp), this % weight > 0.0_dp)
     do i = 1, size(this % component)
        g = jet_form(this % component(i))
        if (over_nodes .and. allocated(solution % node_rule)) then
@@ -863,11 +958,21 @@ contains
           end if
           if (measure == 0.0_dp) cycle
           call g % gradient_at(q, values, value, w, position, gd)
-          m = max(m, value)
+          if (this % weight > 0.0_dp) then
+             m = max(m, value)
+          else
+             m = min(m, value)
+          end if
        end do
     end do
     if (over_nodes) then
-       if (any(solution % node_image /= this_image())) call co_max(m)
+       if (any(solution % node_image /= this_image())) then
+          if (this % weight > 0.0_dp) then
+             call co_max(m)
+          else
+             call co_min(m)
+          end if
+       end if
     end if
 
     ! the integral of the shifted exponentials, and the logarithm

@@ -57,6 +57,13 @@ writes its drawing into the directory it runs in.
 | `steps` | per revolution | 360 |
 | `order` | of the backward differences of the march, 1 or 2 | 1 |
 | `span_points` | of a blade as a beam | 9 |
+| `section_kind` | of a blade as a beam: `'solid'`, the plate of the setup's thickness; `'given'`, by the properties below, constant along the span | `'solid'` |
+| `section_mass` | given: the mass per length, kg/m | 0.95 |
+| `section_moments` | given: the moments of inertia per length about the span, the chord and the thickness, kg m | 7.1828e-4, 1.7e-5, 7.0128e-4 |
+| `section_axial` | given: EA, N | 1.17e7 |
+| `section_flap` | given: EI_f, in bending along the thickness, N m^2 | 250 |
+| `section_lag` | given: EI_c, in bending along the chord, N m^2 | 5200 |
+| `section_torsion` | given: GJ, N m^2 | 160 |
 | `strips` | of the span, the thickness of each a design coordinate; 0, uniform | 0 |
 | `sensitivities` | with strips: the derivatives along each thickness | `.true.` |
 | `optimize` | with strips: the least mass whose stress is bounded | `.false.` |
@@ -79,6 +86,12 @@ On one image of this workstation:
   5`: about 1 min. Printed also: the motion of the tip of the blade at
   zero degrees, the blades' mass and the smooth maximum of their
   stress.
+- **The blades as beams of a given section**, adding `section_kind =
+  'given'`: about 1 min. The defaults are the properties of TACS's
+  uniform HART-II case (its `examples/rotating_beam`). Printed as for
+  the beams, without the smooth maximum: a section given by its
+  properties states no stress, and the strips, which design the
+  plate's thickness, are refused with it.
 - **The derivatives along the thickness of 8 strips**, adding
   `strips = 8, thickness = 8*0.02`: about half an hour, the expansion
   along every strip. Printed for each strip: the mass's derivative, and the

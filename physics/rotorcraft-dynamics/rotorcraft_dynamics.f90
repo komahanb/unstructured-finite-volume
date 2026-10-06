@@ -21,7 +21,13 @@
 ! beam in the axes of its cap (multibody_dynamics, beam), fixed to it
 ! at the root, a field of time and of the span by the hermite cubics,
 ! the bodies' coordinates and the reactions unknowns of time alone;
-! plate and solid are not yet stated.
+! plate and solid are not yet stated. The section of a beam is chosen
+! at setup too: the plate's, a uniform solid rectangle; or given by
+! its properties per length, as TACS's TimoshenkoStiffness takes them,
+! by default those of TACS's uniform HART-II case (its examples,
+! rotating_beam): 0.95 kg/m, the moments of inertia 7.1828e-4,
+! 1.7e-5 and 7.0128e-4 kg m, EA = 1.17e7 N, EI_f = 250 and EI_c =
+! 5200 N m^2, GJ = 160 N m^2. A section given so states no stress.
 !
 ! The Lagrangian density is the bodies' kinetic energy less their
 ! potential energy, with every condition of the joints times its
@@ -41,6 +47,14 @@
 ! THE SETUP, rotorcraft.nml:
 !
 !      blade        rigid or beam (plate and solid to come)
+!      section_kind of a blade as a beam: solid, the plate of the
+!                   setup's thickness; or given, by section_mass,
+!                   section_moments (about the span, the chord and the
+!                   thickness), section_axial, section_flap (EI_f),
+!                   section_lag (EI_c) and section_torsion (GJ), per
+!                   length, constant along the span; the smooth
+!                   maximum, the strips and the optimization ask for
+!                   the solid's stress
 !      scenario     collective, longitudinal or lateral: the push
 !                   rods' amplitudes, 0.05 each, or 0.025, 0.025 and
 !                   0.05, or 0.025, 0.05 and 0.025 at 90, 180 and 270
@@ -75,7 +89,8 @@
 !                   from one step of bdf(1)
 !
 ! THE FUNCTIONS, of the blades as beams: the blades' mass over the
-! revolutions, and the smooth maximum (operation_field, maximum) of
+! revolutions, and with the solid section the smooth maximum
+! (operation_field, maximum) of
 ! the von Mises function of their stress over the four blades, the
 ! corners and the middles of the long sides of their sections and the
 ! revolutions; with strips, their derivatives along the thickness of
@@ -133,8 +148,8 @@ program rotorcraft_dynamics
        &                         minimize_together
   use operation_family  , only : dirk, bdf, chain
   use operation_finite_element, only : finite_element
-  use multibody_dynamics, only : rigid_body, beam_blade, mechanism, body_table, surface, spherical, revolute, &
-       &                         cylindrical, fixed, rigid_link, revolute_driver, motion_driver
+  use multibody_dynamics, only : rigid_body, beam_blade, section, solid_rectangle, mechanism, body_table, surface, &
+       &                         spherical, revolute, cylindrical, fixed, rigid_link, revolute_driver, motion_driver
   use view_bdf_loader   , only : bdf_surface
 
   implicit none
@@ -152,8 +167,15 @@ program rotorcraft_dynamics
   real(dp)           :: ks_bound = 0.25_dp, bounds(2) = [0.01_dp, 0.02_dp], smoothness = 1.0e-3_dp
   integer            :: revolutions = 1, steps = 360, every = 10, span_points = 9, strips = 0, order = 1
   logical            :: sensitivities = .true., optimize = .false.
+  ! the section of a blade as a beam: the solid plate's, or given by its
+  ! properties per length, TACS's uniform HART-II case by default
+  character(len=16)  :: section_kind = 'solid'
+  real(dp)           :: section_mass = 0.95_dp, section_moments(3) = [7.1828e-4_dp, 1.7e-5_dp, 7.0128e-4_dp]
+  real(dp)           :: section_axial = 1.17e7_dp, section_flap = 2.5e2_dp, section_lag = 5.2e3_dp
+  real(dp)           :: section_torsion = 1.6e2_dp
   namelist /setup/ blade, scenario, thickness, revolutions, steps, meshes, every, span_points, strips, yield, &
-       & ks_weight, sensitivities, optimize, ks_bound, bounds, smoothness, order
+       & ks_weight, sensitivities, optimize, ks_bound, bounds, smoothness, order, section_kind, section_mass, &
+       & section_moments, section_axial, section_flap, section_lag, section_torsion
 
   type(discrete_manifold) :: omega_h
   type(discrete_residual) :: L_h(size(scenario))
@@ -170,6 +192,13 @@ program rotorcraft_dynamics
   ! the scenarios listed, each on a manifold of its own
   ns = count(len_trim(scenario) > 0)
   if (ns == 0) error stop 'rotorcraft_dynamics: the setup lists a scenario at least'
+  if (trim(section_kind) /= 'solid' .and. trim(section_kind) /= 'given') then
+     error stop 'rotorcraft_dynamics: the section of a blade as a beam is solid or given'
+  end if
+  if (trim(blade) == 'beam' .and. trim(section_kind) == 'given' .and. strips > 0) then
+     error stop 'rotorcraft_dynamics: strips design the thickness of the solid section; a section given by its &
+          &properties has none, and states no stress'
+  end if
   num_instants = revolutions * steps + 1
   np = 1
   if (trim(blade) == 'beam') np = span_points
@@ -229,6 +258,8 @@ contains
     type(continuous_manifold) :: omega, domega, left
     type(continuous_field)    :: t, x, motion, h, adjoint, lambda, nu, kappa, mu_ks, mu_bounds, mu_smooth, bounded
     type(continuous_field), allocatable :: stresses(:), thicknesses(:), limits(:)
+    class(section)        , allocatable :: s
+    type(continuous_field) :: moments(3)
     type(continuous_residual) :: r, g, b, d, L, stressed, within, smooth
     type(chain)               :: march
     type(body_table)          :: table
@@ -317,10 +348,24 @@ contains
        else
           h = continuous_field(omega, [thickness(1)])
        end if
+       ! the section: the solid plate of that thickness, or given by its
+       ! properties; the moments an array variable, not an array
+       ! constructor, whose temporary's allocatable components the
+       ! compiler in use does not release
+       if (trim(section_kind) == 'solid') then
+          allocate(s, source=solid_rectangle(density, modulus, poisson, chord, h))
+       else
+          do k = 1, 3
+             moments(k) = continuous_field(omega, [section_moments(k)])
+          end do
+          allocate(s, source=section(continuous_field(omega, [section_mass]), moments, &
+               & continuous_field(omega, [section_axial]), continuous_field(omega, [section_flap]), &
+               & continuous_field(omega, [section_lag]), continuous_field(omega, [section_torsion])))
+       end if
        do k = 1, 4
           call rotor % beam(omega, beams(k), part(table % row('cap_' // trim(degrees(k - 1)))), &
                & 'blade_' // trim(degrees(k - 1)), x, turned([root, 0.0_dp, height], k - 1), &
-               & reshape([turned(ex, k - 1), turned(ey, k - 1), ez], [3, 3]), density, modulus, poisson, chord, h)
+               & reshape([turned(ex, k - 1), turned(ey, k - 1), ez], [3, 3]), s)
        end do
     end select
 
@@ -388,14 +433,14 @@ contains
        end do
     end if
 
-    ! with the blades as beams, the blades' mass over the revolutions and
-    ! the smooth maximum of the von Mises function of their stress over
-    ! the blades, the corners and the middles of the long sides of their
-    ! sections and the revolutions
+    ! with the blades as beams, the blades' mass over the revolutions and,
+    ! where their section states its stress, the smooth maximum of the
+    ! von Mises function of their stress over the blades, the corners and
+    ! the middles of the long sides of their sections and the revolutions
     if (trim(blade) == 'beam') then
-       mass     = integral(4.0_dp * density * chord * h, over=omega)
+       mass     = integral(4.0_dp * s % mass, over=omega)
        stresses = [(beams(k) % stress(yield), k = 1, 4)]
-       ks       = maximum(continuous_field(omega, stresses), over=omega, weight=ks_weight)
+       if (size(stresses) > 0) ks = maximum(continuous_field(omega, stresses), over=omega, weight=ks_weight)
     end if
 
     ! the march: bdf of the setup's order, from one step of bdf(1)
@@ -531,9 +576,11 @@ contains
        ! the smooth maximum's derivatives by the expansion, and the smooth
        ! maximum's by the reverse sweep
        mass_h = mass % at(solution)
-       ks_h   = ks % at(solution)
        print '(a, es24.16)', '   the blades'' mass over the revolutions, kg s     ', mass_h % value(1, 1)
-       print '(a, es24.16)', '   the smooth maximum of their von Mises function   ', ks_h % value(1, 1)
+       if (trim(section_kind) == 'solid') then
+          ks_h = ks % at(solution)
+          print '(a, es24.16)', '   the smooth maximum of their von Mises function   ', ks_h % value(1, 1)
+       end if
        if (strips > 0 .and. optimize) then
           if (present(design)) then
              if (design == 'optimized') then

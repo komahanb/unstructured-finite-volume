@@ -41,7 +41,7 @@ program blade_on_hub
   use operation_residual      , only : continuous_residual, discrete_residual, operator(+)
   use operation_family        , only : dirk, bdf, chain
   use operation_finite_element, only : finite_element
-  use multibody_dynamics      , only : rigid_body, beam_blade, mechanism, revolute_driver, rigid_link
+  use multibody_dynamics      , only : rigid_body, beam_blade, solid_rectangle, mechanism, revolute_driver, rigid_link
 
   implicit none
 
@@ -104,8 +104,8 @@ program blade_on_hub
   spinner = mechanism(t)
   call spinner % body(omega, hub, 'hub', [0.0_dp, 0.0_dp, height], 20.0_dp, inertia, angular_velocity=speed * ez)
   if (trim(model) == 'beam') then
-     call spinner % beam(omega, blade, hub, 'blade', x, [root, 0.0_dp, height], axes, density, modulus, poisson, &
-          & chord, continuous_field(omega, [thickness]))
+     call spinner % beam(omega, blade, hub, 'blade', x, [root, 0.0_dp, height], axes, &
+          & solid_rectangle(density, modulus, poisson, chord, continuous_field(omega, [thickness])))
   else
      mass  = density * thickness * (tip - root) * chord
      plate = 0.0_dp

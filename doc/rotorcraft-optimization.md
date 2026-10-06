@@ -567,7 +567,9 @@ differences.
   region; inequalities on functionals of the state, each with its own
   reverse sweep; several Lagrangians on one design, the rotor's three
   scenarios among them; the smooth maximum with its largest value
-  subtracted; the blades as beams.
+  subtracted; the blades as beams, their section given by its
+  properties per length, as TACS's TimoshenkoStiffness takes them, or
+  implied by a uniform solid rectangle, which alone states its stress.
 - **Missing:**
   - a way to write a body's 7 coordinates and its action once, not as
     7 scalar laws by hand, without moving solver logic into `physics/`;
@@ -576,7 +578,16 @@ differences.
     system are measured in "A step of a DIRK tableau on the joints";
   - the case as TACS states it: 48 strips, three scenarios, 360 steps,
     KS <= 1/4 with `ks_weight` near 1e5;
-  - the blades as plates and as solids.
+  - the blades as plates and as solids;
+  - the fan plot of each scenario, with TACS's uniform HART-II section.
+    TACS's own (examples/rotating_beam) holds no input: one blade on a
+    driven hub at 2.5 degrees of precone, the frequencies of its laws
+    linearised about the state one revolution reaches, at 0.1 to 1.2
+    times 109.12 rad/s. A collective held is a steady state, its
+    frequencies the eigenvalues of the laws linearised about it; a
+    cyclic held, a periodic one, its frequencies Floquet's, of the map
+    over a revolution, each up to a multiple of the rate. Both need
+    the state with the inputs held, and the eigenvalues.
 
 ## A step of a DIRK tableau on the joints
 

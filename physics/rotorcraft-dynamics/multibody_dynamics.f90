@@ -182,9 +182,15 @@ module multibody_dynamics
      real(dp) :: root(3) = 0.0_dp, axes(3,3) = 0.0_dp
      class(section), allocatable :: section
      type(continuous_field) :: x, u, v, w, phi
+     ! the section's pitch along the span, nose up positive, when it is
+     ! twisted: its axes turned about the span from the chord and the
+     ! thickness
+     logical :: pitched = .false.
+     type(continuous_field) :: pitch
    contains
      procedure :: stress
      procedure :: strain_energy
+     procedure :: curvatures
   end type beam_blade
 
   ! the points of a surface in the reference configuration, and its
@@ -383,9 +389,16 @@ contains
   ! + w_x^2)/2, which stiffens the turning blade. At the root the blade
   ! is fixed to the body, u, v, w, phi, v_x and w_x zero; it begins at
   ! rest in the body's axes, and its estimate is zero.
+  !
+  ! A TWISTED BLADE: of the pitch theta(x), nose up positive, its
+  ! section's axes are e_c cos theta + e_f sin theta and -e_c sin theta
+  ! + e_f cos theta; its moments of inertia turn with them, and its
+  ! bending stiffnesses take the curvatures along them,
+  ! k_f = w_xx cos theta - v_xx sin theta and k_c = v_xx cos theta +
+  ! w_xx sin theta (curvatures).
   !===================================================================!
 
-  subroutine beam(this, omega, blade, b, name, x, root, axes, s)
+  subroutine beam(this, omega, blade, b, name, x, root, axes, s, pitch)
 
     class(mechanism)         , intent(inout) :: this
     type(continuous_manifold), intent(inout) :: omega
@@ -395,9 +408,10 @@ contains
     type(continuous_field)   , intent(in)    :: x
     real(dp)                 , intent(in)    :: root(3), axes(3,3)
     class(section)           , intent(in)    :: s
+    type(continuous_field)   , intent(in), optional :: pitch
 
     type(continuous_field) :: centre(3), p(3), rate, turning(3), body_rate(3), slope_v, slope_w, strain, energy
-    type(continuous_field) :: zero, inertia
+    type(continuous_field) :: zero, inertia, k_f, k_c, c, sn, turned_moments(3)
     logical  :: stated
     integer  :: k, i, j
 
@@ -406,6 +420,10 @@ contains
     blade % axes = axes
     blade % x    = x
     allocate(blade % section, source=s)
+    if (present(pitch)) then
+       blade % pitched = .true.
+       blade % pitch   = pitch
+    end if
     blade % u   = omega % unknown(name // '_u')
     blade % v   = omega % unknown(name // '_v')
     blade % w   = omega % unknown(name // '_w')
@@ -435,8 +453,31 @@ contains
        if (axes(k, 1) /= 0.0_dp) turning(k) = turning(k) + axes(k, 1) * rate
     end do
     ! the moments of inertia in the body's reference axes, J_ij the sum
-    ! of the moments about the axes k with a_ik a_jk nonzero
+    ! of the moments about the axes k with a_ik a_jk nonzero; of a
+    ! twisted blade, about the span and the chord and thickness turned
+    ! by the pitch, the product of the two the moments' difference times
+    ! cos theta sin theta
+    if (blade % pitched) then
+       c  = cos(pitch)
+       sn = sin(pitch)
+       turned_moments(1) = s % moments(1)
+       turned_moments(2) = s % moments(2) * c * c + s % moments(3) * sn * sn
+       turned_moments(3) = s % moments(2) * sn * sn + s % moments(3) * c * c
+       do i = 1, 3
+          do j = i, 3
+             inertia = turned_moments(1) * (axes(i, 1) * axes(j, 1)) + turned_moments(2) * (axes(i, 2) * axes(j, 2)) &
+                  & + turned_moments(3) * (axes(i, 3) * axes(j, 3)) &
+                  & + ((s % moments(2) - s % moments(3)) * c * sn) * (axes(i, 2) * axes(j, 3) + axes(i, 3) * axes(j, 2))
+             if (i == j) then
+                energy = energy + (inertia / 2.0_dp) * turning(i) * turning(i)
+             else
+                energy = energy + inertia * turning(i) * turning(j)
+             end if
+          end do
+       end do
+    end if
     do i = 1, 3
+       if (blade % pitched) exit
        do j = i, 3
           stated = .false.
           do k = 1, 3
@@ -461,10 +502,17 @@ contains
     slope_v = blade % v % derivative([x])
     slope_w = blade % w % derivative([x])
     strain  = blade % u % derivative([x]) + (slope_v * slope_v + slope_w * slope_w) / 2.0_dp
-    energy  = energy - (s % axial / 2.0_dp) * strain * strain &
-         & - (s % flap / 2.0_dp) * blade % w % derivative([x, x])**2 &
-         & - (s % lag / 2.0_dp) * blade % v % derivative([x, x])**2 &
-         & - (s % torsion / 2.0_dp) * blade % phi % derivative([x])**2 + s % mass * combination(this % gravity, p)
+    if (blade % pitched) then
+       call blade % curvatures(k_f, k_c)
+       energy  = energy - (s % axial / 2.0_dp) * strain * strain &
+            & - (s % flap / 2.0_dp) * k_f**2 - (s % lag / 2.0_dp) * k_c**2 &
+            & - (s % torsion / 2.0_dp) * blade % phi % derivative([x])**2 + s % mass * combination(this % gravity, p)
+    else
+       energy  = energy - (s % axial / 2.0_dp) * strain * strain &
+            & - (s % flap / 2.0_dp) * blade % w % derivative([x, x])**2 &
+            & - (s % lag / 2.0_dp) * blade % v % derivative([x, x])**2 &
+            & - (s % torsion / 2.0_dp) * blade % phi % derivative([x])**2 + s % mass * combination(this % gravity, p)
+    end if
     if (this % spread) then
        this % distributed = this % distributed + energy
     else
@@ -500,9 +548,16 @@ contains
 
     type(continuous_field) :: slope_v, slope_w, strain
 
+    type(continuous_field) :: k_f, k_c
+
     slope_v = blade % v % derivative([blade % x])
     slope_w = blade % w % derivative([blade % x])
     strain  = blade % u % derivative([blade % x]) + (slope_v * slope_v + slope_w * slope_w) / 2.0_dp
+    if (blade % pitched) then
+       call blade % curvatures(k_f, k_c)
+       f = blade % section % stress(strain, k_c, k_f, blade % phi % derivative([blade % x]), yield)
+       return
+    end if
     f = blade % section % stress(strain, blade % v % derivative([blade % x, blade % x]), &
          & blade % w % derivative([blade % x, blade % x]), blade % phi % derivative([blade % x]), yield)
 
@@ -514,15 +569,36 @@ contains
   function strain_energy(blade) result(e)
     class(beam_blade), intent(in) :: blade
     type(continuous_field) :: e
-    type(continuous_field) :: slope_v, slope_w, strain
+    type(continuous_field) :: slope_v, slope_w, strain, k_f, k_c
     slope_v = blade % v % derivative([blade % x])
     slope_w = blade % w % derivative([blade % x])
     strain  = blade % u % derivative([blade % x]) + (slope_v * slope_v + slope_w * slope_w) / 2.0_dp
+    if (blade % pitched) then
+       call blade % curvatures(k_f, k_c)
+       e = (blade % section % axial / 2.0_dp) * strain * strain + (blade % section % flap / 2.0_dp) * k_f**2 &
+            & + (blade % section % lag / 2.0_dp) * k_c**2 &
+            & + (blade % section % torsion / 2.0_dp) * blade % phi % derivative([blade % x])**2
+       return
+    end if
     e = (blade % section % axial / 2.0_dp) * strain * strain &
          & + (blade % section % flap / 2.0_dp) * blade % w % derivative([blade % x, blade % x])**2 &
          & + (blade % section % lag / 2.0_dp) * blade % v % derivative([blade % x, blade % x])**2 &
          & + (blade % section % torsion / 2.0_dp) * blade % phi % derivative([blade % x])**2
   end function strain_energy
+
+  ! the curvatures of a twisted blade along its section's axes: k_f in
+  ! bending along the turned thickness, k_c along the turned chord
+  subroutine curvatures(blade, k_f, k_c)
+    class(beam_blade)     , intent(in)  :: blade
+    type(continuous_field), intent(out) :: k_f, k_c
+    type(continuous_field) :: v_xx, w_xx, c, sn
+    v_xx = blade % v % derivative([blade % x, blade % x])
+    w_xx = blade % w % derivative([blade % x, blade % x])
+    c    = cos(blade % pitch)
+    sn   = sin(blade % pitch)
+    k_f  = w_xx * c - v_xx * sn
+    k_c  = v_xx * c + w_xx * sn
+  end subroutine curvatures
 
   ! a section given by its properties, as TACS's TimoshenkoStiffness
   ! takes them

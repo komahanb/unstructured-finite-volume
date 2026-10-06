@@ -57,6 +57,8 @@ writes its drawing into the directory it runs in.
 | `steps` | per revolution | 360 |
 | `order` | of the backward differences of the march, 1 or 2 | 1 |
 | `span_points` | of a blade as a beam | 9 |
+| `precone` | of the blades, degrees, each span inclined upward about the chord at the root; HART II's is 2.5 | 0 |
+| `twist`, `twist_zero` | of the blades as beams: degrees over the blade's radius, linear, nose up positive, zero at the radius `twist_zero`; HART II's -8 and 1.5 m | 0, 1.5 |
 | `section_kind` | of a blade as a beam: `'solid'`, the plate of the setup's thickness; `'given'`, by the properties below, constant along the span | `'solid'` |
 | `section_mass` | given: the mass per length, kg/m | 0.95 |
 | `section_moments` | given: the moments of inertia per length about the span, the chord and the thickness, kg m | 7.1828e-4, 1.7e-5, 7.0128e-4 |
@@ -69,32 +71,39 @@ writes its drawing into the directory it runs in.
 | `optimize` | with strips: the least mass whose stress is bounded | `.false.` |
 | `ks_bound` | the bound of the von Mises ratio, its square bounding the smooth maximum | 0.25 |
 | `ks_weight` | the weight of the smooth maximum | 100 |
-| `objective` | with strips and sensitivities: the objective whose derivatives the reverse sweep forms too | `'stress'` |
+| `objective` | the functional of the Lagrangian: to optimize, the one minimized; with strips and sensitivities, the one the reverse sweep differentiates too | `'mass'` to optimize, `'stress'` otherwise |
+| `constraints` | to optimize: the functionals bounded in every scenario | `'stress'` |
+| `limits` | their limits, each functional at most its limit | the stress's `ks_bound`^2 |
 | `bounds` | the least and the greatest thickness | 1 cm, 2 cm |
 | `smoothness` | the largest difference of adjacent strips | 1 mm |
 | `yield` | the yield stress | 350e6 |
 | `meshes` | the directory of the bodies' surface meshes; none, no drawing | none |
+| `blade_meshes` | the directory of the blades' surface meshes, `blade0.bdf` .. `blade270.bdf` (the geometry's `--preset hart2`), drawn in place of the plates' boxes | none |
 | `every` | the stride of the instants drawn | 10 |
 
 ## The objectives
 
 Functionals of the motion of the blades as beams, printed after each
-march. With strips and `sensitivities`, the derivatives of every one
-along the thickness of each strip by the expansion of the motion, and
-those of the one named `objective` by the reverse sweep too. The means
-are over the revolutions, and for a field of the blades over the four
-blades and the span.
+march, each a reduction (`operation_field`) of a field over the
+manifold - the revolutions and the span - and over the field's
+components: the blades', the links', the rods' or the hub's. With
+strips and `sensitivities`, the derivatives of every one along the
+thickness of each strip by the expansion of the motion, and those of
+the one named `objective` by the reverse sweep too. A constraint is the
+same reduction of the field less its limit, at most zero, with its
+multiplier in the Lagrangian; an optimization demonstration differs
+from another only by its `objective`, `constraints` and `limits`.
 
-| `objective` | the functional |
-|---|---|
-| `mass` | the blades' mass over the revolutions, kg s |
-| `stress` | the smooth maximum of the von Mises ratio over the blades, their sections and the revolutions; the solid section alone states it |
-| `strain_energy` | the mean of the blades' strain energy, J |
-| `flap`, `lag`, `twist` | the mean squares of the flap and lag displacements, m^2, and of the elastic twist, rad^2 |
-| `pitch_link` | the mean square of the force of a pitch link on the upper swashplate, N^2 |
-| `push_rod` | the mean square of the force of a push rod's driver, N^2 |
-| `hub_force` | the mean square of the force of the hub's driver, N^2 |
-| `hub_moment` | the mean square of the reactions of the hub driver's conditions on its tilt about x and y |
+| name | the reduction | its field |
+|---|---|---|
+| `mass` | the integral, kg s | the blades' mass per length |
+| `stress` | the smooth maximum of weight `ks_weight`; the solid section alone states it | the squared von Mises ratio at the section's corners and long sides |
+| `strain_energy` | the mean, J/m | the blades' strain energy per length |
+| `flap`, `lag`, `twist` | the mean, m^2 and rad^2 | the squares of the flap and lag displacements and of the elastic twist |
+| `pitch_link` | the mean, N^2 | the squared forces of the four pitch links on the upper swashplate |
+| `push_rod` | the mean, N^2 | the squared forces of the three push rods' drivers |
+| `hub_force` | the mean, N^2 | the squared force of the hub's driver |
+| `hub_moment` | the mean | the squared reactions of the hub driver's conditions on its tilt about x and y |
 
 Not yet: the driver's torque and power, in vacuum mostly the
 dissipation of the march; the placement of the frequencies on the

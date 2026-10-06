@@ -594,6 +594,64 @@ differences.
     over a revolution, each up to a multiple of the rate. Both need
     the state with the inputs held, and the eigenvalues.
 
+## Objectives, constraints and their reductions
+
+Every objective and constraint of the rotor is a reduction of a field
+over the manifold - the revolutions and the span - and over the field's
+components, the blades', the links', the rods' or the hub's
+(`operation_field`): the mass an integral, the stress a smooth maximum,
+the others means. The reductions are one operation of several
+generators, phi^-1 of the integral of phi(f): the integral's phi the
+identity, the mean's the identity over the measure made one, the smooth
+maximum's the exponential, of negative weight the smooth minimum. The
+smooth maximum is so not an integral of an integral but one integral
+in the semiring whose sum is log(exp(rho a) + exp(rho b)) / rho, the
+maximum as rho grows and, of the mean's normalized measure, the mean as
+rho falls to zero; an integral of an integral is a reduction over a
+product of factors, which of one generator is the reduction over each in
+turn (the smooth maximum over the revolutions of the smooth maximum over
+the span is the smooth maximum over both, exactly), and of two
+generators a composition whose order matters, not yet stated. The
+derivative of each reduction is a measure over the points: uniform for
+the mean, the weights exp(rho f) / integral for the smooth maximum. A
+constraint is the same reduction of the field less its limit, and an
+optimization demonstration differs from another only in its
+`objective`, `constraints` and `limits`.
+
+## The published optimization
+
+The dissertation (section 5.4.3, eq. 5.1) optimizes this rotor, the
+TACS case's mechanism: the least mass of the blades over the 48 panels'
+thicknesses, 10 to 20 mm, adjacent panels within 1 mm, the smooth
+maximum of the von Mises ratio (TACS's KSFailure, the ratio itself, of
+weight 1e5) at most 0.25 in each of the three scenarios, from 2 cm, by
+SLSQP in 73 iterations; all three stress constraints active, the mass
+some 0.56 of the initial, the thickness some 17 mm at the root falling
+by about 1 mm a panel to 10 mm at 40 per cent of the span and on to the
+tip (Figs. 5.15 and 5.16, read off). At 72 steps of bdf(2) the beam's
+largest ratio is 0.293 to 0.299 in the three scenarios at 1 and at 2
+cm alike: a uniform blade's centrifugal stress at the root does not
+depend on its thickness, so that only a blade thicker at the root than
+outboard meets 0.25 - the published optimum's shape.
+
+## HART II
+
+The blades of HART II are the TACS case's in radius (2 m), chord (0.121
+m) and cutout (0.44 m), and add a precone of 2.5 degrees, a linear twist
+of -8 degrees over the radius zero at 1.5 m, and the NACA 23012 with a
+trailing-edge tab (the geometry's `--preset hart2`). The rotor takes
+them at setup: `precone` cones each blade about its chord at the root,
+its beam's axes, its rigid plate's centre and inertia and its drawing;
+`twist` and `twist_zero` pitch the beam's section along the span, its
+stiffnesses taking the curvatures along the turned axes and its inertia
+and stress points turning with them, so that a constant pitch of 90
+degrees marches as the section with its flap and lag properties
+exchanged, the tip's displacements to every printed digit and the
+driver's reactions to 7.7e-12; `section_kind = 'given'` takes TACS's
+uniform HART-II section; `blade_meshes` draws the blades with their
+meshes. With precone and twist zero every output is the same to every
+byte.
+
 ## A step of a DIRK tableau on the joints
 
 At the end of a step of a DIRK tableau the quadrature of the stages

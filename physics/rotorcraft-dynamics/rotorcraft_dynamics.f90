@@ -65,8 +65,19 @@
 !      steps        per revolution
 !      meshes       the directory of the bodies' surface meshes, the
 !                   case's data/mesh; none, no drawing
+!      blade_meshes the directory of the blades' surface meshes,
+!                   blade0.bdf to blade270.bdf - the HART II blades of
+!                   the geometry's hart2 preset - drawn in place of the
+!                   boxes of their plates
 !      every        the stride of the instants drawn
 !      span_points  of a blade as a beam
+!      precone      of the blades, degrees: each span inclined upward
+!                   about the chord at the root; 0 by default, 2.5 HART
+!                   II's
+!      twist        of the blades as beams, degrees over the blade's
+!                   radius, linear, nose up positive; 0 by default, -8
+!                   HART II's
+!      twist_zero   the radius of zero twist, 1.5 m, HART II's
 !      strips       of the span of a blade as a beam, the thickness of
 !                   each a design coordinate, the same for the four
 !                   blades; none, the thickness of the setup throughout
@@ -83,11 +94,16 @@
 !                   first stating the mass and the inequalities on
 !                   the design alone
 !      ks_bound     the bound of the von Mises ratio, 0.25
-!      objective    with strips and sensitivities, the objective whose
-!                   derivatives the reverse sweep forms too: mass,
-!                   stress (the default), strain_energy, flap, lag,
-!                   twist, pitch_link, push_rod, hub_force or
-!                   hub_moment
+!      objective    the functional of the Lagrangian - mass, stress,
+!                   strain_energy, flap, lag, twist, pitch_link,
+!                   push_rod, hub_force or hub_moment: to optimize,
+!                   the one minimized, the mass unless named; with
+!                   strips and sensitivities, the one the reverse
+!                   sweep differentiates too, the stress unless named
+!      constraints  to optimize, the functionals bounded in every
+!                   scenario, the stress by default
+!      limits       their limits: each functional at most its limit,
+!                   the stress's ks_bound^2 unless given
 !      bounds       the least and the greatest thickness, 0.01 and 0.02
 !      smoothness   the largest difference of adjacent strips, 1e-3
 !      order        of the backward differences of the march, 1 or 2,
@@ -98,13 +114,15 @@
 ! (operation_field, maximum) of
 ! the von Mises function of their stress over the four blades, the
 ! corners and the middles of the long sides of their sections and the
-! revolutions; and the further objectives (objectives_of), means over
-! the revolutions: the blades' strain energy; the squares of their
-! flap and lag displacements and of their elastic twist over the
-! blades and the span; the squares of the forces of the four pitch
-! links on the upper swashplate, of the three push rods' drivers and
-! of the hub's driver, and of the reactions of the hub driver's
-! conditions on its tilt about x and y. With strips, the derivatives
+! revolutions; and the further objectives (pieces_of), the means
+! (operation_field, mean) over the revolutions, the span and the
+! components of their fields: the blades' strain energy per length;
+! the squares of their flap and lag displacements and of their elastic
+! twist; the squares of the forces of the four pitch links on the
+! upper swashplate, of the three push rods' drivers and of the hub's
+! driver, and of the reactions of the hub driver's conditions on its
+! tilt about x and y. A constraint is the same reduction of the field
+! less its limit, at most zero. With strips, the derivatives
 ! of every one along the thickness of each strip by the expansion of
 ! the motion, and the setup's objective's by the reverse sweep too,
 ! -kappa, the smooth maximum unless another is named. At 12 steps, 5
@@ -160,7 +178,7 @@ program rotorcraft_dynamics
   use util_verbosity    , only : set_verbosity
   use operation_manifold, only : continuous_manifold, discrete_manifold, interval, region, points, parameter
   use operation_expansion, only : expansion
-  use operation_field   , only : continuous_field, discrete_field, integral, maximum, heaviside, &
+  use operation_field   , only : continuous_field, discrete_field, integral, mean, maximum, heaviside, &
        &                         operator(+), operator(-), operator(*)
   use operation_residual, only : continuous_residual, discrete_residual, operator(+), operator(*), &
        &                         minimize_together
@@ -180,22 +198,35 @@ program rotorcraft_dynamics
 
   ! the setup
   character(len=16)  :: blade = 'rigid', scenario(3) = [character(len=16) :: 'collective', '', '']
-  character(len=256) :: meshes = ''
+  character(len=256) :: meshes = '', blade_meshes = ''
   real(dp)           :: thickness(48) = 0.02_dp, yield = 350.0e6_dp, ks_weight = 100.0_dp
+  ! the precone of the blades, degrees: each span inclined upward about
+  ! the chord at the root
+  real(dp)           :: precone = 0.0_dp
+  ! the twist of the blades as beams: degrees over the blade's radius,
+  ! linear, nose up positive, zero at the radius twist_zero
+  real(dp)           :: twist = 0.0_dp, twist_zero = 1.5_dp
   real(dp)           :: ks_bound = 0.25_dp, bounds(2) = [0.01_dp, 0.02_dp], smoothness = 1.0e-3_dp
   integer            :: revolutions = 1, steps = 360, every = 10, span_points = 9, strips = 0, order = 1
   logical            :: sensitivities = .true., optimize = .false.
   ! the section of a blade as a beam: the solid plate's, or given by its
   ! properties per length, TACS's uniform HART-II case by default
   character(len=16)  :: section_kind = 'solid'
-  ! the objective whose derivatives the reverse sweep forms too
-  character(len=16)  :: objective = 'stress'
+  ! the objective of the Lagrangian: to optimize, the functional
+  ! minimized, the mass unless named; with sensitivities, the functional
+  ! the reverse sweep differentiates too, the stress unless named. To
+  ! optimize, the functionals bounded in every scenario, and their
+  ! limits, the stress's ks_bound^2 unless given
+  character(len=16)  :: objective = ''
+  character(len=16)  :: constraints(10) = [character(len=16) :: 'stress', '', '', '', '', '', '', '', '', '']
+  real(dp)           :: limits(10) = -huge(1.0_dp)
   real(dp)           :: section_mass = 0.95_dp, section_moments(3) = [7.1828e-4_dp, 1.7e-5_dp, 7.0128e-4_dp]
   real(dp)           :: section_axial = 1.17e7_dp, section_flap = 2.5e2_dp, section_lag = 5.2e3_dp
   real(dp)           :: section_torsion = 1.6e2_dp
   namelist /setup/ blade, scenario, thickness, revolutions, steps, meshes, every, span_points, strips, yield, &
        & ks_weight, sensitivities, optimize, ks_bound, bounds, smoothness, order, section_kind, section_mass, &
-       & section_moments, section_axial, section_flap, section_lag, section_torsion, objective
+       & section_moments, section_axial, section_flap, section_lag, section_torsion, objective, constraints, limits, &
+       & precone, twist, twist_zero, blade_meshes
   ! the objectives besides the mass and the smooth maximum, of the blades
   ! as beams (objectives_of)
   character(len=16), parameter :: further(8) = [character(len=16) :: 'strain_energy', 'flap', 'lag', 'twist', &
@@ -219,10 +250,20 @@ program rotorcraft_dynamics
   if (trim(section_kind) /= 'solid' .and. trim(section_kind) /= 'given') then
      error stop 'rotorcraft_dynamics: the section of a blade as a beam is solid or given'
   end if
-  if (trim(objective) /= 'mass' .and. trim(objective) /= 'stress' .and. .not. any(further == objective)) then
+  if (len_trim(objective) == 0) objective = merge('mass  ', 'stress', optimize)
+  if (.not. functional_named(objective)) then
      error stop 'rotorcraft_dynamics: the objective is mass, stress, strain_energy, flap, lag, twist, pitch_link, &
           &push_rod, hub_force or hub_moment'
   end if
+  do j = 1, count(len_trim(constraints) > 0)
+     if (.not. functional_named(constraints(j))) then
+        error stop 'rotorcraft_dynamics: a constraint is one of the functionals an objective may be'
+     end if
+     if (limits(j) == -huge(1.0_dp)) then
+        if (trim(constraints(j)) /= 'stress') error stop 'rotorcraft_dynamics: each constraint but the stress takes its limit'
+        limits(j) = ks_bound**2
+     end if
+  end do
   if (trim(blade) == 'beam' .and. trim(section_kind) == 'given' .and. strips > 0) then
      error stop 'rotorcraft_dynamics: strips design the thickness of the solid section; a section given by its &
           &properties has none, and states no stress'
@@ -286,9 +327,11 @@ contains
 
     type(continuous_manifold) :: omega, domega, left
     type(continuous_field)    :: t, x, motion, h, adjoint, lambda, nu, kappa, mu_ks, mu_bounds, mu_smooth, bounded
-    type(continuous_field), allocatable :: stresses(:), thicknesses(:), limits(:)
+    type(continuous_field), allocatable :: stresses(:), thicknesses(:), shifted(:)
     class(section)        , allocatable :: s
-    type(continuous_field) :: moments(3)
+    type(continuous_field) :: moments(3), pieces(4, size(further)), mu
+    type(surface)          :: blade_surface
+    integer :: counts(size(further)), c, j
     type(continuous_residual) :: r, g, b, d, L, stressed, within, smooth
     type(chain)               :: march
     type(body_table)          :: table
@@ -360,7 +403,7 @@ contains
     case ('rigid')
        do k = 1, 4
           call rotor % body(omega, blades(k), 'blade_' // trim(degrees(k - 1)), &
-               & turned([(root + tip) / 2.0_dp, 0.0_dp, height], k - 1), &
+               & turned(coned([(root + tip) / 2.0_dp, 0.0_dp, height]), k - 1), &
                & density * thickness(1) * (tip - root) * chord, plate(k - 1), angular_velocity=speed * ez)
        end do
     case ('beam')
@@ -392,9 +435,14 @@ contains
                & continuous_field(omega, [section_lag]), continuous_field(omega, [section_torsion])))
        end if
        do k = 1, 4
-          call rotor % beam(omega, beams(k), part(table % row('cap_' // trim(degrees(k - 1)))), &
-               & 'blade_' // trim(degrees(k - 1)), x, turned([root, 0.0_dp, height], k - 1), &
-               & reshape([turned(ex, k - 1), turned(ey, k - 1), ez], [3, 3]), s)
+          if (twist /= 0.0_dp) then
+             call rotor % beam(omega, beams(k), part(table % row('cap_' // trim(degrees(k - 1)))), &
+                  & 'blade_' // trim(degrees(k - 1)), x, turned([root, 0.0_dp, height], k - 1), blade_axes(k - 1), s, &
+                  & pitch=(twist * pi / (180.0_dp * tip)) * (x + (root - twist_zero)))
+          else
+             call rotor % beam(omega, beams(k), part(table % row('cap_' // trim(degrees(k - 1)))), &
+                  & 'blade_' // trim(degrees(k - 1)), x, turned([root, 0.0_dp, height], k - 1), blade_axes(k - 1), s)
+          end if
        end do
     end select
 
@@ -453,11 +501,17 @@ contains
           call rotor % draw_with(part(k), mesh_surface(trim(meshes) // '/' // trim(table % mesh(k))))
        end do
        do k = 1, 4
-          if (trim(blade) == 'rigid') then
-             call rotor % draw_with(blades(k), plate_surface(k - 1, thickness(1:1)))
+          if (len_trim(blade_meshes) > 0) then
+             blade_surface = mesh_surface(trim(blade_meshes) // '/blade' // trim(degrees(k - 1)) // '.bdf')
+          else if (trim(blade) == 'rigid') then
+             blade_surface = plate_surface(k - 1, thickness(1:1))
           else
-             call rotor % draw_beam_with(beams(k), part(table % row('cap_' // trim(degrees(k - 1)))), &
-                  & plate_surface(k - 1, thickness(1:max(strips, 1))))
+             blade_surface = plate_surface(k - 1, thickness(1:max(strips, 1)))
+          end if
+          if (trim(blade) == 'rigid') then
+             call rotor % draw_with(blades(k), blade_surface)
+          else
+             call rotor % draw_beam_with(beams(k), part(table % row('cap_' // trim(degrees(k - 1)))), blade_surface)
           end if
        end do
     end if
@@ -470,7 +524,10 @@ contains
        mass     = integral(4.0_dp * s % mass, over=omega)
        stresses = [(beams(k) % stress(yield), k = 1, 4)]
        if (size(stresses) > 0) ks = maximum(continuous_field(omega, stresses), over=omega, weight=ks_weight)
-       call objectives_of(rotor, beams, omega, others)
+       call pieces_of(rotor, beams, pieces, counts)
+       do j = 1, size(further)
+          others(j) = mean_of(pieces(1:counts(j), j), omega, 0.0_dp)
+       end do
     end if
 
     ! the march: bdf of the setup's order, from one step of bdf(1)
@@ -502,17 +559,49 @@ contains
           d = continuous_residual(omega % design(), [(thicknesses(k) - thickness(k), k = 1, strips)])
        end if
        if (strips > 0 .and. optimize .and. .not. marched) then
-          allocate(limits(size(stresses)))
-          do k = 1, size(stresses)
-             limits(k) = stresses(k) - ks_bound**2
-          end do
-          bounded  = maximum(continuous_field(omega, limits), over=omega, weight=ks_weight)
-          stressed = continuous_residual(omega % design(), [bounded], inequality=.true.)
           adjoint  = r % multiplier('adjoint')
           lambda   = g % multiplier('lambda')
           nu       = b % multiplier('nu')
-          mu_ks    = stressed % multiplier('mu_ks')
-          L = adjoint*r + lambda*g + nu*b + mu_ks*stressed
+          L = adjoint*r + lambda*g + nu*b
+          ! each constraint the functional's reduction of its field less
+          ! the limit, at most zero, with its multiplier; the mass's, of
+          ! the design alone, stated in the first scenario
+          do c = 1, count(len_trim(constraints) > 0)
+             select case (trim(constraints(c)))
+             case ('stress')
+                allocate(shifted(size(stresses)))
+                do k = 1, size(stresses)
+                   shifted(k) = stresses(k) - limits(c)
+                end do
+                bounded  = maximum(continuous_field(omega, shifted), over=omega, weight=ks_weight)
+                deallocate(shifted)
+                stressed = continuous_residual(omega % design(), [bounded], inequality=.true.)
+                mu_ks    = stressed % multiplier('mu_ks')
+                L = L + mu_ks*stressed
+             case ('mass')
+                if (.not. first) cycle
+                bounded  = integral(4.0_dp * s % mass - limits(c) / omega % measure(), over=omega)
+                stressed = continuous_residual(omega % design(), [bounded], inequality=.true.)
+                mu       = stressed % multiplier('mu_mass')
+                L = L + mu*stressed
+             case default
+                j        = findloc(further, constraints(c), 1)
+                bounded  = mean_of(pieces(1:counts(j), j), omega, limits(c))
+                stressed = continuous_residual(omega % design(), [bounded], inequality=.true.)
+                mu       = stressed % multiplier('mu_' // trim(constraints(c)))
+                L = L + mu*stressed
+             end select
+          end do
+          ! the objective: of the state, in every scenario; the mass, of
+          ! the design alone, in the first, with the inequalities on the
+          ! design alone
+          select case (trim(objective))
+          case ('mass')
+          case ('stress')
+             L = ks + L
+          case default
+             L = others(findloc(further, objective, 1)) + L
+          end select
           if (first) then
              within    = continuous_residual(omega % design(), [(bounds(1) - thicknesses(k), k = 1, strips), &
                   &                                           (thicknesses(k) - bounds(2), k = 1, strips)], &
@@ -523,7 +612,11 @@ contains
                   &                          inequality=.true.)
              mu_bounds = within % multiplier('mu_bounds')
              mu_smooth = smooth % multiplier('mu_smooth')
-             L = mass + L + mu_bounds*within + mu_smooth*smooth
+             if (trim(objective) == 'mass') then
+                L = mass + L + mu_bounds*within + mu_smooth*smooth
+             else
+                L = L + mu_bounds*within + mu_smooth*smooth
+             end if
           end if
        else if (strips > 0 .and. sensitivities .and. .not. marched) then
           adjoint = r % multiplier('adjoint')
@@ -553,67 +646,76 @@ contains
 
   !===================================================================!
   ! THE FURTHER OBJECTIVES of the blades as beams, each the mean over
-  ! the revolutions, and of a field of the blades over the four blades
-  ! and the span: the blades' strain energy; the squares of their flap
-  ! and lag displacements and of their elastic twist; and the squares
-  ! of the forces of the four pitch links on the upper swashplate, of
-  ! the three push rods' drivers and of the hub's driver, and of the
-  ! reactions of the hub driver's conditions on its tilt about x and y.
-  ! Each is an integral over the manifold, as the reverse sweep reads
-  ! an objective under the elements: a reaction, a function of time
-  ! alone, integrates over the span to the span's length times itself.
+  ! the manifold - the revolutions and the span - and over its
+  ! components (operation_field, mean) of a field: the blades' strain
+  ! energy per length; the squares of their flap and lag displacements
+  ! and of their elastic twist; the squares of the forces of the four
+  ! pitch links on the upper swashplate, of the three push rods'
+  ! drivers and of the hub's driver, and of the reactions of the hub
+  ! driver's conditions on its tilt about x and y. The components of
+  ! objective j are pieces(1:counts(j), j), the blades', the links',
+  ! the rods' or the hub's; a reaction, a function of time alone, has
+  ! over the manifold its mean over the revolutions.
   !===================================================================!
 
-  subroutine objectives_of(rotor, beams, omega, others)
+  subroutine pieces_of(rotor, beams, pieces, counts)
 
-    type(mechanism)          , intent(in)  :: rotor
-    type(beam_blade)         , intent(in)  :: beams(4)
-    type(continuous_manifold), intent(in)  :: omega
-    type(continuous_field)   , intent(out) :: others(:)
+    type(mechanism)       , intent(in)  :: rotor
+    type(beam_blade)      , intent(in)  :: beams(4)
+    type(continuous_field), intent(out) :: pieces(:,:)
+    integer               , intent(out) :: counts(:)
 
-    type(continuous_field) :: strain, flap, lag, twist, links, rods, force, tilt
     type(continuous_field), allocatable :: r(:)
-    real(dp) :: period, span
-    integer  :: k
+    integer :: k
 
-    period = revolutions * 2.0_dp * pi / speed
-    span   = tip - root
-    strain = beams(1) % strain_energy()
-    flap   = beams(1) % w * beams(1) % w
-    lag    = beams(1) % v * beams(1) % v
-    twist  = beams(1) % phi * beams(1) % phi
-    do k = 2, 4
-       strain = strain + beams(k) % strain_energy()
-       flap   = flap + beams(k) % w * beams(k) % w
-       lag    = lag + beams(k) % v * beams(k) % v
-       twist  = twist + beams(k) % phi * beams(k) % phi
+    counts = [4, 4, 4, 4, 4, 3, 1, 1]
+    do k = 1, 4
+       pieces(k, 1) = beams(k) % strain_energy()
+       pieces(k, 2) = beams(k) % w * beams(k) % w
+       pieces(k, 3) = beams(k) % v * beams(k) % v
+       pieces(k, 4) = beams(k) % phi * beams(k) % phi
+       r = rotor % reactions('swashplate_link_' // trim(degrees(k - 1)))
+       pieces(k, 5) = r(1) * r(1) + r(2) * r(2) + r(3) * r(3)
     end do
-    r     = rotor % reactions('swashplate_link_' // trim(degrees(0)))
-    links = r(1) * r(1) + r(2) * r(2) + r(3) * r(3)
-    do k = 2, 4
-       r     = rotor % reactions('swashplate_link_' // trim(degrees(k - 1)))
-       links = links + r(1) * r(1) + r(2) * r(2) + r(3) * r(3)
+    do k = 1, 3
+       r = rotor % reactions('rod_driver_' // trim(degrees(k)))
+       pieces(k, 6) = r(1) * r(1) + r(2) * r(2) + r(3) * r(3)
     end do
-    r    = rotor % reactions('rod_driver_' // trim(degrees(1)))
-    rods = r(1) * r(1) + r(2) * r(2) + r(3) * r(3)
-    do k = 2, 3
-       r    = rotor % reactions('rod_driver_' // trim(degrees(k)))
-       rods = rods + r(1) * r(1) + r(2) * r(2) + r(3) * r(3)
-    end do
-    r     = rotor % reactions('hub_driver')
-    force = r(1) * r(1) + r(2) * r(2) + r(3) * r(3)
-    tilt  = r(4) * r(4) + r(5) * r(5)
+    r = rotor % reactions('hub_driver')
+    pieces(1, 7) = r(1) * r(1) + r(2) * r(2) + r(3) * r(3)
+    pieces(1, 8) = r(4) * r(4) + r(5) * r(5)
 
-    others(1) = integral((1.0_dp / period) * strain, over=omega)
-    others(2) = integral((1.0_dp / (4.0_dp * span * period)) * flap, over=omega)
-    others(3) = integral((1.0_dp / (4.0_dp * span * period)) * lag, over=omega)
-    others(4) = integral((1.0_dp / (4.0_dp * span * period)) * twist, over=omega)
-    others(5) = integral((1.0_dp / (4.0_dp * span * period)) * links, over=omega)
-    others(6) = integral((1.0_dp / (3.0_dp * span * period)) * rods, over=omega)
-    others(7) = integral((1.0_dp / (span * period)) * force, over=omega)
-    others(8) = integral((1.0_dp / (span * period)) * tilt, over=omega)
+  end subroutine pieces_of
 
-  end subroutine objectives_of
+  ! the mean over the manifold and the components of the field of these
+  ! components, each less the shift: the functional less the shift
+  function mean_of(pieces, omega, shift) result(f)
+
+    type(continuous_field)   , intent(in) :: pieces(:)
+    type(continuous_manifold), intent(in) :: omega
+    real(dp)                 , intent(in) :: shift
+    type(continuous_field) :: f
+
+    type(continuous_field), allocatable :: shifted(:)
+    integer :: k
+
+    if (shift == 0.0_dp) then
+       f = mean(continuous_field(omega, pieces), over=omega)
+       return
+    end if
+    allocate(shifted(size(pieces)))
+    do k = 1, size(pieces)
+       shifted(k) = pieces(k) - shift
+    end do
+    f = mean(continuous_field(omega, shifted), over=omega)
+
+  end function mean_of
+
+  ! whether the name is one of the functionals an objective may be
+  logical function functional_named(name)
+    character(len=*), intent(in) :: name
+    functional_named = trim(name) == 'mass' .or. trim(name) == 'stress' .or. any(further == name)
+  end function functional_named
 
   !===================================================================!
   ! ONE SCENARIO REPORTED: the energy at every instant - of the rigid
@@ -639,7 +741,7 @@ contains
     real(dp), allocatable  :: e(:), hub_eps(:), found_thickness(:)
     character(len=32), allocatable :: names(:)
     character(len=:), allocatable :: drawing
-    integer :: k, n, j
+    integer :: k, n, j, c
 
     ! the energy at every instant - of the rigid bodies alone when the
     ! blades are beams - and the hub's angle; the first point of each
@@ -690,8 +792,16 @@ contains
                 found_thickness = found % value(1, :)
                 print '(a)', '   the thickness found, strip by strip, and the multiplier of the stress'
                 print '(8es16.8)', found_thickness
-                found = solution % fields(['mu_ks'])
-                print '(a, es24.16)', '   mu_ks ', found % value(1, 1)
+                if (any(constraints == 'stress')) then
+                   found = solution % fields(['mu_ks'])
+                   print '(a, es24.16)', '   mu_ks ', found % value(1, 1)
+                end if
+                do c = 1, count(len_trim(constraints) > 0)
+                   if (trim(constraints(c)) == 'stress') cycle
+                   if (trim(constraints(c)) == 'mass' .and. .not. alone .and. name /= scenario(1)) cycle
+                   found = solution % fields([character(len=32) :: 'mu_' // trim(constraints(c))])
+                   print '(a, a, es24.16)', '   mu_', trim(constraints(c)), found % value(1, 1)
+                end do
              end if
           end if
        else if (strips > 0 .and. sensitivities) then
@@ -736,7 +846,7 @@ contains
        if (.not. alone) drawing = drawing // '_' // trim(name)
        if (present(design)) drawing = drawing // '_' // design
        drawn = rotor
-       if (allocated(found_thickness)) then
+       if (allocated(found_thickness) .and. len_trim(blade_meshes) == 0) then
           do k = 1, size(drawn % beam_surfaces)
              drawn % beam_surfaces(k) = plate_surface(k - 1, found_thickness)
           end do
@@ -785,7 +895,7 @@ contains
                   & + (x(:, face(4, f)) - x(:, face(1, f))) * real(j, dp) / n2
              m    = max(1, min(size(h), 1 + int((y(1) - root) / (tip - root) * size(h))))
              y(3) = height + (y(3) - height) * h(m)
-             s % points = reshape([s % points, turned(y, k)], [3, size(s % points, 2) + 1])
+             s % points = reshape([s % points, turned(coned(y), k)], [3, size(s % points, 2) + 1])
           end do
        end do
        do j = 1, n2
@@ -800,18 +910,56 @@ contains
   end function plate_surface
 
   ! the inertia of the blade of the azimuth of k quarter turns about its
-  ! centre of mass: a plate of the span, the chord and the thickness
+  ! centre of mass: a plate of the span, the chord and the thickness, its
+  ! moments about the blade's axes
   function plate(k) result(inertia)
     integer, intent(in) :: k
-    real(dp) :: inertia(3,3), mass, span
+    real(dp) :: inertia(3,3), mass, span, moments(3), axes(3,3)
+    integer :: i, j
     span    = tip - root
     mass    = density * thickness(1) * span * chord
     inertia = 0.0_dp
     inertia(1, 1) = mass * (chord**2 + thickness(1)**2) / 12.0_dp
     inertia(2, 2) = mass * (span**2 + thickness(1)**2) / 12.0_dp
     inertia(3, 3) = mass * (span**2 + chord**2) / 12.0_dp
+    if (precone /= 0.0_dp) then
+       moments = [inertia(1, 1), inertia(2, 2), inertia(3, 3)]
+       axes    = blade_axes(k)
+       do i = 1, 3
+          do j = 1, 3
+             inertia(i, j) = sum(moments * axes(i, :) * axes(j, :))
+          end do
+       end do
+       return
+    end if
     if (mod(k, 2) == 1) inertia(1:2, 1:2) = reshape([inertia(2, 2), 0.0_dp, 0.0_dp, inertia(1, 1)], [2, 2])
   end function plate
+
+  ! the axes of the blade of k quarter turns - span, chord, thickness -
+  ! the span along the azimuth inclined upward by the precone
+  function blade_axes(k) result(axes)
+    integer, intent(in) :: k
+    real(dp) :: axes(3,3), angle
+    if (precone == 0.0_dp) then
+       axes = reshape([turned(ex, k), turned(ey, k), ez], [3, 3])
+       return
+    end if
+    angle = precone * pi / 180.0_dp
+    axes  = reshape([turned([cos(angle), 0.0_dp, sin(angle)], k), turned(ey, k), &
+         &           turned([-sin(angle), 0.0_dp, cos(angle)], k)], [3, 3])
+  end function blade_axes
+
+  ! a point of the blade along the azimuth zero, coned about the chord at
+  ! the root by the precone
+  function coned(p) result(q)
+    real(dp), intent(in) :: p(3)
+    real(dp) :: q(3), angle
+    q = p
+    if (precone == 0.0_dp) return
+    angle = precone * pi / 180.0_dp
+    q(1) = root + (p(1) - root) * cos(angle) - (p(3) - height) * sin(angle)
+    q(3) = height + (p(1) - root) * sin(angle) + (p(3) - height) * cos(angle)
+  end function coned
 
   ! the point x turned about z by k quarter turns
   function turned(x, k) result(y)

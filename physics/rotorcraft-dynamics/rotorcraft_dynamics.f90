@@ -790,7 +790,7 @@ contains
                 names = [(numbered('h', k), k = 1, strips)]
                 found = solution % fields(names)
                 found_thickness = found % value(1, :)
-                print '(a)', '   the thickness found, strip by strip, and the multiplier of the stress'
+                print '(a)', '   the thickness found, strip by strip, and the multipliers of the constraints'
                 print '(8es16.8)', found_thickness
                 if (any(constraints == 'stress')) then
                    found = solution % fields(['mu_ks'])
@@ -799,7 +799,8 @@ contains
                 do c = 1, count(len_trim(constraints) > 0)
                    if (trim(constraints(c)) == 'stress') cycle
                    if (trim(constraints(c)) == 'mass' .and. .not. alone .and. name /= scenario(1)) cycle
-                   found = solution % fields([character(len=32) :: 'mu_' // trim(constraints(c))])
+                   names = [character(len=32) :: 'mu_' // trim(constraints(c))]
+                   found = solution % fields(names)
                    print '(a, a, es24.16)', '   mu_', trim(constraints(c)), found % value(1, 1)
                 end do
              end if

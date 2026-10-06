@@ -141,6 +141,11 @@ On one image of this workstation:
 At 36 steps of bdf(1) the blades' stress is 1.29 times the yield at
 2 cm and no thickness meets `ks_bound = 0.25`; the bounds 1.25 and 1.5
 above stand in for it until the march of the reduced case is decided.
+That stress, as the 0.29 at 72 steps of bdf(2), is the start's: the
+blades begin unstretched at the full rate, and the axial wave this
+sets off gives the largest stress, which does not converge in the
+step; once it has passed, the ratio is the centrifugal stress, some
+0.16 (`doc/rotorcraft-optimization.md`, "The published optimization").
 Five points of the span resolve the stress at the root to some 15 per
 cent; the case as TACS states it - 48 strips, 49 points of the span,
 360 steps, three scenarios - would take days (see

@@ -628,11 +628,98 @@ weight 1e5) at most 0.25 in each of the three scenarios, from 2 cm, by
 SLSQP in 73 iterations; all three stress constraints active, the mass
 some 0.56 of the initial, the thickness some 17 mm at the root falling
 by about 1 mm a panel to 10 mm at 40 per cent of the span and on to the
-tip (Figs. 5.15 and 5.16, read off). At 72 steps of bdf(2) the beam's
-largest ratio is 0.293 to 0.299 in the three scenarios at 1 and at 2
-cm alike: a uniform blade's centrifugal stress at the root does not
-depend on its thickness, so that only a blade thicker at the root than
-outboard meets 0.25 - the published optimum's shape.
+tip (Figs. 5.15 and 5.16, read off).
+
+Stated here - `scenario = 'collective', 'longitudinal', 'lateral',
+steps = 72, order = 2, strips = 8, thickness = 8*0.02, optimize =
+.true., ks_bound = 0.25, ks_weight = 1.0e4, bounds = 0.01, 0.02,
+smoothness = 6.0e-3` - the blades are beams of eight strips on five
+points of the span, adjacent strips within 6 mm, the dissertation's 1
+mm over the six panels of a strip, and the smooth maximum is of the
+squared ratio of weight 1e4, about 5e3 on the ratio itself. In 68 min
+41 s it finds 11.79 mm in the root strip and the lower bound outboard,
+the mass 0.511 of the initial; the longitudinal bound active, mu_ks
+1.31, the collective's 0.12 per cent and the lateral's 1.8 per cent
+below theirs. This is not the published optimum, and what decides it
+is not the blade's stress:
+
+- **The largest stress is the start's.** The blades begin unstretched
+  at the full rate, and the axial wave this sets off, near 850 Hz and
+  49 periods a revolution, gives the largest ratio at the second or
+  third instant: at the design found 0.250, 0.207, 0.227 and 0.264 at
+  72, 144, 288 and 576 steps, not converging. The wave lasts as long
+  as the march damps it: at 576 steps the ratio is 0.21 to 0.25 up to
+  60 degrees and 0.17 to 0.18 up to 120, where at 288 steps it is 0.16.
+  The blade itself is undamped. Past 150 degrees the ratio is 0.152 to
+  0.159 at 288 and 576 steps, the centrifugal stress at the root of the
+  second strip, 0.153. A uniform blade's centrifugal stress at the root
+  is rho Omega^2 (R^2 - r0^2) / (2 sigma_y), 0.162 of the yield at any
+  thickness: the 0.293 to 0.299 measured at 72 steps, read before as
+  that stress, is the start's. The bound 0.25 and the limits set from
+  those measurements bound the march's error.
+- **The reactions' mean squares include the start's impulse.** The
+  push rods' doubles as the step halves, 6.7e8, 1.3e9, 2.7e9 and 5.3e9
+  N^2: it grows as 1/dt. The flap's and the lag's converge, the
+  flap's at the second order: 9.2e-7, 3.5e-7, 2.7e-7 and 2.5e-7 m^2.
+- **Five points of the span are too few** for a thickness that changes
+  from strip to strip: one cubic element spans two strips, its strain
+  continuous. At nine points, one element a strip, the design found
+  exceeds its bound in every scenario by 12 per cent (0.0703, 0.0704,
+  0.0690).
+- **TACS's shells state a stress at the root that the beam does not.**
+  Their smooth maximum at 2 cm is 0.438 to 0.441 ("Targets from the
+  TACS run"), against the beam's 0.16 once the start has passed, and
+  their optimum keeps 17 mm at the root.
+
+At the design found, rounded to nine digits, the reverse sweep and the
+expansion give the smooth maximum's derivatives in the longitudinal
+scenario to 2.2e-14; the root strip's stationarity, dm/dh_1 + mu_ks
+dKS/dh_1 = 0, gives mu_ks to 1.0e-8 of the one returned, and the seven
+lower bounds' multipliers, dm/dh_k + mu_ks dKS/dh_k, are 14.1 to 19.0,
+all positive: the discrete problem is solved.
+The comparison with the dissertation waits on initial data consistent
+with the rotation ("Decisions for the author", 5) and a march
+converged in the step. The least mean square of the flap under the
+mass and the stress (`objective = 'flap', constraints = 'mass',
+'stress', limits = 1.6303345746653587, 0.0849`, 72 steps), whose
+report first stopped the program (23b8294), ends with both constraints
+inactive, its limits also set from the march's error; at 72 steps its
+objective is mostly that error, the flap at the published design 2.6
+times its value at 144 steps. Its design is not reported.
+
+## Other published optimizations
+
+Chattopadhyay and Walsh (NASA TM-100569, 1988; the journal paper,
+Journal of the American Helicopter Society 34(4), 1989) minimize the
+weight of the blades of a four-bladed articulated rotor in vacuum, 22
+ft in radius at 293 rpm, its blade a box beam inside the airfoil in ten
+segments. The design is each segment's wall thicknesses and
+nonstructural weight and, for the tapered blade, the box's height at
+the root and its taper ratio. The constraints are the first three
+lead-lag and the first two flap frequencies within 1 per cent of the
+reference blade's; the autorotational inertia, the sum of each
+segment's weight times the square of its radius, at least the
+reference's; and in each segment the centrifugal stress, the weight
+outboard times Omega^2 r over its area, at most the allowable over a
+factor of safety of 3. The reference blade weighs 98.27 lb, the optimum
+95.62 lb with 30 design variables, 93.61 with 40 and 92.16 tapered with
+42, the first lead-lag frequency at its upper bound and the inertia at
+its lower in every case. The paper tabulates the reference blade
+segment by segment and the optima (its Tables 1 to 3 and 5 to 7): a
+validation for the blades as beams. Its mass and its stress are
+reductions the rotor states already, and the inertia is another, the
+integral of the mass per length times r^2. Missing are the frequencies,
+the eigenvalues of the laws linearised about the steady rotation; a
+bound from below, the inertia at least its reference, where a limit
+bounds from above; the box beam's section; the hinges at 0.833 ft; and
+the nonstructural masses.
+
+Peters, Ko, Korn and Rossow place the frequencies of a blade by its
+mass and stiffness, also in vacuum (39th Forum of the American
+Helicopter Society, 1983; NASA grant NAG-1-250, 1982 to 1985), which
+also needs the eigenvalues. The optimizations of Ganguli and Chopra, of
+Friedmann and of the HART II blades reduce the vibratory loads of the
+hub in forward flight and need the air.
 
 ## HART II
 
@@ -730,6 +817,19 @@ Open, with what the work has measured:
 4. **The weight of the smooth maximum** of that case: near 1e5, so
    that it bounds the largest stress as TACS's rho_KS = 1e5 does, the
    weight of 100 here lying a factor of two below it at 360 steps.
+5. **The initial data.** The rotor starts at the full rate, its blades
+   unstretched and its push rods not at rest against their drivers, as
+   TACS's case does. The start then decides the largest stress and the
+   reactions' mean squares, and neither converges in the step ("The
+   published optimization"): every optimization stated so far bounds
+   the march's error. Proposed: the steady rotation as the initial data
+   - the blades stretched by their centrifugal load, the rods at rest.
+   It is also the state about which the fan plot's frequencies are the
+   eigenvalues, and its stress is the published minimum-weight blades'
+   (TM-100569). The alternative, the reductions over a window of time
+   after the start - a part of the time factor, as a face is a part of
+   the boundary - converges only as fast as the march damps the start's
+   wave, which the blade does not.
 
 ## Targets from the TACS run
 

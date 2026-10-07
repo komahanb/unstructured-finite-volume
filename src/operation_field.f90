@@ -39,7 +39,7 @@ module operation_field
   private
   public :: continuous_support, discrete_support
   public :: continuous_field, discrete_field
-  public :: unknown_field, coordinate_field, integral, mean, maximum, minimum, representation
+  public :: unknown_field, coordinate_field, integral, mean, maximum, minimum, representation, indicators
   public :: WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR, DESIGN_FACTOR, SPACE_FACE, TIME_WINDOW
 
   ! the parts a support can be of another
@@ -201,12 +201,19 @@ module operation_field
      procedure, private :: plus, minus, times, over, plus_real, minus_real, times_real, over_real, negated
      procedure, private :: to_integer, to_real
      procedure, private, pass(b) :: real_plus, real_minus, real_times, real_over
+     ! A FIELD GIVEN TO AN ARRAY OF FIELDS gives its components, each a
+     ! field of one component: a coordinate of several components its
+     ! coordinates; a field of one component given to an array that
+     ! exists is given to each of its fields
+     generic   :: assignment(=) => component_fields
+     procedure, private, pass(rhs) :: component_fields
 
   end type continuous_field
 
   interface continuous_field
      module procedure create_tuple
      module procedure create_constants
+     module procedure create_on_basis
   end interface continuous_field
 
   !===================================================================!
@@ -355,22 +362,32 @@ contains
 
   end function unknown_field
 
-  function coordinate_field(on, name, c, of_design) result(this)
+  function coordinate_field(on, name, c, of_design, components) result(this)
 
     class(continuous_support), intent(in) :: on
     character(len=*)         , intent(in) :: name
     integer                  , intent(in) :: c
     logical                  , intent(in), optional :: of_design
+    ! a design coordinate of several components, the design coordinates
+    ! c, c + 1, ..: one field of as many components
+    integer                  , intent(in), optional :: components
     type(continuous_field) :: this
 
+    integer :: k, n
+
+    n = 1
+    if (present(components)) n = components
     this % on         = on % identity
     this % name       = name
     this % coordinate = c
-    this % index      = [0]
+    this % index      = [(0, k = 1, n)]
     if (present(of_design)) this % design_coordinate = of_design
+    if (n > 1 .and. .not. this % design_coordinate) then
+       error stop 'operation_field: a coordinate of several components is a design coordinate'
+    end if
     if (this % design_coordinate) then
        ! a direction, of index zero, is no leaf of an expression
-       this % component = [design(max(c, 1))]
+       this % component = [(design(max(c, 1) + k - 1), k = 1, n)]
     else
        this % component = [coordinate(c)]
     end if
@@ -425,6 +442,82 @@ contains
     end do
 
   end function create_constants
+
+  ! THE FIELD OF COEFFICIENTS ON A BASIS: the sum of each coefficient
+  ! times its function of the basis, both arrays of scalar fields of
+  ! one manifold
+  function create_on_basis(coefficients, basis) result(this)
+
+    type(continuous_field), intent(in) :: coefficients(:), basis(:)
+    type(continuous_field) :: this
+
+    integer :: k
+
+    if (size(coefficients) /= size(basis) .or. size(basis) < 1) then
+       error stop 'operation_field: a field on a basis has one coefficient per function of the basis, one at least'
+    end if
+    this = coefficients(1) * basis(1)
+    do k = 2, size(basis)
+       this = this + coefficients(k) * basis(k)
+    end do
+
+  end function create_on_basis
+
+  ! THE INDICATORS of the intervals between edges along a coordinate x,
+  ! e_1 < e_2 < .. < e_n: the k-th one between e_k and e_k+1, the first
+  ! one below e_2 and the last one from e_n-1 on, so that they sum to
+  ! one everywhere
+  function indicators(x, edges) result(basis)
+
+    type(continuous_field), intent(in) :: x
+    real(dp)              , intent(in) :: edges(:)
+    type(continuous_field), allocatable :: basis(:)
+
+    integer :: k, n
+
+    n = size(edges) - 1
+    if (n < 1) error stop 'operation_field: indicators take two edges at least'
+    do k = 2, size(edges)
+       if (.not. edges(k) > edges(k - 1)) error stop 'operation_field: the edges of indicators ascend'
+    end do
+    allocate(basis(n))
+    if (n == 1) then
+       basis(1) = 0.0_dp * x + 1.0_dp
+       return
+    end if
+    basis(1) = 1.0_dp - heaviside(x - edges(2))
+    do k = 2, n - 1
+       basis(k) = heaviside(x - edges(k)) - heaviside(x - edges(k + 1))
+    end do
+    basis(n) = heaviside(x - edges(n))
+
+  end function indicators
+
+  ! a field given to an array of fields: its components, or, of one
+  ! component and the array allocated, the field in each
+  subroutine component_fields(lhs, rhs)
+
+    type(continuous_field), allocatable, intent(inout) :: lhs(:)
+    class(continuous_field), intent(in) :: rhs
+
+    integer :: k
+
+    if (size(rhs % component) == 1 .and. allocated(lhs)) then
+       do k = 1, size(lhs)
+          lhs(k) = rhs
+       end do
+       return
+    end if
+    if (allocated(lhs)) deallocate(lhs)
+    allocate(lhs(size(rhs % component)))
+    do k = 1, size(rhs % component)
+       lhs(k) = rhs
+       lhs(k) % component = [rhs % component(k)]
+       lhs(k) % index     = [rhs % index(k)]
+       if (rhs % design_coordinate .and. rhs % coordinate > 0) lhs(k) % coordinate = rhs % coordinate + k - 1
+    end do
+
+  end subroutine component_fields
 
   !===================================================================!
   ! THE REDUCTIONS of a field over a factor of its manifold - the whole,
@@ -1887,10 +1980,10 @@ contains
     allocate(chosen % on, source=this % on)
     count = 0
     do k = 1, size(names)
-       if (count_named(names(k)) == 0 .and. design_index(names(k)) == 0) then
+       if (count_named(names(k)) == 0 .and. count_design(names(k)) == 0) then
           error stop 'operation_field: fields names a component the field does not have: ' // trim(names(k))
        end if
-       count = count + max(count_named(names(k)), 1)
+       count = count + max(count_named(names(k)), count_design(names(k)))
     end do
     allocate(chosen % name(count), chosen % value(size(this % value, 1), count), slot(count))
     allocate(design(0))
@@ -1902,11 +1995,15 @@ contains
           if (this % along /= 0) then
              error stop 'operation_field: the design is read from the solution, not from a derivative of it'
           end if
-          count  = count + 1
-          design = [design, design_index(names(k))]
-          chosen % name(count)     = names(k)
-          chosen % value(:, count) = this % on % expansion % at(design(size(design)))
-          slot(count) = nrow + size(design)
+          ! every design coordinate of the name, a component each
+          do j = 1, size(this % on % expansion % name)
+             if (trim(this % on % expansion % name(j)) /= trim(names(k))) cycle
+             count  = count + 1
+             design = [design, j]
+             chosen % name(count)     = names(k)
+             chosen % value(:, count) = this % on % expansion % at(j)
+             slot(count) = nrow + size(design)
+          end do
           cycle
        end if
        do j = 1, size(this % name)
@@ -1947,16 +2044,17 @@ contains
       end do
     end function count_named
 
-    ! the design coordinate of the support named so, zero for none
-    pure integer function design_index(name)
+    ! the number of design coordinates of the support named so, the
+    ! components of a design coordinate
+    pure integer function count_design(name)
       character(len=*), intent(in) :: name
       integer :: i
-      design_index = 0
+      count_design = 0
       if (.not. allocated(this % on % expansion % name)) return
       do i = 1, size(this % on % expansion % name)
-         if (trim(this % on % expansion % name(i)) == trim(name)) design_index = i
+         if (trim(this % on % expansion % name(i)) == trim(name)) count_design = count_design + 1
       end do
-    end function design_index
+    end function count_design
 
   end function fields
 

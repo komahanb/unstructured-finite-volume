@@ -97,16 +97,18 @@ module operation_manifold
   end interface corners
 
   ! the design: a coordinate fixed at a value, a point of the design
-  ! space; its discrete image is the expansion of an order at that
-  ! value, so that the discrete solution stores its derivatives along
-  ! the design to the order
+  ! space, or a coordinate of several components fixed at their values;
+  ! its discrete image is the expansion of an order at those values,
+  ! one design coordinate a component, so that the discrete solution
+  ! stores its derivatives along the design to the order
   type :: parameter
      character(len=MAX_NAME) :: name = ''
-     real(dp) :: value = 0.0_dp
+     real(dp), allocatable :: value(:)
   end type parameter
 
   interface parameter
      module procedure create_parameter
+     module procedure create_parameter_of_values
   end interface parameter
 
   type, extends(continuous_support) :: continuous_manifold
@@ -328,9 +330,22 @@ contains
        error stop 'operation_manifold: the design coordinate is named by one to 32 characters'
     end if
     this % name  = name
-    this % value = value
+    this % value = [value]
 
   end function create_parameter
+
+  ! a design coordinate of several components
+  function create_parameter_of_values(name, values) result(this)
+
+    character(len=*), intent(in) :: name
+    real(dp)        , intent(in) :: values(:)
+    type(parameter) :: this
+
+    if (size(values) < 1) error stop 'operation_manifold: a design coordinate has one component at least'
+    this = create_parameter(name, values(1))
+    this % value = values
+
+  end function create_parameter_of_values
 
   function create_manifold(time, space, design) result(this)
 
@@ -512,14 +527,17 @@ contains
     character(len=*)          , intent(in) :: name
     type(continuous_field) :: c
 
-    integer :: axis, at
+    integer :: axis, at, first
 
     if (this % with_design) then
+       first = 1
        do at = 1, size(this % design_parameter)
           if (trim(name) == trim(this % design_parameter(at) % name)) then
-             c = coordinate_field(this, name, at, of_design=.true.)
+             c = coordinate_field(this, name, first, of_design=.true., &
+                  & components=size(this % design_parameter(at) % value))
              return
           end if
+          first = first + size(this % design_parameter(at) % value)
        end do
     end if
     axis = 0
@@ -699,7 +717,7 @@ contains
     if (.not. this % with_design) then
        error stop 'operation_manifold: a direction in the design requires a manifold with a design coordinate'
     end if
-    if (size(along) /= size(this % design_parameter)) then
+    if (size(along) /= size(design_values(this))) then
        error stop 'operation_manifold: a direction in the design has one entry per design coordinate'
     end if
     if (all(along == 0.0_dp)) then
@@ -709,6 +727,29 @@ contains
     w % direction = along
 
   end function manifold_direction
+
+  ! the design coordinates, the components of each parameter in turn:
+  ! their values, and their names, a parameter's name each of its
+  ! components'
+  pure function design_values(this) result(values)
+    class(continuous_manifold), intent(in) :: this
+    real(dp), allocatable :: values(:)
+    integer :: k
+    allocate(values(0))
+    do k = 1, size(this % design_parameter)
+       values = [values, this % design_parameter(k) % value]
+    end do
+  end function design_values
+
+  pure function design_names(this) result(names)
+    class(continuous_manifold), intent(in) :: this
+    character(len=MAX_NAME), allocatable :: names(:)
+    integer :: k, i
+    allocate(names(0))
+    do k = 1, size(this % design_parameter)
+       names = [names, (this % design_parameter(k) % name, i = 1, size(this % design_parameter(k) % value))]
+    end do
+  end function design_names
 
   !===================================================================!
   ! THE DESIGN FACTOR: the point {nu} of the design space, a manifold
@@ -780,15 +821,15 @@ contains
     image % identity = this % identity
     if (present(design)) then
        image % expansion = design
-       image % expansion % at   = [(this % design_parameter(k) % value, k = 1, size(this % design_parameter))]
-       image % expansion % name = [(this % design_parameter(k) % name, k = 1, size(this % design_parameter))]
+       image % expansion % at   = design_values(this)
+       image % expansion % name = design_names(this)
        if (allocated(design % along)) then
-          if (size(design % along, 1) /= size(this % design_parameter)) then
+          if (size(design % along, 1) /= size(image % expansion % at)) then
              error stop 'operation_manifold: a direction of the expansion has one entry per design coordinate'
           end if
        else
-          allocate(image % expansion % along(size(this % design_parameter), size(this % design_parameter)), source=0.0_dp)
-          do k = 1, size(this % design_parameter)
+          allocate(image % expansion % along(size(image % expansion % at), size(image % expansion % at)), source=0.0_dp)
+          do k = 1, size(image % expansion % at)
              image % expansion % along(k, k) = 1.0_dp
           end do
        end if

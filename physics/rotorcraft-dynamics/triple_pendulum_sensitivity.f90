@@ -37,9 +37,8 @@ program triple_pendulum_sensitivity
   use util_verbosity     , only : set_verbosity
   use operation_manifold , only : continuous_manifold, discrete_manifold, interval, points, parameter
   use operation_expansion, only : expansion
-  use operation_field    , only : continuous_field, discrete_field, integral, cos, &
-       &                          operator(+), operator(-), operator(*), operator(/), operator(**)
-  use operation_residual , only : continuous_residual, discrete_residual, operator(+), operator(*)
+  use operation_field    , only : continuous_field, discrete_field, integral, cos
+  use operation_residual , only : continuous_residual, discrete_residual
   use operation_family   , only : dirk, bdf, chain
   use multibody_dynamics , only : rigid_body, mechanism, spherical, revolute
 

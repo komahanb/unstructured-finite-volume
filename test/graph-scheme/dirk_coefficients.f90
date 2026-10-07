@@ -28,7 +28,6 @@ program dirk_coefficients
   use util_precision    , only : dp
   use operation_manifold, only : continuous_manifold, discrete_manifold
   use operation_field   , only : continuous_field, discrete_field
-  use operation_field   , only : operator(+), operator(-), operator(*), operator(/), operator(**)
   use operation_residual, only : continuous_residual, discrete_residual
   use util_verbosity    , only : set_verbosity
 

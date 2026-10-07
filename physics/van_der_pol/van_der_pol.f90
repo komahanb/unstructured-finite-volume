@@ -35,9 +35,8 @@ program van_der_pol
   use util_precision    , only : dp
   use util_verbosity    , only : set_verbosity
   use operation_manifold, only : continuous_manifold, discrete_manifold, interval, points
-  use operation_field   , only : continuous_field, discrete_field, integral, &
-       &                         operator(+), operator(-), operator(*), operator(/), operator(**)
-  use operation_residual, only : continuous_residual, discrete_residual, operator(+), operator(*)
+  use operation_field   , only : continuous_field, discrete_field, integral
+  use operation_residual, only : continuous_residual, discrete_residual
   use operation_family  , only : dirk, bdf, adams, chain
 
   implicit none

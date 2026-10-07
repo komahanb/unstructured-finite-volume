@@ -89,7 +89,6 @@ module operation_residual
   private
   public :: residual_operator
   public :: continuous_residual, discrete_residual, minimize_together
-  public :: operator(+), operator(*)
 
   !===================================================================!
   ! THE PROJECTION OF A LAW ON THE CELLS, tested against a basis in
@@ -352,21 +351,19 @@ module operation_residual
      procedure :: discretize => residual_discretize
      procedure :: multiplier => residual_multiplier
      procedure :: num_terms
+     ! THE LAGRANGIAN's terms: residuals summed, an objective added, a
+     ! multiplier paired with a term
+     generic   :: operator(+) => residual_sum, objective_sum
+     generic   :: operator(*) => paired_term
+     procedure, private :: residual_sum
+     procedure, private, pass(residual) :: objective_sum
+     procedure, private, pass(g) :: paired_term
 
   end type continuous_residual
 
   interface continuous_residual
      module procedure create_continuous
   end interface continuous_residual
-
-  interface operator(+)
-     module procedure residual_sum
-     module procedure objective_sum
-  end interface operator(+)
-
-  interface operator(*)
-     module procedure paired_term
-  end interface operator(*)
 
   !===================================================================!
   ! THE DISCRETE RESIDUAL: the equations of the whole manifold as one
@@ -2465,7 +2462,8 @@ contains
 
   function residual_sum(a, b) result(this)
 
-    type(continuous_residual), intent(in) :: a, b
+    class(continuous_residual), intent(in) :: a
+    type(continuous_residual) , intent(in) :: b
     type(continuous_residual) :: this
 
     this % term = [a % term, b % term]
@@ -2486,8 +2484,8 @@ contains
 
   function objective_sum(objective, residual) result(this)
 
-    type(continuous_field)   , intent(in) :: objective
-    type(continuous_residual), intent(in) :: residual
+    type(continuous_field)    , intent(in) :: objective
+    class(continuous_residual), intent(in) :: residual
     type(continuous_residual) :: this
 
     if (.not. objective % is_integral()) then
@@ -2538,8 +2536,8 @@ contains
 
   function paired_term(lambda, g) result(this)
 
-    type(continuous_field)   , intent(in) :: lambda
-    type(continuous_residual), intent(in) :: g
+    type(continuous_field)    , intent(in) :: lambda
+    class(continuous_residual), intent(in) :: g
     type(continuous_residual) :: this
 
     character(len=250) :: message

@@ -106,9 +106,8 @@ program euler_bernoulli_beam_optimization
   use operation_manifold         , only : continuous_manifold, discrete_manifold, interval, region, points, parameter
   use operation_expansion        , only : expansion
   use operation_field            , only : continuous_field, discrete_field, integral
-  use operation_field            , only : sin, cos, operator(+), operator(-), operator(*), operator(/), operator(**)
-  use operation_residual         , only : continuous_residual, discrete_residual, operator(+), operator(*), &
-       &                                  minimize_together
+  use operation_field            , only : sin, cos
+  use operation_residual         , only : continuous_residual, discrete_residual, minimize_together
   use operation_family           , only : dirk, bdf, adams, chain
   use operation_finite_element   , only : finite_element
 

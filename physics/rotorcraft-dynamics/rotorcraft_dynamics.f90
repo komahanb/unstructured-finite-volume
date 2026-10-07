@@ -178,10 +178,8 @@ program rotorcraft_dynamics
   use util_verbosity    , only : set_verbosity
   use operation_manifold, only : continuous_manifold, discrete_manifold, interval, region, points, parameter
   use operation_expansion, only : expansion
-  use operation_field   , only : continuous_field, discrete_field, integral, mean, maximum, heaviside, &
-       &                         operator(+), operator(-), operator(*)
-  use operation_residual, only : continuous_residual, discrete_residual, operator(+), operator(*), &
-       &                         minimize_together
+  use operation_field   , only : continuous_field, discrete_field, integral, mean, maximum, heaviside
+  use operation_residual, only : continuous_residual, discrete_residual, minimize_together
   use operation_family  , only : dirk, bdf, chain
   use operation_finite_element, only : finite_element
   use multibody_dynamics, only : rigid_body, beam_blade, section, solid_rectangle, mechanism, body_table, surface, &

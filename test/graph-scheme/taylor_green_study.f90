@@ -41,9 +41,8 @@ program taylor_green_study
   use iso_fortran_env            , only : int64
   use util_verbosity             , only : set_verbosity
   use operation_manifold         , only : continuous_manifold, discrete_manifold, interval, region, points, mesh
-  use operation_field            , only : continuous_field, discrete_field, integral, sin, cos, exp, &
-       &                                  operator(+), operator(-), operator(*), operator(/), operator(**)
-  use operation_residual         , only : continuous_residual, discrete_residual, operator(+), operator(*)
+  use operation_field            , only : continuous_field, discrete_field, integral, sin, cos, exp
+  use operation_residual         , only : continuous_residual, discrete_residual
   use operation_family           , only : family, dirk, bdf, adams, chain
   use operation_finite_difference, only : finite_difference
   use operation_finite_volume    , only : finite_volume

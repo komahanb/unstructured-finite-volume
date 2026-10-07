@@ -45,8 +45,8 @@ program euler_bernoulli_beam_grid
   use util_precision             , only : dp
   use operation_manifold         , only : continuous_manifold, discrete_manifold, interval, region, points
   use operation_field            , only : continuous_field, discrete_field, integral, representation
-  use operation_field            , only : sin, cos, operator(+), operator(-), operator(*), operator(/), operator(**)
-  use operation_residual         , only : continuous_residual, discrete_residual, operator(+), operator(*)
+  use operation_field            , only : sin, cos
+  use operation_residual         , only : continuous_residual, discrete_residual
   use operation_family           , only : dirk, bdf, adams, chain
   use operation_finite_difference, only : finite_difference
   use operation_segment_trapezoid, only : segment_trapezoid

@@ -64,8 +64,8 @@ program heat_conduction_study
   use operation_manifold      , only : parameter
   use operation_expansion     , only : expansion
   use operation_field         , only : continuous_field, discrete_field, integral
-  use operation_field         , only : sin, cos, operator(+), operator(-), operator(*), operator(/), operator(**)
-  use operation_residual      , only : continuous_residual, discrete_residual, operator(+), operator(*)
+  use operation_field         , only : sin, cos
+  use operation_residual      , only : continuous_residual, discrete_residual
   use operation_family        , only : dirk, bdf, adams, chain
   use operation_finite_element, only : finite_element
 

@@ -45,7 +45,6 @@ module operation_field
   ! the parts a support can be of another
   integer, parameter :: WHOLE = 0, TIME_FACE = 1, TIME_FACTOR = 2, SPACE_FACTOR = 3, DESIGN_FACTOR = 4, &
        & SPACE_FACE = 5, TIME_WINDOW = 6
-  public :: operator(+), operator(-), operator(*), operator(/), operator(**)
   public :: sin, cos, exp, log, sqrt, heaviside
 
   !===================================================================!
@@ -193,6 +192,15 @@ module operation_field
      procedure :: is_unknown
      procedure :: is_coordinate
      procedure :: is_integral
+     ! THE ARITHMETIC of scalar fields, elemental over arrays of them
+     generic   :: operator(+)  => plus, real_plus, plus_real
+     generic   :: operator(-)  => minus, real_minus, minus_real, negated
+     generic   :: operator(*)  => times, real_times, times_real
+     generic   :: operator(/)  => over, real_over, over_real
+     generic   :: operator(**) => to_integer, to_real
+     procedure, private :: plus, minus, times, over, plus_real, minus_real, times_real, over_real, negated
+     procedure, private :: to_integer, to_real
+     procedure, private, pass(b) :: real_plus, real_minus, real_times, real_over
 
   end type continuous_field
 
@@ -271,32 +279,14 @@ module operation_field
      procedure :: norm
      procedure :: num_points     => discrete_num_points
      procedure :: num_components => discrete_num_components
+     generic   :: operator(-)    => discrete_minus
+     procedure, private :: discrete_minus
 
   end type discrete_field
 
   interface discrete_field
      module procedure create_discrete
   end interface discrete_field
-
-  interface operator(+)
-     module procedure plus, real_plus, plus_real
-  end interface operator(+)
-
-  interface operator(-)
-     module procedure minus, real_minus, minus_real, negated, discrete_minus
-  end interface operator(-)
-
-  interface operator(*)
-     module procedure times, real_times, times_real
-  end interface operator(*)
-
-  interface operator(/)
-     module procedure over, real_over, over_real
-  end interface operator(/)
-
-  interface operator(**)
-     module procedure to_integer, to_real
-  end interface operator(**)
 
   interface sin
      module procedure sine_of
@@ -2000,7 +1990,8 @@ contains
 
   function discrete_minus(a, b) result(d)
 
-    type(discrete_field), intent(in) :: a, b
+    class(discrete_field), intent(in) :: a
+    type(discrete_field) , intent(in) :: b
     type(discrete_field) :: d
 
     if (.not. a % on % identity % matches(b % on % identity)) then
@@ -2096,8 +2087,9 @@ contains
     end if
   end subroutine require_linear
 
-  function plus(a, b) result(this)
-    type(continuous_field), intent(in) :: a, b
+  impure elemental function plus(a, b) result(this)
+    class(continuous_field), intent(in) :: a
+    type(continuous_field) , intent(in) :: b
     type(continuous_field) :: this
     type(expression) :: ta, ia, tb, ib
     call require_scalar(a, '+'); call require_scalar(b, '+'); call require_one_manifold(a, b, '+')
@@ -2109,9 +2101,9 @@ contains
     this = composed(a, a % component(1) + b % component(1))
   end function plus
 
-  function real_plus(x, b) result(this)
-    real(dp)              , intent(in) :: x
-    type(continuous_field), intent(in) :: b
+  impure elemental function real_plus(x, b) result(this)
+    real(dp)               , intent(in) :: x
+    class(continuous_field), intent(in) :: b
     type(continuous_field) :: this
     type(expression) :: tb, ib
     call require_scalar(b, '+')
@@ -2123,17 +2115,18 @@ contains
     this = composed(b, x + b % component(1))
   end function real_plus
 
-  function plus_real(a, x) result(this)
-    type(continuous_field), intent(in) :: a
-    real(dp)              , intent(in) :: x
+  impure elemental function plus_real(a, x) result(this)
+    class(continuous_field), intent(in) :: a
+    real(dp)               , intent(in) :: x
     type(continuous_field) :: this
     call require_scalar(a, '+')
     this = real_plus(x, a)
     if (.not. with_integral(a)) this = composed(a, a % component(1) + x)
   end function plus_real
 
-  function minus(a, b) result(this)
-    type(continuous_field), intent(in) :: a, b
+  impure elemental function minus(a, b) result(this)
+    class(continuous_field), intent(in) :: a
+    type(continuous_field) , intent(in) :: b
     type(continuous_field) :: this
     type(expression) :: ta, ia, tb, ib
     call require_scalar(a, '-'); call require_scalar(b, '-'); call require_one_manifold(a, b, '-')
@@ -2145,9 +2138,9 @@ contains
     this = composed(a, a % component(1) - b % component(1))
   end function minus
 
-  function real_minus(x, b) result(this)
-    real(dp)              , intent(in) :: x
-    type(continuous_field), intent(in) :: b
+  impure elemental function real_minus(x, b) result(this)
+    real(dp)               , intent(in) :: x
+    class(continuous_field), intent(in) :: b
     type(continuous_field) :: this
     type(expression) :: tb, ib
     call require_scalar(b, '-')
@@ -2159,9 +2152,9 @@ contains
     this = composed(b, x - b % component(1))
   end function real_minus
 
-  function minus_real(a, x) result(this)
-    type(continuous_field), intent(in) :: a
-    real(dp)              , intent(in) :: x
+  impure elemental function minus_real(a, x) result(this)
+    class(continuous_field), intent(in) :: a
+    real(dp)               , intent(in) :: x
     type(continuous_field) :: this
     type(expression) :: ta, ia
     call require_scalar(a, '-')
@@ -2173,8 +2166,8 @@ contains
     this = composed(a, a % component(1) - x)
   end function minus_real
 
-  function negated(a) result(this)
-    type(continuous_field), intent(in) :: a
+  impure elemental function negated(a) result(this)
+    class(continuous_field), intent(in) :: a
     type(continuous_field) :: this
     type(expression) :: ta, ia
     call require_scalar(a, '-')
@@ -2188,8 +2181,9 @@ contains
 
   ! a field with an integral times a field of time alone: both parts
   ! times it
-  function times(a, b) result(this)
-    type(continuous_field), intent(in) :: a, b
+  impure elemental function times(a, b) result(this)
+    class(continuous_field), intent(in) :: a
+    type(continuous_field) , intent(in) :: b
     type(continuous_field) :: this
     type(expression) :: ta, ia
     call require_scalar(a, '*'); call require_scalar(b, '*'); call require_one_manifold(a, b, '*')
@@ -2206,9 +2200,9 @@ contains
     this = composed(a, a % component(1) * b % component(1))
   end function times
 
-  function real_times(x, b) result(this)
-    real(dp)              , intent(in) :: x
-    type(continuous_field), intent(in) :: b
+  impure elemental function real_times(x, b) result(this)
+    real(dp)               , intent(in) :: x
+    class(continuous_field), intent(in) :: b
     type(continuous_field) :: this
     type(expression) :: tb, ib
     call require_scalar(b, '*')
@@ -2220,9 +2214,9 @@ contains
     this = composed(b, x * b % component(1))
   end function real_times
 
-  function times_real(a, x) result(this)
-    type(continuous_field), intent(in) :: a
-    real(dp)              , intent(in) :: x
+  impure elemental function times_real(a, x) result(this)
+    class(continuous_field), intent(in) :: a
+    real(dp)               , intent(in) :: x
     type(continuous_field) :: this
     type(expression) :: ta, ia
     call require_scalar(a, '*')
@@ -2234,8 +2228,9 @@ contains
     this = composed(a, a % component(1) * x)
   end function times_real
 
-  function over(a, b) result(this)
-    type(continuous_field), intent(in) :: a, b
+  impure elemental function over(a, b) result(this)
+    class(continuous_field), intent(in) :: a
+    type(continuous_field) , intent(in) :: b
     type(continuous_field) :: this
     type(expression) :: ta, ia
     call require_scalar(a, '/'); call require_scalar(b, '/'); call require_one_manifold(a, b, '/')
@@ -2248,17 +2243,17 @@ contains
     this = composed(a, a % component(1) / b % component(1))
   end function over
 
-  function real_over(x, b) result(this)
-    real(dp)              , intent(in) :: x
-    type(continuous_field), intent(in) :: b
+  impure elemental function real_over(x, b) result(this)
+    real(dp)               , intent(in) :: x
+    class(continuous_field), intent(in) :: b
     type(continuous_field) :: this
     call require_scalar(b, '/'); call require_linear(b, '/')
     this = composed(b, x / b % component(1))
   end function real_over
 
-  function over_real(a, x) result(this)
-    type(continuous_field), intent(in) :: a
-    real(dp)              , intent(in) :: x
+  impure elemental function over_real(a, x) result(this)
+    class(continuous_field), intent(in) :: a
+    real(dp)               , intent(in) :: x
     type(continuous_field) :: this
     type(expression) :: ta, ia
     call require_scalar(a, '/')
@@ -2270,17 +2265,17 @@ contains
     this = composed(a, a % component(1) / x)
   end function over_real
 
-  function to_integer(a, n) result(this)
-    type(continuous_field), intent(in) :: a
-    integer               , intent(in) :: n
+  impure elemental function to_integer(a, n) result(this)
+    class(continuous_field), intent(in) :: a
+    integer                , intent(in) :: n
     type(continuous_field) :: this
     call require_scalar(a, '**'); call require_linear(a, '**')
     this = composed(a, a % component(1) ** n)
   end function to_integer
 
-  function to_real(a, p) result(this)
-    type(continuous_field), intent(in) :: a
-    real(dp)              , intent(in) :: p
+  impure elemental function to_real(a, p) result(this)
+    class(continuous_field), intent(in) :: a
+    real(dp)               , intent(in) :: p
     type(continuous_field) :: this
     call require_scalar(a, '**'); call require_linear(a, '**')
     this = composed(a, a % component(1) ** p)

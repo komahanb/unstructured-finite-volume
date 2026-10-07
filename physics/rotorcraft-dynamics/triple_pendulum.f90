@@ -42,8 +42,8 @@ program triple_pendulum
   use util_precision    , only : dp
   use util_verbosity    , only : set_verbosity
   use operation_manifold, only : continuous_manifold, discrete_manifold, interval, points
-  use operation_field   , only : continuous_field, discrete_field, operator(+), operator(-)
-  use operation_residual, only : continuous_residual, discrete_residual, operator(+)
+  use operation_field   , only : continuous_field, discrete_field
+  use operation_residual, only : continuous_residual, discrete_residual
   use operation_family  , only : dirk, bdf, chain
   use multibody_dynamics, only : rigid_body, mechanism, spherical, revolute
 

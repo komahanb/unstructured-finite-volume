@@ -50,7 +50,7 @@ program blade_on_hub
   use util_precision          , only : dp
   use operation_manifold      , only : continuous_manifold, discrete_manifold, interval, region, points
   use operation_field         , only : continuous_field, discrete_field
-  use operation_residual      , only : continuous_residual, discrete_residual, operator(+)
+  use operation_residual      , only : continuous_residual, discrete_residual
   use operation_family        , only : dirk, bdf, chain
   use operation_finite_element, only : finite_element
   use multibody_dynamics      , only : rigid_body, beam_blade, solid_rectangle, mechanism, revolute_driver, rigid_link

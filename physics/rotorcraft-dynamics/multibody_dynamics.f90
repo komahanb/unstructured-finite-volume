@@ -114,8 +114,7 @@ module multibody_dynamics
   use util_string         , only : string
   use relation_binary     , only : ragged
   use operation_manifold  , only : continuous_manifold, discrete_manifold
-  use operation_field     , only : continuous_field, discrete_field, integral, sin, cos, &
-       &                           operator(+), operator(-), operator(*), operator(/), operator(**)
+  use operation_field     , only : continuous_field, discrete_field, integral, sin, cos
   use operation_expression, only : expression
   use view_paraview_writer, only : paraview_writer, time_series
 

@@ -269,7 +269,7 @@ contains
     real(dp)           , intent(in)    :: a(:,:)
 
     real(dp), allocatable :: k(:,:), m(:,:), bordered(:,:)
-    integer :: n, nk, j
+    integer :: n, nk, j, i
 
     n = size(a, 1)
     if (.not. allocated(this % border)) then
@@ -296,13 +296,19 @@ contains
              m(j, j) = 1.0_dp
           end do
        end if
-       this % border = matmul(transpose(k), m)
+       ! C = K^T M, row i the i-th kernel vector applied to M
+       allocate(this % border(size(k, 2), n))
+       do i = 1, size(k, 2)
+          this % border(i, :) = matmul(k(:, i), m)
+       end do
     end if
     nk = size(this % border, 1)
     allocate(bordered(n + nk, n + nk), source=0.0_dp)
-    bordered(1:n, 1:n)          = a
-    bordered(1:n, n + 1:n + nk) = transpose(this % border)
-    bordered(n + 1:n + nk, 1:n) = this % border
+    bordered(1:n, 1:n) = a
+    do i = 1, nk
+       bordered(1:n, n + i) = this % border(i, :)
+       bordered(n + i, 1:n) = this % border(i, :)
+    end do
     call this % factor % factorise(bordered, this % singular_tolerance, maxval(abs(bordered), dim=1), &
          & equilibrated=this % equilibrated)
     this % retained_bordered = .not. this % factor % singular()

@@ -1463,7 +1463,7 @@ contains
     type(continuous_field) :: largest, work
     type(continuous_field), allocatable :: e(:)
     type(discrete_field) :: v
-    real(dp), allocatable :: values(:), at_start(:)
+    real(dp), allocatable :: at_start(:)
     real(dp) :: first_energy, last_energy, w, largest_condition
     integer :: k
 
@@ -1471,14 +1471,12 @@ contains
     allocate(at_start(size(e)))
     do k = 1, size(e)
        v = e(k) % at(solution)
-       call v % values(values)
-       at_start(k) = values(1)
+       at_start(k) = v % value(1, 1)
     end do
     largest_condition = 0.0_dp
     do k = 1, size(this % conditions)
        v = this % conditions(k) % at(solution)
-       call v % values(values)
-       largest_condition = max(largest_condition, maxval(abs(values)))
+       largest_condition = max(largest_condition, maxval(abs(v % value)))
     end do
     print '(a)', '   the audit'
     print '(a, *(es16.7))', '   the efforts at the first instant: ', at_start

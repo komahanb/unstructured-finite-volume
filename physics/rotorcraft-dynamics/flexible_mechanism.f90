@@ -78,11 +78,18 @@
 ! domain the flexible members share, of one interval and its points,
 ! times the design; an assembly whose members differ stops the program.
 !
-! MEASURED on HART II at the step 8e-4: the start at rest finds the
-! kernel of nine at the reference and the droop in fifteen iterations
-! of Newton, and the march then takes two to thirty-eight iterations a
-! block, some 24 s a block on one core: some nine hours a scenario's
-! march of 1395 instants.
+! MEASURED on HART II at the step 8e-4, on one core: the start at rest
+! finds the kernel of nine at the reference and the droop in fourteen
+! iterations of Newton, where its residual stops at 3.2e-5, 5.7e-9 of
+! its first: the reaction of the phase condition along the upper
+! swashplate's turn. The march reached t = 0.157 s, 198 of its 1395
+! blocks, in 55 minutes, some 1.8 s an iteration of Newton: 13
+! iterations a block on average in the first 0.04 s, 6 from t = 0.08 s,
+! seven in ten of them at the rounding of the residual. Past t = 0.36 s,
+! in a run whose Newton stopped at that rounding, the blocks took 16 to
+! 20 iterations, up to 38, most of them steps damped from the block's
+! estimate. A scenario's march, projected from these rates, takes more
+! than ten hours.
 !=====================================================================!
 
 program flexible_mechanism

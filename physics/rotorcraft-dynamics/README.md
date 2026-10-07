@@ -15,6 +15,7 @@ one scenario or in three.
 | `triple_pendulum` | the triple pendulum of the dissertation, section 5.1, marched by bdf(2) or by a DIRK tableau |
 | `triple_pendulum_sensitivity` | the pendulum's dJ/ds by the adjoint and by the expansion, by either march |
 | `blade_on_hub` | one blade on a driven hub, as a beam or as a rigid plate |
+| `flexible_mechanism` | the template of a problem of a flexible mechanism - its assembly, its design, its scenarios, the march and the audit - compiled with the case `hart2_case`: the HART II rotor from rest on the ground, spun up by its controls, its eight strips' least mass under a bound of the stress |
 
 `rotor_bodies.txt` is the table of the rigid bodies, read by
 `rotorcraft_dynamics`; the header of each program states what it

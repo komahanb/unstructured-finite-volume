@@ -22,15 +22,24 @@ LDFLAGS += -L$(LIB)/ $(LIB)/libufvm.a
 MODULES  = multibody_dynamics.o
 PROGRAMS = triple_pendulum triple_pendulum_sensitivity blade_on_hub rotorcraft_dynamics
 
-all: $(PROGRAMS)
+# the template of a flexible mechanism, and the case it is compiled with
+TEMPLATES = flexible_mechanism
+CASES     = hart2_case.o
+
+all: $(PROGRAMS) $(TEMPLATES)
 
 $(PROGRAMS): %: %.o $(MODULES) $(LIB)/libufvm.a
 	$(F90) $< $(MODULES) -o $@ $(LDFLAGS)
 
+$(TEMPLATES): %: %.o $(CASES) $(MODULES) $(LIB)/libufvm.a
+	$(F90) $< $(CASES) $(MODULES) -o $@ $(LDFLAGS)
+
 $(PROGRAMS:=.o): $(MODULES)
+$(CASES): $(MODULES)
+$(TEMPLATES:=.o): $(CASES) $(MODULES)
 
 clean:
-	@rm -f *.o *.mod *.so $(PROGRAMS) variant.stamp
+	@rm -f *.o *.mod *.so $(PROGRAMS) $(TEMPLATES) variant.stamp
 
 .SUFFIXES: .f90 .o
 .PHONY: all clean FORCE

@@ -449,6 +449,18 @@ module operation_residual
      ! the steps of a staged family reach
      type(expression)        , allocatable :: initial_rule
      type(expression)        , allocatable :: initial_flux
+     ! THE START, when the initial data impose other orders along time
+     ! than those below each field's top degree - the rates and the
+     ! accelerations of a start at rest, the values then free: at the
+     ! manifold's first instant a law is stated by its derivative along
+     ! time only while it reads no component the data leave free,
+     ! start_rule, or projected start_flux, unallocated when no law is;
+     ! and the law of field f governs the row of start_order(f), the
+     ! lowest order of the field the data leave free. Unallocated when
+     ! the data impose the orders below the top degree
+     type(expression)        , allocatable :: start_rule
+     type(expression)        , allocatable :: start_flux
+     integer                 , allocatable :: start_order(:)
      ! each block after the first starts from the solution at the last
      ! instant before it (minimize, continued)
      logical                 :: continued = .false.
@@ -511,6 +523,8 @@ module operation_residual
      procedure, private :: solve_rows
      procedure, private :: solved
      procedure, private :: solver_for
+     procedure, private :: starts
+     procedure, private :: start_metric
      procedure, private :: wavefront_adjoint
      procedure, private :: wavefront_expansion
      procedure, private :: coefficient_component
@@ -2635,7 +2649,7 @@ contains
 
     integer :: k, j, i, whole_term, num_conditions, nf
     integer, allocatable :: defined(:,:)
-    logical, allocatable :: representation(:)
+    logical, allocatable :: representation(:), imposed(:,:)
     logical :: covering, projected
     type(expression) :: form
     real(dp) :: given
@@ -2706,13 +2720,15 @@ contains
       if (.not. projected) image % rule = paired([(jet_form(t % equation(j) % graph(1)), j = 1, size(t % equation))])
     end associate
 
-    if (projected) call projected_form(image, this % term(whole_term), space, points, defined)
+    ! the orders along time the initial data impose, field by field
+    imposed = imposed_orders(this, points, nf)
+    if (projected) call projected_form(image, this % term(whole_term), space, points, defined, imposed)
     call image % check_representations(defined, present(time), present(space))
     if (any(image % manifold % of_time_alone(1:nf)) .and. .not. allocated(image % elements)) then
        error stop 'operation_residual: an unknown of time alone on a manifold of space is stated under a &
             &projection on the cells, which tests its equation with the weight alone'
     end if
-    if (present(time) .and. .not. allocated(image % elements)) call initial_form(image, this % term(whole_term))
+    if (present(time) .and. .not. allocated(image % elements)) call initial_form(image, this % term(whole_term), imposed)
     image % representation = pack(this % term, representation .and. [(this % term(k) % paired, k = 1, size(this % term))])
 
     allocate(image % condition(num_conditions))
@@ -4872,7 +4888,7 @@ contains
     integer , allocatable :: rule_primary(:)
     type(projection) :: projected
     type(expression) :: rule
-    logical :: staged
+    logical :: staged, starting
     integer :: nodes, factor
     integer , allocatable :: related(:), added(:), single(:)
     logical , allocatable :: tying(:), entries(:), explicit_point(:)
@@ -5030,11 +5046,22 @@ contains
 
     ! the row of each equation within a point's tuple: the value row
     ! for a family that determines the derivatives, the top derivative
-    ! row for one that determines the values
+    ! row for one that determines the values; at the manifold's first
+    ! instant, under data that start otherwise, the row of the lowest
+    ! order the data leave free
+    starting = allocated(this % start_order) .and. first == 1 .and. depth == 0
+    if (starting .and. n > 1) then
+       error stop 'operation_residual: initial data that impose other orders than those below the top degree are &
+            &stated in a block of the first instant alone'
+    end if
     allocate(primary(nf))
     do f = 1, nf
-       primary(f) = this % rule % offset_of_field(f) &
-            & + scheme % primary_degree(this % rule % degree_of_field(f))
+       if (starting) then
+          primary(f) = this % rule % offset_of_field(f) + this % start_order(f)
+       else
+          primary(f) = this % rule % offset_of_field(f) &
+               & + scheme % primary_degree(this % rule % degree_of_field(f))
+       end if
     end do
 
     ! THE FIXED ROWS: every component of the history instants, and the
@@ -5126,14 +5153,16 @@ contains
        do f = 1, nf
           do k = 0, this % elements % num_coefficients() - 1
              projected % coefficient_row(k, f) = this % coefficient_component(f, k, &
-                  & scheme % primary_degree(this % rule % degree_of_field(f)))
+                  & primary(f) - this % rule % offset_of_field(f))
           end do
        end do
        call this % formed_components(projected % formed)
        rule_primary = [(primary(this % tested(1, j)), j = 1, size(this % tested, 2))]
        ! the block of the manifold's first instant states the laws there
        rule = this % flux
-       if (allocated(this % initial_flux) .and. first == 1 .and. depth == 0) then
+       if (starting) then
+          if (allocated(this % start_flux)) rule = this % start_flux
+       else if (allocated(this % initial_flux) .and. first == 1 .and. depth == 0) then
           if (n > 1) then
              error stop 'operation_residual: a law the initial data satisfy is stated at the first instant by its &
                   &derivative along time, in a block of that instant alone'
@@ -5159,7 +5188,9 @@ contains
     else
        ! the block of the manifold's first instant states the laws there
        rule = this % rule
-       if (allocated(this % initial_rule) .and. first == 1 .and. depth == 0) then
+       if (starting) then
+          if (allocated(this % start_rule)) rule = this % start_rule
+       else if (allocated(this % initial_rule) .and. first == 1 .and. depth == 0) then
           if (n > 1) then
              error stop 'operation_residual: a law the initial data satisfy is stated at the first instant by its &
                   &derivative along time, in a block of that instant alone'
@@ -5387,7 +5418,12 @@ contains
 
     integer :: d, m
 
-    call this % solved(blk % rows, size(blk % q), blk % rows % degrees, size(blk % rows % at), blk % q)
+    if (this % starts(blk)) then
+       call this % solved(blk % rows, size(blk % q), blk % rows % degrees, size(blk % rows % at), blk % q, &
+            & this % start_metric(blk))
+    else
+       call this % solved(blk % rows, size(blk % q), blk % rows % degrees, size(blk % rows % at), blk % q)
+    end if
     call blk % to_points(OWN_MOMENTS, lb, blk % q, tuple(:, :, :, 0), stages(:, :, :, :, 0))
 
     if (this % points % expansion % order == 0) return
@@ -5476,7 +5512,11 @@ contains
     lin = blk % rows % linearize(blk % rows % unknown_graph(), blk % rows % bind(blk % inputs), rhs, &
          & transposed=.false., version_number=blk % rows % version())
     allocate(x(unknowns), source=0.0_dp)
-    call this % solved(lin, unknowns, blk % rows % degrees, size(blk % rows % at), x)
+    if (this % starts(blk)) then
+       call this % solved(lin, unknowns, blk % rows % degrees, size(blk % rows % at), x, this % start_metric(blk))
+    else
+       call this % solved(lin, unknowns, blk % rows % degrees, size(blk % rows % at), x)
+    end if
     call blk % to_points(OWN_MOMENTS, lb, x, tuple(:, :, :, column), stages(:, :, :, :, column))
 
   end subroutine expansion_order
@@ -5981,7 +6021,11 @@ contains
     lin = blk % rows % linearize(blk % rows % unknown_graph(), blk % rows % bind(blk % inputs), rhs, &
          & transposed=.true., version_number=blk % rows % version())
     allocate(x(unknowns), source=0.0_dp)
-    call this % solved(lin, unknowns, stride, size(blk % rows % at), x)
+    if (this % starts(blk)) then
+       call this % solved(lin, unknowns, stride, size(blk % rows % at), x, this % start_metric(blk))
+    else
+       call this % solved(lin, unknowns, stride, size(blk % rows % at), x)
+    end if
     do k = 1, blk % depth
        do c = 1, blk % num_cells
           base = blk % tuple_at(blk % instant_moment(k), c)
@@ -6726,12 +6770,14 @@ contains
   ! with the solver's description.
   !===================================================================!
 
-  subroutine solved(this, rows, unknowns, stride, npts, q)
+  subroutine solved(this, rows, unknowns, stride, npts, q, metric_column)
 
     class(discrete_residual), intent(in)    :: this
     type(residual_operator) , intent(in)    :: rows
     integer                 , intent(in)    :: unknowns, stride, npts
     real(dp)                , intent(inout) :: q(:)
+    ! at the start, the column of each unknown's metric, its border's
+    integer                 , intent(in), optional :: metric_column(:)
 
     type(newton)       :: solver
     type(solve_result) :: outcome
@@ -6755,7 +6801,7 @@ contains
        call solver % solve(spread(0.0_dp, 1, size(local)), local, achieved)
        q = part % assembled(local)
     else
-       solver = this % solver_for(rows, unknowns, stride, npts)
+       solver = this % solver_for(rows, unknowns, stride, npts, metric_column=metric_column)
        call solver % solve(spread(0.0_dp, 1, unknowns), q, achieved)
     end if
     outcome = solver % result()
@@ -6820,18 +6866,69 @@ contains
   end function design_terms
 
   !===================================================================!
+  ! Whether a block is the start's: the manifold's first instant, its
+  ! data imposing other orders than those below the top degree.
+  !===================================================================!
+
+  logical function starts(this, blk)
+    class(discrete_residual), intent(in) :: this
+    type(chain_block)       , intent(in) :: blk
+    starts = allocated(this % start_order) .and. blk % first == 1 .and. blk % depth == 0
+  end function starts
+
+  !===================================================================!
+  ! THE METRIC OF THE START: of each value a law governs there, the
+  ! component of the field's top degree at the same point and
+  ! coefficient - its acceleration - whose column in that law's row is
+  ! the metric of the reference phase condition; zero for every other
+  ! unknown of the block.
+  !===================================================================!
+
+  function start_metric(this, blk) result(metric_column)
+
+    class(discrete_residual), intent(in) :: this
+    type(chain_block)       , intent(in) :: blk
+    integer, allocatable :: metric_column(:)
+
+    integer :: p, f, k, base, top
+
+    allocate(metric_column(size(blk % q)), source=0)
+    do p = 1, size(blk % rows % at)
+       base = blk % rows % at(p)
+       do f = 1, size(this % start_order)
+          top = this % rule % degree_of_field(f)
+          if (this % start_order(f) /= 0 .or. top < 1) cycle
+          if (allocated(this % elements)) then
+             do k = 0, this % elements % num_coefficients() - 1
+                metric_column(base + this % coefficient_component(f, k, 0) + 1) = &
+                     & base + this % coefficient_component(f, k, top) + 1
+             end do
+          else
+             metric_column(base + this % rule % offset_of_field(f) + 1) = base + this % rule % offset_of_field(f) + top + 1
+          end if
+       end do
+    end do
+
+  end function start_metric
+
+  !===================================================================!
   ! The Newton solver stated on one residual_operator, its inner
   ! minimizer chosen by the manifold and its state set, so that the
   ! operator's jacobian can be formed at any q through it.
   !===================================================================!
 
-  function solver_for(this, rows, unknowns, stride, npts, part) result(solver)
+  function solver_for(this, rows, unknowns, stride, npts, part, metric_column) result(solver)
 
     class(discrete_residual), intent(in) :: this
     type(residual_operator) , intent(in) :: rows
     integer                 , intent(in) :: unknowns, stride, npts
     ! over several images, the part the rows are of
     type(exchange)          , intent(in), optional :: part
+    ! at the start, the column of each unknown's metric: a singular
+    ! system there, whose kernel the joints and the loads leave free,
+    ! is solved under the reference phase condition of the kernel, the
+    ! border of the dense solve (operation_dense_direct)
+    integer                 , intent(in), optional :: metric_column(:)
     type(newton) :: solver
 
     type(dense_direct) :: direct
@@ -6878,6 +6975,10 @@ contains
        ! node - solved directly: Newton converges to round-off
        if (allocated(rows % tying)) then
           reduced % eliminated = rows % tying
+          if (present(metric_column)) then
+             reduced % bordered      = .true.
+             reduced % metric_column = metric_column
+          end if
           ! its rows of positions, rotations and reactions equilibrated
           direct % equilibrated = .true.
           allocate(reduced % inner, source=direct)
@@ -6889,6 +6990,10 @@ contains
        ! a direct inner solve converges Newton quadratically to
        ! round-off at the cost of a step, and the sensitivities read
        ! the converged state: the tolerance is tight here
+       if (present(metric_column)) then
+          direct % bordered      = .true.
+          direct % metric_column = metric_column
+       end if
        allocate(solver % inner, source=direct)
        solver % tolerance = 1.0e-13_dp
     end if
@@ -7049,15 +7154,16 @@ contains
   ! a representation law along space, which the basis states.
   !===================================================================!
 
-  subroutine projected_form(image, physics, space, points, defined)
+  subroutine projected_form(image, physics, space, points, defined, imposed)
 
     type(discrete_residual)        , intent(inout) :: image
     type(residual_term)            , intent(in)    :: physics
     class(derivative_approximation), intent(in)    :: space
     type(discrete_manifold)        , intent(in)    :: points
     integer                        , intent(in)    :: defined(:,:)
+    logical                        , intent(in)    :: imposed(:,0:)
 
-    type(expression), allocatable :: flux(:), groups(:), over_region(:)
+    type(expression), allocatable :: flux(:), groups(:), over_region(:), started(:)
     type(expression) :: law, region_part
     integer, allocatable :: coordinate(:), order(:), group(:,:)
     logical, allocatable :: with_region(:)
@@ -7147,6 +7253,8 @@ contains
     ! a manifold of time alone (initial_form); so too at the explicit
     ! moments of a block
     if (.not. image % manifold % with_time) return
+    allocate(started(m))
+    started = groups
     differentiated = .false.
     law = constant(0.0_dp)
     do g = 1, m
@@ -7160,6 +7268,24 @@ contains
        law = law + multiplier(g) * groups(g)
     end do
     if (differentiated) image % initial_flux = law
+
+    ! THE START, when the data impose other orders than those below the
+    ! top degree: an equation of time alone is differentiated only while
+    ! it reads no component the data leave free
+    if (.not. starts_otherwise(imposed, image % rule, image % manifold % num_unknowns, image % start_order)) return
+    differentiated = .false.
+    law = constant(0.0_dp)
+    do g = 1, m
+       if (image % manifold % of_time_alone(group(1, g))) then
+          do o = 1, top_degree(image % rule, image % manifold % num_unknowns)
+             if (reads_free(started(g), imposed, image % rule, image % manifold % num_unknowns)) exit
+             started(g) = total_derivative(started(g), FIRST_COORDINATE)
+             differentiated = .true.
+          end do
+       end if
+       law = law + multiplier(g) * started(g)
+    end do
+    if (differentiated) image % start_flux = law
 
   contains
 
@@ -7191,10 +7317,11 @@ contains
   ! top degree as the initial data fix them at the first instant.
   !===================================================================!
 
-  subroutine initial_form(image, physics)
+  subroutine initial_form(image, physics, imposed)
 
     type(discrete_residual), intent(inout) :: image
     type(residual_term)    , intent(in)    :: physics
+    logical                , intent(in)    :: imposed(:,0:)
 
     type(expression), allocatable :: laws(:)
     integer :: j, o, nf
@@ -7213,6 +7340,21 @@ contains
     end do
     if (differentiated) image % initial_rule = on_domain(paired(laws), image % rule)
 
+    ! THE START, when the data impose other orders than those below the
+    ! top degree: a law is differentiated only while it reads no
+    ! component the data leave free
+    if (.not. starts_otherwise(imposed, image % rule, nf, image % start_order)) return
+    differentiated = .false.
+    do j = 1, size(physics % equation)
+       laws(j) = jet_form(physics % equation(j) % graph(1))
+       do o = 1, top_degree(image % rule, nf)
+          if (reads_free(laws(j), imposed, image % rule, nf)) exit
+          laws(j) = total_derivative(laws(j), FIRST_COORDINATE)
+          differentiated = .true.
+       end do
+    end do
+    if (differentiated) image % start_rule = on_domain(paired(laws), image % rule)
+
   contains
 
     logical function reads_top_degree(x)
@@ -7225,6 +7367,132 @@ contains
     end function reads_top_degree
 
   end subroutine initial_form
+
+  !===================================================================!
+  ! THE ORDERS THE INITIAL DATA IMPOSE: imposed(f, o), whether a
+  ! condition on the face of the manifold's first instant reads the
+  ! component of field f of order o along time.
+  !===================================================================!
+
+  function imposed_orders(this, points, nf) result(imposed)
+
+    class(continuous_residual), intent(in) :: this
+    type(discrete_manifold)   , intent(in) :: points
+    integer                   , intent(in) :: nf
+    logical, allocatable :: imposed(:,:)
+
+    type(expression) :: form
+    integer :: k, i, f, o, top
+
+    top = 0
+    do k = 1, size(this % term)
+       if (.not. at_first_instant(this % term(k) % manifold)) cycle
+       do i = 1, size(this % term(k) % equation)
+          form = jet_form(this % term(k) % equation(i) % graph(1))
+          do f = 1, nf
+             top = max(top, form % highest_order_read(f))
+          end do
+       end do
+    end do
+    allocate(imposed(nf, 0:top), source=.false.)
+    do k = 1, size(this % term)
+       if (.not. at_first_instant(this % term(k) % manifold)) cycle
+       do i = 1, size(this % term(k) % equation)
+          form = jet_form(this % term(k) % equation(i) % graph(1))
+          do f = 1, nf
+             do o = 0, top
+                if (form % reads_order(f, o)) imposed(f, o) = .true.
+             end do
+          end do
+       end do
+    end do
+
+  contains
+
+    logical function at_first_instant(face)
+      type(continuous_manifold), intent(in) :: face
+      at_first_instant = .false.
+      if (.not. face % is_time_face()) return
+      at_first_instant = abs(face % face_value - points % instant(1)) <= 1.0e-12_dp * max(1.0_dp, abs(points % instant(1)))
+    end function at_first_instant
+
+  end function imposed_orders
+
+  !===================================================================!
+  ! WHETHER THE DATA START OTHERWISE than an initial value problem's,
+  ! which impose, of every field they read, the orders below its top
+  ! degree and not the top degree; and then start_order(f), the lowest
+  ! order of field f the data leave free, whose row its law governs at
+  ! the manifold's first instant. Invalid input: data that impose every
+  ! order of a field, which leave its law no row.
+  !===================================================================!
+
+  logical function starts_otherwise(imposed, rule, nf, start_order) result(otherwise)
+
+    logical         , intent(in)  :: imposed(:,0:)
+    type(expression), intent(in)  :: rule
+    integer         , intent(in)  :: nf
+    integer, allocatable, intent(inout) :: start_order(:)
+
+    integer :: f, d, o
+
+    otherwise = .false.
+    do f = 1, nf
+       if (.not. any(imposed(f, :))) cycle
+       d = rule % degree_of_field(f)
+       if (d > ubound(imposed, 2)) then
+          if (.not. all(imposed(f, 0:d - 1))) otherwise = .true.
+       else if (.not. all(imposed(f, 0:d - 1)) .or. imposed(f, d)) then
+          otherwise = .true.
+       end if
+    end do
+    if (.not. otherwise) return
+    allocate(start_order(nf))
+    do f = 1, nf
+       d = rule % degree_of_field(f)
+       start_order(f) = -1
+       do o = 0, d
+          if (o <= ubound(imposed, 2)) then
+             if (imposed(f, o)) cycle
+          end if
+          start_order(f) = o
+          exit
+       end do
+       if (start_order(f) < 0) then
+          error stop 'operation_residual: initial data impose every order of a field along time, and leave its law &
+               &no row'
+       end if
+    end do
+
+  end function starts_otherwise
+
+  !===================================================================!
+  ! Whether a law reads a component the initial data leave free: of
+  ! some field, an order no condition on the first instant imposes.
+  !===================================================================!
+
+  logical function reads_free(x, imposed, rule, nf)
+
+    type(expression), intent(in) :: x, rule
+    logical         , intent(in) :: imposed(:,0:)
+    integer         , intent(in) :: nf
+
+    integer :: f, o
+
+    reads_free = .false.
+    do f = 1, nf
+       do o = 0, rule % degree_of_field(f)
+          if (o <= ubound(imposed, 2)) then
+             if (imposed(f, o)) cycle
+          end if
+          if (x % reads_order(f, o)) then
+             reads_free = .true.
+             return
+          end if
+       end do
+    end do
+
+  end function reads_free
 
   !===================================================================!
   ! THE COMPONENT OF A NODE'S TUPLE storing the coefficient k of the
@@ -8070,7 +8338,9 @@ contains
              do k = 1, depth
                 if (instant_moment(k) == m) acting = .false.
              end do
-             if (first == 1 .and. instant_moment(1) == m) acting = .false.
+             ! there the initial data satisfy it, unless they leave the
+             ! values free
+             if (first == 1 .and. instant_moment(1) == m .and. .not. allocated(this % start_order)) acting = .false.
              if (.not. acting) cycle
              call this % space_face_relation(this % condition(j) % equation(i), &
                   & positions(:, (m - 1) * ncells + face_point), column_of, slopes, given, f, along)

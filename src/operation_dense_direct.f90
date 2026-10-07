@@ -41,8 +41,9 @@ module operation_dense_direct
   use operation_stencil, only : compile_matrix_from_action
   use operation_minimization , only : minimizer, restrict, solve_result, SOLVE_SINGULAR, SOLVE_CONTINUE, SOLVE_EXHAUSTED
   use iso_fortran_env   , only : int64
-  use util_factorisation, only : dense_factorisation
+  use util_factorisation, only : dense_factorisation, kernel
   use util_tally        , only : linear_solves, factorisations
+  use util_verbosity    , only : verbosity
 
   implicit none
 
@@ -72,6 +73,19 @@ module operation_dense_direct
      type(dense_factorisation), private :: factor
      integer                  , private :: retained_version  = 0
      logical                  , private :: retained_transposed = .false.
+     ! THE BORDER of a singular matrix whose kernel is no fault: where
+     ! the caller allows it, a singular statement is solved with the
+     ! kernel K, found at the first such statement and stored, under
+     ! the phase condition C x = 0, C = K^T M - the system
+     ! [A C^T; C 0] [x; s] = [b; 0] - its transpose against the same
+     ! factors. M is the metric given, or, column by column, the
+     ! matrix's own column of each unknown's metric_column, zero where
+     ! that is zero; the identity when neither is given
+     logical :: bordered = .false.
+     real(dp), allocatable :: metric(:,:)
+     integer , allocatable :: metric_column(:)
+     real(dp), allocatable, private :: border(:,:)
+     logical                  , private :: retained_bordered = .false.
 
    contains
 
@@ -79,6 +93,7 @@ module operation_dense_direct
      procedure :: restrict => dense_direct_restrict
      procedure :: storage_entries => dense_direct_storage_entries
      procedure :: solve => dense_direct_solve
+     procedure, private :: border_factorise
 
   end type dense_direct
 
@@ -148,7 +163,7 @@ contains
     real(dp), intent(out)   :: achieved
 
     real(dp), allocatable :: a(:,:), constant(:), r(:), solution(:)
-    integer :: n
+    integer :: n, bordered_order
     logical :: factors_current
     type(solve_result) :: outcome
     character(len=250) :: message
@@ -178,9 +193,11 @@ contains
 
     n = size(rhs)
 
+    bordered_order = n
+    if (this % retained_bordered) bordered_order = n + size(this % border, 1)
     factors_current = this % action % version() /= 0 .and. &
          & this % action % version() == this % retained_version .and. &
-         & this % factor % order() == n
+         & this % factor % order() == bordered_order
 
     !----------------------------------------------------------------!
     ! Assemble the matrix - one matvec per basis vector, one column
@@ -194,6 +211,8 @@ contains
        call this % record_event(factorisations)
        call this % factor % factorise(a, this % singular_tolerance, maxval(abs(a), dim=1), &
             & equilibrated=this % equilibrated)
+       this % retained_bordered = .false.
+       if (this % factor % singular() .and. this % bordered) call this % border_factorise(a)
        this % retained_version  = this % action % version()
        this % retained_transposed = this % action % transpose_version()
     end if
@@ -214,9 +233,15 @@ contains
             &false so the failure is not returned through achieved'
     end if
 
-    call this % factor % substitute(rhs, solution, &
-         & transposed = this % action % transpose_version() .neqv. this % retained_transposed)
-    x = solution
+    if (this % retained_bordered) then
+       call this % factor % substitute([rhs, spread(0.0_dp, 1, size(this % border, 1))], solution, &
+            & transposed = this % action % transpose_version() .neqv. this % retained_transposed)
+       x = solution(1:n)
+    else
+       call this % factor % substitute(rhs, solution, &
+            & transposed = this % action % transpose_version() .neqv. this % retained_transposed)
+       x = solution
+    end if
 
     !----------------------------------------------------------------!
     ! Measure the residual of the computed solution through the
@@ -230,5 +255,58 @@ contains
     if (outcome % reason == SOLVE_CONTINUE) call this % record_result(achieved, 1, SOLVE_EXHAUSTED)
 
   end subroutine dense_direct_solve
+
+  !===================================================================!
+  ! THE BORDERED FACTORS of a singular matrix: its kernel, at the first
+  ! singular statement, and the phase condition C = K^T M stored; then
+  ! [A C^T; C 0] factorised in place of A. A kernel empty at the
+  ! tolerance leaves the matrix singular as it was.
+  !===================================================================!
+
+  subroutine border_factorise(this, a)
+
+    class(dense_direct), intent(inout) :: this
+    real(dp)           , intent(in)    :: a(:,:)
+
+    real(dp), allocatable :: k(:,:), m(:,:), bordered(:,:)
+    integer :: n, nk, j
+
+    n = size(a, 1)
+    if (.not. allocated(this % border)) then
+       k = kernel(a, 1.0e-9_dp)
+       if (verbosity >= 1) print '(a, i0, a, i0)', 'the border of a singular matrix of order ', size(a, 1), &
+            & ': its kernel of dimension ', size(k, 2)
+       if (size(k, 2) == 0) return
+       if (allocated(this % metric)) then
+          m = this % metric
+       else if (allocated(this % metric_column)) then
+          ! of the transpose, the row of the metric's column
+          allocate(m(n, n), source=0.0_dp)
+          do j = 1, n
+             if (this % metric_column(j) <= 0) cycle
+             if (this % action % transpose_version()) then
+                m(:, j) = a(this % metric_column(j), :)
+             else
+                m(:, j) = a(:, this % metric_column(j))
+             end if
+          end do
+       else
+          allocate(m(n, n), source=0.0_dp)
+          do j = 1, n
+             m(j, j) = 1.0_dp
+          end do
+       end if
+       this % border = matmul(transpose(k), m)
+    end if
+    nk = size(this % border, 1)
+    allocate(bordered(n + nk, n + nk), source=0.0_dp)
+    bordered(1:n, 1:n)          = a
+    bordered(1:n, n + 1:n + nk) = transpose(this % border)
+    bordered(n + 1:n + nk, 1:n) = this % border
+    call this % factor % factorise(bordered, this % singular_tolerance, maxval(abs(bordered), dim=1), &
+         & equilibrated=this % equilibrated)
+    this % retained_bordered = .not. this % factor % singular()
+
+  end subroutine border_factorise
 
 end module operation_dense_direct

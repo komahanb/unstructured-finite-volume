@@ -218,6 +218,7 @@ module operation_expression
      procedure :: component_at
      procedure :: highest_degree_along
      procedure :: highest_order_read
+     procedure :: reads_order
      procedure :: read_components
      procedure :: root
      procedure :: vertices
@@ -2251,6 +2252,36 @@ contains
     end do
 
   end function highest_order_read
+
+  !===================================================================!
+  ! Whether this rule reads a component of the field of the order
+  ! along the first coordinate given - a component along a later
+  ! coordinate at the order along the first it is mixed with.
+  !===================================================================!
+
+  pure logical function reads_order(this, field, order)
+
+    class(expression), intent(in) :: this
+    integer          , intent(in) :: field, order
+
+    integer :: i, along_first
+
+    reads_order = .false.
+    do i = 1, this % num_vertices()
+       if (this % kind(i) /= VERTEX_LEAF .or. this % position(i) /= ARGUMENT_STATE) cycle
+       if (this % field(i) /= field) cycle
+       if (this % along(i) == FIRST_COORDINATE) then
+          along_first = this % order(i)
+       else
+          along_first = this % mixed_order(i)
+       end if
+       if (along_first == order) then
+          reads_order = .true.
+          return
+       end if
+    end do
+
+  end function reads_order
 
   !===================================================================!
   ! The components of the tuple the rule reads, each once, in

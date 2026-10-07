@@ -60,6 +60,7 @@ module operation_elimination
   use operation_minimization, only : SOLVE_STORAGE_EXCEEDED
   use util_tally            , only : tally
   use operation_stencil     , only : stencil
+  use operation_dense_direct, only : dense_direct
   use field_stored          , only : stored_field
 
   implicit none
@@ -119,6 +120,15 @@ module operation_elimination
      logical, allocatable :: eliminated(:)
 
      class(minimizer), allocatable :: inner
+
+     ! THE BORDER of a complement whose kernel is no fault: where it is
+     ! allowed, a dense inner solve of a singular complement is under
+     ! the phase condition of its kernel (operation_dense_direct), its
+     ! metric over the retained unknowns read from J_KE - the column of
+     ! each retained unknown's metric_column, an eliminated unknown of
+     ! the stated system, zero where that is zero
+     logical :: bordered = .false.
+     integer, allocatable :: metric_column(:)
 
      ! the limit on the entries stored, the sum of the five accounts
      integer :: max_entries = huge(1)
@@ -434,6 +444,7 @@ contains
 
     complement = stencil(s_row, s_column, s_weight, spread(0.0_dp, 1, nk), 'eliminated tangent')
     call complement % versioned(action % version(), action % transpose_version())
+    if (this % bordered) call border_metric(this, n, nk, action % transpose_version())
     retained = stored_directed_graph(nk, tails=[integer ::], heads=[integer ::])
     call this % inner % state(complement, complement % pattern, retained % vertex_set(), nk, &
          & num_components = 1, coupling = complement % pattern)
@@ -737,6 +748,60 @@ contains
     entries = this % storage % total()
 
   end function elimination_storage_entries
+
+  !===================================================================!
+  ! THE METRIC OF THE BORDER over the retained unknowns, given to a
+  ! dense inner solve: of retained unknowns i and j, the entry of J_KE
+  ! in the row of i and the column of j's metric_column, where that is
+  ! an eliminated unknown.
+  !===================================================================!
+
+  subroutine border_metric(this, n, nk, transposed)
+
+    class(elimination), intent(inout) :: this
+    integer           , intent(in)    :: n, nk
+    logical           , intent(in)    :: transposed
+
+    real(dp), allocatable :: metric(:,:)
+    integer , allocatable :: in_e(:), of_e(:)
+    integer :: j, e, t, column
+
+    if (.not. allocated(this % metric_column)) then
+       error stop 'elimination: a bordered complement reads its metric through metric_column, not allocated'
+    end if
+    allocate(in_e(n), source=0)
+    do e = 1, size(this % eliminated_at)
+       in_e(this % eliminated_at(e)) = e
+    end do
+    ! of each eliminated unknown, the retained unknown whose metric column it is
+    allocate(of_e(size(this % eliminated_at)), source=0)
+    do j = 1, nk
+       column = this % metric_column(this % retained_at(j))
+       if (column <= 0) cycle
+       if (in_e(column) > 0) of_e(in_e(column)) = j
+    end do
+    ! of the transpose, from J_EK, its rows the metric's columns
+    allocate(metric(nk, nk), source=0.0_dp)
+    if (transposed) then
+       do t = 1, size(this % ek_row)
+          j = of_e(this % ek_row(t))
+          if (j > 0) metric(this % ek_column(t), j) = metric(this % ek_column(t), j) + this % ek_weight(t)
+       end do
+    else
+       do t = 1, size(this % ke_row)
+          j = of_e(this % ke_column(t))
+          if (j > 0) metric(this % ke_row(t), j) = metric(this % ke_row(t), j) + this % ke_weight(t)
+       end do
+    end if
+    select type (inner => this % inner)
+    type is (dense_direct)
+       inner % bordered = .true.
+       inner % metric   = metric
+    class default
+       error stop 'elimination: a bordered complement is solved by a dense inner solve'
+    end select
+
+  end subroutine border_metric
 
   !===================================================================!
   ! The flags of the selected unknowns, in the selection's order. The

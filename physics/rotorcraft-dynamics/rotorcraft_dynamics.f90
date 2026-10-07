@@ -548,7 +548,7 @@ contains
     ! within the bounds and adjacent strips within the smoothness, no
     ! condition fixing the thicknesses
     r = continuous_residual(omega,  rotor % laws())
-    g = continuous_residual(domega, rotor % initial)
+    g = continuous_residual(domega, rotor % initial([0, 1]))
     if (trim(blade) == 'rigid') then
        L   = r + g
        L_h = L % discretize(omega_h, time=march)

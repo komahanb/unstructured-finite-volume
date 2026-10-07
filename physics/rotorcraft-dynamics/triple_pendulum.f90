@@ -91,7 +91,7 @@ program triple_pendulum
 
   ! the laws on [0, T], the initial data on {0}
   r = continuous_residual(omega,  pendulum % laws())
-  g = continuous_residual(domega, pendulum % initial)
+  g = continuous_residual(domega, pendulum % initial([0, 1]))
   L = r + g
   L_h = L % discretize(omega_h, time=march_of(march, num_instants))
 

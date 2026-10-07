@@ -101,7 +101,7 @@ program triple_pendulum_sensitivity
   objective = integral(c % u(3) * c % u(3), over=omega % time())
 
   r = continuous_residual(omega,  pendulum % laws())
-  g = continuous_residual(domega, pendulum % initial)
+  g = continuous_residual(domega, pendulum % initial([0, 1]))
   d = continuous_residual(omega % design(), [s1 - s1_value, s2 - s2_value])
   lambda_r = r % multiplier('adjoint')
   lambda   = g % multiplier('lambda')

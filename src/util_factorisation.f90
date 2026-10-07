@@ -37,7 +37,7 @@ module util_factorisation
   implicit none
 
   private
-  public :: dense_factorisation
+  public :: dense_factorisation, kernel
 
   type :: dense_factorisation
 
@@ -262,5 +262,102 @@ contains
     is_rank_deficient = this % is_singular
 
   end function singular
+
+  !===================================================================!
+  ! THE KERNEL of a square matrix: a basis, orthonormal, of the vectors
+  ! it maps to zero. The matrix is scaled, its rows and then its
+  ! columns, to a largest entry of one, and triangularised by
+  ! Householder reflections with column pivoting, the column of the
+  ! largest remaining norm first; a column whose remaining norm falls
+  ! to the tolerance times the first column's ends the rank, and the
+  ! kernel is read from the triangle there, each vector one of the
+  ! columns past the rank less the leading ones that reproduce it,
+  ! mapped back by the column scales.
+  !===================================================================!
+
+  function kernel(a, tolerance) result(basis)
+
+    real(dp), intent(in) :: a(:,:), tolerance
+    real(dp), allocatable :: basis(:,:)
+
+    real(dp), allocatable :: r(:,:), v(:), norms(:), row_scale(:), column_scale(:), y(:,:), product(:)
+    integer , allocatable :: perm(:)
+    real(dp) :: alpha, beta, first, s
+    integer  :: n, i, j, k, p, rank, c, nk, tmp
+
+    n = size(a, 1)
+    if (size(a, 2) /= n) error stop 'util_factorisation: the kernel is of a square matrix'
+    r = a
+    allocate(row_scale(n), column_scale(n))
+    do i = 1, n
+       row_scale(i) = maxval(abs(r(i, :)))
+       if (row_scale(i) == 0.0_dp) row_scale(i) = 1.0_dp
+       r(i, :) = r(i, :) / row_scale(i)
+    end do
+    do j = 1, n
+       column_scale(j) = maxval(abs(r(:, j)))
+       if (column_scale(j) == 0.0_dp) column_scale(j) = 1.0_dp
+       r(:, j) = r(:, j) / column_scale(j)
+    end do
+    perm = [(j, j = 1, n)]
+    allocate(norms(n))
+    do j = 1, n
+       norms(j) = norm2(r(:, j))
+    end do
+    rank  = n
+    first = 0.0_dp
+    do k = 1, n
+       p = k - 1 + maxloc(norms(k:n), dim=1)
+       if (p /= k) then
+          v       = r(:, k)
+          r(:, k) = r(:, p)
+          r(:, p) = v
+          tmp     = perm(k)
+          perm(k) = perm(p)
+          perm(p) = tmp
+          s        = norms(k)
+          norms(k) = norms(p)
+          norms(p) = s
+       end if
+       alpha = norm2(r(k:n, k))
+       if (k == 1) first = alpha
+       if (alpha <= tolerance * first) then
+          rank = k - 1
+          exit
+       end if
+       v    = r(k:n, k)
+       v(1) = v(1) + sign(alpha, v(1))
+       beta = dot_product(v, v)
+       product = matmul(v, r(k:n, k:n))
+       do j = k, n
+          r(k:n, j) = r(k:n, j) - (2.0_dp / beta) * product(j - k + 1) * v
+       end do
+       do j = k + 1, n
+          norms(j) = norm2(r(k + 1:n, j))
+       end do
+    end do
+
+    nk = n - rank
+    allocate(y(n, nk), source=0.0_dp)
+    do c = 1, nk
+       j = rank + c
+       y(j, c) = 1.0_dp
+       do i = rank, 1, -1
+          s = -r(i, j) - dot_product(r(i, i + 1:rank), y(i + 1:rank, c))
+          y(i, c) = s / r(i, i)
+       end do
+    end do
+    allocate(basis(n, nk))
+    do c = 1, nk
+       do i = 1, n
+          basis(perm(i), c) = y(i, c) / column_scale(perm(i))
+       end do
+       do j = 1, c - 1
+          basis(:, c) = basis(:, c) - dot_product(basis(:, j), basis(:, c)) * basis(:, j)
+       end do
+       basis(:, c) = basis(:, c) / norm2(basis(:, c))
+    end do
+
+  end function kernel
 
 end module util_factorisation

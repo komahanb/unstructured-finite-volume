@@ -207,7 +207,12 @@ module multibody_dynamics
      type(continuous_field) :: density, energy
      logical :: stated = .false.
      type(continuous_field), allocatable :: unknowns(:)
-     type(continuous_field), allocatable :: initial(:)
+     ! the data on t = 0 of each coordinate the bodies and the blades
+     ! declare, in their order: its value, its rate, the coordinate, and
+     ! the member it belongs to
+     type(continuous_field), allocatable :: datum_value(:), datum_rate(:), datum_field(:)
+     integer               , allocatable :: datum_member(:)
+     integer :: members = 0
      type(continuous_field), allocatable :: guess(:)
      ! the density over the span of the blades as beams, the span
      ! coordinate and the space factor, the unknowns of time and span,
@@ -229,6 +234,7 @@ module multibody_dynamics
      procedure :: beam
      procedure :: joint
      procedure :: laws
+     procedure :: initial
      procedure :: estimate
      procedure :: reactions
      procedure, private :: time_unknown
@@ -262,7 +268,8 @@ contains
 
     this % t = t
     if (present(gravity)) this % gravity = gravity
-    allocate(this % unknowns(0), this % initial(0), this % guess(0), this % drawn(0), this % surfaces(0))
+    allocate(this % unknowns(0), this % datum_value(0), this % datum_rate(0), this % datum_field(0), &
+         & this % datum_member(0), this % guess(0), this % drawn(0), this % surfaces(0))
     allocate(this % of_space(0), this % root(0), this % drawn_beams(0), this % beam_bodies(0), this % beam_surfaces(0))
 
   end function create_mechanism
@@ -319,9 +326,12 @@ contains
     ! the initial data: at rest in the reference configuration but for
     ! the velocity of the centre and the rate of the rotation
     start = v + cross_product(w, centre)
-    this % initial = [this % initial, (b % u(k), k = 1, 3), b % eta - 1.0_dp, (b % eps(k), k = 1, 3), &
-         & (b % u(k) % derivative([this % t]) - start(k), k = 1, 3), b % eta % derivative([this % t]), &
-         & (b % eps(k) % derivative([this % t]) - w(k) / 2.0_dp, k = 1, 3)]
+    this % members      = this % members + 1
+    this % datum_value  = [this % datum_value, (b % u(k), k = 1, 3), b % eta - 1.0_dp, (b % eps(k), k = 1, 3)]
+    this % datum_rate   = [this % datum_rate, (b % u(k) % derivative([this % t]) - start(k), k = 1, 3), &
+         & b % eta % derivative([this % t]), (b % eps(k) % derivative([this % t]) - w(k) / 2.0_dp, k = 1, 3)]
+    this % datum_field  = [this % datum_field, (b % u(k), k = 1, 3), b % eta, (b % eps(k), k = 1, 3)]
+    this % datum_member = [this % datum_member, (this % members, k = 1, 7)]
 
     ! the estimate: the initial motion continued, the rotation by the
     ! angle |w| t about w and the translation v t
@@ -522,9 +532,12 @@ contains
 
     ! at rest in the body's axes at the first instant; fixed to the
     ! body at the root; the estimate zero
-    this % initial = [this % initial, blade % u, blade % v, blade % w, blade % phi, &
-         & blade % u % derivative([this % t]), blade % v % derivative([this % t]), &
+    this % members      = this % members + 1
+    this % datum_value  = [this % datum_value, blade % u, blade % v, blade % w, blade % phi]
+    this % datum_rate   = [this % datum_rate, blade % u % derivative([this % t]), blade % v % derivative([this % t]), &
          & blade % w % derivative([this % t]), blade % phi % derivative([this % t])]
+    this % datum_field  = [this % datum_field, blade % u, blade % v, blade % w, blade % phi]
+    this % datum_member = [this % datum_member, (this % members, k = 1, 4)]
     this % root = [this % root, blade % u, blade % v, blade % w, blade % phi, slope_v, slope_w]
     zero = continuous_field(omega, [0.0_dp])
     this % guess = [this % guess, zero, zero, zero, zero]
@@ -713,6 +726,42 @@ contains
             & over=this % space)
     end do
   end function laws
+
+  ! the data on t = 0 of the orders along time given, member by member
+  ! and in each member order by order: of order 0 each coordinate less
+  ! its reference value, of order 1 its rate less the rate the member
+  ! is given, of order 2 its acceleration; orders 0 and 1 the data of
+  ! an initial value problem, 1 and 2 a start at rest, the values then
+  ! solved at the first instant
+  function initial(this, orders) result(data)
+    class(mechanism), intent(in) :: this
+    integer         , intent(in) :: orders(:)
+    type(continuous_field), allocatable :: data(:)
+    integer :: first, last, i, k, n
+    n = size(this % datum_member)
+    allocate(data(0))
+    first = 1
+    do while (first <= n)
+       last = first
+       do while (last < n)
+          if (this % datum_member(last + 1) /= this % datum_member(first)) exit
+          last = last + 1
+       end do
+       do i = 1, size(orders)
+          select case (orders(i))
+          case (0)
+             data = [data, this % datum_value(first:last)]
+          case (1)
+             data = [data, this % datum_rate(first:last)]
+          case (2)
+             data = [data, (this % datum_field(k) % derivative([this % t, this % t]), k = first, last)]
+          case default
+             error stop 'multibody_dynamics: the data on t = 0 are of the orders 0, 1 and 2 along time'
+          end select
+       end do
+       first = last + 1
+    end do
+  end function initial
 
   ! an unknown of the bodies and the joints: of time alone on a
   ! manifold of time and space, and of the design when the manifold

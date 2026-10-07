@@ -106,7 +106,7 @@ module operation_expression
   public :: derivative, jet_form, represented_component, on_domain, paired
   public :: euler_lagrange, at_zero
   public :: partial_derivative, partial_in_design, total_derivative, stationarity, boundary_terms
-  public :: flux_form, coefficient_form
+  public :: flux_form, coefficient_form, pullback
   public :: operator(+), operator(-), operator(*), operator(/), operator(**)
   public :: sin, cos, exp, log, sqrt, heaviside
 
@@ -139,15 +139,19 @@ module operation_expression
   integer, parameter, public :: ARGUMENT_COORDINATE = 4
 
   ! the elementary functions; the step H(a), one where a >= 0 and zero
-  ! elsewhere, of a function of the coordinates alone: its derivative
-  ! along a coordinate a reads is a measure, not a function, and is
-  ! refused, and along any other zero
+  ! elsewhere, of a function of the coordinates alone, and its
+  ! derivative along a coordinate a reads, the jump D(a) times the
+  ! derivative of a: zero where a is not zero, a measure where it is,
+  ! which an evaluation refuses; D's own derivatives are D's alike. A
+  ! schedule of steps differentiated along time is so the derivative of
+  ! its pieces between its breakpoints, and refused at them
   integer, parameter, public :: SINE        = 1
   integer, parameter, public :: COSINE      = 2
   integer, parameter, public :: EXPONENTIAL = 3
   integer, parameter, public :: LOGARITHM   = 4
   integer, parameter, public :: SQUARE_ROOT = 5
   integer, parameter, public :: UNIT_STEP   = 6
+  integer, parameter, public :: STEP_JUMP   = 7
 
   ! ONE VERTEX AS A VALUE, for a view: the kind, the two vertices
   ! read (0 if none), a leaf's argument, field, order and coordinate,
@@ -465,6 +469,38 @@ contains
   ! the expression is evaluated at. An index below one stops the
   ! program.
   !===================================================================!
+
+  !===================================================================!
+  ! THE PULLBACK of an expression of a manifold to the product of an
+  ! interval of time with it: every coordinate the next one, time the
+  ! first. An expression that reads an unknown or a multiplier stops
+  ! the program.
+  !===================================================================!
+
+  function pullback(x) result(this)
+
+    type(expression), intent(in) :: x
+    type(expression) :: this
+
+    integer :: i
+
+    this = x
+    do i = 1, x % num_vertices()
+       if (x % kind(i) == VERTEX_LEAF) then
+          select case (x % position(i))
+          case (ARGUMENT_STATE, ARGUMENT_MULTIPLIER)
+             error stop 'operation_expression: the pullback to a product with time is of an expression that reads &
+                  &no unknown'
+          case (ARGUMENT_COORDINATE)
+             this % field(i) = x % field(i) + 1
+          end select
+       else if (x % kind(i) == VERTEX_DERIVATIVE) then
+          this % along(i) = x % along(i) + 1
+       end if
+    end do
+    call this % derive_domain()
+
+  end function pullback
 
   function coordinate(c) result(this)
 
@@ -1091,9 +1127,8 @@ contains
           else
              this = da / (constant(2.0_dp) * sqrt(a))
           end if
-       case (UNIT_STEP)
-          error stop 'operation_expression: the derivative of a step along a variable its argument reads is a &
-               &measure, not a function'
+       case (UNIT_STEP, STEP_JUMP)
+          this = product_of(applied(a, VERTEX_FUNCTION, STEP_JUMP, 0.0_dp), da)
        case default
           error stop 'operation_expression: the function is not one this module differentiates'
        end select
@@ -1871,6 +1906,11 @@ contains
                   &its argument reads, where its derivative is a measure'
              v(i)  = merge(1.0_dp, 0.0_dp, v(f) >= 0.0_dp)
              dv(i) = 0.0_dp
+          case (STEP_JUMP)
+             if (v(f) == 0.0_dp) error stop 'operation_expression: the derivative of a step is evaluated at its &
+                  &jump, where it is a measure'
+             v(i)  = 0.0_dp
+             dv(i) = 0.0_dp
           case default
              error stop 'operation_expression: this vertex names a function that is not one of &
                   &those defined'
@@ -2182,6 +2222,10 @@ contains
                   &direction its argument reads, where its derivative is a measure'
              v(:, i) = 0.0_dp
              v(0, i) = merge(1.0_dp, 0.0_dp, v(0, f) >= 0.0_dp)
+          case (STEP_JUMP)
+             if (v(0, f) == 0.0_dp) error stop 'operation_expression: the derivative of a step is evaluated at &
+                  &its jump, where it is a measure'
+             v(:, i) = 0.0_dp
           case default
              error stop 'operation_expression: this vertex names a function that is not one of &
                   &those defined'

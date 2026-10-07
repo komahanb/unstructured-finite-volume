@@ -88,7 +88,7 @@ module operation_residual
 
   private
   public :: residual_operator
-  public :: continuous_residual, discrete_residual, minimize_together
+  public :: continuous_residual, discrete_residual, minimize
 
   !===================================================================!
   ! THE PROJECTION OF A LAW ON THE CELLS, tested against a basis in
@@ -242,6 +242,14 @@ module operation_residual
      procedure, private :: explicit_marks
      procedure, private :: explicit_at
   end type residual_operator
+
+  ! THE ZERO OF SEVERAL RESIDUALS ON ONE DESIGN: the residuals together,
+  ! or a residual of the design alone with the residuals of the
+  ! scenarios, the design shared
+  interface minimize
+     module procedure minimize_together
+     module procedure minimize_with_design
+  end interface minimize
 
   interface residual_operator
      module procedure create
@@ -472,7 +480,7 @@ module operation_residual
 
    contains
 
-     procedure :: minimize
+     procedure :: minimize => residual_minimize
      procedure :: disagreement
      procedure, private :: zero_at_design
      procedure, private :: inequalities_at
@@ -2654,6 +2662,15 @@ contains
     real(dp) :: given
     real(dp), allocatable :: slope(:)
     character(len=250) :: message
+    class(derivative_approximation), allocatable :: approximation
+
+    ! the approximation along the region: the one given, or the
+    ! points'
+    if (present(space)) then
+       allocate(approximation, source=space)
+    else if (allocated(points % approximation)) then
+       allocate(approximation, source=points % approximation)
+    end if
 
     ! the terms on the whole manifold: the representation laws, every
     ! equation of which defines a jet component, and the one term of the
@@ -2683,8 +2700,10 @@ contains
          end if
        end associate
     end do
+    ! no term on the whole manifold: a residual of the design alone
     if (whole_term == 0) then
-       error stop 'operation_residual: no term states the equations on the whole manifold'
+       call design_form(this, points, approximation, image)
+       return
     end if
 
     associate (t => this % term(whole_term))
@@ -2715,14 +2734,14 @@ contains
       ! they are, the outer derivatives along space read as fluxes and
       ! never formed
       projected = .false.
-      if (present(space)) projected = space % projects()
+      if (allocated(approximation)) projected = approximation % projects()
       if (.not. projected) image % rule = paired([(jet_form(t % equation(j) % graph(1)), j = 1, size(t % equation))])
     end associate
 
     ! the orders along time the initial data impose, field by field
     imposed = imposed_orders(this, points, nf)
-    if (projected) call projected_form(image, this % term(whole_term), space, points, defined, imposed)
-    call image % check_representations(defined, present(time), present(space))
+    if (projected) call projected_form(image, this % term(whole_term), approximation, points, defined, imposed)
+    call image % check_representations(defined, present(time), allocated(approximation))
     if (any(image % manifold % of_time_alone(1:nf)) .and. .not. allocated(image % elements)) then
        error stop 'operation_residual: an unknown of time alone on a manifold of space is stated under a &
             &projection on the cells, which tests its equation with the weight alone'
@@ -2745,7 +2764,7 @@ contains
        ! a condition on a face of the region takes the rows of the
        ! physics at the points nearest the face: the derivatives along
        ! space come from a closed approximation at every point
-       if (image % condition(j) % manifold % is_space_face() .and. .not. present(space)) then
+       if (image % condition(j) % manifold % is_space_face() .and. .not. allocated(approximation)) then
           error stop 'operation_residual: a condition on a face of the region requires the derivatives along &
                &space approximated at every point, a derivative approximation'
        end if
@@ -2831,7 +2850,7 @@ contains
        error stop 'operation_residual: the derivatives along time are approximated by a chain of &
             &families, given exactly when the manifold has a time coordinate'
     end if
-    if (image % manifold % with_space .neqv. present(space)) then
+    if (image % manifold % with_space .neqv. allocated(approximation)) then
        error stop 'operation_residual: the derivatives along space are approximated by a method of an &
             &order, finite differences or finite volumes, given exactly when the manifold has a region'
     end if
@@ -2842,12 +2861,143 @@ contains
           error stop 'operation_residual: a block of the chain begins after the last instant'
        end if
     end if
-    if (present(space)) then
-       allocate(image % differences, source=space)
+    if (allocated(approximation)) then
+       allocate(image % differences, source=approximation)
        image % with_differences = .true.
     end if
 
   end function residual_discretize
+
+  !===================================================================!
+  ! A RESIDUAL OF THE DESIGN ALONE: no law and no unknown, its
+  ! objective an integral over the whole manifold and its conditions
+  ! inequalities on its design factor, functions of the design alone.
+  ! Its image has no rule: its zero is the quadrature of its points -
+  ! the elements of their approximation, or the points with
+  ! their measure - and its derivative along the design the
+  ! objective's partial. Invalid input: no objective, or a condition
+  ! that is not such an inequality.
+  !===================================================================!
+
+  subroutine design_form(this, points, approximation, image)
+
+    class(continuous_residual), intent(in)    :: this
+    type(discrete_manifold)   , intent(in)    :: points
+    class(derivative_approximation), allocatable, intent(in) :: approximation
+    type(discrete_residual)   , intent(inout) :: image
+
+    type(expression) :: form
+    integer :: k, i
+
+    if (.not. allocated(this % objective)) then
+       error stop 'operation_residual: no term states the equations on the whole manifold, and no objective the &
+            &design alone'
+    end if
+    if (this % objective % integrated_part /= WHOLE .or. &
+         & .not. this % objective % integrated_over % matches(points % identity)) then
+       error stop 'operation_residual: the objective of a residual of the design alone is an integral over its &
+            &whole manifold'
+    end if
+    allocate(image % condition(size(this % term)))
+    do k = 1, size(this % term)
+       associate (t => this % term(k))
+         if (.not. (t % manifold % is_design_factor() .and. t % inequality) .or. &
+              & .not. t % manifold % parent % matches(points % identity)) then
+            error stop 'operation_residual: the conditions of a residual of the design alone are inequalities on &
+                 &its design factor'
+         end if
+         image % condition(k) = t
+         do i = 1, size(t % equation)
+            image % condition(k) % equation(i) = image % condition(k) % equation(i) % jet_form()
+            form = image % condition(k) % equation(i) % graph(1)
+            if (image % condition(k) % equation(i) % is_integral() .or. form % reads_state()) then
+               error stop 'operation_residual: the inequalities of a residual of the design alone are functions of &
+                    &the design alone'
+            end if
+         end do
+       end associate
+    end do
+    image % objective = this % objective % jet_form()
+    image % points    = points
+    if (allocated(approximation)) image % elements = approximation % quadrature(points % cells)
+    ! the manifold: the points', of the design, with no unknown
+    image % manifold % identity    = points % identity
+    image % manifold % with_design = .true.
+
+  end subroutine design_form
+
+  !===================================================================!
+  ! THE ZERO OF A RESIDUAL OF THE DESIGN ALONE: no state. Its solution
+  ! stores the multipliers of its inequalities, zero until the design's
+  ! iteration places them, and the quadrature of its points: the
+  ! elements' sites with their weights, or the points with their
+  ! measure. kappa, -dJ/ds in every column of the expansion, is the
+  ! objective's partial along the design, negated; no inequality is a
+  ! functional of a state, so functional_kappa has no column.
+  !===================================================================!
+
+  subroutine design_solution(this, solution, kappa, functional_kappa)
+
+    class(discrete_residual), intent(in)  :: this
+    type(discrete_field)    , intent(out) :: solution
+    real(dp), allocatable   , intent(out), optional :: kappa(:,:), functional_kappa(:,:)
+
+    character(len=32), allocatable :: names(:)
+    real(dp), allocatable :: gradient(:,:,:), partial(:,:)
+    integer :: j, i, e, q, n, p, ncol, nnodes, npts
+
+    allocate(names(0))
+    do j = 1, size(this % condition)
+       if (.not. this % condition(j) % paired) cycle
+       names = [character(len=32) :: names, (this % condition(j) % multiplier % name, &
+            & i = 1, size(this % condition(j) % equation))]
+    end do
+    npts = this % points % num_points()
+    ncol = this % points % expansion % num_columns()
+    solution = discrete_field(this % points, reshape([real(dp) :: (0.0_dp, i = 1, npts * size(names))], &
+         & [npts, size(names)]), names)
+    solution % rule = constant(0.0_dp)
+    allocate(solution % jet(0, npts, ncol))
+    if (allocated(this % elements)) then
+       nnodes = this % elements % num_cells() * this % elements % num_quadrature_points()
+    else
+       nnodes = npts
+    end if
+    allocate(solution % node_jet(0, nnodes, ncol), solution % node_weight(nnodes), solution % node_face_weight(nnodes))
+    allocate(solution % node_position(this % points % num_coordinates(), nnodes))
+    allocate(solution % node_image(nnodes), source=this_image())
+    solution % node_face_weight = 0.0_dp
+    if (allocated(this % elements)) then
+       n = 0
+       do e = 1, this % elements % num_cells()
+          do q = 1, this % elements % num_quadrature_points()
+             n = n + 1
+             solution % node_weight(n) = this % elements % weight(q, e)
+             solution % node_position(:, n) = this % elements % position(:, q, e)
+          end do
+       end do
+    else
+       do p = 1, npts
+          solution % node_weight(p)      = this % points % measure(p)
+          solution % node_position(:, p) = this % points % position(p)
+       end do
+    end if
+    if (present(kappa)) then
+       allocate(kappa(this % points % expansion % num_designs(), 0:ncol - 1), source=0.0_dp)
+       if (allocated(this % objective)) then
+          call this % objective % differential(solution, gradient, partial)
+          kappa = -partial
+       end if
+    end if
+    if (present(functional_kappa)) allocate(functional_kappa(this % points % expansion % num_designs(), 0))
+
+  end subroutine design_solution
+
+  ! whether a residual is of the design alone: no law, no unknown
+  pure logical function of_design_alone(this)
+    class(discrete_residual), intent(in) :: this
+    of_design_alone = this % manifold % num_unknowns == 0
+  end function of_design_alone
 
   !===================================================================!
   ! THE ZERO OF THE DISCRETE RESIDUAL, at the design the image states,
@@ -2911,7 +3061,7 @@ contains
   ! motion the estimate does not follow.
   !===================================================================!
 
-  recursive subroutine minimize(this, estimate, solution, checkpoint, snapshots, continued)
+  recursive subroutine residual_minimize(this, estimate, solution, checkpoint, snapshots, continued)
 
     class(discrete_residual), intent(in)  :: this
     type(discrete_field)    , intent(in)  :: estimate
@@ -2955,7 +3105,7 @@ contains
     call design_iteration(iterate, estimates, solutions, checkpoint, snapshots)
     solution = solutions(1)
 
-  end subroutine minimize
+  end subroutine residual_minimize
 
   !===================================================================!
   ! SEVERAL LAGRANGIANS ON ONE DESIGN: residuals on manifolds of the
@@ -2990,7 +3140,7 @@ contains
        if (.not. free_design(iterates(k))) then
           error stop 'operation_residual: residuals minimized together have a free design, no equality on it'
        end if
-       if (.not. iterates(k) % with_adjoint) then
+       if (.not. iterates(k) % with_adjoint .and. .not. of_design_alone(iterates(k))) then
           error stop 'operation_residual: residuals minimized together have their equations paired with their &
                &multiplier'
        end if
@@ -3007,6 +3157,48 @@ contains
     call design_iteration(iterates, estimates, solutions, checkpoint, snapshots)
 
   end subroutine minimize_together
+
+  !===================================================================!
+  ! THE ZERO OF L = L_design + sum_j L_j: the residual of the design
+  ! alone - no law, its objective and its inequalities on the design -
+  ! minimized with the residuals of the scenarios, the design shared;
+  ! the solutions are the scenarios'. Each scenario is marched
+  ! continued, each block from the solution before it, unless
+  ! continued is false: the scenarios' motions are the controls',
+  ! which no estimate follows. Invalid input: a first residual with
+  ! laws.
+  !===================================================================!
+
+  subroutine minimize_with_design(design, residuals, estimates, solutions, checkpoint, snapshots, continued)
+
+    type(discrete_residual), intent(in)  :: design, residuals(:)
+    type(discrete_field)   , intent(in)  :: estimates(:)
+    type(discrete_field)   , intent(out) :: solutions(:)
+    integer                , intent(in), optional :: checkpoint, snapshots
+    logical                , intent(in), optional :: continued
+
+    type(discrete_residual), allocatable :: together(:)
+    type(discrete_field)   , allocatable :: guesses(:), found(:)
+
+    if (.not. of_design_alone(design)) then
+       error stop 'operation_residual: the residual minimized with the scenarios is of the design alone, no law'
+    end if
+    if (size(estimates) /= size(residuals) .or. size(solutions) /= size(residuals)) then
+       error stop 'operation_residual: one estimate and one solution for each scenario'
+    end if
+    together = [design, residuals]
+    allocate(guesses(size(together)), found(size(together)))
+    guesses(1) = discrete_field(design % points, reshape([real(dp) ::], [design % points % num_points(), 0]), &
+         & [character(len=32) ::])
+    guesses(2:) = estimates
+    if (present(continued)) then
+       call minimize_together(together, guesses, found, checkpoint, snapshots, continued)
+    else
+       call minimize_together(together, guesses, found, checkpoint, snapshots, continued=.true.)
+    end if
+    solutions = found(2:)
+
+  end subroutine minimize_with_design
 
   !===================================================================!
   ! THE ITERATION ON THE FREE DESIGN of one residual or of several on
@@ -3615,6 +3807,12 @@ contains
     logical :: wavefront, scheduled
     integer(8) :: tick, tock, rate
     character(len=250) :: message
+
+    ! a residual of the design alone: no state to solve for
+    if (of_design_alone(this)) then
+       call design_solution(this, solution, kappa, functional_kappa)
+       return
+    end if
 
     stride = this % rule % num_components()
     nf     = this % manifold % num_unknowns

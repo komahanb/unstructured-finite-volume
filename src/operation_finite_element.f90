@@ -71,6 +71,7 @@ module operation_finite_element
      procedure :: derivative_rows
      procedure :: projects
      procedure :: elements
+     procedure :: quadrature
 
   end type finite_element
 
@@ -137,6 +138,20 @@ contains
   ! the degree of the polynomials the coefficients of two nodes
   ! determine.
   !===================================================================!
+
+  ! the quadrature of the cells: the elements at the order the degree
+  ! states - on a line (degree - 1) / 2, the value and the derivatives
+  ! to it at each node; zero otherwise - with no derivative of the basis
+  function quadrature(this, cells) result(set)
+    class(finite_element), intent(in) :: this
+    type(mesh)           , intent(in) :: cells
+    type(element_quadrature) :: set
+    if (cells % dimension > 1) then
+       set = this % elements(cells, 0, 0)
+    else
+       set = this % elements(cells, (this % degree - 1) / 2, 0)
+    end if
+  end function quadrature
 
   function elements(this, cells, order, derivatives) result(set)
 

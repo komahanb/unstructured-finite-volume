@@ -632,31 +632,41 @@ contains
   ! the smallest f_i, m then the smallest f_i.
   !===================================================================!
 
+  ! without a weight, the largest value at the nodes of the support,
+  ! the limit of the smooth maximum as its weight grows: evaluated on a
+  ! solution, not differentiated
   function maximum(f, over, weight) result(this)
 
     type(continuous_field)   , intent(in) :: f
     class(continuous_support), intent(in) :: over
-    real(dp)                 , intent(in) :: weight
+    real(dp)                 , intent(in), optional :: weight
     type(continuous_field) :: this
 
-    if (.not. weight > 0.0_dp) error stop 'operation_field: the weight of a smooth maximum is positive'
     if (allocated(f % integrand)) error stop 'operation_field: a smooth maximum is of a field with no integral'
     this = reduced(f, over)
-    this % weight = weight
+    this % weight = huge(1.0_dp)
+    if (present(weight)) then
+       if (.not. weight > 0.0_dp) error stop 'operation_field: the weight of a smooth maximum is positive'
+       this % weight = weight
+    end if
 
   end function maximum
 
+  ! without a weight, the smallest value at the nodes of the support
   function minimum(f, over, weight) result(this)
 
     type(continuous_field)   , intent(in) :: f
     class(continuous_support), intent(in) :: over
-    real(dp)                 , intent(in) :: weight
+    real(dp)                 , intent(in), optional :: weight
     type(continuous_field) :: this
 
-    if (.not. weight > 0.0_dp) error stop 'operation_field: the weight of a smooth minimum is positive'
     if (allocated(f % integrand)) error stop 'operation_field: a smooth minimum is of a field with no integral'
     this = reduced(f, over)
-    this % weight = -weight
+    this % weight = -huge(1.0_dp)
+    if (present(weight)) then
+       if (.not. weight > 0.0_dp) error stop 'operation_field: the weight of a smooth minimum is positive'
+       this % weight = -weight
+    end if
 
   end function minimum
 
@@ -762,6 +772,10 @@ contains
     real(dp) :: m, scale
     integer  :: c
 
+    if (abs(this % weight) == huge(1.0_dp)) then
+       error stop 'operation_field: the largest value at the nodes is evaluated, not differentiated; a smooth &
+            &maximum of a weight is'
+    end if
     if (this % weight /= 0.0_dp) then
        ! of the smooth maximum m + log(I) / rho: the differential of I
        ! over rho I, and along each expansion the derivative of that
@@ -983,6 +997,15 @@ contains
     real(dp) :: m
 
     call maximum_parts(this, solution, m, total, gradient, partial)
+    if (abs(this % weight) == huge(1.0_dp)) then
+       ! the largest value, or the smallest, at the design alone
+       if (size(total) > 1) then
+          error stop 'operation_field: the largest value at the nodes is evaluated at the design alone, along no &
+               &expansion'
+       end if
+       total(1) = m
+       return
+    end if
     total(2:) = total(2:) / (this % weight * total(1))
     total(1)  = m + log(total(1)) / this % weight
 
@@ -1071,6 +1094,12 @@ contains
        end if
     end if
 
+    ! the largest value needs no integral
+    if (abs(this % weight) == huge(1.0_dp)) then
+       allocate(total(solution % on % expansion % num_columns()), source=0.0_dp)
+       allocate(gradient(0, 0, 0), partial(0, 0))
+       return
+    end if
     ! the integral of the shifted exponentials, and the logarithm
     summed = exp(this % weight * (this % component(1) - m))
     do i = 2, size(this % component)
@@ -2217,6 +2246,10 @@ contains
     class(continuous_field), intent(in) :: a
     real(dp)               , intent(in) :: x
     type(continuous_field) :: this
+    if (a % weight /= 0.0_dp) then
+       this = shifted_extremum(a, x)
+       return
+    end if
     call require_scalar(a, '+')
     this = real_plus(x, a)
     if (.not. with_integral(a)) this = composed(a, a % component(1) + x)
@@ -2255,6 +2288,10 @@ contains
     real(dp)               , intent(in) :: x
     type(continuous_field) :: this
     type(expression) :: ta, ia
+    if (a % weight /= 0.0_dp) then
+       this = shifted_extremum(a, -x)
+       return
+    end if
     call require_scalar(a, '-')
     if (with_integral(a)) then
        call parts(a, ta, ia)
@@ -2263,6 +2300,20 @@ contains
     end if
     this = composed(a, a % component(1) - x)
   end function minus_real
+
+  ! A SMOOTH EXTREMUM SHIFTED by a number is the smooth extremum of its
+  ! components shifted: log( integral of sum_i exp(rho (f_i + x)) ) /
+  ! rho is the smooth extremum of the f_i plus x
+  function shifted_extremum(a, x) result(this)
+    class(continuous_field), intent(in) :: a
+    real(dp)               , intent(in) :: x
+    type(continuous_field) :: this
+    integer :: k
+    this = a
+    do k = 1, size(a % component)
+       this % component(k) = a % component(k) + x
+    end do
+  end function shifted_extremum
 
   impure elemental function negated(a) result(this)
     class(continuous_field), intent(in) :: a

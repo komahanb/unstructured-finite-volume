@@ -84,7 +84,7 @@
 ! A third argument scenarios asks for the stiffness from two
 ! deflections, at the frequency and at twice it, two scenarios each
 ! with its own state on one design: the sum of their misfits least,
-! minimize_together over the two Lagrangians. On 21 x 17 the design
+! minimize over the two Lagrangians. On 21 x 17 the design
 ! found is (0.5612926640, -0.3552221853) in six iterations, the
 ! derivatives of the two misfits along the design by the expansion
 ! summing to -5.0e-11 and -3.9e-11 against their own 4.1e-3 and
@@ -107,7 +107,7 @@ program euler_bernoulli_beam_optimization
   use operation_expansion        , only : expansion
   use operation_field            , only : continuous_field, discrete_field, integral
   use operation_field            , only : sin, cos
-  use operation_residual         , only : continuous_residual, discrete_residual, minimize_together
+  use operation_residual         , only : continuous_residual, discrete_residual, minimize
   use operation_family           , only : dirk, bdf, adams, chain
   use operation_finite_element   , only : finite_element
 
@@ -160,7 +160,7 @@ program euler_bernoulli_beam_optimization
      do k = 1, 2
         call scenario(real(k, dp), L_hs(k), estimates(k), misfits(k), stiffnesses(k))
      end do
-     call minimize_together(L_hs, estimates, solutions)
+     call minimize(L_hs, estimates, solutions)
      total = 0.0_dp
      do k = 1, 2
         functional = misfits(k) % at(solutions(k))

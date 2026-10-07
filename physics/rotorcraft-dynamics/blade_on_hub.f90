@@ -53,7 +53,7 @@ program blade_on_hub
   use operation_residual      , only : continuous_residual, discrete_residual
   use operation_family        , only : dirk, bdf, chain
   use operation_finite_element, only : finite_element
-  use multibody_dynamics      , only : rigid_body, beam_blade, solid_rectangle, mechanism, revolute_driver, rigid_link
+  use multibody_dynamics      , only : rigid_body, beam_blade, solid_rectangle, mechanism, revolute_driver, rigid
 
   implicit none
 
@@ -129,7 +129,7 @@ program blade_on_hub
      plate(3, 3) = mass * ((tip - root)**2 + chord**2) / 12.0_dp
      call spinner % body(omega, slab, 'blade', [(root + tip) / 2.0_dp, 0.0_dp, height], mass, plate, &
           & angular_velocity=speed * ez)
-     call spinner % joint(omega, 'link', rigid_link(hub, slab))
+     call spinner % joint(omega, 'link', rigid(hub, slab))
   end if
   call spinner % joint(omega, 'driver', revolute_driver(hub, ez, rate, t))
 

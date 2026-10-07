@@ -265,7 +265,9 @@ contains
 
   !===================================================================!
   ! THE KERNEL of a square matrix: a basis, orthonormal, of the vectors
-  ! it maps to zero. The matrix is scaled, its rows and then its
+  ! it maps to zero. A row or a column whose largest entry is within
+  ! the precision of the matrix's largest is its rounding, and is
+  ! taken as zero; the matrix is then scaled, its rows and then its
   ! columns, to a largest entry of one, and triangularised by
   ! Householder reflections with column pivoting, the column of the
   ! largest remaining norm first; a column whose remaining norm falls
@@ -282,12 +284,17 @@ contains
 
     real(dp), allocatable :: r(:,:), v(:), norms(:), row_scale(:), column_scale(:), y(:,:), product(:)
     integer , allocatable :: perm(:)
-    real(dp) :: alpha, beta, first, s
+    real(dp) :: alpha, beta, first, s, largest
     integer  :: n, i, j, k, p, rank, c, nk, tmp
 
     n = size(a, 1)
     if (size(a, 2) /= n) error stop 'util_factorisation: the kernel is of a square matrix'
     r = a
+    largest = maxval(abs(a))
+    do i = 1, n
+       if (maxval(abs(a(i, :))) <= epsilon(1.0_dp) * largest) r(i, :) = 0.0_dp
+       if (maxval(abs(a(:, i))) <= epsilon(1.0_dp) * largest) r(:, i) = 0.0_dp
+    end do
     allocate(row_scale(n), column_scale(n))
     do i = 1, n
        row_scale(i) = maxval(abs(r(i, :)))

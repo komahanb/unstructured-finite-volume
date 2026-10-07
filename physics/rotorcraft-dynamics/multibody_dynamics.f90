@@ -36,7 +36,7 @@
 !                                  through x along e, and the direction
 !                                  e of a along that line
 !      fixed(a)                    a neither moves nor turns
-!      rigid_link(a, b)            b moves and turns with a
+!      rigid(a, b)                 b moves and turns with a
 !      revolute_driver(a, e, w, t) a turns about e at the rate w, its
 !                                  centre fixed
 !      motion_driver(a, d, w, t)   the centre of a moves by d sin(w t)
@@ -113,17 +113,21 @@ module multibody_dynamics
   use util_precision      , only : dp
   use util_string         , only : string
   use relation_binary     , only : ragged
-  use operation_manifold  , only : continuous_manifold, discrete_manifold
-  use operation_field     , only : continuous_field, discrete_field, integral, sin, cos
+  use operation_manifold  , only : continuous_manifold, discrete_manifold, window, region, parameter, points
+  use operation_expansion , only : expansion
+  use operation_finite_element, only : finite_element
+  use operation_field     , only : continuous_field, discrete_field, integral, mean, maximum, sin, cos
+  use operation_residual  , only : continuous_residual
   use operation_expression, only : expression
   use view_paraview_writer, only : paraview_writer, time_series
 
   implicit none
 
   private
-  public :: rigid_body, beam_blade, section, solid_rectangle, mechanism, body_table, surface
-  public :: spherical, revolute, cylindrical, fixed, rigid_link, revolute_driver, motion_driver
+  public :: rigid_body, beam_blade, section, solid_rectangle, mechanism, body_table, table, surface
+  public :: spherical, revolute, cylindrical, fixed, rigid, revolute_driver, motion_driver
   public :: line, rotation, displacement
+  public :: assembly, attachment, beam
 
   type :: rigid_body
      character(len=:), allocatable :: name
@@ -151,6 +155,8 @@ module multibody_dynamics
      integer          :: kind = 0
      type(rigid_body) :: body
      real(dp)         :: axis(3) = 0.0_dp
+     ! of an assembly, the name of the body, which its mechanism forms
+     character(len=32) :: name = ''
   end type actuator
 
   integer, parameter :: TURN = 1, SHIFT = 2
@@ -170,8 +176,11 @@ module multibody_dynamics
      ! an allocatable array: a fixed array of fields in a section copied
      ! as a class is released twice by the compiler in use
      type(continuous_field), allocatable :: moments(:)
+     ! the strength its stress is measured against, where it states one
+     real(dp) :: strength = 0.0_dp
    contains
-     procedure :: stress => section_stress
+     procedure :: stress   => section_stress
+     procedure :: pullback => section_pullback
   end type section
 
   interface section
@@ -195,11 +204,13 @@ module multibody_dynamics
      real(dp) :: chord = 0.0_dp, modulus = 0.0_dp, shear = 0.0_dp
      type(continuous_field) :: thickness
    contains
-     procedure :: stress => rectangle_stress
+     procedure :: stress   => rectangle_stress
+     procedure :: pullback => rectangle_pullback
   end type solid_rectangle
 
   interface solid_rectangle
      module procedure uniform_solid_rectangle
+     module procedure rectangle_of_strength
   end interface solid_rectangle
 
   ! a blade as a beam in the axes of the body it is fixed to: its root
@@ -266,16 +277,26 @@ module multibody_dynamics
      type(beam_blade), allocatable :: drawn_beams(:)
      type(rigid_body), allocatable :: beam_bodies(:)
      type(surface)   , allocatable :: beam_surfaces(:)
+     ! the conditions of its joints and drivers, in their order
+     type(continuous_field), allocatable :: conditions(:)
+     ! OF AN ASSEMBLY: the manifold it is stated on and its blades as
+     ! beams
+     type(continuous_manifold) :: omega
+     type(beam_blade), allocatable :: blades(:)
    contains
      procedure :: body
-     procedure :: beam
+     procedure :: beam => beam_member
      procedure :: joint
      procedure :: driver
      procedure :: efforts
      procedure :: power
      procedure :: laws
      procedure :: initial
-     procedure :: estimate
+     generic   :: estimate => estimate_on, estimate_image
+     procedure, private :: estimate_on, estimate_image
+     procedure :: stress => mechanism_stress
+     procedure :: attachments
+     procedure :: audit
      procedure :: reactions
      procedure, private :: time_unknown
      procedure :: draw_with
@@ -285,6 +306,7 @@ module multibody_dynamics
 
   interface mechanism
      module procedure create_mechanism
+     module procedure mechanism_of_assembly
   end interface mechanism
 
   type :: body_table
@@ -294,9 +316,124 @@ module multibody_dynamics
      procedure :: row
   end type body_table
 
-  interface body_table
+  !===================================================================!
+  ! A COUPLING of bodies by their names: the kind of its joint, the
+  ! bodies - the second absent for the ground - and its point and axis.
+  ! A mechanism of an assembly forms its conditions on its bodies.
+  !===================================================================!
+
+  type :: coupling
+     integer           :: kind = 0
+     character(len=32) :: first = '', second = ''
+     real(dp)          :: point(3) = 0.0_dp, axis(3) = 0.0_dp
+  end type coupling
+
+  integer, parameter :: SPHERICAL_COUPLING = 1, REVOLUTE_COUPLING = 2, CYLINDRICAL_COUPLING = 3, &
+       & FIXED_COUPLING = 4, RIGID_COUPLING = 5, LINE_COUPLING = 6
+
+  ! A FRAME of a body by its name: a point of it and three axes, the
+  ! first along the span of the member attached to it there
+  type :: frame
+     character(len=32) :: body = ''
+     real(dp)          :: point(3) = 0.0_dp, axes(3,3) = 0.0_dp
+  end type frame
+
+  interface attachment
+     module procedure frame_of
+  end interface attachment
+
+  ! A MEMBER'S MODEL: a beam of a section, its pitch along the span
+  ! where it is twisted
+  type :: beam_model
+     class(section), allocatable :: section
+     logical :: pitched = .false.
+     type(continuous_field) :: pitch
+  end type beam_model
+
+  ! A FLEXIBLE MEMBER of an assembly: its name, the region and the
+  ! points of its domain, its attachment and its model
+  type :: flexible_member
+     character(len=32) :: name = ''
+     type(region)      :: domain
+     integer           :: points = 0
+     type(frame)       :: attachment
+     type(beam_model), allocatable :: model
+  end type flexible_member
+
+  !===================================================================!
+  ! THE ASSEMBLY: the members and their domains, the joints and the
+  ! drivers, by name, and the design. Its manifold Sigma is the
+  ! members' domain times the design - the flexible members of one
+  ! domain, the rigid ones of none - on which the design's fields, the
+  ! sections and the pitches, are stated; a mechanism forms them on a
+  ! product of time with Sigma by their pullback.
+  !===================================================================!
+
+  type :: assembly
+     type(body_table)  :: bodies
+     real(dp)          :: gravity(3) = [0.0_dp, 0.0_dp, -9.81_dp]
+     type(continuous_manifold) :: sigma
+     type(flexible_member), allocatable :: members(:)
+     type(coupling)   , allocatable :: couplings(:)
+     character(len=64), allocatable :: coupling_name(:)
+     type(actuator)   , allocatable :: actuators(:)
+     character(len=64), allocatable :: driver_name(:)
+     real(dp)         , allocatable :: driver_row(:,:)
+   contains
+     procedure :: manifold   => assembly_manifold
+     procedure :: mass       => assembly_mass
+     procedure :: discretize => assembly_discretize
+     procedure :: member     => assembly_member
+     procedure :: model      => assembly_model
+     procedure :: joint      => assembly_joint
+     procedure :: driver     => assembly_driver
+     generic   :: coordinate => design_coordinate, member_coordinate
+     procedure, private :: design_coordinate, member_coordinate
+  end type assembly
+
+  interface assembly
+     module procedure create_assembly
+  end interface assembly
+
+  interface table
      module procedure read_table
-  end interface body_table
+  end interface table
+
+  ! THE JOINTS AND THE ACTUATORS of bodies, by the bodies themselves -
+  ! their conditions, or the actuator - or by their names - a coupling,
+  ! or the actuator of the named body, which a mechanism of an assembly
+  ! forms on its bodies by the same procedures
+  interface spherical
+     module procedure spherical_of_bodies, spherical_of_names
+  end interface spherical
+
+  interface revolute
+     module procedure revolute_of_bodies, revolute_of_names
+  end interface revolute
+
+  interface cylindrical
+     module procedure cylindrical_of_body, cylindrical_of_name
+  end interface cylindrical
+
+  interface fixed
+     module procedure fixed_body, fixed_name
+  end interface fixed
+
+  interface rigid
+     module procedure rigid_of_bodies, rigid_of_names
+  end interface rigid
+
+  interface line
+     module procedure line_of_body, line_of_name
+  end interface line
+
+  interface rotation
+     module procedure rotation_of_body, rotation_of_name
+  end interface rotation
+
+  interface displacement
+     module procedure displacement_of_body, displacement_of_name
+  end interface displacement
 
 contains
 
@@ -311,6 +448,7 @@ contains
     allocate(this % unknowns(0), this % datum_value(0), this % datum_rate(0), this % datum_field(0), &
          & this % datum_member(0), this % guess(0), this % drawn(0), this % surfaces(0))
     allocate(this % of_space(0), this % root(0), this % drawn_beams(0), this % beam_bodies(0), this % beam_surfaces(0))
+    allocate(this % conditions(0), this % blades(0))
 
   end function create_mechanism
 
@@ -416,6 +554,7 @@ contains
        this % guess    = [this % guess, continuous_field(omega, [0.0_dp])]
        call add(this, reaction * conditions(k))
     end do
+    this % conditions = [this % conditions, conditions]
 
   end subroutine joint
 
@@ -579,7 +718,7 @@ contains
   ! w_xx sin theta (curvatures).
   !===================================================================!
 
-  subroutine beam(this, omega, blade, b, name, x, root, axes, s, pitch)
+  subroutine beam_member(this, omega, blade, b, name, x, root, axes, s, pitch)
 
     class(mechanism)         , intent(inout) :: this
     type(continuous_manifold), intent(inout) :: omega
@@ -717,7 +856,7 @@ contains
     zero = continuous_field(omega, [0.0_dp])
     this % guess = [this % guess, zero, zero, zero, zero]
 
-  end subroutine beam
+  end subroutine beam_member
 
   !===================================================================!
   ! THE STRESS OF A BLADE AS A BEAM, fields of time and of the span:
@@ -731,23 +870,29 @@ contains
   function stress(blade, yield) result(f)
 
     class(beam_blade), intent(in) :: blade
-    real(dp)         , intent(in) :: yield
+    ! the yield stress, or the strength its section states
+    real(dp)         , intent(in), optional :: yield
     type(continuous_field), allocatable :: f(:)
 
     type(continuous_field) :: slope_v, slope_w, strain
 
     type(continuous_field) :: k_f, k_c
+    real(dp) :: strength
+
+    strength = blade % section % strength
+    if (present(yield)) strength = yield
+    if (.not. strength > 0.0_dp) error stop 'multibody_dynamics: the stress of a beam is measured against a strength'
 
     slope_v = blade % v % derivative([blade % x])
     slope_w = blade % w % derivative([blade % x])
     strain  = blade % u % derivative([blade % x]) + (slope_v * slope_v + slope_w * slope_w) / 2.0_dp
     if (blade % pitched) then
        call blade % curvatures(k_f, k_c)
-       f = blade % section % stress(strain, k_c, k_f, blade % phi % derivative([blade % x]), yield)
+       f = blade % section % stress(strain, k_c, k_f, blade % phi % derivative([blade % x]), strength)
        return
     end if
     f = blade % section % stress(strain, blade % v % derivative([blade % x, blade % x]), &
-         & blade % w % derivative([blade % x, blade % x]), blade % phi % derivative([blade % x]), yield)
+         & blade % w % derivative([blade % x, blade % x]), blade % phi % derivative([blade % x]), strength)
 
   end function stress
 
@@ -832,6 +977,61 @@ contains
     this % lag        = modulus * thickness * chord**3 / 12.0_dp
     this % torsion    = this % shear * (1.0_dp - 0.63_dp * thickness / chord) * chord * thickness**3 / 3.0_dp
   end function uniform_solid_rectangle
+
+  ! the same of a strength, which its stress is measured against
+  function rectangle_of_strength(density, modulus, poisson, strength, chord, thickness) result(this)
+    real(dp)              , intent(in) :: density, modulus, poisson, strength, chord
+    type(continuous_field), intent(in) :: thickness
+    type(solid_rectangle) :: this
+    this = uniform_solid_rectangle(density, modulus, poisson, chord, thickness)
+    this % strength = strength
+  end function rectangle_of_strength
+
+  !===================================================================!
+  ! THE PULLBACK of a section stated on the base of a product of time
+  ! with it - an assembly's - to the product: its fields read there,
+  ! its numbers as they are.
+  !===================================================================!
+
+  function section_pullback(this, omega) result(pulled)
+    class(section)           , intent(in) :: this
+    type(continuous_manifold), intent(in) :: omega
+    class(section), allocatable :: pulled
+    type(section) :: s
+    call section_fields(this, omega, s)
+    allocate(pulled, source=s)
+  end function section_pullback
+
+  function rectangle_pullback(this, omega) result(pulled)
+    class(solid_rectangle)   , intent(in) :: this
+    type(continuous_manifold), intent(in) :: omega
+    class(section), allocatable :: pulled
+    type(solid_rectangle) :: r
+    call section_fields(this, omega, r)
+    r % chord     = this % chord
+    r % modulus   = this % modulus
+    r % shear     = this % shear
+    r % thickness = omega % pullback(this % thickness)
+    allocate(pulled, source=r)
+  end function rectangle_pullback
+
+  ! the fields every section states, pulled back, and its strength
+  subroutine section_fields(this, omega, s)
+    class(section)           , intent(in)    :: this
+    type(continuous_manifold), intent(in)    :: omega
+    class(section)           , intent(inout) :: s
+    integer :: k
+    s % mass    = omega % pullback(this % mass)
+    s % axial   = omega % pullback(this % axial)
+    s % flap    = omega % pullback(this % flap)
+    s % lag     = omega % pullback(this % lag)
+    s % torsion = omega % pullback(this % torsion)
+    allocate(s % moments(size(this % moments)))
+    do k = 1, size(this % moments)
+       s % moments(k) = omega % pullback(this % moments(k))
+    end do
+    s % strength = this % strength
+  end subroutine section_fields
 
   !===================================================================!
   ! THE STRESS OF A UNIFORM SOLID RECTANGLE at its four corners and at
@@ -986,12 +1186,336 @@ contains
     if (size(r) == 0) error stop 'multibody_dynamics: no joint of this name states a reaction: ' // name
   end function reactions
 
-  function estimate(this, omega) result(tuple)
+  function estimate_on(this, omega) result(tuple)
     class(mechanism)         , intent(in) :: this
     type(continuous_manifold), intent(in) :: omega
     type(continuous_field) :: tuple
     tuple = continuous_field(omega, this % guess)
-  end function estimate
+  end function estimate_on
+
+  ! of a mechanism of an assembly, the estimate on the image of its
+  ! manifold
+  function estimate_image(this, omega_h) result(estimates)
+    class(mechanism)       , intent(in) :: this
+    type(discrete_manifold), intent(in) :: omega_h
+    type(discrete_field) :: estimates
+    type(continuous_field) :: tuple
+    tuple     = this % estimate_on(this % omega)
+    estimates = tuple % discretize(omega_h)
+  end function estimate_image
+
+  !===================================================================!
+  ! THE ASSEMBLY: its bodies, the table's, under gravity, and its
+  ! design; its members, joints and drivers are added by name. Sigma is
+  ! a manifold of the design until a flexible member gives it the
+  ! member's domain; a further member of another domain stops the
+  ! program, members of domains of their own not yet stated.
+  !===================================================================!
+
+  function create_assembly(bodies, gravity, design) result(this)
+    type(body_table), intent(in) :: bodies
+    real(dp)        , intent(in) :: gravity(3)
+    type(parameter) , intent(in), optional :: design
+    type(assembly) :: this
+    this % bodies  = bodies
+    this % gravity = gravity
+    if (present(design)) then
+       this % sigma = continuous_manifold(design=design)
+    else
+       this % sigma = continuous_manifold()
+    end if
+    allocate(this % members(0), this % couplings(0), this % coupling_name(0), this % actuators(0), this % driver_name(0))
+  end function create_assembly
+
+  function assembly_manifold(this) result(sigma)
+    class(assembly), intent(in) :: this
+    type(continuous_manifold) :: sigma
+    sigma = this % sigma
+  end function assembly_manifold
+
+  ! a coordinate of the design by its name, one field of its components
+  function design_coordinate(this, name) result(c)
+    class(assembly) , intent(in) :: this
+    character(len=*), intent(in) :: name
+    type(continuous_field) :: c
+    c = this % sigma % coordinate(name)
+  end function design_coordinate
+
+  ! a coordinate of a member's domain by its name
+  function member_coordinate(this, member, name) result(c)
+    class(assembly) , intent(in) :: this
+    character(len=*), intent(in) :: member, name
+    type(continuous_field) :: c
+    integer :: k
+    k = member_index(this, member)
+    c = this % sigma % coordinate(name)
+  end function member_coordinate
+
+  ! a flexible member on a domain of its own points, attached to a frame
+  ! of a body at the first point of its domain
+  subroutine assembly_member(this, name, domain, points, attachment)
+    class(assembly) , intent(inout) :: this
+    character(len=*), intent(in)    :: name
+    type(region)    , intent(in)    :: domain
+    integer         , intent(in)    :: points
+    type(frame)     , intent(in)    :: attachment
+    type(flexible_member) :: m
+    if (.not. allocated(domain % extent)) then
+       error stop 'multibody_dynamics: a flexible member is on an interval of its span'
+    end if
+    if (size(this % members) == 0) then
+       this % sigma % with_space = .true.
+       this % sigma % geometry   = domain
+    else
+       if (domain % extent % a /= this % members(1) % domain % extent % a .or. &
+            & domain % extent % b /= this % members(1) % domain % extent % b .or. points /= this % members(1) % points) then
+          error stop 'multibody_dynamics: the flexible members of an assembly share one domain and its points; &
+               &members of domains of their own are not yet stated'
+       end if
+    end if
+    m % name       = name
+    m % domain     = domain
+    m % points     = points
+    m % attachment = attachment
+    this % members = [this % members, m]
+  end subroutine assembly_member
+
+  subroutine assembly_model(this, name, model)
+    class(assembly) , intent(inout) :: this
+    character(len=*), intent(in)    :: name
+    type(beam_model), intent(in)    :: model
+    integer :: k
+    k = member_index(this, name)
+    this % members(k) % model = model
+  end subroutine assembly_model
+
+  subroutine assembly_joint(this, name, c)
+    class(assembly) , intent(inout) :: this
+    character(len=*), intent(in)    :: name
+    type(coupling)  , intent(in)    :: c
+    this % couplings     = [this % couplings, c]
+    this % coupling_name = [character(len=64) :: this % coupling_name, name]
+  end subroutine assembly_joint
+
+  ! a driver of an actuator by its row of the map from the controls
+  subroutine assembly_driver(this, name, act, row)
+    class(assembly) , intent(inout) :: this
+    character(len=*), intent(in)    :: name
+    type(actuator)  , intent(in)    :: act
+    real(dp)        , intent(in)    :: row(:)
+    real(dp), allocatable :: rows(:,:)
+    integer :: n
+    n = size(this % actuators)
+    if (n == 0) allocate(this % driver_row(0, size(row)))
+    if (size(this % driver_row, 2) /= size(row)) error stop 'multibody_dynamics: every driver reads the same controls'
+    allocate(rows(n + 1, size(row)))
+    rows(1:n, :)  = this % driver_row
+    rows(n + 1, :) = row
+    call move_alloc(rows, this % driver_row)
+    this % actuators   = [this % actuators, act]
+    this % driver_name = [character(len=64) :: this % driver_name, name]
+  end subroutine assembly_driver
+
+  ! THE MASS of the assembly's members, kg: the rigid members', the
+  ! table's, and the integral of each flexible member's mass per length
+  ! over its domain, a field of the design
+  function assembly_mass(this) result(m)
+    class(assembly), intent(in) :: this
+    type(continuous_field) :: m
+    type(continuous_field) :: density
+    integer :: k
+    density = continuous_field(this % sigma, [sum(this % bodies % mass) / this % sigma % measure()])
+    do k = 1, size(this % members)
+       if (.not. allocated(this % members(k) % model)) error stop 'multibody_dynamics: a flexible member is given its model'
+       density = density + this % members(k) % model % section % mass
+    end do
+    m = integral(density, over=this % sigma)
+  end function assembly_mass
+
+  ! THE IMAGE OF SIGMA: the members' points, their beams' hermite
+  ! cubics, and the design's expansion
+  function assembly_discretize(this, design) result(sigma_h)
+    class(assembly), intent(in) :: this
+    type(expansion), intent(in) :: design
+    type(discrete_manifold) :: sigma_h
+    if (size(this % members) > 0) then
+       sigma_h = this % sigma % discretize(space=points(this % members(1) % points), design=design, &
+            & approximation=finite_element(degree=3))
+    else
+       sigma_h = this % sigma % discretize(design=design)
+    end if
+  end function assembly_discretize
+
+  integer function member_index(this, name)
+    class(assembly) , intent(in) :: this
+    character(len=*), intent(in) :: name
+    do member_index = 1, size(this % members)
+       if (trim(this % members(member_index) % name) == trim(name)) return
+    end do
+    error stop 'multibody_dynamics: the assembly has no member named ' // trim(name)
+  end function member_index
+
+  !===================================================================!
+  ! THE MECHANISM OF AN ASSEMBLY on a product of time with its Sigma,
+  ! driven by the controls: the bodies at rest in their reference
+  ! configuration, the flexible members as beams of their sections
+  ! pulled back, the couplings' conditions, and the drivers on the
+  ! controls, in that order.
+  !===================================================================!
+
+  function mechanism_of_assembly(omega, layout, controls) result(this)
+
+    type(continuous_manifold), intent(inout) :: omega
+    type(assembly)           , intent(in)    :: layout
+    type(continuous_field)   , intent(in)    :: controls(:)
+    type(mechanism) :: this
+
+    type(rigid_body), allocatable :: part(:)
+    type(beam_blade) :: blade
+    type(continuous_field) :: x
+    class(section), allocatable :: s
+    type(actuator) :: act
+    integer :: k
+
+    this = create_mechanism(omega % coordinate('t'), layout % gravity)
+    allocate(part(size(layout % bodies % name)))
+    do k = 1, size(part)
+       call this % body(omega, part(k), trim(layout % bodies % name(k)), layout % bodies % centre(:, k), &
+            & layout % bodies % mass(k), layout % bodies % inertia(:, :, k))
+    end do
+    if (size(layout % members) > 0) x = omega % coordinate('x')
+    do k = 1, size(layout % members)
+       associate (m => layout % members(k))
+         if (.not. allocated(m % model)) error stop 'multibody_dynamics: a flexible member is given its model'
+         s = m % model % section % pullback(omega)
+         if (m % model % pitched) then
+            call this % beam(omega, blade, part(layout % bodies % row(m % attachment % body)), trim(m % name), x, &
+                 & m % attachment % point, m % attachment % axes, s, pitch=omega % pullback(m % model % pitch))
+         else
+            call this % beam(omega, blade, part(layout % bodies % row(m % attachment % body)), trim(m % name), x, &
+                 & m % attachment % point, m % attachment % axes, s)
+         end if
+         this % blades = [this % blades, blade]
+       end associate
+    end do
+    do k = 1, size(layout % couplings)
+       call this % joint(omega, trim(layout % coupling_name(k)), coupling_conditions(layout % couplings(k), part, &
+            & layout % bodies))
+    end do
+    do k = 1, size(layout % actuators)
+       act = layout % actuators(k)
+       act % body = part(layout % bodies % row(act % name))
+       call this % driver(omega, trim(layout % driver_name(k)), act, layout % driver_row(k, :), controls)
+    end do
+    this % omega = omega
+
+  end function mechanism_of_assembly
+
+  ! THE STRESS of the flexible members: the squared ratio of the stress
+  ! to the strength at every point of their sections, one field of as
+  ! many components
+  function mechanism_stress(this) result(f)
+    class(mechanism), intent(in) :: this
+    type(continuous_field) :: f
+    type(continuous_field), allocatable :: ratios(:)
+    integer :: k
+    allocate(ratios(0))
+    do k = 1, size(this % blades)
+       ratios = [ratios, this % blades(k) % stress()]
+    end do
+    if (size(ratios) == 0) error stop 'multibody_dynamics: a mechanism of no flexible member states no stress'
+    f = continuous_field(this % omega, ratios)
+  end function mechanism_stress
+
+  ! THE ATTACHMENTS of the flexible members: their conditions at the
+  ! first point of their domain, a residual on that face
+  function attachments(this) result(r)
+    class(mechanism), intent(in) :: this
+    type(continuous_residual) :: r
+    type(continuous_field) :: x
+    x = this % omega % coordinate('x')
+    r = continuous_residual(this % omega % boundary(x, 0.0_dp), this % root)
+  end function attachments
+
+  !===================================================================!
+  ! THE AUDIT of a scenario's solution:
+  !   the start - the efforts at the first instant, the weights the
+  !     drivers carry at rest, and the energy there;
+  !   the conditions - the largest of the joints' and the drivers' over
+  !     the points;
+  !   the stress - the largest ratio of the stress to the strength on
+  !     the window, the root of the largest squared ratio at its nodes,
+  !     against the limit;
+  !   the energy balance - the work of the efforts over the window, its
+  !     duration times the power's mean there, less the energy gained,
+  !     the bodies' by their mean over the window's faces and the
+  !     blades' by their integral, and its defect.
+  !===================================================================!
+
+  subroutine audit(this, solution, stress, observed, limit)
+
+    class(mechanism)      , intent(in) :: this
+    type(discrete_field)  , intent(in) :: solution
+    type(continuous_field), intent(in) :: stress
+    type(window)          , intent(in) :: observed
+    real(dp)              , intent(in) :: limit
+
+    type(continuous_field) :: largest, work
+    type(continuous_field), allocatable :: e(:)
+    type(discrete_field) :: v
+    real(dp), allocatable :: values(:), at_start(:)
+    real(dp) :: first_energy, last_energy, w, largest_condition
+    integer :: k
+
+    e = this % efforts()
+    allocate(at_start(size(e)))
+    do k = 1, size(e)
+       v = e(k) % at(solution)
+       call v % values(values)
+       at_start(k) = values(1)
+    end do
+    largest_condition = 0.0_dp
+    do k = 1, size(this % conditions)
+       v = this % conditions(k) % at(solution)
+       call v % values(values)
+       largest_condition = max(largest_condition, maxval(abs(values)))
+    end do
+    print '(a)', '   the audit'
+    print '(a, *(es16.7))', '   the efforts at the first instant: ', at_start
+    print '(a, es16.7)', '   the energy at the first instant, J: ', &
+         & energy_on(this % omega % boundary(this % t, this % omega % span % a))
+    print '(a, es10.2)', '   the largest condition of the joints and the drivers: ', largest_condition
+    largest = maximum(stress, over=observed)
+    v = largest % at(solution)
+    print '(a, f10.6, a, f10.6)', '   the largest ratio of the stress to the strength on the window: ', &
+         & sqrt(max(v % value(1, 1), 0.0_dp)), ', the limit ', limit
+    work = mean(this % power(), over=observed)
+    v = work % at(solution)
+    w = (observed % window_end - observed % face_value) * v % value(1, 1)
+    first_energy = energy_on(observed % boundary(this % t, observed % face_value))
+    last_energy  = energy_on(observed % boundary(this % t, observed % window_end))
+    print '(a, 3es20.10)', '   the energy balance on the window, J: the work, the energy gained, the defect ', &
+         & w, last_energy - first_energy, w - (last_energy - first_energy)
+
+  contains
+
+    ! the energy on a face of an instant: the bodies' by their mean over
+    ! the face, the blades' by their integral
+    real(dp) function energy_on(face)
+      type(continuous_manifold), intent(in) :: face
+      type(continuous_field) :: f
+      type(discrete_field) :: g
+      f = mean(this % energy, over=face)
+      g = f % at(solution)
+      energy_on = g % value(1, 1)
+      if (this % spread) then
+         f = integral(this % spread_energy, over=face)
+         g = f % at(solution)
+         energy_on = energy_on + g % value(1, 1)
+      end if
+    end function energy_on
+
+  end subroutine audit
 
   !===================================================================!
   ! THE DRAWING: a body drawn with a surface, and a blade as a beam
@@ -1366,7 +1890,7 @@ contains
   ! THE JOINTS, each the list of its conditions.
   !===================================================================!
 
-  function spherical(a, x, b) result(g)
+  function spherical_of_bodies(a, x, b) result(g)
     type(rigid_body), intent(in) :: a
     real(dp)        , intent(in) :: x(3)
     type(rigid_body), intent(in), optional :: b
@@ -1384,11 +1908,11 @@ contains
           g(k) = g(k) - x(k)
        end do
     end if
-  end function spherical
+  end function spherical_of_bodies
 
   ! a hinge about e at the point x, of a to b or, without b, to the
   ! ground
-  function revolute(a, x, e, b) result(g)
+  function revolute_of_bodies(a, x, e, b) result(g)
     type(rigid_body), intent(in) :: a
     real(dp)        , intent(in) :: x(3), e(3)
     type(rigid_body), intent(in), optional :: b
@@ -1406,10 +1930,10 @@ contains
        g(4)   = dotted(ea, e1)
        g(5)   = dotted(ea, e2)
     end if
-  end function revolute
+  end function revolute_of_bodies
 
   ! the centre of a on the line through it along e
-  function line(a, e) result(g)
+  function line_of_body(a, e) result(g)
     type(rigid_body), intent(in) :: a
     real(dp)        , intent(in) :: e(3)
     type(continuous_field) :: g(2)
@@ -1417,29 +1941,29 @@ contains
     call normals(e, e1, e2)
     g(1) = dotted(a % u, e1)
     g(2) = dotted(a % u, e2)
-  end function line
+  end function line_of_body
 
   ! the actuators: the turn of a about e, and the displacement of its
   ! centre along e
-  function rotation(a, e) result(this)
+  function rotation_of_body(a, e) result(this)
     type(rigid_body), intent(in) :: a
     real(dp)        , intent(in) :: e(3)
     type(actuator) :: this
     this % kind = TURN
     this % body = a
     this % axis = e / norm2(e)
-  end function rotation
+  end function rotation_of_body
 
-  function displacement(a, e) result(this)
+  function displacement_of_body(a, e) result(this)
     type(rigid_body), intent(in) :: a
     real(dp)        , intent(in) :: e(3)
     type(actuator) :: this
     this % kind = SHIFT
     this % body = a
     this % axis = e / norm2(e)
-  end function displacement
+  end function displacement_of_body
 
-  function cylindrical(a, x, e) result(g)
+  function cylindrical_of_body(a, x, e) result(g)
     type(rigid_body), intent(in) :: a
     real(dp)        , intent(in) :: x(3), e(3)
     type(continuous_field) :: g(4)
@@ -1452,15 +1976,15 @@ contains
     g(2) = dotted(d, e2)
     g(3) = dotted(ea, e1)
     g(4) = dotted(ea, e2)
-  end function cylindrical
+  end function cylindrical_of_body
 
-  function fixed(a) result(g)
+  function fixed_body(a) result(g)
     type(rigid_body), intent(in) :: a
     type(continuous_field) :: g(6)
     g = [a % u, a % eps]
-  end function fixed
+  end function fixed_body
 
-  function rigid_link(a, b) result(g)
+  function rigid_of_bodies(a, b) result(g)
     type(rigid_body), intent(in) :: a, b
     type(continuous_field) :: g(6)
     type(continuous_field) :: c(3)
@@ -1471,7 +1995,146 @@ contains
        g(k)     = g(k) - b % u(k) - b % centre(k)
        g(3 + k) = a % eta * b % eps(k) - b % eta * a % eps(k) - c(k)
     end do
-  end function rigid_link
+  end function rigid_of_bodies
+
+  !===================================================================!
+  ! THE JOINTS AND THE ACTUATORS BY THE NAMES of their bodies, of an
+  ! assembly, whose mechanism forms them by the procedures above.
+  !===================================================================!
+
+  function spherical_of_names(a, x, b) result(c)
+    character(len=*), intent(in) :: a
+    real(dp)        , intent(in) :: x(3)
+    character(len=*), intent(in), optional :: b
+    type(coupling) :: c
+    c % kind  = SPHERICAL_COUPLING
+    c % first = a
+    c % point = x
+    if (present(b)) c % second = b
+  end function spherical_of_names
+
+  function revolute_of_names(a, x, e, b) result(c)
+    character(len=*), intent(in) :: a
+    real(dp)        , intent(in) :: x(3), e(3)
+    character(len=*), intent(in), optional :: b
+    type(coupling) :: c
+    c % kind  = REVOLUTE_COUPLING
+    c % first = a
+    c % point = x
+    c % axis  = e
+    if (present(b)) c % second = b
+  end function revolute_of_names
+
+  function cylindrical_of_name(a, x, e) result(c)
+    character(len=*), intent(in) :: a
+    real(dp)        , intent(in) :: x(3), e(3)
+    type(coupling) :: c
+    c % kind  = CYLINDRICAL_COUPLING
+    c % first = a
+    c % point = x
+    c % axis  = e
+  end function cylindrical_of_name
+
+  function fixed_name(a) result(c)
+    character(len=*), intent(in) :: a
+    type(coupling) :: c
+    c % kind  = FIXED_COUPLING
+    c % first = a
+  end function fixed_name
+
+  function rigid_of_names(a, b) result(c)
+    character(len=*), intent(in) :: a, b
+    type(coupling) :: c
+    c % kind   = RIGID_COUPLING
+    c % first  = a
+    c % second = b
+  end function rigid_of_names
+
+  function line_of_name(a, e) result(c)
+    character(len=*), intent(in) :: a
+    real(dp)        , intent(in) :: e(3)
+    type(coupling) :: c
+    c % kind  = LINE_COUPLING
+    c % first = a
+    c % axis  = e
+  end function line_of_name
+
+  function rotation_of_name(a, e) result(this)
+    character(len=*), intent(in) :: a
+    real(dp)        , intent(in) :: e(3)
+    type(actuator) :: this
+    this % kind = TURN
+    this % name = a
+    this % axis = e / norm2(e)
+  end function rotation_of_name
+
+  function displacement_of_name(a, e) result(this)
+    character(len=*), intent(in) :: a
+    real(dp)        , intent(in) :: e(3)
+    type(actuator) :: this
+    this % kind = SHIFT
+    this % name = a
+    this % axis = e / norm2(e)
+  end function displacement_of_name
+
+  ! the conditions of a coupling on the bodies of its names
+  function coupling_conditions(c, part, bodies) result(g)
+    type(coupling)  , intent(in) :: c
+    type(rigid_body), intent(in) :: part(:)
+    type(body_table), intent(in) :: bodies
+    type(continuous_field), allocatable :: g(:)
+    integer :: a, b
+    a = bodies % row(c % first)
+    b = 0
+    if (len_trim(c % second) > 0) b = bodies % row(c % second)
+    select case (c % kind)
+    case (SPHERICAL_COUPLING)
+       if (b > 0) then
+          g = spherical(part(a), c % point, part(b))
+       else
+          g = spherical(part(a), c % point)
+       end if
+    case (REVOLUTE_COUPLING)
+       if (b > 0) then
+          g = revolute(part(a), c % point, c % axis, part(b))
+       else
+          g = revolute(part(a), c % point, c % axis)
+       end if
+    case (CYLINDRICAL_COUPLING)
+       g = cylindrical(part(a), c % point, c % axis)
+    case (FIXED_COUPLING)
+       g = fixed(part(a))
+    case (RIGID_COUPLING)
+       g = rigid(part(a), part(b))
+    case (LINE_COUPLING)
+       g = line(part(a), c % axis)
+    case default
+       error stop 'multibody_dynamics: a coupling of no kind'
+    end select
+  end function coupling_conditions
+
+  ! a frame of a body by its name: a point of it and three axes
+  function frame_of(body, point, axes) result(this)
+    character(len=*), intent(in) :: body
+    real(dp)        , intent(in) :: point(3), axes(3,3)
+    type(frame) :: this
+    this % body  = body
+    this % point = point
+    this % axes  = axes
+  end function frame_of
+
+  ! a member's model: a beam of a section, twisted by its pitch along
+  ! the span
+  function beam(s, pitch) result(model)
+    class(section)        , intent(in) :: s
+    type(continuous_field), intent(in), optional :: pitch
+    type(beam_model) :: model
+    allocate(model % section, source=s)
+    if (present(pitch)) then
+       model % pitched = .true.
+       model % pitch   = pitch
+    end if
+  end function beam
 
   ! the rotation by the angle w t about e: eta = cos(w t/2) and eps =
   ! e sin(w t/2)

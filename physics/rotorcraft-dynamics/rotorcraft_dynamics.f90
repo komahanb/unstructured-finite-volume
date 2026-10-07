@@ -90,7 +90,7 @@
 !                   most ks_bound^2 in every scenario listed, each
 !                   strip's within bounds and adjacent strips' within
 !                   smoothness of each other: one design of the
-!                   scenarios' Lagrangians (minimize_together), the
+!                   scenarios' Lagrangians (minimize), the
 !                   first stating the mass and the inequalities on
 !                   the design alone
 !      ks_bound     the bound of the von Mises ratio, 0.25
@@ -179,11 +179,11 @@ program rotorcraft_dynamics
   use operation_manifold, only : continuous_manifold, discrete_manifold, interval, region, points, parameter
   use operation_expansion, only : expansion
   use operation_field   , only : continuous_field, discrete_field, integral, mean, maximum, heaviside
-  use operation_residual, only : continuous_residual, discrete_residual, minimize_together
+  use operation_residual, only : continuous_residual, discrete_residual, minimize
   use operation_family  , only : dirk, bdf, chain
   use operation_finite_element, only : finite_element
-  use multibody_dynamics, only : rigid_body, beam_blade, section, solid_rectangle, mechanism, body_table, surface, &
-       &                         spherical, revolute, cylindrical, fixed, rigid_link, revolute_driver, motion_driver
+  use multibody_dynamics, only : rigid_body, beam_blade, section, solid_rectangle, mechanism, body_table, table, surface, &
+       &                         spherical, revolute, cylindrical, fixed, rigid, revolute_driver, motion_driver
   use view_bdf_loader   , only : bdf_surface
 
   implicit none
@@ -288,7 +288,7 @@ program rotorcraft_dynamics
 
   ! each marched in turn; to optimize, the one design of them all
   if (optimizing) then
-     call minimize_together(L_h(1:ns), estimates(1:ns), solutions(1:ns), continued=.true.)
+     call minimize(L_h(1:ns), estimates(1:ns), solutions(1:ns), continued=.true.)
      do j = 1, ns
         call reported(scenario(j), ns == 1, rotors(j), masses(j), kss(j), others(:, j), solutions(j), 'optimized')
      end do
@@ -332,7 +332,7 @@ contains
     integer :: counts(size(further)), c, j
     type(continuous_residual) :: r, g, b, d, L, stressed, within, smooth
     type(chain)               :: march
-    type(body_table)          :: table
+    type(body_table)          :: bodies
     type(rigid_body), allocatable :: part(:)
     type(rigid_body)          :: blades(4)
     type(beam_blade)          :: beams(4)
@@ -386,11 +386,11 @@ contains
 
     ! THE BODIES: the table's, each turning at its rate about z
     rotor = mechanism(t)
-    table = body_table('rotor_bodies.txt')
-    allocate(part(size(table % name)))
-    do k = 1, size(table % name)
-       call rotor % body(omega, part(k), trim(table % name(k)), table % centre(:, k), table % mass(k), &
-            & table % inertia(:, :, k), angular_velocity=table % rate(k) * ez)
+    bodies = table('rotor_bodies.txt')
+    allocate(part(size(bodies % name)))
+    do k = 1, size(bodies % name)
+       call rotor % body(omega, part(k), trim(bodies % name(k)), bodies % centre(:, k), bodies % mass(k), &
+            & bodies % inertia(:, :, k), angular_velocity=bodies % rate(k) * ez)
     end do
 
     ! the blades, each along the azimuth of its cap and turning with it:
@@ -434,21 +434,21 @@ contains
        end if
        do k = 1, 4
           if (twist /= 0.0_dp) then
-             call rotor % beam(omega, beams(k), part(table % row('cap_' // trim(degrees(k - 1)))), &
+             call rotor % beam(omega, beams(k), part(bodies % row('cap_' // trim(degrees(k - 1)))), &
                   & 'blade_' // trim(degrees(k - 1)), x, turned([root, 0.0_dp, height], k - 1), blade_axes(k - 1), s, &
                   & pitch=(twist * pi / (180.0_dp * tip)) * (x + (root - twist_zero)))
           else
-             call rotor % beam(omega, beams(k), part(table % row('cap_' // trim(degrees(k - 1)))), &
+             call rotor % beam(omega, beams(k), part(bodies % row('cap_' // trim(degrees(k - 1)))), &
                   & 'blade_' // trim(degrees(k - 1)), x, turned([root, 0.0_dp, height], k - 1), blade_axes(k - 1), s)
           end if
        end do
     end select
 
     ! THE JOINTS
-    associate (hub => part(table % row('hub')), lsp => part(table % row('lower_swashplate')), &
-         &     usp => part(table % row('upper_swashplate')), sphere => part(table % row('sphere')), &
-         &     bsp => part(table % row('base_plate')), lph => part(table % row('lower_horn')), &
-         &     uph => part(table % row('upper_horn')))
+    associate (hub => part(bodies % row('hub')), lsp => part(bodies % row('lower_swashplate')), &
+         &     usp => part(bodies % row('upper_swashplate')), sphere => part(bodies % row('sphere')), &
+         &     bsp => part(bodies % row('base_plate')), lph => part(bodies % row('lower_horn')), &
+         &     uph => part(bodies % row('upper_horn')))
 
       ! the shaft turns at its rate; the swashplates hinge about z, the
       ! lower one on the sphere, which slides along the shaft's axis
@@ -461,23 +461,23 @@ contains
       ! pitch link, the lower to the upper pitch link, the upper pitch
       ! link hinged to the shaft, the cap and the blade linked to it
       do k = 1, 4
-         lower = table % row('lower_link_' // trim(degrees(k - 1, 30)))
-         upper = table % row('upper_link_' // trim(degrees(k - 1, 30)))
-         cap   = table % row('cap_' // trim(degrees(k - 1)))
+         lower = bodies % row('lower_link_' // trim(degrees(k - 1, 30)))
+         upper = bodies % row('upper_link_' // trim(degrees(k - 1, 30)))
+         cap   = bodies % row('cap_' // trim(degrees(k - 1)))
          call rotor % joint(omega, 'swashplate_link_' // trim(degrees(k - 1)), &
               & spherical(usp, turned([0.278167359696_dp, 0.1606_dp, 0.43_dp], k - 1), part(lower)))
          call rotor % joint(omega, 'links_' // trim(degrees(k - 1)), &
               & spherical(part(lower), turned([0.278167359696_dp, 0.1606_dp, height], k - 1), part(upper)))
          call rotor % joint(omega, 'shaft_link_' // trim(degrees(k - 1)), &
               & revolute(hub, turned([0.231_dp, 0.0_dp, height], k - 1), abs(turned(ex, k - 1)), part(upper)))
-         call rotor % joint(omega, 'link_cap_' // trim(degrees(k - 1)), rigid_link(part(upper), part(cap)))
+         call rotor % joint(omega, 'link_cap_' // trim(degrees(k - 1)), rigid(part(upper), part(cap)))
          if (trim(blade) == 'rigid') call rotor % joint(omega, 'cap_blade_' // trim(degrees(k - 1)), &
-              & rigid_link(part(cap), blades(k)))
+              & rigid(part(cap), blades(k)))
       end do
 
       ! the push rods on the lower swashplate, driven along z
       do k = 1, 3
-         rod = table % row('push_rod_' // trim(degrees(k)))
+         rod = bodies % row('push_rod_' // trim(degrees(k)))
          call rotor % joint(omega, 'rod_swashplate_' // trim(degrees(k)), &
               & spherical(part(rod), turned([0.4004_dp, 0.0_dp, 0.38_dp], k), lsp))
          call rotor % joint(omega, 'rod_driver_' // trim(degrees(k)), &
@@ -495,8 +495,8 @@ contains
 
     ! the surfaces the bodies are drawn with
     if (len_trim(meshes) > 0) then
-       do k = 1, size(table % name)
-          call rotor % draw_with(part(k), mesh_surface(trim(meshes) // '/' // trim(table % mesh(k))))
+       do k = 1, size(bodies % name)
+          call rotor % draw_with(part(k), mesh_surface(trim(meshes) // '/' // trim(bodies % mesh(k))))
        end do
        do k = 1, 4
           if (len_trim(blade_meshes) > 0) then
@@ -509,7 +509,7 @@ contains
           if (trim(blade) == 'rigid') then
              call rotor % draw_with(blades(k), blade_surface)
           else
-             call rotor % draw_beam_with(beams(k), part(table % row('cap_' // trim(degrees(k - 1)))), blade_surface)
+             call rotor % draw_beam_with(beams(k), part(bodies % row('cap_' // trim(degrees(k - 1)))), blade_surface)
           end if
        end do
     end if

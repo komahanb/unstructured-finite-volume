@@ -35,6 +35,8 @@ module operation_manifold
   use util_precision      , only : dp
   use token_identity      , only : token, next_token
   use operation_expansion , only : expansion
+  use operation_expression, only : pullback
+  use operation_derivative_approximation, only : derivative_approximation
   use operation_field     , only : continuous_support, discrete_support, continuous_field
   use operation_field     , only : unknown_field, coordinate_field
   use operation_field     , only : WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR, DESIGN_FACTOR, SPACE_FACE, TIME_WINDOW
@@ -124,6 +126,9 @@ module operation_manifold
      ! an unknown of a manifold of space that is a function of no
      ! coordinate of space: of time alone, or of the design alone
      logical, allocatable :: of_time_alone(:)
+     ! of the product of an interval of time with another manifold, the
+     ! identity of that manifold, its base
+     type(token)    :: base
 
    contains
 
@@ -131,6 +136,7 @@ module operation_manifold
      procedure :: coordinate      => manifold_coordinate
      procedure :: boundary        => manifold_boundary
      procedure :: window          => manifold_window
+     procedure :: pullback        => manifold_pullback
      procedure :: time            => manifold_time
      procedure :: space           => manifold_space
      procedure :: design          => manifold_design
@@ -150,6 +156,7 @@ module operation_manifold
   interface continuous_manifold
      module procedure create_manifold
      module procedure create_manifold_of_designs
+     module procedure create_manifold_product
   end interface continuous_manifold
 
   !===================================================================!
@@ -169,6 +176,9 @@ module operation_manifold
      integer :: dimension = 0
      real(dp), allocatable :: centre(:)
      real(dp), allocatable :: volume(:)
+     ! the approximation of the derivatives along the region of its
+     ! fields - a beam's hermite cubics - where the image states it
+     class(derivative_approximation), allocatable :: approximation
 
    contains
 
@@ -397,6 +407,27 @@ contains
     this % design_parameter = design
 
   end function create_manifold_of_designs
+
+  ! THE PRODUCT of an interval of time with a manifold of space and of
+  ! the design, its base: the base's region and design, time first.
+  ! The base's fields are read on it by their pullback. Invalid input:
+  ! a base with time, or with unknowns of its own.
+  function create_manifold_product(time, base) result(this)
+
+    type(interval)           , intent(in) :: time
+    type(continuous_manifold), intent(in) :: base
+    type(continuous_manifold) :: this
+
+    if (base % with_time) error stop 'operation_manifold: the base of a product with time has no time of its own'
+    if (base % num_unknowns > 0) error stop 'operation_manifold: the base of a product with time declares no unknown'
+    this = create_manifold(time)
+    this % with_space  = base % with_space
+    this % geometry    = base % geometry
+    this % with_design = base % with_design
+    if (allocated(base % design_parameter)) this % design_parameter = base % design_parameter
+    this % base = base % identity
+
+  end function create_manifold_product
 
   pure logical function is_point(this)
     class(continuous_manifold), intent(in) :: this
@@ -653,6 +684,40 @@ contains
 
   end function manifold_window
 
+  !===================================================================!
+  ! THE PULLBACK of a field of the base to this product of time with
+  ! it: the same field, every coordinate the next one, time the first;
+  ! a field of this manifold is itself. Invalid input: a field of
+  ! another manifold, or a reduction.
+  !===================================================================!
+
+  function manifold_pullback(this, f) result(g)
+
+    class(continuous_manifold), intent(in) :: this
+    type(continuous_field)    , intent(in) :: f
+    type(continuous_field) :: g
+
+    integer :: k
+
+    if (f % on % matches(this % identity)) then
+       g = f
+       return
+    end if
+    if (.not. f % on % matches(this % base)) then
+       error stop 'operation_manifold: a pullback is of a field of the base of this product of time with it'
+    end if
+    if (f % is_integral() .or. allocated(f % integrand)) then
+       error stop 'operation_manifold: a pullback is of a field of the base, not of a reduction of one'
+    end if
+    g = f
+    g % on = this % identity
+    do k = 1, size(f % component)
+       g % component(k) = pullback(f % component(k))
+    end do
+    if (f % coordinate > 0 .and. .not. f % design_coordinate) g % coordinate = f % coordinate + 1
+
+  end function manifold_pullback
+
   ! a part of a manifold: a manifold of its own that records its
   ! parent and which part of it it is, with the design coordinates of
   ! the parent and no unknown yet; the part taken states the
@@ -798,16 +863,37 @@ contains
   ! for a coordinate absent, stops the program.
   !===================================================================!
 
-  function manifold_discretize(this, time, space, design) result(image)
+  function manifold_discretize(this, time, space, design, base, approximation) result(image)
 
     class(continuous_manifold), intent(in) :: this
     type(points)   , intent(in), optional :: time
     class(*)       , intent(in), optional :: space
     type(expansion), intent(in), optional :: design
+    ! of a product of time with a base, the base's image, which gives
+    ! the cells, the expansion and the approximation along the region
+    type(discrete_manifold), intent(in), optional :: base
+    ! the image's approximation of the derivatives along the region
+    class(derivative_approximation), intent(in), optional :: approximation
     type(discrete_manifold) :: image
 
     integer :: k
 
+    if (present(base)) then
+       if (present(space) .or. present(design) .or. present(approximation)) then
+          error stop 'operation_manifold: the image of a product of time with a base takes its region, its design &
+               &and its approximation from the base''s image'
+       end if
+       if (.not. base % identity % matches(this % base)) then
+          error stop 'operation_manifold: the image of a product of time is formed on the image of its base'
+       end if
+       if (.not. (this % with_time .and. present(time))) then
+          error stop 'operation_manifold: the image of a product of time with a base is given its instants'
+       end if
+       image = base
+       image % identity = this % identity
+       image % instant  = positions_on(time, this % span)
+       return
+    end if
     if (this % with_time .neqv. present(time)) then
        error stop 'operation_manifold: the time coordinate is discretized by its points, and only it'
     end if
@@ -817,6 +903,10 @@ contains
     if (this % with_design .neqv. present(design)) then
        error stop 'operation_manifold: the design coordinate is discretized by an expansion of an order, &
             &and only it'
+    end if
+    if (present(approximation)) then
+       if (.not. this % with_space) error stop 'operation_manifold: an approximation is along a region'
+       allocate(image % approximation, source=approximation)
     end if
     image % identity = this % identity
     if (present(design)) then

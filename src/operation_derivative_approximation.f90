@@ -95,6 +95,7 @@ module operation_derivative_approximation
      procedure(derivative_rows_interface), deferred :: derivative_rows
      procedure :: projects
      procedure :: elements
+     procedure :: quadrature
 
   end type derivative_approximation
 
@@ -145,6 +146,19 @@ contains
     allocate(set % node(0, 0), set % weight(0, 0), set % position(1, 0, 0), set % basis(0:0, 0:0, 0, 0, 0))
     allocate(set % test(0:0, 0:0, 0, 0, 0))
   end function elements
+
+  !===================================================================!
+  ! THE QUADRATURE OF THE CELLS a functional is summed by: the elements
+  ! of the method at its own order, the basis's jet to no derivative;
+  ! none for a method that places the law at the points.
+  !===================================================================!
+
+  function quadrature(this, cells) result(set)
+    class(derivative_approximation), intent(in) :: this
+    type(mesh)                     , intent(in) :: cells
+    type(element_quadrature) :: set
+    set = this % elements(cells, 0, 0)
+  end function quadrature
 
   pure integer function element_num_cells(this)
     class(element_quadrature), intent(in) :: this

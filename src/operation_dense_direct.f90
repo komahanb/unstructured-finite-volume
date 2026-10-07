@@ -209,10 +209,17 @@ contains
        call compile_matrix_from_action(this % action, this % graph, this % unknown_domain, &
             & this % num_unknowns, n, this % num_components, a, constant, stored=this % stored)
        call this % record_event(factorisations)
-       call this % factor % factorise(a, this % singular_tolerance, maxval(abs(a), dim=1), &
-            & equilibrated=this % equilibrated)
-       this % retained_bordered = .false.
-       if (this % factor % singular() .and. this % bordered) call this % border_factorise(a)
+       if (this % bordered .and. allocated(this % border)) then
+          ! a kernel found: every statement after it is bordered by the
+          ! same phase condition, which defines the solution, whether or
+          ! not its own factors are singular in their rounding
+          call this % border_factorise(a)
+       else
+          call this % factor % factorise(a, this % singular_tolerance, maxval(abs(a), dim=1), &
+               & equilibrated=this % equilibrated)
+          this % retained_bordered = .false.
+          if (this % factor % singular() .and. this % bordered) call this % border_factorise(a)
+       end if
        this % retained_version  = this % action % version()
        this % retained_transposed = this % action % transpose_version()
     end if
@@ -259,8 +266,9 @@ contains
   !===================================================================!
   ! THE BORDERED FACTORS of a singular matrix: its kernel, at the first
   ! singular statement, and the phase condition C = K^T M stored; then
-  ! [A C^T; C 0] factorised in place of A. A kernel empty at the
-  ! tolerance leaves the matrix singular as it was.
+  ! [A C^T; C 0] factorised in place of A, at that statement and at
+  ! every one after it. A kernel empty at the tolerance leaves the
+  ! matrix singular as it was.
   !===================================================================!
 
   subroutine border_factorise(this, a)

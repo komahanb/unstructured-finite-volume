@@ -21,6 +21,10 @@
 !          attachment  spherical                |                                  revolute
 !              |           |                    |                                      |
 !         (blade_0 ...) x4 +--------- [upper_swashplate]              # --fixed-- [base_plate]
+!                                               |
+!                                           alignment
+!                                               |
+!                                             [hub]
 !
 ! THE CONTROLS u = (azimuth, collective, longitudinal, lateral):
 !
@@ -53,14 +57,17 @@
 ! attached at x = 0 to its cap in the cap's axes coned by HART II's
 ! precone. The limit of the ratio of the stress to the strength: 1/4.
 !
-! At rest nine directions are determined neither by the joints nor by
-! the loads, measured as the kernel at the reference: the sphere's spin
-! about the shaft, the four pitch links' and the three push rods' spins
-! about their axes, and the upper swashplate's turn about the shaft,
-! whose pitch links, vertical there, it moves across their lengths, a
-! mechanism to the first order; the template's reference phase
-! condition holds them at the reference. At the droop the kernel is of
-! four, the weights the joints carry stiffening the rest.
+! THE TORQUE LINK turns the upper swashplate with the hub, an alignment
+! of their turns about the shaft. At rest eight directions are then
+! determined neither by the joints nor by the loads, measured as the
+! kernel at the reference: the sphere's spin about the shaft, and the
+! four pitch links' and the three push rods' spins about their axes;
+! the template's reference phase condition fixes them at the reference,
+! and the start's residual falls to 4e-12 of its first. Without the
+! link the upper swashplate's turn is a ninth: it moves the pitch
+! links, vertical at rest, across their lengths, a mechanism to the
+! first order, and the start's residual stops at 5.7e-9 of its first,
+! the reaction of the phase condition along that turn.
 !=====================================================================!
 
 module hart2_case
@@ -69,7 +76,7 @@ module hart2_case
   use operation_manifold, only : region, interval, parameter
   use operation_field   , only : continuous_field, indicators, heaviside
   use multibody_dynamics, only : assembly, table, beam, solid_rectangle, attachment, revolute, spherical, &
-       &                         cylindrical, fixed, rigid, line, rotation, displacement
+       &                         cylindrical, fixed, rigid, line, alignment, rotation, displacement
 
   implicit none
 
@@ -149,10 +156,12 @@ contains
     end do
 
     ! the swashplates hinged about the shaft, the lower one on the
-    ! sphere, which slides along the shaft
+    ! sphere, which slides along the shaft; the upper one turned with
+    ! the hub by the torque link
     call rotor % joint('swashplates', revolute('lower_swashplate', [0.0_dp, 0.0_dp, 0.4_dp], ez, 'upper_swashplate'))
     call rotor % joint('swashplate_sphere', spherical('lower_swashplate', [0.0_dp, 0.0_dp, 0.4_dp], 'sphere'))
     call rotor % joint('sphere_shaft', cylindrical('sphere', [0.0_dp, 0.0_dp, 0.4_dp], ez))
+    call rotor % joint('torque_link', alignment('hub', ez, 'upper_swashplate'))
 
     ! at each azimuth: the upper swashplate to the lower pitch link, the
     ! lower to the upper pitch link, the upper hinged to the hub, the cap

@@ -126,7 +126,7 @@ module multibody_dynamics
   private
   public :: rigid_body, beam_blade, section, solid_rectangle, mechanism, body_table, table, surface
   public :: spherical, revolute, cylindrical, fixed, rigid, revolute_driver, motion_driver
-  public :: line, rotation, displacement
+  public :: line, alignment, rotation, displacement
   public :: assembly, attachment, beam
 
   type :: rigid_body
@@ -329,7 +329,7 @@ module multibody_dynamics
   end type coupling
 
   integer, parameter :: SPHERICAL_COUPLING = 1, REVOLUTE_COUPLING = 2, CYLINDRICAL_COUPLING = 3, &
-       & FIXED_COUPLING = 4, RIGID_COUPLING = 5, LINE_COUPLING = 6
+       & FIXED_COUPLING = 4, RIGID_COUPLING = 5, LINE_COUPLING = 6, ALIGNMENT_COUPLING = 7
 
   ! A FRAME of a body by its name: a point of it and three axes, the
   ! first along the span of the member attached to it there
@@ -426,6 +426,10 @@ module multibody_dynamics
   interface line
      module procedure line_of_body, line_of_name
   end interface line
+
+  interface alignment
+     module procedure alignment_of_bodies, alignment_of_names
+  end interface alignment
 
   interface rotation
      module procedure rotation_of_body, rotation_of_name
@@ -1941,6 +1945,18 @@ contains
     g(2) = dotted(a % u, e2)
   end function line_of_body
 
+  ! the turns of a and b about e agree: a's first normal to e stays
+  ! normal to b's second, their product the sine of the angle between
+  ! the turns
+  function alignment_of_bodies(a, e, b) result(g)
+    type(rigid_body), intent(in) :: a, b
+    real(dp)        , intent(in) :: e(3)
+    type(continuous_field) :: g(1)
+    real(dp) :: e1(3), e2(3)
+    call normals(e, e1, e2)
+    g(1) = dot(a % direction(e1), b % direction(e2))
+  end function alignment_of_bodies
+
   ! the actuators: the turn of a about e, and the displacement of its
   ! centre along e
   function rotation_of_body(a, e) result(this)
@@ -2057,6 +2073,16 @@ contains
     c % axis  = e
   end function line_of_name
 
+  function alignment_of_names(a, e, b) result(c)
+    character(len=*), intent(in) :: a, b
+    real(dp)        , intent(in) :: e(3)
+    type(coupling) :: c
+    c % kind   = ALIGNMENT_COUPLING
+    c % first  = a
+    c % second = b
+    c % axis   = e
+  end function alignment_of_names
+
   function rotation_of_name(a, e) result(this)
     character(len=*), intent(in) :: a
     real(dp)        , intent(in) :: e(3)
@@ -2106,6 +2132,8 @@ contains
        g = rigid(part(a), part(b))
     case (LINE_COUPLING)
        g = line(part(a), c % axis)
+    case (ALIGNMENT_COUPLING)
+       g = alignment(part(a), c % axis, part(b))
     case default
        error stop 'multibody_dynamics: a coupling of no kind'
     end select

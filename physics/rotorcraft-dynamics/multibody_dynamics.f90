@@ -28,7 +28,10 @@
 !                                  is absent
 !      revolute(a, x, e, b)        spherical, and the direction e of a
 !                                  normal to the two directions of b
-!                                  normal to e: a hinge about e
+!                                  normal to e: a hinge about e; of a
+!                                  to the ground when b is absent
+!      line(a, e)                  the centre of a on the fixed line
+!                                  through it along e
 !      cylindrical(a, x, e)        the point x of a on the fixed line
 !                                  through x along e, and the direction
 !                                  e of a along that line
@@ -58,7 +61,17 @@
 ! equation of motion of each coordinate, and the condition paired
 ! with each reaction. Its estimate is each body continuing its initial
 ! motion, every reaction zero; its energy the bodies' kinetic and
-! potential energies summed.
+! potential energies summed, and the blades' as beams their density of
+! energy over the span (spread_energy).
+!
+! A DRIVER fixes an actuator - the turn of a body about an axis,
+! rotation(a, e), or the displacement of its centre along an axis,
+! displacement(a, e) - at the image of the controls u(t) by its row of
+! a map: its condition c(q, u) = 0 is paired with its reaction mu as a
+! joint's is. The efforts conjugate to the controls are
+! e = -(dc/du)^T mu (efforts), and the power they supply, e^T u', is
+! read from the motion as mu (dc/dq) q' (power): by the energy theorem
+! the rate of the energy, the bodies' and the blades'.
 !
 ! A BLADE AS A BEAM (beam) is a field of time and of its span x, in
 ! the axes of the body it is fixed to: on a manifold of time and of
@@ -111,6 +124,7 @@ module multibody_dynamics
   private
   public :: rigid_body, beam_blade, section, solid_rectangle, mechanism, body_table, surface
   public :: spherical, revolute, cylindrical, fixed, rigid_link, revolute_driver, motion_driver
+  public :: line, rotation, displacement
 
   type :: rigid_body
      character(len=:), allocatable :: name
@@ -126,6 +140,21 @@ module multibody_dynamics
      procedure :: kinetic_energy
      procedure :: potential_energy
   end type rigid_body
+
+  !===================================================================!
+  ! AN ACTUATOR: a coordinate of a body that a driver fixes at the
+  ! image of the controls - its turn about an axis, fixed by the
+  ! agreement of its orientation with the turn by the target angle, or
+  ! the displacement of its centre along an axis.
+  !===================================================================!
+
+  type :: actuator
+     integer          :: kind = 0
+     type(rigid_body) :: body
+     real(dp)         :: axis(3) = 0.0_dp
+  end type actuator
+
+  integer, parameter :: TURN = 1, SHIFT = 2
 
   !===================================================================!
   ! THE SECTION OF A BLADE AS A BEAM, per length of its span: its mass
@@ -220,6 +249,15 @@ module multibody_dynamics
      type(continuous_field) :: distributed, x
      type(continuous_manifold) :: space
      logical :: spread = .false.
+     ! the energy density of the blades as beams over the span, their
+     ! kinetic, strain and gravitational energy per length
+     type(continuous_field) :: spread_energy
+     ! THE DRIVERS: of each, its actuator, its row of the map from the
+     ! controls to the actuators, its target - the row applied to the
+     ! controls - and its reaction
+     type(actuator)        , allocatable :: drivers(:)
+     real(dp)              , allocatable :: driver_row(:,:)
+     type(continuous_field), allocatable :: driver_target(:), driver_reaction(:)
      logical, allocatable :: of_space(:)
      type(continuous_field), allocatable :: root(:)
      ! the bodies drawn, and the surface of each; the blades as beams
@@ -233,6 +271,9 @@ module multibody_dynamics
      procedure :: body
      procedure :: beam
      procedure :: joint
+     procedure :: driver
+     procedure :: efforts
+     procedure :: power
      procedure :: laws
      procedure :: initial
      procedure :: estimate
@@ -380,6 +421,137 @@ contains
   end subroutine joint
 
   !===================================================================!
+  ! A DRIVER fixes an actuator at its target, the row of the map from
+  ! the controls applied to them: a turn by the condition
+  ! cos(psi/2) (eps.e) - sin(psi/2) eta = 0, the axial component of the
+  ! vector part of the rotation between the body and the turn by psi
+  ! about e, which agrees at every turn; a displacement by u.e - psi =
+  ! 0. Its condition and reaction are a joint's, the reaction named
+  ! name_1.
+  !===================================================================!
+
+  subroutine driver(this, omega, name, act, row, controls)
+
+    class(mechanism)         , intent(inout) :: this
+    type(continuous_manifold), intent(inout) :: omega
+    character(len=*)         , intent(in)    :: name
+    type(actuator)           , intent(in)    :: act
+    real(dp)                 , intent(in)    :: row(:)
+    type(continuous_field)   , intent(in)    :: controls(:)
+
+    type(continuous_field) :: target, condition
+    logical :: started
+    integer :: i
+
+    if (size(row) /= size(controls)) error stop 'multibody_dynamics: a driver''s row has one entry per control'
+    started = .false.
+    do i = 1, size(row)
+       if (row(i) == 0.0_dp) cycle
+       if (started) then
+          target = target + row(i) * controls(i)
+       else
+          target  = row(i) * controls(i)
+          started = .true.
+       end if
+    end do
+    if (.not. started) target = 0.0_dp * controls(1)
+    select case (act % kind)
+    case (TURN)
+       condition = cos(target / 2.0_dp) * dotted(act % body % eps, act % axis) - sin(target / 2.0_dp) * act % body % eta
+    case (SHIFT)
+       condition = dotted(act % body % u, act % axis) - target
+    case default
+       error stop 'multibody_dynamics: a driver fixes a turn or a displacement'
+    end select
+    call this % joint(omega, name, [condition])
+    if (.not. allocated(this % drivers)) then
+       allocate(this % drivers(0), this % driver_target(0), this % driver_reaction(0), this % driver_row(0, size(row)))
+    end if
+    if (size(this % driver_row, 2) /= size(row)) error stop 'multibody_dynamics: every driver reads the same controls'
+    this % drivers         = [this % drivers, act]
+    this % driver_target   = [this % driver_target, target]
+    this % driver_reaction = [this % driver_reaction, this % unknowns(size(this % unknowns))]
+    this % driver_row      = reshape([transpose(this % driver_row), row], [size(row), size(this % drivers)])
+    this % driver_row      = transpose(this % driver_row)
+
+  end subroutine driver
+
+  !===================================================================!
+  ! THE EFFORTS conjugate to the controls, e = -(dc/du)^T mu summed over
+  ! the drivers: of a displacement its reaction times its row; of a
+  ! turn its reaction times (sin(psi/2) (eps.e) + cos(psi/2) eta) / 2
+  ! times its row, the reaction over two at agreement.
+  !===================================================================!
+
+  function efforts(this) result(e)
+
+    class(mechanism), intent(in) :: this
+    type(continuous_field), allocatable :: e(:)
+
+    type(continuous_field) :: term
+    logical, allocatable :: started(:)
+    integer :: d, i
+
+    allocate(e(size(this % driver_row, 2)), started(size(this % driver_row, 2)))
+    started = .false.
+    do d = 1, size(this % drivers)
+       associate (act => this % drivers(d), psi => this % driver_target(d))
+         if (act % kind == TURN) then
+            term = this % driver_reaction(d) * (sin(psi / 2.0_dp) * dotted(act % body % eps, act % axis) &
+                 & + cos(psi / 2.0_dp) * act % body % eta) / 2.0_dp
+         else
+            term = this % driver_reaction(d)
+         end if
+       end associate
+       do i = 1, size(this % driver_row, 2)
+          if (this % driver_row(d, i) == 0.0_dp) cycle
+          if (started(i)) then
+             e(i) = e(i) + this % driver_row(d, i) * term
+          else
+             e(i) = this % driver_row(d, i) * term
+             started(i) = .true.
+          end if
+       end do
+    end do
+    do i = 1, size(e)
+       if (.not. started(i)) e(i) = 0.0_dp * this % t
+    end do
+
+  end function efforts
+
+  !===================================================================!
+  ! THE POWER the controls supply, e^T u', read from the motion: each
+  ! driver's reaction times the rate of its condition through the
+  ! coordinates, mu (dc/dq) q', which equals -mu (dc/du) u' where the
+  ! condition is zero along the motion - for a displacement u'.e, for
+  ! a turn cos(psi/2) (eps'.e) - sin(psi/2) eta'; no rate of a control
+  ! is read.
+  !===================================================================!
+
+  function power(this) result(p)
+
+    class(mechanism), intent(in) :: this
+    type(continuous_field) :: p
+
+    type(continuous_field) :: rate
+    integer :: d, i3
+
+    p = 0.0_dp * this % t
+    do d = 1, size(this % drivers)
+       associate (act => this % drivers(d), psi => this % driver_target(d))
+         if (act % kind == TURN) then
+            rate = cos(psi / 2.0_dp) * dotted([(act % body % eps(i3) % derivative([this % t]), i3 = 1, 3)], act % axis) &
+                 & - sin(psi / 2.0_dp) * act % body % eta % derivative([this % t])
+         else
+            rate = dotted([(act % body % u(i3) % derivative([this % t]), i3 = 1, 3)], act % axis)
+         end if
+       end associate
+       p = p + this % driver_reaction(d) * rate
+    end do
+
+  end function power
+
+  !===================================================================!
   ! A BLADE AS A BEAM in the axes of the body it is fixed to: the
   ! displacement u along its span, v along its chord and w along its
   ! thickness, and its twist phi about its span, fields of time and of
@@ -421,7 +593,7 @@ contains
     type(continuous_field)   , intent(in), optional :: pitch
 
     type(continuous_field) :: centre(3), p(3), rate, turning(3), body_rate(3), slope_v, slope_w, strain, energy
-    type(continuous_field) :: zero, inertia, k_f, k_c, c, sn, turned_moments(3)
+    type(continuous_field) :: zero, inertia, k_f, k_c, c, sn, turned_moments(3), kinetic
     logical  :: stated
     integer  :: k, i, j
 
@@ -509,6 +681,7 @@ contains
     end do
 
     ! less the strain energy, and the potential energy in gravity
+    kinetic = energy
     slope_v = blade % v % derivative([x])
     slope_w = blade % w % derivative([x])
     strain  = blade % u % derivative([x]) + (slope_v * slope_v + slope_w * slope_w) / 2.0_dp
@@ -523,11 +696,14 @@ contains
             & - (s % lag / 2.0_dp) * blade % v % derivative([x, x])**2 &
             & - (s % torsion / 2.0_dp) * blade % phi % derivative([x])**2 + s % mass * combination(this % gravity, p)
     end if
+    ! the energy density, kinetic and potential, 2 T - (T - V)
     if (this % spread) then
-       this % distributed = this % distributed + energy
+       this % distributed   = this % distributed + energy
+       this % spread_energy = this % spread_energy + (2.0_dp * kinetic - energy)
     else
-       this % distributed = energy
-       this % spread      = .true.
+       this % distributed   = energy
+       this % spread_energy = 2.0_dp * kinetic - energy
+       this % spread        = .true.
     end if
 
     ! at rest in the body's axes at the first instant; fixed to the
@@ -929,7 +1105,7 @@ contains
           c0 = 0
           do b = 1, nr
              call body_at(coordinates, b, first, u, eta, eps)
-             c = rotation(eta, eps)
+             c = orientation(eta, eps)
              associate (s => this % surfaces(b), r0 => this % drawn(b) % centre)
                moved = s % points
                do i = 1, size(moved, 2)
@@ -940,7 +1116,7 @@ contains
           end do
           do b = 1, nb
              call body_at(bodies, b, first, u, eta, eps)
-             c = rotation(eta, eps)
+             c = orientation(eta, eps)
              associate (s => this % beam_surfaces(b), blade => this % drawn_beams(b), r0 => this % beam_bodies(b) % centre)
                moved = s % points
                do i = 1, size(moved, 2)
@@ -1030,7 +1206,7 @@ contains
 
   ! the rotation matrix of the Euler parameters, C = I - 2 eta eps^x +
   ! 2 eps^x eps^x
-  pure function rotation(eta, eps) result(c)
+  pure function orientation(eta, eps) result(c)
     real(dp), intent(in) :: eta, eps(3)
     real(dp) :: c(3,3)
     c(1, :) = [1.0_dp - 2.0_dp * (eps(2)**2 + eps(3)**2), 2.0_dp * (eps(1) * eps(2) + eta * eps(3)), &
@@ -1039,7 +1215,7 @@ contains
          & 2.0_dp * (eps(2) * eps(3) + eta * eps(1))]
     c(3, :) = [2.0_dp * (eps(3) * eps(1) + eta * eps(2)), 2.0_dp * (eps(3) * eps(2) - eta * eps(1)), &
          & 1.0_dp - 2.0_dp * (eps(1)**2 + eps(2)**2)]
-  end function rotation
+  end function orientation
 
   !===================================================================!
   ! THE TABLE OF BODIES read from a file, and the row of a name.
@@ -1211,18 +1387,58 @@ contains
     end if
   end function spherical
 
+  ! a hinge about e at the point x, of a to b or, without b, to the
+  ! ground
   function revolute(a, x, e, b) result(g)
-    type(rigid_body), intent(in) :: a, b
+    type(rigid_body), intent(in) :: a
     real(dp)        , intent(in) :: x(3), e(3)
+    type(rigid_body), intent(in), optional :: b
     type(continuous_field) :: g(5)
     type(continuous_field) :: ea(3)
     real(dp) :: e1(3), e2(3)
     call normals(e, e1, e2)
     ea = a % direction(e)
-    g(1:3) = spherical(a, x, b)
-    g(4)   = dot(ea, b % direction(e1))
-    g(5)   = dot(ea, b % direction(e2))
+    if (present(b)) then
+       g(1:3) = spherical(a, x, b)
+       g(4)   = dot(ea, b % direction(e1))
+       g(5)   = dot(ea, b % direction(e2))
+    else
+       g(1:3) = spherical(a, x)
+       g(4)   = dotted(ea, e1)
+       g(5)   = dotted(ea, e2)
+    end if
   end function revolute
+
+  ! the centre of a on the line through it along e
+  function line(a, e) result(g)
+    type(rigid_body), intent(in) :: a
+    real(dp)        , intent(in) :: e(3)
+    type(continuous_field) :: g(2)
+    real(dp) :: e1(3), e2(3)
+    call normals(e, e1, e2)
+    g(1) = dotted(a % u, e1)
+    g(2) = dotted(a % u, e2)
+  end function line
+
+  ! the actuators: the turn of a about e, and the displacement of its
+  ! centre along e
+  function rotation(a, e) result(this)
+    type(rigid_body), intent(in) :: a
+    real(dp)        , intent(in) :: e(3)
+    type(actuator) :: this
+    this % kind = TURN
+    this % body = a
+    this % axis = e / norm2(e)
+  end function rotation
+
+  function displacement(a, e) result(this)
+    type(rigid_body), intent(in) :: a
+    real(dp)        , intent(in) :: e(3)
+    type(actuator) :: this
+    this % kind = SHIFT
+    this % body = a
+    this % axis = e / norm2(e)
+  end function displacement
 
   function cylindrical(a, x, e) result(g)
     type(rigid_body), intent(in) :: a

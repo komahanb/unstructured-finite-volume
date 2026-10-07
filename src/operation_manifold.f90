@@ -37,14 +37,14 @@ module operation_manifold
   use operation_expansion , only : expansion
   use operation_field     , only : continuous_support, discrete_support, continuous_field
   use operation_field     , only : unknown_field, coordinate_field
-  use operation_field     , only : WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR, DESIGN_FACTOR, SPACE_FACE
+  use operation_field     , only : WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR, DESIGN_FACTOR, SPACE_FACE, TIME_WINDOW
   use view_mesh           , only : mesh, values_of
   use view_mesh_builder   , only : mesh_from_gmsh, mesh_from_points, mesh_of_corners
 
   implicit none
 
   private
-  public :: continuous_manifold, discrete_manifold
+  public :: continuous_manifold, discrete_manifold, window
   public :: interval, region, points, mesh, corners, parameter
 
   integer, parameter :: MAX_NAME = 32
@@ -71,15 +71,19 @@ module operation_manifold
 
   ! the points of an interval of time or of a space coordinate: n
   ! equally spaced, or the list given, ascending from one end of the
-  ! interval to the other
+  ! interval to the other, or between breakpoints at most a step
+  ! apart, every breakpoint a point, uniform between two
   type :: points
      integer :: n = 0
      real(dp), allocatable :: position(:)
+   contains
+     procedure :: count => points_count
   end type points
 
   interface points
      module procedure create_points
      module procedure create_points_at
+     module procedure create_points_between
   end interface points
 
   interface mesh
@@ -124,6 +128,7 @@ module operation_manifold
      procedure :: unknown         => manifold_unknown
      procedure :: coordinate      => manifold_coordinate
      procedure :: boundary        => manifold_boundary
+     procedure :: window          => manifold_window
      procedure :: time            => manifold_time
      procedure :: space           => manifold_space
      procedure :: design          => manifold_design
@@ -144,6 +149,16 @@ module operation_manifold
      module procedure create_manifold
      module procedure create_manifold_of_designs
   end interface continuous_manifold
+
+  !===================================================================!
+  ! A WINDOW of a manifold: the manifold between two instants of its
+  ! time, a and b, a part of it whose faces are the manifold's faces
+  ! at a and b. A functional over a window sums the steps of the march
+  ! within it, a multistep step's history included.
+  !===================================================================!
+
+  type, extends(continuous_manifold) :: window
+  end type window
 
   type, extends(discrete_support) :: discrete_manifold
 
@@ -249,6 +264,35 @@ contains
     this % position = position
 
   end function create_points_at
+
+  ! the points between breakpoints: between each two, the fewest
+  ! equally spaced at most the step apart, every breakpoint a point
+  function create_points_between(breakpoints, step) result(this)
+
+    real(dp), intent(in) :: breakpoints(:), step
+    type(points) :: this
+
+    real(dp), allocatable :: position(:)
+    integer :: i, k, n
+
+    if (size(breakpoints) < 2) error stop 'operation_manifold: points between breakpoints take two at least'
+    if (.not. step > 0.0_dp) error stop 'operation_manifold: the step between breakpoints is positive'
+    position = [breakpoints(1)]
+    do i = 1, size(breakpoints) - 1
+       if (.not. breakpoints(i + 1) > breakpoints(i)) error stop 'operation_manifold: the breakpoints ascend'
+       n = max(1, ceiling((breakpoints(i + 1) - breakpoints(i)) / step * (1.0_dp - 1.0e-12_dp)))
+       position = [position, (breakpoints(i) + (breakpoints(i + 1) - breakpoints(i)) * real(k, dp) / real(n, dp), &
+            & k = 1, n - 1), breakpoints(i + 1)]
+    end do
+    this = create_points_at(position)
+
+  end function create_points_between
+
+  ! the number of points
+  pure integer function points_count(this)
+    class(points), intent(in) :: this
+    points_count = this % n
+  end function points_count
 
   function mesh_from_file(filename) result(cells)
 
@@ -529,7 +573,8 @@ contains
     logical :: of_time
     character(len=250) :: message
 
-    if (along % coordinate < 1 .or. along % design_coordinate .or. .not. along % on % matches(this % identity)) then
+    if (along % coordinate < 1 .or. along % design_coordinate .or. .not. (along % on % matches(this % identity) &
+         & .or. (this % part == TIME_WINDOW .and. along % on % matches(this % parent)))) then
        error stop 'operation_manifold: a face is taken along a time or space coordinate of this manifold'
     end if
     of_time = this % with_time .and. along % coordinate == 1
@@ -553,8 +598,42 @@ contains
     face % geometry   = this % geometry
     face % face_axis  = along % coordinate
     face % face_value = value
+    ! of a window, the face of the manifold at that instant
+    if (this % part == TIME_WINDOW) face % parent = this % parent
 
   end function manifold_boundary
+
+  !===================================================================!
+  ! THE WINDOW from the instant a to the instant b, a below b, both
+  ! within the interval of time. Invalid input: a field that is not
+  ! the time coordinate of this manifold.
+  !===================================================================!
+
+  function manifold_window(this, along, a, b) result(part)
+
+    class(continuous_manifold), intent(in) :: this
+    type(continuous_field)    , intent(in) :: along
+    real(dp)                  , intent(in) :: a, b
+    type(window) :: part
+
+    if (.not. this % with_time .or. along % coordinate /= 1 .or. along % design_coordinate .or. &
+         & .not. along % on % matches(this % identity)) then
+       error stop 'operation_manifold: a window is taken along the time coordinate of this manifold'
+    end if
+    if (.not. (this % span % a <= a .and. a < b .and. b <= this % span % b)) then
+       error stop 'operation_manifold: a window is an interval of the time, its first instant below its last'
+    end if
+    part % continuous_manifold = part_of(this, TIME_WINDOW)
+    if (this % part == TIME_WINDOW) part % parent = this % parent
+    part % with_time  = .true.
+    part % span       = interval(a, b)
+    part % with_space = this % with_space
+    part % geometry   = this % geometry
+    part % face_axis  = 1
+    part % face_value = a
+    part % window_end = b
+
+  end function manifold_window
 
   ! a part of a manifold: a manifold of its own that records its
   ! parent and which part of it it is, with the design coordinates of

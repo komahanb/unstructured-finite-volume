@@ -62,7 +62,8 @@ module operation_residual
   use util_derivative_terms, only : value
   use util_derivative_terms, only : operator(*)
   use token_identity       , only : token
-  use operation_field      , only : continuous_field, discrete_field, WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR
+  use operation_field      , only : continuous_field, discrete_field, WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR, &
+       &                           TIME_WINDOW
   use view_expression      , only : expression_view
   use operation_manifold   , only : continuous_manifold, discrete_manifold
   use operation_expansion  , only : expansion
@@ -2752,16 +2753,19 @@ contains
        end if
        ! an inequality on the design factor is a function of the design
        ! coordinates alone, or a functional of the state over the whole
-       ! manifold, an integral or a smooth maximum
+       ! manifold or a window of its time, an integral or a smooth
+       ! maximum
        if (image % condition(j) % inequality) then
           do i = 1, size(image % condition(j) % equation)
              associate (equation => image % condition(j) % equation(i))
                form = equation % graph(1)
                if (equation % is_integral()) then
-                  if (equation % integrated_part /= WHOLE .or. &
-                       & .not. equation % integrated_over % matches(image % manifold % identity)) then
+                  if (.not. (equation % integrated_part == WHOLE .and. &
+                       & equation % integrated_over % matches(image % manifold % identity)) .and. &
+                       & .not. (equation % integrated_part == TIME_WINDOW .and. &
+                       & equation % integrated_parent % matches(image % manifold % identity))) then
                      error stop 'operation_residual: an inequality on a functional of the state is over the whole &
-                          &manifold'
+                          &manifold or a window of its time'
                   end if
                else if (form % reads_state()) then
                   error stop 'operation_residual: an inequality on the design factor is a function of the design &
@@ -3955,6 +3959,11 @@ contains
          solution % node_weight   = with_nodes % node_weight
          solution % node_position = with_nodes % node_position
          solution % node_face_weight = with_nodes % node_face_weight
+         if (allocated(with_nodes % share_node)) then
+            solution % share_node   = with_nodes % share_node
+            solution % share_end    = with_nodes % share_end
+            solution % share_weight = with_nodes % share_weight
+         end if
          solution % node_image    = with_nodes % node_image
       else
          solution % objective_value   = with_nodes % objective_value
@@ -3993,7 +4002,7 @@ contains
     integer , allocatable :: instant(:), cell_owner(:)
     real(dp), allocatable :: position(:)
     integer :: stride, ncells, ninst, npts, nb, b, first, last, depth, n, s, smax, k, i, c, j
-    integer :: nnodes, nn, nf, b1, b2, klo, khi, offset
+    integer :: nnodes, nn, nf, b1, b2, klo, khi, offset, shares
     logical :: staged
     real(dp) :: h
 
@@ -4050,6 +4059,7 @@ contains
        deallocate(solution % node_jet, solution % node_weight, solution % node_position, solution % node_face_weight, &
             & solution % node_image)
     end if
+    if (allocated(solution % share_node)) deallocate(solution % share_node, solution % share_end, solution % share_weight)
     allocate(solution % node_jet(stride, nnodes, this % points % expansion % num_columns()), source=0.0_dp)
     allocate(solution % node_weight(nnodes), source=0.0_dp)
     allocate(solution % node_position(this % points % num_coordinates(), nnodes), source=0.0_dp)
@@ -4074,6 +4084,8 @@ contains
     end if
 
     nn = (khi - lb % instant + 1) * ncells
+    shares = 0
+    allocate(solution % share_node(nnodes), solution % share_end(nnodes), solution % share_weight(nnodes))
     do b = b1, b2
        call this % block_extent(b, first, last, depth)
        n      = last - first + 1
@@ -4089,6 +4101,7 @@ contains
                      stage_node(first + k, i, c) = nn + offset
                      solution % node_image(nn)   = cell_owner(c)
                      solution % node_weight(nn)  = h * scheme % stage_weight(i) * cell_volume(c)
+                     call share_added(solution, shares, nn, this % points % instant(first + k), solution % node_weight(nn))
                      position = this % points % position(this % points % point_of(first + k - 1, c))
                      position(1) = position(1) + scheme % stage_abscissa(i) * h
                      solution % node_position(:, nn) = position
@@ -4109,6 +4122,8 @@ contains
                      solution % node_weight(this % points % point_of(first + instant(j) - 1, c) - offset) = &
                           & solution % node_weight(this % points % point_of(first + instant(j) - 1, c) - offset) &
                           & + h * value(weight(j)) * cell_volume(c)
+                     call share_added(solution, shares, this % points % point_of(first + instant(j) - 1, c) - offset, &
+                          & this % points % instant(first + k - 1), h * value(weight(j)) * cell_volume(c))
                   end do
                end do
             end do
@@ -4116,6 +4131,7 @@ contains
          end if
        end associate
     end do
+    call shares_trimmed(solution, shares)
 
   contains
 
@@ -7632,7 +7648,7 @@ contains
     type(derivative_terms), allocatable :: dt(:), weight(:)
     integer , allocatable :: instant(:), cell_owner(:), formed(:,:)
     real(dp), allocatable :: position(:)
-    integer :: stride, ninst, nsites, nq, nnodes, nn, nb, b, first, last, depth, n, s, smax, k, i, j, e, q, site
+    integer :: stride, ninst, nsites, nq, nnodes, nn, nb, b, first, last, depth, n, s, smax, k, i, j, e, q, site, shares
     logical :: staged
     real(dp) :: h
 
@@ -7656,6 +7672,7 @@ contains
        deallocate(solution % node_jet, solution % node_weight, solution % node_position, solution % node_face_weight, &
             & solution % node_image)
     end if
+    if (allocated(solution % share_node)) deallocate(solution % share_node, solution % share_end, solution % share_weight)
     allocate(solution % node_jet(stride, nnodes, this % points % expansion % num_columns()), source=0.0_dp)
     allocate(solution % node_weight(nnodes), source=0.0_dp)
     allocate(solution % node_position(this % points % num_coordinates(), nnodes), source=0.0_dp)
@@ -7691,6 +7708,8 @@ contains
     end if
 
     nn = ninst * nsites
+    shares = 0
+    allocate(solution % share_node(nnodes), solution % share_end(nnodes), solution % share_weight(nnodes))
     do b = 1, nb
        call this % block_extent(b, first, last, depth)
        n      = last - first + 1
@@ -7708,6 +7727,7 @@ contains
                         stage_node(first + k, i, site) = nn
                         solution % node_image(nn)  = cell_owner(this % elements % node(1, e))
                         solution % node_weight(nn) = h * scheme % stage_weight(i) * this % elements % weight(q, e)
+                        call share_added(solution, shares, nn, this % points % instant(first + k), solution % node_weight(nn))
                         position = this % points % position(this % points % point_of(first + k - 1, &
                              & this % elements % node(1, e)))
                         position(1) = position(1) + scheme % stage_abscissa(i) * h
@@ -7733,6 +7753,8 @@ contains
                         nn   = (first + instant(j) - 2) * nsites + site
                         solution % node_weight(nn) = solution % node_weight(nn) &
                              & + h * value(weight(j)) * this % elements % weight(q, e)
+                        call share_added(solution, shares, nn, this % points % instant(first + k - 1), &
+                             & h * value(weight(j)) * this % elements % weight(q, e))
                      end do
                   end do
                end do
@@ -7741,8 +7763,50 @@ contains
          end if
        end associate
     end do
+    call shares_trimmed(solution, shares)
 
   end subroutine projected_nodes
+
+  !===================================================================!
+  ! A SHARE OF A NODE'S WEIGHT, of the step that ends at the instant
+  ! given, added to the solution's shares, whose count is shares and
+  ! whose storage doubles when full; and the storage trimmed to the
+  ! count once the nodes are formed.
+  !===================================================================!
+
+  subroutine share_added(solution, shares, node, end_time, weight)
+
+    type(discrete_field), intent(inout) :: solution
+    integer             , intent(inout) :: shares
+    integer             , intent(in)    :: node
+    real(dp)            , intent(in)    :: end_time, weight
+
+    integer , allocatable :: grown_node(:)
+    real(dp), allocatable :: grown_end(:), grown_weight(:)
+
+    if (shares == size(solution % share_node)) then
+       allocate(grown_node(max(1, 2 * shares)), grown_end(max(1, 2 * shares)), grown_weight(max(1, 2 * shares)))
+       grown_node(1:shares)   = solution % share_node(1:shares)
+       grown_end(1:shares)    = solution % share_end(1:shares)
+       grown_weight(1:shares) = solution % share_weight(1:shares)
+       call move_alloc(grown_node, solution % share_node)
+       call move_alloc(grown_end, solution % share_end)
+       call move_alloc(grown_weight, solution % share_weight)
+    end if
+    shares = shares + 1
+    solution % share_node(shares)   = node
+    solution % share_end(shares)    = end_time
+    solution % share_weight(shares) = weight
+
+  end subroutine share_added
+
+  subroutine shares_trimmed(solution, shares)
+    type(discrete_field), intent(inout) :: solution
+    integer             , intent(in)    :: shares
+    solution % share_node   = solution % share_node(1:shares)
+    solution % share_end    = solution % share_end(1:shares)
+    solution % share_weight = solution % share_weight(1:shares)
+  end subroutine shares_trimmed
 
   !===================================================================!
   ! THE JET AT A QUADRATURE POINT of the layout of the flux's tuple,

@@ -40,11 +40,11 @@ module operation_field
   public :: continuous_support, discrete_support
   public :: continuous_field, discrete_field
   public :: unknown_field, coordinate_field, integral, mean, maximum, minimum, representation
-  public :: WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR, DESIGN_FACTOR, SPACE_FACE
+  public :: WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR, DESIGN_FACTOR, SPACE_FACE, TIME_WINDOW
 
   ! the parts a support can be of another
   integer, parameter :: WHOLE = 0, TIME_FACE = 1, TIME_FACTOR = 2, SPACE_FACTOR = 3, DESIGN_FACTOR = 4, &
-       & SPACE_FACE = 5
+       & SPACE_FACE = 5, TIME_WINDOW = 6
   public :: operator(+), operator(-), operator(*), operator(/), operator(**)
   public :: sin, cos, exp, log, sqrt, heaviside
 
@@ -58,13 +58,16 @@ module operation_field
      type(token) :: identity
      ! the part of another support this one is - the whole, the face
      ! at an instant, the face at a value of a space coordinate, the
-     ! time factor, the space factor, the design factor - the identity
-     ! of that parent, and for a face the coordinate it is taken along
-     ! and the coordinate's value there
+     ! time factor, the space factor, the design factor, the window
+     ! between two instants - the identity of that parent, and for a
+     ! face the coordinate it is taken along and the coordinate's value
+     ! there; for a window its first instant, face_value, and its last,
+     ! window_end
      integer     :: part = WHOLE
      type(token) :: parent
      integer     :: face_axis  = 0
      real(dp)    :: face_value = 0.0_dp
+     real(dp)    :: window_end = 0.0_dp
 
    contains
 
@@ -158,7 +161,10 @@ module operation_field
      type(token) :: integrated_over
      integer     :: integrated_part = WHOLE
      type(token) :: integrated_parent
+     ! the instant of a face, or the first instant of a window and its
+     ! last, integrated_end
      real(dp)    :: integrated_time = 0.0_dp
+     real(dp)    :: integrated_end  = 0.0_dp
      ! the weight of a smooth maximum over the factor; zero for an
      ! integral
      real(dp)    :: weight = 0.0_dp
@@ -218,7 +224,9 @@ module operation_field
   ! weight within the face of its instant (zero for a stage, and for
   ! an instant of history). A functional of the solution is the sum
   ! over the nodes, so that the objective is discretized by the
-  ! scheme that marches the state, not by a rule of the points.
+  ! scheme that marches the state, not by a rule of the points; over a
+  ! window between two instants, the sum with the weights of the steps
+  ! within the window, a multistep step's history included.
   !===================================================================!
 
   type :: discrete_field
@@ -238,6 +246,13 @@ module operation_field
      real(dp), allocatable :: node_weight(:)
      real(dp), allocatable :: node_position(:,:)
      real(dp), allocatable :: node_face_weight(:)
+     ! the shares of the nodes' weights by the steps of the march: the
+     ! step that ends at the instant share_end(s) gives the node
+     ! share_node(s) the weight share_weight(s); a node's weight is the
+     ! sum of its shares, and within a window the sum of those of the
+     ! steps within it
+     integer , allocatable :: share_node(:)
+     real(dp), allocatable :: share_end(:), share_weight(:)
      ! the image that owns the node: a functional sums its owned nodes
      ! and the images' sums once
      integer , allocatable :: node_image(:)
@@ -482,6 +497,7 @@ contains
     this % integrated_part   = over % part
     this % integrated_parent = over % parent
     this % integrated_time   = over % face_value
+    this % integrated_end    = over % window_end
 
   end function reduced
 
@@ -707,7 +723,7 @@ contains
     real(dp), allocatable  , intent(out) :: gradient(:,:,:)
     real(dp), allocatable  , intent(out) :: partial(:,:)
 
-    real(dp), allocatable :: q(:), g(:), gd(:), values(:), unit(:), seed(:), position(:)
+    real(dp), allocatable :: q(:), g(:), gd(:), values(:), unit(:), seed(:), position(:), within(:)
     integer , allocatable :: slot(:)
     type(derivative_terms), allocatable :: jets(:), varied(:), nu(:), along(:), design(:)
     type(derivative_terms) :: r
@@ -762,6 +778,8 @@ contains
        nnodes   = size(solution % jet, 2)
        expanded = jet_expansion(solution)
     end if
+    if (this % integrated_part == TIME_WINDOW) within = window_weights(solution, this % integrated_time, &
+         & this % integrated_end)
     order  = expanded % order
     values = expanded % values()
     if (size(values) < integrand % num_designs()) then
@@ -786,6 +804,7 @@ contains
           measure  = solution % node_weight(p)
           position = solution % node_position(:, p)
           if (this % integrated_part == TIME_FACE) measure = face_weight(solution, p, this % integrated_time)
+          if (this % integrated_part == TIME_WINDOW) measure = within(p)
        else
           measure  = solution % on % measure(p)
           position = solution % on % position(p)
@@ -898,7 +917,7 @@ contains
 
     type(continuous_field) :: shifted
     type(expression) :: summed, g
-    real(dp), allocatable :: q(:), w(:), values(:), gd(:), position(:)
+    real(dp), allocatable :: q(:), w(:), values(:), gd(:), position(:), within(:)
     integer , allocatable :: slot(:)
     real(dp) :: value, measure
     integer  :: i, p, k, nnodes
@@ -919,6 +938,8 @@ contains
     else
        nnodes = size(solution % jet, 2)
     end if
+    if (this % integrated_part == TIME_WINDOW) within = window_weights(solution, this % integrated_time, &
+         & this % integrated_end)
     values = solution % on % expansion % values()
     m = merge(-huge(1.0_dp), huge(1.0_dp), this % weight > 0.0_dp)
     do i = 1, size(this % component)
@@ -936,6 +957,7 @@ contains
              measure  = solution % node_weight(p)
              position = solution % node_position(:, p)
              if (this % integrated_part == TIME_FACE) measure = face_weight(solution, p, this % integrated_time)
+             if (this % integrated_part == TIME_WINDOW) measure = within(p)
              do k = 0, size(slot) - 1
                 q(k) = solution % node_jet(slot(k), p, 1)
              end do
@@ -1011,6 +1033,11 @@ contains
        to % node_weight   = from % node_weight
        to % node_position = from % node_position
        to % node_face_weight = from % node_face_weight
+       if (allocated(from % share_node)) then
+          to % share_node   = from % share_node
+          to % share_end    = from % share_end
+          to % share_weight = from % share_weight
+       end if
        to % node_image    = from % node_image
     end if
     if (allocated(from % objective_value)) then
@@ -1030,6 +1057,28 @@ contains
        face_weight = solution % node_face_weight(p)
     end if
   end function face_weight
+
+  ! the weights of the nodes within the window from the instant a to
+  ! the instant b: of each node, its shares of the steps that end
+  ! after a and at b at the latest, the steps within the window
+  function window_weights(solution, a, b) result(within)
+    type(discrete_field), intent(in) :: solution
+    real(dp)            , intent(in) :: a, b
+    real(dp), allocatable :: within(:)
+    real(dp) :: tolerance
+    integer  :: s
+    if (.not. allocated(solution % share_node)) then
+       error stop 'operation_field: a window is measured by the steps of the march, on the nodes of a solution &
+            &that stores their shares'
+    end if
+    tolerance = 1.0e-12_dp * max(1.0_dp, abs(a), abs(b))
+    allocate(within(size(solution % node_weight)), source=0.0_dp)
+    do s = 1, size(solution % share_node)
+       if (solution % share_end(s) > a + tolerance .and. solution % share_end(s) <= b + tolerance) then
+          within(solution % share_node(s)) = within(solution % share_node(s)) + solution % share_weight(s)
+       end if
+    end do
+  end function window_weights
 
   !===================================================================!
   ! THE DERIVATIVE ALONG TIME AND SPACE of an unknown read from a

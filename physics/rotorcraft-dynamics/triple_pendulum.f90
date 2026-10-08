@@ -81,9 +81,11 @@ program triple_pendulum
   L_h = L % discretize(omega_h, time=chain([dirk(2), bdf(1), (bdf(2), k = 3, num_instants)], &
        &                                   from=[(k, k = 1, num_instants)]))
 
+  ! the motion from the estimate, the convergence of every solve
+  ! printed by image 1
   motion   = pendulum % estimate(omega)
   estimate = motion % discretize(omega_h)
-  if (this_image() == 1 .and. num_instants <= 11) call set_verbosity(1)
+  if (this_image() == 1) call set_verbosity(1)
   call L_h % minimize(estimate, solution, continued=.true.)
 
   ! the energy at every instant, and the conditions of the joints

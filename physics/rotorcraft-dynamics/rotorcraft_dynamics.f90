@@ -174,13 +174,18 @@ program rotorcraft_dynamics
   np = 1
   if (trim(blade) == 'beam') np = span_points
   optimizing = strips > 0 .and. optimize .and. trim(blade) == 'beam'
-  if (this_image() == 1 .and. num_instants <= 11) call set_verbosity(1)
+
+  ! the convergence of every solve and of the design's iteration
+  ! printed by image 1
+  if (this_image() == 1) call set_verbosity(1)
 
   ! to optimize with the bodies drawn, the initial design marched,
   ! reported and drawn first, beside the design found
   if (optimizing .and. len_trim(meshes) > 0) then
      do j = 1, ns
         call stated(scenario(j), j == 1, L_h(j), estimates(j), rotors(j), masses(j), kss(j), omega_h, initial=.true.)
+        if (this_image() == 1) print '(a, a, a, a, a)', 'the march of the rotor, ', trim(blade), ' blades, ', &
+             & trim(scenario(j)), ', the initial design'
         call L_h(j) % minimize(estimates(j), solutions(j), continued=.true.)
         call reported(scenario(j), ns == 1, rotors(j), masses(j), kss(j), solutions(j), 'initial')
      end do
@@ -191,12 +196,16 @@ program rotorcraft_dynamics
 
   ! each marched in turn; to optimize, the one design of them all
   if (optimizing) then
+     if (this_image() == 1) print '(*(a))', 'the design of the rotor, ', trim(blade), ' blades, of the scenarios', &
+          & (' ' // trim(scenario(j)), j = 1, ns)
      call minimize_together(L_h(1:ns), estimates(1:ns), solutions(1:ns), continued=.true.)
      do j = 1, ns
         call reported(scenario(j), ns == 1, rotors(j), masses(j), kss(j), solutions(j), 'optimized')
      end do
   else
      do j = 1, ns
+        if (this_image() == 1) print '(a, a, a, a)', 'the march of the rotor, ', trim(blade), ' blades, ', &
+             & trim(scenario(j))
         call L_h(j) % minimize(estimates(j), solutions(j), continued=.true.)
      end do
      do j = 1, ns

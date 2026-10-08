@@ -28,6 +28,9 @@
 #                        the third argument, s = (0.45, -0.2240) and
 #                        the bound's multiplier 2.4205e-5
 #
+# Each program prints on image 1 the convergence of every solve, and of
+# the design's iteration, before its results, as van_der_pol does.
+#
 #     run.sh             on one process
 #     IMAGES=n run.sh    on n coarray images: the library and the
 #                        programs built with COARRAY=lib, each program

@@ -21,6 +21,9 @@
 #                        the blade model, the scenario, the steps, the
 #                        meshes the bodies are drawn with
 #
+# Each program prints on image 1 the convergence of every solve, and of
+# the design's iteration, before its results, as van_der_pol does.
+#
 #     run.sh             on one process
 set -e
 

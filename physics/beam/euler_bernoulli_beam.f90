@@ -148,6 +148,7 @@
 program euler_bernoulli_beam
 
   use util_precision             , only : dp
+  use util_verbosity             , only : set_verbosity
   use operation_manifold         , only : continuous_manifold, discrete_manifold, interval, region, points
   use operation_field            , only : continuous_field, discrete_field, integral, representation
   use operation_field            , only : sin, cos, operator(+), operator(-), operator(*), operator(/), operator(**)
@@ -173,6 +174,9 @@ program euler_bernoulli_beam
      read(item, *) num_points
   end if
 
+  ! each case under its name, the convergence of every solve printed
+  ! by image 1
+  if (this_image() == 1) call set_verbosity(1)
   call simply_supported(open_line=.false.)
   call clamped(open_line=.false.)
   call clamped(open_line=.true.)
@@ -246,6 +250,11 @@ contains
             &            from=[(k, k = 1, num_instants)]), space=finite_difference(order=6))
     end if
 
+    if (open_line) then
+       if (this_image() == 1) print '(a)', 'simply supported, uniform EI and rhoA, the open line'
+    else
+       if (this_image() == 1) print '(a)', 'simply supported, uniform EI and rhoA'
+    end if
     estimate = exact % discretize(omega_h)
     call L_h % minimize(estimate, solution)
 
@@ -253,11 +262,6 @@ contains
     functional = energy % at(solution)
     call functional % values(J)
     J_exact    = T_final * EI_0 * (pi / L)**4 * L / 4.0_dp
-    if (open_line) then
-       if (this_image() == 1) print '(a)', 'simply supported, uniform EI and rhoA, the open line'
-    else
-       if (this_image() == 1) print '(a)', 'simply supported, uniform EI and rhoA'
-    end if
     if (this_image() == 1) print '(a, es12.4)', '   error against the exact solution  ', error % norm()
     if (this_image() == 1) print '(a, es24.16, a, es24.16)', '   J = ', J(1), '   exact ', J_exact
     if (this_image() == 1) print '(a, es12.4, a, es12.4)', '   J_exact - J = ', J_exact - J(1), &
@@ -355,10 +359,6 @@ contains
             &            from=[(k, k = 1, num_instants)]), space=finite_difference(order=6))
     end if
 
-    estimate = exact % discretize(omega_h)
-    call L_h % minimize(estimate, solution)
-
-    error = solution % fields(['w']) - estimate
     if (open_line) then
        if (this_image() == 1) print '(a)', 'clamped, EI(x) and rhoA(x) varying, manufactured load, the open line'
     else if (present(damping_scale) .and. by_elements) then
@@ -371,6 +371,10 @@ contains
     else
        if (this_image() == 1) print '(a)', 'clamped, EI(x) and rhoA(x) varying, manufactured load'
     end if
+    estimate = exact % discretize(omega_h)
+    call L_h % minimize(estimate, solution)
+
+    error = solution % fields(['w']) - estimate
     if (this_image() == 1) print '(a, es12.4)', '   error against the exact solution  ', error % norm()
 
   end subroutine clamped
@@ -453,6 +457,7 @@ contains
          & time=chain([(dirk(2), k = 1, 4), (bdf(2), k = 5, 7), (adams(2), k = 8, num_instants)], &
          &            from=[(k, k = 1, num_instants)]), space=finite_element(degree=3))
 
+    if (this_image() == 1) print '(a)', 'clamped, case 6 on a turning hub, the hub''s angle an unknown of time alone'
     estimate = exact % discretize(omega_h)
     call L_h % minimize(estimate, solution, continued=.true.)
 
@@ -460,7 +465,6 @@ contains
     theta_only  = continuous_field(omega, [theta_exact])
     error_w     = solution % fields(['w']) - w_only % discretize(omega_h)
     error_theta = solution % fields(['theta']) - theta_only % discretize(omega_h)
-    if (this_image() == 1) print '(a)', 'clamped, case 6 on a turning hub, the hub''s angle an unknown of time alone'
     if (this_image() == 1) print '(a, es12.4)', '   error against the exact solution  ', error_w % norm()
     if (this_image() == 1) print '(a, es12.4)', '   error of the hub''s angle          ', error_theta % norm()
 

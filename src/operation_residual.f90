@@ -2925,8 +2925,11 @@ contains
              objective  = objective + functional % value(1, 1)
           end if
        end do
-       if (verbosity >= 1) print '(a, i0, a, es24.16, a, *(es24.16))', 'design iterate ', iteration, '  J = ', &
-            & objective, '  c = ', c
+       ! J evaluated only under inequalities or bfgs: without them the
+       ! line below states the iterate by |dJ/ds| and s
+       if (verbosity >= 1 .and. (size(of_state) > 0 .or. quasi)) &
+            & print '(a, i0, a, es24.16, a, *(es24.16))', 'design iterate ', iteration, '  J = ', objective, &
+            & '  c = ', c
        if (any(of_state) .and. .not. quasi) gradient = gradient - matmul(weight, a)
        if (quasi) hessian = quasi_hessian
        if (iteration == 1) tolerance = 1.0e-10_dp * max(1.0_dp, norm2(gradient))

@@ -58,6 +58,7 @@
 program van_der_pol_philosophical_template
 
   use util_precision     , only : dp
+  use util_verbosity     , only : set_verbosity
   use operation_manifold , only : continuous_manifold, discrete_manifold, interval, points, parameter
   use operation_expansion, only : expansion
   use operation_field    , only : continuous_field, discrete_field, integral, &
@@ -124,9 +125,11 @@ program van_der_pol_philosophical_template
 
   ! THE ZERO of L_h, from the estimate u = u_0 at every instant: u,
   ! lambda_r, lambda and kappa at the points, each with its
-  ! derivatives along nu to the order
+  ! derivatives along nu to the order; the convergence of every solve
+  ! printed by image 1
   rest     = continuous_field(omega, [u_0])
   estimate = rest % discretize(omega_h)
+  if (this_image() == 1) call set_verbosity(1)
   call L_h % minimize(estimate, solution)
 
   ! the state and the adjoint at every tenth of the interval

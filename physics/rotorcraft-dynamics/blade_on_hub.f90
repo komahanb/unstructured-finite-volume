@@ -36,6 +36,7 @@
 program blade_on_hub
 
   use util_precision          , only : dp
+  use util_verbosity          , only : set_verbosity
   use operation_manifold      , only : continuous_manifold, discrete_manifold, interval, region, points
   use operation_field         , only : continuous_field, discrete_field
   use operation_residual      , only : continuous_residual, discrete_residual, operator(+)
@@ -132,8 +133,11 @@ program blade_on_hub
           &                                   from=[(k, k = 1, num_instants)]))
   end if
 
+  ! the motion from the estimate, the convergence of every solve
+  ! printed by image 1
   motion   = spinner % estimate(omega)
   estimate = motion % discretize(omega_h)
+  if (this_image() == 1) call set_verbosity(1)
   call L_h % minimize(estimate, solution, continued=.true.)
 
   names = [character(len=32) :: 'driver_4', 'driver_5', 'driver_6']

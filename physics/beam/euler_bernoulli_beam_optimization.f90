@@ -103,6 +103,7 @@
 program euler_bernoulli_beam_optimization
 
   use util_precision             , only : dp
+  use util_verbosity             , only : set_verbosity
   use operation_manifold         , only : continuous_manifold, discrete_manifold, interval, region, points, parameter
   use operation_expansion        , only : expansion
   use operation_field            , only : continuous_field, discrete_field, integral
@@ -154,6 +155,10 @@ program euler_bernoulli_beam_optimization
      call get_command_argument(4, item)
      quasi = trim(item) == 'bfgs'
   end if
+
+  ! the convergence of every solve and of the design's iteration
+  ! printed by image 1
+  if (this_image() == 1) call set_verbosity(1)
 
   ! two scenarios on one design: the deflections at the frequency and
   ! at twice it, the sum of their misfits least

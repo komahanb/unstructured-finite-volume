@@ -40,6 +40,15 @@ To run a setup of your own, copy `rotor_bodies.txt` and a
 `rotorcraft.nml` into a directory and run the program there: each run
 writes its drawing into the directory it runs in.
 
+Each program prints on image 1 the convergence of every solve, as
+`van_der_pol` does: for each block of the march its Newton steps - the
+residual, the step and its factor, the jacobian, the linear solve -
+and where there is an adjoint, its blocks in reverse; to optimize,
+each design iteration's objective, conditions and stationarity. The
+rotor names each scenario before its march, and the scenarios before
+the design's iteration, whose every iterate marches them in turn; the
+results follow the iterations.
+
 ## The setup, `rotorcraft.nml`
 
     &setup

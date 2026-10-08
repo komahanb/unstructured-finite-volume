@@ -213,8 +213,9 @@ module operation_field
   ! instant at every cell with the weight the multistep rules give
   ! it, and every stage of a staged family's steps with the tableau's
   ! weight - node_jet(:, n, c + 1) the jet at the node, node_weight
-  ! its weight, node_position its position, node_point the point it
-  ! is (zero for a stage). A functional of the solution is the sum
+  ! its weight, node_position its position, node_face_weight its
+  ! weight within the face of its instant (zero for a stage, and for
+  ! an instant of history). A functional of the solution is the sum
   ! over the nodes, so that the objective is discretized by the
   ! scheme that marches the state, not by a rule of the points.
   !===================================================================!
@@ -235,7 +236,7 @@ module operation_field
      type(expression), allocatable :: node_rule
      real(dp), allocatable :: node_weight(:)
      real(dp), allocatable :: node_position(:,:)
-     integer , allocatable :: node_point(:)
+     real(dp), allocatable :: node_face_weight(:)
      ! the image that owns the node: a functional sums its owned nodes
      ! and the images' sums once
      integer , allocatable :: node_image(:)
@@ -690,12 +691,7 @@ contains
           if (solution % node_image(p) /= this_image()) cycle
           measure  = solution % node_weight(p)
           position = solution % node_position(:, p)
-          if (this % integrated_part == TIME_FACE) then
-             measure = 0.0_dp
-             if (solution % node_point(p) > 0) then
-                measure = solution % on % measure_on_face(solution % node_point(p), this % integrated_time)
-             end if
-          end if
+          if (this % integrated_part == TIME_FACE) measure = face_weight(solution, p, this % integrated_time)
        else
           measure  = solution % on % measure(p)
           position = solution % on % position(p)
@@ -844,12 +840,7 @@ contains
              if (solution % node_image(p) /= this_image()) cycle
              measure  = solution % node_weight(p)
              position = solution % node_position(:, p)
-             if (this % integrated_part == TIME_FACE) then
-                measure = 0.0_dp
-                if (solution % node_point(p) > 0) then
-                   measure = solution % on % measure_on_face(solution % node_point(p), this % integrated_time)
-                end if
-             end if
+             if (this % integrated_part == TIME_FACE) measure = face_weight(solution, p, this % integrated_time)
              do k = 0, size(slot) - 1
                 q(k) = solution % node_jet(slot(k), p, 1)
              end do
@@ -914,7 +905,7 @@ contains
        if (allocated(from % node_rule)) to % node_rule = from % node_rule
        to % node_weight   = from % node_weight
        to % node_position = from % node_position
-       to % node_point    = from % node_point
+       to % node_face_weight = from % node_face_weight
        to % node_image    = from % node_image
     end if
     if (allocated(from % objective_value)) then
@@ -922,6 +913,18 @@ contains
        to % objective_formula = from % objective_formula
     end if
   end subroutine nodes_copied
+
+  ! the weight of node p within the face at the instant given: its
+  ! weight within the face of its own instant there, zero elsewhere
+  pure real(dp) function face_weight(solution, p, time)
+    type(discrete_field), intent(in) :: solution
+    integer             , intent(in) :: p
+    real(dp)            , intent(in) :: time
+    face_weight = 0.0_dp
+    if (abs(solution % node_position(1, p) - time) <= 1.0e-12_dp * max(1.0_dp, abs(time))) then
+       face_weight = solution % node_face_weight(p)
+    end if
+  end function face_weight
 
   !===================================================================!
   ! THE DERIVATIVE ALONG TIME AND SPACE of an unknown read from a

@@ -3787,7 +3787,7 @@ contains
          if (allocated(with_nodes % node_rule)) solution % node_rule = with_nodes % node_rule
          solution % node_weight   = with_nodes % node_weight
          solution % node_position = with_nodes % node_position
-         solution % node_point    = with_nodes % node_point
+         solution % node_face_weight = with_nodes % node_face_weight
          solution % node_image    = with_nodes % node_image
       else
          solution % objective_value   = with_nodes % objective_value
@@ -3880,13 +3880,13 @@ contains
     end if
     allocate(stage_node(lb % stage:ubound(stages, 4), smax, ncells), source=0)
     if (allocated(solution % node_jet)) then
-       deallocate(solution % node_jet, solution % node_weight, solution % node_position, solution % node_point, &
+       deallocate(solution % node_jet, solution % node_weight, solution % node_position, solution % node_face_weight, &
             & solution % node_image)
     end if
     allocate(solution % node_jet(stride, nnodes, this % points % expansion % num_columns()), source=0.0_dp)
     allocate(solution % node_weight(nnodes), source=0.0_dp)
     allocate(solution % node_position(this % points % num_coordinates(), nnodes), source=0.0_dp)
-    allocate(solution % node_point(nnodes), source=0)
+    allocate(solution % node_face_weight(nnodes), source=0.0_dp)
     allocate(solution % node_image(nnodes), source=this_image())
     cell_owner = this % cell_owners()
 
@@ -3894,9 +3894,9 @@ contains
     do k = lb % instant, khi
        do c = 1, ncells
           nn = this % points % point_of(k, c) - offset
-          if (k >= klo) solution % node_point(nn) = nn + offset
+          if (k >= klo) solution % node_face_weight(nn) = cell_volume(c)
           solution % node_image(nn)       = cell_owner(c)
-          solution % node_position(:, nn) = this % points % position(nn)
+          solution % node_position(:, nn) = this % points % position(nn + offset)
           solution % node_jet(:, nn, :) = tuple(:, c, k, :)
        end do
     end do
@@ -7211,13 +7211,13 @@ contains
     end do
     allocate(stage_node(lbound(stages, 4):ubound(stages, 4), smax, nsites), source=0)
     if (allocated(solution % node_jet)) then
-       deallocate(solution % node_jet, solution % node_weight, solution % node_position, solution % node_point, &
+       deallocate(solution % node_jet, solution % node_weight, solution % node_position, solution % node_face_weight, &
             & solution % node_image)
     end if
     allocate(solution % node_jet(stride, nnodes, this % points % expansion % num_columns()), source=0.0_dp)
     allocate(solution % node_weight(nnodes), source=0.0_dp)
     allocate(solution % node_position(this % points % num_coordinates(), nnodes), source=0.0_dp)
-    allocate(solution % node_point(nnodes), source=0)
+    allocate(solution % node_face_weight(nnodes), source=0.0_dp)
     allocate(solution % node_image(nnodes), source=this_image())
     solution % node_rule = this % flux
     cell_owner = this % cell_owners()
@@ -7229,6 +7229,7 @@ contains
              site = (e - 1) * nq + q
              nn   = (k - 1) * nsites + site
              solution % node_image(nn) = cell_owner(this % elements % node(1, e))
+             solution % node_face_weight(nn) = this % elements % weight(q, e)
              position = this % points % position(this % points % point_of(k, this % elements % node(1, e)))
              position(size(position) - this % elements % dimension + 1:) = this % elements % position(:, q, e)
              solution % node_position(:, nn) = position

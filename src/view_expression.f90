@@ -9,7 +9,17 @@
 ! for a field's value, one t per order along the instants, one x, y
 ! or z per order along a spatial coordinate, nu for the design,
 ! lambda<j> for a multiplier; a constant by its value; an operator by
-! its symbol. The vertex index printed is the one root() reports.
+! its symbol. A view given the names of the unknowns and of the
+! design coordinates writes those in place of q<f> and nu. The vertex
+! index printed is the one root() reports.
+!
+! THE COMPOSITION OF VIEWS. Every vertex is written when its view is
+! formed, so that views of expressions named differently compose into
+! one: the sum and the product of two views, and a vertex of text over
+! no view (a leaf), over one (an operator written before its operand,
+! integral over t of), or over two (a separator written after the
+! first operand, a comma). The vertices of the operands come first,
+! the new root last.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -17,6 +27,7 @@
 module view_expression
 
   use util_precision      , only : dp
+  use util_string         , only : string
   use operation_expression, only : expression, expression_vertex, FIRST_COORDINATE
   use operation_expression, only : VERTEX_LEAF, VERTEX_CONSTANT, VERTEX_SUM, VERTEX_DIFFERENCE
   use operation_expression, only : VERTEX_PRODUCT, VERTEX_QUOTIENT, VERTEX_INTEGER_POWER
@@ -27,11 +38,16 @@ module view_expression
   implicit none
 
   private
-  public :: expression_view
+  public :: expression_view, operator(+), operator(*)
+
+  ! a vertex of a view that no expression has, written by its text;
+  ! the kinds of an expression's vertices are positive
+  integer, parameter :: VERTEX_TEXT = 0
 
   type :: expression_view
 
      type(expression_vertex), allocatable, private :: v(:)
+     type(string)           , allocatable, private :: label(:)
 
    contains
 
@@ -40,82 +56,172 @@ module view_expression
      procedure :: formula
      procedure :: brackets
      procedure :: digraph
-     procedure, private :: label
 
   end type expression_view
 
   interface expression_view
      module procedure create
+     module procedure text_view
   end interface expression_view
+
+  interface operator(+)
+     module procedure view_sum
+  end interface operator(+)
+
+  interface operator(*)
+     module procedure view_product
+  end interface operator(*)
 
 contains
 
-  function create(e) result(this)
+  function create(e, unknowns, designs) result(this)
 
     type(expression), intent(in) :: e
+    character(len=*), intent(in), optional :: unknowns(:), designs(:)
     type(expression_view) :: this
 
+    integer :: i
+
     this % v = e % vertices()
+    allocate(this % label(size(this % v)))
+    do i = 1, size(this % v)
+       this % label(i) = string(vertex_label(this % v(i), unknowns, designs))
+    end do
 
   end function create
 
+  function text_view(text, first, second) result(this)
+
+    character(len=*)     , intent(in) :: text
+    type(expression_view), intent(in), optional :: first, second
+    type(expression_view) :: this
+
+    this = composition(VERTEX_TEXT, text, first, second)
+
+  end function text_view
+
+  function view_sum(a, b) result(this)
+
+    type(expression_view), intent(in) :: a, b
+    type(expression_view) :: this
+
+    this = composition(VERTEX_SUM, '+', a, b)
+
+  end function view_sum
+
+  function view_product(a, b) result(this)
+
+    type(expression_view), intent(in) :: a, b
+    type(expression_view) :: this
+
+    this = composition(VERTEX_PRODUCT, '*', a, b)
+
+  end function view_product
+
+  ! the vertices of first, those of second numbered after them, and a
+  ! root of the kind and text given over the two roots
+  function composition(kind, text, first, second) result(this)
+
+    integer              , intent(in) :: kind
+    character(len=*)     , intent(in) :: text
+    type(expression_view), intent(in), optional :: first, second
+    type(expression_view) :: this
+
+    type(expression_vertex) :: root
+    type(expression_vertex), allocatable :: w(:)
+    integer :: n
+
+    root % kind = kind
+    allocate(this % v(0), this % label(0))
+    if (present(first)) then
+       this % v     = first % v
+       this % label = first % label
+       root % first = size(this % v)
+    end if
+    if (present(second)) then
+       n = size(this % v)
+       w = second % v
+       where (w % first  > 0) w % first  = w % first  + n
+       where (w % second > 0) w % second = w % second + n
+       this % v      = [this % v, w]
+       this % label  = [this % label, second % label]
+       root % second = size(this % v)
+    end if
+    this % v     = [this % v, root]
+    this % label = [this % label, string(text)]
+
+  end function composition
+
   !===================================================================!
-  ! The text of one vertex.
+  ! The text of one vertex of an expression.
   !===================================================================!
 
-  function label(this, i) result(text)
+  function vertex_label(u, unknowns, designs) result(text)
 
-    class(expression_view), intent(in) :: this
-    integer               , intent(in) :: i
+    type(expression_vertex), intent(in) :: u
+    character(len=*)       , intent(in), optional :: unknowns(:), designs(:)
     character(len=:), allocatable :: text
 
-    associate (u => this % v(i))
-      select case (u % kind)
-      case (VERTEX_LEAF)
-         select case (u % position)
-         case (ARGUMENT_DESIGN)
-            text = 'nu'
-         case (ARGUMENT_MULTIPLIER)
-            text = 'lambda' // written(u % field)
-         case (ARGUMENT_COORDINATE)
-            text = axis(u % field)
-         case default
-            text = 'q' // written(u % field) // repeat(axis(FIRST_COORDINATE), u % mixed_order) &
-                 & // repeat(axis(u % along), u % order)
-         end select
-      case (VERTEX_CONSTANT)
-         text = number(u % coefficient)
-      case (VERTEX_SUM)
-         text = '+'
-      case (VERTEX_DIFFERENCE)
-         text = '-'
-      case (VERTEX_PRODUCT)
-         text = '*'
-      case (VERTEX_QUOTIENT)
-         text = '/'
-      case (VERTEX_INTEGER_POWER)
-         text = '**' // written(nint(u % coefficient))
-      case (VERTEX_REAL_POWER)
-         text = '**' // number(u % coefficient)
-      case (VERTEX_FUNCTION)
-         select case (u % order)
-         case (SINE);        text = 'sin'
-         case (COSINE);      text = 'cos'
-         case (EXPONENTIAL); text = 'exp'
-         case (LOGARITHM);   text = 'log'
-         case (SQUARE_ROOT); text = 'sqrt'
-         case (UNIT_STEP);   text = 'heaviside'
-         case default
-            error stop 'view_expression: this vertex names a function that is not one of those defined'
-         end select
-      case (VERTEX_DERIVATIVE)
-         text = 'd' // repeat(axis(u % along), u % order)
-      case default
-         error stop 'view_expression: this vertex names a kind that is not one of those defined'
-      end select
-    end associate
+    select case (u % kind)
+    case (VERTEX_LEAF)
+       select case (u % position)
+       case (ARGUMENT_DESIGN)
+          text = leaf_name(designs, u % field, 'nu')
+       case (ARGUMENT_MULTIPLIER)
+          text = 'lambda' // written(u % field)
+       case (ARGUMENT_COORDINATE)
+          text = axis(u % field)
+       case default
+          text = leaf_name(unknowns, u % field, 'q' // written(u % field)) &
+               & // repeat(axis(FIRST_COORDINATE), u % mixed_order) // repeat(axis(u % along), u % order)
+       end select
+    case (VERTEX_CONSTANT)
+       text = number(u % coefficient)
+    case (VERTEX_SUM)
+       text = '+'
+    case (VERTEX_DIFFERENCE)
+       text = '-'
+    case (VERTEX_PRODUCT)
+       text = '*'
+    case (VERTEX_QUOTIENT)
+       text = '/'
+    case (VERTEX_INTEGER_POWER)
+       text = '**' // written(nint(u % coefficient))
+    case (VERTEX_REAL_POWER)
+       text = '**' // number(u % coefficient)
+    case (VERTEX_FUNCTION)
+       select case (u % order)
+       case (SINE);        text = 'sin'
+       case (COSINE);      text = 'cos'
+       case (EXPONENTIAL); text = 'exp'
+       case (LOGARITHM);   text = 'log'
+       case (SQUARE_ROOT); text = 'sqrt'
+       case (UNIT_STEP);   text = 'heaviside'
+       case default
+          error stop 'view_expression: this vertex names a function that is not one of those defined'
+       end select
+    case (VERTEX_DERIVATIVE)
+       text = 'd' // repeat(axis(u % along), u % order)
+    case default
+       error stop 'view_expression: this vertex names a kind that is not one of those defined'
+    end select
 
-  end function label
+  end function vertex_label
+
+  ! the name of index i among the names given; the default where no
+  ! names are given or i is beyond them
+  pure function leaf_name(names, i, default) result(text)
+
+    character(len=*), intent(in), optional :: names(:)
+    integer         , intent(in) :: i
+    character(len=*), intent(in) :: default
+    character(len=:), allocatable :: text
+
+    text = default
+    if (.not. present(names)) return
+    if (i <= size(names)) text = trim(names(i))
+
+  end function leaf_name
 
   ! the letter of a coordinate: t for the first, x, y, z for the next
   ! three, c<n> beyond
@@ -189,7 +295,7 @@ contains
     character(len=6) :: column
 
     write(column, '(i4,2x)') i
-    text = text // column // prefix // branch // this % label(i) // new_line('a')
+    text = text // column // prefix // branch // this % label(i) % str // new_line('a')
     if (this % v(i) % second > 0) then
        call tree_lines(this, this % v(i) % first,  continuation, '├── ', continuation // '│   ', text)
        call tree_lines(this, this % v(i) % second, continuation, '└── ', continuation // '    ', text)
@@ -242,7 +348,7 @@ contains
     integer, parameter :: gap = 3
     integer :: cl, cr, wl, wr, hl, hr, w, h, m, k, offset, start
 
-    text = this % label(i)
+    text = this % label(i) % str
 
     if (this % v(i) % first == 0) then
        allocate(cells(1, len(text)))
@@ -303,7 +409,10 @@ contains
   ! THE FORMULA in infix notation, parenthesized only where the tree
   ! requires it: a sum or difference under a product, quotient or
   ! power; a product or quotient under a power; the right operand of
-  ! a difference or quotient at its own level.
+  ! a difference or quotient at its own level. A vertex of text with
+  ! an operand binds below every operator, so that it is
+  ! parenthesized under each; its operand is parenthesized as that of
+  ! a product, a separator's operands never.
   !===================================================================!
 
   function formula(this) result(text)
@@ -327,11 +436,24 @@ contains
     character(len=:), allocatable :: first, second, operator
     integer :: level
 
-    operator = this % label(i)
+    operator = this % label(i) % str
     select case (this % v(i) % kind)
     case (VERTEX_LEAF, VERTEX_CONSTANT)
        level = 5
        text  = operator
+    case (VERTEX_TEXT)
+       level = 0
+       text  = operator
+       if (this % v(i) % second > 0) then
+          first  = infix(this, this % v(i) % first, 0)
+          second = infix(this, this % v(i) % second, 0)
+          text   = first // operator // ' ' // second
+       else if (this % v(i) % first > 0) then
+          first = infix(this, this % v(i) % first, 2)
+          text  = operator // ' ' // first
+       else
+          level = 5
+       end if
     case (VERTEX_FUNCTION, VERTEX_DERIVATIVE)
        level = 4
        first = infix(this, this % v(i) % first, 0)
@@ -377,7 +499,7 @@ contains
 
     character(len=:), allocatable :: operand
 
-    text = '[' // this % label(i)
+    text = '[' // this % label(i) % str
     if (this % v(i) % first > 0) then
        operand = bracketed(this, this % v(i) % first)
        text = text // ' ' // operand
@@ -405,7 +527,7 @@ contains
 
     text = 'digraph expression {' // new_line('a')
     do i = 1, size(this % v)
-       text = text // '  v' // written(i) // ' [label="' // this % label(i) // '"];' // new_line('a')
+       text = text // '  v' // written(i) // ' [label="' // this % label(i) % str // '"];' // new_line('a')
     end do
     do i = 1, size(this % v)
        if (this % v(i) % first > 0) then

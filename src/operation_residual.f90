@@ -340,7 +340,6 @@ module operation_residual
 
      procedure :: discretize => residual_discretize
      procedure :: multiplier => residual_multiplier
-     procedure :: num_terms
 
   end type continuous_residual
 
@@ -2291,11 +2290,6 @@ contains
     end do
 
   end function create_continuous
-
-  pure integer function num_terms(this)
-    class(continuous_residual), intent(in) :: this
-    num_terms = size(this % term)
-  end function num_terms
 
   function residual_sum(a, b) result(this)
 

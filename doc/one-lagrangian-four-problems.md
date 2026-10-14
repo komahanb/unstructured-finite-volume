@@ -81,7 +81,3 @@ and pressure, and gauge conditions require separate treatment. A free
 design requires an objective, the equations paired with their
 multiplier, and the expansion of order one along each design
 coordinate.
-
-## Not done
-
-- `expression_view` prints every design coordinate as `nu`.

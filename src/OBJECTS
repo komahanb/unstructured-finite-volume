@@ -89,5 +89,6 @@ view_bdf_loader.o \
 view_mesh_builder.o \
 operation_manifold.o \
 operation_residual.o \
+view_residual.o \
 operation_temporal_minimization.o \
 view_paraview_writer.o

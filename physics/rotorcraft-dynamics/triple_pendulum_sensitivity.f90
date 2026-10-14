@@ -31,7 +31,7 @@ program triple_pendulum_sensitivity
        &                          operator(+), operator(-), operator(*), operator(/), operator(**)
   use operation_residual , only : continuous_residual, discrete_residual, operator(+), operator(*)
   use operation_family   , only : dirk, bdf, chain
-  use multibody_dynamics , only : rigid_body, mechanism, spherical, revolute
+  use multibody_dynamics , only : rigid_body, mechanism, joint_conditions, spherical, revolute
 
   implicit none
 
@@ -42,7 +42,7 @@ program triple_pendulum_sensitivity
   type(continuous_manifold) :: omega, domega
   type(discrete_manifold)   :: omega_h
   type(continuous_field)    :: t, s1, s2, motion, objective, lambda_r, lambda, kappa
-  type(continuous_field), allocatable :: g1(:)
+  type(joint_conditions)    :: g1
   type(discrete_field)      :: estimate, solution, kappa_h, functional
   type(continuous_residual) :: r, g, d, L
   type(discrete_residual)   :: L_h
@@ -79,9 +79,10 @@ program triple_pendulum_sensitivity
   pendulum % density = pendulum % density + (s1 - 1.0_dp) * (1.0_dp / 2.0_dp) * (a % u(1) % derivative([t])**2 &
        & + a % u(2) % derivative([t])**2 + a % u(3) % derivative([t])**2)
 
-  ! the design s2 in joint 1: its point moved along z by (s2 - 1) 0.01 (1 - cos 2t)
+  ! the design s2 in joint 1: its point moved along z by (s2 - 1) 0.01 (1 - cos 2t),
+  ! whose rate at the first instant is zero
   g1 = spherical(a, [0.0_dp, 0.0_dp, 0.0_dp])
-  g1(3) = g1(3) - (s2 - 1.0_dp) * 0.01_dp * (1.0_dp - cos(2.0_dp * t))
+  g1 % field(3) = g1 % field(3) - (s2 - 1.0_dp) * 0.01_dp * (1.0_dp - cos(2.0_dp * t))
   call pendulum % joint(omega, 'joint1', g1)
   call pendulum % joint(omega, 'joint2', revolute(a, [1.0_dp, 0.0_dp, 0.0_dp], [0.0_dp, 1.0_dp, 0.0_dp], b))
   call pendulum % joint(omega, 'joint3', revolute(b, [3.0_dp, 0.0_dp, 0.0_dp], [0.0_dp, 1.0_dp, 0.0_dp], c))

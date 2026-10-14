@@ -1,9 +1,11 @@
 # The dynamics of a rotorcraft
 
 The rotor of the TACS case of `komahanb/rotorcraft-optimization`
-(dissertation, section 5.4): 26 bodies and 34 joints, the hub turning
-at 109.12 rad/s, three push rods driving the swashplates, and four
-blades, each a rigid plate or a beam, chosen at setup. Its motion over
+(dissertation, section 5.4): 26 bodies and 35 joints - TACS's 34 and
+the rotating scissors, which turns the upper swashplate with the hub -
+the hub turning at 109.12 rad/s, three push rods driving the
+swashplates, and four blades, each a rigid plate or a beam, chosen at
+setup. The bodies begin at the velocities the drivers require. Its motion over
 the revolutions, the blades' mass and the smooth maximum of their
 stress, the derivatives of these along the thickness of each strip of
 the span, and the thickness of least mass whose stress is bounded in
@@ -52,7 +54,7 @@ results follow the iterations.
 ## The setup, `rotorcraft.nml`
 
     &setup
-      blade = 'beam', scenario = 'collective', steps = 36, span_points = 5
+      blade = 'beam', scenario = 'collective', steps = 144, span_points = 5
     /
 
 | name | meaning | default |
@@ -62,7 +64,7 @@ results follow the iterations.
 | `thickness` | of the blades; with strips, of each strip | 2 cm |
 | `revolutions` | of the hub | 1 |
 | `steps` | per revolution | 360 |
-| `order` | of the backward differences of the march, 1 or 2 | 1 |
+| `order` | of the backward differences of the march, 1 or 2 | 2 |
 | `span_points` | of a blade as a beam | 9 |
 | `strips` | of the span, the thickness of each a design coordinate; 0, uniform | 0 |
 | `sensitivities` | with strips: the derivatives along each thickness | `.true.` |
@@ -77,34 +79,41 @@ results follow the iterations.
 
 ## Setups, and how long they take
 
-On one image of this workstation:
+On one image of this workstation, four setups running at once:
 
-- **The rigid rotor over a revolution**, with `rotorcraft.nml` as it is:
-  about 2 min. Printed: the energy and the hub's angle every 30
-  degrees.
-- **The blades as beams**, `blade = 'beam', steps = 36, span_points =
-  5`: about 1 min. Printed also: the motion of the tip of the blade at
-  zero degrees, the blades' mass and the smooth maximum of their
+- **The rigid rotor over a revolution**, with `rotorcraft.nml` as it is,
+  360 steps of bdf(2): about 4 min. Printed: the energy and the hub's
+  angle every 30 degrees.
+- **The blades as beams**, `blade = 'beam', steps = 144, span_points =
+  5`: about 3.5 min. Printed also: the motion of the tip of the blade
+  at zero degrees, the blades' mass and the smooth maximum of their
   stress.
 - **The derivatives along the thickness of 8 strips**, adding
-  `strips = 8, thickness = 8*0.02`: about half an hour, the expansion
+  `strips = 8, thickness = 8*0.02`: about 3.7 hours, the expansion
   along every strip. Printed for each strip: the mass's derivative, and the
   smooth maximum's by the expansion and by the reverse sweep.
-- **The least mass, one scenario**, adding `optimize = .true.,
-  ks_bound = 1.25`: 6 design iterations, about 11 min.
+- **The least mass, one scenario**, adding `optimize = .true.`: 2
+  design iterations, about 15 min.
 - **The least mass, three scenarios**, `scenario = 'collective',
-  'longitudinal', 'lateral'` with `ks_bound = 1.5`: 6 design
-  iterations, about 33 min. Printed for each scenario, at the design
-  found: its motion, mass and smooth maximum, the thickness of each
-  strip and the multiplier of its bound.
+  'longitudinal', 'lateral'`: 2 design iterations, about 46 min.
+  Printed for each scenario, at the design found: its motion, mass and
+  smooth maximum, the thickness of each strip and the multiplier of its
+  bound.
 
-At 36 steps of bdf(1) the blades' stress is 1.29 times the yield at
-2 cm and no thickness meets `ks_bound = 0.25`; the bounds 1.25 and 1.5
-above stand in for it until the march of the reduced case is decided.
-Five points of the span resolve the stress at the root to some 15 per
-cent; the case as TACS states it - 48 strips, 49 points of the span,
-360 steps, three scenarios - would take days (see
-`doc/rotorcraft-optimization.md`).
+At 144 steps of bdf(2) the blades' stress is the centrifugal stress of
+the turning blade, rho w^2 (R^2 - r^2)/2, 0.162 of the yield at the
+root whatever the thickness: the smooth maximum is 2.515e-2 at 2 cm and
+2.513e-2 at 1 cm, under the 0.0625 of `ks_bound = 0.25`, so that the
+least mass is every strip at its least thickness. A thinner root strip
+under the outer strips' load raises it: its derivative along the root
+strip's thickness is -1.2065, and the derivatives along the eight
+strips sum to 1.1e-3. Five points of the span resolve the smooth maximum
+to 2.2e-4 of its value at 17; 72 steps overstate it by 58 per cent,
+144 and 288 agree to 0.46 per cent. At 36 steps of bdf(1) without the
+rotating scissors the upper swashplate lagged the hub by 64 degrees
+and the stress was 1.29 times the yield; the costs of the case as TACS
+states it in `doc/rotorcraft-optimization.md` were measured on that
+march.
 
 ## Drawing the motion in ParaView
 
@@ -126,17 +135,16 @@ writes:
 | to optimize | the initial design marched first: `rotor_initial.pvd` and `rotor_optimized.pvd`, or `rotor_<scenario>_initial.pvd` and `rotor_<scenario>_optimized.pvd` |
 
 The least mass of one scenario, drawn at the initial design and at
-the design found, every third of the 37 instants, about 12 min:
+the design found, every twelfth of the 145 instants, about 19 min:
 
     &setup
-      blade = 'beam', scenario = 'collective', steps = 36, span_points = 5,
-      strips = 8, thickness = 8*0.02, optimize = .true., ks_bound = 1.25, every = 3,
+      blade = 'beam', scenario = 'collective', steps = 144, span_points = 5,
+      strips = 8, thickness = 8*0.02, optimize = .true., every = 12,
       meshes = '/home/komahan/_git/rotorcraft-optimization/deterministic-optimization/data/mesh'
     /
 
 writes `rotor_initial.pvd` and `rotor_optimized.pvd`, 13 instants each:
-the blades 2 cm thick in the first, and in the second 1.02 cm at the
-root strip and 1 cm outboard.
+the blades 2 cm thick in the first and 1 cm in the second.
 
 Each `.vtu` has `body`, the number of the body of each cell, and
 with beams `deflection`, the beam's deflection at each point in the
@@ -146,9 +154,8 @@ fixed axes, zero on the rigid bodies. In ParaView:
    instants drawn; Play animates the revolution.
 2. Colour by `body` to tell the bodies apart.
 3. With beams, Filters, Warp By Vector, the vector `deflection`, a
-   scale factor of 10 to 100 to see the blades bend - at 36 steps of
-   bdf(1) mostly in lag, the centripetal acceleration a step late;
-   colour by `deflection` to see its magnitude.
+   scale factor of 100 or more to see the blades bend, their tips by
+   some 2 mm; colour by `deflection` to see its magnitude.
 4. To compare the initial and the optimized design, open both `.pvd`
    files, split the view, show one in each and link the cameras
    (right-click in a view, Link Camera); the time slider moves both.

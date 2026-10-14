@@ -31,7 +31,7 @@ program triple_pendulum
   use operation_field   , only : continuous_field, discrete_field, operator(+), operator(-)
   use operation_residual, only : continuous_residual, discrete_residual, operator(+)
   use operation_family  , only : dirk, bdf, chain
-  use multibody_dynamics, only : rigid_body, mechanism, spherical, revolute
+  use multibody_dynamics, only : rigid_body, mechanism, joint_conditions, spherical, revolute
 
   implicit none
 
@@ -46,6 +46,7 @@ program triple_pendulum
   type(discrete_residual)   :: L_h
   type(mechanism)           :: pendulum
   type(rigid_body)          :: a, b, c
+  type(joint_conditions)    :: conditions(3)
   real(dp), allocatable     :: e(:), defect(:,:)
   character(len=32)         :: item
   integer :: k
@@ -95,9 +96,10 @@ program triple_pendulum
   energy_h = energy % at(solution)
   allocate(e(num_instants))
   call energy_h % values(e)
-  joints = continuous_field(omega, [spherical(a, [0.0_dp, 0.0_dp, 0.0_dp]), &
-       & revolute(a, [1.0_dp, 0.0_dp, 0.0_dp], [0.0_dp, 1.0_dp, 0.0_dp], b), &
-       & revolute(b, [3.0_dp, 0.0_dp, 0.0_dp], [0.0_dp, 1.0_dp, 0.0_dp], c)])
+  conditions(1) = spherical(a, [0.0_dp, 0.0_dp, 0.0_dp])
+  conditions(2) = revolute(a, [1.0_dp, 0.0_dp, 0.0_dp], [0.0_dp, 1.0_dp, 0.0_dp], b)
+  conditions(3) = revolute(b, [3.0_dp, 0.0_dp, 0.0_dp], [0.0_dp, 1.0_dp, 0.0_dp], c)
+  joints = continuous_field(omega, [conditions(1) % field, conditions(2) % field, conditions(3) % field])
   joints_h = joints % at(solution)
   defect = joints_h % value
 

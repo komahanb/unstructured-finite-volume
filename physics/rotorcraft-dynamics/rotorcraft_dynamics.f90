@@ -2,15 +2,23 @@
 ! THE DYNAMICS OF A FOUR-BLADED ROTOR (dissertation, section 5.4): the
 ! case of komahanb/rotorcraft-optimization, its 26 bodies and 34
 ! joints as collective.py, longitudinal_cyclic.py and
-! lateral_cyclic.py state them.
+! lateral_cyclic.py state them, and a 35th, the rotating scissors.
 !
 ! The hub turns at 109.12 rad/s about z. Three push rods move the
 ! lower swashplate along z by a sin(w t), w a quarter of the hub's
-! rate; the upper swashplate turns with the hub on a hinge about z,
-! and through the lower and upper pitch links and the blade caps it
-! sets the pitch of the blades. The base plate is fixed, the sphere
-! slides along the shaft's axis, and two horns hinge the lower
-! swashplate to the base plate.
+! rate; the upper swashplate hinges about z on the lower one, the
+! rotating scissors turns it with the hub, and through the lower and
+! upper pitch links and the blade caps it sets the pitch of the
+! blades. The base plate is fixed, the sphere slides along the
+! shaft's axis, and two horns hinge the lower swashplate to the base
+! plate. Without the scissors, as in TACS, the upper swashplate's turn
+! is free, held to the hub by the pitch links alone as they tilt: its
+! lag behind the hub after a revolution is the march's error in its
+! rate, 64.4 degrees at 36 steps of bdf(1), 10.1 at 360, 8.60 at 36
+! steps of bdf(2) and 2.14 at 72, the pitch links tilted by 43.3,
+! 6.1, 5.09 and 0.77 degrees. The bodies begin at the velocities the
+! drivers' rates require (multibody_dynamics, joint), the push rods'
+! a w along z where the table states them at rest.
 !
 ! The bodies are rigid, their table in rotor_bodies.txt. The blades
 ! are plates of span 1.56 from the radius 0.44, chord 0.121 and the
@@ -26,17 +34,21 @@
 ! The Lagrangian density is the bodies' kinetic energy less their
 ! potential energy, with every condition of the joints times its
 ! reaction; its stationarity in each unknown is that unknown's law.
-! The motion is marched by bdf(1) over the revolution, each instant
-! from the solution at the one before. The energy at the first instant
-! is 4.99144494e5 J, and over the revolution of 360 steps it falls to
-! 4.94255e5, the dissipation of bdf(1); the hub's angle holds to
-! 1e-16 and every condition of the joints to 2e-14 at every instant.
-! With the blades as beams the march is solved with the rows that tie
-! the copies of the unknowns of time alone eliminated, the rest by a
-! direct solve; at the tenth step of 360 the tip of the blade at zero
-! degrees has moved by 7.22238e-4 along the span, and along the chord
-! by -7.10262e-4, -7.07935e-4, -7.07820e-4, -7.07813e-4 at 3, 5, 9
-! and 17 points of the span, order four.
+! The motion is marched by bdf(2) over the revolution, from one step
+! of bdf(1). The energy at the first instant is 4.99432169e5 J,
+! 287.675 J above that of the table's rates, the motion the push rods'
+! rates require; at the end of a revolution of 360 steps it is
+! 4.99195025e5, the drivers' work and the march's error between, and
+! the hub's angle holds to 2.4e-18 at every instant printed. With the
+! blades as beams the march is solved with the rows that tie the
+! copies of the unknowns of time alone eliminated, the rest by a
+! direct solve; at 30 degrees of 144 steps the tip of the blade at
+! zero degrees has moved by 7.82649e-4 along the span, about the
+! static stretch of the turning blade, the integral over the span of
+! the centrifugal stress rho w^2 (R^2 - r^2)/2 over E, 7.6583e-4, and
+! along the chord by -2.13686e-3, -2.13816e-3, -2.13845e-3 and
+! -2.13847e-3 at 3, 5, 9 and 17 points of the span, the differences
+! falling by 4.5 and 15.
 !
 ! THE SETUP, rotorcraft.nml:
 !
@@ -71,8 +83,8 @@
 !      ks_bound     the bound of the von Mises ratio, 0.25
 !      bounds       the least and the greatest thickness, 0.01 and 0.02
 !      smoothness   the largest difference of adjacent strips, 1e-3
-!      order        of the backward differences of the march, 1 or 2,
-!                   from one step of bdf(1)
+!      order        of the backward differences of the march, 1 or 2
+!                   (2), from one step of bdf(1)
 !
 ! THE FUNCTIONS, of the blades as beams: the blades' mass over the
 ! revolutions, and the smooth maximum (operation_field, maximum) of
@@ -80,32 +92,37 @@
 ! corners and the middles of the long sides of their sections and the
 ! revolutions; with strips, their derivatives along the thickness of
 ! each strip by the expansion of the motion, and the smooth maximum's
-! by the reverse sweep, -kappa, its objective. At 36 steps, 5 points of
-! the span and eight strips at 2 cm the mass is 2.1737794328871449 kg
-! s, TACS's 2.173779432887122, and the smooth maximum at ks_weight =
-! 100 1.6760974217836406, the same on 1 and 2 images; along the root
+! by the reverse sweep, -kappa, its objective. At 144 steps, 5 points
+! of the span and eight strips at 2 cm the mass is 2.1737794328870783
+! kg s, TACS's 2.173779432887122, and the smooth maximum at ks_weight =
+! 100 2.5151758681472021e-2, the same on 1 and 2 images: the stress is
+! the centrifugal stress of the turning blade, rho w^2 (R^2 - r^2)/2,
+! 0.162 of the yield at the root at every thickness, its square there
+! 0.0262; the smooth maximum is 2.51151e-2, 2.51518e-2, 2.51569e-2 and
+! 2.51574e-2 at 3, 5, 9 and 17 points of the span, and 3.961e-2,
+! 2.515e-2 and 2.504e-2 at 72, 144 and 288 steps. Along the root
 ! strip's thickness its derivative by the expansion is
-! -166.45582953687486, by the reverse sweep the same to 5.4e-14 (along
-! the eight strips to 4e-14 to 2.5e-13), and central differences of
-! steps 5e-6, 1e-5 and 2e-5 miss it by their own error, 3.29e-5,
-! 1.317e-4 and 5.270e-4, extrapolated in the step's second and fourth
-! powers to within 1.4e-9.
+! -1.2065199020683000, a thinner root strip under the outer strips'
+! load, by the reverse sweep the same to 2.2e-15 (along the eight
+! strips to 5.0e-15), their sum 1.13e-3, a uniform thickness leaving
+! the stress as it is; central differences of steps 5e-6, 1e-5 and
+! 2e-5 miss it by their own error, 7.681e-7, 3.073e-6 and 1.229e-5,
+! extrapolated in the step's second and fourth powers to within
+! 2.0e-10.
 !
-! THE LEAST MASS (optimize), at 36 steps, 5 points of the span and
-! eight strips from 2 cm, with ks_bound = 1.25 - the stress of this
-! march is 1.29 times the yield at 2 cm, and no uniform blade meets
-! 0.25 at any march of the note - is found in six iterations: the root
-! strip 1.0203272556788471 cm and the seven others at their bound of
-! 1 cm, the mass 1.0896514020886789 kg s, the smooth maximum on its
-! bound to 5e-15 and its multiplier 0.037891294249. The three
-! scenarios together with ks_bound = 1.5 - their smooth maxima at 2 cm
-! 1.676, 2.106 and 2.991, at 1 cm 1.638, 1.811 and 2.323 - in six
-! iterations: the root strip 1.0308636977683841 cm and the seven others
-! at 1 cm, the mass 1.0910828959080567 kg s, the lateral's smooth
-! maximum on its bound to 7e-15 and its multiplier 0.0578856747211,
-! the others' 1.525 and 1.739 and zero; the lateral's derivative along
-! the root strip by central differences of step 1e-6, -234.706109775,
-! gives the multiplier as the mass's over it to 5e-9.
+! THE LEAST MASS (optimize), at 144 steps, 5 points of the span and
+! eight strips from 2 cm, with ks_bound = 0.25: the smooth maximum, the
+! square of the centrifugal stress, is below the bound's 0.0625 at
+! every uniform thickness from 1 to 2 cm, and the design found in two
+! iterations is every strip at its bound of 1 cm, the mass
+! 1.0868897164435392 kg s, the multiplier of the stress zero and that
+! of each strip's bound 13.586121455544628, the mass's derivative along
+! it, 4 rho c (L/8) 2 pi/w = 13.5861. The three scenarios together,
+! their smooth maxima at 1 cm 2.51338e-2, 2.51312e-2 and 2.51287e-2:
+! the same design in two iterations. At 36 steps of bdf(1) without the
+! scissors the smooth maximum was 1.676 at 2 cm, the stress of the
+! upper swashplate's lag, and the least mass under the bound 1.25 in
+! its place left the root strip at 1.02 cm.
 !
 ! THE DRAWING: every rigid body is drawn with the surface of its mesh,
 ! each blade with the box of its plate, its thickness that of each
@@ -134,7 +151,7 @@ program rotorcraft_dynamics
   use operation_family  , only : dirk, bdf, chain
   use operation_finite_element, only : finite_element
   use multibody_dynamics, only : rigid_body, beam_blade, mechanism, body_table, surface, spherical, revolute, &
-       &                         cylindrical, fixed, rigid_link, revolute_driver, motion_driver
+       &                         cylindrical, fixed, rigid_link, revolute_driver, motion_driver, scissors
   use view_bdf_loader   , only : bdf_surface
 
   implicit none
@@ -150,7 +167,7 @@ program rotorcraft_dynamics
   character(len=256) :: meshes = ''
   real(dp)           :: thickness(48) = 0.02_dp, yield = 350.0e6_dp, ks_weight = 100.0_dp
   real(dp)           :: ks_bound = 0.25_dp, bounds(2) = [0.01_dp, 0.02_dp], smoothness = 1.0e-3_dp
-  integer            :: revolutions = 1, steps = 360, every = 10, span_points = 9, strips = 0, order = 1
+  integer            :: revolutions = 1, steps = 360, every = 10, span_points = 9, strips = 0, order = 2
   logical            :: sensitivities = .true., optimize = .false.
   namelist /setup/ blade, scenario, thickness, revolutions, steps, meshes, every, span_points, strips, yield, &
        & ks_weight, sensitivities, optimize, ks_bound, bounds, smoothness, order
@@ -340,9 +357,11 @@ contains
          &     uph => part(table % row('upper_horn')))
 
       ! the shaft turns at its rate; the swashplates hinge about z, the
+      ! upper one turned with the shaft by the rotating scissors, the
       ! lower one on the sphere, which slides along the shaft's axis
       call rotor % joint(omega, 'hub_driver', revolute_driver(hub, ez, speed, t))
       call rotor % joint(omega, 'swashplates', revolute(lsp, [0.0_dp, 0.0_dp, 0.4_dp], ez, usp))
+      call rotor % joint(omega, 'scissors', scissors(hub, ez, usp))
       call rotor % joint(omega, 'swashplate_sphere', spherical(lsp, [0.0_dp, 0.0_dp, 0.4_dp], sphere))
       call rotor % joint(omega, 'sphere_shaft', cylindrical(sphere, [0.0_dp, 0.0_dp, 0.4_dp], ez))
 

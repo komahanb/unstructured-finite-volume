@@ -16,8 +16,8 @@
 #                        the driver's reactions and the tip's motion;
 #                        the beam approaches the plate as E grows
 #   rotorcraft_dynamics  the rotor of komahanb/rotorcraft-optimization,
-#                        26 bodies and 34 joints, one revolution by
-#                        bdf(1), the setup read from rotorcraft.nml:
+#                        26 bodies and 35 joints, one revolution by
+#                        bdf(2), the setup read from rotorcraft.nml:
 #                        the blade model, the scenario, the steps, the
 #                        meshes the bodies are drawn with
 #

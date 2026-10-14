@@ -37,22 +37,44 @@
 !      revolute_driver(a, e, w, t) a turns about e at the rate w, its
 !                                  centre fixed
 !      motion_driver(a, d, w, t)   the centre of a moves by d sin(w t)
+!      scissors(a, e, b)           b turns with a about the direction e
+!                                  of a: the component along e of the
+!                                  rotation between them zero, the
+!                                  rotating scissors of a swashplate
 !
 ! The two directions normal to e are those of TACS: with i the axis of
 ! the least component of e, e2 = e x i and e1 = e2 x e. Two rotations
 ! agree where the vector part of the rotation between them vanishes,
 ! eta_a eps_b - eta_b eps_a - eps_a x eps_b for the Euler parameters
-! of a and b: three conditions independent at every orientation,
-! which equal parameters eps_a = eps_b are not where eta = 0.
+! of a and b, in the axes of a: three conditions independent at every
+! orientation, which equal parameters eps_a = eps_b are not where
+! eta = 0. Its component along e alone is the scissors: exact where b
+! turns about e alone, as under the collective; where b tilts as well,
+! the turn about e to first order in the tilt.
+!
+! Each joint states, beside its conditions, the rate of each at the
+! first instant, where every body is in the reference configuration:
+! the rate of the point x of a body is v + w x (x - r0), of its
+! direction e, w x e, and of its Euler parameters eps, w/2, for the
+! velocity v of its centre and its angular velocity w; a driver adds
+! the rate of its explicit dependence on time.
 !
 ! THE MECHANISM collects the bodies and the joints: the Lagrangian
 ! density, the sum of the bodies' actions and of the products of the
 ! conditions with their reactions; the unknowns in the order
-! declared; and the initial data, each body moving at the velocity v
-! and turning at the angular velocity w about the origin,
+! declared; and the initial data, each body in the reference
+! configuration moving at the velocity v and turning at the angular
+! velocity w,
 !
-!      u = 0,  eta = 1,  eps = 0,  u' = v + w x r0,  eta' = 0,
-!      eps' = w/2.
+!      u = 0,  eta = 1,  eps = 0,  u' = v,  eta' = 0,  eps' = w/2,
+!
+! the velocities nearest those stated - v + w x r0 and w, of a body
+! turning at w about the origin - in the kinetic energy, sum over the
+! bodies of m |v - v_s|^2 + (w - w_s).J (w - w_s), whose rate of every
+! condition is zero: the velocities just after the conditions act on
+! the stated ones as impulses. Velocities stated with every rate zero
+! are kept, to every digit; the drivers' rates at the first instant
+! are met where none is stated.
 !
 ! Its laws are the stationarities of the density in each unknown: the
 ! equation of motion of each coordinate, and the condition paired
@@ -100,15 +122,18 @@ module multibody_dynamics
        &                           operator(+), operator(-), operator(*), operator(/), operator(**)
   use operation_expression, only : expression
   use view_paraview_writer, only : paraview_writer, time_series
+  use util_factorisation  , only : dense_factorisation
 
   implicit none
 
   private
-  public :: rigid_body, beam_blade, mechanism, body_table, surface
-  public :: spherical, revolute, cylindrical, fixed, rigid_link, revolute_driver, motion_driver
+  public :: rigid_body, beam_blade, mechanism, body_table, surface, joint_conditions
+  public :: spherical, revolute, cylindrical, fixed, rigid_link, revolute_driver, motion_driver, scissors
 
+  ! a body, and its number among the bodies of its mechanism
   type :: rigid_body
      character(len=:), allocatable :: name
+     integer  :: number       = 0
      real(dp) :: centre(3)    = 0.0_dp
      real(dp) :: mass         = 0.0_dp
      real(dp) :: inertia(3,3) = 0.0_dp
@@ -141,6 +166,17 @@ module multibody_dynamics
      integer , allocatable :: corners(:,:), count(:), kinds(:)
   end type surface
 
+  ! the conditions of a joint, and the rate of each at the first
+  ! instant: rate(:, k) times the velocities v_a, w_a, v_b, w_b of the
+  ! bodies numbered in body, plus explicit(k), the rate of the
+  ! condition's explicit dependence on time; the number of an absent
+  ! second body zero
+  type :: joint_conditions
+     type(continuous_field), allocatable :: field(:)
+     integer :: body(2) = 0
+     real(dp), allocatable :: rate(:,:), explicit(:)
+  end type joint_conditions
+
   type :: mechanism
      type(continuous_field) :: t
      real(dp) :: gravity(3) = [0.0_dp, 0.0_dp, -9.81_dp]
@@ -149,6 +185,16 @@ module multibody_dynamics
      type(continuous_field), allocatable :: unknowns(:)
      type(continuous_field), allocatable :: initial(:)
      type(continuous_field), allocatable :: guess(:)
+     ! the bodies, the velocities stated of each - of its centre and its
+     ! angular velocity - the row of its velocity in the initial data,
+     ! and whether the joints corrected it; the rates of the joints'
+     ! conditions at the first instant, and the bodies each reads
+     type(rigid_body), allocatable :: bodies(:)
+     real(dp), allocatable :: stated_velocity(:,:)
+     integer , allocatable :: velocity_row(:)
+     logical , allocatable :: corrected(:)
+     real(dp), allocatable :: rate(:,:), explicit(:)
+     integer , allocatable :: rate_bodies(:,:)
      ! the density over the span of the blades as beams, the span
      ! coordinate and the space factor, the unknowns of time and span,
      ! and the conditions at the root
@@ -203,6 +249,8 @@ contains
     if (present(gravity)) this % gravity = gravity
     allocate(this % unknowns(0), this % initial(0), this % guess(0), this % drawn(0), this % surfaces(0))
     allocate(this % of_space(0), this % root(0), this % drawn_beams(0), this % beam_bodies(0), this % beam_surfaces(0))
+    allocate(this % bodies(0), this % stated_velocity(6, 0), this % velocity_row(0), this % corrected(0), &
+         & this % rate(12, 0), this % explicit(0), this % rate_bodies(2, 0))
 
   end function create_mechanism
 
@@ -231,6 +279,7 @@ contains
     if (present(velocity))         v = velocity
     if (present(angular_velocity)) w = angular_velocity
     b % name    = name
+    b % number  = size(this % bodies) + 1
     b % centre  = centre
     b % mass    = mass
     b % inertia = inertia
@@ -256,8 +305,12 @@ contains
     end if
 
     ! the initial data: at rest in the reference configuration but for
-    ! the velocity of the centre and the rate of the rotation
+    ! the velocity of the centre and the rate of the rotation, stated
+    ! until the joints' conditions restate them
     start = v + cross_product(w, centre)
+    this % velocity_row    = [this % velocity_row, size(this % initial) + 8]
+    this % corrected       = [this % corrected, .false.]
+    this % stated_velocity = reshape([this % stated_velocity, start, w], [6, b % number])
     this % initial = [this % initial, (b % u(k), k = 1, 3), b % eta - 1.0_dp, (b % eps(k), k = 1, 3), &
          & (b % u(k) % derivative([this % t]) - start(k), k = 1, 3), b % eta % derivative([this % t]), &
          & (b % eps(k) % derivative([this % t]) - w(k) / 2.0_dp, k = 1, 3)]
@@ -277,13 +330,17 @@ contains
     else
        this % guess = [this % guess, (v(k) * this % t, k = 1, 3), unit, zero, zero, zero, zero]
     end if
+    this % bodies = [this % bodies, b]
 
   end subroutine body
 
   !===================================================================!
   ! A JOINT of the mechanism: a reaction declared for each condition
   ! under the joint's name, the products of the conditions with their
-  ! reactions added to the density.
+  ! reactions added to the density; the rates of its conditions at the
+  ! first instant added to those of the joints before it, and the
+  ! initial velocities restated to meet them all. Invalid input: a
+  ! joint of a body not of this mechanism.
   !===================================================================!
 
   subroutine joint(this, omega, name, conditions)
@@ -291,22 +348,107 @@ contains
     class(mechanism)         , intent(inout) :: this
     type(continuous_manifold), intent(inout) :: omega
     character(len=*)         , intent(in)    :: name
-    type(continuous_field)   , intent(in)    :: conditions(:)
+    type(joint_conditions)   , intent(in)    :: conditions
 
     type(continuous_field) :: reaction
     character(len=8) :: label
-    integer :: k
+    integer :: k, n
 
-    do k = 1, size(conditions)
+    do k = 1, 2
+       if (conditions % body(k) < 0 .or. conditions % body(k) > size(this % bodies) .or. &
+            & (k == 1 .and. conditions % body(k) == 0)) then
+          error stop 'multibody_dynamics: a joint is of bodies of its mechanism'
+       end if
+    end do
+    do k = 1, size(conditions % field)
        write(label, '(i0)') k
        reaction = this % time_unknown(omega, name // '_' // trim(label))
        this % unknowns = [this % unknowns, reaction]
        this % of_space = [this % of_space, .false.]
        this % guess    = [this % guess, continuous_field(omega, [0.0_dp])]
-       call add(this, reaction * conditions(k))
+       call add(this, reaction * conditions % field(k))
     end do
+    n = size(this % explicit) + size(conditions % explicit)
+    this % rate        = reshape([this % rate, conditions % rate], [12, n])
+    this % explicit    = [this % explicit, conditions % explicit]
+    this % rate_bodies = reshape([this % rate_bodies, (conditions % body, k = 1, size(conditions % explicit))], [2, n])
+    call restate_velocities(this)
 
   end subroutine joint
+
+  !===================================================================!
+  ! THE INITIAL VELOCITIES restated: of every body, the velocity v of
+  ! its centre and its angular velocity w nearest those stated in the
+  ! kinetic energy whose rate of every condition is zero. The
+  ! correction d from the stated x_s solves
+  !
+  !      [ M  A^T ] [ d  ]   [      0       ]
+  !      [ A   0  ] [ mu ] = [ -(A x_s + c) ],
+  !
+  ! M the bodies' masses and inertias, A the rates' rows and c their
+  ! explicit parts, so that stated velocities whose every rate is zero
+  ! have the correction zero, to every digit. A body's rows of the
+  ! initial data are formed again where its correction is not zero, or
+  ! was not after an earlier joint. Invalid input: conditions whose
+  ! rates are dependent, which the factorisation finds singular.
+  !===================================================================!
+
+  subroutine restate_velocities(this)
+
+    class(mechanism), intent(inout) :: this
+
+    type(dense_factorisation) :: factors
+    real(dp), allocatable :: system(:,:), right(:), solution(:)
+    real(dp) :: x(6)
+    integer  :: nb, nr, b, r, j, i, column, row
+
+    nb = size(this % bodies)
+    nr = size(this % explicit)
+    allocate(system(6 * nb + nr, 6 * nb + nr), right(6 * nb + nr), source=0.0_dp)
+    do b = 1, nb
+       column = 6 * (b - 1)
+       do i = 1, 3
+          system(column + i, column + i) = this % bodies(b) % mass
+       end do
+       system(column + 4:column + 6, column + 4:column + 6) = this % bodies(b) % inertia
+    end do
+    do r = 1, nr
+       row = 6 * nb + r
+       right(row) = -this % explicit(r)
+       do j = 1, 2
+          b = this % rate_bodies(j, r)
+          if (b == 0) cycle
+          column = 6 * (b - 1)
+          system(row, column + 1:column + 6) = system(row, column + 1:column + 6) + this % rate(6 * j - 5:6 * j, r)
+          system(column + 1:column + 6, row) = system(row, column + 1:column + 6)
+          right(row) = right(row) - dot_product(this % rate(6 * j - 5:6 * j, r), this % stated_velocity(:, b))
+       end do
+    end do
+    if (all(right == 0.0_dp)) then
+       allocate(solution(6 * nb + nr), source=0.0_dp)
+    else
+       call factors % factorise(system, epsilon(1.0_dp), equilibrated=.true.)
+       if (factors % singular()) then
+          error stop 'multibody_dynamics: the rates of the joints'' conditions at the first instant are dependent'
+       end if
+       call factors % substitute(right, solution, transposed=.false.)
+    end if
+
+    ! the rows of the velocity of each body corrected, now or after an
+    ! earlier joint
+    do b = 1, nb
+       if (all(solution(6 * b - 5:6 * b) == 0.0_dp) .and. .not. this % corrected(b)) cycle
+       this % corrected(b) = any(solution(6 * b - 5:6 * b) /= 0.0_dp)
+       x = this % stated_velocity(:, b) + solution(6 * b - 5:6 * b)
+       associate (body => this % bodies(b), first => this % velocity_row(b))
+         do i = 1, 3
+            this % initial(first + i - 1) = body % u(i) % derivative([this % t]) - x(i)
+            this % initial(first + 3 + i) = body % eps(i) % derivative([this % t]) - x(3 + i) / 2.0_dp
+         end do
+       end associate
+    end do
+
+  end subroutine restate_velocities
 
   !===================================================================!
   ! A BLADE AS A BEAM in the axes of the body it is fixed to: the
@@ -917,73 +1059,87 @@ contains
   end function potential_energy
 
   !===================================================================!
-  ! THE JOINTS, each the list of its conditions.
+  ! THE JOINTS, each the list of its conditions and the rate of each
+  ! at the first instant.
   !===================================================================!
 
   function spherical(a, x, b) result(g)
     type(rigid_body), intent(in) :: a
     real(dp)        , intent(in) :: x(3)
     type(rigid_body), intent(in), optional :: b
-    type(continuous_field) :: g(3)
-    type(continuous_field) :: pb(3)
+    type(joint_conditions) :: g
+    type(continuous_field) :: pa(3), pb(3)
     integer :: k
-    g = a % position(x)
+    pa = a % position(x)
     if (present(b)) then
        pb = b % position(x)
-       do k = 1, 3
-          g(k) = g(k) - pb(k)
-       end do
+       g  = joint_of([(pa(k) - pb(k), k = 1, 3)], a, b)
+       g % rate(7:12, :) = -point_rate(b % centre, x)
     else
-       do k = 1, 3
-          g(k) = g(k) - x(k)
-       end do
+       g = joint_of([(pa(k) - x(k), k = 1, 3)], a)
     end if
+    g % rate(1:6, :) = point_rate(a % centre, x)
   end function spherical
 
   function revolute(a, x, e, b) result(g)
     type(rigid_body), intent(in) :: a, b
     real(dp)        , intent(in) :: x(3), e(3)
-    type(continuous_field) :: g(5)
+    type(joint_conditions) :: g
+    type(joint_conditions) :: s
     type(continuous_field) :: ea(3)
     real(dp) :: e1(3), e2(3)
     call normals(e, e1, e2)
     ea = a % direction(e)
-    g(1:3) = spherical(a, x, b)
-    g(4)   = dot(ea, b % direction(e1))
-    g(5)   = dot(ea, b % direction(e2))
+    s  = spherical(a, x, b)
+    g  = joint_of([s % field, dot(ea, b % direction(e1)), dot(ea, b % direction(e2))], a, b)
+    g % rate(:, 1:3)  = s % rate
+    g % rate(4:6, 4)  = cross_product(e, e1)
+    g % rate(10:12, 4) = -cross_product(e, e1)
+    g % rate(4:6, 5)  = cross_product(e, e2)
+    g % rate(10:12, 5) = -cross_product(e, e2)
   end function revolute
 
   function cylindrical(a, x, e) result(g)
     type(rigid_body), intent(in) :: a
     real(dp)        , intent(in) :: x(3), e(3)
-    type(continuous_field) :: g(4)
+    type(joint_conditions) :: g
     type(continuous_field) :: d(3), ea(3)
     real(dp) :: e1(3), e2(3)
+    integer :: k
     call normals(e, e1, e2)
-    d  = spherical(a, x)
+    d  = a % position(x)
+    d  = [(d(k) - x(k), k = 1, 3)]
     ea = a % direction(e)
-    g(1) = dotted(d, e1)
-    g(2) = dotted(d, e2)
-    g(3) = dotted(ea, e1)
-    g(4) = dotted(ea, e2)
+    g  = joint_of([dotted(d, e1), dotted(d, e2), dotted(ea, e1), dotted(ea, e2)], a)
+    g % rate(1:6, 1) = matmul(point_rate(a % centre, x), e1)
+    g % rate(1:6, 2) = matmul(point_rate(a % centre, x), e2)
+    g % rate(4:6, 3) = cross_product(e, e1)
+    g % rate(4:6, 4) = cross_product(e, e2)
   end function cylindrical
 
   function fixed(a) result(g)
     type(rigid_body), intent(in) :: a
-    type(continuous_field) :: g(6)
-    g = [a % u, a % eps]
+    type(joint_conditions) :: g
+    integer :: k
+    g = joint_of([a % u, a % eps], a)
+    do k = 1, 3
+       g % rate(k, k)         = 1.0_dp
+       g % rate(3 + k, 3 + k) = 0.5_dp
+    end do
   end function fixed
 
   function rigid_link(a, b) result(g)
     type(rigid_body), intent(in) :: a, b
-    type(continuous_field) :: g(6)
-    type(continuous_field) :: c(3)
+    type(joint_conditions) :: g
+    type(continuous_field) :: pa(3)
     integer :: k
-    g(1:3) = a % position(b % centre)
-    c = cross(a % eps, b % eps)
+    pa = a % position(b % centre)
+    g  = joint_of([(pa(k) - b % u(k) - b % centre(k), k = 1, 3), relative_rotation(a, b)], a, b)
+    g % rate(1:6, 1:3) = point_rate(a % centre, b % centre)
     do k = 1, 3
-       g(k)     = g(k) - b % u(k) - b % centre(k)
-       g(3 + k) = a % eta * b % eps(k) - b % eta * a % eps(k) - c(k)
+       g % rate(6 + k, k)     = -1.0_dp
+       g % rate(3 + k, 3 + k) = -0.5_dp
+       g % rate(9 + k, 3 + k) = 0.5_dp
     end do
   end function rigid_link
 
@@ -993,8 +1149,8 @@ contains
     type(rigid_body)      , intent(in) :: a
     real(dp)              , intent(in) :: e(3), rate
     type(continuous_field), intent(in) :: t
-    type(continuous_field) :: g(6)
-    type(continuous_field) :: s, c, turned(3)
+    type(joint_conditions) :: g
+    type(continuous_field) :: s, c, turned(3), f(6)
     real(dp) :: axis(3)
     integer :: k
     axis   = e / norm2(e)
@@ -1002,9 +1158,15 @@ contains
     c      = cos((rate / 2.0_dp) * t)
     turned = crossed(a % eps, axis)
     do k = 1, 3
-       g(k)     = a % u(k)
-       g(3 + k) = c * a % eps(k) + s * turned(k)
-       if (axis(k) /= 0.0_dp) g(3 + k) = g(3 + k) - axis(k) * s * a % eta
+       f(k)     = a % u(k)
+       f(3 + k) = c * a % eps(k) + s * turned(k)
+       if (axis(k) /= 0.0_dp) f(3 + k) = f(3 + k) - axis(k) * s * a % eta
+    end do
+    g = joint_of(f, a)
+    do k = 1, 3
+       g % rate(k, k)         = 1.0_dp
+       g % rate(3 + k, 3 + k) = 0.5_dp
+       g % explicit(3 + k)    = -axis(k) * rate / 2.0_dp
     end do
   end function revolute_driver
 
@@ -1012,14 +1174,66 @@ contains
     type(rigid_body)      , intent(in) :: a
     real(dp)              , intent(in) :: d(3), rate
     type(continuous_field), intent(in) :: t
-    type(continuous_field) :: g(3)
+    type(joint_conditions) :: g
     type(continuous_field) :: s
     integer :: k
     s = sin(rate * t)
+    g = joint_of([(a % u(k) - d(k) * s, k = 1, 3)], a)
     do k = 1, 3
-       g(k) = a % u(k) - d(k) * s
+       g % rate(k, k)  = 1.0_dp
+       g % explicit(k) = -d(k) * rate
     end do
   end function motion_driver
+
+  function scissors(a, e, b) result(g)
+    type(rigid_body), intent(in) :: a, b
+    real(dp)        , intent(in) :: e(3)
+    type(joint_conditions) :: g
+    g = joint_of([dotted(relative_rotation(a, b), e)], a, b)
+    g % rate(4:6, 1)   = -e / 2.0_dp
+    g % rate(10:12, 1) = e / 2.0_dp
+  end function scissors
+
+  ! the conditions of a joint of a, and of b where present, their
+  ! rates zero until the joint states them
+  function joint_of(field, a, b) result(g)
+    type(continuous_field), intent(in) :: field(:)
+    type(rigid_body)      , intent(in) :: a
+    type(rigid_body)      , intent(in), optional :: b
+    type(joint_conditions) :: g
+    g % field   = field
+    g % body(1) = a % number
+    if (present(b)) g % body(2) = b % number
+    allocate(g % rate(12, size(field)), g % explicit(size(field)), source=0.0_dp)
+  end function joint_of
+
+  ! the rate at the first instant of the point x of a body of the
+  ! centre r0: column k the coefficients of v and w in its component
+  ! k, e_k and (x - r0) x e_k
+  pure function point_rate(centre, x) result(r)
+    real(dp), intent(in) :: centre(3), x(3)
+    real(dp) :: r(6, 3), e(3)
+    integer  :: k
+    do k = 1, 3
+       e        = 0.0_dp
+       e(k)     = 1.0_dp
+       r(1:3, k) = e
+       r(4:6, k) = cross_product(x - centre, e)
+    end do
+  end function point_rate
+
+  ! the vector part of the rotation between those of a and b, in the
+  ! axes of a: eta_a eps_b - eta_b eps_a - eps_a x eps_b
+  function relative_rotation(a, b) result(r)
+    type(rigid_body), intent(in) :: a, b
+    type(continuous_field) :: r(3)
+    type(continuous_field) :: c(3)
+    integer :: k
+    c = cross(a % eps, b % eps)
+    do k = 1, 3
+       r(k) = a % eta * b % eps(k) - b % eta * a % eps(k) - c(k)
+    end do
+  end function relative_rotation
 
   !===================================================================!
   ! THE ALGEBRA OF DIRECTIONS: fields and real vectors, a zero

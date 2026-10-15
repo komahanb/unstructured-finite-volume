@@ -3151,7 +3151,9 @@ contains
   ! measured before, where the design meets the tolerance and the
   ! placement does not lower its work, where a design fails the
   ! tolerance after one that met it, or fails it by no less than the
-  ! design before. The design returned is, of those measured, the one
+  ! design before - a design on which the base family does not
+  ! converge fails it with no error measured. The design returned is,
+  ! of those measured, the one
   ! of least work that met the tolerance, or of least error where none
   ! did, solved with its own families from the base family's values,
   ! the user's expansion along the design restored; its error is
@@ -3178,18 +3180,19 @@ contains
     end type design_record
 
     type(discrete_residual) :: iterate, base_residual
-    type(discrete_field) :: start, base_solution, objective_field
+    type(discrete_field) :: start, base_solution, objective_field, measured
     type(design_record), allocatable :: designs(:)
     type(expansion) :: original
     type(family) :: base
     type(family), allocatable :: pool(:)
     type(chain) :: proposed_schemes
     real(dp), allocatable :: t(:), e_base(:), eta(:), e(:,:), gradient(:,:,:), partial(:,:), density(:)
-    real(dp), allocatable :: proposed(:)
+    real(dp), allocatable :: proposed(:), measured_t(:)
     integer , allocatable :: depth(:), proposed_family(:)
     character(len=32), allocatable :: names(:)
     real(dp) :: scale, tol, error_current, j_base, j_final, uncertainty
     integer :: nf, top, g, n, k, round, returned, a, level
+    logical :: converged
 
     if (free_design(this)) then
        error stop 'operation_residual: a pool of families is chosen for a design fixed by an equality'
@@ -3252,7 +3255,18 @@ contains
        if (n < 4) then
           error stop 'operation_residual: the curvature of J_h gives the error of each step from four instants'
        end if
-       call solve_base()
+       call solve_base(converged)
+       ! a design on which the base family does not converge fails the
+       ! tolerance, no error measured, and ends the rounds
+       if (.not. converged) then
+          if (round == 1) error stop 'operation_residual: the base family of the pool does not converge on the instants given'
+          designs = [designs, design_record(t, iterate % schemes, chain_work(iterate % schemes), huge(1.0_dp), .false.)]
+          if (level >= 1) print '(a, i0, a, i0, a)', 'pool round ', round, ': instants ', n, &
+               & '  the base family does not converge'
+          exit
+       end if
+       measured   = base_solution
+       measured_t = t
 
        ! the error of each family at each step, and of the present design
        allocate(e(n, size(pool)))
@@ -3326,10 +3340,14 @@ contains
     if (returned /= size(designs)) then
        iterate % points % instant = designs(returned) % instants
        iterate % schemes = designs(returned) % schemes
-       start = discrete_field(iterate % points, values_at(base_solution, t, designs(returned) % instants, nf), names)
+       start = discrete_field(iterate % points, values_at(measured, measured_t, designs(returned) % instants, nf), &
+            & names)
        t = iterate % points % instant
        n = size(t)
-       call solve_base()
+       call solve_base(converged)
+       if (.not. converged) then
+          error stop 'operation_residual: the base family of the pool does not converge again on a design it converged on'
+       end if
        start = discrete_field(iterate % points, values_at(base_solution, t, t, nf), names)
     else
        start = discrete_field(iterate % points, values_at(base_solution, t, t, nf), names)
@@ -3370,14 +3388,17 @@ contains
     end function runs
 
     ! the base family on the instants t, by the curvature expansion: its
-    ! solution, the error of each of its steps and its J_h
-    subroutine solve_base()
+    ! solution, the error of each of its steps and its J_h, or converged
+    ! false
+    subroutine solve_base(converged)
+      logical, intent(out) :: converged
       base_residual = iterate
       base_residual % schemes      = chain([(base, k = 1, n)], from=[(k, k = 1, n)])
       ! the instants pinned, the curvature their multipliers' derivatives
       base_residual % instant_multiplier = 'pin of the instants'
       base_residual % points % expansion = curvature_expansion(original, n)
-      call base_residual % zero_at_design(start, base_solution)
+      call base_residual % zero_at_design(start, base_solution, converged=converged)
+      if (.not. converged) return
       e_base = base_residual % curvature_errors(base_solution, base % accuracy(), uncertainty)
       objective_field = base_residual % objective % at(base_solution)
       j_base = objective_field % value(1, 1)
@@ -4514,16 +4535,22 @@ contains
   ! schedule; two images on a manifold of time alone divide a
   ! scheduled reverse sweep instead. With kappa present, the
   ! multipliers of the design, -dJ/ds in every column of the
-  ! expansion, are returned in it.
+  ! expansion, are returned in it. With converged present, a block
+  ! whose Newton iteration does not converge ends the march, converged
+  ! false and no solution formed, where it stops the program
+  ! otherwise; under a schedule or a pipelined chain it stops the
+  ! program either way.
   !===================================================================!
 
-  recursive subroutine zero_at_design(this, estimate, solution, checkpoint, snapshots, kappa, functional_kappa)
+  recursive subroutine zero_at_design(this, estimate, solution, checkpoint, snapshots, kappa, functional_kappa, &
+       & converged)
 
     class(discrete_residual), intent(in)  :: this
     type(discrete_field)    , intent(in)  :: estimate
     type(discrete_field)    , intent(out) :: solution
     integer                 , intent(in), optional :: checkpoint, snapshots
     real(dp), allocatable   , intent(out), optional :: kappa(:,:), functional_kappa(:,:)
+    logical                 , intent(out), optional :: converged
 
     real(dp), allocatable :: tuple(:,:,:,:), stages(:,:,:,:,:), value(:,:)
     real(dp), allocatable :: jet(:,:,:), adjoint(:,:,:,:), reaction(:,:,:), gauge(:,:,:)
@@ -4560,6 +4587,7 @@ contains
     ! expansion along the design: in column zero the values from the
     ! estimate, every derivative component zero; zero in the columns
     ! above
+    if (present(converged)) converged = .true.
     order = this % points % expansion % order
     ncol  = this % points % expansion % num_columns()
     segment = 0
@@ -4642,7 +4670,11 @@ contains
           end if
           do b = 1, nb
              call this % block_extent(b, first, last, depth)
-             call this % solve_block(this % schemes % scheme(b), first, last, depth, rows_along, origin, tuple, stages)
+             call this % solve_block(this % schemes % scheme(b), first, last, depth, rows_along, origin, tuple, stages, &
+                  & converged=converged)
+             if (present(converged)) then
+                if (.not. converged) return
+             end if
           end do
        else
           ! both sweeps by the schedule, the state in a window
@@ -6597,7 +6629,7 @@ contains
   ! and solved as one system of rows.
   !===================================================================!
 
-  subroutine solve_block(this, scheme, first, last, depth, rows_along, lb, tuple, stages, expand)
+  subroutine solve_block(this, scheme, first, last, depth, rows_along, lb, tuple, stages, expand, converged)
 
     class(discrete_residual), intent(in)    :: this
     type(family)            , intent(in)    :: scheme
@@ -6606,6 +6638,7 @@ contains
     type(lower_bounds)      , intent(in)    :: lb
     real(dp)                , intent(inout) :: tuple(:,:,lb % instant:,0:), stages(:,:,:,lb % stage:,0:)
     logical                 , intent(in), optional :: expand
+    logical                 , intent(out), optional :: converged
 
     type(chain_block) :: blk
     real(dp), allocatable :: predicted(:,:)
@@ -6632,7 +6665,7 @@ contains
          end do
        end associate
     end if
-    call this % solve_rows(blk, lb, tuple, stages, expand)
+    call this % solve_rows(blk, lb, tuple, stages, expand, converged)
 
   end subroutine solve_block
 
@@ -6641,20 +6674,26 @@ contains
   ! Newton from the estimate, the block's own instants and the stages
   ! of its steps written to column zero, the stages retained for the
   ! adjoint, which linearizes the block at its solution; then every
-  ! column above, expansion by expansion and order by order.
+  ! column above, expansion by expansion and order by order. With
+  ! converged present, a Newton iteration that does not converge
+  ! returns it false and forms no column.
   !===================================================================!
 
-  subroutine solve_rows(this, blk, lb, tuple, stages, expand)
+  subroutine solve_rows(this, blk, lb, tuple, stages, expand, converged)
 
     class(discrete_residual), intent(in)    :: this
     type(chain_block)       , intent(inout) :: blk
     type(lower_bounds)      , intent(in)    :: lb
     real(dp)                , intent(inout) :: tuple(:,:,lb % instant:,0:), stages(:,:,:,lb % stage:,0:)
     logical                 , intent(in), optional :: expand
+    logical                 , intent(out), optional :: converged
 
     integer :: d, m
 
-    call this % solved(blk % rows, size(blk % q), blk % rows % degrees, size(blk % rows % at), blk % q)
+    call this % solved(blk % rows, size(blk % q), blk % rows % degrees, size(blk % rows % at), blk % q, converged)
+    if (present(converged)) then
+       if (.not. converged) return
+    end if
     call blk % to_points(OWN_MOMENTS, lb, blk % q, tuple(:, :, :, 0), stages(:, :, :, :, 0))
 
     if (this % points % expansion % order == 0) return
@@ -8078,15 +8117,17 @@ contains
   ! Newton on one residual_operator: a direct inner solve on a point
   ! manifold, GMRES preconditioned by block Gauss-Seidel over the
   ! tuples elsewhere. A solve that does not converge stops the program
-  ! with the solver's description.
+  ! with the solver's description, or, with converged present, returns
+  ! it false.
   !===================================================================!
 
-  subroutine solved(this, rows, unknowns, stride, npts, q)
+  subroutine solved(this, rows, unknowns, stride, npts, q, converged)
 
     class(discrete_residual), intent(in)    :: this
     type(residual_operator) , intent(in)    :: rows
     integer                 , intent(in)    :: unknowns, stride, npts
     real(dp)                , intent(inout) :: q(:)
+    logical                 , intent(out), optional :: converged
 
     type(newton)       :: solver
     type(solve_result) :: outcome
@@ -8114,6 +8155,10 @@ contains
        call solver % solve(spread(0.0_dp, 1, unknowns), q, achieved)
     end if
     outcome = solver % result()
+    if (present(converged)) then
+       converged = outcome % converged()
+       return
+    end if
     if (.not. outcome % converged()) then
        error stop 'operation_residual: minimize did not converge: ' // outcome % description()
     end if

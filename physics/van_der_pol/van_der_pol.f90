@@ -176,8 +176,11 @@
 ! tolerance. J does not depend on s, so every derivative of J_h along
 ! s is minus that of the error J - J_h: the base family, dirk(4), of
 ! one step and of the highest order in the pool, is solved with the
-! expansion that moves the instants, its error at each step h_k^2
-! (d^2 J_h / dt_(k-1) dt_k) / (p (p + 1)); the error of each other
+! instants pinned, t_k - t_k0 = 0, whose multipliers are -dJ_h/dt_k;
+! their derivatives along three directions, each moving every third
+! instant, are the band of the Hessian of J_h in the instants, and the
+! base family's error at each step h_k^2 (d^2 J_h / dt_(k-1) dt_k) /
+! (p (p + 1)); the error of each other
 ! family at the step is the base family's less the change of J_h were
 ! the step's family replaced, the disagreement with that family's
 ! chain. Each round solves the base family on the instants as they
@@ -185,15 +188,18 @@
 ! instants, at 1e-6 the rounds return 52 instants and 55 solves,
 ! dirk(4) over the first two steps, where no multistep family of the
 ! pool has its history, then adams(4) with adams(3) at one step; the
-! error of J -2.429e-6 against J by the chain of order three at 2561
+! error of J -2.430e-6 against J by the chain of order three at 2561
 ! instants, estimated -2.295e-6. The program's chain meets that
 ! tolerance at 887 solves on equally spaced instants, the best family
 ! of the pool alone, adams(3) after dirk(4), at 53. At 1e-7, 1e-5 and
 ! 1e-4 the rounds return 97, 31 and 17 solves, the best family alone
-! 96, 30 and 17, the program's chain 2787, 286 and 95. The rounds cost
-! more than they save here: 8.0 s at 1e-6 against 0.30 s for the
-! program's chain at 888 instants and 0.02 s for adams(3) at 52, the
-! curvature by 2N - 5 expansions of order two a cost of N^2.
+! 96, 30 and 17, the program's chain 2787, 286 and 95. The rounds take
+! 0.34, 0.74, 1.29 and 2.25 s at 1e-4, 1e-5, 1e-6 and 1e-7, against
+! 0.03, 0.10, 0.30 and 0.96 s for one solve of the program's chain at
+! the count each needs and at most 0.03 s for adams(3): each round's
+! cost grows as the count, the curvature three directions of the pins'
+! multipliers, where 2N - 5 expansions of order two of the state took
+! 0.81, 2.70, 8.0 and 24.8 s.
 !
 ! THE LAGRANGIAN of (b) and (c) is printed before its solve: J and
 ! every law with the multiplier it is paired with, each equation as a

@@ -3110,8 +3110,9 @@ contains
   ! so every derivative of J_h along s is minus that of J - J_h, and
   ! the error of a design s is E(s0) - (J_h(s) - J_h(s0)) from any
   ! base s0. The base family - of one step, of the highest order in
-  ! the pool - is solved on the instants with the expansion that moves
-  ! them, and the curvature of J_h gives the error of each of its
+  ! the pool - is solved on the instants, pinned, and the derivatives
+  ! of the pins' multipliers along three colours give the curvature of
+  ! J_h, and with it the error of each of its
   ! steps (curvature_errors), and its uncertainty, the residual of the
   ! curvature's sum over the steps. The change of J_h were step k's
   ! family that of a chain of f, the disagreement with that chain, is
@@ -3175,6 +3176,10 @@ contains
     if (.not. allocated(this % objective)) then
        error stop 'operation_residual: a pool of families is chosen by the error of the objective; the residual &
             &has none'
+    end if
+    if (.not. this % with_adjoint) then
+       error stop 'operation_residual: a pool of families reads the multipliers of the pins of the instants; the &
+            &equations are paired with their multiplier'
     end if
     select type (this)
     type is (discrete_residual)
@@ -3279,7 +3284,7 @@ contains
        if (designs(round) % met .and. chain_work(proposed_schemes) >= designs(round) % work) exit
        iterate % points % instant = proposed
        iterate % schemes = proposed_schemes
-       start = discrete_field(iterate % points, values_at(base_solution, t, proposed), names)
+       start = discrete_field(iterate % points, values_at(base_solution, t, proposed, nf), names)
     end do
 
     ! the design returned: of the designs measured, the one of least
@@ -3297,13 +3302,13 @@ contains
     if (returned /= size(designs)) then
        iterate % points % instant = designs(returned) % instants
        iterate % schemes = designs(returned) % schemes
-       start = discrete_field(iterate % points, values_at(base_solution, t, designs(returned) % instants), names)
+       start = discrete_field(iterate % points, values_at(base_solution, t, designs(returned) % instants, nf), names)
        t = iterate % points % instant
        n = size(t)
        call solve_base()
-       start = discrete_field(iterate % points, values_at(base_solution, t, t), names)
+       start = discrete_field(iterate % points, values_at(base_solution, t, t, nf), names)
     else
-       start = discrete_field(iterate % points, values_at(base_solution, t, t), names)
+       start = discrete_field(iterate % points, values_at(base_solution, t, t, nf), names)
     end if
     iterate % points % expansion = original
     call set_verbosity(level)
@@ -3345,7 +3350,8 @@ contains
     subroutine solve_base()
       base_residual = iterate
       base_residual % schemes      = chain([(base, k = 1, n)], from=[(k, k = 1, n)])
-      base_residual % with_adjoint = .false.
+      ! the instants pinned, the curvature their multipliers' derivatives
+      if (.not. allocated(base_residual % instant_multiplier)) base_residual % instant_multiplier = 'pin of the instants'
       base_residual % points % expansion = curvature_expansion(original, n)
       call base_residual % zero_at_design(start, base_solution)
       e_base = base_residual % curvature_errors(base_solution, base % accuracy(), uncertainty)
@@ -3572,9 +3578,13 @@ contains
 
   !===================================================================!
   ! THE EXPANSION OF THE CURVATURE: the original's design coordinates
-  ! fixed, of order two along each interior instant a = 2 .. n - 1 and
-  ! along each pair a, a + 1, so that d^2 J_h / dt_a dt_(a+1) = (J_h''
-  ! along e_a + e_(a+1) - J_h'' along e_a - J_h'' along e_(a+1)) / 2.
+  ! fixed, of order one along three directions, each moving every third
+  ! interior instant, colour c the instants a with mod(a, 3) = c - 1:
+  ! the derivative along colour c of the multiplier of the pin of
+  ! instant b is minus row b of the Hessian of J_h in the instants
+  ! summed over the colour's instants, and where the Hessian's band
+  ! is one instant wide, its entry in the column of the one instant of
+  ! the colour next to b.
   !===================================================================!
 
   function curvature_expansion(original, n) result(expanded)
@@ -3584,29 +3594,32 @@ contains
     type(expansion) :: expanded
 
     real(dp), allocatable :: seeds(:,:), along(:,:)
-    integer :: a, ne
+    integer :: a
 
-    ne = (n - 2) + (n - 3)
-    allocate(seeds(n, ne), along(max(1, original % num_designs()), ne), source=0.0_dp)
+    allocate(seeds(n, 3), along(max(1, original % num_designs()), 3), source=0.0_dp)
     do a = 2, n - 1
-       seeds(a, a - 1) = 1.0_dp
+       seeds(a, colour_of(a)) = 1.0_dp
     end do
-    do a = 2, n - 2
-       seeds(a, n - 2 + a - 1)     = 1.0_dp
-       seeds(a + 1, n - 2 + a - 1) = 1.0_dp
-    end do
-    expanded = expansion(2, along, seeds)
+    expanded = expansion(1, along, seeds)
     if (allocated(original % at))   expanded % at   = original % at
     if (allocated(original % name)) expanded % name = original % name
 
   end function curvature_expansion
 
+  ! the colour of an instant: one of three, every third instant alike
+  pure integer function colour_of(a)
+    integer, intent(in) :: a
+    colour_of = mod(a, 3) + 1
+  end function colour_of
+
   !===================================================================!
   ! THE ERROR OF EACH STEP FROM THE CURVATURE of J_h in the instants,
   ! on a solution of a chain of one-step families of order p by the
-  ! curvature expansion: e_k, the error of J the step into instant k
-  ! contributes, homogeneous of degree m = p + 1 in its step, so that
-  ! with D_a = d^2 J_h / dt_a^2 and M_a = d^2 J_h / dt_a dt_(a+1),
+  ! curvature expansion, the instants pinned: e_k, the error of J the
+  ! step into instant k contributes, homogeneous of degree m = p + 1 in
+  ! its step, so that with D_a = d^2 J_h / dt_a^2 and M_a = d^2 J_h /
+  ! dt_a dt_(a+1), minus the derivatives of the pins' multipliers along
+  ! the colours of a and of a + 1,
   !
   !    e_(a+1) = h_(a+1)^2 M_a / (m (m - 1)),   a = 2 .. n - 2,
   !
@@ -3629,23 +3642,23 @@ contains
     real(dp)                , intent(out), optional :: uncertainty
     real(dp), allocatable :: e(:)
 
-    type(discrete_field) :: objective_field
-    real(dp), allocatable :: total(:), diagonal(:), mixed(:), t(:)
+    type(discrete_field) :: pins
+    real(dp), allocatable :: diagonal(:), mixed(:), t(:)
     real(dp) :: m
     integer :: n, a
 
     t = this % points % instant
     n = size(t)
     m = real(p + 1, dp)
-    objective_field = this % objective % at(solution)
-    total = objective_field % value(1, :)
+    pins = solution % fields([this % instant_multiplier])
     allocate(diagonal(n), mixed(n), e(n), source=0.0_dp)
     do a = 2, n - 1
-       diagonal(a) = total(1 + this % points % expansion % column(a - 1, 2))
+       diagonal(a) = -pins % jet(pins % slot(1), this % points % point_of(a, 1), &
+            & 1 + this % points % expansion % column(colour_of(a), 1))
     end do
     do a = 2, n - 2
-       mixed(a) = (total(1 + this % points % expansion % column(n - 2 + a - 1, 2)) - diagonal(a) &
-            & - diagonal(a + 1)) / 2.0_dp
+       mixed(a) = -pins % jet(pins % slot(1), this % points % point_of(a, 1), &
+            & 1 + this % points % expansion % column(colour_of(a + 1), 1))
        e(a + 1) = (t(a + 1) - t(a))**2 * mixed(a) / (m * (m - 1.0_dp))
     end do
     e(2) = (t(2) - t(1))**2 * (-diagonal(2) - mixed(2)) / (m * (m - 1.0_dp))
@@ -3661,20 +3674,21 @@ contains
   end function curvature_errors
 
   !===================================================================!
-  ! The values of a solution's unknowns at the instants placed, linear
-  ! along time between the instants t it is solved at.
+  ! The values of a solution's first nf components, its unknowns, at
+  ! the instants placed, linear along time between the instants t it
+  ! is solved at.
   !===================================================================!
 
-  function values_at(field, t, placed) result(v)
+  function values_at(field, t, placed, nf) result(v)
 
     type(discrete_field), intent(in) :: field
     real(dp)            , intent(in) :: t(:), placed(:)
+    integer             , intent(in) :: nf
     real(dp), allocatable :: v(:,:)
 
     real(dp) :: w
-    integer :: j, k, nf
+    integer :: j, k
 
-    nf = size(field % name)
     allocate(v(size(placed), nf))
     k = 1
     do j = 1, size(placed)

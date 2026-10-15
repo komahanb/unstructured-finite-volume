@@ -318,6 +318,11 @@ module operation_residual
      ! weight along the expansion d
      integer , allocatable :: time_row(:), time_column(:)
      real(dp), allocatable :: weight_derivative(:,:,:)
+     ! where the instants are pinned: instant_weight(e, a, k, d) the
+     ! derivative in the instant instant_first + a - 1 of the k-th
+     ! derivative along the expansion d of the edge's weight
+     integer :: instant_first = 1
+     real(dp), allocatable :: instant_weight(:,:,:,:)
 
    contains
 
@@ -476,6 +481,12 @@ module operation_residual
      ! the placement of the instants, an equidistribution, minimize
      ! moving them; unallocated, the instants are the image's
      type(equidistribution), allocatable :: placement
+     ! THE PIN OF THE INSTANTS, t_k - t_k0 = 0, a condition on the design
+     ! of the discrete image, its multiplier named here: -(dJ/dt_k + mu .
+     ! dR/dt_k) = -dJ_h/dt_k at each instant, and along an expansion its
+     ! derivatives, as the multiplier of a condition on the design factor
+     ! is -dJ/dnu; unallocated, no pin is stated
+     character(len=32), allocatable :: instant_multiplier
 
    contains
 
@@ -2507,13 +2518,14 @@ contains
 
   end subroutine check_representations
 
-  function residual_discretize(this, points, time, space, placement) result(image)
+  function residual_discretize(this, points, time, space, placement, instants) result(image)
 
     class(continuous_residual), intent(in) :: this
     type(discrete_manifold)   , intent(in) :: points
     type(chain)               , intent(in), optional :: time
     class(derivative_approximation), intent(in), optional :: space
     type(equidistribution)    , intent(in), optional :: placement
+    character(len=*)          , intent(in), optional :: instants
     type(discrete_residual) :: image
 
     integer :: k, j, i, whole_term, num_conditions, nf
@@ -2720,6 +2732,13 @@ contains
                &the Lagrangian has none'
        end if
        image % placement = placement
+    end if
+    ! the pin of the instants, its multiplier under the name given
+    if (present(instants)) then
+       if (.not. present(time) .or. present(space)) then
+          error stop 'operation_residual: the instants of a manifold of time alone are pinned'
+       end if
+       image % instant_multiplier = instants
     end if
 
   end function residual_discretize
@@ -4632,6 +4651,8 @@ contains
     end if
     ! the multiplier columns: the equations', then the conditions'
     nm = merge(nf + nc + this % num_represented(), 0, this % with_adjoint)
+    ! and the multiplier of the pin of the instants
+    if (this % with_adjoint .and. allocated(this % instant_multiplier)) nm = nm + 1
     allocate(value(npts, nf + nm), source=0.0_dp)
     ! the rows of the jet: the rule's components over the chain; under
     ! a schedule the unknowns alone, the state having been a window
@@ -4757,15 +4778,31 @@ contains
              end do
           end do
        end do
+       ! the multiplier of the pin of the instants, -dJ_h/dt_k at the
+       ! points of instant k: the rows of the design multiplier after
+       ! the design coordinates'
+       if (allocated(this % instant_multiplier)) then
+          nc = nc + 1
+          names(2 * nf + nc) = this % instant_multiplier
+          do k = 1, ninst
+             do c = 1, ncells
+                jet(nrow + nf + nc, this % points % point_of(k, c), :) = &
+                     & design_multiplier(size(design_multiplier, 1) - ninst + k, :)
+             end do
+          end do
+       end if
        do col = 1, nm
           slot(nf + col)     = nrow + col
           value(:, nf + col) = jet(nrow + col, :, 1)
        end do
     end if
 
+    ! the design's own multipliers, the instants' pins' after them left
     if (present(kappa) .and. allocated(design_multiplier)) then
-       allocate(kappa(size(design_multiplier, 1), 0:ubound(design_multiplier, 2)))
-       kappa = design_multiplier
+       nc = size(design_multiplier, 1)
+       if (allocated(this % instant_multiplier)) nc = nc - ninst
+       allocate(kappa(nc, 0:ubound(design_multiplier, 2)))
+       kappa = design_multiplier(1:nc, :)
     end if
 
     ! the multipliers of the design of each functional of the state an
@@ -4855,19 +4892,21 @@ contains
     real(dp), allocatable   , intent(out), optional :: step_term(:)
 
     type(derivative_terms), allocatable :: dt(:), weight(:), moved(:), moved_weight(:)
+    type(derivative_terms) :: product
     integer , allocatable :: instant(:), cell_owner(:)
-    real(dp), allocatable :: position(:), motion(:,:)
+    real(dp), allocatable :: position(:), motion(:,:), column_values(:)
     integer :: stride, ncells, ninst, npts, nb, b, first, last, depth, n, s, smax, k, i, c, j
-    integer :: nnodes, nn, nf, b1, b2, klo, khi, offset, d, o, order, node
-    logical :: staged, moving
+    integer :: nnodes, nn, nf, b1, b2, klo, khi, offset, d, o, order, node, a, m
+    logical :: staged, moving, pinned
     real(dp) :: h
 
     ! an expansion that moves the instants moves the steps, and the
     ! weights the families' rules give the nodes with them
     order  = this % points % expansion % order
     moving = allocated(this % points % expansion % instants) .and. order > 0
-    if (moving .and. allocated(this % elements)) then
-       error stop 'operation_residual: an expansion moves the instants of a residual whose solution is not &
+    pinned = allocated(this % instant_multiplier)
+    if ((moving .or. pinned) .and. allocated(this % elements)) then
+       error stop 'operation_residual: the instants are moved or pinned in a residual whose solution is not &
             &projected on the cells'
     end if
     if (allocated(this % elements)) then
@@ -4924,13 +4963,23 @@ contains
             & solution % node_image)
     end if
     if (allocated(solution % node_weight_derivative)) deallocate(solution % node_weight_derivative)
+    if (allocated(solution % node_instant)) deallocate(solution % node_instant, solution % node_instant_weight)
     allocate(solution % node_jet(stride, nnodes, this % points % expansion % num_columns()), source=0.0_dp)
     allocate(solution % node_weight(nnodes), source=0.0_dp)
-    if (moving) then
-       allocate(solution % node_weight_derivative(nnodes, this % points % expansion % num_columns() - 1), &
+    ! the instants pinned: each node's weight differentiated in the
+    ! instants it depends on, two to begin with, more as they come
+    if (pinned) then
+       allocate(solution % node_instant(2, nnodes), source=0)
+       allocate(solution % node_instant_weight(2, nnodes, 0:this % points % expansion % num_columns() - 1), &
             & source=0.0_dp)
-       allocate(motion(ninst, this % points % expansion % num_expansions()))
-       do d = 1, this % points % expansion % num_expansions()
+       solution % pinned_instants = ninst
+       allocate(column_values(0:this % points % expansion % num_columns() - 1))
+    end if
+    if (moving) allocate(solution % node_weight_derivative(nnodes, this % points % expansion % num_columns() - 1), &
+         & source=0.0_dp)
+    if (moving .or. pinned) then
+       allocate(motion(ninst, max(1, this % points % expansion % num_expansions())))
+       do d = 1, size(motion, 2)
           motion(:, d) = step_seeds(this % points, d)
        end do
     end if
@@ -4979,6 +5028,14 @@ contains
                                 & motion(first + k, d) * scheme % stage_weight(i) * cell_volume(c)
                         end do
                      end if
+                     ! in the instants the step joins, plus and minus the
+                     ! tableau's weight, along any expansion constant
+                     if (pinned) then
+                        column_values    = 0.0_dp
+                        column_values(0) = scheme % stage_weight(i) * cell_volume(c)
+                        call pin(nn, first + k, column_values)
+                        call pin(nn, first + k - 1, -column_values)
+                     end if
                      position = this % points % position(this % points % point_of(first + k - 1, c))
                      position(1) = position(1) + scheme % stage_abscissa(i) * h
                      solution % node_position(:, nn) = position
@@ -5006,6 +5063,41 @@ contains
                           & * cell_volume(c) * density(this % points % point_of(first + instant(j) - 1, c) - offset)
                   end do
                end do
+               ! in each instant the block's steps join, the step times the
+               ! rule's weight along each expansion: the steps seeded with
+               ! their derivatives along it, and on one direction more with
+               ! their derivative in the instant
+               if (pinned) then
+                  allocate(moved(n))
+                  do a = max(1, first - 1), last
+                     do d = 1, size(motion, 2)
+                        do m = 1, n
+                           moved(m) = symmetric_terms(this % points % step(first + m - 1), &
+                                & [motion(first + m - 1, d), spread(0.0_dp, 1, order - 1)], order + 1)
+                           if (first + m - 1 < 2) cycle
+                           call moved(m) % set_coefficient(2**order, merge(1.0_dp, 0.0_dp, first + m - 1 == a) &
+                                & - merge(1.0_dp, 0.0_dp, first + m - 1 == a + 1))
+                        end do
+                        call scheme % step_quadrature(moved, k, moved_weight, instant=instant)
+                        do j = 1, size(moved_weight)
+                           product = moved(k) * moved_weight(j)
+                           column_values = 0.0_dp
+                           column_values(0) = coefficient(product, 2**order)
+                           do o = 1, order
+                              column_values(this % points % expansion % column(d, o)) = &
+                                   & coefficient(product, 2**o - 1 + 2**order)
+                           end do
+                           ! column zero once, with the first expansion
+                           if (d > 1) column_values(0) = 0.0_dp
+                           do c = 1, ncells
+                              call pin(this % points % point_of(first + instant(j) - 1, c) - offset, a, &
+                                   & column_values * cell_volume(c))
+                           end do
+                        end do
+                     end do
+                  end do
+                  deallocate(moved)
+               end if
                ! the step times the rule's weight, along each expansion:
                ! the steps seeded with their derivatives along it
                if (.not. moving) cycle
@@ -5042,6 +5134,31 @@ contains
       cell_volume = 1.0_dp
       if (this % manifold % with_space) cell_volume = this % points % volume(c)
     end function cell_volume
+
+    ! node's weight's derivative in instant a, in every column, added:
+    ! at the node's entry of the instant, or at a new one, the entries
+    ! doubled where the node has none free
+    subroutine pin(node, a, derivative)
+      integer , intent(in) :: node, a
+      real(dp), intent(in) :: derivative(0:)
+      integer , allocatable :: grown(:,:)
+      real(dp), allocatable :: grown_weight(:,:,:)
+      integer :: l, lmax
+      lmax = size(solution % node_instant, 1)
+      l = findloc(solution % node_instant(:, node), a, dim=1)
+      if (l == 0) l = findloc(solution % node_instant(:, node), 0, dim=1)
+      if (l == 0) then
+         allocate(grown(2 * lmax, size(solution % node_instant, 2)), source=0)
+         allocate(grown_weight(2 * lmax, size(solution % node_instant, 2), 0:size(derivative) - 1), source=0.0_dp)
+         grown(1:lmax, :)           = solution % node_instant
+         grown_weight(1:lmax, :, :) = solution % node_instant_weight
+         call move_alloc(grown, solution % node_instant)
+         call move_alloc(grown_weight, solution % node_instant_weight)
+         l = lmax + 1
+      end if
+      solution % node_instant(l, node) = a
+      solution % node_instant_weight(l, node, :) = solution % node_instant_weight(l, node, :) + derivative
+    end subroutine pin
 
   end subroutine quadrature_nodes
 
@@ -5622,6 +5739,8 @@ contains
 
     ncol = this % points % expansion % num_columns()
     ni   = size(this % points % expansion % values())
+    ! the instants' pins: one row more for each instant
+    if (allocated(this % instant_multiplier)) ni = ni + this % points % num_instants()
     if (allocated(this % objective)) then
        call this % objective % differential(solution, gradient, partial)
     else
@@ -5858,9 +5977,9 @@ contains
     integer :: nodes, factor
     integer , allocatable :: related(:), added(:), single(:)
     logical , allocatable :: tying(:), entries(:), replaced(:)
-    real(dp), allocatable :: derivative(:,:,:), table(:,:,:)
+    real(dp), allocatable :: derivative(:,:,:), table(:,:,:), instant_derivative(:,:,:,:), itable(:,:,:,:)
     integer , allocatable :: relating(:)
-    logical :: moving
+    logical :: moving, pinned
 
     stride = this % rule % num_components()
     nf     = this % manifold % num_unknowns
@@ -5937,6 +6056,16 @@ contains
        allocate(derivative(count, this % points % expansion % order, this % points % expansion % num_expansions()), &
             & source=0.0_dp)
     end if
+    ! the instants pinned: each time edge's weight differentiated in
+    ! each instant its steps join, first - 1 .. last
+    pinned = allocated(this % instant_multiplier)
+    if (pinned) then
+       if (this % rule % num_position_coordinates() > 0) then
+          error stop 'operation_residual: the instants are pinned in laws that read no coordinate'
+       end if
+       allocate(instant_derivative(count, n + 1, 0:this % points % expansion % order, &
+            & max(1, this % points % expansion % num_expansions())), source=0.0_dp)
+    end if
 
     do f = 1, nf
        if (this % rule % degree_of_field(f) < 1) cycle
@@ -5947,6 +6076,7 @@ contains
                 steps = spread(this % points % step(first + k), 1, s + 2)
                 call weights_of(scheme_weight(scheme), connectivity, steps, w)
                 if (moving) call weight_table(steps, spread(first + k, 1, s + 2), table)
+                if (pinned) call instant_table(steps, spread(first + k, 1, s + 2), itable)
                 do j = 1, connectivity % num_edges()
                    do c = 1, ncells
                       e = e + 1
@@ -5956,6 +6086,7 @@ contains
                            & + this % coefficient_component(f, chain, connectivity % tail_degree(j)) + 1
                       weight(e)     = w(j)
                       if (moving) derivative(e, :, :) = table(j, :, :)
+                      if (pinned) instant_derivative(e, :, :, :) = itable(j, :, :, :)
                    end do
                 end do
              end do
@@ -5964,6 +6095,7 @@ contains
              steps = [(this % points % step(first + k - 1), k = 1, n)]
              call weights_of(scheme_weight(scheme), connectivity, steps, w)
              if (moving) call weight_table(steps, [(first + k - 1, k = 1, n)], table)
+             if (pinned) call instant_table(steps, [(first + k - 1, k = 1, n)], itable)
              do j = 1, connectivity % num_edges()
                 do c = 1, ncells
                    e = e + 1
@@ -5973,6 +6105,7 @@ contains
                         & + this % coefficient_component(f, chain, connectivity % tail_degree(j)) + 1
                    weight(e)     = w(j)
                    if (moving) derivative(e, :, :) = table(j, :, :)
+                   if (pinned) instant_derivative(e, :, :, :) = itable(j, :, :, :)
                 end do
              end do
           end if
@@ -6168,7 +6301,7 @@ contains
     blk % num_cells  = ncells
     ! the time edges whose row a fixed, gauge or face row takes state
     ! no relation there, and move nothing
-    if (moving) then
+    if (moving .or. pinned) then
        allocate(replaced(unknowns), source=.false.)
        replaced(fixed_rows) = .true.
        replaced(gauge_rows) = .true.
@@ -6176,7 +6309,14 @@ contains
        relating = pack([(j, j = 1, time_relations)], .not. replaced(determined(1:time_relations)))
        blk % time_row          = determined(relating)
        blk % time_column       = source(relating)
-       blk % weight_derivative = derivative(relating, :, :)
+       if (moving) blk % weight_derivative = derivative(relating, :, :)
+       if (pinned) then
+          blk % instant_first  = first - 1
+          ! the orders from zero: a section assigned would have them from one
+          allocate(blk % instant_weight(size(relating), size(instant_derivative, 2), &
+               & 0:ubound(instant_derivative, 3), size(instant_derivative, 4)))
+          blk % instant_weight = instant_derivative(relating, :, :, :)
+       end if
     end if
     call move_alloc(instant_moment, blk % instant_moment)
 
@@ -6248,6 +6388,50 @@ contains
          end do
       end do
     end subroutine weight_table
+
+    ! itable(j, a, k, d): the derivative in the instant first - 2 + a,
+    ! a = 1 .. n + 1 the instants first - 1 .. last, of the k-th
+    ! derivative along the expansion d of edge j's weight; the steps
+    ! seeded on the singletons of the order's directions with their
+    ! derivatives along d, and on one direction more with their
+    ! derivative in the instant, one where the step ends at it, minus
+    ! one where it begins there; the step ending at the first instant,
+    ! zero, has none
+    subroutine instant_table(steps, step_of, itable)
+      real(dp), intent(in) :: steps(:)
+      integer , intent(in) :: step_of(:)
+      real(dp), allocatable, intent(out) :: itable(:,:,:,:)
+      real(dp), allocatable :: seeds(:,:), terms(:,:), motion(:)
+      integer :: order, d, a, k, mask, v, instant
+      order = this % points % expansion % order
+      allocate(itable(connectivity % num_edges(), n + 1, 0:order, &
+           & max(1, this % points % expansion % num_expansions())), source=0.0_dp)
+      allocate(seeds(size(steps), 2**(order + 1) - 1))
+      do d = 1, size(itable, 4)
+         motion = step_seeds(this % points, d)
+         do a = 1, n + 1
+            instant = first - 2 + a
+            if (instant < 1) cycle
+            seeds = 0.0_dp
+            do mask = 1, 2**(order + 1) - 1
+               if (popcnt(mask) /= 1) cycle
+               do v = 1, size(steps)
+                  if (step_of(v) < 2) cycle
+                  if (mask == 2**order) then
+                     seeds(v, mask) = merge(1.0_dp, 0.0_dp, step_of(v) == instant) &
+                          & - merge(1.0_dp, 0.0_dp, step_of(v) == instant + 1)
+                  else
+                     seeds(v, mask) = motion(step_of(v))
+                  end if
+               end do
+            end do
+            call weights_terms(scheme_weight(scheme), connectivity, steps, seeds, terms)
+            do k = 0, order
+               itable(:, a, k, d) = terms(:, 2**k - 1 + 2**order)
+            end do
+         end do
+      end do
+    end subroutine instant_table
 
   end subroutine block_rows
 
@@ -7299,9 +7483,30 @@ contains
        end do
     end do
 
+    ! THE PINS OF THE INSTANTS: their multipliers after the design's,
+    ! less the o-th derivative along d of the multiplier of each row
+    ! along time times the row's partial in the instant, -(dw/dt_a)
+    ! times the component it reads
+    if (allocated(blk % instant_weight)) then
+       ! the expansion's index taken first, outside the subscripts
+       g = max(1, d)
+       do e = 1, size(blk % time_row)
+          do i = 1, size(blk % instant_weight, 2)
+             instant = blk % instant_first + i - 1
+             if (instant < 1) cycle
+             row = size(in_design, 1) - this % points % num_instants() + instant
+             slope(0:o) = blk % instant_weight(e, i, 0:o, g)
+             in_design(row, column) = in_design(row, column) + mixed_partial( &
+                  & symmetric_terms(mu(blk % time_row(e), 0), mu(blk % time_row(e), 1:o), o) &
+                  & * symmetric_terms(slope(0), slope(1:o), o) &
+                  & * symmetric_terms(jets(blk % time_column(e), 0), jets(blk % time_column(e), 1:o), o))
+          end do
+       end do
+    end if
+
     if (.not. this % manifold % with_design) return
     products = design_products(blk % rows, jets, mu, o, values, seed, blk % owner)
-    in_design(:, column) = in_design(:, column) - products
+    in_design(1:size(products), column) = in_design(1:size(products), column) - products
     e = 0
     do j = 1, size(this % condition)
        if (.not. this % condition(j) % manifold % is_time_face()) cycle

@@ -239,6 +239,13 @@ module operation_field
      ! node's weight in each column above zero, node_weight_derivative(n,
      ! c) of the column c's order along its expansion
      real(dp), allocatable :: node_weight_derivative(:,:)
+     ! where the instants are pinned: node_instant(l, n) the l-th
+     ! instant node n's weight depends on, zero past the last, and
+     ! node_instant_weight(l, n, c) the derivative in it of the weight's
+     ! column c; pinned_instants the instants' count
+     integer , allocatable :: node_instant(:,:)
+     real(dp), allocatable :: node_instant_weight(:,:,:)
+     integer :: pinned_instants = 0
      real(dp), allocatable :: node_position(:,:)
      real(dp), allocatable :: node_face_weight(:)
      ! the image that owns the node: a functional sums its owned nodes
@@ -632,7 +639,7 @@ contains
     type(derivative_terms) :: r
     type(expansion) :: expanded
     real(dp) :: value, measure
-    integer :: p, k, o, i, d, order, ns, nnodes, stride, first
+    integer :: p, k, o, i, d, order, ns, nnodes, stride, first, nv, npin, l
     logical :: over_nodes, moving
     type(expression_view) :: view
     type(expression) :: integrand
@@ -699,7 +706,18 @@ contains
     allocate(q(0:ns - 1), g(0:ns - 1), gd(size(values)), jets(0:ns - 1), varied(0:ns - 1))
     allocate(nu(size(values)), along(size(values)), design(size(values)))
     allocate(gradient(stride, nnodes, 0:expanded % num_columns() - 1), source=0.0_dp)
-    allocate(total(expanded % num_columns()), partial(size(values), 0:expanded % num_columns() - 1), source=0.0_dp)
+    ! the partial in each design coordinate, and where the instants are
+    ! pinned, after them in each instant: the node weights' derivatives
+    ! in it times the field
+    nv   = size(values)
+    npin = 0
+    if (over_nodes .and. this % integrated_part /= TIME_FACE) then
+       if (allocated(solution % node_instant)) npin = solution % pinned_instants
+    end if
+    if (npin > 0 .and. integrand % num_position_coordinates() > 0) then
+       error stop 'operation_field: the instants are pinned under a functional that reads no coordinate'
+    end if
+    allocate(total(expanded % num_columns()), partial(nv + npin, 0:expanded % num_columns() - 1), source=0.0_dp)
     allocate(unit(order), source=0.0_dp)
     if (order > 0) unit(1) = 1.0_dp
     if (present(density)) allocate(density(nnodes), source=0.0_dp)
@@ -722,19 +740,26 @@ contains
        if (moving .and. integrand % num_position_coordinates() > 0) then
           error stop 'operation_field: an expansion moves the instants of a functional that reads no coordinate'
        end if
-       if (measure == 0.0_dp .and. .not. (present(density) .or. moving)) cycle
+       if (measure == 0.0_dp .and. .not. (present(density) .or. moving .or. npin > 0)) cycle
        ! the value, its gradient in the jet and in the design
        do k = 0, ns - 1
           q(k) = jet_of(slot(k), p, 0)
        end do
        call integrand % gradient_at(q, values, value, g, position, gd)
        if (present(density)) density(p) = value
-       if (measure == 0.0_dp .and. .not. moving) cycle
+       if (measure == 0.0_dp .and. .not. (moving .or. npin > 0)) cycle
        total(1) = total(1) + measure * value
        do k = 0, ns - 1
           gradient(slot(k), p, 0) = gradient(slot(k), p, 0) + measure * g(k)
        end do
-       partial(:, 0) = partial(:, 0) + measure * gd
+       partial(1:nv, 0) = partial(1:nv, 0) + measure * gd
+       if (npin > 0) then
+          do l = 1, size(solution % node_instant, 1)
+             if (solution % node_instant(l, p) < 1) cycle
+             partial(nv + solution % node_instant(l, p), 0) = partial(nv + solution % node_instant(l, p), 0) &
+                  & + value * solution % node_instant_weight(l, p, 0)
+          end do
+       end if
        if (order == 0) cycle
        ! along each expansion d, whose columns begin at first: the jets
        ! over the order's directions, and over one more, the last,
@@ -751,6 +776,18 @@ contains
              varied(k) = symmetric_terms(q(k), [(jet_of(slot(k), p, first + o - 1), o = 1, order)], order + 1)
           end do
           r = integrand % at_instant(jets, nu, position)
+          ! the instants' partials along d: the derivatives of the weight's
+          ! derivative in the instant times those of the field
+          if (npin > 0) then
+             do l = 1, size(solution % node_instant, 1)
+                if (solution % node_instant(l, p) < 1) cycle
+                partial(nv + solution % node_instant(l, p), first:first + order - 1) = &
+                     & partial(nv + solution % node_instant(l, p), first:first + order - 1) + leibniz( &
+                     & [solution % node_instant_weight(l, p, 0), &
+                     &  solution % node_instant_weight(l, p, first:first + order - 1)], &
+                     & [value, (coefficient(r, 2**o - 1), o = 1, order)])
+             end do
+          end if
           if (moving) then
              total(first + 1:first + order) = total(first + 1:first + order) + weighted(value, r, 0)
           else
@@ -818,12 +855,19 @@ contains
       type(derivative_terms), intent(in) :: r
       integer               , intent(in) :: shift
       real(dp) :: derivatives(order)
-      real(dp) :: w(0:order), f(0:order), binomial
+      integer  :: o
+      derivatives = leibniz([measure, solution % node_weight_derivative(p, first:first + order - 1)], &
+           & [base, (coefficient(r, 2**o - 1 + shift), o = 1, order)])
+    end function weighted
+
+    ! the derivatives of orders 1 to the order of the product of two
+    ! quantities whose derivatives of orders 0 to the order are w and
+    ! f: the Leibniz sum, the binomial coefficient by its recurrence
+    pure function leibniz(w, f) result(derivatives)
+      real(dp), intent(in) :: w(0:), f(0:)
+      real(dp) :: derivatives(order)
+      real(dp) :: binomial
       integer  :: o, j
-      w(0) = measure
-      w(1:order) = solution % node_weight_derivative(p, first:first + order - 1)
-      f(0) = base
-      f(1:order) = [(coefficient(r, 2**o - 1 + shift), o = 1, order)]
       do o = 1, order
          derivatives(o) = 0.0_dp
          binomial = 1.0_dp
@@ -832,7 +876,7 @@ contains
             binomial = binomial * real(o - j, dp) / real(j + 1, dp)
          end do
       end do
-    end function weighted
+    end function leibniz
 
   end subroutine functional_over
 
@@ -881,8 +925,8 @@ contains
     if (solution % on % expansion % order > 1) then
        error stop 'operation_field: a smooth maximum is evaluated along the design to the first order'
     end if
-    if (allocated(solution % node_weight_derivative)) then
-       error stop 'operation_field: a smooth maximum is evaluated where the expansion keeps the instants fixed'
+    if (allocated(solution % node_weight_derivative) .or. allocated(solution % node_instant)) then
+       error stop 'operation_field: a smooth maximum is evaluated where the instants are neither moved nor pinned'
     end if
     if (.not. (allocated(solution % rule) .and. (allocated(solution % jet) .or. allocated(solution % node_jet)))) then
        error stop 'operation_field: a smooth maximum is evaluated on the solution of a residual, which stores &
@@ -977,6 +1021,11 @@ contains
        if (allocated(from % node_rule)) to % node_rule = from % node_rule
        to % node_weight   = from % node_weight
        if (allocated(from % node_weight_derivative)) to % node_weight_derivative = from % node_weight_derivative
+       if (allocated(from % node_instant)) then
+          to % node_instant        = from % node_instant
+          to % node_instant_weight = from % node_instant_weight
+          to % pinned_instants     = from % pinned_instants
+       end if
        to % node_position = from % node_position
        to % node_face_weight = from % node_face_weight
        to % node_image    = from % node_image

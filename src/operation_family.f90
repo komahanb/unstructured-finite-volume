@@ -48,6 +48,7 @@ module operation_family
        & hairer_wanner_five_stage
   public :: slope_at_zero, integral_over_step
   public :: adams, bdf, dirk, chain
+  public :: enrichment
 
   ! the families by order: adams(p) and bdf(p) the multistep families
   ! of order p, dirk(p) the tabulated tableau of order p
@@ -83,6 +84,13 @@ module operation_family
   interface chain
      module procedure create_chain
   end interface chain
+
+  ! the family, or the chain of families, one order higher: the
+  ! discretization along time an estimate of the error compares with
+  interface enrichment
+     module procedure family_enrichment
+     module procedure chain_enrichment
+  end interface enrichment
 
   ! The coupling geometries a family reads its edges by.
 
@@ -924,5 +932,95 @@ contains
     this = dirk_family(a, a(5, :))
 
   end function hairer_wanner_five_stage
+
+  !===================================================================!
+  ! THE ENRICHMENT of a family: the family of the same geometry one
+  ! order higher - adams(p + 1) for adams(p), bdf(p + 1) for bdf(p),
+  ! for a tableau of order q the tabulated DIRK of order q + 1, its
+  ! order read from the order conditions of the tableau. Invalid input:
+  ! bdf(6), above which the BDF families are not zero-stable; Newmark;
+  ! a tableau of order four, above the tabulated ones.
+  !===================================================================!
+
+  function family_enrichment(this) result(enriched)
+
+    class(family), intent(in) :: this
+    type(family) :: enriched
+
+    select case (this % geometry)
+    case (FAMILY_ADAMS)
+       enriched = adams_family(this % order + 1)
+    case (FAMILY_BDF)
+       if (this % order >= 6) then
+          error stop 'operation_family: the enrichment of bdf(6) would be bdf(7), which is not zero-stable'
+       end if
+       enriched = bdf_family(this % order + 1)
+    case (FAMILY_DIRK)
+       enriched = dirk_of_order(tableau_order(this) + 1)
+    case default
+       error stop 'operation_family: Newmark has no enrichment of its own geometry'
+    end select
+
+  end function family_enrichment
+
+  ! the chain of the enrichments, block by block, on the same instants
+  function chain_enrichment(this) result(enriched)
+
+    class(chain), intent(in) :: this
+    type(chain) :: enriched
+
+    integer :: b
+
+    allocate(enriched % scheme(size(this % scheme)))
+    do b = 1, size(this % scheme)
+       enriched % scheme(b) = family_enrichment(this % scheme(b))
+    end do
+    enriched % from = this % from
+
+  end function chain_enrichment
+
+  !===================================================================!
+  ! The classical order of a tableau, to four: the highest q whose
+  ! order conditions are all met, c the row sums of a - sum b = 1,
+  ! b . c = 1/2, b . c^2 = 1/3, b . a c = 1/6, b . c^3 = 1/4,
+  ! b . (c a c) = 1/8, b . a c^2 = 1/12, b . a a c = 1/24. A condition
+  ! is met to the rounding of its sum: n epsilon times the sum of the
+  ! magnitudes of its n terms, and of the rational it equals.
+  !===================================================================!
+
+  pure integer function tableau_order(this)
+
+    class(family), intent(in) :: this
+
+    real(dp), allocatable :: c(:)
+    integer :: s, i, j, k
+
+    s = size(this % b)
+    c = [(sum(this % a(i, :)), i = 1, s)]
+    tableau_order = 0
+    if (.not. satisfied(this % b, 1.0_dp)) return
+    tableau_order = 1
+    if (.not. satisfied(this % b * c, 0.5_dp)) return
+    tableau_order = 2
+    if (.not. (satisfied(this % b * c**2, 1.0_dp / 3.0_dp) .and. &
+         & satisfied([((this % b(i) * this % a(i, j) * c(j), i = 1, s), j = 1, s)], 1.0_dp / 6.0_dp))) return
+    tableau_order = 3
+    if (.not. (satisfied(this % b * c**3, 0.25_dp) .and. &
+         & satisfied([((this % b(i) * c(i) * this % a(i, j) * c(j), i = 1, s), j = 1, s)], 0.125_dp) .and. &
+         & satisfied([((this % b(i) * this % a(i, j) * c(j)**2, i = 1, s), j = 1, s)], 1.0_dp / 12.0_dp) .and. &
+         & satisfied([(((this % b(i) * this % a(i, j) * this % a(j, k) * c(k), i = 1, s), j = 1, s), k = 1, s)], &
+         &           1.0_dp / 24.0_dp))) return
+    tableau_order = 4
+
+  contains
+
+    ! whether the terms sum to the rational to the rounding of the sum
+    pure logical function satisfied(terms, rational)
+      real(dp), intent(in) :: terms(:), rational
+      satisfied = abs(sum(terms) - rational) <= real(size(terms) + 1, dp) * epsilon(1.0_dp) &
+           & * (sum(abs(terms)) + abs(rational))
+    end function satisfied
+
+  end function tableau_order
 
 end module operation_family

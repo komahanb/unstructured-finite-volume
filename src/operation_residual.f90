@@ -66,7 +66,7 @@ module operation_residual
   use view_expression      , only : expression_view
   use operation_manifold   , only : continuous_manifold, discrete_manifold
   use operation_expansion  , only : expansion
-  use operation_family     , only : family, chain
+  use operation_family     , only : family, chain, enrichment
   use operation_weight     , only : scheme_weight
   use operation_coupling   , only : weights_of
   use view_directed_connectivity, only : connectivity_graph
@@ -451,6 +451,9 @@ module operation_residual
 
      procedure :: minimize
      procedure :: disagreement
+     procedure, private :: time_disagreement
+     procedure, private :: space_rows
+     procedure, private :: lagrangian_differential
      procedure, private :: zero_at_design
      procedure, private :: inequalities_at
      procedure, private :: functional_inequalities
@@ -3514,23 +3517,7 @@ contains
        if (this % continued) call this % estimated_rates(tuple(:, :, :, 0), 1)
     end if
 
-    ! the finite-difference rows along each space axis and order, once
-    if (this % with_differences) then
-       top = 0
-       do c = 2, this % rule % num_coordinates()
-          top = max(top, this % rule % degree_along(c))
-       end do
-       allocate(rows_along(this % points % dimension, top))
-       do c = 1, this % points % dimension
-          do o = 1, top
-             if (c + 1 > this % rule % num_coordinates()) cycle
-             if (o > this % rule % degree_along(c + 1)) cycle
-             rows_along(c, o) = this % differences % derivative_rows(this % points % cells, c, o)
-          end do
-       end do
-    else
-       allocate(rows_along(0, 0))
-    end if
+    rows_along = this % space_rows()
 
     call system_clock(tick, rate)
     if (this % with_chain) then
@@ -3807,10 +3794,12 @@ contains
   ! the stages solved and their jets along the design; a point
   ! manifold's one point has weight one. stage_node(k, i, c) is the
   ! node of stage i of the step into instant k at cell c, zero where
-  ! there is none.
+  ! there is none. With a density at the nodes, step_term(p) is the
+  ! integral of the density over the step into the instant of point p,
+  ! by that step's rule alone, at the cell of p.
   !===================================================================!
 
-  subroutine quadrature_nodes(this, lb, tuple, stages, solution, stage_node, blocks)
+  subroutine quadrature_nodes(this, lb, tuple, stages, solution, stage_node, blocks, density, step_term)
 
     class(discrete_residual), intent(in)    :: this
     type(lower_bounds)      , intent(in)    :: lb
@@ -3818,6 +3807,8 @@ contains
     type(discrete_field)    , intent(inout) :: solution
     integer , allocatable   , intent(out)   :: stage_node(:,:,:)
     integer                 , intent(in), optional :: blocks(2)
+    real(dp)                , intent(in), optional :: density(:)
+    real(dp), allocatable   , intent(out), optional :: step_term(:)
 
     type(derivative_terms), allocatable :: dt(:), weight(:)
     integer , allocatable :: instant(:), cell_owner(:)
@@ -3886,6 +3877,7 @@ contains
     allocate(solution % node_face_weight(nnodes), source=0.0_dp)
     allocate(solution % node_image(nnodes), source=this_image())
     cell_owner = this % cell_owners()
+    if (present(step_term)) allocate(step_term(npts), source=0.0_dp)
 
     ! the points as nodes, their jets those of the solution
     do k = lb % instant, khi
@@ -3923,6 +3915,8 @@ contains
                      position(1) = position(1) + scheme % stage_abscissa(i) * h
                      solution % node_position(:, nn) = position
                      solution % node_jet(:, nn, :) = stages(:, c, i, first + k, :)
+                     if (present(step_term)) step_term(this % points % point_of(first + k, c)) = &
+                          & step_term(this % points % point_of(first + k, c)) + solution % node_weight(nn) * density(nn)
                   end do
                end do
             end do
@@ -3939,6 +3933,9 @@ contains
                      solution % node_weight(this % points % point_of(first + instant(j) - 1, c) - offset) = &
                           & solution % node_weight(this % points % point_of(first + instant(j) - 1, c) - offset) &
                           & + h * value(weight(j)) * cell_volume(c)
+                     if (present(step_term)) step_term(this % points % point_of(first + k - 1, c)) = &
+                          & step_term(this % points % point_of(first + k - 1, c)) + h * value(weight(j)) &
+                          & * cell_volume(c) * density(this % points % point_of(first + instant(j) - 1, c) - offset)
                   end do
                end do
             end do
@@ -4472,36 +4469,13 @@ contains
     real(dp), allocatable   , intent(out) :: adjoint(:,:,:,:), reaction(:,:,:), gauge(:,:,:)
     real(dp), allocatable   , intent(out) :: design_multiplier(:,:)
 
-    real(dp), allocatable :: gradient(:,:,:), partial(:,:), incoming(:,:,:,:), g(:,:,:), p(:,:)
+    real(dp), allocatable :: gradient(:,:,:), partial(:,:), incoming(:,:,:,:)
     type(chain_block) :: point
-    integer :: stride, ninst, b, nb, first, last, depth, ncol, ni, j, i, m
+    integer :: ninst, b, nb, first, last, depth
 
-    stride = this % rule % num_components()
-    ninst  = this % points % num_instants()
-    ncol   = this % points % expansion % num_columns()
-    ni     = size(this % points % expansion % values())
+    ninst = this % points % num_instants()
 
-    if (allocated(this % objective)) then
-       call this % objective % differential(solution, gradient, partial)
-    else
-       allocate(gradient(size(solution % node_jet, 1), size(solution % node_weight), 0:ncol - 1), &
-            & partial(ni, 0:ncol - 1), source=0.0_dp)
-    end if
-    ! the functionals of the inequalities, each times its multiplier:
-    ! the differential of the Lagrangian's functionals
-    if (allocated(this % functional_weight)) then
-       m = 0
-       do j = 1, size(this % condition)
-          if (.not. this % condition(j) % inequality) cycle
-          do i = 1, size(this % condition(j) % equation)
-             m = m + 1
-             if (this % functional_weight(m) == 0.0_dp) cycle
-             call this % condition(j) % equation(i) % differential(solution, g, p)
-             gradient = gradient + this % functional_weight(m) * g
-             partial  = partial  + this % functional_weight(m) * p
-          end do
-       end do
-    end if
+    call this % lagrangian_differential(solution, gradient, partial)
 
     call this % allocate_multipliers(partial, ninst, adjoint, incoming, reaction, gauge, design_multiplier)
 
@@ -4538,6 +4512,78 @@ contains
     call this % shared_expansions_summed(adjoint, reaction, gauge, design_multiplier)
 
   end subroutine adjoint_sweep
+
+  !===================================================================!
+  ! THE DIFFERENTIAL OF THE LAGRANGIAN'S FUNCTIONALS on a solution:
+  ! the objective's, zero without one, and each functional of the state
+  ! an inequality states times its multiplier - the gradient in the jet
+  ! at every node and the partial in each design coordinate, in every
+  ! column of the expansion.
+  !===================================================================!
+
+  subroutine lagrangian_differential(this, solution, gradient, partial)
+
+    class(discrete_residual), intent(in)  :: this
+    type(discrete_field)    , intent(in)  :: solution
+    real(dp), allocatable   , intent(out) :: gradient(:,:,:), partial(:,:)
+
+    real(dp), allocatable :: g(:,:,:), p(:,:)
+    integer :: ncol, ni, j, i, m
+
+    ncol = this % points % expansion % num_columns()
+    ni   = size(this % points % expansion % values())
+    if (allocated(this % objective)) then
+       call this % objective % differential(solution, gradient, partial)
+    else
+       allocate(gradient(size(solution % node_jet, 1), size(solution % node_weight), 0:ncol - 1), &
+            & partial(ni, 0:ncol - 1), source=0.0_dp)
+    end if
+    if (.not. allocated(this % functional_weight)) return
+    m = 0
+    do j = 1, size(this % condition)
+       if (.not. this % condition(j) % inequality) cycle
+       do i = 1, size(this % condition(j) % equation)
+          m = m + 1
+          if (this % functional_weight(m) == 0.0_dp) cycle
+          call this % condition(j) % equation(i) % differential(solution, g, p)
+          gradient = gradient + this % functional_weight(m) * g
+          partial  = partial  + this % functional_weight(m) * p
+       end do
+    end do
+
+  end subroutine lagrangian_differential
+
+  !===================================================================!
+  ! The difference rows along each space axis and order, once: the
+  ! stencil of the derivative of order o along axis c, empty without
+  ! differences.
+  !===================================================================!
+
+  function space_rows(this) result(rows_along)
+
+    class(discrete_residual), intent(in) :: this
+    type(stencil), allocatable :: rows_along(:,:)
+
+    integer :: top, c, o
+
+    if (.not. this % with_differences) then
+       allocate(rows_along(0, 0))
+       return
+    end if
+    top = 0
+    do c = 2, this % rule % num_coordinates()
+       top = max(top, this % rule % degree_along(c))
+    end do
+    allocate(rows_along(this % points % dimension, top))
+    do c = 1, this % points % dimension
+       do o = 1, top
+          if (c + 1 > this % rule % num_coordinates()) cycle
+          if (o > this % rule % degree_along(c + 1)) cycle
+          rows_along(c, o) = this % differences % derivative_rows(this % points % cells, c, o)
+       end do
+    end do
+
+  end function space_rows
 
   !===================================================================!
   ! The multipliers of the reverse sweep, zero, in the columns of the
@@ -8114,14 +8160,15 @@ contains
   ! evaluated on the other concretion's jet of the solution's values,
   ! at the segment's upper point; at the first instant the rows are the
   ! closed ones. Invalid input: a solution without the multipliers of a
-  ! representation along space.
+  ! representation along space. Without other, the disagreement along
+  ! time with the enrichment of the residual's chain, below.
   !===================================================================!
 
   function disagreement(this, solution, other) result(contribution)
 
     class(discrete_residual)       , intent(in) :: this
     type(discrete_field)           , intent(in) :: solution
-    class(derivative_approximation), intent(in) :: other
+    class(derivative_approximation), intent(in), optional :: other
     real(dp), allocatable :: contribution(:)
 
     type(stencil) :: rows, lower_rows
@@ -8130,6 +8177,11 @@ contains
     real(dp) :: h
     integer :: ncells, ninst, j, i, k, c, f, law(3), point, axis
     logical :: stated, open_line
+
+    if (.not. present(other)) then
+       contribution = this % time_disagreement(solution)
+       return
+    end if
 
     ncells = this % points % num_cells()
     ninst  = this % points % num_instants()
@@ -8180,6 +8232,202 @@ contains
     end if
 
   end function disagreement
+
+  !===================================================================!
+  ! THE DISAGREEMENT ALONG TIME of a solution Q with the enrichment of
+  ! the residual's chain - the same Lagrangian on the solution's
+  ! instants and design, each family one order higher, marked + - the
+  ! estimate of the error of the objective,
+  !
+  !    J+(Q+) - J(Q) ~ eta = J+(P Q) - J(Q) + mu+ . R+(P Q),
+  !
+  ! to second order in the error, mu+ the reverse sweep of R+ at P Q,
+  ! A^T mu+ = -dJ+, the convention L = J + mu . R of every sweep. P Q
+  ! is the solution's tuple at every instant; a staged block of the
+  ! enrichment takes the stages of its steps solved from the
+  ! solution's instants behind it, so that its stage rows are met and
+  ! R+ is, at the rows of its instants, the local error of a step from
+  ! the solution. Each row's product goes to the point of its moment,
+  ! a stage's to the instant its step reaches, and the objective over
+  ! each step - its integral by the enrichment's rule at P Q less that
+  ! by the step's own rule at Q - to the instant the step reaches: one
+  ! contribution per point, summing to eta. A difference node by node
+  ! would set against each other the weights two rules divide between
+  ! neighbouring instants. Invalid input: a residual without a chain
+  ! or an objective, an inequality on a functional of the state, a law
+  ! projected on the cells, a solution on another manifold or stored
+  ! over checkpoints.
+  !===================================================================!
+
+  function time_disagreement(this, solution) result(contribution)
+
+    class(discrete_residual), intent(in) :: this
+    type(discrete_field)    , intent(in) :: solution
+    real(dp), allocatable :: contribution(:)
+
+    type(discrete_residual) :: base, plus
+    type(discrete_field) :: state, replay
+    type(chain_block) :: blk
+    type(newton) :: solver
+    type(stencil), allocatable :: rows_along(:,:)
+    real(dp), allocatable :: coarse(:,:,:,:), tuple(:,:,:,:), stages(:,:,:,:,:), zeros(:,:,:,:,:)
+    real(dp), allocatable :: value(:,:), total(:), gradient(:,:,:), partial(:,:), density(:), term(:)
+    real(dp), allocatable :: adjoint(:,:,:,:), incoming(:,:,:,:), reaction(:,:,:), gauge(:,:,:), in_design(:,:)
+    real(dp), allocatable :: jets(:,:), mu(:,:), x(:), y(:)
+    integer , allocatable :: stage_node(:,:,:), base_node(:,:,:)
+    character(len=32), allocatable :: names(:)
+    integer :: stride, nf, ncells, ninst, npts, ncol, nd, nb, b, first, last, depth, k, c, f, top, r, m, width
+    logical :: face
+    character(len=250) :: message
+
+    if (.not. (this % with_chain .and. allocated(this % objective))) then
+       error stop 'operation_residual: the disagreement along time compares a chain with its enrichment through &
+            &the objective; the residual has no chain or no objective'
+    end if
+    if (allocated(this % functional_weight)) then
+       if (any(this % functional_weight /= 0.0_dp)) then
+          error stop 'operation_residual: the disagreement along time reads the objective alone; an inequality on &
+               &a functional of the state enters it'
+       end if
+    end if
+    if (allocated(this % elements)) then
+       error stop 'operation_residual: the disagreement along time is formed at the points; the law is projected &
+            &on the cells'
+    end if
+    if (allocated(solution % objective_value)) then
+       error stop 'operation_residual: the disagreement along time reads the stages of the solution''s steps, &
+            &which a solution stored over checkpoints does not retain'
+    end if
+
+    stride = this % rule % num_components()
+    nf     = this % manifold % num_unknowns
+    select type (this)
+    type is (discrete_residual)
+       base = this
+    end select
+    ! the instants and the design are the solution's
+    select type (on => solution % on)
+    type is (discrete_manifold)
+       if (.not. on % identity % matches(this % points % identity)) then
+          error stop 'operation_residual: the solution is a field on another manifold than the residual''s'
+       end if
+       base % points = on
+    class default
+       error stop 'operation_residual: the disagreement along time reads a solution at the points of a manifold'
+    end select
+    plus = base
+    plus % schemes = enrichment(base % schemes)
+
+    ncells = plus % points % num_cells()
+    ninst  = plus % points % num_instants()
+    npts   = plus % points % num_points()
+    ncol   = plus % points % expansion % num_columns()
+    nd     = top_degree(plus % rule, nf) + 1
+    nb     = plus % schemes % num_blocks()
+    width  = stride * ncells
+
+    ! the solution's tuple at every instant and cell, in every column
+    allocate(coarse(stride, ncells, ninst, 0:ncol - 1))
+    do k = 1, ninst
+       do c = 1, ncells
+          coarse(:, c, k, :) = solution % jet(1:stride, plus % points % point_of(k, c), 1:ncol)
+       end do
+    end do
+    rows_along = plus % space_rows()
+
+    ! the stages of each staged block of the enrichment, solved from the
+    ! solution's instants behind it, the block's own instants then
+    ! returned to the solution's
+    top = 1
+    do b = 1, nb
+       top = max(top, plus % schemes % scheme(b) % num_stages())
+       call plus % block_extent(b, first, last, depth)
+       if (first < 1) then
+          write(message,'(a,i0,a,i0,a,i0)') 'operation_residual: block ', b, ' of the enrichment reads ', depth, &
+               & ' instants of history before instant ', first + depth
+          error stop trim(message)
+       end if
+    end do
+    allocate(stages(stride, ncells, top, ninst, 0:ncol - 1), source=0.0_dp)
+    tuple = coarse
+    do b = 1, nb
+       if (.not. marches_by_stages(plus % schemes % scheme(b), nd)) cycle
+       call plus % block_extent(b, first, last, depth)
+       call plus % solve_block(plus % schemes % scheme(b), first, last, depth, rows_along, origin, tuple, stages, &
+            & expand=.false.)
+       tuple(:, :, first + depth:last, :) = coarse(:, :, first + depth:last, :)
+    end do
+
+    ! P Q, its nodes by the enrichment's quadrature
+    allocate(value(npts, nf))
+    do k = 1, ninst
+       do c = 1, ncells
+          do f = 1, nf
+             value(plus % points % point_of(k, c), f) = coarse(plus % rule % offset_of_field(f) + 1, c, k, 0)
+          end do
+       end do
+    end do
+    allocate(names(nf))
+    names = plus % manifold % unknown_name(1:nf)
+    state = discrete_field(plus % points, value, names)
+    allocate(state % jet(stride, npts, ncol))
+    do k = 1, ninst
+       do c = 1, ncells
+          state % jet(:, plus % points % point_of(k, c), :) = coarse(:, c, k, :)
+       end do
+    end do
+    state % slot = [(plus % rule % offset_of_field(f) + 1, f = 1, nf)]
+    state % rule = plus % rule
+    replay = state
+    call plus % quadrature_nodes(origin, coarse, stages, state, stage_node)
+
+    ! the objective over each step: its integral by the enrichment's
+    ! rule at P Q less that by the step's own rule at Q, the rules'
+    ! weights at their nodes, the solution's nodes numbered again by its
+    ! own chain; a functional on a face of time has no rule along time
+    ! and the same value at P Q as at Q
+    allocate(contribution(npts), source=0.0_dp)
+    face = this % objective % integrated_part == TIME_FACE
+    call this % objective % functional(solution, total, gradient, partial, density)
+    if (.not. face) then
+       top = 1
+       do b = 1, base % schemes % num_blocks()
+          top = max(top, base % schemes % scheme(b) % num_stages())
+       end do
+       allocate(zeros(stride, ncells, top, ninst, 0:ncol - 1), source=0.0_dp)
+       call base % quadrature_nodes(origin, coarse, zeros, replay, base_node, density=density, step_term=term)
+       contribution = contribution - term
+    end if
+    call plus % objective % functional(state, total, gradient, partial, density)
+    if (.not. face) then
+       call plus % quadrature_nodes(origin, coarse, stages, replay, base_node, density=density, step_term=term)
+       contribution = contribution + term
+    end if
+
+    ! the reverse sweep of the enrichment at P Q, block after block from
+    ! the last, each row's multiplier times the row's residual there
+    call plus % allocate_multipliers(partial, ninst, adjoint, incoming, reaction, gauge, in_design)
+    do b = nb, 1, -1
+       call plus % block_extent(b, first, last, depth)
+       call plus % block_rows(plus % schemes % scheme(b), first, last, depth, rows_along, origin, coarse(:, :, :, 0), &
+            & stages(:, :, :, :, 0), .true., blk)
+       call plus % block_inputs(blk)
+       allocate(jets(size(blk % q), 0:0), mu(size(blk % q), 0:0), source=0.0_dp)
+       jets(:, 0) = blk % q
+       call plus % adjoint_order(origin, blk, 0, 1, jets, mu, gradient, stage_node, incoming, x)
+       solver = plus % solver_for(blk % rows, size(blk % q), blk % rows % degrees, size(blk % rows % at))
+       call solver % evaluate(blk % q, y, blk % inputs)
+       do r = 1, size(y)
+          m = (r - 1) / width + 1
+          c = mod(r - 1, width) / stride + 1
+          k = findloc(blk % instant_moment >= m, .true., dim=1)
+          contribution(plus % points % point_of(first + k - 1, c)) = &
+               & contribution(plus % points % point_of(first + k - 1, c)) + x(r) * y(r)
+       end do
+       deallocate(jets, mu, x)
+    end do
+
+  end function time_disagreement
 
   !===================================================================!
   ! Whether the derivatives along space are relations on the segments

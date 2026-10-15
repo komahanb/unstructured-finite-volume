@@ -6,7 +6,9 @@
 # Lagrangian printed; (d) the design, the pin of nu removed. Two runs:
 #
 #   van_der_pol          eleven instants, order 1 along nu: u(2) =
-#                        0.2912 (0.3233 converged), nu = 1.5269 found
+#                        0.2912 (0.3233 converged), nu = 1.5269 found,
+#                        and the estimate of the error of J at nu_0
+#                        and at the design found
 #   van_der_pol 21 2 0 3 21 instants, order 3: the derivatives of u(T)
 #                        and of J along nu to order 3, each of J by the
 #                        state and by the adjoint

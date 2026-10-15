@@ -56,7 +56,19 @@
 ! the energy are the same at every order: at eleven instants J =
 ! 3.1356779007580480 and lambda_ic = (-1.3772000188879279,
 ! -0.10639333936774159). The solution converges with the count: u(2)
-! = 0.32331 at 401 and at 1601 instants.
+! = 0.32331 at 401 and at 1601 instants. THE ESTIMATE of J - J_bar is
+! the disagreement along time of the solution with the chain one
+! order higher, dirk(3), bdf(3), adams(3), on the same instants,
+! J+(P Q) - J(Q) + mu+ . R+(P Q), the stages of each step of dirk(3)
+! solved from the solution's instant behind it: one contribution per
+! instant. Against J by the chain of order three at 2561 instants,
+! 3.0969362409469, which 5121 instants meet to 2.8e-12, its ratio to
+! the error is 1.259, 1.102, 1.032, 1.0099, 1.0029 and 1.0008 at 11,
+! 21, 41, 81, 161 and 321 instants, and to the difference from the
+! solve of order three on the same instants 1.0215, 1.0039, 1.00068,
+! 1.00013, 1.00003 and 1.00001; on instants graded toward either end
+! the ratio to the error is 0.93 to 1.30 at 21 instants and 0.988 to
+! 1.025 at 161.
 !
 ! (c) In the same solve, the stationarity in nu is read for lambda_s
 ! = -dJ/dnu. THE AUDIT is the agreement of the two halves of L_bar:
@@ -84,7 +96,10 @@
 ! found converges with the instants at second order, the order of
 ! the chain: nu = 1.49414469, 1.48607327, 1.48427255, 1.48387461 and
 ! 1.48378216 at 21, 41, 81, 161 and 321 instants, apart by 8.1e-3,
-! 1.8e-3, 4.0e-4 and 9.2e-5.
+! 1.8e-3, 4.0e-4 and 9.2e-5. The estimate of J - J_bar at the design
+! found, against J at that design by the chain of order three at 2561
+! instants, has the ratio 1.259, 1.136, 1.066 and 1.028 to the error
+! at 21, 41, 81 and 161 instants.
 !
 ! THE LAGRANGIAN of (b) and (c) is printed before its solve: J and
 ! every law with the multiplier it is paired with, each equation as a
@@ -120,6 +135,7 @@ program van_der_pol
   type(continuous_residual) :: r_omega, r_ic, r_s, L
   type(discrete_residual)   :: L_bar
   type(discrete_field)      :: estimate, solution, u_bar, lambda_omega_bar, lambda_ic_bar, lambda_s_bar, J_bar, nu_bar
+  real(dp), allocatable     :: eta(:)
   integer                   :: k
 
   num_instants = nint(argument(1, 11.0_dp))
@@ -219,6 +235,10 @@ program van_der_pol
   print '(a, es24.16)', 'lambda_ic = -dJ / du_0   = ', lambda_ic_bar % value(1, 1)
   print '(a, es24.16)', 'lambda_ic = -dJ / du_t_0 = ', lambda_ic_bar % value(1, 2)
 
+  ! (b) THE ESTIMATE of J - J_bar, one contribution per instant
+  eta = L_bar % disagreement(solution)
+  print '(a, es24.16)', 'estimate of J - J_bar    = ', sum(eta)
+
   ! (c) the multiplier of the design pin, and THE AUDIT: d^k J / dnu^k
   ! by the expansion of the state, against the derivative of order
   ! k - 1 of -lambda_s, the expansion of the adjoint
@@ -252,6 +272,8 @@ program van_der_pol
   print '(a, es24.16)', 'nu found                = ', nu_bar % value(1, 1)
   print '(a, es24.16)', 'J                       = ', J_bar % value(1, 1)
   if (order >= 1) print '(a, es24.16)', 'dJ / dnu                = ', J_bar % value(1, 2)
+  eta = L_bar % disagreement(solution)
+  print '(a, es24.16)', 'estimate of J - J_bar   = ', sum(eta)
 
 contains
 

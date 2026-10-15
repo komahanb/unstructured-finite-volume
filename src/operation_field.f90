@@ -603,15 +603,18 @@ contains
   ! seeded on the coordinate i. Over a face at an
   ! instant the measure is the point's within the face, zero off it:
   ! J = u(T)^2 / 2 is the integral of that field over the face at T.
+  ! density(p), when present, is the field at node p, of any measure,
+  ! zero at a node of another image.
   !===================================================================!
 
-  subroutine functional_over(this, solution, total, gradient, partial)
+  subroutine functional_over(this, solution, total, gradient, partial, density)
 
     class(continuous_field), intent(in)  :: this
     type(discrete_field)   , intent(in)  :: solution
     real(dp), allocatable  , intent(out) :: total(:)
     real(dp), allocatable  , intent(out) :: gradient(:,:,:)
     real(dp), allocatable  , intent(out) :: partial(:,:)
+    real(dp), allocatable  , intent(out), optional :: density(:)
 
     real(dp), allocatable :: q(:), g(:), gd(:), values(:), unit(:), seed(:), position(:)
     integer , allocatable :: slot(:)
@@ -645,6 +648,10 @@ contains
        if (view % formula() /= solution % objective_formula) then
           error stop 'operation_field: the solution retained its stages over checkpoints alone, so the &
                &only functional it integrates is the objective of the residual that formed it'
+       end if
+       if (present(density)) then
+          error stop 'operation_field: a solution retained its stages over checkpoints stores the value of its &
+               &objective, not the field at its nodes'
        end if
        total = solution % objective_value
        allocate(gradient(0, 0, 0), partial(0, 0))
@@ -685,6 +692,7 @@ contains
     allocate(total(expanded % num_columns()), partial(size(values), 0:expanded % num_columns() - 1), source=0.0_dp)
     allocate(unit(order), source=0.0_dp)
     if (order > 0) unit(1) = 1.0_dp
+    if (present(density)) allocate(density(nnodes), source=0.0_dp)
 
     do p = 1, nnodes
        if (over_nodes) then
@@ -697,12 +705,14 @@ contains
           position = solution % on % position(p)
           if (this % integrated_part == TIME_FACE) measure = solution % on % measure_on_face(p, this % integrated_time)
        end if
-       if (measure == 0.0_dp) cycle
+       if (measure == 0.0_dp .and. .not. present(density)) cycle
        ! the value, its gradient in the jet and in the design
        do k = 0, ns - 1
           q(k) = jet_of(slot(k), p, 0)
        end do
        call integrand % gradient_at(q, values, value, g, position, gd)
+       if (present(density)) density(p) = value
+       if (measure == 0.0_dp) cycle
        total(1) = total(1) + measure * value
        do k = 0, ns - 1
           gradient(slot(k), p, 0) = gradient(slot(k), p, 0) + measure * g(k)

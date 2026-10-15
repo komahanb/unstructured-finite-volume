@@ -3,7 +3,8 @@
 # on [0, 2] x {nu}, every law r_l paired with its multiplier lambda_l,
 # and four problems as Lagrangians of that statement: (a) the physics,
 # without J; (b) the adjoint and (c) the sensitivity, J added, that
-# Lagrangian printed; (d) the design, the pin of nu removed. Two runs:
+# Lagrangian printed; (d) the design, the pin of nu removed; (e) the
+# design on instants placed by the estimate of its error. Two runs:
 #
 #   van_der_pol          eleven instants, order 1 along nu: u(2) =
 #                        0.2912 (0.3233 converged), nu = 1.5269 found,

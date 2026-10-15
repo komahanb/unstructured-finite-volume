@@ -255,6 +255,7 @@ module operation_field
      procedure :: norm
      procedure :: num_points     => discrete_num_points
      procedure :: num_components => discrete_num_components
+     procedure :: instant        => discrete_instant
 
   end type discrete_field
 
@@ -1701,6 +1702,16 @@ contains
     class(discrete_field), intent(in) :: this
     discrete_num_components = size(this % value, 2)
   end function discrete_num_components
+
+  ! the instant of point p: its first coordinate, time on a manifold of
+  ! time, at the points the field was solved on
+  pure real(dp) function discrete_instant(this, p)
+    class(discrete_field), intent(in) :: this
+    integer              , intent(in) :: p
+    real(dp), allocatable :: x(:)
+    x = this % on % position(p)
+    discrete_instant = x(1)
+  end function discrete_instant
 
   !===================================================================!
   ! The values in the order of the points, each point's components

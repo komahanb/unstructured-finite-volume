@@ -119,6 +119,8 @@ module operation_family
    contains
 
      procedure :: history_depth    => family_history_depth
+     procedure :: accuracy         => family_accuracy
+     procedure :: step_ratio_bound => family_step_ratio_bound
      procedure :: num_stages       => family_num_stages
      procedure :: stage_weight     => family_stage_weight
      procedure :: stage_abscissa   => family_stage_abscissa
@@ -268,6 +270,38 @@ contains
     end select
 
   end function family_history_depth
+
+  ! the order of accuracy: p of adams(p) and bdf(p), the order of a
+  ! tableau by its order conditions, for Newmark two at gamma = 1/2
+  ! and one otherwise
+  pure integer function family_accuracy(this)
+
+    class(family), intent(in) :: this
+
+    select case (this % geometry)
+    case (FAMILY_ADAMS, FAMILY_BDF)
+       family_accuracy = this % order
+    case (FAMILY_DIRK)
+       family_accuracy = tableau_order(this)
+    case default
+       family_accuracy = merge(2, 1, this % gamma == 0.5_dp)
+    end select
+
+  end function family_accuracy
+
+  ! the largest ratio of a step to the step before it that the family
+  ! is known to march stably: 1 + sqrt(2) for bdf(2), Grigorieff's
+  ! sufficient condition for zero-stability on variable steps; no
+  ! bound, the largest number, for a family of one step, and none
+  ! stated here for another multistep family
+  pure real(dp) function family_step_ratio_bound(this)
+
+    class(family), intent(in) :: this
+
+    family_step_ratio_bound = huge(1.0_dp)
+    if (this % geometry == FAMILY_BDF .and. this % order == 2) family_step_ratio_bound = 1.0_dp + sqrt(2.0_dp)
+
+  end function family_step_ratio_bound
 
   pure integer function family_primary_degree(this, equation_degree)
 

@@ -88,6 +88,7 @@ module operation_residual
   private
   public :: residual_operator
   public :: continuous_residual, discrete_residual, minimize_together
+  public :: equidistribution
   public :: operator(+), operator(*)
 
   !===================================================================!
@@ -403,6 +404,18 @@ module operation_residual
   ! objective to the datum there, the functional derivative.
   !===================================================================!
 
+  !===================================================================!
+  ! THE EQUIDISTRIBUTION, a placement of the instants of a discrete
+  ! image of L in place of their positions: the count of the instants
+  ! of the manifold's image, the instants moved by minimize until the
+  ! estimate of the error of the objective is the same over every step
+  ! of the chain - the step density proportional to the local error
+  ! density to the power 1/(p + 1), p the order of the step's family.
+  !===================================================================!
+
+  type :: equidistribution
+  end type equidistribution
+
   type :: discrete_residual
 
      type(discrete_manifold)   :: points
@@ -446,12 +459,18 @@ module operation_residual
      ! Lagrangian's, so that the multipliers of the design and their
      ! expansion are its gradient and its hessian in the design
      real(dp), allocatable   :: functional_weight(:)
+     ! the placement of the instants, an equidistribution, minimize
+     ! moving them; unallocated, the instants are the image's
+     type(equidistribution), allocatable :: placement
 
    contains
 
      procedure :: minimize
      procedure :: disagreement
      procedure, private :: time_disagreement
+     procedure, private :: placement_iteration
+     procedure, private :: placement_instants
+     procedure, private :: design_disagreement
      procedure, private :: space_rows
      procedure, private :: lagrangian_differential
      procedure, private :: zero_at_design
@@ -2471,12 +2490,13 @@ contains
 
   end subroutine check_representations
 
-  function residual_discretize(this, points, time, space) result(image)
+  function residual_discretize(this, points, time, space, placement) result(image)
 
     class(continuous_residual), intent(in) :: this
     type(discrete_manifold)   , intent(in) :: points
     type(chain)               , intent(in), optional :: time
     class(derivative_approximation), intent(in), optional :: space
+    type(equidistribution)    , intent(in), optional :: placement
     type(discrete_residual) :: image
 
     integer :: k, j, i, whole_term, num_conditions, nf
@@ -2674,6 +2694,16 @@ contains
        allocate(image % differences, source=space)
        image % with_differences = .true.
     end if
+    if (present(placement)) then
+       if (.not. present(time)) then
+          error stop 'operation_residual: an equidistribution places instants; the manifold has no time'
+       end if
+       if (.not. allocated(image % objective)) then
+          error stop 'operation_residual: an equidistribution places the instants by the error of the objective; &
+               &the Lagrangian has none'
+       end if
+       image % placement = placement
+    end if
 
   end function residual_discretize
 
@@ -2761,6 +2791,10 @@ contains
           return
        end if
     end if
+    if (allocated(this % placement)) then
+       call this % placement_iteration(estimate, solution, checkpoint, snapshots)
+       return
+    end if
     if (.not. free_design(this)) then
        if (any(this % condition % inequality)) then
           error stop 'operation_residual: an inequality bounds a free design; an equality on the design &
@@ -2784,6 +2818,272 @@ contains
     solution = solutions(1)
 
   end subroutine minimize
+
+  !===================================================================!
+  ! THE ROUNDS OF AN EQUIDISTRIBUTION. Each round solves the
+  ! Lagrangian on the instants as they stand - the design free, from
+  ! the design the round before found - and estimates the error of the
+  ! objective step by step, eta_k, by the disagreement along time.
+  ! A = sum |eta_k| is the measure the placement lowers; the
+  ! uncertainty of the estimate is the difference of sum eta_k from
+  ! J+(Q+) - J(Q), Q+ the solution of the enrichment on the same
+  ! instants. A round that does not lower A is rejected and the round
+  ! before returned; a round that lowers A by less than the
+  ! uncertainty is returned; otherwise the instants are placed again
+  ! (placement_instants) and the next round solves from the solution's
+  ! values at the same points. A density zero over every step returns
+  ! the round. No stop is a chosen number. With the design free, the
+  ! error the placement lowers is that of the design found, its part
+  ! of each step and its uncertainty by design_disagreement, in place
+  ! of eta_k. Invalid input: a checkpoint or snapshot schedule, under
+  ! which the stages of the steps are not retained.
+  !===================================================================!
+
+  recursive subroutine placement_iteration(this, estimate, solution, checkpoint, snapshots)
+
+    class(discrete_residual), intent(in)  :: this
+    type(discrete_field)    , intent(in)  :: estimate
+    type(discrete_field)    , intent(out) :: solution
+    integer                 , intent(in), optional :: checkpoint, snapshots
+
+    type(discrete_residual) :: iterate, plus
+    type(discrete_field) :: start, trial, enriched, at_points
+    real(dp), allocatable :: eta(:), goal(:), position(:), total(:), total_plus(:), gradient(:,:,:), partial(:,:)
+    real(dp), allocatable :: slope(:), slope_plus(:), shift(:)
+    character(len=32), allocatable :: names(:)
+    real(dp) :: measure, measure_before, signed, uncertainty
+    integer :: round, nf, i, nd
+    logical :: free
+
+    if (present(checkpoint) .or. present(snapshots)) then
+       error stop 'operation_residual: an equidistribution reads the stages of every step, which a checkpoint or &
+            &snapshot schedule does not retain'
+    end if
+    select type (this)
+    type is (discrete_residual)
+       iterate = this
+    end select
+    deallocate(iterate % placement)
+    free = free_design(iterate)
+    nf   = iterate % manifold % num_unknowns
+    allocate(names(nf))
+    names = iterate % manifold % unknown_name(1:nf)
+    start = estimate
+    measure_before = huge(1.0_dp)
+    round = 0
+    do
+       round = round + 1
+       call iterate % minimize(start, trial)
+       eta    = iterate % time_disagreement(trial)
+       signed = sum(eta)
+       ! the enrichment solved on the same instants, at the design found
+       plus = iterate
+       select type (on => trial % on)
+       type is (discrete_manifold)
+          plus % points = on
+       end select
+       plus % schemes      = enrichment(iterate % schemes)
+       plus % with_adjoint = .false.
+       at_points = discrete_field(plus % points, trial % value(:, 1:nf), names)
+       call plus % zero_at_design(at_points, enriched)
+       call iterate % objective % functional(trial, total, gradient, partial)
+       call plus % objective % functional(enriched, total_plus, gradient, partial)
+       if (free) then
+          nd = size(plus % points % expansion % at)
+          slope      = [(total(1 + plus % points % expansion % column(i, 1)), i = 1, nd)]
+          slope_plus = [(total_plus(1 + plus % points % expansion % column(i, 1)), i = 1, nd)]
+          call iterate % design_disagreement(trial, slope, slope_plus, goal, uncertainty, shift)
+          if (verbosity >= 1) print '(a, i0, a, *(es12.4))', 'placement round ', round, &
+               & ': nu* - nu_h estimated ', shift
+       else
+          goal = abs(eta)
+          uncertainty = abs(signed - (total_plus(1) - total(1)))
+       end if
+       measure = sum(goal)
+       if (verbosity >= 1) print '(a, i0, a, es12.4, a, es12.4, a, es12.4, a, es10.2)', 'placement round ', round, &
+            & ': measure ', measure, '  sum eta ', signed, '  J+(Q+) - J ', total_plus(1) - total(1), &
+            & '  uncertainty ', uncertainty
+       if (round > 1 .and. measure >= measure_before) then
+          if (verbosity >= 1) print '(a)', 'placement: the round does not lower the measure; the round before returned'
+          exit
+       end if
+       solution = trial
+       if (round > 1 .and. measure_before - measure < uncertainty) then
+          if (verbosity >= 1) print '(a)', 'placement: the decrease of the measure is below the uncertainty of the &
+               &estimate'
+          exit
+       end if
+       measure_before = measure
+       position = iterate % placement_instants(trial, goal)
+       if (size(position) == 0) then
+          if (verbosity >= 1) print '(a)', 'placement: the estimate is zero over every step'
+          exit
+       end if
+       select type (on => trial % on)
+       type is (discrete_manifold)
+          iterate % points = on
+       end select
+       iterate % points % instant = position
+       start = discrete_field(iterate % points, trial % value(:, 1:nf), names)
+    end do
+
+  end subroutine placement_iteration
+
+  !===================================================================!
+  ! THE DISAGREEMENT IN THE DESIGN FOUND, the design free: the error
+  ! of nu* follows that of the gradient, nu* - nu_h ~ -H^(-1) E'(nu_h),
+  ! E = J - J_h, and each point's part of E' is the derivative of its
+  ! eta along each design coordinate, by central differences of the
+  ! solutions at nu_h +- delta_i, delta_i = eps^(1/3) max(1, |nu_i|),
+  ! the step at which the truncation of the difference and the
+  ! rounding of eta are of one size; H by the same differences of the
+  ! gradient dJ_h/dnu. contribution(p) = |H^(-1) d eta(p) / dnu|;
+  ! shift = -H^(-1) sum over the points of d eta / dnu, the estimate of
+  ! nu* - nu_h; uncertainty its distance from -H^(-1) (slope_plus -
+  ! slope), the gradients of J+ at Q+ and of J_h at Q. A singular H
+  ! stops the program.
+  !===================================================================!
+
+  subroutine design_disagreement(this, solution, slope, slope_plus, contribution, uncertainty, shift)
+
+    class(discrete_residual), intent(in)  :: this
+    type(discrete_field)    , intent(in)  :: solution
+    real(dp)                , intent(in)  :: slope(:), slope_plus(:)
+    real(dp), allocatable   , intent(out) :: contribution(:), shift(:)
+    real(dp)                , intent(out) :: uncertainty
+
+    type(discrete_residual) :: pinned
+    type(discrete_field) :: start, side
+    real(dp), allocatable :: values(:), derivative(:,:), hessian(:,:), eta(:,:), gradient_side(:,:)
+    real(dp), allocatable :: total(:), gradient(:,:,:), partial(:,:)
+    character(len=32), allocatable :: names(:)
+    real(dp) :: delta
+    integer :: nd, nf, npts, i, j, s, p
+
+    select type (this)
+    type is (discrete_residual)
+       pinned = this
+    end select
+    select type (on => solution % on)
+    type is (discrete_manifold)
+       pinned % points = on
+    end select
+    values = pinned % points % expansion % at
+    nd     = size(values)
+    nf     = pinned % manifold % num_unknowns
+    npts   = pinned % points % num_points()
+    allocate(names(nf))
+    names = pinned % manifold % unknown_name(1:nf)
+    allocate(derivative(npts, nd), hessian(nd, nd), eta(npts, 2), gradient_side(nd, 2))
+    do i = 1, nd
+       delta = epsilon(1.0_dp)**(1.0_dp / 3.0_dp) * max(1.0_dp, abs(values(i)))
+       do s = 1, 2
+          pinned % points % expansion % at    = values
+          pinned % points % expansion % at(i) = values(i) + merge(delta, -delta, s == 1)
+          start = discrete_field(pinned % points, solution % value(:, 1:nf), names)
+          call pinned % zero_at_design(start, side)
+          eta(:, s) = pinned % time_disagreement(side)
+          call pinned % objective % functional(side, total, gradient, partial)
+          gradient_side(:, s) = [(total(1 + pinned % points % expansion % column(j, 1)), j = 1, nd)]
+       end do
+       derivative(:, i) = (eta(:, 1) - eta(:, 2)) / (2.0_dp * delta)
+       hessian(:, i)    = (gradient_side(:, 1) - gradient_side(:, 2)) / (2.0_dp * delta)
+    end do
+    allocate(contribution(npts))
+    do p = 1, npts
+       contribution(p) = norm2(linear_solution(hessian, derivative(p, :)))
+    end do
+    shift       = -linear_solution(hessian, sum(derivative, dim=1))
+    uncertainty = norm2(shift + linear_solution(hessian, slope_plus - slope))
+
+  end subroutine design_disagreement
+
+  !===================================================================!
+  ! THE INSTANTS OF THE NEXT PLACEMENT, at the count of a solution's
+  ! instants: on each step, the step into instant k of length h_k, the
+  ! step density e_k^(1/(p_k + 1)) / h_k, e_k = sum over the cells of
+  ! |eta| at instant k and p_k the order of the step's family - the
+  ! density a_k^(1/(p_k + 1)) of the local error density a_k = e_k /
+  ! h_k^(p_k + 1), the stationary point of the error at a count of
+  ! steps; the instants its quantiles, the first and the last the
+  ! interval's ends. Each step is then limited to the bound the
+  ! chain's families state on its ratio to the step before it, from
+  ! the first step forward and from the last back, every step only
+  ! shortened, and the steps scaled to the interval, which keeps their
+  ! ratios. A density zero over every step returns no instant.
+  !===================================================================!
+
+  function placement_instants(this, solution, eta) result(position)
+
+    class(discrete_residual), intent(in) :: this
+    type(discrete_field)    , intent(in) :: solution
+    real(dp)                , intent(in) :: eta(:)
+    real(dp), allocatable :: position(:)
+
+    real(dp), allocatable :: t(:), mass(:), h(:)
+    integer , allocatable :: accuracy(:)
+    real(dp) :: bound, target
+    integer :: ninst, ncells, nb, b, first, last, depth, k, j, c
+
+    select type (on => solution % on)
+    type is (discrete_manifold)
+       t = on % instant
+    class default
+       error stop 'operation_residual: an equidistribution places the instants of a manifold'
+    end select
+    ninst  = size(t)
+    ncells = this % points % num_cells()
+    nb     = this % schemes % num_blocks()
+    allocate(accuracy(ninst), source=1)
+    bound = huge(1.0_dp)
+    do b = 1, nb
+       call this % block_extent(b, first, last, depth)
+       accuracy(first + depth:last) = this % schemes % scheme(b) % accuracy()
+       bound = min(bound, this % schemes % scheme(b) % step_ratio_bound())
+    end do
+
+    ! the step density times the step, the mass of each step, and their
+    ! sums from the first instant
+    allocate(mass(ninst), source=0.0_dp)
+    do k = 2, ninst
+       mass(k) = mass(k - 1) + sum([(abs(eta(this % points % point_of(k, c))), c = 1, ncells)]) &
+            & ** (1.0_dp / real(accuracy(k) + 1, dp))
+    end do
+    if (mass(ninst) == 0.0_dp) then
+       allocate(position(0))
+       return
+    end if
+
+    ! the quantiles: instant j at the fraction (j - 1)/(n - 1) of the mass
+    allocate(position(ninst))
+    position(1)     = t(1)
+    position(ninst) = t(ninst)
+    k = 2
+    do j = 2, ninst - 1
+       target = mass(ninst) * real(j - 1, dp) / real(ninst - 1, dp)
+       do while (mass(k) < target)
+          k = k + 1
+       end do
+       position(j) = t(k - 1) + (t(k) - t(k - 1)) * (target - mass(k - 1)) / (mass(k) - mass(k - 1))
+    end do
+
+    ! the bound on the ratio of a step to the step before it
+    if (bound < huge(1.0_dp)) then
+       h = position(2:) - position(:ninst - 1)
+       do k = 2, size(h)
+          h(k) = min(h(k), bound * h(k - 1))
+       end do
+       do k = size(h) - 1, 1, -1
+          h(k) = min(h(k), bound * h(k + 1))
+       end do
+       h = h * (t(ninst) - t(1)) / sum(h)
+       do k = 2, ninst - 1
+          position(k) = position(k - 1) + h(k - 1)
+       end do
+       position(ninst) = t(ninst)
+    end if
+
+  end function placement_instants
 
   !===================================================================!
   ! SEVERAL LAGRANGIANS ON ONE DESIGN: residuals on manifolds of the

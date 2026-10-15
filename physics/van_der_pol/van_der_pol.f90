@@ -27,15 +27,20 @@
 !                    instants t_bar and a chain of families, dirk(2)
 !                    over the first three, bdf(2) over the next four,
 !                    adams(2) to the end; along nu the expansion s_bar
-!                    of an order at nu_0
+!                    of an order at nu_0. The instants are the
+!                    manifold's image, equally spaced, or, in (e), the
+!                    equidistribution, a placement the discrete image
+!                    of L states, since it reads the error of J
 !
-! FOUR PROBLEMS are then four readings of one Lagrangian, each
-! Lagrangian differing from the one before it by one term:
+! FIVE PROBLEMS are then five readings of one Lagrangian, each
+! differing from the one before it by one term or by the placement of
+! its instants:
 !
 !   (a) physics          L = lambda_omega . r_omega + lambda_ic . r_ic + lambda_s . r_s
 !   (b) adjoint, and
 !   (c) sensitivity      L = J + lambda_omega . r_omega + lambda_ic . r_ic + lambda_s . r_s
 !   (d) design           L = J + lambda_omega . r_omega + lambda_ic . r_ic
+!   (e) design on the equidistribution, L of (d)
 !
 ! (a) The stationarity of L in the multipliers is the oscillator with
 ! its data and its design, solved forward for u_bar and, the
@@ -101,6 +106,35 @@
 ! instants, has the ratio 1.259, 1.136, 1.066 and 1.028 to the error
 ! at 21, 41, 81 and 161 instants.
 !
+! (e) The Lagrangian of (d), its discrete image with the placement of
+! the equidistribution: the instants of manifold_bar moved, their
+! count kept, minimize solving (d), estimating and placing the
+! instants again round after round. With the design free the error
+! placed is that of the design found, nu* - nu_h ~ -H^(-1) E'(nu_h):
+! each step's part the derivative along nu of its eta, by central
+! differences of the solutions at nu_h +- delta, delta = eps^(1/3)
+! max(1, |nu_h|), and H by the same differences of dJ/dnu; the step
+! density that part to the power 1/3 over the step, the instants its
+! quantiles, a step at most 1 + sqrt(2) times the step before it,
+! Grigorieff's bound for bdf(2). A round that does not lower the sum
+! of the parts is rejected and the round before returned; one that
+! lowers it by less than the uncertainty of the estimate, its distance
+! from the estimate by the chain of order three on the same instants,
+! is returned. The instants are not design coordinates of L
+! (doc/unified-residuals.md, section 16). Against 1.4837523856, nu
+! by the chain of order three at 2561 instants, the error of nu found
+! falls from 4.316e-2, 1.039e-2, 2.321e-3 and 5.202e-4 on equally
+! spaced instants to 3.398e-2, 7.346e-3, 1.606e-3 and 3.935e-4 on the
+! equidistribution, at 11, 21, 41 and 81 instants, by 21, 29, 31 and
+! 24 per cent, and the estimate of nu* - nu_h reads 0.942, 0.948,
+! 0.969 and 0.982 of it. With the design pinned at nu_0 the
+! equidistribution of eta lowers the error of J by 33, 30, 25 and 20
+! per cent at 21, 41, 81 and 161 instants. The equidistribution of eta
+! with the design free lowers the error of J at the design found
+! three- to tenfold, and raises that of nu found by 13 to 34 per cent
+! at 41 to 161 instants: the design found reads the gradient of J,
+! not its value.
+!
 ! THE LAGRANGIAN of (b) and (c) is printed before its solve: J and
 ! every law with the multiplier it is paired with, each equation as a
 ! formula, then the whole as a tree.
@@ -119,7 +153,8 @@ program van_der_pol
   use operation_expansion, only : expansion
   use operation_field    , only : continuous_field, discrete_field, integral, &
        &                          operator(+), operator(-), operator(*), operator(/), operator(**)
-  use operation_residual , only : continuous_residual, discrete_residual, operator(+), operator(*)
+  use operation_residual , only : continuous_residual, discrete_residual, operator(+), operator(*), &
+       &                          equidistribution
   use operation_family   , only : dirk, bdf, adams, chain
   use view_residual      , only : formula, tree
 
@@ -275,18 +310,45 @@ program van_der_pol
   eta = L_bar % disagreement(solution)
   print '(a, es24.16)', 'estimate of J - J_bar   = ', sum(eta)
 
+  !===================================================================!
+  ! (e) DESIGN ON THE EQUIDISTRIBUTION. L of (d), the instants of
+  ! manifold_bar moved, their count kept, until the error of the
+  ! design found is the same over every step
+  !===================================================================!
+
+  L_bar = discrete_image(L, placement=equidistribution())
+  call L_bar % minimize(estimate, solution)
+
+  ! the design found, and the instants placed with the contribution of
+  ! each to the estimate of J - J_bar, every tenth
+  u_bar  = solution % fields(['u'])
+  nu_bar = solution % fields(['nu'])
+  J_bar  = J % at(solution)
+  eta    = L_bar % disagreement(solution)
+  print '(a)', '(e) design on the equidistribution: L of (d)'
+  do k = 1, num_instants
+     if (mod(k - 1, max(1, (num_instants - 1) / 10)) == 0) then
+        print '(a, f8.4, a, es12.4)', 't = ', u_bar % instant(k), '   eta = ', eta(k)
+     end if
+  end do
+  print '(a, es24.16)', 'nu found                = ', nu_bar % value(1, 1)
+  print '(a, es24.16)', 'J                       = ', J_bar % value(1, 1)
+  print '(a, es24.16)', 'estimate of J - J_bar   = ', sum(eta)
+
 contains
 
   ! the discrete image of a Lagrangian upon manifold_bar: along t the
   ! chain dirk(2), bdf(2), adams(2), one block per instant, each block
   ! reading the instants before it; along nu the derivatives of the
-  ! laws exact
-  function discrete_image(L) result(L_bar)
+  ! laws exact; with a placement, the instants placed by it
+  function discrete_image(L, placement) result(L_bar)
     type(continuous_residual), intent(in) :: L
+    type(equidistribution)   , intent(in), optional :: placement
     type(discrete_residual) :: L_bar
     integer :: k
     L_bar = L % discretize(manifold_bar, time=chain([(dirk(2), k = 1, 3), (bdf(2), k = 4, 7), &
-         &                                           (adams(2), k = 8, num_instants)], from=[(k, k = 1, num_instants)]))
+         &                                           (adams(2), k = 8, num_instants)], from=[(k, k = 1, num_instants)]), &
+         &                 placement=placement)
   end function discrete_image
 
   ! the k-th number of the command line, or the default without one

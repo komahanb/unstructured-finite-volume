@@ -693,6 +693,23 @@ contains
        end if
     end if
     if (present(time)) image % instant = positions_on(time, this % span)
+    ! an expansion that moves the instants names the derivative of each,
+    ! the ends of the interval fixed
+    if (present(design)) then
+       if (allocated(design % instants)) then
+          if (.not. present(time) .or. present(space)) then
+             error stop 'operation_manifold: an expansion moves the instants of a manifold of time alone'
+          end if
+          if (size(design % instants, 1) /= size(image % instant)) then
+             error stop 'operation_manifold: an expansion that moves the instants names the derivative of each'
+          end if
+          if (any(design % instants(1, :) /= 0.0_dp) .or. any(design % instants(size(image % instant), :) /= 0.0_dp)) &
+               & then
+             error stop 'operation_manifold: the ends of the interval are fixed; an expansion moves the instants &
+                  &between them'
+          end if
+       end if
+    end if
     if (present(space)) then
        select type (space)
        type is (mesh)

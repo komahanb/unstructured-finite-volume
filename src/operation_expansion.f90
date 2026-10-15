@@ -45,6 +45,15 @@
 ! image is the expansion along each coordinate; stated with seeds,
 ! along each seed given.
 !
+! THE INSTANTS ALONG AN EXPANSION. An expansion may move the instants
+! as well: instants(k, e) is the derivative of instant k along the
+! expansion e, the first and the last zero, the ends of the interval
+! fixed. J does not depend on the instants, so every derivative of
+! J_h along them is minus that of the error J - J_h. The steps move
+! as the differences of their instants, and every coefficient of a
+! family and every weight of its quadrature is a function of the
+! steps, differentiated exactly by the jet arithmetic.
+!
 ! THE COLUMNS. With m the order and the expansions numbered from one,
 !
 !      column 0                 the value, of every expansion
@@ -72,8 +81,9 @@ module operation_expansion
   ! The expansion of an order at the design values, along its seeds:
   ! one column of `along` per expansion, the derivative of each design
   ! coordinate along it; `at` the value of each design coordinate and
-  ! `name` its name. A manifold without a design has the expansion of
-  ! order zero with no seed, no value and no name.
+  ! `name` its name; `instants(:, e)`, when allocated, the derivative
+  ! of every instant along the expansion e. A manifold without a design
+  ! has the expansion of order zero with no seed, no value and no name.
   !===================================================================!
 
   type :: expansion
@@ -82,12 +92,14 @@ module operation_expansion
      real(dp), allocatable :: along(:,:)
      real(dp), allocatable :: at(:)
      character(len=32), allocatable :: name(:)
+     real(dp), allocatable :: instants(:,:)
 
    contains
 
      procedure :: num_designs
      procedure :: num_expansions
      procedure :: seed
+     procedure :: instant_seed
      procedure :: values
      procedure :: num_columns
      procedure :: column
@@ -98,6 +110,7 @@ module operation_expansion
      module procedure create_expansion
      module procedure create_expansion_along
      module procedure create_expansion_along_several
+     module procedure create_expansion_with_instants
   end interface expansion
 
 contains
@@ -156,6 +169,34 @@ contains
 
   end function create_expansion_along_several
 
+  ! along the design coordinates and the instants: along(:, e) the
+  ! derivative of each design coordinate along the expansion e, zero
+  ! where it moves the instants alone, instants(:, e) that of each
+  ! instant. Invalid input: arrays of other numbers of expansions, or
+  ! an expansion that moves nothing.
+  function create_expansion_with_instants(order, along, instants) result(this)
+
+    integer , intent(in) :: order
+    real(dp), intent(in) :: along(:,:), instants(:,:)
+    type(expansion) :: this
+
+    integer :: e
+
+    this = create_expansion(order)
+    if (size(along, 2) < 1 .or. size(instants, 2) /= size(along, 2)) then
+       error stop 'operation_expansion: an expansion along the design and the instants names, for each &
+            &direction, the derivative of every design coordinate and of every instant'
+    end if
+    do e = 1, size(along, 2)
+       if (all(along(:, e) == 0.0_dp) .and. all(instants(:, e) == 0.0_dp)) then
+          error stop 'operation_expansion: a direction of the expansion moves a design coordinate or an instant'
+       end if
+    end do
+    this % along    = along
+    this % instants = instants
+
+  end function create_expansion_with_instants
+
   !===================================================================!
   ! The design coordinates the expansion is at, and the expansions:
   ! none of either without a design.
@@ -188,6 +229,21 @@ contains
     end if
     along = this % along(:, e)
   end function seed
+
+  ! the derivative of each of the num_instants instants along the e-th
+  ! expansion: zero at every instant where the expansion does not move
+  ! them
+  pure function instant_seed(this, e, num_instants) result(along)
+    class(expansion), intent(in) :: this
+    integer         , intent(in) :: e, num_instants
+    real(dp), allocatable :: along(:)
+    allocate(along(num_instants), source=0.0_dp)
+    if (.not. allocated(this % instants)) return
+    if (e < 1 .or. e > size(this % instants, 2)) then
+       error stop 'operation_expansion: the expansion named does not exist'
+    end if
+    along = this % instants(:, e)
+  end function instant_seed
 
   ! the design vector: the value of every design coordinate, or the
   ! one value zero without a design, which no expression reads

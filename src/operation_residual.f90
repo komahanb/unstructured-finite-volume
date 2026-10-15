@@ -68,7 +68,7 @@ module operation_residual
   use operation_expansion  , only : expansion
   use operation_family     , only : family, chain, enrichment
   use operation_weight     , only : scheme_weight
-  use operation_coupling   , only : weights_of
+  use operation_coupling   , only : weights_of, weights_terms
   use view_directed_connectivity, only : connectivity_graph
   use operation_scheme_stencil  , only : derived_constraints
   use operation_derivative_approximation, only : derivative_approximation, element_quadrature
@@ -312,6 +312,12 @@ module operation_residual
      integer :: num_cells  = 1
      type(stored_field), allocatable :: inputs(:)
      integer           , allocatable :: owner(:)
+     ! where an expansion moves the instants: the rows along time, each
+     ! determining component time_row(e) from time_column(e), and
+     ! weight_derivative(e, o, d) the o-th derivative of the edge's
+     ! weight along the expansion d
+     integer , allocatable :: time_row(:), time_column(:)
+     real(dp), allocatable :: weight_derivative(:,:,:)
 
    contains
 
@@ -4193,6 +4199,9 @@ contains
          solution % node_jet      = with_nodes % node_jet
          if (allocated(with_nodes % node_rule)) solution % node_rule = with_nodes % node_rule
          solution % node_weight   = with_nodes % node_weight
+         if (allocated(with_nodes % node_weight_derivative)) then
+            solution % node_weight_derivative = with_nodes % node_weight_derivative
+         end if
          solution % node_position = with_nodes % node_position
          solution % node_face_weight = with_nodes % node_face_weight
          solution % node_image    = with_nodes % node_image
@@ -4233,14 +4242,22 @@ contains
     real(dp)                , intent(in), optional :: density(:)
     real(dp), allocatable   , intent(out), optional :: step_term(:)
 
-    type(derivative_terms), allocatable :: dt(:), weight(:)
+    type(derivative_terms), allocatable :: dt(:), weight(:), moved(:), moved_weight(:)
     integer , allocatable :: instant(:), cell_owner(:)
-    real(dp), allocatable :: position(:)
+    real(dp), allocatable :: position(:), motion(:,:)
     integer :: stride, ncells, ninst, npts, nb, b, first, last, depth, n, s, smax, k, i, c, j
-    integer :: nnodes, nn, nf, b1, b2, klo, khi, offset
-    logical :: staged
+    integer :: nnodes, nn, nf, b1, b2, klo, khi, offset, d, o, order, node
+    logical :: staged, moving
     real(dp) :: h
 
+    ! an expansion that moves the instants moves the steps, and the
+    ! weights the families' rules give the nodes with them
+    order  = this % points % expansion % order
+    moving = allocated(this % points % expansion % instants) .and. order > 0
+    if (moving .and. allocated(this % elements)) then
+       error stop 'operation_residual: an expansion moves the instants of a residual whose solution is not &
+            &projected on the cells'
+    end if
     if (allocated(this % elements)) then
        call this % projected_nodes(tuple, stages, solution, stage_node, density, step_term)
        return
@@ -4294,8 +4311,17 @@ contains
        deallocate(solution % node_jet, solution % node_weight, solution % node_position, solution % node_face_weight, &
             & solution % node_image)
     end if
+    if (allocated(solution % node_weight_derivative)) deallocate(solution % node_weight_derivative)
     allocate(solution % node_jet(stride, nnodes, this % points % expansion % num_columns()), source=0.0_dp)
     allocate(solution % node_weight(nnodes), source=0.0_dp)
+    if (moving) then
+       allocate(solution % node_weight_derivative(nnodes, this % points % expansion % num_columns() - 1), &
+            & source=0.0_dp)
+       allocate(motion(ninst, this % points % expansion % num_expansions()))
+       do d = 1, this % points % expansion % num_expansions()
+          motion(:, d) = step_seeds(this % points, d)
+       end do
+    end if
     allocate(solution % node_position(this % points % num_coordinates(), nnodes), source=0.0_dp)
     allocate(solution % node_face_weight(nnodes), source=0.0_dp)
     allocate(solution % node_image(nnodes), source=this_image())
@@ -4334,6 +4360,13 @@ contains
                      stage_node(first + k, i, c) = nn + offset
                      solution % node_image(nn)   = cell_owner(c)
                      solution % node_weight(nn)  = h * scheme % stage_weight(i) * cell_volume(c)
+                     ! the weight is linear in its step: one derivative
+                     if (moving) then
+                        do d = 1, this % points % expansion % num_expansions()
+                           solution % node_weight_derivative(nn, this % points % expansion % column(d, 1)) = &
+                                & motion(first + k, d) * scheme % stage_weight(i) * cell_volume(c)
+                        end do
+                     end if
                      position = this % points % position(this % points % point_of(first + k - 1, c))
                      position(1) = position(1) + scheme % stage_abscissa(i) * h
                      solution % node_position(:, nn) = position
@@ -4361,6 +4394,28 @@ contains
                           & * cell_volume(c) * density(this % points % point_of(first + instant(j) - 1, c) - offset)
                   end do
                end do
+               ! the step times the rule's weight, along each expansion:
+               ! the steps seeded with their derivatives along it
+               if (.not. moving) cycle
+               allocate(moved(n))
+               do d = 1, this % points % expansion % num_expansions()
+                  do j = 1, n
+                     moved(j) = symmetric_terms(this % points % step(first + j - 1), &
+                          & [motion(first + j - 1, d), spread(0.0_dp, 1, order - 1)], order)
+                  end do
+                  call scheme % step_quadrature(moved, k, moved_weight, instant=instant)
+                  do j = 1, size(moved_weight)
+                     do c = 1, ncells
+                        node = this % points % point_of(first + instant(j) - 1, c) - offset
+                        do o = 1, order
+                           solution % node_weight_derivative(node, this % points % expansion % column(d, o)) = &
+                                & solution % node_weight_derivative(node, this % points % expansion % column(d, o)) &
+                                & + coefficient(moved(k) * moved_weight(j), 2**o - 1) * cell_volume(c)
+                        end do
+                     end do
+                  end do
+               end do
+               deallocate(moved)
             end do
             deallocate(dt)
          end if
@@ -5190,7 +5245,10 @@ contains
     logical :: staged
     integer :: nodes, factor
     integer , allocatable :: related(:), added(:), single(:)
-    logical , allocatable :: tying(:), entries(:)
+    logical , allocatable :: tying(:), entries(:), replaced(:)
+    real(dp), allocatable :: derivative(:,:,:), table(:,:,:)
+    integer , allocatable :: relating(:)
+    logical :: moving
 
     stride = this % rule % num_components()
     nf     = this % manifold % num_unknowns
@@ -5256,6 +5314,18 @@ contains
     allocate(determined(count), source(count), weight(count))
     e = 0
 
+    ! an expansion that moves the instants: each time edge's weight
+    ! differentiated along it, the steps moving as their instants
+    moving = allocated(this % points % expansion % instants) .and. this % points % expansion % order > 0
+    if (moving) then
+       ! the laws are read at the moments' times, which would move too
+       if (this % rule % num_position_coordinates() > 0) then
+          error stop 'operation_residual: an expansion moves the instants of laws that read no coordinate'
+       end if
+       allocate(derivative(count, this % points % expansion % order, this % points % expansion % num_expansions()), &
+            & source=0.0_dp)
+    end if
+
     do f = 1, nf
        if (this % rule % degree_of_field(f) < 1) cycle
        do chain = 0, chains - 1
@@ -5264,6 +5334,7 @@ contains
              do k = 1, n - 1
                 steps = spread(this % points % step(first + k), 1, s + 2)
                 call weights_of(scheme_weight(scheme), connectivity, steps, w)
+                if (moving) call weight_table(steps, spread(first + k, 1, s + 2), table)
                 do j = 1, connectivity % num_edges()
                    do c = 1, ncells
                       e = e + 1
@@ -5272,6 +5343,7 @@ contains
                       source(e)     = at_of(moment_of(connectivity % edge_tail(j), k), c) &
                            & + this % coefficient_component(f, chain, connectivity % tail_degree(j)) + 1
                       weight(e)     = w(j)
+                      if (moving) derivative(e, :, :) = table(j, :, :)
                    end do
                 end do
              end do
@@ -5279,6 +5351,7 @@ contains
              connectivity = scheme % block_connectivity(this % rule % degree_of_field(f) + 1, n)
              steps = [(this % points % step(first + k - 1), k = 1, n)]
              call weights_of(scheme_weight(scheme), connectivity, steps, w)
+             if (moving) call weight_table(steps, [(first + k - 1, k = 1, n)], table)
              do j = 1, connectivity % num_edges()
                 do c = 1, ncells
                    e = e + 1
@@ -5287,6 +5360,7 @@ contains
                    source(e)     = at_of(instant_moment(connectivity % edge_tail(j)), c) &
                         & + this % coefficient_component(f, chain, connectivity % tail_degree(j)) + 1
                    weight(e)     = w(j)
+                   if (moving) derivative(e, :, :) = table(j, :, :)
                 end do
              end do
           end if
@@ -5480,6 +5554,18 @@ contains
     blk % depth      = depth
     blk % num_stages = s
     blk % num_cells  = ncells
+    ! the time edges whose row a fixed, gauge or face row takes state
+    ! no relation there, and move nothing
+    if (moving) then
+       allocate(replaced(unknowns), source=.false.)
+       replaced(fixed_rows) = .true.
+       replaced(gauge_rows) = .true.
+       replaced(face_rows)  = .true.
+       relating = pack([(j, j = 1, time_relations)], .not. replaced(determined(1:time_relations)))
+       blk % time_row          = determined(relating)
+       blk % time_column       = source(relating)
+       blk % weight_derivative = derivative(relating, :, :)
+    end if
     call move_alloc(instant_moment, blk % instant_moment)
 
     ! the estimate: the tuple at each instant; at a stage of the step
@@ -5520,7 +5606,61 @@ contains
       end if
     end function moment_of
 
+    ! table(j, o, d): the o-th derivative along the expansion d of the
+    ! weight of edge j of the connectivity, the step at vertex v that
+    ! ending at instant step_of(v), moving as the difference of its
+    ! instants; the steps seeded on the singletons of the order's
+    ! directions, so that the full subset of o of them is the o-th
+    ! derivative
+    subroutine weight_table(steps, step_of, table)
+      real(dp), intent(in) :: steps(:)
+      integer , intent(in) :: step_of(:)
+      real(dp), allocatable, intent(out) :: table(:,:,:)
+      real(dp), allocatable :: seeds(:,:), terms(:,:), motion(:)
+      integer :: order, d, o, mask, v
+      order = this % points % expansion % order
+      allocate(table(connectivity % num_edges(), order, this % points % expansion % num_expansions()))
+      allocate(seeds(size(steps), 2**order - 1))
+      do d = 1, this % points % expansion % num_expansions()
+         motion = step_seeds(this % points, d)
+         seeds  = 0.0_dp
+         do mask = 1, 2**order - 1
+            if (popcnt(mask) /= 1) cycle
+            do v = 1, size(steps)
+               seeds(v, mask) = motion(step_of(v))
+            end do
+         end do
+         call weights_terms(scheme_weight(scheme), connectivity, steps, seeds, terms)
+         do o = 1, order
+            table(:, o, d) = terms(:, 2**o - 1)
+         end do
+      end do
+    end subroutine weight_table
+
   end subroutine block_rows
+
+  !===================================================================!
+  ! The derivative of every step along the expansion d: the difference
+  ! of the derivatives of the instants it joins, zero at the first
+  ! instant, which no step ends at.
+  !===================================================================!
+
+  pure function step_seeds(points, d) result(motion)
+
+    type(discrete_manifold), intent(in) :: points
+    integer                , intent(in) :: d
+    real(dp), allocatable :: motion(:)
+
+    real(dp), allocatable :: v(:)
+    integer :: k
+
+    v = points % expansion % instant_seed(d, points % num_instants())
+    allocate(motion(size(v)), source=0.0_dp)
+    do k = 2, size(v)
+       motion(k) = v(k) - v(k - 1)
+    end do
+
+  end function step_seeds
 
   !===================================================================!
   ! A BLOCK AND THE POINTS OF THE MANIFOLD. tuple_at is the offset,
@@ -5743,6 +5883,7 @@ contains
     end do
     column = this % points % expansion % column(d, m)
     call design_source(blk % rows, jets, m, values, seed, blk % owner, rhs)
+    call time_source(blk, d, m, jets, rhs, transposed=.false.)
     call blk % from_points(HISTORY_MOMENTS, lb, tuple(:, :, :, column), rhs)
     do j = 1, size(this % condition)
        if (.not. this % condition(j) % manifold % is_time_face()) cycle
@@ -5951,6 +6092,43 @@ contains
     sync all
 
   end subroutine wavefront_adjoint
+
+  !===================================================================!
+  ! THE ROWS ALONG TIME WHERE THE INSTANTS MOVE: each row q(row) -
+  ! w q(column) of a block's family, its weight w a function of the
+  ! steps. Its m-th derivative along the expansion d with the m-th
+  ! derivative of the state left out is minus the sum over j = 1..m of
+  ! binomial(m, j) times the j-th derivative of w times the (m - j)-th
+  ! of q(column); negated, it is added to the forward source at the
+  ! row. Transposed, the same sum of the multiplier at the row is added
+  ! to the adjoint source at the column. The product rule on symmetric
+  ! subsets forms the sum, the weight's value standing at zero, since
+  ! it multiplies the derivative left out.
+  !===================================================================!
+
+  subroutine time_source(blk, d, m, jets, b, transposed)
+
+    type(chain_block), intent(in)    :: blk
+    integer          , intent(in)    :: d, m
+    real(dp)         , intent(in)    :: jets(:,0:)
+    real(dp)         , intent(inout) :: b(:)
+    logical          , intent(in)    :: transposed
+
+    integer :: e, read_at, row
+
+    if (.not. allocated(blk % weight_derivative)) return
+    do e = 1, size(blk % time_row)
+       read_at = blk % time_column(e)
+       row     = blk % time_row(e)
+       if (transposed) then
+          read_at = blk % time_row(e)
+          row     = blk % time_column(e)
+       end if
+       b(row) = b(row) + mixed_partial(symmetric_terms(0.0_dp, blk % weight_derivative(e, 1:m, d), m) &
+            & * symmetric_terms(jets(read_at, 0), [jets(read_at, 1:m - 1), 0.0_dp], m))
+    end do
+
+  end subroutine time_source
 
   !===================================================================!
   ! The m-th derivative along the design coordinate d of every
@@ -6274,6 +6452,7 @@ contains
     end if
     if (o > 0) call adjoint_source(blk % rows, jets, mu(:, 0:o - 1), o, this % points % expansion % values(), &
          & this % points % expansion % seed(d), blk % owner, rhs)
+    if (o > 0) call time_source(blk, d, o, mu(:, 0:o - 1), rhs, transposed=.true.)
     lin = blk % rows % linearize(blk % rows % unknown_graph(), blk % rows % bind(blk % inputs), rhs, &
          & transposed=.true., version_number=blk % rows % version())
     allocate(x(unknowns), source=0.0_dp)

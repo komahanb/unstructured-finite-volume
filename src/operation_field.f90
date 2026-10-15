@@ -235,6 +235,10 @@ module operation_field
      ! space its basis forms at the quadrature points
      type(expression), allocatable :: node_rule
      real(dp), allocatable :: node_weight(:)
+     ! where an expansion moves the instants: the derivative of each
+     ! node's weight in each column above zero, node_weight_derivative(n,
+     ! c) of the column c's order along its expansion
+     real(dp), allocatable :: node_weight_derivative(:,:)
      real(dp), allocatable :: node_position(:,:)
      real(dp), allocatable :: node_face_weight(:)
      ! the image that owns the node: a functional sums its owned nodes
@@ -629,7 +633,7 @@ contains
     type(expansion) :: expanded
     real(dp) :: value, measure
     integer :: p, k, o, i, d, order, ns, nnodes, stride, first
-    logical :: over_nodes
+    logical :: over_nodes, moving
     type(expression_view) :: view
     type(expression) :: integrand
 
@@ -711,14 +715,21 @@ contains
           position = solution % on % position(p)
           if (this % integrated_part == TIME_FACE) measure = solution % on % measure_on_face(p, this % integrated_time)
        end if
-       if (measure == 0.0_dp .and. .not. present(density)) cycle
+       ! where the expansion moves the instants the node's weight moves
+       ! with them, and each derivative is of the product
+       moving = .false.
+       if (over_nodes .and. this % integrated_part /= TIME_FACE) moving = allocated(solution % node_weight_derivative)
+       if (moving .and. integrand % num_position_coordinates() > 0) then
+          error stop 'operation_field: an expansion moves the instants of a functional that reads no coordinate'
+       end if
+       if (measure == 0.0_dp .and. .not. (present(density) .or. moving)) cycle
        ! the value, its gradient in the jet and in the design
        do k = 0, ns - 1
           q(k) = jet_of(slot(k), p, 0)
        end do
        call integrand % gradient_at(q, values, value, g, position, gd)
        if (present(density)) density(p) = value
-       if (measure == 0.0_dp) cycle
+       if (measure == 0.0_dp .and. .not. moving) cycle
        total(1) = total(1) + measure * value
        do k = 0, ns - 1
           gradient(slot(k), p, 0) = gradient(slot(k), p, 0) + measure * g(k)
@@ -740,13 +751,22 @@ contains
              varied(k) = symmetric_terms(q(k), [(jet_of(slot(k), p, first + o - 1), o = 1, order)], order + 1)
           end do
           r = integrand % at_instant(jets, nu, position)
-          do o = 1, order
-             total(first + o) = total(first + o) + measure * coefficient(r, 2**o - 1)
-          end do
+          if (moving) then
+             total(first + 1:first + order) = total(first + 1:first + order) + weighted(value, r, 0)
+          else
+             do o = 1, order
+                total(first + o) = total(first + o) + measure * coefficient(r, 2**o - 1)
+             end do
+          end if
           do i = 1, size(values)
              design = along
              call design(i) % set_coefficient(2**order, 1.0_dp)
              r = integrand % at_instant(varied, design, position)
+             if (moving) then
+                partial(i, first:first + order - 1) = partial(i, first:first + order - 1) &
+                     & + weighted(gd(i), r, 2**order)
+                cycle
+             end if
              do o = 1, order
                 partial(i, first + o - 1) = partial(i, first + o - 1) + measure * coefficient(r, 2**o - 1 + 2**order)
              end do
@@ -755,6 +775,11 @@ contains
              call varied(k) % set_coefficient(2**order, 1.0_dp)
              r = integrand % at_instant(varied, along, position)
              call varied(k) % set_coefficient(2**order, 0.0_dp)
+             if (moving) then
+                gradient(slot(k), p, first:first + order - 1) = gradient(slot(k), p, first:first + order - 1) &
+                     & + weighted(g(k), r, 2**order)
+                cycle
+             end if
              do o = 1, order
                 gradient(slot(k), p, first + o - 1) = gradient(slot(k), p, first + o - 1) &
                      & + measure * coefficient(r, 2**o - 1 + 2**order)
@@ -782,6 +807,32 @@ contains
          jet_of = solution % jet(row, n, c + 1)
       end if
     end function jet_of
+
+    ! the derivatives of orders 1 to the order, along the expansion
+    ! whose columns begin at first, of node p's weight times the
+    ! quantity of value base whose k-th derivative is the coefficient
+    ! of r on the first k directions with the subset shift: the
+    ! Leibniz sum, the binomial coefficient by its recurrence
+    function weighted(base, r, shift) result(derivatives)
+      real(dp)              , intent(in) :: base
+      type(derivative_terms), intent(in) :: r
+      integer               , intent(in) :: shift
+      real(dp) :: derivatives(order)
+      real(dp) :: w(0:order), f(0:order), binomial
+      integer  :: o, j
+      w(0) = measure
+      w(1:order) = solution % node_weight_derivative(p, first:first + order - 1)
+      f(0) = base
+      f(1:order) = [(coefficient(r, 2**o - 1 + shift), o = 1, order)]
+      do o = 1, order
+         derivatives(o) = 0.0_dp
+         binomial = 1.0_dp
+         do j = 0, o
+            derivatives(o) = derivatives(o) + binomial * w(j) * f(o - j)
+            binomial = binomial * real(o - j, dp) / real(j + 1, dp)
+         end do
+      end do
+    end function weighted
 
   end subroutine functional_over
 
@@ -829,6 +880,9 @@ contains
 
     if (solution % on % expansion % order > 1) then
        error stop 'operation_field: a smooth maximum is evaluated along the design to the first order'
+    end if
+    if (allocated(solution % node_weight_derivative)) then
+       error stop 'operation_field: a smooth maximum is evaluated where the expansion keeps the instants fixed'
     end if
     if (.not. (allocated(solution % rule) .and. (allocated(solution % jet) .or. allocated(solution % node_jet)))) then
        error stop 'operation_field: a smooth maximum is evaluated on the solution of a residual, which stores &
@@ -922,6 +976,7 @@ contains
        to % node_jet      = from % node_jet
        if (allocated(from % node_rule)) to % node_rule = from % node_rule
        to % node_weight   = from % node_weight
+       if (allocated(from % node_weight_derivative)) to % node_weight_derivative = from % node_weight_derivative
        to % node_position = from % node_position
        to % node_face_weight = from % node_face_weight
        to % node_image    = from % node_image
@@ -1194,12 +1249,16 @@ contains
       if (same_seed) same_seed = all(abs(a - b) <= 1.0e-12_dp * max(1.0_dp, maxval(abs(a))))
     end function same_seed
 
-    ! the expansion stored along a seed, zero when none is
+    ! the expansion stored along a seed, zero when none is; one that
+    ! moves the instants is along no direction in the design alone
     integer function expansion_of(s)
       real(dp), intent(in) :: s(:)
       integer :: e
       expansion_of = 0
       do e = 1, this % on % expansion % num_expansions()
+         if (allocated(this % on % expansion % instants)) then
+            if (any(this % on % expansion % instants(:, e) /= 0.0_dp)) cycle
+         end if
          if (same_seed(s, this % on % expansion % seed(e))) expansion_of = e
       end do
     end function expansion_of

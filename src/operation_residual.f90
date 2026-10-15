@@ -3765,6 +3765,9 @@ contains
     if (.not. along_each_coordinate(pinned % points % expansion)) then
        error stop 'operation_residual: the error of the design found is read along each design coordinate'
     end if
+    ! the derivatives of order one, read whatever the order of the
+    ! image's expansion
+    pinned % points % expansion % order = max(1, pinned % points % expansion % order)
     values = pinned % points % expansion % at
     nd     = size(values)
     nf     = pinned % manifold % num_unknowns
@@ -5105,7 +5108,7 @@ contains
                      do d = 1, size(motion, 2)
                         do m = 1, n
                            moved(m) = symmetric_terms(this % points % step(first + m - 1), &
-                                & [motion(first + m - 1, d), spread(0.0_dp, 1, order - 1)], order + 1)
+                                & [(merge(motion(first + m - 1, d), 0.0_dp, o == 1), o = 1, order)], order + 1)
                            if (first + m - 1 < 2) cycle
                            call moved(m) % set_coefficient(2**order, merge(1.0_dp, 0.0_dp, first + m - 1 == a) &
                                 & - merge(1.0_dp, 0.0_dp, first + m - 1 == a + 1))

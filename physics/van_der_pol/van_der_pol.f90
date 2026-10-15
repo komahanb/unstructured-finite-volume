@@ -106,8 +106,10 @@
 ! reads no coordinate t, so J_bar is the same when every instant moves
 ! by one shift, and the sum of lambda_t is -1.1e-15 at eleven instants
 ! and -4.9e-15 at 21 at order three. At 21 instants lambda_t agrees
-! with the derivative of J_bar along each instant by the expansion of
-! the state to 4e-12 on dirk(2) and to 1.7e-11 on the program's chain.
+! with the derivative of J_bar along each interior instant by the
+! expansion of the state to 4e-12 on dirk(2) and to 1.7e-11 on the
+! program's chain, and at the two ends of the chain, the interval
+! moving with them, with central differences to 6e-12 and 6e-11.
 !
 ! (d) Without r_s the design is free, and the same stationarity in nu
 ! is solved for nu, where dJ/dnu = 0: by Newton's iteration from nu_0,

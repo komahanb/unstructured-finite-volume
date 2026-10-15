@@ -36,7 +36,7 @@ module operation_manifold
   use token_identity      , only : token, next_token
   use operation_expansion , only : expansion
   use operation_field     , only : continuous_support, discrete_support, continuous_field
-  use operation_field     , only : unknown_field, coordinate_field
+  use operation_field     , only : unknown_field, coordinate_field, time_map_field
   use operation_field     , only : WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR, DESIGN_FACTOR, SPACE_FACE
   use view_mesh           , only : mesh, values_of
   use view_mesh_builder   , only : mesh_from_gmsh, mesh_from_points, mesh_of_corners
@@ -123,6 +123,7 @@ module operation_manifold
 
      procedure :: unknown         => manifold_unknown
      procedure :: coordinate      => manifold_coordinate
+     procedure :: time_map        => manifold_time_map
      procedure :: boundary        => manifold_boundary
      procedure :: time            => manifold_time
      procedure :: space           => manifold_space
@@ -504,6 +505,26 @@ contains
     c = coordinate_field(this, name, axis)
 
   end function manifold_coordinate
+
+  !===================================================================!
+  ! THE TIME MAP t(tau): the position of the instant whose reference
+  ! position is the coordinate of time tau. The pin of the instants,
+  ! the condition t_map - t on the time factor, fixes every instant
+  ! at its reference position, and its multiplier is minus the
+  ! derivative of the discrete objective in each instant, -dJ_h/dt_k.
+  !===================================================================!
+
+  function manifold_time_map(this) result(t_map)
+
+    class(continuous_manifold), intent(in) :: this
+    type(continuous_field) :: t_map
+
+    if (.not. this % with_time) then
+       error stop 'operation_manifold: the time map requires a manifold with a time coordinate'
+    end if
+    t_map = time_map_field(this)
+
+  end function manifold_time_map
 
   !===================================================================!
   ! THE PARTS: the face where one coordinate takes a value at an end

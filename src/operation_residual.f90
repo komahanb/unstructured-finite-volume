@@ -2519,17 +2519,16 @@ contains
 
   end subroutine check_representations
 
-  function residual_discretize(this, points, time, space, placement, instants) result(image)
+  function residual_discretize(this, points, time, space, placement) result(image)
 
     class(continuous_residual), intent(in) :: this
     type(discrete_manifold)   , intent(in) :: points
     type(chain)               , intent(in), optional :: time
     class(derivative_approximation), intent(in), optional :: space
     type(equidistribution)    , intent(in), optional :: placement
-    character(len=*)          , intent(in), optional :: instants
     type(discrete_residual) :: image
 
-    integer :: k, j, i, whole_term, num_conditions, nf
+    integer :: k, j, i, whole_term, num_conditions, nf, pin
     integer, allocatable :: defined(:,:)
     logical, allocatable :: representation(:)
     logical :: covering, projected
@@ -2545,8 +2544,22 @@ contains
     allocate(defined(3, 0))
     whole_term = 0
     num_conditions = 0
+    pin = 0
     do k = 1, size(this % term)
        associate (t => this % term(k))
+         ! the pin of the instants, the one term that reads the time map
+         if (any([(t % equation(i) % component(1) % reads_time_map(), i = 1, size(t % equation))])) then
+            if (.not. t % manifold % is_time_factor() .or. size(t % equation) /= 1 .or. .not. t % paired) then
+               error stop 'operation_residual: the time map is read by the pin of the instants alone, the &
+                    &one equation t_map - t on the time factor, paired with its multiplier'
+            end if
+            if (.not. t % equation(1) % component(1) % pins_instants()) then
+               error stop 'operation_residual: the pin of the instants is t_map - t'
+            end if
+            if (pin /= 0) error stop 'operation_residual: one term pins the instants'
+            pin = k
+            cycle
+         end if
          if (t % manifold % part == WHOLE) then
             representation(k) = all([(represented_component(t % equation(i) % graph(1)) /= 0, &
                  & i = 1, size(t % equation))])
@@ -2614,7 +2627,7 @@ contains
     allocate(image % condition(num_conditions))
     j = 0
     do k = 1, size(this % term)
-       if (k == whole_term .or. representation(k)) cycle
+       if (k == whole_term .or. k == pin .or. representation(k)) cycle
        j = j + 1
        image % condition(j) = this % term(k)
        do i = 1, size(image % condition(j) % equation)
@@ -2697,6 +2710,9 @@ contains
           error stop 'operation_residual: an objective requires the equations paired with a multiplier, &
                &the adjoint, whose equation is the stationarity of the Lagrangian in the state'
        end if
+       if (any([(this % objective % component(i) % reads_time_map(), i = 1, this % objective % num_components())])) then
+          error stop 'operation_residual: the time map is read by the pin of the instants alone'
+       end if
        image % objective = this % objective % jet_form()
        if (allocated(image % elements) .and. this % objective % integrated_part /= WHOLE) then
           error stop 'operation_residual: under a projection on the cells the objective is integrated over the &
@@ -2734,12 +2750,19 @@ contains
        end if
        image % placement = placement
     end if
-    ! the pin of the instants, its multiplier under the name given
-    if (present(instants)) then
+    ! the pin of the instants, its multiplier under the name of the
+    ! term's
+    if (pin /= 0) then
        if (.not. present(time) .or. present(space)) then
           error stop 'operation_residual: the instants of a manifold of time alone are pinned'
        end if
-       image % instant_multiplier = instants
+       if (present(placement)) then
+          error stop 'operation_residual: a placement moves the instants, which the pin fixes'
+       end if
+       if (.not. this % term(pin) % manifold % parent % matches(image % manifold % identity)) then
+          error stop 'operation_residual: a condition is stated on a part of another manifold'
+       end if
+       image % instant_multiplier = this % term(pin) % multiplier % name
     end if
 
   end function residual_discretize
@@ -3352,7 +3375,7 @@ contains
       base_residual = iterate
       base_residual % schemes      = chain([(base, k = 1, n)], from=[(k, k = 1, n)])
       ! the instants pinned, the curvature their multipliers' derivatives
-      if (.not. allocated(base_residual % instant_multiplier)) base_residual % instant_multiplier = 'pin of the instants'
+      base_residual % instant_multiplier = 'pin of the instants'
       base_residual % points % expansion = curvature_expansion(original, n)
       call base_residual % zero_at_design(start, base_solution)
       e_base = base_residual % curvature_errors(base_solution, base % accuracy(), uncertainty)

@@ -32,7 +32,7 @@ module view_expression
   use operation_expression, only : VERTEX_LEAF, VERTEX_CONSTANT, VERTEX_SUM, VERTEX_DIFFERENCE
   use operation_expression, only : VERTEX_PRODUCT, VERTEX_QUOTIENT, VERTEX_INTEGER_POWER
   use operation_expression, only : VERTEX_REAL_POWER, VERTEX_FUNCTION, VERTEX_DERIVATIVE
-  use operation_expression, only : ARGUMENT_DESIGN, ARGUMENT_MULTIPLIER, ARGUMENT_COORDINATE
+  use operation_expression, only : ARGUMENT_DESIGN, ARGUMENT_MULTIPLIER, ARGUMENT_COORDINATE, ARGUMENT_TIME_MAP
   use operation_expression, only : SINE, COSINE, EXPONENTIAL, LOGARITHM, SQUARE_ROOT, UNIT_STEP
 
   implicit none
@@ -171,6 +171,8 @@ contains
           text = 'lambda' // written(u % field)
        case (ARGUMENT_COORDINATE)
           text = axis(u % field)
+       case (ARGUMENT_TIME_MAP)
+          text = axis(u % field) // '_map'
        case default
           text = leaf_name(unknowns, u % field, 'q' // written(u % field)) &
                & // repeat(axis(FIRST_COORDINATE), u % mixed_order) // repeat(axis(u % along), u % order)

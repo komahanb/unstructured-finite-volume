@@ -102,7 +102,7 @@ module operation_expression
 
   private
   public :: expression
-  public :: unknown, design, constant, multiplier, coordinate, component, component_along
+  public :: unknown, design, constant, multiplier, coordinate, time_map, component, component_along
   public :: derivative, jet_form, represented_component, on_domain, paired
   public :: euler_lagrange, at_zero
   public :: partial_derivative, partial_in_design, total_derivative, stationarity, boundary_terms
@@ -137,6 +137,11 @@ module operation_expression
   integer, parameter, public :: ARGUMENT_DESIGN     = 2
   integer, parameter, public :: ARGUMENT_MULTIPLIER = 3
   integer, parameter, public :: ARGUMENT_COORDINATE = 4
+  ! the time map t(tau), the position of the instant whose reference
+  ! position is the coordinate of time: read by the pin of the
+  ! instants t(tau) - tau alone, which the discrete image states as
+  ! the condition fixing each instant at its reference position
+  integer, parameter, public :: ARGUMENT_TIME_MAP   = 5
 
   ! the elementary functions; the step H(a), one where a >= 0 and zero
   ! elsewhere, of a function of the coordinates alone: its derivative
@@ -211,6 +216,8 @@ module operation_expression
      procedure :: value_on
      procedure, private :: values_over
      procedure :: reads_state
+     procedure :: reads_time_map
+     procedure :: pins_instants
      procedure :: equation_degree
      procedure :: num_coordinates
      procedure :: num_position_coordinates
@@ -480,6 +487,12 @@ contains
     this = vertex(VERTEX_LEAF, ARGUMENT_COORDINATE, 0, 0.0_dp, field=c)
 
   end function coordinate
+
+  ! the time map t(tau), a function of the coordinate of time
+  function time_map() result(this)
+    type(expression) :: this
+    this = vertex(VERTEX_LEAF, ARGUMENT_TIME_MAP, 0, 0.0_dp, field=FIRST_COORDINATE)
+  end function time_map
 
   !===================================================================!
   ! The component of degree d of the unknown. Anything but a bare
@@ -2048,6 +2061,32 @@ contains
     end do
 
   end function reads_state
+
+  ! whether any leaf reads the time map
+  pure logical function reads_time_map(this)
+    class(expression), intent(in) :: this
+    integer :: i
+    reads_time_map = .false.
+    do i = 1, this % num_vertices()
+       if (this % kind(i) == VERTEX_LEAF .and. this % position(i) == ARGUMENT_TIME_MAP) reads_time_map = .true.
+    end do
+  end function reads_time_map
+
+  ! whether the expression is t(tau) - tau, the time map less the
+  ! coordinate of time: the pin of the instants
+  pure logical function pins_instants(this)
+    class(expression), intent(in) :: this
+    integer :: r, a, b
+    pins_instants = .false.
+    r = this % root()
+    if (r /= 3) return
+    if (this % kind(r) /= VERTEX_DIFFERENCE) return
+    a = this % first(r)
+    b = this % second(r)
+    if (this % kind(a) /= VERTEX_LEAF .or. this % kind(b) /= VERTEX_LEAF) return
+    pins_instants = this % position(a) == ARGUMENT_TIME_MAP .and. this % position(b) == ARGUMENT_COORDINATE &
+         & .and. this % field(b) == FIRST_COORDINATE
+  end function pins_instants
 
   !===================================================================!
   ! WHETHER THE ZERO STATE LIES IN THE EXPRESSION'S DOMAIN. A vertex

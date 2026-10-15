@@ -18,7 +18,10 @@
 !                    oscillator upon the manifold, the initial face
 !                    included, r_ic the pin of (u, u_t) to its datum
 !                    upon the initial face t = 0, r_s = nu - nu_0 the
-!                    pin of the design upon the factor {nu}
+!                    pin of the design upon the factor {nu}, r_t =
+!                    t_map - t the pin of the time map, the position of
+!                    each instant, to its reference position upon the
+!                    time factor
 !   THE OBJECTIVE    a functional of the field, J
 !   THE MULTIPLIERS  every law paired with a multiplier lambda_l of the
 !                    same index
@@ -28,23 +31,25 @@
 !                    over the first three, bdf(2) over the next four,
 !                    adams(2) to the end; along nu the expansion s_bar
 !                    of an order at nu_0. The instants are the
-!                    manifold's image, equally spaced, or, in (e), the
-!                    equidistribution, a placement the discrete image
-!                    of L states, since it reads the error of J; in
-!                    (g) the instants and each step's family are the
-!                    design of the discrete image, chosen with them
+!                    manifold's image, equally spaced, which r_t fixes;
+!                    without r_t, in (e) and (f), the equidistribution,
+!                    a placement the discrete image of L states, since
+!                    it reads the error of J; in (g) the instants and
+!                    each step's family are the design of the discrete
+!                    image, chosen with them
 !
 ! SEVEN PROBLEMS are then seven readings of one Lagrangian, each
 ! differing from the one before it by one term or by the placement of
 ! its instants:
 !
-!   (a) physics          L = lambda_omega . r_omega + lambda_ic . r_ic + lambda_s . r_s
+!   (a) physics          L = lambda_omega . r_omega + lambda_ic . r_ic + lambda_s . r_s + lambda_t . r_t
 !   (b) adjoint, and
-!   (c) sensitivity      L = J + lambda_omega . r_omega + lambda_ic . r_ic + lambda_s . r_s
-!   (d) design           L = J + lambda_omega . r_omega + lambda_ic . r_ic
-!   (e) design on the equidistribution, L of (d)
-!   (f) design to a tolerance, L of (d), the count of instants free
-!   (g) J to a tolerance, L of (b), each step's family from a pool
+!   (c) sensitivity      L = J + lambda_omega . r_omega + lambda_ic . r_ic + lambda_s . r_s + lambda_t . r_t
+!   (d) design           L = J + lambda_omega . r_omega + lambda_ic . r_ic + lambda_t . r_t
+!   (e) design on the equidistribution, L = J + lambda_omega . r_omega + lambda_ic . r_ic
+!   (f) design to a tolerance, L of (e), the count of instants free
+!   (g) J to a tolerance, L = J + lambda_omega . r_omega + lambda_ic . r_ic + lambda_s . r_s,
+!       each step's family from a pool
 !
 ! (a) The stationarity of L in the multipliers is the oscillator with
 ! its data and its design, solved forward for u_bar and, the
@@ -92,7 +97,17 @@
 ! d^2J/dnu^2 = 1.548406 against 1.548272, d^3J/dnu^3 = 1.0211 against
 ! 1.0215. Two design coordinates, the mixed derivative of J and the
 ! symmetry of its hessian are audited in
-! test/graph-scheme/van_der_pol_design_audit.f90.
+! test/graph-scheme/van_der_pol_design_audit.f90. In the same solve
+! the stationarity in the time map is read for lambda_t =
+! -dJ_bar/dt_k, the derivative of the discrete energy in the position
+! of each instant: at an interior instant minus that of the error J -
+! J_bar, since J reads no instant; at an end that of J too, the
+! interval moving with it. THE AUDIT of lambda_t: the oscillator
+! reads no coordinate t, so J_bar is the same when every instant moves
+! by one shift, and the sum of lambda_t is -1.1e-15 at eleven instants
+! and -4.9e-15 at 21 at order three. At 21 instants lambda_t agrees
+! with the derivative of J_bar along each instant by the expansion of
+! the state to 4e-12 on dirk(2) and to 1.7e-11 on the program's chain.
 !
 ! (d) Without r_s the design is free, and the same stationarity in nu
 ! is solved for nu, where dJ/dnu = 0: by Newton's iteration from nu_0,
@@ -110,8 +125,8 @@
 ! instants, has the ratio 1.259, 1.136, 1.066 and 1.028 to the error
 ! at 21, 41, 81 and 161 instants.
 !
-! (e) The Lagrangian of (d), its discrete image with the placement of
-! the equidistribution: the instants of manifold_bar moved, their
+! (e) The Lagrangian of (d) without r_t, its discrete image with the
+! placement of the equidistribution: the instants of manifold_bar moved, their
 ! count kept, minimize solving (d), estimating and placing the
 ! instants again round after round. With the design free the error
 ! placed is that of the design found, nu* - nu_h ~ -H^(-1) E'(nu_h):
@@ -140,7 +155,7 @@
 ! at 41 to 161 instants: the design found reads the gradient of J,
 ! not its value.
 !
-! (f) The Lagrangian of (d) on the equidistribution with a tolerance,
+! (f) The Lagrangian of (e) on the equidistribution with a tolerance,
 ! 1e-3 of the design, its count of instants free. At each count the
 ! rounds of (e) settle the placement; where the estimate of the error
 ! of the design found is not within the tolerance times the norm of
@@ -159,47 +174,47 @@
 ! error 2.98e-3, against 34 equally spaced, and 1e-4 at 100, the
 ! error 2.15e-4, against 116.
 !
-! (g) The Lagrangian of (b), J at nu_0 to 1e-6 of sum |w f|, the
-! instants and the family of each step chosen together from a pool:
-! dirk(2), dirk(3), dirk(4), adams(2), adams(3), adams(4), bdf(2) and
-! bdf(3). The design of the discrete image along time is s, the
-! instants and each step's weights on the families of the pool; its
-! own Lagrangian is the work, the solves of the steps, plus lambda
+! (g) The Lagrangian of (b) without r_t, J at nu_0 to 1e-6 of sum
+! |w f|, the instants and the family of each step chosen together from
+! a pool: dirk(2), dirk(3), dirk(4), adams(2), adams(3), adams(4),
+! bdf(2) and bdf(3). The design of the discrete image along time is s,
+! the instants and each step's weights on the families of the pool;
+! its own Lagrangian is the work, the solves of the steps, plus lambda
 ! times sum |e_k| less the tolerance, e_k the error of J step k
 ! contributes, with a family excluded from a step at which it would
 ! read an instant before the first, and bdf(2) from a step more than
 ! 1 + sqrt(2) times the one before. Its stationarity at leading order
-! gives each instant the family of least work per unit time, (1 +
-! 1/p) w n, w the solves of a step of the family, p its order and n =
+! gives each instant the family of least work per unit time, (1 + 1/p)
+! w n, w the solves of a step of the family, p its order and n =
 ! (lambda p a / w)^(1/(p + 1)) its steps per unit time at its error
 ! density a, lambda the multiplier at which the error meets the
 ! tolerance. J does not depend on s, so every derivative of J_h along
 ! s is minus that of the error J - J_h: the base family, dirk(4), of
 ! one step and of the highest order in the pool, is solved with the
-! instants pinned, t_k - t_k0 = 0, whose multipliers are -dJ_h/dt_k;
-! their derivatives along three directions, each moving every third
-! instant, are the band of the Hessian of J_h in the instants, and the
-! base family's error at each step h_k^2 (d^2 J_h / dt_(k-1) dt_k) /
-! (p (p + 1)); the error of each other
-! family at the step is the base family's less the change of J_h were
-! the step's family replaced, the disagreement with that family's
-! chain. Each round solves the base family on the instants as they
-! stand and places them again with their families. From eleven
-! instants, at 1e-6 the rounds return 52 instants and 55 solves,
-! dirk(4) over the first two steps, where no multistep family of the
-! pool has its history, then adams(4) with adams(3) at one step; the
-! error of J -2.430e-6 against J by the chain of order three at 2561
-! instants, estimated -2.295e-6. The program's chain meets that
-! tolerance at 887 solves on equally spaced instants, the best family
-! of the pool alone, adams(3) after dirk(4), at 53. At 1e-7, 1e-5 and
-! 1e-4 the rounds return 97, 31 and 17 solves, the best family alone
-! 96, 30 and 17, the program's chain 2787, 286 and 95. The rounds take
-! 0.34, 0.74, 1.29 and 2.25 s at 1e-4, 1e-5, 1e-6 and 1e-7, against
-! 0.03, 0.10, 0.30 and 0.96 s for one solve of the program's chain at
-! the count each needs and at most 0.03 s for adams(3): each round's
-! cost grows as the count, the curvature three directions of the pins'
-! multipliers, where 2N - 5 expansions of order two of the state took
-! 0.81, 2.70, 8.0 and 24.8 s.
+! pin of the instants, r_t, whose multipliers are -dJ_h/dt_k; their
+! derivatives along three directions, each moving every third instant,
+! are the band of the Hessian of J_h in the instants, and the base
+! family's error at each step h_k^2 (d^2 J_h / dt_(k-1) dt_k) /
+! (p (p + 1)); the error of each other family at the step is the base
+! family's less the change of J_h were the step's family replaced, the
+! disagreement with that family's chain. Each round solves the base
+! family on the instants as they stand and places them again with
+! their families. From eleven instants, at 1e-6 the rounds return 52
+! instants and 55 solves, dirk(4) over the first two steps, where no
+! multistep family of the pool has its history, then adams(4) with
+! adams(3) at one step; the error of J -2.430e-6 against J by the
+! chain of order three at 2561 instants, estimated -2.295e-6. The
+! program's chain meets that tolerance at 887 solves on equally spaced
+! instants, the best family of the pool alone, adams(3) after dirk(4),
+! at 53. At 1e-7, 1e-5 and 1e-4 the rounds return 97, 31 and 17
+! solves, the best family alone 96, 30 and 17, the program's chain
+! 2787, 286 and 95. The rounds take 0.34, 0.74, 1.29 and 2.25 s at
+! 1e-4, 1e-5, 1e-6 and 1e-7, against 0.03, 0.10, 0.30 and 0.96 s for
+! one solve of the program's chain at the count each needs and at most
+! 0.03 s for adams(3): each round's cost grows as the count, the
+! curvature three directions of the pins' multipliers, where 2N - 5
+! expansions of order two of the state took 0.81, 2.70, 8.0 and
+! 24.8 s.
 !
 ! THE LAGRANGIAN of (b) and (c) is printed before its solve: J and
 ! every law with the multiplier it is paired with, each equation as a
@@ -232,10 +247,11 @@ program van_der_pol
 
   type(continuous_manifold) :: manifold
   type(discrete_manifold)   :: manifold_bar
-  type(continuous_field)    :: t, nu, u, J, lambda_omega, lambda_ic, lambda_s, rest
-  type(continuous_residual) :: r_omega, r_ic, r_s, L
+  type(continuous_field)    :: t, t_map, nu, u, J, lambda_omega, lambda_ic, lambda_s, lambda_t, rest
+  type(continuous_residual) :: r_omega, r_ic, r_s, r_t, L
   type(discrete_residual)   :: L_bar
-  type(discrete_field)      :: estimate, solution, u_bar, lambda_omega_bar, lambda_ic_bar, lambda_s_bar, J_bar, nu_bar
+  type(discrete_field)      :: estimate, solution, u_bar, lambda_omega_bar, lambda_ic_bar, lambda_s_bar, lambda_t_bar, &
+       &                       J_bar, nu_bar
   real(dp), allocatable     :: eta(:)
   integer                   :: k
 
@@ -255,10 +271,14 @@ program van_der_pol
   ! function of the jet of u to order two along t, reading nu as a
   ! coordinate; r_ic upon the face t = 0, the pin of the value and the
   ! first derivative of u to their data; r_s upon the factor {nu}, the
-  ! pin of the design to nu_0
+  ! pin of the design to nu_0; r_t upon the time factor, the pin of
+  ! the time map, the position of each instant, to its reference
+  ! position
+  t_map   = manifold % time_map()
   r_omega = continuous_residual(manifold, [u % derivative([t, t]) - nu*(1.0_dp - u*u)*u % derivative([t]) + u])
   r_ic    = continuous_residual(manifold % boundary(t, 0.0_dp), [u - u_0, u % derivative([t]) - u_t_0])
   r_s     = continuous_residual(manifold % design(), [nu - nu_0])
+  r_t     = continuous_residual(manifold % time(), [t_map - t])
 
   ! THE OBJECTIVE. The energy J, the integral over the time factor
   J = integral((u*u + u % derivative([t])**2)/2.0_dp, over=manifold % time())
@@ -266,10 +286,12 @@ program van_der_pol
   ! THE MULTIPLIERS. Every law declares its multiplier, one component
   ! per equation, a function of the coordinates of its domain:
   ! lambda_omega(t, nu) the adjoint, lambda_ic(nu) one number per
-  ! pinned field, lambda_s one number
+  ! pinned field, lambda_s one number, lambda_t(t) one number per
+  ! instant
   lambda_omega = r_omega % multiplier('lambda_omega', [t, nu])
   lambda_ic    = r_ic % multiplier('lambda_ic', [nu])
   lambda_s     = r_s % multiplier('lambda_s')
+  lambda_t     = r_t % multiplier('lambda_t', [t])
 
   ! THE DISCRETE IMAGE of the manifold: the instants t_bar = {t(1)..t(N)}
   ! along t, the expansion s_bar of the order at nu_0 along nu; and
@@ -286,7 +308,7 @@ program van_der_pol
   ! solved for u_bar; the multipliers zero
   !===================================================================!
 
-  L     = lambda_omega*r_omega + lambda_ic*r_ic + lambda_s*r_s
+  L     = lambda_omega*r_omega + lambda_ic*r_ic + lambda_s*r_s + lambda_t*r_t
   L_bar = discrete_image(L)
   call L_bar % minimize(estimate, solution)
 
@@ -294,7 +316,7 @@ program van_der_pol
   lambda_omega_bar = solution % fields(['lambda_omega'])
   lambda_ic_bar    = solution % fields(['lambda_ic'])
   lambda_s_bar     = solution % fields(['lambda_s'])
-  print '(a)', '(a) physics: L = lambda_omega . r_omega + lambda_ic . r_ic + lambda_s . r_s'
+  print '(a)', '(a) physics: L = lambda_omega . r_omega + lambda_ic . r_ic + lambda_s . r_s + lambda_t . r_t'
   print '(a, es24.16)', 'u(T)                    = ', u_bar % value(num_instants, 1)
   print '(a, es24.16)', 'max |lambda_omega|      = ', &
        & maxval([(abs(lambda_omega_bar % value(k, 1)), k = 1, num_instants)])
@@ -323,7 +345,7 @@ program van_der_pol
   u_bar            = solution % fields(['u'])
   lambda_omega_bar = solution % fields(['lambda_omega'])
   lambda_ic_bar    = solution % fields(['lambda_ic'])
-  print '(a)', '(b) adjoint: L = J + lambda_omega . r_omega + lambda_ic . r_ic + lambda_s . r_s'
+  print '(a)', '(b) adjoint: L = J + lambda_omega . r_omega + lambda_ic . r_ic + lambda_s . r_s + lambda_t . r_t'
   do k = 1, num_instants
      if (mod(k - 1, max(1, (num_instants - 1) / 10)) == 0) then
         print '(a, f8.4, a, es16.8, a, es16.8)', 't = ', manifold_bar % instant(k), '   u = ', u_bar % value(k, 1), &
@@ -359,17 +381,30 @@ program van_der_pol
      print '(a, i0, a, i0, a, es24.16)', 'd^', k, ' u(T) / dnu^', k, '        = ', u_bar % value(num_instants, 1)
   end do
 
+  ! (c) the multiplier of the pin of the instants, -dJ_bar/dt_k, at
+  ! every tenth of the interval, and THE AUDIT of its sum: the
+  ! oscillator reads no coordinate t, so J_bar is the same when every
+  ! instant moves by one shift, and the sum is zero
+  lambda_t_bar = solution % fields(['lambda_t'])
+  do k = 1, num_instants
+     if (mod(k - 1, max(1, (num_instants - 1) / 10)) == 0) then
+        print '(a, f8.4, a, es16.8)', 't = ', manifold_bar % instant(k), '   lambda_t = -dJ_bar / dt_k = ', &
+             & lambda_t_bar % value(k, 1)
+     end if
+  end do
+  print '(a, es24.16)', 'sum of lambda_t         = ', sum([(lambda_t_bar % value(k, 1), k = 1, num_instants)])
+
   !===================================================================!
   ! (d) DESIGN. r_s removed: nu free, solved for where dJ/dnu = 0
   !===================================================================!
 
-  L     = J + lambda_omega*r_omega + lambda_ic*r_ic
+  L     = J + lambda_omega*r_omega + lambda_ic*r_ic + lambda_t*r_t
   L_bar = discrete_image(L)
   call L_bar % minimize(estimate, solution)
 
   nu_bar = solution % fields(['nu'])
   J_bar  = J % at(solution)
-  print '(a)', '(d) design: L = J + lambda_omega . r_omega + lambda_ic . r_ic'
+  print '(a)', '(d) design: L = J + lambda_omega . r_omega + lambda_ic . r_ic + lambda_t . r_t'
   print '(a, es24.16)', 'nu found                = ', nu_bar % value(1, 1)
   print '(a, es24.16)', 'J                       = ', J_bar % value(1, 1)
   if (order >= 1) print '(a, es24.16)', 'dJ / dnu                = ', J_bar % value(1, 2)
@@ -377,11 +412,12 @@ program van_der_pol
   print '(a, es24.16)', 'estimate of J - J_bar   = ', sum(eta)
 
   !===================================================================!
-  ! (e) DESIGN ON THE EQUIDISTRIBUTION. L of (d), the instants of
+  ! (e) DESIGN ON THE EQUIDISTRIBUTION. r_t removed: the instants of
   ! manifold_bar moved, their count kept, until the error of the
   ! design found is the same over every step
   !===================================================================!
 
+  L     = J + lambda_omega*r_omega + lambda_ic*r_ic
   L_bar = discrete_image(L, placement=equidistribution())
   call L_bar % minimize(estimate, solution)
 
@@ -391,7 +427,7 @@ program van_der_pol
   nu_bar = solution % fields(['nu'])
   J_bar  = J % at(solution)
   eta    = L_bar % disagreement(solution)
-  print '(a)', '(e) design on the equidistribution: L of (d)'
+  print '(a)', '(e) design on the equidistribution: L = J + lambda_omega . r_omega + lambda_ic . r_ic'
   do k = 1, num_instants
      if (mod(k - 1, max(1, (num_instants - 1) / 10)) == 0) then
         print '(a, f8.4, a, es12.4)', 't = ', u_bar % instant(k), '   eta = ', eta(k)
@@ -402,7 +438,7 @@ program van_der_pol
   print '(a, es24.16)', 'estimate of J - J_bar   = ', sum(eta)
 
   !===================================================================!
-  ! (f) DESIGN TO A TOLERANCE. L of (d), the count of the instants free:
+  ! (f) DESIGN TO A TOLERANCE. L of (e), the count of the instants free:
   ! as many, equidistributed, as place the estimate of the error of the
   ! design found within 1e-3 of the design
   !===================================================================!
@@ -412,16 +448,16 @@ program van_der_pol
 
   nu_bar = solution % fields(['nu'])
   J_bar  = J % at(solution)
-  print '(a)', '(f) design to a tolerance: L of (d)'
+  print '(a)', '(f) design to a tolerance: L of (e)'
   print '(a, i24)', 'instants                = ', solution % num_points()
   print '(a, es24.16)', 'nu found                = ', nu_bar % value(1, 1)
   print '(a, es24.16)', 'J                       = ', J_bar % value(1, 1)
 
   !===================================================================!
-  ! (g) J TO A TOLERANCE, EACH STEP'S FAMILY FROM A POOL. L of (b), the
-  ! instants and the family of each step the design of the discrete
-  ! image, chosen together at the least work that places the error of
-  ! J within 1e-6 of sum |w f|
+  ! (g) J TO A TOLERANCE, EACH STEP'S FAMILY FROM A POOL. L of (b), r_t
+  ! removed: the instants and the family of each step the design of
+  ! the discrete image, chosen together at the least work that places
+  ! the error of J within 1e-6 of sum |w f|
   !===================================================================!
 
   L     = J + lambda_omega*r_omega + lambda_ic*r_ic + lambda_s*r_s
@@ -430,7 +466,8 @@ program van_der_pol
   call L_bar % minimize(estimate, solution)
 
   J_bar = J % at(solution)
-  print '(a)', '(g) J to a tolerance, each step''s family from a pool: L of (b)'
+  print '(a)', '(g) J to a tolerance, each step''s family from a pool: &
+       &L = J + lambda_omega . r_omega + lambda_ic . r_ic + lambda_s . r_s'
   print '(a, i24)', 'instants                = ', solution % num_points()
   print '(a, es24.16)', 'J                       = ', J_bar % value(1, 1)
 

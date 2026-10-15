@@ -25,7 +25,7 @@ module operation_field
   use token_identity      , only : token
   use util_derivative_terms, only : derivative_terms, coefficient, symmetric_terms
   use operation_expansion , only : expansion
-  use operation_expression, only : expression, unknown, constant, coordinate, component, component_along, design
+  use operation_expression, only : expression, unknown, constant, coordinate, time_map, component, component_along, design
   use operation_expression, only : derivative, jet_form
   use operation_expression, only : partial_derivative, partial_in_design, total_derivative, stationarity
   use operation_expression, only : boundary_terms
@@ -39,7 +39,7 @@ module operation_field
   private
   public :: continuous_support, discrete_support
   public :: continuous_field, discrete_field
-  public :: unknown_field, coordinate_field, integral, maximum, representation
+  public :: unknown_field, coordinate_field, time_map_field, integral, maximum, representation
   public :: WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR, DESIGN_FACTOR, SPACE_FACE
 
   ! the parts a support can be of another
@@ -384,6 +384,22 @@ contains
     this % argument(1) = name
 
   end function coordinate_field
+
+  ! the time map t(tau), a function of the coordinate of time; no
+  ! derivative follows it
+  function time_map_field(on) result(this)
+
+    class(continuous_support), intent(in) :: on
+    type(continuous_field) :: this
+
+    this % on        = on % identity
+    this % name      = 't_map'
+    this % index     = [0]
+    this % component = [time_map()]
+    allocate(this % argument(1))
+    this % argument(1) = 't'
+
+  end function time_map_field
 
   function create_tuple(on, fields) result(this)
 

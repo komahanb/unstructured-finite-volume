@@ -411,9 +411,15 @@ module operation_residual
   ! estimate of the error of the objective is the same over every step
   ! of the chain - the step density proportional to the local error
   ! density to the power 1/(p + 1), p the order of the step's family.
+  ! With a tolerance the count is free: the instants are as many as
+  ! place the estimate within the tolerance, relative to the size of
+  ! the objective, or of the design when the design is free, unless
+  ! absolute.
   !===================================================================!
 
   type :: equidistribution
+     real(dp) :: tolerance = 0.0_dp
+     logical  :: absolute  = .false.
   end type equidistribution
 
   type :: discrete_residual
@@ -2827,16 +2833,33 @@ contains
   ! A = sum |eta_k| is the measure the placement lowers; the
   ! uncertainty of the estimate is the difference of sum eta_k from
   ! J+(Q+) - J(Q), Q+ the solution of the enrichment on the same
-  ! instants. A round that does not lower A is rejected and the round
-  ! before returned; a round that lowers A by less than the
-  ! uncertainty is returned; otherwise the instants are placed again
-  ! (placement_instants) and the next round solves from the solution's
-  ! values at the same points. A density zero over every step returns
-  ! the round. No stop is a chosen number. With the design free, the
-  ! error the placement lowers is that of the design found, its part
-  ! of each step and its uncertainty by design_disagreement, in place
-  ! of eta_k. Invalid input: a checkpoint or snapshot schedule, under
-  ! which the stages of the steps are not retained.
+  ! instants. With the design free, the measure is that of the error of
+  ! the design found, its part of each step and its uncertainty by
+  ! design_disagreement, in place of eta_k.
+  !
+  ! AT A COUNT of instants the rounds place them again
+  ! (placement_instants), each solving from the solution's values at
+  ! the same points, until a round does not lower A - rejected, the
+  ! round before taken - or lowers it by less than the uncertainty -
+  ! taken: the placement at that count is then settled.
+  !
+  ! TO A TOLERANCE the settled placement is returned, met, where its A
+  ! is within the tolerance times the scale - sum |w f| over the nodes
+  ! for the objective, |J| on a face, the norm of the design for the
+  ! design, one when absolute. Otherwise the count of steps is raised
+  ! to the one at which A, falling as the steps to the power -r, would
+  ! meet the tolerance, at least by one, r the lowest order of the
+  ! chain's families until two counts observe the order themselves;
+  ! the chain is extended to it (chain % extension), the instants
+  ! placed at that count, and the next round solves from the solution's
+  ! values interpolated along time. A settled A that does not fall
+  ! below that of the count before returns the count before, and one
+  ! within the uncertainty of the estimate is returned: the outcome is
+  ! unmet, the refinement no longer resolved by the estimate.
+  !
+  ! A density zero over every step returns the placement. No stop is a
+  ! chosen number. Invalid input: a checkpoint or snapshot schedule,
+  ! under which the stages of the steps are not retained.
   !===================================================================!
 
   recursive subroutine placement_iteration(this, estimate, solution, checkpoint, snapshots)
@@ -2847,13 +2870,15 @@ contains
     integer                 , intent(in), optional :: checkpoint, snapshots
 
     type(discrete_residual) :: iterate, plus
-    type(discrete_field) :: start, trial, enriched, at_points
-    real(dp), allocatable :: eta(:), goal(:), position(:), total(:), total_plus(:), gradient(:,:,:), partial(:,:)
-    real(dp), allocatable :: slope(:), slope_plus(:), shift(:)
+    type(discrete_field) :: start, trial, enriched, at_points, settled
+    type(equidistribution) :: placement
+    real(dp), allocatable :: eta(:), goal(:), accepted_goal(:), position(:), total(:), total_plus(:)
+    real(dp), allocatable :: gradient(:,:,:), partial(:,:), slope(:), slope_plus(:), shift(:), density(:)
     character(len=32), allocatable :: names(:)
-    real(dp) :: measure, measure_before, signed, uncertainty
-    integer :: round, nf, i, nd
-    logical :: free
+    real(dp) :: measure, measure_before, accepted, uncertainty, accepted_uncertainty, scale, accepted_scale
+    real(dp) :: settled_measure, signed, rate
+    integer :: round, rounds, nf, i, nd, b, count, settled_count
+    logical :: free, taken
 
     if (present(checkpoint) .or. present(snapshots)) then
        error stop 'operation_residual: an equidistribution reads the stages of every step, which a checkpoint or &
@@ -2863,16 +2888,27 @@ contains
     type is (discrete_residual)
        iterate = this
     end select
+    placement = iterate % placement
     deallocate(iterate % placement)
-    free = free_design(iterate)
-    nf   = iterate % manifold % num_unknowns
+    free  = free_design(iterate)
+    nf    = iterate % manifold % num_unknowns
     allocate(names(nf))
     names = iterate % manifold % unknown_name(1:nf)
+    ! the order A falls at with the count of steps until two counts
+    ! observe one: the lowest of the chain's families
+    rate = real(huge(1), dp)
+    do b = 1, iterate % schemes % num_blocks()
+       rate = min(rate, real(iterate % schemes % scheme(b) % accuracy(), dp))
+    end do
     start = estimate
+    settled_count = 0
+    round  = 0
+    rounds = 0
     measure_before = huge(1.0_dp)
-    round = 0
     do
-       round = round + 1
+       round  = round + 1
+       rounds = rounds + 1
+       count  = iterate % points % num_instants()
        call iterate % minimize(start, trial)
        eta    = iterate % time_disagreement(trial)
        signed = sum(eta)
@@ -2886,46 +2922,127 @@ contains
        plus % with_adjoint = .false.
        at_points = discrete_field(plus % points, trial % value(:, 1:nf), names)
        call plus % zero_at_design(at_points, enriched)
-       call iterate % objective % functional(trial, total, gradient, partial)
+       call iterate % objective % functional(trial, total, gradient, partial, density)
        call plus % objective % functional(enriched, total_plus, gradient, partial)
        if (free) then
           nd = size(plus % points % expansion % at)
           slope      = [(total(1 + plus % points % expansion % column(i, 1)), i = 1, nd)]
           slope_plus = [(total_plus(1 + plus % points % expansion % column(i, 1)), i = 1, nd)]
           call iterate % design_disagreement(trial, slope, slope_plus, goal, uncertainty, shift)
-          if (verbosity >= 1) print '(a, i0, a, *(es12.4))', 'placement round ', round, &
+          if (verbosity >= 1) print '(a, i0, a, *(es12.4))', 'placement round ', rounds, &
                & ': nu* - nu_h estimated ', shift
+          scale = norm2(plus % points % expansion % at)
        else
           goal = abs(eta)
           uncertainty = abs(signed - (total_plus(1) - total(1)))
+          if (iterate % objective % integrated_part == TIME_FACE) then
+             scale = abs(total(1))
+          else
+             scale = sum(abs(trial % node_weight * density))
+          end if
        end if
+       if (placement % absolute) scale = 1.0_dp
        measure = sum(goal)
-       if (verbosity >= 1) print '(a, i0, a, es12.4, a, es12.4, a, es12.4, a, es10.2)', 'placement round ', round, &
-            & ': measure ', measure, '  sum eta ', signed, '  J+(Q+) - J ', total_plus(1) - total(1), &
-            & '  uncertainty ', uncertainty
-       if (round > 1 .and. measure >= measure_before) then
-          if (verbosity >= 1) print '(a)', 'placement: the round does not lower the measure; the round before returned'
+       if (verbosity >= 1) print '(a, i0, a, i0, a, es12.4, a, es12.4, a, es12.4, a, es10.2)', 'placement round ', &
+            & rounds, ': instants ', count, '  measure ', measure, '  sum eta ', signed, '  J+(Q+) - J ', &
+            & total_plus(1) - total(1), '  uncertainty ', uncertainty
+
+       ! at the count: the round taken, or the round before
+       taken = round == 1 .or. measure < measure_before
+       if (taken) then
+          solution = trial
+          accepted = measure
+          accepted_goal = goal
+          accepted_uncertainty = uncertainty
+          accepted_scale = scale
+       end if
+       if (taken .and. .not. (round > 1 .and. measure_before - measure < accepted_uncertainty)) then
+          measure_before = measure
+          position = iterate % placement_instants(solution, accepted_goal, count)
+          if (size(position) == 0) then
+             if (verbosity >= 1) print '(a)', 'placement: the estimate is zero over every step'
+             exit
+          end if
+          call place(position)
+          cycle
+       end if
+
+       ! the placement at the count settled
+       if (placement % tolerance <= 0.0_dp) exit
+       if (settled_count > 0) then
+          if (accepted >= settled_measure) then
+             solution = settled
+             if (verbosity >= 1) print '(a)', 'placement unmet: the refinement does not lower the measure; the &
+                  &count before returned'
+             exit
+          end if
+          rate = log(settled_measure / accepted) / log(real(count - 1, dp) / real(settled_count - 1, dp))
+       end if
+       if (accepted <= placement % tolerance * accepted_scale) then
+          if (verbosity >= 1) print '(a)', 'placement met: the measure is within the tolerance'
           exit
        end if
-       solution = trial
-       if (round > 1 .and. measure_before - measure < uncertainty) then
-          if (verbosity >= 1) print '(a)', 'placement: the decrease of the measure is below the uncertainty of the &
-               &estimate'
+       if (accepted <= accepted_uncertainty) then
+          if (verbosity >= 1) print '(a)', 'placement unmet: the measure is within the uncertainty of the estimate'
           exit
        end if
-       measure_before = measure
-       position = iterate % placement_instants(trial, goal)
+       settled         = solution
+       settled_measure = accepted
+       settled_count   = count
+       count = 1 + max(count, ceiling(real(count - 1, dp) * (accepted / (placement % tolerance * accepted_scale)) &
+            & **(1.0_dp / rate)))
+       position = iterate % placement_instants(solution, accepted_goal, count)
        if (size(position) == 0) then
           if (verbosity >= 1) print '(a)', 'placement: the estimate is zero over every step'
           exit
        end if
-       select type (on => trial % on)
-       type is (discrete_manifold)
-          iterate % points = on
-       end select
-       iterate % points % instant = position
-       start = discrete_field(iterate % points, trial % value(:, 1:nf), names)
+       call place(position)
+       round = 0
+       measure_before = huge(1.0_dp)
     end do
+
+  contains
+
+    ! the instants placed at their count, the chain extended to it, and
+    ! the next estimate the solution's values along time there
+    subroutine place(t)
+      real(dp), intent(in) :: t(:)
+      select type (on => solution % on)
+      type is (discrete_manifold)
+         iterate % points = on
+      end select
+      if (size(t) /= iterate % points % num_instants()) iterate % schemes = iterate % schemes % extension(size(t))
+      iterate % points % instant = t
+      start = discrete_field(iterate % points, values_along(solution, t), names)
+    end subroutine place
+
+    ! the unknowns of a field at the instants given, at every cell,
+    ! linear along time between the field's instants
+    function values_along(field, t) result(v)
+      type(discrete_field), intent(in) :: field
+      real(dp)            , intent(in) :: t(:)
+      real(dp), allocatable :: v(:,:)
+      real(dp), allocatable :: s(:)
+      real(dp) :: w
+      integer :: j, k, c, ncells
+      select type (on => field % on)
+      type is (discrete_manifold)
+         s = on % instant
+         ncells = on % num_cells()
+      end select
+      allocate(v(size(t) * ncells, nf))
+      k = 1
+      do j = 1, size(t)
+         do while (k < size(s) - 1 .and. s(k + 1) < t(j))
+            k = k + 1
+         end do
+         w = (t(j) - s(k)) / (s(k + 1) - s(k))
+         do c = 1, ncells
+            v((j - 1) * ncells + c, :) = (1.0_dp - w) * field % value((k - 1) * ncells + c, 1:nf) &
+                 & + w * field % value(k * ncells + c, 1:nf)
+         end do
+      end do
+    end function values_along
 
   end subroutine placement_iteration
 
@@ -2999,8 +3116,8 @@ contains
   end subroutine design_disagreement
 
   !===================================================================!
-  ! THE INSTANTS OF THE NEXT PLACEMENT, at the count of a solution's
-  ! instants: on each step, the step into instant k of length h_k, the
+  ! THE INSTANTS OF THE NEXT PLACEMENT, count of them: on each step of
+  ! a solution's instants, the step into instant k of length h_k, the
   ! step density e_k^(1/(p_k + 1)) / h_k, e_k = sum over the cells of
   ! |eta| at instant k and p_k the order of the step's family - the
   ! density a_k^(1/(p_k + 1)) of the local error density a_k = e_k /
@@ -3013,11 +3130,12 @@ contains
   ! ratios. A density zero over every step returns no instant.
   !===================================================================!
 
-  function placement_instants(this, solution, eta) result(position)
+  function placement_instants(this, solution, eta, count) result(position)
 
     class(discrete_residual), intent(in) :: this
     type(discrete_field)    , intent(in) :: solution
     real(dp)                , intent(in) :: eta(:)
+    integer                 , intent(in) :: count
     real(dp), allocatable :: position(:)
 
     real(dp), allocatable :: t(:), mass(:), h(:)
@@ -3054,13 +3172,14 @@ contains
        return
     end if
 
-    ! the quantiles: instant j at the fraction (j - 1)/(n - 1) of the mass
-    allocate(position(ninst))
+    ! the quantiles: instant j of the count at the fraction (j - 1) /
+    ! (count - 1) of the mass
+    allocate(position(count))
     position(1)     = t(1)
-    position(ninst) = t(ninst)
+    position(count) = t(ninst)
     k = 2
-    do j = 2, ninst - 1
-       target = mass(ninst) * real(j - 1, dp) / real(ninst - 1, dp)
+    do j = 2, count - 1
+       target = mass(ninst) * real(j - 1, dp) / real(count - 1, dp)
        do while (mass(k) < target)
           k = k + 1
        end do
@@ -3069,7 +3188,7 @@ contains
 
     ! the bound on the ratio of a step to the step before it
     if (bound < huge(1.0_dp)) then
-       h = position(2:) - position(:ninst - 1)
+       h = position(2:) - position(:count - 1)
        do k = 2, size(h)
           h(k) = min(h(k), bound * h(k - 1))
        end do
@@ -3077,10 +3196,10 @@ contains
           h(k) = min(h(k), bound * h(k + 1))
        end do
        h = h * (t(ninst) - t(1)) / sum(h)
-       do k = 2, ninst - 1
+       do k = 2, count - 1
           position(k) = position(k - 1) + h(k - 1)
        end do
-       position(ninst) = t(ninst)
+       position(count) = t(ninst)
     end if
 
   end function placement_instants

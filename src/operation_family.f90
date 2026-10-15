@@ -78,6 +78,7 @@ module operation_family
    contains
 
      procedure :: num_blocks
+     procedure :: extension => chain_extension
 
   end type chain
 
@@ -950,6 +951,55 @@ contains
     class(chain), intent(in) :: this
     num_blocks = size(this % scheme)
   end function num_blocks
+
+  !===================================================================!
+  ! THE CHAIN AT ANOTHER COUNT of instants: a chain of one block per
+  ! instant, whose blocks from the m-th to the last are of one family,
+  ! extends to n instants, n >= m, one block per instant, the blocks
+  ! from the m-th of that family. Invalid input: a chain of another
+  ! form, which is written for its count, or n below m.
+  !===================================================================!
+
+  function chain_extension(this, n) result(extended)
+
+    class(chain), intent(in) :: this
+    integer     , intent(in) :: n
+    type(chain) :: extended
+
+    integer :: nb, m, k
+    character(len=250) :: message
+
+    nb = size(this % scheme)
+    if (any(this % from /= [(k, k = 1, nb)])) then
+       error stop 'operation_family: a chain extends to another count of instants with one block per instant'
+    end if
+    m = nb
+    do while (m > 1)
+       if (.not. same_family(this % scheme(m - 1), this % scheme(nb))) exit
+       m = m - 1
+    end do
+    if (n < m) then
+       write(message,'(a,i0,a,i0)') 'operation_family: the chain states its first ', m - 1, &
+            & ' blocks, more than the count of instants; count = ', n
+       error stop trim(message)
+    end if
+    allocate(extended % scheme(n))
+    extended % scheme(1:m - 1) = this % scheme(1:m - 1)
+    do k = m, n
+       extended % scheme(k) = this % scheme(nb)
+    end do
+    extended % from = [(k, k = 1, n)]
+
+  contains
+
+    pure logical function same_family(a, b)
+      type(family), intent(in) :: a, b
+      same_family = a % geometry == b % geometry .and. a % order == b % order .and. a % beta == b % beta &
+           & .and. a % gamma == b % gamma .and. size(a % b) == size(b % b)
+      if (same_family) same_family = all(a % a == b % a) .and. all(a % b == b % b)
+    end function same_family
+
+  end function chain_extension
 
   function hairer_wanner_five_stage() result(this)
 

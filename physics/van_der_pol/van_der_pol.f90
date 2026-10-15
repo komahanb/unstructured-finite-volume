@@ -32,7 +32,7 @@
 !                    equidistribution, a placement the discrete image
 !                    of L states, since it reads the error of J
 !
-! FIVE PROBLEMS are then five readings of one Lagrangian, each
+! SIX PROBLEMS are then six readings of one Lagrangian, each
 ! differing from the one before it by one term or by the placement of
 ! its instants:
 !
@@ -41,6 +41,7 @@
 !   (c) sensitivity      L = J + lambda_omega . r_omega + lambda_ic . r_ic + lambda_s . r_s
 !   (d) design           L = J + lambda_omega . r_omega + lambda_ic . r_ic
 !   (e) design on the equidistribution, L of (d)
+!   (f) design to a tolerance, L of (d), the count of instants free
 !
 ! (a) The stationarity of L in the multipliers is the oscillator with
 ! its data and its design, solved forward for u_bar and, the
@@ -134,6 +135,25 @@
 ! three- to tenfold, and raises that of nu found by 13 to 34 per cent
 ! at 41 to 161 instants: the design found reads the gradient of J,
 ! not its value.
+!
+! (f) The Lagrangian of (d) on the equidistribution with a tolerance,
+! 1e-3 of the design, its count of instants free. At each count the
+! rounds of (e) settle the placement; where the estimate of the error
+! of the design found is not within the tolerance times the norm of
+! the design, the count of steps is raised to the one at which the
+! estimate, falling as the steps to the power -r, would meet it - r
+! two, the order of the chain, until two counts observe the order -
+! the chain's last family continued to the new count, the instants
+! placed there and the next solve begun from the solution interpolated
+! along time. A count whose estimate does not fall below that of the
+! count before, or falls within its own uncertainty, ends the rounds
+! unmet. From eleven instants the tolerance is met at 47, nu found
+! 1.4849560023, its error 1.204e-3, where equally spaced instants
+! meet that error at 57; at 1e-4 it is met at 147 instants, the error
+! 1.171e-4, where equally spaced instants need 165. The same rule on
+! the error of J at nu_0 meets 1e-3 of sum |w f| at 33 instants, the
+! error 2.98e-3, against 34 equally spaced, and 1e-4 at 100, the
+! error 2.15e-4, against 116.
 !
 ! THE LAGRANGIAN of (b) and (c) is printed before its solve: J and
 ! every law with the multiplier it is paired with, each equation as a
@@ -334,6 +354,22 @@ program van_der_pol
   print '(a, es24.16)', 'nu found                = ', nu_bar % value(1, 1)
   print '(a, es24.16)', 'J                       = ', J_bar % value(1, 1)
   print '(a, es24.16)', 'estimate of J - J_bar   = ', sum(eta)
+
+  !===================================================================!
+  ! (f) DESIGN TO A TOLERANCE. L of (d), the count of the instants free:
+  ! as many, equidistributed, as bring the estimate of the error of the
+  ! design found within 1e-3 of the design
+  !===================================================================!
+
+  L_bar = discrete_image(L, placement=equidistribution(tolerance=1.0e-3_dp))
+  call L_bar % minimize(estimate, solution)
+
+  nu_bar = solution % fields(['nu'])
+  J_bar  = J % at(solution)
+  print '(a)', '(f) design to a tolerance: L of (d)'
+  print '(a, i24)', 'instants                = ', solution % num_points()
+  print '(a, es24.16)', 'nu found                = ', nu_bar % value(1, 1)
+  print '(a, es24.16)', 'J                       = ', J_bar % value(1, 1)
 
 contains
 

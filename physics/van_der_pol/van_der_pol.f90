@@ -357,7 +357,7 @@ program van_der_pol
 
   !===================================================================!
   ! (f) DESIGN TO A TOLERANCE. L of (d), the count of the instants free:
-  ! as many, equidistributed, as bring the estimate of the error of the
+  ! as many, equidistributed, as place the estimate of the error of the
   ! design found within 1e-3 of the design
   !===================================================================!
 

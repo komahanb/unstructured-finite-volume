@@ -474,6 +474,7 @@ module operation_residual
      procedure :: minimize
      procedure :: disagreement
      procedure, private :: time_disagreement
+     procedure, private :: chain_of_enrichment
      procedure, private :: placement_iteration
      procedure, private :: placement_instants
      procedure, private :: design_disagreement
@@ -2870,7 +2871,7 @@ contains
     integer                 , intent(in), optional :: checkpoint, snapshots
 
     type(discrete_residual) :: iterate, plus
-    type(discrete_field) :: start, trial, enriched, at_points, settled
+    type(discrete_field) :: start, trial, enriched, at_points, settled, objective_field
     type(equidistribution) :: placement
     real(dp), allocatable :: eta(:), goal(:), accepted_goal(:), position(:), total(:), total_plus(:)
     real(dp), allocatable :: gradient(:,:,:), partial(:,:), slope(:), slope_plus(:), shift(:), density(:)
@@ -2918,12 +2919,14 @@ contains
        type is (discrete_manifold)
           plus % points = on
        end select
-       plus % schemes      = enrichment(iterate % schemes)
+       plus % schemes      = iterate % chain_of_enrichment()
        plus % with_adjoint = .false.
        at_points = discrete_field(plus % points, trial % value(:, 1:nf), names)
        call plus % zero_at_design(at_points, enriched)
-       call iterate % objective % functional(trial, total, gradient, partial, density)
-       call plus % objective % functional(enriched, total_plus, gradient, partial)
+       objective_field = iterate % objective % at(trial)
+       total           = objective_field % value(1, :)
+       objective_field = plus % objective % at(enriched)
+       total_plus      = objective_field % value(1, :)
        if (free) then
           nd = size(plus % points % expansion % at)
           slope      = [(total(1 + plus % points % expansion % column(i, 1)), i = 1, nd)]
@@ -2935,9 +2938,10 @@ contains
        else
           goal = abs(eta)
           uncertainty = abs(signed - (total_plus(1) - total(1)))
-          if (iterate % objective % integrated_part == TIME_FACE) then
+          if (iterate % objective % integrated_part == TIME_FACE .or. iterate % objective % weight > 0.0_dp) then
              scale = abs(total(1))
           else
+             call iterate % objective % differential(trial, gradient, partial, density)
              scale = sum(abs(trial % node_weight * density))
           end if
        end if
@@ -4238,7 +4242,7 @@ contains
     real(dp) :: h
 
     if (allocated(this % elements)) then
-       call this % projected_nodes(tuple, stages, solution, stage_node)
+       call this % projected_nodes(tuple, stages, solution, stage_node, density, step_term)
        return
     end if
 
@@ -7639,15 +7643,19 @@ contains
   ! space, its jet the one the tuples of the element's nodes form there
   ! by the basis, of the layout of a node's tuple. stage_node(k, i, s)
   ! is the node of stage i of the step into instant k at site s; a site
-  ! is a node without a point.
+  ! is a node without a point. With a density at the nodes, step_term
+  ! at the point of an element's first node at instant k is the
+  ! integral of the density over the element and the step into k.
   !===================================================================!
 
-  subroutine projected_nodes(this, tuple, stages, solution, stage_node)
+  subroutine projected_nodes(this, tuple, stages, solution, stage_node, density, step_term)
 
     class(discrete_residual), intent(in)    :: this
     real(dp)                , intent(in)    :: tuple(:,:,:,0:), stages(:,:,:,:,0:)
     type(discrete_field)    , intent(inout) :: solution
     integer , allocatable   , intent(out)   :: stage_node(:,:,:)
+    real(dp)                , intent(in), optional :: density(:)
+    real(dp), allocatable   , intent(out), optional :: step_term(:)
 
     type(derivative_terms), allocatable :: dt(:), weight(:)
     integer , allocatable :: instant(:), cell_owner(:), formed(:,:)
@@ -7683,6 +7691,7 @@ contains
     allocate(solution % node_image(nnodes), source=this_image())
     solution % node_rule = this % flux
     cell_owner = this % cell_owners()
+    if (present(step_term)) allocate(step_term(this % points % num_points()), source=0.0_dp)
 
     ! the sites at every instant
     do k = 1, ninst
@@ -7734,6 +7743,9 @@ contains
                         position(size(position) - this % elements % dimension + 1:) = this % elements % position(:, q, e)
                         solution % node_position(:, nn) = position
                         solution % node_jet(:, nn, :) = this % site_jet(formed, e, q, stages(:, :, i, first + k, :))
+                        if (present(step_term)) step_term(this % points % point_of(first + k, this % elements % node(1, e))) &
+                             & = step_term(this % points % point_of(first + k, this % elements % node(1, e))) &
+                             & + solution % node_weight(nn) * density(nn)
                      end do
                   end do
                end do
@@ -7753,6 +7765,10 @@ contains
                         nn   = (first + instant(j) - 2) * nsites + site
                         solution % node_weight(nn) = solution % node_weight(nn) &
                              & + h * value(weight(j)) * this % elements % weight(q, e)
+                        if (present(step_term)) step_term(this % points % point_of(first + k - 1, &
+                             & this % elements % node(1, e))) = step_term(this % points % point_of(first + k - 1, &
+                             & this % elements % node(1, e))) + h * value(weight(j)) * this % elements % weight(q, e) &
+                             & * density(nn)
                      end do
                   end do
                end do
@@ -8653,10 +8669,41 @@ contains
   end function disagreement
 
   !===================================================================!
+  ! THE CHAIN OF THE ENRICHMENT: each family of the residual's chain
+  ! one order higher (enrichment), except where the enriched family of
+  ! a block would read history before the first instant - bdf(p + 1)
+  ! from block p + 1 - which keeps the residual's own family, the error
+  ! of its steps not estimated. A family of one step of the higher
+  ! order in its place, the tabulated DIRK, is singular on the rotor's
+  ! joints, whose conditions it meets at its stages alone.
+  !===================================================================!
+
+  function chain_of_enrichment(this) result(schemes)
+
+    class(discrete_residual), intent(in) :: this
+    type(chain) :: schemes
+
+    type(discrete_residual) :: enriched
+    integer :: b, first, last, depth
+
+    schemes = enrichment(this % schemes)
+    select type (this)
+    type is (discrete_residual)
+       enriched = this
+    end select
+    enriched % schemes = schemes
+    do b = 1, schemes % num_blocks()
+       call enriched % block_extent(b, first, last, depth)
+       if (first < 1) schemes % scheme(b) = this % schemes % scheme(b)
+    end do
+
+  end function chain_of_enrichment
+
+  !===================================================================!
   ! THE DISAGREEMENT ALONG TIME of a solution Q with the enrichment of
   ! the residual's chain - the same Lagrangian on the solution's
-  ! instants and design, each family one order higher, marked + - the
-  ! estimate of the error of the objective,
+  ! instants and design, its chain the chain of the enrichment, marked
+  ! + - the estimate of the error of the objective,
   !
   !    J+(Q+) - J(Q) ~ eta = J+(P Q) - J(Q) + mu+ . R+(P Q),
   !
@@ -8670,12 +8717,15 @@ contains
   ! a stage's to the instant its step reaches, and the objective over
   ! each step - its integral by the enrichment's rule at P Q less that
   ! by the step's own rule at Q - to the instant the step reaches: one
-  ! contribution per point, summing to eta. A difference node by node
-  ! would set against each other the weights two rules divide between
+  ! contribution per point, summing to eta; under a projection on the
+  ! cells, to the point of the first node of each element. For a
+  ! smooth maximum S = m + log(I) / rho the parts of I by the two
+  ! rules, each over rho I of its own, are scaled to the difference of
+  ! the two values, S+ - S. A difference node by node would set
+  ! against each other the weights two rules divide between
   ! neighbouring instants. Invalid input: a residual without a chain
-  ! or an objective, an inequality on a functional of the state, a law
-  ! projected on the cells, a solution on another manifold or stored
-  ! over checkpoints.
+  ! or an objective, an inequality on a functional of the state, a
+  ! solution on another manifold or stored over checkpoints.
   !===================================================================!
 
   function time_disagreement(this, solution) result(contribution)
@@ -8685,18 +8735,19 @@ contains
     real(dp), allocatable :: contribution(:)
 
     type(discrete_residual) :: base, plus
-    type(discrete_field) :: state, replay
+    type(discrete_field) :: state, replay, value_field, value_plus
     type(chain_block) :: blk
     type(newton) :: solver
     type(stencil), allocatable :: rows_along(:,:)
     real(dp), allocatable :: coarse(:,:,:,:), tuple(:,:,:,:), stages(:,:,:,:,:), zeros(:,:,:,:,:)
-    real(dp), allocatable :: value(:,:), total(:), gradient(:,:,:), partial(:,:), density(:), term(:)
+    real(dp), allocatable :: value(:,:), total(:), gradient(:,:,:), partial(:,:), density(:), term(:), term_plus(:)
     real(dp), allocatable :: adjoint(:,:,:,:), incoming(:,:,:,:), reaction(:,:,:), gauge(:,:,:), in_design(:,:)
     real(dp), allocatable :: jets(:,:), mu(:,:), x(:), y(:)
     integer , allocatable :: stage_node(:,:,:), base_node(:,:,:)
     character(len=32), allocatable :: names(:)
     integer :: stride, nf, ncells, ninst, npts, ncol, nd, nb, b, first, last, depth, k, c, f, top, r, m, width
     logical :: face
+    real(dp) :: growth
     character(len=250) :: message
 
     if (.not. (this % with_chain .and. allocated(this % objective))) then
@@ -8708,10 +8759,6 @@ contains
           error stop 'operation_residual: the disagreement along time reads the objective alone; an inequality on &
                &a functional of the state enters it'
        end if
-    end if
-    if (allocated(this % elements)) then
-       error stop 'operation_residual: the disagreement along time is formed at the points; the law is projected &
-            &on the cells'
     end if
     if (allocated(solution % objective_value)) then
        error stop 'operation_residual: the disagreement along time reads the stages of the solution''s steps, &
@@ -8735,7 +8782,7 @@ contains
        error stop 'operation_residual: the disagreement along time reads a solution at the points of a manifold'
     end select
     plus = base
-    plus % schemes = enrichment(base % schemes)
+    plus % schemes = base % chain_of_enrichment()
 
     ncells = plus % points % num_cells()
     ninst  = plus % points % num_instants()
@@ -8807,7 +8854,7 @@ contains
     ! and the same value at P Q as at Q
     allocate(contribution(npts), source=0.0_dp)
     face = this % objective % integrated_part == TIME_FACE
-    call this % objective % functional(solution, total, gradient, partial, density)
+    call this % objective % differential(solution, gradient, partial, density)
     if (.not. face) then
        top = 1
        do b = 1, base % schemes % num_blocks()
@@ -8815,12 +8862,25 @@ contains
        end do
        allocate(zeros(stride, ncells, top, ninst, 0:ncol - 1), source=0.0_dp)
        call base % quadrature_nodes(origin, coarse, zeros, replay, base_node, density=density, step_term=term)
-       contribution = contribution - term
     end if
-    call plus % objective % functional(state, total, gradient, partial, density)
+    call plus % objective % differential(state, gradient, partial, density)
     if (.not. face) then
-       call plus % quadrature_nodes(origin, coarse, stages, replay, base_node, density=density, step_term=term)
-       contribution = contribution + term
+       call plus % quadrature_nodes(origin, coarse, stages, replay, base_node, density=density, step_term=term_plus)
+       if (this % objective % weight > 0.0_dp) then
+          ! a smooth maximum, m + log(I) / rho: each step's part of I by
+          ! its rule, over rho I of its own image, the enrichment's scaled
+          ! by exp(rho (S+ - S)) to the solution's I, and the difference
+          ! scaled to S+ - S, the difference of the two values
+          value_field = this % objective % at(solution)
+          value_plus  = plus % objective % at(state)
+          growth = exp(this % objective % weight * (value_plus % value(1, 1) - value_field % value(1, 1)))
+          if (growth /= 1.0_dp) then
+             contribution = contribution + (value_plus % value(1, 1) - value_field % value(1, 1)) &
+                  & * (growth * term_plus - term) * this % objective % weight / (growth - 1.0_dp)
+          end if
+       else
+          contribution = contribution + term_plus - term
+       end if
     end if
 
     ! the reverse sweep of the enrichment at P Q, block after block from

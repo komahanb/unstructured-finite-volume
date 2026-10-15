@@ -559,12 +559,16 @@ contains
 
   end function field_on_points
 
-  subroutine field_differential(this, solution, gradient, partial)
+  ! density(p), when present, is the derivative of the functional in the
+  ! weight of node p: the field there for an integral, exp(rho (f - m))
+  ! / (rho I) for a smooth maximum
+  subroutine field_differential(this, solution, gradient, partial, density)
 
     class(continuous_field), intent(in)  :: this
     type(discrete_field)   , intent(in)  :: solution
     real(dp), allocatable  , intent(out) :: gradient(:,:,:)
     real(dp), allocatable  , intent(out) :: partial(:,:)
+    real(dp), allocatable  , intent(out), optional :: density(:)
 
     real(dp), allocatable :: total(:)
     real(dp) :: m, scale
@@ -574,8 +578,9 @@ contains
        ! of the smooth maximum m + log(I) / rho: the differential of I
        ! over rho I, and along each expansion the derivative of that
        ! quotient, I's own derivative read in its value's column
-       call maximum_parts(this, solution, m, total, gradient, partial)
+       call maximum_parts(this, solution, m, total, gradient, partial, density)
        scale = 1.0_dp / (this % weight * total(1))
+       if (present(density)) density = density * scale
        gradient(:, :, 0) = gradient(:, :, 0) * scale
        partial(:, 0)     = partial(:, 0) * scale
        do c = 1, ubound(gradient, 3)
@@ -584,7 +589,7 @@ contains
        end do
        return
     end if
-    call functional_over(this, solution, total, gradient, partial)
+    call functional_over(this, solution, total, gradient, partial, density)
 
   end subroutine field_differential
 
@@ -804,13 +809,15 @@ contains
   end function maximum_over
 
   ! the largest component m, and the integral I of the shifted
-  ! exponentials with its differential, in every column
-  subroutine maximum_parts(this, solution, m, total, gradient, partial)
+  ! exponentials with its differential, in every column; density, the
+  ! shifted exponentials at the nodes
+  subroutine maximum_parts(this, solution, m, total, gradient, partial, density)
 
     class(continuous_field), intent(in)  :: this
     type(discrete_field)   , intent(in)  :: solution
     real(dp)               , intent(out) :: m
     real(dp), allocatable  , intent(out) :: total(:), gradient(:,:,:), partial(:,:)
+    real(dp), allocatable  , intent(out), optional :: density(:)
 
     type(continuous_field) :: shifted
     type(expression) :: summed, g
@@ -881,7 +888,7 @@ contains
     shifted % weight    = 0.0_dp
     shifted % component = [summed]
     shifted % index     = [0]
-    call functional_over(shifted, solution, total, gradient, partial)
+    call functional_over(shifted, solution, total, gradient, partial, density)
 
   end subroutine maximum_parts
 

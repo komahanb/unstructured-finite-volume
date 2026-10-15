@@ -520,6 +520,7 @@ module operation_residual
      procedure, private :: block_rows
      procedure, private :: cell_owners
      procedure, private :: expansion_order
+     procedure, private :: expansion_source
      procedure, private :: expansion_owned
      procedure, private :: face_instant
      procedure, private :: face_row_moment
@@ -3705,15 +3706,15 @@ contains
   ! THE DISAGREEMENT IN THE DESIGN FOUND, the design free: the error
   ! of nu* follows that of the gradient, nu* - nu_h ~ -H^(-1) E'(nu_h),
   ! E = J - J_h, and each point's part of E' is the derivative of its
-  ! eta along each design coordinate, by central differences of the
-  ! solutions at nu_h +- delta_i, delta_i = eps^(1/3) max(1, |nu_i|),
-  ! the step at which the truncation of the difference and the
-  ! rounding of eta are of one size; H by the same differences of the
-  ! gradient dJ_h/dnu. contribution(p) = |H^(-1) d eta(p) / dnu|;
-  ! shift = -H^(-1) sum over the points of d eta / dnu, the estimate of
-  ! nu* - nu_h; uncertainty its distance from -H^(-1) (slope_plus -
-  ! slope), the gradients of J+ at Q+ and of J_h at Q. A singular H
-  ! stops the program.
+  ! eta along each design coordinate, by the disagreement expanded
+  ! along it; H the derivative of the gradient, minus that of the
+  ! design multipliers along each coordinate, by the reverse sweep's
+  ! expansion - one solve at nu_h. contribution(p) = |H^(-1) d eta(p)
+  ! / dnu|; shift = -H^(-1) sum over the points of d eta / dnu, the
+  ! estimate of nu* - nu_h; uncertainty its distance from -H^(-1)
+  ! (slope_plus - slope), the gradients of J+ at Q+ and of J_h at Q.
+  ! Invalid input: an expansion along other than each design
+  ! coordinate. A singular H stops the program.
   !===================================================================!
 
   subroutine design_disagreement(this, solution, slope, slope_plus, contribution, uncertainty, shift)
@@ -3726,11 +3727,9 @@ contains
 
     type(discrete_residual) :: pinned
     type(discrete_field) :: start, side
-    real(dp), allocatable :: values(:), derivative(:,:), hessian(:,:), eta(:,:), gradient_side(:,:)
-    real(dp), allocatable :: total(:), gradient(:,:,:), partial(:,:)
+    real(dp), allocatable :: values(:), derivative(:,:), hessian(:,:), eta(:), kappa(:,:), eta_derivative(:,:)
     character(len=32), allocatable :: names(:)
-    real(dp) :: delta
-    integer :: nd, nf, npts, i, j, s, p
+    integer :: nd, nf, npts, i, p
 
     select type (this)
     type is (discrete_residual)
@@ -3740,26 +3739,22 @@ contains
     type is (discrete_manifold)
        pinned % points = on
     end select
+    if (.not. along_each_coordinate(pinned % points % expansion)) then
+       error stop 'operation_residual: the error of the design found is read along each design coordinate'
+    end if
     values = pinned % points % expansion % at
     nd     = size(values)
     nf     = pinned % manifold % num_unknowns
     npts   = pinned % points % num_points()
     allocate(names(nf))
     names = pinned % manifold % unknown_name(1:nf)
-    allocate(derivative(npts, nd), hessian(nd, nd), eta(npts, 2), gradient_side(nd, 2))
+    start = discrete_field(pinned % points, solution % value(:, 1:nf), names)
+    call pinned % zero_at_design(start, side, kappa=kappa)
+    eta = pinned % time_disagreement(side, derivative=eta_derivative)
+    allocate(derivative(npts, nd), hessian(nd, nd))
     do i = 1, nd
-       delta = epsilon(1.0_dp)**(1.0_dp / 3.0_dp) * max(1.0_dp, abs(values(i)))
-       do s = 1, 2
-          pinned % points % expansion % at    = values
-          pinned % points % expansion % at(i) = values(i) + merge(delta, -delta, s == 1)
-          start = discrete_field(pinned % points, solution % value(:, 1:nf), names)
-          call pinned % zero_at_design(start, side)
-          eta(:, s) = pinned % time_disagreement(side)
-          call pinned % objective % functional(side, total, gradient, partial)
-          gradient_side(:, s) = [(total(1 + pinned % points % expansion % column(j, 1)), j = 1, nd)]
-       end do
-       derivative(:, i) = (eta(:, 1) - eta(:, 2)) / (2.0_dp * delta)
-       hessian(:, i)    = (gradient_side(:, 1) - gradient_side(:, 2)) / (2.0_dp * delta)
+       derivative(:, i) = eta_derivative(:, pinned % points % expansion % column(i, 1))
+       hessian(:, i)    = -kappa(:, pinned % points % expansion % column(i, 1))
     end do
     allocate(contribution(npts))
     do p = 1, npts
@@ -6676,7 +6671,40 @@ contains
     real(dp)                , intent(inout) :: tuple(:,:,lb % instant:,0:), stages(:,:,:,lb % stage:,0:)
 
     type(residual_operator) :: lin
-    real(dp), allocatable :: jets(:,:), rhs(:), x(:), slopes(:), values(:), seed(:)
+    real(dp), allocatable :: rhs(:), x(:)
+    integer :: unknowns, column
+
+    unknowns = size(blk % q)
+    column   = this % points % expansion % column(d, m)
+    call this % expansion_source(blk, lb, d, m, tuple, stages, rhs)
+    lin = blk % rows % linearize(blk % rows % unknown_graph(), blk % rows % bind(blk % inputs), rhs, &
+         & transposed=.false., version_number=blk % rows % version())
+    allocate(x(unknowns), source=0.0_dp)
+    call this % solved(lin, unknowns, blk % rows % degrees, size(blk % rows % at), x)
+    call blk % to_points(OWN_MOMENTS, lb, x, tuple(:, :, :, column), stages(:, :, :, :, column))
+
+  end subroutine expansion_order
+
+  !===================================================================!
+  ! THE RIGHT SIDE b OF ONE ORDER OF THE EXPANSION of a block, as
+  ! expansion_order states it: on the block's rows at the tuple of
+  ! column zero, the derivatives below m read from their columns of the
+  ! tuples and of the stages, the m-th at the history instants from its
+  ! own. At a state that is the rows' zero, A x = b gives the m-th
+  ! derivative of the state; at any other, A x - b is the m-th
+  ! derivative of the rows themselves, x the state's.
+  !===================================================================!
+
+  subroutine expansion_source(this, blk, lb, d, m, tuple, stages, rhs)
+
+    class(discrete_residual), intent(in)  :: this
+    type(chain_block)       , intent(in)  :: blk
+    type(lower_bounds)      , intent(in)  :: lb
+    integer                 , intent(in)  :: d, m
+    real(dp)                , intent(in)  :: tuple(:,:,lb % instant:,0:), stages(:,:,:,lb % stage:,0:)
+    real(dp), allocatable   , intent(out) :: rhs(:)
+
+    real(dp), allocatable :: jets(:,:), slopes(:), values(:), seed(:)
     integer , allocatable :: columns(:)
     real(dp) :: given
     integer :: unknowns, column, o, c, base, j, i, instant, row
@@ -6720,13 +6748,8 @@ contains
           end do
        end do
     end do
-    lin = blk % rows % linearize(blk % rows % unknown_graph(), blk % rows % bind(blk % inputs), rhs, &
-         & transposed=.false., version_number=blk % rows % version())
-    allocate(x(unknowns), source=0.0_dp)
-    call this % solved(lin, unknowns, blk % rows % degrees, size(blk % rows % at), x)
-    call blk % to_points(OWN_MOMENTS, lb, x, tuple(:, :, :, column), stages(:, :, :, :, column))
 
-  end subroutine expansion_order
+  end subroutine expansion_source
 
   !===================================================================!
   ! THE WAVEFRONT over the blocks and the orders: on a manifold of
@@ -9607,15 +9630,17 @@ contains
   ! closed ones. Invalid input: a solution without the multipliers of a
   ! representation along space. Without other, the disagreement along
   ! time with the enrichment of the residual's chain, or with the chain
-  ! of families given, below.
+  ! of families given, below, and with derivatives its derivative in
+  ! each column of the expansion above zero, of order one along each.
   !===================================================================!
 
-  function disagreement(this, solution, other, schemes) result(contribution)
+  function disagreement(this, solution, other, schemes, derivatives) result(contribution)
 
     class(discrete_residual)       , intent(in) :: this
     type(discrete_field)           , intent(in) :: solution
     class(derivative_approximation), intent(in), optional :: other
     type(chain)                    , intent(in), optional :: schemes
+    real(dp), allocatable          , intent(out), optional :: derivatives(:,:)
     real(dp), allocatable :: contribution(:)
 
     type(stencil) :: rows, lower_rows
@@ -9626,7 +9651,7 @@ contains
     logical :: stated, open_line
 
     if (.not. present(other)) then
-       contribution = this % time_disagreement(solution, schemes)
+       contribution = this % time_disagreement(solution, schemes, derivatives)
        return
     end if
 
@@ -9749,11 +9774,12 @@ contains
   ! instant.
   !===================================================================!
 
-  function time_disagreement(this, solution, schemes) result(contribution)
+  function time_disagreement(this, solution, schemes, derivative) result(contribution)
 
     class(discrete_residual), intent(in) :: this
     type(discrete_field)    , intent(in) :: solution
     type(chain)             , intent(in), optional :: schemes
+    real(dp), allocatable   , intent(out), optional :: derivative(:,:)
     real(dp), allocatable :: contribution(:)
 
     type(discrete_residual) :: base, plus
@@ -9764,17 +9790,35 @@ contains
     real(dp), allocatable :: coarse(:,:,:,:), tuple(:,:,:,:), stages(:,:,:,:,:), zeros(:,:,:,:,:)
     real(dp), allocatable :: value(:,:), total(:), gradient(:,:,:), partial(:,:), density(:), term(:), term_plus(:)
     real(dp), allocatable :: adjoint(:,:,:,:), incoming(:,:,:,:), reaction(:,:,:), gauge(:,:,:), in_design(:,:)
-    real(dp), allocatable :: jets(:,:), mu(:,:), x(:), y(:)
-    integer , allocatable :: stage_node(:,:,:), base_node(:,:,:)
+    real(dp), allocatable :: jets(:,:), mu(:,:), x(:), y(:), density_jet(:,:), term_column(:), x1(:), y1(:), b1(:)
+    real(dp), allocatable :: jacobian_weight(:)
+    integer , allocatable :: stage_node(:,:,:), base_node(:,:,:), jacobian_row(:), jacobian_column(:)
     character(len=32), allocatable :: names(:)
     integer :: stride, nf, ncells, ninst, npts, ncol, nd, nb, b, first, last, depth, k, c, f, top, r, m, width
-    logical :: face
+    integer :: d, column, i
+    logical :: face, expanding, jacobian_defined
     real(dp) :: growth
     character(len=250) :: message
 
     if (.not. (this % with_chain .and. allocated(this % objective))) then
        error stop 'operation_residual: the disagreement along time compares a chain with its enrichment through &
             &the objective; the residual has no chain or no objective'
+    end if
+    ! its derivative along each expansion, of order one: the
+    ! enrichment's stages solved with their derivatives, the objective's
+    ! density's derivatives at the nodes, and the rows' products' by the
+    ! product rule, the multipliers' derivative by the adjoint of order
+    ! one and the rows' at P Q by A x - b, x the state's derivative and b
+    ! the expansion's right side
+    expanding = present(derivative)
+    if (expanding) then
+       if (this % points % expansion % order < 1) then
+          error stop 'operation_residual: the derivative of the disagreement is read along an expansion of order &
+               &one at least'
+       end if
+       if (this % objective % weight > 0.0_dp) then
+          error stop 'operation_residual: the derivative of the disagreement is formed for an integral objective'
+       end if
     end if
     if (allocated(this % functional_weight)) then
        if (any(this % functional_weight /= 0.0_dp)) then
@@ -9849,7 +9893,7 @@ contains
        if (.not. marches_by_stages(plus % schemes % scheme(b), nd)) cycle
        call plus % block_extent(b, first, last, depth)
        call plus % solve_block(plus % schemes % scheme(b), first, last, depth, rows_along, origin, tuple, stages, &
-            & expand=.false.)
+            & expand=expanding)
        tuple(:, :, first + depth:last, :) = coarse(:, :, first + depth:last, :)
     end do
 
@@ -9882,8 +9926,13 @@ contains
     ! own chain; a functional on a face of time has no rule along time
     ! and the same value at P Q as at Q
     allocate(contribution(npts), source=0.0_dp)
+    if (expanding) allocate(derivative(npts, ncol - 1), source=0.0_dp)
     face = this % objective % integrated_part == TIME_FACE
-    call this % objective % differential(solution, gradient, partial, density)
+    if (expanding) then
+       call this % objective % differential(solution, gradient, partial, density, density_jet)
+    else
+       call this % objective % differential(solution, gradient, partial, density)
+    end if
     if (.not. face) then
        top = 1
        do b = 1, base % schemes % num_blocks()
@@ -9891,9 +9940,28 @@ contains
        end do
        allocate(zeros(stride, ncells, top, ninst, 0:ncol - 1), source=0.0_dp)
        call base % quadrature_nodes(origin, coarse, zeros, replay, base_node, density=density, step_term=term)
+       ! each column's step terms, the rule's weights the same
+       if (expanding) then
+          do column = 1, ncol - 1
+             call base % quadrature_nodes(origin, coarse, zeros, replay, base_node, density=density_jet(:, column), &
+                  & step_term=term_column)
+             derivative(:, column) = derivative(:, column) - term_column
+          end do
+       end if
     end if
-    call plus % objective % differential(state, gradient, partial, density)
+    if (expanding) then
+       call plus % objective % differential(state, gradient, partial, density, density_jet)
+    else
+       call plus % objective % differential(state, gradient, partial, density)
+    end if
     if (.not. face) then
+       if (expanding) then
+          do column = 1, ncol - 1
+             call plus % quadrature_nodes(origin, coarse, stages, replay, base_node, density=density_jet(:, column), &
+                  & step_term=term_column)
+             derivative(:, column) = derivative(:, column) + term_column
+          end do
+       end if
        call plus % quadrature_nodes(origin, coarse, stages, replay, base_node, density=density, step_term=term_plus)
        if (this % objective % weight > 0.0_dp) then
           ! a smooth maximum, m + log(I) / rho: each step's part of I by
@@ -9932,6 +10000,35 @@ contains
           contribution(plus % points % point_of(first + k - 1, c)) = &
                & contribution(plus % points % point_of(first + k - 1, c)) + x(r) * y(r)
        end do
+       ! along each expansion: the multipliers' derivative x1 by the
+       ! adjoint of order one, the rows' y1 = A x - b at P Q, and the
+       ! product's derivative x1 y + x y1 at each row
+       if (expanding) then
+          mu(:, 0) = x
+          call blk % rows % explicit_jacobian(blk % rows % unknown_graph(), blk % rows % bind(blk % inputs), 1, &
+               & jacobian_row, jacobian_column, jacobian_weight, jacobian_defined)
+          deallocate(jets)
+          allocate(jets(size(blk % q), 0:1), source=0.0_dp)
+          jets(:, 0) = blk % q
+          do d = 1, plus % points % expansion % num_expansions()
+             column = plus % points % expansion % column(d, 1)
+             call blk % from_points(EVERY_MOMENT, origin, coarse(:, :, :, column), jets(:, 1), &
+                  & stages(:, :, :, :, column))
+             call plus % adjoint_order(origin, blk, 1, d, jets, mu, gradient, stage_node, incoming, x1)
+             call plus % expansion_source(blk, origin, d, 1, coarse, stages, b1)
+             y1 = -b1
+             do i = 1, size(jacobian_row)
+                y1(jacobian_row(i)) = y1(jacobian_row(i)) + jacobian_weight(i) * jets(jacobian_column(i), 1)
+             end do
+             do r = 1, size(y)
+                m = (r - 1) / width + 1
+                c = mod(r - 1, width) / stride + 1
+                k = findloc(blk % instant_moment >= m, .true., dim=1)
+                derivative(plus % points % point_of(first + k - 1, c), column) = &
+                     & derivative(plus % points % point_of(first + k - 1, c), column) + x1(r) * y(r) + x(r) * y1(r)
+             end do
+          end do
+       end if
        deallocate(jets, mu, x)
     end do
 

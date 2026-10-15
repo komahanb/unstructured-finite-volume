@@ -115,9 +115,9 @@
 ! count kept, minimize solving (d), estimating and placing the
 ! instants again round after round. With the design free the error
 ! placed is that of the design found, nu* - nu_h ~ -H^(-1) E'(nu_h):
-! each step's part the derivative along nu of its eta, by central
-! differences of the solutions at nu_h +- delta, delta = eps^(1/3)
-! max(1, |nu_h|), and H by the same differences of dJ/dnu; the step
+! each step's part the derivative along nu of its eta, by the
+! disagreement expanded along nu, and H the derivative of the gradient
+! by the reverse sweep's expansion, one solve at nu_h; the step
 ! density that part to the power 1/3 over the step, the instants its
 ! quantiles, a step at most 1 + sqrt(2) times the step before it,
 ! Grigorieff's bound for bdf(2). A round that does not lower the sum

@@ -573,19 +573,23 @@ contains
   ! density(p), when present, is the derivative of the functional in the
   ! weight of node p: the field there for an integral, exp(rho (f - m))
   ! / (rho I) for a smooth maximum
-  subroutine field_differential(this, solution, gradient, partial, density)
+  subroutine field_differential(this, solution, gradient, partial, density, density_jet)
 
     class(continuous_field), intent(in)  :: this
     type(discrete_field)   , intent(in)  :: solution
     real(dp), allocatable  , intent(out) :: gradient(:,:,:)
     real(dp), allocatable  , intent(out) :: partial(:,:)
     real(dp), allocatable  , intent(out), optional :: density(:)
+    real(dp), allocatable  , intent(out), optional :: density_jet(:,:)
 
     real(dp), allocatable :: total(:)
     real(dp) :: m, scale
     integer  :: c
 
     if (this % weight > 0.0_dp) then
+       if (present(density_jet)) then
+          error stop 'operation_field: the density of a smooth maximum is formed in column zero alone'
+       end if
        ! of the smooth maximum m + log(I) / rho: the differential of I
        ! over rho I, and along each expansion the derivative of that
        ! quotient, I's own derivative read in its value's column
@@ -600,7 +604,7 @@ contains
        end do
        return
     end if
-    call functional_over(this, solution, total, gradient, partial, density)
+    call functional_over(this, solution, total, gradient, partial, density, density_jet)
 
   end subroutine field_differential
 
@@ -624,7 +628,7 @@ contains
   ! zero at a node of another image.
   !===================================================================!
 
-  subroutine functional_over(this, solution, total, gradient, partial, density)
+  subroutine functional_over(this, solution, total, gradient, partial, density, density_jet)
 
     class(continuous_field), intent(in)  :: this
     type(discrete_field)   , intent(in)  :: solution
@@ -632,6 +636,7 @@ contains
     real(dp), allocatable  , intent(out) :: gradient(:,:,:)
     real(dp), allocatable  , intent(out) :: partial(:,:)
     real(dp), allocatable  , intent(out), optional :: density(:)
+    real(dp), allocatable  , intent(out), optional :: density_jet(:,:)
 
     real(dp), allocatable :: q(:), g(:), gd(:), values(:), unit(:), seed(:), position(:)
     integer , allocatable :: slot(:)
@@ -721,6 +726,7 @@ contains
     allocate(unit(order), source=0.0_dp)
     if (order > 0) unit(1) = 1.0_dp
     if (present(density)) allocate(density(nnodes), source=0.0_dp)
+    if (present(density_jet)) allocate(density_jet(nnodes, 0:expanded % num_columns() - 1), source=0.0_dp)
 
     do p = 1, nnodes
        if (over_nodes) then
@@ -740,14 +746,15 @@ contains
        if (moving .and. integrand % num_position_coordinates() > 0) then
           error stop 'operation_field: an expansion moves the instants of a functional that reads no coordinate'
        end if
-       if (measure == 0.0_dp .and. .not. (present(density) .or. moving .or. npin > 0)) cycle
+       if (measure == 0.0_dp .and. .not. (present(density) .or. present(density_jet) .or. moving .or. npin > 0)) cycle
        ! the value, its gradient in the jet and in the design
        do k = 0, ns - 1
           q(k) = jet_of(slot(k), p, 0)
        end do
        call integrand % gradient_at(q, values, value, g, position, gd)
        if (present(density)) density(p) = value
-       if (measure == 0.0_dp .and. .not. (moving .or. npin > 0)) cycle
+       if (present(density_jet)) density_jet(p, 0) = value
+       if (measure == 0.0_dp .and. .not. (present(density_jet) .or. moving .or. npin > 0)) cycle
        total(1) = total(1) + measure * value
        do k = 0, ns - 1
           gradient(slot(k), p, 0) = gradient(slot(k), p, 0) + measure * g(k)
@@ -776,6 +783,11 @@ contains
              varied(k) = symmetric_terms(q(k), [(jet_of(slot(k), p, first + o - 1), o = 1, order)], order + 1)
           end do
           r = integrand % at_instant(jets, nu, position)
+          if (present(density_jet)) then
+             do o = 1, order
+                density_jet(p, first + o - 1) = coefficient(r, 2**o - 1)
+             end do
+          end if
           ! the instants' partials along d: the derivatives of the weight's
           ! derivative in the instant times those of the field
           if (npin > 0) then

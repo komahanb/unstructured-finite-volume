@@ -1,10 +1,11 @@
 include ../../Makefile.in
 
 #=====================================================================#
-# THE VAN DER POL OSCILLATOR: the physics, its sensitivity along the
-# design, and the problem stated once. src/ is the mathematics and the
-# computing; a program here states the fields, the laws, the
-# conditions, the objective and the Lagrangian, and calls minimize.
+# THE VAN DER POL OSCILLATOR, stated once: the physics, the adjoint,
+# the sensitivity along the design and the design. src/ is the
+# mathematics and the computing; the program here states the fields,
+# the laws with their data, the objective and the Lagrangian, and
+# calls minimize.
 # -Wtarget-lifetime checks pointer target lifetimes at compile time.
 #=====================================================================#
 
@@ -19,7 +20,7 @@ endif
 F90FLAGS += -I$(LIB)/ -Wtarget-lifetime
 LDFLAGS += -L$(LIB)/ $(LIB)/libufvm.a
 
-PROGRAMS = van_der_pol van_der_pol_sensitivity van_der_pol_philosophical_template
+PROGRAMS = van_der_pol
 
 all: $(PROGRAMS)
 

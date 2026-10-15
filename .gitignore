@@ -101,8 +101,6 @@ test/graph-scheme/van_der_pol_design_audit
 test/graph-scheme/euler_bernoulli_beam_grid
 physics/*/variant.stamp
 physics/van_der_pol/van_der_pol
-physics/van_der_pol/van_der_pol_sensitivity
-physics/van_der_pol/van_der_pol_philosophical_template
 physics/beam/euler_bernoulli_beam
 physics/beam/euler_bernoulli_beam_optimization
 physics/taylor_green/taylor_green_vortex

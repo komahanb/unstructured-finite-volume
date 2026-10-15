@@ -1,22 +1,15 @@
 #!/bin/bash
-# Build and run the programs of the van der Pol oscillator:
+# Build and run the program of the van der Pol oscillator, stated once
+# on [0, 2] x {nu}, every law r_l paired with its multiplier lambda_l,
+# and four problems as Lagrangians of that statement: (a) the physics,
+# without J; (b) the adjoint and (c) the sensitivity, J added, that
+# Lagrangian printed; (d) the design, the pin of nu removed. Two runs:
 #
-#   van_der_pol          the oscillator on [0, 2] by the chain dirk(2),
-#                        bdf(2), adams(2) over eleven instants; u(2) =
-#                        0.2912 (0.3233 converged)
-#   van_der_pol_sensitivity
-#                        the oscillator with nu and mu as design
-#                        coordinates, the energy as the objective, the
-#                        adjoint, the reactions of the initial data,
-#                        the multipliers of the design conditions
-#                        (the gradient of the energy) with a row of
-#                        its Hessian, and the derivatives of u(T) and
-#                        of the energy along each coordinate to order
-#                        3 by the expansion along the design
-#   van_der_pol_philosophical_template
-#                        the oscillator stated once; order 0 of the
-#                        expansion along nu is van_der_pol in every
-#                        digit
+#   van_der_pol          eleven instants, order 1 along nu: u(2) =
+#                        0.2912 (0.3233 converged), nu = 1.5269 found
+#   van_der_pol 21 2 0 3 21 instants, order 3: the derivatives of u(T)
+#                        and of J along nu to order 3, each of J by the
+#                        state and by the adjoint
 #
 #     run.sh             on one process
 #     IMAGES=n run.sh    on n coarray images: the library and the
@@ -53,5 +46,4 @@ launch() {
 }
 
 launch van_der_pol
-launch van_der_pol_sensitivity
-launch van_der_pol_philosophical_template
+launch van_der_pol 21 2 0 3

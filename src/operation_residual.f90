@@ -74,7 +74,7 @@ module operation_residual
   use operation_derivative_approximation, only : derivative_approximation, element_quadrature
   use operation_segment_trapezoid, only : segment_trapezoid
   use operation_exchange       , only : exchange, state_summed_rows
-  use util_verbosity           , only : verbosity
+  use util_verbosity           , only : verbosity, set_verbosity
   use transform_partitioner    , only : partitioner, PARTITION_BREADTH_FIRST
   use operation_minimization, only : solve_result
   use operation_newton      , only : newton
@@ -420,12 +420,14 @@ module operation_residual
   ! With a tolerance the count is free: the instants are as many as
   ! place the estimate within the tolerance, relative to the size of
   ! the objective, or of the design when the design is free, unless
-  ! absolute.
+  ! absolute. With a pool of families, each step's family is chosen
+  ! from the pool with the instants (pool_iteration).
   !===================================================================!
 
   type :: equidistribution
      real(dp) :: tolerance = 0.0_dp
      logical  :: absolute  = .false.
+     type(family), allocatable :: pool(:)
   end type equidistribution
 
   type :: discrete_residual
@@ -484,6 +486,8 @@ module operation_residual
      procedure, private :: placement_iteration
      procedure, private :: placement_instants
      procedure, private :: design_disagreement
+     procedure, private :: pool_iteration
+     procedure, private :: curvature_errors
      procedure, private :: space_rows
      procedure, private :: lagrangian_differential
      procedure, private :: zero_at_design
@@ -2897,6 +2901,10 @@ contains
     end select
     placement = iterate % placement
     deallocate(iterate % placement)
+    if (allocated(placement % pool)) then
+       call iterate % pool_iteration(placement, estimate, solution)
+       return
+    end if
     free  = free_design(iterate)
     nf    = iterate % manifold % num_unknowns
     allocate(names(nf))
@@ -3055,6 +3063,610 @@ contains
     end function values_along
 
   end subroutine placement_iteration
+
+  !===================================================================!
+  ! THE CHOICE OF EACH STEP'S FAMILY FROM A POOL, with the instants.
+  ! The design of the discrete image along time is s = (t_2 .. t_(N-1),
+  ! c_(k,f)): the instants, and at each step k the weight c_(k,f) of
+  ! each family f of the pool, sum over f of c_(k,f) = 1. Its
+  ! constrained objective is the work, the solves of the steps, with
+  ! the error of J within the tolerance:
+  !
+  !    L_s = sum_k sum_f c_(k,f) w_f + lambda (sum_k |e_k| - tol)
+  !            + sum_k pi_k (sum_f c_(k,f) - 1),
+  !
+  ! w_f the solves of a step of f, its stages; e_k the error of J the
+  ! step contributes; on the rows of history c_(k,f) = 0 where f would
+  ! read an instant before the first, and on the rows of the ratio
+  ! h_k <= rho_f h_(k-1) where f bounds the ratio of its steps. At
+  ! leading order the stationarity of L_s splits by the instant: with
+  ! e = a_f h^(p_f + 1), a_f the error density of f and n = 1/h the
+  ! steps per unit time, n_f = (lambda p_f a_f / w_f)^(1/(p_f + 1)),
+  ! and the family of least work per unit time, (1 + 1/p_f) w_f n_f;
+  ! lambda is the multiplier at which sum |e| meets the tolerance, and
+  ! a family with the least error density at no more work is chosen
+  ! wherever the tolerance tightens.
+  !
+  ! THE ERROR OF EVERY FAMILY AT EVERY STEP. J does not depend on s,
+  ! so every derivative of J_h along s is minus that of J - J_h, and
+  ! the error of a design s is E(s0) - (J_h(s) - J_h(s0)) from any
+  ! base s0. The base family - of one step, of the highest order in
+  ! the pool - is solved on the instants with the expansion that moves
+  ! them, and the curvature of J_h gives the error of each of its
+  ! steps (curvature_errors), and its uncertainty, the residual of the
+  ! curvature's sum over the steps. The change of J_h were step k's
+  ! family that of a chain of f, the disagreement with that chain, is
+  ! the derivative along c_(k,f) to first order, so that e_k(f) =
+  ! e_k(base) less it. The errors of a family reach as far below the
+  ! base family's as the curvature resolves the base family's own.
+  !
+  ! THE ROUNDS. Each round solves the base family on the instants as
+  ! they stand, measures the error and the work of the present
+  ! design, and places the instants and chooses the families by the
+  ! conditions above. The rounds end where a design placed is one
+  ! measured before, where the design meets the tolerance and the
+  ! placement does not lower its work, where a design fails the
+  ! tolerance after one that met it, or fails it by no less than the
+  ! design before. The design returned is, of those measured, the one
+  ! of least work that met the tolerance, or of least error where none
+  ! did, solved with its own families from the base family's values,
+  ! the user's expansion along the design restored; its error is
+  ! E(base) - (J_h - J_h(base)). Invalid input: a free design, a pool
+  ! without a family of one step, a chain of other than one block per
+  ! instant, fewer than four instants.
+  !===================================================================!
+
+  subroutine pool_iteration(this, placement, estimate, solution)
+
+    class(discrete_residual), intent(in)  :: this
+    type(equidistribution)  , intent(in)  :: placement
+    type(discrete_field)    , intent(in)  :: estimate
+    type(discrete_field)    , intent(out) :: solution
+
+    ! a design of the rounds: its instants and chain, its solves, and
+    ! its error by the errors of the round that measured it
+    type :: design_record
+       real(dp), allocatable :: instants(:)
+       type(chain) :: schemes
+       integer  :: work = 0
+       real(dp) :: error = 0.0_dp
+       logical  :: met = .false.
+    end type design_record
+
+    type(discrete_residual) :: iterate, base_residual
+    type(discrete_field) :: start, base_solution, objective_field
+    type(design_record), allocatable :: designs(:)
+    type(expansion) :: original
+    type(family) :: base
+    type(family), allocatable :: pool(:)
+    type(chain) :: proposed_schemes
+    real(dp), allocatable :: t(:), e_base(:), eta(:), e(:,:), gradient(:,:,:), partial(:,:), density(:)
+    real(dp), allocatable :: proposed(:)
+    integer , allocatable :: depth(:), proposed_family(:)
+    character(len=32), allocatable :: names(:)
+    real(dp) :: scale, tol, error_current, j_base, j_final, uncertainty
+    integer :: nf, top, g, n, k, round, returned, a, level
+
+    if (free_design(this)) then
+       error stop 'operation_residual: a pool of families is chosen for a design fixed by an equality'
+    end if
+    if (placement % tolerance <= 0.0_dp) then
+       error stop 'operation_residual: a pool of families is chosen to a tolerance on the error of J'
+    end if
+    if (.not. allocated(this % objective)) then
+       error stop 'operation_residual: a pool of families is chosen by the error of the objective; the residual &
+            &has none'
+    end if
+    select type (this)
+    type is (discrete_residual)
+       iterate = this
+    end select
+    pool = placement % pool
+    nf   = iterate % manifold % num_unknowns
+    top  = top_degree(iterate % rule, nf)
+    allocate(names(nf))
+    names = iterate % manifold % unknown_name(1:nf)
+    allocate(depth(size(pool)))
+    do g = 1, size(pool)
+       depth(g) = pool(g) % history_depth(top)
+    end do
+    ! the base family: of one step, the highest order, the fewest stages
+    a = 0
+    do g = 1, size(pool)
+       if (depth(g) /= 1) cycle
+       if (a == 0) then
+          a = g
+       else if (pool(g) % accuracy() > pool(a) % accuracy() .or. (pool(g) % accuracy() == pool(a) % accuracy() &
+            & .and. pool(g) % num_stages() < pool(a) % num_stages())) then
+          a = g
+       end if
+    end do
+    if (a == 0) then
+       error stop 'operation_residual: a pool of families includes a family of one step, whose errors the curvature gives'
+    end if
+    base   = pool(a)
+    original = iterate % points % expansion
+    if (iterate % schemes % num_blocks() /= iterate % points % num_instants()) then
+       error stop 'operation_residual: a pool of families chooses the family of each step, a chain of one block &
+            &per instant'
+    end if
+
+    ! the rounds print their own lines, their solves none
+    level = verbosity
+    call set_verbosity(0)
+    start = estimate
+    round = 0
+    allocate(designs(0))
+    do
+       round = round + 1
+       t = iterate % points % instant
+       n = size(t)
+       if (n < 4) then
+          error stop 'operation_residual: the curvature of J_h gives the error of each step from four instants'
+       end if
+       call solve_base()
+
+       ! the error of each family at each step, and of the present design
+       allocate(e(n, size(pool)))
+       do g = 1, size(pool)
+          eta = base_residual % time_disagreement(base_solution, &
+               & chain([(base, k = 1, min(depth(g), n)), (pool(g), k = depth(g) + 1, n)], from=[(k, k = 1, n)]))
+          e(:, g) = e_base - eta
+       end do
+       eta = base_residual % time_disagreement(base_solution, iterate % schemes)
+       error_current = sum(abs(e_base(2:n) - eta(2:n)))
+
+       ! the tolerance, relative to sum |w f| over the base family's nodes
+       ! unless absolute
+       scale = 1.0_dp
+       if (.not. placement % absolute) then
+          if (iterate % objective % integrated_part == TIME_FACE) then
+             scale = abs(j_base)
+          else
+             call base_residual % objective % differential(base_solution, gradient, partial, density)
+             scale = sum(abs(base_solution % node_weight * density))
+          end if
+       end if
+       tol = placement % tolerance * scale
+       designs = [designs, design_record(t, iterate % schemes, chain_work(iterate % schemes), error_current, &
+            & error_current <= tol)]
+       if (level >= 1) then
+          print '(a, i0, a, i0, a, es12.4, a, es10.2, a, es12.4, a, i0)', 'pool round ', round, ': instants ', n, &
+               & '  error ', error_current, '  uncertainty ', uncertainty, '  tolerance ', tol, '  solves ', &
+               & designs(round) % work
+       end if
+       if (all(e == 0.0_dp)) then
+          if (level >= 1) print '(a)', 'pool: the error is zero at every step'
+          exit
+       end if
+       ! a round that does not progress ends the rounds: a design that
+       ! fails the tolerance after one that met it, or fails it by no
+       ! less than the design before
+       if (round > 1 .and. .not. designs(round) % met) then
+          if (any(designs(1:round - 1) % met)) exit
+          if (designs(round) % error >= designs(round - 1) % error) exit
+       end if
+
+       ! the placement and the families by the stationarity of L_s
+       call pool_choice(tol, proposed, proposed_family)
+       deallocate(e)
+       proposed_schemes = chain([(pool(proposed_family(k)), k = 1, size(proposed))], &
+            & from=[(k, k = 1, size(proposed))])
+       if (level >= 1) then
+          print '(a, i0, a, i0, a, i0, a, a)', 'pool round ', round, ': placed ', size(proposed), &
+               & '  solves ', chain_work(proposed_schemes), '  steps', runs(proposed_schemes)
+       end if
+       if (any([(same_design(designs(k)), k = 1, size(designs))])) exit
+       if (designs(round) % met .and. chain_work(proposed_schemes) >= designs(round) % work) exit
+       iterate % points % instant = proposed
+       iterate % schemes = proposed_schemes
+       start = discrete_field(iterate % points, values_at(base_solution, t, proposed), names)
+    end do
+
+    ! the design returned: of the designs measured, the one of least
+    ! work that met the tolerance, the latest of equal work, or the one
+    ! of least error where none met it
+    returned = size(designs)
+    if (any(designs % met)) then
+       do k = size(designs), 1, -1
+          if (.not. designs(k) % met) cycle
+          if (.not. designs(returned) % met .or. designs(k) % work < designs(returned) % work) returned = k
+       end do
+    else
+       returned = minloc(designs % error, dim=1)
+    end if
+    if (returned /= size(designs)) then
+       iterate % points % instant = designs(returned) % instants
+       iterate % schemes = designs(returned) % schemes
+       start = discrete_field(iterate % points, values_at(base_solution, t, designs(returned) % instants), names)
+       t = iterate % points % instant
+       n = size(t)
+       call solve_base()
+       start = discrete_field(iterate % points, values_at(base_solution, t, t), names)
+    else
+       start = discrete_field(iterate % points, values_at(base_solution, t, t), names)
+    end if
+    iterate % points % expansion = original
+    call set_verbosity(level)
+    call iterate % zero_at_design(start, solution)
+    objective_field = iterate % objective % at(solution)
+    j_final = objective_field % value(1, 1)
+    if (level >= 1) then
+       print '(a, i0, a, i0, a, a)', 'pool: instants ', iterate % points % num_instants(), &
+            & '  solves ', chain_work(iterate % schemes), '  steps', runs(iterate % schemes)
+       print '(a, es12.4, a, es10.2, a, es12.4)', 'pool: the error of J estimated ', sum(e_base) - (j_final - j_base), &
+            & '  uncertainty ', uncertainty, '  tolerance ', tol
+    end if
+
+  contains
+
+    ! the families of a chain's steps, each run of one family by its
+    ! name, its order and the steps it takes
+    function runs(schemes) result(line)
+      type(chain), intent(in) :: schemes
+      character(len=:), allocatable :: line
+      character(len=16) :: steps
+      integer :: k, first
+      line  = ''
+      first = 2
+      do k = 2, schemes % num_blocks()
+         if (k < schemes % num_blocks()) then
+            if (trim(schemes % scheme(k + 1) % name()) == trim(schemes % scheme(first) % name()) .and. &
+                 & schemes % scheme(k + 1) % accuracy() == schemes % scheme(first) % accuracy()) cycle
+         end if
+         write(steps, '(i0)') k - first + 1
+         line  = line // ' ' // trim(schemes % scheme(first) % name()) // '(' &
+              & // digit(schemes % scheme(first) % accuracy()) // ') x' // trim(steps)
+         first = k + 1
+      end do
+    end function runs
+
+    ! the base family on the instants t, by the curvature expansion: its
+    ! solution, the error of each of its steps and its J_h
+    subroutine solve_base()
+      base_residual = iterate
+      base_residual % schemes      = chain([(base, k = 1, n)], from=[(k, k = 1, n)])
+      base_residual % with_adjoint = .false.
+      base_residual % points % expansion = curvature_expansion(original, n)
+      call base_residual % zero_at_design(start, base_solution)
+      e_base = base_residual % curvature_errors(base_solution, base % accuracy(), uncertainty)
+      objective_field = base_residual % objective % at(base_solution)
+      j_base = objective_field % value(1, 1)
+    end subroutine solve_base
+
+    ! the solves of the steps of a chain of one block per instant
+    integer function chain_work(schemes)
+      type(chain), intent(in) :: schemes
+      integer :: k
+      chain_work = 0
+      do k = 2, schemes % num_blocks()
+         chain_work = chain_work + schemes % scheme(k) % num_stages()
+      end do
+    end function chain_work
+
+    character(len=1) function digit(p)
+      integer, intent(in) :: p
+      write(digit, '(i1)') min(p, 9)
+    end function digit
+
+    ! whether the design placed is the design recorded
+    logical function same_design(record)
+      type(design_record), intent(in) :: record
+      integer :: k
+      same_design = size(record % instants) == size(proposed)
+      if (.not. same_design) return
+      same_design = all(abs(record % instants - proposed) <= 4.0_dp * epsilon(1.0_dp) * maxval(abs(proposed)))
+      if (.not. same_design) return
+      do k = 2, size(proposed)
+         same_design = same_design .and. trim(record % schemes % scheme(k) % name()) &
+              & == trim(pool(proposed_family(k)) % name()) .and. record % schemes % scheme(k) % accuracy() &
+              & == pool(proposed_family(k)) % accuracy()
+      end do
+    end function same_design
+
+    ! THE STATIONARITY OF L_s: at each step k of the instants t, of
+    ! length h_k, each family's error density a, the mean of |psi| over
+    ! the step (density_mean),
+    ! and steps per unit time n_f = (lambda p_f a / w_f)^(1/(p_f + 1)),
+    ! the family of least (1 + 1/p_f) w_f n_f; lambda where the error,
+    ! the sum over the steps of h_k w_f n_f / (lambda p_f), is the
+    ! tolerance, by bisection of log lambda to the rounding. The count
+    ! of steps is the integral of n, three at least for the curvature,
+    ! the instants its quantiles; each step placed takes the family
+    ! chosen where its midpoint lies, unless the history or the ratio
+    ! rows exclude it there, the least work per unit time among those
+    ! they admit in its place.
+    subroutine pool_choice(tol, placed, families)
+      real(dp), intent(in) :: tol
+      real(dp), allocatable, intent(out) :: placed(:)
+      integer , allocatable, intent(out) :: families(:)
+      real(dp), allocatable :: rate(:), mass(:), h(:)
+      integer , allocatable :: choice(:)
+      real(dp) :: low, high, middle, target
+      integer :: k, j, steps, cell
+
+      ! the bracket of lambda: the error falls as lambda grows
+      low  = 1.0_dp
+      high = 1.0_dp
+      do while (error_at(low) < tol)
+         low = low / 2.0_dp
+      end do
+      do while (error_at(high) > tol)
+         high = high * 2.0_dp
+      end do
+      do
+         middle = sqrt(low * high)
+         if (middle <= low .or. middle >= high) exit
+         if (error_at(middle) > tol) then
+            low = middle
+         else
+            high = middle
+         end if
+      end do
+      call density_at(high, rate, choice)
+
+      ! the count and the quantiles of the density
+      allocate(mass(n), source=0.0_dp)
+      do k = 2, n
+         mass(k) = mass(k - 1) + rate(k) * (t(k) - t(k - 1))
+      end do
+      steps = max(3, ceiling(mass(n)))
+      allocate(placed(steps + 1))
+      placed(1)         = t(1)
+      placed(steps + 1) = t(n)
+      k = 2
+      do j = 2, steps
+         target = mass(n) * real(j - 1, dp) / real(steps, dp)
+         do while (mass(k) < target)
+            k = k + 1
+         end do
+         placed(j) = t(k - 1) + (t(k) - t(k - 1)) * (target - mass(k - 1)) / (mass(k) - mass(k - 1))
+      end do
+
+      ! each step's family: the choice where its midpoint lies, among
+      ! those the history and the ratio rows admit
+      h = placed(2:) - placed(:steps)
+      allocate(families(steps + 1), source=a)
+      do j = 2, steps + 1
+         cell = 2
+         do while (cell < n .and. t(cell) < 0.5_dp * (placed(j - 1) + placed(j)))
+            cell = cell + 1
+         end do
+         families(j) = admitted_choice(cell, j, h, high)
+      end do
+    end subroutine pool_choice
+
+    ! the error of the choice at lambda
+    real(dp) function error_at(lambda)
+      real(dp), intent(in) :: lambda
+      real(dp), allocatable :: rate(:)
+      integer , allocatable :: choice(:)
+      integer :: k
+      call density_at(lambda, rate, choice)
+      error_at = 0.0_dp
+      do k = 2, n
+         error_at = error_at + (t(k) - t(k - 1)) * pool(choice(k)) % num_stages() * rate(k) &
+              & / (lambda * pool(choice(k)) % accuracy())
+      end do
+    end function error_at
+
+    ! the steps per unit time and the family chosen at each step at
+    ! lambda
+    subroutine density_at(lambda, rate, choice)
+      real(dp), intent(in) :: lambda
+      real(dp), allocatable, intent(out) :: rate(:)
+      integer , allocatable, intent(out) :: choice(:)
+      real(dp) :: work, least, n_f
+      integer :: k, g
+      allocate(rate(n), source=0.0_dp)
+      allocate(choice(n), source=a)
+      do k = 2, n
+         least = huge(1.0_dp)
+         do g = 1, size(pool)
+            ! the history rows: no family at a step it would read an
+            ! instant before the first from
+            if (k - depth(g) < 1) cycle
+            n_f  = steps_per_time(k, g, lambda)
+            work = (1.0_dp + 1.0_dp / pool(g) % accuracy()) * pool(g) % num_stages() * n_f
+            if (work < least) then
+               least     = work
+               rate(k)   = n_f
+               choice(k) = g
+            end if
+         end do
+      end do
+    end subroutine density_at
+
+    real(dp) function steps_per_time(k, g, lambda)
+      integer , intent(in) :: k, g
+      real(dp), intent(in) :: lambda
+      real(dp) :: p
+      p = real(pool(g) % accuracy(), dp)
+      steps_per_time = (lambda * p * density_mean(k, g) / pool(g) % num_stages())**(1.0_dp / (p + 1.0_dp))
+    end function steps_per_time
+
+    ! THE ERROR DENSITY OF FAMILY g OVER STEP k, the mean of its
+    ! absolute value: the density psi = e / h^(p + 1), the error of the
+    ! step over its step to the power of the order, is a smooth
+    ! function of t, signed; its values at the steps' midpoints are
+    ! joined linearly, constant beyond the first and the last, and
+    ! |psi| integrated over the step, so that a step at which psi
+    ! changes sign is weighed by the density about it, not by the sum
+    ! its signs cancel in
+    real(dp) function density_mean(k, g)
+      integer, intent(in) :: k, g
+      real(dp) :: midpoint, left, right, at_left, at_right, here
+      here     = psi(k, g)
+      midpoint = 0.5_dp * (t(k - 1) + t(k))
+      at_left  = here
+      at_right = here
+      if (k > 2) then
+         left    = 0.5_dp * (t(k - 2) + t(k - 1))
+         at_left = here + (psi(k - 1, g) - here) * (midpoint - t(k - 1)) / (midpoint - left)
+      end if
+      if (k < n) then
+         right    = 0.5_dp * (t(k) + t(k + 1))
+         at_right = here + (psi(k + 1, g) - here) * (t(k) - midpoint) / (right - midpoint)
+      end if
+      density_mean = (absolute_integral(at_left, here) + absolute_integral(here, at_right)) / 2.0_dp
+    end function density_mean
+
+    real(dp) function psi(k, g)
+      integer, intent(in) :: k, g
+      psi = e(k, g) / (t(k) - t(k - 1))**(pool(g) % accuracy() + 1)
+    end function psi
+
+    ! the mean of |v| over an interval on which v is linear from v0 to v1
+    pure real(dp) function absolute_integral(v0, v1)
+      real(dp), intent(in) :: v0, v1
+      if (v0 * v1 >= 0.0_dp) then
+         absolute_integral = 0.5_dp * (abs(v0) + abs(v1))
+      else
+         absolute_integral = 0.5_dp * (v0**2 + v1**2) / (abs(v0) + abs(v1))
+      end if
+    end function absolute_integral
+
+    ! the family of least work per unit time at step `cell` of the
+    ! instants as they stand among those admitted at step j placed,
+    ! h the steps placed
+    integer function admitted_choice(cell, j, h, lambda)
+      integer , intent(in) :: cell, j
+      real(dp), intent(in) :: h(:), lambda
+      real(dp) :: least, work
+      integer  :: g
+      admitted_choice = a
+      least = huge(1.0_dp)
+      do g = 1, size(pool)
+         if (j - depth(g) < 1) cycle
+         if (j > 2) then
+            if (h(j - 1) > pool(g) % step_ratio_bound() * h(j - 2)) cycle
+         end if
+         work = (1.0_dp + 1.0_dp / pool(g) % accuracy()) * pool(g) % num_stages() * steps_per_time(cell, g, lambda)
+         if (work < least) then
+            least = work
+            admitted_choice = g
+         end if
+      end do
+    end function admitted_choice
+
+  end subroutine pool_iteration
+
+  !===================================================================!
+  ! THE EXPANSION OF THE CURVATURE: the original's design coordinates
+  ! fixed, of order two along each interior instant a = 2 .. n - 1 and
+  ! along each pair a, a + 1, so that d^2 J_h / dt_a dt_(a+1) = (J_h''
+  ! along e_a + e_(a+1) - J_h'' along e_a - J_h'' along e_(a+1)) / 2.
+  !===================================================================!
+
+  function curvature_expansion(original, n) result(expanded)
+
+    type(expansion), intent(in) :: original
+    integer        , intent(in) :: n
+    type(expansion) :: expanded
+
+    real(dp), allocatable :: seeds(:,:), along(:,:)
+    integer :: a, ne
+
+    ne = (n - 2) + (n - 3)
+    allocate(seeds(n, ne), along(max(1, original % num_designs()), ne), source=0.0_dp)
+    do a = 2, n - 1
+       seeds(a, a - 1) = 1.0_dp
+    end do
+    do a = 2, n - 2
+       seeds(a, n - 2 + a - 1)     = 1.0_dp
+       seeds(a + 1, n - 2 + a - 1) = 1.0_dp
+    end do
+    expanded = expansion(2, along, seeds)
+    if (allocated(original % at))   expanded % at   = original % at
+    if (allocated(original % name)) expanded % name = original % name
+
+  end function curvature_expansion
+
+  !===================================================================!
+  ! THE ERROR OF EACH STEP FROM THE CURVATURE of J_h in the instants,
+  ! on a solution of a chain of one-step families of order p by the
+  ! curvature expansion: e_k, the error of J the step into instant k
+  ! contributes, homogeneous of degree m = p + 1 in its step, so that
+  ! with D_a = d^2 J_h / dt_a^2 and M_a = d^2 J_h / dt_a dt_(a+1),
+  !
+  !    e_(a+1) = h_(a+1)^2 M_a / (m (m - 1)),   a = 2 .. n - 2,
+  !
+  ! and at the two steps with an end of the interval, fixed, by the
+  ! diagonal at their free instant, D_a = -(M_(a-1) + M_a) the steps'
+  ! parts: e_2 = h_2^2 (-D_2 - M_2) / (m (m - 1)) and e_n = h_n^2
+  ! (-D_(n-1) - M_(n-2)) / (m (m - 1)). e_1 = 0, no step reaching the
+  ! first instant. Where the error is the sum of its steps' parts,
+  ! D_a + M_(a-1) + M_a = 0 at every instant a = 3 .. n - 2; its
+  ! residual there, times the square of the mean of the two steps over
+  ! m (m - 1), summed over those instants, is the uncertainty of the
+  ! steps' errors.
+  !===================================================================!
+
+  function curvature_errors(this, solution, p, uncertainty) result(e)
+
+    class(discrete_residual), intent(in)  :: this
+    type(discrete_field)    , intent(in)  :: solution
+    integer                 , intent(in)  :: p
+    real(dp)                , intent(out), optional :: uncertainty
+    real(dp), allocatable :: e(:)
+
+    type(discrete_field) :: objective_field
+    real(dp), allocatable :: total(:), diagonal(:), mixed(:), t(:)
+    real(dp) :: m
+    integer :: n, a
+
+    t = this % points % instant
+    n = size(t)
+    m = real(p + 1, dp)
+    objective_field = this % objective % at(solution)
+    total = objective_field % value(1, :)
+    allocate(diagonal(n), mixed(n), e(n), source=0.0_dp)
+    do a = 2, n - 1
+       diagonal(a) = total(1 + this % points % expansion % column(a - 1, 2))
+    end do
+    do a = 2, n - 2
+       mixed(a) = (total(1 + this % points % expansion % column(n - 2 + a - 1, 2)) - diagonal(a) &
+            & - diagonal(a + 1)) / 2.0_dp
+       e(a + 1) = (t(a + 1) - t(a))**2 * mixed(a) / (m * (m - 1.0_dp))
+    end do
+    e(2) = (t(2) - t(1))**2 * (-diagonal(2) - mixed(2)) / (m * (m - 1.0_dp))
+    e(n) = (t(n) - t(n - 1))**2 * (-diagonal(n - 1) - mixed(n - 2)) / (m * (m - 1.0_dp))
+    if (present(uncertainty)) then
+       uncertainty = 0.0_dp
+       do a = 3, n - 2
+          uncertainty = uncertainty + (0.5_dp * (t(a + 1) - t(a - 1)))**2 &
+               & * abs(diagonal(a) + mixed(a - 1) + mixed(a)) / (m * (m - 1.0_dp))
+       end do
+    end if
+
+  end function curvature_errors
+
+  !===================================================================!
+  ! The values of a solution's unknowns at the instants placed, linear
+  ! along time between the instants t it is solved at.
+  !===================================================================!
+
+  function values_at(field, t, placed) result(v)
+
+    type(discrete_field), intent(in) :: field
+    real(dp)            , intent(in) :: t(:), placed(:)
+    real(dp), allocatable :: v(:,:)
+
+    real(dp) :: w
+    integer :: j, k, nf
+
+    nf = size(field % name)
+    allocate(v(size(placed), nf))
+    k = 1
+    do j = 1, size(placed)
+       do while (k < size(t) - 1 .and. t(k + 1) < placed(j))
+          k = k + 1
+       end do
+       w = (placed(j) - t(k)) / (t(k + 1) - t(k))
+       v(j, :) = (1.0_dp - w) * field % value(k, 1:nf) + w * field % value(k + 1, 1:nf)
+    end do
+
+  end function values_at
 
   !===================================================================!
   ! THE DISAGREEMENT IN THE DESIGN FOUND, the design free: the error
@@ -8775,14 +9387,16 @@ contains
   ! at the segment's upper point; at the first instant the rows are the
   ! closed ones. Invalid input: a solution without the multipliers of a
   ! representation along space. Without other, the disagreement along
-  ! time with the enrichment of the residual's chain, below.
+  ! time with the enrichment of the residual's chain, or with the chain
+  ! of families given, below.
   !===================================================================!
 
-  function disagreement(this, solution, other) result(contribution)
+  function disagreement(this, solution, other, schemes) result(contribution)
 
     class(discrete_residual)       , intent(in) :: this
     type(discrete_field)           , intent(in) :: solution
     class(derivative_approximation), intent(in), optional :: other
+    type(chain)                    , intent(in), optional :: schemes
     real(dp), allocatable :: contribution(:)
 
     type(stencil) :: rows, lower_rows
@@ -8793,7 +9407,7 @@ contains
     logical :: stated, open_line
 
     if (.not. present(other)) then
-       contribution = this % time_disagreement(solution)
+       contribution = this % time_disagreement(solution, schemes)
        return
     end if
 
@@ -8902,15 +9516,25 @@ contains
   ! rules, each over rho I of its own, are scaled to the difference of
   ! the two values, S+ - S. A difference node by node would set
   ! against each other the weights two rules divide between
-  ! neighbouring instants. Invalid input: a residual without a chain
-  ! or an objective, an inequality on a functional of the state, a
-  ! solution on another manifold or stored over checkpoints.
+  ! neighbouring instants.
+  !
+  ! WITH A CHAIN GIVEN in place of the enrichment, + is that chain on
+  ! the same instants, and the contribution of a step is the change of
+  ! J_h were that step's family replaced by the chain's there: J_h(+) -
+  ! J_h, the first-order change in each step's family, and with it the
+  ! error of the chain's family at the step, (J - J_h) less the
+  ! contribution. Invalid input: a residual without a chain or an
+  ! objective, an inequality on a functional of the state, a solution
+  ! on another manifold or stored over checkpoints, a chain of other
+  ! blocks or one whose block would read history before the first
+  ! instant.
   !===================================================================!
 
-  function time_disagreement(this, solution) result(contribution)
+  function time_disagreement(this, solution, schemes) result(contribution)
 
     class(discrete_residual), intent(in) :: this
     type(discrete_field)    , intent(in) :: solution
+    type(chain)             , intent(in), optional :: schemes
     real(dp), allocatable :: contribution(:)
 
     type(discrete_residual) :: base, plus
@@ -8961,7 +9585,14 @@ contains
        error stop 'operation_residual: the disagreement along time reads a solution at the points of a manifold'
     end select
     plus = base
-    plus % schemes = base % chain_of_enrichment()
+    if (present(schemes)) then
+       if (schemes % num_blocks() /= base % schemes % num_blocks()) then
+          error stop 'operation_residual: the chain the solution is compared with has the blocks of the residual''s'
+       end if
+       plus % schemes = schemes
+    else
+       plus % schemes = base % chain_of_enrichment()
+    end if
 
     ncells = plus % points % num_cells()
     ninst  = plus % points % num_instants()

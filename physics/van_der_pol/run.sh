@@ -4,7 +4,9 @@
 # and four problems as Lagrangians of that statement: (a) the physics,
 # without J; (b) the adjoint and (c) the sensitivity, J added, that
 # Lagrangian printed; (d) the design, the pin of nu removed; (e) the
-# design on instants placed by the estimate of its error. Two runs:
+# design on instants placed by the estimate of its error; (f) the
+# design to a tolerance; (g) J to a tolerance, the instants and each
+# step's family chosen together from a pool. Two runs:
 #
 #   van_der_pol          eleven instants, order 1 along nu: u(2) =
 #                        0.2912 (0.3233 converged), nu = 1.5269 found,

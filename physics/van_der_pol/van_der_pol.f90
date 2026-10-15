@@ -30,9 +30,11 @@
 !                    of an order at nu_0. The instants are the
 !                    manifold's image, equally spaced, or, in (e), the
 !                    equidistribution, a placement the discrete image
-!                    of L states, since it reads the error of J
+!                    of L states, since it reads the error of J; in
+!                    (g) the instants and each step's family are the
+!                    design of the discrete image, chosen with them
 !
-! SIX PROBLEMS are then six readings of one Lagrangian, each
+! SEVEN PROBLEMS are then seven readings of one Lagrangian, each
 ! differing from the one before it by one term or by the placement of
 ! its instants:
 !
@@ -42,6 +44,7 @@
 !   (d) design           L = J + lambda_omega . r_omega + lambda_ic . r_ic
 !   (e) design on the equidistribution, L of (d)
 !   (f) design to a tolerance, L of (d), the count of instants free
+!   (g) J to a tolerance, L of (b), each step's family from a pool
 !
 ! (a) The stationarity of L in the multipliers is the oscillator with
 ! its data and its design, solved forward for u_bar and, the
@@ -121,8 +124,9 @@
 ! of the parts is rejected and the round before returned; one that
 ! lowers it by less than the uncertainty of the estimate, its distance
 ! from the estimate by the chain of order three on the same instants,
-! is returned. The instants are not design coordinates of L
-! (doc/unified-residuals.md, section 16). Against 1.4837523856, nu
+! is returned. The instants are not coordinates of the design factor
+! of L (doc/unified-residuals.md, section 16); they are those of the
+! design of its discrete image, (g). Against 1.4837523856, nu
 ! by the chain of order three at 2561 instants, the error of nu found
 ! falls from 4.316e-2, 1.039e-2, 2.321e-3 and 5.202e-4 on equally
 ! spaced instants to 3.398e-2, 7.346e-3, 1.606e-3 and 3.935e-4 on the
@@ -154,6 +158,42 @@
 ! the error of J at nu_0 meets 1e-3 of sum |w f| at 33 instants, the
 ! error 2.98e-3, against 34 equally spaced, and 1e-4 at 100, the
 ! error 2.15e-4, against 116.
+!
+! (g) The Lagrangian of (b), J at nu_0 to 1e-6 of sum |w f|, the
+! instants and the family of each step chosen together from a pool:
+! dirk(2), dirk(3), dirk(4), adams(2), adams(3), adams(4), bdf(2) and
+! bdf(3). The design of the discrete image along time is s, the
+! instants and each step's weights on the families of the pool; its
+! own Lagrangian is the work, the solves of the steps, plus lambda
+! times sum |e_k| less the tolerance, e_k the error of J step k
+! contributes, with a family excluded from a step at which it would
+! read an instant before the first, and bdf(2) from a step more than
+! 1 + sqrt(2) times the one before. Its stationarity at leading order
+! gives each instant the family of least work per unit time, (1 +
+! 1/p) w n, w the solves of a step of the family, p its order and n =
+! (lambda p a / w)^(1/(p + 1)) its steps per unit time at its error
+! density a, lambda the multiplier at which the error meets the
+! tolerance. J does not depend on s, so every derivative of J_h along
+! s is minus that of the error J - J_h: the base family, dirk(4), of
+! one step and of the highest order in the pool, is solved with the
+! expansion that moves the instants, its error at each step h_k^2
+! (d^2 J_h / dt_(k-1) dt_k) / (p (p + 1)); the error of each other
+! family at the step is the base family's less the change of J_h were
+! the step's family replaced, the disagreement with that family's
+! chain. Each round solves the base family on the instants as they
+! stand and places them again with their families. From eleven
+! instants, at 1e-6 the rounds return 52 instants and 55 solves,
+! dirk(4) over the first two steps, where no multistep family of the
+! pool has its history, then adams(4) with adams(3) at one step; the
+! error of J -2.429e-6 against J by the chain of order three at 2561
+! instants, estimated -2.295e-6. The program's chain meets that
+! tolerance at 887 solves on equally spaced instants, the best family
+! of the pool alone, adams(3) after dirk(4), at 53. At 1e-7, 1e-5 and
+! 1e-4 the rounds return 97, 31 and 17 solves, the best family alone
+! 96, 30 and 17, the program's chain 2787, 286 and 95. The rounds cost
+! more than they save here: 8.0 s at 1e-6 against 0.30 s for the
+! program's chain at 888 instants and 0.02 s for adams(3) at 52, the
+! curvature by 2N - 5 expansions of order two a cost of N^2.
 !
 ! THE LAGRANGIAN of (b) and (c) is printed before its solve: J and
 ! every law with the multiplier it is paired with, each equation as a
@@ -369,6 +409,23 @@ program van_der_pol
   print '(a)', '(f) design to a tolerance: L of (d)'
   print '(a, i24)', 'instants                = ', solution % num_points()
   print '(a, es24.16)', 'nu found                = ', nu_bar % value(1, 1)
+  print '(a, es24.16)', 'J                       = ', J_bar % value(1, 1)
+
+  !===================================================================!
+  ! (g) J TO A TOLERANCE, EACH STEP'S FAMILY FROM A POOL. L of (b), the
+  ! instants and the family of each step the design of the discrete
+  ! image, chosen together at the least work that places the error of
+  ! J within 1e-6 of sum |w f|
+  !===================================================================!
+
+  L     = J + lambda_omega*r_omega + lambda_ic*r_ic + lambda_s*r_s
+  L_bar = discrete_image(L, placement=equidistribution(tolerance=1.0e-6_dp, pool=[dirk(2), dirk(3), dirk(4), &
+       & adams(2), adams(3), adams(4), bdf(2), bdf(3)]))
+  call L_bar % minimize(estimate, solution)
+
+  J_bar = J % at(solution)
+  print '(a)', '(g) J to a tolerance, each step''s family from a pool: L of (b)'
+  print '(a, i24)', 'instants                = ', solution % num_points()
   print '(a, es24.16)', 'J                       = ', J_bar % value(1, 1)
 
 contains

@@ -34,7 +34,7 @@ module operation_derivative_approximation
   implicit none
 
   private
-  public :: derivative_approximation, element_quadrature
+  public :: derivative_approximation, element_quadrature, tested_at
 
   !===================================================================!
   ! THE ELEMENTS OF A MESH on which a law is projected. A cell has
@@ -174,5 +174,13 @@ contains
     class(element_quadrature), intent(in) :: this
     element_num_derivatives = 1 + this % dimension * this % derivatives
   end function element_num_derivatives
+
+  ! whether a test function of the derivative index d is other than
+  ! zero at the quadrature point q of the cell e
+  pure logical function tested_at(el, d, q, e)
+    type(element_quadrature), intent(in) :: el
+    integer                 , intent(in) :: d, q, e
+    tested_at = any(el % test(d, :, :, q, e) /= 0.0_dp)
+  end function tested_at
 
 end module operation_derivative_approximation

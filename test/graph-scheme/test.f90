@@ -16,7 +16,7 @@ program test_graph_algebra
   use util_precision
   use operation_expression
   use view_expression,        only : expression_view
-  use operation_residual,     only : residual_operator
+  use operation_residual_operator,     only : residual_operator
   use operation_stencil,      only : stencil
   use operation_newton,       only : newton
   use operation_dense_direct, only : dense_direct

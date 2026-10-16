@@ -19,7 +19,7 @@ program restriction_refusal
   use operation_multigrid, only : multigrid
   use operation_elimination, only : elimination
   use operation_temporal_minimization, only : temporal_minimizer
-  use operation_residual, only : residual_operator
+  use operation_residual_operator, only : residual_operator
   use operation_domain, only : continuous_domain, discrete_domain
   use operation_expression, only : unknown, component, constant, operator(+), operator(*), operator(**)
   use operation_action, only : variation

@@ -130,7 +130,7 @@ module restriction_fixture
   use operation_action, only : operation
   use operation_minimization, only : minimizer, state, restrict, solve_result, SOLVE_SINGULAR
   use operation_stencil, only : stencil
-  use operation_residual, only : residual_operator
+  use operation_residual_operator, only : residual_operator
   use operation_expression, only : unknown, component, constant, design
   use operation_expression, only : operator(+), operator(*), operator(**)
 
@@ -306,7 +306,7 @@ program test_graph_minimization
   use operation_elimination, only : elimination
   use operation_multigrid, only : multigrid
   use operation_temporal_minimization, only : temporal_minimizer
-  use operation_residual, only : residual_operator
+  use operation_residual_operator, only : residual_operator
   use operation_domain, only : continuous_domain, discrete_domain
   use operation_expression, only : expression, unknown, component, constant, &
        & operator(+), operator(*), operator(**)

@@ -22,7 +22,7 @@ module operation_temporal_minimization
   use operation_minimization, only : minimizer, state, restrict, compact_labels
   use operation_minimization, only : solve_result, SOLVE_EVALUATED, SOLVE_STAGNATED, SOLVE_INNER_FAILED
   use operation_driver      , only : driver, pairing, vertex_rule
-  use operation_residual    , only : residual_operator
+  use operation_residual_operator, only : residual_operator
   use field_calculus        , only : FIELD_REAL
   use field_stored          , only : stored_field
   use util_tally            , only : tally

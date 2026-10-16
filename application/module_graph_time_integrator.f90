@@ -2520,7 +2520,7 @@ module gti_block
   use gti_expansion        , only : expansion
   use view_level           , only : level_member, level_num_members, level_is_leaf
   use operation_stencil    , only : combine_triples, stencil
-  use operation_residual   , only : residual_operator
+  use operation_residual_operator   , only : residual_operator
   use operation_family     , only : family
   use operation_coupling   , only : matrix_scheme_connectivity, connectivity_terms
   use operation_expression    , only : expression
@@ -2978,7 +2978,7 @@ module gti_march
   use operation_weight        , only : scheme_weight
   use operation_scheme_stencil, only : derived_constraints
   use operation_expression       , only : expression, euler_lagrange
-  use operation_residual      , only : residual_operator
+  use operation_residual_operator      , only : residual_operator
   use util_factorisation      , only : dense_factorisation
   use operation_domain        , only : continuous_domain, discrete_domain
   use gti_expansion           , only : family_container, expansion, marches_by_stages

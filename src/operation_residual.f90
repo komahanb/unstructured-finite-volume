@@ -426,13 +426,16 @@ module operation_residual
   ! place the estimate within the tolerance, relative to the size of
   ! the objective, or of the design when the design is free, unless
   ! absolute. With a pool of families, each step's family is chosen
-  ! from the pool with the instants (pool_iteration).
+  ! from the pool with the instants (pool_iteration), to the least work
+  ! within a tolerance, or to the least error at a work, a number of
+  ! solves.
   !===================================================================!
 
   type :: equidistribution
      real(dp) :: tolerance = 0.0_dp
      logical  :: absolute  = .false.
      type(family), allocatable :: pool(:)
+     integer  :: work      = 0
   end type equidistribution
 
   type :: discrete_residual
@@ -2948,6 +2951,9 @@ contains
        call iterate % pool_iteration(placement, estimate, solution)
        return
     end if
+    if (placement % work > 0) then
+       error stop 'operation_residual: the least error at a work is chosen with a pool of families'
+    end if
     free  = free_design(iterate)
     nf    = iterate % manifold % num_unknowns
     allocate(names(nf))
@@ -3128,7 +3134,10 @@ contains
   ! and the family of least work per unit time, (1 + 1/p_f) w_f n_f;
   ! lambda is the multiplier at which sum |e| meets the tolerance, and
   ! a family with the least error density at no more work is chosen
-  ! wherever the tolerance tightens.
+  ! wherever the tolerance tightens. AT A WORK W of solves the
+  ! objective is the error with the work within W, L_s = sum_k |e_k| +
+  ! mu (sum_k sum_f c_(k,f) w_f - W) + ..., whose stationarity is the
+  ! same at mu = 1/lambda: lambda is where the steps placed take W.
   !
   ! THE ERROR OF EVERY FAMILY AT EVERY STEP. J does not depend on s,
   ! so every derivative of J_h along s is minus that of J - J_h, and
@@ -3200,14 +3209,16 @@ contains
     character(len=32), allocatable :: names(:)
     real(dp) :: scale, tol, error_current, j_base, j_final, uncertainty, lambda, penalty, predicted, decrease
     integer :: nf, top, g, n, k, round, returned, a, level, accepted
-    logical :: converged, refused
+    logical :: converged, refused, at_work
 
     if (free_design(this)) then
        error stop 'operation_residual: a pool of families is chosen for a design fixed by an equality'
     end if
-    if (placement % tolerance <= 0.0_dp) then
-       error stop 'operation_residual: a pool of families is chosen to a tolerance on the error of J'
+    if ((placement % tolerance > 0.0_dp) .eqv. (placement % work > 0)) then
+       error stop 'operation_residual: a pool of families is chosen to a tolerance on the error of J or at a work, &
+            &a number of solves, one of the two'
     end if
+    at_work = placement % work > 0
     if (.not. allocated(this % objective)) then
        error stop 'operation_residual: a pool of families is chosen by the error of the objective; the residual &
             &has none'
@@ -3293,7 +3304,12 @@ contains
           tol = placement % tolerance * scale
           designs = [designs, design_record(t, iterate % schemes, chain_work(iterate % schemes), error_current, &
                & error_current <= tol, tol)]
-          if (level >= 1) then
+          if (at_work) designs(round) % met = designs(round) % work <= placement % work
+          if (level >= 1 .and. at_work) then
+             print '(a, i0, a, i0, a, es12.4, a, es10.2, a, i0, a, i0)', 'pool round ', round, ': instants ', n, &
+                  & '  error ', error_current, '  uncertainty ', uncertainty, '  work ', placement % work, &
+                  & '  solves ', designs(round) % work
+          else if (level >= 1) then
              print '(a, i0, a, i0, a, es12.4, a, es10.2, a, es12.4, a, i0)', 'pool round ', round, ': instants ', n, &
                   & '  error ', error_current, '  uncertainty ', uncertainty, '  tolerance ', tol, '  solves ', &
                   & designs(round) % work
@@ -3362,7 +3378,12 @@ contains
        ! the placement and the families by the stationarity of L_s, each
        ! penalty of the merit at least twice the multiplier of the error
        call pool_choice(tol, proposed, proposed_family, lambda)
-       penalty = max(penalty, 2.0_dp * lambda)
+       ! the multiplier of the work, where the work is given, is 1/lambda
+       if (at_work) then
+          penalty = max(penalty, 2.0_dp / lambda)
+       else
+          penalty = max(penalty, 2.0_dp * lambda)
+       end if
        proposed_schemes = chain([(pool(proposed_family(k)), k = 1, size(proposed))], &
             & from=[(k, k = 1, size(proposed))])
        if (level >= 1) then
@@ -3370,7 +3391,11 @@ contains
                & '  solves ', chain_work(proposed_schemes), '  steps', runs(proposed_schemes)
        end if
        if (any([(same_design(designs(k)), k = 1, size(designs))])) exit
-       if (designs(round) % met .and. chain_work(proposed_schemes) >= designs(round) % work) exit
+       if (designs(round) % met .and. at_work) then
+          if (modelled_error(proposed, proposed_family) >= designs(round) % error) exit
+       else if (designs(round) % met) then
+          if (chain_work(proposed_schemes) >= designs(round) % work) exit
+       end if
        predicted = merit(designs(accepted)) - modelled_merit(proposed, proposed_family)
        iterate % points % instant = proposed
        iterate % schemes = proposed_schemes
@@ -3379,13 +3404,22 @@ contains
 
     ! the design returned: of the designs measured, the one of least
     ! work that met the tolerance, the latest of equal work, or the one
-    ! of least error where none met it
+    ! of least error where none met it; at a work, the one of least
+    ! error within it, or of least work where none is
     returned = size(designs)
     if (any(designs % met)) then
        do k = size(designs), 1, -1
           if (.not. designs(k) % met) cycle
-          if (.not. designs(returned) % met .or. designs(k) % work < designs(returned) % work) returned = k
+          if (.not. designs(returned) % met) then
+             returned = k
+          else if (at_work) then
+             if (designs(k) % error < designs(returned) % error) returned = k
+          else if (designs(k) % work < designs(returned) % work) then
+             returned = k
+          end if
        end do
+    else if (at_work) then
+       returned = minloc(designs % work, dim=1)
     else
        returned = minloc(designs % error, dim=1)
     end if
@@ -3412,8 +3446,13 @@ contains
     if (level >= 1) then
        print '(a, i0, a, i0, a, a)', 'pool: instants ', iterate % points % num_instants(), &
             & '  solves ', chain_work(iterate % schemes), '  steps', runs(iterate % schemes)
-       print '(a, es12.4, a, es10.2, a, es12.4)', 'pool: the error of J estimated ', sum(e_base) - (j_final - j_base), &
-            & '  uncertainty ', uncertainty, '  tolerance ', tol
+       if (at_work) then
+          print '(a, es12.4, a, es10.2, a, i0)', 'pool: the error of J estimated ', sum(e_base) - (j_final - j_base), &
+               & '  uncertainty ', uncertainty, '  work ', placement % work
+       else
+          print '(a, es12.4, a, es10.2, a, es12.4)', 'pool: the error of J estimated ', sum(e_base) - (j_final - j_base), &
+               & '  uncertainty ', uncertainty, '  tolerance ', tol
+       end if
     end if
 
   contains
@@ -3497,32 +3536,48 @@ contains
     ! tolerance at the penalty
     real(dp) function merit(record)
       type(design_record), intent(in) :: record
-      merit = real(record % work, dp) + penalty * max(record % error - record % tolerance, 0.0_dp)
+      if (at_work) then
+         merit = record % error + penalty * max(real(record % work - placement % work, dp), 0.0_dp)
+      else
+         merit = real(record % work, dp) + penalty * max(record % error - record % tolerance, 0.0_dp)
+      end if
     end function merit
 
     ! the merit of a design placed, its error by the model of the design
-    ! accepted, on the instants t: on each step of length h and family
-    ! g, the mean error density of g over the step accepted its midpoint
-    ! lies in times h^(p_g + 1)
+    ! accepted
     real(dp) function modelled_merit(placed, families)
       real(dp), intent(in) :: placed(:)
       integer , intent(in) :: families(:)
-      real(dp) :: modelled, middle
-      integer :: j, cell, work
-      modelled = 0.0_dp
-      work     = 0
-      cell     = 2
+      integer :: work, j
+      work = sum([(pool(families(j)) % num_stages(), j = 2, size(placed))])
+      if (at_work) then
+         modelled_merit = modelled_error(placed, families) + penalty * max(real(work - placement % work, dp), 0.0_dp)
+      else
+         modelled_merit = real(work, dp) + penalty * max(modelled_error(placed, families) &
+              & - designs(accepted) % tolerance, 0.0_dp)
+      end if
+    end function modelled_merit
+
+    ! the error of a design placed by the model of the design accepted,
+    ! on the instants t: on each step of length h and family g, the mean
+    ! error density of g over the step accepted its midpoint lies in
+    ! times h^(p_g + 1)
+    real(dp) function modelled_error(placed, families)
+      real(dp), intent(in) :: placed(:)
+      integer , intent(in) :: families(:)
+      real(dp) :: middle
+      integer :: j, cell
+      modelled_error = 0.0_dp
+      cell = 2
       do j = 2, size(placed)
          middle = 0.5_dp * (placed(j - 1) + placed(j))
          do while (cell < n .and. t(cell) < middle)
             cell = cell + 1
          end do
-         modelled = modelled + density_mean(cell, families(j)) * (placed(j) - placed(j - 1)) &
+         modelled_error = modelled_error + density_mean(cell, families(j)) * (placed(j) - placed(j - 1)) &
               & **(pool(families(j)) % accuracy() + 1)
-         work = work + pool(families(j)) % num_stages()
       end do
-      modelled_merit = real(work, dp) + penalty * max(modelled - designs(accepted) % tolerance, 0.0_dp)
-    end function modelled_merit
+    end function modelled_error
 
     ! THE DESIGN HALFWAY from the design accepted, on the instants t, to
     ! the design refused, in the logarithm of the step density: the steps
@@ -3608,45 +3663,75 @@ contains
 
     ! THE STATIONARITY OF L_s: at each step k of the instants t, of
     ! length h_k, each family's error density a, the mean of |psi| over
-    ! the step (density_mean),
-    ! and steps per unit time n_f = (lambda p_f a / w_f)^(1/(p_f + 1)),
-    ! the family of least (1 + 1/p_f) w_f n_f; lambda where the error,
-    ! the sum over the steps of h_k w_f n_f / (lambda p_f), is the
-    ! tolerance, by bisection of log lambda to the rounding. The count
-    ! of steps is the integral of n, three at least for the curvature,
-    ! the instants its quantiles; each step placed takes the family
-    ! chosen where its midpoint lies, unless the history or the ratio
-    ! rows exclude it there, the least work per unit time among those
-    ! they admit in its place; and lambda.
+    ! the step (density_mean), and steps per unit time n_f = (lambda p_f
+    ! a / w_f)^(1/(p_f + 1)), the family of least (1 + 1/p_f) w_f n_f;
+    ! lambda where the error, the sum over the steps of h_k w_f n_f /
+    ! (lambda p_f), is the tolerance, or where the solves of the steps
+    ! placed are the work, by bisection of log lambda to the rounding,
+    ! and the placement at lambda; and lambda.
     subroutine pool_choice(tol, placed, families, lambda)
       real(dp), intent(in) :: tol
       real(dp), allocatable, intent(out) :: placed(:)
       integer , allocatable, intent(out) :: families(:)
       real(dp), intent(out) :: lambda
-      real(dp), allocatable :: rate(:), mass(:), h(:)
-      integer , allocatable :: choice(:)
-      real(dp) :: low, high, middle, target
-      integer :: k, j, steps, cell
+      real(dp) :: low, high, middle
 
-      ! the bracket of lambda: the error falls as lambda grows
+      ! the bracket of lambda: the error falls and the work rises as
+      ! lambda grows
       low  = 1.0_dp
       high = 1.0_dp
-      do while (error_at(low) < tol)
+      do while (excess_at(low, tol) < 0.0_dp .and. low > tiny(1.0_dp))
          low = low / 2.0_dp
       end do
-      do while (error_at(high) > tol)
+      do while (excess_at(high, tol) > 0.0_dp)
          high = high * 2.0_dp
       end do
       do
          middle = sqrt(low * high)
          if (middle <= low .or. middle >= high) exit
-         if (error_at(middle) > tol) then
+         if (excess_at(middle, tol) > 0.0_dp) then
             low = middle
          else
             high = middle
          end if
       end do
-      call density_at(high, rate, choice)
+      ! within the tolerance at high, within the work at low
+      lambda = merge(low, high, at_work)
+      call placement_at(lambda, placed, families)
+    end subroutine pool_choice
+
+    ! the excess at lambda of the error over the tolerance, or of the
+    ! work over the solves of the steps placed, which falls as lambda
+    ! grows
+    real(dp) function excess_at(lambda, tol)
+      real(dp), intent(in) :: lambda, tol
+      real(dp), allocatable :: placed(:)
+      integer , allocatable :: families(:)
+      integer :: j
+      if (at_work) then
+         call placement_at(lambda, placed, families)
+         excess_at = real(placement % work - sum([(pool(families(j)) % num_stages(), j = 2, size(placed))]), dp) &
+              & + 0.5_dp
+      else
+         excess_at = error_at(lambda) - tol
+      end if
+    end function excess_at
+
+    ! THE PLACEMENT AT lambda: the count of steps the integral of n,
+    ! three at least for the curvature, the instants its quantiles; each
+    ! step placed takes the family chosen where its midpoint lies, unless
+    ! the history or the ratio rows exclude it there, the least work per
+    ! unit time among those they admit in its place
+    subroutine placement_at(lambda, placed, families)
+      real(dp), intent(in) :: lambda
+      real(dp), allocatable, intent(out) :: placed(:)
+      integer , allocatable, intent(out) :: families(:)
+      real(dp), allocatable :: rate(:), mass(:), h(:)
+      integer , allocatable :: choice(:)
+      real(dp) :: target
+      integer :: k, j, steps, cell
+
+      call density_at(lambda, rate, choice)
 
       ! the count and the quantiles of the density
       allocate(mass(n), source=0.0_dp)
@@ -3675,10 +3760,9 @@ contains
          do while (cell < n .and. t(cell) < 0.5_dp * (placed(j - 1) + placed(j)))
             cell = cell + 1
          end do
-         families(j) = admitted_choice(cell, j, h, high)
+         families(j) = admitted_choice(cell, j, h, lambda)
       end do
-      lambda = high
-    end subroutine pool_choice
+    end subroutine placement_at
 
     ! the error of the choice at lambda
     real(dp) function error_at(lambda)

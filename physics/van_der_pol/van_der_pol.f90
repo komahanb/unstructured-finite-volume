@@ -38,7 +38,7 @@
 !                    each step's family are the design of the discrete
 !                    image, chosen with them
 !
-! SEVEN PROBLEMS are then seven readings of one Lagrangian, each
+! EIGHT PROBLEMS are then eight readings of one Lagrangian, each
 ! differing from the one before it by one term or by the placement of
 ! its instants:
 !
@@ -50,6 +50,7 @@
 !   (f) design to a tolerance, L of (e), the count of instants free
 !   (g) J to a tolerance, L = J + lambda_omega . r_omega + lambda_ic . r_ic + lambda_s . r_s,
 !       each step's family from a pool
+!   (h) J at a work of solves, L of (g), each step's family from the pool
 !
 ! (a) The stationarity of L in the multipliers is the oscillator with
 ! its data and its design, solved forward for u_bar and, the
@@ -218,6 +219,17 @@
 ! expansions of order two of the state took 0.81, 2.70, 8.0 and
 ! 24.8 s.
 !
+! (h) The Lagrangian of (g) at a work of 55 solves, the work (g)
+! takes: the rounds of (g), the error the objective and the work
+! within 55 solves, L_s = sum |e_k| + mu (work - 55) with mu =
+! 1/lambda, and the design returned of least error within that work.
+! From eleven instants the rounds return 51 instants, the error of J
+! -2.45e-6 against the chain of order three at 2561 instants, where (g)
+! at 1e-6 takes 55 solves at -2.43e-6; at 31 and 97 solves the errors
+! are -2.33e-5 and -2.24e-7, where 1e-5 and 1e-7 take 31 and 97 at
+! -2.52e-5 and -2.27e-7: the least work within a tolerance and the
+! least error at that work are one design.
+!
 ! THE LAGRANGIAN of (b) and (c) is printed before its solve: J and
 ! every law with the multiplier it is paired with, each equation as a
 ! formula, then the whole as a tree.
@@ -238,7 +250,7 @@ program van_der_pol
        &                          operator(+), operator(-), operator(*), operator(/), operator(**)
   use operation_residual , only : continuous_residual, discrete_residual, operator(+), operator(*), &
        &                          equidistribution
-  use operation_family   , only : dirk, bdf, adams, chain
+  use operation_family   , only : family, dirk, bdf, adams, chain
   use view_residual      , only : formula, tree
 
   implicit none
@@ -252,6 +264,7 @@ program van_der_pol
   type(continuous_field)    :: t, t_map, nu, u, J, lambda_omega, lambda_ic, lambda_s, lambda_t, rest
   type(continuous_residual) :: r_omega, r_ic, r_s, r_t, L
   type(discrete_residual)   :: L_bar
+  type(family), allocatable :: pool(:)
   type(discrete_field)      :: estimate, solution, u_bar, lambda_omega_bar, lambda_ic_bar, lambda_s_bar, lambda_t_bar, &
        &                       J_bar, nu_bar
   real(dp), allocatable     :: eta(:)
@@ -463,13 +476,27 @@ program van_der_pol
   !===================================================================!
 
   L     = J + lambda_omega*r_omega + lambda_ic*r_ic + lambda_s*r_s
-  L_bar = discrete_image(L, placement=equidistribution(tolerance=1.0e-6_dp, pool=[dirk(2), dirk(3), dirk(4), &
-       & adams(2), adams(3), adams(4), bdf(2), bdf(3)]))
+  pool  = [dirk(2), dirk(3), dirk(4), adams(2), adams(3), adams(4), bdf(2), bdf(3)]
+  L_bar = discrete_image(L, placement=equidistribution(tolerance=1.0e-6_dp, pool=pool))
   call L_bar % minimize(estimate, solution)
 
   J_bar = J % at(solution)
   print '(a)', '(g) J to a tolerance, each step''s family from a pool: &
        &L = J + lambda_omega . r_omega + lambda_ic . r_ic + lambda_s . r_s'
+  print '(a, i24)', 'instants                = ', solution % num_points()
+  print '(a, es24.16)', 'J                       = ', J_bar % value(1, 1)
+
+  !===================================================================!
+  ! (h) J AT A WORK. L of (g), the instants and the family of each step
+  ! chosen together at the least error of J that 55 solves allow, the
+  ! work (g) takes
+  !===================================================================!
+
+  L_bar = discrete_image(L, placement=equidistribution(work=55, pool=pool))
+  call L_bar % minimize(estimate, solution)
+
+  J_bar = J % at(solution)
+  print '(a)', '(h) J at a work of 55 solves, each step''s family from the pool of (g): L of (g)'
   print '(a, i24)', 'instants                = ', solution % num_points()
   print '(a, es24.16)', 'J                       = ', J_bar % value(1, 1)
 

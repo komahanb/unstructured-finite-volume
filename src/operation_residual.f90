@@ -3166,9 +3166,9 @@ contains
   ! halfway to it in the logarithm of the step density is measured in
   ! its place. The rounds end where a design placed is one measured
   ! before, where the design meets the tolerance and the placement
-  ! does not lower its work, where a design fails the tolerance after
-  ! one that met it, or where the design halfway has the count of the
-  ! design accepted. The design returned is,
+  ! does not lower its work, where a design solved fails the tolerance
+  ! after one that met it, or where the design halfway has the count of
+  ! the design accepted. The design returned is,
   ! of those measured, the one
   ! of least work that met the tolerance, or of least error where none
   ! did, solved with its own families from the base family's values,
@@ -3326,9 +3326,9 @@ contains
                & '  the base family does not converge'
        end if
 
-       ! a design that fails the tolerance after one that met it ends the
-       ! rounds
-       if (.not. designs(round) % met .and. any(designs(1:round - 1) % met)) exit
+       ! a design solved that fails the tolerance after one that met it
+       ! ends the rounds; one not solved is refused, as before any met
+       if (converged .and. .not. designs(round) % met .and. any(designs(1:round - 1) % met)) exit
        ! THE STEP CONTROL, as of the design's own iteration: a design that
        ! does not converge, or whose merit falls by less than a tenth of
        ! the fall the model of the design accepted predicted, is refused,
@@ -3337,10 +3337,7 @@ contains
           refused = .not. converged
           if (converged) then
              decrease = merit(designs(accepted)) - merit(designs(round))
-             ! a fall predicted below the rounding of the merit is not
-             ! tested
-             refused = decrease < 0.1_dp * predicted .and. predicted > 1.0e-12_dp * max(1.0_dp, &
-                  & merit(designs(accepted)))
+             refused  = refusal(decrease, predicted, merit(designs(accepted)))
              if (refused .and. level >= 1) print '(a, i0, a, es12.4, a, es12.4)', 'pool round ', round, &
                   & ': refused, the merit fell by ', decrease, ' where the model predicted ', predicted
           end if
@@ -3380,9 +3377,9 @@ contains
        call pool_choice(tol, proposed, proposed_family, lambda)
        ! the multiplier of the work, where the work is given, is 1/lambda
        if (at_work) then
-          penalty = max(penalty, 2.0_dp / lambda)
+          penalty = merit_penalty(penalty, 1.0_dp / lambda)
        else
-          penalty = max(penalty, 2.0_dp * lambda)
+          penalty = merit_penalty(penalty, lambda)
        end if
        proposed_schemes = chain([(pool(proposed_family(k)), k = 1, size(proposed))], &
             & from=[(k, k = 1, size(proposed))])
@@ -4211,6 +4208,25 @@ contains
   end subroutine minimize_together
 
   !===================================================================!
+  ! THE STEP CONTROL OF AN ITERATION ON A DESIGN, the design's own
+  ! (design_iteration) and the rounds of a pool's (pool_iteration): a
+  ! step whose merit falls by less than a tenth of the fall its model
+  ! predicted is refused, a fall predicted below the rounding of the
+  ! merit, of size scale, not tested; and each penalty of the merit is
+  ! at least twice its multiplier.
+  !===================================================================!
+
+  pure logical function refusal(fall, predicted, scale)
+    real(dp), intent(in) :: fall, predicted, scale
+    refusal = fall < 0.1_dp * predicted .and. predicted > 1.0e-12_dp * max(1.0_dp, scale)
+  end function refusal
+
+  elemental real(dp) function merit_penalty(penalty, multiplier)
+    real(dp), intent(in) :: penalty, multiplier
+    merit_penalty = max(penalty, 2.0_dp * multiplier)
+  end function merit_penalty
+
+  !===================================================================!
   ! THE ITERATION ON THE FREE DESIGN of one residual or of several on
   ! one design, as minimize states it: the gradient and the hessian
   ! the sums of every residual's, the inequalities those of all, the
@@ -4322,10 +4338,7 @@ contains
        if (with_accepted) then
           decrease = accepted_objective + dot_product(penalty, max(accepted_c, 0.0_dp)) &
                & - (objective + dot_product(penalty, max(c, 0.0_dp)))
-          ! a decrease predicted below the rounding of the merit is not
-          ! tested
-          refused  = decrease < 0.1_dp * predicted .and. predicted > 1.0e-12_dp * max(1.0_dp, &
-               & abs(accepted_objective) + dot_product(penalty, max(accepted_c, 0.0_dp)))
+          refused  = refusal(decrease, predicted, abs(accepted_objective) + dot_product(penalty, max(accepted_c, 0.0_dp)))
           if (refused) then
              if (verbosity >= 1) print '(a, es12.4, a, es12.4)', 'refused: the merit decreased by ', decrease, &
                   & ' where the model predicted ', predicted
@@ -4402,7 +4415,7 @@ contains
        end if
        ! each penalty at least twice its multiplier, and the decrease of
        ! the merit the model predicts for the step
-       penalty   = max(penalty, 2.0_dp * mu)
+       penalty   = merit_penalty(penalty, mu)
        predicted = -(dot_product(gradient, step) + dot_product(step, matmul(hessian, step)) / 2.0_dp) &
             & + dot_product(penalty, max(c, 0.0_dp) - max(c + matmul(a, step), 0.0_dp))
        weight = merge(mu, 0.0_dp, of_state)

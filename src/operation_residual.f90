@@ -3147,12 +3147,19 @@ contains
   ! THE ROUNDS. Each round solves the base family on the instants as
   ! they stand, measures the error and the work of the present
   ! design, and places the instants and chooses the families by the
-  ! conditions above. The rounds end where a design placed is one
-  ! measured before, where the design meets the tolerance and the
-  ! placement does not lower its work, where a design fails the
-  ! tolerance after one that met it, or fails it by no less than the
-  ! design before - a design on which the base family does not
-  ! converge fails it with no error measured. The design returned is,
+  ! conditions above. THE STEP CONTROL is that of the design's own
+  ! iteration: the merit of a design is its work plus its error beyond
+  ! the tolerance times the penalty, at least twice the multiplier
+  ! lambda; a design whose merit falls by less than a tenth of the fall
+  ! the model of the design accepted before it predicted - its error
+  ! density over each step times the step to the power p + 1 - or on
+  ! which the base family does not converge is refused, and the design
+  ! halfway to it in the logarithm of the step density is measured in
+  ! its place. The rounds end where a design placed is one measured
+  ! before, where the design meets the tolerance and the placement
+  ! does not lower its work, where a design fails the tolerance after
+  ! one that met it, or where the design halfway has the count of the
+  ! design accepted. The design returned is,
   ! of those measured, the one
   ! of least work that met the tolerance, or of least error where none
   ! did, solved with its own families from the base family's values,
@@ -3177,22 +3184,23 @@ contains
        integer  :: work = 0
        real(dp) :: error = 0.0_dp
        logical  :: met = .false.
+       real(dp) :: tolerance = 0.0_dp
     end type design_record
 
     type(discrete_residual) :: iterate, base_residual
-    type(discrete_field) :: start, base_solution, objective_field, measured
+    type(discrete_field) :: start, base_solution, objective_field, accepted_solution
     type(design_record), allocatable :: designs(:)
     type(expansion) :: original
     type(family) :: base
     type(family), allocatable :: pool(:)
     type(chain) :: proposed_schemes
     real(dp), allocatable :: t(:), e_base(:), eta(:), e(:,:), gradient(:,:,:), partial(:,:), density(:)
-    real(dp), allocatable :: proposed(:), measured_t(:)
+    real(dp), allocatable :: proposed(:), accepted_t(:), accepted_e(:,:)
     integer , allocatable :: depth(:), proposed_family(:)
     character(len=32), allocatable :: names(:)
-    real(dp) :: scale, tol, error_current, j_base, j_final, uncertainty
-    integer :: nf, top, g, n, k, round, returned, a, level
-    logical :: converged
+    real(dp) :: scale, tol, error_current, j_base, j_final, uncertainty, lambda, penalty, predicted, decrease
+    integer :: nf, top, g, n, k, round, returned, a, level, accepted
+    logical :: converged, refused
 
     if (free_design(this)) then
        error stop 'operation_residual: a pool of families is chosen for a design fixed by an equality'
@@ -3247,6 +3255,9 @@ contains
     call set_verbosity(0)
     start = estimate
     round = 0
+    accepted = 0
+    penalty = 0.0_dp
+    predicted = 0.0_dp
     allocate(designs(0))
     do
        round = round + 1
@@ -3256,62 +3267,102 @@ contains
           error stop 'operation_residual: the curvature of J_h gives the error of each step from four instants'
        end if
        call solve_base(converged)
-       ! a design on which the base family does not converge fails the
-       ! tolerance, no error measured, and ends the rounds
-       if (.not. converged) then
-          if (round == 1) error stop 'operation_residual: the base family of the pool does not converge on the instants given'
-          designs = [designs, design_record(t, iterate % schemes, chain_work(iterate % schemes), huge(1.0_dp), .false.)]
+       if (converged) then
+          ! the error of each family at each step, and of the present design
+          if (allocated(e)) deallocate(e)
+          allocate(e(n, size(pool)))
+          do g = 1, size(pool)
+             eta = base_residual % time_disagreement(base_solution, &
+                  & chain([(base, k = 1, min(depth(g), n)), (pool(g), k = depth(g) + 1, n)], from=[(k, k = 1, n)]))
+             e(:, g) = e_base - eta
+          end do
+          eta = base_residual % time_disagreement(base_solution, iterate % schemes)
+          error_current = sum(abs(e_base(2:n) - eta(2:n)))
+
+          ! the tolerance, relative to sum |w f| over the base family's
+          ! nodes unless absolute
+          scale = 1.0_dp
+          if (.not. placement % absolute) then
+             if (iterate % objective % integrated_part == TIME_FACE) then
+                scale = abs(j_base)
+             else
+                call base_residual % objective % differential(base_solution, gradient, partial, density)
+                scale = sum(abs(base_solution % node_weight * density))
+             end if
+          end if
+          tol = placement % tolerance * scale
+          designs = [designs, design_record(t, iterate % schemes, chain_work(iterate % schemes), error_current, &
+               & error_current <= tol, tol)]
+          if (level >= 1) then
+             print '(a, i0, a, i0, a, es12.4, a, es10.2, a, es12.4, a, i0)', 'pool round ', round, ': instants ', n, &
+                  & '  error ', error_current, '  uncertainty ', uncertainty, '  tolerance ', tol, '  solves ', &
+                  & designs(round) % work
+          end if
+       else
+          ! a design on which the base family does not converge fails the
+          ! tolerance, no error measured
+          if (accepted == 0) then
+             error stop 'operation_residual: the base family of the pool does not converge on the instants given'
+          end if
+          designs = [designs, design_record(t, iterate % schemes, chain_work(iterate % schemes), huge(1.0_dp), &
+               & .false., huge(1.0_dp))]
           if (level >= 1) print '(a, i0, a, i0, a)', 'pool round ', round, ': instants ', n, &
                & '  the base family does not converge'
-          exit
        end if
-       measured   = base_solution
-       measured_t = t
 
-       ! the error of each family at each step, and of the present design
-       allocate(e(n, size(pool)))
-       do g = 1, size(pool)
-          eta = base_residual % time_disagreement(base_solution, &
-               & chain([(base, k = 1, min(depth(g), n)), (pool(g), k = depth(g) + 1, n)], from=[(k, k = 1, n)]))
-          e(:, g) = e_base - eta
-       end do
-       eta = base_residual % time_disagreement(base_solution, iterate % schemes)
-       error_current = sum(abs(e_base(2:n) - eta(2:n)))
-
-       ! the tolerance, relative to sum |w f| over the base family's nodes
-       ! unless absolute
-       scale = 1.0_dp
-       if (.not. placement % absolute) then
-          if (iterate % objective % integrated_part == TIME_FACE) then
-             scale = abs(j_base)
-          else
-             call base_residual % objective % differential(base_solution, gradient, partial, density)
-             scale = sum(abs(base_solution % node_weight * density))
+       ! a design that fails the tolerance after one that met it ends the
+       ! rounds
+       if (.not. designs(round) % met .and. any(designs(1:round - 1) % met)) exit
+       ! THE STEP CONTROL, as of the design's own iteration: a design that
+       ! does not converge, or whose merit falls by less than a tenth of
+       ! the fall the model of the design accepted predicted, is refused,
+       ! and the design halfway from that one to it measured in its place
+       if (accepted > 0) then
+          refused = .not. converged
+          if (converged) then
+             decrease = merit(designs(accepted)) - merit(designs(round))
+             ! a fall predicted below the rounding of the merit is not
+             ! tested
+             refused = decrease < 0.1_dp * predicted .and. predicted > 1.0e-12_dp * max(1.0_dp, &
+                  & merit(designs(accepted)))
+             if (refused .and. level >= 1) print '(a, i0, a, es12.4, a, es12.4)', 'pool round ', round, &
+                  & ': refused, the merit fell by ', decrease, ' where the model predicted ', predicted
+          end if
+          if (refused) then
+             t = accepted_t
+             n = size(t)
+             e = accepted_e
+             call halfway(proposed, proposed_family)
+             ! the step shortened to the count of the design accepted, or
+             ! to a design measured, ends the rounds
+             if (size(proposed) == n) exit
+             if (any([(same_design(designs(k)), k = 1, size(designs))])) exit
+             proposed_schemes = chain([(pool(proposed_family(k)), k = 1, size(proposed))], &
+                  & from=[(k, k = 1, size(proposed))])
+             if (level >= 1) then
+                print '(a, i0, a, i0, a, i0, a, a)', 'pool round ', round, ': halfway ', size(proposed), &
+                     & '  solves ', chain_work(proposed_schemes), '  steps', runs(proposed_schemes)
+             end if
+             predicted = merit(designs(accepted)) - modelled_merit(proposed, proposed_family)
+             iterate % points % instant = proposed
+             iterate % schemes = proposed_schemes
+             start = discrete_field(iterate % points, values_at(accepted_solution, accepted_t, proposed, nf), names)
+             cycle
           end if
        end if
-       tol = placement % tolerance * scale
-       designs = [designs, design_record(t, iterate % schemes, chain_work(iterate % schemes), error_current, &
-            & error_current <= tol)]
-       if (level >= 1) then
-          print '(a, i0, a, i0, a, es12.4, a, es10.2, a, es12.4, a, i0)', 'pool round ', round, ': instants ', n, &
-               & '  error ', error_current, '  uncertainty ', uncertainty, '  tolerance ', tol, '  solves ', &
-               & designs(round) % work
-       end if
+       accepted          = round
+       accepted_solution = base_solution
+       accepted_t        = t
+       accepted_e        = e
        if (all(e == 0.0_dp)) then
           if (level >= 1) print '(a)', 'pool: the error is zero at every step'
           exit
        end if
-       ! a round that does not progress ends the rounds: a design that
-       ! fails the tolerance after one that met it, or fails it by no
-       ! less than the design before
-       if (round > 1 .and. .not. designs(round) % met) then
-          if (any(designs(1:round - 1) % met)) exit
-          if (designs(round) % error >= designs(round - 1) % error) exit
-       end if
 
-       ! the placement and the families by the stationarity of L_s
-       call pool_choice(tol, proposed, proposed_family)
-       deallocate(e)
+       ! the placement and the families by the stationarity of L_s, each
+       ! penalty of the merit at least twice the multiplier of the error
+       call pool_choice(tol, proposed, proposed_family, lambda)
+       penalty = max(penalty, 2.0_dp * lambda)
        proposed_schemes = chain([(pool(proposed_family(k)), k = 1, size(proposed))], &
             & from=[(k, k = 1, size(proposed))])
        if (level >= 1) then
@@ -3320,6 +3371,7 @@ contains
        end if
        if (any([(same_design(designs(k)), k = 1, size(designs))])) exit
        if (designs(round) % met .and. chain_work(proposed_schemes) >= designs(round) % work) exit
+       predicted = merit(designs(accepted)) - modelled_merit(proposed, proposed_family)
        iterate % points % instant = proposed
        iterate % schemes = proposed_schemes
        start = discrete_field(iterate % points, values_at(base_solution, t, proposed, nf), names)
@@ -3340,8 +3392,8 @@ contains
     if (returned /= size(designs)) then
        iterate % points % instant = designs(returned) % instants
        iterate % schemes = designs(returned) % schemes
-       start = discrete_field(iterate % points, values_at(measured, measured_t, designs(returned) % instants, nf), &
-            & names)
+       start = discrete_field(iterate % points, values_at(accepted_solution, accepted_t, designs(returned) % instants, &
+            & nf), names)
        t = iterate % points % instant
        n = size(t)
        call solve_base(converged)
@@ -3422,17 +3474,137 @@ contains
     ! whether the design placed is the design recorded
     logical function same_design(record)
       type(design_record), intent(in) :: record
-      integer :: k
-      same_design = size(record % instants) == size(proposed)
+      same_design = same_families(record)
       if (.not. same_design) return
       same_design = all(abs(record % instants - proposed) <= 4.0_dp * epsilon(1.0_dp) * maxval(abs(proposed)))
-      if (.not. same_design) return
+    end function same_design
+
+    ! whether the steps placed are as many as recorded, each of the
+    ! family recorded
+    logical function same_families(record)
+      type(design_record), intent(in) :: record
+      integer :: k
+      same_families = size(record % instants) == size(proposed)
+      if (.not. same_families) return
       do k = 2, size(proposed)
-         same_design = same_design .and. trim(record % schemes % scheme(k) % name()) &
+         same_families = same_families .and. trim(record % schemes % scheme(k) % name()) &
               & == trim(pool(proposed_family(k)) % name()) .and. record % schemes % scheme(k) % accuracy() &
               & == pool(proposed_family(k)) % accuracy()
       end do
-    end function same_design
+    end function same_families
+
+    ! the merit of a design measured: its work, and its error beyond the
+    ! tolerance at the penalty
+    real(dp) function merit(record)
+      type(design_record), intent(in) :: record
+      merit = real(record % work, dp) + penalty * max(record % error - record % tolerance, 0.0_dp)
+    end function merit
+
+    ! the merit of a design placed, its error by the model of the design
+    ! accepted, on the instants t: on each step of length h and family
+    ! g, the mean error density of g over the step accepted its midpoint
+    ! lies in times h^(p_g + 1)
+    real(dp) function modelled_merit(placed, families)
+      real(dp), intent(in) :: placed(:)
+      integer , intent(in) :: families(:)
+      real(dp) :: modelled, middle
+      integer :: j, cell, work
+      modelled = 0.0_dp
+      work     = 0
+      cell     = 2
+      do j = 2, size(placed)
+         middle = 0.5_dp * (placed(j - 1) + placed(j))
+         do while (cell < n .and. t(cell) < middle)
+            cell = cell + 1
+         end do
+         modelled = modelled + density_mean(cell, families(j)) * (placed(j) - placed(j - 1)) &
+              & **(pool(families(j)) % accuracy() + 1)
+         work = work + pool(families(j)) % num_stages()
+      end do
+      modelled_merit = real(work, dp) + penalty * max(modelled - designs(accepted) % tolerance, 0.0_dp)
+    end function modelled_merit
+
+    ! THE DESIGN HALFWAY from the design accepted, on the instants t, to
+    ! the design refused, in the logarithm of the step density: the steps
+    ! per unit time the geometric mean of the two designs', the count of
+    ! steps its integral, three at least, the instants its quantiles;
+    ! each step takes the refused design's family where its midpoint
+    ! lies, or the base family where the history or the ratio rows
+    ! exclude that one
+    subroutine halfway(placed, families)
+      real(dp), allocatable, intent(inout) :: placed(:)
+      integer , allocatable, intent(inout) :: families(:)
+      real(dp), allocatable :: refused_at(:), s(:), mass(:), h(:)
+      integer , allocatable :: refused_family(:)
+      real(dp) :: middle, target
+      integer :: i, j, k, m, r, steps, g
+      call move_alloc(placed, refused_at)
+      call move_alloc(families, refused_family)
+      ! the instants of both designs in order
+      allocate(s(size(t) + size(refused_at)))
+      i = 1
+      j = 1
+      do m = 1, size(s)
+         if (j > size(refused_at)) then
+            s(m) = t(i)
+            i = i + 1
+         else if (i > size(t)) then
+            s(m) = refused_at(j)
+            j = j + 1
+         else if (t(i) <= refused_at(j)) then
+            s(m) = t(i)
+            i = i + 1
+         else
+            s(m) = refused_at(j)
+            j = j + 1
+         end if
+      end do
+      ! the mass of the mean density between them
+      allocate(mass(size(s)), source=0.0_dp)
+      k = 2
+      r = 2
+      do i = 2, size(s)
+         mass(i) = mass(i - 1)
+         if (s(i) == s(i - 1)) cycle
+         middle = 0.5_dp * (s(i - 1) + s(i))
+         do while (t(k) < middle)
+            k = k + 1
+         end do
+         do while (refused_at(r) < middle)
+            r = r + 1
+         end do
+         mass(i) = mass(i) + (s(i) - s(i - 1)) / sqrt((t(k) - t(k - 1)) * (refused_at(r) - refused_at(r - 1)))
+      end do
+      ! the count and the quantiles
+      steps = max(3, ceiling(mass(size(s))))
+      allocate(placed(steps + 1))
+      placed(1)         = s(1)
+      placed(steps + 1) = s(size(s))
+      k = 2
+      do j = 2, steps
+         target = mass(size(s)) * real(j - 1, dp) / real(steps, dp)
+         do while (mass(k) < target)
+            k = k + 1
+         end do
+         placed(j) = s(k - 1) + (s(k) - s(k - 1)) * (target - mass(k - 1)) / (mass(k) - mass(k - 1))
+      end do
+      ! each step's family
+      h = placed(2:) - placed(:steps)
+      allocate(families(steps + 1), source=a)
+      r = 2
+      do j = 2, steps + 1
+         middle = 0.5_dp * (placed(j - 1) + placed(j))
+         do while (r < size(refused_at) .and. refused_at(r) < middle)
+            r = r + 1
+         end do
+         g = refused_family(r)
+         if (j - depth(g) < 1) cycle
+         if (j > 2) then
+            if (h(j - 1) > pool(g) % step_ratio_bound() * h(j - 2)) cycle
+         end if
+         families(j) = g
+      end do
+    end subroutine halfway
 
     ! THE STATIONARITY OF L_s: at each step k of the instants t, of
     ! length h_k, each family's error density a, the mean of |psi| over
@@ -3445,11 +3617,12 @@ contains
     ! the instants its quantiles; each step placed takes the family
     ! chosen where its midpoint lies, unless the history or the ratio
     ! rows exclude it there, the least work per unit time among those
-    ! they admit in its place.
-    subroutine pool_choice(tol, placed, families)
+    ! they admit in its place; and lambda.
+    subroutine pool_choice(tol, placed, families, lambda)
       real(dp), intent(in) :: tol
       real(dp), allocatable, intent(out) :: placed(:)
       integer , allocatable, intent(out) :: families(:)
+      real(dp), intent(out) :: lambda
       real(dp), allocatable :: rate(:), mass(:), h(:)
       integer , allocatable :: choice(:)
       real(dp) :: low, high, middle, target
@@ -3504,6 +3677,7 @@ contains
          end do
          families(j) = admitted_choice(cell, j, h, high)
       end do
+      lambda = high
     end subroutine pool_choice
 
     ! the error of the choice at lambda

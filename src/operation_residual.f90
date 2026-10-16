@@ -161,15 +161,14 @@ module operation_residual
      ! copies and zero coefficients of the unknowns of time alone,
      ! eliminated before a direct solve of the rest
      logical, allocatable, private :: tying(:)
-     ! AT AN EXPLICIT POINT, a moment whose components below each field's
-     ! top degree along time the family determines from other moments,
-     ! as the initial data determine them at the first instant: rule j
-     ! there is rules(variant(j)), the explicit rule's - a law that reads
-     ! no component of top degree stated by its derivative along time
+     ! AT A REDUCED POINT, a moment at which the law is stated in its
+     ! form at the first instant (block_rows): rule j there is
+     ! rules(variant(j)), the reduced rule's - a law that reads no
+     ! component of top degree stated by its derivative along time
      ! (initial_form) - appended to the rules, and rule j itself where
      ! the law reads one
      integer, allocatable, private :: variant(:)
-     logical, allocatable, private :: explicit_point(:)
+     logical, allocatable, private :: reduced_point(:)
      ! the count of the rules, one per multiplier, their variants after
      integer, private :: laws = 0
 
@@ -244,7 +243,7 @@ module operation_residual
      procedure, private :: projected_edges
      procedure, private :: projected_part
      procedure, private :: law_at
-     procedure, private :: restrict_explicit_points
+     procedure, private :: restrict_reduced_points
   end type residual_operator
 
   interface residual_operator
@@ -593,8 +592,8 @@ contains
   !===================================================================!
 
   function create(primary_law, rule, at, unknowns, degrees, primary, fixed_rows, fixed, &
-       & connected_law, fixed_rate, prescribed, positions, summed_rows, projected, tying, explicit, &
-       & explicit_rule) result(this)
+       & connected_law, fixed_rate, prescribed, positions, summed_rows, projected, tying, reduced, &
+       & reduced_rule) result(this)
 
     type(stencil)         , intent(in) :: primary_law
     type(expression)      , intent(in), optional :: rule
@@ -608,8 +607,8 @@ contains
     integer               , intent(in), optional :: summed_rows(:)
     type(projection)      , intent(in), optional :: projected
     logical               , intent(in), optional :: tying(:)
-    logical               , intent(in), optional :: explicit(:)
-    type(expression)      , intent(in), optional :: explicit_rule
+    logical               , intent(in), optional :: reduced(:)
+    type(expression)      , intent(in), optional :: reduced_rule
     type(residual_operator) :: this
     type(continuous_domain) :: domain
     type(expression) :: law
@@ -693,8 +692,8 @@ contains
     end if
     this % laws = size(this % rules)
     ! the rules at the explicit points
-    if (present(explicit) .and. present(explicit_rule) .and. present(rule)) then
-       if (any(explicit)) then
+    if (present(reduced) .and. present(reduced_rule) .and. present(rule)) then
+       if (any(reduced)) then
           allocate(this % variant(size(this % rules)))
           do j = 1, size(this % variant)
              this % variant(j) = j
@@ -703,12 +702,12 @@ contains
                 error stop 'operation_residual: under a projection on the cells a law that reads no component &
                      &of top degree is not stated at an explicit moment'
              end if
-             law = euler_lagrange(explicit_rule, j)
+             law = euler_lagrange(reduced_rule, j)
              call law % share_arguments(rule)
              this % rules = [this % rules, law]
              this % variant(j) = size(this % rules)
           end do
-          this % explicit_point = explicit
+          this % reduced_point = reduced
        end if
     end if
     this % at      = at
@@ -958,7 +957,7 @@ contains
             & size(part % whole_index), this % degrees, this % primary, fixed_rows, fixed, &
             & connected_law=connected, fixed_rate=rate, prescribed=prescribed, &
             & positions=this % point_positions(:, points))
-       call this % restrict_explicit_points(sub, points)
+       call this % restrict_reduced_points(sub, points)
     else
        sub = residual_operator(part_stencil(this % primary_law, part, summed), at=at, &
             & unknowns=size(part % whole_index), degrees=this % degrees, primary=this % primary, &
@@ -1010,21 +1009,21 @@ contains
     class(residual_operator), intent(in) :: this
     integer                 , intent(in) :: j, p
     law_at = j
-    if (.not. allocated(this % explicit_point)) return
-    if (this % explicit_point(p)) law_at = this % variant(j)
+    if (.not. allocated(this % reduced_point)) return
+    if (this % reduced_point(p)) law_at = this % variant(j)
   end function law_at
 
   ! the rules at the explicit points restricted to a residual of the
   ! points given of this one
-  subroutine restrict_explicit_points(this, sub, points)
+  subroutine restrict_reduced_points(this, sub, points)
     class(residual_operator), intent(in)    :: this
     type(residual_operator) , intent(inout) :: sub
     integer                 , intent(in)    :: points(:)
-    if (.not. allocated(this % explicit_point)) return
+    if (.not. allocated(this % reduced_point)) return
     sub % rules          = this % rules
     sub % variant        = this % variant
-    sub % explicit_point = this % explicit_point(points)
-  end subroutine restrict_explicit_points
+    sub % reduced_point = this % reduced_point(points)
+  end subroutine restrict_reduced_points
 
   function rule_of(this, j) result(law)
     class(residual_operator), intent(in) :: this
@@ -1374,7 +1373,7 @@ contains
        ! point and taken at those
        if (allocated(this % variant)) then
           if (this % variant(j) /= j) governing(:, j) = merge(evaluated(this % variant(j)), governing(:, j), &
-               & this % explicit_point)
+               & this % reduced_point)
        end if
     end do
 
@@ -1928,7 +1927,7 @@ contains
     end if
 
     if (allocated(this % summed_rows)) sub % summed_rows = pack(sub_of(this % summed_rows), sub_of(this % summed_rows) > 0)
-    call this % restrict_explicit_points(sub, points)
+    call this % restrict_reduced_points(sub, points)
 
   end function constrain
 
@@ -6409,7 +6408,7 @@ contains
     logical :: staged
     integer :: nodes, factor
     integer , allocatable :: related(:), added(:), single(:)
-    logical , allocatable :: tying(:), entries(:), replaced(:), explicit_points(:)
+    logical , allocatable :: tying(:), entries(:), replaced(:), reduced_points(:)
     real(dp), allocatable :: derivative(:,:,:), table(:,:,:), instant_derivative(:,:,:,:), itable(:,:,:,:)
     integer , allocatable :: relating(:)
     logical :: moving, pinned
@@ -6715,20 +6714,23 @@ contains
           end if
           rule = this % initial_rule
        end if
-       ! THE EXPLICIT POINTS: at a moment after the history, the
-       ! manifold's first instant aside, whose components below each
-       ! field's top degree the family determines from other moments, as
-       ! the initial data determine them at the first instant, a law that
-       ! reads no component of top degree is stated in its form at the
-       ! first instant (initial_form): there it would restate a condition
-       ! on values the family fixes, and leave its multiplier no row
-       allocate(explicit_points(npts), source=.false.)
+       ! THE REDUCED POINTS, after the history, the manifold's first
+       ! instant aside, where a law that reads no component of top degree
+       ! is stated in its form at the first instant (initial_form): at an
+       ! explicit moment, whose components below each field's top degree
+       ! the family determines from other moments, as the initial data
+       ! determine them at the first instant, it would restate a condition
+       ! on values the family fixes and leave its multiplier no row; and
+       ! at every stage of a family that marches by stages, where a
+       ! condition on the stage's values reaches its multiplier only
+       ! through h^2 a_ii^2 and the tableau's order is lost
+       allocate(reduced_points(npts), source=.false.)
        if (allocated(this % initial_rule)) then
           do m = 1, nm
-             if (implicit_moment(m)) cycle
+             if (implicit_moment(m) .and. .not. staged) cycle
              if (any(instant_moment(1:depth) == m)) cycle
              if (first == 1 .and. instant_moment(1) == m) cycle
-             explicit_points((m - 1) * ncells + 1:m * ncells) = .true.
+             reduced_points((m - 1) * ncells + 1:m * ncells) = .true.
           end do
        end if
        if (size(gauge_rows) + size(face_rows) > 0) then
@@ -6738,10 +6740,10 @@ contains
           ! cell of the moment
           blk % rows = residual_operator(relations, rule, at, unknowns, stride, primary, fixed_rows, fixed, &
                & prescribed=gauge, positions=point_positions, summed_rows=gauge_rows(1:size(gauge_rows):ncells), &
-               & explicit=explicit_points, explicit_rule=this % initial_rule)
+               & reduced=reduced_points, reduced_rule=this % initial_rule)
        else
           blk % rows = residual_operator(relations, rule, at, unknowns, stride, primary, fixed_rows, fixed, &
-               & positions=point_positions, explicit=explicit_points, explicit_rule=this % initial_rule)
+               & positions=point_positions, reduced=reduced_points, reduced_rule=this % initial_rule)
        end if
     end if
     blk % first      = first

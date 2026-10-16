@@ -6432,6 +6432,9 @@ contains
     integer :: nodes, factor
     integer , allocatable :: related(:), added(:), single(:)
     logical , allocatable :: tying(:), entries(:), replaced(:), reduced_points(:), corrected_moment(:), varying(:)
+    logical , allocatable :: zero_moment(:)
+    integer , allocatable :: zero_rows(:)
+    integer :: nz
     type(expression), allocatable :: variant
     real(dp), allocatable :: derivative(:,:,:), table(:,:,:), instant_derivative(:,:,:,:), itable(:,:,:,:)
     integer , allocatable :: relating(:)
@@ -6659,6 +6662,19 @@ contains
     ! THE FIXED ROWS: every component of the history instants, and the
     ! values a face condition states at the first or the last instant
     call this % fixed_rows_of(first, last, depth, instant_moment, at, lb, tuple, fixed_rows, fixed)
+    ! and the unknowns of the projection at every moment after the
+    ! history but the corrected instants, zero there: fixed rows, which
+    ! the elimination removes with the history's
+    if (this % projection_unknowns > 0) then
+       nz = this % projection_unknowns
+       allocate(zero_moment(nm), source=.not. corrected_moment)
+       zero_moment(instant_moment(1:depth)) = .false.
+       zero_rows = [(((at_of(m, c) + this % rule % offset_of_field(nf - nz + j) + 1, j = 1, nz), c = 1, ncells), &
+            & m = 1, nm)]
+       zero_rows = pack(zero_rows, [(((zero_moment(m), j = 1, nz), c = 1, ncells), m = 1, nm)])
+       fixed_rows = [fixed_rows, zero_rows]
+       fixed      = [fixed, spread(0.0_dp, 1, size(zero_rows))]
+    end if
 
     ! THE PRESCRIBED ROWS: the gauge rows - at every moment after the
     ! history, the mean of the integrated unknown over the cells, in
@@ -6681,10 +6697,15 @@ contains
     if (factor > 0) then
        call this % time_alone_rows_of(depth, nm, instant_moment, at, primary, fixed_rows, face_rows, &
             & face_columns, face_weights, face_constants, added)
-       ! THE TYING ROWS: the history, the family's relations, the rows of
-       ! the unknowns of time alone, and the prescribed rows of one entry
-       ! on their own diagonal; a prescribed row of several entries is
-       ! not, though it take the row of a relation
+    else
+       allocate(added(0))
+    end if
+    ! THE TYING ROWS, with unknowns of time alone or on a manifold
+    ! without space: the history, the family's relations, the rows of
+    ! the unknowns of time alone, and the prescribed rows of one entry
+    ! on their own diagonal; a prescribed row of several entries is
+    ! not, though it take the row of a relation
+    if (factor > 0 .or. .not. this % manifold % with_space) then
        allocate(tying(unknowns), entries(unknowns), source=.false.)
        tying(fixed_rows) = .true.
        tying(related)    = .true.
@@ -6806,10 +6827,11 @@ contains
           ! cell of the moment
           blk % rows = residual_operator(relations, rule, at, unknowns, stride, primary, fixed_rows, fixed, &
                & prescribed=gauge, positions=point_positions, summed_rows=gauge_rows(1:size(gauge_rows):ncells), &
-               & reduced=reduced_points, reduced_rule=variant, varying=varying)
+               & reduced=reduced_points, reduced_rule=variant, varying=varying, tying=tying)
        else
           blk % rows = residual_operator(relations, rule, at, unknowns, stride, primary, fixed_rows, fixed, &
-               & positions=point_positions, reduced=reduced_points, reduced_rule=variant, varying=varying)
+               & positions=point_positions, reduced=reduced_points, reduced_rule=variant, varying=varying, &
+               & tying=tying)
        end if
     end if
     blk % first      = first
@@ -8748,8 +8770,17 @@ contains
     else
        ! a direct inner solve converges Newton quadratically to
        ! round-off at the cost of a step, and the sensitivities read
-       ! the converged state: the tolerance is tight here
-       allocate(solver % inner, source=direct)
+       ! the converged state: the tolerance is tight here. The tying
+       ! rows of a block - the history, the family's relations, the
+       ! prescribed rows of one entry - are eliminated first, and the
+       ! direct solve is of the complement, the laws' rows alone
+       if (allocated(rows % tying)) then
+          reduced % eliminated = rows % tying
+          allocate(reduced % inner, source=direct)
+          allocate(solver % inner, source=reduced)
+       else
+          allocate(solver % inner, source=direct)
+       end if
        solver % tolerance = 1.0e-13_dp
     end if
 

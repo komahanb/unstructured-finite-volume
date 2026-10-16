@@ -74,6 +74,18 @@
 ! is not a line search; it is only the difference between reporting
 ! a failure and stopping the program.
 !
+!                        THE CHORD METHOD
+!
+! With chord, the jacobian formed at the first step - and, under a
+! direct inner minimizer, its factorisation - serves the steps after
+! it, J_0 dq = -F(q), each a residual and a substitution where Newton
+! forms and factorises the jacobian of every iterate. The rate is
+! linear, ||I - J_0^-1 J(q)||, where Newton's is quadratic. A step the
+! line search shortens is one along which J_0 no longer gives a
+! decrease of the residual, and the jacobian of the step after it is
+! formed again. The Halley correction is of the jacobian at the
+! iterate, and is not taken with it.
+!
 !                 AT THE ROUNDING OF THE RESIDUAL
 !
 ! The tolerance is relative to the residual the iteration began at. An
@@ -117,6 +129,11 @@ module operation_newton
   ! it takes the last trial
   integer, parameter :: max_halvings = 8
 
+  ! the jacobians the chord method forms, numbered from one: a direct
+  ! inner minimizer retains a factorisation for the jacobian of its
+  ! own number alone, and factorises one of number zero at every solve
+  integer, save :: jacobians_formed = 0
+
   type, extends(minimizer) :: newton
 
      ! Whether the jacobian is taken explicit where the statement
@@ -129,6 +146,10 @@ module operation_newton
      ! unchanged, and the statement's own max_degree is the upper
      ! bound on this order.
      integer :: higher_order_jacobian_product = 1
+
+     ! The chord method: the jacobian of the first step for the steps
+     ! after it, formed again after a step the line search shortens
+     logical :: chord = .false.
 
      class(minimizer), allocatable :: inner
 
@@ -198,7 +219,7 @@ contains
     type(stored_field), allocatable :: inputs(:)
     integer , allocatable :: rows(:), columns(:)
     real(dp), allocatable :: weights(:)
-    logical :: jacobian_defined, failed, decreased
+    logical :: jacobian_defined, failed, decreased, forming
     real(dp), allocatable :: residual(:), y(:), dq(:)
     real(dp) :: linear_achieved, initial, factor, previous, step_norm, full_step
     integer :: nonzeros
@@ -207,6 +228,11 @@ contains
     type(solve_result) :: outcome
 
     call this % record_event(newton_solves)
+
+    if (this % chord .and. this % higher_order_jacobian_product > 1) then
+       error stop 'operation_newton: the chord method solves against the jacobian of an earlier step; the &
+            &Halley correction is formed with the jacobian at the step'
+    end if
 
     allocate(dq(size(x)))
 
@@ -217,8 +243,8 @@ contains
     achieved = this % norm(residual)
     initial  = achieved
     if (verbosity >= 1) then
-       print '(a)', ' step          |F|     |F|/|F0|          |dq|   factor    rows  nonzeros  jacobian  halley' // &
-            & '   cycles          |r|     |r|/|r0|  linear solve'
+       print '(a)', ' step          |F|     |F|/|F0|          |dq|   factor    rows  nonzeros  jacobian' // &
+            & '  factorised  halley   cycles          |r|     |r|/|r0|  linear solve'
        print '(i5,es13.4)', 0, achieved
     end if
     if (this % terminated(achieved, 0)) return
@@ -226,52 +252,68 @@ contains
     ! the jacobian in the unknown's argument; which mode it uses is
     ! determined by the statement, and no dispatch is defined here
     linearized = jacobian_of(this % action, this % action % argument(1))
+    jacobian_defined = .false.
+    nonzeros = 0
+    factor   = 1.0_dp
 
     do it = 1, this % max_iterations
 
        call this % record_event(primal_loops)
 
-       ! The linear system at this iterate, solved by the inner
-       ! minimizer: the Jacobian is frozen at the same input tuple the
-       ! residual was evaluated on, stored inputs included.
-       call linearized % freeze(inputs, base=y)
+       ! the jacobian formed at this step: at every step, and under the
+       ! chord method at the first and after a step the line search
+       ! shortened; otherwise the inner minimizer solves the system it
+       ! was stated with
+       forming = .not. this % chord .or. it == 1 .or. factor < 1.0_dp
 
-       ! A statement whose jacobian is explicit passes the inner
-       ! minimizer a stencil; the coupling a structured minimizer
-       ! sweeps by is the one this solver was stated with, when one
-       ! was, and the stencil's pattern otherwise: a row that reads
-       ! every unknown, the integral of a field over the region, lies
-       ! in the pattern but couples no two points, and a colouring
-       ! taken from the pattern gives its block a colour of its own
-       ! and the others one colour fewer, under which the sweep
-       ! converges at half the rate (255 against 117 preconditioner
-       ! applications on the 16 x 16 vortex). Any other statement is
-       ! passed the linearization, a matrix-vector product.
-       jacobian_defined = .false.
-       if (this % explicit) then
-          call this % action % explicit_jacobian(this % graph, this % action % bind(inputs), &
-               & 1, rows, columns, &
-               & weights, jacobian_defined)
-       end if
-       nonzeros = 0
-       if (jacobian_defined) nonzeros = size(rows)
-       if (jacobian_defined) then
-          jacobian = stencil(rows, columns, weights, &
-               & spread(0.0_dp, 1, this % num_unknowns), 'explicit jacobian')
-          call jacobian % versioned(this % action % version(), this % action % transpose_version())
-          if (allocated(this % distribution)) this % inner % distribution = this % distribution
-          if (allocated(this % coupling)) then
-             call this % inner % state(jacobian, jacobian % pattern, this % unknown_domain, &
-                  & this % num_unknowns, num_components = this % num_components, &
-                  & coupling = this % coupling)
-          else
-             call this % inner % state(jacobian, jacobian % pattern, this % unknown_domain, &
-                  & this % num_unknowns, num_components = this % num_components, &
-                  & coupling = jacobian % pattern)
+       if (forming) then
+          ! The linear system at this iterate, solved by the inner
+          ! minimizer: the Jacobian is frozen at the same input tuple the
+          ! residual was evaluated on, stored inputs included.
+          call linearized % freeze(inputs, base=y)
+
+          ! A statement whose jacobian is explicit passes the inner
+          ! minimizer a stencil; the coupling a structured minimizer
+          ! sweeps by is the one this solver was stated with, when one
+          ! was, and the stencil's pattern otherwise: a row that reads
+          ! every unknown, the integral of a field over the region, lies
+          ! in the pattern but couples no two points, and a colouring
+          ! taken from the pattern gives its block a colour of its own
+          ! and the others one colour fewer, under which the sweep
+          ! converges at half the rate (255 against 117 preconditioner
+          ! applications on the 16 x 16 vortex). Any other statement is
+          ! passed the linearization, a matrix-vector product.
+          jacobian_defined = .false.
+          if (this % explicit) then
+             call this % action % explicit_jacobian(this % graph, this % action % bind(inputs), &
+                  & 1, rows, columns, &
+                  & weights, jacobian_defined)
           end if
-       else
-          call this % inner % state(linearized, this % graph, this % unknown_domain, &
-               & this % num_unknowns, num_components = this % num_components)
+          nonzeros = 0
+          if (jacobian_defined) nonzeros = size(rows)
+          if (jacobian_defined) then
+             jacobian = stencil(rows, columns, weights, &
+                  & spread(0.0_dp, 1, this % num_unknowns), 'explicit jacobian')
+             if (this % chord) then
+                jacobians_formed = jacobians_formed + 1
+                call jacobian % versioned(jacobians_formed)
+             else
+                call jacobian % versioned(this % action % version(), this % action % transpose_version())
+             end if
+             if (allocated(this % distribution)) this % inner % distribution = this % distribution
+             if (allocated(this % coupling)) then
+                call this % inner % state(jacobian, jacobian % pattern, this % unknown_domain, &
+                     & this % num_unknowns, num_components = this % num_components, &
+                     & coupling = this % coupling)
+             else
+                call this % inner % state(jacobian, jacobian % pattern, this % unknown_domain, &
+                     & this % num_unknowns, num_components = this % num_components, &
+                     & coupling = jacobian % pattern)
+             end if
+          else
+             call this % inner % state(linearized, this % graph, this % unknown_domain, &
+                  & this % num_unknowns, num_components = this % num_components)
+          end if
        end if
        dq = 0.0_dp
        call this % inner % solve(-residual, dq, linear_achieved)
@@ -321,7 +363,8 @@ contains
        ! the norm of the step is a reduction over the images, taken by
        ! every image whether or not it prints
        step_norm = this % norm(dq)
-       if (verbosity >= 1) call reported(this, it, achieved, initial, step_norm, factor, jacobian_defined, nonzeros, outcome)
+       if (verbosity >= 1) call reported(this, it, achieved, initial, step_norm, factor, jacobian_defined, nonzeros, &
+            & forming, outcome)
        ! AT THE ROUNDING OF THE RESIDUAL: no halving of the step
        ! decreases the residual, and the full step is below half the
        ! digits of the iterate. The residual is the rounding of its own
@@ -348,21 +391,24 @@ contains
   ! and its representation - sparse, the explicit stencil formed at
   ! this step; dense, that stencil compiled to a full matrix by a
   ! direct inner solver; free, no matrix, the directional derivatives
-  ! of the linearization - the Halley correction's order or its
-  ! absence, and the inner solve's restart cycles, residual absolute
-  ! and relative to its own first, and outcome.
+  ! of the linearization - whether the jacobian was formed at this step,
+  ! and by a direct inner minimizer factorised, yes, or the step solved
+  ! against the jacobian of an earlier step, no (the chord method), the
+  ! Halley correction's order or its absence, and the inner solve's
+  ! restart cycles, residual absolute and relative to its own first,
+  ! and outcome.
   !===================================================================!
 
-  subroutine reported(this, it, achieved, initial, step_norm, factor, jacobian_defined, nonzeros, outcome)
+  subroutine reported(this, it, achieved, initial, step_norm, factor, jacobian_defined, nonzeros, formed, outcome)
 
     class(newton)     , intent(in) :: this
     integer           , intent(in) :: it
     real(dp)          , intent(in) :: achieved, initial, step_norm, factor
-    logical           , intent(in) :: jacobian_defined
+    logical           , intent(in) :: jacobian_defined, formed
     integer           , intent(in) :: nonzeros
     type(solve_result), intent(in) :: outcome
 
-    character(len=12) :: jacobian, halley
+    character(len=12) :: jacobian, halley, factorised
     real(dp) :: relative, linear_relative
 
     jacobian = 'free'
@@ -373,6 +419,7 @@ contains
           jacobian = 'dense'
        end select
     end if
+    factorised = merge('yes', 'no ', formed)
     halley = 'none'
     if (this % higher_order_jacobian_product > 1) then
        write(halley,'(a,i0)') 'order ', this % higher_order_jacobian_product
@@ -381,8 +428,8 @@ contains
     if (initial > 0.0_dp) relative = achieved / initial
     linear_relative = 0.0_dp
     if (outcome % initial_residual > 0.0_dp) linear_relative = outcome % residual / outcome % initial_residual
-    print '(i5,3es13.4,f9.4,i8,i10,2x,a8,2x,a6,i7,2es13.4,2x,a)', it, achieved, relative, step_norm, factor, &
-         & this % num_unknowns * this % num_components, nonzeros, jacobian, halley, outcome % iterations, &
+    print '(i5,3es13.4,f9.4,i8,i10,2x,a8,2x,a10,2x,a6,i7,2es13.4,2x,a)', it, achieved, relative, step_norm, factor, &
+         & this % num_unknowns * this % num_components, nonzeros, jacobian, factorised, halley, outcome % iterations, &
          & outcome % residual, linear_relative, trim(outcome % description())
 
   end subroutine reported

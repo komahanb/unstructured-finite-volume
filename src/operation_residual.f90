@@ -55,7 +55,7 @@ module operation_residual
   use operation_stencil  , only : stencil, combine_triples
   use operation_expression , only : expression, euler_lagrange, multiplier, constant, jet_form, represented_component
   use operation_expression , only : flux_form, coefficient_form, total_derivative, on_domain, paired
-  use operation_expression , only : operator(+), operator(*)
+  use operation_expression , only : operator(+), operator(-), operator(*), unknown, partial_derivative
   use operation_expression , only : expression_vertex, VERTEX_LEAF, ARGUMENT_STATE, FIRST_COORDINATE
   use operation_domain     , only : continuous_domain, discrete_domain
   use util_derivative_terms, only : max_subset_width, derivative_terms, mixed_partial, coefficient, symmetric_terms
@@ -483,6 +483,19 @@ module operation_residual
      ! when no law is. Projected, the flux form there
      type(expression)        , allocatable :: initial_rule
      type(expression)        , allocatable :: initial_flux
+     ! the derivatives along time initial_form takes of each law, zero
+     ! for a law it states as it is, and the laws it differentiates
+     integer                 , allocatable :: initial_order(:)
+     logical                 , allocatable :: initial_laws(:)
+     ! THE PROJECTION OF THE EXPLICIT INSTANTS (projection_form): the
+     ! rule at an explicit instant ending a step of a family that marches
+     ! by stages, the laws that differ there from the rule at its stages,
+     ! the count of the unknowns it adds, and the unknown z of each order
+     ! along time and field, zero where there is none
+     type(expression)        , allocatable :: projection_rule
+     logical                 , allocatable :: projection_laws(:)
+     integer                 :: projection_unknowns = 0
+     integer                 , allocatable :: projection_field(:,:)
      ! each block after the first starts from the solution at the last
      ! instant before it (minimize, continued)
      logical                 :: continued = .false.
@@ -593,7 +606,7 @@ contains
 
   function create(primary_law, rule, at, unknowns, degrees, primary, fixed_rows, fixed, &
        & connected_law, fixed_rate, prescribed, positions, summed_rows, projected, tying, reduced, &
-       & reduced_rule) result(this)
+       & reduced_rule, varying) result(this)
 
     type(stencil)         , intent(in) :: primary_law
     type(expression)      , intent(in), optional :: rule
@@ -609,6 +622,7 @@ contains
     logical               , intent(in), optional :: tying(:)
     logical               , intent(in), optional :: reduced(:)
     type(expression)      , intent(in), optional :: reduced_rule
+    logical               , intent(in), optional :: varying(:)
     type(residual_operator) :: this
     type(continuous_domain) :: domain
     type(expression) :: law
@@ -691,13 +705,14 @@ contains
        allocate(this % rules(0))
     end if
     this % laws = size(this % rules)
-    ! the rules at the explicit points
-    if (present(reduced) .and. present(reduced_rule) .and. present(rule)) then
+    ! the rules at the reduced points: rule j of reduced_rule in place
+    ! of its own where varying(j)
+    if (present(reduced) .and. present(reduced_rule) .and. present(varying) .and. present(rule)) then
        if (any(reduced)) then
           allocate(this % variant(size(this % rules)))
           do j = 1, size(this % variant)
              this % variant(j) = j
-             if (reads_top_degree(this % rules(j), rule, rule % num_fields())) cycle
+             if (.not. varying(j)) cycle
              if (present(projected)) then
                 error stop 'operation_residual: under a projection on the cells a law that reads no component &
                      &of top degree is not stated at an explicit moment'
@@ -2719,6 +2734,12 @@ contains
             &projection on the cells, which tests its equation with the weight alone'
     end if
     if (present(time) .and. .not. allocated(image % elements)) call initial_form(image, this % term(whole_term))
+    ! a family that marches by stages with a law that initial_form
+    ! differentiates: the explicit instants projected
+    if (present(time) .and. .not. allocated(image % elements) .and. allocated(image % initial_rule)) then
+       if (any([(marches_by_stages(time % scheme(k), top_degree(image % rule, image % manifold % num_unknowns) + 1), &
+            & k = 1, time % num_blocks())])) call projection_form(image, this % term(whole_term))
+    end if
     image % representation = pack(this % term, representation .and. [(this % term(k) % paired, k = 1, size(this % term))])
 
     allocate(image % condition(num_conditions))
@@ -4942,7 +4963,9 @@ contains
     if (.not. estimate % on % identity % matches(this % points % identity)) then
        error stop 'operation_residual: the estimate is a field on another manifold than the residual''s'
     end if
-    if (estimate % num_components() /= nf) then
+    ! the unknowns of the projection start at zero where an estimate
+    ! does not state them
+    if (estimate % num_components() /= nf .and. estimate % num_components() /= nf - this % projection_unknowns) then
        write(message,'(a,i0,a,i0)') 'operation_residual: the estimate has one component per unknown; &
             &components = ', estimate % num_components(), ', unknowns = ', nf
        error stop trim(message)
@@ -4997,7 +5020,7 @@ contains
        allocate(tuple(stride, ncells, ninst, 0:ncol - 1), source=0.0_dp)
        do k = 1, ninst
           do c = 1, ncells
-             do f = 1, nf
+             do f = 1, estimate % num_components()
                 tuple(this % rule % offset_of_field(f) + 1, c, k, 0) = estimate % value(this % points % point_of(k, c), f)
              end do
           end do
@@ -5827,7 +5850,7 @@ contains
       end if
       do k = own, whi
          do c = 1, ncells
-            do f = 1, nf
+            do f = 1, estimate % num_components()
                window(this % rule % offset_of_field(f) + 1, c, k, 0) = estimate % value(this % points % point_of(k, c), f)
             end do
          end do
@@ -6408,7 +6431,8 @@ contains
     logical :: staged
     integer :: nodes, factor
     integer , allocatable :: related(:), added(:), single(:)
-    logical , allocatable :: tying(:), entries(:), replaced(:), reduced_points(:)
+    logical , allocatable :: tying(:), entries(:), replaced(:), reduced_points(:), corrected_moment(:), varying(:)
+    type(expression), allocatable :: variant
     real(dp), allocatable :: derivative(:,:,:), table(:,:,:), instant_derivative(:,:,:,:), itable(:,:,:,:)
     integer , allocatable :: relating(:)
     logical :: moving, pinned
@@ -6473,6 +6497,9 @@ contains
              end do
           end do
        end do
+    end if
+    if (staged .and. allocated(this % projection_rule)) then
+       count = count + n * ncells * sum(merge(1, 0, this % projection_field > 0))
     end if
     allocate(determined(count), source(count), weight(count))
     e = 0
@@ -6557,6 +6584,32 @@ contains
        end if
     end do
     open_line = this % open_line()
+
+    ! THE CORRECTED INSTANTS: an explicit instant of a family that
+    ! marches by stages, after the history, the manifold's first instant
+    ! aside, where the update of each component a condition's level
+    ! reads at its highest order is less its correction z, the instant
+    ! projected (projection_form); the edges are added after the
+    ! implicit moments are found from the family's relations alone
+    allocate(corrected_moment(nm), source=.false.)
+    if (staged .and. allocated(this % projection_rule)) then
+       do k = 1, n
+          m = instant_moment(k)
+          if (implicit_moment(m) .or. k <= depth .or. (first == 1 .and. k == 1)) cycle
+          corrected_moment(m) = .true.
+          do f = 1, size(this % projection_field, 2)
+             do o = 0, ubound(this % projection_field, 1)
+                if (this % projection_field(o, f) == 0) cycle
+                do c = 1, ncells
+                   e = e + 1
+                   determined(e) = at_of(m, c) + this % coefficient_component(f, 0, o) + 1
+                   source(e)     = at_of(m, c) + this % rule % offset_of_field(this % projection_field(o, f)) + 1
+                   weight(e)     = -1.0_dp
+                end do
+             end do
+          end do
+       end do
+    end if
 
     ! the mixed component of order a along time and o along space is
     ! the space derivative of order o of the time component of order
@@ -6726,11 +6779,24 @@ contains
        ! through h^2 a_ii^2 and the tableau's order is lost
        allocate(reduced_points(npts), source=.false.)
        if (allocated(this % initial_rule)) then
+          variant = this % initial_rule
+          varying = this % initial_laws
           do m = 1, nm
              if (implicit_moment(m) .and. .not. staged) cycle
              if (any(instant_moment(1:depth) == m)) cycle
              if (first == 1 .and. instant_moment(1) == m) cycle
              reduced_points((m - 1) * ncells + 1:m * ncells) = .true.
+          end do
+       end if
+       ! with corrected instants, the laws of initial_form at every
+       ! moment, and at the corrected instants the rows of the projection
+       ! in place of the zero rows of its unknowns
+       if (any(corrected_moment)) then
+          rule    = this % initial_rule
+          variant = this % projection_rule
+          varying = this % projection_laws
+          do m = 1, nm
+             reduced_points((m - 1) * ncells + 1:m * ncells) = corrected_moment(m)
           end do
        end if
        if (size(gauge_rows) + size(face_rows) > 0) then
@@ -6740,10 +6806,10 @@ contains
           ! cell of the moment
           blk % rows = residual_operator(relations, rule, at, unknowns, stride, primary, fixed_rows, fixed, &
                & prescribed=gauge, positions=point_positions, summed_rows=gauge_rows(1:size(gauge_rows):ncells), &
-               & reduced=reduced_points, reduced_rule=this % initial_rule)
+               & reduced=reduced_points, reduced_rule=variant, varying=varying)
        else
           blk % rows = residual_operator(relations, rule, at, unknowns, stride, primary, fixed_rows, fixed, &
-               & positions=point_positions, reduced=reduced_points, reduced_rule=this % initial_rule)
+               & positions=point_positions, reduced=reduced_points, reduced_rule=variant, varying=varying)
        end if
     end if
     blk % first      = first
@@ -8985,17 +9051,148 @@ contains
     nf = image % manifold % num_unknowns
     differentiated = .false.
     allocate(laws(size(physics % equation)))
+    allocate(image % initial_order(size(physics % equation)), source=0)
     do j = 1, size(physics % equation)
        laws(j) = jet_form(physics % equation(j) % graph(1))
        do o = 1, top_degree(image % rule, nf)
           if (reads_top_degree(laws(j), image % rule, nf)) exit
           laws(j) = total_derivative(laws(j), FIRST_COORDINATE)
+          image % initial_order(j) = o
           differentiated = .true.
        end do
     end do
+    image % initial_laws = image % initial_order > 0
     if (differentiated) image % initial_rule = on_domain(paired(laws), image % rule)
 
   end subroutine initial_form
+
+  !===================================================================!
+  ! THE PROJECTION OF THE EXPLICIT INSTANTS of a family that marches
+  ! by stages. At its stages a condition c_j that reads no component
+  ! of top degree is stated by c_j^(nu_j), nu_j its order in
+  ! initial_form; at the instant ending a step the update fixes the
+  ! components below the top degree, q~^(o), and the levels c_j, c_j',
+  ! .., c_j^(nu_j - 1) are off zero there by the error of the step.
+  ! The instant is projected onto them: each component a level reads
+  ! at its highest order is corrected, q^(o) = q~^(o) - z_o, by the
+  ! correction of least norm in the metric W = dR/dq^(d) of the laws'
+  ! derivatives in the components of top degree,
+  !
+  !     W z_o - sum_j C_j^T eta_(j, o - r_j) = 0,   c_j^(l)(q) = 0,
+  !
+  ! C_j = dc_j/dq^(r_j), r_j the highest order of each field c_j reads,
+  ! eta_(j, l) the multiplier of the level l of condition j. The
+  ! unknowns eta and z are fields after the laws' own, zero at every
+  ! point but the explicit instants, where the update's relation reads
+  ! -z (block_rows). The rule is the laws with z = 0 and eta = 0; the
+  ! rule at the first instant and at the stages the laws of
+  ! initial_form with them; the rule at the explicit instants the laws
+  ! of initial_form with the rows of the projection.
+  !===================================================================!
+
+  subroutine projection_form(image, physics)
+
+    type(discrete_residual), intent(inout) :: image
+    type(residual_term)    , intent(in)    :: physics
+
+    type(expression), allocatable :: laws(:), reduced(:), zeros(:), rows(:)
+    type(expression) :: row
+    character(len=len(image % manifold % unknown_name)), allocatable :: names(:)
+    integer , allocatable :: level_field(:,:), read_order(:,:), degree(:)
+    logical , allocatable :: corrected(:)
+    integer :: nf, ns, j, l, o, f, g, top
+    character(len=12) :: number
+
+    nf  = image % manifold % num_unknowns
+    top = top_degree(image % rule, nf)
+    allocate(laws(nf), reduced(nf), read_order(nf, nf), degree(nf))
+    do f = 1, nf
+       degree(f) = image % rule % degree_of_field(f)
+    end do
+    do j = 1, nf
+       laws(j)    = jet_form(physics % equation(j) % graph(1))
+       reduced(j) = laws(j)
+       do l = 1, image % initial_order(j)
+          reduced(j) = total_derivative(reduced(j), FIRST_COORDINATE)
+       end do
+       do f = 1, nf
+          read_order(j, f) = laws(j) % highest_order_read(f)
+       end do
+    end do
+
+    ! the unknowns: eta of each level of each condition, then z of each
+    ! order a level corrects, for every field of a higher degree
+    allocate(level_field(0:top - 1, nf), image % projection_field(0:top - 1, nf), source=0)
+    allocate(corrected(0:top - 1), source=.false.)
+    allocate(names(0))
+    ns = 0
+    do j = 1, nf
+       do l = 0, image % initial_order(j) - 1
+          ns = ns + 1
+          level_field(l, j) = nf + ns
+          write(number, '(i0)') l
+          names = [character(len=len(names)) :: names, &
+               & 'projection_' // trim(image % manifold % unknown_name(j)) // '_' // trim(number)]
+          do f = 1, nf
+             if (read_order(j, f) >= 0) corrected(read_order(j, f) + l) = .true.
+          end do
+       end do
+    end do
+    do o = 0, top - 1
+       if (.not. corrected(o)) cycle
+       do f = 1, nf
+          if (degree(f) <= o) cycle
+          ns = ns + 1
+          image % projection_field(o, f) = nf + ns
+          write(number, '(i0)') o
+          names = [character(len=len(names)) :: names, &
+               & 'correction_' // trim(image % manifold % unknown_name(f)) // '_' // trim(number)]
+       end do
+    end do
+
+    ! the rows: c_j^(l) = 0 for eta; for z the metric's product less
+    ! the conditions' derivatives in the components it corrects
+    allocate(zeros(ns), rows(ns))
+    do j = 1, ns
+       zeros(j) = unknown(nf + j)
+    end do
+    do j = 1, nf
+       row = laws(j)
+       do l = 0, image % initial_order(j) - 1
+          if (l > 0) row = total_derivative(row, FIRST_COORDINATE)
+          rows(level_field(l, j) - nf) = row
+       end do
+    end do
+    do o = 0, top - 1
+       do f = 1, nf
+          if (image % projection_field(o, f) == 0) cycle
+          row = constant(0.0_dp)
+          do g = 1, nf
+             if (image % projection_field(o, g) == 0) cycle
+             row = row + partial_derivative(laws(f), g, degree(g)) * unknown(image % projection_field(o, g))
+          end do
+          do j = 1, nf
+             l = o - read_order(j, f)
+             if (read_order(j, f) < 0 .or. l < 0 .or. l >= image % initial_order(j)) cycle
+             row = row - partial_derivative(laws(j), f, read_order(j, f)) * unknown(level_field(l, j))
+          end do
+          rows(image % projection_field(o, f) - nf) = row
+       end do
+    end do
+
+    image % rule            = paired([laws, zeros])
+    image % initial_rule    = on_domain(paired([reduced, zeros]), image % rule)
+    image % projection_rule = on_domain(paired([reduced, rows]), image % rule)
+    image % initial_laws    = [image % initial_laws, spread(.false., 1, ns)]
+    image % projection_laws = [spread(.false., 1, nf), spread(.true., 1, ns)]
+    image % projection_unknowns = ns
+    image % manifold % unknown_name  = [image % manifold % unknown_name(1:nf), names, &
+         & image % manifold % unknown_name(nf + 1:)]
+    image % manifold % of_time_alone = [image % manifold % of_time_alone(1:nf), spread(.false., 1, ns), &
+         & image % manifold % of_time_alone(nf + 1:)]
+    image % manifold % num_unknowns  = nf + ns
+
+  end subroutine projection_form
 
   !===================================================================!
   ! Whether a law reads a component of top degree along time of one of

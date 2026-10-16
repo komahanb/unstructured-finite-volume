@@ -161,6 +161,17 @@ module operation_residual
      ! copies and zero coefficients of the unknowns of time alone,
      ! eliminated before a direct solve of the rest
      logical, allocatable, private :: tying(:)
+     ! AT AN EXPLICIT POINT, a moment whose components below each field's
+     ! top degree along time the family determines from other moments,
+     ! as the initial data determine them at the first instant: rule j
+     ! there is rules(variant(j)), the explicit rule's - a law that reads
+     ! no component of top degree stated by its derivative along time
+     ! (initial_form) - appended to the rules, and rule j itself where
+     ! the law reads one
+     integer, allocatable, private :: variant(:)
+     logical, allocatable, private :: explicit_point(:)
+     ! the count of the rules, one per multiplier, their variants after
+     integer, private :: laws = 0
 
    contains
 
@@ -232,6 +243,8 @@ module operation_residual
      procedure, private :: projected_triples
      procedure, private :: projected_edges
      procedure, private :: projected_part
+     procedure, private :: law_at
+     procedure, private :: restrict_explicit_points
   end type residual_operator
 
   interface residual_operator
@@ -580,7 +593,8 @@ contains
   !===================================================================!
 
   function create(primary_law, rule, at, unknowns, degrees, primary, fixed_rows, fixed, &
-       & connected_law, fixed_rate, prescribed, positions, summed_rows, projected, tying) result(this)
+       & connected_law, fixed_rate, prescribed, positions, summed_rows, projected, tying, explicit, &
+       & explicit_rule) result(this)
 
     type(stencil)         , intent(in) :: primary_law
     type(expression)      , intent(in), optional :: rule
@@ -594,8 +608,11 @@ contains
     integer               , intent(in), optional :: summed_rows(:)
     type(projection)      , intent(in), optional :: projected
     logical               , intent(in), optional :: tying(:)
+    logical               , intent(in), optional :: explicit(:)
+    type(expression)      , intent(in), optional :: explicit_rule
     type(residual_operator) :: this
     type(continuous_domain) :: domain
+    type(expression) :: law
     integer :: j, components, governed, e, n, q, nq, s, dimension
     character(len=250) :: message
 
@@ -673,6 +690,26 @@ contains
        end if
     else
        allocate(this % rules(0))
+    end if
+    this % laws = size(this % rules)
+    ! the rules at the explicit points
+    if (present(explicit) .and. present(explicit_rule) .and. present(rule)) then
+       if (any(explicit)) then
+          allocate(this % variant(size(this % rules)))
+          do j = 1, size(this % variant)
+             this % variant(j) = j
+             if (reads_top_degree(this % rules(j), rule, rule % num_fields())) cycle
+             if (present(projected)) then
+                error stop 'operation_residual: under a projection on the cells a law that reads no component &
+                     &of top degree is not stated at an explicit moment'
+             end if
+             law = euler_lagrange(explicit_rule, j)
+             call law % share_arguments(rule)
+             this % rules = [this % rules, law]
+             this % variant(j) = size(this % rules)
+          end do
+          this % explicit_point = explicit
+       end if
     end if
     this % at      = at
     this % unknowns = unknowns
@@ -921,6 +958,7 @@ contains
             & size(part % whole_index), this % degrees, this % primary, fixed_rows, fixed, &
             & connected_law=connected, fixed_rate=rate, prescribed=prescribed, &
             & positions=this % point_positions(:, points))
+       call this % restrict_explicit_points(sub, points)
     else
        sub = residual_operator(part_stencil(this % primary_law, part, summed), at=at, &
             & unknowns=size(part % whole_index), degrees=this % degrees, primary=this % primary, &
@@ -964,8 +1002,29 @@ contains
 
   pure integer function num_rules(this)
     class(residual_operator), intent(in) :: this
-    num_rules = size(this % rules)
+    num_rules = this % laws
   end function num_rules
+
+  ! the rule j at point p: at an explicit point its variant there
+  pure integer function law_at(this, j, p)
+    class(residual_operator), intent(in) :: this
+    integer                 , intent(in) :: j, p
+    law_at = j
+    if (.not. allocated(this % explicit_point)) return
+    if (this % explicit_point(p)) law_at = this % variant(j)
+  end function law_at
+
+  ! the rules at the explicit points restricted to a residual of the
+  ! points given of this one
+  subroutine restrict_explicit_points(this, sub, points)
+    class(residual_operator), intent(in)    :: this
+    type(residual_operator) , intent(inout) :: sub
+    integer                 , intent(in)    :: points(:)
+    if (.not. allocated(this % explicit_point)) return
+    sub % rules          = this % rules
+    sub % variant        = this % variant
+    sub % explicit_point = this % explicit_point(points)
+  end subroutine restrict_explicit_points
 
   function rule_of(this, j) result(law)
     class(residual_operator), intent(in) :: this
@@ -1012,11 +1071,17 @@ contains
 
   pure integer function residual_max_degree(this)
     class(residual_operator), intent(in) :: this
+    integer :: j
     ! the discretization stencils are linear in the state, so every
-    ! partial above the first is the physics expression's alone, and
-    ! is exact to every order when there is no physics
+    ! partial above the first is the physics expression's alone, or its
+    ! variants' at the explicit points, and is exact to every order when
+    ! there is no physics
     residual_max_degree = max_subset_width()
     if (allocated(this % physics)) residual_max_degree = this % physics % max_degree()
+    if (allocated(this % variant)) then
+       residual_max_degree = max(residual_max_degree, &
+            & maxval([(this % rules(j) % max_degree(), j = this % laws + 1, size(this % rules))]))
+    end if
   end function residual_max_degree
 
   !===================================================================!
@@ -1275,7 +1340,7 @@ contains
        call this % tested_into(governing, r)
        return
     end if
-    do j = 1, size(this % rules)
+    do j = 1, this % laws
        do p = 1, size(this % at)
           r(this % at(p) + this % primary(j) + 1) = &
                & r(this % at(p) + this % primary(j) + 1) + governing(p, j)
@@ -1299,31 +1364,45 @@ contains
     integer :: j, coordinates
     ! at the points, or at the sites of a projection
     if (allocated(this % projected)) then
-       allocate(governing(this % sites % num_vertices(), size(this % rules)))
+       allocate(governing(this % sites % num_vertices(), this % laws))
     else
-       allocate(governing(size(this % at), size(this % rules)))
+       allocate(governing(size(this % at), this % laws))
     end if
-    do j = 1, size(this % rules)
-       ! a rule that reads a coordinate is given the positions of the
-       ! points as its third argument
-       bound       = point_data
-       coordinates = this % rules(j) % num_position_coordinates()
-       if (coordinates > 0) bound = [point_data, this % positions(coordinates)]
-       if (allocated(this % projected)) then
-          if (present(variations)) then
-             call this % rules(j) % partial_action(this % sites, this % rules(j) % bind(bound), variations, half)
-          else
-             call this % rules(j) % apply(this % sites, this % rules(j) % bind(bound), half)
-          end if
-       else if (present(variations)) then
-          call this % rules(j) % partial_action(this % points, this % rules(j) % bind(bound), &
-               & variations, half)
-       else
-          call this % rules(j) % apply(this % points, this % rules(j) % bind(bound), half)
+    do j = 1, this % laws
+       governing(:, j) = evaluated(j)
+       ! at the explicit points the rule's variant, evaluated at every
+       ! point and taken at those
+       if (allocated(this % variant)) then
+          if (this % variant(j) /= j) governing(:, j) = merge(evaluated(this % variant(j)), governing(:, j), &
+               & this % explicit_point)
        end if
-       call half % real_vector(column)
-       governing(:, j) = column
     end do
+
+  contains
+
+    function evaluated(k) result(column)
+      integer, intent(in) :: k
+      real(dp), allocatable :: column(:)
+      ! a rule that reads a coordinate is given the positions of the
+      ! points as its third argument
+      bound       = point_data
+      coordinates = this % rules(k) % num_position_coordinates()
+      if (coordinates > 0) bound = [point_data, this % positions(coordinates)]
+      if (allocated(this % projected)) then
+         if (present(variations)) then
+            call this % rules(k) % partial_action(this % sites, this % rules(k) % bind(bound), variations, half)
+         else
+            call this % rules(k) % apply(this % sites, this % rules(k) % bind(bound), half)
+         end if
+      else if (present(variations)) then
+         call this % rules(k) % partial_action(this % points, this % rules(k) % bind(bound), &
+              & variations, half)
+      else
+         call this % rules(k) % apply(this % points, this % rules(k) % bind(bound), half)
+      end if
+      call half % real_vector(column)
+    end function evaluated
+
   end subroutine governed
 
   ! every rule's value at every site of the projection, on the real
@@ -1341,9 +1420,9 @@ contains
     width  = size(this % projected % formed, 2)
     nd     = this % designs
     nsites = this % sites % num_vertices()
-    allocate(governing(nsites, size(this % rules)))
+    allocate(governing(nsites, this % laws))
     nq = this % projected % elements % num_quadrature_points()
-    do j = 1, size(this % rules)
+    do j = 1, this % laws
        coordinates = this % rules(j) % num_position_coordinates()
        do s = 1, nsites
           ! no rule is evaluated where its test functions vanish
@@ -1567,7 +1646,7 @@ contains
     logical              , intent(out) :: jacobian_defined
     type(stored_field) :: state
     real(dp), allocatable :: x(:), w(:), column(:), xs(:), nu(:), g(:)
-    integer , allocatable :: r(:), c(:), reads(:)
+    integer , allocatable :: r(:), c(:), reads(:), variant_reads(:)
     logical , allocatable :: is_fixed(:)
     integer :: e, d, p, npts, n, num_triples, count, j, k, deg
     real(dp) :: value
@@ -1588,7 +1667,7 @@ contains
        xs = this % gathered(x)
        allocate(g(0:deg - 1))
     end if
-    count = this % primary_law % pattern % num_edges() + npts * this % degrees * size(this % rules) &
+    count = this % primary_law % pattern % num_edges() + npts * this % degrees * this % laws &
          & + size(this % fixed_rows)
     if (allocated(this % projected)) count = this % primary_law % pattern % num_edges() + size(this % fixed_rows) &
          & + this % projected_count()
@@ -1604,20 +1683,20 @@ contains
     if (allocated(this % projected)) then
        call this % projected_triples(x, nu, is_fixed, r, c, w, num_triples)
     end if
-    do j = 1, size(this % rules)
+    do j = 1, this % laws
        if (allocated(this % projected)) exit
        call this % rules(j) % read_components(reads)
+       variant_reads = reads
+       if (allocated(this % variant)) call this % rules(this % variant(j)) % read_components(variant_reads)
        do p = 1, npts
           if (is_fixed(this % at(p) + this % primary(j) + 1)) cycle
-          call this % rules(j) % gradient_at(xs((p - 1) * deg + 1:p * deg), &
+          call this % rules(this % law_at(j, p)) % gradient_at(xs((p - 1) * deg + 1:p * deg), &
                & nu((p - 1) * this % designs + 1:p * this % designs), value, g, this % point_positions(:, p))
-          do k = 1, size(reads)
-             d = reads(k)
-             num_triples    = num_triples + 1
-             r(num_triples) = this % at(p) + this % primary(j) + 1
-             c(num_triples) = this % at(p) + d + 1
-             w(num_triples) = g(d)
-          end do
+          if (this % law_at(j, p) == j) then
+             call place(reads)
+          else
+             call place(variant_reads)
+          end if
        end do
     end do
     do e = 1, size(this % fixed_rows)
@@ -1636,6 +1715,21 @@ contains
        end do
     end if
     call combine_triples(n, n, r(1:num_triples), c(1:num_triples), w(1:num_triples), rows, columns, weights)
+
+  contains
+
+    ! the rule's partials in the components it reads, in its row at p
+    subroutine place(components)
+      integer, intent(in) :: components(:)
+      do k = 1, size(components)
+         d = components(k)
+         num_triples    = num_triples + 1
+         r(num_triples) = this % at(p) + this % primary(j) + 1
+         c(num_triples) = this % at(p) + d + 1
+         w(num_triples) = g(d)
+      end do
+    end subroutine place
+
   end subroutine residual_explicit_jacobian
 
   subroutine stencil_triples(op, is_fixed, r, c, w, num_triples)
@@ -1834,6 +1928,7 @@ contains
     end if
 
     if (allocated(this % summed_rows)) sub % summed_rows = pack(sub_of(this % summed_rows), sub_of(this % summed_rows) > 0)
+    call this % restrict_explicit_points(sub, points)
 
   end function constrain
 
@@ -2012,7 +2107,7 @@ contains
     real(dp) :: value
     associate (pr => this % projected, el => this % projected % elements)
       nq = el % num_quadrature_points()
-      do j = 1, size(this % rules)
+      do j = 1, this % laws
          f = pr % tested(1, j)
          d = pr % tested(2, j)
          do n = 1, size(pr % element_cell)
@@ -2078,7 +2173,7 @@ contains
       allocate(place(0:maxval([offsets, 0])), source=0)
       place(offsets) = [(o, o = 1, no)]
       allocate(slot(no, nf), source=0)
-      do j = 1, size(this % rules)
+      do j = 1, this % laws
          f = pr % tested(1, j)
          call this % rules(j) % read_components(reads)
          do m = 1, size(reads)
@@ -2158,7 +2253,7 @@ contains
          local = 0.0_dp
          do q = 1, nq
             s = (n - 1) * nq + q
-            do j = 1, size(this % rules)
+            do j = 1, this % laws
                f = pr % tested(1, j)
                d = pr % tested(2, j)
                if (.not. tested_at(el, d, q, e)) cycle
@@ -6314,7 +6409,7 @@ contains
     logical :: staged
     integer :: nodes, factor
     integer , allocatable :: related(:), added(:), single(:)
-    logical , allocatable :: tying(:), entries(:), replaced(:)
+    logical , allocatable :: tying(:), entries(:), replaced(:), explicit_points(:)
     real(dp), allocatable :: derivative(:,:,:), table(:,:,:), instant_derivative(:,:,:,:), itable(:,:,:,:)
     integer , allocatable :: relating(:)
     logical :: moving, pinned
@@ -6620,16 +6715,33 @@ contains
           end if
           rule = this % initial_rule
        end if
+       ! THE EXPLICIT POINTS: at a moment after the history, the
+       ! manifold's first instant aside, whose components below each
+       ! field's top degree the family determines from other moments, as
+       ! the initial data determine them at the first instant, a law that
+       ! reads no component of top degree is stated in its form at the
+       ! first instant (initial_form): there it would restate a condition
+       ! on values the family fixes, and leave its multiplier no row
+       allocate(explicit_points(npts), source=.false.)
+       if (allocated(this % initial_rule)) then
+          do m = 1, nm
+             if (implicit_moment(m)) cycle
+             if (any(instant_moment(1:depth) == m)) cycle
+             if (first == 1 .and. instant_moment(1) == m) cycle
+             explicit_points((m - 1) * ncells + 1:m * ncells) = .true.
+          end do
+       end if
        if (size(gauge_rows) + size(face_rows) > 0) then
           gauge = stencil([gauge_rows, face_rows], [gauge_columns, face_columns], [gauge_weights, face_weights], &
                & zeros, 'prescribed')
           ! the gauge rows, one per moment and gauged field, read every
           ! cell of the moment
           blk % rows = residual_operator(relations, rule, at, unknowns, stride, primary, fixed_rows, fixed, &
-               & prescribed=gauge, positions=point_positions, summed_rows=gauge_rows(1:size(gauge_rows):ncells))
+               & prescribed=gauge, positions=point_positions, summed_rows=gauge_rows(1:size(gauge_rows):ncells), &
+               & explicit=explicit_points, explicit_rule=this % initial_rule)
        else
           blk % rows = residual_operator(relations, rule, at, unknowns, stride, primary, fixed_rows, fixed, &
-               & positions=point_positions)
+               & positions=point_positions, explicit=explicit_points, explicit_rule=this % initial_rule)
        end if
     end if
     blk % first      = first
@@ -7335,7 +7447,7 @@ contains
     design   = design_terms(values, seed, m, m)
     allocate(q(0:deg - 1))
     allocate(source(size(b)), source=0.0_dp)
-    do j = 1, size(rows % rules)
+    do j = 1, rows % laws
        do p = 1, npts
           if (owner(p) /= this_image()) cycle
           row = rows % at(p) + rows % primary(j) + 1
@@ -7346,7 +7458,7 @@ contains
                 call q(c) % set_symmetric(k, jets(rows % at(p) + c + 1, k))
              end do
           end do
-          r = rows % rules(j) % at_instant(q, design, rows % point_positions(:, p))
+          r = rows % rules(rows % law_at(j, p)) % at_instant(q, design, rows % point_positions(:, p))
           source(row) = -mixed_partial(r)
        end do
     end do
@@ -7960,7 +8072,7 @@ contains
     type(derivative_terms) :: r, along
     real(dp), allocatable :: partial(:), lower(:), source(:)
     logical, allocatable :: is_fixed(:)
-    integer, allocatable :: reads(:)
+    integer, allocatable :: reads(:), rule_reads(:), variant_reads(:)
     integer :: deg, npts, j, p, c, k, row, m
 
     if (allocated(rows % projected)) then
@@ -7974,13 +8086,21 @@ contains
     allocate(source(size(rhs)), source=0.0_dp)
     design = design_terms(values, seed, o, o + 1)
     allocate(q(0:deg - 1))
-    do j = 1, size(rows % rules)
-       ! the components the rule reads: its partial in any other is zero
-       call rows % rules(j) % read_components(reads)
+    do j = 1, rows % laws
+       ! the components the rule reads, and its variant at the explicit
+       ! points: its partial in any other is zero
+       call rows % rules(j) % read_components(rule_reads)
+       variant_reads = rule_reads
+       if (allocated(rows % variant)) call rows % rules(rows % variant(j)) % read_components(variant_reads)
        do p = 1, npts
           if (owner(p) /= this_image()) cycle
           row = rows % at(p) + rows % primary(j) + 1
           if (is_fixed(row)) cycle
+          if (rows % law_at(j, p) == j) then
+             reads = rule_reads
+          else
+             reads = variant_reads
+          end if
           do c = 0, deg - 1
              q(c) = symmetric_terms(jets(rows % at(p) + c + 1, 0), jets(rows % at(p) + c + 1, 1:o), o + 1)
           end do
@@ -7990,7 +8110,7 @@ contains
           do m = 1, size(reads)
              c = reads(m)
              call q(c) % set_coefficient(2**o, 1.0_dp)
-             r = rows % rules(j) % at_instant(q, design, rows % point_positions(:, p))
+             r = rows % rules(rows % law_at(j, p)) % at_instant(q, design, rows % point_positions(:, p))
              call q(c) % set_coefficient(2**o, 0.0_dp)
              do k = 0, o
                 partial(k) = coefficient(r, 2**k - 1 + 2**o)
@@ -8041,13 +8161,14 @@ contains
     allocate(total(size(values)), source=0.0_dp)
     if (o == 0) then
        allocate(g(0:deg - 1), gd(size(values)), x(0:deg - 1))
-       do j = 1, size(rows % rules)
+       do j = 1, rows % laws
           do p = 1, npts
              if (owner(p) /= this_image()) cycle
              row = rows % at(p) + rows % primary(j) + 1
              if (is_fixed(row)) cycle
              x = jets(rows % at(p) + 1:rows % at(p) + deg, 0)
-             call rows % rules(j) % gradient_at(x, values, value, g, rows % point_positions(:, p), g_design=gd)
+             call rows % rules(rows % law_at(j, p)) % gradient_at(x, values, value, g, rows % point_positions(:, p), &
+                  & g_design=gd)
              total = total + mu(row, 0) * gd
           end do
        end do
@@ -8058,7 +8179,7 @@ contains
     do i = 1, size(values)
        design = design_terms(values, seed, o, o + 1)
        call design(i) % set_coefficient(2**o, 1.0_dp)
-       do j = 1, size(rows % rules)
+       do j = 1, rows % laws
           do p = 1, npts
              if (owner(p) /= this_image()) cycle
              row = rows % at(p) + rows % primary(j) + 1
@@ -8066,7 +8187,7 @@ contains
              do c = 0, deg - 1
                 q(c) = symmetric_terms(jets(rows % at(p) + c + 1, 0), jets(rows % at(p) + c + 1, 1:o), o + 1)
              end do
-             r = rows % rules(j) % at_instant(q, design, rows % point_positions(:, p))
+             r = rows % rules(rows % law_at(j, p)) % at_instant(q, design, rows % point_positions(:, p))
              do k = 0, o
                 partial(k) = coefficient(r, 2**k - 1 + 2**o)
              end do
@@ -8119,7 +8240,7 @@ contains
     end do
     associate (pr => rows % projected, el => rows % projected % elements)
       nq = el % num_quadrature_points()
-      do j = 1, size(rows % rules)
+      do j = 1, rows % laws
          f = pr % tested(1, j)
          d = pr % tested(2, j)
          do n = 1, size(pr % element_cell)
@@ -8182,7 +8303,7 @@ contains
     end do
     associate (pr => rows % projected, el => rows % projected % elements)
       nq = el % num_quadrature_points()
-      do j = 1, size(rows % rules)
+      do j = 1, rows % laws
          f = pr % tested(1, j)
          d = pr % tested(2, j)
          ! the components the rule reads: its partial in any other is zero
@@ -8273,7 +8394,7 @@ contains
             design = design_terms(values, seed, o, o + 1)
             call design(l) % set_coefficient(2**o, 1.0_dp)
          end if
-         do j = 1, size(rows % rules)
+         do j = 1, rows % laws
             f = pr % tested(1, j)
             d = pr % tested(2, j)
             do n = 1, size(pr % element_cell)
@@ -8822,7 +8943,7 @@ contains
     do g = 1, m
        if (image % manifold % of_time_alone(group(1, g))) then
           do o = 1, top_degree(image % rule, image % manifold % num_unknowns)
-             if (reads_top_degree(groups(g))) exit
+             if (reads_top_degree(groups(g), image % rule, image % manifold % num_unknowns)) exit
              groups(g) = total_derivative(groups(g), FIRST_COORDINATE)
              differentiated = .true.
           end do
@@ -8830,17 +8951,6 @@ contains
        law = law + multiplier(g) * groups(g)
     end do
     if (differentiated) image % initial_flux = law
-
-  contains
-
-    logical function reads_top_degree(x)
-      type(expression), intent(in) :: x
-      integer :: f
-      reads_top_degree = .false.
-      do f = 1, image % manifold % num_unknowns
-         if (x % highest_order_read(f) == image % rule % degree_of_field(f)) reads_top_degree = .true.
-      end do
-    end function reads_top_degree
 
   end subroutine projected_form
 
@@ -8855,7 +8965,10 @@ contains
   ! holding at every instant, which determines the reaction there. The
   ! rule at the first instant is the rule with those laws
   ! differentiated, on the rule's domain; it is not formed when no law
-  ! is differentiated.
+  ! is differentiated. It is the rule at every explicit moment too, an
+  ! instant whose components below the top degree the family's
+  ! quadrature of other moments fixes, as the instant ending a step of
+  ! a DIRK family (block_rows).
   !===================================================================!
 
   subroutine initial_form(image, physics)
@@ -8873,25 +8986,29 @@ contains
     do j = 1, size(physics % equation)
        laws(j) = jet_form(physics % equation(j) % graph(1))
        do o = 1, top_degree(image % rule, nf)
-          if (reads_top_degree(laws(j))) exit
+          if (reads_top_degree(laws(j), image % rule, nf)) exit
           laws(j) = total_derivative(laws(j), FIRST_COORDINATE)
           differentiated = .true.
        end do
     end do
     if (differentiated) image % initial_rule = on_domain(paired(laws), image % rule)
 
-  contains
-
-    logical function reads_top_degree(x)
-      type(expression), intent(in) :: x
-      integer :: f
-      reads_top_degree = .false.
-      do f = 1, nf
-         if (x % highest_order_read(f) == image % rule % degree_of_field(f)) reads_top_degree = .true.
-      end do
-    end function reads_top_degree
-
   end subroutine initial_form
+
+  !===================================================================!
+  ! Whether a law reads a component of top degree along time of one of
+  ! the nf fields: the field's degree in the rule.
+  !===================================================================!
+
+  pure logical function reads_top_degree(x, rule, nf)
+    type(expression), intent(in) :: x, rule
+    integer         , intent(in) :: nf
+    integer :: f
+    reads_top_degree = .false.
+    do f = 1, nf
+       if (x % highest_order_read(f) == rule % degree_of_field(f)) reads_top_degree = .true.
+    end do
+  end function reads_top_degree
 
   !===================================================================!
   ! THE COMPONENT OF A NODE'S TUPLE storing the coefficient k of the

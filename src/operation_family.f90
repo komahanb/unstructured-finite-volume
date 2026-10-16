@@ -525,8 +525,11 @@ contains
   !    Q_i = q_(k-1) + h sum_(j<=i) a_ij Q'_j ,  q_k = q_(k-1) + h sum_j b_j Q'_j .
   !
   ! The top degree has no row of the family: at every stage and at
-  ! the instant ahead it is the law's own row. Degree outer, stage
-  ! inner; within a row the instant behind precedes the stages.
+  ! the instant ahead it is the law's own row - at the instant ahead,
+  ! whose lower degrees the family fixes, a law that reads no
+  ! component of top degree in its form at the first instant
+  ! (operation_residual, initial_form). Degree outer, stage inner;
+  ! within a row the instant behind precedes the stages.
   !===================================================================!
 
   function family_stage_connectivity(this, nd) result(connectivity)

@@ -626,8 +626,7 @@ contains
     logical               , intent(in), optional :: varying(:)
     type(residual_operator) :: this
     type(continuous_domain) :: domain
-    type(expression) :: law
-    integer :: j, components, governed, e, n, q, nq, s, dimension
+    integer :: j, k, variants, components, governed, e, n, q, nq, s, dimension
     character(len=250) :: message
 
     if (size(fixed_rows) /= size(fixed)) then
@@ -690,41 +689,45 @@ contains
 
     this % primary_law = primary_law
     if (present(connected_law)) this % connected_law = connected_law
+    ! the rules at the reduced points: rule j of reduced_rule in place
+    ! of its own where varying(j), stored after the laws' own
+    variants = 0
+    if (present(reduced) .and. present(reduced_rule) .and. present(varying) .and. present(rule)) then
+       if (any(reduced)) variants = count(varying)
+    end if
     ! a Lagrangian's rules are its stationarities, one per multiplier;
     ! a residual without a rule governs no row
     if (present(rule)) then
        this % physics = rule
+       this % laws    = max(1, rule % num_multipliers())
+       allocate(this % rules(this % laws + variants))
        if (rule % num_multipliers() > 0) then
-          allocate(this % rules(rule % num_multipliers()))
           do j = 1, rule % num_multipliers()
              this % rules(j) = euler_lagrange(rule, j)
           end do
        else
-          this % rules = [rule]
+          this % rules(1) = rule
        end if
     else
        allocate(this % rules(0))
+       this % laws = 0
     end if
-    this % laws = size(this % rules)
-    ! the rules at the reduced points: rule j of reduced_rule in place
-    ! of its own where varying(j)
-    if (present(reduced) .and. present(reduced_rule) .and. present(varying) .and. present(rule)) then
-       if (any(reduced)) then
-          allocate(this % variant(size(this % rules)))
-          do j = 1, size(this % variant)
-             this % variant(j) = j
-             if (.not. varying(j)) cycle
-             if (present(projected)) then
-                error stop 'operation_residual: under a projection on the cells a law that reads no component &
-                     &of top degree is not stated at an explicit moment'
-             end if
-             law = euler_lagrange(reduced_rule, j)
-             call law % share_arguments(rule)
-             this % rules = [this % rules, law]
-             this % variant(j) = size(this % rules)
-          end do
-          this % reduced_point = reduced
-       end if
+    if (variants > 0) then
+       allocate(this % variant(this % laws))
+       k = this % laws
+       do j = 1, this % laws
+          this % variant(j) = j
+          if (.not. varying(j)) cycle
+          if (present(projected)) then
+             error stop 'operation_residual: under a projection on the cells a law that reads no component &
+                  &of top degree is not stated at an explicit moment'
+          end if
+          k = k + 1
+          this % rules(k) = euler_lagrange(reduced_rule, j)
+          call this % rules(k) % share_arguments(rule)
+          this % variant(j) = k
+       end do
+       this % reduced_point = reduced
     end if
     this % at      = at
     this % unknowns = unknowns

@@ -223,6 +223,7 @@ module operation_residual
      procedure, private :: gathered
      procedure, private :: governed
      procedure, private :: governed_on_reals
+     procedure, private :: governed_at_points
      procedure, private :: physics_tangent
      procedure, private :: physics_variation
      procedure, private :: placed
@@ -1419,6 +1420,28 @@ contains
 
   end subroutine governed
 
+  ! every rule's value at every point, on the real values of its tuple,
+  ! at a reduced point its variant
+  subroutine governed_at_points(this, inputs, x, governing)
+    class(residual_operator), intent(in)  :: this
+    type(binding)           , intent(in)  :: inputs(:)
+    real(dp)                , intent(in)  :: x(:)
+    real(dp), allocatable   , intent(out) :: governing(:,:)
+    real(dp), allocatable :: nu(:), xs(:)
+    integer :: j, p, deg, nd
+    call bound_real_vector(inputs, this % argument(2), nu)
+    xs  = this % gathered(x)
+    deg = this % degrees
+    nd  = this % designs
+    allocate(governing(size(this % at), this % laws))
+    do j = 1, this % laws
+       do p = 1, size(this % at)
+          governing(p, j) = this % rules(this % law_at(j, p)) % value_on(xs((p - 1) * deg + 1:p * deg), &
+               & nu((p - 1) * nd + 1:p * nd), this % point_positions(:, p))
+       end do
+    end do
+  end subroutine governed_at_points
+
   ! every rule's value at every site of the projection, on the real
   ! values the basis forms there
   subroutine governed_on_reals(this, inputs, x, governing)
@@ -1608,8 +1631,12 @@ contains
     end if
     ! with the tying rows eliminated, each rule's value at each site on
     ! the real values, by the pass its jacobian takes
-    if (allocated(this % projected) .and. allocated(this % tying) .and. .not. present(v)) then
-       call this % governed_on_reals(inputs, x, governing)
+    if (allocated(this % tying) .and. .not. present(v)) then
+       if (allocated(this % projected)) then
+          call this % governed_on_reals(inputs, x, governing)
+       else
+          call this % governed_at_points(inputs, x, governing)
+       end if
        return
     end if
     call this % point_inputs(inputs, x, point_data)

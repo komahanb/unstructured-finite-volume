@@ -487,16 +487,21 @@ module operation_residual
      ! the derivatives along time initial_form takes of each law, zero
      ! for a law it states as it is, and the laws it differentiates
      integer                 , allocatable :: initial_order(:)
-     logical                 , allocatable :: initial_laws(:)
+     logical                 , allocatable :: initial_varying(:)
      ! THE PROJECTION OF THE EXPLICIT INSTANTS (projection_form): the
      ! rule at an explicit instant ending a step of a family that marches
      ! by stages, the laws that differ there from the rule at its stages,
      ! the count of the unknowns it adds, and the unknown z of each order
      ! along time and field, zero where there is none
      type(expression)        , allocatable :: projection_rule
-     logical                 , allocatable :: projection_laws(:)
+     logical                 , allocatable :: projection_varying(:)
      integer                 :: projection_unknowns = 0
      integer                 , allocatable :: projection_field(:,:)
+     ! THE LAWS OF THE RULES, the stationarities of each rule's
+     ! Lagrangian in its multipliers, formed once for every block: of
+     ! the rule (projected, the flux), of the rule at the first instant
+     ! and of the rule at the corrected instants
+     type(expression)        , allocatable :: rule_laws(:), initial_rule_laws(:), projection_rule_laws(:)
      ! each block after the first starts from the solution at the last
      ! instant before it (minimize, continued)
      logical                 :: continued = .false.
@@ -594,6 +599,22 @@ module operation_residual
 
 contains
 
+  ! THE LAWS OF A RULE: the stationarities of its Lagrangian in each
+  ! multiplier, the rule itself where it pairs none
+  function stationarities(rule) result(laws)
+    type(expression), intent(in) :: rule
+    type(expression), allocatable :: laws(:)
+    integer :: j
+    if (rule % num_multipliers() == 0) then
+       laws = [rule]
+       return
+    end if
+    allocate(laws(rule % num_multipliers()))
+    do j = 1, rule % num_multipliers()
+       laws(j) = euler_lagrange(rule, j)
+    end do
+  end function stationarities
+
   !===================================================================!
   ! Build from the two stencils, the physics, and the points the
   ! physics reads: at(p) is the offset of point p's tuple, whose
@@ -607,7 +628,7 @@ contains
 
   function create(primary_law, rule, at, unknowns, degrees, primary, fixed_rows, fixed, &
        & connected_law, fixed_rate, prescribed, positions, summed_rows, projected, tying, reduced, &
-       & reduced_rule, varying) result(this)
+       & reduced_laws, varying, laws) result(this)
 
     type(stencil)         , intent(in) :: primary_law
     type(expression)      , intent(in), optional :: rule
@@ -622,8 +643,9 @@ contains
     type(projection)      , intent(in), optional :: projected
     logical               , intent(in), optional :: tying(:)
     logical               , intent(in), optional :: reduced(:)
-    type(expression)      , intent(in), optional :: reduced_rule
+    type(expression)      , intent(in), optional :: reduced_laws(:)
     logical               , intent(in), optional :: varying(:)
+    type(expression)      , intent(in), optional :: laws(:)
     type(residual_operator) :: this
     type(continuous_domain) :: domain
     integer :: j, k, variants, components, governed, e, n, q, nq, s, dimension
@@ -689,24 +711,28 @@ contains
 
     this % primary_law = primary_law
     if (present(connected_law)) this % connected_law = connected_law
-    ! the rules at the reduced points: rule j of reduced_rule in place
+    ! the rules at the reduced points: law j of reduced_laws in place
     ! of its own where varying(j), stored after the laws' own
     variants = 0
-    if (present(reduced) .and. present(reduced_rule) .and. present(varying) .and. present(rule)) then
+    if (present(reduced) .and. present(reduced_laws) .and. present(varying) .and. present(rule)) then
        if (any(reduced)) variants = count(varying)
     end if
-    ! a Lagrangian's rules are its stationarities, one per multiplier;
-    ! a residual without a rule governs no row
+    ! a Lagrangian's rules are its stationarities, one per multiplier,
+    ! given as laws where they are formed once for many operators; a
+    ! residual without a rule governs no row
     if (present(rule)) then
        this % physics = rule
        this % laws    = max(1, rule % num_multipliers())
        allocate(this % rules(this % laws + variants))
-       if (rule % num_multipliers() > 0) then
-          do j = 1, rule % num_multipliers()
-             this % rules(j) = euler_lagrange(rule, j)
-          end do
+       if (present(laws)) then
+          if (size(laws) /= this % laws) then
+             write(message,'(a,i0,a,i0)') 'operation_residual: one law is given per stationarity of the rule; &
+                  &laws = ', size(laws), ', stationarities = ', this % laws
+             error stop trim(message)
+          end if
+          this % rules(1:this % laws) = laws
        else
-          this % rules(1) = rule
+          this % rules(1:this % laws) = stationarities(rule)
        end if
     else
        allocate(this % rules(0))
@@ -723,7 +749,7 @@ contains
                   &of top degree is not stated at an explicit moment'
           end if
           k = k + 1
-          this % rules(k) = euler_lagrange(reduced_rule, j)
+          this % rules(k) = reduced_laws(j)
           call this % rules(k) % share_arguments(rule)
           this % variant(j) = k
        end do
@@ -970,12 +996,12 @@ contains
             & size(part % whole_index), this % degrees, this % primary, fixed_rows, fixed, &
             & connected_law=connected, fixed_rate=rate, prescribed=prescribed, &
             & positions=this % point_positions(:, points), &
-            & projected=this % projected_part(point_place, owned_point))
+            & projected=this % projected_part(point_place, owned_point), laws=this % rules(1:this % laws))
     else if (allocated(this % physics)) then
        sub = residual_operator(part_stencil(this % primary_law, part, summed), this % physics, at, &
             & size(part % whole_index), this % degrees, this % primary, fixed_rows, fixed, &
             & connected_law=connected, fixed_rate=rate, prescribed=prescribed, &
-            & positions=this % point_positions(:, points))
+            & positions=this % point_positions(:, points), laws=this % rules(1:this % laws))
        call this % restrict_reduced_points(sub, points)
     else
        sub = residual_operator(part_stencil(this % primary_law, part, summed), at=at, &
@@ -1964,11 +1990,12 @@ contains
        secondary = this % connected_law % restricted(free, values)
        sub = residual_operator(derived, this % physics, at, size(free), &
             & this % degrees, this % primary, fixed_rows(1:ncar), fixed(1:ncar), &
-            & connected_law=secondary, fixed_rate=rate(1:ncar), positions=this % point_positions(:, points))
+            & connected_law=secondary, fixed_rate=rate(1:ncar), positions=this % point_positions(:, points), &
+            & laws=this % rules(1:this % laws))
     else
        sub = residual_operator(derived, this % physics, at, size(free), &
             & this % degrees, this % primary, fixed_rows(1:ncar), fixed(1:ncar), &
-            & fixed_rate=rate(1:ncar), positions=this % point_positions(:, points))
+            & fixed_rate=rate(1:ncar), positions=this % point_positions(:, points), laws=this % rules(1:this % laws))
     end if
 
     if (allocated(this % summed_rows)) sub % summed_rows = pack(sub_of(this % summed_rows), sub_of(this % summed_rows) > 0)
@@ -2769,6 +2796,14 @@ contains
     if (present(time) .and. .not. allocated(image % elements) .and. allocated(image % initial_rule)) then
        if (any([(marches_by_stages(time % scheme(k), top_degree(image % rule, image % manifold % num_unknowns) + 1), &
             & k = 1, time % num_blocks())])) call projection_form(image, this % term(whole_term))
+    end if
+    if (allocated(image % elements)) then
+       image % rule_laws = stationarities(image % flux)
+       if (allocated(image % initial_flux)) image % initial_rule_laws = stationarities(image % initial_flux)
+    else
+       image % rule_laws = stationarities(image % rule)
+       if (allocated(image % initial_rule)) image % initial_rule_laws = stationarities(image % initial_rule)
+       if (allocated(image % projection_rule)) image % projection_rule_laws = stationarities(image % projection_rule)
     end if
     image % representation = pack(this % term, representation .and. [(this % term(k) % paired, k = 1, size(this % term))])
 
@@ -6465,7 +6500,7 @@ contains
     logical , allocatable :: zero_moment(:)
     integer , allocatable :: zero_rows(:)
     integer :: nz
-    type(expression), allocatable :: variant
+    type(expression), allocatable :: laws(:), variant_laws(:)
     real(dp), allocatable :: derivative(:,:,:), table(:,:,:), instant_derivative(:,:,:,:), itable(:,:,:,:)
     integer , allocatable :: relating(:)
     logical :: moving, pinned
@@ -6788,35 +6823,39 @@ contains
        rule_primary = [(primary(this % tested(1, j)), j = 1, size(this % tested, 2))]
        ! the block of the manifold's first instant states the laws there
        rule = this % flux
+       laws = this % rule_laws
        if (allocated(this % initial_flux) .and. first == 1 .and. depth == 0) then
           if (n > 1) then
              error stop 'operation_residual: a law the initial data satisfy is stated at the first instant by its &
                   &derivative along time, in a block of that instant alone'
           end if
           rule = this % initial_flux
+          laws = this % initial_rule_laws
        end if
        if (size(face_rows) > 0) then
           gauge = stencil(face_rows, face_columns, face_weights, zeros, 'prescribed')
           if (factor > 0) then
              blk % rows = residual_operator(relations, rule, at, unknowns, stride, rule_primary, fixed_rows, &
-                  & fixed, prescribed=gauge, positions=point_positions, projected=projected, tying=tying)
+                  & fixed, prescribed=gauge, positions=point_positions, projected=projected, tying=tying, laws=laws)
           else
              blk % rows = residual_operator(relations, rule, at, unknowns, stride, rule_primary, fixed_rows, &
-                  & fixed, prescribed=gauge, positions=point_positions, projected=projected)
+                  & fixed, prescribed=gauge, positions=point_positions, projected=projected, laws=laws)
           end if
        else
           blk % rows = residual_operator(relations, rule, at, unknowns, stride, rule_primary, fixed_rows, &
-               & fixed, positions=point_positions, projected=projected)
+               & fixed, positions=point_positions, projected=projected, laws=laws)
        end if
     else
        ! the block of the manifold's first instant states the laws there
        rule = this % rule
+       laws = this % rule_laws
        if (allocated(this % initial_rule) .and. first == 1 .and. depth == 0) then
           if (n > 1) then
              error stop 'operation_residual: a law the initial data satisfy is stated at the first instant by its &
                   &derivative along time, in a block of that instant alone'
           end if
           rule = this % initial_rule
+          laws = this % initial_rule_laws
        end if
        ! THE REDUCED POINTS, after the history, the manifold's first
        ! instant aside, where a law that reads no component of top degree
@@ -6830,8 +6869,8 @@ contains
        ! through h^2 a_ii^2 and the tableau's order is lost
        allocate(reduced_points(npts), source=.false.)
        if (allocated(this % initial_rule)) then
-          variant = this % initial_rule
-          varying = this % initial_laws
+          variant_laws = this % initial_rule_laws
+          varying      = this % initial_varying
           do m = 1, nm
              if (implicit_moment(m) .and. .not. staged) cycle
              if (any(instant_moment(1:depth) == m)) cycle
@@ -6843,9 +6882,10 @@ contains
        ! moment, and at the corrected instants the rows of the projection
        ! in place of the zero rows of its unknowns
        if (any(corrected_moment)) then
-          rule    = this % initial_rule
-          variant = this % projection_rule
-          varying = this % projection_laws
+          rule         = this % initial_rule
+          laws         = this % initial_rule_laws
+          variant_laws = this % projection_rule_laws
+          varying      = this % projection_varying
           do m = 1, nm
              reduced_points((m - 1) * ncells + 1:m * ncells) = corrected_moment(m)
           end do
@@ -6857,11 +6897,11 @@ contains
           ! cell of the moment
           blk % rows = residual_operator(relations, rule, at, unknowns, stride, primary, fixed_rows, fixed, &
                & prescribed=gauge, positions=point_positions, summed_rows=gauge_rows(1:size(gauge_rows):ncells), &
-               & reduced=reduced_points, reduced_rule=variant, varying=varying, tying=tying)
+               & reduced=reduced_points, reduced_laws=variant_laws, varying=varying, tying=tying, laws=laws)
        else
           blk % rows = residual_operator(relations, rule, at, unknowns, stride, primary, fixed_rows, fixed, &
-               & positions=point_positions, reduced=reduced_points, reduced_rule=variant, varying=varying, &
-               & tying=tying)
+               & positions=point_positions, reduced=reduced_points, reduced_laws=variant_laws, varying=varying, &
+               & tying=tying, laws=laws)
        end if
     end if
     blk % first      = first
@@ -9122,7 +9162,7 @@ contains
           differentiated = .true.
        end do
     end do
-    image % initial_laws = image % initial_order > 0
+    image % initial_varying = image % initial_order > 0
     if (differentiated) image % initial_rule = on_domain(paired(laws), image % rule)
 
   end subroutine initial_form
@@ -9244,8 +9284,8 @@ contains
     image % rule            = paired([laws, zeros])
     image % initial_rule    = on_domain(paired([reduced, zeros]), image % rule)
     image % projection_rule = on_domain(paired([reduced, rows]), image % rule)
-    image % initial_laws    = [image % initial_laws, spread(.false., 1, ns)]
-    image % projection_laws = [spread(.false., 1, nf), spread(.true., 1, ns)]
+    image % initial_varying    = [image % initial_varying, spread(.false., 1, ns)]
+    image % projection_varying = [spread(.false., 1, nf), spread(.true., 1, ns)]
     image % projection_unknowns = ns
     image % manifold % unknown_name  = [image % manifold % unknown_name(1:nf), names, &
          & image % manifold % unknown_name(nf + 1:)]

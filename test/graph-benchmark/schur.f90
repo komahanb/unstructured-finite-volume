@@ -29,7 +29,7 @@ program elimination_scaling
   use operation_elimination , only : elimination
   use operation_dense_direct, only : dense_direct
   use operation_stencil     , only : stencil
-  use operation_minimization, only : solve_result, SOLVE_STORAGE_EXCEEDED
+  use operation_minimizer, only : solve_result, SOLVE_STORAGE_EXCEEDED
   use benchmark_measurement , only : phase, begin_phase, end_phase, record, peak_rss_kilobytes, &
        &                             argument_integer, argument_real
 

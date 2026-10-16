@@ -46,7 +46,7 @@ module operation_residual
   use operation_exchange       , only : exchange, state_summed_rows
   use util_verbosity           , only : verbosity, set_verbosity
   use transform_partitioner    , only : partitioner, PARTITION_BREADTH_FIRST
-  use operation_minimization, only : solve_result
+  use operation_minimizer, only : solve_result
   use operation_residual_operator, only : residual_operator, projection, stationarities, chain_block, lower_bounds
   use operation_residual_operator, only : origin, HISTORY_MOMENTS, OWN_MOMENTS, EVERY_MOMENT
   use operation_newton      , only : newton

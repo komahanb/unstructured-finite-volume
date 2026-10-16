@@ -128,7 +128,7 @@ module restriction_fixture
   use view_directed, only : directed_graph
   use field_stored, only : stored_field
   use operation_action, only : operation
-  use operation_minimization, only : minimizer, state, restrict, solve_result, SOLVE_SINGULAR
+  use operation_minimizer, only : minimizer, state, restrict, solve_result, SOLVE_SINGULAR
   use operation_stencil, only : stencil
   use operation_residual_operator, only : residual_operator
   use operation_expression, only : unknown, component, constant, design
@@ -295,7 +295,7 @@ program test_graph_minimization
   use operation_gauss_seidel, only : gauss_seidel
   use operation_gmres    , only : gmres
   use operation_newton   , only : newton
-  use operation_minimization, only : minimizer, solve_result, absolute, SOLVE_EXHAUSTED, SOLVE_BREAKDOWN, &
+  use operation_minimizer, only : minimizer, solve_result, absolute, SOLVE_EXHAUSTED, SOLVE_BREAKDOWN, &
        & SOLVE_INNER_FAILED, SOLVE_NOT_STARTED, SOLVE_STAGNATED, state_tuple
   use operation_linearization, only : linearization, jacobian_of
   use operation_action, only : varied, variation, dense_of_triples

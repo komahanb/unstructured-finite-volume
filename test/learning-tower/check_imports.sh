@@ -41,7 +41,7 @@ allowed_for() {
         level-6-discretization)  echo "learning_assert graph_fractal map_set_representation map_set map_inclusion relation_finitary relation_algebra relation_binary relation_algorithms graph_fractal view_relational" ;;
         # level 7: the fitting rung. The GMRES citizen inherits
         # attach/constant/solve from the minimizer base, so
-        # operation_minimization is not directly imported and stays off
+        # operation_minimizer is not directly imported and stays off
         # the list; the relation/algebra/profile stack is not needed
         # at all - the solver sees an opaque R : Theta -> Y. The
         # named fixture is the level's own test-local oracle.
@@ -54,7 +54,7 @@ allowed_for() {
         # level 9: the statement - the composition rung. The REUSED
         # level-8 constitution and the level's own adapter are the
         # named fixtures; Level 7's affine oracle is deliberately
-        # absent, and operation_minimization stays off: gmres inherits
+        # absent, and operation_minimizer stays off: gmres inherits
         # the minimizer face. No new mathematics enters here.
         level-9-statement)       echo "learning_assert graph_fractal map_set_representation map_set map_inclusion relation_finitary relation_algebra relation_algorithms operation_action view_directed field_calculus view_directed_stored field_stored operation_gmres learning_constitution_fixture constituted_residual_fixture graph_fractal view_relational" ;;
         *)                       echo "__no_allowlist__" ;;

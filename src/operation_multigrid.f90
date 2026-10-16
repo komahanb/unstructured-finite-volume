@@ -44,8 +44,8 @@ module operation_multigrid
   use view_directed, only : directed_graph
   use view_directed_stored, only : stored_directed_graph
   use operation_stencil, only : stencil, combine_triples
-  use operation_minimization , only : minimizer, state, restrict, compact_labels, solve_result, SOLVE_INNER_FAILED
-  use operation_minimization , only : saturated_sum
+  use operation_minimizer , only : minimizer, state, restrict, compact_labels, solve_result, SOLVE_INNER_FAILED
+  use operation_minimizer , only : saturated_sum
   use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
   use operation_action       , only : operation
   use graph_fractal          , only : graph

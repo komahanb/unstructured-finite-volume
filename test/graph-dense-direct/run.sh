@@ -24,15 +24,15 @@ rm -f refusal.out
 src="$here/../../src/operation_dense_direct.f90"
 
 # Static checks on src/operation_dense_direct.f90: dense_direct
-# must extend minimizer, must import operation_minimization, and
+# must extend minimizer, must import operation_minimizer, and
 # must not reference gti_ modules, the word "backend", or define a
 # solve_transpose method. The dense-array adapters stay deleted:
 # the solver does not name them outside a comment.
 grep -q "extends(minimizer) :: dense_direct" "$src" \
-    && echo " PASS : dense_direct extends operation_minimization's minimizer" \
+    && echo " PASS : dense_direct extends operation_minimizer's minimizer" \
     || { echo " FAIL : dense_direct is not a minimizer concretion"; exit 1; }
-grep -q "use operation_minimization" "$src" \
-    && echo " PASS : the solver imports operation_minimization" \
+grep -q "use operation_minimizer" "$src" \
+    && echo " PASS : the solver imports operation_minimizer" \
     || { echo " FAIL : a required import is missing"; exit 1; }
 grep -hv '^ *!' "$src" \
     | grep -v '% transpose()' \

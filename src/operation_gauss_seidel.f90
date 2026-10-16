@@ -26,7 +26,7 @@ module operation_gauss_seidel
 
   use iso_fortran_env , only : int64
   use util_precision  , only : dp
-  use operation_minimization, only : minimizer
+  use operation_minimizer, only : minimizer
   use operation_stencil     , only : stencil
   use relation_binary       , only : group_by_key
   use util_factorisation    , only : dense_factorisation

@@ -39,7 +39,7 @@ module operation_dense_direct
 
   use util_precision  , only : dp, spacing_at_one
   use operation_stencil, only : compile_matrix_from_action
-  use operation_minimization , only : minimizer, restrict, solve_result, SOLVE_SINGULAR, SOLVE_CONTINUE, SOLVE_EXHAUSTED
+  use operation_minimizer , only : minimizer, restrict, solve_result, SOLVE_SINGULAR, SOLVE_CONTINUE, SOLVE_EXHAUSTED
   use iso_fortran_env   , only : int64
   use util_factorisation, only : dense_factorisation
   use util_tally        , only : linear_solves, factorisations

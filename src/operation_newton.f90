@@ -92,7 +92,7 @@ module operation_newton
 
   use iso_fortran_env , only : int64
   use util_precision  , only : dp, half_digits
-  use operation_minimization        , only : minimizer, restrict, solve_result, SOLVE_INNER_FAILED, SOLVE_CONVERGED
+  use operation_minimizer        , only : minimizer, restrict, solve_result, SOLVE_INNER_FAILED, SOLVE_CONVERGED
   use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
   use operation_stencil     , only : stencil
   use util_tally, only : newton_solves, primal_loops, tally

@@ -11,7 +11,7 @@
 !
 !                    THE MINIMIZER WAS ALREADY RIGHT
 !
-! operation_minimization takes its unknown domain as an EXPLICIT
+! operation_minimizer takes its unknown domain as an EXPLICIT
 ! argument - `state(action, context, unknown_domain, num_unknowns)` -
 ! and reads the residual domain from the ACTION rather than the host. Its own
 ! comment says so: "no hidden fallback to the host's vertices; a
@@ -22,7 +22,7 @@
 ! That contrast is the evidence: the same seam that was open in the
 ! discretization was already closed in the minimization, by a
 ! contract written the other way round. Nothing here "improves"
-! operation_minimization, because nothing here found anything to
+! operation_minimizer, because nothing here found anything to
 ! improve.
 !
 !                    THE TWO SOLVES

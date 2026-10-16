@@ -22,7 +22,7 @@
 module operation_conjugate_gradient
 
   use util_precision  , only : dp
-  use operation_minimization, only : minimizer, solve_result, SOLVE_BREAKDOWN, SOLVE_CONTINUE
+  use operation_minimizer, only : minimizer, solve_result, SOLVE_BREAKDOWN, SOLVE_CONTINUE
   use util_tally, only : linear_solves
 
   implicit none

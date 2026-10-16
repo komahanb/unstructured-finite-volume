@@ -1,6 +1,6 @@
 program gti_contract
   use util_precision, only : dp
-  use operation_minimization, only : relative, absolute, by_count, SOLVE_NOT_STARTED
+  use operation_minimizer, only : relative, absolute, by_count, SOLVE_NOT_STARTED
   use operation_family, only : implicit_midpoint, crouzeix_three_stage, bdf_family
   use operation_grid, only : uniform_grid, fixed_grid
   use operation_expression, only : expression

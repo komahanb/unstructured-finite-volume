@@ -14,7 +14,7 @@ module elimination_fixture
   use operation_elimination, only : elimination, entry_bytes
   use operation_dense_direct, only : dense_direct
   use operation_gmres, only : gmres
-  use operation_minimization, only : solve_result, SOLVE_STORAGE_EXCEEDED, absolute
+  use operation_minimizer, only : solve_result, SOLVE_STORAGE_EXCEEDED, absolute
   use operation_stencil, only : stencil
   implicit none
 contains

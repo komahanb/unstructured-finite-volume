@@ -19,8 +19,8 @@ module operation_temporal_minimization
   use graph_fractal         , only : graph
   use view_directed         , only : directed_graph
   use operation_action      , only : operation
-  use operation_minimization, only : minimizer, state, restrict, compact_labels
-  use operation_minimization, only : solve_result, SOLVE_EVALUATED, SOLVE_STAGNATED, SOLVE_INNER_FAILED
+  use operation_minimizer, only : minimizer, state, restrict, compact_labels
+  use operation_minimizer, only : solve_result, SOLVE_EVALUATED, SOLVE_STAGNATED, SOLVE_INNER_FAILED
   use operation_driver      , only : driver, pairing, vertex_rule
   use operation_residual_operator, only : residual_operator
   use field_calculus        , only : FIELD_REAL

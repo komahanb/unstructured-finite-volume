@@ -34,8 +34,8 @@ module operation_gmres
   use iso_fortran_env , only : int64
   use util_verbosity  , only : verbosity
   use util_precision  , only : dp
-  use operation_minimization, only : minimizer, state, restrict, solve_result, SOLVE_BREAKDOWN, SOLVE_INNER_FAILED, SOLVE_STAGNATED
-  use operation_minimization, only : saturated_sum
+  use operation_minimizer, only : minimizer, state, restrict, solve_result, SOLVE_BREAKDOWN, SOLVE_INNER_FAILED, SOLVE_STAGNATED
+  use operation_minimizer, only : saturated_sum
   use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
   use util_tally, only : linear_solves, tally
   use view_directed, only : directed_graph

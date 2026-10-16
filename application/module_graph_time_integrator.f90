@@ -998,7 +998,7 @@ module gti_sweeps
   use operation_gauss_seidel, only : gauss_seidel
   use operation_gmres       , only : gmres
   use operation_elimination , only : elimination
-  use operation_minimization, only : minimizer, relative, absolute, by_rate, by_count
+  use operation_minimizer, only : minimizer, relative, absolute, by_rate, by_count
   use gti_layout            , only : tuple_layout
   implicit none
   private
@@ -2968,8 +2968,8 @@ module gti_march
   use operation_action      , only : variation, jacobian_of
   use operation_stencil       , only : stencil
   use operation_newton        , only : newton
-  use operation_minimization  , only : minimizer, relative, by_rate
-  use operation_minimization  , only : solve_result
+  use operation_minimizer  , only : minimizer, relative, by_rate
+  use operation_minimizer  , only : solve_result
   use operation_temporal_minimization, only : temporal_minimizer
   use operation_dense_direct  , only : dense_direct
   use operation_gmres         , only : gmres
@@ -4180,7 +4180,7 @@ end module gti_march
 module gti_adaptive
   use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
   use util_precision   , only : dp
-  use operation_minimization, only : solve_result, SOLVE_CONVERGED
+  use operation_minimizer, only : solve_result, SOLVE_CONVERGED
   use operation_family , only : family
   use operation_grid   , only : uniform_grid
   use operation_expression, only : expression
@@ -5406,7 +5406,7 @@ module gti_chain
   use field_stored     , only : stored_field, typed_field_domain
   use gti_sweeps       , only : pass_of, pass_substitutions, forward_pass, reverse_pass
   use util_tally            , only : tally
-  use operation_minimization, only : solve_result, SOLVE_CONVERGED
+  use operation_minimizer, only : solve_result, SOLVE_CONVERGED
   use gti_configuration     , only : at_horizon, at_block, at_stage
   use view_level            , only : level_member
   use graph_fractal         , only : graph
@@ -9572,7 +9572,7 @@ module gti_demos
   use operation_expression  , only : expression
   use operation_domain      , only : continuous_domain, discrete_domain
   use gti_physics           , only : van_der_pol, van_der_pol_energy, van_der_pol_dissipation
-  use operation_minimization, only : relative, by_rate
+  use operation_minimizer, only : relative, by_rate
   use gti_expansion         , only : expansion, family_container
   use gti_block             , only : block_residual
   use gti_march, only : march_context, block_from, solved, &
@@ -13301,7 +13301,7 @@ program graph_time_integrator
        & grid_stationary_partition, functional_error, functional_error_estimate, &
        & functional_error_partition, adaptation_outcome, adaptation_description, ADAPTATION_MET
   use gti_sweeps, only : pass_of, forward_pass, reverse_pass
-  use operation_minimization, only : relative, absolute, by_count, by_rate
+  use operation_minimizer, only : relative, absolute, by_count, by_rate
   use gti_driver            , only : settings, chosen_grid, steps_of, family_named, clock, &
        & functional_named, enriched_family
   use gti_configuration     , only : configuration, read_configuration, override, show, &

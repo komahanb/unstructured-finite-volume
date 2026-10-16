@@ -32,7 +32,7 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module operation_minimization
+module operation_minimizer
 
   use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
   use iso_fortran_env , only : int64
@@ -1167,4 +1167,4 @@ contains
 
   end subroutine solver_apply
 
-end module operation_minimization
+end module operation_minimizer

@@ -45,7 +45,7 @@
 #                           earned at Level 6, refused at 0-5: the
 #                           family's incidence and the weights read
 #                           from it, checked against closed forms
-#     operation_minimization      earned at Level 7, refused at 0-6
+#     operation_minimizer      earned at Level 7, refused at 0-6
 #     operation_gmres       earned at Level 7, refused at 0-6
 #     operation_driver      earned at Level 8, refused at 0-7
 #     operation_newton      earned at Level 8, refused at 0-7
@@ -165,7 +165,7 @@ allowed_for() {
         level-6-discretization) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture temporal_step_fixture graph_fractal map_set view_directed relation_finitary relation_algebra relation_binary field_calculus view_directed_stored field_stored operation_family view_directed_connectivity operation_weight operation_coupling util_derivative_terms" ;;
         # ---- L7: + minimization and its gmres concretion. Still no
         #          marcher.
-        level-7-minimization) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture temporal_step_fixture graph_fractal map_set view_directed relation_finitary relation_binary field_calculus view_directed_stored field_stored operation_family operation_minimization operation_gmres" ;;
+        level-7-minimization) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture temporal_step_fixture graph_fractal map_set view_directed relation_finitary relation_binary field_calculus view_directed_stored field_stored operation_family operation_minimizer operation_gmres" ;;
 
         # ===== REVIEW GATE B =====
 
@@ -173,9 +173,9 @@ allowed_for() {
         #          under test, and the march digraph the driver reads.
         #          NOT operation_linearization: newton reaches it, and
         #          the tower may not.
-        level-8-constitution) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture temporal_step_fixture temporal_march_fixture graph_fractal map_set relation_finitary relation_algebra relation_binary field_calculus view_directed_stored view_read_write field_stored operation_family operation_minimization operation_gmres operation_newton operation_driver" ;;
+        level-8-constitution) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture temporal_step_fixture temporal_march_fixture graph_fractal map_set relation_finitary relation_algebra relation_binary field_calculus view_directed_stored view_read_write field_stored operation_family operation_minimizer operation_gmres operation_newton operation_driver" ;;
         # ---- L9: the statement, on the same constitution.
-        level-9-statement) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture temporal_step_fixture temporal_march_fixture graph_fractal map_set relation_finitary relation_binary field_calculus view_directed_stored view_read_write field_stored operation_family operation_minimization operation_gmres operation_newton operation_driver" ;;
+        level-9-statement) echo "time_assert time_carriers_fixture time_relations_fixture time_algebra_fixture time_fields_fixture triangular_decay_fixture temporal_step_fixture temporal_march_fixture graph_fractal map_set relation_finitary relation_binary field_calculus view_directed_stored view_read_write field_stored operation_family operation_minimizer operation_gmres operation_newton operation_driver" ;;
 
         *)                 echo "__no_allowlist__" ;;
     esac
@@ -294,10 +294,10 @@ if [ "$1" = "--selftest" ]; then
         refuses "$lvl" temporal_step_fixture
     done
 
-    permits level-7-minimization operation_minimization
+    permits level-7-minimization operation_minimizer
     permits level-7-minimization operation_gmres
     for lvl in $before_seven; do
-        refuses "$lvl" operation_minimization
+        refuses "$lvl" operation_minimizer
         refuses "$lvl" operation_gmres
     done
 

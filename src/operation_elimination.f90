@@ -55,9 +55,9 @@ module operation_elimination
   use view_directed         , only : directed_graph
   use view_directed_stored  , only : stored_directed_graph
   use operation_action      , only : operation
-  use operation_minimization, only : minimizer, state, restrict, saturated_sum
-  use operation_minimization, only : solve_result, SOLVE_INNER_FAILED, SOLVE_EXHAUSTED, SOLVE_CONTINUE
-  use operation_minimization, only : SOLVE_STORAGE_EXCEEDED
+  use operation_minimizer, only : minimizer, state, restrict, saturated_sum
+  use operation_minimizer, only : solve_result, SOLVE_INNER_FAILED, SOLVE_EXHAUSTED, SOLVE_CONTINUE
+  use operation_minimizer, only : SOLVE_STORAGE_EXCEEDED
   use util_tally            , only : tally
   use operation_stencil     , only : stencil
   use field_stored          , only : stored_field

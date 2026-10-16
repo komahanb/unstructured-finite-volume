@@ -1,7 +1,7 @@
 program context_contract
   use util_precision, only : dp
   use iso_fortran_env, only : real128
-  use operation_minimization, only : minimizer, absolute, by_count
+  use operation_minimizer, only : minimizer, absolute, by_count
   use operation_gmres, only : gmres
   use operation_dense_direct, only : dense_direct
   use gti_march, only : march_context, precision_needed

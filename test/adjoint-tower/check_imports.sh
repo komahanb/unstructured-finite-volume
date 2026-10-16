@@ -37,7 +37,7 @@ allowed_for() {
         # where an operator stands is not what it multiplies.
         level-6-discretization)   echo "adjoint_assert graph_fractal map_set_representation map_set map_label map_inclusion relation_finitary relation_algebra relation_binary" ;;
         # level 7: the solver rung. gmres inherits attach/constant/
-        # apply from the minimizer base, so operation_minimization is not
+        # apply from the minimizer base, so operation_minimizer is not
         # imported directly; the equations are SUPPLIED by the level's
         # own fixture, and no Level-8 constitution may be reached.
         level-7-minimization)     echo "adjoint_assert graph_fractal map_set_representation map_set map_inclusion operation_action view_directed field_calculus field_stored view_directed_stored operation_gmres opaque_equation_fixture" ;;

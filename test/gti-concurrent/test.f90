@@ -26,7 +26,7 @@ program concurrent_executions
 
   !$ use omp_lib, only : omp_set_num_threads, omp_get_max_threads
   use util_precision, only : dp
-  use operation_minimization, only : relative, by_count, solve_result
+  use operation_minimizer, only : relative, by_count, solve_result
   use operation_family, only : bdf_family, adams_family, newmark_family, &
        & crouzeix_three_stage, implicit_midpoint
   use operation_grid, only : uniform_grid, random_grid

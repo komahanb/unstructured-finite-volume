@@ -151,7 +151,7 @@ allowed_for() {
         level-6-discretization) echo "graph_fractal map_set_representation map_set map_label visualization_assert visualization_carriers_fixture visualization_relations_fixture visualization_algebra_fixture structural_renderer_fixture production_discretization_fixture production_pattern_renderer_fixture relation_finitary relation_binary relation_algebra view_directed operation_stencil operation_family" ;;
 
         # ---- L7: + MINIMIZATION, and only the concrete the
-        #          experiment uses. operation_minimization itself is not
+        #          experiment uses. operation_minimizer itself is not
         #          named (jacobi inherits attach/matvec/sweep_order/
         #          diagonal), and gauss_seidel is inspected in the
         #          census rather than run. Nothing that solves beyond
@@ -363,7 +363,7 @@ if [ "$1" = "--selftest" ]; then
         refuses "$lvl" graph_calculus
         refuses "$lvl" operation_fitting
         refuses "$lvl" operation_linearization
-        refuses "$lvl" operation_minimization
+        refuses "$lvl" operation_minimizer
         refuses "$lvl" operation_gmres
         refuses "$lvl" operation_newton
         refuses "$lvl" operation_driver
@@ -446,7 +446,7 @@ if [ "$1" = "--selftest" ]; then
     # L6 does NOT lift the rest of the frontier. Nothing that solves,
     # and nothing merely adjacent to discretization machinery.
     refuses level-6-discretization operation_fitting
-    refuses level-6-discretization operation_minimization
+    refuses level-6-discretization operation_minimizer
     refuses level-6-discretization operation_gmres
     refuses level-6-discretization operation_newton
     refuses level-6-discretization operation_driver
@@ -479,7 +479,7 @@ if [ "$1" = "--selftest" ]; then
     for lvl in $with_five level-6-discretization; do
         refuses "$lvl" operation_jacobi
         refuses "$lvl" operation_gauss_seidel
-        refuses "$lvl" operation_minimization
+        refuses "$lvl" operation_minimizer
     done
 
     # L7 does NOT lift the rest of the frontier.
@@ -491,7 +491,7 @@ if [ "$1" = "--selftest" ]; then
     refuses level-7-minimization operation_fitting
     refuses level-7-minimization graph_profile
     refuses level-7-minimization operation_gauss_seidel
-    refuses level-7-minimization operation_minimization
+    refuses level-7-minimization operation_minimizer
 
     # ---- THE DISCRETIZATION VOCABULARY: WHERE IT LIFTS.
     for below in level-0-carrier/test.f90 level-4-graph-calculus/test.f90 \

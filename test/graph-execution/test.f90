@@ -3,7 +3,7 @@ program graph_execution
   use operation_action, only : operation
   use operation_driver, only : driver, pairing, rule_graph, data_graph
   use operation_temporal_minimization, only : temporal_minimizer
-  use operation_minimization, only : solve_result, SOLVE_NOT_STARTED, SOLVE_EVALUATED
+  use operation_minimizer, only : solve_result, SOLVE_NOT_STARTED, SOLVE_EVALUATED
   use view_read_write, only : bipartite_digraph, FIRST_PART, SECOND_PART
   use view_directed_stored, only : stored_directed_graph
   use field_calculus, only : field

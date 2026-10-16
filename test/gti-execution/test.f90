@@ -2,7 +2,7 @@ program execution_independence
 
   use iso_fortran_env, only : int64
   use util_precision, only : dp
-  use operation_minimization, only : relative, by_count
+  use operation_minimizer, only : relative, by_count
   use operation_family, only : bdf_family, adams_family, crouzeix_three_stage, newmark_family
   use operation_grid, only : grid, uniform_grid, designed_grid
   use util_tally, only : tally, linear_solves, newton_solves

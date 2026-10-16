@@ -30,7 +30,7 @@
 program horizon_scaling
 
   use util_precision        , only : dp
-  use operation_minimization, only : relative, by_rate
+  use operation_minimizer, only : relative, by_rate
   use operation_family      , only : crouzeix_three_stage, bdf_family, adams_family, newmark_family
   use operation_grid        , only : uniform_grid, designed_grid
   use operation_expression  , only : expression

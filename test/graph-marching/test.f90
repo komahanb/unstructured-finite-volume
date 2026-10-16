@@ -36,7 +36,7 @@ program test_graph_marching
   use operation_stencil , only : stencil
   use operation_temporal_minimization, only : temporal_minimizer
   use operation_dense_direct, only : dense_direct
-  use operation_minimization, only : solve_result, SOLVE_SINGULAR
+  use operation_minimizer, only : solve_result, SOLVE_SINGULAR
   use march_rules_fixture, only : explicit_step, implicit_step, adjoint_step
   use mandelbrot_law_fixture, only : mandelbrot_law
   use vdp_fixture, only : vdp_law, vdp_tangent_law

@@ -17,7 +17,7 @@
 
 module coarse_solve_fixture
   use iso_fortran_env, only : dp => REAL64
-  use operation_minimization, only : minimizer, state
+  use operation_minimizer, only : minimizer, state
   use operation_action      , only : operation
   use view_directed         , only : directed_graph
   use graph_fractal         , only : graph
@@ -75,7 +75,7 @@ program test_graph_multigrid
   use operation_multigrid, only : multigrid
   use operation_jacobi   , only : jacobi
   use operation_gmres    , only : gmres
-  use operation_minimization, only : solve_result, SOLVE_EXHAUSTED
+  use operation_minimizer, only : solve_result, SOLVE_EXHAUSTED
   use coarse_solve_fixture, only : counted_coarse_solver, num_coarse_solves, &
        & num_statements_received, statement_versions
 

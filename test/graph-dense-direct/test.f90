@@ -21,7 +21,7 @@ program test_graph_dense_direct
   use field_stored  , only : stored_field
   use operation_stencil , only : stencil
   use operation_dense_direct, only : dense_direct
-  use operation_minimization, only : solve_result, SOLVE_SINGULAR
+  use operation_minimizer, only : solve_result, SOLVE_SINGULAR
 
   implicit none
 

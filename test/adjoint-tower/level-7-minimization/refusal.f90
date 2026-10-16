@@ -12,7 +12,7 @@
 !   primal-state-on-Y ... a state on Y handed to the primal equation
 !   adjoint-covector-on-Q  a covector on Q handed to the adjoint one
 !
-! The first two are refused by PRODUCTION - operation_minimization
+! The first two are refused by PRODUCTION - operation_minimizer
 ! already knows that a right-hand side lives on the residual
 ! domain - and the last two by the test-local equations themselves.
 ! Both layers must hold: a solver that trusted sizes, or an

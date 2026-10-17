@@ -16,6 +16,7 @@
 module operation_lagrangian
 
   use util_precision   , only : dp
+  use util_eigensystem , only : symmetric_eigensystem
   use operation_action , only : operation, contract, variation
   use operation_action  , only : binding, bound_real_vector, bound_on
   use view_directed     , only : directed_graph
@@ -315,6 +316,7 @@ module operation_lagrangian
      procedure :: disagreement
      procedure :: local_errors
      procedure :: transported_errors
+     procedure :: energy_norms
      procedure, private :: time_disagreement
      procedure, private :: chain_of_enrichment
      procedure, private :: placement_iteration
@@ -9043,6 +9045,163 @@ contains
     call set_verbosity(level)
 
   end function transported_errors
+
+  !===================================================================!
+  ! THE ENERGY NORM OF THE ERRORS of a solution, at every cell and
+  ! instant,
+  !
+  !    N(e)^2 = 1/2 e'^T M e' + 1/2 e^T K~ e + 1/2 w_hi^-2 e''^T M e''.
+  !
+  ! The coordinates are the unknowns of degree two in time.
+  ! Law f is the equation of unknown f.
+  ! M and K are the derivatives of the laws of the coordinates in their
+  ! accelerations and in their values, at the solution there.
+  ! The law of a coordinate is the stationarity of the action in it, so
+  ! M is the hessian of the kinetic energy in the velocities.
+  ! M and K are made symmetric.
+  ! Where the laws are written with the opposite sign, both are negated.
+  !
+  ! M may be singular: the kinetic energy of a body does not change
+  ! along its Euler parameters.
+  ! The norm is taken on the range of M, in the coordinates
+  ! z = D^1/2 V^T e of M = V D V^T, D its eigenvalues above rounding.
+  ! There M is the identity and K is B = D^-1/2 V^T K V D^-1/2.
+  ! An error along the null space of M changes the value of a
+  ! condition, which this norm does not measure.
+  !
+  ! K~ = K + max(0, w_lo^2 - lambda_min) M lifts the least eigenvalue
+  ! lambda_min of B to w_lo^2 where it is below.
+  ! w_lo = 2 pi / T is the lowest frequency the interval T resolves.
+  ! A drift along a direction of no stiffness then costs what an
+  ! oscillation at w_lo costs.
+  ! A negative stiffness, as of a centrifugal softening, is lifted the
+  ! same way.
+  !
+  ! The term of the accelerations measures the error of the reactions:
+  ! the part of e'' normal to the conditions is M^-1 G^T times it.
+  ! For an oscillation at w it is (w / w_hi)^2 times the stiffness
+  ! term, so below w_hi it adds no more than the energy.
+  ! Without w_hi it is left out.
+  !
+  ! Invalid input: a solution on another manifold, stored over
+  ! checkpoints, or of values alone; errors of another shape; a law
+  ! projected on the cells, whose mass and stiffness are those of its
+  ! elements; a law without coordinates; a mass that is indefinite or
+  ! zero, which no kinetic energy is.
+  !===================================================================!
+
+  function energy_norms(this, solution, error, highest) result(norm)
+
+    class(discrete_lagrangian), intent(in) :: this
+    type(discrete_field)      , intent(in) :: solution
+    real(dp)                  , intent(in) :: error(:,:,:)
+    real(dp)                  , intent(in), optional :: highest
+    real(dp), allocatable :: norm(:,:)
+
+    real(dp), parameter :: pi = acos(-1.0_dp)
+    type(discrete_manifold) :: points
+    integer , allocatable :: coordinate(:), at(:,:), significant(:)
+    real(dp), allocatable :: q(:), nu(:), g(:), mass(:,:), stiffness(:,:), d(:), v(:,:), w(:,:), b(:,:)
+    real(dp), allocatable :: lambda(:), u(:,:), z(:,:)
+    real(dp) :: value, lowest, lift, bound, squared
+    integer :: stride, ncells, ninst, nf, n, k, c, p, i, o
+
+    if (allocated(this % flux)) then
+       error stop 'operation_lagrangian: the energy norm of a law projected on the cells is formed from the mass and &
+            &stiffness of its elements, which are not formed'
+    end if
+    if (allocated(solution % objective_value)) then
+       error stop 'operation_lagrangian: the energy norm reads the solution at every instant, which a solution stored &
+            &over checkpoints does not retain'
+    end if
+    select type (on => solution % on)
+    type is (discrete_manifold)
+       if (.not. on % identity % matches(this % points % identity)) then
+          error stop 'operation_lagrangian: the solution is a field on another manifold than the residual''s'
+       end if
+       points = on
+    class default
+       error stop 'operation_lagrangian: the energy norm is of a solution at the points of a manifold'
+    end select
+    stride = this % rule % num_components()
+    if (size(solution % jet, 1) < stride) then
+       error stop 'operation_lagrangian: the energy norm reads the rates and accelerations of the solution, which a &
+            &solution of values alone does not hold'
+    end if
+    ncells = points % num_cells()
+    ninst  = points % num_instants()
+    if (any(shape(error) /= [stride, ncells, ninst])) then
+       error stop 'operation_lagrangian: the errors are not of the shape of the solution''s tuple, cells and instants'
+    end if
+
+    ! the coordinates, and the component of each order along time of
+    ! each
+    nf = this % rule % num_fields()
+    coordinate = pack([(i, i = 1, nf)], [(this % rule % degree_of_field(i) == 2, i = 1, nf)])
+    n = size(coordinate)
+    if (n == 0) then
+       error stop 'operation_lagrangian: the energy norm is of a law with coordinates, unknowns of degree two in time'
+    end if
+    allocate(at(0:2, n))
+    do i = 1, n
+       do o = 0, 2
+          at(o, i) = this % rule % component_at(FIRST_COORDINATE, o, coordinate(i))
+       end do
+    end do
+
+    nu = points % expansion % values()
+    if (size(nu) == 0) nu = [0.0_dp]
+    lowest = 2.0_dp * pi / (points % instant(ninst) - points % instant(1))
+    allocate(norm(ncells, ninst), mass(n, n), stiffness(n, n), g(0:stride - 1), z(n, 0:2))
+    do k = 1, ninst
+       do c = 1, ncells
+          p = points % point_of(k, c)
+          q = solution % jet(1:stride, p, 1)
+          do i = 1, n
+             call this % rule_laws(coordinate(i)) % gradient_at(q, nu, value, g, points % position(p))
+             mass(i, :)      = g(at(2, :))
+             stiffness(i, :) = g(at(0, :))
+          end do
+          mass      = (mass + transpose(mass)) / 2.0_dp
+          stiffness = (stiffness + transpose(stiffness)) / 2.0_dp
+          call symmetric_eigensystem(mass, d, v)
+          bound = n * epsilon(1.0_dp) * maxval(abs(d))
+          if (any(d > bound) .and. any(d < -bound)) then
+             error stop 'operation_lagrangian: the mass of the laws of the coordinates is indefinite, which no kinetic &
+                  &energy is'
+          end if
+          if (.not. any(d > bound)) then
+             mass      = -mass
+             stiffness = -stiffness
+             d         = -d
+          end if
+          significant = pack([(i, i = 1, n)], d > bound)
+          if (size(significant) == 0) then
+             error stop 'operation_lagrangian: the mass of the laws of the coordinates is zero, which no kinetic energy is'
+          end if
+          ! W = V D^-1/2 on the range of M, so that W^T M W = I, B =
+          ! W^T K W, and z = W^T M e
+          w = v(:, significant)
+          do i = 1, size(significant)
+             w(:, i) = w(:, i) / sqrt(d(significant(i)))
+          end do
+          b = matmul(transpose(w), matmul(stiffness, w))
+          call symmetric_eigensystem(b, lambda, u)
+          lift = max(0.0_dp, lowest**2 - lambda(1))
+          z = 0.0_dp
+          do o = 0, 2
+             z(1:size(significant), o) = matmul(transpose(w), matmul(mass, error(at(o, :) + 1, c, k)))
+          end do
+          associate (z0 => z(1:size(significant), 0), z1 => z(1:size(significant), 1), &
+               &     z2 => z(1:size(significant), 2))
+            squared = (dot_product(z1, z1) + dot_product(z0, matmul(b, z0)) + lift * dot_product(z0, z0)) / 2.0_dp
+            if (present(highest)) squared = squared + dot_product(z2, z2) / (2.0_dp * highest**2)
+          end associate
+          norm(c, k) = sqrt(max(0.0_dp, squared))
+       end do
+    end do
+
+  end function energy_norms
 
   !===================================================================!
   ! THE CHAIN OF THE ENRICHMENT: each family of the residual's chain

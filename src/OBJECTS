@@ -6,6 +6,7 @@ util_norm.o \
 util_derivative_terms.o \
 util_tally.o \
 util_factorisation.o \
+util_eigensystem.o \
 token_identity.o \
 map_token_rows.o \
 util_string.o \

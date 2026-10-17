@@ -93,5 +93,6 @@ operation_residual_operator.o \
 operation_temporal_minimization.o \
 operation_minimization.o \
 operation_lagrangian.o \
+operation_march_laws.o \
 view_residual.o \
 view_paraview_writer.o

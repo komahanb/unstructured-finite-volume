@@ -326,6 +326,7 @@ module operation_lagrangian
      procedure :: transported_errors
      procedure :: energy_norms
      procedure :: vibration_frequency
+     procedure :: measure_free_motion
      procedure, private :: time_disagreement
      procedure, private :: chain_of_enrichment
      procedure, private :: placement_iteration
@@ -9201,46 +9202,138 @@ contains
     type(discrete_field)      , intent(in) :: solution
     real(dp) :: frequency
 
-    type(discrete_manifold) :: points
-    integer , allocatable :: coordinate(:), condition(:), at(:,:)
-    real(dp), allocatable :: mass(:,:), stiffness(:,:), constraint(:,:), w(:,:), lambda(:), u(:,:), y(:), ya(:)
-    real(dp), allocatable :: velocity(:), acceleration(:), free(:,:)
-    real(dp) :: lowest, accelerations, velocities, measure
-    integer :: k, c, j, p
-
-    if (allocated(this % flux)) then
-       frequency = projected_vibration_frequency(this, solution)
-       return
-    end if
-    call coordinates_read(this, solution, points, coordinate, condition, at)
-    lowest        = lowest_frequency(points)
-    accelerations = 0.0_dp
-    velocities    = 0.0_dp
-    do k = 1, points % num_instants()
-       do c = 1, points % num_cells()
-          p = points % point_of(k, c)
-          call coordinate_derivatives(this, points, solution, k, c, coordinate, condition, at, mass, stiffness, &
-               & constraint)
-          free = free_motions(constraint)
-          w    = mass_orthonormal(mass, free)
-          if (size(w, 2) == 0) cycle
-          call symmetric_eigensystem(matmul(transpose(w), matmul(stiffness, w)), lambda, u)
-          velocity     = matmul(free, matmul(transpose(free), solution % jet(at(1, :) + 1, p, 1)))
-          acceleration = matmul(free, matmul(transpose(free), solution % jet(at(2, :) + 1, p, 1)))
-          y  = matmul(transpose(u), matmul(transpose(w), matmul(mass, velocity)))
-          ya = matmul(transpose(u), matmul(transpose(w), matmul(mass, acceleration)))
-          measure = points % measure(p)
-          do j = 1, size(lambda)
-             if (lambda(j) < lowest**2) cycle
-             accelerations = accelerations + measure * ya(j)**2
-             velocities    = velocities + measure * y(j)**2
-          end do
-       end do
-    end do
-    frequency = lowest
-    if (velocities > 0.0_dp) frequency = max(lowest, sqrt(accelerations / velocities))
+    call this % measure_free_motion(solution, frequency=frequency)
 
   end function vibration_frequency
+
+  !===================================================================!
+  ! THE MEASURES OF THE FREE MOTION of a solution, at once:
+  ! frequency, w_hi of vibration_frequency;
+  ! highest, the highest frequency of the free motions over the
+  ! instants, the root of the largest eigenvalue of W^T K W;
+  ! energy(k), the energy of the free motion at instant k,
+  !
+  !    E(k) = 1/2 |v|^2 + 1/2 d^T (B + max(0, w_lo^2 - lambda_min)) d,
+  !
+  ! v the velocities and d the displacements since the first instant,
+  ! projected on the free motions along the rows of G, in the
+  ! coordinates z = W^T M of the free motions' basis W.
+  ! It is the energy norm of the motion the conditions leave free: a
+  ! hub's spin under its driver is not in it.
+  ! For a law at the points it is summed over the cells; for a law
+  ! projected on the cells it is that of the region.
+  ! Invalid input: as energy_norms.
+  !===================================================================!
+
+  subroutine measure_free_motion(this, solution, frequency, highest, energy)
+
+    class(discrete_lagrangian), intent(in)  :: this
+    type(discrete_field)      , intent(in)  :: solution
+    real(dp)                  , intent(out), optional :: frequency, highest
+    real(dp), allocatable     , intent(out), optional :: energy(:)
+
+    type(discrete_manifold) :: points
+    type(element_pencil), allocatable :: pencil(:)
+    type(stencil), allocatable :: rows_along(:,:)
+    integer , allocatable :: coordinate(:), condition(:), at(:,:), dof(:,:)
+    real(dp), allocatable :: mass(:,:), stiffness(:,:), constraint(:,:), constraints(:,:,:), coarse(:,:,:)
+    real(dp), allocatable :: stages(:,:,:,:), free(:,:), sample(:,:), first(:), totals(:)
+    logical , allocatable :: prescribed(:)
+    real(dp) :: lowest, accelerations, velocities, top, share
+    integer :: ninst, k, c, p, n, e, i, j, a
+
+    call solution_read(this, solution, points)
+    ninst  = points % num_instants()
+    lowest = lowest_frequency(points)
+    accelerations = 0.0_dp
+    velocities    = 0.0_dp
+    top           = 0.0_dp
+    allocate(totals(ninst), source=0.0_dp)
+    if (allocated(this % flux)) then
+       call pencil_states(this, solution, points, coarse, stages, rows_along)
+       do k = 1, ninst
+          call element_pencils(this, points, coarse, stages, rows_along, k, pencil, dof, constraints, prescribed)
+          n = size(dof, 2)
+          allocate(mass(n, n), stiffness(n, n), source=0.0_dp)
+          do e = 1, size(pencil)
+             mass(pencil(e) % coordinate, pencil(e) % coordinate) = &
+                  & mass(pencil(e) % coordinate, pencil(e) % coordinate) + pencil(e) % mass
+             stiffness(pencil(e) % coordinate, pencil(e) % coordinate) = &
+                  & stiffness(pencil(e) % coordinate, pencil(e) % coordinate) + pencil(e) % stiffness
+          end do
+          ! each condition by its derivatives of the highest order it
+          ! reads, and a row for each coordinate a face condition
+          ! prescribes
+          allocate(constraint(0, n))
+          do i = 1, size(constraints, 1)
+             do a = 2, 0, -1
+                if (any(abs(constraints(i, :, a)) > epsilon(1.0_dp) * maxval(abs(constraints(i, :, :))))) exit
+             end do
+             if (a < 0) cycle
+             constraint = reshape([transpose(constraint), constraints(i, :, a)], [size(constraint, 1) + 1, n], &
+                  & order=[2, 1])
+          end do
+          do j = 1, n
+             if (.not. prescribed(j)) cycle
+             constraint = reshape([transpose(constraint), merge(1.0_dp, 0.0_dp, [(i == j, i = 1, n)])], &
+                  & [size(constraint, 1) + 1, n], order=[2, 1])
+          end do
+          sample = coordinate_values_at(this, points, solution, dof, k)
+          first  = coordinate_values_at_first(this, points, solution, dof)
+          call free_modes(mass, stiffness, free_motions(constraint), sample, first, instant_share(points, k))
+          deallocate(mass, stiffness, constraint)
+       end do
+    else
+       call coordinates_read(this, solution, points, coordinate, condition, at)
+       do k = 1, ninst
+          do c = 1, points % num_cells()
+             p = points % point_of(k, c)
+             call coordinate_derivatives(this, points, solution, k, c, coordinate, condition, at, mass, stiffness, &
+                  & constraint)
+             allocate(sample(size(coordinate), 0:2))
+             do a = 0, 2
+                sample(:, a) = solution % jet(at(a, :) + 1, p, 1)
+             end do
+             first = solution % jet(at(0, :) + 1, points % point_of(1, c), 1)
+             call free_modes(mass, stiffness, free_motions(constraint), sample, first, points % measure(p))
+             deallocate(sample)
+          end do
+       end do
+    end if
+    if (present(frequency)) then
+       frequency = lowest
+       if (velocities > 0.0_dp) frequency = max(lowest, sqrt(accelerations / velocities))
+    end if
+    if (present(highest)) highest = top
+    if (present(energy)) energy = totals
+
+  contains
+
+    ! the modes of the free motions at an instant, their sums for the
+    ! frequency, the highest frequency and the energy
+    subroutine free_modes(mass, stiffness, free, sample, first, measure)
+      real(dp), intent(in) :: mass(:,:), stiffness(:,:), free(:,:), sample(:,0:), first(:), measure
+      real(dp), allocatable :: w(:,:), lambda(:), u(:,:), y(:), ya(:), yd(:), projected(:,:)
+      integer :: j
+      w = mass_orthonormal(mass, free)
+      if (size(w, 2) == 0) return
+      call symmetric_eigensystem(matmul(transpose(w), matmul(stiffness, w)), lambda, u)
+      projected = matmul(free, matmul(transpose(free), reshape([sample(:, 0) - first, sample(:, 1), sample(:, 2)], &
+           & [size(first), 3])))
+      yd = matmul(transpose(u), matmul(transpose(w), matmul(mass, projected(:, 1))))
+      y  = matmul(transpose(u), matmul(transpose(w), matmul(mass, projected(:, 2))))
+      ya = matmul(transpose(u), matmul(transpose(w), matmul(mass, projected(:, 3))))
+      top = max(top, sqrt(max(lambda(size(lambda)), 0.0_dp)))
+      totals(k) = totals(k) + (dot_product(y, y) + dot_product(yd, (lambda + max(0.0_dp, lowest**2 - lambda(1))) &
+           & * yd)) / 2.0_dp
+      do j = 1, size(lambda)
+         if (lambda(j) < lowest**2) cycle
+         accelerations = accelerations + measure * ya(j)**2
+         velocities    = velocities + measure * y(j)**2
+      end do
+    end subroutine free_modes
+
+  end subroutine measure_free_motion
 
   ! the lowest frequency the interval of the instants resolves, 2 pi / T
   pure real(dp) function lowest_frequency(points)
@@ -9476,83 +9569,6 @@ contains
 
   end function projected_energy_norms
 
-  !===================================================================!
-  ! THE FREQUENCY OF THE VIBRATION of a law projected on the cells: as
-  ! vibration_frequency, with the mass and stiffness of the elements
-  ! summed over the region at each instant.
-  ! The free motions are those the conditions and the coordinates fixed
-  ! by a condition on a face leave.
-  ! Invalid input: as projected_energy_norms.
-  !===================================================================!
-
-  function projected_vibration_frequency(this, solution) result(frequency)
-
-    class(discrete_lagrangian), intent(in) :: this
-    type(discrete_field)      , intent(in) :: solution
-    real(dp) :: frequency
-
-    type(discrete_manifold) :: points
-    type(element_pencil), allocatable :: pencil(:)
-    integer , allocatable :: dof(:,:)
-    real(dp), allocatable :: coarse(:,:,:), stages(:,:,:,:), constraint(:,:,:), mass(:,:), stiffness(:,:)
-    real(dp), allocatable :: g(:,:), w(:,:), lambda(:), u(:,:), y(:), ya(:), sample(:,:), free(:,:)
-    logical , allocatable :: prescribed(:)
-    type(stencil), allocatable :: rows_along(:,:)
-    real(dp) :: lowest, accelerations, velocities, share, bound
-    integer :: ninst, k, e, n, i, j, a
-
-    call solution_read(this, solution, points)
-    call pencil_states(this, solution, points, coarse, stages, rows_along)
-    ninst         = points % num_instants()
-    lowest        = lowest_frequency(points)
-    accelerations = 0.0_dp
-    velocities    = 0.0_dp
-    do k = 1, ninst
-       call element_pencils(this, points, coarse, stages, rows_along, k, pencil, dof, constraint, prescribed)
-       n = size(dof, 2)
-       allocate(mass(n, n), stiffness(n, n), source=0.0_dp)
-       do e = 1, size(pencil)
-          mass(pencil(e) % coordinate, pencil(e) % coordinate) = &
-               & mass(pencil(e) % coordinate, pencil(e) % coordinate) + pencil(e) % mass
-          stiffness(pencil(e) % coordinate, pencil(e) % coordinate) = &
-               & stiffness(pencil(e) % coordinate, pencil(e) % coordinate) + pencil(e) % stiffness
-       end do
-       ! each condition by its derivatives of the highest order it
-       ! reads, and a row for each coordinate a face condition prescribes
-       allocate(g(0, n))
-       do i = 1, size(constraint, 1)
-          bound = epsilon(1.0_dp) * maxval(abs(constraint(i, :, :)))
-          do a = 2, 0, -1
-             if (any(abs(constraint(i, :, a)) > bound)) exit
-          end do
-          if (a < 0) cycle
-          g = reshape([transpose(g), constraint(i, :, a)], [size(g, 1) + 1, n], order=[2, 1])
-       end do
-       do j = 1, n
-          if (.not. prescribed(j)) cycle
-          g = reshape([transpose(g), merge(1.0_dp, 0.0_dp, [(i == j, i = 1, n)])], [size(g, 1) + 1, n], order=[2, 1])
-       end do
-       free = free_motions(g)
-       w    = mass_orthonormal(mass, free)
-       if (size(w, 2) > 0) then
-          call symmetric_eigensystem(matmul(transpose(w), matmul(stiffness, w)), lambda, u)
-          sample = coordinate_values_at(this, points, solution, dof, k)
-          sample = matmul(free, matmul(transpose(free), sample))
-          y  = matmul(transpose(u), matmul(transpose(w), matmul(mass, sample(:, 1))))
-          ya = matmul(transpose(u), matmul(transpose(w), matmul(mass, sample(:, 2))))
-          share = instant_share(points, k)
-          do j = 1, size(lambda)
-             if (lambda(j) < lowest**2) cycle
-             accelerations = accelerations + share * ya(j)**2
-             velocities    = velocities + share * y(j)**2
-          end do
-       end if
-       deallocate(mass, stiffness, g)
-    end do
-    frequency = lowest
-    if (velocities > 0.0_dp) frequency = max(lowest, sqrt(accelerations / velocities))
-
-  end function projected_vibration_frequency
 
   ! the share of the interval at instant k, the trapezoidal weight
   pure real(dp) function instant_share(points, k)
@@ -9608,8 +9624,8 @@ contains
     end do
   end function coordinate_values
 
-  ! the rates and accelerations of the coordinates at instant k of the
-  ! solution, in the columns 1 and 2
+  ! the values, rates and accelerations of the coordinates at instant k
+  ! of the solution, in the columns 0, 1 and 2
   function coordinate_values_at(this, points, solution, dof, k) result(v)
     class(discrete_lagrangian), intent(in) :: this
     type(discrete_manifold)   , intent(in) :: points
@@ -9622,11 +9638,27 @@ contains
     do c = 1, points % num_cells()
        x(:, c) = solution % jet(1:size(x, 1), points % point_of(k, c), 1)
     end do
-    allocate(v(size(dof, 2), 2))
-    do o = 1, 2
+    allocate(v(size(dof, 2), 0:2))
+    do o = 0, 2
        v(:, o) = coordinate_values(this, dof, o, x)
     end do
   end function coordinate_values_at
+
+  ! the values of the coordinates at the first instant of the solution
+  function coordinate_values_at_first(this, points, solution, dof) result(v)
+    class(discrete_lagrangian), intent(in) :: this
+    type(discrete_manifold)   , intent(in) :: points
+    type(discrete_field)      , intent(in) :: solution
+    integer                   , intent(in) :: dof(:,:)
+    real(dp), allocatable :: v(:)
+    real(dp), allocatable :: x(:,:)
+    integer :: c
+    allocate(x(this % rule % num_components(), points % num_cells()))
+    do c = 1, points % num_cells()
+       x(:, c) = solution % jet(1:size(x, 1), points % point_of(1, c), 1)
+    end do
+    v = coordinate_values(this, dof, 0, x)
+  end function coordinate_values_at_first
 
   !===================================================================!
   ! THE PENCILS OF THE ELEMENTS of a law projected on the cells, at

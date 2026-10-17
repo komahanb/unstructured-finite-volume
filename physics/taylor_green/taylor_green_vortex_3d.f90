@@ -36,7 +36,7 @@ program taylor_green_vortex_3d
   use operation_manifold         , only : continuous_manifold, discrete_manifold, interval, region, points, mesh
   use operation_field            , only : continuous_field, discrete_field, integral, sin, cos, exp, &
        &                                  operator(+), operator(-), operator(*), operator(/), operator(**)
-  use operation_lagrangian         , only : continuous_lagrangian, discrete_lagrangian, operator(+), operator(*)
+  use operation_lagrangian       , only : continuous_lagrangian, discrete_lagrangian, operator(+), operator(*)
   use operation_family           , only : dirk, chain
   use operation_finite_volume    , only : finite_volume
   use view_paraview_writer       , only : paraview
@@ -50,16 +50,16 @@ program taylor_green_vortex_3d
   real(dp), parameter :: T_final = 0.5_dp, nu = 0.01_dp
   integer , parameter :: num_instants = 5
 
-  type(continuous_manifold) :: omega, domega, tau
-  type(discrete_manifold)   :: omega_h
-  type(continuous_field)    :: t, x, y, z, u_exact, v_exact, w_exact, p_exact, exact
-  type(continuous_field)    :: u, v, w, p, lambda, mu, momentum_x, momentum_y, momentum_z, pressure
-  type(discrete_field)      :: estimate, solution, error
+  type(continuous_manifold)   :: omega, domega, tau
+  type(discrete_manifold)     :: omega_h
+  type(continuous_field)      :: t, x, y, z, u_exact, v_exact, w_exact, p_exact, exact
+  type(continuous_field)      :: u, v, w, p, lambda, mu, momentum_x, momentum_y, momentum_z, pressure
+  type(discrete_field)        :: estimate, solution, error
   type(continuous_lagrangian) :: r, g, gauge, L
   type(discrete_lagrangian)   :: L_h
-  type(newton)              :: stack
-  type(minimization)        :: graph
-  integer                   :: k
+  type(newton)                :: stack
+  type(minimization)          :: graph
+  integer                     :: k
 
   ! Omega = [0, T] x B, B the box of box_3d.py; dOmega = {0} x B;
   ! tau = [0, T]; Omega_h = {t_0..t_n} x C, C the cells of box_3d.msh

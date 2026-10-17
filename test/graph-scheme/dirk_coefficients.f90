@@ -25,12 +25,12 @@
 
 program dirk_coefficients
 
-  use util_precision    , only : dp
-  use operation_manifold, only : continuous_manifold, discrete_manifold
-  use operation_field   , only : continuous_field, discrete_field
-  use operation_field   , only : operator(+), operator(-), operator(*), operator(/), operator(**)
+  use util_precision      , only : dp
+  use operation_manifold  , only : continuous_manifold, discrete_manifold
+  use operation_field     , only : continuous_field, discrete_field
+  use operation_field     , only : operator(+), operator(-), operator(*), operator(/), operator(**)
   use operation_lagrangian, only : continuous_lagrangian, discrete_lagrangian
-  use util_verbosity    , only : set_verbosity
+  use util_verbosity      , only : set_verbosity
 
   implicit none
 

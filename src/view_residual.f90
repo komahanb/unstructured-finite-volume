@@ -22,12 +22,12 @@
 
 module view_residual
 
-  use util_precision    , only : dp
-  use token_identity    , only : token
-  use operation_field   , only : continuous_field
-  use operation_field   , only : WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR, DESIGN_FACTOR
+  use util_precision      , only : dp
+  use token_identity      , only : token
+  use operation_field     , only : continuous_field
+  use operation_field     , only : WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR, DESIGN_FACTOR
   use operation_lagrangian, only : continuous_lagrangian
-  use view_expression   , only : expression_view, operator(+), operator(*)
+  use view_expression     , only : expression_view, operator(+), operator(*)
 
   implicit none
 

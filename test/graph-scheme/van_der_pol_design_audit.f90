@@ -47,7 +47,7 @@ program van_der_pol_design_audit
   use operation_field    , only : continuous_field, discrete_field, integral, &
        &                          operator(+), operator(-), operator(*), operator(/), operator(**)
   use operation_lagrangian , only : continuous_lagrangian, discrete_lagrangian, operator(+), operator(*)
-  use operation_family   , only : dirk, bdf, adams, chain
+  use operation_family     , only : dirk, bdf, adams, chain
 
   implicit none
 
@@ -56,14 +56,14 @@ program van_der_pol_design_audit
   ! the seeds of the three expansions: along nu, along mu, along nu + mu
   real(dp), parameter :: seed(2, 3) = reshape([1.0_dp, 0.0_dp, 0.0_dp, 1.0_dp, 1.0_dp, 1.0_dp], [2, 3])
 
-  type(continuous_manifold) :: omega
-  type(discrete_manifold)   :: omega_h
-  type(continuous_field)    :: t, nu, mu, w, u, energy, lambda_r, lambda, kappa, rest
+  type(continuous_manifold)   :: omega
+  type(discrete_manifold)     :: omega_h
+  type(continuous_field)      :: t, nu, mu, w, u, energy, lambda_r, lambda, kappa, rest
   type(continuous_lagrangian) :: r, g, d, L
   type(discrete_lagrangian)   :: L_h
-  type(discrete_field)      :: estimate, solution, bare, kappa_h, slope, energy_h, bare_energy, design_h
-  type(discrete_field)      :: u_h, u_t_h, u_tt_h
-  type(continuous_field)    :: along(3)
+  type(discrete_field)        :: estimate, solution, bare, kappa_h, slope, energy_h, bare_energy, design_h
+  type(discrete_field)        :: u_h, u_t_h, u_tt_h
+  type(continuous_field)      :: along(3)
   real(dp) :: J(1 + 3 * order), by_adjoint, mixed, apart, largest
   integer  :: k, e
 

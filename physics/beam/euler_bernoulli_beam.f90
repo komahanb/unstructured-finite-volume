@@ -161,7 +161,7 @@ program euler_bernoulli_beam
   use operation_manifold         , only : continuous_manifold, discrete_manifold, interval, region, points
   use operation_field            , only : continuous_field, discrete_field, integral, representation
   use operation_field            , only : sin, cos, operator(+), operator(-), operator(*), operator(/), operator(**)
-  use operation_lagrangian         , only : continuous_lagrangian, discrete_lagrangian, operator(+), operator(*)
+  use operation_lagrangian       , only : continuous_lagrangian, discrete_lagrangian, operator(+), operator(*)
   use operation_family           , only : dirk, bdf, adams, chain
   use operation_finite_difference, only : finite_difference
   use operation_finite_element   , only : finite_element
@@ -223,14 +223,14 @@ contains
 
     logical, intent(in) :: open_line
 
-    type(continuous_manifold) :: omega, initial, left, right
-    type(discrete_manifold)   :: omega_h
-    type(continuous_field)    :: t, x, w, w_exact, exact, energy
-    type(continuous_field)    :: adjoint, mu_t, mu_x, lambda, lambda_0, lambda_L
-    type(discrete_field)      :: estimate, solution, error, functional, at_0, at_L
+    type(continuous_manifold)   :: omega, initial, left, right
+    type(discrete_manifold)     :: omega_h
+    type(continuous_field)      :: t, x, w, w_exact, exact, energy
+    type(continuous_field)      :: adjoint, mu_t, mu_x, lambda, lambda_0, lambda_L
+    type(discrete_field)        :: estimate, solution, error, functional, at_0, at_L
     type(continuous_lagrangian) :: r, r_t, r_x, ic, bc_0, bc_L, Lagrangian
     type(discrete_lagrangian)   :: L_h
-    type(minimization)        :: graph
+    type(minimization)          :: graph
     real(dp) :: frequency, J(1), J_exact
     integer  :: k
 
@@ -322,14 +322,14 @@ contains
     real(dp), intent(in), optional :: damping_scale
     logical , intent(in), optional :: elements
 
-    type(continuous_manifold) :: omega, initial, left, right
-    type(discrete_manifold)   :: omega_h
-    type(continuous_field)    :: t, x, w, w_exact, exact, EI, rhoA, damping, moment, moment_exact, load
-    type(continuous_field)    :: lambda, lambda_0, lambda_L
-    type(discrete_field)      :: estimate, solution, error
+    type(continuous_manifold)   :: omega, initial, left, right
+    type(discrete_manifold)     :: omega_h
+    type(continuous_field)      :: t, x, w, w_exact, exact, EI, rhoA, damping, moment, moment_exact, load
+    type(continuous_field)      :: lambda, lambda_0, lambda_L
+    type(discrete_field)        :: estimate, solution, error
     type(continuous_lagrangian) :: r, ic, bc_0, bc_L, Lagrangian
     type(discrete_lagrangian)   :: L_h
-    type(minimization)        :: graph
+    type(minimization)          :: graph
     real(dp) :: frequency
     integer  :: k
     logical  :: by_elements
@@ -421,15 +421,15 @@ contains
 
     real(dp), parameter :: r0 = 0.5_dp, inertia = 3.0_dp, spring = 4.0_dp
 
-    type(continuous_manifold) :: omega, initial, left, right
-    type(discrete_manifold)   :: omega_h
-    type(continuous_field)    :: t, x, w, theta, w_exact, theta_exact, exact, EI, rhoA, moment, moment_exact
-    type(continuous_field)    :: across, across_exact, turning, turning_exact, load, torque
-    type(continuous_field)    :: lambda, lambda_0, lambda_L, w_only, theta_only
-    type(discrete_field)      :: estimate, solution, error_w, error_theta
+    type(continuous_manifold)   :: omega, initial, left, right
+    type(discrete_manifold)     :: omega_h
+    type(continuous_field)      :: t, x, w, theta, w_exact, theta_exact, exact, EI, rhoA, moment, moment_exact
+    type(continuous_field)      :: across, across_exact, turning, turning_exact, load, torque
+    type(continuous_field)      :: lambda, lambda_0, lambda_L, w_only, theta_only
+    type(discrete_field)        :: estimate, solution, error_w, error_theta
     type(continuous_lagrangian) :: r, ic, bc_0, bc_L, Lagrangian
     type(discrete_lagrangian)   :: L_h
-    type(minimization)        :: graph
+    type(minimization)          :: graph
     real(dp) :: frequency
     integer  :: k
 
@@ -474,10 +474,10 @@ contains
     torque = inertia * theta_exact % derivative([t, t]) + spring * theta_exact &
          & + integral(turning_exact, over=omega % space())
     r      = continuous_lagrangian(omega, [rhoA * across + moment % derivative([x, x]) - load, &
-         &                               inertia * theta % derivative([t, t]) + spring * theta &
-         &                               + integral(turning, over=omega % space()) - torque])
+         &                                 inertia * theta % derivative([t, t]) + spring * theta &
+         &                                 + integral(turning, over=omega % space()) - torque])
     ic     = continuous_lagrangian(initial, [w - w_exact, w % derivative([t]), theta - theta_exact, &
-         &                                 theta % derivative([t]) - theta_exact % derivative([t])])
+         &                                   theta % derivative([t]) - theta_exact % derivative([t])])
     bc_0   = continuous_lagrangian(left , [w, w % derivative([x])])
     bc_L   = continuous_lagrangian(right, [w, w % derivative([x])])
 

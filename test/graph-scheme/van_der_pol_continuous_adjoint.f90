@@ -56,8 +56,8 @@ program van_der_pol_continuous_adjoint
   use operation_field    , only : continuous_field, discrete_field, integral, &
        &                          operator(+), operator(-), operator(*), operator(/), operator(**)
   use operation_lagrangian , only : continuous_lagrangian, discrete_lagrangian, operator(+), operator(*)
-  use operation_family   , only : dirk, bdf, adams, chain
-  use view_expression    , only : expression_view
+  use operation_family     , only : dirk, bdf, adams, chain
+  use view_expression      , only : expression_view
 
   implicit none
 
@@ -65,20 +65,20 @@ program van_der_pol_continuous_adjoint
   integer  :: num_instants = 21
 
   ! the continuous adjoint: one manifold, two unknowns, one block
-  type(continuous_manifold) :: omega, domega_0, domega_T
-  type(discrete_manifold)   :: omega_h
-  type(continuous_field)    :: t, nu, u, lambda, r, density, adjoint, u0, v0, rest, sensitivity
+  type(continuous_manifold)   :: omega, domega_0, domega_T
+  type(discrete_manifold)     :: omega_h
+  type(continuous_field)      :: t, nu, u, lambda, r, density, adjoint, u0, v0, rest, sensitivity
   type(continuous_field), allocatable :: terminal(:)
-  type(discrete_field)      :: estimate, solution, lambda_h, functional
+  type(discrete_field)        :: estimate, solution, lambda_h, functional
   type(continuous_lagrangian) :: system, g_0, g_T, g_nu, L
   type(discrete_lagrangian)   :: L_h
-  type(continuous_field)    :: rho_0, rho_T
+  type(continuous_field)      :: rho_0, rho_T
 
   ! the discrete adjoint: the manifold of the sensitivity contract
-  type(continuous_manifold) :: omega_d, domega_d
-  type(discrete_manifold)   :: omega_dh
-  type(continuous_field)    :: t_d, nu_d, u_d, lambda_r, lambda_g, kappa, r_d, u0_d, v0_d, energy, rest_d
-  type(discrete_field)      :: estimate_d, solution_d, kappa_h, adjoint_h, energy_h
+  type(continuous_manifold)   :: omega_d, domega_d
+  type(discrete_manifold)     :: omega_dh
+  type(continuous_field)      :: t_d, nu_d, u_d, lambda_r, lambda_g, kappa, r_d, u0_d, v0_d, energy, rest_d
+  type(discrete_field)        :: estimate_d, solution_d, kappa_h, adjoint_h, energy_h
   type(continuous_lagrangian) :: r_term, g_term, d_term, L_d
   type(discrete_lagrangian)   :: L_dh
 

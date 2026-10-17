@@ -54,7 +54,7 @@ program taylor_green_vortex
   use operation_manifold         , only : continuous_manifold, discrete_manifold, interval, region, points, mesh
   use operation_field            , only : continuous_field, discrete_field, integral
   use operation_field            , only : sin, cos, exp, operator(+), operator(-), operator(*), operator(/), operator(**)
-  use operation_lagrangian         , only : continuous_lagrangian, discrete_lagrangian, operator(+), operator(*)
+  use operation_lagrangian       , only : continuous_lagrangian, discrete_lagrangian, operator(+), operator(*)
   use operation_family           , only : dirk, bdf, adams, chain
   use operation_finite_volume    , only : finite_volume
   use view_paraview_writer       , only : paraview
@@ -78,9 +78,9 @@ program taylor_green_vortex
 
   type(continuous_lagrangian) :: r, g, gauge, L
   type(discrete_lagrangian)   :: L_h
-  type(newton)              :: stack
-  type(minimization)        :: graph
-  integer                   :: k
+  type(newton)                :: stack
+  type(minimization)          :: graph
+  integer                     :: k
 
   ! Omega = [0, T] x B, B the region of box.geo; dOmega = {0} x B;
   ! tau = [0, T]; Omega_h = {t_0..t_n} x C, C the cells of box.msh

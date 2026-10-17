@@ -55,7 +55,7 @@ program van_der_pol_study
   use operation_field    , only : continuous_field, discrete_field, integral, &
        &                          operator(+), operator(-), operator(*), operator(/), operator(**)
   use operation_lagrangian , only : continuous_lagrangian, discrete_lagrangian, operator(+), operator(*)
-  use operation_family   , only : family, dirk, bdf, adams, chain
+  use operation_family     , only : family, dirk, bdf, adams, chain
 
   implicit none
 
@@ -69,10 +69,10 @@ program van_der_pol_study
   type(family), allocatable :: schemes(:)
   integer, allocatable :: from(:)
 
-  type(continuous_manifold) :: omega, domega
-  type(discrete_manifold)   :: omega_h
-  type(continuous_field)    :: t, nu, u, lambda_r, lambda, kappa, oscillator, u0, v0, energy, rest
-  type(discrete_field)      :: estimate, solution, kappa_h, sensitivity
+  type(continuous_manifold)   :: omega, domega
+  type(discrete_manifold)     :: omega_h
+  type(continuous_field)      :: t, nu, u, lambda_r, lambda, kappa, oscillator, u0, v0, energy, rest
+  type(discrete_field)        :: estimate, solution, kappa_h, sensitivity
   type(continuous_lagrangian) :: r, g, d, L
   type(discrete_lagrangian)   :: L_h
   real(dp), allocatable :: values(:), reverse(:)

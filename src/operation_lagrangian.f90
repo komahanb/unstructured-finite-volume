@@ -504,8 +504,8 @@ contains
   function residual_multiplier(this, name, arguments) result(lambda)
 
     class(continuous_lagrangian), intent(inout) :: this
-    character(len=*)          , intent(in)    :: name
-    type(continuous_field)    , intent(in), optional :: arguments(:)
+    character(len=*)            , intent(in)    :: name
+    type(continuous_field)      , intent(in), optional :: arguments(:)
     type(continuous_field) :: lambda
 
     if (size(this % term) /= 1) then
@@ -590,8 +590,8 @@ contains
   subroutine check_representations(this, defined, with_chain, with_differences)
 
     class(discrete_lagrangian), intent(in) :: this
-    integer                 , intent(in) :: defined(:,:)
-    logical                 , intent(in) :: with_chain, with_differences
+    integer                   , intent(in) :: defined(:,:)
+    logical                   , intent(in) :: with_chain, with_differences
 
     integer :: c, f, o, top, times
     logical :: along_time
@@ -954,14 +954,14 @@ contains
   recursive subroutine minimize(this, estimate, solution, checkpoint, snapshots, continued, by)
 
     class(discrete_lagrangian), intent(in)  :: this
-    type(discrete_field)    , intent(in)  :: estimate
-    type(discrete_field)    , intent(out) :: solution
-    integer                 , intent(in), optional :: checkpoint, snapshots
-    logical                 , intent(in), optional :: continued
-    class(minimizer)        , intent(in), optional :: by
+    type(discrete_field)      , intent(in)  :: estimate
+    type(discrete_field)      , intent(out) :: solution
+    integer                   , intent(in), optional :: checkpoint, snapshots
+    logical                   , intent(in), optional :: continued
+    class(minimizer)          , intent(in), optional :: by
 
     type(discrete_lagrangian) :: iterate(1)
-    type(discrete_field)    :: estimates(1), solutions(1)
+    type(discrete_field)      :: estimates(1), solutions(1)
 
     if (present(continued)) then
        if (continued .neqv. this % continued) then
@@ -1043,9 +1043,9 @@ contains
     class(minimizer)        , intent(in), optional :: by
 
     class(discrete_lagrangian), intent(in)  :: this
-    type(discrete_field)    , intent(in)  :: estimate
-    type(discrete_field)    , intent(out) :: solution
-    integer                 , intent(in), optional :: checkpoint, snapshots
+    type(discrete_field)      , intent(in)  :: estimate
+    type(discrete_field)      , intent(out) :: solution
+    integer                   , intent(in), optional :: checkpoint, snapshots
 
     type(discrete_lagrangian) :: iterate, plus
     type(discrete_field) :: start, trial, enriched, at_points, settled, objective_field
@@ -1303,9 +1303,9 @@ contains
     class(minimizer)        , intent(in), optional :: by
 
     class(discrete_lagrangian), intent(in)  :: this
-    type(equidistribution)  , intent(in)  :: placement
-    type(discrete_field)    , intent(in)  :: estimate
-    type(discrete_field)    , intent(out) :: solution
+    type(equidistribution)    , intent(in)  :: placement
+    type(discrete_field)      , intent(in)  :: estimate
+    type(discrete_field)      , intent(out) :: solution
 
     ! a design of the rounds: its instants and chain, its solves, and
     ! its error by the errors of the round that measured it
@@ -2059,9 +2059,9 @@ contains
   function curvature_errors(this, solution, p, uncertainty) result(e)
 
     class(discrete_lagrangian), intent(in)  :: this
-    type(discrete_field)    , intent(in)  :: solution
-    integer                 , intent(in)  :: p
-    real(dp)                , intent(out), optional :: uncertainty
+    type(discrete_field)      , intent(in)  :: solution
+    integer                   , intent(in)  :: p
+    real(dp)                  , intent(out), optional :: uncertainty
     real(dp), allocatable :: e(:)
 
     type(discrete_field) :: pins
@@ -2142,10 +2142,10 @@ contains
     class(minimizer)        , intent(in), optional :: by
 
     class(discrete_lagrangian), intent(in)  :: this
-    type(discrete_field)    , intent(in)  :: solution
-    real(dp)                , intent(in)  :: slope(:), slope_plus(:)
+    type(discrete_field)      , intent(in)  :: solution
+    real(dp)                  , intent(in)  :: slope(:), slope_plus(:)
     real(dp), allocatable   , intent(out) :: contribution(:), shift(:)
-    real(dp)                , intent(out) :: uncertainty
+    real(dp)                  , intent(out) :: uncertainty
 
     type(discrete_lagrangian) :: pinned
     type(discrete_field) :: start, side
@@ -2208,9 +2208,9 @@ contains
   function placement_instants(this, solution, eta, count) result(position)
 
     class(discrete_lagrangian), intent(in) :: this
-    type(discrete_field)    , intent(in) :: solution
-    real(dp)                , intent(in) :: eta(:)
-    integer                 , intent(in) :: count
+    type(discrete_field)      , intent(in) :: solution
+    real(dp)                  , intent(in) :: eta(:)
+    integer                   , intent(in) :: count
     real(dp), allocatable :: position(:)
 
     real(dp), allocatable :: t(:), mass(:), h(:)
@@ -2296,10 +2296,10 @@ contains
     class(minimizer)        , intent(in), optional :: by
 
     type(discrete_lagrangian), intent(in)  :: residuals(:)
-    type(discrete_field)   , intent(in)  :: estimates(:)
-    type(discrete_field)   , intent(out) :: solutions(:)
-    integer                , intent(in), optional :: checkpoint, snapshots
-    logical                , intent(in), optional :: continued
+    type(discrete_field)     , intent(in)  :: estimates(:)
+    type(discrete_field)     , intent(out) :: solutions(:)
+    integer                  , intent(in), optional :: checkpoint, snapshots
+    logical                  , intent(in), optional :: continued
 
     type(discrete_lagrangian), allocatable :: iterates(:)
     integer :: k
@@ -2362,9 +2362,9 @@ contains
     class(minimizer)        , intent(in), optional :: by
 
     type(discrete_lagrangian), intent(inout) :: iterates(:)
-    type(discrete_field)   , intent(in)    :: estimates(:)
-    type(discrete_field)   , intent(out)   :: solutions(:)
-    integer                , intent(in), optional :: checkpoint, snapshots
+    type(discrete_field)     , intent(in)    :: estimates(:)
+    type(discrete_field)     , intent(out)   :: solutions(:)
+    integer                  , intent(in), optional :: checkpoint, snapshots
 
     type(discrete_field)    :: functional
     real(dp), allocatable :: kappa(:,:), gradient(:), hessian(:,:), c(:), a(:,:), step(:), mu(:), weight(:)
@@ -2568,9 +2568,9 @@ contains
   subroutine inequalities_at(this, solution, c, a, gradients)
 
     class(discrete_lagrangian), intent(in)  :: this
-    type(discrete_field)    , intent(in)  :: solution
+    type(discrete_field)      , intent(in)  :: solution
     real(dp), allocatable   , intent(out) :: c(:), a(:,:)
-    real(dp)                , intent(in), optional :: gradients(:,:)
+    real(dp)                  , intent(in), optional :: gradients(:,:)
 
     type(discrete_field) :: functional
     real(dp), allocatable :: slope(:)
@@ -2630,8 +2630,8 @@ contains
   subroutine place_inequality_multipliers(this, mu, solution)
 
     class(discrete_lagrangian), intent(in)    :: this
-    real(dp)                , intent(in)    :: mu(:)
-    type(discrete_field)    , intent(inout) :: solution
+    real(dp)                  , intent(in)    :: mu(:)
+    type(discrete_field)      , intent(inout) :: solution
 
     integer :: j, i, m, column, first
 
@@ -2945,12 +2945,12 @@ contains
        & converged, by)
 
     class(discrete_lagrangian), intent(in)  :: this
-    type(discrete_field)    , intent(in)  :: estimate
-    type(discrete_field)    , intent(out) :: solution
-    integer                 , intent(in), optional :: checkpoint, snapshots
+    type(discrete_field)      , intent(in)  :: estimate
+    type(discrete_field)      , intent(out) :: solution
+    integer                   , intent(in), optional :: checkpoint, snapshots
     real(dp), allocatable   , intent(out), optional :: kappa(:,:), functional_kappa(:,:)
-    logical                 , intent(out), optional :: converged
-    class(minimizer)        , intent(in), optional :: by
+    logical                   , intent(out), optional :: converged
+    class(minimizer)          , intent(in), optional :: by
 
     type(minimization) :: graph
     class(march_state), allocatable :: state
@@ -3079,9 +3079,9 @@ contains
     class(minimizer)        , intent(in), optional :: by
 
     class(discrete_lagrangian), intent(in)  :: this
-    type(discrete_field)    , intent(in)  :: estimate
-    integer                 , intent(in)  :: segment, shots
-    type(discrete_field)    , intent(out) :: solution
+    type(discrete_field)      , intent(in)  :: estimate
+    integer                   , intent(in)  :: segment, shots
+    type(discrete_field)      , intent(out) :: solution
     real(dp), allocatable   , intent(out), optional :: kappa(:,:)
 
     real(dp), allocatable :: value(:,:), jet(:,:,:), adjoint(:,:,:,:), reaction(:,:,:), gauge(:,:,:)
@@ -3143,8 +3143,8 @@ contains
     class(minimizer)        , intent(in), optional :: by
 
     class(discrete_lagrangian)       , intent(in)  :: this
-    type(discrete_field)           , intent(in)  :: estimate
-    type(discrete_field)           , intent(out) :: solution
+    type(discrete_field)             , intent(in)  :: estimate
+    type(discrete_field)             , intent(out) :: solution
     class(march_state), allocatable, intent(out) :: state
 
     call this % begun(estimate, state)
@@ -3251,7 +3251,7 @@ contains
   ! the design at every point of rows, their stored input
   function rows_design(this, rows) result(design)
     class(discrete_lagrangian), intent(in) :: this
-    type(residual_operator) , intent(in) :: rows
+    type(residual_operator)   , intent(in) :: rows
     type(stored_field) :: design
     type(typed_field_domain) :: designs
     designs = rows % design_fields()
@@ -3270,7 +3270,7 @@ contains
   subroutine march_begun(this, estimate, state)
 
     class(discrete_lagrangian)       , intent(in)  :: this
-    type(discrete_field)           , intent(in)  :: estimate
+    type(discrete_field)             , intent(in)  :: estimate
     class(march_state), allocatable, intent(out) :: state
 
     type(chain_state), allocatable :: march
@@ -3332,10 +3332,10 @@ contains
   subroutine march_block_system(this, b, state, reversed, blk)
 
     class(discrete_lagrangian), intent(in)    :: this
-    integer                 , intent(in)    :: b
-    class(march_state)      , intent(inout) :: state
-    logical                 , intent(in)    :: reversed
-    type(chain_block)       , intent(out)   :: blk
+    integer                   , intent(in)    :: b
+    class(march_state)        , intent(inout) :: state
+    logical                   , intent(in)    :: reversed
+    type(chain_block)         , intent(out)   :: blk
 
     real(dp), allocatable :: predicted(:,:)
     integer :: first, last, depth, m, c, stride, order, nd, d, o, column
@@ -3383,10 +3383,10 @@ contains
   ! block's own instants and the stages of its steps
   subroutine block_written(this, blk, x, column, state)
     class(discrete_lagrangian), intent(in)    :: this
-    type(chain_block)       , intent(in)    :: blk
-    real(dp)                , intent(in)    :: x(:)
-    integer                 , intent(in)    :: column
-    class(march_state)      , intent(inout) :: state
+    type(chain_block)         , intent(in)    :: blk
+    real(dp)                  , intent(in)    :: x(:)
+    integer                   , intent(in)    :: column
+    class(march_state)        , intent(inout) :: state
     select type (state)
     type is (chain_state)
        call blk % to_points(OWN_MOMENTS, origin, x, state % tuple(:, :, :, column), state % stages(:, :, :, :, column))
@@ -3410,9 +3410,9 @@ contains
 
   subroutine march_expansion_side(this, blk, d, m, state, rhs)
     class(discrete_lagrangian), intent(in)    :: this
-    type(chain_block)       , intent(in)    :: blk
-    integer                 , intent(in)    :: d, m
-    class(march_state)      , intent(inout) :: state
+    type(chain_block)         , intent(in)    :: blk
+    integer                   , intent(in)    :: d, m
+    class(march_state)        , intent(inout) :: state
     real(dp), allocatable   , intent(out)   :: rhs(:)
     select type (state)
     type is (chain_state)
@@ -3430,8 +3430,8 @@ contains
   subroutine march_solved(this, state, solution)
 
     class(discrete_lagrangian), intent(in)    :: this
-    class(march_state)      , intent(inout) :: state
-    type(discrete_field)    , intent(out)   :: solution
+    class(march_state)        , intent(inout) :: state
+    type(discrete_field)      , intent(out)   :: solution
 
     real(dp), allocatable :: above(:,:,:,:), stages_above(:,:,:,:,:)
     integer :: nf, ncells, ninst, stride, k, c, f
@@ -3479,8 +3479,8 @@ contains
   ! at the nodes, and the multipliers of every equality, zero
   subroutine march_adjoint_begun(this, solution, state)
     class(discrete_lagrangian), intent(in)    :: this
-    type(discrete_field)    , intent(in)    :: solution
-    class(march_state)      , intent(inout) :: state
+    type(discrete_field)      , intent(in)    :: solution
+    class(march_state)        , intent(inout) :: state
     select type (state)
     type is (chain_state)
        call this % lagrangian_differential(solution, state % gradient, state % partial)
@@ -3502,9 +3502,9 @@ contains
   subroutine march_adjoint_side(this, blk, o, d, state, rhs)
 
     class(discrete_lagrangian), intent(in)    :: this
-    type(chain_block)       , intent(in)    :: blk
-    integer                 , intent(in)    :: o, d
-    class(march_state)      , intent(inout) :: state
+    type(chain_block)         , intent(in)    :: blk
+    integer                   , intent(in)    :: o, d
+    class(march_state)        , intent(inout) :: state
     real(dp), allocatable   , intent(out)   :: rhs(:)
 
     select type (state)
@@ -3521,10 +3521,10 @@ contains
   subroutine march_adjoint_received(this, blk, o, d, x, state)
 
     class(discrete_lagrangian), intent(in)    :: this
-    type(chain_block)       , intent(in)    :: blk
-    integer                 , intent(in)    :: o, d
-    real(dp)                , intent(in)    :: x(:)
-    class(march_state)      , intent(inout) :: state
+    type(chain_block)         , intent(in)    :: blk
+    integer                   , intent(in)    :: o, d
+    real(dp)                  , intent(in)    :: x(:)
+    class(march_state)        , intent(inout) :: state
 
     integer :: k, c, base, stride, column
 
@@ -3553,8 +3553,8 @@ contains
   subroutine march_adjoint_placed(this, blk, state)
 
     class(discrete_lagrangian), intent(in)    :: this
-    type(chain_block)       , intent(inout) :: blk
-    class(march_state)      , intent(inout) :: state
+    type(chain_block)         , intent(inout) :: blk
+    class(march_state)        , intent(inout) :: state
 
     integer :: d, o, order, nd
 
@@ -3577,8 +3577,8 @@ contains
   ! the images summed once first
   subroutine march_adjoint_solution(this, state, solution)
     class(discrete_lagrangian), intent(in)    :: this
-    class(march_state)      , intent(inout) :: state
-    type(discrete_field)    , intent(inout) :: solution
+    class(march_state)        , intent(inout) :: state
+    type(discrete_field)      , intent(inout) :: solution
     select type (state)
     type is (chain_state)
        if (.not. this % pipelined()) call this % shared_expansions_summed(state % adjoint, state % reaction, &
@@ -3601,11 +3601,11 @@ contains
   subroutine solution_columns(this, nrow, value, names, jet, slot, nm)
 
     class(discrete_lagrangian)      , intent(in)  :: this
-    integer                       , intent(in)  :: nrow
+    integer                         , intent(in)  :: nrow
     real(dp), allocatable         , intent(out) :: value(:,:), jet(:,:,:)
     character(len=32), allocatable, intent(out) :: names(:)
     integer , allocatable         , intent(out) :: slot(:)
-    integer                       , intent(out) :: nm
+    integer                         , intent(out) :: nm
 
     integer :: nf, npts, nc, j, f
 
@@ -3650,12 +3650,12 @@ contains
   subroutine multipliers_assembled(this, nrow, adjoint, reaction, gauge, design_multiplier, names, jet, value, slot)
 
     class(discrete_lagrangian), intent(in)    :: this
-    integer                 , intent(in)    :: nrow
-    real(dp)                , intent(in)    :: adjoint(:,:,:,0:), reaction(:,:,0:), gauge(:,:,0:)
-    real(dp)                , intent(in)    :: design_multiplier(:,0:)
-    character(len=32)       , intent(inout) :: names(:)
-    real(dp)                , intent(inout) :: jet(:,:,:), value(:,:)
-    integer                 , intent(inout) :: slot(:)
+    integer                   , intent(in)    :: nrow
+    real(dp)                  , intent(in)    :: adjoint(:,:,:,0:), reaction(:,:,0:), gauge(:,:,0:)
+    real(dp)                  , intent(in)    :: design_multiplier(:,0:)
+    character(len=32)         , intent(inout) :: names(:)
+    real(dp)                  , intent(inout) :: jet(:,:,:), value(:,:)
+    integer                   , intent(inout) :: slot(:)
 
     integer :: nf, ninst, ncells, npts, nc, e, g, j, f, k, c, col, nm
 
@@ -3744,10 +3744,10 @@ contains
   ! solution of the state retained
   subroutine solution_completed(this, value, names, jet, slot, solution)
     class(discrete_lagrangian), intent(in)    :: this
-    real(dp)                , intent(in)    :: value(:,:), jet(:,:,:)
-    character(len=32)       , intent(in)    :: names(:)
-    integer                 , intent(in)    :: slot(:)
-    type(discrete_field)    , intent(inout) :: solution
+    real(dp)                  , intent(in)    :: value(:,:), jet(:,:,:)
+    character(len=32)         , intent(in)    :: names(:)
+    integer                   , intent(in)    :: slot(:)
+    type(discrete_field)      , intent(inout) :: solution
     type(discrete_field) :: with_nodes
     with_nodes = solution
     solution = discrete_field(this % points, value, names)
@@ -3786,12 +3786,12 @@ contains
   subroutine quadrature_nodes(this, lb, tuple, stages, solution, stage_node, blocks, density, step_term)
 
     class(discrete_lagrangian), intent(in)    :: this
-    type(lower_bounds)      , intent(in)    :: lb
-    real(dp)                , intent(in)    :: tuple(:,:,lb % instant:,0:), stages(:,:,:,lb % stage:,0:)
-    type(discrete_field)    , intent(inout) :: solution
+    type(lower_bounds)        , intent(in)    :: lb
+    real(dp)                  , intent(in)    :: tuple(:,:,lb % instant:,0:), stages(:,:,:,lb % stage:,0:)
+    type(discrete_field)      , intent(inout) :: solution
     integer , allocatable   , intent(out)   :: stage_node(:,:,:)
-    integer                 , intent(in), optional :: blocks(2)
-    real(dp)                , intent(in), optional :: density(:)
+    integer                   , intent(in), optional :: blocks(2)
+    real(dp)                  , intent(in), optional :: density(:)
     real(dp), allocatable   , intent(out), optional :: step_term(:)
 
     type(derivative_terms), allocatable :: dt(:), weight(:), moved(:), moved_weight(:)
@@ -4068,8 +4068,8 @@ contains
   ! the instants of block b: first - depth .. last, depth of history
   subroutine block_extent(this, b, first, last, depth)
     class(discrete_lagrangian), intent(in)  :: this
-    integer                 , intent(in)  :: b
-    integer                 , intent(out) :: first, last, depth
+    integer                   , intent(in)  :: b
+    integer                   , intent(out) :: first, last, depth
     integer :: nb
     nb    = this % schemes % num_blocks()
     first = this % schemes % from(b)
@@ -4109,9 +4109,9 @@ contains
     class(minimizer)        , intent(in), optional :: by
 
     class(discrete_lagrangian), intent(in)  :: this
-    type(discrete_field)    , intent(in)  :: estimate
-    type(stencil)           , intent(in)  :: rows_along(:,:)
-    integer                 , intent(in)  :: segment, shots
+    type(discrete_field)      , intent(in)  :: estimate
+    type(stencil)             , intent(in)  :: rows_along(:,:)
+    integer                   , intent(in)  :: segment, shots
     real(dp), allocatable   , intent(out) :: field_value(:,:,:,:), objective_value(:)
     real(dp), allocatable   , intent(out) :: adjoint(:,:,:,:), reaction(:,:,:), gauge(:,:,:)
     real(dp), allocatable   , intent(out) :: design_multiplier(:,:)
@@ -4561,7 +4561,7 @@ contains
   subroutine lagrangian_differential(this, solution, gradient, partial)
 
     class(discrete_lagrangian), intent(in)  :: this
-    type(discrete_field)    , intent(in)  :: solution
+    type(discrete_field)      , intent(in)  :: solution
     real(dp), allocatable   , intent(out) :: gradient(:,:,:), partial(:,:)
 
     real(dp), allocatable :: g(:,:,:), p(:,:)
@@ -4639,8 +4639,8 @@ contains
   subroutine allocate_multipliers(this, partial, ninst, adjoint, incoming, reaction, gauge, design_multiplier)
 
     class(discrete_lagrangian), intent(in)  :: this
-    real(dp)                , intent(in)  :: partial(:,0:)
-    integer                 , intent(in)  :: ninst
+    real(dp)                  , intent(in)  :: partial(:,0:)
+    integer                   , intent(in)  :: ninst
     real(dp), allocatable   , intent(out) :: adjoint(:,:,:,:), incoming(:,:,:,:), reaction(:,:,:)
     real(dp), allocatable   , intent(out) :: gauge(:,:,:), design_multiplier(:,:)
 
@@ -4678,8 +4678,8 @@ contains
   subroutine shared_expansions_summed(this, adjoint, reaction, gauge, design_multiplier)
 
     class(discrete_lagrangian), intent(in)    :: this
-    real(dp)                , intent(inout) :: adjoint(:,:,:,0:), reaction(:,:,0:), gauge(:,:,0:)
-    real(dp)                , intent(inout) :: design_multiplier(:,0:)
+    real(dp)                  , intent(inout) :: adjoint(:,:,:,0:), reaction(:,:,0:), gauge(:,:,0:)
+    real(dp)                  , intent(inout) :: design_multiplier(:,0:)
 
     real(dp), allocatable :: above4(:,:,:,:), above3(:,:,:), above2(:,:)
 
@@ -4750,8 +4750,8 @@ contains
   function block_positions(this, scheme, first, n, instant_moment, stage_moment) result(positions)
 
     class(discrete_lagrangian), intent(in) :: this
-    type(family)            , intent(in) :: scheme
-    integer                 , intent(in) :: first, n, instant_moment(:), stage_moment(:,:)
+    type(family)              , intent(in) :: scheme
+    integer                   , intent(in) :: first, n, instant_moment(:), stage_moment(:,:)
     real(dp), allocatable :: positions(:,:)
 
     integer :: ncells, k, i, c, m
@@ -4780,13 +4780,13 @@ contains
   subroutine block_rows(this, scheme, first, last, depth, rows_along, lb, tuple, stages, solved_stages, blk)
 
     class(discrete_lagrangian), intent(in)  :: this
-    type(family)            , intent(in)  :: scheme
-    integer                 , intent(in)  :: first, last, depth
-    type(stencil)           , intent(in)  :: rows_along(:,:)
-    type(lower_bounds)      , intent(in)  :: lb
-    real(dp)                , intent(in)  :: tuple(:,:,lb % instant:), stages(:,:,:,lb % stage:)
-    logical                 , intent(in)  :: solved_stages
-    type(chain_block)       , intent(out) :: blk
+    type(family)              , intent(in)  :: scheme
+    integer                   , intent(in)  :: first, last, depth
+    type(stencil)             , intent(in)  :: rows_along(:,:)
+    type(lower_bounds)        , intent(in)  :: lb
+    real(dp)                  , intent(in)  :: tuple(:,:,lb % instant:), stages(:,:,:,lb % stage:)
+    logical                   , intent(in)  :: solved_stages
+    type(chain_block)         , intent(out) :: blk
 
     integer , allocatable :: at(:), instant_moment(:), primary(:)
     type(stencil) :: relations, gauge
@@ -5387,7 +5387,7 @@ contains
   subroutine block_inputs(this, blk)
 
     class(discrete_lagrangian), intent(in)    :: this
-    type(chain_block)       , intent(inout) :: blk
+    type(chain_block)         , intent(inout) :: blk
 
     real(dp), allocatable :: y(:)
 
@@ -5405,13 +5405,13 @@ contains
     class(minimizer)        , intent(in), optional :: by
 
     class(discrete_lagrangian), intent(in)    :: this
-    type(family)            , intent(in)    :: scheme
-    integer                 , intent(in)    :: first, last, depth
-    type(stencil)           , intent(in)    :: rows_along(:,:)
-    type(lower_bounds)      , intent(in)    :: lb
-    real(dp)                , intent(inout) :: tuple(:,:,lb % instant:,0:), stages(:,:,:,lb % stage:,0:)
-    logical                 , intent(in), optional :: expand
-    logical                 , intent(out), optional :: converged
+    type(family)              , intent(in)    :: scheme
+    integer                   , intent(in)    :: first, last, depth
+    type(stencil)             , intent(in)    :: rows_along(:,:)
+    type(lower_bounds)        , intent(in)    :: lb
+    real(dp)                  , intent(inout) :: tuple(:,:,lb % instant:,0:), stages(:,:,:,lb % stage:,0:)
+    logical                   , intent(in), optional :: expand
+    logical                   , intent(out), optional :: converged
 
     type(chain_block) :: blk
     real(dp), allocatable :: predicted(:,:)
@@ -5456,11 +5456,11 @@ contains
     class(minimizer)        , intent(in), optional :: by
 
     class(discrete_lagrangian), intent(in)    :: this
-    type(chain_block)       , intent(inout) :: blk
-    type(lower_bounds)      , intent(in)    :: lb
-    real(dp)                , intent(inout) :: tuple(:,:,lb % instant:,0:), stages(:,:,:,lb % stage:,0:)
-    logical                 , intent(in), optional :: expand
-    logical                 , intent(out), optional :: converged
+    type(chain_block)         , intent(inout) :: blk
+    type(lower_bounds)        , intent(in)    :: lb
+    real(dp)                  , intent(inout) :: tuple(:,:,lb % instant:,0:), stages(:,:,:,lb % stage:,0:)
+    logical                   , intent(in), optional :: expand
+    logical                   , intent(out), optional :: converged
 
     integer :: d, m
 
@@ -5505,10 +5505,10 @@ contains
     class(minimizer)        , intent(in), optional :: by
 
     class(discrete_lagrangian), intent(in)    :: this
-    type(chain_block)       , intent(in)    :: blk
-    type(lower_bounds)      , intent(in)    :: lb
-    integer                 , intent(in)    :: d, m
-    real(dp)                , intent(inout) :: tuple(:,:,lb % instant:,0:), stages(:,:,:,lb % stage:,0:)
+    type(chain_block)         , intent(in)    :: blk
+    type(lower_bounds)        , intent(in)    :: lb
+    integer                   , intent(in)    :: d, m
+    real(dp)                  , intent(inout) :: tuple(:,:,lb % instant:,0:), stages(:,:,:,lb % stage:,0:)
 
     type(residual_operator) :: lin
     real(dp), allocatable :: rhs(:), x(:)
@@ -5538,10 +5538,10 @@ contains
   subroutine expansion_source(this, blk, lb, d, m, tuple, stages, rhs)
 
     class(discrete_lagrangian), intent(in)  :: this
-    type(chain_block)       , intent(in)  :: blk
-    type(lower_bounds)      , intent(in)  :: lb
-    integer                 , intent(in)  :: d, m
-    real(dp)                , intent(in)  :: tuple(:,:,lb % instant:,0:), stages(:,:,:,lb % stage:,0:)
+    type(chain_block)         , intent(in)  :: blk
+    type(lower_bounds)        , intent(in)  :: lb
+    integer                   , intent(in)  :: d, m
+    real(dp)                  , intent(in)  :: tuple(:,:,lb % instant:,0:), stages(:,:,:,lb % stage:,0:)
     real(dp), allocatable   , intent(out) :: rhs(:)
 
     real(dp), allocatable :: jets(:,:), slopes(:), values(:), seed(:)
@@ -5609,8 +5609,8 @@ contains
     class(minimizer)        , intent(in), optional :: by
 
     class(discrete_lagrangian), intent(in)    :: this
-    type(stencil)           , intent(in)    :: rows_along(:,:)
-    real(dp)                , intent(inout) :: tuple(:,:,:,0:), stages(:,:,:,:,0:)
+    type(stencil)             , intent(in)    :: rows_along(:,:)
+    real(dp)                  , intent(inout) :: tuple(:,:,:,0:), stages(:,:,:,:,0:)
 
     real(dp), allocatable :: tuple_co(:,:,:,:)[:], stages_co(:,:,:,:,:)[:]
     type(chain_block) :: blk
@@ -5698,12 +5698,12 @@ contains
     class(minimizer)        , intent(in), optional :: by
 
     class(discrete_lagrangian), intent(in)    :: this
-    type(stencil)           , intent(in)    :: rows_along(:,:)
-    real(dp)                , intent(in)    :: tuple(:,:,:,0:), stages(:,:,:,:,0:)
-    real(dp)                , intent(in)    :: gradient(:,:,0:)
-    integer                 , intent(in)    :: stage_node(:,:,:)
-    real(dp)                , intent(inout) :: adjoint(:,:,:,0:), incoming(:,:,:,0:), reaction(:,:,0:)
-    real(dp)                , intent(inout) :: gauge(:,:,0:), in_design(:,0:)
+    type(stencil)             , intent(in)    :: rows_along(:,:)
+    real(dp)                  , intent(in)    :: tuple(:,:,:,0:), stages(:,:,:,:,0:)
+    real(dp)                  , intent(in)    :: gradient(:,:,0:)
+    integer                   , intent(in)    :: stage_node(:,:,:)
+    real(dp)                  , intent(inout) :: adjoint(:,:,:,0:), incoming(:,:,:,0:), reaction(:,:,0:)
+    real(dp)                  , intent(inout) :: gauge(:,:,0:), in_design(:,0:)
 
     real(dp), allocatable :: mu_co(:,:,:)[:], smu_co(:,:,:,:)[:], reaction_co(:,:,:)[:]
     real(dp), allocatable :: below(:,:,:), stages_below(:,:,:,:)
@@ -5941,15 +5941,15 @@ contains
     class(minimizer)        , intent(in), optional :: by
 
     class(discrete_lagrangian), intent(in)    :: this
-    type(family)            , intent(in)    :: scheme
-    integer                 , intent(in)    :: first, last, depth
-    type(stencil)           , intent(in)    :: rows_along(:,:)
-    type(lower_bounds)      , intent(in)    :: lb
-    real(dp)                , intent(in)    :: tuple(:,:,lb % instant:,0:), stages(:,:,:,lb % stage:,0:)
-    real(dp)                , intent(in)    :: gradient(:,lb % node:,0:)
-    integer                 , intent(in)    :: stage_node(lb % stage:,:,:)
-    real(dp)                , intent(inout) :: adjoint(:,:,:,0:), incoming(:,:,lb % instant:,0:), reaction(:,:,0:)
-    real(dp)                , intent(inout) :: gauge(:,:,0:), in_design(:,0:)
+    type(family)              , intent(in)    :: scheme
+    integer                   , intent(in)    :: first, last, depth
+    type(stencil)             , intent(in)    :: rows_along(:,:)
+    type(lower_bounds)        , intent(in)    :: lb
+    real(dp)                  , intent(in)    :: tuple(:,:,lb % instant:,0:), stages(:,:,:,lb % stage:,0:)
+    real(dp)                  , intent(in)    :: gradient(:,lb % node:,0:)
+    integer                   , intent(in)    :: stage_node(lb % stage:,:,:)
+    real(dp)                  , intent(inout) :: adjoint(:,:,:,0:), incoming(:,:,lb % instant:,0:), reaction(:,:,0:)
+    real(dp)                  , intent(inout) :: gauge(:,:,0:), in_design(:,0:)
 
     type(chain_block) :: blk
 
@@ -5976,13 +5976,13 @@ contains
     class(minimizer)        , intent(in), optional :: by
 
     class(discrete_lagrangian), intent(in)    :: this
-    type(chain_block)       , intent(inout) :: blk
-    type(lower_bounds)      , intent(in)    :: lb
-    real(dp)                , intent(in)    :: tuple(:,:,lb % instant:,0:), stages(:,:,:,lb % stage:,0:)
-    real(dp)                , intent(in)    :: gradient(:,lb % node:,0:)
-    integer                 , intent(in)    :: stage_node(lb % stage:,:,:)
-    real(dp)                , intent(inout) :: adjoint(:,:,:,0:), incoming(:,:,lb % instant:,0:), reaction(:,:,0:)
-    real(dp)                , intent(inout) :: gauge(:,:,0:), in_design(:,0:)
+    type(chain_block)         , intent(inout) :: blk
+    type(lower_bounds)        , intent(in)    :: lb
+    real(dp)                  , intent(in)    :: tuple(:,:,lb % instant:,0:), stages(:,:,:,lb % stage:,0:)
+    real(dp)                  , intent(in)    :: gradient(:,lb % node:,0:)
+    integer                   , intent(in)    :: stage_node(lb % stage:,:,:)
+    real(dp)                  , intent(inout) :: adjoint(:,:,:,0:), incoming(:,:,lb % instant:,0:), reaction(:,:,0:)
+    real(dp)                  , intent(inout) :: gauge(:,:,0:), in_design(:,0:)
 
     real(dp), allocatable :: mu(:,:,:), x(:), jets(:,:,:)
     logical , allocatable :: gauged(:)
@@ -6066,12 +6066,12 @@ contains
   subroutine adjoint_right_side_of(this, lb, blk, o, d, jets, mu, gradient, stage_node, incoming, rhs)
 
     class(discrete_lagrangian), intent(in)    :: this
-    type(lower_bounds)      , intent(in)    :: lb
-    type(chain_block)       , intent(in)    :: blk
-    integer                 , intent(in)    :: o, d
-    real(dp)                , intent(in)    :: jets(:,0:), mu(:,0:), gradient(:,lb % node:,0:)
-    integer                 , intent(in)    :: stage_node(lb % stage:,:,:)
-    real(dp)                , intent(in)    :: incoming(:,:,lb % instant:,0:)
+    type(lower_bounds)        , intent(in)    :: lb
+    type(chain_block)         , intent(in)    :: blk
+    integer                   , intent(in)    :: o, d
+    real(dp)                  , intent(in)    :: jets(:,0:), mu(:,0:), gradient(:,lb % node:,0:)
+    integer                   , intent(in)    :: stage_node(lb % stage:,:,:)
+    real(dp)                  , intent(in)    :: incoming(:,:,lb % instant:,0:)
     real(dp), allocatable   , intent(out)   :: rhs(:)
 
     integer :: stride, n, k, c, i, base, unknowns, column, nsites, site
@@ -6134,12 +6134,12 @@ contains
     class(minimizer)        , intent(in), optional :: by
 
     class(discrete_lagrangian), intent(in)    :: this
-    type(lower_bounds)      , intent(in)    :: lb
-    type(chain_block)       , intent(in)    :: blk
-    integer                 , intent(in)    :: o, d
-    real(dp)                , intent(in)    :: jets(:,0:), mu(:,0:), gradient(:,lb % node:,0:)
-    integer                 , intent(in)    :: stage_node(lb % stage:,:,:)
-    real(dp)                , intent(inout) :: incoming(:,:,lb % instant:,0:)
+    type(lower_bounds)        , intent(in)    :: lb
+    type(chain_block)         , intent(in)    :: blk
+    integer                   , intent(in)    :: o, d
+    real(dp)                  , intent(in)    :: jets(:,0:), mu(:,0:), gradient(:,lb % node:,0:)
+    integer                   , intent(in)    :: stage_node(lb % stage:,:,:)
+    real(dp)                  , intent(inout) :: incoming(:,:,lb % instant:,0:)
     real(dp), allocatable   , intent(out)   :: x(:)
 
     type(residual_operator) :: lin
@@ -6187,12 +6187,12 @@ contains
   subroutine multipliers_of_order(this, blk, o, d, gauged, jets, mu, adjoint, gauge, reaction, in_design)
 
     class(discrete_lagrangian), intent(in)    :: this
-    type(chain_block)       , intent(in)    :: blk
-    integer                 , intent(in)    :: o, d
-    logical                 , intent(in)    :: gauged(:)
-    real(dp)                , intent(in)    :: jets(:,0:), mu(:,0:)
-    real(dp)                , intent(inout) :: adjoint(:,:,:,0:), gauge(:,:,0:), reaction(:,:,0:)
-    real(dp)                , intent(inout) :: in_design(:,0:)
+    type(chain_block)         , intent(in)    :: blk
+    integer                   , intent(in)    :: o, d
+    logical                   , intent(in)    :: gauged(:)
+    real(dp)                  , intent(in)    :: jets(:,0:), mu(:,0:)
+    real(dp)                  , intent(inout) :: adjoint(:,:,:,0:), gauge(:,:,0:), reaction(:,:,0:)
+    real(dp)                  , intent(inout) :: in_design(:,0:)
 
     ! the orders of a slope from zero: an allocatable assigned the
     ! function's result would have them from one
@@ -6902,8 +6902,8 @@ contains
   subroutine point_rows(this, tuple, blk)
 
     class(discrete_lagrangian), intent(in)  :: this
-    real(dp)                , intent(in)  :: tuple(:,:,:)
-    type(chain_block)       , intent(out) :: blk
+    real(dp)                  , intent(in)  :: tuple(:,:,:)
+    type(chain_block)         , intent(out) :: blk
 
     type(stencil) :: relations
     integer , allocatable :: primary(:)
@@ -6934,10 +6934,10 @@ contains
     class(minimizer)        , intent(in), optional :: by
 
     class(discrete_lagrangian), intent(in)    :: this
-    type(residual_operator) , intent(in)    :: rows
-    integer                 , intent(in)    :: unknowns, stride, npts
-    real(dp)                , intent(inout) :: q(:)
-    logical                 , intent(out), optional :: converged
+    type(residual_operator)   , intent(in)    :: rows
+    integer                   , intent(in)    :: unknowns, stride, npts
+    real(dp)                  , intent(inout) :: q(:)
+    logical                   , intent(out), optional :: converged
 
     class(minimizer), allocatable :: stack
     logical :: met
@@ -7089,7 +7089,7 @@ contains
   logical function expansion_owned(this, d)
 
     class(discrete_lagrangian), intent(in) :: this
-    integer                 , intent(in) :: d
+    integer                   , intent(in) :: d
 
     expansion_owned = .true.
     if (this % manifold % with_space .or. num_images() == 1 .or. this % overlapped) return
@@ -7161,7 +7161,7 @@ contains
 
   subroutine projected_form(image, physics, space, points, defined)
 
-    type(discrete_lagrangian)        , intent(inout) :: image
+    type(discrete_lagrangian)      , intent(inout) :: image
     type(residual_term)            , intent(in)    :: physics
     class(derivative_approximation), intent(in)    :: space
     type(discrete_manifold)        , intent(in)    :: points
@@ -7292,7 +7292,7 @@ contains
   subroutine initial_form(image, physics)
 
     type(discrete_lagrangian), intent(inout) :: image
-    type(residual_term)    , intent(in)    :: physics
+    type(residual_term)      , intent(in)    :: physics
 
     type(expression), allocatable :: laws(:)
     integer :: j, o, nf
@@ -7343,7 +7343,7 @@ contains
   subroutine projection_form(image, physics)
 
     type(discrete_lagrangian), intent(inout) :: image
-    type(residual_term)    , intent(in)    :: physics
+    type(residual_term)      , intent(in)    :: physics
 
     type(expression), allocatable :: laws(:), reduced(:), zeros(:), rows(:)
     type(expression) :: row
@@ -7470,7 +7470,7 @@ contains
   pure integer function coefficient_component(this, f, k, a) result(at)
 
     class(discrete_lagrangian), intent(in) :: this
-    integer                 , intent(in) :: f, k, a
+    integer                   , intent(in) :: f, k, a
 
     integer :: first, axis, o
 
@@ -7498,8 +7498,8 @@ contains
   pure subroutine stored_order(this, component, field, order)
 
     class(discrete_lagrangian), intent(in)  :: this
-    integer                 , intent(in)  :: component
-    integer                 , intent(out) :: field, order
+    integer                   , intent(in)  :: component
+    integer                   , intent(out) :: field, order
 
     integer :: f
 
@@ -7592,10 +7592,10 @@ contains
   subroutine projected_nodes(this, tuple, stages, solution, stage_node, density, step_term)
 
     class(discrete_lagrangian), intent(in)    :: this
-    real(dp)                , intent(in)    :: tuple(:,:,:,0:), stages(:,:,:,:,0:)
-    type(discrete_field)    , intent(inout) :: solution
+    real(dp)                  , intent(in)    :: tuple(:,:,:,0:), stages(:,:,:,:,0:)
+    type(discrete_field)      , intent(inout) :: solution
     integer , allocatable   , intent(out)   :: stage_node(:,:,:)
-    real(dp)                , intent(in), optional :: density(:)
+    real(dp)                  , intent(in), optional :: density(:)
     real(dp), allocatable   , intent(out), optional :: step_term(:)
 
     type(derivative_terms), allocatable :: dt(:), weight(:)
@@ -7735,8 +7735,8 @@ contains
   pure function site_jet(this, formed, e, q, tuples) result(jet)
 
     class(discrete_lagrangian), intent(in) :: this
-    integer                 , intent(in) :: formed(0:,:), e, q
-    real(dp)                , intent(in) :: tuples(:,:,0:)
+    integer                   , intent(in) :: formed(0:,:), e, q
+    real(dp)                  , intent(in) :: tuples(:,:,0:)
     real(dp) :: jet(size(formed, 2), 0:ubound(tuples, 3))
 
     integer :: c, i, k
@@ -7758,10 +7758,10 @@ contains
   subroutine site_gradient(this, formed, site, g, blk, m, rhs)
 
     class(discrete_lagrangian), intent(in)    :: this
-    integer                 , intent(in)    :: formed(0:,:), site, m
-    real(dp)                , intent(in)    :: g(:)
-    type(chain_block)       , intent(in)    :: blk
-    real(dp)                , intent(inout) :: rhs(:)
+    integer                   , intent(in)    :: formed(0:,:), site, m
+    real(dp)                  , intent(in)    :: g(:)
+    type(chain_block)         , intent(in)    :: blk
+    real(dp)                  , intent(inout) :: rhs(:)
 
     integer :: c, i, k, e, q, row
 
@@ -7791,8 +7791,8 @@ contains
   integer function fixed_coefficient(this, j, i, field, equation_row) result(component)
 
     class(discrete_lagrangian), intent(in)  :: this
-    integer                 , intent(in)  :: j, i, equation_row(:)
-    integer                 , intent(out) :: field
+    integer                   , intent(in)  :: j, i, equation_row(:)
+    integer                   , intent(out) :: field
 
     integer , allocatable :: column_of(:)
     real(dp), allocatable :: slopes(:), position(:)
@@ -7819,11 +7819,11 @@ contains
   subroutine projected_datum(this, equation, instant, m, values, seed, blk, rhs)
 
     class(discrete_lagrangian), intent(in)    :: this
-    type(continuous_field)  , intent(in)    :: equation
-    integer                 , intent(in)    :: instant, m
-    real(dp)                , intent(in)    :: values(:), seed(:)
-    type(chain_block)       , intent(in)    :: blk
-    real(dp)                , intent(inout) :: rhs(:)
+    type(continuous_field)    , intent(in)    :: equation
+    integer                   , intent(in)    :: instant, m
+    real(dp)                  , intent(in)    :: values(:), seed(:)
+    type(chain_block)         , intent(in)    :: blk
+    real(dp)                  , intent(inout) :: rhs(:)
 
     integer , allocatable :: columns(:)
     real(dp), allocatable :: slopes(:), position(:)
@@ -7859,7 +7859,7 @@ contains
   ! coefficient zero, the same order along the same axis otherwise
   pure integer function coefficient_derivative(this, k) result(d)
     class(discrete_lagrangian), intent(in) :: this
-    integer                 , intent(in) :: k
+    integer                   , intent(in) :: k
     integer :: axis, o
     d = 0
     if (k == 0) return
@@ -7912,8 +7912,8 @@ contains
   subroutine estimated_rates(this, tuple, first)
 
     class(discrete_lagrangian), intent(in)    :: this
-    real(dp)                , intent(inout) :: tuple(:,:,:)
-    integer                 , intent(in)    :: first
+    real(dp)                  , intent(inout) :: tuple(:,:,:)
+    integer                   , intent(in)    :: first
 
     real(dp) :: s(3), w1(3), w2(3), tk
     integer :: n, k, j, f, o, i
@@ -7963,8 +7963,8 @@ contains
   subroutine extrapolated(this, tuple, h)
 
     class(discrete_lagrangian), intent(in)    :: this
-    real(dp)                , intent(inout) :: tuple(:,:)
-    real(dp)                , intent(in)    :: h
+    real(dp)                  , intent(inout) :: tuple(:,:)
+    real(dp)                  , intent(in)    :: h
 
     integer, allocatable :: chain(:)
     integer :: f, k, a, top, nk
@@ -8137,9 +8137,9 @@ contains
   subroutine fixed_rows_of(this, first, last, depth, instant_moment, at, lb, tuple, fixed_rows, fixed)
 
     class(discrete_lagrangian), intent(in)  :: this
-    integer                 , intent(in)  :: first, last, depth, instant_moment(:), at(:)
-    type(lower_bounds)      , intent(in)  :: lb
-    real(dp)                , intent(in)  :: tuple(:,:,lb % instant:)
+    integer                   , intent(in)  :: first, last, depth, instant_moment(:), at(:)
+    type(lower_bounds)        , intent(in)  :: lb
+    real(dp)                  , intent(in)  :: tuple(:,:,lb % instant:)
     integer , allocatable   , intent(out) :: fixed_rows(:)
     real(dp), allocatable   , intent(out) :: fixed(:)
 
@@ -8213,10 +8213,10 @@ contains
        & implicit_moment, rows, columns, weights, constants)
 
     class(discrete_lagrangian), intent(in)  :: this
-    integer                 , intent(in)  :: first, last, depth, nm, instant_moment(:), at(:), primary(:)
-    real(dp)                , intent(in)  :: positions(:,:)
-    type(stencil)           , intent(in)  :: rows_along(:,:)
-    logical                 , intent(in)  :: implicit_moment(:)
+    integer                   , intent(in)  :: first, last, depth, nm, instant_moment(:), at(:), primary(:)
+    real(dp)                  , intent(in)  :: positions(:,:)
+    type(stencil)             , intent(in)  :: rows_along(:,:)
+    logical                   , intent(in)  :: implicit_moment(:)
     integer , allocatable   , intent(out) :: rows(:), columns(:)
     real(dp), allocatable   , intent(out) :: weights(:), constants(:)
 
@@ -8537,7 +8537,7 @@ contains
 
   function disagreement(this, solution, other, schemes, derivatives, by) result(contribution)
 
-    class(discrete_lagrangian)       , intent(in) :: this
+    class(discrete_lagrangian)     , intent(in) :: this
     type(discrete_field)           , intent(in) :: solution
     class(derivative_approximation), intent(in), optional :: other
     type(chain)                    , intent(in), optional :: schemes
@@ -8680,8 +8680,8 @@ contains
     class(minimizer)        , intent(in), optional :: by
 
     class(discrete_lagrangian), intent(in) :: this
-    type(discrete_field)    , intent(in) :: solution
-    type(chain)             , intent(in), optional :: schemes
+    type(discrete_field)      , intent(in) :: solution
+    type(chain)               , intent(in), optional :: schemes
     real(dp), allocatable   , intent(out), optional :: derivative(:,:)
     real(dp), allocatable :: contribution(:)
 
@@ -8975,8 +8975,8 @@ contains
   subroutine segment_rows_of(this, nm, at, implicit_moment, rows, columns, weights)
 
     class(discrete_lagrangian), intent(in)  :: this
-    integer                 , intent(in)  :: nm, at(:)
-    logical                 , intent(in)  :: implicit_moment(:)
+    integer                   , intent(in)  :: nm, at(:)
+    logical                   , intent(in)  :: implicit_moment(:)
     integer , allocatable   , intent(out) :: rows(:), columns(:)
     real(dp), allocatable   , intent(out) :: weights(:)
 
@@ -9042,8 +9042,8 @@ contains
   subroutine space_face_placement(this, j, primary, face_point, target, row_point, row_offset, field, determined)
 
     class(discrete_lagrangian), intent(in)  :: this
-    integer                 , intent(in)  :: j, primary(:)
-    integer                 , intent(out) :: face_point
+    integer                   , intent(in)  :: j, primary(:)
+    integer                   , intent(out) :: face_point
     integer , allocatable   , intent(out) :: target(:), row_point(:), row_offset(:), field(:), determined(:,:)
 
     integer , allocatable :: nearest(:), column_of(:)
@@ -9148,11 +9148,11 @@ contains
   subroutine condition_relation(this, equation, values, position, columns, slopes, given, leaves)
 
     class(discrete_lagrangian), intent(in)  :: this
-    type(continuous_field)  , intent(in)  :: equation
-    real(dp)                , intent(in)  :: values(:), position(:)
+    type(continuous_field)    , intent(in)  :: equation
+    real(dp)                  , intent(in)  :: values(:), position(:)
     integer , allocatable   , intent(out) :: columns(:), leaves(:,:)
     real(dp), allocatable   , intent(out) :: slopes(:)
-    real(dp)                , intent(out) :: given
+    real(dp)                  , intent(out) :: given
 
     type(expression) :: g
     type(expression_vertex), allocatable :: v(:)
@@ -9195,12 +9195,12 @@ contains
   subroutine space_face_relation(this, equation, position, columns, slopes, given, field, determined)
 
     class(discrete_lagrangian), intent(in)  :: this
-    type(continuous_field)  , intent(in)  :: equation
-    real(dp)                , intent(in)  :: position(:)
+    type(continuous_field)    , intent(in)  :: equation
+    real(dp)                  , intent(in)  :: position(:)
     integer , allocatable   , intent(out) :: columns(:)
     real(dp), allocatable   , intent(out) :: slopes(:)
-    real(dp)                , intent(out) :: given
-    integer                 , intent(out) :: field, determined(2)
+    real(dp)                  , intent(out) :: given
+    integer                   , intent(out) :: field, determined(2)
 
     integer, allocatable :: leaves(:,:)
     integer :: k
@@ -9219,7 +9219,7 @@ contains
   integer function face_row_moment(this, instant, first, last, depth, instant_moment) result(m)
 
     class(discrete_lagrangian), intent(in) :: this
-    integer                 , intent(in) :: instant, first, last, depth, instant_moment(:)
+    integer                   , intent(in) :: instant, first, last, depth, instant_moment(:)
 
     if (instant == 1) then
        m = instant_moment(instant - first + 1)
@@ -9247,12 +9247,12 @@ contains
   subroutine face_relation(this, equation, values, position, columns, slopes, given, row)
 
     class(discrete_lagrangian), intent(in)  :: this
-    type(continuous_field)  , intent(in)  :: equation
-    real(dp)                , intent(in)  :: values(:), position(:)
+    type(continuous_field)    , intent(in)  :: equation
+    real(dp)                  , intent(in)  :: values(:), position(:)
     integer , allocatable   , intent(out) :: columns(:)
     real(dp), allocatable   , intent(out) :: slopes(:)
-    real(dp)                , intent(out) :: given
-    integer                 , intent(out) :: row
+    real(dp)                  , intent(out) :: given
+    integer                   , intent(out) :: row
 
     integer, allocatable :: leaves(:,:)
     real(dp) :: sign
@@ -9286,7 +9286,7 @@ contains
   ! the instant of a face at a time of the interval
   integer function face_instant(this, time)
     class(discrete_lagrangian), intent(in) :: this
-    real(dp)                , intent(in) :: time
+    real(dp)                  , intent(in) :: time
     integer :: k
     face_instant = 0
     do k = 1, this % points % num_instants()

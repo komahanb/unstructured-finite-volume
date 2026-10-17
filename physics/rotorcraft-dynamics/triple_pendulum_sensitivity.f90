@@ -38,9 +38,9 @@ program triple_pendulum_sensitivity
   use operation_expansion, only : expansion
   use operation_field    , only : continuous_field, discrete_field, integral, cos, &
        &                          operator(+), operator(-), operator(*), operator(/), operator(**)
-  use operation_lagrangian , only : continuous_lagrangian, discrete_lagrangian, operator(+), operator(*)
-  use operation_family   , only : dirk, bdf, chain
-  use multibody_dynamics , only : rigid_body, mechanism, joint_conditions, spherical, revolute
+  use operation_lagrangian  , only : continuous_lagrangian, discrete_lagrangian, operator(+), operator(*)
+  use operation_family      , only : dirk, bdf, chain
+  use multibody_dynamics    , only : rigid_body, mechanism, joint_conditions, spherical, revolute
   use operation_newton      , only : newton
   use operation_elimination , only : elimination
   use operation_dense_direct, only : dense_direct
@@ -52,19 +52,19 @@ program triple_pendulum_sensitivity
   integer  :: num_instants = 101, order = 1
   real(dp) :: s1_value = 1.0_dp, s2_value = 1.0_dp
 
-  type(continuous_manifold) :: omega, domega
-  type(discrete_manifold)   :: omega_h
-  type(continuous_field)    :: t, s1, s2, motion, objective, lambda_r, lambda, kappa
-  type(joint_conditions)    :: g1
-  type(discrete_field)      :: estimate, solution, kappa_h, functional
+  type(continuous_manifold)   :: omega, domega
+  type(discrete_manifold)     :: omega_h
+  type(continuous_field)      :: t, s1, s2, motion, objective, lambda_r, lambda, kappa
+  type(joint_conditions)      :: g1
+  type(discrete_field)        :: estimate, solution, kappa_h, functional
   type(continuous_lagrangian) :: r, g, d, L
   type(discrete_lagrangian)   :: L_h
-  type(newton)              :: stack
-  type(minimization)        :: graph
-  type(mechanism)           :: pendulum
-  type(rigid_body)          :: a, b, c
+  type(newton)                :: stack
+  type(minimization)          :: graph
+  type(mechanism)             :: pendulum
+  type(rigid_body)            :: a, b, c
   real(dp), allocatable     :: values(:)
-  character(len=32)         :: item
+  character(len=32)           :: item
   integer :: k
 
   if (command_argument_count() >= 1) then

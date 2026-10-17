@@ -43,7 +43,7 @@ program taylor_green_study
   use operation_manifold         , only : continuous_manifold, discrete_manifold, interval, region, points, mesh
   use operation_field            , only : continuous_field, discrete_field, integral, sin, cos, exp, &
        &                                  operator(+), operator(-), operator(*), operator(/), operator(**)
-  use operation_lagrangian         , only : continuous_lagrangian, discrete_lagrangian, operator(+), operator(*)
+  use operation_lagrangian       , only : continuous_lagrangian, discrete_lagrangian, operator(+), operator(*)
   use operation_family           , only : family, dirk, bdf, adams, chain
   use operation_finite_difference, only : finite_difference
   use operation_finite_volume    , only : finite_volume
@@ -61,11 +61,11 @@ program taylor_green_study
   integer     , allocatable :: from(:)
   integer :: k, num_adams
 
-  type(continuous_manifold) :: omega, domega, tau
-  type(discrete_manifold)   :: omega_h
-  type(continuous_field)    :: t, x, y, u_exact, v_exact, p_exact, exact
-  type(continuous_field)    :: u, v, p, lambda, mu, momentum_x, momentum_y, pressure, lambda_r, energy
-  type(discrete_field)      :: estimate, solution, error, functional
+  type(continuous_manifold)   :: omega, domega, tau
+  type(discrete_manifold)     :: omega_h
+  type(continuous_field)      :: t, x, y, u_exact, v_exact, p_exact, exact
+  type(continuous_field)      :: u, v, p, lambda, mu, momentum_x, momentum_y, pressure, lambda_r, energy
+  type(discrete_field)        :: estimate, solution, error, functional
   real(dp) :: J(1)
   type(continuous_lagrangian) :: r, g, gauge, L
   type(discrete_lagrangian)   :: L_h

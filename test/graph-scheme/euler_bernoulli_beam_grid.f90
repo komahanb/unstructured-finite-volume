@@ -46,7 +46,7 @@ program euler_bernoulli_beam_grid
   use operation_manifold         , only : continuous_manifold, discrete_manifold, interval, region, points
   use operation_field            , only : continuous_field, discrete_field, integral, representation
   use operation_field            , only : sin, cos, operator(+), operator(-), operator(*), operator(/), operator(**)
-  use operation_lagrangian         , only : continuous_lagrangian, discrete_lagrangian, operator(+), operator(*)
+  use operation_lagrangian       , only : continuous_lagrangian, discrete_lagrangian, operator(+), operator(*)
   use operation_family           , only : dirk, bdf, adams, chain
   use operation_finite_difference, only : finite_difference
   use operation_segment_trapezoid, only : segment_trapezoid
@@ -108,11 +108,11 @@ contains
     real(dp), intent(out)           :: phi
     real(dp), intent(out), optional :: eta, J_error, w_error
 
-    type(continuous_manifold) :: omega, initial, left, right
-    type(discrete_manifold)   :: omega_h
-    type(continuous_field)    :: t, x, w, w_exact, exact, load, goal
-    type(continuous_field)    :: adjoint, mu_x, lambda, lambda_0, lambda_L
-    type(discrete_field)      :: estimate, solution, functional, error
+    type(continuous_manifold)   :: omega, initial, left, right
+    type(discrete_manifold)     :: omega_h
+    type(continuous_field)      :: t, x, w, w_exact, exact, load, goal
+    type(continuous_field)      :: adjoint, mu_x, lambda, lambda_0, lambda_L
+    type(discrete_field)        :: estimate, solution, functional, error
     type(continuous_lagrangian) :: r, r_x, ic, bc_0, bc_L, Lagrangian
     type(discrete_lagrangian)   :: L_h
     real(dp), allocatable :: xi(:), contribution(:)

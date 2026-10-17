@@ -47,14 +47,14 @@ program blade_on_hub
   use util_verbosity          , only : set_verbosity
   use operation_manifold      , only : continuous_manifold, discrete_manifold, interval, region, points
   use operation_field         , only : continuous_field, discrete_field
-  use operation_lagrangian      , only : continuous_lagrangian, discrete_lagrangian, operator(+)
+  use operation_lagrangian    , only : continuous_lagrangian, discrete_lagrangian, operator(+)
   use operation_family        , only : dirk, bdf, chain
   use operation_finite_element, only : finite_element
   use multibody_dynamics      , only : rigid_body, beam_blade, mechanism, revolute_driver, rigid_link
-  use operation_newton      , only : newton
-  use operation_elimination , only : elimination
-  use operation_dense_direct, only : dense_direct
-  use operation_minimization, only : minimization
+  use operation_newton        , only : newton
+  use operation_elimination   , only : elimination
+  use operation_dense_direct  , only : dense_direct
+  use operation_minimization  , only : minimization
 
   implicit none
 
@@ -69,17 +69,17 @@ program blade_on_hub
   real(dp) :: modulus = 70.0e9_dp, inertia(3,3), plate(3,3), mass
   integer  :: steps = 36, span_points = 5, k, num_instants
 
-  type(continuous_manifold) :: omega, initial, left
-  type(discrete_manifold)   :: omega_h
-  type(continuous_field)    :: t, x, motion
-  type(discrete_field)      :: estimate, solution, reactions, tip_h
+  type(continuous_manifold)   :: omega, initial, left
+  type(discrete_manifold)     :: omega_h
+  type(continuous_field)      :: t, x, motion
+  type(discrete_field)        :: estimate, solution, reactions, tip_h
   type(continuous_lagrangian) :: L
   type(discrete_lagrangian)   :: L_h
-  type(newton)              :: stack
-  type(minimization)        :: graph
-  type(mechanism)           :: spinner
-  type(rigid_body)          :: hub, slab
-  type(beam_blade)          :: blade
+  type(newton)                :: stack
+  type(minimization)          :: graph
+  type(mechanism)             :: spinner
+  type(rigid_body)            :: hub, slab
+  type(beam_blade)            :: blade
   character(len=32), allocatable :: names(:)
 
   if (command_argument_count() >= 1) call get_command_argument(1, model)

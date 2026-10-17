@@ -114,7 +114,7 @@ program euler_bernoulli_beam_optimization
   use operation_expansion        , only : expansion
   use operation_field            , only : continuous_field, discrete_field, integral
   use operation_field            , only : sin, cos, operator(+), operator(-), operator(*), operator(/), operator(**)
-  use operation_lagrangian         , only : continuous_lagrangian, discrete_lagrangian, operator(+), operator(*), &
+  use operation_lagrangian       , only : continuous_lagrangian, discrete_lagrangian, operator(+), operator(*), &
        &                                  minimize_together
   use operation_family           , only : dirk, bdf, adams, chain
   use operation_finite_element   , only : finite_element
@@ -244,16 +244,16 @@ contains
 
   subroutine scenario(harmonic, L_h, estimate, misfit, stiffness)
 
-    real(dp)               , intent(in)  :: harmonic
+    real(dp)                 , intent(in)  :: harmonic
     type(discrete_lagrangian), intent(out) :: L_h
-    type(discrete_field)   , intent(out) :: estimate
-    type(continuous_field) , intent(out) :: misfit, stiffness
+    type(discrete_field)     , intent(out) :: estimate
+    type(continuous_field)   , intent(out) :: misfit, stiffness
 
-    type(continuous_manifold) :: omega, initial, left, right
-    type(discrete_manifold)   :: omega_h
-    type(continuous_field)    :: t, x, s1, s2, w, w_true, exact
-    type(continuous_field)    :: EI, EI_true, rhoA, moment, moment_true, load
-    type(continuous_field)    :: adjoint, lambda, lambda_0, lambda_L, mu
+    type(continuous_manifold)   :: omega, initial, left, right
+    type(discrete_manifold)     :: omega_h
+    type(continuous_field)      :: t, x, s1, s2, w, w_true, exact
+    type(continuous_field)      :: EI, EI_true, rhoA, moment, moment_true, load
+    type(continuous_field)      :: adjoint, lambda, lambda_0, lambda_L, mu
     type(continuous_lagrangian) :: r, ic, bc_0, bc_L, bound, Lagrangian
     real(dp) :: frequency
     integer  :: k

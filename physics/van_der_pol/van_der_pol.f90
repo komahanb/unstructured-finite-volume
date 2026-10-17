@@ -272,13 +272,13 @@ program van_der_pol
   real(dp) :: u_0, u_t_0
   integer  :: num_instants, order
 
-  type(continuous_manifold) :: manifold
-  type(discrete_manifold)   :: manifold_bar
-  type(continuous_field)    :: t, t_map, nu, u, J, lambda_omega, lambda_ic, lambda_s, lambda_t, rest
+  type(continuous_manifold)   :: manifold
+  type(discrete_manifold)     :: manifold_bar
+  type(continuous_field)      :: t, t_map, nu, u, J, lambda_omega, lambda_ic, lambda_s, lambda_t, rest
   type(continuous_lagrangian) :: r_omega, r_ic, r_s, r_t, L
   type(discrete_lagrangian)   :: L_bar
   type(family), allocatable :: pool(:)
-  type(discrete_field)      :: estimate, solution, u_bar, lambda_omega_bar, lambda_ic_bar, lambda_s_bar, lambda_t_bar, &
+  type(discrete_field)        :: estimate, solution, u_bar, lambda_omega_bar, lambda_ic_bar, lambda_s_bar, lambda_t_bar, &
        &                       J_bar, nu_bar
   real(dp), allocatable     :: eta(:)
   type(newton)              :: stack

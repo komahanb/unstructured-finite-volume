@@ -32,13 +32,13 @@
 
 program triple_pendulum
 
-  use util_precision    , only : dp
-  use util_verbosity    , only : set_verbosity
-  use operation_manifold, only : continuous_manifold, discrete_manifold, interval, points
-  use operation_field   , only : continuous_field, discrete_field, operator(+), operator(-)
-  use operation_lagrangian, only : continuous_lagrangian, discrete_lagrangian, operator(+)
-  use operation_family  , only : dirk, bdf, chain
-  use multibody_dynamics, only : rigid_body, mechanism, joint_conditions, spherical, revolute
+  use util_precision        , only : dp
+  use util_verbosity        , only : set_verbosity
+  use operation_manifold    , only : continuous_manifold, discrete_manifold, interval, points
+  use operation_field       , only : continuous_field, discrete_field, operator(+), operator(-)
+  use operation_lagrangian  , only : continuous_lagrangian, discrete_lagrangian, operator(+)
+  use operation_family      , only : dirk, bdf, chain
+  use multibody_dynamics    , only : rigid_body, mechanism, joint_conditions, spherical, revolute
   use operation_newton      , only : newton
   use operation_elimination , only : elimination
   use operation_dense_direct, only : dense_direct
@@ -49,19 +49,19 @@ program triple_pendulum
   real(dp), parameter :: T_final = 2.0_dp, width = 0.1_dp, turning(3) = [0.0_dp, 0.0_dp, 1.0_dp]
   integer  :: num_instants = 201
 
-  type(continuous_manifold) :: omega, domega
-  type(discrete_manifold)   :: omega_h
-  type(continuous_field)    :: t, energy, joints, motion
-  type(discrete_field)      :: estimate, solution, energy_h, joints_h
+  type(continuous_manifold)   :: omega, domega
+  type(discrete_manifold)     :: omega_h
+  type(continuous_field)      :: t, energy, joints, motion
+  type(discrete_field)        :: estimate, solution, energy_h, joints_h
   type(continuous_lagrangian) :: r, g, L
   type(discrete_lagrangian)   :: L_h
-  type(newton)              :: stack
-  type(minimization)        :: graph
-  type(mechanism)           :: pendulum
-  type(rigid_body)          :: a, b, c
-  type(joint_conditions)    :: conditions(3)
+  type(newton)                :: stack
+  type(minimization)          :: graph
+  type(mechanism)             :: pendulum
+  type(rigid_body)            :: a, b, c
+  type(joint_conditions)      :: conditions(3)
   real(dp), allocatable     :: e(:), defect(:,:)
-  character(len=32)         :: item
+  character(len=32)           :: item
   integer :: k
 
   if (command_argument_count() >= 1) then
